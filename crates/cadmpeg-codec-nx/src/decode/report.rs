@@ -421,7 +421,7 @@ pub(super) fn build_geometry_report(
 
     for loss in dialect_losses {
         ctx.reserve_vec(&mut losses, 1, "nx geometry report losses")?;
-        losses.push(loss.clone_admitted(ctx, "nx geometry report dialect loss")?);
+        losses.push(loss.try_clone_for_decode(ctx, "nx geometry report dialect loss")?);
     }
     let mut copied_notes = ctx.collection_vec(notes.len(), "nx geometry report notes")?;
     for note in notes {

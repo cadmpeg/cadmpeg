@@ -2024,8 +2024,8 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
         findings.push(Finding {
             check: Check::ReferentialIntegrity,
             severity: Severity::Error,
-            message: error.message,
-            entity: Some(error.owner.into_string()),
+            message: error.to_string(),
+            entity: match error { crate::document::FeatureParentValidationError::Invalid(error) => Some(error.owner.into_string()), _ => None },
         });
     }
 

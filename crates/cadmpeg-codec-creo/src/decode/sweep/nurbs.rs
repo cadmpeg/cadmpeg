@@ -651,7 +651,7 @@ pub(in super::super) fn placed_section_nurbs(
     transform: &crate::placement::FeatureSectionTransform,
     nurbs: &NurbsCurve,
 ) -> Result<Option<NurbsCurve>, CodecError> {
-    nurbs.map_control_points_admitted(ctx, "creo placed section NURBS curve", |point| {
+    nurbs.map_control_points(ctx, "creo placed section NURBS curve", |point| {
         Point3::from(section_xyz_in_model(transform, [point.x, point.y, point.z]))
     })
 }
@@ -661,7 +661,7 @@ pub(super) fn translated_nurbs_curve(
     curve: &NurbsCurve,
     translation: [f64; 3],
 ) -> Result<Option<NurbsCurve>, CodecError> {
-    curve.map_control_points_admitted(ctx, "creo translated NURBS curve", |point| {
+    curve.map_control_points(ctx, "creo translated NURBS curve", |point| {
         Point3::new(
             point.x + translation[0],
             point.y + translation[1],

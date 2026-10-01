@@ -514,10 +514,7 @@ mod tests {
     fn driver_coverage_refuses_transferred_count_above_decoded() {
         crate::decode::with_test_decode_ctx(|ctx| {
             let mut coverage = cadmpeg_ir::report::decode::Coverage::default();
-            coverage.record(
-                crate::coverage::TRANSFERRED_CONFIGURATION_DRIVER_TABLE_COUNT,
-                1,
-            );
+            coverage.record(ctx, crate::coverage::TRANSFERRED_CONFIGURATION_DRIVER_TABLE_COUNT, 1).expect("coverage entry");
             assert!(matches!(
                 push_coverage_drop_losses(ctx, &mut Vec::new(), &coverage),
                 Err(CodecError::Malformed(_))
@@ -529,10 +526,7 @@ mod tests {
     fn solve_coverage_refuses_evaluated_count_above_decoded() {
         crate::decode::with_test_decode_ctx(|ctx| {
             let mut coverage = cadmpeg_ir::report::decode::Coverage::default();
-            coverage.record(
-                crate::coverage::EVALUATED_ACTIVE_CURVE_EXPRESSION_SOLVE_BLOCK_COUNT,
-                1,
-            );
+            coverage.record(ctx, crate::coverage::EVALUATED_ACTIVE_CURVE_EXPRESSION_SOLVE_BLOCK_COUNT, 1).expect("coverage entry");
             assert!(matches!(
                 push_coverage_drop_losses(ctx, &mut Vec::new(), &coverage),
                 Err(CodecError::Malformed(_))
@@ -541,13 +535,12 @@ mod tests {
     }
 
     fn two_untransferred_planes() -> cadmpeg_ir::report::decode::Coverage {
+        crate::decode::with_test_decode_ctx(|ctx| {
         let mut coverage = cadmpeg_ir::report::decode::Coverage::default();
-        coverage.record(crate::coverage::UNTRANSFERRED_VISIBLE_SURFACE_ROW_COUNT, 2);
-        coverage.record(
-            crate::coverage::UNTRANSFERRED_VISIBLE_PLANE_SURFACE_ROW_COUNT,
-            2,
-        );
+        coverage.record(ctx, crate::coverage::UNTRANSFERRED_VISIBLE_SURFACE_ROW_COUNT, 2).expect("coverage entry");
+        coverage.record(ctx, crate::coverage::UNTRANSFERRED_VISIBLE_PLANE_SURFACE_ROW_COUNT, 2).expect("coverage entry");
         coverage
+        })
     }
 
     #[test]

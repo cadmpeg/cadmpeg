@@ -2585,7 +2585,7 @@ fn append_legacy_brep(
         color: None,
         visible: None,
     });
-    draft.commit_model(ir).map_err(CodecError::malformed)
+    draft.commit_model_for_decode(ir, ctx)?.map_err(CodecError::malformed)
 }
 
 fn legacy_trim(
@@ -3600,12 +3600,7 @@ pub(crate) fn decode_v1(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<Decoded,
         ),
         (crate::coverage::LEGACY_V1_NURBS_BREPS, decoded_nurbs_breps),
     ] {
-        ctx.charge_collection_items(1, "Rhino V1 coverage entries")?;
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(key.as_str().len()),
-            "Rhino V1 coverage keys",
-        )?;
-        coverage.record(key, count);
+        coverage.record(ctx, key, count)?;
     }
     let mut source_fidelity = cadmpeg_ir::SourceFidelity::default();
     for _ in opaque_records.iter().chain(&typed_source_records) {

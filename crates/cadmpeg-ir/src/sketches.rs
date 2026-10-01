@@ -14,6 +14,32 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
+/// Collection admission or decode resource refusal.
+#[derive(Debug, thiserror::Error)]
+pub enum SketchCollectionError {
+    /// Geometric or collection invariant failure.
+    #[error("{0}")]
+    Invalid(&'static str),
+    /// Storage or work allowance exhausted.
+    #[error("resource refusal: {0:?}")]
+    Resource(cadmpeg_core::decode::ResourceLimit),
+    /// A fallible admission operation could not complete.
+    #[error("{0}")]
+    Admission(String),
+}
+
+impl From<cadmpeg_core::CodecError> for SketchCollectionError {
+    fn from(error: cadmpeg_core::CodecError) -> Self {
+        match error { cadmpeg_core::CodecError::ResourceLimit(limit) => Self::Resource(limit), error => Self::Admission(error.to_string()) }
+    }
+}
+
+fn default_sketch_collection<T>(build: impl FnOnce(&cadmpeg_core::decode::DecodeContext<'_>) -> Result<Result<T, &'static str>, cadmpeg_core::CodecError>) -> Result<T, SketchCollectionError> {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &cadmpeg_core::decode::DecodePolicy::default())?;
+    build(&ctx)?.map_err(SketchCollectionError::Invalid)
+}
+
 pub mod scaling;
 
 crate::ids::id_type!(
@@ -1385,7 +1411,7 @@ struct SpatialSketchProfileWire {
 }
 
 impl TryFrom<SpatialSketchProfileWire> for SpatialSketchProfile {
-    type Error = &'static str;
+    type Error = SketchCollectionError;
 
     fn try_from(wire: SpatialSketchProfileWire) -> Result<Self, Self::Error> {
         Self::try_new(wire.origin, wire.normal, wire.u_axis, wire.boundary)
@@ -1393,96 +1419,40 @@ impl TryFrom<SpatialSketchProfileWire> for SpatialSketchProfile {
 }
 
 impl SpatialSketchProfile {
-    /// Admit a finite plane with unit orthogonal axes and a nonempty distinct boundary.
-    pub fn try_new(
-        origin: Point3,
-        normal: Vector3,
-        u_axis: Vector3,
-        boundary: Vec<SpatialSketchEntityUse>,
-    ) -> Result<Self, &'static str> {
-        let origin = FinitePoint3::new(origin).ok_or("spatial profile origin must be finite")?;
-        let normal = UnitVector3::new(normal).ok_or(SPATIAL_PROFILE_AXES_ERROR)?;
-        let u_axis = UnitVector3::new(u_axis).ok_or(SPATIAL_PROFILE_AXES_ERROR)?;
-        Self::from_parts(origin, normal, u_axis, boundary)
+    /// Admit a finite plane and distinct closed boundary under the default policy.
+    pub fn try_new(origin: Point3, normal: Vector3, u_axis: Vector3, boundary: Vec<SpatialSketchEntityUse>) -> Result<Self, SketchCollectionError> {
+        default_sketch_collection(|ctx| Self::try_new_for_decode(origin, normal, u_axis, boundary, ctx, "spatial profile uniqueness"))
     }
 
-    /// Admit a decoded profile after charging and reserving its uniqueness index.
-    pub fn try_new_charged(
-        origin: Point3,
-        normal: Vector3,
-        u_axis: Vector3,
-        boundary: Vec<SpatialSketchEntityUse>,
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-        operation: &'static str,
-    ) -> Result<Result<Self, &'static str>, cadmpeg_core::CodecError> {
-        let Some(origin) = FinitePoint3::new(origin) else {
-            return Ok(Err("spatial profile origin must be finite"));
-        };
-        let Some(normal) = UnitVector3::new(normal) else {
-            return Ok(Err(SPATIAL_PROFILE_AXES_ERROR));
-        };
-        let Some(u_axis) = UnitVector3::new(u_axis) else {
-            return Ok(Err(SPATIAL_PROFILE_AXES_ERROR));
-        };
+    /// Build a decoded profile through the shared typed-parts admission body.
+    pub fn try_new_for_decode(origin: Point3, normal: Vector3, u_axis: Vector3, boundary: Vec<SpatialSketchEntityUse>, ctx: &cadmpeg_core::decode::DecodeContext<'_>, operation: &'static str) -> Result<Result<Self, &'static str>, cadmpeg_core::CodecError> {
+        let Some(origin) = FinitePoint3::new(origin) else { return Ok(Err("spatial profile origin must be finite")); };
+        let Some(normal) = UnitVector3::new(normal) else { return Ok(Err(SPATIAL_PROFILE_AXES_ERROR)); };
+        let Some(u_axis) = UnitVector3::new(u_axis) else { return Ok(Err(SPATIAL_PROFILE_AXES_ERROR)); };
+        Self::from_parts_for_decode(origin, normal, u_axis, boundary, ctx, operation)
+    }
+
+    /// Admit finite profile controls under the default decode policy.
+    pub fn from_parts(origin: FinitePoint3, normal: UnitVector3, u_axis: UnitVector3, boundary: Vec<SpatialSketchEntityUse>) -> Result<Self, SketchCollectionError> {
+        default_sketch_collection(|ctx| Self::from_parts_for_decode(origin, normal, u_axis, boundary, ctx, "spatial profile uniqueness"))
+    }
+
+    /// Admit typed plane controls and charge temporary uniqueness storage.
+    pub fn from_parts_for_decode(origin: FinitePoint3, normal: UnitVector3, u_axis: UnitVector3, boundary: Vec<SpatialSketchEntityUse>, ctx: &cadmpeg_core::decode::DecodeContext<'_>, operation: &'static str) -> Result<Result<Self, &'static str>, cadmpeg_core::CodecError> {
+        use crate::index::{DecodeStorage, IndexStorage};
         let [n, u] = [normal.as_raw(), u_axis.as_raw()];
+        ctx.charge_work(1, operation)?;
         let dot = n.x * u.x + n.y * u.y + n.z * u.z;
-        if dot.abs() > EPS_SPATIAL_PROFILE_FRAME {
-            return Ok(Err(SPATIAL_PROFILE_AXES_ERROR));
-        }
-        if boundary.is_empty() {
-            return Ok(Err(
-                "spatial profile boundary must be nonempty and contain distinct entities",
-            ));
-        }
-        let count =
-            u64::try_from(boundary.len()).map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
-        ctx.charge_collection_items(count, operation)?;
-        let mut unique = std::collections::HashSet::new();
-        unique
-            .try_reserve(boundary.len())
-            .map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
+        if dot.abs() > EPS_SPATIAL_PROFILE_FRAME { return Ok(Err(SPATIAL_PROFILE_AXES_ERROR)); }
+        if boundary.is_empty() { return Ok(Err("spatial profile boundary must be nonempty and contain distinct entities")); }
+        let storage = DecodeStorage(ctx);
+        let mut unique = storage.temporary_map(boundary.len(), operation)?;
         for use_ in &boundary {
-            if !unique.insert(&use_.entity) {
-                return Ok(Err(
-                    "spatial profile boundary must be nonempty and contain distinct entities",
-                ));
-            }
+            ctx.charge_work(cadmpeg_core::decode::u64_from_index(use_.entity.as_str().len()), operation)?;
+            if unique.insert(&use_.entity, ()).is_some() { return Ok(Err("spatial profile boundary must be nonempty and contain distinct entities")); }
         }
-        Ok(Ok(Self {
-            origin,
-            normal,
-            u_axis,
-            boundary,
-        }))
-    }
-
-    /// Build a profile from an admitted origin and unit axes. The argument
-    /// types state finiteness and unit length, so only the axis
-    /// orthogonality and the boundary are tested.
-    pub fn from_parts(
-        origin: FinitePoint3,
-        normal: UnitVector3,
-        u_axis: UnitVector3,
-        boundary: Vec<SpatialSketchEntityUse>,
-    ) -> Result<Self, &'static str> {
-        let [n, u] = [normal.as_raw(), u_axis.as_raw()];
-        let dot = n.x * u.x + n.y * u.y + n.z * u.z;
-        if dot.abs() > EPS_SPATIAL_PROFILE_FRAME {
-            return Err(SPATIAL_PROFILE_AXES_ERROR);
-        }
-        let unique = boundary
-            .iter()
-            .map(|use_| &use_.entity)
-            .collect::<std::collections::HashSet<_>>();
-        if boundary.is_empty() || unique.len() != boundary.len() {
-            return Err("spatial profile boundary must be nonempty and contain distinct entities");
-        }
-        Ok(Self {
-            origin,
-            normal,
-            u_axis,
-            boundary,
-        })
+        drop(unique);
+        Ok(Ok(Self { origin, normal, u_axis, boundary }))
     }
 
     /// Profile-plane origin in model space.
@@ -2087,6 +2057,30 @@ pub struct SpatialSketchGeometry(
 );
 
 impl SpatialSketchGeometry {
+    /// Copy the retained geometry payload through the decode budget.
+    pub fn try_clone_for_decode(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<Self, cadmpeg_core::CodecError> {
+        ctx.charge_work(1, operation)?;
+        use SpatialSketchGeometryDefinition as Definition;
+        let definition = match &self.0 {
+            Definition::Nurbs { curve } => Definition::Nurbs {
+                curve: SpatialSketchNurbsCurve(curve.0.try_clone_for_decode(ctx, operation)?),
+            },
+            Definition::NurbsSurface { surface } => Definition::NurbsSurface {
+                surface: surface.try_clone_for_decode(ctx, operation)?,
+            },
+            Definition::Native { native_kind } => Definition::Native {
+                native_kind: native_kind.try_clone_for_decode(ctx, operation)?,
+            },
+            Definition::Point { .. } | Definition::Line { .. }
+            | Definition::Circle { .. } | Definition::Arc { .. } => return Ok(self.clone()),
+        };
+        Ok(Self(definition))
+    }
+
     /// Borrow the admitted spatial geometry definition.
     #[must_use]
     pub fn definition(
@@ -3139,7 +3133,7 @@ struct SketchPolygonWire {
 }
 
 impl TryFrom<SketchPolygonWire> for SketchPolygon {
-    type Error = &'static str;
+    type Error = SketchCollectionError;
 
     fn try_from(wire: SketchPolygonWire) -> Result<Self, Self::Error> {
         Self::try_new(wire.entities)
@@ -3147,45 +3141,22 @@ impl TryFrom<SketchPolygonWire> for SketchPolygon {
 }
 
 impl SketchPolygon {
-    /// Admits at least three distinct polygon members.
-    pub fn try_new(entities: Vec<SketchEntityId>) -> Result<Self, &'static str> {
-        if entities.len() < 3
-            || entities
-                .iter()
-                .collect::<std::collections::HashSet<_>>()
-                .len()
-                != entities.len()
-        {
-            return Err("entities requires at least three distinct polygon members");
-        }
-        Ok(Self { entities })
+    /// Admit polygon members under the default decode policy.
+    pub fn try_new(entities: Vec<SketchEntityId>) -> Result<Self, SketchCollectionError> {
+        default_sketch_collection(|ctx| Self::try_new_for_decode(entities, ctx, "sketch polygon uniqueness"))
     }
 
-    /// Admit decoded polygon members after charging the uniqueness index.
-    pub fn try_new_charged(
-        entities: Vec<SketchEntityId>,
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-        operation: &'static str,
-    ) -> Result<Result<Self, &'static str>, cadmpeg_core::CodecError> {
-        if entities.len() < 3 {
-            return Ok(Err(
-                "entities requires at least three distinct polygon members",
-            ));
-        }
-        let count =
-            u64::try_from(entities.len()).map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
-        ctx.charge_collection_items(count, operation)?;
-        let mut unique = std::collections::HashSet::new();
-        unique
-            .try_reserve(entities.len())
-            .map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
+    /// Admit decoded members and charge temporary uniqueness storage.
+    pub fn try_new_for_decode(entities: Vec<SketchEntityId>, ctx: &cadmpeg_core::decode::DecodeContext<'_>, operation: &'static str) -> Result<Result<Self, &'static str>, cadmpeg_core::CodecError> {
+        use crate::index::{DecodeStorage, IndexStorage};
+        if entities.len() < 3 { return Ok(Err("entities requires at least three distinct polygon members")); }
+        let storage = DecodeStorage(ctx);
+        let mut unique = storage.temporary_map(entities.len(), operation)?;
         for entity in &entities {
-            if !unique.insert(entity) {
-                return Ok(Err(
-                    "entities requires at least three distinct polygon members",
-                ));
-            }
+            ctx.charge_work(cadmpeg_core::decode::u64_from_index(entity.as_str().len()), operation)?;
+            if unique.insert(entity, ()).is_some() { return Ok(Err("entities requires at least three distinct polygon members")); }
         }
+        drop(unique);
         Ok(Ok(Self { entities }))
     }
 

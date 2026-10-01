@@ -162,8 +162,22 @@ fn admitted_rolling_ball_stations_keep_the_refusals_of_raw_stations() {
         (5, unequal_radii),
     ] {
         assert_eq!(
-            RollingBallJetStations::from_admitted(degree, admit(stations.clone())),
+            RollingBallJetStations::from_parts(degree, admit(stations.clone())),
             RollingBallJetStations::try_new(degree, stations)
         );
+    }
+}
+
+#[test]
+fn rolling_ball_jet_decode_refuses_work_and_retained_rows() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    for dimension in [ResourceDimension::WorkUnits, ResourceDimension::RetainedBytes] {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        if dimension == ResourceDimension::WorkUnits { policy.limits.max_work_units = 0; }
+        else { policy.limits.max_retained_bytes = 0; }
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let result = crate::geometry::RollingBallJetStations::try_new_for_decode(5, vec![station(2.0, 6), station(8.0, 6)], &ctx);
+        assert!(matches!(result, Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.dimension == dimension));
     }
 }

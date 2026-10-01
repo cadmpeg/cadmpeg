@@ -228,7 +228,7 @@ pub(in crate::families) fn copy_rolling_ball_definition(
     };
     let stations = ctx.copy_retained_slice(jet.stations(), "catia_b5_rolling_ball_jet_stations")?;
     Ok(ProceduralSurfaceDefinition::RollingBallJet(
-        cadmpeg_ir::geometry::RollingBallJetStations::from_admitted(jet.degree(), stations)
+        cadmpeg_ir::geometry::RollingBallJetStations::from_parts_for_decode(jet.degree(), stations, ctx)?
             .map_err(CodecError::malformed)?,
     ))
 }
@@ -909,13 +909,8 @@ pub(super) fn emit_surfaces(
                     "2d_surface_of_revolution",
                     Exactness::Derived,
                 )?;
-                admission.reserve_entity(
-                    &mut ir.model.procedural_surfaces,
-                    "catia_b5_emit_procedural_surfaces",
-                )?;
-                let _attached = ir.model.add_procedural_surface(
-                    &id,
-                    cadmpeg_ir::geometry::surface_payloads::RevolutionSurfaceConstruction::try_new(
+                admission.charge()?;
+                let _attached = ir.model.add_procedural_surface_for_decode(admission.context(), &id, cadmpeg_ir::geometry::surface_payloads::RevolutionSurfaceConstruction::try_new(
                         directrix_id,
                         (revolution.axis_origin, revolution.axis_direction),
                         revolution.angular_interval,
@@ -931,8 +926,7 @@ pub(super) fn emit_surfaces(
                             None,
                         )
                     })
-                    .map_err(cadmpeg_core::CodecError::malformed)?,
-                );
+                    .map_err(cadmpeg_core::CodecError::malformed)?)?;
             }
             Some(SurfaceProcedure::RollingBall {
                 carrier_object_id,
@@ -960,14 +954,8 @@ pub(super) fn emit_surfaces(
                     &carrier_tag,
                     Exactness::ByteExact,
                 )?;
-                admission.reserve_entity(
-                    &mut ir.model.procedural_surfaces,
-                    "catia_b5_emit_procedural_surfaces",
-                )?;
-                let _attached = ir.model.add_procedural_surface(
-                    &id,
-                    ProceduralSurface::new(procedural_id, *definition, None),
-                );
+                admission.charge()?;
+                let _attached = ir.model.add_procedural_surface_for_decode(admission.context(), &id, ProceduralSurface::new(procedural_id, *definition, None))?;
             }
             Some(SurfaceProcedure::RollingBall { .. }) | None => {}
         }
@@ -1001,13 +989,8 @@ pub(super) fn emit_surfaces(
             Exactness::Derived,
         )?;
         let record_bounds = super::parameter_record_bounds(offset.parameter_bounds);
-        admission.reserve_entity(
-            &mut ir.model.procedural_surfaces,
-            "catia_b5_emit_procedural_surfaces",
-        )?;
-        let _attached = ir.model.add_procedural_surface(
-            &surface.try_clone_for_decode(admission.context(), "catia_b5_offset_surface_id")?,
-            ProceduralSurface::new(
+        admission.charge()?;
+        let _attached = ir.model.add_procedural_surface_for_decode(admission.context(), &surface.try_clone_for_decode(admission.context(), "catia_b5_offset_surface_id")?, ProceduralSurface::new(
                 procedural_id,
                 ProceduralSurfaceDefinition::Offset(
                     cadmpeg_ir::geometry::surface_payloads::OffsetSurfaceConstruction::legacy(
@@ -1024,8 +1007,7 @@ pub(super) fn emit_surfaces(
                     ),
                 ),
                 Some(record_bounds),
-            ),
-        );
+            ))?;
     }
     Ok(surface_ids)
 }
@@ -1118,11 +1100,8 @@ fn emit_extrusion_procedure(
                 },
             );
 
-            admission.reserve_entity(
-                &mut ir.model.procedural_curves,
-                "catia_b5_emit_procedural_curves",
-            )?;
-            let _attached = ir.model.add_procedural_curve_charged(
+            admission.charge()?;
+            let _attached = ir.model.add_procedural_curve_for_decode(
                 admission.context(),
                 &directrix_id.try_clone_for_decode(
                     admission.context(),
@@ -1222,11 +1201,8 @@ fn emit_extrusion_procedure(
                 "fixed_direction_offset_curve",
                 Exactness::ByteExact,
             )?;
-            admission.reserve_entity(
-                &mut ir.model.procedural_curves,
-                "catia_b5_emit_procedural_curves",
-            )?;
-            let _attached = ir.model.add_procedural_curve_charged(admission.context(),
+            admission.charge()?;
+            let _attached = ir.model.add_procedural_curve_for_decode(admission.context(),
                 &directrix_id.try_clone_for_decode(admission.context(), "catia_b5_extrusion_procedure_owner_id")?,
                 ProceduralCurve::new(
                     procedure_id,
@@ -1259,13 +1235,8 @@ fn emit_extrusion_procedure(
         Exactness::ByteExact,
     )?;
     let record_bounds = super::parameter_record_bounds(extrusion.parameter_bounds);
-    admission.reserve_entity(
-        &mut ir.model.procedural_surfaces,
-        "catia_b5_emit_procedural_surfaces",
-    )?;
-    let _attached = ir.model.add_procedural_surface(
-        surface_id,
-        ProceduralSurface::new(
+    admission.charge()?;
+    let _attached = ir.model.add_procedural_surface_for_decode(admission.context(), surface_id, ProceduralSurface::new(
             procedure_id,
             ProceduralSurfaceDefinition::Extrusion(
                 cadmpeg_ir::geometry::surface_payloads::ExtrusionSurfaceConstruction::legacy(
@@ -1277,8 +1248,7 @@ fn emit_extrusion_procedure(
                 ),
             ),
             Some(record_bounds),
-        ),
-    );
+        ))?;
     Ok(())
 }
 

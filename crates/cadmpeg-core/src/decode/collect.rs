@@ -212,27 +212,8 @@ impl DecodeContext<'_> {
         count: usize,
         operation: &'static str,
     ) -> Result<ScopedReservation<'_>, ResourceLimit> {
-        let count_u64 = u64_from_index(count);
-        self.charge_collection_items_limit(count_u64, operation)?;
-        let bytes = count
-            .checked_mul(std::mem::size_of::<T>())
-            .ok_or_else(|| ResourceLimit {
-                dimension: ResourceDimension::MaterializedBytes,
-                reason: super::ResourceFailure::BudgetExceeded,
-                limit: self.policy().limits.max_materialized_bytes,
-                used: 0,
-                additional: u64::MAX,
-                operation,
-            })?;
-        let reservation = self.reserve_scoped_limit(u64_from_index(bytes), operation)?;
-        values.try_reserve_exact(count).map_err(|_| {
-            ResourceLimit::allocation_failed(
-                ResourceDimension::CollectionItems,
-                self.policy().limits.max_collection_items,
-                count_u64,
-                operation,
-            )
-        })?;
+        let mut reservation = self.reserve_scoped_limit(0, operation)?;
+        reservation.with_storage_limit(|| self.reserve_retained_vec_storage(values, count, VecGrowth::Exact, Some(count), operation))?;
         Ok(reservation)
     }
 
@@ -244,6 +225,7 @@ impl DecodeContext<'_> {
     ) -> Result<(Vec<T>, ScopedReservation<'_>), ResourceLimit> {
         let mut copy = Vec::new();
         let reservation = self.reserve_temporary_vec(&mut copy, values.len(), operation)?;
+        self.charge_work_limit(u64_from_index(values.len()), operation)?;
         copy.extend_from_slice(values);
         Ok((copy, reservation))
     }
@@ -3398,5 +3380,22 @@ mod tests {
         ctx.resize_retained_bytes(&mut values, 1, 0, "test retained resize")
             .expect("truncate");
         assert_eq!(values, [7]);
+    }
+}
+
+#[cfg(test)]
+mod temporary_capacity_tests {
+    #[test]
+    fn temporary_reserve_charges_no_storage_with_available_capacity() {
+        use super::DecodeContext;
+        let arena = super::super::DecodeArena::new();
+        let mut policy = super::super::DecodePolicy::service();
+        policy.limits.max_materialized_bytes = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let mut values = Vec::<u64>::with_capacity(8);
+        let capacity = values.capacity();
+        let storage = ctx.reserve_temporary_vec(&mut values, 3, "existing temporary capacity").unwrap();
+        assert_eq!(values.capacity(), capacity);
+        drop(storage);
     }
 }

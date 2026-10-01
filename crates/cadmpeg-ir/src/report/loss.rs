@@ -421,11 +421,13 @@ pub struct NamespacedLossKind {
 }
 
 impl LossKind {
-    fn clone_admitted(
+    /// Copy the retained namespace and code through the decode budget.
+    pub fn try_clone_for_decode(
         &self,
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         operation: &'static str,
     ) -> Result<Self, cadmpeg_core::CodecError> {
+        ctx.charge_work(1, operation)?;
         match self {
             Self::Shared { kind } => Ok(Self::Shared { kind: *kind }),
             Self::Namespaced(kind) => Ok(Self::Namespaced(NamespacedLossKind {
@@ -575,14 +577,15 @@ pub struct LossNote {
 
 impl LossNote {
     /// Copies a report loss after admitting every owned string in the copy.
-    pub fn clone_admitted(
+    pub fn try_clone_for_decode(
         &self,
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         operation: &'static str,
     ) -> Result<Self, cadmpeg_core::CodecError> {
+        ctx.charge_work(1, operation)?;
         let message = ctx.copy_retained_text(&self.message, operation)?;
         Ok(Self {
-            code: self.code.clone_admitted(ctx, operation)?,
+            code: self.code.try_clone_for_decode(ctx, operation)?,
             severity: self.severity,
             message,
             provenance: self

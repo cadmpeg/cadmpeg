@@ -294,11 +294,11 @@ fn build_result(
         )));
     }
     let mut coverage = cadmpeg_ir::report::decode::Coverage::default();
-    coverage.record(crate::coverage::UNKNOWN_RECORDS, unknowns.len());
-    coverage.record(
+    coverage.record(ctx, crate::coverage::UNKNOWN_RECORDS, unknowns.len())?;
+    coverage.record(ctx,
         crate::coverage::UNKNOWN_SURFACE_FACES,
         stats.unknown_surface_faces(),
-    );
+    )?;
     let body = DecodeBody {
         coverage,
         losses,

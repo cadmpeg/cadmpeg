@@ -359,7 +359,7 @@ pub(super) fn assign_ext11_support_uv_to_surfaces(
     fit_tolerance: f64,
     lanes: &SupportUv,
 ) -> Option<SupportUv> {
-    let index = cadmpeg_ir::index::ModelIndex::new_model_only(ir);
+    let index = cadmpeg_ir::index::ModelIndex::new_model_only_for_decode(ir, ctx).expect("decode index allocation succeeds");
     let geometry_budget = GeometryWorkBudget::from_context(
         ctx,
         cadmpeg_core::decode::u64_from_index(super::geometry_work::MAX_ADAPTIVE_GEOMETRY_WORK),
@@ -734,7 +734,7 @@ pub(super) fn complete_ext11_support_uv_with_budget(
     pending: &[PendingExt11SupportUv],
     geometry_budget: &GeometryWorkBudget<'_>,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    let model_index = cadmpeg_ir::index::ModelIndex::try_new_model_only_for_decode(ir, ctx)?;
+    let model_index = cadmpeg_ir::index::ModelIndex::new_model_only_for_decode(ir, ctx)?;
     let mut replacements = Vec::new();
     for (procedural_id, samples, fit_tolerance, serialized) in pending {
         let points = &samples.points_charged(ctx)?;
@@ -981,7 +981,7 @@ pub(super) fn invalidate_inconsistent_support_uv_with_validated_lanes_and_status
     isolate_lanes: bool,
 ) -> Result<SupportUvValidationResult, cadmpeg_core::CodecError> {
     let (invalid, endpoint_witnesses, lane_geometry_exhausted) = {
-        let index = cadmpeg_ir::index::ModelIndex::try_new_model_only_for_decode(ir, ctx)?;
+        let index = cadmpeg_ir::index::ModelIndex::new_model_only_for_decode(ir, ctx)?;
         let mut invalid = Vec::new();
         let mut endpoint_witnesses: EndpointWitnesses = BTreeMap::new();
         let mut lane_geometry_exhausted = false;
@@ -1161,7 +1161,7 @@ fn pending_support_lanes_requiring_completion(
     ir: &CadIr,
     pending: &[PendingExt11SupportUv],
 ) -> Result<usize, cadmpeg_core::CodecError> {
-    let index = cadmpeg_ir::index::ModelIndex::try_new_model_only_for_decode(ir, ctx)?;
+    let index = cadmpeg_ir::index::ModelIndex::new_model_only_for_decode(ir, ctx)?;
     Ok(pending
         .iter()
         .filter_map(|(procedural_id, ..)| index.procedural_curves(procedural_id.as_str()))
@@ -1218,7 +1218,7 @@ fn complete_support_uv_wave(
     if !support_uv_budget_exhausted(support_budget) && !geometry_exhausted {
         let mut replacements = Vec::new();
         let mut blend_parameter_grids = BTreeMap::<SurfaceId, Option<Vec<(Point2, Point3)>>>::new();
-        let model_index = cadmpeg_ir::index::ModelIndex::try_new_model_only_for_decode(ir, ctx)?;
+        let model_index = cadmpeg_ir::index::ModelIndex::new_model_only_for_decode(ir, ctx)?;
         for (procedural_id, samples, fit_tolerance, serialized) in pending {
             let points = &samples.points_charged(ctx)?;
             let parameters = &samples.parameters_charged(ctx)?;
@@ -1721,6 +1721,7 @@ geometry_budget,
                 );
             }
         }
+        drop(model_index);
         for (procedural_id, side, pcurve, effective_fit_tolerance) in replacements {
             let Some(procedural) = ir
                 .model
@@ -1884,7 +1885,7 @@ fn complete_coupled_support_uv(
     let mut lane_geometry_exhausted = false;
     let mut replacements = Vec::new();
     let mut blend_parameter_grids = BTreeMap::<&str, Option<Vec<(Point2, Point3)>>>::new();
-    let model_index = cadmpeg_ir::index::ModelIndex::try_new_model_only_for_decode(ir, ctx)?;
+    let model_index = cadmpeg_ir::index::ModelIndex::new_model_only_for_decode(ir, ctx)?;
     for (procedural_id, samples, fit_tolerance, serialized) in pending {
         let points = &samples.points_charged(ctx)?;
         let parameters = &samples.parameters_charged(ctx)?;
@@ -2184,7 +2185,7 @@ pub(super) fn complete_parameterization_equivalent_support_uv(
     ir: &mut CadIr,
 ) -> Result<(), cadmpeg_core::CodecError> {
     let replacements = {
-        let model_index = cadmpeg_ir::index::ModelIndex::try_new_model_only_for_decode(ir, ctx)?;
+        let model_index = cadmpeg_ir::index::ModelIndex::new_model_only_for_decode(ir, ctx)?;
         let mut replacements = Vec::new();
         for (procedural_index, procedural) in ir.model.procedural_curves.iter().enumerate() {
             let ProceduralCurveDefinition::Intersection { context, .. } = procedural.definition()
@@ -2569,7 +2570,7 @@ fn attach_completed_intersection_pcurves_for_sources_with_budget(
     }
 
     let replacements = {
-        let model_index = cadmpeg_ir::index::ModelIndex::try_new_model_only_for_decode(ir, ctx)?;
+        let model_index = cadmpeg_ir::index::ModelIndex::new_model_only_for_decode(ir, ctx)?;
         let mut edge_endpoint_contracts = BTreeMap::new();
         for (_, edge_id, ..) in &coedge_candidates {
             if edge_endpoint_contracts.contains_key(edge_id) {

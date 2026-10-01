@@ -2,7 +2,6 @@
 //! Admitted SHA-256 digests.
 
 use serde::{Deserialize, Deserializer, Serialize};
-use sha2::{Digest, Sha256};
 
 /// A SHA-256 digest spelled as exactly 64 lowercase hexadecimal characters.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize)]
@@ -18,7 +17,7 @@ impl Sha256Digest {
     /// Hash source bytes without a text admission step.
     #[must_use]
     pub fn digest(bytes: &[u8]) -> Self {
-        Self::from_bytes(Sha256::digest(bytes).into())
+        Self::from_bytes(super::sha256(bytes))
     }
 
     /// Charge input hashing work and 64 retained bytes before allocating digest text.
@@ -28,17 +27,34 @@ impl Sha256Digest {
         operation: &'static str,
     ) -> Result<Self, cadmpeg_core::CodecError> {
         ctx.charge_work(cadmpeg_core::decode::u64_from_index(bytes.len()), operation)?;
-        let mut text = ctx.retained_string(64, operation)?;
-        let digest = super::sha256(bytes);
-        std::fmt::write(&mut text, format_args!("{}", super::LowerHex(&digest)))
-            .map_err(cadmpeg_core::CodecError::malformed)?;
-        Ok(Self(text))
+        Self::from_bytes_for_decode(ctx, super::sha256(bytes), operation)
     }
 
     /// Encode the 32 bytes produced by a SHA-256 hasher.
     #[must_use]
     pub fn from_bytes(bytes: [u8; 32]) -> Self {
-        Self(super::LowerHex(&bytes).to_string())
+        Self::encode_bytes(bytes, String::with_capacity(64))
+    }
+
+    /// Encode a completed hash after admitting its retained hexadecimal text.
+    pub fn from_bytes_for_decode(ctx: &cadmpeg_core::decode::DecodeContext<'_>, bytes: [u8; 32], operation: &'static str) -> Result<Self, cadmpeg_core::CodecError> {
+        let text = ctx.retained_string(64, operation)?;
+        ctx.charge_work(64, operation)?;
+        Ok(Self::encode_bytes(bytes, text))
+    }
+
+    fn encode_bytes(bytes: [u8; 32], mut text: String) -> Self {
+        const HEX: &[u8; 16] = b"0123456789abcdef";
+        for byte in bytes {
+            text.push(char::from(HEX[usize::from(byte >> 4)]));
+            text.push(char::from(HEX[usize::from(byte & 15)]));
+        }
+        Self(text)
+    }
+
+    /// Copy the canonical spelling through the decode budget.
+    pub fn try_clone_for_decode(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, operation: &'static str) -> Result<Self, cadmpeg_core::CodecError> {
+        Ok(Self(ctx.copy_retained_text(self.as_str(), operation)?))
     }
 
     /// Borrow the canonical hexadecimal spelling.

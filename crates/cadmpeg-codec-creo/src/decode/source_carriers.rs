@@ -553,7 +553,7 @@ impl SourceUnitCarriers {
         scales: Option<[f64; 2]>,
     ) -> Result<(), CodecError> {
         if let Some(scales) = scales {
-            pcurve.geometry = pcurve.geometry.scaled_coordinates_owned_admitted(ctx, scales)?
+            pcurve.geometry = pcurve.geometry.scaled_coordinates_owned(ctx, scales)?
                 .map_err(|_refusal| match ctx.format_retained(
                     format_args!("Creo pcurve cannot be represented after unit normalization with scales {scales:?}"),
                     "creo normalized pcurve refusal text",
@@ -577,13 +577,9 @@ impl SourceUnitCarriers {
         if let Some(scale) = self.length_scale_mm {
             crate::decode::build::units::scale_procedural_surface(ctx, &mut procedural, scale)?;
         }
-        ctx.reserve_vec(
-            &mut ir.model.procedural_surfaces,
-            1,
-            "procedural surface arena",
-        )?;
+
         ir.model
-            .add_procedural_surface_charged(ctx, owner, procedural)?
+            .add_procedural_surface_for_decode(ctx, owner, procedural)?
             .map_err(CodecError::malformed)
     }
 
@@ -597,9 +593,9 @@ impl SourceUnitCarriers {
         if let Some(scale) = self.length_scale_mm {
             crate::decode::build::units::scale_procedural_curve(ctx, &mut procedural, scale)?;
         }
-        ctx.reserve_vec(&mut ir.model.procedural_curves, 1, "procedural curve arena")?;
+
         ir.model
-            .add_procedural_curve_charged(ctx, owner, procedural)?
+            .add_procedural_curve_for_decode(ctx, owner, procedural)?
             .map_err(CodecError::malformed)
     }
 

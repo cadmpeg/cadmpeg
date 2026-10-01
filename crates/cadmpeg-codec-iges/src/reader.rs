@@ -837,7 +837,7 @@ fn decode_with_occurrence_limits(
             "quarantined parameter data retained; tokens were not recovered",
         )?;
     }
-    let verification_index = cadmpeg_ir::index::ModelIndex::try_new_for_decode(&ir, ctx)?;
+    let verification_index = cadmpeg_ir::index::ModelIndex::new_for_decode(&ir, ctx)?;
     transfer_ledger
         .verify(&verification_index)
         .map_err(|message| {
@@ -860,6 +860,7 @@ fn decode_with_occurrence_limits(
         document_local_sha256_with_charge(&ir, "iges", crate::SOURCE_IMAGE_ID, |bytes| {
             ctx.charge_work(bytes, "iges_document_digest")
         })?;
+    drop(verification_index);
     if let Some(source) = &mut ir.source {
         source.attributes.insert(
             cadmpeg_core::nonblank_const!(DOCUMENT_LOCAL_DIGEST_ATTRIBUTE),

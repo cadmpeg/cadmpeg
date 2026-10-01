@@ -2811,15 +2811,9 @@ fn project_with_type_130_policy(
                 component: segment.child,
             });
         }
-        ctx.reserve_vec(
-            &mut ir.model.procedural_curves,
-            1,
-            "iges composite procedural curve slots",
-        )?;
+
         ctx.charge_entities(1, "iges_geometry_composites")?;
-        let _attached = ir.model.add_procedural_curve(
-            &curve_id,
-            ProceduralCurve::new(
+        let _attached = ir.model.add_procedural_curve_for_decode(ctx, &curve_id, ProceduralCurve::new(
                 crate::ids::procedural_curve_admitted(&stem, ctx)?,
                 ProceduralCurveDefinition::Compound(
                     cadmpeg_ir::geometry::CompoundCurveConstruction::try_new(
@@ -2827,8 +2821,7 @@ fn project_with_type_130_policy(
                     )
                     .map_err(cadmpeg_core::CodecError::malformed)?,
                 ),
-            ),
-        );
+            ))?;
         ctx.reserve_vec(&mut wire_edges, 1, "iges composite wire edge ids")?;
         wire_edges.push(edge);
         ctx.insert_btree_set(

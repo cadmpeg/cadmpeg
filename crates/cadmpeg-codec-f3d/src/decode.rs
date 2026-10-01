@@ -28,7 +28,6 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::annotations::AnnotationBuilder;
 use cadmpeg_ir::codec::{DecodeBody, Decoded};
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::hash::digest::Sha256Digest;
 use cadmpeg_ir::ids::UnknownId;
 use cadmpeg_ir::report::{
     loss::{LossCategory, LossTaxonomy},
@@ -2238,7 +2237,7 @@ fn try_decode_text_model(
                     header,
                     terminator: stream.terminator,
                 }),
-                sha256: Sha256Digest::digest(bytes),
+                sha256: cadmpeg_ir::hash::digest::Sha256Digest::digest_for_decode(ctx, bytes, "retain source digest")?,
             },
             decoded,
         ));

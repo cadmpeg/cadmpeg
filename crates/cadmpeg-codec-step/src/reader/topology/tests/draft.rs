@@ -48,13 +48,14 @@ fn cross_root_surface_filter_tracks_successful_commits_only() {
     let committed_id = "step:data:surface#implicit-face-1";
     let rejected_id = "step:data:surface#implicit-face-2";
     let mut ir = CadIr::empty();
-    let mut session = CommitSession::new(&mut ir);
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let mut session = CommitSession::new_for_decode(&mut ir, &ctx).unwrap();
 
     session
-        .commit_model(surface_draft(committed_id))
+        .commit_model_for_decode(surface_draft(committed_id), &ctx).unwrap()
         .expect("first root commit");
     let mut second_root = surface_draft(committed_id);
-    drop_committed_surfaces(&mut second_root, &mut session);
+    drop_committed_surfaces(&mut second_root, &mut session, &ctx).unwrap();
     assert!(second_root.model().surfaces.is_empty());
 
     let mut rejected_root = surface_draft(rejected_id);
@@ -69,10 +70,10 @@ fn cross_root_surface_filter_tracks_successful_commits_only() {
             tolerance: None,
         })
         .expect("insert invalid root reference");
-    assert!(session.commit_model(rejected_root).is_err());
+    assert!(session.commit_model_for_decode(rejected_root, &ctx).unwrap().is_err());
 
     let mut later_root = surface_draft(rejected_id);
-    drop_committed_surfaces(&mut later_root, &mut session);
+    drop_committed_surfaces(&mut later_root, &mut session, &ctx).unwrap();
     assert_eq!(later_root.model().surfaces.len(), 1);
 }
 

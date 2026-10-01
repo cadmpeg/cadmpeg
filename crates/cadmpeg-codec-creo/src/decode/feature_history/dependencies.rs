@@ -452,10 +452,8 @@ pub(in super::super) fn reconcile_feature_links(
         if emitted.contains(&feature.id) {
             continue;
         }
-        let id = IrFeatureId::mint(
-            ctx.copy_retained_text(feature.id.as_str(), "creo emitted feature identity text")?,
-        )
-        .map_err(cadmpeg_core::CodecError::malformed)?;
+        let id = IrFeatureId::mint(ctx.copy_retained_text(feature.id.as_str(), "creo emitted feature identity text")?).map_err(cadmpeg_core::CodecError::malformed)
+        ?;
         ctx.charge_collection_items(1, "creo emitted feature identity nodes")?;
         emitted.insert(id);
     }
@@ -516,8 +514,8 @@ pub(in super::super) fn reconcile_feature_links(
             let id = IrFeatureId::mint(ctx.copy_retained_text(
                 dependency.as_str(),
                 "creo reconciled generated dependency IDs",
-            )?)
-            .map_err(cadmpeg_core::CodecError::malformed)?;
+            )?).map_err(cadmpeg_core::CodecError::malformed)
+            ?;
             ctx.reserve_vec(
                 &mut generated_ids,
                 1,
@@ -542,22 +540,18 @@ pub(in super::super) fn reconcile_feature_links(
             )?;
             let parent = IrFeatureId::mint(text).map_err(cadmpeg_core::CodecError::malformed)?;
             if parent != feature.id && emitted.contains(&parent) {
-                let child = IrFeatureId::mint(
-                    ctx.copy_retained_text(feature.id.as_str(), "creo regeneration child IDs")?,
-                )
-                .map_err(cadmpeg_core::CodecError::malformed)?;
+                let child = IrFeatureId::mint(ctx.copy_retained_text(feature.id.as_str(), "creo regeneration child IDs")?).map_err(cadmpeg_core::CodecError::malformed)
+                ?;
                 ctx.reserve_vec(&mut regeneration_edges, 1, "creo regeneration edges")?;
                 regeneration_edges.push((child, parent));
             }
         }
     }
     for (child, parent) in regeneration_edges {
-        if ir.model.feature_regeneration_parent(&child).is_none() {
-            ctx.charge_collection_items(1, "creo regeneration parent nodes")?;
-        }
+
         ir.model
-            .set_feature_regeneration_parent(child, parent)
-            .map_err(cadmpeg_core::CodecError::malformed)?;
+            .set_feature_regeneration_parent_for_decode(ctx, &child, &parent)
+            ?;
     }
     let mut remaining = Vec::new();
     ctx.reserve_vec(
@@ -665,9 +659,7 @@ pub(in super::super) fn reconciled_dependencies(
         {
             continue;
         }
-        let id = IrFeatureId::mint(
-            ctx.copy_retained_text(dependency.as_str(), "creo established dependency IDs")?,
-        )
+        let id = IrFeatureId::mint(ctx.copy_retained_text(dependency.as_str(), "creo established dependency IDs")?)
         .map_err(CodecError::malformed)?;
         ctx.reserve_vec(&mut dependencies, 1, "creo reconciled dependencies")?;
         dependencies.push(id);

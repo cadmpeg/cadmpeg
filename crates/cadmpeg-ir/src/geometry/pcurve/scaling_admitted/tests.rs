@@ -38,7 +38,7 @@ fn owned_pcurve_scaling_refuses_pole_work_and_reuses_both_pole_forms() {
     for rational in [false, true] {
         for cap in [1, 2] {
             assert!(
-                matches!(with_limits(cap, u64::MAX, |ctx| nurbs(1.0, rational).scaled_coordinates_owned_admitted(ctx, [2.0, 3.0])),
+                matches!(with_limits(cap, u64::MAX, |ctx| nurbs(1.0, rational).scaled_coordinates_owned(ctx, [2.0, 3.0])),
                 Err(CodecError::ResourceLimit(resource)) if resource.operation == "IR pcurve pole coordinate scaling work")
             );
         }
@@ -48,13 +48,13 @@ fn owned_pcurve_scaling_refuses_pole_work_and_reuses_both_pole_forms() {
             .expect("reference");
         assert_eq!(
             with_limits(3, 0, |ctx| nurbs(1.0, rational)
-                .scaled_coordinates_owned_admitted(ctx, [2.0, 3.0]))
+                .scaled_coordinates_owned(ctx, [2.0, 3.0]))
             .expect("no copies"),
             Ok(expected)
         );
         assert_eq!(
             with_limits(2, 0, |ctx| nurbs(f64::MAX, rational)
-                .scaled_coordinates_owned_admitted(ctx, [2.0, 3.0]))
+                .scaled_coordinates_owned(ctx, [2.0, 3.0]))
             .expect("borrowed refusal"),
             Err("control_points contains a non-finite point")
         );
@@ -77,11 +77,11 @@ fn owned_pcurve_scaling_refuses_each_wrapper_depth_and_keeps_service_geometry() 
     ];
     for geometry in wrapped {
         assert!(
-            matches!(with_limits(u64::MAX, 0, |ctx| geometry.clone().scaled_coordinates_owned_admitted(ctx, [2.0, 2.0])),
+            matches!(with_limits(u64::MAX, 0, |ctx| geometry.clone().scaled_coordinates_owned(ctx, [2.0, 2.0])),
             Err(CodecError::ResourceLimit(resource)) if resource.operation == "IR pcurve coordinate scaling nesting")
         );
         assert!(
-            matches!(with_limits(0, 1, |ctx| geometry.clone().scaled_coordinates_owned_admitted(ctx, [2.0, 2.0])),
+            matches!(with_limits(0, 1, |ctx| geometry.clone().scaled_coordinates_owned(ctx, [2.0, 2.0])),
             Err(CodecError::ResourceLimit(resource)) if resource.operation == "IR pcurve coordinate scaling work")
         );
         let mut expected = geometry.clone();
@@ -90,7 +90,7 @@ fn owned_pcurve_scaling_refuses_each_wrapper_depth_and_keeps_service_geometry() 
             .expect("reference");
         assert_eq!(
             with_limits(4, 1, |ctx| geometry
-                .scaled_coordinates_owned_admitted(ctx, [2.0, 2.0]))
+                .scaled_coordinates_owned(ctx, [2.0, 2.0]))
             .expect("no copies"),
             Ok(expected)
         );
@@ -126,11 +126,11 @@ fn owned_pcurve_scaling_preserves_analytic_conversion_and_refusal_order() {
     for geometry in geometry {
         for scales in [[2.0, 3.0], [2.0, 2.0], [f64::MAX, f64::MAX], [0.0, 0.0]] {
             let mut expected = geometry.clone();
-            let expected = expected.try_scale_coordinates(scales).map(|()| expected);
+            let expected = expected.try_scale_coordinates(scales).map(|()| expected).map_err(|error| error.to_string());
             let actual = with_limits(u64::MAX, u64::MAX, |ctx| {
                 geometry
                     .clone()
-                    .scaled_coordinates_owned_admitted(ctx, scales)
+                    .scaled_coordinates_owned(ctx, scales)
             })
             .expect("admitted");
             assert_eq!(actual.map_err(str::to_owned), expected);
@@ -151,11 +151,11 @@ fn owned_pcurve_scaling_preserves_analytic_conversion_and_refusal_order() {
     ] {
         for scales in [[2.0, 2.0], [2.0, 3.0], [0.0, 0.0]] {
             let mut expected = geometry.clone();
-            let expected = expected.try_scale_coordinates(scales).map(|()| expected);
+            let expected = expected.try_scale_coordinates(scales).map(|()| expected).map_err(|error| error.to_string());
             let actual = with_limits(u64::MAX, u64::MAX, |ctx| {
                 geometry
                     .clone()
-                    .scaled_coordinates_owned_admitted(ctx, scales)
+                    .scaled_coordinates_owned(ctx, scales)
             })
             .expect("admitted");
             assert_eq!(actual.map_err(str::to_owned), expected);

@@ -6,7 +6,6 @@ use std::collections::BTreeMap;
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::text::NonBlankString;
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::report::decode::{Coverage, CoverageKey};
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::AnnotationBuilder;
 
@@ -48,36 +47,24 @@ mod collection_tests {
     fn coverage_entry_refuses_collection_and_retained_limits() {
         let key = cadmpeg_ir::report::decode::CoverageKey::new("decoded_entities");
         let collection = crate::test_support::with_collection_limit(0, |ctx| {
-            super::record_coverage(
-                ctx,
-                &mut cadmpeg_ir::report::decode::Coverage::default(),
-                key,
-                3,
-                "catia_coverage_test",
-            )
+            (&mut cadmpeg_ir::report::decode::Coverage::default()).record(ctx, key, 3)
         });
         assert!(
             matches!(collection, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.operation == "catia_coverage_test"
+            if limit.operation == "decode coverage nodes"
                 && limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
         );
         let retained = crate::test_support::with_retained_limit(0, |ctx| {
-            super::record_coverage(
-                ctx,
-                &mut cadmpeg_ir::report::decode::Coverage::default(),
-                key,
-                3,
-                "catia_coverage_test",
-            )
+            (&mut cadmpeg_ir::report::decode::Coverage::default()).record(ctx, key, 3)
         });
         assert!(
             matches!(retained, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.operation == "catia_coverage_test"
+            if limit.operation == "decode coverage names"
                 && limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes)
         );
         let coverage = crate::test_support::with_service_context(|ctx| {
             let mut coverage = cadmpeg_ir::report::decode::Coverage::default();
-            super::record_coverage(ctx, &mut coverage, key, 3, "catia_coverage_test")
+            (&mut coverage).record(ctx, key, 3)
                 .expect("service budget admits coverage entry");
             coverage
         });
@@ -130,22 +117,6 @@ mod collection_tests {
         assert_eq!(notes.len(), 1);
         assert_eq!(notes[0].code, code.kind());
     }
-}
-
-pub(crate) fn record_coverage(
-    ctx: &DecodeContext<'_>,
-    coverage: &mut Coverage,
-    key: CoverageKey,
-    count: usize,
-    operation: &'static str,
-) -> Result<(), CodecError> {
-    if !coverage.contains_key(key.as_str()) {
-        ctx.charge_collection_items(1, operation)?;
-    }
-    let name = ctx.copy_retained_text(key.as_str(), operation)?;
-    coverage
-        .record_owned(key, name, count)
-        .map_err(CodecError::malformed)
 }
 
 pub(crate) fn source_attribute(

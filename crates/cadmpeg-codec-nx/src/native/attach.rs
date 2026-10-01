@@ -1464,11 +1464,8 @@ fn attach_material_texture_assets(
         let Some(bytes) = scan.container.data.get(start..end) else {
             return Ok(());
         };
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(bytes.len()),
-            "NX material texture hash",
-        )?;
-        if cadmpeg_ir::hash::digest::Sha256Digest::digest(bytes) != texture.sha256 {
+        let (digest, _digest_storage) = ctx.with_scoped_storage("NX material texture hash", || cadmpeg_ir::hash::digest::Sha256Digest::digest_for_decode(ctx, bytes, "NX material texture hash"))?;
+        if digest != texture.sha256 {
             return Ok(());
         }
         ctx.reserve_scoped_vec(

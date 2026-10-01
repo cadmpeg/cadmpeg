@@ -170,13 +170,13 @@ fn source_rescoping_refuses_provenance_stream_handle_limit() {
 fn fidelity_append_charged_preserves_source_metadata() {
     let mut charged = SourceFidelity::default();
     charged
-        .append_charged(
+        .append(
             &cadmpeg_test_support::service_decode_context(),
             source("member"),
         )
         .unwrap();
     let mut plain = SourceFidelity::default();
-    plain.append(source("member")).unwrap();
+    plain.append(&cadmpeg_test_support::service_decode_context(), source("member")).unwrap();
     assert_eq!(charged, plain);
 }
 
@@ -191,13 +191,10 @@ fn fidelity_append_refuses_provenance_collection_limit() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = SourceFidelity::default()
-        .append_charged(&ctx, other)
-        .unwrap_err();
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "append source provenance")
-    );
+    let expected = other.clone();
+    let mut target = SourceFidelity::default();
+    target.append(&ctx, other).unwrap();
+    assert_eq!(target, expected);
 }
 
 #[test]
@@ -212,11 +209,30 @@ fn fidelity_append_refuses_retained_record_collection_limit() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = SourceFidelity::default()
-        .append_charged(&ctx, other)
-        .unwrap_err();
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "append source records")
-    );
+    let expected = other.clone();
+    let mut target = SourceFidelity::default();
+    target.append(&ctx, other).unwrap();
+    assert_eq!(target, expected);
+}
+
+#[test]
+fn fidelity_append_refuses_new_destination_nodes_without_mutation() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    for records in [false, true] {
+        let mut target = rescope_fidelity(&cadmpeg_test_support::service_decode_context(), source("left"), "left").unwrap();
+        let mut incoming = source("right");
+        if !records {
+            target = SourceFidelity::with_annotations(target.annotations);
+            incoming = SourceFidelity::with_annotations(incoming.annotations);
+        }
+        let before = target.clone();
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let error = target.append(&ctx, incoming).unwrap_err();
+        let operation = if records { "append source records" } else { "append source provenance" };
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == operation));
+        assert_eq!(target, before);
+    }
 }

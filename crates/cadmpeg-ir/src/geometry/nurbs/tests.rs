@@ -24,7 +24,7 @@ fn admitted_nurbs_curve_mapping_refuses_knot_and_pole_limits() {
         let (ctx, _) =
             DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root admitted");
         let error = curve
-            .map_control_points_admitted(&ctx, "mapped NURBS fixture", |point| {
+            .map_control_points(&ctx, "mapped NURBS fixture", |point| {
                 Point3::new(point.x + 2.0, point.y, point.z)
             })
             .expect_err("knot or pole limit refuses the map");
@@ -39,7 +39,7 @@ fn admitted_nurbs_curve_mapping_refuses_knot_and_pole_limits() {
     let (ctx, _) =
         DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root admitted");
     let mapped = curve
-        .map_control_points_admitted(&ctx, "mapped NURBS fixture", |point| {
+        .map_control_points(&ctx, "mapped NURBS fixture", |point| {
             Point3::new(point.x + 2.0, point.y, point.z)
         })
         .expect("mapping resources")
@@ -51,7 +51,7 @@ fn admitted_nurbs_curve_mapping_refuses_knot_and_pole_limits() {
         vec![Point3::new(3.0, 2.0, 3.0), Point3::new(6.0, 5.0, 6.0),]
     );
     assert!(curve
-        .map_control_points_admitted(&ctx, "mapped NURBS fixture", |_| Point3::new(
+        .map_control_points(&ctx, "mapped NURBS fixture", |_| Point3::new(
             f64::INFINITY,
             0.0,
             0.0

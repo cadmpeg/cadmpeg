@@ -1288,8 +1288,7 @@ fn materialize(
             )
         })?;
         edges.push(
-            SubdEdge::from_admitted(
-                [
+            SubdEdge::from_controls([
                     *vertex_indices
                         .get(&edge.vertices[0].archive_id)
                         .ok_or_else(|| {
@@ -1300,12 +1299,7 @@ fn materialize(
                         .ok_or_else(|| {
                             malformed(edge.base.source_offset, "missing SubD edge endpoint")
                         })?,
-                ],
-                edge.sharpness,
-                tag,
-                None,
-                edge.sector_coefficients,
-            )
+                ], edge.sharpness, tag, None, edge.sector_coefficients, ctx).map_err(SubdError::from)?
             .map_err(|error| malformed(edge.base.source_offset, error.to_string()))?,
         );
     }

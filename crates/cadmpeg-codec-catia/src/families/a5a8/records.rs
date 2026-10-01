@@ -1051,10 +1051,7 @@ pub(in crate::families) fn rolling_ball_jet_definition(
                 ),
             }),
     );
-    Ok(cadmpeg_ir::geometry::RollingBallJetStations::from_admitted(
-        A8FreeformCurve::DEGREE,
-        stations,
-    )
+    Ok(cadmpeg_ir::geometry::RollingBallJetStations::from_parts_for_decode(A8FreeformCurve::DEGREE, stations, ctx)?
     .ok()
     .map(ProceduralSurfaceDefinition::RollingBallJet))
 }

@@ -288,7 +288,8 @@ impl<'a> DecodeContext<'a> {
         self.budget.retained_size_overflow_limit(operation)
     }
 
-    pub(crate) fn charge_retained_limit(
+    /// Charge retained storage with a resource-only refusal channel.
+    pub fn charge_retained_limit(
         &self,
         bytes: u64,
         operation: &'static str,

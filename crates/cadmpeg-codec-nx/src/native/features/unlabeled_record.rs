@@ -71,18 +71,13 @@ impl FeatureUnlabeledOperationRecord {
         if header.end_offset().checked_add(payload_byte_len).is_none() {
             return Ok(None);
         }
-        let digest_work = u64_from_index(record.bytes().len())
-            .checked_add(payload_byte_len)
-            .ok_or_else(|| ctx.refuse_codec_limit("hash NX unlabeled operation record", 0, 1))?;
-        ctx.charge_work(digest_work, "hash NX unlabeled operation record")?;
-        ctx.charge_retained(128, "retain NX unlabeled operation digests")?;
         Ok(Some(Self {
             id,
             ordinal,
             header,
-            sha256: cadmpeg_ir::hash::digest::Sha256Digest::digest(record.bytes()),
+            sha256: cadmpeg_ir::hash::digest::Sha256Digest::digest_for_decode(ctx, record.bytes(), "retain source digest")?,
             payload_byte_len,
-            payload_sha256: cadmpeg_ir::hash::digest::Sha256Digest::digest(record.payload()),
+            payload_sha256: cadmpeg_ir::hash::digest::Sha256Digest::digest_for_decode(ctx, record.payload(), "retain source digest")?,
         }))
     }
 

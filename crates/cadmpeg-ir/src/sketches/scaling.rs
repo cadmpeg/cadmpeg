@@ -13,6 +13,8 @@ use crate::geometry::nurbs::NurbsError;
 /// A condition that scaling checked sketch geometry can break.
 #[derive(Debug)]
 pub enum SketchLengthScaleError {
+    /// Storage or work exceeded its operation limit.
+    Resource(cadmpeg_core::decode::ResourceLimit),
     /// A source length product overflowed before geometry admission.
     LengthOverflow,
     /// A changed coordinate, positive length, or bound failed its field contract.
@@ -21,6 +23,15 @@ pub enum SketchLengthScaleError {
     CurveControlPoints(NurbsError),
     /// A spatial surface control point failed admission.
     SurfaceControlPoints(NurbsError),
+}
+
+impl From<cadmpeg_core::CodecError> for SketchLengthScaleError {
+    fn from(error: cadmpeg_core::CodecError) -> Self {
+        match error {
+            cadmpeg_core::CodecError::ResourceLimit(limit) => Self::Resource(limit),
+            error => Self::CurveControlPoints(NurbsError::from(error)),
+        }
+    }
 }
 
 /// A condition that scaling a stored sketch constraint distance can break.
@@ -90,8 +101,7 @@ impl SpatialSketchConstraintDefinition {
     /// Scale the optional offset distance while carrying admitted directions
     /// and entity relationships unchanged.
     pub fn scale_lengths(&mut self, scale: PositiveReal) -> Result<(), SketchConstraintScaleError> {
-        let mut kind = self.0.clone();
-        if let SpatialSketchConstraintDefinitionInput::Offset { distance, .. } = &mut kind {
+        if let SpatialSketchConstraintDefinitionInput::Offset { distance, .. } = &mut self.0 {
             let product = distance.get() * scale.get();
             if !product.is_finite() {
                 return Err(SketchConstraintScaleError::LengthOverflow);
@@ -99,7 +109,6 @@ impl SpatialSketchConstraintDefinition {
             *distance = PositiveLength::new(product)
                 .ok_or(SketchConstraintScaleError::InvalidLocalValue)?;
         }
-        self.0 = kind;
         Ok(())
     }
 }
@@ -128,11 +137,30 @@ impl SketchGeometry {
     /// Scale length-bearing fields while carrying stored directions, angles,
     /// bounds unrelated to length, and text attributes unchanged.
     pub fn scaled_lengths(&self, scale: PositiveReal) -> Result<Self, SketchLengthScaleError> {
-        self.clone().scaled_lengths_owned(scale)
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let policy = cadmpeg_core::decode::DecodePolicy::default();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).map_err(SketchLengthScaleError::from)?;
+        self.scaled_lengths_for_decode(&ctx, scale).map_err(SketchLengthScaleError::from)?
+    }
+
+    /// Copy and scale borrowed planar geometry through its owner.
+    pub fn scaled_lengths_for_decode(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, scale: PositiveReal) -> Result<Result<Self, SketchLengthScaleError>, cadmpeg_core::CodecError> {
+        self.try_clone_for_decode(ctx, "IR planar sketch scaling copy")?.scaled_lengths_owned_for_decode(ctx, scale)
     }
 
     /// Scale an owned carrier without copying its retained text or NURBS lanes.
     pub fn scaled_lengths_owned(self, scale: PositiveReal) -> Result<Self, SketchLengthScaleError> {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let policy = cadmpeg_core::decode::DecodePolicy::default();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).map_err(SketchLengthScaleError::from)?;
+        self.scaled_lengths_owned_for_decode(&ctx, scale).map_err(SketchLengthScaleError::from)?
+    }
+
+    /// Scale owned geometry without copying retained lanes or text.
+    pub fn scaled_lengths_owned_for_decode(self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, scale: PositiveReal) -> Result<Result<Self, SketchLengthScaleError>, cadmpeg_core::CodecError> {
+        let result = (|| -> Result<Self, SketchLengthScaleError> {
+            ctx.charge_work(1, "IR sketch unit scaling work").map_err(SketchLengthScaleError::from)?;
+
         use SketchGeometryDefinition as Definition;
         let mut definition = self.0;
         match &mut definition {
@@ -219,15 +247,7 @@ impl SketchGeometry {
                     .transpose()?;
             }
             Definition::Nurbs { curve } => {
-                curve
-                    .try_map_control_points(|_, point| {
-                        planar_point(point, scale).ok_or_else(|| {
-                            NurbsError::Structure(
-                                "control_points contains a non-finite point".into(),
-                            )
-                        })
-                    })
-                    .map_err(SketchLengthScaleError::CurveControlPoints)?;
+                curve.scale_points(ctx, scale).map_err(SketchLengthScaleError::from)?.map_err(SketchLengthScaleError::CurveControlPoints)?;
             }
             Definition::Text {
                 height, placement, ..
@@ -257,24 +277,11 @@ impl SketchGeometry {
             ))?;
         }
         Ok(Self(definition))
-    }
-}
-
-impl SketchGeometry {
-    /// Scale an owned planar carrier through the caller's work and refusal-text budget.
-    pub fn scaled_lengths_owned_admitted(
-        mut self,
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-        scale: PositiveReal,
-    ) -> Result<Result<Self, SketchLengthScaleError>, cadmpeg_core::CodecError> {
-        ctx.charge_work(1, "IR sketch unit scaling work")?;
-        if let SketchGeometryDefinition::Nurbs { curve } = &mut self.0 {
-            return Ok(match curve.scale_points_admitted(ctx, scale)? {
-                Ok(()) => Ok(self),
-                Err(error) => Err(SketchLengthScaleError::CurveControlPoints(error)),
-            });
+            })();
+        match result {
+            Err(SketchLengthScaleError::Resource(limit)) => Err(limit.into()),
+            result => Ok(result),
         }
-        Ok(self.scaled_lengths_owned(scale))
     }
 }
 
@@ -282,8 +289,18 @@ impl SpatialSketchGeometry {
     /// Scale the model-space coordinates and radii while carrying admitted
     /// unit directions, angles, and native labels unchanged.
     pub fn scaled_lengths(&self, scale: PositiveReal) -> Result<Self, SketchLengthScaleError> {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let policy = cadmpeg_core::decode::DecodePolicy::default();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).map_err(SketchLengthScaleError::from)?;
+        self.scaled_lengths_for_decode(&ctx, scale)
+    }
+
+    /// Scale a charged copy of a borrowed spatial carrier.
+    pub fn scaled_lengths_for_decode(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, scale: PositiveReal) -> Result<Self, SketchLengthScaleError> {
+        ctx.charge_work(1, "IR spatial sketch unit scaling work").map_err(SketchLengthScaleError::from)?;
+
         use SpatialSketchGeometryDefinition as Definition;
-        let mut definition = self.definition().clone();
+        let mut definition = self.try_clone_for_decode(ctx, "IR spatial sketch scaling copy").map_err(SketchLengthScaleError::from)?.0;
         match &mut definition {
             Definition::Point { position } => {
                 *position = spatial_point(*position, scale).ok_or(
@@ -321,39 +338,15 @@ impl SpatialSketchGeometry {
                 ))?;
             }
             Definition::Nurbs { curve } => {
-                curve
-                    .try_map_control_points(|_, point| {
-                        let mut scaled = point.get();
-                        scaled.x *= scale.get();
-                        scaled.y *= scale.get();
-                        scaled.z *= scale.get();
-                        FinitePoint3::new(scaled).ok_or_else(|| {
-                            NurbsError::Structure(
-                                "control_points contains a non-finite point".into(),
-                            )
-                        })
-                    })
-                    .map_err(SketchLengthScaleError::CurveControlPoints)?;
+                curve.0.scale_points(ctx, scale).map_err(SketchLengthScaleError::from)?.map_err(SketchLengthScaleError::CurveControlPoints)?;
             }
             Definition::NurbsSurface { surface } => {
-                surface
-                    .try_map_control_points(|_, point| {
-                        let mut scaled = point.get();
-                        scaled.x *= scale.get();
-                        scaled.y *= scale.get();
-                        scaled.z *= scale.get();
-                        FinitePoint3::new(scaled).ok_or_else(|| {
-                            NurbsError::Structure(
-                                "control_points contains a non-finite point".into(),
-                            )
-                        })
-                    })
-                    .map_err(SketchLengthScaleError::SurfaceControlPoints)?;
+                surface.scale_points(ctx, scale).map_err(SketchLengthScaleError::from)?.map_err(SketchLengthScaleError::SurfaceControlPoints)?;
             }
             Definition::Native { .. } => {}
         }
         Ok(Self(definition))
-    }
+        }
 }
 
 #[cfg(test)]
@@ -598,7 +591,7 @@ mod tests {
                 policy.limits.max_work_units = cap;
                 let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
                 assert!(
-                    matches!(make(1.0, rational).scaled_lengths_owned_admitted(&ctx, PositiveReal::new(2.0).expect("scale")),
+                    matches!(make(1.0, rational).scaled_lengths_owned_for_decode(&ctx, PositiveReal::new(2.0).expect("scale")),
                     Err(cadmpeg_core::CodecError::ResourceLimit(resource)) if resource.operation == "IR sketch NURBS unit scaling work")
                 );
             }
@@ -607,13 +600,13 @@ mod tests {
             policy.limits.max_retained_bytes = 0;
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
             assert!(
-                matches!(make(f64::MAX, rational).scaled_lengths_owned_admitted(&ctx, PositiveReal::new(2.0).expect("scale")),
+                matches!(make(f64::MAX, rational).scaled_lengths_owned_for_decode(&ctx, PositiveReal::new(2.0).expect("scale")),
                 Err(cadmpeg_core::CodecError::ResourceLimit(resource)) if resource.operation == "IR NURBS refusal text")
             );
             policy.limits.max_collection_items = 0;
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
             let actual = make(1.0, rational)
-                .scaled_lengths_owned_admitted(&ctx, PositiveReal::new(2.0).expect("scale"))
+                .scaled_lengths_owned_for_decode(&ctx, PositiveReal::new(2.0).expect("scale"))
                 .expect("no copy")
                 .expect("finite");
             assert_eq!(
@@ -625,7 +618,7 @@ mod tests {
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
                 .expect("root");
             let actual = make(f64::MAX, rational)
-                .scaled_lengths_owned_admitted(&ctx, PositiveReal::new(2.0).expect("scale"))
+                .scaled_lengths_owned_for_decode(&ctx, PositiveReal::new(2.0).expect("scale"))
                 .expect("admitted refusal");
             assert!(
                 matches!(actual, Err(SketchLengthScaleError::CurveControlPoints(crate::geometry::nurbs::NurbsError::Structure(message))) if message == "control_points contains a non-finite point")

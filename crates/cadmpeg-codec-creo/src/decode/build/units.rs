@@ -895,12 +895,13 @@ fn scale_radius_spec(
             use cadmpeg_ir::features::edge_treatments::VariableRadiiMapError;
             RadiusSpec::Variable {
                 points: points
-                    .try_map_radii_owned_admitted(ctx, |radius| {
+                    .try_map_radii_owned(ctx, |radius| {
                         radius.scaled(scale).ok_or_else(|| {
                             malformed_refusal(ctx, "Creo scaled length must be finite")
                         })
                     })?
                     .map_err(|error| match error {
+                        VariableRadiiMapError::Resource(limit) => CodecError::ResourceLimit(limit),
                         VariableRadiiMapError::Radius(error) => error,
                         VariableRadiiMapError::Admission(message) => {
                             malformed_refusal(ctx, message)
@@ -1091,7 +1092,7 @@ pub(in crate::decode) fn scale_surface_geometry(
 ) -> Result<(), CodecError> {
     let owned = std::mem::replace(geometry, SolvedSurfaceGeometry::Unknown { record: None });
     *geometry = owned
-        .scaled_owned_admitted(ctx, scale)?
+        .scaled_owned(ctx, scale)?
         .map_err(|refusal| scale_refusal(ctx, refusal, "surface", scale))?;
     Ok(())
 }
@@ -1103,7 +1104,7 @@ pub(in crate::decode) fn scale_curve_geometry(
 ) -> Result<(), CodecError> {
     let owned = std::mem::replace(geometry, SolvedCurveGeometry::Unknown { record: None });
     *geometry = owned
-        .scaled_owned_admitted(ctx, scale)?
+        .scaled_owned(ctx, scale)?
         .map_err(|refusal| scale_refusal(ctx, refusal, "curve", scale))?;
     Ok(())
 }
@@ -1117,6 +1118,7 @@ fn scale_refusal(
     scale: PositiveReal,
 ) -> CodecError {
     match refusal {
+        ScaleRefusal::Resource(limit) => CodecError::ResourceLimit(limit),
         ScaleRefusal::Field(message) => malformed_refusal(ctx, message),
         ScaleRefusal::ControlPoints(error) => malformed_refusal(
             ctx,
@@ -1327,8 +1329,9 @@ pub(in crate::decode) fn scale_sketch_geometry(
     use cadmpeg_ir::sketches::scaling::SketchLengthScaleError;
 
     geometry
-        .scaled_lengths_owned_admitted(ctx, scale)?
+        .scaled_lengths_owned_for_decode(ctx, scale)?
         .map_err(|error| match error {
+            SketchLengthScaleError::Resource(limit) => CodecError::ResourceLimit(limit),
             SketchLengthScaleError::LengthOverflow => {
                 malformed_refusal(ctx, "Creo scaled length must be finite")
             }

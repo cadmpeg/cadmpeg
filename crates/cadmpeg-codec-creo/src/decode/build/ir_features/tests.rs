@@ -117,7 +117,7 @@ fn regeneration_parent_node_refuses_before_tree_insertion() {
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::CollectionItems
-            && resource.operation == "creo regeneration parent nodes")
+            && resource.operation == "install decoded feature regeneration parent")
     );
 
     let arena = DecodeArena::new();

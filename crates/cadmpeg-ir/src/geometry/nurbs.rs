@@ -721,6 +721,22 @@ pub struct BsplineSurface {
 }
 
 impl BsplineSurface {
+    /// Copy the retained knot vectors and control grid through the decode budget.
+    pub fn try_clone_for_decode(
+        &self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<Self, CodecError> {
+        ctx.charge_work(1, operation)?;
+        Ok(Self {
+            u_degree: self.u_degree,
+            v_degree: self.v_degree,
+            u_knots: self.u_knots.try_clone_for_decode(ctx, operation)?,
+            v_knots: self.v_knots.try_clone_for_decode(ctx, operation)?,
+            control_points: copy_decode_grid(&self.control_points, ctx, operation)?,
+        })
+    }
+
     /// Build a rectangular grid with full knot vectors for both parameters.
     pub fn new(
         u_degree: u32,
@@ -1510,7 +1526,7 @@ impl NurbsCurve {
     /// Copy a curve after charging its knot and pole lanes, then map the
     /// copied positions without another allocation. A non-finite result leaves
     /// the source untouched and returns no curve.
-    pub fn map_control_points_admitted(
+    pub fn map_control_points(
         &self,
         ctx: &DecodeContext<'_>,
         operation: &'static str,
@@ -1520,6 +1536,7 @@ impl NurbsCurve {
         match &mut mapped.poles {
             NurbsPoles3::Polynomial { points } => {
                 for point in points {
+                    ctx.charge_work(1, operation)?;
                     let Some(next) = FinitePoint3::new(map(point.get())) else {
                         return Ok(None);
                     };
@@ -1528,6 +1545,7 @@ impl NurbsCurve {
             }
             NurbsPoles3::Rational { points } => {
                 for pole in points {
+                    ctx.charge_work(1, operation)?;
                     let Some(next) = FinitePoint3::new(map(pole.point.get())) else {
                         return Ok(None);
                     };

@@ -594,7 +594,8 @@ fn regeneration_edges_refuse_collection_limit() {
 
 #[test]
 fn regeneration_parent_nodes_refuse_collection_limit() {
-    regeneration_edge_limit_error(Some(10), None, "creo regeneration parent nodes");
+    // The dependency uniqueness index stores one borrowed member.
+    regeneration_edge_limit_error(Some(11), None, "install decoded feature regeneration parent");
 }
 
 #[test]

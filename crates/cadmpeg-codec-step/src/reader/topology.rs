@@ -11,7 +11,7 @@ use super::{source_numeric_id, RecordExt, ValueExt};
 use cadmpeg_core::decode::{u64_from_index, DecodeContext, ResourceLimit, ScopedReservation};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::draft::{CommitSession, DraftError, ModelDraft};
+use cadmpeg_ir::draft::{CommitSession, DecodeCommitSession, DraftError, ModelDraft};
 use cadmpeg_ir::eval::{
     model_curve_parameter_near_point_in_index_with_tolerance, model_curve_point_by_id,
     model_surface_partials_by_id, model_surface_point_by_id, nurbs_curve_parameter_domain,
@@ -97,7 +97,9 @@ fn topology_commit_error(
     ctx: &DecodeContext<'_>,
 ) -> Result<String, CodecError> {
     match error {
-        DraftError::IdentityCollision(identity) => ctx.format_retained(format_args!("{context} conflicts with decoded topology: identity collision at '{identity}': {error}"), "step_topology_commit_error_text"),
+        DraftError::Resource(limit) => Err(CodecError::ResourceLimit(limit.clone())),
+DraftError::Admission(message) => ctx.copy_retained_text(message, "step_topology_commit_error_text"),
+DraftError::IdentityCollision(identity) => ctx.format_retained(format_args!("{context} conflicts with decoded topology: identity collision at '{identity}': {error}"), "step_topology_commit_error_text"),
         DraftError::UnresolvedReference { .. }
         | DraftError::ReferenceWalk { .. }
         | DraftError::FeatureParents { .. } => {
@@ -405,7 +407,7 @@ pub(super) fn decode(
     carrier_index: &CarrierIndex,
     ctx: &DecodeContext<'_>,
 ) -> Result<StageOutcome<TopologyData>, CodecError> {
-    let mut commit_session = CommitSession::new(ir);
+    let mut commit_session = CommitSession::new_for_decode(ir, ctx)?;
     let mut result = StageOutcome {
         value: TopologyData {
             body_by_root: BTreeMap::new(),
@@ -515,7 +517,7 @@ pub(super) fn decode(
             let (built, failures) = outcome.into_parts();
             let mut committed = 0;
             for mut built in built {
-                if let Err(error) = commit_session.commit_model(built.draft) {
+                if let Err(error) = commit_session.commit_model_for_decode(built.draft, ctx)? {
                     ctx.push_vec(
                         &mut losses,
                         StepLossCode::DecodeWarning.note(topology_commit_error(
@@ -580,7 +582,7 @@ pub(super) fn decode(
         let (built, failures) = outcome.into_parts();
         let mut committed = 0;
         for mut built in built {
-            if let Err(error) = commit_session.commit_model(built.draft) {
+            if let Err(error) = commit_session.commit_model_for_decode(built.draft, ctx)? {
                 ctx.push_vec(
                     &mut losses,
                     StepLossCode::DecodeWarning.note(topology_commit_error(
@@ -730,8 +732,8 @@ pub(super) fn decode(
         let mut body_ids = Vec::new();
         let mut body_by_shell = BTreeMap::<u64, BTreeSet<BodyId>>::new();
         for mut built in built {
-            drop_committed_surfaces(&mut built.draft, &mut commit_session);
-            if let Err(error) = commit_session.commit_model(built.draft) {
+            drop_committed_surfaces(&mut built.draft, &mut commit_session, ctx)?;
+            if let Err(error) = commit_session.commit_model_for_decode(built.draft, ctx)? {
                 ctx.push_vec(
                     &mut losses,
                     StepLossCode::DecodeWarning.note(topology_commit_error(
@@ -874,7 +876,7 @@ pub(super) fn decode(
             )), "step_topology_losses")?;
             continue;
         };
-        if let Err(error) = commit_session.commit_model(built.draft) {
+        if let Err(error) = commit_session.commit_model_for_decode(built.draft, ctx)? {
             ctx.push_vec(
                 &mut losses,
                 StepLossCode::DecodeWarning.note(topology_commit_error(
@@ -2450,14 +2452,16 @@ struct Built {
     pcurve_admissions: Vec<PcurveAdmission>,
 }
 
-fn drop_committed_surfaces(draft: &mut ModelDraft, session: &mut CommitSession<'_>) {
-    // Implicit surfaces can be staged by multiple roots. The session is the
-    // authority on which ones a prior root committed; a pre-loop snapshot is
-    // wrong because commits add surfaces while the loop is running.
-    draft
-        .model_mut()
-        .surfaces
-        .retain(|surface| !session.contains(surface.id.as_str()));
+fn drop_committed_surfaces(draft: &mut ModelDraft, session: &mut DecodeCommitSession<'_, '_>, ctx: &DecodeContext<'_>) -> Result<(), CodecError> {
+    let mut refusal = None;
+    draft.model_mut().surfaces.retain(|surface| {
+        if refusal.is_some() { return true; }
+        match session.contains_for_decode(surface.id.as_str(), ctx) {
+            Ok(contains) => !contains,
+            Err(error) => { refusal = Some(error); true }
+        }
+    });
+    match refusal { Some(error) => Err(error), None => Ok(()) }
 }
 
 #[cfg(test)]
@@ -2471,7 +2475,7 @@ enum StageError {
 
 impl From<DraftError> for StageError {
     fn from(error: DraftError) -> Self {
-        Self::Draft(error)
+        match error { DraftError::Resource(limit) => Self::Resource(CodecError::ResourceLimit(limit)), error => Self::Draft(error) }
     }
 }
 
@@ -2512,24 +2516,19 @@ fn staged_topology(
     } = parts;
     let mut draft = ModelDraft::new();
     for vertex in vertices {
-        ctx.charge_collection_items(1, "step_staged_vertices")?;
-        draft.insert(vertex)?;
+        draft.insert_for_decode(vertex, ctx)?;
     }
     for edge in edges {
-        ctx.charge_collection_items(1, "step_staged_edges")?;
-        draft.insert(edge)?;
+        draft.insert_for_decode(edge, ctx)?;
     }
     for coedge in coedges {
-        ctx.charge_collection_items(1, "step_staged_coedges")?;
-        draft.insert(coedge)?;
+        draft.insert_for_decode(coedge, ctx)?;
     }
     for loop_ in loops {
-        ctx.charge_collection_items(1, "step_staged_loops")?;
-        draft.insert(loop_)?;
+        draft.insert_for_decode(loop_, ctx)?;
     }
     for face in faces {
-        ctx.charge_collection_items(1, "step_staged_faces")?;
-        draft.insert(face)?;
+        draft.insert_for_decode(face, ctx)?;
     }
     let mut surface_ids = BTreeSet::new();
     for surface in surfaces {
@@ -2539,19 +2538,15 @@ fn staged_topology(
                 ctx.copy_retained(surface.id.as_str().as_bytes(), "step_staged_surface_ids")?;
             let id = String::from_utf8(id).map_err(CodecError::malformed)?;
             surface_ids.insert(id);
-            ctx.charge_collection_items(1, "step_staged_surfaces")?;
-            draft.insert(surface)?;
+                draft.insert_for_decode(surface, ctx)?;
         }
     }
     for shell in shells {
-        ctx.charge_collection_items(1, "step_staged_shells")?;
-        draft.insert(shell)?;
+        draft.insert_for_decode(shell, ctx)?;
     }
-    ctx.charge_collection_items(1, "step_staged_regions")?;
-    draft.insert(region)?;
+    draft.insert_for_decode(region, ctx)?;
     let body_id = body.id.clone();
-    ctx.charge_collection_items(1, "step_staged_bodies")?;
-    draft.insert(body)?;
+    draft.insert_for_decode(body, ctx)?;
     Ok(Built {
         typed,
         draft,
@@ -4528,7 +4523,7 @@ fn select_associated_pcurve(
         .map(|surface| &surface.geometry)
         .ok_or(PcurveSelectionFailure::Carrier)?;
     let surface_id = SurfaceId::from(surface_identity);
-    let index = ModelIndex::new(ir);
+    let index = ModelIndex::new_for_decode(ir, ctx)?;
     let pcurve = ir
         .model
         .pcurves

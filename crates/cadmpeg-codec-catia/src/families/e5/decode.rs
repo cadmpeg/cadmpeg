@@ -2112,11 +2112,8 @@ fn emit_e5_curves_and_edges(
             "definition",
             "catia_annotation_field",
         )?;
-        admission.reserve_entity(
-            &mut ir.model.procedural_curves,
-            "catia_e5_model_procedural_curves",
-        )?;
-        let _attached = ir.model.add_procedural_curve_charged(
+        admission.charge()?;
+        let _attached = ir.model.add_procedural_curve_for_decode(
             ctx,
             &curve,
             ProceduralCurve::new(
@@ -2169,11 +2166,8 @@ fn emit_e5_curves_and_edges(
             "definition",
             "catia_annotation_field",
         )?;
-        admission.reserve_entity(
-            &mut ir.model.procedural_curves,
-            "catia_e5_model_procedural_curves",
-        )?;
-        let _attached = ir.model.add_procedural_curve_charged(
+        admission.charge()?;
+        let _attached = ir.model.add_procedural_curve_for_decode(
             ctx,
             &curve,
             ProceduralCurve::new(

@@ -25,7 +25,7 @@ fn spatial_profile_uniqueness_index_refuses_collection_limit() {
         entity: SpatialSketchEntityId::mint("test:model:entity#profile-edge").unwrap(),
         reversed: false,
     }];
-    let result = SpatialSketchProfile::try_new_charged(
+    let result = SpatialSketchProfile::try_new_for_decode(
         Point3::new(0.0, 0.0, 0.0),
         Vector3::new(0.0, 0.0, 1.0),
         Vector3::new(1.0, 0.0, 0.0),
@@ -54,7 +54,7 @@ fn polygon_uniqueness_index_refuses_collection_limit() {
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let result =
-        crate::sketches::SketchPolygon::try_new_charged(entities, &ctx, "test polygon uniqueness");
+        crate::sketches::SketchPolygon::try_new_for_decode(entities, &ctx, "test polygon uniqueness");
     assert!(matches!(result, Err(CodecError::ResourceLimit(failure))
         if failure.dimension == ResourceDimension::CollectionItems
             && failure.operation == "test polygon uniqueness"));
@@ -319,7 +319,22 @@ fn spatial_sketch_records_hold_their_admitted_frames_and_scalars() {
             unit(0.0, 0.0, 1.0),
             boundary
         )
-        .unwrap_err(),
+        .unwrap_err().to_string(),
         "spatial profile normal and u_axis must be unit and orthogonal"
     );
+}
+
+#[test]
+fn polygon_uniqueness_refuses_scoped_storage_and_work() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    for dimension in [ResourceDimension::MaterializedBytes, ResourceDimension::WorkUnits] {
+        let entities = ["first", "second", "third"].map(|suffix| crate::sketches::SketchEntityId::mint(format!("test:model:entity#{suffix}")).unwrap()).into_iter().collect();
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        if dimension == ResourceDimension::MaterializedBytes { policy.limits.max_materialized_bytes = 0; }
+        else { policy.limits.max_work_units = 0; }
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let result = crate::sketches::SketchPolygon::try_new_for_decode(entities, &ctx, "polygon temporary uniqueness");
+        assert!(matches!(result, Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.dimension == dimension));
+    }
 }

@@ -1459,16 +1459,10 @@ fn emit_standard_extrusion_definition(
                 "two_surface_pcurve_intersection",
                 Exactness::ByteExact,
             )?;
-            admission.reserve_entity(
-                &mut ir.model.procedural_curves,
-                "catia_extrusion_directrix_procedures",
-            )?;
+            admission.charge()?;
             let owner =
                 directrix_id.try_clone_for_decode(ctx, "catia_extrusion_directrix_owner_id")?;
-            ctx.charge_retained(
-                u64_from_index(procedure_id.as_str().len()),
-                "catia_extrusion_directrix_construction_id",
-            )?;
+
             let procedure = ProceduralCurve::new(
                 procedure_id,
                 ProceduralCurveDefinition::Intersection {
@@ -1484,7 +1478,7 @@ fn emit_standard_extrusion_definition(
             );
             let _attached = ir
                 .model
-                .add_procedural_curve_charged(ctx, &owner, procedure)?;
+                .add_procedural_curve_for_decode(ctx, &owner, procedure)?;
         }
         crate::families::b5::transfer::ResolvedExtrusionDirectrix::SurfaceCurve {
             curve, ..
@@ -1581,17 +1575,11 @@ fn emit_standard_extrusion_definition(
                 support.surface,
                 admission,
             )?;
-            admission.reserve_entity(
-                &mut ir.model.procedural_curves,
-                "catia_extrusion_offset_procedures",
-            )?;
-            ctx.charge_retained(
-                u64_from_index(procedure_id.as_str().len()),
-                "catia_extrusion_offset_construction_id",
-            )?;
+            admission.charge()?;
+
             let owner =
                 directrix_id.try_clone_for_decode(ctx, "catia_extrusion_offset_owner_id")?;
-            let _attached = ir.model.add_procedural_curve_charged(ctx, &owner, ProceduralCurve::new(
+            let _attached = ir.model.add_procedural_curve_for_decode(ctx, &owner, ProceduralCurve::new(
                     procedure_id,
                     ProceduralCurveDefinition::Offset(
                         cadmpeg_ir::geometry::curve_payloads::OffsetCurveConstruction::along_direction(
@@ -2272,12 +2260,12 @@ fn try_decode_standard_populations(
         let mut model = output.ir.model;
         retain_standard_population_model(&mut model);
         let mut rewriter = StandardPopulationScope { scope: &scope, ctx };
-        match merged.ir.model.extend_rewritten_charged(
+        match merged.ir.model.extend_rewritten_for_decode(
             ctx,
             model,
             &mut rewriter,
             "catia_standard_population_model_merge",
-        ) {
+        ).map_err(CodecError::from) {
             Ok(()) => {}
             Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
             Err(_) => return Ok(None),
@@ -2297,28 +2285,28 @@ fn try_decode_standard_populations(
     }
 
     for (key, value) in population_coverage {
-        merged.report.coverage.record(key, value);
+        merged.report.coverage.record(ctx, key, value)?;
     }
-    merged.report.coverage.record(
+    merged.report.coverage.record(ctx,
         crate::coverage::STANDARD_FBB_RUN_COUNT,
         scan.census.fbb_runs,
-    );
-    merged.report.coverage.record(
+    )?;
+    merged.report.coverage.record(ctx,
         crate::coverage::STANDARD_FBB_CANDIDATE_FACE_ROW_COUNT,
         scan.census.fbb_face_rows,
-    );
-    merged.report.coverage.record(
+    )?;
+    merged.report.coverage.record(ctx,
         crate::coverage::STANDARD_FBB_ADMITTED_FACE_ROW_COUNT,
         admitted_face_rows,
-    );
-    merged.report.coverage.record(
+    )?;
+    merged.report.coverage.record(ctx,
         crate::coverage::STANDARD_FBB_WITHHELD_FACE_ROW_COUNT,
         scan.census.fbb_face_rows - scan.census.fbb_face_rows.min(admitted_face_rows),
-    );
-    merged.report.coverage.record(
+    )?;
+    merged.report.coverage.record(ctx,
         crate::coverage::ATTACHED_STANDARD_TOPOLOGY_COUNT,
         attached_topology_count,
-    );
+    )?;
 
     merged.report.losses.retain(|loss| {
         !matches!(
@@ -3267,60 +3255,60 @@ topology_failure.map(StandardTopologyFailure::message)) {
             return Some(Err(error));
         }
     }
-    report.coverage.record(
+    if let Err(error) = report.coverage.record(ctx,
         crate::coverage::ATTEMPTED_STANDARD_TOPOLOGY_COUNT,
         usize::from(true),
-    );
-    report.coverage.record(
+    ) { return Some(Err(error)); }
+    if let Err(error) = report.coverage.record(ctx,
         crate::coverage::STANDARD_FBB_RUN_COUNT,
         scan.census.fbb_runs,
-    );
-    report.coverage.record(
+    ) { return Some(Err(error)); }
+    if let Err(error) = report.coverage.record(ctx,
         crate::coverage::STANDARD_FBB_CANDIDATE_FACE_ROW_COUNT,
         scan.census.fbb_face_rows,
-    );
-    report.coverage.record(
+    ) { return Some(Err(error)); }
+    if let Err(error) = report.coverage.record(ctx,
         crate::coverage::STANDARD_FBB_ADMITTED_FACE_ROW_COUNT,
         face_count,
-    );
-    report.coverage.record(
+    ) { return Some(Err(error)); }
+    if let Err(error) = report.coverage.record(ctx,
         crate::coverage::STANDARD_FBB_WITHHELD_FACE_ROW_COUNT,
         withheld_face_rows,
-    );
-    report.coverage.record(
+    ) { return Some(Err(error)); }
+    if let Err(error) = report.coverage.record(ctx,
         crate::coverage::ATTACHED_STANDARD_TOPOLOGY_COUNT,
         usize::from(topology_attached),
-    );
+    ) { return Some(Err(error)); }
     for failure in StandardTopologyFailure::ALL {
-        report.coverage.record(
+        if let Err(error) = report.coverage.record(ctx,
             failure.coverage_key(),
             usize::from(topology_failure == Some(failure)),
-        );
+        ) { return Some(Err(error)); }
     }
-    report.coverage.record(
+    if let Err(error) = report.coverage.record(ctx,
         crate::coverage::STANDARD_TOPOLOGY_CURVE_SUPPORT_COUNT,
         topology_diagnostics.curve_supports,
-    );
-    report.coverage.record(
+    ) { return Some(Err(error)); }
+    if let Err(error) = report.coverage.record(ctx,
         crate::coverage::STANDARD_TOPOLOGY_NATIVE_ENDPOINT_PAIR_COUNT,
         topology_diagnostics.native_endpoint_pairs,
-    );
-    report.coverage.record(
+    ) { return Some(Err(error)); }
+    if let Err(error) = report.coverage.record(ctx,
         crate::coverage::STANDARD_TOPOLOGY_EMPTY_ENDPOINT_DOMAIN_COUNT,
         topology_diagnostics.empty_endpoint_domains,
-    );
-    report.coverage.record(
+    ) { return Some(Err(error)); }
+    if let Err(error) = report.coverage.record(ctx,
         crate::coverage::STANDARD_TOPOLOGY_SINGLETON_ENDPOINT_DOMAIN_COUNT,
         topology_diagnostics.singleton_endpoint_domains,
-    );
-    report.coverage.record(
+    ) { return Some(Err(error)); }
+    if let Err(error) = report.coverage.record(ctx,
         crate::coverage::STANDARD_TOPOLOGY_MULTIPLE_ENDPOINT_DOMAIN_COUNT,
         topology_diagnostics.multiple_endpoint_domains,
-    );
-    report.coverage.record(
+    ) { return Some(Err(error)); }
+    if let Err(error) = report.coverage.record(ctx,
         crate::coverage::STANDARD_TOPOLOGY_ENDPOINT_DOMAIN_CHOICE_COUNT,
         topology_diagnostics.endpoint_domain_choices,
-    );
+    ) { return Some(Err(error)); }
     for (key, rejection) in [
         (
             crate::coverage::STANDARD_TOPOLOGY_MESH_REJECTION_INPUT_STRUCTURE_COUNT,
@@ -3347,13 +3335,13 @@ topology_failure.map(StandardTopologyFailure::message)) {
             mesh_quotient::MeshCandidateRejection::EdgeClassConstraint,
         ),
     ] {
-        report.coverage.record(
+        if let Err(error) = report.coverage.record(ctx,
             key,
             usize::from(
                 topology_diagnostics.mesh_failure
                     == Some(mesh_quotient::MeshCandidateFailure::Rejected(rejection)),
             ),
-        );
+        ) { return Some(Err(error)); }
     }
     let endpoint_incidence_rejection = match topology_diagnostics.mesh_failure {
         Some(mesh_quotient::MeshCandidateFailure::Rejected(
@@ -3361,11 +3349,11 @@ topology_failure.map(StandardTopologyFailure::message)) {
         )) => Some(rejection),
         _ => None,
     };
-    report.coverage.record(
+    if let Err(error) = report.coverage.record(ctx,
         crate::coverage::STANDARD_TOPOLOGY_MESH_REJECTION_ENDPOINT_INCIDENCE_COUNT,
         usize::from(endpoint_incidence_rejection.is_some()),
-    );
-    report.coverage.record(
+    ) { return Some(Err(error)); }
+    if let Err(error) = report.coverage.record(ctx,
         crate::coverage::STANDARD_TOPOLOGY_MESH_REJECTION_ENDPOINT_INCIDENCE_NO_ASSIGNMENT_COUNT,
         usize::from(matches!(
             endpoint_incidence_rejection,
@@ -3373,14 +3361,14 @@ topology_failure.map(StandardTopologyFailure::message)) {
                 _
             ))
         )),
-    );
-    report.coverage.record(
+    ) { return Some(Err(error)); }
+    if let Err(error) = report.coverage.record(ctx,
         crate::coverage::STANDARD_TOPOLOGY_MESH_REJECTION_ENDPOINT_INCIDENCE_BOUNDARY_RECONSTRUCTION_COUNT,
         usize::from(
             endpoint_incidence_rejection
                 == Some(mesh_quotient::MeshEndpointIncidenceRejection::BoundaryReconstruction),
         ),
-    );
+    ) { return Some(Err(error)); }
     let incidence_rejection = endpoint_incidence_rejection.and_then(|rejection| match rejection {
         mesh_quotient::MeshEndpointIncidenceRejection::NoAssignment(rejection) => Some(rejection),
         mesh_quotient::MeshEndpointIncidenceRejection::BoundaryReconstruction => None,
@@ -3407,9 +3395,9 @@ topology_failure.map(StandardTopologyFailure::message)) {
             crate::solve::incidence::IncidenceRejection::ComponentComposition,
         ),
     ] {
-        report
+        if let Err(error) = report
             .coverage
-            .record(key, usize::from(incidence_rejection == Some(rejection)));
+            .record(ctx, key, usize::from(incidence_rejection == Some(rejection))) { return Some(Err(error)); }
     }
     for (key, ambiguity) in [
         (
@@ -3425,18 +3413,18 @@ topology_failure.map(StandardTopologyFailure::message)) {
             mesh_quotient::MeshCandidateAmbiguity::DistinctTopologySolutions,
         ),
     ] {
-        report.coverage.record(
+        if let Err(error) = report.coverage.record(ctx,
             key,
             usize::from(
                 topology_diagnostics.mesh_failure
                     == Some(mesh_quotient::MeshCandidateFailure::Ambiguous(ambiguity)),
             ),
-        );
+        ) { return Some(Err(error)); }
     }
-    report.coverage.record(
+    if let Err(error) = report.coverage.record(ctx,
         crate::coverage::STANDARD_TOPOLOGY_MESH_EXHAUSTION_QUOTIENT_PREPARATION_COUNT,
         0,
-    );
+    ) { return Some(Err(error)); }
     for (key, exhaustion) in [
         (
             crate::coverage::STANDARD_TOPOLOGY_MESH_EXHAUSTION_INCIDENCE_ENUMERATION_COUNT,
@@ -3447,54 +3435,54 @@ topology_failure.map(StandardTopologyFailure::message)) {
             mesh_quotient::MeshCandidateExhaustion::EndpointResolution,
         ),
     ] {
-        report.coverage.record(
+        if let Err(error) = report.coverage.record(ctx,
             key,
             usize::from(
                 topology_diagnostics.mesh_failure
                     == Some(mesh_quotient::MeshCandidateFailure::Exhausted(exhaustion)),
             ),
-        );
+        ) { return Some(Err(error)); }
     }
-    report.coverage.record(
+    if let Err(error) = report.coverage.record(ctx,
         crate::coverage::REFINED_CONSOLIDATED_ANALYTIC_SURFACE_COUNT,
         refined_analytic_surfaces.len(),
-    );
-    report.coverage.record(
+    ) { return Some(Err(error)); }
+    if let Err(error) = report.coverage.record(ctx,
         crate::coverage::DECODED_STANDARD_LIMIT_CURVE_COUNT,
         standard_limit_curve_count,
-    );
-    report.coverage.record(
+    ) { return Some(Err(error)); }
+    if let Err(error) = report.coverage.record(ctx,
         crate::coverage::BOUND_STANDARD_LIMIT_CURVE_COUNT,
         bound_standard_limit_curve_count,
-    );
-    report.coverage.record(
+    ) { return Some(Err(error)); }
+    if let Err(error) = report.coverage.record(ctx,
         crate::coverage::BOUND_CONSOLIDATED_REVOLUTION_FACE_SURFACE_COUNT,
         bound_revolution_face_surface_count,
-    );
-    report.coverage.record(
+    ) { return Some(Err(error)); }
+    if let Err(error) = report.coverage.record(ctx,
         crate::coverage::RESOLVED_CONSOLIDATED_REVOLUTION_SEAM_CURVE_COUNT,
         resolved_revolution_seam_curve_count,
-    );
-    report.coverage.record(
+    ) { return Some(Err(error)); }
+    if let Err(error) = report.coverage.record(ctx,
         crate::coverage::BOUND_CONSOLIDATED_STANDARD_EDGE_COUNT,
         consolidated_curve_bindings.standard_edges,
-    );
-    report.coverage.record(
+    ) { return Some(Err(error)); }
+    if let Err(error) = report.coverage.record(ctx,
         crate::coverage::BOUND_CONSOLIDATED_PARTNER_SUPPORT_COUNT,
         consolidated_curve_bindings.partner_supports,
-    );
-    report.coverage.record(
+    ) { return Some(Err(error)); }
+    if let Err(error) = report.coverage.record(ctx,
         crate::coverage::BOUND_CONSOLIDATED_PARTNER_FACE_PCURVE_PAIR_COUNT,
         consolidated_curve_bindings.partner_face_pcurve_pairs,
-    );
-    report.coverage.record(
+    ) { return Some(Err(error)); }
+    if let Err(error) = report.coverage.record(ctx,
         crate::coverage::BOUND_CONSOLIDATED_STANDARD_FACE_SURFACE_COUNT,
         consolidated_curve_bindings.standard_face_surfaces,
-    );
-    report.coverage.record(
+    ) { return Some(Err(error)); }
+    if let Err(error) = report.coverage.record(ctx,
         crate::coverage::BOUND_CONSOLIDATED_STANDARD_FACE_PCURVE_COUNT,
         consolidated_curve_bindings.standard_face_pcurves,
-    );
+    ) { return Some(Err(error)); }
     Some(Ok(FamilyOutput {
         ir,
         report,

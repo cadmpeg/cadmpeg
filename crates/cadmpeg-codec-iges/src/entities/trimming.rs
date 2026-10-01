@@ -1950,7 +1950,7 @@ pub(super) fn project(
     let mut boundary_vertex_derivations = Vec::new();
     let mut boundaries = BTreeMap::new();
 
-    let carrier_index = ModelIndex::try_new_model_only_for_decode(ir, ctx)?;
+    let carrier_index = ModelIndex::new_model_only_for_decode(ir, ctx)?;
     let mut composite_index: Option<CompositeIndex> = None;
     let mut edges_by_curve = BTreeMap::<&CurveId, Vec<&Edge>>::new();
     for edge in &ir.model.edges {
@@ -3029,15 +3029,9 @@ pub(super) fn project(
                     continue;
                 }
             };
-            ctx.reserve_vec(
-                &mut candidate.model_mut().procedural_surfaces,
-                1,
-                "iges procedural surface slots",
-            )?;
+
             ctx.charge_entities(1, "iges_geometry_trimming")?;
-            let _attached = candidate.model_mut().add_procedural_surface(
-                &derived_surface_id.try_clone_for_decode(ctx, "iges trimming identity copy")?,
-                ProceduralSurface::new(
+            let _attached = candidate.model_mut().add_procedural_surface_for_decode(ctx, &derived_surface_id.try_clone_for_decode(ctx, "iges trimming identity copy")?, ProceduralSurface::new(
                     crate::ids::procedural_surface_admitted(
                         &crate::ids::Stem::directory(entry.sequence)
                             .part(crate::ids::Word::ImplicitOuter),
@@ -3051,8 +3045,7 @@ pub(super) fn project(
                         implicit_outer: true,
                     },
                     record_bounds,
-                ),
-            );
+                ))?;
             derived_surface_id
         } else {
             surface_id
@@ -3135,10 +3128,10 @@ pub(super) fn project(
         staged.push((entry, candidate, candidate_boundary_vertex_derivations));
     }
     drop(carrier_index);
-    let mut commit_session = CommitSession::new(ir);
+    let mut commit_session = CommitSession::new_for_decode(ir, ctx)?;
     for (entry, candidate, derivations) in staged {
         if commit_session
-            .commit_model_admitted(candidate, ctx)?
+            .commit_model_for_decode(candidate, ctx)?
             .is_err()
         {
             super::push_entity_loss(

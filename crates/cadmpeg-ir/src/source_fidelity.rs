@@ -348,58 +348,30 @@ impl SourceFidelity {
 
     /// Append source metadata after checking both tables for identity collisions.
     /// Failure leaves this source metadata unchanged.
-    pub fn append_charged(
+    pub fn append(
         &mut self,
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         mut other: Self,
     ) -> Result<(), cadmpeg_core::CodecError> {
-        const DUPLICATE_PREFIX: &str = "duplicate retained or native unknown record ";
         for id in other.retained_records.keys() {
+            ctx.charge_work(cadmpeg_core::decode::u64_from_index(id.as_str().len()), "check appended source records")?;
             if self.retained_records.contains_key(id) {
-                let operation = "report duplicate source record";
-                let length = DUPLICATE_PREFIX
-                    .len()
-                    .checked_add(id.as_str().len())
-                    .ok_or_else(|| ctx.refuse_codec_limit(operation, 0, u64::MAX))?;
-                let bytes = cadmpeg_core::decode::u64_from_index(length);
-                ctx.charge_retained(bytes, operation)?;
-                let mut message = String::new();
-                message.try_reserve(length).map_err(|_| {
-                    cadmpeg_core::CodecError::ResourceLimit(
-                        cadmpeg_core::decode::ResourceLimit::allocation_failed(
-                            cadmpeg_core::decode::ResourceDimension::Codec(operation),
-                            0,
-                            bytes,
-                            operation,
-                        ),
-                    )
-                })?;
-                message.push_str(DUPLICATE_PREFIX);
-                message.push_str(id.as_str());
-                return Err(cadmpeg_core::CodecError::Malformed(message));
+                return Err(cadmpeg_core::CodecError::Malformed(ctx.format_retained(
+                    format_args!("duplicate retained or native unknown record {id}"),
+                    "report duplicate source record",
+                )?));
             }
         }
-        let record_count = cadmpeg_core::decode::u64_from_index(other.retained_records.len());
-        ctx.charge_collection_items(record_count, "append source records")?;
+        if !self.retained_records.is_empty() && !other.retained_records.is_empty() {
+            for _entry in self.retained_records.iter().chain(other.retained_records.iter()) {
+                ctx.charge_collection_items(1, "append source records")?;
+                ctx.charge_retained(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<(UnknownId, RetainedSourceRecord)>()), "append source records")?;
+            }
+        }
         self.annotations
             .append_for_decode(ctx, other.annotations, "append source provenance")?
             .map_err(cadmpeg_core::CodecError::from)?;
         self.retained_records.append(&mut other.retained_records);
-        Ok(())
-    }
-
-    /// Append source metadata without a decode context.
-    /// Failure leaves this source metadata unchanged.
-    pub fn append(&mut self, other: Self) -> Result<(), NativeConvertError> {
-        for id in other.retained_records.keys() {
-            if self.retained_records.contains_key(id) {
-                return Err(duplicate_record(id));
-            }
-        }
-        self.annotations
-            .append(other.annotations)
-            .map_err(|error| NativeConvertError::InvalidCollection(error.to_string()))?;
-        self.retained_records.extend(other.retained_records);
         Ok(())
     }
 
