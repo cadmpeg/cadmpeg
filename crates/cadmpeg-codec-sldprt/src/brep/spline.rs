@@ -87,6 +87,7 @@ fn read_array<T>(
     operation: &'static str,
     mut read: impl FnMut(usize) -> Option<T>,
 ) -> Result<Option<Vec<T>>, cadmpeg_core::CodecError> {
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(count), operation)?;
     let mut values = Vec::new();
     ctx.reserve_vec(&mut values, count, operation)?;
     for index in 0..count {
@@ -204,6 +205,7 @@ fn scan_arrays(
     bytes: &[u8],
     compact_attrs: Option<&HashSet<u16>>,
 ) -> Result<Arrays, cadmpeg_core::CodecError> {
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(bytes.len()), "scan Parasolid spline arrays")?;
     let mut arrays = Arrays::default();
     for off in 0..bytes.len().checked_sub(9).map_or(0, |end| end) {
         if bytes.get(off) == Some(&0) {
@@ -226,6 +228,7 @@ fn scan_arrays(
             Some([0x00, tag @ (0x2d | 0x7f | 0x80)]) => *tag,
             _ => continue,
         };
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(arr_hdr::LEN), "probe Parasolid spline array")?;
         let Some(p) = array_body(bytes, off, tag) else {
             continue;
         };
@@ -392,11 +395,13 @@ fn scan_curve_descriptors(
     ctx: &DecodeContext<'_>,
     bytes: &[u8],
 ) -> Result<HashMap<u16, CurveDescriptor>, cadmpeg_core::CodecError> {
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(bytes.len()), "scan Parasolid curve descriptors")?;
     let mut out = HashMap::new();
     for off in 0..bytes.len().checked_sub(29).map_or(0, |end| end) {
         if bytes.get(off..off + 2) != Some(&[0x00, 0x88]) {
             continue;
         }
+        ctx.charge_work(29, "probe Parasolid curve descriptor")?;
         let mut p = off + 2;
         if bytes.get(p) == Some(&0xff) {
             p += 1;
@@ -854,6 +859,7 @@ pub(crate) fn scan_curve_carriers(
 ) -> Result<HashMap<u16, CurveCarrier>, cadmpeg_core::CodecError> {
     let arrays = scan_arrays(ctx, bytes, None)?;
     let descriptors = scan_curve_descriptors(ctx, bytes)?;
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(bytes.len()), "scan Parasolid curve wrappers")?;
     let mut out = HashMap::new();
     for off in 0..bytes.len().checked_sub(6).map_or(0, |end| end) {
         if bytes.get(off..off + 2) != Some(&[0x00, 0x86]) {
@@ -973,8 +979,11 @@ fn scan_surface_descriptors(
     ctx: &DecodeContext<'_>,
     bytes: &[u8],
 ) -> Result<HashMap<u16, SurfaceDescriptor>, cadmpeg_core::CodecError> {
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(bytes.len()), "scan Parasolid surface descriptors")?;
     let mut out = HashMap::new();
     for off in 0..bytes.len().checked_sub(1).map_or(0, |end| end) {
+        if bytes.get(off..off + 2) != Some(&[0x00, 0x7e]) { continue; }
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(surf_desc::LEN), "probe Parasolid surface descriptor")?;
         let Some(descriptor) = parse_surface_descriptor(bytes, off) else {
             continue;
         };
@@ -1094,6 +1103,7 @@ pub(crate) fn scan_surface_carriers(
         compact_attrs.extend(descriptor.refs);
     }
     let arrays = scan_arrays(ctx, bytes, Some(&compact_attrs))?;
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(bytes.len()), "scan Parasolid surface wrappers")?;
     let mut out = HashMap::new();
     for off in 0..bytes.len().checked_sub(1).map_or(0, |end| end) {
         if bytes.get(off..off + 2) != Some(&[0x00, 0x7c]) {
