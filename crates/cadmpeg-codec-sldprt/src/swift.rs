@@ -42,14 +42,32 @@ struct ObjectSection {
 
 impl ObjectSection {
     /// Admits distinct references and their matching embedded entity prefix.
-    fn new(ctx: &DecodeContext<'_>, references: Vec<Reference>, entities: Vec<Entity>) -> Result<Option<Self>, CodecError> {
+    fn new(
+        ctx: &DecodeContext<'_>,
+        references: Vec<Reference>,
+        entities: Vec<Entity>,
+    ) -> Result<Option<Self>, CodecError> {
         let mut ids = std::collections::HashSet::new();
         for reference in &references {
-            let work = u64_from_index(reference.id.len()).checked_mul(2)
-                .ok_or_else(|| ctx.refuse_codec_limit("validate SWIFT reference identities", u64::MAX, u64::MAX))?;
+            let work = u64_from_index(reference.id.len())
+                .checked_mul(2)
+                .ok_or_else(|| {
+                    ctx.refuse_codec_limit(
+                        "validate SWIFT reference identities",
+                        u64::MAX,
+                        u64::MAX,
+                    )
+                })?;
             ctx.charge_work(work, "validate SWIFT reference identities")?;
-            if !ctx.insert_hash_set(&mut ids, reference.id.as_str(), "admit distinct SWIFT object references")? {
-                let message = ctx.format_retained(format_args!("duplicate SWIFT object reference ID {}", reference.id), "retain SWIFT duplicate reference error")?;
+            if !ctx.insert_hash_set(
+                &mut ids,
+                reference.id.as_str(),
+                "admit distinct SWIFT object references",
+            )? {
+                let message = ctx.format_retained(
+                    format_args!("duplicate SWIFT object reference ID {}", reference.id),
+                    "retain SWIFT duplicate reference error",
+                )?;
                 return Err(CodecError::Malformed(message));
             }
         }
@@ -57,14 +75,22 @@ impl ObjectSection {
             return Ok(None);
         }
         for (reference, entity) in references.iter().zip(&entities) {
-            let work = reference.class.len().checked_add(entity.class.len())
-                .ok_or_else(|| ctx.refuse_codec_limit("bind SWIFT reference classes", u64::MAX, u64::MAX))?;
+            let work = reference
+                .class
+                .len()
+                .checked_add(entity.class.len())
+                .ok_or_else(|| {
+                    ctx.refuse_codec_limit("bind SWIFT reference classes", u64::MAX, u64::MAX)
+                })?;
             ctx.charge_work(u64_from_index(work), "bind SWIFT reference classes")?;
             if !reference_matches_entity(reference, entity) {
                 return Ok(None);
             }
         }
-        Ok(Some(Self { references, entities }))
+        Ok(Some(Self {
+            references,
+            entities,
+        }))
     }
 }
 
@@ -366,7 +392,8 @@ pub(crate) fn annotations(
         topology,
         &rendered_dimensions,
         pattern_hole_nominals,
-    )?.annotations;
+    )?
+    .annotations;
     for (reference, entity) in root
         .annotations
         .references
@@ -938,7 +965,9 @@ fn project(root: &Entity) -> Vec<PmiAnnotation> {
     let (ctx, _) =
         DecodeContext::from_root_bytes(&[], &arena, &cadmpeg_core::decode::DecodePolicy::service())
             .expect("empty root fits test policy");
-    project_with_topology(&ctx, root, None, &[], None).expect("test projection fits policy").annotations
+    project_with_topology(&ctx, root, None, &[], None)
+        .expect("test projection fits policy")
+        .annotations
 }
 
 #[cfg(test)]
@@ -952,7 +981,8 @@ fn enrich_implicit_nominals(
         DecodeContext::from_root_bytes(&[], &arena, &cadmpeg_core::decode::DecodePolicy::service())
             .expect("empty root fits test policy");
     *annotations = project_with_topology(&ctx, root, None, rendered, None)
-        .expect("test projection fits policy").annotations;
+        .expect("test projection fits policy")
+        .annotations;
 }
 
 #[cfg(test)]
@@ -967,7 +997,8 @@ fn enrich_implicit_nominals_with_context(
         DecodeContext::from_root_bytes(&[], &arena, &cadmpeg_core::decode::DecodePolicy::service())
             .expect("empty root fits test policy");
     *annotations = project_with_topology(&ctx, root, None, rendered, pattern_hole_nominals)
-        .expect("test projection fits policy").annotations;
+        .expect("test projection fits policy")
+        .annotations;
 }
 
 #[derive(Default)]
@@ -976,6 +1007,7 @@ struct AnnotationProjection {
     unsupported: BTreeMap<String, usize>,
 }
 
+#[derive(Clone, Copy)]
 enum AnnotationDisposition {
     Projected,
     Suppressed,
@@ -983,18 +1015,36 @@ enum AnnotationDisposition {
     Unsupported,
 }
 
-fn missing_projection(ctx: &DecodeContext<'_>, entity: &Entity) -> Result<AnnotationDisposition, CodecError> {
-    ctx.charge_work(u64_from_index(entity.class.len()), "classify SWIFT missing projection")?;
+fn missing_projection(
+    ctx: &DecodeContext<'_>,
+    entity: &Entity,
+) -> Result<AnnotationDisposition, CodecError> {
+    ctx.charge_work(
+        u64_from_index(entity.class.len()),
+        "classify SWIFT missing projection",
+    )?;
     let class = short_class(&entity.class);
     if class == "GdtDatum"
-        && !entity.strings.get("DatumIdentifier").is_some_and(|value| !value.is_empty())
+        && entity
+            .strings
+            .get("DatumIdentifier")
+            .is_none_or(String::is_empty)
     {
-        return Ok(AnnotationDisposition::Malformed("missing or empty DatumIdentifier"));
+        return Ok(AnnotationDisposition::Malformed(
+            "missing or empty DatumIdentifier",
+        ));
     }
     if tolerance_kind(class).is_some()
-        && entity.doubles.get("Tolerance").copied().and_then(NonNegativeReal::new).is_none()
+        && entity
+            .doubles
+            .get("Tolerance")
+            .copied()
+            .and_then(NonNegativeReal::new)
+            .is_none()
     {
-        return Ok(AnnotationDisposition::Malformed("Tolerance must be present, finite and non-negative"));
+        return Ok(AnnotationDisposition::Malformed(
+            "Tolerance must be present, finite and non-negative",
+        ));
     }
     Ok(AnnotationDisposition::Unsupported)
 }
@@ -1009,21 +1059,41 @@ fn record_projection(
     match disposition {
         AnnotationDisposition::Projected | AnnotationDisposition::Suppressed => Ok(()),
         AnnotationDisposition::Malformed(reason) => {
-            let message = ctx.format_retained(format_args!(
-                "SWIFT annotation {} ({}): {reason}", reference.id, short_class(&entity.class)
-            ), "retain SWIFT malformed annotation error")?;
+            let message = ctx.format_retained(
+                format_args!(
+                    "SWIFT annotation {} ({}): {reason}",
+                    reference.id,
+                    short_class(&entity.class)
+                ),
+                "retain SWIFT malformed annotation error",
+            )?;
             Err(CodecError::Malformed(message))
-        },
+        }
         AnnotationDisposition::Unsupported => {
             let class = short_class(&entity.class);
-            ctx.charge_work(u64_from_index(class.len()), "count SLDPRT unsupported SWIFT classes")?;
+            ctx.charge_work(
+                u64_from_index(class.len()),
+                "count SLDPRT unsupported SWIFT classes",
+            )?;
             if let Some(count) = unsupported.get_mut(class) {
                 *count = count.checked_add(1).ok_or_else(|| {
-                    ctx.refuse_codec_limit("count SLDPRT unsupported SWIFT classes", u64::MAX - 1, u64::MAX)
+                    ctx.refuse_codec_limit(
+                        "count SLDPRT unsupported SWIFT classes",
+                        u64::MAX - 1,
+                        u64::MAX,
+                    )
                 })?;
             } else {
-                let key = ctx.format_retained(format_args!("{class}"), "retain SLDPRT unsupported SWIFT class")?;
-                ctx.insert_btree_map(unsupported, key, 1, "collect SLDPRT unsupported SWIFT classes")?;
+                let key = ctx.format_retained(
+                    format_args!("{class}"),
+                    "retain SLDPRT unsupported SWIFT class",
+                )?;
+                ctx.insert_btree_map(
+                    unsupported,
+                    key,
+                    1,
+                    "collect SLDPRT unsupported SWIFT classes",
+                )?;
             }
             Ok(())
         }
@@ -1084,7 +1154,9 @@ fn project_with_topology(
             AnnotationDisposition::Suppressed
         } else if pmi_id_charged(ctx, &reference.id)?.is_none() {
             AnnotationDisposition::Unsupported
-        } else if let Some(annotation) = project_datum(ctx, reference, entity, &feature_index, topology)? {
+        } else if let Some(annotation) =
+            project_datum(ctx, reference, entity, &feature_index, topology)?
+        {
             ctx.reserve_vec(&mut projected, 1, "collect SWIFT datum annotations")?;
             projected.push(annotation);
             AnnotationDisposition::Projected
@@ -1104,16 +1176,34 @@ fn project_with_topology(
             continue;
         }
         if suppressed(entity) {
-            record_projection(ctx, &mut unsupported, reference, entity, AnnotationDisposition::Suppressed)?;
+            record_projection(
+                ctx,
+                &mut unsupported,
+                reference,
+                entity,
+                AnnotationDisposition::Suppressed,
+            )?;
             continue;
         }
         let Some(id) = pmi_id_charged(ctx, &reference.id)? else {
-            record_projection(ctx, &mut unsupported, reference, entity, AnnotationDisposition::Unsupported)?;
+            record_projection(
+                ctx,
+                &mut unsupported,
+                reference,
+                entity,
+                AnnotationDisposition::Unsupported,
+            )?;
             continue;
         };
         let disposition = if let Some(tolerance) = project_tolerance(ctx, entity, &datum_ids)? {
             let Some(targets) = targets(ctx, entity, &feature_index, topology)? else {
-                record_projection(ctx, &mut unsupported, reference, entity, AnnotationDisposition::Unsupported)?;
+                record_projection(
+                    ctx,
+                    &mut unsupported,
+                    reference,
+                    entity,
+                    AnnotationDisposition::Unsupported,
+                )?;
                 continue;
             };
             ctx.charge_work(
@@ -1194,7 +1284,10 @@ fn project_with_topology(
         };
         record_projection(ctx, &mut unsupported, reference, entity, disposition)?;
     }
-    Ok(AnnotationProjection { annotations: projected, unsupported })
+    Ok(AnnotationProjection {
+        annotations: projected,
+        unsupported,
+    })
 }
 
 fn project_datum(

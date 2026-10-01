@@ -33,13 +33,19 @@ pub(crate) fn patch_partition(
     if !requires_native_carrier_patch {
         return Ok(None);
     }
-    let Some(source) = retained_records.iter()
+    let Some(source) = retained_records
+        .iter()
         .find(|record| record.id.as_str() == "sldprt:file:source-image#0")
-        .and_then(|record| record.data) else { return Ok(None); };
+        .and_then(|record| record.data)
+    else {
+        return Ok(None);
+    };
     let arena = DecodeArena::new();
     let (ctx, root) = DecodeContext::from_root_bytes(source, &arena, &DecodePolicy::desktop())?;
     let scan = crate::container::scan(&ctx, root)?;
-    let Some(selected) = crate::container::select_active_parasolid_site(&scan) else { return Ok(None); };
+    let Some(selected) = crate::container::select_active_parasolid_site(&scan) else {
+        return Ok(None);
+    };
     let crate::container::Section::Block(block) = selected.section else {
         return Ok(None);
     };
@@ -53,31 +59,61 @@ pub(crate) fn patch_partition(
         return Ok(None);
     }
     let site = site_key(block);
-    let mut streams = ctx.collect_vec(scan
-        .blocks
-        .iter()
-        .filter(|candidate| site_key(candidate) == site)
-        .flat_map(|candidate| {
-            candidate.ps_streams.iter().filter_map(move |stream| {
-                crate::parasolid::is_body_stream(&stream.header).then_some((
-                    candidate,
-                    &stream.payload,
-                    &stream.header,
-                ))
-            })
-        })
-        , "index SLDPRT patch streams")?;
+    let mut streams = ctx.collect_vec(
+        scan.blocks
+            .iter()
+            .filter(|candidate| site_key(candidate) == site)
+            .flat_map(|candidate| {
+                candidate.ps_streams.iter().filter_map(move |stream| {
+                    crate::parasolid::is_body_stream(&stream.header).then_some((
+                        candidate,
+                        &stream.payload,
+                        &stream.header,
+                    ))
+                })
+            }),
+        "index SLDPRT patch streams",
+    )?;
     let mut ordered = Vec::new();
     for (candidate, payload, header) in streams.drain(..) {
         let section = candidate.section.name().unwrap_or("");
-        let work = section.len().checked_add(header.description.len()).ok_or_else(|| ctx.refuse_codec_limit("order SLDPRT patch streams", u64::MAX, u64::MAX))?;
-        ctx.charge_work(cadmpeg_core::decode::u64_from_index(work), "order SLDPRT patch streams")?;
-        let partition = section.as_bytes().windows(9).any(|part| part.eq_ignore_ascii_case(b"partition"));
-        let body_partition = header.description.as_bytes().windows(9).any(|part| part.eq_ignore_ascii_case(b"partition"));
-        ctx.push_vec(&mut ordered, ((!partition, !body_partition), (candidate, payload, header)), "order SLDPRT patch streams")?;
+        let work = section
+            .len()
+            .checked_add(header.description.len())
+            .ok_or_else(|| {
+                ctx.refuse_codec_limit("order SLDPRT patch streams", u64::MAX, u64::MAX)
+            })?;
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(work),
+            "order SLDPRT patch streams",
+        )?;
+        let partition = section
+            .as_bytes()
+            .windows(9)
+            .any(|part| part.eq_ignore_ascii_case(b"partition"));
+        let body_partition = header
+            .description
+            .as_bytes()
+            .windows(9)
+            .any(|part| part.eq_ignore_ascii_case(b"partition"));
+        ctx.push_vec(
+            &mut ordered,
+            ((!partition, !body_partition), (candidate, payload, header)),
+            "order SLDPRT patch streams",
+        )?;
     }
-    ctx.stable_sort_by(&mut ordered, |left, right| left.0.cmp(&right.0), |_| 0, "sort SLDPRT patch streams")?;
-    let bodies = ctx.collect_vec(ordered.iter().map(|(_, (_, payload, header))| (payload.as_slice(), *header)), "index SLDPRT patch bodies")?;
+    ctx.stable_sort_by(
+        &mut ordered,
+        |left, right| left.0.cmp(&right.0),
+        |_| 0,
+        "sort SLDPRT patch streams",
+    )?;
+    let bodies = ctx.collect_vec(
+        ordered
+            .iter()
+            .map(|(_, (_, payload, header))| (payload.as_slice(), *header)),
+        "index SLDPRT patch bodies",
+    )?;
     let native = crate::brep::graph::decode_bodies(
         &ctx,
         &bodies,
@@ -94,31 +130,18 @@ pub(crate) fn patch_partition(
     )?;
 
     let mut payload = ctx.copy_retained(&block.payload, "copy SLDPRT patch partition")?;
-    let Some(body) = payload.get_mut(header.body_offset..) else { return Ok(None); };
-    if patch_points(
-        &ctx,
-        ir,
-        annotations,
-        &native,
-        body,
-        scale,
-    )?.is_none() { return Ok(None); }
-    if patch_surfaces(
-        &ctx,
-        ir,
-        annotations,
-        &native,
-        body,
-        scale,
-    )?.is_none() { return Ok(None); }
-    if patch_curves(
-        &ctx,
-        ir,
-        annotations,
-        &native,
-        body,
-        scale,
-    )?.is_none() { return Ok(None); }
+    let Some(body) = payload.get_mut(header.body_offset..) else {
+        return Ok(None);
+    };
+    if patch_points(&ctx, ir, annotations, &native, body, scale)?.is_none() {
+        return Ok(None);
+    }
+    if patch_surfaces(&ctx, ir, annotations, &native, body, scale)?.is_none() {
+        return Ok(None);
+    }
+    if patch_curves(&ctx, ir, annotations, &native, body, scale)?.is_none() {
+        return Ok(None);
+    }
     Ok(Some((
         block.section.source_stream().as_str().to_owned(),
         payload,
@@ -364,17 +387,25 @@ fn patch_points(
         ctx.insert_hash_map(&mut current, &point.id, point, "index SLDPRT patch points")?;
     }
     for old in &native.points {
-        let Some(new) = current.get(&old.id) else { return Ok(None); };
+        let Some(new) = current.get(&old.id) else {
+            return Ok(None);
+        };
         if new.position().get() == old.position().get() {
             continue;
         }
         let offset = raw_annotation_offset(annotations, &old.id)?;
         let tables = crate::brep::topology::scan(ctx, payload)?;
-        ctx.charge_work(cadmpeg_core::decode::u64_from_index(tables.points().len()), "find SLDPRT patch point")?;
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(tables.points().len()),
+            "find SLDPRT patch point",
+        )?;
         let Some(point) = tables
             .points()
             .values()
-            .find(|point| point.offset == offset) else { return Ok(None); };
+            .find(|point| point.offset == offset)
+        else {
+            return Ok(None);
+        };
         let values = point.xyz_offset;
         let old_xyz_m = [
             old.position().get().x * 0.001,
@@ -401,13 +432,14 @@ fn patch_surfaces(
     payload: &mut [u8],
     scale: f64,
 ) -> Result<Option<()>, CodecError> {
-    let old = ctx.collect_hash_map(native
-        .surfaces
-        .iter()
-        .map(|v| (&v.id, v))
-        , "index SLDPRT patch surfaces")?;
+    let old = ctx.collect_hash_map(
+        native.surfaces.iter().map(|v| (&v.id, v)),
+        "index SLDPRT patch surfaces",
+    )?;
     for surface in &ir.model.surfaces {
-        let Some(baseline) = old.get(&surface.id) else { return Ok(None); };
+        let Some(baseline) = old.get(&surface.id) else {
+            return Ok(None);
+        };
         match (&surface.geometry, &baseline.geometry) {
             (
                 SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { .. }),
@@ -428,21 +460,30 @@ fn patch_surfaces(
                     old,
                     new,
                     scale,
-                )?.is_none() { return Ok(None); }
+                )?
+                .is_none()
+                {
+                    return Ok(None);
+                }
                 continue;
             }
             _ if surface.geometry == baseline.geometry => continue,
             _ => {}
         }
-        let Some(solved) = surface.geometry.solved() else { return Ok(None); };
+        let Some(solved) = surface.geometry.solved() else {
+            return Ok(None);
+        };
         let reference = super::writer::surface_reference(solved);
-        let (_, values) =
-            super::writer::surface_values(&surface.geometry, reference, scale)?;
+        let (_, values) = super::writer::surface_values(&surface.geometry, reference, scale)?;
         if patch_compact(
             payload,
             raw_annotation_offset(annotations, &surface.id)?,
             &values,
-        ).is_none() { return Ok(None); }
+        )
+        .is_none()
+        {
+            return Ok(None);
+        }
     }
     Ok(Some(()))
 }
@@ -455,13 +496,14 @@ fn patch_curves(
     payload: &mut [u8],
     scale: f64,
 ) -> Result<Option<()>, CodecError> {
-    let old = ctx.collect_hash_map(native
-        .curves
-        .iter()
-        .map(|v| (&v.id, v))
-        , "index SLDPRT patch curves")?;
+    let old = ctx.collect_hash_map(
+        native.curves.iter().map(|v| (&v.id, v)),
+        "index SLDPRT patch curves",
+    )?;
     for curve in &ir.model.curves {
-        let Some(baseline) = old.get(&curve.id) else { return Ok(None); };
+        let Some(baseline) = old.get(&curve.id) else {
+            return Ok(None);
+        };
         match (&curve.geometry, &baseline.geometry) {
             (
                 CurveGeometry::Solved(SolvedCurveGeometry::Unknown { .. }),
@@ -482,7 +524,11 @@ fn patch_curves(
                     old,
                     new,
                     scale,
-                )?.is_none() { return Ok(None); }
+                )?
+                .is_none()
+                {
+                    return Ok(None);
+                }
                 continue;
             }
             _ if curve.geometry == baseline.geometry => continue,
@@ -493,16 +539,16 @@ fn patch_curves(
             payload,
             raw_annotation_offset(annotations, &curve.id)?,
             &values,
-        ).is_none() { return Ok(None); }
+        )
+        .is_none()
+        {
+            return Ok(None);
+        }
     }
     Ok(Some(()))
 }
 
-fn patch_compact(
-    payload: &mut [u8],
-    offset: usize,
-    values: &[f64],
-) -> Option<()> {
+fn patch_compact(payload: &mut [u8], offset: usize, values: &[f64]) -> Option<()> {
     let carrier = crate::brep::parse_carrier(payload, offset)?;
     let end = match carrier {
         crate::brep::Carrier::Curve(carrier) => carrier.end,

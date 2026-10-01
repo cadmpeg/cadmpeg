@@ -7799,7 +7799,8 @@ mod tests {
         let mut policy = cadmpeg_core::decode::DecodePolicy::service();
         policy.limits.max_collection_items = 0;
         let body = [0x00, 0x1e, 0x00];
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&body, &arena, &policy).unwrap();
+        let (ctx, _) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(&body, &arena, &policy).unwrap();
         let carriers = super::scan_carriers(&ctx, &body).unwrap();
         assert!(carriers.curve_attrs(&ctx).unwrap().is_empty());
         let tables = super::topology::scan(&ctx, &body).unwrap();
@@ -7809,8 +7810,11 @@ mod tests {
         // Graph construction owns one annotation-stream handle even without records.
         policy.limits.max_collection_items = 1;
         let arena = cadmpeg_core::decode::DecodeArena::new();
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&body, &arena, &policy).unwrap();
-        let decoded = super::decode_body(&ctx, &body, &cadmpeg_ir::stream_name!("incomplete-marker")).unwrap();
+        let (ctx, _) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(&body, &arena, &policy).unwrap();
+        let decoded =
+            super::decode_body(&ctx, &body, &cadmpeg_ir::stream_name!("incomplete-marker"))
+                .unwrap();
         assert!(decoded.points.is_empty());
         assert!(decoded.loops.is_empty());
         ctx.finish_session().unwrap();
@@ -7822,13 +7826,19 @@ mod tests {
         let mut policy = cadmpeg_core::decode::DecodePolicy::service();
         policy.limits.max_work_units = 0;
         let body = [0xff; 4096];
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&body, &arena, &policy).unwrap();
+        let (ctx, _) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(&body, &arena, &policy).unwrap();
         let stream = cadmpeg_ir::stream_name!("no-candidates");
         let (result, allocations) = crate::test_support::allocation::count_allocations(|| {
             super::decode_body(&ctx, &body, &stream)
         });
-        let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) = result else { panic!("work refusal"); };
-        assert_eq!(limit.dimension, cadmpeg_core::decode::ResourceDimension::WorkUnits);
+        let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) = result else {
+            panic!("work refusal");
+        };
+        assert_eq!(
+            limit.dimension,
+            cadmpeg_core::decode::ResourceDimension::WorkUnits
+        );
         assert_eq!(limit.operation, "scan SLDPRT analytic carriers");
         assert_eq!(ctx.resource_refusal(), Some(limit));
         assert_eq!(allocations, 0);
@@ -8831,7 +8841,7 @@ mod tests {
     }
 
     #[test]
-    fn native_brep_scan_candidates_refuse_collection_limit_before_parsing() {
+    fn native_brep_carrier_collection_refuses_before_insertion() {
         use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 
         let body = crate::test_support::parasolid::triangle_body();
@@ -8844,12 +8854,12 @@ mod tests {
             &body,
             &cadmpeg_ir::stream_name!("candidate-admission"),
         ) else {
-            panic!("expected candidate admission refusal");
+            panic!("expected carrier collection admission refusal");
         };
         assert!(matches!(error,
             cadmpeg_core::CodecError::ResourceLimit(limit)
                 if limit.dimension == ResourceDimension::CollectionItems
-                    && limit.operation == "admit Parasolid scan candidates"));
+                    && limit.operation == "index SLDPRT surface carriers"));
 
         let arena = DecodeArena::new();
         let (ctx, _) =

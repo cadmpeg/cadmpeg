@@ -806,10 +806,14 @@ fn compound_parasolid_wrapper_expands_once() {
     policy.limits.max_decompressed_bytes_total = u64_from_index(payload.len());
     let (ctx, root) = DecodeContext::from_root_bytes(&source, &arena, &policy).unwrap();
     let scan = super::scan(&ctx, root).expect("one expansion fits the allowance");
-    let [stream] = scan.compound_streams.as_slice() else { panic!("one CFB stream"); };
+    let [stream] = scan.compound_streams.as_slice() else {
+        panic!("one CFB stream");
+    };
     assert_eq!(stream.payload, wrapper);
     assert_eq!(stream.decoded_payload.as_deref(), Some(payload.as_slice()));
-    let [parasolid] = stream.ps_streams.as_slice() else { panic!("one Parasolid stream"); };
+    let [parasolid] = stream.ps_streams.as_slice() else {
+        panic!("one Parasolid stream");
+    };
     assert_eq!(parasolid.payload, payload);
     assert_eq!(parasolid.offset, 0);
     assert_eq!(parasolid.header.description, "partition body");
@@ -838,14 +842,20 @@ fn empty_native_block_still_requires_compressed_member_and_valid_crc() {
     block[super::block_hdr::CRC32..super::block_hdr::CRC32 + 4]
         .copy_from_slice(&1_u32.to_le_bytes());
     let ctx = cadmpeg_test_support::service_decode_context();
-    assert!(super::try_block_budgeted(&ctx, cadmpeg_core::decode::View::over_retained(&block), 0)
-        .unwrap().is_none());
+    assert!(
+        super::try_block_budgeted(&ctx, cadmpeg_core::decode::View::over_retained(&block), 0)
+            .unwrap()
+            .is_none()
+    );
     block[super::block_hdr::CRC32..super::block_hdr::CRC32 + 4]
         .copy_from_slice(&0_u32.to_le_bytes());
     block[super::block_hdr::COMP_SZ..super::block_hdr::COMP_SZ + 4]
         .copy_from_slice(&0_u32.to_le_bytes());
-    assert!(super::try_block_budgeted(&ctx, cadmpeg_core::decode::View::over_retained(&block), 0)
-        .unwrap().is_none());
+    assert!(
+        super::try_block_budgeted(&ctx, cadmpeg_core::decode::View::over_retained(&block), 0)
+            .unwrap()
+            .is_none()
+    );
 }
 
 #[test]
@@ -854,15 +864,27 @@ fn truncated_native_outer_header_refuses_before_semantic_scan() {
     for len in 0..super::outer_hdr::LEN {
         let source = &header[..len];
         let arena = DecodeArena::new();
-        let (ctx, root) = DecodeContext::from_root_bytes(source, &arena, &DecodePolicy::service()).unwrap();
-        let Err(CodecError::Truncated { location, operation }) = container::scan(&ctx, root) else {
+        let (ctx, root) =
+            DecodeContext::from_root_bytes(source, &arena, &DecodePolicy::service()).unwrap();
+        let Err(CodecError::Truncated {
+            location,
+            operation,
+        }) = container::scan(&ctx, root)
+        else {
             panic!("expected a truncated outer header at length {len}");
         };
         assert_eq!(location.space, root.location().space);
         assert_eq!(location.offset, u64_from_index(root.start()));
         assert_eq!(operation, "read SLDPRT native outer header");
-        assert!(matches!(SldprtCodec.decode(&mut Cursor::new(source), &cadmpeg_ir::codec::DecodeOptions::default()),
-            Err(cadmpeg_ir::codec::DecodeFailure::Codec(CodecError::Truncated { .. }))));
+        assert!(matches!(
+            SldprtCodec.decode(
+                &mut Cursor::new(source),
+                &cadmpeg_ir::codec::DecodeOptions::default()
+            ),
+            Err(cadmpeg_ir::codec::DecodeFailure::Codec(
+                CodecError::Truncated { .. }
+            ))
+        ));
     }
 }
 
