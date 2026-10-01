@@ -271,9 +271,7 @@ pub(crate) fn patch_payload(
     let Some(namespace) = ir.native.namespace("sldprt") else {
         return Ok(());
     };
-    let native = crate::native::SldprtNative::load(namespace).map_err(|error| {
-        cadmpeg_core::CodecError::malformed(format_args!("invalid SLDPRT native PMI: {error}"))
-    })?;
+    let native = crate::native::SldprtNative::load(namespace).map_err(cadmpeg_core::CodecError::from)?;
     let records_by_id = native
         .pmi_dimensions
         .iter()
