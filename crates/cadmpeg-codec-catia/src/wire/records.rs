@@ -707,15 +707,18 @@ where
 {
     let mut records = Vec::new();
     for (source_index, extents) in sources.into_iter().enumerate() {
-        // Every extent is inside the image by construction. An empty extent
-        // holds no record, so it opens no logical source offset.
-        let source_ranges = ctx.collect_vec(
-            extents
-                .into_iter()
-                .map(|extent| extent.borrow().range())
-                .filter(|range| range.start < range.end),
-            "catia_record_source_ranges",
-        )?;
+        // Revalidate extents against this image before using their ranges.
+        let mut source_ranges = Vec::new();
+        for extent in extents {
+            ctx.charge_work(1, "catia_record_source_extent_admission")?;
+            let range = extent.borrow().range();
+            if range.end > data.len() || range.start > range.end {
+                return Err(CodecError::malformed("record source extent is outside the supplied image"));
+            }
+            if range.start < range.end {
+                ctx.push_vec(&mut source_ranges, range, "catia_record_source_ranges")?;
+            }
+        }
         let mut source_records = Vec::new();
         let mut source_offset = 0usize;
         for range in &source_ranges {
@@ -967,7 +970,7 @@ fn parse_consolidated_record(
     let class = *data.get(pos.checked_add(a_frame::CLASS)?)?;
     let payload_start = token_at.checked_add(usize::from(u8::from(width)))?;
     let end = payload_start.checked_add(length)?;
-    if end > source_end {
+    if end > source_end || end > data.len() {
         return None;
     }
     let header_token = data
@@ -1167,7 +1170,7 @@ mod tests {
     #[test]
     fn consolidated_record_scan_refuses_marker_free_work() {
         let bytes = [0_u8; 64];
-        crate::test_support::with_work_limit(0, |ctx| {
+        crate::test_support::with_work_limit(1, |ctx| {
             let error = super::consolidated_records_in_sources(
                 ctx,
                 &bytes,
@@ -1517,5 +1520,20 @@ mod tests {
         assert_eq!(point.x, 2_000_000.0);
         assert_eq!(point.y, -2_000_000.0);
         assert_eq!(point.z, 2_000_000.0);
+    }
+}
+
+#[cfg(test)]
+mod source_image_admission_tests {
+    #[test]
+    fn record_sources_reject_extents_from_a_larger_image() {
+        let larger = [0_u8; 260];
+        let short = [0xb2, 0x03, 0x24, 0xff, 0x01];
+        let result = crate::test_support::with_service_context(|ctx| {
+            super::consolidated_records_in_sources(ctx, &short,
+                [[super::SourceExtent::whole(&larger)]])
+        });
+        assert!(matches!(result, Err(cadmpeg_core::CodecError::Malformed(_))));
+        assert!(super::parse_consolidated_record(&short, 0, larger.len()).is_none());
     }
 }
