@@ -311,8 +311,7 @@ fn resolve_source_curve_parameter_scales(
         if let Some(scale) =
             source_curve_parameter_scale(id, exchange, unit_scales, &mut BTreeSet::new(), ctx)?
         {
-            ctx.charge_collection_items(1, "step_source_curve_parameter_scales")?;
-            scales.insert(id, scale);
+            ctx.insert_btree_map(&mut scales, id, scale, "step_source_curve_parameter_scales")?;
         }
     }
     Ok(scales)
@@ -330,8 +329,7 @@ fn source_curve_parameter_scale(
         if active.contains(&id) {
             return Ok(None);
         }
-        ctx.charge_collection_items(1, "step_source_curve_parameter_active")?;
-        active.insert(id);
+        ctx.insert_btree_set(active, id, "step_source_curve_parameter_active")?;
         match source_curve_parameter_scale_value(id, exchange, unit_scales) {
             CurveParameterStep::Scale(scale) => return Ok(Some(scale)),
             CurveParameterStep::Parent(parent) => id = parent,
@@ -640,10 +638,15 @@ pub(super) fn decode(
                 .iter()
                 .flat_map(|partial| partial.parameters.iter())
             {
-                for id in
-                    super::reference::references(parameter).filter(|id| points.contains_key(id))
-                {
-                    ctx.insert_btree_set(&mut point_carriers, id, "step_geometry_point_carriers")?;
+                for id in super::reference::references(parameter, ctx) {
+                    let id = id?;
+                    if points.contains_key(&id) {
+                        ctx.insert_btree_set(
+                            &mut point_carriers,
+                            id,
+                            "step_geometry_point_carriers",
+                        )?;
+                    }
                 }
             }
         }
@@ -3063,7 +3066,8 @@ pub(super) fn associate_free_presentation_carriers(
             .iter()
             .flat_map(|partial| partial.parameters.iter())
         {
-            for target in super::reference::references(parameter) {
+            for target in super::reference::references(parameter, ctx) {
+                let target = target?;
                 if index.surfaces.contains_key(&target) {
                     associate_presentation_carrier(
                         exchange,
@@ -3733,7 +3737,8 @@ fn retained_surface_curve_ids(
             .iter()
             .flat_map(|partial| partial.parameters.iter())
         {
-            for target in super::reference::references(parameter) {
+            for target in super::reference::references(parameter, ctx) {
+                let target = target?;
                 if decoded_surface_curve(target, exchange, index) {
                     ctx.insert_btree_set(&mut retained, target, "step_retained_surface_curve_ids")?;
                 }
@@ -3889,9 +3894,7 @@ fn add_unit_candidate(
     group_operation: &'static str,
     value_operation: &'static str,
 ) -> Result<(), CodecError> {
-    if !candidates.contains_key(&id) {
-        ctx.charge_collection_items(1, group_operation)?;
-    }
+    ctx.admit_btree_entry(candidates, &id, group_operation)?;
     let values = candidates.entry(id).or_default();
     ctx.push_vec(values, scale, value_operation)
 }
@@ -3908,8 +3911,7 @@ fn finalize_unit_candidates(
     for (id, values) in candidates {
         match unique_scale(&values) {
             Some(scale) if scale != default => {
-                ctx.charge_collection_items(1, "step_unit_selected_scales")?;
-                selected.insert(id, scale);
+                ctx.insert_btree_map(&mut selected, id, scale, "step_unit_selected_scales")?;
             }
             Some(_) => {}
             None => ambiguous += 1,
@@ -3998,15 +4000,10 @@ fn collect_unit_scope_members(
         let _nested = (current != id)
             .then(|| ctx.enter_nested("step_unit_scope_walk"))
             .transpose()?;
-        if !active.contains(&current) {
-            ctx.charge_collection_items(1, "step_unit_scope_active")?;
-            active.insert(current);
+        if ctx.insert_btree_set(active, current, "step_unit_scope_active")? {
             if let Some(record) = exchange.records().get(&current) {
                 if !is_unit_record(record) && !is_representation_context_record(record) {
-                    if !members.contains(&current) {
-                        ctx.charge_collection_items(1, "step_unit_scope_members")?;
-                    }
-                    members.insert(current);
+                    ctx.insert_btree_set(members, current, "step_unit_scope_members")?;
                     if record.partial("PCURVE").is_none() {
                         if let Some(mapped) = record.partial("MAPPED_ITEM") {
                             // The mapping source keeps the units of its mapped representation.
@@ -4022,7 +4019,8 @@ fn collect_unit_scope_members(
                                 .iter()
                                 .flat_map(|partial| &partial.parameters)
                             {
-                                for reference in super::reference::references(parameter) {
+                                for reference in super::reference::references(parameter, ctx) {
+                                    let reference = reference?;
                                     let Some(referenced) = exchange.records().get(&reference)
                                     else {
                                         continue;
@@ -4206,8 +4204,7 @@ fn unit_scale_radians_inner(
     if active.contains(&id) {
         return Ok(None);
     }
-    ctx.charge_collection_items(1, "step_angle_unit_active")?;
-    active.insert(id);
+    ctx.insert_btree_set(active, id, "step_angle_unit_active")?;
     let result = (|| -> Result<Option<f64>, CodecError> {
         let Some(record) = exchange.records().get(&id) else {
             return Ok(None);
@@ -4271,8 +4268,7 @@ fn unit_scale_mm_inner(
     if active.contains(&id) {
         return Ok(None);
     }
-    ctx.charge_collection_items(1, "step_length_unit_active")?;
-    active.insert(id);
+    ctx.insert_btree_set(active, id, "step_length_unit_active")?;
     let result = (|| -> Result<Option<f64>, CodecError> {
         let Some(record) = exchange.records().get(&id) else {
             return Ok(None);
@@ -4453,7 +4449,12 @@ fn linear_uncertainty(
             }
         }
     }
-    candidates.sort_by(|left, right| left.get().total_cmp(&right.get()));
+    ctx.stable_sort_by(
+        &mut candidates,
+        |left, right| left.get().total_cmp(&right.get()),
+        |_| 0,
+        "step_uncertainty_candidate_sort",
+    )?;
 
     Ok(match candidates.len() {
         0 => LinearUncertainty::Empty { unresolved },
@@ -4576,7 +4577,7 @@ fn trim_parameter_value(
     match value {
         Value::Integer(value) => Ok(cadmpeg_core::convert::f64_from_i64(*value)
             .map(|value| scale * value + context.parameter_offset)),
-        Value::Real(value) => Ok(Some(scale * *value + context.parameter_offset)),
+        Value::Real(value) => Ok(Some(scale * value.get() + context.parameter_offset)),
         Value::Typed(name, value) if name == "PARAMETER_VALUE" => {
             trim_parameter_value(value, context)
         }
@@ -5699,7 +5700,7 @@ fn pcurve_trim_parameter(value: &Value) -> Option<FiniteReal> {
     fn bare_number(value: &Value) -> Option<f64> {
         match value {
             Value::Integer(value) => cadmpeg_core::convert::f64_from_i64(*value),
-            Value::Real(value) => Some(*value),
+            Value::Real(value) => Some(value.get()),
             _ => None,
         }
     }

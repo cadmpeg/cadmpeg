@@ -159,7 +159,9 @@ fn axial_profile_resolves_counterbore_roles() {
                 let SketchGeometryDefinition::Line { start, end } = definition else {
                     unreachable!();
                 };
-                let offset = (ordinal + 1) as f64 * 100.0;
+                let offset = cadmpeg_core::convert::f64_from_index(ordinal + 1)
+                    .expect("ordinal is exact in f64")
+                    * 100.0;
                 start.u += offset;
                 start.v -= offset;
                 end.u += offset;
@@ -741,7 +743,9 @@ fn axial_profile_resolves_open_countersink_with_optional_terminal_overrun() {
                 let SketchGeometryDefinition::Line { start, end } = definition else {
                     unreachable!();
                 };
-                let offset = (index + 1) as f64 * 20.0;
+                let offset = cadmpeg_core::convert::f64_from_index(index + 1)
+                    .expect("index is exact in f64")
+                    * 20.0;
                 start.u += offset;
                 start.v += offset;
                 end.u += offset;

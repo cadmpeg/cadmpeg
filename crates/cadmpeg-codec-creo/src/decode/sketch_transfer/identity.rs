@@ -31,10 +31,11 @@ pub(in super::super) fn section_entity_external_ids(
             )
         })
     {
-        if !ids.contains(&external_id) {
-            ctx.charge_collection_items(1, "creo section entity external ID nodes")?;
-        }
-        ids.insert(external_id);
+        ctx.insert_btree_set(
+            &mut ids,
+            external_id,
+            "creo section entity external ID nodes",
+        )?;
     }
     Ok(ids)
 }
@@ -92,8 +93,7 @@ pub(in super::super) fn unique_section_segment_external_ids(
         .iter()
         .flat_map(|table| table.rows.unique_ids())
     {
-        ctx.charge_collection_items(1, "creo unique section segment ID nodes")?;
-        ids.insert(id);
+        ctx.insert_btree_set(&mut ids, id, "creo unique section segment ID nodes")?;
     }
     Ok(ids)
 }
@@ -108,8 +108,7 @@ pub(in super::super) fn ambiguous_section_segment_external_ids(
         .iter()
         .flat_map(|table| table.rows.conflicting_ids())
     {
-        ctx.charge_collection_items(1, "creo ambiguous section segment ID nodes")?;
-        ids.insert(id);
+        ctx.insert_btree_set(&mut ids, id, "creo ambiguous section segment ID nodes")?;
     }
     Ok(ids)
 }
@@ -267,16 +266,13 @@ pub(in super::super) fn unique_saved_section_internal_ids(
     for internal_id in semantic_saved_section_entities(definition)
         .filter_map(|entity| saved_section_entity_identity(entity).0)
     {
-        if !counts.contains_key(&internal_id) {
-            ctx.charge_collection_items(1, "creo saved section ID count nodes")?;
-        }
+        ctx.admit_btree_entry(&counts, &internal_id, "creo saved section ID count nodes")?;
         *counts.entry(internal_id).or_insert(0usize) += 1;
     }
     let mut ids = BTreeSet::new();
     for (internal_id, count) in counts {
         if count == 1 {
-            ctx.charge_collection_items(1, "creo unique saved section ID nodes")?;
-            ids.insert(internal_id);
+            ctx.insert_btree_set(&mut ids, internal_id, "creo unique saved section ID nodes")?;
         }
     }
     Ok(ids)
@@ -359,13 +355,11 @@ pub(in super::super) fn materialized_saved_section_external_ids(
                 internal_id,
             )
         }) {
-            if !external_ids.contains(&external_id) {
-                ctx.charge_collection_items(
-                    1,
-                    "creo materialized saved-section external ID nodes",
-                )?;
-            }
-            external_ids.insert(external_id);
+            ctx.insert_btree_set(
+                &mut external_ids,
+                external_id,
+                "creo materialized saved-section external ID nodes",
+            )?;
         }
     }
     Ok(external_ids)

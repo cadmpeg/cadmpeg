@@ -1,12 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Parse exact image-plane bindings owned by Design `Canvas` scopes.
 
+use crate::bytes::lp_ascii_filtered_view;
+use crate::bytes::lp_utf16_bounded_charged;
 use crate::container::ContainerScan;
 use crate::design::decode::image::embedded_image_asset;
 use crate::design::decode::scopes::shared_frames::marked_reference;
 use crate::design::decode::sketch::next_indexed_record_offset_with_index;
-use crate::design::decode::text::lp_ascii_filtered_view;
-use crate::design::decode::text::lp_utf16_bounded_charged;
+
 use crate::ids;
 use crate::records::{
     canvas::{
@@ -110,7 +111,12 @@ pub(crate) fn project_canvas_images(
                 },
             ));
     }
-    crate::design::sort::sort_by(ctx, &mut assets[..], |a, b| a.id.cmp(&b.id))?;
+    ctx.stable_sort_by(
+        &mut assets[..],
+        |a, b| a.id.cmp(&b.id),
+        |value| value.id.as_str().len(),
+        "sort f3d design canvas 1",
+    )?;
     Ok(assets)
 }
 
@@ -207,12 +213,17 @@ fn parse_canvas_image(
         let geometry_payload = bytes.get(geometry_at + 69..geometry_at + 146)?;
         let geometry_payload = DesignCanvasGeometryPayload::try_from(geometry_payload).ok()?;
 
-        let (label, after_label) =
-            match lp_utf16_bounded_charged(ctx, bytes, geometry_at + 213, 1..=256) {
-                Ok(Some(value)) => value,
-                Ok(None) => return None,
-                Err(error) => return Some(Err(error)),
-            };
+        let (label, after_label) = match lp_utf16_bounded_charged(
+            ctx,
+            bytes,
+            geometry_at + 213,
+            1..=256,
+            "f3d Design UTF-16 text",
+        ) {
+            Ok(Some(value)) => value,
+            Ok(None) => return None,
+            Err(error) => return Some(Err(error)),
+        };
         if after_label != paired_at {
             return None;
         }
@@ -224,12 +235,17 @@ fn parse_canvas_image(
         {
             return None;
         }
-        let (asset_name, after_asset_name) =
-            match lp_utf16_bounded_charged(ctx, bytes, asset_record_at + 21, 1..=1024) {
-                Ok(Some(value)) => value,
-                Ok(None) => return None,
-                Err(error) => return Some(Err(error)),
-            };
+        let (asset_name, after_asset_name) = match lp_utf16_bounded_charged(
+            ctx,
+            bytes,
+            asset_record_at + 21,
+            1..=1024,
+            "f3d Design UTF-16 text",
+        ) {
+            Ok(Some(value)) => value,
+            Ok(None) => return None,
+            Err(error) => return Some(Err(error)),
+        };
         if after_asset_name != scope_at {
             return None;
         }

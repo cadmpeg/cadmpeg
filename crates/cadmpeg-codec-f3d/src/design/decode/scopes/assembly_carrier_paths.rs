@@ -3,7 +3,8 @@
 
 use cadmpeg_core::decode::index_from_u32;
 
-use cadmpeg_core::decode::View;
+use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::CodecError;
 
 use crate::layout::assembly_class_307_264_joint_origin_scope as class_307_joint_origin;
 
@@ -30,161 +31,180 @@ use crate::records::feature::assembly::DesignAssemblyOperandQualifier;
 use crate::records::feature::scope::DesignParameterScope;
 
 pub(super) fn exact_variable_reference_operand_qualifiers(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
     frames: &[DesignAssemblyOperandFrame; 2],
-) -> Option<[DesignAssemblyOperandQualifier; 2]> {
-    let [first, second] = frames.each_ref().map(|frame| {
-        exact_class_363_operand_path(bytes, records, scope, frame)
+) -> Result<Option<[DesignAssemblyOperandQualifier; 2]>, CodecError> {
+    let mut qualifiers = [None, None];
+    for (qualifier, frame) in qualifiers.iter_mut().zip(frames) {
+        *qualifier = exact_class_363_operand_path(ctx, bytes, records, scope, frame)?
             .map(|path| DesignAssemblyOperandQualifier::OccurrencePath { path })
-            .or_else(|| exact_class_307_joint_origin(bytes, records, frame))
-    });
-    Some([first?, second?])
+            .or_else(|| exact_class_307_joint_origin(bytes, records, frame));
+    }
+    let [Some(first), Some(second)] = qualifiers else {
+        return Ok(None);
+    };
+    Ok(Some([first, second]))
 }
 
 fn exact_class_363_operand_path(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
     frame: &DesignAssemblyOperandFrame,
-) -> Option<DesignAssemblyOperandPath> {
-    let (carrier_at, carrier_paired_at) = exact_class_264_record_frame(
-        bytes,
-        records,
-        frame.reference_record_index,
-        "363",
-        class_363_carrier::LEN,
-    )?;
-    let leading_record_index = marked_record_reference(
-        bytes,
-        carrier_at.checked_add(class_363_carrier::LEADING_REFERENCE)?,
-    )?;
-    let terminal_record_index = marked_record_reference(
-        bytes,
-        carrier_at.checked_add(class_363_carrier::TERMINAL_REFERENCE)?,
-    )?;
-    let leading = exact_class_363_node_frame(bytes, records, scope, leading_record_index)?;
-    let (terminal_at, terminal_paired_at) = exact_class_264_record_frame(
-        bytes,
-        records,
-        terminal_record_index,
-        "386",
-        class_363_terminal::LEN,
-    )?;
-    let leading_identity_record_index = marked_record_reference(
-        bytes,
-        leading
-            .start
-            .checked_add(class_363_leading::IDENTITY_REFERENCE)?,
-    )?;
-    let terminal_identity_record_index = marked_record_reference(
-        bytes,
-        terminal_at.checked_add(class_363_terminal::IDENTITY_REFERENCE)?,
-    )?;
-    let leading_identity =
-        exact_class_363_identity_frame(bytes, records, leading_identity_record_index)?;
-    let terminal_identity =
-        exact_class_363_identity_frame(bytes, records, terminal_identity_record_index)?;
-    let scope_backlinks = [
-        leading,
-        CarrierFrame {
-            start: terminal_at,
-            scope_reference: class_363_terminal::SCOPE_REFERENCE,
-        },
-        leading_identity,
-        terminal_identity,
-        CarrierFrame {
-            start: carrier_at,
-            scope_reference: class_363_carrier::SCOPE_REFERENCE,
-        },
-    ];
-    if carrier_paired_at != carrier_at.checked_add(class_363_carrier::LEN)?
-        || terminal_paired_at != terminal_at.checked_add(class_363_terminal::LEN)?
-        || leading_record_index == terminal_record_index
-        || leading_identity_record_index == terminal_identity_record_index
-        || rigid_transform_at(bytes, carrier_at.checked_add(class_363_carrier::TRANSFORM)?)?
-            != frame.transform
-        || marked_record_reference(
+) -> Result<Option<DesignAssemblyOperandPath>, CodecError> {
+    (|| {
+        let (carrier_at, carrier_paired_at) = exact_class_264_record_frame(
             bytes,
-            carrier_at.checked_add(class_363_carrier::REPEATED_LEADING_REFERENCE)?,
-        ) != Some(leading_record_index)
-        || marked_record_reference(
-            bytes,
-            carrier_at.checked_add(class_363_carrier::REPEATED_TERMINAL_REFERENCE)?,
-        ) != Some(terminal_record_index)
-        || scope_backlinks.iter().any(|frame| {
-            frame
-                .start
-                .checked_add(frame.scope_reference)
-                .and_then(|at| marked_record_reference(bytes, at))
-                != Some(scope.record_index)
-        })
-    {
-        return None;
-    }
-    for ordinal in 0..4 {
-        let owner_record_index = marked_record_reference(
-            bytes,
-            carrier_at.checked_add(
-                class_363_carrier::PLACEMENT_OWNER_REFERENCES
-                    .checked_add(ordinal * ASSEMBLY_MARKED_REFERENCE_LEN)?,
-            )?,
+            records,
+            frame.reference_record_index,
+            "363",
+            class_363_carrier::LEN,
         )?;
-        if !scope
-            .reference_members()
-            .values()
-            .any(|value| value == &owner_record_index)
+        let leading_record_index = marked_record_reference(
+            bytes,
+            carrier_at.checked_add(class_363_carrier::LEADING_REFERENCE)?,
+        )?;
+        let terminal_record_index = marked_record_reference(
+            bytes,
+            carrier_at.checked_add(class_363_carrier::TERMINAL_REFERENCE)?,
+        )?;
+        let leading = exact_class_363_node_frame(bytes, records, scope, leading_record_index)?;
+        let (terminal_at, terminal_paired_at) = exact_class_264_record_frame(
+            bytes,
+            records,
+            terminal_record_index,
+            "386",
+            class_363_terminal::LEN,
+        )?;
+        let leading_identity_record_index = marked_record_reference(
+            bytes,
+            leading
+                .start
+                .checked_add(class_363_leading::IDENTITY_REFERENCE)?,
+        )?;
+        let terminal_identity_record_index = marked_record_reference(
+            bytes,
+            terminal_at.checked_add(class_363_terminal::IDENTITY_REFERENCE)?,
+        )?;
+        let leading_identity =
+            exact_class_363_identity_frame(bytes, records, leading_identity_record_index)?;
+        let terminal_identity =
+            exact_class_363_identity_frame(bytes, records, terminal_identity_record_index)?;
+        let scope_backlinks = [
+            leading,
+            CarrierFrame {
+                start: terminal_at,
+                scope_reference: class_363_terminal::SCOPE_REFERENCE,
+            },
+            leading_identity,
+            terminal_identity,
+            CarrierFrame {
+                start: carrier_at,
+                scope_reference: class_363_carrier::SCOPE_REFERENCE,
+            },
+        ];
+        if carrier_paired_at != carrier_at.checked_add(class_363_carrier::LEN)?
+            || terminal_paired_at != terminal_at.checked_add(class_363_terminal::LEN)?
+            || leading_record_index == terminal_record_index
+            || leading_identity_record_index == terminal_identity_record_index
+            || rigid_transform_at(bytes, carrier_at.checked_add(class_363_carrier::TRANSFORM)?)?
+                != frame.transform
+            || marked_record_reference(
+                bytes,
+                carrier_at.checked_add(class_363_carrier::REPEATED_LEADING_REFERENCE)?,
+            ) != Some(leading_record_index)
+            || marked_record_reference(
+                bytes,
+                carrier_at.checked_add(class_363_carrier::REPEATED_TERMINAL_REFERENCE)?,
+            ) != Some(terminal_record_index)
+            || scope_backlinks.iter().any(|frame| {
+                frame
+                    .start
+                    .checked_add(frame.scope_reference)
+                    .and_then(|at| marked_record_reference(bytes, at))
+                    != Some(scope.record_index)
+            })
         {
             return None;
         }
-    }
-    let (occurrence_guid, identity_guid, occurrence_guid_offset, identity_guid_offset) =
-        exact_class_363_identity_guids(bytes, leading_identity.start)?;
-    let (terminal_occurrence_guid, terminal_identity_guid, _, _) =
-        exact_class_363_identity_guids(bytes, terminal_identity.start)?;
-    if occurrence_guid != terminal_occurrence_guid || identity_guid != terminal_identity_guid {
-        return None;
-    }
-    let (scope_record_index, locator_scope_reference_offset) = exact_same_segment_record_reference(
-        bytes,
-        carrier_at.checked_add(class_363_carrier::SCOPE_REFERENCE)?,
-    )?;
-    if scope_record_index != scope.record_index {
-        return None;
-    }
-    let (_, wrapper_reference_offset) = exact_same_segment_record_reference(
-        bytes,
-        leading
-            .start
-            .checked_add(class_363_leading::IDENTITY_REFERENCE)?,
-    )?;
-    DesignAssemblyOperandPath::try_new(
-        DesignAssemblyOperandPathLink {
-            locator_reference_offset: frame.reference_offset,
-            locator_record_index: frame.reference_record_index,
-            locator_class_tag: "363".to_owned().try_into().ok()?,
-            locator_byte_offset: u64::try_from(carrier_at).ok()?,
-            locator_scope_reference_offset,
-            wrapper_record_index: leading_identity_record_index,
-            wrapper_reference_offset,
-            wrapper_class_tag: "388".to_owned().try_into().ok()?,
-            wrapper_byte_offset: u64::try_from(leading_identity.start).ok()?,
-            path_reference_offset: occurrence_guid_offset,
-        },
-        terminal_record_index,
-        "386".to_owned().try_into().ok()?,
-        u64::try_from(terminal_at).ok()?,
-        vec![crate::records::identity::Located {
-            value: occurrence_guid,
-            offset: occurrence_guid_offset,
-        }],
-        vec![crate::records::identity::Located {
-            value: identity_guid,
-            offset: identity_guid_offset,
-        }],
-    )
-    .ok()
+        for ordinal in 0..4 {
+            let owner_record_index = marked_record_reference(
+                bytes,
+                carrier_at.checked_add(
+                    class_363_carrier::PLACEMENT_OWNER_REFERENCES
+                        .checked_add(ordinal * ASSEMBLY_MARKED_REFERENCE_LEN)?,
+                )?,
+            )?;
+            if !scope
+                .reference_members()
+                .values()
+                .any(|value| value == &owner_record_index)
+            {
+                return None;
+            }
+        }
+        let (occurrence_guid, identity_guid, occurrence_guid_offset, identity_guid_offset) =
+            match exact_class_363_identity_guids(ctx, bytes, leading_identity.start) {
+                Ok(Some(value)) => value,
+                Ok(None) => return None,
+                Err(error) => return Some(Err(error)),
+            };
+        let (terminal_occurrence_guid, terminal_identity_guid, _, _) =
+            match exact_class_363_identity_guids(ctx, bytes, terminal_identity.start) {
+                Ok(Some(value)) => value,
+                Ok(None) => return None,
+                Err(error) => return Some(Err(error)),
+            };
+        if occurrence_guid != terminal_occurrence_guid || identity_guid != terminal_identity_guid {
+            return None;
+        }
+        let (scope_record_index, locator_scope_reference_offset) =
+            exact_same_segment_record_reference(
+                bytes,
+                carrier_at.checked_add(class_363_carrier::SCOPE_REFERENCE)?,
+            )?;
+        if scope_record_index != scope.record_index {
+            return None;
+        }
+        let (_, wrapper_reference_offset) = exact_same_segment_record_reference(
+            bytes,
+            leading
+                .start
+                .checked_add(class_363_leading::IDENTITY_REFERENCE)?,
+        )?;
+        DesignAssemblyOperandPath::try_new(
+            DesignAssemblyOperandPathLink {
+                locator_reference_offset: frame.reference_offset,
+                locator_record_index: frame.reference_record_index,
+                locator_class_tag: "363".to_owned().try_into().ok()?,
+                locator_byte_offset: u64::try_from(carrier_at).ok()?,
+                locator_scope_reference_offset,
+                wrapper_record_index: leading_identity_record_index,
+                wrapper_reference_offset,
+                wrapper_class_tag: "388".to_owned().try_into().ok()?,
+                wrapper_byte_offset: u64::try_from(leading_identity.start).ok()?,
+                path_reference_offset: occurrence_guid_offset,
+            },
+            terminal_record_index,
+            "386".to_owned().try_into().ok()?,
+            u64::try_from(terminal_at).ok()?,
+            vec![crate::records::identity::Located {
+                value: occurrence_guid,
+                offset: occurrence_guid_offset,
+            }],
+            vec![crate::records::identity::Located {
+                value: identity_guid,
+                offset: identity_guid_offset,
+            }],
+        )
+        .ok()
+        .map(Ok)
+    })()
+    .transpose()
 }
 
 fn exact_class_307_joint_origin(
@@ -375,27 +395,43 @@ fn exact_class_264_record_frame(
 }
 
 fn exact_class_363_identity_guids(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     start: usize,
-) -> Option<(
-    crate::records::mesh::DesignRelaxedGuidText,
-    crate::records::mesh::DesignRelaxedGuidText,
-    u64,
-    u64,
-)> {
-    let occurrence_at = start.checked_add(class_363_identity::OCCURRENCE_GUID)?;
-    let identity_at = start.checked_add(class_363_identity::COMPONENT_IDENTITY_GUID)?;
-    let (occurrence_guid, occurrence_end) = fixed_relaxed_guid_text(bytes, occurrence_at)?;
-    let (identity_guid, identity_end) = fixed_relaxed_guid_text(bytes, identity_at)?;
-    if occurrence_end != identity_at || identity_end != identity_at.checked_add(76)? {
-        return None;
-    }
-    Some((
-        occurrence_guid,
-        identity_guid,
-        u64::try_from(occurrence_at.checked_add(4)?).ok()?,
-        u64::try_from(identity_at.checked_add(4)?).ok()?,
-    ))
+) -> Result<
+    Option<(
+        crate::records::mesh::DesignRelaxedGuidText,
+        crate::records::mesh::DesignRelaxedGuidText,
+        u64,
+        u64,
+    )>,
+    CodecError,
+> {
+    (|| {
+        let occurrence_at = start.checked_add(class_363_identity::OCCURRENCE_GUID)?;
+        let identity_at = start.checked_add(class_363_identity::COMPONENT_IDENTITY_GUID)?;
+        let (occurrence_guid, occurrence_end) =
+            match fixed_relaxed_guid_text(ctx, bytes, occurrence_at) {
+                Ok(Some(value)) => value,
+                Ok(None) => return None,
+                Err(error) => return Some(Err(error)),
+            };
+        let (identity_guid, identity_end) = match fixed_relaxed_guid_text(ctx, bytes, identity_at) {
+            Ok(Some(value)) => value,
+            Ok(None) => return None,
+            Err(error) => return Some(Err(error)),
+        };
+        if occurrence_end != identity_at || identity_end != identity_at.checked_add(76)? {
+            return None;
+        }
+        Some(Ok((
+            occurrence_guid,
+            identity_guid,
+            u64::try_from(occurrence_at.checked_add(4)?).ok()?,
+            u64::try_from(identity_at.checked_add(4)?).ok()?,
+        )))
+    })()
+    .transpose()
 }
 
 #[cfg(test)]
@@ -407,7 +443,7 @@ mod tests {
         exact_class_264_record_frame, exact_class_307_joint_origin, exact_class_363_identity_frame,
         exact_class_363_identity_guids, CarrierFrame,
     };
-    use crate::bytes::lp_utf16_bounded;
+    use crate::bytes::lp_utf16_bounded_charged;
     use crate::layout::{
         assembly_class_307_264_joint_origin_scope as class_307_joint_origin,
         assembly_class_363_264_frame_388_identity as class_363_identity,
@@ -499,11 +535,14 @@ mod tests {
             Some((0, class_307_joint_origin::LEN))
         );
         assert_eq!(
-            lp_utf16_bounded(
+            crate::test_support::with_decode_context(|ctx| lp_utf16_bounded_charged(
+                ctx,
                 &bytes,
                 class_307_joint_origin::KIND_CODE_UNIT_COUNT,
                 11..=11,
-            ),
+                "retain F3D UTF-16 string"
+            )
+            .unwrap()),
             Some((
                 "JointOrigin".into(),
                 class_307_joint_origin::FEATURE_ORDINAL
@@ -570,8 +609,13 @@ mod tests {
                     scope_reference
                 })
             );
-            let (occurrence, identity, _, _) =
-                exact_class_363_identity_guids(&bytes, 0).expect("identity GUID prefix");
+            let (occurrence, identity, _, _) = exact_class_363_identity_guids(
+                &cadmpeg_test_support::service_decode_context(),
+                &bytes,
+                0,
+            )
+            .expect("GUID admission")
+            .expect("identity GUID prefix");
             assert_eq!(occurrence.as_str(), guid);
             assert_eq!(identity.as_str(), guid);
         }

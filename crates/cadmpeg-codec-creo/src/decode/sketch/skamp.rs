@@ -74,9 +74,11 @@ fn section_line_entity_fixed_coordinate_with_mode(
             (first.entity_id, second.entity_id),
             (second.entity_id, first.entity_id),
         ] {
-            if !adjacency.contains_key(&entity_id) {
-                ctx.charge_collection_items(1, "creo fixed-coordinate adjacency nodes")?;
-            }
+            ctx.admit_btree_entry(
+                &adjacency,
+                &entity_id,
+                "creo fixed-coordinate adjacency nodes",
+            )?;
             let neighbors = adjacency.entry(entity_id).or_default();
             ctx.reserve_vec(neighbors, 1, "creo fixed-coordinate adjacency links")?;
             neighbors.push((neighbor, parity));
@@ -99,7 +101,11 @@ fn section_line_entity_fixed_coordinate_with_mode(
                 Some(stored) if *stored != neighbor_parity => return Ok(None),
                 Some(_) => {}
                 None => {
-                    ctx.charge_collection_items(1, "creo fixed-coordinate parity nodes")?;
+                    ctx.admit_btree_entry(
+                        &parities,
+                        &neighbor,
+                        "creo fixed-coordinate parity nodes",
+                    )?;
                     ctx.push_back(
                         &mut pending,
                         neighbor,
@@ -123,10 +129,11 @@ fn section_line_entity_fixed_coordinate_with_mode(
             } else {
                 coordinate
             };
-            if !coordinates.contains(&coordinate) {
-                ctx.charge_collection_items(1, "creo fixed-coordinate result nodes")?;
-                coordinates.insert(coordinate);
-            }
+            ctx.insert_btree_set(
+                &mut coordinates,
+                coordinate,
+                "creo fixed-coordinate result nodes",
+            )?;
         }
     }
     Ok(coordinates
@@ -161,8 +168,11 @@ fn section_line_direct_fixed_coordinates_with_mode(
         });
     let mut coordinates = BTreeSet::new();
     if let Some(coordinate) = segment_coordinate {
-        ctx.charge_collection_items(1, "creo direct fixed-coordinate nodes")?;
-        coordinates.insert(coordinate);
+        ctx.insert_btree_set(
+            &mut coordinates,
+            coordinate,
+            "creo direct fixed-coordinate nodes",
+        )?;
     }
     if let Some(coordinate) = unique_reference_line_segment(definition, entity_id)
         .and_then(|segment| segment.vertical_horizontal)
@@ -172,10 +182,11 @@ fn section_line_direct_fixed_coordinates_with_mode(
             _ => None,
         })
     {
-        if !coordinates.contains(&coordinate) {
-            ctx.charge_collection_items(1, "creo direct fixed-coordinate nodes")?;
-            coordinates.insert(coordinate);
-        }
+        ctx.insert_btree_set(
+            &mut coordinates,
+            coordinate,
+            "creo direct fixed-coordinate nodes",
+        )?;
     }
     for skamp in active_complete_section_skamps(definition) {
         ctx.charge_work(1, "creo direct fixed-coordinate skamp scan")?;
@@ -187,10 +198,11 @@ fn section_line_direct_fixed_coordinates_with_mode(
         let Some(coordinate) = coordinate else {
             continue;
         };
-        if !coordinates.contains(&coordinate) {
-            ctx.charge_collection_items(1, "creo direct fixed-coordinate nodes")?;
-            coordinates.insert(coordinate);
-        }
+        ctx.insert_btree_set(
+            &mut coordinates,
+            coordinate,
+            "creo direct fixed-coordinate nodes",
+        )?;
     }
     if saved_section_line_witness_allowed(definition, entity_id) {
         if let Some(crate::feature::definitions::FeatureSavedEntity::Line(line)) =
@@ -206,16 +218,18 @@ fn section_line_direct_fixed_coordinates_with_mode(
             let tolerance = EPS_SAVED_LINE_AXIS * scale;
             match [(x0 - x1).abs() <= tolerance, (y0 - y1).abs() <= tolerance] {
                 [true, false] => {
-                    if !coordinates.contains(&SectionAxis::U) {
-                        ctx.charge_collection_items(1, "creo direct fixed-coordinate nodes")?;
-                    }
-                    coordinates.insert(SectionAxis::U);
+                    ctx.insert_btree_set(
+                        &mut coordinates,
+                        SectionAxis::U,
+                        "creo direct fixed-coordinate nodes",
+                    )?;
                 }
                 [false, true] => {
-                    if !coordinates.contains(&SectionAxis::V) {
-                        ctx.charge_collection_items(1, "creo direct fixed-coordinate nodes")?;
-                    }
-                    coordinates.insert(SectionAxis::V);
+                    ctx.insert_btree_set(
+                        &mut coordinates,
+                        SectionAxis::V,
+                        "creo direct fixed-coordinate nodes",
+                    )?;
                 }
                 _ => {}
             }

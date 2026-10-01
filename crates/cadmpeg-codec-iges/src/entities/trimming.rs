@@ -181,9 +181,7 @@ fn cluster_boundary_positions(
     let mut members_by_root = BTreeMap::<usize, Vec<usize>>::new();
     for index in 0..positions.len() {
         let root = find_cluster_root(&mut parents, index);
-        if !members_by_root.contains_key(&root) {
-            ctx.charge_collection_items(1, "iges boundary cluster roots")?;
-        }
+        ctx.admit_btree_entry(&members_by_root, &root, "iges boundary cluster roots")?;
         let members = members_by_root.entry(root).or_default();
         ctx.reserve_vec(members, 1, "iges boundary cluster members")?;
         members.push(index);
@@ -213,7 +211,12 @@ fn cluster_boundary_positions(
             members,
         });
     }
-    clusters.sort_by_key(|cluster| cluster.members[0]);
+    ctx.stable_sort_by(
+        &mut clusters,
+        |left, right| left.members[0].cmp(&right.members[0]),
+        |_| 0,
+        "iges boundary clusters sort",
+    )?;
     Ok(clusters)
 }
 
@@ -1369,7 +1372,7 @@ fn homogeneous_pcurve_spans(
             .copied()
             .filter(|knot| domain[0] < *knot && *knot < domain[1]),
     );
-    internal.sort_by(f64::total_cmp);
+    ctx.stable_sort_by(&mut internal, f64::total_cmp, |_| 0, "iges pcurve internal knots sort")?;
     internal.dedup();
     for knot in internal {
         while copied_knots
@@ -1965,9 +1968,7 @@ pub(super) fn project(
     let mut edges_by_curve = BTreeMap::<&CurveId, Vec<&Edge>>::new();
     for edge in &ir.model.edges {
         if let Some(curve) = edge.curve() {
-            if !edges_by_curve.contains_key(curve) {
-                ctx.charge_collection_items(1, "iges boundary carrier index nodes")?;
-            }
+            ctx.admit_btree_entry(&edges_by_curve, &curve, "iges boundary carrier index nodes")?;
             let group = edges_by_curve.entry(curve).or_default();
             ctx.reserve_vec(group, 1, "iges boundary carrier edge references")?;
             group.push(edge);

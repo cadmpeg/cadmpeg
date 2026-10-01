@@ -21,7 +21,6 @@ pub(crate) mod presentation;
 pub(crate) mod profile_select;
 mod relation_kinds;
 pub(crate) mod sketch_project;
-mod sort;
 #[cfg(test)]
 pub(crate) mod test_support;
 #[cfg(test)]

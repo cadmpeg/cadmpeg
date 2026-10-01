@@ -10,17 +10,10 @@ use crate::history::classify::feature_input_class;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::{FaceSelection, FeatureId, PlanarProfileRef, WrapMode};
 
-#[allow(
-    clippy::too_many_arguments,
-    clippy::trivially_copy_pass_by_ref,
-    clippy::ref_option,
-    clippy::ptr_arg,
-    reason = "Encoder arguments are borrowed from one FeatureDefinition match."
-)]
 impl NeutralFeatureEncoder<'_, '_, '_> {
     pub(super) fn encode_sketch_block_definition(
         &self,
-        sketch: &Option<cadmpeg_ir::sketches::SketchId>,
+        sketch: Option<&cadmpeg_ir::sketches::SketchId>,
     ) -> Result<NeutralFeatureEncoding, CodecError> {
         let feature = self.feature;
         let existing = self.existing;
@@ -50,8 +43,8 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
 
     pub(super) fn encode_sketch_block_instance(
         &self,
-        block: &Option<FeatureId>,
-        placement: &Option<cadmpeg_ir::transform::Transform>,
+        block: Option<&FeatureId>,
+        placement: Option<&cadmpeg_ir::transform::Transform>,
     ) -> Result<NeutralFeatureEncoding, CodecError> {
         let feature = self.feature;
         let existing = self.existing;
@@ -60,12 +53,9 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
             let retained_source = existing
                 .and_then(|record| record.properties.get("BlockDefinition"))
                 .map(String::as_str);
-            let block_source = block
-                .as_ref()
-                .and_then(|block| feature_sources.get(block).copied());
+            let block_source = block.and_then(|block| feature_sources.get(block).copied());
             let retained_placement = existing.and_then(sketch_block_placement);
-            if retained_source != block_source || retained_placement.as_ref() != placement.as_ref()
-            {
+            if retained_source != block_source || retained_placement.as_ref() != placement {
                 return Err(CodecError::NotImplemented(format!(
                     "SLDPRT feature {} changes sketch-block instance semantics",
                     feature.id

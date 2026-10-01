@@ -139,11 +139,12 @@ pub(crate) fn transfer(
             )
         }) {
             if let Some(value) = scalar_parameter(ctx, property)? {
-                ctx.charge_collection_items(1, "fcstd joint parameters")?;
-                parameters.insert(
+                ctx.insert_btree_map(
+                    &mut parameters,
                     ctx.copy_retained_text(&property.name, "fcstd joint parameter name")?,
                     value,
-                );
+                    "fcstd joint parameters",
+                )?;
             }
         }
         ctx.reserve_vec(&mut output, 1, "fcstd joint records")?;
@@ -425,16 +426,22 @@ fn enumeration_value(
     ctx: &DecodeContext<'_>,
     property: &PropertyRecord,
 ) -> Result<String, CodecError> {
-    let document = roxmltree::Document::parse(property.xml.text()).map_err(|error| {
-        crate::resource::malformed_charged(
-            ctx,
-            format_args!(
-                "joint enumeration property {} has invalid XML: {error}",
-                property.id
-            ),
-            "fcstd joint diagnostic",
-        )
-    })?;
+    let admitted_document = ctx
+        .parse_xml(property.xml.text(), "FreeCAD XML tree")
+        .map_err(|error| {
+            let CodecError::Malformed(error) = error else {
+                return error;
+            };
+            crate::resource::malformed_charged(
+                ctx,
+                format_args!(
+                    "joint enumeration property {} has invalid XML: {error}",
+                    property.id
+                ),
+                "fcstd joint diagnostic",
+            )
+        })?;
+    let document = admitted_document.document();
     let root = document.root_element();
     if !root.has_tag_name("Property") {
         return Err(crate::resource::malformed_charged(
@@ -1000,19 +1007,9 @@ pub(crate) mod tests {
             xml: crate::native::RetainedXml::from_text("<Property".into(), 0)
                 .expect("valid retained span"),
         };
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-        policy.limits.max_retained_bytes = 0;
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-            .expect("empty root is within policy");
-        let error = super::enumeration_value(&ctx, &property)
-            .expect_err("diagnostic text must be admitted");
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(ref failure)
-            if failure.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
-                && failure.operation == "fcstd joint diagnostic"),
-            "{error:?}"
-        );
+        crate::test_support::assert_retained_refusal_at(&[], "fcstd joint diagnostic", |ctx| {
+            super::enumeration_value(ctx, &property)
+        });
     }
 
     #[test]

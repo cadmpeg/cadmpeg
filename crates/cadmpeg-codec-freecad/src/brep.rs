@@ -2303,10 +2303,12 @@ pub(crate) fn parse_payloads(
 ) -> Result<Vec<ShapePayloadRecord>, CodecError> {
     let mut entries_by_name = BTreeMap::new();
     for entry in entries {
-        if !entries_by_name.contains_key(entry.name.as_str()) {
-            ctx.charge_collection_items(1, "FreeCAD shape entry index")?;
-        }
-        entries_by_name.insert(entry.name.as_str(), entry);
+        ctx.insert_btree_map(
+            &mut entries_by_name,
+            entry.name(),
+            entry,
+            "FreeCAD shape entry index",
+        )?;
     }
     let mut payloads = Vec::new();
     for property in properties
@@ -2322,23 +2324,23 @@ pub(crate) fn parse_payloads(
                 "FreeCAD missing shape entry",
             )?));
         };
-        let payload = if entry.data.is_empty() {
+        let payload = if entry.data().is_empty() {
             ShapePayload::Empty
         } else if name
             .rsplit_once('.')
             .is_some_and(|(_, extension)| extension.eq_ignore_ascii_case("bin"))
         {
-            let (facts, version) = parse_binary_prefix(ctx, &entry.data)?;
+            let (facts, version) = parse_binary_prefix(ctx, entry.data())?;
             ShapePayload::Binary { facts, version }
         } else {
-            let (facts, version) = parse_text(ctx, &entry.data)?;
+            let (facts, version) = parse_text(ctx, entry.data())?;
             ShapePayload::Text { facts, version }
         };
         ctx.reserve_vec(&mut payloads, 1, "FreeCAD shape payload records")?;
         payloads.push(ShapePayloadRecord {
             id: crate::native::native_child_id_charged(ctx, "shape-payload", &property.id, &name)?,
             property: ctx.copy_retained_text(&property.id, "FreeCAD shape payload property")?,
-            entry: ctx.copy_retained_text(&entry.id, "FreeCAD shape payload entry")?,
+            entry: ctx.copy_retained_text(entry.id(), "FreeCAD shape payload entry")?,
             payload,
         });
     }
@@ -2349,12 +2351,18 @@ fn direct_shape_entry(
     ctx: &DecodeContext<'_>,
     property: &PropertyRecord,
 ) -> Result<Option<String>, CodecError> {
-    let document = roxmltree::Document::parse(property.xml.text()).or_else(|error| {
-        Err(CodecError::Malformed(ctx.format_retained(
-            format_args!("invalid exact-shape property XML {}: {error}", property.id),
-            "FreeCAD shape property XML diagnostic",
-        )?))
-    })?;
+    let admitted_document = ctx
+        .parse_xml(property.xml.text(), "FreeCAD XML tree")
+        .or_else(|error| {
+            let CodecError::Malformed(error) = error else {
+                return Err(error);
+            };
+            Err(CodecError::Malformed(ctx.format_retained(
+                format_args!("invalid exact-shape property XML {}: {error}", property.id),
+                "FreeCAD shape property XML diagnostic",
+            )?))
+        })?;
+    let document = admitted_document.document();
     let root = document.root_element();
     if !matches!(root.tag_name().name(), "Property" | "_Property") {
         return Err(CodecError::Malformed(ctx.format_retained(
@@ -2457,7 +2465,12 @@ pub(crate) fn carrier_census(
         }
         census.push(record);
     }
-    census.sort_by(|left, right| left.id.cmp(&right.id));
+    ctx.stable_sort_by(
+        &mut census,
+        |left, right| left.id.cmp(&right.id),
+        |item| item.id.len(),
+        "FreeCAD carrier census sort",
+    )?;
     Ok(census)
 }
 
@@ -2469,8 +2482,12 @@ fn increment(
     if let Some(count) = counts.get_mut(family) {
         *count += 1;
     } else {
-        ctx.charge_collection_items(1, "FreeCAD carrier census families")?;
-        counts.insert(family.to_owned(), 1);
+        ctx.insert_btree_map(
+            counts,
+            family.to_owned(),
+            1,
+            "FreeCAD carrier census families",
+        )?;
     }
     Ok(())
 }

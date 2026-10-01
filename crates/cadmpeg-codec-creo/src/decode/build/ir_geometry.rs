@@ -67,8 +67,11 @@ fn append_borrowed_curve_ids<'a>(
         if target.contains(id) {
             continue;
         }
-        ctx.charge_collection_items(1, "creo derived intersection curve IDs")?;
-        target.insert(id.try_clone_for_decode(ctx, "creo derived intersection curve ID copies")?);
+        ctx.insert_btree_set(
+            target,
+            id.try_clone_for_decode(ctx, "creo derived intersection curve ID copies")?,
+            "creo derived intersection curve IDs",
+        )?;
     }
     Ok(())
 }
@@ -79,10 +82,7 @@ fn append_owned_curve_ids(
     source: BTreeSet<CurveId>,
 ) -> Result<(), CodecError> {
     for id in source {
-        if !target.contains(&id) {
-            ctx.charge_collection_items(1, "creo derived topology carrier IDs")?;
-            target.insert(id);
-        }
+        ctx.insert_btree_set(target, id, "creo derived topology carrier IDs")?;
     }
     Ok(())
 }
@@ -1078,13 +1078,13 @@ mod tests {
                 offset: 21,
             },
         ];
-        scan.topology.loops.push(crate::topology::Loop {
-            face_id: std::num::NonZeroU32::new(5),
-            half_edges: vec![crate::topology::HalfEdgeId {
+        scan.topology.loops.push(crate::test_support::closed_loop(
+            std::num::NonZeroU32::new(5),
+            vec![crate::topology::HalfEdgeId {
                 curve_id: 10,
                 side: crate::topology::Side::Zero,
             }],
-        });
+        ));
 
         let mut ir = CadIr::empty();
         ir.model.curves.push(Curve {

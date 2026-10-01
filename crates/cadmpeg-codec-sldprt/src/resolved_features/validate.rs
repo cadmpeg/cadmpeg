@@ -69,7 +69,11 @@ pub(crate) fn validate_native(
             for item in &history.content {
                 let error = match item {
                     crate::records::HistoryContent::Configuration(id) => {
-                        reserve_seen_id(ctx, &mut seen_configurations)?;
+                        ctx.reserve_set(
+                            &mut seen_configurations,
+                            1,
+                            "index SLDPRT native history content",
+                        )?;
                         if !configurations.contains(id.as_str()) {
                             Some(ctx.format_retained(
                                 format_args!(
@@ -87,7 +91,11 @@ pub(crate) fn validate_native(
                         }
                     }
                     crate::records::HistoryContent::Feature(id) => {
-                        reserve_seen_id(ctx, &mut seen_features)?;
+                        ctx.reserve_set(
+                            &mut seen_features,
+                            1,
+                            "index SLDPRT native history content",
+                        )?;
                         if !all_features.contains(id.as_str()) {
                             Some(ctx.format_retained(
                                 format_args!(
@@ -289,24 +297,13 @@ fn push_finding(
     Ok(())
 }
 
-fn reserve_seen_id(ctx: &DecodeContext<'_>, ids: &mut HashSet<&str>) -> Result<(), CodecError> {
-    ctx.charge_collection_items(1, "index SLDPRT native history content")?;
-    ids.try_reserve(1).map_err(|_| {
-        ctx.refuse_codec_limit(
-            "index SLDPRT native history content",
-            u64::MAX - 1,
-            u64::MAX,
-        )
-    })
-}
-
 fn collect_history_ids<'a>(
     ctx: &DecodeContext<'_>,
     items: impl Iterator<Item = &'a str>,
 ) -> Result<HashSet<&'a str>, CodecError> {
     let mut ids = HashSet::new();
     for id in items {
-        reserve_seen_id(ctx, &mut ids)?;
+        ctx.reserve_set(&mut ids, 1, "index SLDPRT native history content")?;
         ids.insert(id);
     }
     Ok(ids)

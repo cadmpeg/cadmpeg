@@ -57,7 +57,10 @@ fn component_feature_history_follows_the_parent_without_losing_relative_order() 
         feature("f3d:test:feature#component-1", 12),
     ];
 
-    append_feature_history(&parent, &mut component).unwrap();
+    crate::test_support::with_decode_context(|ctx| {
+        append_feature_history(ctx, &parent, &mut component)
+    })
+    .unwrap();
 
     assert_eq!(
         component
@@ -76,7 +79,10 @@ fn component_feature_history_refuses_an_exhausted_ordinal_domain() {
     let mut component = Model::default();
     component.features = vec![feature("f3d:test:feature#component", 0)];
 
-    let error = append_feature_history(&parent, &mut component).unwrap_err();
+    let error = crate::test_support::with_decode_context(|ctx| {
+        append_feature_history(ctx, &parent, &mut component)
+    })
+    .unwrap_err();
 
     assert!(error
         .to_string()
@@ -224,7 +230,12 @@ fn repeated_occurrence_merge_remaps_typed_graphs_disjointly() {
             occurrence: &occurrence,
         };
         merged
-            .extend_rewritten(component.clone(), &mut scope)
+            .extend_rewritten_for_decode(
+                &ctx,
+                component.clone(),
+                &mut scope,
+                "append F3Z model entities",
+            )
             .expect("merge component arenas");
     }
 
@@ -402,7 +413,7 @@ fn occurrence_merge_refuses_native_record_collection_limit() {
                 id: "f3d:xref:design#0".into(),
                 ordinal: 0,
                 file_version: 1,
-                target_file_name: "part.f3d".into(),
+                target_file_name: "part.f3d".to_owned().try_into().unwrap(),
                 display_name: "Part".into(),
                 lineage_urn: "lineage".into(),
                 version_urn: "version".into(),
@@ -565,7 +576,8 @@ fn occurrence_merge_scopes_admitted_native_references_and_preserves_configuratio
 }
 
 #[test]
-fn occurrence_key_separates_fallback_and_authored_roles() {
+fn occurrence_key_preserves_authored_roles() {
+    assert!(crate::records::xref::RequiredXrefText::try_from(String::new()).is_err());
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let policy = cadmpeg_core::decode::DecodePolicy::service();
     let (ctx, _) =
@@ -574,17 +586,13 @@ fn occurrence_key_separates_fallback_and_authored_roles() {
         id: "f3d:xref:reference#1".into(),
         ordinal,
         occurrence_ordinal: 0,
-        from: "root.f3d".into(),
-        relative_path: "part.f3d".into(),
-        neutron_role: role.into(),
+        from: "root.f3d".to_owned().try_into().unwrap(),
+        relative_path: "part.f3d".to_owned().try_into().unwrap(),
+        neutron_role: role.to_owned().try_into().unwrap(),
         neutron_data: String::new(),
         transform: None,
     };
 
-    assert_eq!(
-        occurrence_key(&ctx, &reference("", 7)).unwrap(),
-        "ordinal-7/occurrence-0"
-    );
     assert_eq!(
         occurrence_key(&ctx, &reference("ordinal-7", 7)).unwrap(),
         "role-ordinal-7/reference-7/occurrence-0"
@@ -608,9 +616,9 @@ fn occurrence_key_separates_same_role_references_with_reset_ordinals() {
         id: format!("f3d:xref:reference#{ordinal}"),
         ordinal,
         occurrence_ordinal: 0,
-        from: "root.f3d".into(),
-        relative_path: format!("part-{ordinal}.f3d"),
-        neutron_role: "same-role".into(),
+        from: "root.f3d".to_owned().try_into().unwrap(),
+        relative_path: format!("part-{ordinal}.f3d").try_into().unwrap(),
+        neutron_role: "same-role".to_owned().try_into().unwrap(),
         neutron_data: String::new(),
         transform: None,
     };
@@ -633,9 +641,9 @@ fn occurrence_key_refuses_retained_limit() {
         id: "f3d:xref:reference#1".into(),
         ordinal: 1,
         occurrence_ordinal: 0,
-        from: "root.f3d".into(),
-        relative_path: "part.f3d".into(),
-        neutron_role: "role /#: value".into(),
+        from: "root.f3d".to_owned().try_into().unwrap(),
+        relative_path: "part.f3d".to_owned().try_into().unwrap(),
+        neutron_role: "role /#: value".to_owned().try_into().unwrap(),
         neutron_data: String::new(),
         transform: None,
     };
@@ -644,4 +652,92 @@ fn occurrence_key_refuses_retained_limit() {
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "retain F3Z occurrence key")
     );
+}
+
+#[test]
+fn occurrence_merge_refuses_destination_growth_before_rewriting() {
+    let mut component = Model::default();
+    component
+        .features
+        .push(feature("f3d:test:feature#child", 0));
+    let mut parent = Model::default();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    crate::test_support::with_decode_policy(&policy, |ctx| {
+        let mut scope = OccurrenceScope {
+            ctx,
+            occurrence: "child",
+        };
+        let error = parent
+            .extend_rewritten_for_decode(ctx, component, &mut scope, "append F3Z model entities")
+            .unwrap_err();
+        let cadmpeg_core::CodecError::ResourceLimit(limit) = cadmpeg_core::CodecError::from(error)
+        else {
+            panic!("destination growth must refuse through the caller context");
+        };
+        assert_eq!(limit.operation, "append F3Z model entities");
+        assert_eq!(Some(limit), ctx.resource_refusal());
+        assert!(parent.features.is_empty());
+    });
+}
+
+#[test]
+fn feature_history_scans_preserve_work_refusals() {
+    let mut parent = Model::default();
+    parent.features = vec![
+        feature("f3d:test:feature#parent", 5),
+        feature("f3d:test:feature#other", 6),
+    ];
+    for (work, operation) in [
+        (0, "scan F3Z component feature ordinals"),
+        (1, "scan F3Z parent feature ordinals"),
+        (3, "rewrite F3Z feature ordinals"),
+    ] {
+        let mut component = Model::default();
+        component.features = vec![feature("f3d:test:feature#component", 10)];
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_work_units = work;
+        crate::test_support::with_decode_policy(&policy, |ctx| {
+            let error = append_feature_history(ctx, &parent, &mut component).unwrap_err();
+            let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
+                panic!("ordinal scan must refuse");
+            };
+            assert_eq!(limit.operation, operation);
+            assert_eq!(Some(limit), ctx.resource_refusal());
+            assert_eq!(component.features[0].ordinal, 10);
+        });
+    }
+}
+
+#[test]
+fn occurrence_body_composition_preserves_work_refusal() {
+    let mut model = Model::default();
+    model.bodies.push(Body {
+        id: BodyId::mint("f3d:brep:body#1").unwrap(),
+        name: None,
+        kind: BodyKind::Solid,
+        regions: Vec::new(),
+        transform: None,
+        visible: None,
+        color: None,
+    });
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    crate::test_support::with_decode_policy(&policy, |ctx| {
+        let transform = crate::records::xref::XrefPlacementTransform::try_from([
+            [1., 0., 0., 0.],
+            [0., 1., 0., 0.],
+            [0., 0., 1., 0.],
+            [0., 0., 0., 1.],
+        ])
+        .unwrap();
+        let error =
+            super::super::apply_occurrence_transform(ctx, &mut model, transform).unwrap_err();
+        let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
+            panic!("body composition must refuse");
+        };
+        assert_eq!(limit.operation, "compose F3Z body transforms");
+        assert_eq!(Some(limit), ctx.resource_refusal());
+        assert!(model.bodies[0].transform.is_none());
+    });
 }

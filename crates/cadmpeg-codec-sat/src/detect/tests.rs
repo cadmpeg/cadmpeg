@@ -94,3 +94,42 @@ fn text_inspect_propagates_framing_collection_limit() {
                 && limit.operation == "frame SAT primitive"
     ));
 }
+
+#[test]
+fn sat_header_attributes_admit_retained_text_and_collection_slots() {
+    use crate::test_support::with_context;
+    use cadmpeg_core::decode::{DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let source = text_sphere_stream(1.0);
+    let header = with_context(&source, &DecodePolicy::service(), |ctx| {
+        cadmpeg_asm::sat::parse(ctx, &source)
+            .expect("text stream parses")
+            .header
+            .as_kernel_header(ctx)
+            .expect("kernel header")
+    });
+    for dimension in [
+        ResourceDimension::RetainedBytes,
+        ResourceDimension::CollectionItems,
+        ResourceDimension::WorkUnits,
+    ] {
+        let mut policy = DecodePolicy::service();
+        match dimension {
+            ResourceDimension::RetainedBytes => policy.limits.max_retained_bytes = 0,
+            ResourceDimension::CollectionItems => policy.limits.max_collection_items = 0,
+            ResourceDimension::WorkUnits => policy.limits.max_work_units = 0,
+            _ => unreachable!(),
+        }
+        let error = with_context(&[], &policy, |ctx| {
+            super::header_attributes(
+                ctx,
+                &header,
+                crate::dialect::Family::Asm,
+                &mut std::collections::BTreeMap::new(),
+            )
+        })
+        .expect_err("attribute admission uses the caller budget");
+        assert!(matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == dimension));
+    }
+}

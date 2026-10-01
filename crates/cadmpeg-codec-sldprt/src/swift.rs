@@ -183,8 +183,12 @@ impl TopologyIdentityIndex {
                 *existing = None;
             }
         } else {
-            ctx.charge_collection_items(1, "index SWIFT topology sequence")?;
-            self.sequence_targets.insert(u64::from(sequence), target);
+            ctx.insert_btree_map(
+                &mut self.sequence_targets,
+                u64::from(sequence),
+                target,
+                "index SWIFT topology sequence",
+            )?;
         }
         Ok(())
     }
@@ -201,9 +205,11 @@ impl TopologyIdentityIndex {
         let Ok(suffix) = suffix.parse::<u64>() else {
             return Ok(());
         };
-        if !self.entries.contains_key(&suffix) {
-            ctx.charge_collection_items(1, "index SWIFT primary topology suffix")?;
-        }
+        ctx.admit_btree_entry(
+            &self.entries,
+            &suffix,
+            "index SWIFT primary topology suffix",
+        )?;
         let entries = self.entries.entry(suffix).or_default();
         if !entries.contains(&target) {
             ctx.reserve_vec(entries, 1, "collect SWIFT primary topology targets")?;
@@ -358,7 +364,7 @@ pub(crate) fn annotations(
                     "copy SWIFT provenance ID",
                 )?,
                 &stream,
-                entity.offset as u64,
+                u64_from_index(entity.offset),
                 "swift_gdt_analysis",
                 cadmpeg_ir::Exactness::ByteExact,
             )?;
@@ -421,7 +427,7 @@ pub(crate) fn pattern_hole_nominal_context(
                 continue;
             }
             ctx.charge_work(
-                candidate.dependencies.len() as u64,
+                u64_from_index(candidate.dependencies.len()),
                 "swift pattern hole dependencies",
             )?;
             if !candidate
@@ -458,15 +464,18 @@ pub(crate) fn pattern_hole_nominal_context(
         if let Some(value) = candidates.get_mut(&semantic_name) {
             *value = None;
         } else {
-            ctx.charge_collection_items(1, "swift pattern candidate")?;
-            candidates.insert(semantic_name, Some(diameter));
+            ctx.insert_btree_map(
+                &mut candidates,
+                semantic_name,
+                Some(diameter),
+                "swift pattern candidate",
+            )?;
         }
     }
     let mut nominals = BTreeMap::new();
     for (name, value) in candidates {
         if let Some(value) = value {
-            ctx.charge_collection_items(1, "swift pattern nominal")?;
-            nominals.insert(name, value);
+            ctx.insert_btree_map(&mut nominals, name, value, "swift pattern nominal")?;
         }
     }
     Ok(nominals)
@@ -479,29 +488,34 @@ pub(crate) fn unsupported_annotation_classes(
     let Some((_, root, _)) = scan_root(ctx, scan)? else {
         let mut classes = BTreeMap::new();
         if has_root_marker(scan) {
-            ctx.charge_collection_items(1, "collect SLDPRT unsupported SWIFT classes")?;
             let key = ctx.format_retained(
                 format_args!("GdtAnalysisGraphUnresolved"),
                 "retain SLDPRT unsupported SWIFT class",
             )?;
-            classes.insert(key, 1);
+            ctx.insert_btree_map(
+                &mut classes,
+                key,
+                1,
+                "collect SLDPRT unsupported SWIFT classes",
+            )?;
         }
         return Ok(classes);
     };
     let mut classes = BTreeMap::new();
     if root.annotations.references.len() != root.annotations.entities.len() {
-        ctx.charge_collection_items(1, "collect SLDPRT unsupported SWIFT classes")?;
         let key = ctx.format_retained(
             format_args!("GdtAnalysisIncompleteAnnotationRoster"),
             "retain SLDPRT unsupported SWIFT class",
         )?;
-        classes.insert(
+        ctx.insert_btree_map(
+            &mut classes,
             key,
             root.annotations
                 .references
                 .len()
                 .abs_diff(root.annotations.entities.len()),
-        );
+            "collect SLDPRT unsupported SWIFT classes",
+        )?;
         return Ok(classes);
     }
     for (reference, entity) in root
@@ -525,12 +539,16 @@ pub(crate) fn unsupported_annotation_classes(
                     )
                 })?;
             } else {
-                ctx.charge_collection_items(1, "collect SLDPRT unsupported SWIFT classes")?;
                 let key = ctx.format_retained(
                     format_args!("{class}"),
                     "retain SLDPRT unsupported SWIFT class",
                 )?;
-                classes.insert(key, 1);
+                ctx.insert_btree_map(
+                    &mut classes,
+                    key,
+                    1,
+                    "collect SLDPRT unsupported SWIFT classes",
+                )?;
             }
         }
     }
@@ -604,15 +622,30 @@ fn parse_unique_root(
     Ok(parsed)
 }
 
+fn admit_swift_depth(
+    ctx: &DecodeContext<'_>,
+    depth: usize,
+    operation: &'static str,
+) -> Result<(), CodecError> {
+    if depth >= MAX_DEPTH {
+        let requested = u64_from_index(depth).checked_add(1).ok_or_else(|| {
+            ctx.refuse_codec_limit(operation, u64_from_index(MAX_DEPTH), u64::MAX)
+        })?;
+        return Err(ctx.refuse_codec_limit(operation, u64_from_index(MAX_DEPTH), requested));
+    }
+    Ok(())
+}
+
 fn parse_entity(
     ctx: &DecodeContext<'_>,
     cursor: &mut View<'_>,
     depth: usize,
 ) -> Result<Option<Entity>, CodecError> {
     let offset = cursor.position();
-    if depth >= MAX_DEPTH || pstr(cursor) != Some("Entity") {
+    if pstr(cursor) != Some("Entity") {
         return Ok(None);
     }
+    admit_swift_depth(ctx, depth, "parse SWIFT entity")?;
     let _depth_guard = ctx.enter_nested("parse SWIFT entity")?;
     ctx.charge_work(1, "parse SWIFT entity")?;
     let Some(class) = pstr(cursor) else {
@@ -710,8 +743,7 @@ fn read_strings(
         if values.contains_key(&name) {
             return Ok(None);
         }
-        ctx.charge_collection_items(1, "collect SWIFT string properties")?;
-        values.insert(name, value);
+        ctx.insert_btree_map(&mut values, name, value, "collect SWIFT string properties")?;
     }
     Ok((pstr(cursor) == Some("EndStrings")).then_some(values))
 }
@@ -739,8 +771,7 @@ fn read_integers(
         if values.contains_key(&name) {
             return Ok(None);
         }
-        ctx.charge_collection_items(1, "collect SWIFT integer properties")?;
-        values.insert(name, value);
+        ctx.insert_btree_map(&mut values, name, value, "collect SWIFT integer properties")?;
     }
     Ok((pstr(cursor) == Some("EndIntegers")).then_some(values))
 }
@@ -768,8 +799,7 @@ fn read_doubles(
         if values.contains_key(&name) {
             return Ok(None);
         }
-        ctx.charge_collection_items(1, "collect SWIFT double properties")?;
-        values.insert(name, value);
+        ctx.insert_btree_map(&mut values, name, value, "collect SWIFT double properties")?;
     }
     Ok((pstr(cursor) == Some("EndDoubles")).then_some(values))
 }
@@ -813,9 +843,13 @@ fn read_objects(
         if entities.len() >= references.len() {
             return Ok(None);
         }
-        let Some(next_depth) = depth.checked_add(1) else {
-            return Ok(None);
-        };
+        let next_depth = depth.checked_add(1).ok_or_else(|| {
+            ctx.refuse_codec_limit(
+                "advance SWIFT recursion depth",
+                u64_from_index(MAX_DEPTH),
+                u64::MAX,
+            )
+        })?;
         let Some(entity) = parse_entity(ctx, cursor, next_depth)? else {
             return Ok(None);
         };
@@ -866,9 +900,13 @@ fn read_related(
     }
     let mut related = Vec::new();
     for (name, class) in descriptors {
-        let Some(next_depth) = depth.checked_add(1) else {
-            return Ok(None);
-        };
+        let next_depth = depth.checked_add(1).ok_or_else(|| {
+            ctx.refuse_codec_limit(
+                "advance SWIFT recursion depth",
+                u64_from_index(MAX_DEPTH),
+                u64::MAX,
+            )
+        })?;
         let Some(entity) = parse_entity(ctx, cursor, next_depth)? else {
             return Ok(None);
         };
@@ -979,10 +1017,12 @@ fn project_with_topology(
         let Some(id) = pmi_id_charged(ctx, &reference.id)? else {
             continue;
         };
-        if !datum_ids.contains_key(reference.id.as_str()) {
-            ctx.charge_collection_items(1, "index SWIFT datum IDs")?;
-        }
-        datum_ids.insert(reference.id.as_str(), id);
+        ctx.insert_btree_map(
+            &mut datum_ids,
+            reference.id.as_str(),
+            id,
+            "index SWIFT datum IDs",
+        )?;
     }
     let mut projected = Vec::new();
     for (reference, entity) in root
@@ -1527,22 +1567,26 @@ fn feature_reaches(
     visited: &mut BTreeSet<String>,
     depth: usize,
 ) -> Result<bool, CodecError> {
-    let _depth = ctx.enter_nested("traverse SWIFT feature reachability")?;
     ctx.charge_work(1, "traverse SWIFT feature reachability")?;
-    if depth >= MAX_DEPTH || visited.contains(id) {
+    if visited.contains(id) {
         return Ok(false);
     }
-    ctx.charge_collection_items(1, "track SWIFT reachability path")?;
+    admit_swift_depth(ctx, depth, "traverse SWIFT feature reachability")?;
+    let _depth = ctx.enter_nested("traverse SWIFT feature reachability")?;
     let owned_id =
         ctx.format_retained(format_args!("{id}"), "retain SWIFT reachability path ID")?;
-    visited.insert(owned_id);
+    ctx.insert_btree_set(visited, owned_id, "track SWIFT reachability path")?;
     let result = (|| {
         let Some(feature) = feature_index.get(id) else {
             return Ok(false);
         };
-        let Some(next_depth) = depth.checked_add(1) else {
-            return Ok(false);
-        };
+        let next_depth = depth.checked_add(1).ok_or_else(|| {
+            ctx.refuse_codec_limit(
+                "advance SWIFT recursion depth",
+                u64_from_index(MAX_DEPTH),
+                u64::MAX,
+            )
+        })?;
         for child in child_feature_ids(feature) {
             if child == target
                 || feature_reaches(ctx, child, target, feature_index, visited, next_depth)?
@@ -1651,14 +1695,14 @@ fn collect_rotational_projections(
     depth: usize,
     projections: &mut Vec<FiniteReal>,
 ) -> Result<(), CodecError> {
-    let _depth = ctx.enter_nested("scan SWIFT rotational features")?;
     ctx.charge_work(1, "scan SWIFT rotational features")?;
-    if depth >= MAX_DEPTH || visited.contains(id) {
+    if visited.contains(id) {
         return Ok(());
     }
-    ctx.charge_collection_items(1, "track SWIFT rotational path")?;
+    admit_swift_depth(ctx, depth, "scan SWIFT rotational features")?;
+    let _depth = ctx.enter_nested("scan SWIFT rotational features")?;
     let owned_id = ctx.format_retained(format_args!("{id}"), "retain SWIFT rotational path ID")?;
-    visited.insert(owned_id);
+    ctx.insert_btree_set(visited, owned_id, "track SWIFT rotational path")?;
     let result = (|| {
         let Some(feature) = feature_index.get(id) else {
             return Ok(());
@@ -1673,9 +1717,13 @@ fn collect_rotational_projections(
             projections.push(projection);
             return Ok(());
         }
-        let Some(next_depth) = depth.checked_add(1) else {
-            return Ok(());
-        };
+        let next_depth = depth.checked_add(1).ok_or_else(|| {
+            ctx.refuse_codec_limit(
+                "advance SWIFT recursion depth",
+                u64_from_index(MAX_DEPTH),
+                u64::MAX,
+            )
+        })?;
         for child in child_feature_ids(feature) {
             collect_rotational_projections(
                 ctx,
@@ -1776,10 +1824,11 @@ fn hole_diameter_excluding_counterbore(
     let mut context = BTreeSet::new();
     for reference in &annotation.features.references {
         ctx.charge_work(1, "collect SWIFT diameter context")?;
-        if !context.contains(reference.id.as_str()) {
-            ctx.charge_collection_items(1, "collect SWIFT diameter context")?;
-            context.insert(reference.id.as_str());
-        }
+        ctx.insert_btree_set(
+            &mut context,
+            reference.id.as_str(),
+            "collect SWIFT diameter context",
+        )?;
     }
     if context.is_empty() {
         return Ok(None);
@@ -1850,14 +1899,14 @@ fn collect_diameter_contributors(
     depth: usize,
     values: &mut Vec<PositiveReal>,
 ) -> Result<(), CodecError> {
-    let _depth = ctx.enter_nested("scan SWIFT diameter features")?;
     ctx.charge_work(1, "scan SWIFT diameter features")?;
-    if depth >= MAX_DEPTH || visited.contains(id) {
+    if visited.contains(id) {
         return Ok(());
     }
-    ctx.charge_collection_items(1, "track SWIFT diameter path")?;
+    admit_swift_depth(ctx, depth, "scan SWIFT diameter features")?;
+    let _depth = ctx.enter_nested("scan SWIFT diameter features")?;
     let owned_id = ctx.format_retained(format_args!("{id}"), "retain SWIFT diameter path ID")?;
-    visited.insert(owned_id);
+    ctx.insert_btree_set(visited, owned_id, "track SWIFT diameter path")?;
     let result = (|| {
         let Some(feature) = feature_index.get(id) else {
             return Ok(());
@@ -1872,9 +1921,13 @@ fn collect_diameter_contributors(
             values.push(diameter);
             return Ok(());
         }
-        let Some(next_depth) = depth.checked_add(1) else {
-            return Ok(());
-        };
+        let next_depth = depth.checked_add(1).ok_or_else(|| {
+            ctx.refuse_codec_limit(
+                "advance SWIFT recursion depth",
+                u64_from_index(MAX_DEPTH),
+                u64::MAX,
+            )
+        })?;
         for child in child_feature_ids(feature) {
             collect_diameter_contributors(ctx, child, feature_index, visited, next_depth, values)?;
         }
@@ -2005,10 +2058,11 @@ fn direct_feature_context<'a>(
         {
             continue;
         }
-        if !context.contains(reference.id.as_str()) {
-            ctx.charge_collection_items(1, "collect SWIFT feature context")?;
-            context.insert(reference.id.as_str());
-        }
+        ctx.insert_btree_set(
+            &mut context,
+            reference.id.as_str(),
+            "collect SWIFT feature context",
+        )?;
     }
     Ok((!context.is_empty()).then_some(context))
 }
@@ -2458,14 +2512,14 @@ fn measurement_for_feature(
     depth: usize,
     direct_measurement: impl Copy + Fn(&Entity) -> Option<PositiveReal>,
 ) -> Result<Option<PositiveReal>, CodecError> {
-    let _depth = ctx.enter_nested("measure SWIFT feature geometry")?;
     ctx.charge_work(1, "measure SWIFT feature geometry")?;
-    if depth >= MAX_DEPTH || visited.contains(id) {
+    if visited.contains(id) {
         return Ok(None);
     }
-    ctx.charge_collection_items(1, "track SWIFT measurement path")?;
+    admit_swift_depth(ctx, depth, "measure SWIFT feature geometry")?;
+    let _depth = ctx.enter_nested("measure SWIFT feature geometry")?;
     let owned_id = ctx.format_retained(format_args!("{id}"), "retain SWIFT measurement path ID")?;
-    visited.insert(owned_id);
+    ctx.insert_btree_set(visited, owned_id, "track SWIFT measurement path")?;
     let result = (|| {
         let Some(feature) = feature_index.get(id) else {
             return Ok(None);
@@ -2473,9 +2527,13 @@ fn measurement_for_feature(
         if let Some(measurement) = direct_measurement(feature) {
             return Ok(Some(measurement));
         }
-        let Some(next_depth) = depth.checked_add(1) else {
-            return Ok(None);
-        };
+        let next_depth = depth.checked_add(1).ok_or_else(|| {
+            ctx.refuse_codec_limit(
+                "advance SWIFT recursion depth",
+                u64_from_index(MAX_DEPTH),
+                u64::MAX,
+            )
+        })?;
         let mut first: Option<PositiveReal> = None;
         for child in child_feature_ids(feature) {
             let Some(value) = measurement_for_feature(
@@ -2644,6 +2702,10 @@ fn deviation(
     tolerance
 }
 
+const PRIMARY_DATUM_PRECEDENCE: NonZeroU32 = NonZeroU32::MIN;
+const SECONDARY_DATUM_PRECEDENCE: NonZeroU32 = NonZeroU32::MIN.saturating_add(1);
+const TERTIARY_DATUM_PRECEDENCE: NonZeroU32 = NonZeroU32::MIN.saturating_add(2);
+
 fn datum_references(
     ctx: &DecodeContext<'_>,
     entity: &Entity,
@@ -2651,9 +2713,9 @@ fn datum_references(
 ) -> Result<Vec<DatumReference>, CodecError> {
     let mut result = Vec::new();
     for (name, precedence) in [
-        ("PrimaryDatums", NonZeroU32::MIN),
-        ("SecondaryDatums", NonZeroU32::MIN.saturating_add(1)),
-        ("TertiaryDatums", NonZeroU32::MIN.saturating_add(2)),
+        ("PrimaryDatums", PRIMARY_DATUM_PRECEDENCE),
+        ("SecondaryDatums", SECONDARY_DATUM_PRECEDENCE),
+        ("TertiaryDatums", TERTIARY_DATUM_PRECEDENCE),
     ] {
         let Some(collection) = unique_related(entity, name) else {
             continue;
@@ -2709,10 +2771,12 @@ fn feature_index<'a>(
     let mut index = BTreeMap::new();
     for (reference, entity) in root.features.references.iter().zip(&root.features.entities) {
         ctx.charge_work(1, "index SWIFT features")?;
-        if !index.contains_key(reference.id.as_str()) {
-            ctx.charge_collection_items(1, "index SWIFT feature references")?;
-        }
-        index.insert(reference.id.as_str(), entity);
+        ctx.insert_btree_map(
+            &mut index,
+            reference.id.as_str(),
+            entity,
+            "index SWIFT feature references",
+        )?;
     }
     Ok(index)
 }
@@ -2728,11 +2792,13 @@ fn targets(
     for reference in &entity.features.references {
         let valid =
             visit_expanded_feature_ids(ctx, &reference.id, feature_index, 0, &mut |source_id| {
-                if seen.contains(source_id) {
+                if !ctx.insert_btree_set(
+                    &mut seen,
+                    source_id,
+                    "deduplicate SWIFT target feature IDs",
+                )? {
                     return Ok(true);
                 }
-                ctx.charge_collection_items(1, "deduplicate SWIFT target feature IDs")?;
-                seen.insert(source_id);
                 if !source_id
                     .chars()
                     .any(|character| !character.is_whitespace())
@@ -2858,16 +2924,21 @@ fn visit_expanded_feature_ids<'a>(
     let Some(feature) = feature_index.get(id) else {
         return visit(id);
     };
-    if short_class(&feature.class) != "GdtPattern" || depth >= MAX_DEPTH {
+    if short_class(&feature.class) != "GdtPattern" {
         return visit(id);
     }
+    admit_swift_depth(ctx, depth, "expand SWIFT target features")?;
     let Some(subfeatures) = direct_subfeature_ids(feature) else {
         return visit(id);
     };
     for subfeature in subfeatures {
-        let Some(next_depth) = depth.checked_add(1) else {
-            return visit(id);
-        };
+        let next_depth = depth.checked_add(1).ok_or_else(|| {
+            ctx.refuse_codec_limit(
+                "advance SWIFT recursion depth",
+                u64_from_index(MAX_DEPTH),
+                u64::MAX,
+            )
+        })?;
         if !visit_expanded_feature_ids(ctx, subfeature, feature_index, next_depth, visit)? {
             return Ok(false);
         }

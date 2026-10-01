@@ -14,18 +14,11 @@ use cadmpeg_ir::features::{
     BooleanOp, RibConstruction, RibDraft, RibSide,
 };
 
-#[allow(
-    clippy::too_many_arguments,
-    clippy::trivially_copy_pass_by_ref,
-    clippy::ref_option,
-    clippy::ptr_arg,
-    reason = "Encoder arguments are borrowed from one FeatureDefinition match."
-)]
 impl NeutralFeatureEncoder<'_, '_, '_> {
     pub(super) fn encode_rib(
         &self,
         construction: &RibConstruction,
-        op: &BooleanOp,
+        op: BooleanOp,
     ) -> Result<NeutralFeatureEncoding, CodecError> {
         let feature = self.feature;
         let existing = self.existing;
@@ -40,7 +33,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     || construction.thickness.is_none()
                     || construction.side.is_none()
                     || construction.draft == RibDraft::Unresolved
-                    || *op == BooleanOp::Unresolved)
+                    || op == BooleanOp::Unresolved)
             {
                 return Err(CodecError::NotImplemented(format!(
                     "SLDPRT feature {} has unresolved rib construction",
@@ -92,10 +85,10 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     (side == RibSide::Centered).to_string(),
                 );
             }
-            if *op != BooleanOp::Unresolved {
+            if op != BooleanOp::Unresolved {
                 properties.insert(
                     cadmpeg_core::nonblank_literal!("Operation"),
-                    resolved_boolean_op(*op, &feature.id)?.into(),
+                    resolved_boolean_op(op, &feature.id)?.into(),
                 );
             }
             NeutralFeatureEncoding {
@@ -108,7 +101,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
 
     pub(super) fn encode_pattern(
         &self,
-        seeds: &Vec<PatternSeed>,
+        seeds: &[PatternSeed],
         pattern: &PatternKind,
     ) -> Result<NeutralFeatureEncoding, CodecError> {
         let feature = self.feature;

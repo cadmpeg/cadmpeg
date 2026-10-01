@@ -341,21 +341,10 @@ pub(super) fn dimensioned_circle_surface_transforms(
             delta.x * v_axis.x + delta.y * v_axis.y + delta.z * v_axis.z,
         );
         ctx.charge_work(64, OPERATION)?;
-        if !targets_by_radius.contains_key(&radius_key) {
-            ctx.charge_collection_items(1, OPERATION)?;
-            targets_by_radius
-                .try_reserve(1)
-                .map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
-        }
+        ctx.admit_hash_map_entry(&mut targets_by_radius, &radius_key, OPERATION)?;
         let targets = targets_by_radius.entry(radius_key).or_default();
         let point = quantize(center, quantum);
-        if !targets.contains(&point) {
-            ctx.charge_collection_items(1, OPERATION)?;
-            targets
-                .try_reserve(1)
-                .map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
-        }
-        targets.insert(point);
+        ctx.insert_hash_set(targets, point, OPERATION)?;
     }
     let mut compatible = HashMap::new();
     for (center, radius) in circles {
@@ -364,13 +353,7 @@ pub(super) fn dimensioned_circle_surface_transforms(
             continue;
         };
         let center = (*center).into();
-        if !compatible.contains_key(&center) {
-            ctx.charge_collection_items(1, OPERATION)?;
-            compatible
-                .try_reserve(1)
-                .map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
-        }
-        compatible.insert(center, targets);
+        ctx.insert_hash_map(&mut compatible, center, targets, OPERATION)?;
     }
     if compatible.len() != circles.len() {
         return Ok(Vec::new());
@@ -397,10 +380,7 @@ pub(super) fn dimensioned_circle_surface_transforms(
                 complete = false;
                 break;
             }
-            ctx.charge_collection_items(1, OPERATION)?;
-            used.try_reserve(1)
-                .map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
-            used.insert((*radius, center));
+            ctx.insert_hash_set(&mut used, (*radius, center), OPERATION)?;
         }
         if complete {
             ctx.reserve_vec(&mut result, 1, OPERATION)?;
@@ -420,13 +400,6 @@ pub(super) fn dimensioned_circle_transform(
         .map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
     let signature =
         |transform: MarkerTransform| -> Result<Option<Vec<_>>, cadmpeg_core::CodecError> {
-            let sort_depth = u64::from(circles.len().checked_ilog2().unwrap_or(0)) + 1;
-            let work = count
-                .checked_add(1)
-                .and_then(|count| count.checked_mul(sort_depth))
-                .and_then(|work| work.checked_mul(32))
-                .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
-            ctx.charge_work(work, OPERATION)?;
             let mut transformed = Vec::new();
             ctx.reserve_vec(&mut transformed, circles.len(), OPERATION)?;
             for (center, radius) in circles {
@@ -435,7 +408,7 @@ pub(super) fn dimensioned_circle_transform(
                 };
                 transformed.push((center.0, center.1, *radius));
             }
-            transformed.sort_unstable();
+            ctx.sort_unstable_by(&mut transformed, Ord::cmp, |_| 0, OPERATION)?;
             Ok(
                 (transformed.len() == circles.len() && !transformed.is_empty())
                     .then_some(transformed),
@@ -610,12 +583,7 @@ where
                     else {
                         continue;
                     };
-                    if !translations.contains_key(&translation) {
-                        ctx.charge_collection_items(1, OPERATION)?;
-                        translations.try_reserve(1).map_err(|_| {
-                            ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX)
-                        })?;
-                    }
+                    ctx.admit_hash_map_entry(&mut translations, &translation, OPERATION)?;
                     let count = translations.entry(translation).or_default();
                     *count = count
                         .checked_add(1)
@@ -1265,15 +1233,7 @@ where
             .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?,
         operation,
     )?;
-    if identities.contains(identity) {
-        return Ok(false);
-    }
-    ctx.charge_collection_items(1, operation)?;
-    identities
-        .try_reserve(1)
-        .map_err(|_| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
-    identities.insert(identity);
-    Ok(true)
+    ctx.insert_hash_set(identities, identity, operation)
 }
 
 pub(super) fn charge_profile_marker_lookup(
@@ -1313,28 +1273,12 @@ pub(super) fn sort_marker_entity_ids(
     entities: &mut Vec<SketchEntityId>,
     operation: &'static str,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    let count = cadmpeg_core::decode::u64_from_index(entities.len());
-    ctx.charge_work(count, operation)?;
-    let max_bytes = entities
-        .iter()
-        .map(|entity| entity.as_str().len())
-        .max()
-        .unwrap_or(0);
-    let levels = u64::from(u64::BITS - count.leading_zeros()) + 1;
-    ctx.charge_work(
-        count
-            .checked_mul(levels)
-            .and_then(|work| work.checked_mul(64))
-            .and_then(|work| {
-                cadmpeg_core::decode::u64_from_index(max_bytes)
-                    .checked_mul(2)
-                    .and_then(|bytes| bytes.checked_add(1))
-                    .and_then(|bytes| work.checked_mul(bytes))
-            })
-            .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?,
+    ctx.sort_unstable_by(
+        entities,
+        Ord::cmp,
+        |entity| entity.as_str().len(),
         operation,
     )?;
-    entities.sort_unstable();
     entities.dedup();
     Ok(())
 }

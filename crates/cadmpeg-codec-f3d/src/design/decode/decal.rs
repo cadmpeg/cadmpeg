@@ -1,12 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Parse exact raster and face bindings owned by Design `Decal` scopes.
 
+use crate::bytes::lp_ascii_filtered_view;
+use crate::bytes::lp_utf16_bounded_charged;
 use crate::container::ContainerScan;
 use crate::design::decode::image::embedded_image_asset;
 use crate::design::decode::scopes::shared_frames::marked_reference;
 use crate::design::decode::sketch::next_indexed_record_offset;
-use crate::design::decode::text::lp_ascii_filtered_view;
-use crate::design::decode::text::lp_utf16_bounded_charged;
+
 use crate::ids;
 use crate::layout::design_decal_image_asset_record as decal_asset;
 use crate::layout::design_decal_image_name_prefix as decal_name;
@@ -93,7 +94,12 @@ pub(crate) fn project_decal_images(
             ctx.reserve_vec(&mut faces, 1, "f3d Decal faces")?;
             faces.push(copied);
         }
-        crate::design::sort::sort_by(ctx, &mut faces[..], |a, b| a.as_str().cmp(b.as_str()))?;
+        ctx.stable_sort_by(
+            &mut faces[..],
+            |a, b| a.as_str().cmp(b.as_str()),
+            |_| 0,
+            "sort f3d design decal 1",
+        )?;
         faces.dedup();
         if faces.is_empty() {
             continue;
@@ -127,7 +133,12 @@ pub(crate) fn project_decal_images(
         ctx.reserve_vec(&mut assets, 1, "f3d Decal assets")?;
         assets.push(asset);
     }
-    crate::design::sort::sort_by(ctx, &mut assets[..], |a, b| a.id.cmp(&b.id))?;
+    ctx.stable_sort_by(
+        &mut assets[..],
+        |a, b| a.id.cmp(&b.id),
+        |value| value.id.as_str().len(),
+        "sort f3d design decal 2",
+    )?;
     assets.dedup_by(|a, b| a.id == b.id);
     Ok(assets)
 }
@@ -250,6 +261,7 @@ fn parse_decal_asset_record(
             bytes,
             name_at + decal_name::ASSET_NAME_CODE_UNIT_COUNT,
             1..=1024,
+            "f3d Design UTF-16 text",
         ) {
             Ok(Some(value)) => value,
             Ok(None) => return None,

@@ -760,8 +760,7 @@ pub(crate) fn resolve_transform(
     if path.contains(&sequence) {
         return Err("transformation chain is cyclic".into());
     }
-    ctx.charge_collection_items(1, "iges transform chain path")?;
-    path.insert(sequence);
+    ctx.insert_btree_set(path, sequence, "iges transform chain path")?;
     let result: Result<Transform, TransformResolutionError> = (|| {
         let entry = entries
             .get(&sequence)
@@ -1362,9 +1361,8 @@ impl SourceSequences {
             *existing = sequence;
             return Ok(());
         }
-        ctx.charge_collection_items(1, operation)?;
         let key = copy(id, ctx)?;
-        values.insert(key, sequence);
+        ctx.insert_btree_map(values, key, sequence, operation)?;
         Ok(())
     }
 

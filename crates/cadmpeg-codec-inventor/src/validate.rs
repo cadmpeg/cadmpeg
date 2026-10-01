@@ -131,8 +131,18 @@ pub(crate) fn validate_native(
             .difference(&expected_arenas)
             .copied()
             .collect::<Vec<_>>();
-        missing.sort_unstable();
-        unexpected.sort_unstable();
+        ctx.sort_unstable_by(
+            &mut missing,
+            Ord::cmp,
+            |item| item.len(),
+            "Inventor missing arena sort",
+        )?;
+        ctx.sort_unstable_by(
+            &mut unexpected,
+            Ord::cmp,
+            |item| item.len(),
+            "Inventor unexpected arena sort",
+        )?;
         return Ok(vec![finding(
             Check::NativeLinks,
             format!(
@@ -239,10 +249,10 @@ fn validate_design(data: &NativeData, ir: &CadIr, findings: &mut Vec<Finding>) {
     );
     for parameter in &data.pm_dc_parameters {
         let references = [
-            parameter.header.next.index,
-            parameter.header.context.index,
-            parameter.unit.index,
-            parameter.formula.index,
+            parameter.header.next.index(),
+            parameter.header.context.index(),
+            parameter.unit.index(),
+            parameter.formula.index(),
         ];
         if raw.get(&(
             parameter.identity.segment_token.as_str(),
@@ -263,14 +273,14 @@ fn validate_design(data: &NativeData, ir: &CadIr, findings: &mut Vec<Finding>) {
         }
     }
     for expression in &data.pm_dc_expressions {
-        let mut references = vec![expression.unit.index];
+        let mut references = vec![expression.unit.index()];
         match &expression.kind {
             PmDcExpressionKind::Value { .. } => {}
             PmDcExpressionKind::ParameterReference { operand, .. }
-            | PmDcExpressionKind::Unary { operand, .. } => references.push(operand.index),
+            | PmDcExpressionKind::Unary { operand, .. } => references.push(operand.index()),
             PmDcExpressionKind::Binary { left, right, .. } => {
-                references.push(left.index);
-                references.push(right.index);
+                references.push(left.index());
+                references.push(right.index());
             }
         }
         if raw.get(&(
@@ -302,8 +312,8 @@ fn validate_design(data: &NativeData, ir: &CadIr, findings: &mut Vec<Finding>) {
                 .references()
                 .iter()
                 .chain(denominators.references())
-                .map(|reference| reference.index)
-                .chain(std::iter::once(derived.index))
+                .map(|reference| reference.index())
+                .chain(std::iter::once(derived.index()))
                 .collect::<Vec<_>>(),
             PmDcUnitKind::Base { .. } => Vec::new(),
         };
@@ -431,10 +441,10 @@ fn validate_sketches(data: &NativeData, ir: &CadIr, findings: &mut Vec<Finding>)
     );
     for sketch in &data.pm_dc_sketches {
         let references = [
-            sketch.header.next.index,
-            sketch.header.context.index,
-            sketch.transform.index,
-            sketch.direction.index,
+            sketch.header.next.index(),
+            sketch.header.context.index(),
+            sketch.transform.index(),
+            sketch.direction.index(),
         ]
         .into_iter()
         .chain(
@@ -442,20 +452,20 @@ fn validate_sketches(data: &NativeData, ir: &CadIr, findings: &mut Vec<Finding>)
                 .entities
                 .references()
                 .iter()
-                .map(|reference| reference.index),
+                .map(|reference| reference.index()),
         )
         .chain(
             sketch
                 .auxiliary
                 .iter()
                 .flat_map(super::pmdc::PmDcReferenceList::references)
-                .map(|reference| reference.index),
+                .map(|reference| reference.index()),
         )
         .collect::<Vec<_>>();
         if !record_is_exact(
             sketch.identity.segment_token.as_str(),
             sketch.identity.record_ordinal,
-            &sketch.identity.type_id,
+            sketch.identity.type_id.as_str(),
         ) || !references_resolve(sketch.identity.segment_token.as_str(), &references)
         {
             findings.push(finding(
@@ -467,12 +477,12 @@ fn validate_sketches(data: &NativeData, ir: &CadIr, findings: &mut Vec<Finding>)
     }
     for entity in &data.pm_dc_sketch_entities {
         let mut references = vec![
-            entity.header.next.index,
-            entity.header.context.index,
-            entity.sketch.index,
+            entity.header.next.index(),
+            entity.header.context.index(),
+            entity.sketch.index(),
         ];
         let mut add_list = |list: &PmDcReferenceList| {
-            references.extend(list.references().iter().map(|reference| reference.index));
+            references.extend(list.references().iter().map(|reference| reference.index()));
         };
         match &entity.kind {
             PmDcSketchEntityKind::Point {
@@ -511,13 +521,13 @@ fn validate_sketches(data: &NativeData, ir: &CadIr, findings: &mut Vec<Finding>)
                 for list in auxiliary {
                     add_list(list);
                 }
-                references.push(center.index);
+                references.push(center.index());
             }
         }
         if !record_is_exact(
             entity.identity.segment_token.as_str(),
             entity.identity.record_ordinal,
-            &entity.identity.type_id,
+            entity.identity.type_id.as_str(),
         ) || !references_resolve(entity.identity.segment_token.as_str(), &references)
         {
             findings.push(finding(
@@ -531,10 +541,13 @@ fn validate_sketches(data: &NativeData, ir: &CadIr, findings: &mut Vec<Finding>)
         if !record_is_exact(
             transform.identity.segment_token.as_str(),
             transform.identity.record_ordinal,
-            &transform.identity.type_id,
+            transform.identity.type_id.as_str(),
         ) || !references_resolve(
             transform.identity.segment_token.as_str(),
-            &[transform.header.next.index, transform.header.context.index],
+            &[
+                transform.header.next.index(),
+                transform.header.context.index(),
+            ],
         ) {
             findings.push(finding(
                 Check::NativeLinks,
@@ -546,27 +559,27 @@ fn validate_sketches(data: &NativeData, ir: &CadIr, findings: &mut Vec<Finding>)
     for constraint in &data.pm_dc_sketch_constraints {
         let header = &constraint.header;
         let mut references = vec![
-            header.content.next.index,
-            header.content.context.index,
-            header.group.index,
-            header.parameter.index,
+            header.content.next.index(),
+            header.content.context.index(),
+            header.group.index(),
+            header.parameter.index(),
         ];
         for (key, _) in header.scalar_map.entries() {
-            references.push(key.index);
+            references.push(key.index());
         }
         for (key, value) in header.reference_map.entries() {
-            references.extend([key.index, value.index]);
+            references.extend([key.index(), value.index()]);
         }
         match constraint.kind {
             PmDcSketchConstraintKind::Coincident { first, second }
             | PmDcSketchConstraintKind::Parallel { first, second, .. }
             | PmDcSketchConstraintKind::Perpendicular { first, second, .. }
             | PmDcSketchConstraintKind::Tangent { first, second, .. } => {
-                references.extend([first.index, second.index]);
+                references.extend([first.index(), second.index()]);
             }
             PmDcSketchConstraintKind::Horizontal { entity, .. }
             | PmDcSketchConstraintKind::Vertical { entity, .. } => {
-                references.push(entity.index);
+                references.push(entity.index());
             }
             PmDcSketchConstraintKind::HorizontalDistance {
                 first,
@@ -579,24 +592,24 @@ fn validate_sketches(data: &NativeData, ir: &CadIr, findings: &mut Vec<Finding>)
                 second,
                 parameter,
                 ..
-            } => references.extend([first.index, second.index, parameter.index]),
+            } => references.extend([first.index(), second.index(), parameter.index()]),
             PmDcSketchConstraintKind::Radius { entity, .. } => {
-                references.push(entity.index);
+                references.push(entity.index());
             }
             PmDcSketchConstraintKind::Diameter {
                 reference, entity, ..
-            } => references.extend([reference.index, entity.index]),
+            } => references.extend([reference.index(), entity.index()]),
             PmDcSketchConstraintKind::CircleCenter { entity, center } => {
-                references.extend([entity.index, center.index]);
+                references.extend([entity.index(), center.index()]);
             }
             PmDcSketchConstraintKind::EqualRadius { first, second } => {
-                references.extend([first.index, second.index]);
+                references.extend([first.index(), second.index()]);
             }
         }
         if !record_is_exact(
             constraint.identity.segment_token.as_str(),
             constraint.identity.record_ordinal,
-            &constraint.identity.type_id,
+            constraint.identity.type_id.as_str(),
         ) || !references_resolve(constraint.identity.segment_token.as_str(), &references)
         {
             findings.push(finding(
@@ -610,10 +623,13 @@ fn validate_sketches(data: &NativeData, ir: &CadIr, findings: &mut Vec<Finding>)
         if !record_is_exact(
             direction.identity.segment_token.as_str(),
             direction.identity.record_ordinal,
-            &direction.identity.type_id,
+            direction.identity.type_id.as_str(),
         ) || !references_resolve(
             direction.identity.segment_token.as_str(),
-            &[direction.header.next.index, direction.header.context.index],
+            &[
+                direction.header.next.index(),
+                direction.header.context.index(),
+            ],
         ) {
             findings.push(finding(
                 Check::NativeLinks,
@@ -754,14 +770,14 @@ fn validate_features(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>)
         "Inventor PmDc feature label",
     );
     for feature in &data.pm_dc_features {
-        let references = [feature.header.next.index, feature.header.context.index]
+        let references = [feature.header.next.index(), feature.header.context.index()]
             .into_iter()
             .chain(
                 feature
                     .properties
                     .references()
                     .iter()
-                    .map(|reference| reference.index),
+                    .map(|reference| reference.index()),
             );
         if raw.get(&(
             feature.identity.segment_token.as_str(),
@@ -779,27 +795,27 @@ fn validate_features(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>)
         }
     }
     for feature in &data.pm_dc_pattern_features {
-        let references = [feature.header.next.index, feature.header.context.index]
+        let references = [feature.header.next.index(), feature.header.context.index()]
             .into_iter()
             .chain(
                 feature
                     .properties
                     .references()
                     .iter()
-                    .map(|reference| reference.index),
+                    .map(|reference| reference.index()),
             )
             .chain(
                 feature
                     .participants
                     .references()
                     .iter()
-                    .map(|reference| reference.index),
+                    .map(|reference| reference.index()),
             )
             .chain(
                 feature
                     .property_slots
                     .iter()
-                    .map(|reference| reference.index),
+                    .map(|reference| reference.index()),
             );
         if raw.get(&(
             feature.identity.segment_token.as_str(),
@@ -817,26 +833,34 @@ fn validate_features(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>)
         }
     }
     for property in &data.pm_dc_feature_properties {
-        let mut references = vec![property.header.next.index, property.header.context.index];
+        let mut references = vec![
+            property.header.next.index(),
+            property.header.context.index(),
+        ];
         match &property.kind {
             PmDcFeaturePropertyKind::References { items, .. } => {
-                references.extend(items.references().iter().map(|reference| reference.index));
+                references.extend(items.references().iter().map(|reference| reference.index()));
             }
-            PmDcFeaturePropertyKind::SurfaceBody { body } => references.push(body.index),
+            PmDcFeaturePropertyKind::SurfaceBody { body } => references.push(body.index()),
             PmDcFeaturePropertyKind::ProfileSelection { entity_link, .. } => {
-                references.push(entity_link.index);
+                references.push(entity_link.index());
             }
             PmDcFeaturePropertyKind::Placement {
                 transform,
                 point,
                 value,
-            } => references.extend([transform.index, point.index, value.index]),
+            } => references.extend([transform.index(), point.index(), value.index()]),
             PmDcFeaturePropertyKind::FilletEdgeSet {
                 edges,
                 radius,
                 selection,
                 continuity,
-            } => references.extend([edges.index, radius.index, selection.index, continuity.index]),
+            } => references.extend([
+                edges.index(),
+                radius.index(),
+                selection.index(),
+                continuity.index(),
+            ]),
             PmDcFeaturePropertyKind::Enumeration { .. }
             | PmDcFeaturePropertyKind::WideEnumeration { .. }
             | PmDcFeaturePropertyKind::Boolean { .. }
@@ -860,9 +884,9 @@ fn validate_features(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>)
     }
     for link in &data.pm_dc_entity_style_links {
         let references = [
-            link.header.owner.index,
-            link.header.parent.index,
-            link.header.next.index,
+            link.header.owner.index(),
+            link.header.parent.index(),
+            link.header.next.index(),
         ];
         if raw.get(&(
             link.identity.segment_token.as_str(),
@@ -881,9 +905,9 @@ fn validate_features(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>)
     }
     for label in &data.pm_dc_feature_labels {
         let references = [
-            label.header.owner.index,
-            label.header.parent.index,
-            label.header.next.index,
+            label.header.owner.index(),
+            label.header.parent.index(),
+            label.header.next.index(),
         ]
         .into_iter()
         .chain(
@@ -891,7 +915,7 @@ fn validate_features(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>)
                 .participants
                 .references()
                 .iter()
-                .map(|reference| reference.index),
+                .map(|reference| reference.index()),
         );
         if raw.get(&(
             label.identity.segment_token.as_str(),
@@ -910,8 +934,8 @@ fn validate_features(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>)
     }
     for terminator in &data.pm_dc_feature_terminators {
         let references = [
-            terminator.header.next.index,
-            terminator.header.context.index,
+            terminator.header.next.index(),
+            terminator.header.context.index(),
         ];
         if raw.get(&(
             terminator.identity.segment_token.as_str(),
@@ -940,7 +964,7 @@ fn validate_features(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>)
             Some((
                 (
                     label.identity.segment_token.as_str(),
-                    label.header.owner.index.checked_sub(1)?,
+                    label.header.owner.index().checked_sub(1)?,
                 ),
                 label,
             ))
@@ -1007,7 +1031,7 @@ fn validate_features(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>)
             .properties
             .references()
             .get(output_slot)
-            .and_then(|reference| reference.index.checked_sub(1))
+            .and_then(|reference| reference.index().checked_sub(1))
             .and_then(|ordinal| {
                 properties_by_record
                     .get(&(raw_feature.identity.segment_token.as_str(), ordinal))
@@ -1055,7 +1079,7 @@ fn validate_features(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>)
             .references()
             .iter()
             .filter_map(|reference| {
-                let ordinal = reference.index.checked_sub(1)?;
+                let ordinal = reference.index().checked_sub(1)?;
                 properties_by_record
                     .get(&(collection.identity.segment_token.as_str(), ordinal))
                     .filter(|property| {
@@ -1135,14 +1159,14 @@ fn validate_presentation(ir: &CadIr, data: &NativeData, findings: &mut Vec<Findi
         findings,
         data.pm_graphics_style_collections
             .iter()
-            .map(|record| record.id.as_str()),
+            .map(PmGraphicsStyleCollectionRecord::id),
         "PmGraphics style-collection id",
     );
     unique(
         findings,
         data.pm_graphics_style_collections
             .iter()
-            .map(|record| (record.segment_token.as_str(), record.record_ordinal)),
+            .map(|record| (record.segment_token(), record.record_ordinal())),
         "PmGraphics style-collection record key",
     );
     unique(
@@ -1245,14 +1269,14 @@ fn validate_presentation(ir: &CadIr, data: &NativeData, findings: &mut Vec<Findi
                 Some(record.id.clone()),
             ));
         }
-        for reference in std::iter::once(record.surface.index)
-            .chain(std::iter::once(record.parent.index))
+        for reference in std::iter::once(record.surface.index())
+            .chain(std::iter::once(record.parent.index()))
             .chain(
                 record
                     .edge_references
                     .references()
                     .iter()
-                    .map(|reference| reference.index),
+                    .map(|reference| reference.index()),
             )
             .filter(|reference| *reference != 0)
         {
@@ -1267,8 +1291,8 @@ fn validate_presentation(ir: &CadIr, data: &NativeData, findings: &mut Vec<Findi
                 ));
             }
         }
-        if record.styles.index != 0 {
-            let target = record.styles.index - 1;
+        if record.styles.index() != 0 {
+            let target = record.styles.index() - 1;
             if raw_records.get(&(record.segment_token.as_str(), target))
                 != Some(&"0786eb48d2110c076000f99ac5361ab0")
             {
@@ -1282,25 +1306,25 @@ fn validate_presentation(ir: &CadIr, data: &NativeData, findings: &mut Vec<Findi
         }
     }
     for record in &data.pm_graphics_style_collections {
-        let key = (record.segment_token.as_str(), record.record_ordinal);
+        let key = (record.segment_token(), record.record_ordinal());
         if raw_records.get(&key) != Some(&"0786eb48d2110c076000f99ac5361ab0") {
             findings.push(finding(
                 Check::NativeLinks,
                 "Inventor PmGraphics style collection does not resolve to its RSe record".into(),
-                Some(record.id.clone()),
+                Some(record.id().to_owned()),
             ));
         }
         for reference in record.style_references.references() {
-            if reference.index == 0
-                || !raw_keys.contains(&(record.segment_token.as_str(), reference.index - 1))
+            if reference.index() == 0
+                || !raw_keys.contains(&(record.segment_token(), reference.index() - 1))
             {
                 findings.push(finding(
                     Check::NativeLinks,
                     format!(
                         "Inventor PmGraphics style-collection reference {} does not resolve",
-                        reference.index
+                        reference.index()
                     ),
-                    Some(record.id.clone()),
+                    Some(record.id().to_owned()),
                 ));
             }
         }
@@ -2092,9 +2116,12 @@ fn validate_assembly(
         &data.assembly_occurrences,
         &data.assembly_placements,
     )?;
-    projected
-        .occurrences
-        .sort_by(|left, right| left.id.as_str().cmp(right.id.as_str()));
+    ctx.stable_sort_by(
+        &mut projected.occurrences,
+        |left, right| left.id.as_str().cmp(right.id.as_str()),
+        |item| item.id.as_str().len(),
+        "Inventor projected occurrence sort",
+    )?;
     if ir.model.occurrences != projected.occurrences {
         findings.push(finding(
             Check::NativeLinks,

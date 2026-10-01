@@ -605,3 +605,20 @@ fn a_pcurve_lift_with_an_overflowing_placed_end_is_measured_at_its_finite_end() 
         .expect("evaluator allocation succeeds")
     );
 }
+
+#[test]
+fn standard_carrier_endpoints_refuse_caller_depth() {
+    let (cone, pcurve) = overflowing_cone_lift();
+    crate::test_support::with_depth_limit(0, |ctx| {
+        let error = super::super::standard_carrier_endpoint_loci(ctx, &pcurve, &cone, [0.0, 1.0])
+            .expect_err("carrier evaluation exceeds caller depth");
+        let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
+            panic!("resource refusal required")
+        };
+        assert_eq!(
+            limit.dimension,
+            cadmpeg_core::decode::ResourceDimension::RecursionDepth
+        );
+        assert_eq!(ctx.resource_refusal(), Some(limit));
+    });
+}

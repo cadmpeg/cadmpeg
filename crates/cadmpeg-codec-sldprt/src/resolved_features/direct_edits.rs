@@ -160,13 +160,13 @@ fn push_move_face_candidate(
     key: (usize, usize),
     candidate: Option<FeatureDirection3>,
 ) -> Result<(), CodecError> {
-    if !candidates.contains_key(&key) {
-        ctx.charge_collection_items(1, "index SLDPRT move-face directions")?;
-    }
-    let values = candidates.entry(key).or_default();
-    ctx.reserve_vec(values, 1, "collect SLDPRT move-face directions")?;
-    values.push(candidate);
-    Ok(())
+    ctx.push_btree_group(
+        candidates,
+        key,
+        candidate,
+        "index SLDPRT move-face directions",
+        "collect SLDPRT move-face directions",
+    )
 }
 
 /// Add translation laws carried by Move Face direction-spec children.
@@ -187,7 +187,12 @@ pub(crate) fn enrich_history_move_face_translations(
                 }
             }
         }
-        starts.sort_unstable_by_key(|entry| entry.0);
+        ctx.sort_unstable_by(
+            &mut starts,
+            |left, right| left.0.cmp(&right.0),
+            |_| 0,
+            "sort SLDPRT move-face feature starts",
+        )?;
         for (index, &(start, history_index, feature_index)) in starts.iter().enumerate() {
             let feature = &histories[history_index].features[feature_index];
             if classify(feature) != Some(FeatureClass::MoveFace)
@@ -219,7 +224,7 @@ pub(crate) fn enrich_history_move_face_translations(
                 continue;
             }
             ctx.charge_work(
-                lane.classes.len() as u64,
+                u64_from_index(lane.classes.len()),
                 "scan SLDPRT move-face direction classes",
             )?;
             let direction_specs = lane
@@ -343,7 +348,12 @@ pub(crate) fn enrich_history_move_body_translations(
                 }
             }
         }
-        starts.sort_unstable_by_key(|entry| entry.0);
+        ctx.sort_unstable_by(
+            &mut starts,
+            |left, right| left.0.cmp(&right.0),
+            |_| 0,
+            "sort SLDPRT move-body feature starts",
+        )?;
         for (index, &(start, history_index, feature_index)) in starts.iter().enumerate() {
             let feature = &histories[history_index].features[feature_index];
             if classify(feature) != Some(FeatureClass::MoveBody)
@@ -380,12 +390,13 @@ pub(crate) fn enrich_history_move_body_translations(
                 _ => None,
             };
             let key = (history_index, feature_index);
-            if !candidates.contains_key(&key) {
-                ctx.charge_collection_items(1, "index SLDPRT move-body candidates")?;
-            }
-            let values = candidates.entry(key).or_default();
-            ctx.reserve_vec(values, 1, "collect SLDPRT move-body candidates")?;
-            values.push(candidate);
+            ctx.push_btree_group(
+                &mut candidates,
+                key,
+                candidate,
+                "index SLDPRT move-body candidates",
+                "collect SLDPRT move-body candidates",
+            )?;
         }
     }
     for ((history_index, feature_index), candidates) in candidates {
@@ -397,9 +408,6 @@ pub(crate) fn enrich_history_move_body_translations(
         }
         let first = first.get();
         let properties = &mut histories[history_index].features[feature_index].properties;
-        if !properties.contains_key("Translation") {
-            ctx.charge_collection_items(1, "insert SLDPRT move-body translation")?;
-        }
         let translation = ctx.format_retained(
             format_args!(
                 "{}mm,{}mm,{}mm",
@@ -409,7 +417,12 @@ pub(crate) fn enrich_history_move_body_translations(
             ),
             "format SLDPRT move-body translation",
         )?;
-        properties.insert(cadmpeg_core::nonblank_literal!("Translation"), translation);
+        ctx.insert_btree_map(
+            properties,
+            cadmpeg_core::nonblank_literal!("Translation"),
+            translation,
+            "insert SLDPRT move-body translation",
+        )?;
     }
     Ok(())
 }
@@ -428,6 +441,7 @@ mod tests {
         FeatureInputScalarRole,
     };
 
+    use cadmpeg_core::decode::u64_from_index;
     use cadmpeg_ir::math::Vector3;
     use cadmpeg_ir::{
         features::{FaceMotion, FaceSelection, FeatureDefinition, FeatureOperation, FiniteVector3},
@@ -563,7 +577,7 @@ mod tests {
             id: "move-body-data".into(),
             parent: "lane".into(),
             ordinal: 1,
-            offset: selection_offset as u64,
+            offset: u64_from_index(selection_offset),
             name: "moMoveCopyBodyData_c".into(),
         });
 
@@ -619,15 +633,15 @@ mod tests {
             .map(|index| FeatureInputClass {
                 id: format!("direction-spec-{index}"),
                 parent: "lane".into(),
-                ordinal: index as u32,
-                offset: 32 + index as u64,
+                ordinal: u32::try_from(index).expect("test index fits u32"),
+                offset: 32 + u64_from_index(index),
                 name: "moDirectionSpec_c".into(),
             })
             .collect::<Vec<_>>();
         classes.push(FeatureInputClass {
             id: "line-ref".into(),
             parent: "lane".into(),
-            ordinal: direction_specs as u32,
+            ordinal: u32::try_from(direction_specs).expect("test direction spec count fits u32"),
             offset: 80,
             name: "moLineRef_w".into(),
         });

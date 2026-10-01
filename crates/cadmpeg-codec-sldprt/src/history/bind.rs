@@ -92,17 +92,12 @@ pub(crate) fn bind_unique_sketch_feature(
     let mut native_features = HashMap::new();
     for feature in histories.iter().flat_map(|history| &history.features) {
         ctx.charge_work(1, "index SLDPRT native sketch features")?;
-        if !native_features.contains_key(feature.id.as_str()) {
-            ctx.charge_collection_items(1, "index SLDPRT native sketch features")?;
-            native_features.try_reserve(1).map_err(|_| {
-                ctx.refuse_codec_limit(
-                    "index SLDPRT native sketch features",
-                    u64::MAX - 1,
-                    u64::MAX,
-                )
-            })?;
-        }
-        native_features.insert(feature.id.as_str(), feature);
+        ctx.insert_hash_map(
+            &mut native_features,
+            feature.id.as_str(),
+            feature,
+            "index SLDPRT native sketch features",
+        )?;
     }
     let mut feature_indices = Vec::new();
     for (index, feature) in features.iter().enumerate() {
@@ -340,17 +335,11 @@ fn add_regeneration_predecessor<'a>(
     predecessors: &mut HashSet<&'a FeatureId>,
     predecessor: &'a FeatureId,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    if !predecessors.contains(predecessor) {
-        ctx.charge_collection_items(1, "collect SLDPRT feature predecessors")?;
-        predecessors.try_reserve(1).map_err(|_| {
-            ctx.refuse_codec_limit(
-                "collect SLDPRT feature predecessors",
-                u64::MAX - 1,
-                u64::MAX,
-            )
-        })?;
-    }
-    predecessors.insert(predecessor);
+    ctx.insert_hash_set(
+        predecessors,
+        predecessor,
+        "collect SLDPRT feature predecessors",
+    )?;
     Ok(())
 }
 
@@ -378,33 +367,23 @@ fn regeneration_order(
         };
         for child in children {
             ctx.charge_work(1, "index SLDPRT feature tree parents")?;
-            if !tree_parent_by_child.contains_key(child) {
-                ctx.charge_collection_items(1, "index SLDPRT feature tree parents")?;
-                tree_parent_by_child.try_reserve(1).map_err(|_| {
-                    ctx.refuse_codec_limit(
-                        "index SLDPRT feature tree parents",
-                        u64::MAX - 1,
-                        u64::MAX,
-                    )
-                })?;
-            }
-            tree_parent_by_child.insert(child, &feature.id);
+            ctx.insert_hash_map(
+                &mut tree_parent_by_child,
+                child,
+                &feature.id,
+                "index SLDPRT feature tree parents",
+            )?;
         }
     }
     let mut by_id = HashMap::new();
     for (index, feature) in features.iter().enumerate() {
         ctx.charge_work(1, "index SLDPRT feature regeneration IDs")?;
-        if !by_id.contains_key(&feature.id) {
-            ctx.charge_collection_items(1, "index SLDPRT feature regeneration IDs")?;
-            by_id.try_reserve(1).map_err(|_| {
-                ctx.refuse_codec_limit(
-                    "index SLDPRT feature regeneration IDs",
-                    u64::MAX - 1,
-                    u64::MAX,
-                )
-            })?;
-        }
-        by_id.insert(&feature.id, index);
+        ctx.insert_hash_map(
+            &mut by_id,
+            &feature.id,
+            index,
+            "index SLDPRT feature regeneration IDs",
+        )?;
     }
     for (consumer, feature) in features.iter().enumerate() {
         let mut predecessors = HashSet::new();
@@ -450,8 +429,11 @@ fn regeneration_order(
     let mut ready = std::collections::BTreeSet::new();
     for (index, feature) in features.iter().enumerate() {
         if indegree[index] == 0 {
-            ctx.charge_collection_items(1, "queue SLDPRT feature regeneration order")?;
-            ready.insert((feature.ordinal, &feature.id, index));
+            ctx.insert_btree_set(
+                &mut ready,
+                (feature.ordinal, &feature.id, index),
+                "queue SLDPRT feature regeneration order",
+            )?;
         }
     }
     let mut order = Vec::new();
@@ -468,8 +450,11 @@ fn regeneration_order(
             indegree[consumer] -= 1;
             if indegree[consumer] == 0 {
                 let feature = &features[consumer];
-                ctx.charge_collection_items(1, "queue SLDPRT feature regeneration order")?;
-                ready.insert((feature.ordinal, &feature.id, consumer));
+                ctx.insert_btree_set(
+                    &mut ready,
+                    (feature.ordinal, &feature.id, consumer),
+                    "queue SLDPRT feature regeneration order",
+                )?;
             }
         }
     }
@@ -519,13 +504,12 @@ fn face_owner_bodies<'a>(
     let mut region_bodies = HashMap::new();
     for region in regions {
         ctx.charge_work(1, "index SLDPRT face owner regions")?;
-        if !region_bodies.contains_key(region.id.as_str()) {
-            ctx.charge_collection_items(1, "index SLDPRT face owner regions")?;
-            region_bodies.try_reserve(1).map_err(|_| {
-                ctx.refuse_codec_limit("index SLDPRT face owner regions", u64::MAX - 1, u64::MAX)
-            })?;
-        }
-        region_bodies.insert(region.id.as_str(), &region.body);
+        ctx.insert_hash_map(
+            &mut region_bodies,
+            region.id.as_str(),
+            &region.body,
+            "index SLDPRT face owner regions",
+        )?;
     }
     let mut shell_bodies = HashMap::new();
     for shell in shells {
@@ -533,13 +517,12 @@ fn face_owner_bodies<'a>(
         let Some(&body) = region_bodies.get(shell.region.as_str()) else {
             continue;
         };
-        if !shell_bodies.contains_key(shell.id.as_str()) {
-            ctx.charge_collection_items(1, "index SLDPRT face owner shells")?;
-            shell_bodies.try_reserve(1).map_err(|_| {
-                ctx.refuse_codec_limit("index SLDPRT face owner shells", u64::MAX - 1, u64::MAX)
-            })?;
-        }
-        shell_bodies.insert(shell.id.as_str(), body);
+        ctx.insert_hash_map(
+            &mut shell_bodies,
+            shell.id.as_str(),
+            body,
+            "index SLDPRT face owner shells",
+        )?;
     }
     let mut owners = HashMap::new();
     for face in faces {
@@ -547,13 +530,12 @@ fn face_owner_bodies<'a>(
         let Some(&body) = shell_bodies.get(face.shell.as_str()) else {
             continue;
         };
-        if !owners.contains_key(face.id.as_str()) {
-            ctx.charge_collection_items(1, "index SLDPRT face owner bodies")?;
-            owners.try_reserve(1).map_err(|_| {
-                ctx.refuse_codec_limit("index SLDPRT face owner bodies", u64::MAX - 1, u64::MAX)
-            })?;
-        }
-        owners.insert(face.id.as_str(), body);
+        ctx.insert_hash_map(
+            &mut owners,
+            face.id.as_str(),
+            body,
+            "index SLDPRT face owner bodies",
+        )?;
     }
     Ok(owners)
 }
@@ -624,16 +606,11 @@ pub(crate) fn derive_feature_outputs(
                     u64::MAX,
                 )
             })?;
-            if !feature_ids_by_ordinal.contains_key(&ordinal) {
-                ctx.charge_collection_items(1, "index SLDPRT body modifier ordinals")?;
-                feature_ids_by_ordinal.try_reserve(1).map_err(|_| {
-                    ctx.refuse_codec_limit(
-                        "index SLDPRT body modifier ordinals",
-                        u64::MAX - 1,
-                        u64::MAX,
-                    )
-                })?;
-            }
+            ctx.admit_hash_map_entry(
+                &mut feature_ids_by_ordinal,
+                &ordinal,
+                "index SLDPRT body modifier ordinals",
+            )?;
             match feature_ids_by_ordinal.entry(ordinal) {
                 std::collections::hash_map::Entry::Vacant(entry) => {
                     entry.insert(Some(record.id.as_str()));
@@ -698,12 +675,7 @@ pub(crate) fn derive_feature_outputs(
         let Some(body) = owners.get(face.as_str()) else {
             continue;
         };
-        if !produced.contains_key(source_id) {
-            ctx.charge_collection_items(1, "index SLDPRT produced bodies")?;
-            produced.try_reserve(1).map_err(|_| {
-                ctx.refuse_codec_limit("index SLDPRT produced bodies", u64::MAX - 1, u64::MAX)
-            })?;
-        }
+        ctx.admit_hash_map_entry(&mut produced, source_id, "index SLDPRT produced bodies")?;
         let bodies = produced.entry(*source_id).or_default();
         if !bodies.contains(body) {
             ctx.reserve_vec(bodies, 1, "collect SLDPRT produced bodies")?;

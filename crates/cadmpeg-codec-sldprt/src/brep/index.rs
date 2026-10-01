@@ -49,30 +49,20 @@ impl CarrierIndex {
     ) -> Result<(), cadmpeg_core::CodecError> {
         match carrier {
             Carrier::Curve(carrier) => {
-                if !self.curves.contains_key(&carrier.attr) {
-                    ctx.charge_collection_items(1, "index SLDPRT curve carriers")?;
-                    self.curves.try_reserve(1).map_err(|_| {
-                        ctx.refuse_codec_limit(
-                            "index SLDPRT curve carriers",
-                            u64::MAX - 1,
-                            u64::MAX,
-                        )
-                    })?;
-                }
+                ctx.admit_hash_map_entry(
+                    &mut self.curves,
+                    &carrier.attr,
+                    "index SLDPRT curve carriers",
+                )?;
                 self.curves
                     .insert(carrier.attr, IndexedCurve::Exact(carrier));
             }
             Carrier::Surface(carrier) => {
-                if !self.surfaces.contains_key(&carrier.attr) {
-                    ctx.charge_collection_items(1, "index SLDPRT surface carriers")?;
-                    self.surfaces.try_reserve(1).map_err(|_| {
-                        ctx.refuse_codec_limit(
-                            "index SLDPRT surface carriers",
-                            u64::MAX - 1,
-                            u64::MAX,
-                        )
-                    })?;
-                }
+                ctx.admit_hash_map_entry(
+                    &mut self.surfaces,
+                    &carrier.attr,
+                    "index SLDPRT surface carriers",
+                )?;
                 self.surfaces.insert(carrier.attr, carrier);
             }
         }
@@ -87,11 +77,12 @@ impl CarrierIndex {
         &self,
         ctx: &DecodeContext<'_>,
     ) -> Result<HashSet<u16>, cadmpeg_core::CodecError> {
-        ctx.charge_collection_items(self.curves.len() as u64, "collect SLDPRT curve attributes")?;
         let mut attrs = HashSet::new();
-        attrs.try_reserve(self.curves.len()).map_err(|_| {
-            ctx.refuse_codec_limit("collect SLDPRT curve attributes", u64::MAX - 1, u64::MAX)
-        })?;
+        ctx.reserve_set(
+            &mut attrs,
+            self.curves.len(),
+            "collect SLDPRT curve attributes",
+        )?;
         attrs.extend(self.curves.keys().copied());
         Ok(attrs)
     }
@@ -125,12 +116,11 @@ impl CarrierIndex {
         ctx: &DecodeContext<'_>,
         intersection: intersection::IntersectionCarrier,
     ) -> Result<(), cadmpeg_core::CodecError> {
-        if !self.curves.contains_key(&intersection.carrier.attr) {
-            ctx.charge_collection_items(1, "index SLDPRT intersection carriers")?;
-            self.curves.try_reserve(1).map_err(|_| {
-                ctx.refuse_codec_limit("index SLDPRT intersection carriers", u64::MAX - 1, u64::MAX)
-            })?;
-        }
+        ctx.admit_hash_map_entry(
+            &mut self.curves,
+            &intersection.carrier.attr,
+            "index SLDPRT intersection carriers",
+        )?;
         self.curves
             .entry(intersection.carrier.attr)
             .or_insert(IndexedCurve::Derived(intersection));
@@ -201,11 +191,7 @@ fn merge_missing_map<K: Eq + Hash, V>(
 ) -> Result<(), cadmpeg_core::CodecError> {
     for (key, value) in source {
         if !target.contains_key(&key) {
-            ctx.charge_collection_items(1, operation)?;
-            target
-                .try_reserve(1)
-                .map_err(|_| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
-            target.insert(key, value);
+            ctx.insert_hash_map(target, key, value, operation)?;
         }
     }
     Ok(())

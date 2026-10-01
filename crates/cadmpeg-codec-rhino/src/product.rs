@@ -250,7 +250,7 @@ pub(crate) fn install(
             ctx.reserve_vec(&mut links, 1, "Rhino definition links")?;
             links.push(ctx.copy_retained_text(id, "Rhino definition external link")?);
         }
-        links.sort();
+        ctx.stable_sort_by(&mut links, Ord::cmp, std::string::String::len, "Rhino definition links sort")?;
         links.dedup();
         let mut member_object_ids = Vec::new();
         for id in &definition.members {
@@ -307,7 +307,12 @@ pub(crate) fn install(
         }
     }
     for parents in member_definitions.values_mut() {
-        parents.sort();
+        ctx.stable_sort_by(
+            parents,
+            Ord::cmp,
+            std::string::String::len,
+            "Rhino product member parents sort",
+        )?;
         parents.dedup();
     }
     let mut occurrences = Vec::new();
@@ -392,7 +397,7 @@ pub(crate) fn install(
             ctx.reserve_vec(&mut links, 1, "Rhino occurrence links")?;
             links.push(definition);
         }
-        links.sort();
+        ctx.stable_sort_by(&mut links, Ord::cmp, std::string::String::len, "Rhino occurrence links sort")?;
         ctx.reserve_vec(&mut occurrences, 1, "Rhino product occurrences")?;
         occurrences.push(OccurrenceRecord {
             id: ctx.format_retained(

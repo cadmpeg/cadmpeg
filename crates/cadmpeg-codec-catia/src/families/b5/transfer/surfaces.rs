@@ -507,42 +507,23 @@ pub(super) fn revolve_nurbs(
         let span_count = std::num::NonZeroUsize::new(truncate_f64_to_usize(span_count)?)?.get();
         let angular_count = span_count.checked_mul(2)?.checked_add(1)?;
         let control_count =
-            crate::nurbs_surface_control_count(profile.control_points().len(), angular_count)?;
+            crate::nurbs_surface_control_count(profile.pole_count(), angular_count)?;
+        let mut angles = Vec::new();
         if let Err(error) =
-            ctx.charge_collection_items(u64_from_index(angular_count), "catia b5 revolution angles")
+            ctx.reserve_vec(&mut angles, angular_count, "catia b5 revolution angles")
         {
             return Some(Err(error));
         }
-        let mut angles = Vec::new();
-        if let Err(error) = cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
-            &mut angles,
-            angular_count,
-            "catia b5 revolution angles",
-        ) {
-            return Some(Err(error));
-        }
-        if let Err(error) = ctx.charge_collection_items(
-            u64_from_index(angular_count),
-            "catia b5 revolution angular weights",
-        ) {
-            return Some(Err(error));
-        }
         let mut angular_weights = Vec::new();
-        if let Err(error) = cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+        if let Err(error) = ctx.reserve_vec(
             &mut angular_weights,
             angular_count,
             "catia b5 revolution angular weights",
         ) {
             return Some(Err(error));
         }
-        if let Err(error) = ctx.charge_collection_items(
-            u64_from_index(angular_count + 3),
-            "catia b5 revolution angular knots",
-        ) {
-            return Some(Err(error));
-        }
         let mut v_knots = Vec::new();
-        if let Err(error) = cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+        if let Err(error) = ctx.reserve_vec(
             &mut v_knots,
             angular_count + 3,
             "catia b5 revolution angular knots",
@@ -582,7 +563,7 @@ pub(super) fn revolve_nurbs(
                 }
             }
             cadmpeg_ir::geometry::nurbs::NurbsPoles3::Polynomial { .. } => match ctx.alloc_filled(
-                profile.control_points().len(),
+                profile.pole_count(),
                 1.0,
                 "catia b5 revolution profile weights",
             ) {
@@ -590,36 +571,24 @@ pub(super) fn revolve_nurbs(
                 Err(error) => return Some(Err(error)),
             },
         };
-        if let Err(error) = ctx.charge_collection_items(
-            u64_from_index(control_count),
-            "catia b5 revolution control net",
-        ) {
-            return Some(Err(error));
-        }
         let mut control_points = Vec::new();
-        if let Err(error) = cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+        if let Err(error) = ctx.reserve_vec(
             &mut control_points,
             control_count,
             "catia b5 revolution control net",
         ) {
             return Some(Err(error));
         }
-        if let Err(error) = ctx.charge_collection_items(
-            u64_from_index(control_count),
-            "catia b5 revolution net weights",
-        ) {
-            return Some(Err(error));
-        }
         let mut weights = Vec::new();
-        if let Err(error) = cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+        if let Err(error) = ctx.reserve_vec(
             &mut weights,
             control_count,
             "catia b5 revolution net weights",
         ) {
             return Some(Err(error));
         }
-        for (profile_point, profile_weight) in profile.control_points().iter().zip(profile_weights)
-        {
+        for (index, profile_weight) in profile_weights.into_iter().enumerate() {
+            let profile_point = profile.pole_rows().point_at(index)?;
             let relative = [
                 profile_point.x - axis_origin[0],
                 profile_point.y - axis_origin[1],
@@ -639,13 +608,14 @@ pub(super) fn revolve_nurbs(
             }
         }
         let row_len = angular_count;
-        let row_count = profile.control_points().len();
-        if let Err(error) = ctx.charge_collection_items(
-            u64_from_index(profile.knots().len()),
+        let row_count = profile.pole_count();
+        let profile_knots = match ctx.copy_slice(
+            profile.knots().as_slice(),
             "catia b5 revolution profile knots",
         ) {
-            return Some(Err(error));
-        }
+            Ok(knots) => knots,
+            Err(error) => return Some(Err(error)),
+        };
         if let Err(error) =
             ctx.charge_collection_items(u64_from_index(row_count), "catia b5 revolution point rows")
         {
@@ -668,13 +638,6 @@ pub(super) fn revolve_nurbs(
         ) {
             return Some(Err(error));
         }
-        let profile_knots = match cadmpeg_core::decode::DecodeContext::copy_admitted_slice(
-            profile.knots().as_slice(),
-            "catia b5 revolution profile knots",
-        ) {
-            Ok(knots) => knots,
-            Err(error) => return Some(Err(error)),
-        };
         let point_rows = match cadmpeg_core::decode::DecodeContext::copy_admitted_rows(
             &control_points,
             row_len,

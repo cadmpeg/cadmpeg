@@ -41,7 +41,7 @@ fn complete_hole_preserves_the_existing_body_identity() {
 
     assert_eq!(
         evaluate_saved_body_census(&ir),
-        BodyCensusEvaluation::Verified { bodies: vec![body] }
+        BodyCensusEvaluation::verified(vec![body]).unwrap()
     );
 }
 
@@ -76,7 +76,7 @@ fn complete_sphere_rederives_a_new_body() {
 
     assert_eq!(
         evaluate_saved_body_census(&ir),
-        BodyCensusEvaluation::Verified { bodies: vec![body] }
+        BodyCensusEvaluation::verified(vec![body]).unwrap()
     );
 }
 
@@ -112,11 +112,10 @@ fn exact_empty_replay_input_precedes_a_new_body_construction() {
 
     assert_eq!(
         evaluate_saved_body_census(&ir),
-        BodyCensusEvaluation::Verified {
-            bodies: vec![
-                BodyId::mint("test:model:entity#body".to_string()).expect("identity grammar")
-            ],
-        }
+        BodyCensusEvaluation::verified(vec![
+            BodyId::mint("test:model:entity#body".to_string()).expect("identity grammar")
+        ])
+        .unwrap()
     );
 }
 
@@ -130,7 +129,7 @@ fn in_place_edit_can_precede_a_saved_body_image_creator() {
 
     assert_eq!(
         evaluate_saved_body_census(&ir),
-        BodyCensusEvaluation::Verified { bodies: vec![body] }
+        BodyCensusEvaluation::verified(vec![body]).unwrap()
     );
 }
 
@@ -168,7 +167,7 @@ fn curve_construction_families_do_not_change_the_body_census() {
 
     assert_eq!(
         evaluate_saved_body_census(&ir),
-        BodyCensusEvaluation::Verified { bodies: vec![body] }
+        BodyCensusEvaluation::verified(vec![body]).unwrap()
     );
 }
 
@@ -255,7 +254,7 @@ fn boolean_block_preserves_its_existing_output_body() {
 
     assert_eq!(
         evaluate_saved_body_census(&ir),
-        BodyCensusEvaluation::Verified { bodies: vec![body] }
+        BodyCensusEvaluation::verified(vec![body]).unwrap()
     );
 }
 
@@ -280,7 +279,7 @@ fn unresolved_block_mode_preserves_a_proven_existing_output() {
 
     assert_eq!(
         evaluate_saved_body_census(&ir),
-        BodyCensusEvaluation::Verified { bodies: vec![body] }
+        BodyCensusEvaluation::verified(vec![body]).unwrap()
     );
 }
 
@@ -318,9 +317,7 @@ fn complete_extrudes_apply_new_body_and_boolean_output_lineage() {
 
     assert_eq!(
         evaluate_saved_body_census(&ir),
-        BodyCensusEvaluation::Verified {
-            bodies: vec![existing, created],
-        }
+        BodyCensusEvaluation::verified(vec![existing, created]).unwrap()
     );
 }
 
@@ -377,7 +374,7 @@ fn unresolved_extrude_preserves_an_existing_output_without_construction_replay()
 
     assert_eq!(
         evaluate_saved_body_census(&ir),
-        BodyCensusEvaluation::Verified { bodies: vec![body] }
+        BodyCensusEvaluation::verified(vec![body]).unwrap()
     );
 }
 
@@ -481,7 +478,7 @@ fn complete_active_configuration_admits_the_rederived_model() {
 
     assert_eq!(
         evaluate_saved_body_census(&ir),
-        BodyCensusEvaluation::Verified { bodies: vec![body] }
+        BodyCensusEvaluation::verified(vec![body]).unwrap()
     );
 }
 
@@ -514,7 +511,7 @@ fn body_neutral_history_needs_only_exact_configuration_body_membership() {
 
     assert_eq!(
         evaluate_saved_body_census(&ir),
-        BodyCensusEvaluation::Verified { bodies: Vec::new() }
+        BodyCensusEvaluation::verified(Vec::new()).unwrap()
     );
 }
 
@@ -534,7 +531,7 @@ fn empty_body_neutral_model_does_not_need_an_active_configuration_identity() {
 
     assert_eq!(
         evaluate_saved_body_census(&ir),
-        BodyCensusEvaluation::Verified { bodies: Vec::new() }
+        BodyCensusEvaluation::verified(Vec::new()).unwrap()
     );
 }
 
@@ -557,7 +554,7 @@ fn incomplete_hole_construction_does_not_change_its_body_identity_effect() {
     ));
     assert_eq!(
         evaluate_saved_body_census(&ir),
-        BodyCensusEvaluation::Verified { bodies: vec![body] }
+        BodyCensusEvaluation::verified(vec![body]).unwrap()
     );
 }
 
@@ -614,7 +611,7 @@ fn replay_uses_stable_feature_ordinals_independently_of_storage_order() {
 
     assert_eq!(
         evaluate_saved_body_census(&ir),
-        BodyCensusEvaluation::Verified { bodies: vec![body] }
+        BodyCensusEvaluation::verified(vec![body]).unwrap()
     );
 }
 
@@ -657,7 +654,7 @@ fn base_feature_introduces_its_complete_selected_outputs() {
 
     assert_eq!(
         evaluate_saved_body_census(&ir),
-        BodyCensusEvaluation::Verified { bodies: vec![body] }
+        BodyCensusEvaluation::verified(vec![body]).unwrap()
     );
 }
 
@@ -690,12 +687,11 @@ fn extract_body_copies_each_existing_source_to_one_new_output() {
 
     assert_eq!(
         evaluate_saved_body_census(&ir),
-        BodyCensusEvaluation::Verified {
-            bodies: vec![
-                BodyId::mint("test:model:entity#body".to_string()).expect("identity grammar"),
-                extracted
-            ],
-        }
+        BodyCensusEvaluation::verified(vec![
+            BodyId::mint("test:model:entity#body".to_string()).expect("identity grammar"),
+            extracted
+        ])
+        .unwrap()
     );
 }
 
@@ -729,7 +725,7 @@ fn output_free_local_extract_does_not_change_the_saved_body_census() {
     assert!(matches!(
         evaluate_saved_body_census(&ir),
         BodyCensusEvaluation::Verified { bodies }
-            if bodies == [BodyId::mint("test:model:entity#body".to_string()).expect("identity grammar")]
+            if bodies.as_slice() == [BodyId::mint("test:model:entity#body".to_string()).expect("identity grammar")]
     ));
 }
 
@@ -760,7 +756,7 @@ fn delete_body_removes_an_existing_selected_body() {
 
     assert_eq!(
         evaluate_saved_body_census(&ir),
-        BodyCensusEvaluation::Verified { bodies: Vec::new() }
+        BodyCensusEvaluation::verified(Vec::new()).unwrap()
     );
 }
 
@@ -795,7 +791,7 @@ fn delete_body_ignores_a_complete_feature_local_body() {
     assert!(matches!(
         evaluate_saved_body_census(&ir),
         BodyCensusEvaluation::Verified { bodies }
-            if bodies == [BodyId::mint("test:model:entity#body".to_string()).expect("identity grammar")]
+            if bodies.as_slice() == [BodyId::mint("test:model:entity#body".to_string()).expect("identity grammar")]
     ));
 }
 
@@ -870,8 +866,6 @@ fn keep_selected_removes_every_unselected_body() {
 
     assert_eq!(
         evaluate_saved_body_census(&ir),
-        BodyCensusEvaluation::Verified {
-            bodies: vec![retained]
-        }
+        BodyCensusEvaluation::verified(vec![retained]).unwrap()
     );
 }

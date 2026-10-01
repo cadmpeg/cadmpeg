@@ -312,7 +312,7 @@ fn inline_operation_binds_join_and_cut_to_their_family_words() {
         id: "name".into(),
         parent: "lane".into(),
         ordinal: 0,
-        offset: name_offset as u64,
+        offset: cadmpeg_core::decode::u64_from_index(name_offset),
         value: value.into(),
         object_id: ObjectId::from_value(7),
     };
@@ -461,8 +461,11 @@ fn ambiguous_form_code_padding_does_not_shift_the_code() {
         let mut payload = vec![0; 128];
         payload[code_offset..code_offset + 4].copy_from_slice(&code.to_le_bytes());
         payload[class_offset..class_offset + 4].copy_from_slice(&[0xff, 0xff, 0x01, 0x00]);
-        payload[class_offset + 4..class_offset + 6]
-            .copy_from_slice(&(class_name.len() as u16).to_le_bytes());
+        payload[class_offset + 4..class_offset + 6].copy_from_slice(
+            &u16::try_from(class_name.len())
+                .expect("class name length fits u16")
+                .to_le_bytes(),
+        );
         payload[class_offset + 6..name_offset].copy_from_slice(class_name.as_bytes());
         if padding == 4 {
             payload[class_offset - 12..class_offset - 8].copy_from_slice(&preceding.to_le_bytes());
@@ -478,7 +481,7 @@ fn ambiguous_form_code_padding_does_not_shift_the_code() {
                     id: "class".into(),
                     parent: "lane".into(),
                     ordinal: 0,
-                    offset: class_offset as u64,
+                    offset: cadmpeg_core::decode::u64_from_index(class_offset),
                     name: class_name.into(),
                 }],
                 names: Vec::new(),
@@ -496,7 +499,7 @@ fn ambiguous_form_code_padding_does_not_shift_the_code() {
                 id: "name".into(),
                 parent: "lane".into(),
                 ordinal: 0,
-                offset: name_offset as u64,
+                offset: cadmpeg_core::decode::u64_from_index(name_offset),
                 value: "Feature".into(),
                 object_id: ObjectId::from_value(1),
             },
@@ -557,7 +560,7 @@ fn ambiguous_form_code_padding_does_not_shift_the_code() {
         id: "compact-name".into(),
         parent: "compact-lane".into(),
         ordinal: 0,
-        offset: name_offset as u64,
+        offset: cadmpeg_core::decode::u64_from_index(name_offset),
         value: "Feature".into(),
         object_id: ObjectId::from_value(1),
     };

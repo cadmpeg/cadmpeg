@@ -36,9 +36,6 @@ fn decode_asm_binary(
     bytes: &[u8],
     header: &BinaryHeader,
 ) -> Result<Decoded, CodecError> {
-    if let Some(count) = header.metadata.entity_count {
-        ctx.charge_entities(count, "admit SAT header entities")?;
-    }
     let width = header.width;
     let stream = crate::dialect::record_stream_start(bytes, Family::Asm, header);
     let Some(stream) = stream else {
@@ -55,8 +52,22 @@ fn decode_asm_binary(
     // A history-bearing stream ends its solved partition at the delta-state
     // boundary; a history-less stream ends at EOF without a terminator tag.
     let framed = match asm_header::solved_record_limit_with_header(bytes, header) {
-        Some(limit) => sab::frame(ctx, bytes, start, limit, width),
-        None => sab::frame_history(ctx, bytes, start, bytes.len(), width),
+        Some(limit) => sab::frame(
+            ctx,
+            bytes,
+            start,
+            limit,
+            width,
+            header.metadata.entity_count,
+        ),
+        None => sab::frame_history(
+            ctx,
+            bytes,
+            start,
+            bytes.len(),
+            width,
+            header.metadata.entity_count,
+        ),
     };
     let records = framed.map_err(|failure| {
         failure.into_codec_error(ctx, |error| {
@@ -67,13 +78,13 @@ fn decode_asm_binary(
         ctx,
         &records,
         bytes,
-        Some(header.metadata.clone()),
+        Some(&header.metadata),
         "stream",
         cadmpeg_asm::asm_format!("sat"),
         DecodePurpose::Model,
     )?;
     let mut attributes = BTreeMap::new();
-    header_attributes(&header.metadata, Family::Asm, &mut attributes);
+    header_attributes(ctx, &header.metadata, Family::Asm, &mut attributes)?;
     let evidence = StreamEvidence::Binary {
         family: Family::Asm,
         header,
@@ -96,9 +107,6 @@ fn decode_acis_binary(
     bytes: &[u8],
     header: &BinaryHeader,
 ) -> Result<Decoded, CodecError> {
-    if let Some(count) = header.metadata.entity_count {
-        ctx.charge_entities(count, "admit SAT header entities")?;
-    }
     let stream = crate::dialect::record_stream_start(bytes, Family::Acis, header);
     let Some(stream) = stream else {
         return Err(unsupported_unframed(
@@ -118,6 +126,7 @@ fn decode_acis_binary(
             start,
             limit,
             cadmpeg_asm::kernel_header::RefWidth::Four,
+            header.metadata.entity_count,
         ),
         None => sab::frame_history(
             ctx,
@@ -125,6 +134,7 @@ fn decode_acis_binary(
             start,
             bytes.len(),
             cadmpeg_asm::kernel_header::RefWidth::Four,
+            header.metadata.entity_count,
         ),
     };
     let records = framed.map_err(|failure| {
@@ -136,13 +146,13 @@ fn decode_acis_binary(
         ctx,
         &records,
         bytes,
-        Some(header.metadata.clone()),
+        Some(&header.metadata),
         "stream",
         cadmpeg_asm::asm_format!("sat"),
         DecodePurpose::Model,
     )?;
     let mut attributes = BTreeMap::new();
-    header_attributes(&header.metadata, Family::Acis, &mut attributes);
+    header_attributes(ctx, &header.metadata, Family::Acis, &mut attributes)?;
     // Every band frames and decodes the same way. Classification states
     // whether the grammar applied is the one the framed stream declares; it
     // gates nothing. Build the admitted evidence only after framing succeeds.
@@ -174,11 +184,13 @@ fn decode_text(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Decoded, CodecEr
     })?;
     let header = stream.header.as_kernel_header(ctx)?;
     let mut attributes = BTreeMap::new();
-    header_attributes(&header, stream.terminator.into(), &mut attributes);
-    attributes.insert(
-        "scale".to_string(),
-        format!("{}", stream.header.scale().get()),
-    );
+    header_attributes(ctx, &header, stream.terminator.into(), &mut attributes)?;
+    let key = ctx.copy_retained_text("scale", "retain SAT scale attribute key")?;
+    let value = ctx.format_retained(
+        format_args!("{}", stream.header.scale().get()),
+        "retain SAT scale attribute",
+    )?;
+    ctx.insert_btree_map(&mut attributes, key, value, "collect SAT scale attribute")?;
     // The ACIS branch carries the same save-format band as the ACIS binary
     // stream, so it takes the same admission — literally the same code path,
     // through `classify`. Neither branch gates the record decode on it.
@@ -191,7 +203,7 @@ fn decode_text(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Decoded, CodecEr
         ctx,
         &stream.records,
         bytes,
-        Some(header.clone()),
+        Some(&header),
         "stream",
         cadmpeg_asm::asm_format!("sat"),
         DecodePurpose::Model,
@@ -315,6 +327,8 @@ fn build_result(
     };
 
     let mut annotations = AnnotationBuilder::new();
+    let annotation_count = cadmpeg_core::decode::u64_from_index(annotation_records.len());
+    ctx.charge_work(annotation_count, "scan SAT annotation records")?;
     for record in annotation_records {
         let stream = StreamHandle::new_for_decode(
             ctx,
@@ -335,11 +349,7 @@ fn build_result(
         }
     }
     let mut source_fidelity = cadmpeg_ir::SourceFidelity::with_annotations(annotations.build());
-    source_fidelity
-        .attach_native_unknown_records(&mut ir, FORMAT, unknowns, ctx)
-        .map_err(|error| {
-            CodecError::malformed(format_args!("unknown-record retention failed: {error}"))
-        })?;
+    source_fidelity.attach_native_unknown_records(&mut ir, FORMAT, unknowns, ctx)?;
     Ok(Decoded {
         ir,
         body,

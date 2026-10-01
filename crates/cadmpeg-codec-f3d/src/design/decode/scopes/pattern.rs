@@ -6,10 +6,10 @@ use cadmpeg_core::decode::u64_from_index;
 
 use super::shared_frames::exact_fixed_scalar;
 use super::shared_frames::marked_record_reference;
+use crate::bytes::lp_ascii_filtered_view;
 use crate::bytes::{f64s_at, finite_reals_at};
 use crate::design::decode::sketch::next_indexed_record_offset;
 use crate::design::decode::sketch::IndexedRecordOffsets;
-use crate::design::decode::text::lp_ascii_filtered_view;
 use crate::design::decode::text::relaxed_guid_end;
 use crate::design::design_feature_family;
 use crate::design::DesignFeatureFamily;
@@ -49,7 +49,14 @@ pub(super) fn exact_rectangular_pattern_construction(
         if lanes.next().is_some() {
             return None;
         }
-        ordered_lanes.sort_by_key(|owner| owner.local_ordinal());
+        if let Err(error) = ctx.stable_sort_by(
+            &mut ordered_lanes,
+            |left, right| left.local_ordinal().cmp(&right.local_ordinal()),
+            |_| 0,
+            "sort f3d rectangular pattern lanes",
+        ) {
+            return Some(Err(error));
+        }
         let [u_count, v_count, u_extent, v_extent] = ordered_lanes;
         if [u_count, v_count, u_extent, v_extent]
             .iter()
@@ -87,13 +94,16 @@ pub(super) fn exact_rectangular_pattern_construction(
             },
         )
         .ok()?;
-        Some(construction)
+        Some(Ok(construction))
     })();
-    let Some(mut construction) = parsed else {
+    let Some(construction) = parsed else {
         return Ok(None);
     };
-    construction.instances =
-        exact_rectangular_pattern_instances(ctx, bytes, records, scope, &construction)?;
+    let mut construction = construction?;
+    let instances = exact_rectangular_pattern_instances(ctx, bytes, records, scope, &construction)?;
+    construction
+        .try_set_instances(instances)
+        .map_err(CodecError::malformed)?;
     Ok(Some(construction))
 }
 
@@ -116,8 +126,14 @@ fn exact_rectangular_pattern_instances(
             return None;
         }
         let count = usize::try_from(count).ok()?;
-        if count > 4_096
-            || scope.reference_members().len() != count.checked_add(6)?
+        if count > 4_096 {
+            return Some(Err(ctx.refuse_codec_limit(
+                "F3D rectangular pattern search count",
+                4_096,
+                u64_from_index(count),
+            )));
+        }
+        if scope.reference_members().len() != count.checked_add(6)?
             || !scope
                 .reference_members()
                 .values()
@@ -167,6 +183,18 @@ fn exact_rectangular_pattern_instances(
         }
         let mut scanned_bytes = 0_usize;
         for record_index in &record_indices {
+            let Some(range_work) = u64_from_index(reference_starts.len()).checked_mul(2) else {
+                return Some(Err(ctx.refuse_codec_limit(
+                    "index F3D rectangular pattern candidate range",
+                    0,
+                    u64::MAX,
+                )));
+            };
+            if let Err(error) =
+                ctx.charge_work(range_work, "index F3D rectangular pattern candidate range")
+            {
+                return Some(Err(error));
+            }
             let start = reference_starts
                 .iter()
                 .find_map(|(candidate, offset)| (candidate == record_index).then_some(*offset))?;
@@ -175,9 +203,27 @@ fn exact_rectangular_pattern_instances(
                 .filter_map(|(_, offset)| (*offset > start).then_some(*offset))
                 .min()?;
             let span = end.checked_sub(start)?;
-            scanned_bytes = scanned_bytes.checked_add(span)?;
-            if span > 1_048_576 || scanned_bytes > 16_777_216 {
-                return None;
+            let Some(total) = scanned_bytes.checked_add(span) else {
+                return Some(Err(ctx.refuse_codec_limit(
+                    "F3D rectangular pattern aggregate span",
+                    16_777_216,
+                    u64::MAX,
+                )));
+            };
+            scanned_bytes = total;
+            if span > 1_048_576 {
+                return Some(Err(ctx.refuse_codec_limit(
+                    "F3D rectangular pattern record span",
+                    1_048_576,
+                    u64_from_index(span),
+                )));
+            }
+            if scanned_bytes > 16_777_216 {
+                return Some(Err(ctx.refuse_codec_limit(
+                    "F3D rectangular pattern aggregate span",
+                    16_777_216,
+                    u64_from_index(scanned_bytes),
+                )));
             }
             let candidate = match exact_rigid_transform_candidates(ctx, bytes, start, end) {
                 Ok(Some(candidate)) => candidate,
@@ -191,6 +237,9 @@ fn exact_rectangular_pattern_instances(
         let mut runs = Vec::new();
         for first in first_candidates {
             for final_candidate in final_candidates {
+                if let Err(error) = ctx.charge_work(24, "match F3D rectangular pattern endpoints") {
+                    return Some(Err(error));
+                }
                 if !same_transform_basis(&first.0, &final_candidate.0) {
                     continue;
                 }
@@ -212,8 +261,14 @@ fn exact_rectangular_pattern_instances(
                 let mut unique = true;
                 for (ordinal, record_candidates) in candidates[1..count - 1].iter().enumerate() {
                     let fraction = f64_from_index(ordinal + 1)? / f64_from_index(count - 1)?;
-                    let mut matches = record_candidates.iter().filter(|candidate| {
-                        same_transform_basis(&first.0, &candidate.0)
+                    let mut matched = None;
+                    for candidate in record_candidates {
+                        if let Err(error) =
+                            ctx.charge_work(24, "match F3D rectangular pattern intermediate")
+                        {
+                            return Some(Err(error));
+                        }
+                        if same_transform_basis(&first.0, &candidate.0)
                             && translation_delta(&first.0, &candidate.0)
                                 .iter()
                                 .zip(delta)
@@ -221,13 +276,19 @@ fn exact_rectangular_pattern_instances(
                                     (*value - total * fraction).abs()
                                         <= EPS_SCOPES_EXACT_RECTANGULAR_PATTERN_INSTANCES_E8
                                 })
-                    });
-                    let Some(candidate) = matches.next() else {
+                        {
+                            if matched.is_some() {
+                                unique = false;
+                                break;
+                            }
+                            matched = Some(candidate);
+                        }
+                    }
+                    let Some(candidate) = matched else {
                         unique = false;
                         break;
                     };
-                    if matches.next().is_some() {
-                        unique = false;
+                    if !unique {
                         break;
                     }
                     run.push(*candidate);
@@ -244,11 +305,16 @@ fn exact_rectangular_pattern_instances(
                 }
             }
         }
-        if let Err(error) = crate::design::sort::sort_by(ctx, &mut runs[..], |a, b| {
-            a.iter()
-                .map(|(_, offset)| *offset)
-                .cmp(b.iter().map(|(_, offset)| *offset))
-        }) {
+        if let Err(error) = ctx.stable_sort_by(
+            &mut runs[..],
+            |a, b| {
+                a.iter()
+                    .map(|(_, offset)| *offset)
+                    .cmp(b.iter().map(|(_, offset)| *offset))
+            },
+            |_| 0,
+            "sort f3d design pattern 1",
+        ) {
             return Some(Err(error));
         }
         runs.dedup_by(|left, right| left == right);
@@ -299,7 +365,16 @@ fn exact_rigid_transform_candidates(
         // either sign at lanes twelve to fourteen. Locate the fixed `1.0` image
         // (it cannot overlap itself, so every occurrence surfaces) and read the
         // full sixteen-lane frame only at surviving offsets.
+        if let Err(error) = ctx.charge_work(
+            u64_from_index(end - start - 120),
+            "scan F3D rectangular pattern matrices",
+        ) {
+            return Some(Err(error));
+        }
         for hit in memchr::memmem::find_iter(&bytes[start + 120..end], &ONE_F64_LE) {
+            if let Err(error) = ctx.charge_work(152, "validate F3D rectangular pattern matrix") {
+                return Some(Err(error));
+            }
             let offset = start + hit;
             let zero_lanes_valid = (0..3).all(|lane| {
                 let at = offset + 96 + lane * 8;
@@ -309,7 +384,7 @@ fn exact_rigid_transform_candidates(
             if !zero_lanes_valid {
                 continue;
             }
-            let values = f64s_at(bytes, offset, 16)?;
+            let values = f64s_at::<16>(bytes, offset)?;
             let mut transform = [[0.0; 4]; 4];
             for (ordinal, value) in values.into_iter().enumerate() {
                 transform[ordinal / 4][ordinal % 4] = value;
@@ -474,7 +549,14 @@ pub(super) fn exact_circular_pattern_construction_with_owners(
                 }
             }
         }
-        count_candidates.sort_unstable();
+        if let Err(error) = ctx.sort_unstable_by(
+            &mut count_candidates,
+            Ord::cmp,
+            |_| 0,
+            "sort f3d circular pattern count candidates",
+        ) {
+            return Some(Err(error));
+        }
         count_candidates.dedup();
         let [(count, count_record_index, count_offset)] = count_candidates.as_slice() else {
             return None;
@@ -523,15 +605,18 @@ pub(super) fn exact_circular_pattern_construction_with_owners(
                 angle_candidates.push((angle, *record_index, scalar.value_offset));
             }
         }
-        if let Err(error) =
-            crate::design::sort::sort_by(ctx, &mut angle_candidates[..], |left, right| {
+        if let Err(error) = ctx.stable_sort_by(
+            &mut angle_candidates[..],
+            |left, right| {
                 left.0
                     .get()
                     .total_cmp(&right.0.get())
                     .then_with(|| left.1.cmp(&right.1))
                     .then_with(|| left.2.cmp(&right.2))
-            })
-        {
+            },
+            |_| 0,
+            "sort f3d design pattern 2",
+        ) {
             return Some(Err(error));
         }
         angle_candidates.dedup();
@@ -539,7 +624,7 @@ pub(super) fn exact_circular_pattern_construction_with_owners(
             return None;
         };
         Some(Ok(DesignCircularPatternConstruction {
-            count: *count,
+            count: std::num::NonZeroU32::new(*count)?,
             count_record_index: *count_record_index,
             count_offset: *count_offset,
             angle: *angle,
@@ -718,7 +803,7 @@ fn exact_legacy_circular_pattern_axis(
         }
         Some(Ok((
             DesignCircularPatternAxis::HistoricalEdge {
-                wrappers: retained_wrappers,
+                wrappers: retained_wrappers.try_into().ok()?,
                 persistent_identity,
                 resolved: None,
             },

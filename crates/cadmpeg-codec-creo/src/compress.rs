@@ -68,7 +68,7 @@ pub(crate) fn decode(
     let mut stack = ctx.collection_vec(dictionary_limit, "creo LZW stack slots")?;
 
     if written == expected_length {
-        return finish_expansion(ctx, output, reservation).map(Some);
+        return finish_expansion(output, reservation).map(Some);
     }
 
     while let Some(raw_code) = reader.next(free_entry, false) {
@@ -93,7 +93,7 @@ pub(crate) fn decode(
             }
             output.write(&[final_byte])?;
             if written == expected_length {
-                return finish_expansion(ctx, output, reservation).map(Some);
+                return finish_expansion(output, reservation).map(Some);
             }
             continue;
         }
@@ -140,7 +140,7 @@ pub(crate) fn decode(
         stack.clear();
         written = next_written;
         if written == expected_length {
-            return finish_expansion(ctx, output, reservation).map(Some);
+            return finish_expansion(output, reservation).map(Some);
         }
 
         if free_entry < dictionary_limit {
@@ -155,20 +155,19 @@ pub(crate) fn decode(
     }
 
     if written == expected_length {
-        finish_expansion(ctx, output, reservation).map(Some)
+        finish_expansion(output, reservation).map(Some)
     } else {
         Ok(None)
     }
 }
 
 fn finish_expansion(
-    ctx: &DecodeContext<'_>,
     output: ExpandWriter<'_, '_>,
     reservation: ScopedReservation<'_>,
 ) -> Result<Vec<u8>, CodecError> {
-    let view = output.finalize()?;
+    let bytes = output.finalize_owned()?;
     reservation.commit()?;
-    ctx.copy_retained(view.window(), "retain Creo expanded section")
+    Ok(bytes)
 }
 
 struct CodeReader<'a> {
@@ -430,5 +429,19 @@ mod tests {
         stream.extend(first_block);
         stream.extend(codes(&[u16::from(b'B'), u16::from(b'C'), 257]));
         assert_eq!(decode(&stream, 5), Some(b"ABCBC".to_vec()));
+    }
+    #[test]
+    fn expansion_owns_one_payload_buffer() {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_retained_bytes = 3;
+        let stream = [0x1f, 0x9d, 0x10, 0x41, 0x84, 0x0c, 0x01];
+        let (ctx, _) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(&stream, &arena, &policy)
+                .expect("root");
+        assert_eq!(
+            super::decode(&ctx, &stream, 3).expect("one retained buffer"),
+            Some(b"ABC".to_vec())
+        );
     }
 }

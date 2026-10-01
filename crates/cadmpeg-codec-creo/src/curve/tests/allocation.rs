@@ -516,7 +516,9 @@ evaluation_collection_test!(
 evaluation_retained_test!(
     external_value_names_refuse,
     &[],
-    external_symbol(Some(super::super::CurveExpressionValue::Number(1.0))),
+    external_symbol(Some(super::super::CurveExpressionValue::Number(
+        cadmpeg_ir::scalar::FiniteReal::new(1.0).expect("finite relation fixture")
+    ))),
     "creo external value names"
 );
 evaluation_retained_test!(
@@ -1463,4 +1465,50 @@ fn expression_helix_required_outputs_refuse_scan_work() {
     assert!(
         matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::WorkUnits && limit.operation == "creo helix output scan work")
     );
+}
+
+#[test]
+fn affine_equation_merge_propagates_coefficient_node_refusal() {
+    use crate::curve::{RelationDimension, SimultaneousAffineValue};
+    let left = SimultaneousAffineValue::constant(0.0, RelationDimension::default());
+    let right = SimultaneousAffineValue {
+        dimension: RelationDimension::default(),
+        constant: 0.0,
+        coefficients: BTreeMap::from([("y".to_owned(), 1.0)]),
+    };
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let error = resource_error(with_expression_policy(policy, |ctx| {
+        let result = left.combine_admitted(right, true, ctx);
+        assert_eq!(
+            ctx.resource_refusal(),
+            match &result {
+                Err(CodecError::ResourceLimit(limit)) => Some(*limit),
+                _ => None,
+            }
+        );
+        result
+    }));
+    assert_target_limit(
+        &error,
+        ResourceDimension::CollectionItems,
+        "creo affine combined coefficient nodes",
+    );
+    crate::decode::with_test_decode_ctx(|ctx| {
+        let left = SimultaneousAffineValue::constant(2.0, RelationDimension::default());
+        let right = SimultaneousAffineValue {
+            dimension: RelationDimension::default(),
+            constant: 1.0,
+            coefficients: BTreeMap::from([("y".to_owned(), 1.0)]),
+        };
+        let difference = left
+            .combine_admitted(right, true, ctx)
+            .expect("service merge")
+            .expect("equal dimensions");
+        assert_eq!(difference.constant, 1.0);
+        assert_eq!(
+            difference.coefficients,
+            BTreeMap::from([("y".to_owned(), -1.0)])
+        );
+    });
 }

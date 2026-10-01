@@ -344,7 +344,10 @@ fn native_scalars_accept_only_exact_integer_values() {
     let largest_consecutive = 1_i64 << 53;
     assert_eq!(exact_integer_f64(largest_consecutive), Some(2_f64.powi(53)));
     assert_eq!(exact_integer_f64(largest_consecutive + 1), None);
-    assert_eq!(exact_integer_f64(i64::MIN), Some(i64::MIN as f64));
+    assert_eq!(
+        exact_integer_f64(i64::MIN),
+        Some(cadmpeg_core::convert::f64_from_i64(i64::MIN).unwrap())
+    );
     assert_eq!(exact_integer_f64(i64::MAX), None);
 }
 
@@ -377,7 +380,12 @@ fn mixed_numeric_comparisons_preserve_integer_identity() {
     assert_eq!(
         compare_parameter_values(
             &ParameterValue::Integer(i64::MAX),
-            &ParameterValue::Real(cadmpeg_ir::scalar::FiniteReal::new(-(i64::MIN as f64)).unwrap()),
+            &ParameterValue::Real(
+                cadmpeg_ir::scalar::FiniteReal::new(
+                    -cadmpeg_core::convert::f64_from_i64(i64::MIN).unwrap()
+                )
+                .unwrap()
+            ),
             "<",
         ),
         Some(true)
@@ -396,5 +404,22 @@ fn expression_rewrite_quotes_hyphenated_identifiers() {
         .unwrap()
         .as_deref(),
         Some("\"Wall-Gauge\" * 2")
+    );
+}
+
+#[test]
+fn integer_without_exact_real_value_has_no_real_arithmetic_result() {
+    let inexact = ParameterValue::Integer((1_i64 << 53) + 1);
+    let half = ParameterValue::Real(real(0.5));
+    assert_eq!(exponentiate_parameter_value(&inexact, &half), None);
+    assert_eq!(
+        exponentiate_parameter_value(&inexact, &ParameterValue::Integer(-1)),
+        None
+    );
+    let exact = ParameterValue::Integer(1_i64 << 53);
+    assert!(exponentiate_parameter_value(&exact, &half).is_some());
+    assert_eq!(
+        exponentiate_parameter_value(&ParameterValue::Integer(2), &ParameterValue::Integer(-1)),
+        Some(ParameterValue::Real(real(0.5)))
     );
 }

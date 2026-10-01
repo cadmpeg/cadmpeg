@@ -66,10 +66,7 @@ fn prepare_topology_streams<'a>(
     )?;
     let mut paired_deltas = BTreeSet::new();
     for delta in pairs.values().flatten().copied() {
-        if !paired_deltas.contains(&delta) {
-            ctx.charge_collection_items(1, "nx paired topology deltas")?;
-            paired_deltas.insert(delta);
-        }
+        ctx.insert_btree_set(&mut paired_deltas, delta, "nx paired topology deltas")?;
     }
     let mut merge =
         |partition: &[u8], deltas: &[u8], census: &Census| -> Result<Vec<u8>, CodecError> {
@@ -145,11 +142,8 @@ pub(super) fn paired_delta_streams(
         }
         if let Some((ordinal, stream)) = matched {
             has_links = true;
-            if stream.kind() == crate::parasolid::StreamKind::Deltas
-                && !linked_deltas.contains(&ordinal)
-            {
-                ctx.charge_collection_items(1, "nx linked delta candidates")?;
-                linked_deltas.insert(ordinal);
+            if stream.kind() == crate::parasolid::StreamKind::Deltas {
+                ctx.insert_btree_set(&mut linked_deltas, ordinal, "nx linked delta candidates")?;
             }
         }
     }
@@ -364,10 +358,7 @@ impl<'a> ParsedStreams<'a> {
         )?;
         let mut paired_deltas = BTreeSet::new();
         for delta in delta_pairs.values().flatten().copied() {
-            if !paired_deltas.contains(&delta) {
-                ctx.charge_collection_items(1, "nx parsed stream paired deltas")?;
-                paired_deltas.insert(delta);
-            }
+            ctx.insert_btree_set(&mut paired_deltas, delta, "nx parsed stream paired deltas")?;
         }
 
         let mut streams = ctx.retained_vec(scan.streams.len(), "nx parsed stream records")?;
@@ -564,15 +555,14 @@ impl<'a> ParsedStreams<'a> {
             .map(|(ordinal, stream)| (ordinal, &stream.views))
     }
 
-    /// The prepared delta-extended semantic bytes of the stream at `ordinal`.
-    pub(crate) fn semantic_bytes(&self, ordinal: usize) -> &[u8] {
-        &self.streams[ordinal].semantic_bytes
-    }
-
     /// Parse NURBS geometry for the selected semantic stream when requested.
-    pub(crate) fn parse_nurbs(&self, ordinal: usize) -> crate::nurbs::Parsed {
+    pub(crate) fn parse_nurbs(
+        &self,
+        ctx: &DecodeContext<'_>,
+        ordinal: usize,
+    ) -> Result<crate::nurbs::Parsed, CodecError> {
         let stream = &self.streams[ordinal];
-        crate::nurbs::parse_with_graph(&stream.semantic_bytes, &stream.nurbs_graph)
+        crate::nurbs::parse_with_graph(ctx, &stream.semantic_bytes, &stream.nurbs_graph)
     }
 }
 
@@ -1078,11 +1068,16 @@ mod tests {
             ParsedStreams::parse(ctx, &scan).expect("test parsed streams")
         });
 
-        let expected = crate::nurbs::parse_with_graph(
-            parsed.semantic_bytes(1),
-            &parsed.streams[1].nurbs_graph,
-        );
-        let actual = parsed.parse_nurbs(1);
+        let expected = crate::test_support::with_decode_context(|ctx| {
+            crate::nurbs::parse_with_graph(
+                ctx,
+                &parsed.streams[1].semantic_bytes,
+                &parsed.streams[1].nurbs_graph,
+            )
+        })
+        .unwrap();
+        let actual =
+            crate::test_support::with_decode_context(|ctx| parsed.parse_nurbs(ctx, 1)).unwrap();
         assert_eq!(actual.surfaces.len(), expected.surfaces.len());
         assert_eq!(actual.curves.len(), expected.curves.len());
         assert_eq!(actual.pcurves.len(), expected.pcurves.len());

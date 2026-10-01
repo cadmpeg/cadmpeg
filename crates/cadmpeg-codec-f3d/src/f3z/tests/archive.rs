@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use cadmpeg_core::decode::u64_from_index;
-
 use cadmpeg_test_support::{assembly, wire, EditableDecodeResult};
 
 use crate::test_support::assembly_test::{
@@ -194,10 +192,12 @@ fn f3z_model_root_name_refuses_retained_limit() {
     let (scan_context, root) =
         DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default()).unwrap();
     let scan = crate::container::scan(&scan_context, root).unwrap();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = u64_from_index("model.f3d".len() - 1);
-    let (limited, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = crate::f3z::archive::model_root(&limited, &scan).unwrap_err();
+    let error = crate::test_support::resource_refusal_at(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        "retain F3Z model root",
+        0,
+        |ctx| crate::f3z::archive::model_root(ctx, &scan),
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "retain F3Z model root")
@@ -213,10 +213,12 @@ fn f3z_model_candidate_refuses_collection_limit() {
     let (scan_context, root) =
         DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default()).unwrap();
     let scan = crate::container::scan(&scan_context, root).unwrap();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
-    let (limited, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = crate::f3z::archive::model_root(&limited, &scan).unwrap_err();
+    let error = crate::test_support::resource_refusal_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "collect F3Z model candidates",
+        0,
+        |ctx| crate::f3z::archive::model_root(ctx, &scan),
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "collect F3Z model candidates")
@@ -232,10 +234,12 @@ fn f3z_derived_model_match_refuses_work_limit() {
     let (scan_context, root) =
         DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default()).unwrap();
     let scan = crate::container::scan(&scan_context, root).unwrap();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = 0;
-    let (limited, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = crate::f3z::archive::model_root(&limited, &scan).unwrap_err();
+    let error = crate::test_support::resource_refusal_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "match F3Z derived model reference",
+        0,
+        |ctx| crate::f3z::archive::model_root(ctx, &scan),
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "match F3Z derived model reference")
@@ -251,11 +255,12 @@ fn f3z_drawing_root_copy_refuses_retained_limit() {
     let (scan_context, root) =
         DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default()).unwrap();
     let scan = crate::container::scan(&scan_context, root).unwrap();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes =
-        u64_from_index("model.f3d".len() * 2 + "drawing.f2d".len() - 1);
-    let (limited, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = crate::f3z::archive::model_root(&limited, &scan).unwrap_err();
+    let error = crate::test_support::resource_refusal_at(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        "retain F3Z drawing root",
+        0,
+        |ctx| crate::f3z::archive::model_root(ctx, &scan),
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "retain F3Z drawing root")
@@ -668,15 +673,16 @@ fn f3z_nested_member_reference_obeys_session_depth_limit() {
         ],
     );
     let mut options = DecodeOptions::default();
-    options.policy.limits.max_recursion_depth = 3;
+    // Redirections has six container levels. The root fits; a member adds one.
+    options.policy.limits.max_recursion_depth = 6;
     let error = F3dCodec
         .decode(&mut Cursor::new(archive), &options)
-        .expect_err("nested member properties exceed the selected depth");
+        .expect_err("nested member redirections exceed the selected depth");
     assert!(matches!(
         error,
         cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
             if limit.dimension == ResourceDimension::RecursionDepth
-                && limit.operation == "scan F3D properties JSON"
+                && limit.operation == "parse F3D redirections JSON"
     ));
 }
 

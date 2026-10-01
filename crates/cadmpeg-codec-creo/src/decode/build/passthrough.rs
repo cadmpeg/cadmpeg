@@ -3,6 +3,7 @@
 
 use crate::container::SectionRole;
 
+use crate::decode::native::CreoArena;
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
@@ -135,7 +136,7 @@ fn emit_legacy_value_arena<K: crate::legacy::LegacyCode>(
     scan: &ContainerScan,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
-    key: &str,
+    key: CreoArena,
     records: &[crate::legacy::ValueRecord<K>],
     tag: &str,
 ) -> Result<(), CodecError>
@@ -169,7 +170,7 @@ pub(super) fn emit_legacy_arenas(
         ctx,
         ir,
         annotations,
-        "legacy_objects",
+        CreoArena::LegacyObjects,
         &legacy.persistence.objects,
         |annotations, record| {
             annotate(
@@ -189,7 +190,7 @@ pub(super) fn emit_legacy_arenas(
         scan,
         ir,
         annotations,
-        "legacy_integer_values",
+        CreoArena::LegacyIntegerValues,
         &legacy.persistence.integer_values.rows,
         "legacy_type_1_integer",
     )?;
@@ -198,7 +199,7 @@ pub(super) fn emit_legacy_arenas(
         scan,
         ir,
         annotations,
-        "legacy_real_values",
+        CreoArena::LegacyRealValues,
         &legacy.persistence.real_values.rows,
         "legacy_type_2_real",
     )?;
@@ -207,7 +208,7 @@ pub(super) fn emit_legacy_arenas(
         scan,
         ir,
         annotations,
-        "legacy_type_3_values",
+        CreoArena::LegacyType3Values,
         &legacy.persistence.type_3_values.rows,
         "legacy_type_3_value",
     )?;
@@ -216,7 +217,7 @@ pub(super) fn emit_legacy_arenas(
         scan,
         ir,
         annotations,
-        "legacy_type_4_values",
+        CreoArena::LegacyType4Values,
         &legacy.persistence.type_4_values.rows,
         "legacy_type_4_value",
     )?;
@@ -225,7 +226,7 @@ pub(super) fn emit_legacy_arenas(
         scan,
         ir,
         annotations,
-        "legacy_string_values",
+        CreoArena::LegacyStringValues,
         &legacy.persistence.string_values,
         "legacy_type_10_string",
     )?;
@@ -234,7 +235,7 @@ pub(super) fn emit_legacy_arenas(
         scan,
         ir,
         annotations,
-        "legacy_type_5_values",
+        CreoArena::LegacyType5Values,
         &legacy.persistence.type_5_values.rows,
         "legacy_type_5_value",
     )?;
@@ -243,7 +244,7 @@ pub(super) fn emit_legacy_arenas(
         scan,
         ir,
         annotations,
-        "legacy_type_6_values",
+        CreoArena::LegacyType6Values,
         &legacy.persistence.type_6_values.rows,
         "legacy_type_6_value",
     )?;
@@ -252,7 +253,7 @@ pub(super) fn emit_legacy_arenas(
         scan,
         ir,
         annotations,
-        "legacy_type_7_values",
+        CreoArena::LegacyType7Values,
         &legacy.persistence.type_7_values.rows,
         "legacy_type_7_value",
     )?;
@@ -261,7 +262,7 @@ pub(super) fn emit_legacy_arenas(
         scan,
         ir,
         annotations,
-        "legacy_type_9_values",
+        CreoArena::LegacyType9Values,
         &legacy.persistence.type_9_values.rows,
         "legacy_type_9_value",
     )?;
@@ -270,7 +271,7 @@ pub(super) fn emit_legacy_arenas(
         scan,
         ir,
         annotations,
-        "legacy_type_11_values",
+        CreoArena::LegacyType11Values,
         &legacy.persistence.type_11_values.rows,
         "legacy_type_11_value",
     )?;
@@ -279,7 +280,7 @@ pub(super) fn emit_legacy_arenas(
             ctx,
             ir,
             annotations,
-            "configuration_driver_tables",
+            CreoArena::ConfigurationDriverTables,
             std::slice::from_ref(table),
             |annotations, record| {
                 annotate(

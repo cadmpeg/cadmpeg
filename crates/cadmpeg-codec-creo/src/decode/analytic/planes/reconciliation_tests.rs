@@ -550,13 +550,13 @@ fn unique_native_conic_loop_places_its_plane_surface() {
             next_edges: [11, 0],
             offset: 20,
         });
-    scan.topology.loops.push(crate::topology::Loop {
-        face_id: std::num::NonZeroU32::new(5),
-        half_edges: vec![crate::topology::HalfEdgeId {
+    scan.topology.loops.push(crate::test_support::closed_loop(
+        std::num::NonZeroU32::new(5),
+        vec![crate::topology::HalfEdgeId {
             curve_id: 11,
             side: crate::topology::Side::Zero,
         }],
-    });
+    ));
     let mut ir = cadmpeg_ir::CadIr::empty();
     ir.model.curves.push(Curve {
         id: CurveId::mint("creo:visibgeom:curve#11".to_string()).expect("identity grammar"),
@@ -646,16 +646,16 @@ fn unique_nurbs_line_loop_places_its_plane_surface() {
                 offset: 20,
             });
     }
-    scan.topology.loops.push(crate::topology::Loop {
-        face_id: std::num::NonZeroU32::new(5),
-        half_edges: [11, 12]
+    scan.topology.loops.push(crate::test_support::closed_loop(
+        std::num::NonZeroU32::new(5),
+        [11, 12]
             .into_iter()
             .map(|curve_id| crate::topology::HalfEdgeId {
                 curve_id,
                 side: crate::topology::Side::Zero,
             })
             .collect(),
-    });
+    ));
     let mut ir = cadmpeg_ir::CadIr::empty();
     for (id, origin, direction) in [
         (11, Point3::new(0.0, 0.0, 4.0), Vector3::new(1.0, 0.0, 0.0)),

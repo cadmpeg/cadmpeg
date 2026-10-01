@@ -300,10 +300,10 @@ pub(crate) fn ellipse_carriers(
             offset: conic.offset,
         });
     }
-    crate::sort::stable_sort_by_key(
-        ctx,
+    ctx.stable_sort_by(
         result.as_mut_slice(),
-        |ellipse| ellipse.offset,
+        |left, right| left.offset.cmp(&right.offset),
+        |_| 0,
         "creo ellipse carriers result ordering",
     )?;
     Ok(result)
@@ -703,10 +703,10 @@ pub(crate) fn named_conics(
         });
         search = block_end.max(fields_start);
     }
-    crate::sort::stable_sort_by_key(
-        ctx,
+    ctx.stable_sort_by(
         result.as_mut_slice(),
-        |conic| conic.offset,
+        |left, right| left.offset.cmp(&right.offset),
+        |_| 0,
         "creo named conics result ordering",
     )?;
     Ok(result)
@@ -855,10 +855,10 @@ pub(crate) fn positional_conics(
         }
         search = block_end.max(rows_start);
     }
-    crate::sort::stable_sort_by_key(
-        ctx,
+    ctx.stable_sort_by(
         result.as_mut_slice(),
-        |conic| conic.offset,
+        |left, right| left.offset.cmp(&right.offset),
+        |_| 0,
         "creo positional conics result ordering",
     )?;
     result.dedup_by_key(|conic| conic.offset);
@@ -946,10 +946,10 @@ pub(crate) fn lines(
         }
         search = block_end.max(instance_search);
     }
-    crate::sort::stable_sort_by_key(
-        ctx,
+    ctx.stable_sort_by(
         result.as_mut_slice(),
-        |line| line.offset,
+        |left, right| left.offset.cmp(&right.offset),
+        |_| 0,
         "creo lines result ordering",
     )?;
     result.dedup_by_key(|line| line.offset);
@@ -1073,10 +1073,10 @@ pub(crate) fn line3d_lines(
         }
         search = block_end.max(rows_start);
     }
-    crate::sort::stable_sort_by_key(
-        ctx,
+    ctx.stable_sort_by(
         result.as_mut_slice(),
-        |line| line.offset,
+        |left, right| left.offset.cmp(&right.offset),
+        |_| 0,
         "creo line3d lines result ordering",
     )?;
     result.dedup_by_key(|line| line.offset);
@@ -1247,10 +1247,10 @@ pub(crate) fn arc_z_circles(
         }
         search = block_end.max(rows_start);
     }
-    crate::sort::stable_sort_by_key(
-        ctx,
+    ctx.stable_sort_by(
         result.as_mut_slice(),
-        |circle| circle.offset,
+        |left, right| left.offset.cmp(&right.offset),
+        |_| 0,
         "creo arc z circles result ordering",
     )?;
     result.dedup_by_key(|circle| circle.offset);

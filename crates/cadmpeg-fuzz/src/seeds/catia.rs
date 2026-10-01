@@ -72,15 +72,17 @@ pub fn standard_catpart() -> io::Result<Vec<u8>> {
     let main = main_stream();
     let surf = surf_stream();
     let main_off = 16u32;
-    let surf_off = main_off + main.len() as u32;
-    let dir_rel = surf_off + surf.len() as u32;
+    let main_len = u32::try_from(main.len()).map_err(io::Error::other)?;
+    let surf_len = u32::try_from(surf.len()).map_err(io::Error::other)?;
+    let surf_off = main_off + main_len;
+    let dir_rel = surf_off + surf_len;
 
     let mut dir = Vec::new();
     dir.extend_from_slice(DIR_MAGIC);
-    dir.extend_from_slice(&descriptor("MainDataStream", main_off, main.len() as u32)?);
-    dir.extend_from_slice(&descriptor("SurfacicReps", surf_off, surf.len() as u32)?);
+    dir.extend_from_slice(&descriptor("MainDataStream", main_off, main_len)?);
+    dir.extend_from_slice(&descriptor("SurfacicReps", surf_off, surf_len)?);
     dir.extend_from_slice(b"CB__END");
-    let b_len = dir.len() as u32;
+    let b_len = u32::try_from(dir.len()).map_err(io::Error::other)?;
 
     let mut inner = Vec::new();
     inner.extend_from_slice(OUTER_MAGIC);
@@ -92,7 +94,7 @@ pub fn standard_catpart() -> io::Result<Vec<u8>> {
 
     let mut f = Vec::new();
     f.extend_from_slice(OUTER_MAGIC);
-    let outer_dir_off = 16u32 + inner.len() as u32;
+    let outer_dir_off = 16u32 + u32::try_from(inner.len()).map_err(io::Error::other)?;
     f.extend_from_slice(&be32(outer_dir_off));
     f.extend_from_slice(&be32(0));
     f.extend_from_slice(&inner);

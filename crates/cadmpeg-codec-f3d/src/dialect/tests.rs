@@ -142,7 +142,14 @@ fn extra_dialect_collection_refuses_limit() {
     .unwrap();
     let scan = crate::container::scan(&scan_ctx, root).unwrap();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_collection_items = 1;
+    let header = scan.breps[0].kernel.as_ref().map_or(
+        cadmpeg_asm::dialect::KernelHeaderRef::Unknown,
+        crate::container::KernelFraming::as_header_ref,
+    );
+    let kernel_entries = cadmpeg_asm::dialect::classify(header).declared().len() + 1;
+    // Admit declarations before testing the next destination slot.
+    policy.limits.max_collection_items =
+        u64::try_from(scan.kind.dialect().declared().len() + kernel_entries).unwrap();
     let (limited, _) =
         cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let error = classify_layers(&limited, &scan).unwrap_err();
@@ -166,7 +173,18 @@ fn dialect_collision_loss_refuses_collection_limit() {
     let mut scan = crate::container::scan(&scan_ctx, root).unwrap();
     scan.breps.push(scan.breps[0].clone());
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_collection_items = 3;
+    let header = scan.breps[0].kernel.as_ref().map_or(
+        cadmpeg_asm::dialect::KernelHeaderRef::Unknown,
+        crate::container::KernelFraming::as_header_ref,
+    );
+    let kernel_entries = cadmpeg_asm::dialect::classify(header).declared().len() + 1;
+    // Admit declarations before testing the next destination slot.
+    policy.limits.max_collection_items = u64::try_from(
+        scan.kind.dialect().declared().len()
+            + scan.breps.len() * kernel_entries
+            + (scan.breps.len() - 1),
+    )
+    .unwrap();
     let (limited, _) =
         cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let error = classify_layers(&limited, &scan).unwrap_err();

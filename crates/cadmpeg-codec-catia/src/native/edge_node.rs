@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 use crate::native::edge_definition::CatiaConsolidatedEdgeDefinition;
-use crate::wire::records::{ConsolidatedFrameFlag, ConsolidatedFrameWidth};
+use crate::wire::records::{ConsolidatedFrameFlag, ConsolidatedFrameWidth, WidthCodedToken};
 
 use super::{
     CatiaAllocationReferenceEncoding, CatiaConsolidatedAnalyticCircleBinding,
@@ -21,12 +21,10 @@ pub(crate) struct CatiaConsolidatedEdgeNode {
     pub(super) byte_offset: u64,
     /// Zero-based bounded record-source ordinal.
     pub(super) source_index: usize,
-    /// Header-token width in bytes.
-    pub(super) width: ConsolidatedFrameWidth,
+    /// Header token with its checked encoded width.
+    pub(super) token: WidthCodedToken,
     /// Independent framing flag.
     pub(super) flag: ConsolidatedFrameFlag,
-    /// Width-coded header token.
-    pub(super) header_token: u32,
     /// Owning compact class-`0x62` packet and frame ordinal.
     pub(super) allocation: Option<(String, u32)>,
     /// Allocation-local curve-support reference.
@@ -142,9 +140,9 @@ impl CatiaConsolidatedEdgeNodeWire {
             id: value.id,
             byte_offset: value.byte_offset,
             source_index: value.source_index,
-            width: value.width,
+            width: value.token.width(),
             flag: value.flag,
-            header_token: value.header_token,
+            header_token: value.token.value(),
             allocation_owner,
             allocation_ordinal,
             curve_ref: value.curve_ref,
@@ -182,9 +180,8 @@ impl TryFrom<CatiaConsolidatedEdgeNodeWire> for CatiaConsolidatedEdgeNode {
             id: wire.id,
             byte_offset: wire.byte_offset,
             source_index: wire.source_index,
-            width: wire.width,
+            token: WidthCodedToken::new(wire.width, wire.header_token)?,
             flag: wire.flag,
-            header_token: wire.header_token,
             allocation,
             curve_ref: wire.curve_ref,
             vertex_refs: wire.vertex_refs,
@@ -209,17 +206,17 @@ impl TryFrom<CatiaConsolidatedEdgeNodeWire> for CatiaConsolidatedEdgeNode {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-enum IdentityKey {
+enum IdentityKey<'owner> {
     EndpointRecord(u64),
-    Unresolved(usize, Option<String>, u32),
+    Unresolved(usize, Option<&'owner str>, u32),
 }
 
-fn node_identity_key(node: &CatiaConsolidatedEdgeNode, endpoint: usize) -> IdentityKey {
+fn node_identity_key(node: &CatiaConsolidatedEdgeNode, endpoint: usize) -> IdentityKey<'_> {
     node.endpoint_records.map_or_else(
         || {
             IdentityKey::Unresolved(
                 node.source_index,
-                node.allocation.as_ref().map(|(owner, _)| owner.clone()),
+                node.allocation.as_ref().map(|(owner, _)| owner.as_str()),
                 node.vertex_refs[endpoint],
             )
         },
@@ -227,7 +224,9 @@ fn node_identity_key(node: &CatiaConsolidatedEdgeNode, endpoint: usize) -> Ident
     )
 }
 
-fn identity_index(identities: &[CatiaConsolidatedVertexIdentity]) -> HashMap<IdentityKey, &str> {
+fn identity_index(
+    identities: &[CatiaConsolidatedVertexIdentity],
+) -> HashMap<IdentityKey<'_>, &str> {
     identities
         .iter()
         .map(|identity| {
@@ -235,7 +234,7 @@ fn identity_index(identities: &[CatiaConsolidatedVertexIdentity]) -> HashMap<Ide
                 || {
                     IdentityKey::Unresolved(
                         identity.source_index,
-                        identity.allocation_owner.clone(),
+                        identity.allocation_owner.as_deref(),
                         identity.identity,
                     )
                 },
@@ -248,7 +247,7 @@ fn identity_index(identities: &[CatiaConsolidatedVertexIdentity]) -> HashMap<Ide
 
 fn joined_vertices<'a>(
     node: &CatiaConsolidatedEdgeNode,
-    index: &HashMap<IdentityKey, &'a str>,
+    index: &HashMap<IdentityKey<'_>, &'a str>,
 ) -> [&'a str; 2] {
     if node.endpoint_records.is_none() && node.uses.is_none() {
         return ["", ""];
@@ -278,21 +277,20 @@ pub(super) fn edge_node_wires(
 fn identity_index_charged<'a>(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     identities: &'a [CatiaConsolidatedVertexIdentity],
-) -> Result<HashMap<IdentityKey, &'a str>, cadmpeg_core::CodecError> {
+) -> Result<HashMap<IdentityKey<'a>, &'a str>, cadmpeg_core::CodecError> {
     let mut index = HashMap::new();
     for identity in identities {
+        let work = identity
+            .allocation_owner
+            .as_deref()
+            .map_or(1, |owner| cadmpeg_core::decode::u64_from_index(owner.len()));
+        ctx.charge_work(work, "catia_native_edge_wire_index")?;
         let key = if let Some(record) = identity.endpoint_record {
             IdentityKey::EndpointRecord(record)
         } else {
             IdentityKey::Unresolved(
                 identity.source_index,
-                identity
-                    .allocation_owner
-                    .as_deref()
-                    .map(|owner| {
-                        ctx.copy_retained_text(owner, "catia_native_edge_wire_index_owner")
-                    })
-                    .transpose()?,
+                identity.allocation_owner.as_deref(),
                 identity.identity,
             )
         };
@@ -310,25 +308,16 @@ fn joined_vertex_charged<'a>(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     node: &CatiaConsolidatedEdgeNode,
     endpoint: usize,
-    index: &HashMap<IdentityKey, &'a str>,
+    index: &HashMap<IdentityKey<'_>, &'a str>,
 ) -> Result<&'a str, cadmpeg_core::CodecError> {
     if node.endpoint_records.is_none() && node.uses.is_none() {
         return Ok("");
     }
-    let key = if let Some(records) = node.endpoint_records {
-        IdentityKey::EndpointRecord(records[endpoint])
-    } else {
-        IdentityKey::Unresolved(
-            node.source_index,
-            node.allocation
-                .as_ref()
-                .map(|(owner, _)| {
-                    ctx.copy_retained_text(owner, "catia_native_edge_wire_lookup_owner")
-                })
-                .transpose()?,
-            node.vertex_refs[endpoint],
-        )
-    };
+    let key = node_identity_key(node, endpoint);
+    let work = node.allocation.as_ref().map_or(1, |(owner, _)| {
+        cadmpeg_core::decode::u64_from_index(owner.len())
+    });
+    ctx.charge_work(work, "catia_native_edge_wire_lookup")?;
     Ok(index.get(&key).copied().unwrap_or(""))
 }
 
@@ -399,18 +388,11 @@ pub(super) fn consolidated_vertex_identities(
         }
         for (endpoint, identity) in node.vertex_refs.into_iter().enumerate() {
             let endpoint_record = node.endpoint_records.map(|records| records[endpoint]);
-            let key = node.endpoint_records.map_or_else(
-                || {
-                    node.allocation
-                        .as_ref()
-                        .map(|(owner, _)| {
-                            ctx.copy_retained_text(owner, "catia_native_vertex_identity_lookup_key")
-                        })
-                        .transpose()
-                        .map(|owner| IdentityKey::Unresolved(node.source_index, owner, identity))
-                },
-                |records| Ok(IdentityKey::EndpointRecord(records[endpoint])),
-            )?;
+            let key = node_identity_key(node, endpoint);
+            let work = node.allocation.as_ref().map_or(1, |(owner, _)| {
+                cadmpeg_core::decode::u64_from_index(owner.len())
+            });
+            ctx.charge_work(work, "catia_native_vertex_identity_lookup")?;
             let index = if let Some(&index) = identity_indices.get(&key) {
                 index
             } else {
@@ -482,6 +464,55 @@ mod tests {
     use cadmpeg_test_support::refusal::{refusal, states_the_key};
 
     #[test]
+    fn native_edge_node_rejects_a_token_wider_than_its_declared_width() {
+        let native = CatiaNative::decode(&a5_native_edge_run_stream(6, 139, 142));
+        let mut wire = serde_json::to_value(&native).expect("native wire")
+            ["consolidated_edge_nodes"][0]
+            .clone();
+        wire["width"] = serde_json::json!(1);
+        wire["header_token"] = serde_json::json!(256);
+        let wire = serde_json::from_value::<super::CatiaConsolidatedEdgeNodeWire>(wire)
+            .expect("wire shape");
+        assert!(super::CatiaConsolidatedEdgeNode::try_from(wire)
+            .expect_err("token exceeds width")
+            .contains("does not fit"));
+    }
+
+    #[test]
+    fn identity_lookup_keys_borrow_allocation_names() {
+        let native = CatiaNative::decode(&a5_native_edge_run_stream(6, 139, 142));
+        let owner = "allocation-owner".to_owned();
+        let mut node = native.consolidated_edge_nodes[0].clone();
+        node.endpoint_records = None;
+        node.allocation = Some((owner, 0));
+        let key = super::node_identity_key(&node, 0);
+        let super::IdentityKey::Unresolved(_, Some(key_owner), _) = key else {
+            panic!("borrowed unresolved identity required")
+        };
+        assert_eq!(
+            key_owner.as_ptr(),
+            node.allocation.as_ref().expect("allocation").0.as_ptr()
+        );
+        let identities = [super::CatiaConsolidatedVertexIdentity {
+            id: String::new(),
+            identity: node.vertex_refs[0],
+            source_index: node.source_index,
+            endpoint_record: None,
+            allocation_owner: Some(key_owner.to_owned()),
+            reference_values: Vec::new(),
+            incident_edge_nodes: Vec::new(),
+        }];
+        crate::test_support::with_retained_limit(0, |ctx| {
+            let index =
+                super::identity_index_charged(ctx, &identities).expect("borrowed index owners");
+            assert_eq!(
+                super::joined_vertex_charged(ctx, &node, 0, &index).expect("borrowed lookup owner"),
+                ""
+            );
+        });
+    }
+
+    #[test]
     fn native_edge_wire_projection_refuses_before_identity_index_growth() {
         let native = CatiaNative::decode(&a5_native_edge_run_stream(6, 139, 142));
         let service = crate::test_support::with_service_context(|ctx| {
@@ -510,6 +541,42 @@ mod tests {
         assert!(
             matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
             if limit.operation == "catia_native_edge_wire_index")
+        );
+    }
+
+    #[test]
+    fn repeated_vertex_identity_keys_do_not_accumulate_retained_owner_copies() {
+        let native = CatiaNative::decode(&a5_native_edge_run_stream(6, 139, 142));
+        let mut node = native.consolidated_edge_nodes[0].clone();
+        node.endpoint_records = None;
+        node.allocation = Some(("allocation-owner".to_owned(), 0));
+        assert!(node.uses.is_some());
+        let expected = crate::test_support::with_service_context(|ctx| {
+            super::consolidated_vertex_identities(ctx, std::slice::from_ref(&node))
+        })
+        .expect("single node identities");
+        let retained = expected
+            .iter()
+            .map(|identity| {
+                identity.id.len()
+                    + identity.allocation_owner.as_ref().map_or(0, String::len)
+                    + identity
+                        .incident_edge_nodes
+                        .iter()
+                        .map(String::len)
+                        .sum::<usize>()
+            })
+            .sum::<usize>();
+        let nodes = (0..64).map(|_| node.clone()).collect::<Vec<_>>();
+        crate::test_support::with_retained_limit(
+            u64::try_from(retained).expect("identity retained bytes"),
+            |ctx| {
+                assert_eq!(
+                    super::consolidated_vertex_identities(ctx, &nodes)
+                        .expect("only arena names are retained"),
+                    expected
+                );
+            },
         );
     }
 

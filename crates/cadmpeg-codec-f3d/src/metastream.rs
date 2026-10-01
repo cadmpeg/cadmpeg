@@ -239,7 +239,9 @@ fn take_version_guid(
         let Some(guid_at) = initial.checked_add(prefix_len) else {
             continue;
         };
-        let Some((guid, next)) = lp_utf16_bounded_charged(ctx, bytes, guid_at, 36..=36)? else {
+        let Some((guid, next)) =
+            lp_utf16_bounded_charged(ctx, bytes, guid_at, 36..=36, "retain F3D UTF-16 string")?
+        else {
             continue;
         };
         if is_guid_hyphenated(&guid) {
@@ -267,7 +269,9 @@ fn take_version_urn(
         let Some(urn_at) = initial.checked_add(prefix_len) else {
             continue;
         };
-        let Some((urn, next)) = lp_utf16_bounded_charged(ctx, bytes, urn_at, 1..=1024)? else {
+        let Some((urn, next)) =
+            lp_utf16_bounded_charged(ctx, bytes, urn_at, 1..=1024, "retain F3D UTF-16 string")?
+        else {
             continue;
         };
         let urn = urn.as_bytes();
@@ -352,7 +356,7 @@ fn parse_segment_header(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<(u32, u
     )?;
     let at = require(at.checked_add(4), "segment id", at)?;
     let (_, at) = require(
-        lp_utf16_bounded_charged(ctx, bytes, at, 0..=256)?,
+        lp_utf16_bounded_charged(ctx, bytes, at, 0..=256, "retain F3D UTF-16 string")?,
         "asset GUID",
         at,
     )?;

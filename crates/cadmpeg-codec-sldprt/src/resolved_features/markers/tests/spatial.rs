@@ -1375,7 +1375,7 @@ fn linked_profile_point_carries_coordinates_for_compact_and_long_tails() {
         let entities = super::sketch_input_entities(&payload, "lane");
         let point = entities
             .iter()
-            .find(|entity| entity.offset() == offset as u64)
+            .find(|entity| entity.offset() == cadmpeg_core::decode::u64_from_index(offset))
             .expect("linked profile point");
         assert_eq!(point.kind(), SketchInputKind::Point);
         assert_eq!(
@@ -1457,7 +1457,7 @@ fn linked_profile_point_carries_coordinates_for_compact_and_long_tails() {
     let entities = super::sketch_input_entities(&extended, "lane");
     let point = entities
         .iter()
-        .find(|entity| entity.offset() == offset as u64)
+        .find(|entity| entity.offset() == cadmpeg_core::decode::u64_from_index(offset))
         .expect("extended-tail linked profile point");
     assert_eq!(point.kind(), SketchInputKind::Point);
     assert_eq!(
@@ -1549,7 +1549,7 @@ fn linked_profile_point_carries_coordinates_for_compact_and_long_tails() {
     );
     let entity = super::sketch_input_entities(&legacy_geometry, "lane")
         .into_iter()
-        .find(|entity| entity.offset() == offset as u64)
+        .find(|entity| entity.offset() == cadmpeg_core::decode::u64_from_index(offset))
         .expect("legacy geometry linked profile point");
     assert_eq!(entity.kind(), SketchInputKind::Point);
     assert_eq!(

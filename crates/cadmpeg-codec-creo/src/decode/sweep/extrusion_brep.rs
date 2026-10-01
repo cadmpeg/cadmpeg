@@ -180,10 +180,11 @@ fn sketch_profiles_cover_generated_extrusion_sides(
     for entity_use in sketch.profiles.iter().flatten() {
         profile_count += 1;
         let id = entity_use.entity.as_str();
-        if !profile_entity_set.contains(id) {
-            ctx.charge_collection_items(1, "creo extrusion profile entity ID nodes")?;
-            profile_entity_set.insert(id);
-        }
+        ctx.insert_btree_set(
+            &mut profile_entity_set,
+            id,
+            "creo extrusion profile entity ID nodes",
+        )?;
     }
     let mut expected_entity_set = BTreeSet::<&str>::new();
     let mut expected_count = 0;
@@ -217,10 +218,11 @@ fn sketch_profiles_cover_generated_extrusion_sides(
                 continue;
             }
             expected_count += 1;
-            if !expected_entity_set.contains(*matched) {
-                ctx.charge_collection_items(1, "creo extrusion expected entity ID nodes")?;
-                expected_entity_set.insert(*matched);
-            }
+            ctx.insert_btree_set(
+                &mut expected_entity_set,
+                *matched,
+                "creo extrusion expected entity ID nodes",
+            )?;
         }
     }
     Ok(expected_count > 0
@@ -240,10 +242,11 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
     let mut transferred = 0;
     for transform in &scan.features.section_transforms {
         if unique_feature_section_transform(
+            ctx,
             &scan.features.section_transforms,
             transform.definition_id,
             transform.offset,
-        )
+        )?
         .is_none()
         {
             continue;
@@ -252,12 +255,12 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
             continue;
         };
         if !feature_allows_additive_linear_extrusion(scan, feature_id)
-            || !feature_is_first_material_operation(scan, feature_id)
+            || !feature_is_first_material_operation(ctx, scan, feature_id)?
         {
             continue;
         }
         let Some(definition) =
-            unique_feature_definition_for_transform(&scan.features.definitions, transform)
+            unique_feature_definition_for_transform(ctx, &scan.features.definitions, transform)?
         else {
             continue;
         };

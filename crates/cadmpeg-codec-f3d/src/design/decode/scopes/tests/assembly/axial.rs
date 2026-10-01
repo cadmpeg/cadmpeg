@@ -191,7 +191,8 @@ fn axial_external_reference_text_refuses_retained_limit() {
     let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
-    policy.limits.max_retained_bytes = 35;
+    // Two selector GUID copies precede the external-reference text.
+    policy.limits.max_retained_bytes = 2 * 36 + 35;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let error =
         bind_axial_assembly_operand_targets(&ctx, &bytes, &records, &mut scopes).unwrap_err();

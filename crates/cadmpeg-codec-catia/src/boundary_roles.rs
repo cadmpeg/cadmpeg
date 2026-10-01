@@ -164,9 +164,29 @@ pub(crate) fn classify_planar_boundaries(
     let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)) = surface else {
         return unspecified();
     };
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(rows.len()),
+        "catia_boundary_work_bound",
+    )?;
+    let point_count = rows
+        .iter()
+        .try_fold(0_u64, |count, (_, points)| {
+            count.checked_add(cadmpeg_core::decode::u64_from_index(points.len()))
+        })
+        .ok_or_else(|| ctx.refuse_codec_limit("catia_boundary_work_bound", u64::MAX, u64::MAX))?;
+    // Segment pairs, containment passes, projection and area scans fit this bound.
+    let work = point_count
+        .checked_mul(point_count)
+        .and_then(|square| square.checked_mul(4))
+        .and_then(|pairs| point_count.checked_mul(8)?.checked_add(pairs))
+        .ok_or_else(|| {
+            ctx.refuse_codec_limit("catia_boundary_classification_work", u64::MAX, u64::MAX)
+        })?;
+    ctx.charge_work(work, "catia_boundary_classification_work")?;
     let origin = plane_surface.origin().get();
     let u_axis = *plane_surface.frame().reference().as_raw();
     let v_axis = *plane_surface.frame().binormal().as_raw();
+    let normal = *plane_surface.frame().axis().as_raw();
     let mut polygons = Vec::new();
     for (_, boundary) in rows {
         if boundary.len() < 3 {
@@ -180,7 +200,18 @@ pub(crate) fn classify_planar_boundaries(
         )?;
         for point in boundary {
             let offset = point.vector_from(origin);
-            polygon.push(Point2::new(offset.dot(u_axis), offset.dot(v_axis)));
+            let u = offset.dot(u_axis);
+            let v = offset.dot(v_axis);
+            let distance = offset.dot(normal);
+            let scale = 1.0_f64.max(u.abs()).max(v.abs());
+            if !u.is_finite()
+                || !v.is_finite()
+                || !distance.is_finite()
+                || distance.abs() > EPS_PLANAR_COORDINATE * scale
+            {
+                return unspecified();
+            }
+            polygon.push(Point2::new(u, v));
         }
         ctx.push_vec(&mut polygons, polygon, "catia_boundary_polygon_rows")?;
     }
@@ -318,6 +349,24 @@ mod tests {
     }
 
     #[test]
+    fn planar_boundary_comparisons_refuse_work() {
+        let boundaries = rows(vec![
+            square(0.0, 0.0, 10.0, 10.0),
+            square(2.0, 2.0, 3.0, 3.0),
+        ]);
+        crate::test_support::with_work_limit(2, |ctx| {
+            let cadmpeg_core::CodecError::ResourceLimit(limit) =
+                super::classify_planar_boundaries(ctx, &plane(), &boundaries)
+                    .expect_err("comparison work must be admitted")
+            else {
+                panic!("resource refusal required")
+            };
+            assert_eq!(limit.operation, "catia_boundary_classification_work");
+            assert_eq!(ctx.resource_refusal(), Some(limit));
+        });
+    }
+
+    #[test]
     fn planar_boundary_points_refuse_before_nested_polygon_allocation() {
         let boundaries = rows(vec![square(0.0, 0.0, 1.0, 1.0), square(3.0, 0.0, 4.0, 1.0)]);
         let limited = crate::test_support::with_collection_limit(3, |ctx| {
@@ -329,6 +378,19 @@ mod tests {
         ));
         assert_eq!(
             classify_planar_boundaries(&plane(), &boundaries),
+            FaceLoops::unspecified(vec![loop_id(0), loop_id(1)])
+        );
+    }
+
+    #[test]
+    fn planar_boundaries_decline_an_off_plane_hole() {
+        let outer = square(0.0, 0.0, 10.0, 10.0);
+        let mut inner = square(2.0, 2.0, 3.0, 3.0);
+        for point in &mut inner {
+            point.z = 10.0;
+        }
+        assert_eq!(
+            classify_planar_boundaries(&plane(), &rows(vec![outer, inner])),
             FaceLoops::unspecified(vec![loop_id(0), loop_id(1)])
         );
     }

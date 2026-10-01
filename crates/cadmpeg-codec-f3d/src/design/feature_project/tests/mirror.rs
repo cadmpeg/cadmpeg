@@ -88,12 +88,12 @@ fn mirror_scope(seed_group_record_index: u32) -> DesignParameterScope {
             seed_feature_scope_record_index: None,
             plane_scope_record_index: None,
             plane_selection_record_index: None,
-            plane: Some(crate::records::feature::patterns::DesignPlane {
-                origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
+            plane: crate::records::feature::patterns::DesignPlane::from_parts(
+                cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
                     .expect("finite plane origin"),
-                normal: cadmpeg_ir::features::FiniteVector3::new(Vector3::new(0.0, 0.0, 1.0))
+                cadmpeg_ir::features::FiniteVector3::new(Vector3::new(0.0, 0.0, 1.0))
                     .expect("finite plane normal"),
-            }),
+            ),
         });
     }
     scope

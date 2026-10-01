@@ -113,7 +113,8 @@ fn encode_regenerates_decoded_brep_void_shell_without_source_bytes() {
         "{:#?}",
         round_trip.report().losses
     );
-    let validation = cadmpeg_ir::validate_neutral(round_trip.ir(), Vec::new()).expect("resource allocation did not fail");
+    let validation = cadmpeg_ir::validate_neutral(round_trip.ir(), Vec::new())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -502,7 +503,13 @@ fn encode_type_186_uses_ordered_region_shell_roles() {
     assert_eq!(voids, std::slice::from_ref(&source_outer));
 
     let entities = crate::writer::brep_entities(
-        crate::writer::validate_brep_topology(&ir, crate::IgesVersion::V5_3).unwrap(),
+        &cadmpeg_test_support::service_decode_context(),
+        crate::writer::validate_brep_topology(
+            &cadmpeg_test_support::service_decode_context(),
+            &ir,
+            crate::IgesVersion::V5_3,
+        )
+        .unwrap(),
         &mut std::collections::BTreeMap::new(),
         &mut Vec::new(),
     )

@@ -33,7 +33,12 @@ pub(crate) fn matches_native(
         .with_scoped_storage("FreeCAD expected application records", || {
             wire_records(ctx, objects, properties, entries)
         })?;
-    expected.sort_by(|left, right| left.id.cmp(&right.id));
+    ctx.stable_sort_by(
+        &mut expected,
+        |left, right| left.id.cmp(&right.id),
+        |record| record.id.len(),
+        "FreeCAD application records sort",
+    )?;
     let mut actual = namespace.arena_iter_as_for_decode::<serde_json::Value>(ctx, "applications");
     for record in expected {
         let (actual, _actual_storage) = ctx
@@ -99,7 +104,7 @@ struct ApplicationPayloadWire<'a> {
     entry: &'a str,
     name: &'a str,
     byte_len: u64,
-    sha256: String,
+    sha256: &'a str,
     data: &'a [u8],
 }
 
@@ -121,15 +126,22 @@ fn wire_records<'a>(
     }
     let mut entry_index = HashMap::new();
     for entry in entries {
-        if !entry_index.contains_key(entry.name.as_str()) {
+        if !entry_index.contains_key(entry.name()) {
             ctx.reserve_map(&mut entry_index, 1, "FreeCAD application entry lookup")?;
         }
-        entry_index.insert(entry.name.as_str(), entry);
+        entry_index.insert(entry.name(), entry);
     }
     let mut records = ctx.collection_vec(objects.len(), "FreeCAD application records")?;
     for object in objects {
         let mut owned = by_owner.remove(object.id.as_str()).unwrap_or_default();
-        owned.sort_by_key(|property| (property.xml.start(), property.xml.end()));
+        ctx.stable_sort_by(
+            &mut owned,
+            |left, right| {
+                (left.xml.start(), left.xml.end()).cmp(&(right.xml.start(), right.xml.end()))
+            },
+            |_| 0,
+            "FreeCAD application owner properties sort",
+        )?;
         let data = object
             .data
             .as_ref()
@@ -161,14 +173,19 @@ fn wire_records<'a>(
             for name in property.side_entries() {
                 if let Some(entry) = entry_index.get(name.as_str()) {
                     payloads.push(ApplicationPayloadWire {
-                        entry: &entry.id,
-                        name: &entry.name,
+                        entry: entry.id(),
+                        name: entry.name(),
                         byte_len: entry.byte_len(),
                         sha256: entry.sha256(),
-                        data: &entry.data,
+                        data: entry.data(),
                     });
                 }
             }
+            ctx.charge_work(
+                cadmpeg_core::decode::u64_from_index(data.len()),
+                "FreeCAD application property digest",
+            )?;
+            ctx.charge_retained(64, "FreeCAD application property digest")?;
             property_records.push(ApplicationPropertyWire {
                 id: crate::native::native_child_id_charged(
                     ctx,
@@ -191,6 +208,11 @@ fn wire_records<'a>(
                 inert: is_inert(property),
             });
         }
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(data.len()),
+            "FreeCAD application object digest",
+        )?;
+        ctx.charge_retained(64, "FreeCAD application object digest")?;
         records.push(ApplicationRecordWire {
             id: crate::native::native_id_charged(ctx, "application", &object.name)?,
             object: &object.id,

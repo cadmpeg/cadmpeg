@@ -55,15 +55,16 @@ pub(super) fn decode(
                 .transpose()?
                 .flatten()
                 .unwrap_or_default();
-            ctx.charge_collection_items(1, "step_dependency_documents")?;
-            documents.insert(
+            ctx.insert_btree_map(
+                &mut documents,
                 id,
                 (
                     identifier,
                     name,
                     parameters.get(3).and_then(ValueExt::reference),
                 ),
-            );
+                "step_dependency_documents",
+            )?;
         }
         if let Some(partial) = record.partial("EXTERNAL_SOURCE") {
             let parameters = partial.parameters.as_slice();
@@ -73,8 +74,7 @@ pub(super) fn decode(
                 .transpose()?
                 .flatten()
             {
-                ctx.charge_collection_items(1, "step_dependency_sources")?;
-                sources.insert(id, source);
+                ctx.insert_btree_map(&mut sources, id, source, "step_dependency_sources")?;
             }
         }
     }

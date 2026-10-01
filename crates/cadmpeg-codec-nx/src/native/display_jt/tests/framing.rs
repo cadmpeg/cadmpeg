@@ -353,9 +353,19 @@ fn jt_compressed_sequence_tail_refuses_before_copy() {
 #[test]
 fn jt_compressed_element_hash_refuses_before_body_work() {
     use cadmpeg_core::decode::ResourceDimension;
+    assert_compressed_jt_limit(
+        |policy| policy.limits.max_work_units = 2,
+        ResourceDimension::WorkUnits,
+        "zlib compressed input",
+    );
+    let (data, _) = compressed_jt_fixture();
+    // This member finishes in one 8192-byte expansion step and copies its whole output;
+    // retaining the inflated payload then copies that output again.
+    let expanded_len = cadmpeg_core::decode::u64_from_index(framed_jt_element().len() + 3 + 2);
+    let expansion_work =
+        cadmpeg_core::decode::u64_from_index(data.len() - 33) + 8192 + expanded_len;
     let adjust_policy = |policy: &mut cadmpeg_core::decode::DecodePolicy| {
-        policy.limits.max_work_units =
-            cadmpeg_core::decode::u64_from_index(framed_jt_element().len() + 3 + 2) + 2;
+        policy.limits.max_work_units = expansion_work + expanded_len + 2;
     };
     assert_compressed_jt_limit(
         adjust_policy,
@@ -367,14 +377,19 @@ fn jt_compressed_element_hash_refuses_before_body_work() {
 #[test]
 fn jt_compressed_sequence_hash_refuses_before_tail_work() {
     use cadmpeg_core::decode::ResourceDimension;
+    assert_compressed_jt_limit(
+        |policy| policy.limits.max_work_units = 5,
+        ResourceDimension::WorkUnits,
+        "zlib compressed input",
+    );
+    let (data, _) = compressed_jt_fixture();
+    // This member finishes in one 8192-byte expansion step and copies its whole output;
+    // retaining the inflated payload then copies that output again.
+    let expanded_len = cadmpeg_core::decode::u64_from_index(framed_jt_element().len() + 3 + 2);
+    let expansion_work =
+        cadmpeg_core::decode::u64_from_index(data.len() - 33) + 8192 + expanded_len;
     let adjust_policy = |policy: &mut cadmpeg_core::decode::DecodePolicy| {
-        policy.limits.max_work_units =
-            cadmpeg_core::decode::u64_from_index(framed_jt_element().len() + 3 + 2)
-                + 5
-                + 64
-                + 2
-                + 2
-                + 64;
+        policy.limits.max_work_units = expansion_work + expanded_len + 5 + 64 + 2 + 2 + 64;
     };
     assert_compressed_jt_limit(
         adjust_policy,
@@ -386,9 +401,19 @@ fn jt_compressed_sequence_hash_refuses_before_tail_work() {
 #[test]
 fn jt_compressed_sequence_validation_refuses_before_second_hash() {
     use cadmpeg_core::decode::ResourceDimension;
+    assert_compressed_jt_limit(
+        |policy| policy.limits.max_work_units = 7,
+        ResourceDimension::WorkUnits,
+        "zlib compressed input",
+    );
+    let (data, _) = compressed_jt_fixture();
+    // This member finishes in one 8192-byte expansion step and copies its whole output;
+    // retaining the inflated payload then copies that output again.
+    let expanded_len = cadmpeg_core::decode::u64_from_index(framed_jt_element().len() + 3 + 2);
+    let expansion_work =
+        cadmpeg_core::decode::u64_from_index(data.len() - 33) + 8192 + expanded_len;
     let adjust_policy = |policy: &mut cadmpeg_core::decode::DecodePolicy| {
-        policy.limits.max_work_units =
-            cadmpeg_core::decode::u64_from_index(framed_jt_element().len() + 3 + 2) + 7 + 2 + 64;
+        policy.limits.max_work_units = expansion_work + expanded_len + 7 + 2 + 64;
     };
     assert_compressed_jt_limit(
         adjust_policy,

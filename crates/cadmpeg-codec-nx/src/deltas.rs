@@ -533,13 +533,12 @@ fn term_use_numeric_tails(
             .chain(census.tombstones.iter().map(|tombstone| tombstone.offset))
             .chain(census.body_revisions.iter().map(|revision| revision.offset)),
     );
-    let sort_work = u64_from_index(count)
-        .checked_mul(u64::from(usize::BITS - count.leading_zeros()))
-        .ok_or_else(|| {
-            ctx.refuse_codec_limit("NX deltas event start sort", 0, u64_from_index(count))
-        })?;
-    ctx.charge_work(sort_work, "sort NX deltas event starts")?;
-    event_starts.sort_unstable();
+    ctx.sort_unstable_by(
+        &mut event_starts,
+        Ord::cmp,
+        |_| 0,
+        "sort NX deltas event starts",
+    )?;
     event_starts.dedup();
 
     let mut tails = Vec::new();
@@ -1692,13 +1691,6 @@ fn merged_event_spans(
     let _covered_reservation =
         ctx.reserve_scoped(u64_from_index(scratch_bytes), "NX deltas event spans")?;
     ctx.charge_collection_items(u64_from_index(count), "NX deltas event spans")?;
-    let sort_width = usize::BITS - count.leading_zeros();
-    let sort_work = u64_from_index(count)
-        .checked_mul(u64::from(sort_width))
-        .ok_or_else(|| {
-            ctx.refuse_codec_limit("NX deltas event span sort", 0, u64_from_index(count))
-        })?;
-    ctx.charge_work(sort_work, "sort NX deltas event spans")?;
     let mut covered = Vec::new();
     cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
         &mut covered,
@@ -1791,7 +1783,12 @@ fn merged_event_spans(
                 .map(|state| (state.offset, state.end)),
         );
     }
-    covered.sort_unstable();
+    ctx.sort_unstable_by(
+        &mut covered,
+        Ord::cmp,
+        |_| 0,
+        "sort NX deltas covered spans",
+    )?;
     let mut merged = Vec::<(usize, usize)>::new();
     for (start, end) in covered {
         if let Some((_, merged_end)) = merged.last_mut().filter(|(_, end)| start <= *end) {
@@ -2104,12 +2101,11 @@ fn merge_records(
                 .get(&key)
                 .is_none_or(|record| tombstone.offset > record.offset)
         {
-            ctx.charge_collection_items(1, "NX deltas deletion keys")?;
             deletion_reservation
                 .grow(u64_from_index(
                     std::mem::size_of::<((u8, u32), &Tombstone)>(),
                 ))?;
-            deletions.insert(key, tombstone);
+            ctx.insert_btree_map(&mut deletions, key, tombstone, "NX deltas deletion keys")?;
         }
     }
     let build = |include_topology: bool| -> Result<_, CodecError> {
@@ -2153,7 +2149,7 @@ fn merge_records(
         }
         Ok((merged, reservation))
     };
-    if graph.body_shape_shells().next().is_some() {
+    if graph.body_shape_shells(ctx)?.next().is_some() {
         let (merged, reservation) = build(false)?;
         reservation.commit()?;
         return Ok(merged);
@@ -2165,10 +2161,11 @@ fn merge_records(
     let deletes_owner = deletions.keys().any(|(kind, _)| matches!(kind, 12 | 13));
     let deleted_faces = deletions.keys().filter(|(kind, _)| *kind == 14).count();
     let accounted_faces = merged_graph
-        .body_shape_face_count()
+        .body_shape_face_count(ctx)?
         .checked_add(deleted_faces)
         .ok_or_else(|| CodecError::Malformed("NX accounted face count overflow".into()))?;
-    let unaccounted_face_loss = !deletes_owner && accounted_faces < graph.body_shape_face_count();
+    let unaccounted_face_loss =
+        !deletes_owner && accounted_faces < graph.body_shape_face_count(ctx)?;
     if base_complete && (!merged_complete || unaccounted_face_loss) {
         let (selected, reservation) = build(false)?;
         reservation.commit()?;
@@ -2270,14 +2267,17 @@ fn count_unmatched_events(
 ) -> Result<BTreeMap<&'static str, usize>, CodecError> {
     let mut unmatched = BTreeMap::new();
     for ((kind, xmt), mut events) in events {
-        let count = u64_from_index(events.len());
-        let work = count
-            .checked_mul(u64::from(usize::BITS - events.len().leading_zeros()))
-            .ok_or_else(|| ctx.refuse_codec_limit("sort NX unmatched deltas events", 0, count))?;
-        ctx.charge_work(work, "sort NX unmatched deltas events")?;
-        events.sort_by_key(|event| match event {
-            MergeEvent::Full { offset } | MergeEvent::Tombstone { offset, .. } => *offset,
-        });
+        ctx.stable_sort_by(
+            &mut events,
+            |first, second| {
+                let offset = |event: &MergeEvent| match event {
+                    MergeEvent::Full { offset } | MergeEvent::Tombstone { offset, .. } => *offset,
+                };
+                offset(first).cmp(&offset(second))
+            },
+            |_| 0,
+            "sort NX unmatched deltas events",
+        )?;
         let Some(MergeEvent::Tombstone {
             offset,
             kind: tombstone_kind,
@@ -2291,9 +2291,7 @@ fn count_unmatched_events(
             })
         {
             let name = tombstone_kind.name();
-            if !unmatched.contains_key(name) {
-                ctx.charge_collection_items(1, "NX unmatched tombstone families")?;
-            }
+            ctx.admit_btree_entry(&unmatched, &name, "NX unmatched tombstone families")?;
             *unmatched.entry(name).or_default() += 1;
         }
     }
@@ -2736,10 +2734,12 @@ fn consume_variable(
     if kind == 91 {
         return consume_type_91(ctx, stream, offset);
     }
-    let parsed = (|| -> Option<_> {
-        Some(match kind {
+    let parsed: Option<Result<_, CodecError>> = (|| {
+        Some(Ok(match kind {
             81 => {
-                let record = crate::parasolid::entity_51_record_at(stream, offset)?;
+                let record = propagate_resource!(crate::parasolid::entity_51_record_at(
+                    ctx, stream, offset
+                ))?;
                 (
                     record.xmt.into(),
                     record.byte_len,
@@ -2750,10 +2750,11 @@ fn consume_variable(
                 )
             }
             82..=89 | 98 => {
-                let (parsed_kind, xmt, byte_len) =
+                let (parsed_kind, xmt, byte_len) = propagate_resource!(
                     crate::parasolid::value_records::entity_value_record_identity_at(
-                        stream, offset,
-                    )?;
+                        ctx, stream, offset,
+                    )
+                )?;
                 (parsed_kind == kind).then_some(())?;
                 let family = match parsed_kind {
                     82 => RecordFamily::Entity52,
@@ -2770,9 +2771,9 @@ fn consume_variable(
                 (xmt, byte_len, family)
             }
             _ => return None,
-        })
+        }))
     })();
-    let Some((xmt, byte_len, family)) = parsed else {
+    let Some((xmt, byte_len, family)) = parsed.transpose()? else {
         return Ok(None);
     };
     let Some(end) = offset.checked_add(byte_len) else {
@@ -3258,16 +3259,18 @@ fn consume_type_45(
     stream: &[u8],
     offset: usize,
 ) -> Result<Option<Record>, CodecError> {
-    let parsed = (|| {
+    let parsed: Option<Result<_, CodecError>> = (|| {
         (View::u16_be_at(stream, offset) == Some(45)).then_some(())?;
-        let direct = type_45_layout(stream, offset, 0);
+        let direct = propagate_resource!(type_45_layout(ctx, stream, offset, 0));
         let escaped_marker = stream.get(offset + 2) == Some(&0xff);
-        let escaped = escaped_marker
-            .then(|| type_45_layout(stream, offset, 1))
-            .flatten();
-        select_enveloped_layout(escaped_marker, direct, escaped)
+        let escaped = if escaped_marker {
+            propagate_resource!(type_45_layout(ctx, stream, offset, 1))
+        } else {
+            None
+        };
+        select_enveloped_layout(escaped_marker, direct, escaped).map(Ok)
     })();
-    let Some((xmt, end)) = parsed else {
+    let Some((xmt, end)) = parsed.transpose()? else {
         return Ok(None);
     };
     admitted_record(ctx, stream, offset, end, RecordFamily::Type45, xmt)
@@ -3340,36 +3343,54 @@ fn type_67_layout(
     Some((xmt, node_id, references, at))
 }
 
-fn type_45_layout(stream: &[u8], offset: usize, envelope_len: usize) -> Option<(u32, usize)> {
-    let count_at = offset.checked_add(2 + envelope_len)?;
-    let count = usize::try_from(View::u32_be_at(stream, count_at)?).ok()?;
-    (count > 0).then_some(())?;
-    let (xmt, xmt_len) = read_xmt(stream, count_at.checked_add(4)?)?;
-    (xmt > 1).then_some(())?;
-    let data_at = count_at.checked_add(4 + xmt_len)?;
-    let finite_end = |value_count: usize| {
-        let end = data_at.checked_add(value_count.checked_mul(8)?)?;
-        let raw = stream.get(data_at..end)?;
-        (0..value_count)
-            .all(|i| {
-                View::f64_be_at(raw, i * 8)
-                    .is_some_and(|value| value.is_finite() && (value == 0.0 || value.is_normal()))
-            })
-            .then_some(end)
-    };
-    let exact_end = finite_end(count);
-    let successor_count = count.checked_add(1)?;
-    let successor_extent = data_at.checked_add(successor_count.checked_mul(8)?)?;
-    let successor_end = finite_end(successor_count);
-    let end = match (exact_end, successor_end) {
-        (Some(exact), Some(_)) if crate::nurbs::auxiliary_record_at(stream, exact).is_some() => {
-            exact
-        }
-        (_, Some(successor)) => successor,
-        (Some(exact), None) if successor_extent > stream.len() => exact,
-        (Some(_) | None, None) => return None,
-    };
-    Some((xmt, end))
+fn type_45_layout(
+    ctx: &DecodeContext<'_>,
+    stream: &[u8],
+    offset: usize,
+    envelope_len: usize,
+) -> Result<Option<(u32, usize)>, CodecError> {
+    let parsed: Option<Result<_, CodecError>> = (|| {
+        let count_at = offset.checked_add(2 + envelope_len)?;
+        let count = usize::try_from(View::u32_be_at(stream, count_at)?).ok()?;
+        (count > 0).then_some(())?;
+        let (xmt, xmt_len) = read_xmt(stream, count_at.checked_add(4)?)?;
+        (xmt > 1).then_some(())?;
+        let data_at = count_at.checked_add(4 + xmt_len)?;
+        let finite_end = |value_count: usize| -> Result<Option<usize>, CodecError> {
+            let parsed: Option<Result<_, CodecError>> = (|| {
+                let end = data_at.checked_add(value_count.checked_mul(8)?)?;
+                let raw = stream.get(data_at..end)?;
+                propagate_resource!(
+                    ctx.charge_work(u64_from_index(value_count), "validate NX type-45 lane")
+                );
+                (0..value_count)
+                    .all(|i| {
+                        View::f64_be_at(raw, i * 8).is_some_and(|value| {
+                            value.is_finite() && (value == 0.0 || value.is_normal())
+                        })
+                    })
+                    .then_some(Ok(end))
+            })();
+            parsed.transpose()
+        };
+        let exact_end = propagate_resource!(finite_end(count));
+        let successor_count = count.checked_add(1)?;
+        let successor_extent = data_at.checked_add(successor_count.checked_mul(8)?)?;
+        let successor_end = propagate_resource!(finite_end(successor_count));
+        let end = match (exact_end, successor_end) {
+            (Some(exact), Some(_))
+                if propagate_resource!(crate::nurbs::auxiliary_record_at(ctx, stream, exact))
+                    .is_some() =>
+            {
+                exact
+            }
+            (_, Some(successor)) => successor,
+            (Some(exact), None) if successor_extent > stream.len() => exact,
+            (Some(_) | None, None) => return None,
+        };
+        Some(Ok((xmt, end)))
+    })();
+    parsed.transpose()
 }
 
 fn type_141_layout(
@@ -3498,7 +3519,7 @@ fn consume_nurbs_auxiliary(
     stream: &[u8],
     offset: usize,
 ) -> Result<Option<Record>, CodecError> {
-    let Some(auxiliary) = crate::nurbs::auxiliary_record_at(stream, offset) else {
+    let Some(auxiliary) = crate::nurbs::auxiliary_record_at(ctx, stream, offset)? else {
         return Ok(None);
     };
     admitted_record(

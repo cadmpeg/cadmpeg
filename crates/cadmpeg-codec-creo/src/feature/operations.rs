@@ -532,9 +532,9 @@ fn conflicting_recipe_features(
 ) -> Result<BTreeSet<u32>, CodecError> {
     let mut by_feature = BTreeMap::<u32, Vec<FeatureRecipeBinding>>::new();
     for (feature_id, binding) in bindings {
+        ctx.admit_btree_entry(&by_feature, feature_id, "creo recipe feature nodes")?;
         match by_feature.entry(*feature_id) {
             std::collections::btree_map::Entry::Vacant(entry) => {
-                ctx.charge_collection_items(1, "creo recipe feature nodes")?;
                 let mut values = Vec::new();
                 ctx.reserve_vec(&mut values, 1, "creo recipe feature bindings")?;
                 values.push(*binding);
@@ -550,8 +550,11 @@ fn conflicting_recipe_features(
     let mut conflicting = BTreeSet::new();
     for (feature_id, bindings) in by_feature {
         if agreeing_recipe_binding(&bindings).is_none() {
-            ctx.charge_collection_items(1, "creo conflicting recipe features")?;
-            conflicting.insert(feature_id);
+            ctx.insert_btree_set(
+                &mut conflicting,
+                feature_id,
+                "creo conflicting recipe features",
+            )?;
         }
     }
     Ok(conflicting)
@@ -578,9 +581,13 @@ pub(crate) fn operation_states(
     let conflicting_features = conflicting_recipe_features(ctx, &bound_recipes)?;
     let mut recipe_binding_counts = BTreeMap::<u32, usize>::new();
     for (feature_id, _) in &bound_recipes {
+        ctx.admit_btree_entry(
+            &recipe_binding_counts,
+            feature_id,
+            "creo recipe binding counts",
+        )?;
         match recipe_binding_counts.entry(*feature_id) {
             std::collections::btree_map::Entry::Vacant(entry) => {
-                ctx.charge_collection_items(1, "creo recipe binding counts")?;
                 entry.insert(1);
             }
             std::collections::btree_map::Entry::Occupied(mut entry) => *entry.get_mut() += 1,
@@ -653,7 +660,13 @@ pub(crate) fn operation_states(
                 RecipeState::Resolved(binding.recipe)
             })
         };
-        let kind = crate::text::copy_lossy_text(ctx, family, "creo operation family name")?;
+        let text_work = cadmpeg_core::decode::u64_from_index(family.len())
+            .checked_mul(6)
+            .ok_or_else(|| {
+                ctx.refuse_codec_limit("creo operation family text work", u64::MAX, u64::MAX)
+            })?;
+        ctx.charge_work(text_work, "creo operation family text work")?;
+        let kind = ctx.copy_retained_lossy_utf8(family, "creo operation family name")?;
         let name_bytes = ctx.copy_retained(
             &payload[state_offset..separator + separator_bytes.len() + end],
             "creo operation stored name bytes",
@@ -710,10 +723,10 @@ pub(crate) fn operation_states(
             state_offset: binding.offset,
         });
     }
-    crate::sort::stable_sort_by_key(
-        ctx,
+    ctx.stable_sort_by(
         result.as_mut_slice(),
-        |operation| operation.offset,
+        |left, right| left.offset.cmp(&right.offset),
+        |_| 0,
         "creo operation states result ordering",
     )?;
     let mut display_counts = BTreeMap::<u32, usize>::new();
@@ -721,9 +734,13 @@ pub(crate) fn operation_states(
         .iter()
         .filter(|operation| operation.display_name_stored())
     {
+        ctx.admit_btree_entry(
+            &display_counts,
+            &operation.feature_id,
+            "creo operation display counts",
+        )?;
         match display_counts.entry(operation.feature_id) {
             std::collections::btree_map::Entry::Vacant(entry) => {
-                ctx.charge_collection_items(1, "creo operation display counts")?;
                 entry.insert(1);
             }
             std::collections::btree_map::Entry::Occupied(mut entry) => *entry.get_mut() += 1,
@@ -732,8 +749,11 @@ pub(crate) fn operation_states(
     let mut conflicting_display_features = BTreeSet::new();
     for (feature_id, count) in display_counts {
         if count > 1 {
-            ctx.charge_collection_items(1, "creo conflicting operation displays")?;
-            conflicting_display_features.insert(feature_id);
+            ctx.insert_btree_set(
+                &mut conflicting_display_features,
+                feature_id,
+                "creo conflicting operation displays",
+            )?;
         }
     }
     for operation in &mut result {
@@ -752,9 +772,13 @@ pub(crate) fn operations(
     let conflicting_features = conflicting_recipe_features(ctx, &bindings)?;
     let mut by_feature = BTreeMap::<u32, Vec<FeatureOperationState>>::new();
     for operation in operation_states(ctx, payload)? {
+        ctx.admit_btree_entry(
+            &by_feature,
+            &operation.feature_id,
+            "creo operation feature nodes",
+        )?;
         match by_feature.entry(operation.feature_id) {
             std::collections::btree_map::Entry::Vacant(entry) => {
-                ctx.charge_collection_items(1, "creo operation feature nodes")?;
                 let mut states = Vec::new();
                 ctx.reserve_vec(&mut states, 1, "creo operation feature states")?;
                 states.push(operation);
@@ -859,10 +883,10 @@ pub(crate) fn operations(
             operation.kind = OperationKind::Native;
         }
     }
-    crate::sort::stable_sort_by_key(
-        ctx,
+    ctx.stable_sort_by(
         current.as_mut_slice(),
-        |operation| operation.offset,
+        |left, right| left.offset.cmp(&right.offset),
+        |_| 0,
         "creo operations current ordering",
     )?;
     Ok(current)

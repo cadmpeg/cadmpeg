@@ -517,7 +517,7 @@ pub(crate) fn inventory(
                     family: RecordIssueFamily::Feature {
                         type_id: type_id_string(record.type_id),
                     },
-                    segment_token: segment.pair.token.as_str().into(),
+                    segment_token: segment.pair.token.key().clone(),
                     record_ordinal: record.ordinal,
                     detail: crate::issue_detail(error)?,
                 });
@@ -1101,10 +1101,7 @@ pub(crate) fn project(
                 .map(|feature| feature.identity.segment_token.as_str()),
         )
     {
-        if !feature_tokens.contains(token) {
-            ctx.charge_collection_items(1, "index Inventor feature token")?;
-            feature_tokens.insert(token);
-        }
+        ctx.insert_hash_set(&mut feature_tokens, token, "index Inventor feature token")?;
     }
     if feature_tokens.len() > 1 {
         return Ok(FeatureProjection {
@@ -1172,13 +1169,10 @@ pub(crate) fn project(
             let mut ids = HashMap::new();
             for sketch in sketches {
                 if let Some(native) = sketch.native_ref.as_deref() {
-                    ctx.charge_collection_items(1, "index Inventor feature sketch ids")?;
-                    ids.insert(
-                        native,
-                        sketch
-                            .id
-                            .try_clone_for_decode(ctx, "retain Inventor feature sketch id")?,
-                    );
+                    let id = sketch
+                        .id
+                        .try_clone_for_decode(ctx, "retain Inventor feature sketch id")?;
+                    ctx.insert_hash_map(&mut ids, native, id, "index Inventor feature sketch ids")?;
                 }
             }
             ids
@@ -1212,10 +1206,7 @@ pub(crate) fn project(
                     record.identity.segment_token.as_str(),
                     record.identity.record_ordinal,
                 );
-                if !links.contains(&key) {
-                    ctx.charge_collection_items(1, "index Inventor entity style link")?;
-                    links.insert(key);
-                }
+                ctx.insert_hash_set(&mut links, key, "index Inventor entity style link")?;
             }
             links
         },
@@ -1279,7 +1270,12 @@ pub(crate) fn project(
         .filter_map(|(ordinal, count)| (count > 1).then_some(ordinal))
         .collect::<HashSet<_>>();
     projected.retain(|(feature, _)| !duplicate_ordinals.contains(&feature.ordinal));
-    projected.sort_unstable_by_key(|(feature, _)| feature.ordinal);
+    ctx.sort_unstable_by(
+        &mut projected,
+        |(left, _), (right, _)| left.ordinal.cmp(&right.ordinal),
+        |_| 0,
+        "Inventor projected features sort",
+    )?;
     ctx.charge_collection_items(
         cadmpeg_core::decode::u64_from_index(projected.len()),
         "collect Inventor projected features",
@@ -1326,7 +1322,7 @@ fn project_extrusion(
         }
         if boundary.references()[..position]
             .iter()
-            .any(|prior| prior.index == selection.index)
+            .any(|prior| prior.index() == selection.index())
         {
             return None;
         }
@@ -1335,13 +1331,13 @@ fn project_extrusion(
     for reference in boundary.references() {
         let property = resolve_property(
             source.identity.segment_token.as_str(),
-            reference.index,
+            reference.index(),
             index,
         )?;
         let PmDcFeaturePropertyKind::ProfileSelection { entity_link, .. } = &property.kind else {
             return None;
         };
-        let ordinal = entity_link.index.checked_sub(1)?;
+        let ordinal = entity_link.index().checked_sub(1)?;
         if !index
             .entity_style_links
             .contains(&(source.identity.segment_token.as_str(), ordinal))
@@ -1365,7 +1361,7 @@ fn project_extrusion(
     let sketch_reference = label.participants.references().first()?;
     let sketch = index.sketches.get(&(
         source.identity.segment_token.as_str(),
-        sketch_reference.index.checked_sub(1)?,
+        sketch_reference.index().checked_sub(1)?,
     ))?;
     let sketch_native_reservation = ctx.reserve_scoped(
         cadmpeg_core::decode::u64_from_index(sketch.id_len()?),
@@ -1494,8 +1490,8 @@ fn project_fillet(
     index: &ProjectionIndex<'_>,
 ) -> Option<Result<(Feature, FeatureResultTopology), CodecError>> {
     if enum16(source, 11, PmDcFeatureEnumFamily::Fillet, index)? != 0
-        || source.properties.references().get(1)?.index != 0
-        || source.properties.references().get(10)?.index != 0
+        || source.properties.references().get(1)?.index() != 0
+        || source.properties.references().get(10)?.index() != 0
     {
         return None;
     }
@@ -1504,7 +1500,7 @@ fn project_fillet(
     for reference in sets.references() {
         let set = resolve_property(
             source.identity.segment_token.as_str(),
-            reference.index,
+            reference.index(),
             index,
         )?;
         let PmDcFeaturePropertyKind::FilletEdgeSet {
@@ -1518,7 +1514,7 @@ fn project_fillet(
         };
         let selection = resolve_property(
             source.identity.segment_token.as_str(),
-            selection.index,
+            selection.index(),
             index,
         )?;
         if !matches!(
@@ -1530,7 +1526,7 @@ fn project_fillet(
         ) || !matches!(
             resolve_property(
                 source.identity.segment_token.as_str(),
-                continuity.index,
+                continuity.index(),
                 index
             )?
             .kind,
@@ -1539,7 +1535,7 @@ fn project_fillet(
             return None;
         }
         let edge_collection =
-            resolve_property(source.identity.segment_token.as_str(), edges.index, index)?;
+            resolve_property(source.identity.segment_token.as_str(), edges.index(), index)?;
         let PmDcFeaturePropertyKind::References {
             family: PmDcFeatureReferenceFamily::EdgeCollection,
             items,
@@ -1551,7 +1547,12 @@ fn project_fillet(
             return None;
         }
         let radius = cadmpeg_ir::scalar::PositiveLength::new(
-            length_reference(source.identity.segment_token.as_str(), radius.index, index)?.get(),
+            length_reference(
+                source.identity.segment_token.as_str(),
+                radius.index(),
+                index,
+            )?
+            .get(),
         )?;
         if let Err(error) = ctx.charge_collection_items(1, "collect Inventor fillet group") {
             return Some(Err(error));
@@ -1724,7 +1725,7 @@ fn project_hole(
     let transform_reference = source.properties.references().get(8)?;
     let transform = index.transforms.get(&(
         source.identity.segment_token.as_str(),
-        transform_reference.index.checked_sub(1)?,
+        transform_reference.index().checked_sub(1)?,
     ))?;
     if transform.matrix.rows()[3]
         .iter()
@@ -1748,9 +1749,9 @@ fn project_hole(
     else {
         return None;
     };
-    if placement_transform.index != transform_reference.index
-        || point.index == 0
-        || value.index == 0
+    if placement_transform.index() != transform_reference.index()
+        || point.index() == 0
+        || value.index() == 0
     {
         return None;
     }
@@ -1832,7 +1833,7 @@ fn feature_result(
     for reference in items.references() {
         let body = resolve_property(
             source.identity.segment_token.as_str(),
-            reference.index,
+            reference.index(),
             index,
         )?;
         if !matches!(body.kind, PmDcFeaturePropertyKind::SurfaceBody { .. }) {
@@ -1950,7 +1951,7 @@ fn feature_result(
 fn closed_edge_items(token: &str, items: &PmDcReferenceList, index: &ProjectionIndex<'_>) -> bool {
     !items.references().is_empty()
         && items.references().iter().all(|reference| {
-            resolve_property(token, reference.index, index).is_some_and(|property| {
+            resolve_property(token, reference.index(), index).is_some_and(|property| {
                 matches!(
                     &property.kind,
                     PmDcFeaturePropertyKind::EdgeItem {
@@ -1969,7 +1970,7 @@ fn slot_property<'a>(
 ) -> Option<&'a PmDcFeatureProperty> {
     resolve_property(
         source.identity.segment_token.as_str(),
-        source.properties.references().get(slot)?.index,
+        source.properties.references().get(slot)?.index(),
         index,
     )
 }
@@ -2040,7 +2041,7 @@ fn resolve_direction<'a>(
         .directions
         .get(&(
             source.identity.segment_token.as_str(),
-            reference.index.checked_sub(1)?,
+            reference.index().checked_sub(1)?,
         ))
         .copied()
 }
@@ -2052,7 +2053,7 @@ fn length_parameter(
 ) -> Option<Length> {
     length_reference(
         source.identity.segment_token.as_str(),
-        source.properties.references().get(slot)?.index,
+        source.properties.references().get(slot)?.index(),
         index,
     )
 }
@@ -2073,7 +2074,7 @@ fn angle_parameter(
     let reference = source.properties.references().get(slot)?;
     let parameter = index.parameters.get(&(
         source.identity.segment_token.as_str(),
-        reference.index.checked_sub(1)?,
+        reference.index().checked_sub(1)?,
     ))?;
     match index.parameter_values.get(parameter.id().as_str())? {
         ParameterValue::Angle(value) => Some(*value),
@@ -2090,7 +2091,6 @@ fn boolean_properties(
     let mut properties = BTreeMap::new();
     for slot in slots {
         if let Some(value) = boolean(source, *slot, index) {
-            ctx.charge_collection_items(1, "project Inventor feature boolean property")?;
             ctx.charge_retained(
                 cadmpeg_core::decode::u64_from_index(
                     "property_".len()
@@ -2108,10 +2108,12 @@ fn boolean_properties(
                 if value { 4 } else { 5 },
                 "retain Inventor feature property value",
             )?;
-            properties.insert(
+            ctx.insert_btree_map(
+                &mut properties,
                 cadmpeg_core::nonblank_literal!("property_{slot}_boolean"),
                 value.to_string(),
-            );
+                "project Inventor feature boolean property",
+            )?;
         }
     }
     Ok(properties)
@@ -2170,7 +2172,7 @@ mod tests {
         MIRROR_FEATURE_TYPE, RECTANGULAR_PATTERN_FEATURE_TYPE,
     };
     use crate::container::InventorContainer;
-    use crate::pmdc::{type_id_string, PmDcContentHeader, PmDcReferenceList, PmDcU32List};
+    use crate::pmdc::{PmDcContentHeader, PmDcReferenceList, PmDcU32List};
     use crate::record_identity::Located;
     use crate::rse::{RecordFrameState, SegmentBulkState, SegmentKind};
     use crate::test_support::test_fixtures::{content, parse, primary_envelope_fixture};
@@ -2533,10 +2535,8 @@ mod tests {
     }
 
     fn reference(index: u32) -> crate::pmdc::PmDcReference {
-        crate::pmdc::PmDcReference {
-            index,
-            qualified: index != 0,
-        }
+        crate::pmdc::PmDcReference::new(index, index != 0)
+            .expect("test reference index fits 31 bits")
     }
 
     fn reference_list(values: &[u32]) -> PmDcReferenceList {
@@ -2569,7 +2569,8 @@ mod tests {
                 header: test_header(),
                 kind,
             },
-            format!("{ordinal:032x}"),
+            crate::record_identity::RecordTypeId::try_from(format!("{ordinal:032x}"))
+                .expect("test GUID"),
             segment()
                 .try_clone_for_decode(
                     &cadmpeg_test_support::service_decode_context(),
@@ -2602,7 +2603,7 @@ mod tests {
                 .expect("test list metadata matches length"),
                 value: 0,
             },
-            type_id_string(FEATURE_TYPE),
+            crate::record_identity::RecordTypeId::from_bytes(FEATURE_TYPE),
             segment()
                 .try_clone_for_decode(
                     &cadmpeg_test_support::service_decode_context(),
@@ -2663,7 +2664,7 @@ mod tests {
                 class_id: class_id.into(),
             })
             .expect("valid label fixture"),
-            type_id_string(FEATURE_LABEL_TYPE),
+            crate::record_identity::RecordTypeId::from_bytes(FEATURE_LABEL_TYPE),
             segment()
                 .try_clone_for_decode(
                     &cadmpeg_test_support::service_decode_context(),
@@ -2695,7 +2696,10 @@ mod tests {
                 tolerance: 0,
                 terminal_value: 0,
             },
-            "264d8790d011f8d10008cabc0663dc09".into(),
+            crate::record_identity::RecordTypeId::try_from(
+                "264d8790d011f8d10008cabc0663dc09".to_owned(),
+            )
+            .expect("test GUID"),
             segment()
                 .try_clone_for_decode(
                     &cadmpeg_test_support::service_decode_context(),
@@ -2847,7 +2851,7 @@ mod tests {
         assert_eq!(parsed.state, -1);
         assert_eq!(parsed.outline_value, 42);
         assert_eq!(parsed.properties.references().len(), 2);
-        assert!(parsed.properties.references()[0].qualified);
+        assert!(parsed.properties.references()[0].qualified());
         assert_eq!(parsed.value, 9);
 
         let mut terminator = content(8);
@@ -3303,7 +3307,10 @@ mod tests {
                 values: [0; 2],
                 auxiliary: None,
             },
-            "114d8790d011f8d10008cabc0663dc09".into(),
+            crate::record_identity::RecordTypeId::try_from(
+                "114d8790d011f8d10008cabc0663dc09".to_owned(),
+            )
+            .expect("test GUID"),
             segment()
                 .try_clone_for_decode(
                     &cadmpeg_test_support::service_decode_context(),
@@ -3340,7 +3347,10 @@ mod tests {
                     cadmpeg_ir::scalar::FiniteReal::ONE,
                 ],
             },
-            "40df52ced011d0d20008ccbc0663dc09".into(),
+            crate::record_identity::RecordTypeId::try_from(
+                "40df52ced011d0d20008ccbc0663dc09".to_owned(),
+            )
+            .expect("test GUID"),
             segment()
                 .try_clone_for_decode(
                     &cadmpeg_test_support::service_decode_context(),
@@ -3364,7 +3374,7 @@ mod tests {
                 associative_id: 1,
                 entity_type: 1,
             },
-            type_id_string(ENTITY_STYLE_LINK_TYPE),
+            crate::record_identity::RecordTypeId::from_bytes(ENTITY_STYLE_LINK_TYPE),
             segment()
                 .try_clone_for_decode(
                     &cadmpeg_test_support::service_decode_context(),
@@ -3534,7 +3544,10 @@ mod tests {
                 )
                 .expect("finite explicit matrix fixture"),
             },
-            "184d8790d011f8d10008cabc0663dc09".into(),
+            crate::record_identity::RecordTypeId::try_from(
+                "184d8790d011f8d10008cabc0663dc09".to_owned(),
+            )
+            .expect("test GUID"),
             segment()
                 .try_clone_for_decode(
                     &cadmpeg_test_support::service_decode_context(),
@@ -3556,7 +3569,10 @@ mod tests {
                     cadmpeg_ir::scalar::FiniteReal::ONE.negated(),
                 ],
             },
-            "40df52ced011d0d20008ccbc0663dc09".into(),
+            crate::record_identity::RecordTypeId::try_from(
+                "40df52ced011d0d20008ccbc0663dc09".to_owned(),
+            )
+            .expect("test GUID"),
             segment()
                 .try_clone_for_decode(
                     &cadmpeg_test_support::service_decode_context(),
@@ -3777,8 +3793,8 @@ mod tests {
         let parsed = parse(&entity_link, |_, source| {
             parse_entity_style_link(source, 16).expect("entity-style link")
         });
-        assert_eq!(parsed.header.owner.index, 8);
-        assert_eq!(parsed.header.next.index, 9);
+        assert_eq!(parsed.header.owner.index(), 8);
+        assert_eq!(parsed.header.next.index(), 9);
         assert_eq!(parsed.associative_id, 2);
 
         let mut placement = content(17);
@@ -3799,7 +3815,7 @@ mod tests {
         });
         assert!(matches!(
             parsed.kind,
-            PmDcFeaturePropertyKind::FilletEdgeSet { radius, .. } if radius.index == 17
+            PmDcFeaturePropertyKind::FilletEdgeSet { radius, .. } if radius.index() == 17
         ));
 
         let mut edge_item = content(18);
@@ -3882,10 +3898,8 @@ mod tests {
             id: &'static str,
             value: &'a PmDcFeatureLabelPayload,
         }
-        let reference = crate::pmdc::PmDcReference {
-            index: 1,
-            qualified: false,
-        };
+        let reference =
+            crate::pmdc::PmDcReference::new(1, false).expect("test reference index fits 31 bits");
         let label = PmDcFeatureLabelPayload::try_from(PmDcFeatureLabelPayloadWire {
             save_version_major: 16,
             header: PmDcLinkedHeader {

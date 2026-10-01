@@ -121,7 +121,8 @@ fn compact_surface_selection_ends_with_its_entry_signature() {
     payload.extend([0, 0]);
     let signature = [0x34, 0x80, 0x37, 0, 0x89, 0, 0, 0, 0xe2, 0x56, 0xdf, 0x5e];
     for (index, id) in [2u32, 1, 11, 14, 15, 16, 17].into_iter().enumerate() {
-        payload.extend((0x8c20u32 + index as u32).to_le_bytes());
+        payload
+            .extend((0x8c20u32 + u32::try_from(index).expect("test index fits u32")).to_le_bytes());
         payload.extend(signature);
         payload.extend(id.to_le_bytes());
         if index == 0 {
@@ -199,7 +200,11 @@ fn operation_surface_selection_finds_marker_inside_class_body() {
     ];
     let mut payload = vec![0; entry + 20];
     payload[..4].copy_from_slice(CLASS_MARKER);
-    payload[4..6].copy_from_slice(&(class_name.len() as u16).to_le_bytes());
+    payload[4..6].copy_from_slice(
+        &u16::try_from(class_name.len())
+            .expect("length fits u16")
+            .to_le_bytes(),
+    );
     payload[6..class_body].copy_from_slice(class_name.as_bytes());
     payload[class_body..class_body + 2].copy_from_slice(&0x860eu16.to_le_bytes());
     payload[marker - 12..marker - 8].copy_from_slice(&6u32.to_le_bytes());
@@ -301,7 +306,11 @@ fn operation_surface_selection_scans_inline_component_faces_and_rejects_collisio
     let first_end = first_body + 68 + 18 + 20;
     let mut one = vec![0; first_end];
     one[..4].copy_from_slice(CLASS_MARKER);
-    one[4..6].copy_from_slice(&(class_name.len() as u16).to_le_bytes());
+    one[4..6].copy_from_slice(
+        &u16::try_from(class_name.len())
+            .expect("length fits u16")
+            .to_le_bytes(),
+    );
     one[6..class_body].copy_from_slice(class_name.as_bytes());
     one[class_body..class_body + 2].copy_from_slice(&class_token.to_le_bytes());
     build_face(&mut one, first_body, 6);
@@ -398,7 +407,11 @@ fn component_face_reference_accepts_both_nested_body_flags() {
     .unwrap()
     .is_some());
     let mut record = CLASS_MARKER.to_vec();
-    record.extend((b"moCompFace_c".len() as u16).to_le_bytes());
+    record.extend(
+        u16::try_from(b"moCompFace_c".len())
+            .expect("length fits u16")
+            .to_le_bytes(),
+    );
     record.extend(b"moCompFace_c");
     record.extend_from_slice(&flagged[body_offset..]);
     assert!(component_face_reference_in_record(&face_path_ctx, &record)
@@ -417,8 +430,11 @@ fn component_face_reference_accepts_both_nested_body_flags() {
     nested[body_offset..body_offset + 2].copy_from_slice(&0x802b_u16.to_le_bytes());
     nested[body_offset + 2..body_offset + 6].copy_from_slice(&2u32.to_le_bytes());
     nested[nested_class_offset..nested_class_offset + 4].copy_from_slice(CLASS_MARKER);
-    nested[nested_class_offset + 4..nested_class_offset + 6]
-        .copy_from_slice(&(nested_class.len() as u16).to_le_bytes());
+    nested[nested_class_offset + 4..nested_class_offset + 6].copy_from_slice(
+        &u16::try_from(nested_class.len())
+            .expect("length fits u16")
+            .to_le_bytes(),
+    );
     nested[nested_class_offset + 6..nested_class_offset + 6 + nested_class.len()]
         .copy_from_slice(nested_class);
     assert_eq!(selection_vector_tail(&mut nested, &[6]), nested_marker);
@@ -445,7 +461,7 @@ fn component_face_reference_accepts_compact_body_frame() {
     let body_offset = 30;
     let marker = body_offset + 64;
     let count = 6u32;
-    let entry_count = count as usize - 1;
+    let entry_count = cadmpeg_core::decode::index_from_u32(count) - 1;
     let mut payload = vec![0; marker + 18 + entry_count * 20];
     payload[body_offset..body_offset + 2].copy_from_slice(&0x8080_u16.to_le_bytes());
     payload[body_offset + 2..body_offset + 6].copy_from_slice(&2u32.to_le_bytes());
@@ -455,9 +471,13 @@ fn component_face_reference_accepts_compact_body_frame() {
     let signature = [0x34, 0x80, 1, 0, 1, 0, 0, 0, 2, 0, 0, 0];
     for index in 0..entry_count {
         let entry = marker + 18 + index * 20;
-        payload[entry..entry + 4].copy_from_slice(&(0x8020_u32 + index as u32).to_le_bytes());
+        payload[entry..entry + 4].copy_from_slice(
+            &(0x8020_u32 + u32::try_from(index).expect("test index fits u32")).to_le_bytes(),
+        );
         payload[entry + 4..entry + 16].copy_from_slice(&signature);
-        payload[entry + 16..entry + 20].copy_from_slice(&(index as u32 + 1).to_le_bytes());
+        payload[entry + 16..entry + 20].copy_from_slice(
+            &(u32::try_from(index).expect("test index fits u32") + 1).to_le_bytes(),
+        );
     }
 
     let (actual_marker, components) =
@@ -492,9 +512,13 @@ fn fillet_face_candidates_require_three_ordered_role_three_paths() {
         payload[marker..marker + 16].copy_from_slice(&COMPACT_EDGE_VECTOR_MARKER);
         for index in 0..5 {
             let entry = marker + 18 + index * 20;
-            payload[entry..entry + 4].copy_from_slice(&(0x8020_u32 + index as u32).to_le_bytes());
+            payload[entry..entry + 4].copy_from_slice(
+                &(0x8020_u32 + u32::try_from(index).expect("test index fits u32")).to_le_bytes(),
+            );
             payload[entry + 4..entry + 16].copy_from_slice(&signature);
-            payload[entry + 16..entry + 20].copy_from_slice(&(base + index as u32).to_le_bytes());
+            payload[entry + 16..entry + 20].copy_from_slice(
+                &(base + u32::try_from(index).expect("test index fits u32")).to_le_bytes(),
+            );
         }
     }
     let lane = FeatureInputLane {
@@ -568,9 +592,9 @@ fn sketch_surface_component_path_has_two_implicit_root_slots() {
         if index == 2 {
             payload.extend([0; 2]);
         }
-        payload.extend((0x8094 + index as u16).to_le_bytes());
+        payload.extend((0x8094 + u16::try_from(index).expect("test index fits u16")).to_le_bytes());
         payload.extend([0; 2]);
-        payload.extend([index as u8 + 1; 12]);
+        payload.extend([u8::try_from(index).expect("test index fits u8") + 1; 12]);
         payload.extend(local_id.to_le_bytes());
     }
 
@@ -608,9 +632,9 @@ fn sketch_surface_component_path_accepts_a_slot_cell_between_entries() {
         } else if index == 2 {
             payload.extend([1, 0, 0, 0, 0, 0]);
         }
-        payload.extend((0x8034 + index as u16).to_le_bytes());
+        payload.extend((0x8034 + u16::try_from(index).expect("test index fits u16")).to_le_bytes());
         payload.extend([0; 2]);
-        payload.extend([index as u8 + 1; 12]);
+        payload.extend([u8::try_from(index).expect("test index fits u8") + 1; 12]);
         payload.extend(local_id.to_le_bytes());
     }
 
@@ -668,9 +692,9 @@ fn legacy_sketch_surface_component_path_requires_its_ownership_trailer() {
             payload.extend(12u16.to_le_bytes());
             payload.extend([0; 4]);
         }
-        payload.extend((0x8032 + index as u16).to_le_bytes());
+        payload.extend((0x8032 + u16::try_from(index).expect("test index fits u16")).to_le_bytes());
         payload.extend([0; 2]);
-        payload.extend([index as u8 + 1; 12]);
+        payload.extend([u8::try_from(index).expect("test index fits u8") + 1; 12]);
         payload.extend(local_id.to_le_bytes());
     }
     let trailer = payload.len();
@@ -1131,18 +1155,21 @@ fn face_reference_plane_owns_its_counted_surface_path() {
     let marker = class_body + 109;
     let mut payload = vec![0; marker + 18];
     payload[class_offset..class_offset + 4].copy_from_slice(CLASS_MARKER);
-    payload[class_offset + 4..class_offset + 6]
-        .copy_from_slice(&(class_name.len() as u16).to_le_bytes());
+    payload[class_offset + 4..class_offset + 6].copy_from_slice(
+        &u16::try_from(class_name.len())
+            .expect("length fits u16")
+            .to_le_bytes(),
+    );
     payload[class_offset + 6..class_body].copy_from_slice(class_name.as_bytes());
     payload[marker - 12..marker - 8].copy_from_slice(&3u32.to_le_bytes());
     payload[marker - 8..marker - 4].copy_from_slice(&[0, 2, 0, 0]);
     payload[marker..marker + 16].copy_from_slice(&COMPACT_EDGE_VECTOR_MARKER);
     for (index, local_id) in [11u32, 7].into_iter().enumerate() {
-        payload.extend((0x8038 + index as u16).to_le_bytes());
+        payload.extend((0x8038 + u16::try_from(index).expect("test index fits u16")).to_le_bytes());
         payload.extend([0, 0]);
         payload.extend([0x23, 0x80, 1, 0]);
-        payload.extend((40 + index as u32).to_le_bytes());
-        payload.extend((90 + index as u32).to_le_bytes());
+        payload.extend((40 + u32::try_from(index).expect("test index fits u32")).to_le_bytes());
+        payload.extend((90 + u32::try_from(index).expect("test index fits u32")).to_le_bytes());
         payload.extend(local_id.to_le_bytes());
     }
     let lane = FeatureInputLane {
@@ -1153,7 +1180,7 @@ fn face_reference_plane_owns_its_counted_surface_path() {
             id: "face-plane-data".into(),
             parent: "lane".into(),
             ordinal: 0,
-            offset: class_offset as u64,
+            offset: cadmpeg_core::decode::u64_from_index(class_offset),
             name: class_name.into(),
         }],
         names: vec![
@@ -1265,16 +1292,22 @@ fn face_reference_plane_accepts_a_component_face_path() {
         body_offset + crate::layout::component_face_nested_reference_prefix::COMPONENT_MARKER;
     let mut payload = vec![0; marker - 12];
     payload[class_offset..class_offset + 4].copy_from_slice(CLASS_MARKER);
-    payload[class_offset + 4..class_offset + 6]
-        .copy_from_slice(&(class_name.len() as u16).to_le_bytes());
+    payload[class_offset + 4..class_offset + 6].copy_from_slice(
+        &u16::try_from(class_name.len())
+            .expect("length fits u16")
+            .to_le_bytes(),
+    );
     payload[class_offset + 6..body_offset].copy_from_slice(class_name.as_bytes());
     payload[body_offset..body_offset + 2].copy_from_slice(&0x802b_u16.to_le_bytes());
     payload[body_offset + 2..body_offset + 6].copy_from_slice(&2u32.to_le_bytes());
     let nested_class = b"moFaceRef_c";
     let nested_class_offset = body_offset + 46;
     payload[nested_class_offset..nested_class_offset + 4].copy_from_slice(CLASS_MARKER);
-    payload[nested_class_offset + 4..nested_class_offset + 6]
-        .copy_from_slice(&(nested_class.len() as u16).to_le_bytes());
+    payload[nested_class_offset + 4..nested_class_offset + 6].copy_from_slice(
+        &u16::try_from(nested_class.len())
+            .expect("length fits u16")
+            .to_le_bytes(),
+    );
     payload[nested_class_offset + 6..nested_class_offset + 6 + nested_class.len()]
         .copy_from_slice(nested_class);
     assert_eq!(selection_vector_tail(&mut payload, &[6]), marker);
@@ -1287,7 +1320,7 @@ fn face_reference_plane_accepts_a_component_face_path() {
             id: "component-face".into(),
             parent: "lane".into(),
             ordinal: 0,
-            offset: class_offset as u64,
+            offset: cadmpeg_core::decode::u64_from_index(class_offset),
             name: class_name.into(),
         }],
         names: Vec::new(),
@@ -1374,7 +1407,11 @@ fn projected_split_line_consumes_self_owned_surface_identity_paths() {
         signature
     };
     let mut payload = CLASS_MARKER.to_vec();
-    payload.extend((class_name.len() as u16).to_le_bytes());
+    payload.extend(
+        u16::try_from(class_name.len())
+            .expect("length fits u16")
+            .to_le_bytes(),
+    );
     payload.extend(class_name.as_bytes());
     payload.extend([0, 0]);
     payload.extend(signature(711, 1));
@@ -1398,7 +1435,7 @@ fn projected_split_line_consumes_self_owned_surface_identity_paths() {
                 id: "projection-class".into(),
                 parent: "lane".into(),
                 ordinal: 1,
-                offset: payload.len() as u64,
+                offset: cadmpeg_core::decode::u64_from_index(payload.len()),
                 name: "moPLineProjIdRep_c".into(),
             },
         ],
@@ -1458,7 +1495,11 @@ fn generated_surface_identities_are_producer_outputs() {
     let class_name = "moWzdHoleSurfIdRep_c";
     let prefix = [0xc3, 0x80, 0xc5, 0x00];
     let mut payload = CLASS_MARKER.to_vec();
-    payload.extend((class_name.len() as u16).to_le_bytes());
+    payload.extend(
+        u16::try_from(class_name.len())
+            .expect("length fits u16")
+            .to_le_bytes(),
+    );
     payload.extend(class_name.as_bytes());
     payload.extend([0, 0]);
     payload.extend(prefix);

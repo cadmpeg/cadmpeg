@@ -1410,16 +1410,12 @@ impl Serialize for NativeProductOccurrenceExpansion {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
 enum ProductOccurrenceIssue {
-    OutputLimit,
-    DepthLimit,
     MalformedDefinition,
     MalformedPlacement,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct ProductOccurrenceExpansion {
-    pub(crate) output_truncated_at: Option<u32>,
-    pub(crate) depth_truncated_at: Option<u32>,
     pub(crate) malformed_definition_sequences: Vec<u32>,
     pub(crate) malformed_placement_sequences: Vec<u32>,
 }
@@ -2067,28 +2063,32 @@ impl OccurrenceExpansion<'_, '_> {
         parent: Transform,
         path: &mut Vec<u32>,
         occurrences: &mut Vec<NativeProductOccurrence>,
-        depth_truncated_at: &mut Option<u32>,
         malformed_placement_sequences: &mut std::collections::BTreeSet<u32>,
-    ) -> Result<Option<u32>, CodecError> {
+    ) -> Result<(), CodecError> {
         let _depth = self.ctx.enter_nested("iges_product_occurrence")?;
         if occurrences.len() >= self.output_limit {
-            return Ok(Some(instance_sequence));
+            return Err(self.ctx.refuse_codec_limit(
+                "iges_product_occurrence_output",
+                cadmpeg_core::decode::u64_from_index(self.output_limit),
+                cadmpeg_core::decode::u64_from_index(occurrences.len()) + 1,
+            ));
         }
         if path.len() >= self.depth_limit {
-            if depth_truncated_at.is_none() {
-                *depth_truncated_at = Some(instance_sequence);
-            }
-            return Ok(None);
+            return Err(self.ctx.refuse_codec_limit(
+                "iges_product_occurrence_depth",
+                cadmpeg_core::decode::u64_from_index(self.depth_limit),
+                cadmpeg_core::decode::u64_from_index(path.len()) + 1,
+            ));
         }
         if path.contains(&instance_sequence) {
-            return Ok(None);
+            return Ok(());
         }
         let (Some(instance), Some(record)) = (
             self.entries.get(&instance_sequence).copied(),
             self.records.get(&instance_sequence).copied(),
         ) else {
             self.record_malformed(malformed_placement_sequences, instance_sequence)?;
-            return Ok(None);
+            return Ok(());
         };
         let (definition_sequence, local) = match placement_affine(
             instance,
@@ -2103,19 +2103,19 @@ impl OccurrenceExpansion<'_, '_> {
             Err(error) => {
                 error.non_resource()?;
                 self.record_malformed(malformed_placement_sequences, instance_sequence)?;
-                return Ok(None);
+                return Ok(());
             }
         };
         let Some(definition) = self.definitions.get(&definition_sequence) else {
             self.record_malformed(malformed_placement_sequences, instance_sequence)?;
-            return Ok(None);
+            return Ok(());
         };
         let Ok(definition_world) = parent
             .compose(local)
             .and_then(|world| world.compose(definition.transform))
         else {
             self.record_malformed(malformed_placement_sequences, instance_sequence)?;
-            return Ok(None);
+            return Ok(());
         };
         self.ctx
             .reserve_vec(path, 1, "iges occurrence expansion path slots")?;
@@ -2134,24 +2134,24 @@ impl OccurrenceExpansion<'_, '_> {
         for member in &definition.members {
             if occurrences.len() >= self.output_limit {
                 path.pop();
-                return Ok(Some(instance_sequence));
+                return Err(self.ctx.refuse_codec_limit(
+                    "iges_product_occurrence_output",
+                    cadmpeg_core::decode::u64_from_index(self.output_limit),
+                    cadmpeg_core::decode::u64_from_index(occurrences.len()) + 1,
+                ));
             }
             if self
                 .entries
                 .get(member)
                 .is_some_and(|entry| matches!(entry.entity_type, 408 | 420))
             {
-                if let Some(source_sequence) = self.expand(
+                self.expand(
                     *member,
                     definition_world,
                     path,
                     occurrences,
-                    depth_truncated_at,
                     malformed_placement_sequences,
-                )? {
-                    path.pop();
-                    return Ok(Some(source_sequence));
-                }
+                )?;
                 continue;
             }
             let Some(member_entry) = self.entries.get(member).copied() else {
@@ -2205,7 +2205,7 @@ impl OccurrenceExpansion<'_, '_> {
             )?);
         }
         path.pop();
-        Ok(None)
+        Ok(())
     }
 }
 
@@ -6660,16 +6660,15 @@ pub(crate) fn store(
                 "iges malformed occurrence definitions",
             )?;
             malformed_definition_sequences.push(entry.sequence);
-            if !all_occurrence_definitions.contains_key(&entry.sequence) {
-                ctx.charge_collection_items(1, "iges occurrence definition map")?;
-            }
-            all_occurrence_definitions.insert(
+            ctx.insert_btree_map(
+                &mut all_occurrence_definitions,
                 entry.sequence,
                 OccurrenceDefinition {
                     members: Vec::new(),
                     transform: Transform::identity(),
                 },
-            );
+                "iges occurrence definition map",
+            )?;
             continue;
         };
         let mut malformed = false;
@@ -6715,11 +6714,12 @@ pub(crate) fn store(
             )?;
             malformed_definition_sequences.push(entry.sequence);
         }
-        if !all_occurrence_definitions.contains_key(&entry.sequence) {
-            ctx.charge_collection_items(1, "iges occurrence definition map")?;
-        }
-        all_occurrence_definitions
-            .insert(entry.sequence, OccurrenceDefinition { members, transform });
+        ctx.insert_btree_map(
+            &mut all_occurrence_definitions,
+            entry.sequence,
+            OccurrenceDefinition { members, transform },
+            "iges occurrence definition map",
+        )?;
     }
     // Keep parseable member lists as containment evidence even when semantic
     // structure admission rejects their definitions. A rejected definition is
@@ -6808,8 +6808,6 @@ pub(crate) fn store(
         }
     }
     let mut product_occurrences = Vec::new();
-    let mut output_truncated_at = None;
-    let mut depth_truncated_at = None;
     let mut malformed_placement_sequences = std::collections::BTreeSet::new();
     if let Some(length_factor) = occurrence_length_factor {
         if let Some(admission) = structure_admitted {
@@ -6849,29 +6847,19 @@ pub(crate) fn store(
                         .is_none_or(|admitted| admitted.decoded.contains(&entry.sequence))
                     && !contained_instances.contains(&entry.sequence)
             }) {
-                if let Some(source_sequence) = expansion.expand(
+                expansion.expand(
                     root.sequence,
                     Transform::identity(),
                     &mut Vec::new(),
                     &mut product_occurrences,
-                    &mut depth_truncated_at,
                     &mut malformed_placement_sequences,
-                )? {
-                    output_truncated_at = Some(source_sequence);
-                    break;
-                }
+                )?;
             }
         }
     }
     let issues = collect_native_items(
         ctx,
         [
-            output_truncated_at
-                .is_some()
-                .then_some(ProductOccurrenceIssue::OutputLimit),
-            depth_truncated_at
-                .is_some()
-                .then_some(ProductOccurrenceIssue::DepthLimit),
             (!malformed_definition_sequences.is_empty())
                 .then_some(ProductOccurrenceIssue::MalformedDefinition),
             (!malformed_placement_sequences.is_empty())
@@ -7099,8 +7087,6 @@ pub(crate) fn store(
     )?;
     Ok(NativeStoreResult {
         occurrence_expansion: ProductOccurrenceExpansion {
-            output_truncated_at,
-            depth_truncated_at,
             malformed_definition_sequences,
             malformed_placement_sequences: {
                 let mut sequences = ctx.collection_vec(

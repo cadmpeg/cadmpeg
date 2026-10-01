@@ -10,7 +10,9 @@ use crate::chunks::{checked_count_bytes, chunk_at, ArchiveVersion, BoundedReader
 use crate::container::{OpaqueRecord, Record};
 use crate::objects::{parse_class_wrapper, parse_class_wrapper_with_userdata, UserdataDescriptor};
 use crate::polyedge::{EdgeDomains, HistoryPolyEdge, HistoryReference, PolyEdge, Segment};
-use crate::settings::{point, utf16, vector, xform, MillimeterScale, Point3, Vector3, Xform};
+use crate::settings::{
+    point, utf16_retained, vector, xform, MillimeterScale, Point3, Vector3, Xform,
+};
 use crate::wire::{uuid, Uuid};
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
@@ -631,7 +633,9 @@ fn parse_value_with_warnings(
         5 => Value::Points(array(ctx, &mut reader, 24, point)?),
         6 => Value::Vectors(array(ctx, &mut reader, 24, vector)?),
         7 => Value::Transforms(array(ctx, &mut reader, 128, xform)?),
-        8 => Value::Strings(array(ctx, &mut reader, 4, utf16)?),
+        8 => Value::Strings(array(ctx, &mut reader, 4, |reader| {
+            utf16_retained(ctx, reader, "Rhino history string")
+        })?),
         9 => Value::ObjectReferences(object_references(ctx, &mut reader, archive)?),
         10 => Value::Geometries(geometries(ctx, &mut reader, archive)?),
         11 => Value::Uuids(array(ctx, &mut reader, 16, uuid)?),
@@ -823,8 +827,7 @@ fn insert_property(
 ) -> Result<(), CodecError> {
     let key = ctx.format_retained(format_args!("{key}"), "Rhino history property key")?;
     let value = ctx.format_retained(format_args!("{value}"), "Rhino history property value")?;
-    ctx.charge_collection_items(1, "Rhino history property entries")?;
-    properties.insert(key, value);
+    ctx.insert_btree_map(properties, key, value, "Rhino history property entries")?;
     Ok(())
 }
 
@@ -839,21 +842,25 @@ fn admitted_named_properties(
     let mut kept = BTreeMap::new();
     for (name, value) in entries {
         match cadmpeg_core::text::NonBlankString::new(name) {
-            Some(key) => match kept.entry(key) {
-                Entry::Vacant(slot) => {
-                    ctx.charge_collection_items(1, "Rhino history named property entries")?;
-                    slot.insert(value);
+            Some(key) => {
+                ctx.admit_btree_entry(&kept, &key, "Rhino history named property entries")?;
+                match kept.entry(key) {
+                    Entry::Vacant(slot) => {
+                        slot.insert(value);
+                    }
+                    Entry::Occupied(slot) => warnings.push_coded_admitted(
+                        ctx,
+                        crate::loss::RhinoLossCode::ObjectAttributesDegraded,
+                        format_args!("{record} states the property {} a second time; the property is not transferred", slot.key()),
+                    )?,
                 }
-                Entry::Occupied(slot) => warnings.push_coded_admitted(
-                    ctx,
-                    crate::loss::RhinoLossCode::ObjectAttributesDegraded,
-                    format_args!("{record} states the property {} a second time; the property is not transferred", slot.key()),
-                )?,
-            },
+            }
             None => warnings.push_coded_admitted(
                 ctx,
                 crate::loss::RhinoLossCode::ObjectAttributesDegraded,
-                format_args!("{record} states a property with a blank key; the property is not transferred"),
+                format_args!(
+                    "{record} states a property with a blank key; the property is not transferred"
+                ),
             )?,
         }
     }
@@ -2016,12 +2023,16 @@ fn structured_value_properties(
                         };
                         match semantic {
                             Ok(semantic) => {
-                                ctx.charge_collection_items(1, "Rhino history property entries")?;
                                 let property_key = ctx.format_retained(
                                     format_args!("{key}.{index}.geometry"),
                                     "Rhino history property key",
                                 )?;
-                                properties.insert(property_key, semantic);
+                                ctx.insert_btree_map(
+                                    properties,
+                                    property_key,
+                                    semantic,
+                                    "Rhino history property entries",
+                                )?;
                             }
                             Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
                             Err(_) => {}
@@ -2041,12 +2052,16 @@ fn structured_value_properties(
                         }
                         if let Some(semantic) = semantic {
                             sink.untyped += 1;
-                            ctx.charge_collection_items(1, "Rhino history property entries")?;
                             let property_key = ctx.format_retained(
                                 format_args!("{key}.{index}.geometry"),
                                 "Rhino history property key",
                             )?;
-                            properties.insert(property_key, semantic);
+                            ctx.insert_btree_map(
+                                properties,
+                                property_key,
+                                semantic,
+                                "Rhino history property entries",
+                            )?;
                         } else {
                             sink.failed += 1;
                         }
@@ -2377,9 +2392,13 @@ pub(crate) fn project(
                 .map_err(ProjectionError::Codec)?;
             }
             if let Some(text) = value_text(ctx, &value.value).map_err(ProjectionError::Codec)? {
-                ctx.charge_collection_items(1, "Rhino history parameter entries")
-                    .map_err(ProjectionError::Codec)?;
-                parameters.insert(key, text);
+                ctx.insert_btree_map(
+                    &mut parameters,
+                    key,
+                    text,
+                    "Rhino history parameter entries",
+                )
+                .map_err(ProjectionError::Codec)?;
             } else if let Value::Opaque { type_code, range } = &value.value {
                 insert_property(ctx, &mut properties, format_args!("{key}.type"), type_code)
                     .map_err(ProjectionError::Codec)?;

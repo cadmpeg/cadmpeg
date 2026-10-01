@@ -646,8 +646,12 @@ pub(crate) fn terminal_feature_body_ids(
         if statuses_by_binding.contains_key(status.segment_body_binding.as_str()) {
             return Ok(None);
         }
-        ctx.charge_collection_items(1, "nx terminal body status index")?;
-        statuses_by_binding.insert(status.segment_body_binding.as_str(), status);
+        ctx.insert_btree_map(
+            &mut statuses_by_binding,
+            status.segment_body_binding.as_str(),
+            status,
+            "nx terminal body status index",
+        )?;
     }
     let mut mapped = BTreeSet::new();
     let mut selected = BTreeSet::new();
@@ -681,13 +685,12 @@ pub(crate) fn terminal_feature_body_ids(
             .filter(|body| body.as_str().starts_with(&prefix))
         {
             if !mapped.contains(body) {
-                ctx.charge_collection_items(1, "nx mapped terminal body")?;
-                mapped.insert(body);
+                ctx.insert_btree_set(&mut mapped, body, "nx mapped terminal body")?;
             }
             if status.terminal && !selected.contains(body) {
-                ctx.charge_collection_items(1, "nx selected terminal body")?;
-                selected
-                    .insert(body.try_clone_for_decode(ctx, "nx selected terminal body identity")?);
+                let body_id =
+                    body.try_clone_for_decode(ctx, "nx selected terminal body identity")?;
+                ctx.insert_btree_set(&mut selected, body_id, "nx selected terminal body")?;
             }
         }
     }
@@ -749,8 +752,7 @@ impl NativeModel {
             let ordinal = usize::try_from(link.stream_ordinal)
                 .map_err(|_| ctx.refuse_codec_limit("nx linked delta ordinal", 0, u64::MAX))?;
             if !linked_deltas.contains(&ordinal) {
-                ctx.charge_collection_items(1, "nx linked delta index")?;
-                linked_deltas.insert(ordinal);
+                ctx.insert_btree_set(&mut linked_deltas, ordinal, "nx linked delta index")?;
             }
         }
         let delta_pairs = pair_stream_indices(
@@ -775,12 +777,6 @@ impl NativeModel {
         let parasolid_attribute_definitions = parasolid_attribute_definitions(ctx, streams)?;
         let parasolid_entity_51_records = parasolid_entity_51_records(ctx, streams)?;
         let value_records = parasolid_entity_value_records(ctx, streams, &deltas_events.records)?;
-        // A value-record frame that passes its family validation and then does
-        // not materialize is a disagreement inside the reader, not a record
-        // the decoder may drop in silence.
-        if let Some(refusal) = value_records.unmaterialized.first() {
-            return Err(cadmpeg_core::CodecError::Malformed(refusal.to_string()));
-        }
         let parasolid_entity_52_integer_records = value_records.integers;
         let parasolid_entity_53_double_records = value_records.doubles;
         let parasolid_entity_54_string_records = value_records.strings;

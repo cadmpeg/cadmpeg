@@ -5,13 +5,13 @@ fn reference_plane_error(policy: DecodePolicy) -> CodecError {
     const CLASS: &[u8] = b"moConstraintMidPlaneRefplaneData_c";
     let class_offset = 16;
     let body = class_offset + super::CLASS_MARKER.len() + 2 + CLASS.len();
-    let mut payload =
-        cadmpeg_core::decode::alloc_filled(body + 48 + 16, 0u8, "fixed reference-plane fixture")
-            .expect("fixed fixture allocation");
+    let mut payload = cadmpeg_test_support::service_decode_context()
+        .alloc_filled(body + 48 + 16, 0u8, "fixed reference-plane fixture")
+        .expect("fixed fixture allocation");
     payload[class_offset..class_offset + super::CLASS_MARKER.len()]
         .copy_from_slice(super::CLASS_MARKER);
     payload[class_offset + super::CLASS_MARKER.len()..class_offset + super::CLASS_MARKER.len() + 2]
-        .copy_from_slice(&(CLASS.len() as u16).to_le_bytes());
+        .copy_from_slice(&u16::try_from(CLASS.len()).unwrap().to_le_bytes());
     payload[class_offset + super::CLASS_MARKER.len() + 2..body].copy_from_slice(CLASS);
     for (relative, value) in [
         (8, 1.0e-16_f64),

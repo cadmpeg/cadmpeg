@@ -293,7 +293,12 @@ pub(super) fn decode(
             )?;
         }
     }
-    styles.sort_by_key(|(_, order)| *order);
+    ctx.stable_sort_by(
+        &mut styles,
+        |(_, left), (_, right)| left.cmp(right),
+        |_| 0,
+        "step_presentation_style_ids_sort",
+    )?;
     let mut scalar_color_candidates = HashMap::<AppearanceTarget, Vec<(u64, Color)>>::new();
     for (style_id, _) in styles {
         if overridden_styles.contains(&style_id) {
@@ -327,8 +332,9 @@ pub(super) fn decode(
             .list()
             .into_iter()
             .flatten()
-            .flat_map(references)
+            .flat_map(|value| references(value, ctx))
         {
+            let reference = reference?;
             ctx.push_vec(
                 &mut style_references,
                 reference,
@@ -1129,9 +1135,8 @@ fn collect_identity_indices<'a>(
             *existing = index;
             continue;
         }
-        ctx.charge_collection_items(1, operation)?;
         let copy = ctx.copy_retained_text(identity, operation)?;
-        result.insert(copy, index);
+        ctx.insert_btree_map(&mut result, copy, index, operation)?;
     }
     Ok(result)
 }
@@ -1502,8 +1507,9 @@ fn find_color(
                 .partials
                 .iter()
                 .flat_map(|partial| partial.parameters.iter())
-                .flat_map(references)
+                .flat_map(|value| references(value, ctx))
             {
+                let reference = reference?;
                 // The recursive search caches the colour and records its losses.
                 find_color(
                     reference,
@@ -1619,8 +1625,9 @@ fn find_color(
                     .partials
                     .iter()
                     .flat_map(|partial| partial.parameters.iter())
-                    .flat_map(references)
+                    .flat_map(|value| references(value, ctx))
                     .map(|reference| {
+                        let reference = reference?;
                         find_color(
                             reference,
                             exchange,
@@ -1692,8 +1699,14 @@ fn surface_transparency(
         .partials
         .iter()
         .filter(|partial| partial.name == "SURFACE_STYLE_RENDERING_WITH_PROPERTIES")
-        .flat_map(|partial| partial.parameters.iter().flat_map(references))
+        .flat_map(|partial| {
+            partial
+                .parameters
+                .iter()
+                .flat_map(|value| references(value, ctx))
+        })
     {
+        let property_id = property_id?;
         let Some(property) = exchange.records().get(&property_id) else {
             continue;
         };

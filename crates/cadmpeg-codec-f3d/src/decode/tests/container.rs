@@ -42,14 +42,15 @@ fn with_docstruct_scan(
 
 #[test]
 fn docstruct_type_attribute_refuses_collection_limit() {
-    with_docstruct_scan(|arena, scan| {
-        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-        policy.limits.max_collection_items = 11;
-        let ctx = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], arena, &policy)
-            .unwrap()
-            .0;
-        let mut attributes = std::collections::BTreeMap::new();
-        let error = super::super::annotate_docstruct(&ctx, &mut attributes, scan).unwrap_err();
+    with_docstruct_scan(|_arena, scan| {
+        let error = crate::test_support::resource_refusal_at(
+            cadmpeg_core::decode::ResourceDimension::CollectionItems,
+            "record F3D docstruct type",
+            0,
+            |ctx| {
+                super::super::annotate_docstruct(ctx, &mut std::collections::BTreeMap::new(), scan)
+            },
+        );
         assert!(
             matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.operation == "record F3D docstruct type")
@@ -59,14 +60,15 @@ fn docstruct_type_attribute_refuses_collection_limit() {
 
 #[test]
 fn docstruct_subtype_attribute_refuses_collection_limit() {
-    with_docstruct_scan(|arena, scan| {
-        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-        policy.limits.max_collection_items = 12;
-        let ctx = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], arena, &policy)
-            .unwrap()
-            .0;
-        let mut attributes = std::collections::BTreeMap::new();
-        let error = super::super::annotate_docstruct(&ctx, &mut attributes, scan).unwrap_err();
+    with_docstruct_scan(|_arena, scan| {
+        let error = crate::test_support::resource_refusal_at(
+            cadmpeg_core::decode::ResourceDimension::CollectionItems,
+            "record F3D docstruct subtype",
+            0,
+            |ctx| {
+                super::super::annotate_docstruct(ctx, &mut std::collections::BTreeMap::new(), scan)
+            },
+        );
         assert!(
             matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.operation == "record F3D docstruct subtype")
@@ -535,8 +537,9 @@ fn text_brep_framing_propagates_sat_collection_limit() {
     let entry = "FusionAssetName[Active]/Breps.BlobParts/BREP0.sat";
     let archive = f3d_with_text_brep(&[entry]);
     let mut options = DecodeOptions::default();
-    // Archive admission and indexes consume 74 collection items before SAT framing.
-    options.policy.limits.max_collection_items = 74;
+    // Archive admission and indexes consume 74 items. The retained asset-folder
+    // destination admits one further slot before SAT framing.
+    options.policy.limits.max_collection_items = 74 + 1;
     let error = F3dCodec
         .decode(&mut Cursor::new(archive), &options)
         .expect_err("text B-rep framing must admit primitives");

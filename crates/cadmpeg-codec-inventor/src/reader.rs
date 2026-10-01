@@ -6,7 +6,7 @@
 //! in this crate reports a truncation this way, so a consumer parses one form
 //! and covers the codec.
 
-use cadmpeg_core::decode::View;
+use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
 
 use crate::pmdc::PmDcReference;
@@ -83,10 +83,7 @@ pub(crate) fn pmdc_reference(
     field: &'static str,
 ) -> Result<PmDcReference, CodecError> {
     let value = u32(view, field)?;
-    Ok(PmDcReference {
-        index: value & 0x7fff_ffff,
-        qualified: value & 0x8000_0000 != 0,
-    })
+    Ok(PmDcReference::from_packed(value))
 }
 
 pub(crate) fn take<'a>(
@@ -97,35 +94,22 @@ pub(crate) fn take<'a>(
     Ok(view.req_take(len).map_err(|error| error.during(field))?)
 }
 
-/// Counts the UTF-8 bytes of a strict UTF-16LE value without allocating or advancing.
-pub(crate) fn utf16_utf8_len(source: View<'_>, count: usize) -> Option<usize> {
-    let len = count.checked_mul(2)?;
-    let bytes = source.unread().get(..len)?;
-    let mut preview = View::over_retained(bytes);
-    let mut remaining = count;
-    let mut utf8_bytes = 0_usize;
-    while remaining != 0 {
-        let first = preview.u16_le()?;
-        remaining -= 1;
-        let scalar = if (0xd800..=0xdbff).contains(&first) {
-            if remaining == 0 {
-                return None;
-            }
-            let second = preview.u16_le()?;
-            remaining -= 1;
-            if !(0xdc00..=0xdfff).contains(&second) {
-                return None;
-            }
-            0x10000 + ((u32::from(first) - 0xd800) << 10) + u32::from(second) - 0xdc00
-        } else {
-            if (0xdc00..=0xdfff).contains(&first) {
-                return None;
-            }
-            u32::from(first)
-        };
-        utf8_bytes = utf8_bytes.checked_add(char::from_u32(scalar)?.len_utf8())?;
-    }
-    Some(utf8_bytes)
+/// Decodes a counted string and advances the source only after admission.
+pub(crate) fn utf16_text(
+    ctx: &DecodeContext<'_>,
+    source: &mut View<'_>,
+    count: usize,
+    field: &'static str,
+    operation: &'static str,
+) -> Result<String, CodecError> {
+    let len = count
+        .checked_mul(2)
+        .ok_or_else(|| CodecError::malformed("Inventor UTF-16 byte length overflow"))?;
+    let mut candidate = *source;
+    let bytes = take(&mut candidate, len, field)?;
+    let value = ctx.utf16le_text(bytes, count, false, operation)?;
+    *source = candidate;
+    Ok(value)
 }
 
 /// Takes `len` bytes as a bounded window over the same space.
@@ -162,7 +146,7 @@ pub(crate) fn at<'a>(
 
 #[cfg(test)]
 mod tests {
-    use super::{array, at, u16_array, utf16_utf8_len};
+    use super::{array, at, u16_array, utf16_text};
     use crate::test_support::truncation::located_truncation;
     use cadmpeg_core::decode::View;
 
@@ -199,12 +183,68 @@ mod tests {
 
     #[test]
     fn utf16_preflight_counts_utf8_bytes_and_rejects_invalid_pairs() {
+        let ctx = cadmpeg_test_support::service_decode_context();
         let euro = [0xac, 0x20];
-        assert_eq!(utf16_utf8_len(View::over_retained(&euro), 1), Some(3));
+        assert_eq!(
+            utf16_text(
+                &ctx,
+                &mut View::over_retained(&euro),
+                1,
+                "test text",
+                "Inventor UTF-16 test"
+            )
+            .ok()
+            .map(|text| text.len()),
+            Some(3)
+        );
         let emoji = [0x3d, 0xd8, 0x00, 0xde];
-        assert_eq!(utf16_utf8_len(View::over_retained(&emoji), 2), Some(4));
-        assert_eq!(utf16_utf8_len(View::over_retained(&emoji), 3), None);
-        assert_eq!(utf16_utf8_len(View::over_retained(&emoji[..2]), 1), None);
-        assert_eq!(utf16_utf8_len(View::over_retained(&emoji[2..]), 1), None);
+        assert_eq!(
+            utf16_text(
+                &ctx,
+                &mut View::over_retained(&emoji),
+                2,
+                "test text",
+                "Inventor UTF-16 test"
+            )
+            .ok()
+            .map(|text| text.len()),
+            Some(4)
+        );
+        assert_eq!(
+            utf16_text(
+                &ctx,
+                &mut View::over_retained(&emoji),
+                3,
+                "test text",
+                "Inventor UTF-16 test"
+            )
+            .ok()
+            .map(|text| text.len()),
+            None
+        );
+        assert_eq!(
+            utf16_text(
+                &ctx,
+                &mut View::over_retained(&emoji[..2]),
+                1,
+                "test text",
+                "Inventor UTF-16 test"
+            )
+            .ok()
+            .map(|text| text.len()),
+            None
+        );
+        assert_eq!(
+            utf16_text(
+                &ctx,
+                &mut View::over_retained(&emoji[2..]),
+                1,
+                "test text",
+                "Inventor UTF-16 test"
+            )
+            .ok()
+            .map(|text| text.len()),
+            None
+        );
     }
 }

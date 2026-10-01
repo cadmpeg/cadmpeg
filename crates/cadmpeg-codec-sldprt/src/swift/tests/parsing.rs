@@ -64,7 +64,11 @@ fn encode_entity(entity: &Entity, bytes: &mut Vec<u8>) {
     bytes.extend_from_slice(&1u32.to_le_bytes());
     if !entity.strings.is_empty() {
         put_pstr(bytes, "Strings");
-        bytes.extend_from_slice(&(entity.strings.len() as u32).to_le_bytes());
+        bytes.extend_from_slice(
+            &u32::try_from(entity.strings.len())
+                .expect("length fits u32")
+                .to_le_bytes(),
+        );
         for (key, value) in &entity.strings {
             put_pstr(bytes, key);
             put_pstr(bytes, value);
@@ -73,7 +77,11 @@ fn encode_entity(entity: &Entity, bytes: &mut Vec<u8>) {
     }
     if !entity.integers.is_empty() {
         put_pstr(bytes, "Integers");
-        bytes.extend_from_slice(&(entity.integers.len() as u32).to_le_bytes());
+        bytes.extend_from_slice(
+            &u32::try_from(entity.integers.len())
+                .expect("length fits u32")
+                .to_le_bytes(),
+        );
         for (key, value) in &entity.integers {
             put_pstr(bytes, key);
             bytes.extend_from_slice(&value.to_le_bytes());
@@ -82,7 +90,11 @@ fn encode_entity(entity: &Entity, bytes: &mut Vec<u8>) {
     }
     if !entity.doubles.is_empty() {
         put_pstr(bytes, "Doubles");
-        bytes.extend_from_slice(&(entity.doubles.len() as u32).to_le_bytes());
+        bytes.extend_from_slice(
+            &u32::try_from(entity.doubles.len())
+                .expect("length fits u32")
+                .to_le_bytes(),
+        );
         for (key, value) in &entity.doubles {
             put_pstr(bytes, key);
             bytes.extend_from_slice(&value.to_le_bytes());
@@ -93,7 +105,11 @@ fn encode_entity(entity: &Entity, bytes: &mut Vec<u8>) {
     encode_objects("Annotations", "EndAnnotations", &entity.annotations, bytes);
     if !entity.related.is_empty() {
         put_pstr(bytes, "RelatedObjects");
-        bytes.extend_from_slice(&(entity.related.len() as u32).to_le_bytes());
+        bytes.extend_from_slice(
+            &u32::try_from(entity.related.len())
+                .expect("length fits u32")
+                .to_le_bytes(),
+        );
         for object in &entity.related {
             put_pstr(bytes, &object.name);
             put_pstr(bytes, &object.class);
@@ -111,7 +127,11 @@ fn encode_objects(name: &str, end: &str, section: &ObjectSection, bytes: &mut Ve
         return;
     }
     put_pstr(bytes, name);
-    bytes.extend_from_slice(&(section.references.as_slice().len() as u32).to_le_bytes());
+    bytes.extend_from_slice(
+        &u32::try_from(section.references.as_slice().len())
+            .expect("length fits u32")
+            .to_le_bytes(),
+    );
     for reference in &section.references {
         put_pstr(bytes, &reference.id);
         put_pstr(bytes, &reference.class);
@@ -149,7 +169,7 @@ fn swift_annotations_refuse_retained_stream_limit() {
         "SWIFT/Schema",
         &payload,
     ));
-    let scan = crate::container::scan_bytes(&source);
+    let scan = crate::test_support::container::scan(&source);
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = u64::try_from(root.class.len()).expect("fixture length");
@@ -180,7 +200,7 @@ fn swift_rendered_annotation_limit_error(
         "SWIFT/Schema",
         &payload,
     ));
-    let scan = crate::container::scan_bytes(&source);
+    let scan = crate::test_support::container::scan(&source);
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     set_limit(&mut policy.limits);
@@ -401,4 +421,30 @@ fn malformed_reference_identity_returns_decode_loss() {
             .iter()
             .any(|annotation| annotation.name.as_deref() == Some("Datum A")));
     }
+}
+
+#[test]
+fn swift_serialized_entity_depth_refuses_instead_of_unresolved_root() {
+    let mut nested = Entity {
+        class: "Leaf".into(),
+        ..Default::default()
+    };
+    for _ in 0..crate::swift::MAX_DEPTH {
+        nested = Entity {
+            class: crate::swift::ROOT_CLASS.into(),
+            related: vec![crate::swift::RelatedObject {
+                name: "Child".into(),
+                class: nested.class.clone(),
+                entity: nested,
+            }],
+            ..Default::default()
+        };
+    }
+    let mut payload = Vec::new();
+    encode_entity(&nested, &mut payload);
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let error = parse_unique_root(&ctx, &payload).unwrap_err();
+    assert!(
+        matches!(error, CodecError::ResourceLimit(limit) if limit.operation == "parse SWIFT entity")
+    );
 }

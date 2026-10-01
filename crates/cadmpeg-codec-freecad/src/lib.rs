@@ -190,7 +190,7 @@ fn validate_native(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<Vec<Finding>, 
         .collect::<HashSet<_>>();
     let entry_names = entries
         .iter()
-        .map(|entry| entry.name.as_str())
+        .map(crate::native::EntryRecord::name)
         .collect::<HashSet<_>>();
     let property_ids = properties
         .iter()
@@ -650,29 +650,29 @@ fn validate_native(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<Vec<Finding>, 
         }
     }
     for entry in &entries {
-        entry_lengths.insert(entry.name.as_str(), entry.byte_len());
-        for owner in &entry.referenced_by {
+        entry_lengths.insert(entry.name(), entry.byte_len());
+        for owner in entry.referenced_by() {
             if !asset_owner_ids.contains(owner.as_str()) {
                 findings.push(finding(
                     Check::ReferentialIntegrity,
-                    format!("{} has missing referencing record {owner}", entry.id),
-                    Some(entry.id.clone()),
+                    format!("{} has missing referencing record {owner}", entry.id()),
+                    Some(entry.id().to_owned()),
                 ));
             }
         }
         let expected = expected_references
-            .get(entry.name.as_str())
+            .get(entry.name())
             .map_or(&[][..], Vec::as_slice);
         if !entry
-            .referenced_by
+            .referenced_by()
             .iter()
             .map(String::as_str)
             .eq(expected.iter().map(String::as_str))
         {
             findings.push(finding(
                 Check::ReferentialIntegrity,
-                format!("{} has a stale side-entry reference relation", entry.id),
-                Some(entry.id.clone()),
+                format!("{} has a stale side-entry reference relation", entry.id()),
+                Some(entry.id().to_owned()),
             ));
         }
     }
@@ -698,7 +698,7 @@ fn validate_native(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<Vec<Finding>, 
         .chain(shape_payloads.iter().map(|record| record.id.as_str()))
         .chain(string_table_ids.iter().map(String::as_str))
         .chain(element_maps.iter().map(|record| record.id.as_str()))
-        .chain(entries.iter().map(|record| record.id.as_str()))
+        .chain(entries.iter().map(crate::native::EntryRecord::id))
         .collect::<HashSet<_>>();
     let mut logical_by_entry = BTreeMap::<&str, Vec<&native::LogicalSpan>>::new();
     for span in &logical {
@@ -720,16 +720,21 @@ fn validate_native(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<Vec<Finding>, 
     }
     let covered_entries = logical_by_entry.keys().copied().collect::<HashSet<_>>();
     for entry in &entries {
-        if entry.byte_len() > 0 && !covered_entries.contains(entry.name.as_str()) {
+        if entry.byte_len() > 0 && !covered_entries.contains(entry.name()) {
             findings.push(finding(
                 Check::PayloadIntegrity,
-                format!("logical ledger omits nonempty entry {}", entry.name),
-                Some(entry.id.clone()),
+                format!("logical ledger omits nonempty entry {}", entry.name()),
+                Some(entry.id().to_owned()),
             ));
         }
     }
     for (name, mut spans) in logical_by_entry {
-        spans.sort_by_key(|span| span.span.start());
+        ctx.stable_sort_by(
+            &mut spans,
+            |left, right| left.span.start().cmp(&right.span.start()),
+            |_| 0,
+            "fcstd logical spans sort",
+        )?;
         let expected = entry_lengths.get(name).copied();
         validate_logical_chain(name, &spans, expected, &mut findings);
     }
@@ -972,8 +977,13 @@ impl CodecBackend for FcstdCodec {
                     .add_procedural_surface_for_decode(ctx, &owner, procedural)?
                     .map_err(|error| CodecError::malformed(error.to_string()))?;
             }
-            geometry_transferred |=
-                application_geometry::transfer(ctx, &mut ir, &graph.properties, &entry_records)?;
+            geometry_transferred |= application_geometry::transfer(
+                ctx,
+                &mut ir,
+                &graph.properties,
+                &entry_records,
+                &mut admitted_entities,
+            )?;
             let topology_occurrences = topology_transfer::transfer(
                 ctx,
                 &mut ir,
@@ -1058,9 +1068,9 @@ impl CodecBackend for FcstdCodec {
             {
                 if let Some(entry) = entry_records
                     .iter_mut()
-                    .find(|entry| entry.name == entry_name)
+                    .find(|entry| entry.name() == entry_name)
                 {
-                    container::add_entry_reference(ctx, entry, owner)?;
+                    entry.add_reference(ctx, owner)?;
                 }
             }
             ir.native

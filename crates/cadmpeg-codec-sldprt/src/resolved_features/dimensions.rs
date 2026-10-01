@@ -154,14 +154,12 @@ fn native_dimensioned_circle_construction_state(
             ctx.reserve_vec(&mut roster, 1, DIMENSIONED_CARRIER_OPERATION)?;
             roster.push(marker);
         }
-        let levels = u64::from(roster.len().checked_ilog2().unwrap_or(0))
-            .checked_add(1)
-            .and_then(|levels| levels.checked_mul(32))
-            .ok_or_else(|| {
-                ctx.refuse_codec_limit(DIMENSIONED_CARRIER_OPERATION, u64::MAX - 1, u64::MAX)
-            })?;
-        charge_dimensioned_carrier_work(ctx, roster.len(), levels)?;
-        roster.sort_unstable_by_key(|marker| marker.offset());
+        ctx.sort_unstable_by(
+            &mut roster,
+            |left, right| left.offset().cmp(&right.offset()),
+            |_| 0,
+            DIMENSIONED_CARRIER_OPERATION,
+        )?;
         charge_dimensioned_carrier_work(ctx, lane.native_payload.len(), 512)?;
         for (_, radial_index, construction) in radial_circle_records(&lane.native_payload) {
             ctx.charge_work(64, DIMENSIONED_CARRIER_OPERATION)?;
@@ -291,15 +289,12 @@ fn dimensioned_arc_native_geometry(
         object_markers.push(candidate);
         charge_dimensioned_carrier_work(ctx, candidate.id().len(), 4)?;
         if !markers_by_id.contains_key(candidate.id()) {
-            ctx.charge_collection_items(1, DIMENSIONED_CARRIER_OPERATION)?;
             if markers_by_id.len() == markers_by_id.capacity() {
                 for key in markers_by_id.keys() {
                     charge_dimensioned_carrier_work(ctx, key.len(), 1)?;
                 }
             }
-            markers_by_id.try_reserve(1).map_err(|_| {
-                ctx.refuse_codec_limit(DIMENSIONED_CARRIER_OPERATION, u64::MAX - 1, u64::MAX)
-            })?;
+            ctx.reserve_map(&mut markers_by_id, 1, DIMENSIONED_CARRIER_OPERATION)?;
         }
         markers_by_id.insert(candidate.id(), candidate);
     }
@@ -769,8 +764,8 @@ fn transformed_dimensioned_arc(
                 quantum,
             ))?;
             Some(Point2::new(
-                point.0 as f64 * quantum,
-                point.1 as f64 * quantum,
+                cadmpeg_core::convert::f64_from_i64(point.0)? * quantum,
+                cadmpeg_core::convert::f64_from_i64(point.1)? * quantum,
             ))
         };
         let center = transform_point(arc.center)?;
@@ -877,7 +872,6 @@ pub(crate) fn project_dimensioned_sketch_geometry(
             OPERATION,
         )?;
         if !sketches_by_feature.contains_key(native) {
-            ctx.charge_collection_items(1, OPERATION)?;
             if sketches_by_feature.len() == sketches_by_feature.capacity() {
                 for key in sketches_by_feature.keys() {
                     ctx.charge_work(
@@ -891,9 +885,7 @@ pub(crate) fn project_dimensioned_sketch_geometry(
                     )?;
                 }
             }
-            sketches_by_feature
-                .try_reserve(1)
-                .map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
+            ctx.reserve_map(&mut sketches_by_feature, 1, OPERATION)?;
         }
         sketches_by_feature.insert(native, sketch);
     }
@@ -910,7 +902,6 @@ pub(crate) fn project_dimensioned_sketch_geometry(
             OPERATION,
         )?;
         if !parameters_by_id.contains_key(&parameter.id) {
-            ctx.charge_collection_items(1, OPERATION)?;
             if parameters_by_id.len() == parameters_by_id.capacity() {
                 for key in parameters_by_id.keys() {
                     ctx.charge_work(
@@ -924,9 +915,7 @@ pub(crate) fn project_dimensioned_sketch_geometry(
                     )?;
                 }
             }
-            parameters_by_id
-                .try_reserve(1)
-                .map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
+            ctx.reserve_map(&mut parameters_by_id, 1, OPERATION)?;
         }
         parameter_key_bytes = parameter_key_bytes.max(parameter.id.as_str().len());
         parameters_by_id.insert(&parameter.id, parameter);
@@ -949,7 +938,6 @@ pub(crate) fn project_dimensioned_sketch_geometry(
             OPERATION,
         )?;
         if !markers_by_id.contains_key(marker.id()) {
-            ctx.charge_collection_items(1, OPERATION)?;
             if markers_by_id.len() == markers_by_id.capacity() {
                 for key in markers_by_id.keys() {
                     ctx.charge_work(
@@ -963,9 +951,7 @@ pub(crate) fn project_dimensioned_sketch_geometry(
                     )?;
                 }
             }
-            markers_by_id
-                .try_reserve(1)
-                .map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
+            ctx.reserve_map(&mut markers_by_id, 1, OPERATION)?;
         }
         markers_by_id.insert(marker.id(), marker);
     }
@@ -1075,7 +1061,6 @@ pub(crate) fn project_dimensioned_sketch_geometry(
                 .map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?,
             OPERATION,
         )?;
-        ctx.charge_collection_items(1, OPERATION)?;
         if transforms.len() == transforms.capacity() {
             for key in transforms.keys() {
                 ctx.charge_work(
@@ -1087,9 +1072,7 @@ pub(crate) fn project_dimensioned_sketch_geometry(
                 )?;
             }
         }
-        transforms
-            .try_reserve(1)
-            .map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
+        ctx.reserve_map(&mut transforms, 1, OPERATION)?;
         transforms.insert(*feature, transform);
     }
     for lane in lanes {
@@ -1163,7 +1146,13 @@ pub(crate) fn project_dimensioned_sketch_geometry(
             let Some(center) = transform.apply(native) else {
                 continue;
             };
-            let center = Point2::new(center.0 as f64 * QUANTUM, center.1 as f64 * QUANTUM);
+            let (Some(center_u), Some(center_v)) = (
+                cadmpeg_core::convert::f64_from_i64(center.0),
+                cadmpeg_core::convert::f64_from_i64(center.1),
+            ) else {
+                continue;
+            };
+            let center = Point2::new(center_u * QUANTUM, center_v * QUANTUM);
             for entity in &*entities {
                 let work = entity
                     .sketch
@@ -1305,15 +1294,12 @@ pub(crate) fn project_relation_point_dimensioned_circles(
         charge_dimensioned_carrier_work(ctx, native_ref.len(), 4)?;
         if !sketches_by_feature.contains_key(native_ref) {
             let operation = "index SLDPRT dimensioned point sketches";
-            ctx.charge_collection_items(1, operation)?;
             if sketches_by_feature.len() == sketches_by_feature.capacity() {
                 for key in sketches_by_feature.keys() {
                     charge_dimensioned_carrier_work(ctx, key.len(), 1)?;
                 }
             }
-            sketches_by_feature
-                .try_reserve(1)
-                .map_err(|_| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
+            ctx.reserve_map(&mut sketches_by_feature, 1, operation)?;
         }
         sketches_by_feature.insert(native_ref, sketch);
     }
@@ -1323,15 +1309,12 @@ pub(crate) fn project_relation_point_dimensioned_circles(
         charge_dimensioned_carrier_work(ctx, parameter.id.as_str().len(), 4)?;
         if !parameters_by_id.contains_key(&parameter.id) {
             let operation = "index SLDPRT dimensioned point parameters";
-            ctx.charge_collection_items(1, operation)?;
             if parameters_by_id.len() == parameters_by_id.capacity() {
                 for key in parameters_by_id.keys() {
                     charge_dimensioned_carrier_work(ctx, key.as_str().len(), 1)?;
                 }
             }
-            parameters_by_id
-                .try_reserve(1)
-                .map_err(|_| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
+            ctx.reserve_map(&mut parameters_by_id, 1, operation)?;
         }
         parameters_by_id.insert(&parameter.id, parameter);
     }
@@ -1340,15 +1323,12 @@ pub(crate) fn project_relation_point_dimensioned_circles(
         charge_dimensioned_carrier_work(ctx, marker.id().len(), 4)?;
         if !markers_by_id.contains_key(marker.id()) {
             let operation = "index SLDPRT dimensioned point markers";
-            ctx.charge_collection_items(1, operation)?;
             if markers_by_id.len() == markers_by_id.capacity() {
                 for key in markers_by_id.keys() {
                     charge_dimensioned_carrier_work(ctx, key.len(), 1)?;
                 }
             }
-            markers_by_id
-                .try_reserve(1)
-                .map_err(|_| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
+            ctx.reserve_map(&mut markers_by_id, 1, operation)?;
         }
         markers_by_id.insert(marker.id(), marker);
     }
@@ -1572,7 +1552,9 @@ fn compact_radial_circle_index(payload: &[u8], offset: usize) -> Option<usize> {
                 0xff, 0xff,
             ])
         && payload.get(offset + 94..offset + 96) == Some(&[0; 2])
-        && sketch_marker_prefix_at(payload, offset.saturating_add(104));
+        && offset
+            .checked_add(104)
+            .is_some_and(|at| sketch_marker_prefix_at(payload, at));
     if !(ordinary || construction)
         || payload.get(offset + 23..offset + 27) != Some(&[0x04, 0x00, 0x02, 0x00])
         || payload.get(offset + 48..offset + 56) != Some(&1.0f64.to_le_bytes())
@@ -1593,15 +1575,18 @@ pub(super) fn compact_legacy_radial_circle_index(payload: &[u8], offset: usize) 
 }
 
 fn radial_circle_records(payload: &[u8]) -> impl Iterator<Item = (usize, usize, bool)> + '_ {
-    (0..payload.len().saturating_sub(LEGACY_SKETCH_MARKER.len() - 1)).filter_map(move |offset| {
-        let radial = compact_radial_circle_index(payload, offset)
-            .or_else(|| extended_terminal_repeated_radial_circle_index(payload, offset))?;
-        Some((
-            offset,
-            radial,
-            marker_profile_curve_role(payload, offset) == Some(2),
-        ))
-    })
+    payload
+        .windows(LEGACY_SKETCH_MARKER.len())
+        .enumerate()
+        .filter_map(move |(offset, _)| {
+            let radial = compact_radial_circle_index(payload, offset)
+                .or_else(|| extended_terminal_repeated_radial_circle_index(payload, offset))?;
+            Some((
+                offset,
+                radial,
+                marker_profile_curve_role(payload, offset) == Some(2),
+            ))
+        })
 }
 
 fn extended_terminal_repeated_radial_circle_index(payload: &[u8], offset: usize) -> Option<usize> {
@@ -1676,8 +1661,12 @@ fn terminal_repeated_radial_circle_pairs<'a>(
             return Ok(None);
         }
     }
-    charge_marker_circle_sort(ctx, pairs.len())?;
-    pairs.sort_unstable_by_key(|(center, _)| center.offset());
+    ctx.sort_unstable_by(
+        &mut pairs,
+        |(left, _), (right, _)| left.offset().cmp(&right.offset()),
+        |_| 0,
+        MARKER_CIRCLE_OPERATION,
+    )?;
     Ok(Some(pairs))
 }
 
@@ -1823,7 +1812,6 @@ fn reconcile_direct_circle_dimension_carriers(
             OPERATION,
         )?;
         if !replacements.contains_key(marker.id()) {
-            ctx.charge_collection_items(1, OPERATION)?;
             if replacements.len() == replacements.capacity() {
                 for key in replacements.keys() {
                     ctx.charge_work(
@@ -1837,9 +1825,7 @@ fn reconcile_direct_circle_dimension_carriers(
                     )?;
                 }
             }
-            replacements
-                .try_reserve(1)
-                .map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
+            ctx.reserve_map(&mut replacements, 1, OPERATION)?;
         }
         replacements.insert(marker.id(), typed_entity.id());
     }
@@ -1876,7 +1862,6 @@ fn reconcile_direct_circle_dimension_carriers(
             continue;
         };
         if !removed.contains_key(entity.id()) {
-            ctx.charge_collection_items(1, OPERATION)?;
             if removed.len() == removed.capacity() {
                 for key in removed.keys() {
                     ctx.charge_work(
@@ -1890,9 +1875,7 @@ fn reconcile_direct_circle_dimension_carriers(
                     )?;
                 }
             }
-            removed
-                .try_reserve(1)
-                .map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
+            ctx.reserve_map(&mut removed, 1, OPERATION)?;
         }
         removed.insert(
             copy_circle_carrier_entity_id(ctx, entity.id())?,
@@ -1929,7 +1912,6 @@ fn reconcile_direct_circle_dimension_carriers(
                 if removed.contains_key(&usage.entity) || present.contains(&usage.entity) {
                     continue;
                 }
-                ctx.charge_collection_items(1, OPERATION)?;
                 if present.len() == present.capacity() {
                     for key in &present {
                         ctx.charge_work(
@@ -1943,9 +1925,7 @@ fn reconcile_direct_circle_dimension_carriers(
                         )?;
                     }
                 }
-                present
-                    .try_reserve(1)
-                    .map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
+                ctx.reserve_set(&mut present, 1, OPERATION)?;
                 present.insert(&usage.entity);
             }
             let mut updated = Vec::new();
@@ -1972,7 +1952,6 @@ fn reconcile_direct_circle_dimension_carriers(
                     if present.contains(replacement) {
                         continue;
                     }
-                    ctx.charge_collection_items(1, OPERATION)?;
                     if present.len() == present.capacity() {
                         for key in &present {
                             ctx.charge_work(
@@ -1986,9 +1965,7 @@ fn reconcile_direct_circle_dimension_carriers(
                             )?;
                         }
                     }
-                    present
-                        .try_reserve(1)
-                        .map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
+                    ctx.reserve_set(&mut present, 1, OPERATION)?;
                     present.insert(replacement);
                     replacement
                 } else {
@@ -2079,26 +2056,13 @@ fn insert_marker_circle_key<T: Eq + std::hash::Hash>(
     if keys.contains(&key) {
         return Ok(false);
     }
-    ctx.charge_collection_items(1, MARKER_CIRCLE_OPERATION)?;
     if keys.len() == keys.capacity() {
         for old in &*keys {
             charge_marker_circle_work(ctx, key_len(old), 1)?;
         }
     }
-    keys.try_reserve(1)
-        .map_err(|_| ctx.refuse_codec_limit(MARKER_CIRCLE_OPERATION, u64::MAX - 1, u64::MAX))?;
+    ctx.reserve_set(keys, 1, MARKER_CIRCLE_OPERATION)?;
     Ok(keys.insert(key))
-}
-
-fn charge_marker_circle_sort(
-    ctx: &DecodeContext<'_>,
-    len: usize,
-) -> Result<(), cadmpeg_core::CodecError> {
-    let levels = u64::from(len.checked_ilog2().unwrap_or(0))
-        .checked_add(1)
-        .and_then(|levels| levels.checked_mul(32))
-        .ok_or_else(|| ctx.refuse_codec_limit(MARKER_CIRCLE_OPERATION, u64::MAX - 1, u64::MAX))?;
-    charge_marker_circle_work(ctx, len, levels)
 }
 
 fn marker_circle_text(
@@ -2148,7 +2112,7 @@ fn unique_marker_circle_center(
         }
         unique = Some(center);
     }
-    Ok(unique.map(|center| super::grid::GridPoint::from(center).point(quantum)))
+    Ok(unique.and_then(|center| super::grid::GridPoint::from(center).point(quantum)))
 }
 
 fn marker_circle_one_to_one(
@@ -2270,7 +2234,6 @@ pub(crate) fn project_marker_dimensioned_circles(
             OPERATION,
         )?;
         if !radial_records_by_lane.contains_key(lane.id.as_str()) {
-            ctx.charge_collection_items(1, OPERATION)?;
             if radial_records_by_lane.len() == radial_records_by_lane.capacity() {
                 for key in radial_records_by_lane.keys() {
                     ctx.charge_work(
@@ -2284,9 +2247,7 @@ pub(crate) fn project_marker_dimensioned_circles(
                     )?;
                 }
             }
-            radial_records_by_lane
-                .try_reserve(1)
-                .map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
+            ctx.reserve_map(&mut radial_records_by_lane, 1, OPERATION)?;
         }
         radial_records_by_lane.insert(lane.id.as_str(), records);
     }
@@ -2442,8 +2403,12 @@ pub(crate) fn project_marker_dimensioned_circles(
                     )
                 }),
             )?;
-            charge_marker_circle_sort(ctx, roster.len())?;
-            roster.sort_unstable_by_key(|(marker, _)| marker.offset());
+            ctx.sort_unstable_by(
+                &mut roster,
+                |(left, _), (right, _)| left.offset().cmp(&right.offset()),
+                |_| 0,
+                OPERATION,
+            )?;
             // Only this suffix can have exactly one witness per dimension.
             if let Some(center_index) = roster
                 .len()
@@ -2612,8 +2577,12 @@ pub(crate) fn project_marker_dimensioned_circles(
                     .filter(|marker| marker.feature_ref.as_deref() == Some(native_ref))
                     .filter(|marker| marker.coordinates_m.is_some()),
             )?;
-            charge_marker_circle_sort(ctx, roster.len())?;
-            roster.sort_unstable_by_key(|marker| marker.offset());
+            ctx.sort_unstable_by(
+                &mut roster,
+                |left, right| left.offset().cmp(&right.offset()),
+                |_| 0,
+                OPERATION,
+            )?;
             for (parameter, radius) in &radial_dimensions {
                 let Some(pairs) = terminal_repeated_radial_circle_pairs(
                     ctx,
@@ -2791,8 +2760,12 @@ pub(crate) fn project_marker_dimensioned_circles(
                                 .map(|coordinates| (marker, coordinates.get()))
                         }),
                 )?;
-                charge_marker_circle_sort(ctx, roster.len())?;
-                roster.sort_unstable_by_key(|(marker, _)| marker.offset());
+                ctx.sort_unstable_by(
+                    &mut roster,
+                    |(left, _), (right, _)| left.offset().cmp(&right.offset()),
+                    |_| 0,
+                    OPERATION,
+                )?;
                 let Some((radial, [ru, rv])) = roster.get(radial_index).copied() else {
                     continue;
                 };
@@ -2831,9 +2804,15 @@ pub(crate) fn project_marker_dimensioned_circles(
                         radius,
                     ));
                 }
-                charge_marker_circle_sort(ctx, candidates.len())?;
-                candidates
-                    .sort_unstable_by_key(|(center, marker, _, _)| (*center, marker.offset()));
+                ctx.sort_unstable_by(
+                    &mut candidates,
+                    |(left_center, left_marker, _, _), (right_center, right_marker, _, _)| {
+                        (*left_center, left_marker.offset())
+                            .cmp(&(*right_center, right_marker.offset()))
+                    },
+                    |_| 0,
+                    OPERATION,
+                )?;
                 charge_marker_circle_work(ctx, candidates.len(), 64)?;
                 candidates.dedup_by_key(|(center, _, _, _)| *center);
                 let [(center, marker, parameter, radius)] = candidates.as_slice() else {
@@ -2853,11 +2832,11 @@ pub(crate) fn project_marker_dimensioned_circles(
                 let mut transformed = Vec::new();
                 charge_marker_circle_work(ctx, native_ref.len(), 4)?;
                 for record in &resolved {
+                    let Some(native_point) = record.3.point(QUANTUM) else {
+                        continue;
+                    };
                     let native = quantize(
-                        Point2::new(
-                            record.3.point(QUANTUM).u * NATIVE_TO_IR,
-                            record.3.point(QUANTUM).v * NATIVE_TO_IR,
-                        ),
+                        Point2::new(native_point.u * NATIVE_TO_IR, native_point.v * NATIVE_TO_IR),
                         QUANTUM,
                     );
                     let Some(center) =

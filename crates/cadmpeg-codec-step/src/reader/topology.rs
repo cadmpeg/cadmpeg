@@ -53,9 +53,7 @@ fn push_topology_body_group(
     group_operation: &'static str,
     member_operation: &'static str,
 ) -> Result<(), CodecError> {
-    if !groups.contains_key(&key) {
-        ctx.charge_collection_items(1, group_operation)?;
-    }
+    ctx.admit_btree_entry(groups, &key, group_operation)?;
     let copy = body.try_clone_for_decode(ctx, member_operation)?;
     ctx.push_vec(groups.entry(key).or_default(), copy, member_operation)
 }
@@ -71,12 +69,9 @@ fn insert_topology_body_group(
     if groups.get(&key).is_some_and(|bodies| bodies.contains(body)) {
         return Ok(());
     }
-    if !groups.contains_key(&key) {
-        ctx.charge_collection_items(1, group_operation)?;
-    }
-    ctx.charge_collection_items(1, member_operation)?;
+    ctx.admit_btree_entry(groups, &key, group_operation)?;
     let copy = body.try_clone_for_decode(ctx, member_operation)?;
-    groups.entry(key).or_default().insert(copy);
+    ctx.insert_btree_set(groups.entry(key).or_default(), copy, member_operation)?;
     Ok(())
 }
 
@@ -158,14 +153,18 @@ fn cache_representation_bodies<'a>(
     ctx: &'a DecodeContext<'_>,
 ) -> Result<(), cadmpeg_core::CodecError> {
     let mut admitted = admitted_body_clone(bodies, ctx, "step_representation_body_cache_values")?;
-    ctx.charge_collection_items(1, "step_representation_body_cache_entries")?;
     admitted
         .reservation
         .grow(u64_from_index(std::mem::size_of::<(
             u64,
             AdmittedRepresentationBodies<'_>,
         )>()))?;
-    cache.insert(representation, admitted);
+    ctx.insert_btree_map(
+        cache,
+        representation,
+        admitted,
+        "step_representation_body_cache_entries",
+    )?;
     Ok(())
 }
 
@@ -213,13 +212,12 @@ pub(super) fn representation_bodies<'a>(
         return admitted_body_clone(&[], ctx, "step_representation_body_empty");
     }
     let active_bytes = {
-        ctx.charge_collection_items(1, "step_representation_body_active")?;
         ctx.reserve_scoped(
             u64_from_index(std::mem::size_of::<u64>()),
             "step_representation_body_active",
         )?
     };
-    active.insert(representation);
+    ctx.insert_btree_set(active, representation, "step_representation_body_active")?;
     let mut body_ids = BTreeSet::new();
     let mut body_ids_bytes = ctx.reserve_scoped(0, "step_representation_body_set")?;
     if let Some(items) = exchange
@@ -336,7 +334,12 @@ fn shape_representation_relationships(
         )?;
     }
     for representations in related.values_mut() {
-        representations.sort_unstable();
+        ctx.sort_unstable_by(
+            representations,
+            Ord::cmp,
+            |_| 0,
+            "step_shape_relationship_sort",
+        )?;
         representations.dedup();
     }
     Ok(related)
@@ -828,7 +831,7 @@ pub(super) fn decode(
     }
     // Every admitted relation shares one class of unproved invariant, so the
     // document reports the class once with its count and named examples.
-    if let Some(note) = pcurve_admission_note(&admissions) {
+    if let Some(note) = pcurve_admission_note(&admissions, ctx)? {
         ctx.push_vec(&mut result.losses, note, "step_topology_losses")?;
     }
     for (id, record) in exchange.entities("GEOMETRICALLY_BOUNDED_SURFACE_SHAPE_REPRESENTATION") {
@@ -2536,11 +2539,10 @@ fn staged_topology(
     let mut surface_ids = BTreeSet::new();
     for surface in surfaces {
         if !surface_ids.contains(surface.id.as_str()) {
-            ctx.charge_collection_items(1, "step_staged_surface_ids")?;
             let id =
                 ctx.copy_retained(surface.id.as_str().as_bytes(), "step_staged_surface_ids")?;
             let id = String::from_utf8(id).map_err(CodecError::malformed)?;
-            surface_ids.insert(id);
+            ctx.insert_btree_set(&mut surface_ids, id, "step_staged_surface_ids")?;
             draft.insert_for_decode(surface, ctx)?;
         }
     }
@@ -2631,13 +2633,21 @@ fn root_shell_steps(
         }
         // `voids` is a STEP SET. CADIR keeps the outer shell at index zero
         // and canonicalizes the void suffix by resolved shell identity.
-        ids[1..].sort_unstable_by_key(|reference| {
-            shell_definitions
-                .get(reference)
-                .map_or((u64::MAX, true, *reference), |definition| {
-                    (definition.base, definition.forward, *reference)
-                })
-        });
+        ctx.sort_unstable_by(
+            &mut ids[1..],
+            |left, right| {
+                let key = |reference: &u64| {
+                    shell_definitions
+                        .get(reference)
+                        .map_or((u64::MAX, true, *reference), |definition| {
+                            (definition.base, definition.forward, *reference)
+                        })
+                };
+                key(left).cmp(&key(right))
+            },
+            |_| 0,
+            "step_root_shell_steps_sort",
+        )?;
         return Ok(Some(ids));
     }
     Ok(None)
@@ -2686,7 +2696,12 @@ fn root_key(
     if resolved == 0 {
         return Ok(None);
     }
-    shell_keys.sort_unstable();
+    ctx.sort_unstable_by(
+        &mut shell_keys,
+        Ord::cmp,
+        |_| 0,
+        "step_root_shell_keys_sort",
+    )?;
     Ok(Some(RootKey {
         root_kind,
         shell_keys,
@@ -4008,13 +4023,21 @@ fn connected_face_components(
     )?;
     let mut face_indices = BTreeMap::new();
     for (index, face) in face_ids.iter().enumerate() {
-        ctx.charge_collection_items(1, "STEP connected-face indices")?;
-        face_indices.insert(face.as_str(), index);
+        ctx.insert_btree_map(
+            &mut face_indices,
+            face.as_str(),
+            index,
+            "STEP connected-face indices",
+        )?;
     }
     let mut coedge_edges = BTreeMap::new();
     for coedge in coedges {
-        ctx.charge_collection_items(1, "STEP connected-face coedge edges")?;
-        coedge_edges.insert(coedge.id.as_str(), coedge.edge.as_str());
+        ctx.insert_btree_map(
+            &mut coedge_edges,
+            coedge.id.as_str(),
+            coedge.edge.as_str(),
+            "STEP connected-face coedge edges",
+        )?;
     }
     let mut faces_by_edge = BTreeMap::<&str, BTreeSet<usize>>::new();
     let mut faces_by_vertex = BTreeMap::<&str, BTreeSet<usize>>::new();
@@ -4040,9 +4063,8 @@ fn connected_face_components(
     for group in faces_by_edge.values().chain(faces_by_vertex.values()) {
         for &face in group {
             for &other in group {
-                if other != face && !neighbors[face].contains(&other) {
-                    ctx.charge_collection_items(1, "STEP connected-face links")?;
-                    neighbors[face].insert(other);
+                if other != face {
+                    ctx.insert_btree_set(&mut neighbors[face], other, "STEP connected-face links")?;
                 }
             }
         }
@@ -4066,7 +4088,12 @@ fn connected_face_components(
                 }
             }
         }
-        component.sort_unstable();
+        ctx.sort_unstable_by(
+            &mut component,
+            Ord::cmp,
+            |_| 0,
+            "STEP connected-face component sort",
+        )?;
         ctx.push_vec(&mut components, component, "STEP connected-face components")?;
     }
     Ok(components)
@@ -4078,14 +4105,9 @@ fn insert_connected_face_group<'a>(
     face: usize,
     ctx: &DecodeContext<'_>,
 ) -> Result<(), CodecError> {
-    if !groups.contains_key(key) {
-        ctx.charge_collection_items(1, "STEP connected-face groups")?;
-    }
+    ctx.admit_btree_entry(groups, &key, "STEP connected-face groups")?;
     let group = groups.entry(key).or_default();
-    if !group.contains(&face) {
-        ctx.charge_collection_items(1, "STEP connected-face group faces")?;
-        group.insert(face);
-    }
+    ctx.insert_btree_set(group, face, "STEP connected-face group faces")?;
     Ok(())
 }
 
@@ -4326,12 +4348,17 @@ fn implicit_face_plane(
     for point in loops.iter().flatten().copied() {
         ctx.push_vec(&mut points, point, "step_implicit_face_plane_points")?;
     }
-    points.sort_by(|left, right| {
-        left.x
-            .total_cmp(&right.x)
-            .then_with(|| left.y.total_cmp(&right.y))
-            .then_with(|| left.z.total_cmp(&right.z))
-    });
+    ctx.stable_sort_by(
+        &mut points,
+        |left, right| {
+            left.x
+                .total_cmp(&right.x)
+                .then_with(|| left.y.total_cmp(&right.y))
+                .then_with(|| left.z.total_cmp(&right.z))
+        },
+        |_| 0,
+        "step_implicit_face_plane_sort",
+    )?;
     let Some(point_count) = cadmpeg_core::convert::f64_from_index(points.len()) else {
         return Ok(None);
     };
@@ -4715,7 +4742,12 @@ fn pcurve_locus_witness(
         &mut break_fractions,
         "step_pcurve_locus_fractions",
     )?;
-    fractions.sort_by(f64::total_cmp);
+    ctx.stable_sort_by(
+        &mut fractions,
+        f64::total_cmp,
+        |_| 0,
+        "step_pcurve_locus_fractions_sort",
+    )?;
     fractions.dedup_by(|left, right| *left == *right);
     for fraction in fractions {
         let pcurve_parameter = endpoint
@@ -5192,7 +5224,12 @@ fn pcurve_selection_seeds(
             ctx.push_vec(&mut fractions, fraction, "step_pcurve_selection_fractions")?;
         }
         pcurve_parameter_break_fractions(geometry, [start, end], &mut fractions, ctx)?;
-        fractions.sort_by(f64::total_cmp);
+        ctx.stable_sort_by(
+            &mut fractions,
+            f64::total_cmp,
+            |_| 0,
+            "step_pcurve_selection_fractions_sort",
+        )?;
         fractions.dedup_by(|left, right| *left == *right);
         for seed in fractions
             .iter()

@@ -424,8 +424,8 @@ fn prototype_local_frame_rejects_nonfinite_origin() {
             value: crate::surface::SurfaceNamedValue::ScalarArray({
                 let mut array = crate::surface::arrays::DimensionedScalars::empty(4, 3)
                     .expect("valid scalar array");
-                array
-                    .fill_values(
+                assert_eq!(
+                    array.fill_values(
                         [
                             1.0,
                             0.0,
@@ -443,8 +443,9 @@ fn prototype_local_frame_rejects_nonfinite_origin() {
                         .into_iter()
                         .map(Some)
                         .collect(),
-                    )
-                    .expect("matching scalar extent");
+                    ),
+                    None
+                );
                 array
             }),
             body: Vec::new(),
@@ -466,8 +467,8 @@ fn prototype_local_frame_rejects_nonfinite_unused_support_values() {
             value: crate::surface::SurfaceNamedValue::ScalarArray({
                 let mut array = crate::surface::arrays::DimensionedScalars::empty(4, 3)
                     .expect("valid scalar array");
-                array
-                    .fill_values(
+                assert_eq!(
+                    array.fill_values(
                         [
                             1.0,
                             0.0,
@@ -485,8 +486,9 @@ fn prototype_local_frame_rejects_nonfinite_unused_support_values() {
                         .into_iter()
                         .map(Some)
                         .collect(),
-                    )
-                    .expect("matching scalar extent");
+                    ),
+                    None
+                );
                 array
             }),
             body: Vec::new(),

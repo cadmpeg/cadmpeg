@@ -114,10 +114,11 @@ pub(crate) fn uniquely_identified_rows_checked<'a, T>(
 ) -> Result<Vec<&'a T>, CodecError> {
     let mut counts = BTreeMap::<u32, usize>::new();
     for row in rows {
-        match counts.entry(id(row)) {
+        let key = id(row);
+        ctx.admit_btree_entry(&counts, &key, "creo unique-row count nodes")?;
+        match counts.entry(key) {
             std::collections::btree_map::Entry::Occupied(mut entry) => *entry.get_mut() += 1,
             std::collections::btree_map::Entry::Vacant(entry) => {
-                ctx.charge_collection_items(1, "creo unique-row count nodes")?;
                 entry.insert(1);
             }
         }

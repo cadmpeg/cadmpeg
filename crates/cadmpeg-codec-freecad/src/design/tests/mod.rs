@@ -632,13 +632,13 @@ fn part_fillet_edge_values_refuse_at_collection_limit() {
     data.extend(0_u32.to_le_bytes());
     data.extend(2_f64.to_le_bytes());
     data.extend(2_f64.to_le_bytes());
-    let entry = crate::native::EntryRecord {
-        id: "entry".into(),
-        name: "edges.bin".into(),
-        role: cadmpeg_core::container::ContainerRole::Auxiliary,
-        referenced_by: Vec::new(),
+    let entry = crate::test_support::entry_record(
+        crate::native::native_id("entry", "edges.bin"),
+        "edges.bin".into(),
+        cadmpeg_core::container::ContainerRole::Auxiliary,
+        Vec::new(),
         data,
-    };
+    );
     crate::test_support::assert_collection_refusal_at(&[], "fcstd fillet edge values", |ctx| {
         super::part_fillet_edge_values(ctx, &[&property], std::slice::from_ref(&entry))
     });
@@ -872,15 +872,13 @@ fn design_grouped_and_native_constraints_refuse_at_matching_limits() {
         "fcstd constraint locus copies",
         |ctx| super::parse_constraints(ctx, &object, &[&text], &sketch, &entities),
     );
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
-    policy.limits.max_materialized_bytes = 0;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root");
+    let error = crate::test_support::materialized_refusal_at(
+        "fcstd constraint text metadata parse",
+        |ctx| super::parse_constraints(ctx, &object, &[&text], &sketch, &entities),
+    );
     assert!(
-        matches!(super::parse_constraints(&ctx, &object, &[&text], &sketch, &entities),
-        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.operation == "fcstd constraint text metadata parse")
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "fcstd constraint text metadata parse")
     );
     let native = property("<Constrain Type=\"99\" First=\"0\" FirstPos=\"0\"/>");
     crate::test_support::assert_collection_refusal_at(
@@ -1236,21 +1234,16 @@ fn design_numeric_list_refuses_at_collection_limit() {
     };
     let mut data = 1_u32.to_le_bytes().to_vec();
     data.extend(2.5_f64.to_le_bytes());
-    let entry = crate::native::EntryRecord {
-        id: "entry".into(),
-        name: "numbers.bin".into(),
-        role: cadmpeg_core::container::ContainerRole::Auxiliary,
-        referenced_by: Vec::new(),
+    let entry = crate::test_support::entry_record(
+        crate::native::native_id("entry", "numbers.bin"),
+        "numbers.bin".into(),
+        cadmpeg_core::container::ContainerRole::Auxiliary,
+        Vec::new(),
         data,
-    };
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
-    policy.limits.max_collection_items = 0;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root");
-    assert!(matches!(super::numeric_list(&ctx, &property, &[entry]),
-        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.operation == "fcstd numeric-list values"));
+    );
+    crate::test_support::assert_collection_refusal_at(&[], "fcstd numeric-list values", |ctx| {
+        super::numeric_list(ctx, &property, std::slice::from_ref(&entry))
+    });
 }
 
 #[test]
@@ -1279,23 +1272,16 @@ fn design_vector_list_refuses_at_collection_limit() {
     for component in [1.0_f64, 2.0, 3.0] {
         data.extend(component.to_le_bytes());
     }
-    let entry = crate::native::EntryRecord {
-        id: "entry".into(),
-        name: "vectors.bin".into(),
-        role: cadmpeg_core::container::ContainerRole::Auxiliary,
-        referenced_by: Vec::new(),
+    let entry = crate::test_support::entry_record(
+        crate::native::native_id("entry", "vectors.bin"),
+        "vectors.bin".into(),
+        cadmpeg_core::container::ContainerRole::Auxiliary,
+        Vec::new(),
         data,
-    };
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
-    policy.limits.max_collection_items = 0;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root");
-    assert!(
-        matches!(super::vector_list_property(&ctx, &[&property], "Nodes", &[entry]),
-        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.operation == "fcstd vector-list points")
     );
+    crate::test_support::assert_collection_refusal_at(&[], "fcstd vector-list points", |ctx| {
+        super::vector_list_property(ctx, &[&property], "Nodes", std::slice::from_ref(&entry))
+    });
 }
 
 #[test]

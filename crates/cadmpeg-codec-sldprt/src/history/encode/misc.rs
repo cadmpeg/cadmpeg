@@ -21,17 +21,24 @@ use cadmpeg_ir::{
 };
 use std::collections::BTreeMap;
 
-#[allow(
-    clippy::too_many_arguments,
-    clippy::trivially_copy_pass_by_ref,
-    clippy::ref_option,
-    clippy::ptr_arg,
-    reason = "Encoder arguments are borrowed from one FeatureDefinition match."
-)]
+/// The decoded fields of one `Helix` operation, borrowed from the feature definition.
+#[derive(Clone, Copy)]
+pub(super) struct HelixDefinition<'a> {
+    pub(super) axis_origin: &'a Point3,
+    pub(super) axis_direction: &'a Vector3,
+    pub(super) radius: &'a cadmpeg_ir::scalar::PositiveLength,
+    pub(super) shape: &'a cadmpeg_ir::features::HelixShape,
+    pub(super) revolutions: &'a cadmpeg_ir::scalar::PositiveReal,
+    pub(super) start_angle: &'a Angle,
+    pub(super) clockwise: bool,
+    pub(super) segment_turns: Option<&'a cadmpeg_ir::scalar::PositiveReal>,
+    pub(super) construction_style: Option<&'a HelixConstructionStyle>,
+}
+
 impl NeutralFeatureEncoder<'_, '_, '_> {
     pub(super) fn encode_tree_node(
         &self,
-        role: &FeatureTreeNodeRole,
+        role: FeatureTreeNodeRole,
         children: &[FeatureId],
         active_child: Option<&FeatureId>,
     ) -> Result<NeutralFeatureEncoding, CodecError> {
@@ -45,7 +52,8 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     feature.id
                 )));
             }
-            if existing.is_some_and(|record| retained_tree_node_roles.get(&record.id) != Some(role))
+            if existing
+                .is_some_and(|record| retained_tree_node_roles.get(&record.id) != Some(&role))
             {
                 return Err(CodecError::NotImplemented(format!(
                     "SLDPRT feature {} changes feature-tree node role",
@@ -54,7 +62,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
             }
             NeutralFeatureEncoding {
                 kind: existing.map_or_else(
-                    || feature_tree_node_kind(*role).into(),
+                    || feature_tree_node_kind(role).into(),
                     |record| record.kind.clone(),
                 ),
                 parameters: existing
@@ -68,8 +76,8 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
     pub(super) fn encode_cosmetic_thread(
         &self,
         face: &FaceSelection,
-        diameter: &Option<cadmpeg_ir::scalar::PositiveLength>,
-        extent: &Option<CosmeticThreadExtent>,
+        diameter: Option<&cadmpeg_ir::scalar::PositiveLength>,
+        extent: Option<&CosmeticThreadExtent>,
     ) -> Result<NeutralFeatureEncoding, CodecError> {
         let feature = self.feature;
         let existing = self.existing;
@@ -230,7 +238,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
         source: &PathRef,
         target_faces: &FaceSelection,
         direction: &CurveProjectionDirection,
-        bidirectional: &Option<bool>,
+        bidirectional: Option<bool>,
     ) -> Result<NeutralFeatureEncoding, CodecError> {
         let feature = self.feature;
         let existing = self.existing;
@@ -294,7 +302,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
     pub(super) fn encode_composite_curve(
         &self,
         segments: &[PathRef],
-        closed: &bool,
+        closed: bool,
     ) -> Result<NeutralFeatureEncoding, CodecError> {
         let feature = self.feature;
         let existing = self.existing;
@@ -341,16 +349,19 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
 
     pub(super) fn encode_helix(
         &self,
-        axis_origin: &Point3,
-        axis_direction: &Vector3,
-        radius: &cadmpeg_ir::scalar::PositiveLength,
-        shape: &cadmpeg_ir::features::HelixShape,
-        revolutions: &cadmpeg_ir::scalar::PositiveReal,
-        start_angle: &Angle,
-        clockwise: &bool,
-        segment_turns: &Option<cadmpeg_ir::scalar::PositiveReal>,
-        construction_style: &Option<HelixConstructionStyle>,
+        definition: HelixDefinition<'_>,
     ) -> Result<NeutralFeatureEncoding, CodecError> {
+        let HelixDefinition {
+            axis_origin,
+            axis_direction,
+            radius,
+            shape,
+            revolutions,
+            start_angle,
+            clockwise,
+            segment_turns,
+            construction_style,
+        } = definition;
         let feature = self.feature;
         let existing = self.existing;
         Ok({
@@ -425,11 +436,11 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
     pub(super) fn encode_helix_native_axis(
         &self,
         axis_native_ref: &str,
-        axial_rise: &Length,
-        pitch: &Length,
-        revolutions: &cadmpeg_ir::scalar::PositiveReal,
-        start_angle: &Angle,
-        clockwise: &bool,
+        axial_rise: Length,
+        pitch: Length,
+        revolutions: cadmpeg_ir::scalar::PositiveReal,
+        start_angle: Angle,
+        clockwise: bool,
     ) -> Result<NeutralFeatureEncoding, CodecError> {
         let feature = self.feature;
         let existing = self.existing;
@@ -455,11 +466,11 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
             let mut parameters = record.parameters.clone();
             parameters.insert(
                 cadmpeg_core::nonblank_literal!("D3"),
-                format_length_like(*axial_rise, record.parameters.get("D3").map(String::as_str)),
+                format_length_like(axial_rise, record.parameters.get("D3").map(String::as_str)),
             );
             parameters.insert(
                 cadmpeg_core::nonblank_literal!("D4"),
-                format_length_like(*pitch, record.parameters.get("D4").map(String::as_str)),
+                format_length_like(pitch, record.parameters.get("D4").map(String::as_str)),
             );
             parameters.insert(
                 cadmpeg_core::nonblank_literal!("D5"),
@@ -467,13 +478,10 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
             );
             parameters.insert(
                 cadmpeg_core::nonblank_literal!("D7"),
-                format_angle_like(
-                    *start_angle,
-                    record.parameters.get("D7").map(String::as_str),
-                )?,
+                format_angle_like(start_angle, record.parameters.get("D7").map(String::as_str))?,
             );
             let mut properties = feature.source_properties.clone();
-            if properties.contains_key("Clockwise") || *clockwise {
+            if properties.contains_key("Clockwise") || clockwise {
                 properties.insert(
                     cadmpeg_core::nonblank_literal!("Clockwise"),
                     clockwise.to_string(),

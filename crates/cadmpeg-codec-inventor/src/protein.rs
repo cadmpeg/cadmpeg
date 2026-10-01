@@ -188,7 +188,8 @@ fn decode_instances_from(
         .map(|entry| {
             let instance = archive.open(ctx, &entry.name)?;
             let frames = cadmpeg_protein::framing::record_frames_admitted(ctx, instance.window())?;
-            let outcome = cadmpeg_protein::decode_frames_admitted(ctx, &mut catalog, &frames)?;
+            let outcome =
+                cadmpeg_protein::decode_frames_admitted(ctx, &mut catalog, frames.frames())?;
             ctx.charge_retained(
                 cadmpeg_core::decode::u64_from_index(entry.name.len()),
                 "Inventor Protein instance entry name",
@@ -419,7 +420,7 @@ mod tests {
                 1
             );
             let mut result_vec_refused = false;
-            for cap in 0..64 {
+            for cap in 0..128 {
                 let arena = DecodeArena::new();
                 let mut policy = DecodePolicy::service();
                 policy.limits.max_collection_items = cap;
@@ -545,10 +546,46 @@ mod tests {
         bytes.extend_from_slice(&zip);
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        // Two ZIP inventories, one schema parse and closure, and both records' strings.
+        policy.limits.max_work_units = cadmpeg_core::decode::u64_from_index(schema.len()) + 10;
+        let (limited, root) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+            .expect("package fits input limit");
+        assert!(matches!(
+            parse_stream(&limited, root),
+            Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::WorkUnits
+                    && limit.operation == "ZIP end record search"
+        ));
+        // Each inventory scans the ZIP, one end candidate, and three headers.
+        // The stored payloads need CRC work; each instance scans its pages and copies its record.
+        let inventory_work = cadmpeg_core::decode::u64_from_index(zip.len()) + 4;
+        let instance_work = cadmpeg_core::decode::u64_from_index(
+            instance.len() + instance.len() - STREAM_HEADER_LEN
+                + RECORD_MARKER.len()
+                + record.len(),
+        );
+        // The schema's XML tree admission charges what one parse of its text needs.
+        let schema_text = std::str::from_utf8(schema).expect("ASCII schema");
+        let schema_tree_work = (0..u64::MAX)
+            .find(|&limit| {
+                let arena = DecodeArena::new();
+                let mut tree_policy = DecodePolicy::service();
+                tree_policy.limits.max_work_units = limit;
+                let (ctx, _) =
+                    DecodeContext::from_root_bytes(&[], &arena, &tree_policy).expect("empty root");
+                let parsed = ctx
+                    .parse_xml(schema_text, "Protein schema XML tree")
+                    .is_ok();
+                parsed
+            })
+            .expect("schema parses");
+        // Each instance copies its decoded strings into retained storage.
         let decoded_string_bytes = "SimpleSchema".len() + "asset-guid".len() + "Simple".len() + 160;
-        policy.limits.max_work_units =
-            cadmpeg_core::decode::u64_from_index(schema.len() + 2 * decoded_string_bytes) + 10;
+        // One schema CRC, one UTF-8 validation, one XML tree, and one two-step property closure.
+        policy.limits.max_work_units = 2 * inventory_work
+            + 2 * cadmpeg_core::decode::u64_from_index(schema.len())
+            + schema_tree_work
+            + 2 * (instance_work + cadmpeg_core::decode::u64_from_index(decoded_string_bytes))
+            + 2;
         let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)
             .expect("package fits the service input limit");
         let ParsedProtein::Package {

@@ -30,10 +30,10 @@ fn direct_extrusion_operation_payload() -> Vec<u8> {
     payload[..4].copy_from_slice(&1u32.to_le_bytes());
     payload[class_offset..class_offset + 4].copy_from_slice(&[0xff, 0xff, 0x01, 0x00]);
     payload[class_offset + 4..class_offset + 6]
-        .copy_from_slice(&(class.len() as u16).to_le_bytes());
+        .copy_from_slice(&u16::try_from(class.len()).unwrap().to_le_bytes());
     payload[class_offset + 6..name_offset].copy_from_slice(class);
     payload[name_offset..name_offset + 5].copy_from_slice(&[0x04, 0x80, 0xff, 0xfe, 0xff]);
-    payload[name_offset + 5] = name.encode_utf16().count() as u8;
+    payload[name_offset + 5] = u8::try_from(name.encode_utf16().count()).unwrap();
     for (index, unit) in name.encode_utf16().enumerate() {
         let start = name_offset + 6 + index * 2;
         payload[start..start + 2].copy_from_slice(&unit.to_le_bytes());

@@ -221,8 +221,12 @@ pub(crate) fn object_pairs(
             }
         }
     }
-    ctx.charge_work(u64_from_index(pairs.len()), "sort NX object pairs")?;
-    pairs.sort_by_key(Binary64Pair::offset);
+    ctx.stable_sort_by(
+        &mut pairs,
+        |first, second| first.offset().cmp(&second.offset()),
+        |_| 0,
+        "sort NX object pairs",
+    )?;
     Ok(pairs)
 }
 
@@ -261,8 +265,12 @@ pub(crate) fn sketch_pairs(
             ctx.push_retained_vec(&mut pairs, pair, "NX binary64 pairs")?;
         }
     }
-    ctx.charge_work(u64_from_index(pairs.len()), "sort NX sketch pairs")?;
-    pairs.sort_by_key(Binary64Pair::offset);
+    ctx.stable_sort_by(
+        &mut pairs,
+        |first, second| first.offset().cmp(&second.offset()),
+        |_| 0,
+        "sort NX sketch pairs",
+    )?;
     Ok(pairs)
 }
 

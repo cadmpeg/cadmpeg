@@ -6,7 +6,6 @@ use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
-use crate::container;
 use crate::test_support::appearance::sldprt_with_body_and_material;
 use crate::test_support::container::add_solidworks_version;
 use crate::test_support::container::make_block;
@@ -323,13 +322,13 @@ fn metadata_history_xml_refuses_scoped_limit() {
     let payload = br#"<Keywords Name="Part"><Configuration Name="Default"/></Keywords>"#;
     let mut source = outer_header();
     source.extend(make_block(0x43, "Contents/Keywords", payload));
-    let scan = container::scan_bytes(&source);
+    let scan = crate::test_support::container::scan(&source);
     let classification =
         crate::dialect::classify_layers(&cadmpeg_test_support::service_decode_context(), &scan)
             .unwrap();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_materialized_bytes = (payload.len() - 1) as u64;
+    policy.limits.max_materialized_bytes = cadmpeg_core::decode::u64_from_index(payload.len() - 1);
     let (ctx, _) = DecodeContext::from_root_bytes(&source, &arena, &policy).unwrap();
     let mut admitted_entities = 0;
     let error =
@@ -515,13 +514,13 @@ fn geometry_history_xml_refuses_scoped_limit() {
     let payload = br#"<Keywords Name="Part"><Configuration Name="Default"/></Keywords>"#;
     let mut source = outer_header();
     source.extend(make_block(0x43, "Contents/Keywords", payload));
-    let mut scan = container::scan_bytes(&source);
+    let mut scan = crate::test_support::container::scan(&source);
     let classification =
         crate::dialect::classify_layers(&cadmpeg_test_support::service_decode_context(), &scan)
             .unwrap();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_materialized_bytes = (payload.len() - 1) as u64;
+    policy.limits.max_materialized_bytes = cadmpeg_core::decode::u64_from_index(payload.len() - 1);
     let (ctx, _) = DecodeContext::from_root_bytes(&source, &arena, &policy).unwrap();
     let decoded = super::super::DecodedBrep {
         metadata_header: None,
@@ -573,7 +572,8 @@ fn direct_parasolid_stream_copy_refuses_retained_limit() {
     let stream = parasolid_with_body("partition body", "SCH_SW_33103_11000", &body);
     let source = sldprt_with_body(&body);
     let mut options = DecodeOptions::default();
-    options.policy.limits.max_retained_bytes = stream.len() as u64 - 1;
+    options.policy.limits.max_retained_bytes =
+        cadmpeg_core::decode::u64_from_index(stream.len()) - 1;
     let error = SldprtCodec
         .decode(&mut Cursor::new(source.clone()), &options)
         .expect_err("direct Parasolid copy must be admitted");
@@ -638,7 +638,8 @@ fn display_section_copy_refuses_retained_limit() {
     let display = display_list_payload();
     let source = sldprt_with_body_and_display_list(&body);
     let mut options = DecodeOptions::default();
-    options.policy.limits.max_retained_bytes = (stream.len() + display.len()) as u64 - 1;
+    options.policy.limits.max_retained_bytes =
+        cadmpeg_core::decode::u64_from_index(stream.len() + display.len()) - 1;
     let error = retained_refusal_at(&source, &mut options, "retain SLDPRT display section");
     assert!(
         matches!(error,
@@ -687,7 +688,8 @@ fn whole_source_copy_refuses_retained_limit_before_unknown_record() {
         container_only: true,
         ..DecodeOptions::default()
     };
-    options.policy.limits.max_retained_bytes = source.len() as u64 - 1;
+    options.policy.limits.max_retained_bytes =
+        cadmpeg_core::decode::u64_from_index(source.len()) - 1;
     let error = retained_refusal_at(&source, &mut options, "retain SLDPRT source image");
     assert!(
         matches!(
@@ -749,7 +751,7 @@ fn decode_keeps_container_stream_and_model_entity_admission_additive() {
     use cadmpeg_core::decode::ResourceDimension;
 
     let fixture = sldprt_with_body_and_history(&triangle_body());
-    let scan = container::scan_bytes(&fixture);
+    let scan = crate::test_support::container::scan(&fixture);
     let container_entities = scan.blocks.len()
         + scan.compound_streams.len()
         + scan.directory.len()
@@ -772,7 +774,9 @@ fn decode_keeps_container_stream_and_model_entity_admission_additive() {
     assert!(stream_entities > 0);
     assert!(model_entities > 0);
 
-    let previous_undercount = (container_entities + stream_entities).max(model_entities) as u64;
+    let previous_undercount = cadmpeg_core::decode::u64_from_index(
+        (container_entities + stream_entities).max(model_entities),
+    );
     let mut options = DecodeOptions::default();
     options.policy.limits.max_entities = previous_undercount;
     let error = SldprtCodec
@@ -789,7 +793,7 @@ fn decode_keeps_container_stream_and_model_entity_admission_additive() {
     );
 
     options.policy.limits.max_entities =
-        (container_entities + stream_entities + model_entities) as u64;
+        cadmpeg_core::decode::u64_from_index(container_entities + stream_entities + model_entities);
     SldprtCodec
         .decode(&mut Cursor::new(fixture), &options)
         .expect("the exact additive entity limit must admit the fixture");

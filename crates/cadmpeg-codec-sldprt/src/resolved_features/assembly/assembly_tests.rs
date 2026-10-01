@@ -16,7 +16,7 @@ fn legacy_feature_input_section_is_an_exact_numeric_config_stream() {
 fn legacy_sketch_object_stream_requires_a_sketch_and_entity_declaration() {
     let declaration = |name: &str| {
         let mut bytes = CLASS_MARKER.to_vec();
-        bytes.extend_from_slice(&(name.len() as u16).to_le_bytes());
+        bytes.extend_from_slice(&u16::try_from(name.len()).unwrap().to_le_bytes());
         bytes.extend_from_slice(name.as_bytes());
         bytes
     };

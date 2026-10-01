@@ -270,16 +270,17 @@ pub(in super::super) fn transfer_saved_spline_curves(
     let mut transferred = 0;
     for transform in &scan.features.section_transforms {
         if unique_feature_section_transform(
+            ctx,
             &scan.features.section_transforms,
             transform.definition_id,
             transform.offset,
-        )
+        )?
         .is_none()
         {
             continue;
         }
         let Some(definition) =
-            unique_feature_definition_for_transform(&scan.features.definitions, transform)
+            unique_feature_definition_for_transform(ctx, &scan.features.definitions, transform)?
         else {
             continue;
         };
@@ -586,16 +587,17 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
     let mut transferred = 0;
     for transform in &scan.features.section_transforms {
         if unique_feature_section_transform(
+            ctx,
             &scan.features.section_transforms,
             transform.definition_id,
             transform.offset,
-        )
+        )?
         .is_none()
         {
             continue;
         }
         let Some(definition) =
-            unique_feature_definition_for_transform(&scan.features.definitions, transform)
+            unique_feature_definition_for_transform(ctx, &scan.features.definitions, transform)?
         else {
             continue;
         };
@@ -977,10 +979,7 @@ fn extrusion_solved_segment_ids(
         .flat_map(|trim_entities| &trim_entities.rows)
         .filter_map(|row| trim_segment_id(definition, row))
     {
-        if !solved.contains(&id) {
-            ctx.charge_collection_items(1, "creo extrusion solved segment ID nodes")?;
-        }
-        solved.insert(id);
+        ctx.insert_btree_set(&mut solved, id, "creo extrusion solved segment ID nodes")?;
     }
     Ok(solved)
 }

@@ -130,8 +130,8 @@ pub(in super::super) fn transfer_carrier_intersection_curves(
         let points = (|| {
             let vertices = edge_vertices.get(&row.id)?;
             let points = [
-                *solved_vertices.get(&vertices[0])?,
-                *solved_vertices.get(&vertices[1])?,
+                *solved_vertices.get(&vertices[0].get())?,
+                *solved_vertices.get(&vertices[1].get())?,
             ];
             Some(points)
         })();
@@ -205,8 +205,7 @@ pub(in super::super) fn transfer_carrier_intersection_curves(
                 }),
             },
         )?;
-        ctx.charge_collection_items(1, "creo transferred carrier curve nodes")?;
-        transferred.insert(id);
+        ctx.insert_btree_set(&mut transferred, id, "creo transferred carrier curve nodes")?;
     }
     Ok(transferred)
 }
@@ -459,14 +458,20 @@ pub(in super::super) fn transfer_nurbs_boundary_curves(
                 }),
             },
         )?;
-        ctx.charge_collection_items(1, "creo NURBS boundary curve ID nodes")?;
-        result.ids.insert(crate::identity::copy_checked_id(
-            ctx,
-            id.as_str(),
-            "creo NURBS boundary result curve ID copy",
-        )?);
-        ctx.charge_collection_items(1, "creo NURBS boundary endpoint nodes")?;
-        result.endpoint_witnesses.insert(id);
+        ctx.insert_btree_set(
+            &mut result.ids,
+            crate::identity::copy_checked_id(
+                ctx,
+                id.as_str(),
+                "creo NURBS boundary result curve ID copy",
+            )?,
+            "creo NURBS boundary curve ID nodes",
+        )?;
+        ctx.insert_btree_set(
+            &mut result.endpoint_witnesses,
+            id,
+            "creo NURBS boundary endpoint nodes",
+        )?;
         match kind {
             NurbsBoundaryKind::ExtrusionPlane => result.extrusion_plane_count += 1,
             NurbsBoundaryKind::ExtrusionPlaneSectionGenerator => {
@@ -516,7 +521,7 @@ mod tests {
         .expect("carrier intersection admission")
     }
     use crate::decode::analytic::equations::{CarrierEquation, PlaneEquation};
-    use crate::topology::{HalfEdge, HalfEdgeId, HalfEdgeVertexIncidence, TopologicalVertex};
+    use crate::topology::{HalfEdge, HalfEdgeId, HalfEdgeVertexIncidence};
     use crate::{container, curve, surface};
 
     #[test]
@@ -735,20 +740,30 @@ mod tests {
             },
         ];
         scan.topology.vertices = vec![
-            TopologicalVertex {
-                id: 1,
-                half_edges: vec![HalfEdgeId {
-                    curve_id: 10,
-                    side: crate::topology::Side::Zero,
-                }],
-            },
-            TopologicalVertex {
-                id: 2,
-                half_edges: vec![HalfEdgeId {
-                    curve_id: 10,
-                    side: crate::topology::Side::One,
-                }],
-            },
+            crate::decode::with_test_decode_ctx(|ctx| {
+                crate::topology::TopologicalVertex::new(
+                    ctx,
+                    1,
+                    vec![HalfEdgeId {
+                        curve_id: 10,
+                        side: crate::topology::Side::Zero,
+                    }],
+                )
+            })
+            .expect("vertex admission")
+            .expect("valid vertex fixture"),
+            crate::decode::with_test_decode_ctx(|ctx| {
+                crate::topology::TopologicalVertex::new(
+                    ctx,
+                    2,
+                    vec![HalfEdgeId {
+                        curve_id: 10,
+                        side: crate::topology::Side::One,
+                    }],
+                )
+            })
+            .expect("vertex admission")
+            .expect("valid vertex fixture"),
         ];
         scan.topology.half_edge_vertex_incidence = vec![
             HalfEdgeVertexIncidence {
@@ -756,16 +771,16 @@ mod tests {
                     curve_id: 10,
                     side: crate::topology::Side::Zero,
                 },
-                start_vertex_id: 1,
-                end_vertex_id: Some(2),
+                start_vertex_id: std::num::NonZeroU32::new(1).expect("one-based vertex fixture"),
+                end_vertex_id: std::num::NonZeroU32::new(2),
             },
             HalfEdgeVertexIncidence {
                 half_edge: HalfEdgeId {
                     curve_id: 10,
                     side: crate::topology::Side::One,
                 },
-                start_vertex_id: 2,
-                end_vertex_id: Some(1),
+                start_vertex_id: std::num::NonZeroU32::new(2).expect("one-based vertex fixture"),
+                end_vertex_id: std::num::NonZeroU32::new(1),
             },
         ];
 

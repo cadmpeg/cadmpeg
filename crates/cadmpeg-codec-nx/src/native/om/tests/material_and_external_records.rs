@@ -15,7 +15,6 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::Codec;
 use cadmpeg_ir::codec::DecodeOptions;
 use std::io::Cursor;
-
 fn native_fastload_result(
     adjust: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
 ) -> Result<
@@ -910,8 +909,9 @@ fn arrangement_configuration_route_preserves_order() {
 
 #[test]
 fn arrangement_configuration_route_refuses_collection_limit() {
-    let error = arrangement_configuration_result(|policy| policy.limits.max_collection_items = 0)
-        .expect_err("arrangement names exceed collection budget");
+    let error = crate::test_support::collection_refusal_at("nx arrangement names", |ceiling| {
+        arrangement_configuration_result(|policy| policy.limits.max_collection_items = ceiling)
+    });
     assert!(
         matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::CollectionItems
@@ -939,7 +939,7 @@ fn arrangement_configuration_route_refuses_scoped_limit() {
     assert!(
         matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::MaterializedBytes
-            && limit.operation == "nx arrangement names"),
+            && limit.operation == "decode XML tree"),
         "{error:?}"
     );
 }
@@ -984,8 +984,10 @@ fn part_attribute_route_preserves_typed_value() {
 
 #[test]
 fn part_attribute_route_refuses_collection_limit() {
-    let error = part_attribute_result(|policy| policy.limits.max_collection_items = 0)
-        .expect_err("part attribute exceeds collection budget");
+    let error =
+        crate::test_support::collection_refusal_at("nx native part attributes", |ceiling| {
+            part_attribute_result(|policy| policy.limits.max_collection_items = ceiling)
+        });
     assert!(
         matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::CollectionItems

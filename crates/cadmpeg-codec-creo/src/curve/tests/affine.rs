@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
+const EPS_NONLINEAR_VALUE: f64 = 1.0e-9;
 
 use crate::curve::curve_expression_solve_program;
 use crate::curve::expression_records;
@@ -94,9 +95,12 @@ fn dimension_inference_limit_reaches(
     };
     let values = match case {
         DimensionLimitCase::Basic => BTreeMap::new(),
-        DimensionLimitCase::KnownNumber => {
-            BTreeMap::from([("driver".to_owned(), CurveExpressionValue::Number(2.0))])
-        }
+        DimensionLimitCase::KnownNumber => BTreeMap::from([(
+            "driver".to_owned(),
+            CurveExpressionValue::Number(
+                cadmpeg_ir::scalar::FiniteReal::new(2.0).expect("finite relation fixture"),
+            ),
+        )]),
         DimensionLimitCase::KnownText => BTreeMap::from([(
             "driver".to_owned(),
             CurveExpressionValue::String("abc".to_owned()),
@@ -352,7 +356,9 @@ fn decodes_counted_curve_expression_source_lines() {
     assert!(records[0].assignments[0].dependencies.is_empty());
     assert_eq!(
         records[0].assignments[0].value,
-        Some(CurveExpressionValue::Number(5.0))
+        Some(CurveExpressionValue::Number(
+            cadmpeg_ir::scalar::FiniteReal::new(5.0).expect("finite relation fixture")
+        ))
     );
     assert_eq!(
         records[0].assignments[1].parameter_target(),
@@ -365,7 +371,9 @@ fn decodes_counted_curve_expression_source_lines() {
     assert_eq!(records[0].assignments[3].dependencies, ["r"]);
     assert_eq!(
         records[0].assignments[3].value,
-        Some(CurveExpressionValue::Number(11.0))
+        Some(CurveExpressionValue::Number(
+            cadmpeg_ir::scalar::FiniteReal::new(11.0).expect("finite relation fixture")
+        ))
     );
 }
 
@@ -389,7 +397,9 @@ fn standalone_equality_does_not_create_an_assignment() {
     assert_eq!(assignments[1].parameter_target(), Some(("flag", None)));
     assert_eq!(
         assignments[1].value,
-        Some(CurveExpressionValue::Number(1.0))
+        Some(CurveExpressionValue::Number(
+            cadmpeg_ir::scalar::FiniteReal::new(1.0).expect("finite relation fixture")
+        ))
     );
 }
 
@@ -458,12 +468,16 @@ fn retains_simultaneous_equations_without_sequential_assignments() {
     assert_eq!(assignments[3].parameter_target(), Some(("offset", None)));
     assert_eq!(
         assignments[3].value,
-        Some(CurveExpressionValue::Number(11.0))
+        Some(CurveExpressionValue::Number(
+            cadmpeg_ir::scalar::FiniteReal::new(11.0).expect("finite relation fixture")
+        ))
     );
     assert_eq!(assignments[4].parameter_target(), Some(("present", None)));
     assert_eq!(
         assignments[4].value,
-        Some(CurveExpressionValue::Number(1.0))
+        Some(CurveExpressionValue::Number(
+            cadmpeg_ir::scalar::FiniteReal::new(1.0).expect("finite relation fixture")
+        ))
     );
     assert_eq!(
         assignments[5].parameter_target(),
@@ -473,7 +487,9 @@ fn retains_simultaneous_equations_without_sequential_assignments() {
     assert_eq!(assignments[6].parameter_target(), Some(("result", None)));
     assert_eq!(
         assignments[6].value,
-        Some(CurveExpressionValue::Number(101.0))
+        Some(CurveExpressionValue::Number(
+            cadmpeg_ir::scalar::FiniteReal::new(101.0).expect("finite relation fixture")
+        ))
     );
 }
 
@@ -503,8 +519,12 @@ fn solves_complete_affine_simultaneous_equations() {
     assert_eq!(
         evaluation.solve_solutions[&3],
         [
-            CurveExpressionValue::Number(6.0),
-            CurveExpressionValue::Number(4.0),
+            CurveExpressionValue::Number(
+                cadmpeg_ir::scalar::FiniteReal::new(6.0).expect("finite relation fixture")
+            ),
+            CurveExpressionValue::Number(
+                cadmpeg_ir::scalar::FiniteReal::new(4.0).expect("finite relation fixture")
+            ),
         ]
     );
     assert_eq!(evaluation.assignments.len(), 4);
@@ -515,10 +535,18 @@ fn solves_complete_affine_simultaneous_equations() {
             .map(|assignment| assignment.value.clone())
             .collect::<Vec<_>>(),
         [
-            Some(CurveExpressionValue::Number(6.0)),
-            Some(CurveExpressionValue::Number(4.0)),
-            Some(CurveExpressionValue::Number(10.0)),
-            Some(CurveExpressionValue::Number(24.0)),
+            Some(CurveExpressionValue::Number(
+                cadmpeg_ir::scalar::FiniteReal::new(6.0).expect("finite relation fixture")
+            )),
+            Some(CurveExpressionValue::Number(
+                cadmpeg_ir::scalar::FiniteReal::new(4.0).expect("finite relation fixture")
+            )),
+            Some(CurveExpressionValue::Number(
+                cadmpeg_ir::scalar::FiniteReal::new(10.0).expect("finite relation fixture")
+            )),
+            Some(CurveExpressionValue::Number(
+                cadmpeg_ir::scalar::FiniteReal::new(24.0).expect("finite relation fixture")
+            )),
         ]
     );
 }
@@ -540,13 +568,19 @@ fn solves_affine_systems_without_previous_numeric_values() {
     assert_eq!(
         evaluation.solve_solutions[&0],
         [
-            CurveExpressionValue::Length(6.0),
-            CurveExpressionValue::Length(4.0),
+            CurveExpressionValue::Length(
+                cadmpeg_ir::scalar::FiniteReal::new(6.0).expect("finite relation fixture")
+            ),
+            CurveExpressionValue::Length(
+                cadmpeg_ir::scalar::FiniteReal::new(4.0).expect("finite relation fixture")
+            ),
         ]
     );
     assert_eq!(
         evaluation.assignments[0].value,
-        Some(CurveExpressionValue::Length(10.0))
+        Some(CurveExpressionValue::Length(
+            cadmpeg_ir::scalar::FiniteReal::new(10.0).expect("finite relation fixture")
+        ))
     );
 }
 
@@ -574,8 +608,10 @@ fn infers_missing_solve_dimensions_through_known_quantities() {
     assert_eq!(
         evaluation.solve_solutions[&2],
         [
-            CurveExpressionValue::Length(6.0),
-            quantity_value(2.0, RelationDimension::TIME),
+            CurveExpressionValue::Length(
+                cadmpeg_ir::scalar::FiniteReal::new(6.0).expect("finite relation fixture")
+            ),
+            quantity_value(2.0, RelationDimension::TIME).expect("finite relation fixture"),
         ]
     );
 }
@@ -674,8 +710,12 @@ fn solves_affine_systems_with_fixed_boolean_annihilators() {
     assert_eq!(
         evaluation.solve_solutions[&2],
         [
-            CurveExpressionValue::Number(3.0),
-            CurveExpressionValue::Number(4.0),
+            CurveExpressionValue::Number(
+                cadmpeg_ir::scalar::FiniteReal::new(3.0).expect("finite relation fixture")
+            ),
+            CurveExpressionValue::Number(
+                cadmpeg_ir::scalar::FiniteReal::new(4.0).expect("finite relation fixture")
+            ),
         ]
     );
 
@@ -694,8 +734,12 @@ fn solves_affine_systems_with_fixed_boolean_annihilators() {
     assert_eq!(
         evaluation.solve_solutions[&2],
         [
-            CurveExpressionValue::Number(3.0),
-            CurveExpressionValue::Number(4.0),
+            CurveExpressionValue::Number(
+                cadmpeg_ir::scalar::FiniteReal::new(3.0).expect("finite relation fixture")
+            ),
+            CurveExpressionValue::Number(
+                cadmpeg_ir::scalar::FiniteReal::new(4.0).expect("finite relation fixture")
+            ),
         ]
     );
 }
@@ -724,8 +768,12 @@ fn solves_affine_systems_with_fixed_function_powers() {
     assert_eq!(
         evaluation.solve_solutions[&2],
         [
-            CurveExpressionValue::Length(3.0),
-            CurveExpressionValue::Number(4.0),
+            CurveExpressionValue::Length(
+                cadmpeg_ir::scalar::FiniteReal::new(3.0).expect("finite relation fixture")
+            ),
+            CurveExpressionValue::Number(
+                cadmpeg_ir::scalar::FiniteReal::new(4.0).expect("finite relation fixture")
+            ),
         ]
     );
 }
@@ -754,8 +802,12 @@ fn solves_affine_systems_with_branch_and_sign_invariants() {
     assert_eq!(
         evaluation.solve_solutions[&2],
         [
-            CurveExpressionValue::Number(3.0),
-            CurveExpressionValue::Length(4.0),
+            CurveExpressionValue::Number(
+                cadmpeg_ir::scalar::FiniteReal::new(3.0).expect("finite relation fixture")
+            ),
+            CurveExpressionValue::Length(
+                cadmpeg_ir::scalar::FiniteReal::new(4.0).expect("finite relation fixture")
+            ),
         ]
     );
 }
@@ -798,11 +850,11 @@ fn solves_unique_nonlinear_simultaneous_equations() {
     let [CurveExpressionValue::Number(solution)] = evaluation.solve_solutions[&1].as_slice() else {
         panic!("expected one numeric nonlinear solution");
     };
-    assert!((*solution - 2.0).abs() <= 1.0e-9);
+    assert!((solution.get() - 2.0).abs() <= EPS_NONLINEAR_VALUE);
     let Some(CurveExpressionValue::Number(after)) = &evaluation.assignments[1].value else {
         panic!("expected evaluated assignment after nonlinear solve");
     };
-    assert!((*after - 3.0).abs() <= 1.0e-9);
+    assert!((after.get() - 3.0).abs() <= EPS_NONLINEAR_VALUE);
 }
 
 #[test]
@@ -925,26 +977,37 @@ fn solves_dimensioned_affine_simultaneous_equations() {
     assert_eq!(
         evaluation.solve_solutions[&2],
         [
-            CurveExpressionValue::Length(6.0),
-            CurveExpressionValue::Length(4.0),
+            CurveExpressionValue::Length(
+                cadmpeg_ir::scalar::FiniteReal::new(6.0).expect("finite relation fixture")
+            ),
+            CurveExpressionValue::Length(
+                cadmpeg_ir::scalar::FiniteReal::new(4.0).expect("finite relation fixture")
+            ),
         ]
     );
     assert_eq!(
         evaluation.assignments[0].value,
-        Some(CurveExpressionValue::Length(6.0))
+        Some(CurveExpressionValue::Length(
+            cadmpeg_ir::scalar::FiniteReal::new(6.0).expect("finite relation fixture")
+        ))
     );
     assert_eq!(
         evaluation.assignments[1].value,
-        Some(CurveExpressionValue::Length(4.0))
+        Some(CurveExpressionValue::Length(
+            cadmpeg_ir::scalar::FiniteReal::new(4.0).expect("finite relation fixture")
+        ))
     );
     assert_eq!(
         evaluation.assignments[2].value,
-        Some(quantity_value(
-            24.0,
-            RelationDimension::LENGTH
-                .scale(2)
-                .expect("squared length dimension")
-        ))
+        Some(
+            quantity_value(
+                24.0,
+                RelationDimension::LENGTH
+                    .scale(2)
+                    .expect("squared length dimension")
+            )
+            .expect("finite relation fixture")
+        )
     );
 }
 
@@ -973,8 +1036,12 @@ fn solves_affine_piecewise_expressions_with_unknown_independent_branches() {
     assert_eq!(
         evaluation.solve_solutions[&2],
         [
-            CurveExpressionValue::Length(6.0),
-            CurveExpressionValue::Length(2.0),
+            CurveExpressionValue::Length(
+                cadmpeg_ir::scalar::FiniteReal::new(6.0).expect("finite relation fixture")
+            ),
+            CurveExpressionValue::Length(
+                cadmpeg_ir::scalar::FiniteReal::new(2.0).expect("finite relation fixture")
+            ),
         ]
     );
 }
@@ -1031,8 +1098,12 @@ fn solves_parallel_affine_clamps_deadbands_and_tolerance_tests() {
     assert_eq!(
         evaluation.solve_solutions[&2],
         [
-            CurveExpressionValue::Length(8.0),
-            CurveExpressionValue::Length(0.0),
+            CurveExpressionValue::Length(
+                cadmpeg_ir::scalar::FiniteReal::new(8.0).expect("finite relation fixture")
+            ),
+            CurveExpressionValue::Length(
+                cadmpeg_ir::scalar::FiniteReal::new(0.0).expect("finite relation fixture")
+            ),
         ]
     );
 }
@@ -1089,8 +1160,10 @@ fn solves_affine_systems_with_different_unknown_dimensions() {
     assert_eq!(
         evaluation.solve_solutions[&4],
         [
-            CurveExpressionValue::Length(6.0),
-            quantity_value(2.0, RelationDimension::TIME),
+            CurveExpressionValue::Length(
+                cadmpeg_ir::scalar::FiniteReal::new(6.0).expect("finite relation fixture")
+            ),
+            quantity_value(2.0, RelationDimension::TIME).expect("finite relation fixture"),
         ]
     );
 }
@@ -1119,8 +1192,10 @@ fn infers_independent_dimensions_for_untyped_solve_variables() {
     assert_eq!(
         evaluation.solve_solutions[&2],
         [
-            CurveExpressionValue::Length(6.0),
-            quantity_value(2.0, RelationDimension::TIME),
+            CurveExpressionValue::Length(
+                cadmpeg_ir::scalar::FiniteReal::new(6.0).expect("finite relation fixture")
+            ),
+            quantity_value(2.0, RelationDimension::TIME).expect("finite relation fixture"),
         ]
     );
 }
@@ -1142,7 +1217,12 @@ fn infers_integral_dimensions_through_sqrt_for_untyped_variables() {
         offset: 0,
         for_offset: 1,
     };
-    let values = BTreeMap::from([("length".to_owned(), CurveExpressionValue::Length(2.0))]);
+    let values = BTreeMap::from([(
+        "length".to_owned(),
+        CurveExpressionValue::Length(
+            cadmpeg_ir::scalar::FiniteReal::new(2.0).expect("finite relation fixture"),
+        ),
+    )]);
 
     assert_eq!(
         infer_solve_variable_dimensions(
@@ -1244,7 +1324,9 @@ fn nonlinear_seed_error(limit: u64) -> cadmpeg_core::CodecError {
     with_collection_limit(limit, |ctx| {
         crate::curve::nonlinear_initial_guesses(
             ctx,
-            &[Some(CurveExpressionValue::Number(1.0))],
+            &[Some(CurveExpressionValue::Number(
+                cadmpeg_ir::scalar::FiniteReal::new(1.0).expect("finite relation fixture"),
+            ))],
             &[RelationDimension::default()],
         )
     })
@@ -1322,7 +1404,8 @@ fn preserves_reserved_quantity_dimensions_in_affine_systems() {
 
     assert_eq!(
         evaluation.solve_solutions[&1],
-        [quantity_value(9_800.0, RelationDimension::ACCELERATION)]
+        [quantity_value(9_800.0, RelationDimension::ACCELERATION)
+            .expect("finite relation fixture")]
     );
 }
 

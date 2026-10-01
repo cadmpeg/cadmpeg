@@ -212,13 +212,13 @@ fn shape_payload_identity_refuses_at_retained_limit() {
         )
         .expect("valid test XML"),
     };
-    let entry = EntryRecord {
-        id: crate::native::native_id("entry", "empty.brp"),
-        name: "empty.brp".into(),
-        role: cadmpeg_core::container::ContainerRole::Brep,
-        referenced_by: Vec::new(),
-        data: Vec::new(),
-    };
+    let entry = crate::test_support::entry_record(
+        crate::native::native_id("entry", "empty.brp"),
+        "empty.brp".into(),
+        cadmpeg_core::container::ContainerRole::Brep,
+        Vec::new(),
+        Vec::new(),
+    );
     crate::test_support::assert_retained_refusal_at(&[], "FreeCAD native child identity", |ctx| {
         parse_payloads(
             ctx,
@@ -250,27 +250,35 @@ fn shape_payload_record_refuses_on_collection_limit() {
         )
         .expect("valid test XML"),
     };
-    let entry = EntryRecord {
-        id: crate::native::native_id("entry", "empty.brp"),
-        name: "empty.brp".into(),
-        role: cadmpeg_core::container::ContainerRole::Brep,
-        referenced_by: vec![property.id.clone()],
-        data: Vec::new(),
-    };
-    let result = with_collection_limit(&[], 1, |ctx| parse_payloads(ctx, &[property], &[entry]));
-    assert!(matches!(result, Err(CodecError::ResourceLimit(limit))
-            if limit.operation == "FreeCAD shape payload records"));
+    let entry = crate::test_support::entry_record(
+        crate::native::native_id("entry", "empty.brp"),
+        "empty.brp".into(),
+        cadmpeg_core::container::ContainerRole::Brep,
+        vec![property.id.clone()],
+        Vec::new(),
+    );
+    crate::test_support::assert_collection_refusal_at(
+        &[],
+        "FreeCAD shape payload records",
+        |ctx| {
+            parse_payloads(
+                ctx,
+                std::slice::from_ref(&property),
+                std::slice::from_ref(&entry),
+            )
+        },
+    );
 }
 
 #[test]
 fn shape_entry_index_refuses_on_collection_limit() {
-    let entry = EntryRecord {
-        id: crate::native::native_id("entry", "empty.brp"),
-        name: "empty.brp".into(),
-        role: cadmpeg_core::container::ContainerRole::Brep,
-        referenced_by: Vec::new(),
-        data: Vec::new(),
-    };
+    let entry = crate::test_support::entry_record(
+        crate::native::native_id("entry", "empty.brp"),
+        "empty.brp".into(),
+        cadmpeg_core::container::ContainerRole::Brep,
+        Vec::new(),
+        Vec::new(),
+    );
     let result = with_collection_limit(&[], 0, |ctx| parse_payloads(ctx, &[], &[entry]));
     assert!(matches!(result, Err(CodecError::ResourceLimit(limit))
             if limit.operation == "FreeCAD shape entry index"));
@@ -947,20 +955,20 @@ fn binds_only_the_direct_shape_entry_as_typed_payload() {
         )
         .unwrap(),
     };
-    let entry = EntryRecord {
-        id: crate::native::native_id("entry", "empty.brp"),
-        name: "empty.brp".into(),
-        role: cadmpeg_core::container::ContainerRole::Brep,
-        referenced_by: vec![property.id.clone()],
-        data: Vec::new(),
-    };
-    let second_entry = EntryRecord {
-        id: crate::native::native_id("entry", "empty-2.brp"),
-        name: "empty-2.brp".into(),
-        role: cadmpeg_core::container::ContainerRole::Brep,
-        referenced_by: vec![property.id.clone()],
-        data: Vec::new(),
-    };
+    let entry = crate::test_support::entry_record(
+        crate::native::native_id("entry", "empty.brp"),
+        "empty.brp".into(),
+        cadmpeg_core::container::ContainerRole::Brep,
+        vec![property.id.clone()],
+        Vec::new(),
+    );
+    let second_entry = crate::test_support::entry_record(
+        crate::native::native_id("entry", "empty-2.brp"),
+        "empty-2.brp".into(),
+        cadmpeg_core::container::ContainerRole::Brep,
+        vec![property.id.clone()],
+        Vec::new(),
+    );
     let payloads =
         test_parse_payloads(&[property], &[entry, second_entry]).expect("empty shape payload");
     assert_eq!(payloads.len(), 1);

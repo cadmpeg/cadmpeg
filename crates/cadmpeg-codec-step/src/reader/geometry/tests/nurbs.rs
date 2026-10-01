@@ -23,7 +23,10 @@ fn explicit_knot_expansion_retains_admitted_bits_and_refusal() {
     let (ctx, _) =
         DecodeContext::from_root_bytes(b"", &arena, &policy).expect("empty root fits policy");
     let counts = Value::List(vec![Value::Integer(2), Value::Integer(1)]);
-    let values = Value::List(vec![Value::Real(-0.0), Value::Real(0.5)]);
+    let values = Value::List(vec![
+        Value::Real(cadmpeg_ir::scalar::FiniteReal::new(-0.0).expect("finite fixture")),
+        Value::Real(cadmpeg_ir::scalar::FiniteReal::new(0.5).expect("finite fixture")),
+    ]);
     let knots: cadmpeg_ir::geometry::nurbs::KnotVector =
         super::super::expand_knots(&counts, &values, 3, &ctx)
             .expect("no resource refusal")
@@ -33,11 +36,11 @@ fn explicit_knot_expansion_retains_admitted_bits_and_refusal() {
     assert_eq!(knots.as_slice()[1].to_bits(), (-0.0_f64).to_bits());
     assert_eq!(knots.as_slice()[2].to_bits(), 0.5_f64.to_bits());
 
-    let non_finite = Value::List(vec![Value::Real(0.0), Value::Real(f64::NAN)]);
-    assert!(super::super::expand_knots(&counts, &non_finite, 3, &ctx)
-        .expect("no resource refusal")
-        .is_none());
-    let decreasing = Value::List(vec![Value::Real(1.0), Value::Real(0.5)]);
+    assert!(cadmpeg_ir::scalar::FiniteReal::new(f64::NAN).is_none());
+    let decreasing = Value::List(vec![
+        Value::Real(cadmpeg_ir::scalar::FiniteReal::new(1.0).expect("finite fixture")),
+        Value::Real(cadmpeg_ir::scalar::FiniteReal::new(0.5).expect("finite fixture")),
+    ]);
     assert!(super::super::expand_knots(&counts, &decreasing, 3, &ctx)
         .expect("no resource refusal")
         .is_none());
@@ -50,7 +53,10 @@ fn explicit_knot_expansion_refuses_caller_collection_limit() {
     use cadmpeg_core::CodecError;
 
     let counts = Value::List(vec![Value::Integer(2), Value::Integer(1)]);
-    let values = Value::List(vec![Value::Real(0.0), Value::Real(0.5)]);
+    let values = Value::List(vec![
+        Value::Real(cadmpeg_ir::scalar::FiniteReal::new(0.0).expect("finite fixture")),
+        Value::Real(cadmpeg_ir::scalar::FiniteReal::new(0.5).expect("finite fixture")),
+    ]);
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = 2;

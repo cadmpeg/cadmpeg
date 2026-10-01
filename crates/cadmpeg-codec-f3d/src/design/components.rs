@@ -132,7 +132,7 @@ pub(crate) fn project_local_components(
             },
         ) = scope
             .rectangular_pattern_construction()
-            .and_then(|construction| construction.instances.as_ref())
+            .and_then(|construction| construction.instances())
         else {
             continue;
         };

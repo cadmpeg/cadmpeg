@@ -445,8 +445,11 @@ impl<'a> RseInventory<'a> {
             };
             let path = stream.path();
             if let Some(band) = database_band(path) {
-                ctx.charge_collection_items(1, "index RSe database stream")?;
-                databases.push((band, stream.id()));
+                ctx.push_vec(
+                    &mut databases,
+                    (band, stream.id()),
+                    "index RSe database stream",
+                )?;
                 continue;
             }
             let Some(name) = direct_rse_child(path) else {
@@ -457,20 +460,24 @@ impl<'a> RseInventory<'a> {
             };
             match prefix {
                 SegmentPrefix::Metadata => {
-                    if !metadata.contains_key(&token) {
-                        ctx.charge_collection_items(1, "index RSe metadata stream")?;
-                    }
-                    metadata.insert(token, stream.id());
+                    ctx.insert_btree_map(
+                        &mut metadata,
+                        token,
+                        stream.id(),
+                        "index RSe metadata stream",
+                    )?;
                 }
                 SegmentPrefix::Bulk => {
-                    if !bulk.contains_key(&token) {
-                        ctx.charge_collection_items(1, "index RSe bulk stream")?;
-                    }
-                    bulk.insert(token, stream.id());
+                    ctx.insert_btree_map(&mut bulk, token, stream.id(), "index RSe bulk stream")?;
                 }
             }
         }
-        databases.sort_by_key(|(band, _)| *band);
+        ctx.stable_sort_by(
+            &mut databases,
+            |(left, _), (right, _)| left.cmp(right),
+            |_| 0,
+            "RSe database descriptor sort",
+        )?;
         ctx.charge_collection_items(
             cadmpeg_core::decode::u64_from_index(databases.len()),
             "admit RSe database descriptors",
@@ -667,10 +674,12 @@ fn push_identity_issue(
     issues: &mut Vec<String>,
     detail: std::fmt::Arguments<'_>,
 ) -> Result<(), CodecError> {
-    ctx.charge_collection_items(1, "admit RSe segment identity issue")?;
-    ctx.charge_formatted_retained(detail, "retain RSe segment identity issue")?;
-    issues.push(format!("{detail}"));
-    Ok(())
+    ctx.push_formatted_retained(
+        issues,
+        detail,
+        "admit RSe segment identity issue",
+        "retain RSe segment identity issue",
+    )
 }
 
 fn join_registry<B>(
@@ -964,18 +973,13 @@ impl<'a> MetaCursor<'a> {
                 "RSe metadata {what} exceeds 4096 UTF-16 units"
             )));
         }
-        let malformed = || CodecError::malformed(format_args!("RSe metadata {what} is not UTF-16"));
-        let utf8_bytes =
-            crate::reader::utf16_utf8_len(self.source, len / 2).ok_or_else(malformed)?;
-        let _units = ctx.reserve_scoped(
-            cadmpeg_core::decode::u64_from_index(len),
-            "decode RSe metadata UTF-16 units",
-        )?;
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(utf8_bytes),
+        crate::reader::utf16_text(
+            ctx,
+            &mut self.source,
+            len / 2,
+            what,
             "retain RSe metadata UTF-16 field",
-        )?;
-        self.source.utf16_le(len / 2).ok_or_else(malformed)
+        )
     }
 }
 
@@ -1375,21 +1379,21 @@ mod tests {
     }
 
     #[test]
-    fn metadata_utf16_units_refuse_materialized_limit_before_decode() {
+    fn metadata_utf16_decoding_needs_no_materialized_units() {
         let mut bytes = Vec::new();
         push_utf16(&mut bytes, "A");
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        policy.limits.max_materialized_bytes = 1;
+        policy.limits.max_materialized_bytes = 0;
         let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)
             .expect("metadata field fits input cap");
         let mut cursor = MetaCursor::new(root);
-        assert!(matches!(
-            cursor.length_prefixed_utf16(&ctx, "display name"),
-            Err(CodecError::ResourceLimit(limit))
-                if limit.dimension == ResourceDimension::MaterializedBytes
-                    && limit.operation == "decode RSe metadata UTF-16 units"
-        ));
+        assert_eq!(
+            cursor
+                .length_prefixed_utf16(&ctx, "display name")
+                .expect("direct UTF-16 decode needs no temporary storage"),
+            "A"
+        );
     }
 
     #[test]

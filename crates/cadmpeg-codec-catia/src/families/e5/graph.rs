@@ -456,10 +456,11 @@ pub(crate) fn parse_topology(
                     Ok(None) => return None,
                     Err(error) => return Some(Err(error)),
                 };
-                if let Err(error) = ctx.charge_collection_items(1, "catia_e5_topology_edges") {
+                if let Err(error) =
+                    ctx.insert_btree_map(&mut edges, record.id, edge, "catia_e5_topology_edges")
+                {
                     return Some(Err(error));
                 }
-                edges.insert(record.id, edge);
             }
             if matches!(record.class, 0x96 | 0x97 | 0xa0 | 0xaa) {
                 let pcurve = match parse_pcurve(ctx, record) {
@@ -467,10 +468,14 @@ pub(crate) fn parse_topology(
                     Ok(None) => return None,
                     Err(error) => return Some(Err(error)),
                 };
-                if let Err(error) = ctx.charge_collection_items(1, "catia_e5_topology_pcurves") {
+                if let Err(error) = ctx.insert_btree_map(
+                    &mut pcurves,
+                    record.id,
+                    pcurve,
+                    "catia_e5_topology_pcurves",
+                ) {
                     return Some(Err(error));
                 }
-                pcurves.insert(record.id, pcurve);
             }
         }
         for pcurve in pcurves.values() {
@@ -500,10 +505,14 @@ pub(crate) fn parse_topology(
                         Ok(None) => return None,
                         Err(error) => return Some(Err(error)),
                     };
-                    if let Err(error) = ctx.charge_collection_items(1, "catia_e5_topology_bounds") {
+                    if let Err(error) = ctx.insert_btree_map(
+                        &mut bounds,
+                        record.id,
+                        value,
+                        "catia_e5_topology_bounds",
+                    ) {
                         return Some(Err(error));
                     }
-                    bounds.insert(record.id, value);
                 }
                 0xc0 | 0xc1 => {
                     let value = match parse_curve_support(ctx, record) {
@@ -511,10 +520,14 @@ pub(crate) fn parse_topology(
                         Ok(None) => return None,
                         Err(error) => return Some(Err(error)),
                     };
-                    if let Err(error) = ctx.charge_collection_items(1, "catia_e5_curve_supports") {
+                    if let Err(error) = ctx.insert_btree_map(
+                        &mut curve_supports,
+                        record.id,
+                        value,
+                        "catia_e5_curve_supports",
+                    ) {
                         return Some(Err(error));
                     }
-                    curve_supports.insert(record.id, value);
                 }
                 0x09 => {
                     let value = match parse_loop(ctx, record) {
@@ -707,7 +720,14 @@ pub(crate) fn parse_topology(
                 }
             }
         }
-        vertex_refs.sort_unstable();
+        if let Err(error) = ctx.sort_unstable_by(
+            &mut vertex_refs,
+            Ord::cmp,
+            |_| 0,
+            "catia_e5_vertex_refs_sort",
+        ) {
+            return Some(Err(error));
+        }
         vertex_refs.dedup();
         let bodies = match parse_bodies(ctx, &records, &by_id) {
             Ok(Some(bodies)) => bodies,

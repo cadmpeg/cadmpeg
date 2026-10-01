@@ -606,13 +606,21 @@ fn transfer_record_with_limits(
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(payload, &arena, &policy)
         .expect("root bytes fit the configured limit");
+    transfer_record_in_context(&ctx, record, dimension_parameters)
+}
+
+fn transfer_record_in_context(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    record: crate::curve::CurveExpressionRecord,
+    dimension_parameters: &std::collections::BTreeMap<String, cadmpeg_ir::features::ParameterId>,
+) -> Result<usize, cadmpeg_core::CodecError> {
     let mut scan = crate::container::scan_bytes_ok(Vec::new());
     scan.curves.expressions.push(record);
     let mut ir = cadmpeg_ir::document::CadIr::empty();
     let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
     let mut carriers = crate::decode::source_carriers::SourceUnitCarriers::new(None);
     super::transfer_curve_expression_features(
-        &ctx,
+        ctx,
         &scan,
         &mut ir,
         &mut annotations,
@@ -1040,14 +1048,8 @@ fn quantity_property_result(
         .pop()
         .expect("complete curve expression");
     record.assignments[0].value = Some(crate::curve::CurveExpressionValue::Quantity(
-        crate::curve::CurveExpressionQuantity {
-            value: 3.5,
-            length_power: 1,
-            mass_power: 2,
-            time_power: 0,
-            angle_power: 0,
-            temperature_power: 0,
-        },
+        crate::curve::CurveExpressionQuantity::new(3.5, [1, 2, 0, 0, 0])
+            .expect("valid residual dimension fixture"),
     ));
     let parameter_id = cadmpeg_ir::features::ParameterId::mint("test:test:parameter#a")
         .expect("valid parameter ID");

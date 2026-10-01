@@ -119,10 +119,11 @@ pub(in super::super) fn build_report(
                 .map(|plane| plane.surface_id),
         )
     {
-        if !placed_plane_ids.contains(&id) {
-            ctx.charge_collection_items(1, "creo report placed plane ID nodes")?;
-            placed_plane_ids.insert(id);
-        }
+        ctx.insert_btree_set(
+            &mut placed_plane_ids,
+            id,
+            "creo report placed plane ID nodes",
+        )?;
     }
     let placed_plane_count = placed_plane_ids.len();
     let mut losses = Vec::new();

@@ -8,7 +8,6 @@ use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDim
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
-use crate::container;
 use crate::test_support::container::make_block;
 use crate::test_support::container::outer_header;
 use crate::test_support::container::sldprt_with_body;
@@ -21,7 +20,7 @@ fn metadata_from_nameless_block_keeps_annotation_owner() {
     let payload = br"<swSolidWorks><SW_UnitsLinear>1</SW_UnitsLinear></swSolidWorks>";
     let mut source = outer_header();
     source.extend(make_block(0x43, "", payload));
-    let scan = container::scan_bytes(&source);
+    let scan = crate::test_support::container::scan(&source);
     let arena = DecodeArena::new();
     let (ctx, _) =
         DecodeContext::from_root_bytes(&source, &arena, &DecodePolicy::service()).unwrap();
@@ -42,7 +41,7 @@ fn metadata_annotation_route_refuses_retained_text() {
     let payload = br"<swSolidWorks><SW_UnitsLinear>1</SW_UnitsLinear></swSolidWorks>";
     let mut source = outer_header();
     source.extend(make_block(0x43, "", payload));
-    let scan = container::scan_bytes(&source);
+    let scan = crate::test_support::container::scan(&source);
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = 0;
@@ -59,7 +58,7 @@ fn metadata_annotation_route_refuses_collection_growth() {
     let payload = br"<swSolidWorks><SW_UnitsLinear>1</SW_UnitsLinear></swSolidWorks>";
     let mut source = outer_header();
     source.extend(make_block(0x43, "", payload));
-    let scan = container::scan_bytes(&source);
+    let scan = crate::test_support::container::scan(&source);
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = 0;
@@ -76,7 +75,7 @@ fn metadata_annotation_route_refuses_work_at_minimum_admission() {
     let payload = br"<swSolidWorks><SW_UnitsLinear>1</SW_UnitsLinear></swSolidWorks>";
     let mut source = outer_header();
     source.extend(make_block(0x43, "", payload));
-    let scan = container::scan_bytes(&source);
+    let scan = crate::test_support::container::scan(&source);
     let arena = DecodeArena::new();
     let run = |policy: &DecodePolicy| {
         let (ctx, _) = DecodeContext::from_root_bytes(&source, &arena, policy).unwrap();
@@ -178,7 +177,7 @@ fn semantic_writer_preserves_transformed_reference_plane_prefix() {
     )
     .unwrap();
 
-    let scan = container::scan_bytes(&written);
+    let scan = crate::test_support::container::scan(&written);
     let payload = scan
         .blocks
         .iter()
@@ -373,7 +372,7 @@ fn decode_extracts_document_envelope() {
 fn scanned_metadata(payload: &[u8]) -> Vec<cadmpeg_ir::attributes::SourceAttribute> {
     let mut source = outer_header();
     source.extend(make_block(0x43, "SWObjects", payload));
-    let scan = container::scan_bytes(&source);
+    let scan = crate::test_support::container::scan(&source);
     let arena = DecodeArena::new();
     let (ctx, _) =
         DecodeContext::from_root_bytes(&source, &arena, &DecodePolicy::service()).unwrap();
@@ -415,5 +414,60 @@ fn a_reference_plane_origin_that_overflows_in_millimetres_is_not_admitted() {
             .iter()
             .any(|attribute| attribute.name == "default_reference_plane"),
         "{attributes:?}"
+    );
+}
+
+fn replacement_unit_source() -> (Vec<u8>, usize) {
+    let mut payload = b"moLengthUserUnits_c".to_vec();
+    payload.extend_from_slice(&[0xff, 0xfe, 0xff, 2, 0, 0xd8]);
+    let length = payload.len();
+    let mut source = outer_header();
+    source.extend(make_block(0x43, "SWObjects", &payload));
+    (source, length)
+}
+
+#[test]
+fn unit_name_replacement_refuses_exact_retained_limit() {
+    let (source, _) = replacement_unit_source();
+    let scan = crate::test_support::container::scan(&source);
+    let section = scan.sections().next().expect("unit-name section");
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 2;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+    assert!(
+        matches!(super::scan_length_user_units(&ctx, section, &mut Vec::new(), &mut cadmpeg_ir::annotations::Annotations::default()), Err(CodecError::ResourceLimit(limit))
+        if limit.dimension == ResourceDimension::RetainedBytes && limit.used == 0 && limit.additional == 3 && limit.operation == "retain SLDPRT linear unit name")
+    );
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_materialized_bytes = 86;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+    let mut attributes = Vec::new();
+    super::scan_length_user_units(
+        &ctx,
+        section,
+        &mut attributes,
+        &mut cadmpeg_ir::annotations::Annotations::default(),
+    )
+    .expect("replacement unit name");
+    assert_eq!(
+        attributes[0].values,
+        vec![cadmpeg_ir::attributes::AttributeValue::String("�".into())]
+    );
+}
+
+#[test]
+fn unit_name_replacement_refuses_work_before_validation() {
+    let (source, length) = replacement_unit_source();
+    let scan = crate::test_support::container::scan(&source);
+    let section = scan.sections().next().expect("unit-name section");
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = u64::try_from(length).expect("payload length");
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+    assert!(
+        matches!(super::scan_length_user_units(&ctx, section, &mut Vec::new(), &mut cadmpeg_ir::annotations::Annotations::default()), Err(CodecError::ResourceLimit(limit))
+        if limit.dimension == ResourceDimension::WorkUnits && limit.operation == "validate SLDPRT linear unit name")
     );
 }

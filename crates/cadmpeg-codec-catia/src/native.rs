@@ -28,7 +28,6 @@ pub(crate) mod class5b5c;
 use class5b5c::CatiaConsolidatedClass5b5cRecord;
 
 pub(crate) mod edge_definition;
-use edge_definition::CatiaConsolidatedEdgeDefinition;
 
 mod edge_node;
 use edge_node::{
@@ -7465,11 +7464,12 @@ pub(crate) struct CatiaZeroEntityEndpointLocusCandidate {
     /// Stable derived-locus identity.
     pub(crate) id: String,
     /// Incident endpoints in endpoint-pair and endpoint order.
-    pub(crate) incident_endpoint_pair_endpoints: Vec<CatiaZeroEntityEndpointPairEndpoint>,
+    pub(crate) incident_endpoint_pair_endpoints:
+        cadmpeg_ir::features::NonEmptyMembers<CatiaZeroEntityEndpointPairEndpoint>,
     /// Model-space point from the first incident endpoint.
     pub(crate) representative_point: FinitePoint3,
     /// Maximum pairwise distance between incident endpoint coordinates.
-    pub(crate) maximum_deviation: f64,
+    pub(crate) maximum_deviation: cadmpeg_ir::scalar::NonNegativeReal,
 }
 
 /// One counted zero-entity `05xx` vertex-incidence record.
@@ -8305,7 +8305,12 @@ fn consolidated_class61_records(
             "catia_native_class61_order",
         )?;
     }
-    class61_records.sort_by_key(|(pos, _, _)| *pos);
+    ctx.stable_sort_by(
+        &mut class61_records,
+        |(left, _, _), (right, _, _)| left.cmp(right),
+        |_| 0,
+        "catia_native_class61_sort",
+    )?;
     let mut output = Vec::new();
     for (index, (pos, header_token, payload)) in class61_records.into_iter().enumerate() {
         let value = CatiaConsolidatedClass61Record {
@@ -8329,7 +8334,14 @@ fn consolidated_class5b5c_records(
 ) -> Result<Vec<CatiaConsolidatedClass5b5cRecord>, CodecError> {
     let mut control_records =
         crate::families::b2::records::b2_class5b5c_records_from_records(ctx, bytes, records)?;
-    control_records.sort_by_key(|record| (record.source_index, record.source_offset));
+    ctx.stable_sort_by(
+        &mut control_records,
+        |left, right| {
+        (left.source_index, left.source_offset).cmp(&(right.source_index, right.source_offset))
+    },
+        |_| 0,
+        "catia_native_class5b5c_sort",
+    )?;
     let mut output = Vec::new();
     for (index, record) in control_records.into_iter().enumerate() {
         let value = CatiaConsolidatedClass5b5cRecord {
@@ -9012,7 +9024,12 @@ fn consolidated_pcurves(
             ),
         "catia_native_pcurve_ordering",
     )?;
-    pcurves.sort_by_key(|(pcurve, _)| pcurve.pos);
+    ctx.stable_sort_by(
+        &mut pcurves,
+        |(left, _), (right, _)| left.pos.cmp(&right.pos),
+        |_| 0,
+        "catia_native_pcurve_sort",
+    )?;
     let mut native = Vec::new();
     for (index, (pcurve, family)) in pcurves.into_iter().enumerate() {
         let (knots, points, first_derivatives, second_derivatives) = pcurve.native_lanes(ctx)?;
@@ -9399,9 +9416,16 @@ fn zero_entity_endpoint_locus_candidates(
                 format_args!("catia:zero-entity:endpoint-locus-candidate#{index}"),
                 "catia_native_zero_endpoint_locus_id",
             )?,
-            incident_endpoint_pair_endpoints: endpoints,
+            incident_endpoint_pair_endpoints: endpoints
+                .try_into()
+                .map_err(CodecError::malformed)?,
             representative_point: candidate.representative_point,
-            maximum_deviation: candidate.maximum_deviation,
+            maximum_deviation: cadmpeg_ir::scalar::NonNegativeReal::new(
+                candidate.maximum_deviation,
+            )
+            .ok_or_else(|| {
+                CodecError::malformed("endpoint locus deviation must be finite and nonnegative")
+            })?,
         });
     }
     Ok(output)
@@ -9656,23 +9680,12 @@ impl CatiaNative {
         let mut parsed_object_graphs =
             object_graph::parse_all_with_paired_roots(ctx, bytes, &paired_object_graph_roots)?;
         let mut parsed_value_blocks = value_block::parse(ctx, bytes)?;
-        parsed_value_blocks.retain(|block| {
-            !parsed_object_graphs.iter().any(|graph| {
-                extent_contains(graph.pos, graph.total_len, block.pos, block.total_len())
-            })
-        });
-        parsed_object_graphs.retain(|graph| {
-            !parsed_value_blocks.iter().any(|block| {
-                extent_contains(block.pos, block.total_len(), graph.pos, graph.total_len)
-            })
-        });
-        parsed_catalogs.retain(|catalog| {
-            !parsed_object_graphs.iter().any(|graph| {
-                extent_contains(graph.pos, graph.total_len, catalog.pos, catalog.total_len)
-            }) && !parsed_value_blocks.iter().any(|block| {
-                extent_contains(block.pos, block.total_len(), catalog.pos, catalog.total_len)
-            })
-        });
+        filter_nested_inventory(
+            ctx,
+            &mut parsed_object_graphs,
+            &mut parsed_value_blocks,
+            &mut parsed_catalogs,
+        )?;
         let mut catalogs = Vec::new();
         for catalog in parsed_catalogs {
             let catalog = CatiaCatalog::from_source(ctx, catalog)?;
@@ -10076,5 +10089,43 @@ impl CatiaNative {
 
 #[cfg(test)]
 mod test_only;
+/// Admit all extent comparisons before removing inventories nested inside another frame.
+fn filter_nested_inventory(
+    ctx: &DecodeContext<'_>,
+    graphs: &mut Vec<object_graph::ObjectGraph>,
+    blocks: &mut Vec<value_block::ValueBlock>,
+    catalogs: &mut Vec<catalog::Catalog>,
+) -> Result<(), CodecError> {
+    let g = u64_from_index(graphs.len());
+    let b = u64_from_index(blocks.len());
+    let c = u64_from_index(catalogs.len());
+    let work = g
+        .checked_mul(b)
+        .and_then(|pairs| pairs.checked_mul(2))
+        .and_then(|pairs| c.checked_mul(g.checked_add(b)?)?.checked_add(pairs))
+        .ok_or_else(|| {
+            ctx.refuse_codec_limit("catia_native_inventory_overlap", u64::MAX, u64::MAX)
+        })?;
+    ctx.charge_work(work, "catia_native_inventory_overlap")?;
+    blocks.retain(|block| {
+        !graphs
+            .iter()
+            .any(|graph| extent_contains(graph.pos, graph.total_len, block.pos, block.total_len()))
+    });
+    graphs.retain(|graph| {
+        !blocks
+            .iter()
+            .any(|block| extent_contains(block.pos, block.total_len(), graph.pos, graph.total_len))
+    });
+    catalogs.retain(|catalog| {
+        !graphs.iter().any(|graph| {
+            extent_contains(graph.pos, graph.total_len, catalog.pos, catalog.total_len)
+        }) && !blocks.iter().any(|block| {
+            extent_contains(block.pos, block.total_len(), catalog.pos, catalog.total_len)
+        })
+    });
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests;

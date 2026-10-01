@@ -1354,21 +1354,19 @@ fn unique_monotone_run(
     let mut layers = Vec::new();
     for record in &records[1..] {
         let previous_count = cadmpeg_core::decode::u64_from_index(previous.len());
-        ctx.charge_collection_items(previous_count, "collect CATIA 7C05 ordered predecessors")?;
         let mut ordered_predecessors = Vec::new();
-        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+        ctx.reserve_vec(
             &mut ordered_predecessors,
             previous.len(),
             "collect CATIA 7C05 ordered predecessors",
         )?;
         ordered_predecessors.extend(previous.iter().enumerate());
-        let sort_units = previous_count
-            .checked_mul(u64::from(previous_count.ilog2()) + 1)
-            .ok_or_else(|| {
-                ctx.refuse_codec_limit("sort CATIA 7C05 predecessor states", u64::MAX, u64::MAX)
-            })?;
-        ctx.charge_work(sort_units, "sort CATIA 7C05 predecessor states")?;
-        ordered_predecessors.sort_by_key(|(_, state)| state.identity.entity_id);
+        ctx.stable_sort_by(
+            &mut ordered_predecessors,
+            |(_, left), (_, right)| left.identity.entity_id.cmp(&right.identity.entity_id),
+            |_| 0,
+            "sort CATIA 7C05 predecessor states",
+        )?;
         let mut cumulative = Vec::new();
         ctx.reserve_vec(
             &mut cumulative,
@@ -1397,12 +1395,7 @@ fn unique_monotone_run(
                 .checked_sub(1)
                 .map_or((PathCount::None, None), |index| cumulative[index]);
             if path_count != PathCount::None {
-                ctx.charge_collection_items(1, "collect CATIA 7C05 path states")?;
-                cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
-                    &mut layer,
-                    1,
-                    "collect CATIA 7C05 path states",
-                )?;
+                ctx.reserve_vec(&mut layer, 1, "collect CATIA 7C05 path states")?;
                 layer.push(MonotonePathState {
                     identity: *identity,
                     path_count,
@@ -1413,12 +1406,7 @@ fn unique_monotone_run(
         if layer.is_empty() {
             return Ok(None);
         }
-        ctx.charge_collection_items(1, "collect CATIA 7C05 path layers")?;
-        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
-            &mut layers,
-            1,
-            "collect CATIA 7C05 path layers",
-        )?;
+        ctx.reserve_vec(&mut layers, 1, "collect CATIA 7C05 path layers")?;
         layers.push(std::mem::replace(&mut previous, layer));
     }
     let final_layer = &previous;

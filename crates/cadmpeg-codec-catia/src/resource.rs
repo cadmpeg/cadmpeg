@@ -177,6 +177,45 @@ pub(crate) fn derived_annotation(
 #[cfg(test)]
 mod derived_annotation_tests {
     #[test]
+    fn repeated_annotation_and_coverage_keys_do_not_consume_retained_bytes() {
+        let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
+        let mut coverage = cadmpeg_ir::report::decode::Coverage::default();
+        let key = cadmpeg_ir::report::decode::CoverageKey::new("decoded_entities");
+        crate::test_support::with_service_context(|ctx| {
+            super::derived_annotation(
+                ctx,
+                &mut annotations,
+                "catia:test:vertex#0",
+                "point",
+                "catia_annotation_field",
+            )
+            .expect("initial annotation");
+            coverage.record(ctx, key, 1).expect("initial coverage");
+        });
+        crate::test_support::with_retained_limit(0, |ctx| {
+            for _ in 0..64 {
+                super::derived_annotation(
+                    ctx,
+                    &mut annotations,
+                    "catia:test:vertex#0",
+                    "point",
+                    "catia_annotation_field",
+                )
+                .expect("count-only annotation update");
+                coverage
+                    .record(ctx, key, 1)
+                    .expect("count-only coverage update");
+            }
+        });
+        assert_eq!(
+            annotations.build().exactness()["catia:test:vertex#0"]
+                .fields()
+                .get("point"),
+            Some(&cadmpeg_ir::Exactness::Derived)
+        );
+    }
+
+    #[test]
     fn derived_field_refuses_retained_and_collection_limits() {
         let retained = crate::test_support::with_retained_limit(0, |ctx| {
             super::derived_annotation(

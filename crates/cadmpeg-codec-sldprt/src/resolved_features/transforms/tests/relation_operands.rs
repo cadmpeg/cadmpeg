@@ -937,7 +937,7 @@ fn point_operand_canonicalizes_shared_endpoint_loci() {
         class_ref: "class".into(),
         feature_ref: "feature-native".into(),
         scalars: crate::records::relation_scalars::RelationScalars::from_refs(
-            Vec::new(),
+            vec!["sldprt:test:scalar#unselected-1".into()],
             None,
             None,
         )
@@ -1591,10 +1591,10 @@ fn dimension_preserves_structurally_typed_operands_when_geometry_disagrees() {
             .into_iter()
             .enumerate()
             .map(|(index, marker)| FeatureInputOperand {
-                offset: index as u64,
+                offset: cadmpeg_core::decode::u64_from_index(index),
                 reference_ref: format!("reference-{index}"),
                 kind: FeatureInputOperandKind::D6,
-                entity_index: index as u16,
+                entity_index: u16::try_from(index).expect("test index fits u16"),
                 entity_ref: Some(marker.id().to_string()),
             })
             .collect(),

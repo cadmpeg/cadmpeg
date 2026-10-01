@@ -52,7 +52,7 @@ fn appearance_assignment_loss_retains_exact_text_and_refuses_limit() {
 
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = (expected.len() - 1) as u64;
+    policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(expected.len() - 1);
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let error =
         super::super::appearance_assignment_loss_message(&ctx, &assigned, &matched, &conflicts)
@@ -87,7 +87,7 @@ fn conflicting_display_reference_retains_exact_text_and_refuses_limit() {
 
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = (expected.len() - 1) as u64;
+    policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(expected.len() - 1);
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let error =
         super::super::conflicting_display_reference(&ctx, "SyntheticDisplayStream", 7, &candidates)
@@ -401,7 +401,7 @@ fn direct_feature_input_operations_require_unique_history_bindings() {
             id: "name".into(),
             parent: "lane".into(),
             ordinal: 0,
-            offset: 10 + 6 + class_name.len() as u64,
+            offset: 10 + 6 + cadmpeg_core::decode::u64_from_index(class_name.len()),
             object_id: ObjectId::from_value(42),
             value: "Boss".into(),
         }],
@@ -473,7 +473,8 @@ fn direct_feature_input_operations_require_unique_history_bindings() {
     native.feature_histories[0].features[0].kind = "Sketch".into();
     native.feature_histories[0].features[0].name = "Profile".into();
     lane.classes[0].name = "moProfileFeature_c".into();
-    lane.names[0].offset = 10 + 6 + "moProfileFeature_c".len() as u64;
+    lane.names[0].offset =
+        10 + 6 + cadmpeg_core::decode::u64_from_index("moProfileFeature_c".len());
     lane.names[0].value = "Profile".into();
     native.feature_input_lanes = vec![lane.clone()];
     assert_eq!(
@@ -489,7 +490,7 @@ fn direct_feature_input_operations_require_unique_history_bindings() {
     native.feature_histories[0].features[0].name = "Boss".into();
     native.feature_histories[0].features[0].input_class = Some(class_name.into());
     lane.classes[0].name = class_name.into();
-    lane.names[0].offset = 10 + 6 + class_name.len() as u64;
+    lane.names[0].offset = 10 + 6 + cadmpeg_core::decode::u64_from_index(class_name.len());
     lane.names[0].value = "Boss".into();
     native.feature_input_lanes = vec![lane.clone()];
     native.feature_histories[0].features[0].input_class = Some("moSweep_c".into());
@@ -618,7 +619,8 @@ fn geometry_report_surfaces_ambiguous_pcurve_loss() {
         &scan,
         &mut decoded,
         &classification,
-        crate::container::notes(&scan),
+        crate::container::notes_charged(&cadmpeg_test_support::service_decode_context(), &scan)
+            .unwrap(),
     )
     .unwrap();
     assert!(report.losses.iter().any(|loss| {
@@ -640,7 +642,7 @@ fn unresolved_swift_source() -> Vec<u8> {
 #[test]
 fn unsupported_swift_loss_retains_exact_text() {
     let source = unresolved_swift_source();
-    let scan = crate::container::scan_bytes(&source);
+    let scan = crate::test_support::container::scan(&source);
     let ctx = cadmpeg_test_support::service_decode_context();
     let mut losses = Vec::new();
     super::super::append_swift_pmi_losses(&ctx, &scan, &mut losses).unwrap();
@@ -655,7 +657,7 @@ fn unsupported_swift_loss_retains_exact_text() {
 fn unsupported_swift_loss_refuses_collection_limit() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     let source = unresolved_swift_source();
-    let scan = crate::container::scan_bytes(&source);
+    let scan = crate::test_support::container::scan(&source);
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = 0;
@@ -672,7 +674,7 @@ fn unsupported_swift_loss_refuses_collection_limit() {
 fn unsupported_swift_loss_refuses_retained_limit() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     let source = unresolved_swift_source();
-    let scan = crate::container::scan_bytes(&source);
+    let scan = crate::test_support::container::scan(&source);
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = 0;
@@ -689,10 +691,11 @@ fn unsupported_swift_loss_refuses_retained_limit() {
 fn unsupported_swift_loss_refuses_scoped_limit() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     let source = unresolved_swift_source();
-    let scan = crate::container::scan_bytes(&source);
+    let scan = crate::test_support::container::scan(&source);
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_materialized_bytes = ("GdtAnalysisGraphUnresolved (1)".len() - 1) as u64;
+    policy.limits.max_materialized_bytes =
+        cadmpeg_core::decode::u64_from_index("GdtAnalysisGraphUnresolved (1)".len() - 1);
     let (ctx, _) = DecodeContext::from_root_bytes(&source, &arena, &policy).unwrap();
     let error = super::super::append_swift_pmi_losses(&ctx, &scan, &mut Vec::new()).unwrap_err();
     assert!(

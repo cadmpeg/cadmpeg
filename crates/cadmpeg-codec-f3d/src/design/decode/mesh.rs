@@ -5,6 +5,7 @@
 //! and a typed Design graph joins the container, mesh body, owning feature,
 //! optional texture resources, and Scene state ([spec §3.1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#31-design-metadata)).
 
+use crate::bytes::lp_utf16_bounded_charged;
 use cadmpeg_core::container::ContainerRole;
 use cadmpeg_core::decode::DecodeContext;
 use std::fmt::Write;
@@ -17,7 +18,7 @@ use crate::design::decode::meta::{
 };
 use crate::design::decode::scopes::parameter_scope::parse_parameter_scope;
 use crate::design::decode::sketch::{native_scope_charged, IndexedRecordOffsets};
-use crate::design::decode::text::lp_utf16_bounded_charged;
+
 use crate::layout::indexed_design_record_header as indexed_header;
 use crate::layout::paramesh_body_wrapper as body_wrapper;
 use crate::layout::paramesh_collection_owner_backlink_prefix as collection_owner;
@@ -582,8 +583,14 @@ fn parse_mesh_entry_name_record(
     let guid_record_index =
         exact_local_record_index(record, entry_name_prefix::GUID_RECORD_REFERENCE)
             .ok_or_else(|| malformed_frame(ctx, "mesh-entry-name", frame.entity_id))?;
-    let (entry_name, _) = lp_utf16_bounded_charged(ctx, record, entry_name_prefix::LEN, 1..=1024)?
-        .ok_or_else(|| malformed_frame(ctx, "mesh-entry-name", frame.entity_id))?;
+    let (entry_name, _) = lp_utf16_bounded_charged(
+        ctx,
+        record,
+        entry_name_prefix::LEN,
+        1..=1024,
+        "f3d Design UTF-16 text",
+    )?
+    .ok_or_else(|| malformed_frame(ctx, "mesh-entry-name", frame.entity_id))?;
     Ok(MeshEntryNameRecord {
         entry: DesignMeshEntryName::new(identity, entry_name)
             .map_err(|_| malformed_frame(ctx, "mesh-entry-name", frame.entity_id))?,
@@ -611,15 +618,21 @@ fn parse_mesh_guid_record(
             .then_some(())?;
         let (fusion_uuid, end) = lp_ascii_strict(record, guid_join::FUSION_UUID, 36..=36)?;
         (end == guid_join::ENTRY_NAME_BACKLINK).then_some(())?;
-        let fusion_uuid = DesignGuidText::try_from(fusion_uuid).ok()?;
+        crate::bytes::is_guid_hyphenated(fusion_uuid).then_some(())?;
         let entry_name_record_index =
             exact_local_record_index(record, guid_join::ENTRY_NAME_BACKLINK)?;
-        Some(MeshGuidRecord {
-            guid: DesignMeshGuid::new(identity, fusion_uuid).ok()?,
-            entry_name_record_index,
-        })
+        Some((fusion_uuid, entry_name_record_index))
     })();
-    parsed.ok_or_else(|| malformed_frame(ctx, "mesh-GUID", frame.entity_id))
+    let (guid, entry_name_record_index) =
+        parsed.ok_or_else(|| malformed_frame(ctx, "mesh-GUID", frame.entity_id))?;
+    ctx.charge_work(72, "retain F3D mesh GUID")?;
+    let guid = DesignGuidText::try_from(ctx.copy_retained_text(guid, "retain F3D mesh GUID")?)
+        .map_err(|_| malformed_frame(ctx, "mesh-GUID", frame.entity_id))?;
+    Ok(MeshGuidRecord {
+        guid: DesignMeshGuid::new(identity, guid)
+            .map_err(|_| malformed_frame(ctx, "mesh-GUID", frame.entity_id))?,
+        entry_name_record_index,
+    })
 }
 
 fn parse_mesh_body_record(
@@ -775,10 +788,20 @@ fn parse_mesh_texture_table_record(
             let Some((resource_guid, end)) = lp_ascii_strict(record, at, 36..=36) else {
                 return Ok(None);
             };
-            let Ok(resource_guid) = DesignGuidText::try_from(resource_guid) else {
+            ctx.charge_work(144, "retain F3D mesh texture GUID")?;
+            if !crate::bytes::is_guid_hyphenated(resource_guid) {
                 return Ok(None);
-            };
-            if !flag_keys.insert(resource_guid.as_str().to_ascii_uppercase()) {
+            }
+            let key: [u8; 36] = resource_guid
+                .as_bytes()
+                .try_into()
+                .map_err(|_| CodecError::malformed("mesh resource GUID width"))?;
+            let key = key.map(|byte| byte.to_ascii_uppercase());
+            let resource_guid = DesignGuidText::try_from(
+                ctx.copy_retained_text(resource_guid, "retain F3D mesh texture GUID")?,
+            )
+            .map_err(CodecError::malformed)?;
+            if !flag_keys.insert(key) {
                 return Ok(None);
             }
             at = end;
@@ -826,10 +849,20 @@ fn parse_mesh_texture_table_record(
             let Some((resource_guid, end)) = lp_ascii_strict(record, at, 36..=36) else {
                 return Ok(None);
             };
-            let Ok(resource_guid) = DesignGuidText::try_from(resource_guid) else {
+            ctx.charge_work(144, "retain F3D mesh texture GUID")?;
+            if !crate::bytes::is_guid_hyphenated(resource_guid) {
                 return Ok(None);
-            };
-            if !filename_keys.insert(resource_guid.as_str().to_ascii_uppercase()) {
+            }
+            let key: [u8; 36] = resource_guid
+                .as_bytes()
+                .try_into()
+                .map_err(|_| CodecError::malformed("mesh resource GUID width"))?;
+            let key = key.map(|byte| byte.to_ascii_uppercase());
+            let resource_guid = DesignGuidText::try_from(
+                ctx.copy_retained_text(resource_guid, "retain F3D mesh texture GUID")?,
+            )
+            .map_err(CodecError::malformed)?;
+            if !filename_keys.insert(key) {
                 return Ok(None);
             }
             at = end;
@@ -1210,6 +1243,7 @@ fn parse_mesh_texture_filename_record(
         record,
         texture_filename::BASENAME_CODE_UNIT_COUNT,
         1..=1024,
+        "f3d Design UTF-16 text",
     )?
     .ok_or_else(|| malformed_frame(ctx, "mesh-texture-filename", frame.entity_id))?;
     if end != record.len() {
@@ -1952,6 +1986,7 @@ mod tests {
     use cadmpeg_core::decode::u64_from_index;
 
     mod placement;
+    mod text;
     use super::{
         parse_mesh_collection_owner_record, parse_mesh_scene_state_record,
         parse_mesh_texture_table_record, parse_mesh_wrapper_record, parse_scene_node_record,

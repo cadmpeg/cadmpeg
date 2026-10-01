@@ -614,9 +614,7 @@ fn count_v1_omission(
     omitted: &mut BTreeMap<u32, usize>,
     typecode: u32,
 ) -> Result<(), CodecError> {
-    if !omitted.contains_key(&typecode) {
-        ctx.charge_collection_items(1, "Rhino V1 omitted typecodes")?;
-    }
+    ctx.admit_btree_entry(omitted, &typecode, "Rhino V1 omitted typecodes")?;
     *omitted.entry(typecode).or_default() += 1;
     Ok(())
 }
@@ -1941,7 +1939,7 @@ fn append_legacy_brep(
         values
     };
     group_roots.extend_from_slice(&roots);
-    group_roots.sort_unstable();
+    ctx.sort_unstable_by(&mut group_roots, Ord::cmp, |_| 0, "Rhino V1 Brep unique roots sort")?;
     group_roots.dedup();
     admit_v1_temporary_items::<(usize, NurbsCurve)>(
         ctx,
@@ -2255,8 +2253,12 @@ fn append_legacy_brep(
             .transpose()?
             .ok_or_else(|| CodecError::malformed("V1 edge end endpoint has no admitted vertex"))?;
         let ids = [start, end];
-        ctx.charge_collection_items(1, "Rhino V1 Brep grouped vertices")?;
-        group_vertices.insert(*root, ids);
+        ctx.insert_btree_map(
+            &mut group_vertices,
+            *root,
+            ids,
+            "Rhino V1 Brep grouped vertices",
+        )?;
     }
     reserve_v1_temporary_bytes::<(usize, cadmpeg_ir::ids::EdgeId)>(
         &mut workspace,
@@ -2312,8 +2314,12 @@ fn append_legacy_brep(
                 })
                 .transpose()?,
         });
-        ctx.charge_collection_items(1, "Rhino V1 Brep grouped edges")?;
-        group_edges.insert(root, edge_id);
+        ctx.insert_btree_map(
+            &mut group_edges,
+            root,
+            edge_id,
+            "Rhino V1 Brep grouped edges",
+        )?;
     }
     let mut shell_faces =
         ctx.retained_vec::<cadmpeg_ir::ids::FaceId>(face_count, "Rhino V1 shell faces")?;
@@ -2563,12 +2569,16 @@ fn append_legacy_brep(
     )?;
     let mut coedge_positions = BTreeMap::new();
     for (index, coedge) in model.coedges.iter().enumerate() {
-        ctx.charge_collection_items(1, "Rhino V1 Brep radial positions")?;
         let id = cadmpeg_ir::ids::CoedgeId::try_from(
             ctx.copy_retained_text(coedge.id.as_str(), "Rhino V1 Brep radial position ID")?,
         )
         .map_err(|error| CodecError::malformed(error.to_string()))?;
-        coedge_positions.insert(id, index);
+        ctx.insert_btree_map(
+            &mut coedge_positions,
+            id,
+            index,
+            "Rhino V1 Brep radial positions",
+        )?;
     }
     for ring in coedges_by_root.values() {
         for index in 0..ring.len() {

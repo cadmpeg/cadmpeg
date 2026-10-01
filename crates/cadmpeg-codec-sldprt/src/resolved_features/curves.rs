@@ -16,7 +16,7 @@ use super::scalars::feature_object_name;
 use super::{LEGACY_EXTENDED_SKETCH_MARKER, LEGACY_SKETCH_MARKER, SKETCH_MARKER};
 use crate::records::ObjectId;
 use crate::records::{FeatureInputLane, SketchInputEntity, SketchInputKind};
-use cadmpeg_core::decode::{bounded_len, refuse_local_limit, DecodeContext, View};
+use cadmpeg_core::decode::{bounded_len, DecodeContext, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::sketches::{
@@ -622,12 +622,12 @@ pub(super) fn resolve_slot_marker_arcs(
             curves.push(*marker);
         }
     }
-    let curve_count = cadmpeg_core::decode::u64_from_index(curves.len());
-    let curve_sort_work = curve_count
-        .checked_mul(u64::from(usize::BITS - curves.len().leading_zeros()))
-        .ok_or_else(|| ctx.refuse_codec_limit("sort SLDPRT slot curves", u64::MAX - 1, u64::MAX))?;
-    ctx.charge_work(curve_sort_work, "sort SLDPRT slot curves")?;
-    curves.sort_unstable_by_key(|marker| marker.offset());
+    ctx.sort_unstable_by(
+        &mut curves,
+        |left, right| left.offset().cmp(&right.offset()),
+        |_| 0,
+        "sort SLDPRT slot curves",
+    )?;
     if curves.len() != 4 {
         return Ok(());
     }
@@ -656,12 +656,12 @@ pub(super) fn resolve_slot_marker_arcs(
             points.push(*marker);
         }
     }
-    let point_count = cadmpeg_core::decode::u64_from_index(points.len());
-    let point_sort_work = point_count
-        .checked_mul(u64::from(usize::BITS - points.len().leading_zeros()))
-        .ok_or_else(|| ctx.refuse_codec_limit("sort SLDPRT slot points", u64::MAX - 1, u64::MAX))?;
-    ctx.charge_work(point_sort_work, "sort SLDPRT slot points")?;
-    points.sort_unstable_by_key(|marker| marker.offset());
+    ctx.sort_unstable_by(
+        &mut points,
+        |left, right| left.offset().cmp(&right.offset()),
+        |_| 0,
+        "sort SLDPRT slot points",
+    )?;
     let [Some(first_center), Some(second_center)] =
         center_indices.map(|index| points.get(index).map(|point| point.id()))
     else {
@@ -986,12 +986,11 @@ pub(super) fn resolve_connected_marker_arcs(
             format_args!("{native_ref}"),
             "copy SLDPRT connected arc point identity",
         )?;
-        if !points.contains_key(&retained_ref) {
-            ctx.charge_collection_items(1, "index SLDPRT connected arc points")?;
-            points.try_reserve(1).map_err(|_| {
-                ctx.refuse_codec_limit("index SLDPRT connected arc points", u64::MAX - 1, u64::MAX)
-            })?;
-        }
+        ctx.admit_hash_map_entry(
+            &mut points,
+            &retained_ref,
+            "index SLDPRT connected arc points",
+        )?;
         points.insert(retained_ref, position.get());
         ctx.reserve_vec(
             &mut point_records,
@@ -1076,16 +1075,11 @@ pub(super) fn resolve_connected_marker_arcs(
         let Some(native_ref) = entity.native_ref.as_deref() else {
             continue;
         };
-        if !point_by_ref.contains_key(native_ref) {
-            ctx.charge_collection_items(1, "index SLDPRT connected arc point references")?;
-            point_by_ref.try_reserve(1).map_err(|_| {
-                ctx.refuse_codec_limit(
-                    "index SLDPRT connected arc point references",
-                    u64::MAX - 1,
-                    u64::MAX,
-                )
-            })?;
-        }
+        ctx.admit_hash_map_entry(
+            &mut point_by_ref,
+            &native_ref,
+            "index SLDPRT connected arc point references",
+        )?;
         point_by_ref.insert(native_ref, position.get());
     }
     let mut cycle_replacements = Vec::new();
@@ -1126,10 +1120,7 @@ pub(super) fn resolve_connected_marker_arcs(
         if visited.contains(&first) {
             continue;
         }
-        ctx.charge_collection_items(1, "visit SLDPRT connected native arc")?;
-        visited.try_reserve(1).map_err(|_| {
-            ctx.refuse_codec_limit("visit SLDPRT connected native arc", u64::MAX - 1, u64::MAX)
-        })?;
+        ctx.reserve_set(&mut visited, 1, "visit SLDPRT connected native arc")?;
         visited.insert(first);
         let mut component = Vec::new();
         ctx.reserve_vec(&mut component, 1, "collect SLDPRT connected arc component")?;
@@ -1147,14 +1138,7 @@ pub(super) fn resolve_connected_marker_arcs(
                 {
                     continue;
                 }
-                ctx.charge_collection_items(1, "visit SLDPRT connected native arc")?;
-                visited.try_reserve(1).map_err(|_| {
-                    ctx.refuse_codec_limit(
-                        "visit SLDPRT connected native arc",
-                        u64::MAX - 1,
-                        u64::MAX,
-                    )
-                })?;
+                ctx.reserve_set(&mut visited, 1, "visit SLDPRT connected native arc")?;
                 visited.insert(candidate);
                 ctx.reserve_vec(&mut component, 1, "collect SLDPRT connected arc component")?;
                 component.push(candidate);
@@ -1171,18 +1155,12 @@ pub(super) fn resolve_connected_marker_arcs(
                 endpoint_refs.push(reference);
             }
         }
-        let endpoint_count = cadmpeg_core::decode::u64_from_index(endpoint_refs.len());
-        let endpoint_sort_work = endpoint_count
-            .checked_mul(u64::from(usize::BITS - endpoint_refs.len().leading_zeros()))
-            .ok_or_else(|| {
-                ctx.refuse_codec_limit(
-                    "sort SLDPRT connected arc endpoints",
-                    u64::MAX - 1,
-                    u64::MAX,
-                )
-            })?;
-        ctx.charge_work(endpoint_sort_work, "sort SLDPRT connected arc endpoints")?;
-        endpoint_refs.sort_unstable();
+        ctx.sort_unstable_by(
+            &mut endpoint_refs,
+            Ord::cmp,
+            |reference| reference.len(),
+            "sort SLDPRT connected arc endpoints",
+        )?;
         endpoint_refs.dedup();
         let mut component_points = Vec::new();
         let mut missing_point = false;
@@ -1328,16 +1306,11 @@ fn closed_marker_profiles_with_policy<E: Borrow<SketchEntity>>(
     for index in &curves {
         let entity = entities[*index].borrow();
         for endpoint in &entity.endpoint_refs {
-            if !incidence.contains_key(endpoint.as_str()) {
-                ctx.charge_collection_items(1, "index SLDPRT closed curve endpoints")?;
-                incidence.try_reserve(1).map_err(|_| {
-                    ctx.refuse_codec_limit(
-                        "index SLDPRT closed curve endpoints",
-                        u64::MAX - 1,
-                        u64::MAX,
-                    )
-                })?;
-            }
+            ctx.admit_hash_map_entry(
+                &mut incidence,
+                &endpoint.as_str(),
+                "index SLDPRT closed curve endpoints",
+            )?;
             let adjacent = incidence.entry(endpoint.as_str()).or_default();
             ctx.reserve_vec(adjacent, 1, "collect SLDPRT endpoint incidence")?;
             adjacent.push(*index);
@@ -1345,22 +1318,12 @@ fn closed_marker_profiles_with_policy<E: Borrow<SketchEntity>>(
     }
     let mut unused = HashSet::new();
     for index in &curves {
-        ctx.charge_collection_items(1, "index SLDPRT unused closed curves")?;
-        unused.try_reserve(1).map_err(|_| {
-            ctx.refuse_codec_limit("index SLDPRT unused closed curves", u64::MAX - 1, u64::MAX)
-        })?;
+        ctx.reserve_set(&mut unused, 1, "index SLDPRT unused closed curves")?;
         unused.insert(*index);
     }
     while let Some(&first) = unused.iter().min() {
         let mut component = HashSet::new();
-        ctx.charge_collection_items(1, "index SLDPRT closed curve component")?;
-        component.try_reserve(1).map_err(|_| {
-            ctx.refuse_codec_limit(
-                "index SLDPRT closed curve component",
-                u64::MAX - 1,
-                u64::MAX,
-            )
-        })?;
+        ctx.reserve_set(&mut component, 1, "index SLDPRT closed curve component")?;
         component.insert(first);
         let mut frontier = Vec::new();
         ctx.reserve_vec(&mut frontier, 1, "collect SLDPRT closed curve frontier")?;
@@ -1370,14 +1333,7 @@ fn closed_marker_profiles_with_policy<E: Borrow<SketchEntity>>(
                 for adjacent in incidence.get(endpoint.as_str()).into_iter().flatten() {
                     ctx.charge_work(1, "scan SLDPRT closed curve incidence")?;
                     if !component.contains(adjacent) {
-                        ctx.charge_collection_items(1, "index SLDPRT closed curve component")?;
-                        component.try_reserve(1).map_err(|_| {
-                            ctx.refuse_codec_limit(
-                                "index SLDPRT closed curve component",
-                                u64::MAX - 1,
-                                u64::MAX,
-                            )
-                        })?;
+                        ctx.reserve_set(&mut component, 1, "index SLDPRT closed curve component")?;
                         component.insert(*adjacent);
                         ctx.reserve_vec(&mut frontier, 1, "collect SLDPRT closed curve frontier")?;
                         frontier.push(*adjacent);
@@ -1519,12 +1475,11 @@ pub(super) fn sketch_plane_frames(
         else {
             continue;
         };
-        if !source_by_feature.contains_key(neutral_id) {
-            ctx.charge_collection_items(1, "index SLDPRT sketch plane sources")?;
-            source_by_feature.try_reserve(1).map_err(|_| {
-                ctx.refuse_codec_limit("index SLDPRT sketch plane sources", u64::MAX - 1, u64::MAX)
-            })?;
-        }
+        ctx.admit_hash_map_entry(
+            &mut source_by_feature,
+            &neutral_id,
+            "index SLDPRT sketch plane sources",
+        )?;
         source_by_feature.insert(neutral_id, source);
     }
     let mut frames_by_feature = HashMap::new();
@@ -1551,16 +1506,11 @@ pub(super) fn sketch_plane_frames(
         let Some(frame) = frame else {
             continue;
         };
-        if !frames_by_feature.contains_key(feature.id.as_str()) {
-            ctx.charge_collection_items(1, "index SLDPRT resolved sketch planes")?;
-            frames_by_feature.try_reserve(1).map_err(|_| {
-                ctx.refuse_codec_limit(
-                    "index SLDPRT resolved sketch planes",
-                    u64::MAX - 1,
-                    u64::MAX,
-                )
-            })?;
-        }
+        ctx.admit_hash_map_entry(
+            &mut frames_by_feature,
+            &feature.id.as_str(),
+            "index SLDPRT resolved sketch planes",
+        )?;
         frames_by_feature.insert(feature.id.as_str(), frame);
     }
     loop {
@@ -1601,16 +1551,11 @@ pub(super) fn sketch_plane_frames(
             break;
         }
         for (id, frame) in derived {
-            if !frames_by_feature.contains_key(id) {
-                ctx.charge_collection_items(1, "index SLDPRT derived sketch planes")?;
-                frames_by_feature.try_reserve(1).map_err(|_| {
-                    ctx.refuse_codec_limit(
-                        "index SLDPRT derived sketch planes",
-                        u64::MAX - 1,
-                        u64::MAX,
-                    )
-                })?;
-            }
+            ctx.admit_hash_map_entry(
+                &mut frames_by_feature,
+                &id,
+                "index SLDPRT derived sketch planes",
+            )?;
             frames_by_feature.insert(id, frame);
         }
     }
@@ -1619,16 +1564,11 @@ pub(super) fn sketch_plane_frames(
         let Some(frame) = frames_by_feature.get(feature).copied() else {
             continue;
         };
-        if !frames.contains_key(&source) {
-            ctx.charge_collection_items(1, "index SLDPRT sketch plane source frames")?;
-            frames.try_reserve(1).map_err(|_| {
-                ctx.refuse_codec_limit(
-                    "index SLDPRT sketch plane source frames",
-                    u64::MAX - 1,
-                    u64::MAX,
-                )
-            })?;
-        }
+        ctx.admit_hash_map_entry(
+            &mut frames,
+            &source,
+            "index SLDPRT sketch plane source frames",
+        )?;
         frames.insert(source, frame);
     }
     Ok(frames)
@@ -1670,16 +1610,11 @@ pub(super) fn lane_sketch_plane_frames(
             }
             _ => continue,
         };
-        if !lane_candidates.contains_key(&source) {
-            ctx.charge_collection_items(1, "index SLDPRT lane sketch plane candidates")?;
-            lane_candidates.try_reserve(1).map_err(|_| {
-                ctx.refuse_codec_limit(
-                    "index SLDPRT lane sketch plane candidates",
-                    u64::MAX - 1,
-                    u64::MAX,
-                )
-            })?;
-        }
+        ctx.admit_hash_map_entry(
+            &mut lane_candidates,
+            &source,
+            "index SLDPRT lane sketch plane candidates",
+        )?;
         let candidates = lane_candidates.entry(source).or_default();
         ctx.reserve_vec(candidates, 1, "collect SLDPRT lane sketch plane candidates")?;
         candidates.push(frame);
@@ -1702,16 +1637,11 @@ pub(super) fn lane_sketch_plane_frames(
         )?;
         candidates.dedup_by_key(|frame| reference_plane_frame_key(&frame.as_tuple()));
         if let [frame] = candidates.as_slice() {
-            if !frames.contains_key(&source) {
-                ctx.charge_collection_items(1, "index SLDPRT lane sketch plane frames")?;
-                frames.try_reserve(1).map_err(|_| {
-                    ctx.refuse_codec_limit(
-                        "index SLDPRT lane sketch plane frames",
-                        u64::MAX - 1,
-                        u64::MAX,
-                    )
-                })?;
-            }
+            ctx.admit_hash_map_entry(
+                &mut frames,
+                &source,
+                "index SLDPRT lane sketch plane frames",
+            )?;
             frames.entry(source).or_insert(*frame);
         }
     }
@@ -2204,7 +2134,9 @@ pub(super) fn legacy_extended_rectangle_line_endpoints(
     let endpoint = |relative: usize| View::u16_le_at(payload, offset + relative).map(u32::from);
     let endpoints = [endpoint(56)?, endpoint(58)?];
     let terminal_state = View::u16_le_at(payload, offset + 74)?;
-    let continued = sketch_marker_prefix_at(payload, offset.saturating_add(84));
+    let continued = offset
+        .checked_add(84)
+        .is_some_and(|at| sketch_marker_prefix_at(payload, at));
     let terminal = payload.get(offset + 72..offset + 84) == Some(&[0; 12]);
     (matches!(terminal_state, 0 | 2) && endpoints[0] != endpoints[1] && (continued || terminal))
         .then_some(endpoints)
@@ -2235,7 +2167,9 @@ pub(super) fn current_compact_rectangle_line_endpoints(
     }
     let endpoints = one_based_u16_endpoint_pair(payload, offset, 56)?;
     let terminal_state = View::u16_le_at(payload, offset + 74)?;
-    let continued = sketch_marker_prefix_at(payload, offset.saturating_add(84));
+    let continued = offset
+        .checked_add(84)
+        .is_some_and(|at| sketch_marker_prefix_at(payload, at));
     let terminal = payload.get(offset + 72..offset + 84) == Some(&[0; 12]);
     (matches!(terminal_state, 0 | 2) && endpoints[0] != endpoints[1] && (continued || terminal))
         .then_some(endpoints)
@@ -2257,7 +2191,9 @@ pub(super) fn current_wide_rectangle_line_endpoints(
             != Some(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x04, 0x00])
         || payload.get(offset + 48..offset + 56) != Some(&1.0f64.to_le_bytes())
         || wide_indexed_curve_endpoint_indices(payload, offset).is_none()
-        || !sketch_marker_prefix_at(payload, offset.saturating_add(92))
+        || !offset
+            .checked_add(92)
+            .is_some_and(|at| sketch_marker_prefix_at(payload, at))
     {
         return None;
     }
@@ -2296,10 +2232,14 @@ pub(super) fn legacy_extended_rectangle_diagonal_endpoint(
             && payload
                 .get(offset + 142..offset + 146)
                 .is_some_and(|identity| identity != [0; 4] && identity != [0xff; 4])
-            && sketch_marker_prefix_at(payload, offset.saturating_add(146));
+            && offset
+                .checked_add(146)
+                .is_some_and(|at| sketch_marker_prefix_at(payload, at));
         let terminal_end = payload.get(offset + 100..offset + 142) == Some(&[0; 42])
             && payload.get(offset + 142..offset + 146) == Some(&[0xff; 4])
-            && sketch_marker_prefix_at(payload, offset.saturating_add(146));
+            && offset
+                .checked_add(146)
+                .is_some_and(|at| sketch_marker_prefix_at(payload, at));
         (
             payload.get(offset + 78..offset + 86)?,
             payload.get(offset + 86..offset + 94)?,
@@ -2376,8 +2316,16 @@ pub(super) fn unique_dimensioned_rectangle_markers<'a>(
             ctx.refuse_codec_limit("scan SLDPRT rectangle dimensions", u64::MAX - 1, u64::MAX)
         })?;
     let dimensions_match = |u0: i64, u1: i64, v0: i64, v1: i64| {
-        let u_span = (i128::from(u1) - i128::from(u0)) as f64 * QUANTUM;
-        let v_span = (i128::from(v1) - i128::from(v0)) as f64 * QUANTUM;
+        let (Some(u_cells), Some(v_cells)) = (
+            u1.checked_sub(u0)
+                .and_then(cadmpeg_core::convert::f64_from_i64),
+            v1.checked_sub(v0)
+                .and_then(cadmpeg_core::convert::f64_from_i64),
+        ) else {
+            return false;
+        };
+        let u_span = u_cells * QUANTUM;
+        let v_span = v_cells * QUANTUM;
         dimensions_mm
             .iter()
             .enumerate()
@@ -2449,15 +2397,7 @@ fn ordered_compact_line_profile(
         return Ok(None);
     }
     let mut used = ctx.alloc_filled(lines.len(), false, "SLDPRT compact line profile usage")?;
-    ctx.charge_collection_items(lines.len() as u64, "SLDPRT compact line profile")?;
-    let mut profile = Vec::new();
-    profile.try_reserve_exact(lines.len()).map_err(|_| {
-        refuse_local_limit(
-            "SLDPRT compact line profile",
-            lines.len() as u64,
-            lines.len() as u64,
-        )
-    })?;
+    let mut profile = ctx.collection_vec(lines.len(), "SLDPRT compact line profile")?;
     let Some(first) = lines.first() else {
         return Ok(None);
     };
@@ -2566,7 +2506,7 @@ pub(super) fn compact_line_region_addresses(
     let Some(remaining) = payload.len().checked_sub(entries_start) else {
         return Ok(None);
     };
-    if bounded_len(count as u64, 12, remaining).is_none() {
+    if bounded_len(cadmpeg_core::decode::u64_from_index(count), 12, remaining).is_none() {
         return Ok(None);
     }
     let mut addresses = ctx.alloc_filled(count, 0u16, "collect SLDPRT compact region addresses")?;
@@ -2591,7 +2531,10 @@ pub(super) fn compact_line_region_addresses(
         };
         *slot = address;
     }
-    ctx.charge_work(count as u64, "validate SLDPRT compact region addresses")?;
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(count),
+        "validate SLDPRT compact region addresses",
+    )?;
     let mut seen = ctx.alloc_filled(count, false, "validate SLDPRT compact region addresses")?;
     for address in &addresses {
         let Some(index) = usize::from(*address)
@@ -2642,7 +2585,10 @@ pub(super) fn compact_line_chain_addresses(
         })() else {
             continue;
         };
-        ctx.charge_work(count as u64, "validate SLDPRT compact line chain")?;
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(count),
+            "validate SLDPRT compact line chain",
+        )?;
         let mut addresses =
             ctx.alloc_filled(count, 0u16, "collect SLDPRT compact chain addresses")?;
         let mut seen = [false; 64];

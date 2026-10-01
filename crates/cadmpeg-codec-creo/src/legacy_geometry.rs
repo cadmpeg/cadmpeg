@@ -160,10 +160,10 @@ pub(crate) fn scan(
         "creo legacy nonvisible carrier aggregation",
     )?;
     carriers.append(&mut nonvisible_carriers);
-    crate::sort::stable_sort_by_key(
-        ctx,
+    ctx.stable_sort_by(
         carriers.as_mut_slice(),
-        |carrier| carrier.offset,
+        |left, right| left.offset.cmp(&right.offset),
+        |_| 0,
         "creo scan carriers ordering",
     )?;
     let (topology_rows, pcurves) = curve_namespace(
@@ -213,17 +213,17 @@ fn curve_namespace(
         ctx.reserve_vec(&mut topology_rows, 1, "creo legacy topology rows")?;
         topology_rows.push(row);
     }
-    crate::sort::stable_sort_by_key(
-        ctx,
+    ctx.stable_sort_by(
         topology_rows.as_mut_slice(),
-        |row| row.offset,
+        |left, right| left.offset.cmp(&right.offset),
+        |_| 0,
         "creo curve namespace topology rows ordering",
     )?;
     topology_rows.dedup_by_key(|row| row.offset);
-    crate::sort::stable_sort_by_key(
-        ctx,
+    ctx.stable_sort_by(
         pcurves.as_mut_slice(),
-        |pcurve| pcurve.offset,
+        |left, right| left.offset.cmp(&right.offset),
+        |_| 0,
         "creo curve namespace pcurves ordering",
     )?;
     pcurves.dedup_by_key(|pcurve| pcurve.offset);
@@ -457,16 +457,16 @@ fn namespace(
         ctx.reserve_vec(&mut rows, 1, "creo legacy surface rows")?;
         rows.push(row);
     }
-    crate::sort::stable_sort_by_key(
-        ctx,
+    ctx.stable_sort_by(
         rows.as_mut_slice(),
-        |row| row.offset,
+        |left, right| left.offset.cmp(&right.offset),
+        |_| 0,
         "creo namespace rows ordering",
     )?;
-    crate::sort::stable_sort_by_key(
-        ctx,
+    ctx.stable_sort_by(
         carriers.as_mut_slice(),
-        |carrier| carrier.offset,
+        |left, right| left.offset.cmp(&right.offset),
+        |_| 0,
         "creo namespace carriers ordering",
     )?;
     Ok((rows, carriers))
@@ -781,15 +781,7 @@ fn object_id_index<'a>(
     for object in objects {
         let id =
             legacy::checked_object_node_id(ctx, object.offset, "creo legacy object index IDs")?;
-        match index.entry(id) {
-            std::collections::btree_map::Entry::Vacant(entry) => {
-                ctx.charge_collection_items(1, "creo legacy object index nodes")?;
-                entry.insert(object);
-            }
-            std::collections::btree_map::Entry::Occupied(mut entry) => {
-                entry.insert(object);
-            }
-        }
+        ctx.insert_btree_map(&mut index, id, object, "creo legacy object index nodes")?;
     }
     Ok(index)
 }
@@ -801,9 +793,9 @@ fn child_index<'a>(
     let mut index = BTreeMap::new();
     for object in objects {
         if let Some(parent) = object.parent {
+            ctx.admit_btree_entry(&index, &parent, "creo legacy child index nodes")?;
             match index.entry(parent) {
                 std::collections::btree_map::Entry::Vacant(entry) => {
-                    ctx.charge_collection_items(1, "creo legacy child index nodes")?;
                     let mut children = Vec::new();
                     ctx.reserve_vec(&mut children, 1, "creo legacy child index rows")?;
                     children.push(object);

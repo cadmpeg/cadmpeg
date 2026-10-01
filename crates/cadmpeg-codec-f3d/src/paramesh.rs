@@ -22,7 +22,7 @@ use cadmpeg_ir::units::UnitVector3;
 
 use crate::error::malformed;
 use crate::records::mesh::DesignMeshUuid;
-use cadmpeg_core::decode::{index_from_u32, u64_from_index};
+use cadmpeg_core::decode::index_from_u32;
 
 /// Container magic.
 const MAGIC: [u8; 12] = [
@@ -1169,19 +1169,33 @@ fn attribute_names(
         return Ok(std::collections::BTreeMap::new());
     };
     require_layout(stream, StreamLayout::Byte)?;
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(stream.bytes.len()),
+        "validate paramesh XML UTF-8",
+    )?;
     let xml = std::str::from_utf8(&stream.bytes)
         .map_err(|_| malformed("paramesh attribute-name stream is not UTF-8"))?;
     let body = xml
         .strip_prefix("<?xml version=\"1.0\"?>")
         .ok_or_else(|| malformed("paramesh attribute-name stream has no XML declaration"))?;
-    let (wrapped, _wrapped_reservation) = ctx.format_scoped(
-        format_args!("<Root>{body}</Root>"),
-        "wrap paramesh attribute XML",
-    )?;
-    let wrapped_count = u64_from_index(wrapped.len());
-    ctx.charge_collection_items(wrapped_count, "parse paramesh XML nodes")?;
-    let document = roxmltree::Document::parse(&wrapped)
-        .map_err(|_| malformed("paramesh attribute-name stream is not XML"))?;
+    let work = cadmpeg_core::decode::u64_from_index(body.len())
+        .checked_mul(2)
+        .ok_or_else(|| ctx.refuse_codec_limit("wrap paramesh attribute XML", u64::MAX, u64::MAX))?;
+    ctx.charge_work(work, "wrap paramesh attribute XML")?;
+    let (_wrapped_reservation, wrapped) = {
+        let (text, reservation) = ctx.format_scoped(
+            format_args!("<Root>{body}</Root>"),
+            "wrap paramesh attribute XML",
+        )?;
+        (reservation, text)
+    };
+    let admitted_document =
+        ctx.parse_xml(&wrapped, "parse paramesh XML tree")
+            .map_err(|error| match error {
+                CodecError::ResourceLimit(_) => error,
+                _ => malformed("paramesh attribute-name stream is not XML"),
+            })?;
+    let document = admitted_document.document();
     let root = document.root_element();
     if root.tag_name().name() != "Root"
         || root.attributes().next().is_some()
@@ -1753,7 +1767,12 @@ pub(crate) fn decode_mesh_container(
         require_version_2_descriptor(stream)?;
     }
     // The kind-4 chunks follow the name table in ascending stream-id order.
-    name_table.sort_by_key(|(_, id)| *id);
+    ctx.stable_sort_by(
+        &mut name_table,
+        |(_, left), (_, right)| left.cmp(right),
+        |_| 0,
+        "sort paramesh name table",
+    )?;
     let named = |name: &str| {
         name_table
             .iter()

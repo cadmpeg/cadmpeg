@@ -76,33 +76,19 @@ pub(in crate::native) fn attach_expression_parameters(
         uses.push(parameter_use);
     }
     for uses in uses_by_expression.values_mut() {
-        let count = uses.len();
-        let passes = usize::try_from(usize::BITS - count.leading_zeros()).map_err(|_| {
-            ctx.refuse_codec_limit(
-                "NX expression use sort",
-                0,
-                cadmpeg_core::decode::u64_from_index(count),
-            )
-        })?;
-        let work = count.checked_mul(passes).ok_or_else(|| {
-            ctx.refuse_codec_limit(
-                "NX expression use sort",
-                0,
-                cadmpeg_core::decode::u64_from_index(count),
-            )
-        })?;
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(work),
+        ctx.stable_sort_by(
+            uses,
+            |first, second| {
+                first
+                    .bindings
+                    .first()
+                    .map(|binding| binding.source_offset)
+                    .cmp(&second.bindings.first().map(|binding| binding.source_offset))
+                    .then_with(|| first.id.cmp(&second.id))
+            },
+            |item| item.id.len(),
             "NX expression use sort",
         )?;
-        uses.sort_by(|first, second| {
-            first
-                .bindings
-                .first()
-                .map(|binding| binding.source_offset)
-                .cmp(&second.bindings.first().map(|binding| binding.source_offset))
-                .then_with(|| first.id.cmp(&second.id))
-        });
     }
     let mut ordered_tables = Vec::new();
     for entry in tables {
@@ -115,58 +101,30 @@ pub(in crate::native) fn attach_expression_parameters(
         ordered_tables.push(entry);
     }
     for (_, expressions) in &mut ordered_tables {
-        let count = expressions.len();
-        let passes = usize::try_from(usize::BITS - count.leading_zeros()).map_err(|_| {
-            ctx.refuse_codec_limit(
-                "NX expression table sort",
-                0,
-                cadmpeg_core::decode::u64_from_index(count),
-            )
-        })?;
-        let work = count.checked_mul(passes).ok_or_else(|| {
-            ctx.refuse_codec_limit(
-                "NX expression table sort",
-                0,
-                cadmpeg_core::decode::u64_from_index(count),
-            )
-        })?;
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(work),
+        ctx.stable_sort_by(
+            expressions,
+            |first, second| {
+                first
+                    .source_offset
+                    .cmp(&second.source_offset)
+                    .then_with(|| first.id.cmp(&second.id))
+            },
+            |item| item.id.len(),
             "NX expression table sort",
         )?;
-        expressions.sort_by(|first, second| {
-            first
-                .source_offset
-                .cmp(&second.source_offset)
-                .then_with(|| first.id.cmp(&second.id))
-        });
     }
-    let count = ordered_tables.len();
-    let passes = usize::try_from(usize::BITS - count.leading_zeros()).map_err(|_| {
-        ctx.refuse_codec_limit(
-            "NX ordered table sort",
-            0,
-            cadmpeg_core::decode::u64_from_index(count),
-        )
-    })?;
-    let work = count.checked_mul(passes).ok_or_else(|| {
-        ctx.refuse_codec_limit(
-            "NX ordered table sort",
-            0,
-            cadmpeg_core::decode::u64_from_index(count),
-        )
-    })?;
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(work),
+    ctx.stable_sort_by(
+        &mut ordered_tables,
+        |(first_table, first), (second_table, second)| {
+            first
+                .first()
+                .map(|expression| expression.source_offset)
+                .cmp(&second.first().map(|expression| expression.source_offset))
+                .then_with(|| first_table.cmp(second_table))
+        },
+        |(table, _)| table.len(),
         "NX ordered table sort",
     )?;
-    ordered_tables.sort_by(|(first_table, first), (second_table, second)| {
-        first
-            .first()
-            .map(|expression| expression.source_offset)
-            .cmp(&second.first().map(|expression| expression.source_offset))
-            .then_with(|| first_table.cmp(second_table))
-    });
     let base_ordinal = cadmpeg_core::decode::u64_from_index(ir.model.features.len());
     for (table_ordinal, (table, mut expressions)) in ordered_tables.into_iter().enumerate() {
         let ordered_count = order_expression_dependencies(ctx, &mut reservation, &mut expressions)?;

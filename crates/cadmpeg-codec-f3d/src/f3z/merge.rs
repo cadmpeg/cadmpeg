@@ -140,7 +140,24 @@ impl MergeSession<'_, '_> {
                 .map_or(reference.relative_path.as_str(), |design| {
                     design.display_name.as_str()
                 });
-            if self.stack.contains(&reference.relative_path) {
+            let mut cycle = false;
+            for path in &self.stack {
+                let work = cadmpeg_core::decode::u64_from_index(path.len())
+                    .checked_add(1)
+                    .ok_or_else(|| {
+                        self.ctx.refuse_codec_limit(
+                            "match F3Z reference cycle",
+                            u64::MAX - 1,
+                            u64::MAX,
+                        )
+                    })?;
+                self.ctx.charge_work(work, "match F3Z reference cycle")?;
+                if path == reference.relative_path.as_str() {
+                    cycle = true;
+                    break;
+                }
+            }
+            if cycle {
                 super::push_loss(
                     self.ctx,
                     &mut parent_report.losses,
@@ -152,7 +169,7 @@ impl MergeSession<'_, '_> {
                 )?;
                 continue;
             }
-            let Some(member) = self.archive.members.get(&reference.relative_path) else {
+            let Some(member) = self.archive.members.get(reference.relative_path.as_str()) else {
                 if self.scan.entry_view(&reference.relative_path).is_some() {
                     super::push_loss(
                         self.ctx,
@@ -222,9 +239,9 @@ impl MergeSession<'_, '_> {
             )?;
             self.stack.pop();
             if let Some(transform) = reference.transform {
-                apply_occurrence_transform(&mut component_ir.model, transform)?;
+                apply_occurrence_transform(self.ctx, &mut component_ir.model, transform)?;
             }
-            append_feature_history(&parent_ir.model, &mut component_ir.model)?;
+            append_feature_history(self.ctx, &parent_ir.model, &mut component_ir.model)?;
             let occurrence_start = parent_ir.model.occurrences.len();
             let mut scope = OccurrenceScope {
                 ctx: self.ctx,
@@ -311,7 +328,15 @@ fn reparent_component_roots(
 }
 
 /// Places one component's feature history after the histories already merged.
-fn append_feature_history(parent: &Model, component: &mut Model) -> Result<(), CodecError> {
+fn append_feature_history(
+    ctx: &DecodeContext<'_>,
+    parent: &Model,
+    component: &mut Model,
+) -> Result<(), CodecError> {
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(component.features.len()),
+        "scan F3Z component feature ordinals",
+    )?;
     let Some(component_minimum) = component
         .features
         .iter()
@@ -320,6 +345,10 @@ fn append_feature_history(parent: &Model, component: &mut Model) -> Result<(), C
     else {
         return Ok(());
     };
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(parent.features.len()),
+        "scan F3Z parent feature ordinals",
+    )?;
     let next = parent
         .features
         .iter()
@@ -330,6 +359,10 @@ fn append_feature_history(parent: &Model, component: &mut Model) -> Result<(), C
                 CodecError::Malformed("merged F3Z feature ordinal exceeds u64::MAX".into())
             })
         })?;
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(component.features.len()),
+        "rewrite F3Z feature ordinals",
+    )?;
     for feature in &mut component.features {
         feature.ordinal = feature
             .ordinal
@@ -409,15 +442,6 @@ fn occurrence_key(
     ctx: &DecodeContext<'_>,
     reference: &XrefReference,
 ) -> Result<String, CodecError> {
-    if reference.neutron_role.is_empty() {
-        return ctx.format_retained(
-            format_args!(
-                "ordinal-{}/occurrence-{}",
-                reference.ordinal, reference.occurrence_ordinal
-            ),
-            "retain F3Z occurrence key",
-        );
-    }
     let role = EscapedOccurrenceComponent(&reference.neutron_role);
     // `occurrence_ordinal` restarts for each Redirections reference. Keep the
     // source reference ordinal in the scope so two admitted rows carrying the
@@ -450,6 +474,7 @@ impl std::fmt::Display for EscapedOccurrenceComponent<'_> {
 }
 
 fn apply_occurrence_transform(
+    ctx: &DecodeContext<'_>,
     model: &mut Model,
     transform: crate::records::xref::XrefPlacementTransform,
 ) -> Result<(), CodecError> {
@@ -463,6 +488,12 @@ fn apply_occurrence_transform(
             "F3Z occurrence translation is not a finite affine transform"
         ))
     })?;
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(model.bodies.len())
+            .checked_mul(48)
+            .ok_or_else(|| ctx.refuse_codec_limit("compose F3Z body transforms", 0, u64::MAX))?,
+        "compose F3Z body transforms",
+    )?;
     for body in &mut model.bodies {
         body.transform = Some(match body.transform {
             Some(local) => compose_transforms(occurrence, local)?,
@@ -969,7 +1000,7 @@ mod tests {
                     id: "f3d:xref:design#0".into(),
                     ordinal: 0,
                     file_version: 1,
-                    target_file_name: "part.f3d".into(),
+                    target_file_name: "part.f3d".to_owned().try_into().unwrap(),
                     display_name: "Part".into(),
                     lineage_urn: "lineage".into(),
                     version_urn: "version".into(),
@@ -997,7 +1028,10 @@ mod tests {
         ];
         let source = cadmpeg_ir::transform::Transform::affine(rows).unwrap();
         let source = crate::records::xref::XrefPlacementTransform::try_from(source.rows()).unwrap();
-        let error = apply_occurrence_transform(&mut Model::default(), source).unwrap_err();
+        let error = crate::test_support::with_decode_context(|ctx| {
+            apply_occurrence_transform(ctx, &mut Model::default(), source)
+        })
+        .unwrap_err();
         assert!(error
             .to_string()
             .contains("F3Z occurrence translation is not a finite affine transform"));

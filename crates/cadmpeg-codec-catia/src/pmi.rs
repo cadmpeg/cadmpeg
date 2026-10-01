@@ -44,7 +44,20 @@ pub(crate) fn transfer_dimensions(
             continue;
         };
         let id = pmi_id(ctx, entity.byte_offset)?;
-        if ir.model.pmi.iter().any(|annotation| annotation.id == id) {
+        let mut duplicate = false;
+        for annotation in &ir.model.pmi {
+            let work = cadmpeg_core::decode::u64_from_index(annotation.id.as_str().len())
+                .checked_add(cadmpeg_core::decode::u64_from_index(id.as_str().len()))
+                .ok_or_else(|| {
+                    ctx.refuse_codec_limit("catia_pmi_duplicate_search", u64::MAX, u64::MAX)
+                })?;
+            ctx.charge_work(work, "catia_pmi_duplicate_search")?;
+            if annotation.id == id {
+                duplicate = true;
+                break;
+            }
+        }
+        if duplicate {
             continue;
         }
         ctx.charge_entities(1, "admit CATIA PMI dimension")?;
@@ -290,6 +303,44 @@ mod tests {
             0
         );
         assert!(ir.model.pmi.is_empty());
+    }
+
+    #[test]
+    fn pmi_duplicate_search_refuses_work() {
+        let native = CatiaNative {
+            entity_records: vec![range_only_entity("DiameterThread")],
+            ..CatiaNative::default()
+        };
+        let mut ir = CadIr::empty();
+        crate::test_support::with_service_context(|ctx| {
+            transfer_dimensions(
+                ctx,
+                &mut ir,
+                &native,
+                &crate::decode::ModelingGraphScope::Unscoped,
+                &HashSet::new(),
+            )
+        })
+        .expect("first dimension");
+        // The formatted identity charges its length twice (measure, then append); the
+        // scan then charges both ids.
+        let id_work = 2 * u64::try_from("catia:model:pmi#entity-record-0000000000".len())
+            .expect("identity length fits u64");
+        crate::test_support::with_work_limit(id_work, |ctx| {
+            let cadmpeg_core::CodecError::ResourceLimit(limit) = transfer_dimensions(
+                ctx,
+                &mut ir,
+                &native,
+                &crate::decode::ModelingGraphScope::Unscoped,
+                &HashSet::new(),
+            )
+            .expect_err("duplicate scan consumes work") else {
+                panic!("resource refusal required")
+            };
+            assert_eq!(limit.operation, "catia_pmi_duplicate_search");
+            assert_eq!(ctx.resource_refusal(), Some(limit));
+        });
+        assert_eq!(ir.model.pmi.len(), 1);
     }
 
     #[test]

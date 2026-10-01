@@ -913,12 +913,104 @@ class AuthoringPaths(TempSourceCase):
         self.assertEqual(self.findings("authoring_path"), [])
 
 
+class DecodeSorts(TempSourceCase):
+    def test_each_slice_sort_with_context_parameter_is_rejected(self) -> None:
+        for method in sorted(policy.SLICE_SORT_METHODS):
+            with self.subTest(method=method):
+                self.write("crates/demo/src/lib.rs",
+                           f"fn read(budget: &DecodeContext<'_>) {{\n    values.{method}(compare);\n}}\n")
+                findings = self.findings("uncharged_decode_sort")
+                self.assertEqual([(item.path, item.line) for item in findings],
+                                 [("crates/demo/src/lib.rs", 2)])
+                self.assertIn("ctx.stable_sort_by", findings[0].message)
+                self.assertIn("ctx.sort_unstable_by", findings[0].message)
+
+    def test_context_local_and_self_field_are_rejected(self) -> None:
+        self.write("crates/demo/src/lib.rs", """
+struct Reader<'a> { ctx: &'a cadmpeg_core::decode::DecodeContext<'a> }
+impl Reader<'_> {
+    fn read(&self) { self.ctx.charge_work(1, "read")?; values.sort(); }
+}
+fn local() {
+    let allowance: &DecodeContext<'_> = context;
+    values.sort_unstable();
+}
+""")
+        self.assertEqual([item.line for item in self.findings("uncharged_decode_sort")], [4, 8])
+
+    def test_field_declared_in_another_module_is_rejected(self) -> None:
+        self.write("crates/demo/src/types.rs", "struct Reader<'a> { budget: &'a DecodeContext<'a> }")
+        self.write("crates/demo/src/read.rs", "impl Reader<'_> { fn read(&self) { self.budget; values.sort(); } }")
+        self.assertEqual(len(self.findings("uncharged_decode_sort")), 1)
+
+    def test_each_slice_sort_without_context_is_accepted(self) -> None:
+        self.write("crates/demo/src/lib.rs", "fn write() {\n" + "\n".join(
+            f"    values.{method}(compare);" for method in sorted(policy.SLICE_SORT_METHODS)
+        ) + "\n}\n")
+        self.assertEqual(self.findings("uncharged_decode_sort"), [])
+
+    def test_core_sort_implementations_are_accepted(self) -> None:
+        for path in sorted(policy.DECODE_SORT_EXEMPT_FILES):
+            self.write(path, "fn sort(ctx: &DecodeContext<'_>) { values.sort_unstable_by(compare); }")
+        self.assertEqual(self.findings("uncharged_decode_sort"), [])
+
+    def test_cfg_test_sorts_and_non_code_are_accepted(self) -> None:
+        self.write("crates/demo/src/lib.rs", """
+#[cfg(test)]
+mod tests { fn read(ctx: &DecodeContext<'_>) { values.sort(); } }
+#[cfg(test)]
+fn read(ctx: &DecodeContext<'_>) { values.sort_unstable(); }
+fn production(ctx: &DecodeContext<'_>) {
+    // values.sort();
+    let text = "values.sort_unstable();";
+    ctx.stable_sort_by(values, compare, key_bytes, "values")?;
+    ctx.sort_unstable_by(values, compare, key_bytes, "values")?;
+}
+""")
+        # The admitted unstable operation has the same method name as a slice call.
+        self.assertEqual(self.findings("uncharged_decode_sort"), [])
+
+    def test_function_boundaries_do_not_leak_context(self) -> None:
+        self.write("crates/demo/src/lib.rs", """
+fn read(ctx: &DecodeContext<'_>) {
+    fn write() { values.sort(); }
+    values.sort();
+}
+fn write() { values.sort_unstable(); }
+""")
+        self.assertEqual([item.line for item in self.findings("uncharged_decode_sort")], [4])
+
+    def test_closures_keep_context_and_generics_keep_function_scope(self) -> None:
+        self.write("crates/demo/src/lib.rs", """
+fn read<T: Copy>(ctx: &DecodeContext<'_>) {
+    records.map(|values| values.sort_unstable());
+}
+""")
+        self.assertEqual([item.line for item in self.findings("uncharged_decode_sort")], [3])
+
+
 class SourcePolicyCommand(TempSourceCase):
     def run_check(self, *args: str) -> tuple[int, str]:
         output = io.StringIO()
         with redirect_stdout(output):
             result = policy.main(list(args))
         return result, output.getvalue()
+
+    def test_crate_filter_keeps_only_selected_crate_findings(self) -> None:
+        self.write("crates/demo/src/lib.rs", "fn f() { let x = 1e-9; }\n")
+        self.write("crates/other/src/lib.rs", "fn f() { let x = 1e-8; }\n")
+        result, output = self.run_check("--json", "--crate", "demo")
+        self.assertEqual(result, 1)
+        self.assertEqual([item["path"] for item in json.loads(output)["findings"]],
+                         ["crates/demo/src/lib.rs"])
+        result, output = self.run_check("--json", "--crate", "demo", "--crate", "other")
+        self.assertEqual(result, 1)
+        self.assertEqual(len(json.loads(output)["findings"]), 2)
+
+    def test_unknown_crate_filter_is_rejected(self) -> None:
+        with patch("sys.stderr", new=io.StringIO()), self.assertRaises(SystemExit) as error:
+            self.run_check("--crate", "absent")
+        self.assertEqual(error.exception.code, 2)
 
     def test_clean_source_needs_no_git_or_ledger(self) -> None:
         self.write("crates/demo/src/lib.rs", "fn f() {}\n")
@@ -953,6 +1045,149 @@ class SourcePolicyCommand(TempSourceCase):
             with patch("sys.stderr", new=io.StringIO()), self.assertRaises(SystemExit) as error:
                 policy.main(args)
             self.assertEqual(error.exception.code, 2)
+
+
+class EvaluationRefusals(TempSourceCase):
+    def scan(self, body: str, *, declarations: str = "", imports: str = ""):
+        evaluator = self.write("crates/cadmpeg-ir/src/eval.rs", """
+pub fn curve_point(x: f64) -> Result<Point, EvaluationFailure<Point>> { todo!() }
+pub mod admitted {
+    pub fn surface_point(x: f64) -> Result<Result<Point, EvaluationFailure<Point>>, CodecError> { todo!() }
+}
+""")
+        consumer = self.write("crates/demo/src/lib.rs", imports + declarations + "\nfn route() {\n" + body + "\n}\n")
+        return policy.scan_evaluation_refusals({
+            evaluator: evaluator.read_text(), consumer: consumer.read_text(),
+        })
+
+    def test_evaluation_refusal_rejects_each_dropping_method(self) -> None:
+        for method in sorted(policy.EVALUATION_DROPS):
+            with self.subTest(method=method):
+                findings = self.scan(f"cadmpeg_ir::eval::curve_point(0.).{method}(fallback);")
+                self.assertEqual(len(findings), 1)
+                self.assertEqual(findings[0].rule, "evaluation_refusal")
+                self.assertIn("." + method, findings[0].message)
+
+    def test_evaluation_refusal_tracks_bound_and_mapped_results(self) -> None:
+        for body in [
+            "let value = cadmpeg_ir::eval::curve_point(0.); value.ok();",
+            "let value = cadmpeg_ir::eval::curve_point(0.).map(|point| point.x); value.is_err();",
+            "(cadmpeg_ir::eval::curve_point(0.)).ok()?;",
+            "cadmpeg_ir::eval::curve_point(0.).map_err(|_| malformed());",
+            "cadmpeg_ir::eval::curve_point(0.).map_err(|failure| malformed());",
+            "cadmpeg_ir::eval::curve_point(0.).map_err(|_failure| malformed());",
+            "cadmpeg_ir::eval::curve_point(0.).map_err(move |_| malformed());",
+            "cadmpeg_ir::eval::curve_point(0.).map_err(|failure: EvaluationFailure<Point>| EvaluationFailure::NoValue);",
+            "cadmpeg_ir::eval::admitted::surface_point(0.)?.ok();",
+            "match cadmpeg_ir::eval::admitted::surface_point(0.) { Ok(inner) => inner.ok(), Err(CodecError::ResourceLimit(limit)) => return Err(limit.into()), Err(_) => None }",
+        ]:
+            with self.subTest(body=body):
+                self.assertEqual(len(self.scan(body)), 1)
+
+    def test_evaluation_refusal_rejects_patterns_and_iterators(self) -> None:
+        for body in [
+            "if let Ok(point) = cadmpeg_ir::eval::curve_point(0.) { use_point(point); }",
+            "let Ok(point) = cadmpeg_ir::eval::curve_point(0.) else { return None; };",
+            "while let Ok(point) = cadmpeg_ir::eval::curve_point(0.) { use_point(point); }",
+            "if let Err(_) = cadmpeg_ir::eval::curve_point(0.) { return false; }",
+            "matches!(cadmpeg_ir::eval::curve_point(0.), Ok(_));",
+            "matches!(cadmpeg_ir::eval::curve_point(0.), Err(..));",
+            "match cadmpeg_ir::eval::curve_point(0.) { Ok(point) => Some(point), Err(_) => None }",
+            "match cadmpeg_ir::eval::curve_point(0.) { Ok(point) => Some(point), _ => None }",
+            "match cadmpeg_ir::eval::curve_point(0.) { Err(EvaluationFailure::ResourceLimit(limit)) => None, _ => None }",
+            "match cadmpeg_ir::eval::curve_point(0.) { Err(EvaluationFailure::ResourceLimit(limit)) => Err(CodecError::InvalidInput(limit.to_string())), _ => None }",
+            "match cadmpeg_ir::eval::curve_point(0.) { Ok(_) | Err(_) => None }",
+            "match cadmpeg_ir::eval::curve_point(0.) { _ if condition => None, _ => None }",
+            "match cadmpeg_ir::eval::curve_point(0.) { Err(_) => None, Err(EvaluationFailure::ResourceLimit(limit)) => return Err(limit) }",
+            "items.flat_map(|item| cadmpeg_ir::eval::curve_point(item));",
+            "items.flat_map(cadmpeg_ir::eval::curve_point);",
+            "items.map(cadmpeg_ir::eval::curve_point).flatten();",
+            "items.filter_map(|item| cadmpeg_ir::eval::curve_point(item).ok());",
+            "items.find_map(|item| cadmpeg_ir::eval::curve_point(item).ok());",
+            "items.map(|item| cadmpeg_ir::eval::curve_point(item)).flatten();",
+        ]:
+            with self.subTest(body=body):
+                self.assertEqual(len(self.scan(body)), 1)
+
+    def test_evaluation_refusal_accepts_propagation_and_finite_conversion(self) -> None:
+        for body in [
+            "cadmpeg_ir::eval::curve_point(0.)?;",
+            "cadmpeg_ir::eval::admitted::surface_point(0.)??;",
+            "finite_or_refusal(cadmpeg_ir::eval::curve_point(0.))?;",
+            "let value = finite_or_refusal(cadmpeg_ir::eval::curve_point(0.))?; if let Some(point) = value {}",
+            "match cadmpeg_ir::eval::curve_point(0.) { Ok(p) => Some(p), Err(EvaluationFailure::ResourceLimit(limit)) => return Err(limit.into()), Err(_) => None }",
+            "match cadmpeg_ir::eval::curve_point(0.) { Ok(p) => Some(p), Err(failure) => failure.non_finite()? }",
+            "cadmpeg_ir::eval::curve_point(0.).map_err(|failure| match failure { EvaluationFailure::ResourceLimit(limit) => CodecError::ResourceLimit(limit), _ => malformed() })?;",
+            "items.map(|item| cadmpeg_ir::eval::curve_point(item)).collect::<Result<Vec<_>, _>>()?;",
+        ]:
+            with self.subTest(body=body):
+                self.assertEqual(self.scan(body), [])
+
+    def test_evaluation_refusal_discovers_new_functions_and_methods(self) -> None:
+        declarations = """
+fn new_evaluator() -> Result<Point, EvaluationFailure<Point>> { todo!() }
+struct NewEvaluator;
+impl NewEvaluator {
+    fn new() -> Self { Self }
+    fn point(&self) -> Result<Point, EvaluationFailure<Point>> { todo!() }
+    fn reader(&self) { self.point().ok(); }
+}
+fn borrowed<'a>(evaluator: &'a mut NewEvaluator) { evaluator.point().ok(); }
+fn make_evaluator() -> Result<NewEvaluator, OtherError> { todo!() }
+"""
+        for body in [
+            "new_evaluator().ok();",
+            "let evaluator = NewEvaluator::new(); evaluator.point().ok();",
+            "let evaluator = make_evaluator()?; evaluator.point().ok();",
+            "let evaluator = NewEvaluator::new(); let value = evaluator.point(); value.ok();",
+            "let evaluator = NewEvaluator::new(); (evaluator.point()).ok();",
+            "NewEvaluator::new().point().ok();",
+            "new_evaluator::<Point>().map::<Point>(|point| point).ok();",
+            "NewEvaluator::point(&evaluator).ok();",
+            "items.flat_map(NewEvaluator::point);",
+        ]:
+            with self.subTest(body=body):
+                self.assertEqual(len(self.scan(body, declarations=declarations)), 3)
+
+    def test_evaluation_refusal_resolves_imports_without_same_name_false_positives(self) -> None:
+        for imports, call in [
+            ("use cadmpeg_ir::eval::curve_point;", "curve_point(0.)"),
+            ("use cadmpeg_ir::eval::{curve_point as sample};", "sample(0.)"),
+            ("use cadmpeg_ir::{eval as evaluator};", "evaluator::curve_point(0.)"),
+        ]:
+            with self.subTest(imports=imports):
+                self.assertEqual(len(self.scan(call + ".ok();", imports=imports)), 1)
+        self.assertEqual(self.scan("curve_point(0.).ok();", declarations="fn curve_point(x: f64) -> Result<Point, OtherError> { todo!() }"), [])
+        self.assertEqual(self.scan("other::curve_point(0.).ok();"), [])
+
+    def test_evaluation_refusal_accepts_retained_resource_carriers_and_returning_guards(self) -> None:
+        declarations = """
+struct Evaluation { resource: Option<ResourceLimit> }
+impl Evaluation {
+    fn resource(limit: ResourceLimit) -> Self { Self { resource: Some(limit) } }
+}
+fn resource(limit: ResourceLimit) -> Evaluation { Evaluation { resource: Some(limit) } }
+"""
+        for body in [
+            "match cadmpeg_ir::eval::curve_point(0.) { Err(EvaluationFailure::ResourceLimit(limit)) => Some(Evaluation::resource(limit)), _ => None }",
+            "match cadmpeg_ir::eval::curve_point(0.) { Err(EvaluationFailure::ResourceLimit(limit)) => Some(resource(limit)), _ => None }",
+            "let radial = cadmpeg_ir::eval::curve_point(0.); if let Err(EvaluationFailure::ResourceLimit(limit)) = &radial { return Some(Evaluation::resource(*limit)); } match radial { Ok(point) => Some(point), Err(_) => None }",
+        ]:
+            with self.subTest(body=body):
+                self.assertEqual(self.scan(body, declarations=declarations), [])
+        self.assertEqual(len(self.scan("let radial = cadmpeg_ir::eval::curve_point(0.); if let Err(EvaluationFailure::ResourceLimit(limit)) = &radial { let saved = Some(Evaluation::resource(*limit)); } match radial { Ok(point) => Some(point), Err(_) => None }", declarations=declarations)), 1)
+
+    def test_evaluation_refusal_respects_binding_scope_and_shadowing(self) -> None:
+        self.assertEqual(len(self.scan("let value = cadmpeg_ir::eval::curve_point(0.); { let value = other(); value.ok(); } value.ok();")), 1)
+        self.assertEqual(self.scan("{ let value = cadmpeg_ir::eval::curve_point(0.); } let value = other(); value.ok();"), [])
+
+    def test_evaluation_refusal_masks_tests_comments_and_strings(self) -> None:
+        body = '''
+// cadmpeg_ir::eval::curve_point(0.).ok();
+let text = "cadmpeg_ir::eval::curve_point(0.).ok()";
+#[cfg(test)] fn test_only() { cadmpeg_ir::eval::curve_point(0.).ok(); }
+'''
+        self.assertEqual(self.scan(body), [])
 
 
 if __name__ == "__main__":

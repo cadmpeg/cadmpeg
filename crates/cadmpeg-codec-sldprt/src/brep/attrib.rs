@@ -15,7 +15,6 @@
 
 use cadmpeg_core::decode::{DecodeContext, View};
 use std::collections::HashMap;
-use std::hash::Hash;
 
 use crate::layout::attribute_instance_00_51 as attr_inst;
 
@@ -83,40 +82,6 @@ fn opens_record(buf: &[u8], at: usize) -> bool {
 /// Stream-local attribute definitions with unique names or withheld conflicts.
 type DefinitionTable = HashMap<u16, Option<String>>;
 
-fn charge_items(
-    ctx: &DecodeContext<'_>,
-    count: usize,
-    operation: &'static str,
-) -> Result<(), cadmpeg_core::CodecError> {
-    let count = u64::try_from(count)
-        .map_err(|_| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
-    ctx.charge_collection_items(count, operation)
-}
-
-fn reserve_map_entry<K: Eq + Hash, V>(
-    ctx: &DecodeContext<'_>,
-    map: &mut HashMap<K, V>,
-    key: &K,
-    operation: &'static str,
-) -> Result<(), cadmpeg_core::CodecError> {
-    if !map.contains_key(key) {
-        charge_items(ctx, 1, operation)?;
-        map.try_reserve(1)
-            .map_err(|_| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
-    }
-    Ok(())
-}
-
-fn reserve_precharged_map<K: Eq + Hash, V>(
-    ctx: &DecodeContext<'_>,
-    map: &mut HashMap<K, V>,
-    count: usize,
-    operation: &'static str,
-) -> Result<(), cadmpeg_core::CodecError> {
-    map.try_reserve(count)
-        .map_err(|_| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))
-}
-
 fn charge_scan(
     ctx: &DecodeContext<'_>,
     buf: &[u8],
@@ -177,8 +142,7 @@ fn definition_candidates(
             continue;
         };
         let family = ctx.copy_retained(text, "copy Parasolid attribute family")?;
-        reserve_map_entry(
-            ctx,
+        ctx.admit_hash_map_entry(
             &mut found,
             &definition,
             "collect Parasolid attribute definitions",
@@ -207,14 +171,8 @@ pub(super) fn definition_table(
     buf: &[u8],
 ) -> Result<DefinitionTable, cadmpeg_core::CodecError> {
     let candidates = definition_candidates(ctx, buf)?;
-    charge_items(
-        ctx,
-        candidates.len(),
-        "resolve Parasolid attribute definitions",
-    )?;
     let mut resolved = HashMap::new();
-    reserve_precharged_map(
-        ctx,
+    ctx.reserve_map(
         &mut resolved,
         candidates.len(),
         "resolve Parasolid attribute definitions",
@@ -236,10 +194,8 @@ fn definitions(
 ) -> Result<HashMap<u16, &'static str>, cadmpeg_core::CodecError> {
     let definitions = definition_table(ctx, buf)?;
     let admitted = definitions.values().filter(|name| name.is_some()).count();
-    charge_items(ctx, admitted, "collect Parasolid supported definitions")?;
     let mut supported = HashMap::new();
-    reserve_precharged_map(
-        ctx,
+    ctx.reserve_map(
         &mut supported,
         admitted,
         "collect Parasolid supported definitions",
@@ -288,13 +244,8 @@ fn integer_lists(
         if count != 1 && !ATOM_WIDTHS.contains(&count) {
             continue;
         }
-        charge_items(ctx, count, "decode Parasolid attribute values")?;
         let mut values = Vec::new();
-        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
-            &mut values,
-            count,
-            "decode Parasolid attribute values",
-        )?;
+        ctx.reserve_vec(&mut values, count, "decode Parasolid attribute values")?;
         for index in 0..count {
             let Some(value) = index
                 .checked_mul(4)
@@ -307,12 +258,7 @@ fn integer_lists(
             values.push(value);
         }
         if values.len() == count {
-            reserve_map_entry(
-                ctx,
-                &mut found,
-                &node,
-                "collect Parasolid attribute value lists",
-            )?;
+            ctx.admit_hash_map_entry(&mut found, &node, "collect Parasolid attribute value lists")?;
             match found.entry(node) {
                 std::collections::hash_map::Entry::Vacant(entry) => {
                     entry.insert(Some(values));
@@ -329,10 +275,8 @@ fn integer_lists(
             }
         }
     }
-    charge_items(ctx, found.len(), "retain Parasolid attribute value lists")?;
     let mut retained = HashMap::new();
-    reserve_precharged_map(
-        ctx,
+    ctx.reserve_map(
         &mut retained,
         found.len(),
         "retain Parasolid attribute value lists",
@@ -440,13 +384,8 @@ pub(super) fn scan(
         let identity = if let Ok(feature_source_id) =
             super::feature_source::FeatureSourceId::try_from(values[ATOM_FEATURE])
         {
-            charge_items(
-                ctx,
-                trailing_fields.len(),
-                "copy Parasolid face identity fields",
-            )?;
             let mut copied_fields = Vec::new();
-            cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+            ctx.reserve_vec(
                 &mut copied_fields,
                 trailing_fields.len(),
                 "copy Parasolid face identity fields",
@@ -464,7 +403,7 @@ pub(super) fn scan(
             face_attr,
             identity,
         };
-        reserve_map_entry(ctx, &mut found, &face_attr, "collect Parasolid face atoms")?;
+        ctx.admit_hash_map_entry(&mut found, &face_attr, "collect Parasolid face atoms")?;
         match found.entry(face_attr) {
             std::collections::hash_map::Entry::Vacant(entry) => {
                 entry.insert(Some(atom));
@@ -480,13 +419,8 @@ pub(super) fn scan(
             }
         }
     }
-    charge_items(ctx, found.len(), "retain Parasolid face atoms")?;
     let mut out = Vec::new();
-    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
-        &mut out,
-        found.len(),
-        "retain Parasolid face atoms",
-    )?;
+    ctx.reserve_vec(&mut out, found.len(), "retain Parasolid face atoms")?;
     out.extend(found.into_values().flatten());
     ctx.stable_sort_by(
         &mut out,
@@ -531,12 +465,7 @@ pub(super) fn scan_body_modifiers(
             values.len() == 1 && values[0] > 0
         })?
         else {
-            reserve_map_entry(
-                ctx,
-                &mut found,
-                &body_attr,
-                "collect Parasolid body modifiers",
-            )?;
+            ctx.admit_hash_map_entry(&mut found, &body_attr, "collect Parasolid body modifiers")?;
             found.insert(body_attr, None);
             continue;
         };
@@ -556,8 +485,7 @@ pub(super) fn scan_body_modifiers(
             Some(None) => {}
             Some(Some(_)) => {}
             None => {
-                reserve_map_entry(
-                    ctx,
+                ctx.admit_hash_map_entry(
                     &mut found,
                     &body_attr,
                     "collect Parasolid body modifiers",
@@ -566,13 +494,8 @@ pub(super) fn scan_body_modifiers(
             }
         }
     }
-    charge_items(ctx, found.len(), "retain Parasolid body modifiers")?;
     let mut out = Vec::new();
-    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
-        &mut out,
-        found.len(),
-        "retain Parasolid body modifiers",
-    )?;
+    ctx.reserve_vec(&mut out, found.len(), "retain Parasolid body modifiers")?;
     out.extend(found.into_values().flatten());
     ctx.stable_sort_by(
         &mut out,
@@ -589,11 +512,17 @@ mod tests {
         definition_table, definitions, integer_lists, scan, scan_body_modifiers, ATOM_ID,
         LAST_BODY_MODIFIER,
     };
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::decode::{
+        u64_from_index, DecodeArena, DecodeContext, DecodePolicy, ResourceDimension,
+    };
 
     fn append_definition(out: &mut Vec<u8>, family: &str, name_node: u16, definition: u16) {
         out.extend([0x00, 0x4f]);
-        out.extend((family.len() as u32).to_be_bytes());
+        out.extend(
+            u32::try_from(family.len())
+                .expect("family length fits u32")
+                .to_be_bytes(),
+        );
         out.extend(name_node.to_be_bytes());
         out.extend(family.as_bytes());
         out.extend([0x00, 0x50]);
@@ -610,7 +539,11 @@ mod tests {
         let mut out = Vec::new();
         append_definition(&mut out, ATOM_ID, 15, 16);
         out.extend([0x00, 0x52]);
-        out.extend((payload.len() as u32).to_be_bytes());
+        out.extend(
+            u32::try_from(payload.len())
+                .expect("payload length fits u32")
+                .to_be_bytes(),
+        );
         out.extend(list_node.to_be_bytes());
         for value in payload {
             out.extend(value.to_be_bytes());
@@ -632,8 +565,12 @@ mod tests {
         append_definition(&mut out, LAST_BODY_MODIFIER, 15, 16);
         for (index, payload) in payloads.iter().enumerate() {
             out.extend([0x00, 0x52]);
-            out.extend((payload.len() as u32).to_be_bytes());
-            out.extend((300 + index as u16).to_be_bytes());
+            out.extend(
+                u32::try_from(payload.len())
+                    .expect("payload length fits u32")
+                    .to_be_bytes(),
+            );
+            out.extend((300 + u16::try_from(index).expect("index fits u16")).to_be_bytes());
             for value in *payload {
                 out.extend(value.to_be_bytes());
             }
@@ -646,7 +583,7 @@ mod tests {
         out.extend(16_u16.to_be_bytes());
         out.extend(body_attr.to_be_bytes());
         for index in 0..payloads.len() {
-            out.extend((300 + index as u16).to_be_bytes());
+            out.extend((300 + u16::try_from(index).expect("index fits u16")).to_be_bytes());
         }
         out
     }
@@ -682,7 +619,7 @@ mod tests {
         append_definition(&mut bytes, ATOM_ID, 15, 16);
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = ATOM_ID.len() as u64 - 1;
+        policy.limits.max_retained_bytes = u64_from_index(ATOM_ID.len()) - 1;
         let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("root");
         let error = definition_table(&ctx, &bytes).expect_err("family copy exceeds retained limit");
         assert!(matches!(error,

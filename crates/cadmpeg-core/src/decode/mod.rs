@@ -11,7 +11,10 @@ mod context;
 mod error;
 mod policy;
 mod probe;
+mod sort;
 mod space;
+pub mod tree;
+mod utf16;
 mod view;
 pub mod work_scratch;
 
@@ -20,8 +23,8 @@ mod tests;
 
 pub use arena::DecodeArena;
 pub use budget::{
-    alloc_filled, refuse_local_limit, work_units, BudgetExhausted, DepthGuard, ScopedReservation,
-    WorkBudget, WorkBudgetRecursionGuard,
+    refuse_local_limit, work_units, BudgetExhausted, DepthGuard, ScopedReservation, WorkBudget,
+    WorkBudgetRecursionGuard,
 };
 pub use context::{DecodeContext, ExpandSpec, ExpandWriter};
 pub use error::{ResourceDimension, ResourceFailure, ResourceLimit, SourceLocation};

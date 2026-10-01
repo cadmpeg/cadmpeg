@@ -306,7 +306,12 @@ fn bind_snapshot_revision_ids(
         ctx.reserve_vec(&mut old_references, 1, "collect F3D ASM old references")?;
         old_references.push(old_reference);
     }
-    old_references.sort_unstable();
+    ctx.sort_unstable_by(
+        &mut old_references,
+        Ord::cmp,
+        |_| 0,
+        "sort F3D ASM old references",
+    )?;
     let Some(&first) = old_references.first() else {
         return Ok(());
     };
@@ -357,7 +362,12 @@ fn archived_active_record_count(
         ctx.reserve_vec(&mut archived, 1, "collect F3D archived revisions")?;
         archived.push(revision_id);
     }
-    archived.sort_unstable();
+    ctx.sort_unstable_by(
+        &mut archived,
+        Ord::cmp,
+        |_| 0,
+        "sort F3D archived revisions",
+    )?;
     let Some(&active_count) = archived.first() else {
         return Ok(None);
     };
@@ -428,7 +438,12 @@ fn bind_historical_entity_versions(
         ctx.reserve_vec(&mut archived_ids, 1, "index F3D archived revision IDs")?;
         archived_ids.push(revision_id);
     }
-    archived_ids.sort_unstable();
+    ctx.sort_unstable_by(
+        &mut archived_ids,
+        Ord::cmp,
+        |_| 0,
+        "sort F3D archived revision IDs",
+    )?;
     let active_count = match archived_active_record_count(ctx, states)? {
         Some(count) => Some(count),
         None => insert_only_active_record_count(ctx, states)?,
@@ -643,7 +658,7 @@ fn bind_complete_record_tables(
         return Ok(false);
     };
     let active_limit = cadmpeg_asm::asm_header::solved_record_limit(bytes).unwrap_or(bytes.len());
-    let framed = match cadmpeg_asm::sab::frame(ctx, bytes, start, active_limit, width) {
+    let framed = match cadmpeg_asm::sab::frame(ctx, bytes, start, active_limit, width, None) {
         Ok(records) => records,
         Err(cadmpeg_asm::stream_error::StreamFailure::Resource(error)) => return Err(error),
         Err(_) => return Ok(false),
@@ -682,7 +697,7 @@ fn bind_complete_record_tables(
         if bytes.get(offset..limit) != Some(record.raw_bytes.as_slice()) {
             return Ok(false);
         }
-        let mut framed = match cadmpeg_asm::sab::frame(ctx, bytes, offset, limit, width) {
+        let mut framed = match cadmpeg_asm::sab::frame(ctx, bytes, offset, limit, width, None) {
             Ok(records) => records,
             Err(cadmpeg_asm::stream_error::StreamFailure::Resource(error)) => return Err(error),
             Err(_) => return Ok(false),
@@ -3302,7 +3317,12 @@ fn bind_surface_stitch_face_selection(
         }),
         "collect F3D Stitch face groups",
     )?;
-    matching_groups.sort_by_key(|group| group.scope_reference_ordinal);
+    ctx.stable_sort_by(
+        &mut matching_groups,
+        |a, b| a.scope_reference_ordinal.cmp(&b.scope_reference_ordinal),
+        |_| 0,
+        "sort F3D Stitch face groups",
+    )?;
     if matching_groups.len().checked_mul(2) != Some(input_end)
         || matching_groups
             .iter()
@@ -4032,7 +4052,12 @@ fn vertex_recipe_candidate(
                 .filter(|face| topology.faces.contains(face)),
             "collect F3D vertex recipe candidate faces",
         )?;
-        slots.sort_unstable();
+        ctx.sort_unstable_by(
+            &mut slots,
+            Ord::cmp,
+            |_| 0,
+            "sort F3D vertex recipe candidate faces",
+        )?;
         slots.dedup();
         let [slot] = slots.as_slice() else {
             return Ok(None);
@@ -4913,13 +4938,19 @@ fn bind_historical_recipe_reference_candidates(
             _ => {}
         }
     }
-    reference
-        .candidate_faces
-        .sort_by(|left, right| left.as_str().cmp(right.as_str()));
+    decode.stable_sort_by(
+        &mut reference.candidate_faces,
+        |left, right| left.as_str().cmp(right.as_str()),
+        |face| face.as_str().len(),
+        "sort F3D recipe reference faces",
+    )?;
     reference.candidate_faces.dedup();
-    reference
-        .candidate_edges
-        .sort_by(|left, right| left.as_str().cmp(right.as_str()));
+    decode.stable_sort_by(
+        &mut reference.candidate_edges,
+        |left, right| left.as_str().cmp(right.as_str()),
+        |edge| edge.as_str().len(),
+        "sort F3D recipe reference edges",
+    )?;
     reference.candidate_edges.dedup();
     Ok(())
 }
@@ -4943,7 +4974,12 @@ fn historical_recipe_faces(
             faces.push(historical_face_id(decode, tag.entity_ref)?);
         }
     }
-    faces.sort_by(|left, right| left.as_str().cmp(right.as_str()));
+    decode.stable_sort_by(
+        &mut faces,
+        |left, right| left.as_str().cmp(right.as_str()),
+        |face| face.as_str().len(),
+        "sort F3D historical recipe faces",
+    )?;
     faces.dedup();
     Ok(faces)
 }
@@ -4966,7 +5002,12 @@ fn direct_face_recipe_candidates(
         decode.reserve_vec(&mut faces, 1, "collect F3D direct face recipe candidates")?;
         faces.push((face).try_clone_for_decode(decode, "copy F3D historical face identity")?);
     }
-    faces.sort_by(|left, right| left.as_str().cmp(right.as_str()));
+    decode.stable_sort_by(
+        &mut faces,
+        |left, right| left.as_str().cmp(right.as_str()),
+        |face| face.as_str().len(),
+        "sort F3D direct face recipe candidates",
+    )?;
     faces.dedup();
     Ok((!faces.is_empty()).then_some(faces))
 }
@@ -5922,7 +5963,12 @@ fn resolve_bounded_face_recipe_target(
             matches.push(candidate);
         }
     }
-    matches.sort_unstable();
+    decode.sort_unstable_by(
+        &mut matches,
+        Ord::cmp,
+        |_| 0,
+        "sort F3D bounded face matches",
+    )?;
     matches.dedup();
     let [face] = matches.as_slice() else {
         return Ok(None);
@@ -6306,7 +6352,12 @@ fn complete_body_face_slots(
         }
     }
     let mut faces = decode.collect_vec(seen_faces, "collect F3D complete body face slots")?;
-    faces.sort_unstable();
+    decode.sort_unstable_by(
+        &mut faces,
+        Ord::cmp,
+        |_| 0,
+        "sort F3D complete body face slots",
+    )?;
     Ok((!faces.is_empty()).then_some(faces))
 }
 
@@ -6569,7 +6620,12 @@ fn bind_profile_face_group_cardinality(
                             transition.topology.faces.deleted.iter().copied(),
                             "copy F3D profile deleted faces",
                         )?;
-                        deleted.sort_unstable();
+                        decode.sort_unstable_by(
+                            &mut deleted,
+                            Ord::cmp,
+                            |_| 0,
+                            "sort F3D profile deleted faces",
+                        )?;
                         deleted.dedup();
                         (deleted.len() == group.members().len()
                             && deleted.len() == transition.topology.faces.deleted.len()
@@ -6660,7 +6716,12 @@ fn profile_face_group_cardinality_candidates(
     if candidates.next().is_some() {
         return Ok(None);
     }
-    faces.sort_unstable();
+    decode.sort_unstable_by(
+        &mut faces,
+        Ord::cmp,
+        |_| 0,
+        "sort F3D profile carrier faces",
+    )?;
     faces.dedup();
     Ok((faces.len() == member_count).then_some(faces))
 }
@@ -6817,7 +6878,12 @@ fn historical_face_support_contexts(
                 .map(|binding| binding.entity),
             "collect F3D historical support face slots",
         )?;
-        preceding_face_slots.sort_unstable();
+        decode.sort_unstable_by(
+            &mut preceding_face_slots,
+            Ord::cmp,
+            |_| 0,
+            "sort F3D historical support face slots",
+        )?;
         preceding_face_slots.dedup();
         if preceding_face_slots.is_empty() {
             continue;
@@ -6883,7 +6949,7 @@ fn face_boundary_edges(
             .map(|coedge| coedge.edge),
         "collect F3D boundary edges",
     )?;
-    edges.sort_unstable();
+    decode.sort_unstable_by(&mut edges, Ord::cmp, |_| 0, "sort F3D boundary edges")?;
     edges.dedup();
     Ok(edges)
 }
@@ -7205,7 +7271,12 @@ fn edge_recipe_reference_context(
             .filter(|edge| changed_edges.contains(edge)),
         "collect F3D changed reference edges",
     )?;
-    changed_reference_edge_slots.sort_unstable();
+    decode.sort_unstable_by(
+        &mut changed_reference_edge_slots,
+        Ord::cmp,
+        |_| 0,
+        "sort F3D changed reference edges",
+    )?;
     changed_reference_edge_slots.dedup();
     Ok(
         crate::records::topology::historical_context::DesignEdgeRecipeReferenceContext {
@@ -7251,7 +7322,12 @@ fn side_one_recipe_edge(
         decode.reserve_vec(&mut ordinals, 1, "collect F3D recipe side ordinals")?;
         ordinals.push(ordinal);
     }
-    ordinals.sort_unstable();
+    decode.sort_unstable_by(
+        &mut ordinals,
+        Ord::cmp,
+        |_| 0,
+        "sort F3D recipe side ordinals",
+    )?;
     ordinals.dedup();
     let mut edge_sets = Vec::new();
     for ordinal in ordinals {
@@ -7276,7 +7352,12 @@ fn side_one_recipe_edge(
         candidates.retain(|candidate| edges.contains(candidate));
     }
     candidates.retain(|candidate| candidate_edges.contains(candidate));
-    candidates.sort_unstable();
+    decode.sort_unstable_by(
+        &mut candidates,
+        Ord::cmp,
+        |_| 0,
+        "sort F3D recipe side edges",
+    )?;
     candidates.dedup();
     match candidates.as_slice() {
         [edge] => Ok(Some(*edge)),
@@ -7818,7 +7899,12 @@ fn surface_patch_edge_operand_slot(
             .filter(|edge| face_boundary_edges.contains(edge)),
         "collect F3D surface patch edge candidates",
     )?;
-    candidates.sort_unstable();
+    decode.sort_unstable_by(
+        &mut candidates,
+        Ord::cmp,
+        |_| 0,
+        "sort F3D surface patch edge candidates",
+    )?;
     candidates.dedup();
     match candidates.as_slice() {
         [edge] => Ok(Some(*edge)),
@@ -7919,7 +8005,12 @@ fn terminal_edge_recipe_faces(
             .map(|face| face.try_clone_for_decode(decode, "copy F3D historical face identity")),
         "collect F3D terminal edge recipe faces",
     )?;
-    faces.sort_by(|left, right| left.as_str().cmp(right.as_str()));
+    decode.stable_sort_by(
+        &mut faces,
+        |left, right| left.as_str().cmp(right.as_str()),
+        |face| face.as_str().len(),
+        "sort F3D terminal edge recipe faces",
+    )?;
     faces.dedup();
     Ok(faces)
 }
@@ -8081,15 +8172,25 @@ fn treatment_edge_candidates(
             }
         }
     }
-    radii_out.sort_by(|left, right| {
-        left.radius
-            .get()
-            .total_cmp(&right.radius.get())
-            .then(left.edge_slot.cmp(&right.edge_slot))
-    });
+    decode.stable_sort_by(
+        &mut radii_out,
+        |left, right| {
+            left.radius
+                .get()
+                .total_cmp(&right.radius.get())
+                .then(left.edge_slot.cmp(&right.edge_slot))
+        },
+        |_| 0,
+        "sort F3D treatment edge radii",
+    )?;
     radii_out
         .dedup_by(|left, right| left.radius == right.radius && left.edge_slot == right.edge_slot);
-    transitions_out.sort_unstable();
+    decode.sort_unstable_by(
+        &mut transitions_out,
+        Ord::cmp,
+        |_| 0,
+        "sort F3D treatment edge transitions",
+    )?;
     transitions_out.dedup();
     Ok((radii_out, transitions_out))
 }
@@ -8153,7 +8254,12 @@ fn treatment_face_supports(
                 .filter_map(|carrier| preceding_carrier_faces.get(&carrier).copied().flatten()),
             "collect F3D treatment support faces",
         )?;
-        supports.sort_unstable();
+        decode.sort_unstable_by(
+            &mut supports,
+            Ord::cmp,
+            |_| 0,
+            "sort F3D treatment support faces",
+        )?;
         supports.dedup();
 
         decode.reserve_vec(&mut selected, 1, "collect F3D treatment face supports")?;
@@ -8629,7 +8735,12 @@ fn historical_topology(
             radius: signed_radius.get().abs(),
         });
     }
-    surface_radii.sort_by_key(|candidate| candidate.surface);
+    ctx.stable_sort_by(
+        &mut surface_radii,
+        |a, b| a.surface.cmp(&b.surface),
+        |_| 0,
+        "sort F3D historical surface radii",
+    )?;
     let mut surface_cylinders = ctx.collect_vec(
         brep.surfaces.iter().filter_map(|surface| {
             let Some(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) = surface.geometry.solved()
@@ -8648,7 +8759,12 @@ fn historical_topology(
         }),
         "collect F3D historical surface cylinders",
     )?;
-    surface_cylinders.sort_by_key(|candidate| candidate.surface);
+    ctx.stable_sort_by(
+        &mut surface_cylinders,
+        |a, b| a.surface.cmp(&b.surface),
+        |_| 0,
+        "sort F3D historical surface cylinders",
+    )?;
     let mut surface_planes = ctx.collect_vec(
         brep.surfaces.iter().filter_map(|surface| {
             let Some(SolvedSurfaceGeometry::Plane(plane_surface)) = surface.geometry.solved()
@@ -8665,7 +8781,12 @@ fn historical_topology(
         }),
         "collect F3D historical surface planes",
     )?;
-    surface_planes.sort_by_key(|candidate| candidate.surface);
+    ctx.stable_sort_by(
+        &mut surface_planes,
+        |a, b| a.surface.cmp(&b.surface),
+        |_| 0,
+        "sort F3D historical surface planes",
+    )?;
     let mut surface_axes = ctx.collect_vec(
         brep.surfaces.iter().filter_map(|surface| {
             use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
@@ -8695,7 +8816,12 @@ fn historical_topology(
         }),
         "collect F3D historical surface axes",
     )?;
-    surface_axes.sort_by_key(|candidate| candidate.surface);
+    ctx.stable_sort_by(
+        &mut surface_axes,
+        |a, b| a.surface.cmp(&b.surface),
+        |_| 0,
+        "sort F3D historical surface axes",
+    )?;
 
     Ok(Some(AsmHistoricalTopology {
         bodies: topology_some!(refs(
@@ -9021,7 +9147,12 @@ fn materialize_record_table(
         }
         records.push(clone_historical_record(ctx, record)?);
     }
-    records.sort_unstable_by_key(|record| record.index);
+    ctx.sort_unstable_by(
+        &mut records,
+        |a, b| a.index.cmp(&b.index),
+        |_| 0,
+        "sort F3D historical records",
+    )?;
     Ok(Some(records))
 }
 
@@ -9134,7 +9265,7 @@ fn decode_history_records(
     if start >= limit {
         return Ok(Vec::new());
     }
-    match cadmpeg_asm::sab::frame_history(ctx, bytes, start, limit, width) {
+    match cadmpeg_asm::sab::frame_history(ctx, bytes, start, limit, width, None) {
         Ok(records) => {
             let mut decoded = Vec::new();
             for record in records {

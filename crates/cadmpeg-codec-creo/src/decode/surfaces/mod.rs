@@ -11,7 +11,7 @@ pub(super) mod positional;
 pub(super) mod prototypes;
 pub(super) mod transfer_curves;
 
-use crate::decode::axis::{Axis, Sign};
+use crate::axis::{Axis, Sign};
 
 use std::collections::BTreeMap;
 

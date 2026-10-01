@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Parse exact legacy As-built assembly alignment frames.
 
+use crate::bytes::lp_ascii_filtered_view;
 use crate::design::decode::operands::{parse_entity_selection_prefix, parse_face_operand};
-use crate::design::decode::text::lp_ascii_filtered_view;
 use crate::layout::assembly_as_built_421_frame_297 as as_built_421_frame_297;
 use crate::layout::assembly_as_built_421_frame_327 as as_built_421_frame_327;
 use crate::layout::assembly_as_built_421_frame_376 as as_built_421_frame_376;

@@ -636,7 +636,7 @@ fn decode_projects_compact_solid_sweep_general_curve_path() {
     let path_offset = resolved.len();
     resolved.extend_from_slice(&[0xff, 0xff, 0x01, 0x00]);
     let path_class = b"moGeneralCurveRef_w";
-    resolved.extend_from_slice(&(path_class.len() as u16).to_le_bytes());
+    resolved.extend_from_slice(&u16::try_from(path_class.len()).unwrap().to_le_bytes());
     resolved.extend_from_slice(path_class);
     source.extend(make_block(
         0x42,
@@ -665,7 +665,7 @@ fn decode_does_not_globalize_configuration_local_sweep_path() {
         if has_path {
             payload.extend_from_slice(&[0xff, 0xff, 0x01, 0x00]);
             let path_class = b"moGeneralCurveRef_w";
-            payload.extend_from_slice(&(path_class.len() as u16).to_le_bytes());
+            payload.extend_from_slice(&u16::try_from(path_class.len()).unwrap().to_le_bytes());
             payload.extend_from_slice(path_class);
         }
         payload
@@ -724,7 +724,7 @@ fn decode_projects_native_surface_sweep_class_without_localized_type() {
     let path_offset = resolved.len();
     resolved.extend_from_slice(&[0xff, 0xff, 0x01, 0x00]);
     let path_class = b"moGeneralCurveRef_w";
-    resolved.extend_from_slice(&(path_class.len() as u16).to_le_bytes());
+    resolved.extend_from_slice(&u16::try_from(path_class.len()).unwrap().to_le_bytes());
     resolved.extend_from_slice(path_class);
     source.extend(make_block(
         0x42,
@@ -762,7 +762,7 @@ fn decode_projects_surface_sweep_reference_curve_profile() {
     ]);
     resolved.extend_from_slice(&[0xdd, 0x94, 0xff, 0xff, 1, 0]);
     let class = b"moCompReferenceCurve_c";
-    resolved.extend_from_slice(&(class.len() as u16).to_le_bytes());
+    resolved.extend_from_slice(&u16::try_from(class.len()).unwrap().to_le_bytes());
     resolved.extend_from_slice(class);
     let prefix = resolved.len();
     resolved.resize(prefix + 133, 0);
@@ -885,7 +885,7 @@ fn decode_projects_generated_surface_sweep_profile_path() {
         resolved_feature_classes_with_ids(&[("moSweepRefSurface_c", "Surface-Sweep1", 137)]);
     resolved.extend_from_slice(&[0xdd, 0x94, 0xff, 0xff, 1, 0]);
     let class = b"moCompReferenceCurve_c";
-    resolved.extend_from_slice(&(class.len() as u16).to_le_bytes());
+    resolved.extend_from_slice(&u16::try_from(class.len()).unwrap().to_le_bytes());
     resolved.extend_from_slice(class);
     resolved.extend_from_slice(&[0x2b, 0x80, 0x02, 0, 0, 0, 0, 0, 0, 0]);
     resolved.extend(resolved_feature_classes_with_ids(&[(

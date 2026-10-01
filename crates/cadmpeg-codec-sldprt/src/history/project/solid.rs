@@ -30,7 +30,7 @@ pub(super) fn project_extrude(
     features_by_source: &HashMap<crate::records::FeatureSource, &Feature>,
 ) -> Result<Option<FeatureDefinition>, CodecError> {
     ctx.charge_work(
-        feature.content.len() as u64,
+        cadmpeg_core::decode::u64_from_index(feature.content.len()),
         "scan SLDPRT extrusion dimensions",
     )?;
     let mut source_dimensions = feature.content.iter().filter_map(|content| match content {
@@ -61,7 +61,7 @@ pub(super) fn project_extrude(
         feature.input_class.as_deref() == Some("moExtrusion_c") && source_depth.is_some();
     if history_profile_extrusion {
         ctx.charge_work(
-            features_by_source.len() as u64,
+            cadmpeg_core::decode::u64_from_index(features_by_source.len()),
             "scan SLDPRT extrusion source profiles",
         )?;
     }
@@ -248,7 +248,7 @@ pub(super) fn project_extrude(
         )?))
     } else if let Some(children) = feature.properties.get("DissectableChildren") {
         ctx.charge_work(
-            children.len() as u64,
+            cadmpeg_core::decode::u64_from_index(children.len()),
             "scan SLDPRT extrusion child profiles",
         )?;
         let mut profiles = children

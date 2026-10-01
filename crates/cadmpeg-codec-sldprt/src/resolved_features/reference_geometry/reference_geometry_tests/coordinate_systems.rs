@@ -113,7 +113,7 @@ fn coordinate_system_record(
     let name = "CS1";
     let mut payload = Vec::new();
     payload.extend_from_slice(NAME_MARKER);
-    payload.push(name.encode_utf16().count() as u8);
+    payload.push(u8::try_from(name.encode_utf16().count()).unwrap());
     for code_unit in name.encode_utf16() {
         payload.extend_from_slice(&code_unit.to_le_bytes());
     }
@@ -137,7 +137,7 @@ fn coordinate_system_record(
 
     let mut axis_offsets = Vec::new();
     for (index, direction) in axes.iter().enumerate() {
-        payload.extend_from_slice(&[0xa0 + index as u8, 0x81, 0x01, 0]);
+        payload.extend_from_slice(&[0xa0 + u8::try_from(index).unwrap(), 0x81, 0x01, 0]);
         let axis = payload.len();
         axis_offsets.push(axis);
         payload.resize(axis + 113, 0);
@@ -380,7 +380,8 @@ fn solved_coordinate_system_requires_one_exact_complete_frame() {
     ]);
     component_path_origin.extend_from_slice(&[0; 2]);
     for index in 0..3u32 {
-        component_path_origin.extend_from_slice(&(0x8001 + index as u16).to_le_bytes());
+        component_path_origin
+            .extend_from_slice(&(0x8001 + u16::try_from(index).unwrap()).to_le_bytes());
         component_path_origin.extend_from_slice(&[0; 2]);
         component_path_origin.extend_from_slice(&[0x38, 0x80, 0x3b, 0, 0x68, 1, 0, 0]);
         component_path_origin.extend_from_slice(&(700 + index).to_le_bytes());
@@ -442,7 +443,7 @@ fn solved_coordinate_system_requires_one_exact_complete_frame() {
     ]);
     endpoint_origin.extend_from_slice(&[0; 2]);
     for index in 0..3u32 {
-        endpoint_origin.extend_from_slice(&(0x8001 + index as u16).to_le_bytes());
+        endpoint_origin.extend_from_slice(&(0x8001 + u16::try_from(index).unwrap()).to_le_bytes());
         endpoint_origin.extend_from_slice(&[0; 2]);
         endpoint_origin.extend_from_slice(&[0x38, 0x80, 0x3b, 0, 0x68, 1, 0, 0]);
         endpoint_origin.extend_from_slice(&(800 + index).to_le_bytes());

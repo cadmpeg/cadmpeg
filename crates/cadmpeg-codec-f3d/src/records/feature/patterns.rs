@@ -25,7 +25,7 @@ cadmpeg_core::named_optional_field!(
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub(crate) struct DesignCircularPatternConstruction {
     /// Positive total instance count, including the seed.
-    pub(crate) count: u32,
+    pub(crate) count: NonZeroU32,
     /// Referenced compact count-parameter owner.
     pub(crate) count_record_index: u32,
     /// Byte offset of the evaluated count scalar.
@@ -63,8 +63,23 @@ impl DesignAxis {
 /// Proven origin and unit normal.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) struct DesignPlane {
-    pub(crate) origin: FinitePoint3,
-    pub(crate) normal: FiniteVector3,
+    origin: FinitePoint3,
+    normal: UnitVector3,
+}
+
+impl DesignPlane {
+    pub(crate) fn from_parts(origin: FinitePoint3, normal: FiniteVector3) -> Option<Self> {
+        Some(Self {
+            origin,
+            normal: UnitVector3::new(normal.get())?,
+        })
+    }
+    pub(crate) fn origin(self) -> FinitePoint3 {
+        self.origin
+    }
+    pub(crate) fn normal(self) -> UnitVector3 {
+        self.normal
+    }
 }
 
 /// Axis construction carried by a fixed circular-pattern scope.
@@ -86,7 +101,7 @@ pub(crate) enum DesignCircularPatternAxis {
     /// Axis selected through wrappers of one persistent historical topology identity.
     HistoricalEdge {
         /// Referenced wrappers and the offsets of their shared identity.
-        wrappers: Vec<DesignPatternAxisWrapper>,
+        wrappers: cadmpeg_ir::features::NonEmptyMembers<DesignPatternAxisWrapper>,
         /// Persistent ASM identity shared by the wrappers.
         persistent_identity: u64,
         /// Resolved model-space axis, when exact.
@@ -312,7 +327,9 @@ impl TryFrom<DesignCircularPatternAxisWire> for DesignCircularPatternAxis {
                             record_index,
                             identity_offset,
                         })
-                        .collect(),
+                        .collect::<Vec<_>>()
+                        .try_into()
+                        .map_err(|_| "historical axis wrappers must be nonempty")?,
                     persistent_identity: *persistent_identity,
                     resolved,
                 })
@@ -379,7 +396,7 @@ pub(crate) struct DesignRectangularPatternConstruction {
     pub(crate) value_offsets: [u64; 4],
     /// Exact serialized instance sequence when one pattern direction is active.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub(crate) instances: Option<DesignRectangularPatternInstances>,
+    instances: Option<DesignRectangularPatternInstances>,
 }
 
 #[cfg(test)]
@@ -467,15 +484,17 @@ impl TryFrom<DesignRectangularPatternConstructionWire> for DesignRectangularPatt
         if !wire.v_extent.is_finite() || (v_count.get() == 1) != (wire.v_extent == 0.0) {
             return Err("v_extent must be finite and zero exactly when v_count is one");
         }
-        Ok(Self {
+        let mut record = Self {
             u_count,
             v_count,
             u_extent: wire.u_extent,
             v_extent: wire.v_extent,
             owner_record_indices: wire.owner_record_indices,
             value_offsets: wire.value_offsets,
-            instances: wire.instances,
-        })
+            instances: None,
+        };
+        record.try_set_instances(wire.instances)?;
+        Ok(record)
     }
 }
 
@@ -495,6 +514,27 @@ impl From<DesignRectangularPatternConstruction> for DesignRectangularPatternCons
 }
 
 impl DesignRectangularPatternConstruction {
+    pub(crate) fn instances(&self) -> Option<&DesignRectangularPatternInstances> {
+        self.instances.as_ref()
+    }
+
+    pub(crate) fn try_set_instances(
+        &mut self,
+        instances: Option<DesignRectangularPatternInstances>,
+    ) -> Result<(), &'static str> {
+        if let Some(run) = &instances {
+            if (self.u_count.get() > 1) == (self.v_count.get() > 1) {
+                return Err("instances require exactly one active axis");
+            }
+            let total = u64::from(self.u_count.get()) * u64::from(self.v_count.get());
+            if u64::try_from(run.instance_count()) != Ok(total) {
+                return Err("instances must match the positive total scalar count");
+            }
+        }
+        self.instances = instances;
+        Ok(())
+    }
+
     pub(crate) fn u_count(&self) -> u32 {
         self.u_count.get()
     }
@@ -839,7 +879,9 @@ mod tests {
                     record_index: 2,
                     identity_offset: 30,
                 },
-            ],
+            ]
+            .try_into()
+            .unwrap(),
             persistent_identity: 7,
             resolved: resolved.then(|| DesignAxis {
                 origin: cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
@@ -943,5 +985,43 @@ mod tests {
             || RECTANGULAR_PATTERN_CONSTRUCTION_CLONE_COUNT.with(|count| count.set(0)),
             || RECTANGULAR_PATTERN_CONSTRUCTION_CLONE_COUNT.with(std::cell::Cell::get),
         );
+    }
+
+    #[test]
+    fn historical_pattern_axis_refuses_empty_wrapper_arrays() {
+        let mut wire = serde_json::to_value(circular_axis(false)).unwrap();
+        wire["wrapper_record_indices"] = serde_json::json!([]);
+        wire["identity_offsets"] = serde_json::json!([]);
+        let error = serde_json::from_value::<DesignCircularPatternAxis>(wire).unwrap_err();
+        assert!(error.to_string().contains("wrappers must be nonempty"));
+    }
+
+    #[test]
+    fn rectangular_pattern_instances_validate_scalar_count_and_active_axis() {
+        for count in [0, 1, 3] {
+            let mut record = construction(Some(components()));
+            let previous = serde_json::to_vec(&record).unwrap();
+            let frames = (0..count).map(frame).collect();
+            assert!(record
+                .try_set_instances(Some(DesignRectangularPatternInstances::Bodies(frames)))
+                .is_err());
+            assert_eq!(serde_json::to_vec(&record).unwrap(), previous);
+            let mut wire = serde_json::to_value(&record).unwrap();
+            wire["instances"] = serde_json::to_value(DesignRectangularPatternInstances::Bodies(
+                (0..count).map(frame).collect(),
+            ))
+            .unwrap();
+            assert!(serde_json::from_value::<DesignRectangularPatternConstruction>(wire).is_err());
+        }
+        let mut wire = DesignRectangularPatternConstructionWire::from(construction(None));
+        wire.v_count = 2;
+        wire.v_extent = 1.0;
+        wire.instances = Some(DesignRectangularPatternInstances::Bodies(vec![
+            frame(1),
+            frame(2),
+            frame(3),
+            frame(4),
+        ]));
+        assert!(DesignRectangularPatternConstruction::try_from(wire).is_err());
     }
 }

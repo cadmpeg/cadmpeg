@@ -458,7 +458,7 @@ pub(crate) fn inventory(
                     family: RecordIssueFamily::Design {
                         type_id: type_id_string(record.type_id),
                     },
-                    segment_token: segment.pair.token.as_str().into(),
+                    segment_token: segment.pair.token.key().clone(),
                     record_ordinal: record.ordinal,
                     detail: error.to_string(),
                 });
@@ -513,7 +513,7 @@ pub(crate) fn project_parameters(
         }
         let Some(unit) = resolve_unit(
             parameter.identity.segment_token.as_str(),
-            parameter.unit.index,
+            parameter.unit.index(),
             &units,
         ) else {
             unresolved += 1;
@@ -523,7 +523,7 @@ pub(crate) fn project_parameters(
         let Some(expression) = render_expression(
             ctx,
             parameter.identity.segment_token.as_str(),
-            parameter.formula.index,
+            parameter.formula.index(),
             &expressions,
             &units,
             &parameters,
@@ -733,11 +733,11 @@ fn resolve_unit<'a>(
     };
     if numerators.references().len() != 1
         || !denominators.references().is_empty()
-        || derived.index != 0
+        || derived.index() != 0
     {
         return None;
     }
-    let base_ordinal = numerators.references()[0].index.checked_sub(1)?;
+    let base_ordinal = numerators.references()[0].index().checked_sub(1)?;
     let base = units.get(&(token, base_ordinal))?;
     let PmDcUnitKind::Base {
         dimension,
@@ -815,9 +815,12 @@ fn render_expression<'a>(
         let expression = expressions[&(token, ordinal)];
         match &expression.kind {
             PmDcExpressionKind::Value { .. } => {
-                let unit = resolve_unit(token, expression.unit.index, units).ok_or_else(|| {
-                    CodecError::Malformed("Inventor expression unit changed during render".into())
-                })?;
+                let unit =
+                    resolve_unit(token, expression.unit.index(), units).ok_or_else(|| {
+                        CodecError::Malformed(
+                            "Inventor expression unit changed during render".into(),
+                        )
+                    })?;
                 let scalar = plan.lengths[&ordinal].scalar.ok_or_else(|| {
                     CodecError::Malformed("Inventor measured expression scalar is missing".into())
                 })?;
@@ -834,12 +837,12 @@ fn render_expression<'a>(
                 }
             }
             PmDcExpressionKind::ParameterReference { operand } => {
-                let target = parameters[&(token, operand.index - 1)];
+                let target = parameters[&(token, operand.index() - 1)];
                 text.push_str(&target.name);
             }
             PmDcExpressionKind::Unary { operand, .. } => {
                 text.push_str("-(");
-                text.push_str(&rendered[&(operand.index - 1)]);
+                text.push_str(&rendered[&(operand.index() - 1)]);
                 text.push(')');
             }
             PmDcExpressionKind::Binary {
@@ -848,7 +851,7 @@ fn render_expression<'a>(
                 right,
             } => {
                 text.push('(');
-                text.push_str(&rendered[&(left.index - 1)]);
+                text.push_str(&rendered[&(left.index() - 1)]);
                 text.push_str(") ");
                 let symbol = match operation {
                     PmDcBinaryOperation::Add => "+",
@@ -860,7 +863,7 @@ fn render_expression<'a>(
                 };
                 text.push_str(symbol);
                 text.push_str(" (");
-                text.push_str(&rendered[&(right.index - 1)]);
+                text.push_str(&rendered[&(right.index() - 1)]);
                 text.push(')');
             }
         }
@@ -918,12 +921,15 @@ impl ExpressionRenderPlan<'_, '_> {
         let Some(expression) = self.expressions.get(&(self.token, ordinal)) else {
             return Ok(None);
         };
-        self.ctx
-            .charge_collection_items(1, "track Inventor expression ancestors")?;
-        self.visiting.insert(ordinal);
+        self.ctx.insert_hash_set(
+            &mut self.visiting,
+            ordinal,
+            "track Inventor expression ancestors",
+        )?;
         let measured = match &expression.kind {
             PmDcExpressionKind::Value { value, .. } => {
-                let Some(unit) = resolve_unit(self.token, expression.unit.index, self.units) else {
+                let Some(unit) = resolve_unit(self.token, expression.unit.index(), self.units)
+                else {
                     return Ok(None);
                 };
                 if unit.scale_to_internal.get() == 0.0 {
@@ -946,7 +952,7 @@ impl ExpressionRenderPlan<'_, '_> {
                 }
             }
             PmDcExpressionKind::ParameterReference { operand } => {
-                let Some(target_ordinal) = operand.index.checked_sub(1) else {
+                let Some(target_ordinal) = operand.index().checked_sub(1) else {
                     return Ok(None);
                 };
                 let Some(target) = self.parameters.get(&(self.token, target_ordinal)) else {
@@ -965,7 +971,7 @@ impl ExpressionRenderPlan<'_, '_> {
                 }
             }
             PmDcExpressionKind::Unary { operation, operand } => {
-                let Some((child_length, child_height)) = self.measure(operand.index)? else {
+                let Some((child_length, child_height)) = self.measure(operand.index())? else {
                     return Ok(None);
                 };
                 if *operation == PmDcUnaryOperation::PowerIdentity {
@@ -978,10 +984,10 @@ impl ExpressionRenderPlan<'_, '_> {
                 }
             }
             PmDcExpressionKind::Binary { left, right, .. } => {
-                let Some((left_length, left_height)) = self.measure(left.index)? else {
+                let Some((left_length, left_height)) = self.measure(left.index())? else {
                     return Ok(None);
                 };
-                let Some((right_length, right_height)) = self.measure(right.index)? else {
+                let Some((right_length, right_height)) = self.measure(right.index())? else {
                     return Ok(None);
                 };
                 let children = checked_expression_len(self.ctx, left_length, right_length)?;
@@ -1359,8 +1365,8 @@ mod tests {
     use cadmpeg_ir::scalar::{FiniteReal, Length};
     use std::collections::HashMap;
 
-    const fn reference(index: u32, qualified: bool) -> PmDcReference {
-        PmDcReference { index, qualified }
+    fn reference(index: u32, qualified: bool) -> PmDcReference {
+        PmDcReference::new(index, qualified).expect("test reference index fits 31 bits")
     }
 
     fn real(value: f64) -> FiniteReal {
@@ -1710,7 +1716,7 @@ mod tests {
                     factor: real(1.0),
                 },
             },
-            String::new(),
+            crate::record_identity::RecordTypeId::from_bytes([0; 16]),
             token
                 .try_clone_for_decode(
                     &cadmpeg_test_support::service_decode_context(),
@@ -1731,7 +1737,7 @@ mod tests {
                     state: 0,
                 },
             },
-            String::new(),
+            crate::record_identity::RecordTypeId::from_bytes([0; 16]),
             token
                 .try_clone_for_decode(
                     &cadmpeg_test_support::service_decode_context(),
@@ -1859,16 +1865,10 @@ mod tests {
             assert!(matches!(
                 parsed.kind,
                 PmDcExpressionKind::Binary {
-                    left: PmDcReference {
-                        index: 4,
-                        qualified: true
-                    },
-                    right: PmDcReference {
-                        index: 5,
-                        qualified: false
-                    },
+                    left,
+                    right,
                     ..
-                }
+                } if left.index() == 4 && left.qualified() && right.index() == 5 && !right.qualified()
             ));
         }
 
@@ -1887,12 +1887,9 @@ mod tests {
             assert!(matches!(
                 parsed.kind,
                 PmDcExpressionKind::Unary {
-                    operand: PmDcReference {
-                        index: 4,
-                        qualified: true
-                    },
+                    operand,
                     ..
-                }
+                } if operand.index() == 4 && operand.qualified()
             ));
         }
     }
@@ -1938,7 +1935,7 @@ mod tests {
                     factor: real(1.0),
                 },
             },
-            String::new(),
+            crate::record_identity::RecordTypeId::from_bytes([0; 16]),
             token
                 .try_clone_for_decode(
                     &cadmpeg_test_support::service_decode_context(),
@@ -1964,7 +1961,7 @@ mod tests {
                     derived: reference(0, false),
                 },
             },
-            String::new(),
+            crate::record_identity::RecordTypeId::from_bytes([0; 16]),
             token
                 .try_clone_for_decode(
                     &cadmpeg_test_support::service_decode_context(),
@@ -1985,7 +1982,7 @@ mod tests {
                     state: 0,
                 },
             },
-            String::new(),
+            crate::record_identity::RecordTypeId::from_bytes([0; 16]),
             token
                 .try_clone_for_decode(
                     &cadmpeg_test_support::service_decode_context(),
@@ -2014,7 +2011,7 @@ mod tests {
                 tolerance: 0,
                 terminal_value: -1,
             },
-            String::new(),
+            crate::record_identity::RecordTypeId::from_bytes([0; 16]),
             token
                 .try_clone_for_decode(
                     &cadmpeg_test_support::service_decode_context(),
@@ -2033,7 +2030,7 @@ mod tests {
                     operand: reference(4, true),
                 },
             },
-            String::new(),
+            crate::record_identity::RecordTypeId::from_bytes([0; 16]),
             token
                 .try_clone_for_decode(
                     &cadmpeg_test_support::service_decode_context(),
@@ -2062,7 +2059,7 @@ mod tests {
                 tolerance: 0,
                 terminal_value: -1,
             },
-            String::new(),
+            crate::record_identity::RecordTypeId::from_bytes([0; 16]),
             token
                 .try_clone_for_decode(
                     &cadmpeg_test_support::service_decode_context(),
@@ -2125,7 +2122,7 @@ mod tests {
                     factor: real(1.0),
                 },
             },
-            String::new(),
+            crate::record_identity::RecordTypeId::from_bytes([0; 16]),
             token
                 .try_clone_for_decode(
                     &cadmpeg_test_support::service_decode_context(),
@@ -2151,7 +2148,7 @@ mod tests {
                     derived: reference(0, false),
                 },
             },
-            String::new(),
+            crate::record_identity::RecordTypeId::from_bytes([0; 16]),
             token
                 .try_clone_for_decode(
                     &cadmpeg_test_support::service_decode_context(),
@@ -2172,7 +2169,7 @@ mod tests {
                     state: 0,
                 },
             },
-            String::new(),
+            crate::record_identity::RecordTypeId::from_bytes([0; 16]),
             token
                 .try_clone_for_decode(
                     &cadmpeg_test_support::service_decode_context(),
@@ -2201,7 +2198,7 @@ mod tests {
                 tolerance: 0,
                 terminal_value: -1,
             },
-            String::new(),
+            crate::record_identity::RecordTypeId::from_bytes([0; 16]),
             token
                 .try_clone_for_decode(
                     &cadmpeg_test_support::service_decode_context(),
@@ -2485,7 +2482,7 @@ mod tests {
                 tolerance: 0,
                 terminal_value: 0,
             },
-            String::new(),
+            crate::record_identity::RecordTypeId::from_bytes([0; 16]),
             token
                 .try_clone_for_decode(
                     &cadmpeg_test_support::service_decode_context(),
@@ -2506,7 +2503,7 @@ mod tests {
                         unit: reference(0, false),
                         kind,
                     },
-                    String::new(),
+                    crate::record_identity::RecordTypeId::from_bytes([0; 16]),
                     token
                         .try_clone_for_decode(
                             &cadmpeg_test_support::service_decode_context(),

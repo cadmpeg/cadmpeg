@@ -576,8 +576,11 @@ fn generated_planar_table_shape(
         if entry_ids.contains(&entry.entity_id) {
             return Ok(false);
         }
-        ctx.charge_collection_items(1, "creo generated planar table entry nodes")?;
-        entry_ids.insert(entry.entity_id);
+        ctx.insert_btree_set(
+            &mut entry_ids,
+            entry.entity_id,
+            "creo generated planar table entry nodes",
+        )?;
     }
     Ok(true)
 }
@@ -627,8 +630,8 @@ fn plane_equation(
     }
     if let Some(datum) = datum {
         return Some(SignedPlaneEquation {
-            normal: datum.plane.normal(),
-            offset: datum.plane.offset,
+            normal: datum.plane().normal(),
+            offset: datum.plane().offset(),
         });
     }
     if let Some(equation) = model_equation {
@@ -784,8 +787,8 @@ fn generated_datum_plane_equation(
                     .iter()
                     .filter(|datum| datum.feature_id == *other)
                     .map(|datum| SignedPlaneEquation {
-                        normal: datum.plane.normal(),
-                        offset: datum.plane.offset,
+                        normal: datum.plane().normal(),
+                        offset: datum.plane().offset(),
                     })
                     .chain(
                         sources
@@ -1038,8 +1041,8 @@ fn zero_offset_standard_section_plane_equation(
     )?;
     let mut candidates = sources.datums.iter().filter_map(|datum| {
         let equation = SignedPlaneEquation {
-            normal: datum.plane.normal(),
-            offset: datum.plane.offset,
+            normal: datum.plane().normal(),
+            offset: datum.plane().offset(),
         };
         let cap_alignment = dot(equation.normal, cap.normal).abs();
         let reference_alignment = dot(equation.normal, reference.normal).abs();
@@ -1180,7 +1183,12 @@ pub(crate) fn resolve(
                 reference_ids.push(id);
             }
         }
-        reference_ids.sort_unstable();
+        ctx.sort_unstable_by(
+            &mut reference_ids,
+            Ord::cmp,
+            |_| 0,
+            "creo placement reference ID sort",
+        )?;
         reference_ids.dedup();
         let direct_sketch = plane_equation(
             sketch_id,
@@ -1379,10 +1387,10 @@ pub(crate) fn resolve(
             result.push(transform);
         }
     }
-    crate::sort::stable_sort_by_key(
-        ctx,
+    ctx.stable_sort_by(
         result.as_mut_slice(),
-        |transform| transform.offset,
+        |left, right| left.offset.cmp(&right.offset),
+        |_| 0,
         "creo resolve result ordering",
     )?;
     Ok(result)

@@ -11,7 +11,6 @@ use std::io::Cursor;
 use cadmpeg_ir::codec::write::Encoder;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
-use crate::container;
 use crate::test_support::appearance::material_payload;
 use crate::test_support::appearance::sldprt_with_body_and_material;
 use crate::test_support::container::make_block;
@@ -107,7 +106,7 @@ fn encoder_writes_source_less_ir() {
         report.write_path(),
         cadmpeg_ir::report::export::WritePath::Synthesized { .. }
     ));
-    let scan = container::scan_bytes(&encoded);
+    let scan = crate::test_support::container::scan(&encoded);
     assert_eq!(scan.blocks.len(), 1);
     assert_eq!(scan.directory.len(), 1);
     let decoded = SldprtCodec
@@ -134,9 +133,9 @@ fn semantic_writer_emits_face_records_deterministically() {
     for (index, face) in ir.model.faces.iter_mut().enumerate() {
         face.color = Some(
             Color::new(
-                index as f32 / 10.0,
-                (index + 1) as f32 / 10.0,
-                (index + 2) as f32 / 10.0,
+                f32::from(u16::try_from(index).expect("index fits u16")) / 10.0,
+                f32::from(u16::try_from(index + 1).expect("index fits u16")) / 10.0,
+                f32::from(u16::try_from(index + 2).expect("index fits u16")) / 10.0,
                 1.0,
             )
             .expect("valid color"),
@@ -455,7 +454,7 @@ fn encoder_writes_source_less_line_sketches() {
         ir.model.features.push(Feature {
             id: FeatureId::mint(format!("synthetic:test:feature#profile-op-{index}"))
                 .expect("identity grammar"),
-            ordinal: index as u64 + 2,
+            ordinal: cadmpeg_core::decode::u64_from_index(index) + 2,
             name: Some(format!("Profile op {index}")),
             suppressed: Some(false),
             dependencies: cadmpeg_ir::features::DistinctMembers::default(),
@@ -519,7 +518,7 @@ fn encoder_writes_source_less_line_sketches() {
         .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut encoded))
         .unwrap();
-    let scan = container::scan_bytes(&encoded);
+    let scan = crate::test_support::container::scan(&encoded);
     assert!(scan.blocks.iter().any(|block| {
         block
             .section

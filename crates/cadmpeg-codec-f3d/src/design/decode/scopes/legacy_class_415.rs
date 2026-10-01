@@ -167,7 +167,7 @@ pub(super) fn exact_one_sided_extrude_prologue(
         _ => return None,
     };
     let profile_normal_offset = start.checked_add(to_face::PROFILE_NORMAL)?;
-    let profile_normal = f64s_at(bytes, profile_normal_offset, 3)?;
+    let profile_normal = f64s_at::<3>(bytes, profile_normal_offset)?;
     let profile_normal_squared = profile_normal
         .iter()
         .map(|component| component * component)

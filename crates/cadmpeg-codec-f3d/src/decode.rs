@@ -2352,7 +2352,7 @@ impl<'a> F3dDecodeSession<'a> {
         session_state: DecodeSessionState,
     ) -> Result<(Self, SessionPath), CodecError> {
         let DecodeSessionState {
-            mut admitted_entities,
+            admitted_entities: _,
             report_scope,
         } = session_state;
         let mut report = crate::report::build_decode_report(
@@ -2385,7 +2385,7 @@ impl<'a> F3dDecodeSession<'a> {
             build_geometry_ir(ctx, scan, primary_model_brep, brep)?;
         // ASM transfer already charged its delta; keep the running counter in
         // sync so a later admit_entities call cannot double-count those bodies.
-        admitted_entities = admitted_entities.max(u64_from_index(ir.model.entity_count()));
+        let mut admitted_entities = u64_from_index(ir.model.entity_count());
         let AsmTransferRemainder {
             unknowns,
             stats: _,
@@ -3014,14 +3014,18 @@ impl<'a> F3dDecodeSession<'a> {
             &mut self.ir.model.sketch_constraints,
             &self.native.design_parameters,
         )?;
-        self.ir
-            .model
-            .sketch_constraints
-            .sort_by(|a, b| a.id.cmp(&b.id));
-        self.ir
-            .model
-            .spatial_sketch_constraints
-            .sort_by(|a, b| a.id.cmp(&b.id));
+        ctx.stable_sort_by(
+            &mut self.ir.model.sketch_constraints,
+            |a, b| a.id.cmp(&b.id),
+            |constraint| constraint.id.as_str().len(),
+            "sort F3D sketch constraints",
+        )?;
+        ctx.stable_sort_by(
+            &mut self.ir.model.spatial_sketch_constraints,
+            |a, b| a.id.cmp(&b.id),
+            |constraint| constraint.id.as_str().len(),
+            "sort F3D spatial sketch constraints",
+        )?;
         crate::design::configurations::bind_configuration_suppressed_features(
             ctx,
             &mut self.ir.model.configurations,
@@ -3078,10 +3082,12 @@ impl<'a> F3dDecodeSession<'a> {
                     &materials.face_assignments,
                 )?;
                 apply_appearance_base_colors(self.ctx, &mut self.ir)?;
-                self.ir
-                    .model
-                    .appearance_bindings
-                    .sort_by(|a, b| a.id.cmp(&b.id));
+                self.ctx.stable_sort_by(
+                    &mut self.ir.model.appearance_bindings,
+                    |a, b| a.id.cmp(&b.id),
+                    |binding| binding.id.as_str().len(),
+                    "sort F3D appearance bindings",
+                )?;
                 reconcile_appearance_loss(
                     &mut self.report,
                     &self.ir,
@@ -3107,7 +3113,9 @@ impl<'a> F3dDecodeSession<'a> {
                         self.native.xref_references = table.references;
                     }
                     Ok(None) => {}
-                    Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
+                    Err(error @ (CodecError::ResourceLimit(_) | CodecError::NotImplemented(_))) => {
+                        return Err(error)
+                    }
                     Err(error) => report_xref_parse_loss(self.ctx, &mut self.report, &error)?,
                 }
                 FinalizePath::Geometry(index)
@@ -3132,7 +3140,9 @@ impl<'a> F3dDecodeSession<'a> {
                     scan,
                     &self.native.design_parameter_scopes,
                 ) {
-                    Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
+                    Err(error @ (CodecError::ResourceLimit(_) | CodecError::NotImplemented(_))) => {
+                        return Err(error)
+                    }
                     other => other,
                 };
                 if let Ok(Some(table)) = &xref_table {
@@ -3144,8 +3154,6 @@ impl<'a> F3dDecodeSession<'a> {
                         &self.native.design_parameter_scopes,
                         table,
                     );
-                    self.native.xref_designs.clone_from(&table.designs);
-                    self.native.xref_references.clone_from(&table.references);
                 }
                 FinalizePath::Bodyless(DeferredBodylessInputs {
                     xref: xref_table,
@@ -3222,11 +3230,6 @@ impl<'a> F3dDecodeSession<'a> {
                     &mut self.admitted_entities,
                     "admit F3D entities",
                 )?;
-                self.native
-                    .store(ctx, self.ir.native.namespace_mut("f3d"))?;
-                let annotations =
-                    populate_annotations(ctx, &self.ir, scan, &self.native, None, &self.unknowns)?;
-                let source_image = preserve_source_image(ctx, scan)?;
                 if mesh_projection.count > 0 {
                     apply_mesh_body_classification(
                         ctx,
@@ -3256,11 +3259,20 @@ impl<'a> F3dDecodeSession<'a> {
                 match inputs.xref {
                     Ok(Some(table)) => {
                         apply_assembly_classification(self.ctx, &mut self.report, scan, &table)?;
+                        self.native.xref_designs = table.designs;
+                        self.native.xref_references = table.references;
                     }
                     Ok(None) => {}
-                    Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
+                    Err(error @ (CodecError::ResourceLimit(_) | CodecError::NotImplemented(_))) => {
+                        return Err(error)
+                    }
                     Err(error) => report_xref_parse_loss(ctx, &mut self.report, &error)?,
                 }
+                self.native
+                    .store(ctx, self.ir.native.namespace_mut("f3d"))?;
+                let annotations =
+                    populate_annotations(ctx, &self.ir, scan, &self.native, None, &self.unknowns)?;
+                let source_image = preserve_source_image(ctx, scan)?;
                 let mut admitted_entities = self.admitted_entities;
                 return decode_result(
                     ctx,
@@ -3354,9 +3366,8 @@ fn decode_scanned_document<'a>(
     report_scope: crate::report::ReportScope,
 ) -> Result<AuthoredDecoded, CodecError> {
     let mut admitted_entities = 0_u64;
-    ctx.admit_entities(
+    ctx.charge_entities(
         u64_from_index(scan.entries.len()),
-        &mut admitted_entities,
         "admit F3D archive entries",
     )?;
 
@@ -3379,7 +3390,9 @@ fn decode_scanned_document<'a>(
         match crate::xref::decode(ctx, scan) {
             Ok(Some(table)) => apply_assembly_classification(ctx, &mut report, scan, &table)?,
             Ok(None) => {}
-            Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
+            Err(error @ (CodecError::ResourceLimit(_) | CodecError::NotImplemented(_))) => {
+                return Err(error)
+            }
             Err(error) => report_xref_parse_loss(ctx, &mut report, &error)?,
         }
         return decode_result(
@@ -3501,7 +3514,6 @@ fn decode_scanned_document<'a>(
             decoded_brep_count += 1;
         }
         if decoded_brep_count != 0 {
-            // Re-find primary in model_breps after move — keep the cloned primary.
             return finish_model_decode(
                 ctx,
                 scan,
@@ -4383,7 +4395,7 @@ struct XrefPropertyNote<'a>(&'a crate::records::xref::XrefReference);
 impl std::fmt::Display for XrefPropertyNote<'_> {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(formatter, "neutronRole {}", self.0.neutron_role)?;
-        if !self.0.neutron_data.is_empty() && self.0.neutron_data != self.0.neutron_role {
+        if !self.0.neutron_data.is_empty() && self.0.neutron_data != self.0.neutron_role.as_str() {
             write!(formatter, ", neutronData {}", self.0.neutron_data)?;
         }
         Ok(())
@@ -4858,7 +4870,12 @@ fn append_related_record_headers(
         related,
         "append F3D related record headers",
     )?;
-    native.design_record_headers.sort_by(|a, b| a.id.cmp(&b.id));
+    ctx.stable_sort_by(
+        &mut native.design_record_headers,
+        |a, b| a.id.cmp(&b.id),
+        |record| record.id.len(),
+        "sort F3D design record headers",
+    )?;
     Ok(())
 }
 
@@ -5500,8 +5517,8 @@ fn try_decode_brep(
     // `End-of-ASM-data` record ends at EOF without the `0x11` terminator, so
     // it needs the EOF-tolerant framer used for the history partition.
     let framed = match *solved_record_limit {
-        Some(limit) => sab::frame(ctx, bytes, start, limit, width),
-        None => sab::frame_history(ctx, bytes, start, bytes.len(), width),
+        Some(limit) => sab::frame(ctx, bytes, start, limit, width, None),
+        None => sab::frame_history(ctx, bytes, start, bytes.len(), width, None),
     };
     let records = match framed {
         Ok(r) if !r.is_empty() => r,
@@ -6246,7 +6263,12 @@ pub(crate) fn resolve_face_appearance_bindings(
         ctx.push_vec(faces, face, "collect F3D faces by material GUID")?;
     }
     for faces in faces_by_guid.values_mut() {
-        faces.sort();
+        ctx.stable_sort_by(
+            faces,
+            Ord::cmp,
+            |face| face.as_str().len(),
+            "sort F3D faces by material GUID",
+        )?;
         faces.dedup();
     }
     let mut bound_faces = ctx.collect_hash_map(

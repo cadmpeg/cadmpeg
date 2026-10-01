@@ -195,7 +195,7 @@ pub(super) fn exact_work_plane_frame(
                 }
                 _ => continue,
             };
-            let values = f64s_at(bytes, matrix_at, 16)?;
+            let values = f64s_at::<16>(bytes, matrix_at)?;
             let mut transform = [[0.0; 4]; 4];
             for (ordinal, value) in values.into_iter().enumerate() {
                 transform[ordinal / 4][ordinal % 4] = value;
@@ -284,11 +284,11 @@ fn exact_two_point_work_axis_construction(
         {
             return None;
         }
-        let point = f64s_at(bytes, start + 42, 3)?;
+        let point = f64s_at::<3>(bytes, start + 42)?;
         if point.iter().any(|value| !value.is_finite()) {
             return None;
         }
-        points[ordinal] = point.try_into().ok()?;
+        points[ordinal] = point;
         point_offsets[ordinal] = u64::try_from(start + 42).ok()?;
     }
     let endpoint = std::array::from_fn(|axis| origin[axis].get() + displacement[axis].get());
@@ -441,7 +441,7 @@ pub(super) fn exact_joint_origin_frame(
                         ..start + joint_origin_class_337_266::MATRIX,
                 ) == Some(&joint_origin_class_337_266::MATRIX_PREFIX_VALUE)
             {
-                let values = f64s_at(bytes, start + joint_origin_class_337_266::MATRIX, 16)?;
+                let values = f64s_at::<16>(bytes, start + joint_origin_class_337_266::MATRIX)?;
                 let mut transform = [[0.0; 4]; 4];
                 for (ordinal, value) in values.into_iter().enumerate() {
                     transform[ordinal / 4][ordinal % 4] = value;
@@ -470,7 +470,7 @@ pub(super) fn exact_joint_origin_frame(
                 && bytes.get(start + 11..start + 45) == Some(&[0; 34])
                 && bytes.get(start + 45..start + 49) == Some(&[1, 1, 0, 0])
             {
-                let values = f64s_at(bytes, start + 49, 16)?;
+                let values = f64s_at::<16>(bytes, start + 49)?;
                 let mut transform = [[0.0; 4]; 4];
                 for (ordinal, value) in values.into_iter().enumerate() {
                     transform[ordinal / 4][ordinal % 4] = value;
@@ -498,7 +498,7 @@ pub(super) fn exact_joint_origin_frame(
                 continue;
             }
             let reference = marked_record_reference(bytes, start + 45)?;
-            let values = f64s_at(bytes, start + 60, 16)?;
+            let values = f64s_at::<16>(bytes, start + 60)?;
             let mut transform = [[0.0; 4]; 4];
             for (ordinal, value) in values.into_iter().enumerate() {
                 transform[ordinal / 4][ordinal % 4] = value;

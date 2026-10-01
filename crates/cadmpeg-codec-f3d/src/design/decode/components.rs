@@ -1,16 +1,17 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Decode fixed local component-occurrence carriers.
 
+use crate::bytes::lp_utf16_bounded_charged;
 use cadmpeg_core::container::ContainerRole;
 
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
 use std::fmt::Write;
 
+use crate::bytes::lp_ascii_filtered_view;
 use crate::container::ContainerScan;
 use crate::design::decode::sketch::{native_scope_charged, next_indexed_record_offset};
-use crate::design::decode::text::lp_ascii_filtered_view;
-use crate::design::decode::text::lp_utf16_bounded_charged;
+
 use crate::records::feature::assembly_features::DesignComponentOccurrence;
 
 const BASE_FRAME_LENGTH: usize = 229;
@@ -44,7 +45,12 @@ pub(crate) fn decode_component_occurrences(
             at = next_at;
         }
     }
-    crate::design::sort::sort_by(ctx, &mut occurrences[..], |a, b| a.id.cmp(&b.id))?;
+    ctx.stable_sort_by(
+        &mut occurrences[..],
+        |a, b| a.id.cmp(&b.id),
+        |value| value.id.as_str().len(),
+        "sort f3d design components 1",
+    )?;
     occurrences.dedup_by(|left, right| left.id == right.id);
     Ok(occurrences)
 }
@@ -134,12 +140,12 @@ fn exact_component_occurrence(
         return Ok(None);
     };
     let Some((component_guid, after_component)) =
-        lp_utf16_bounded_charged(ctx, bytes, start + 44, 36..=36)?
+        lp_utf16_bounded_charged(ctx, bytes, start + 44, 36..=36, "f3d Design UTF-16 text")?
     else {
         return Ok(None);
     };
     let Some((occurrence_guid, after_occurrence)) =
-        lp_utf16_bounded_charged(ctx, bytes, start + 120, 36..=36)?
+        lp_utf16_bounded_charged(ctx, bytes, start + 120, 36..=36, "f3d Design UTF-16 text")?
     else {
         return Ok(None);
     };
