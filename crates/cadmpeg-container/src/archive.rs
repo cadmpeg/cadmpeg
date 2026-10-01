@@ -253,7 +253,12 @@ impl<'a> ArchiveSnapshot<'a> {
                     "ZIP compressed input",
                 )?;
                 let mut decoder = flate2::read::DeflateDecoder::new(source.window());
-                let view = Self::open_expanded(ctx, entry, &mut decoder)?;
+                let view = Self::open_expanded(ctx, entry, |chunk| {
+                    ctx.charge_work(cadmpeg_core::decode::u64_from_index(chunk.len()), "ZIP expansion step")?;
+                    let read = decoder.read(chunk).map_err(|error| CodecError::malformed(format_args!("cannot inflate {}: {error}", entry.name)))?;
+                    ctx.charge_work(cadmpeg_core::decode::u64_from_index(read), "ZIP expansion copy")?;
+                    Ok(read)
+                })?;
                 if decoder.total_in() != cadmpeg_core::decode::u64_from_index(source.window().len())
                 {
                     return Err(CodecError::Malformed(
@@ -264,18 +269,8 @@ impl<'a> ArchiveSnapshot<'a> {
             }
             ZipCompression::Zstd => {
                 let source = self.compressed_source(entry, range)?;
-                ctx.charge_work(
-                    cadmpeg_core::decode::u64_from_index(source.window().len()),
-                    "ZIP compressed input",
-                )?;
-                let decoder =
-                    zstd::stream::read::Decoder::with_buffer(source.window()).map_err(|error| {
-                        CodecError::malformed(format_args!(
-                            "cannot open Zstandard frame for {}: {error}",
-                            entry.name
-                        ))
-                    })?;
-                Self::open_expanded(ctx, entry, decoder)
+                let mut decoder = ctx.open_zstd(source)?;
+                Self::open_expanded(ctx, entry, |chunk| decoder.read_chunk(chunk))
             }
         }
     }
@@ -326,25 +321,15 @@ impl<'a> ArchiveSnapshot<'a> {
     fn open_expanded(
         ctx: &DecodeContext<'a>,
         entry: &EntryRecord,
-        mut decoder: impl Read,
+        mut read_chunk: impl FnMut(&mut [u8]) -> Result<usize, CodecError>,
     ) -> Result<View<'a>, CodecError> {
         let mut writer = ctx.begin_expand(ExpandSpec::Exact(entry.uncompressed_size))?;
         let mut chunk = [0_u8; 16 * 1024];
         loop {
-            ctx.charge_work(
-                cadmpeg_core::decode::u64_from_index(chunk.len()),
-                "ZIP expansion step",
-            )?;
-            let read = decoder.read(&mut chunk).map_err(|error| {
-                CodecError::malformed(format_args!("cannot inflate {}: {error}", entry.name))
-            })?;
+            let read = read_chunk(&mut chunk)?;
             if read == 0 {
                 break;
             }
-            ctx.charge_work(
-                cadmpeg_core::decode::u64_from_index(read),
-                "ZIP expansion copy",
-            )?;
             writer.write(&chunk[..read])?;
         }
         let view = writer.finalize()?;
@@ -1293,7 +1278,13 @@ mod tests {
         // Two read calls and one four-byte output copy consume this allowance.
         policy.limits.max_work_units = 2 * 16 * 1024 + 4;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("fresh root");
-        let error = ArchiveSnapshot::open_expanded(&ctx, entry, Cursor::new(b"part"))
+        let mut reader = Cursor::new(b"part");
+        let error = ArchiveSnapshot::open_expanded(&ctx, entry, |chunk| {
+            ctx.charge_work(cadmpeg_core::decode::u64_from_index(chunk.len()), "ZIP expansion step")?;
+            let read = std::io::Read::read(&mut reader, chunk).map_err(CodecError::Io)?;
+            ctx.charge_work(cadmpeg_core::decode::u64_from_index(read), "ZIP expansion copy")?;
+            Ok(read)
+        })
             .expect_err("expanded CRC needs its own work");
         assert!(matches!(error, CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::WorkUnits && limit.operation == "ZIP payload CRC"));
