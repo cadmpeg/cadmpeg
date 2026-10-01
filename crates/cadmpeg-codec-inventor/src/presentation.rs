@@ -402,7 +402,7 @@ fn project_face_bindings(
             continue;
         }
         if matching_faces.len() != 1 {
-            if matching_faces.iter().any(|face| face.styles.index != 0) {
+            if matching_faces.iter().any(|face| face.styles.index() != 0) {
                 count_unresolved(
                     ctx,
                     &mut projection.unresolved_face_overrides,
@@ -412,7 +412,7 @@ fn project_face_bindings(
             continue;
         }
         let graphics_face = matching_faces[0];
-        let Some(collection_ordinal) = graphics_face.styles.index.checked_sub(1) else {
+        let Some(collection_ordinal) = graphics_face.styles.index().checked_sub(1) else {
             continue;
         };
         if key_counts.get(key) != Some(&1) {
@@ -450,7 +450,7 @@ fn project_face_bindings(
             .style_references
             .references()
             .iter()
-            .filter_map(|reference| reference.index.checked_sub(1))
+            .filter_map(|reference| reference.index().checked_sub(1))
         {
             ctx.charge_work(
                 cadmpeg_core::decode::u64_from_index(inventory.graphics_primary_color_styles.len()),
@@ -1795,23 +1795,17 @@ mod tests {
 
         let face = parse_graphics_face(&ctx, root, 26).expect("graphics face parses");
 
-        assert_eq!(face.styles.index, 7);
-        assert!(face.styles.qualified);
-        assert_eq!(face.surface.index, 8);
-        assert!(face.surface.qualified);
-        assert_eq!(face.parent.index, 9);
-        assert!(face.parent.qualified);
+        assert_eq!(face.styles.index(), 7);
+        assert!(face.styles.qualified());
+        assert_eq!(face.surface.index(), 8);
+        assert!(face.surface.qualified());
+        assert_eq!(face.parent.index(), 9);
+        assert!(face.parent.qualified());
         assert_eq!(
             face.edge_references.references(),
             [
-                PmDcReference {
-                    index: 13,
-                    qualified: true
-                },
-                PmDcReference {
-                    index: 14,
-                    qualified: true
-                }
+                PmDcReference::new(13, true).expect("test reference index fits 31 bits"),
+                PmDcReference::new(14, true).expect("test reference index fits 31 bits")
             ]
         );
         assert_eq!(face.edge_references.metadata().copied(), Some([11, 12]));
@@ -1857,14 +1851,8 @@ mod tests {
         assert_eq!(
             styles.style_references.references(),
             [
-                PmDcReference {
-                    index: 23,
-                    qualified: true
-                },
-                PmDcReference {
-                    index: 24,
-                    qualified: false
-                }
+                PmDcReference::new(23, true).expect("test reference index fits 31 bits"),
+                PmDcReference::new(24, false).expect("test reference index fits 31 bits")
             ]
         );
         assert_eq!(styles.style_references.metadata().copied(), Some([21, 22]));
@@ -1913,18 +1901,9 @@ mod tests {
                 header_value: 0,
                 header_id: 0,
                 flags: 0,
-                styles: PmDcReference {
-                    index: 5,
-                    qualified: true,
-                },
-                surface: PmDcReference {
-                    index: 0,
-                    qualified: false,
-                },
-                parent: PmDcReference {
-                    index: 0,
-                    qualified: false,
-                },
+                styles: PmDcReference::new(5, true).expect("test reference index fits 31 bits"),
+                surface: PmDcReference::new(0, false).expect("test reference index fits 31 bits"),
+                parent: PmDcReference::new(0, false).expect("test reference index fits 31 bits"),
                 state: 0,
                 edge_references: PmDcPairedReferenceList::default(),
                 visibility_state: 0,
@@ -1941,10 +1920,7 @@ mod tests {
                 segment_version_major: 26,
                 style_references: PmDcPairedReferenceList::new(
                     Some([1, 2]),
-                    vec![PmDcReference {
-                        index: 7,
-                        qualified: true,
-                    }],
+                    vec![PmDcReference::new(7, true).expect("test reference index fits 31 bits")],
                 )
                 .expect("valid reference list"),
             },

@@ -30,10 +30,7 @@ fn pmdc_reference_list_refuses_retained_limit_before_clone() {
     let list = PmDcReferenceList::new(
         8,
         Some(PmDcListMetadata::U16([1, 2])),
-        vec![PmDcReference {
-            index: 7,
-            qualified: false,
-        }],
+        vec![PmDcReference::new(7, false).expect("test reference index fits 31 bits")],
     )
     .expect("paired reference list");
     let wire = PmDcReferenceListWire::from(list.clone());
@@ -53,10 +50,7 @@ fn pmdc_paired_map_refuses_retained_limit_before_clone() {
     let map = PmDcPairedMap::new(
         Some([1, 2]),
         vec![(
-            PmDcReference {
-                index: 7,
-                qualified: false,
-            },
+            PmDcReference::new(7, false).expect("test reference index fits 31 bits"),
             9_u32,
         )],
     )

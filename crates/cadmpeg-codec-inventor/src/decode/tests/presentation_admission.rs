@@ -78,10 +78,7 @@ fn presentation_default_native_record_refuses_before_id_creation() {
 fn presentation_other_native_records_refuse_before_ids_text_and_reference_copies() {
     let suffix = [1_u8];
     let token = cadmpeg_ir::ids::IdentityKey::encode_segment("segment");
-    let reference = PmDcReference {
-        index: 1,
-        qualified: false,
-    };
+    let reference = PmDcReference::new(1, false).expect("test reference index fits 31 bits");
     let mut inventory = PresentationInventory {
         default_styles: Vec::new(),
         rendering_styles: vec![Located::new(
