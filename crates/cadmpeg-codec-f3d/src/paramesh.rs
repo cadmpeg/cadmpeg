@@ -13,7 +13,7 @@
 //! per vertex followed by corner overrides selected by a delta-coded position
 //! stream.
 
-use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::decode::{DecodeContext, ExpandSpec, ExpandWriter, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::math::Vector3;
@@ -1059,9 +1059,10 @@ fn inflate_stream(ctx: &DecodeContext<'_>, body: &[u8]) -> Result<MeshStream, Co
     framed.push(LZMA_PROPERTIES);
     framed.extend_from_slice(&(1u32 << LZMA_DICTIONARY_LOG).to_le_bytes());
     framed.extend_from_slice(payload);
-    let mut out = Vec::new();
-    ctx.resize_retained_bytes(&mut out, declared_len, 0, "retain paramesh stream bytes")?;
-    let mut writer = std::io::Cursor::new(out.as_mut_slice());
+    let mut writer = LzmaOutput {
+        expansion: ctx.begin_expand(ExpandSpec::Exact(u64::from(declared)))?,
+        failure: None,
+    };
     lzma_rs::lzma_decompress_with_options(
         &mut std::io::Cursor::new(framed.as_slice()),
         &mut writer,
@@ -1073,16 +1074,35 @@ fn inflate_stream(ctx: &DecodeContext<'_>, body: &[u8]) -> Result<MeshStream, Co
             allow_incomplete: false,
         },
     )
-    .map_err(|error| malformed(format!("paramesh stream does not decompress: {error}")))?;
-    if writer.position() != u64::from(declared) {
-        return Err(malformed(
-            "paramesh stream does not decompress to its declared byte count",
-        ));
-    }
+    .map_err(|error| {
+        writer.failure.take().unwrap_or_else(|| {
+            malformed(format!("paramesh stream does not decompress: {error}"))
+        })
+    })?;
     Ok(MeshStream {
         descriptor,
-        bytes: out,
+        bytes: writer.expansion.finalize_owned()?,
     })
+}
+
+/// Keeps the typed expansion error across the LZMA library's I/O boundary.
+struct LzmaOutput<'ctx, 'arena> {
+    expansion: ExpandWriter<'ctx, 'arena>,
+    failure: Option<CodecError>,
+}
+
+impl std::io::Write for LzmaOutput<'_, '_> {
+    fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+        if let Err(error) = self.expansion.write(bytes) {
+            self.failure = Some(error);
+            return Err(std::io::Error::other("paramesh expansion refused"));
+        }
+        Ok(bytes.len())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
 }
 
 /// A stream layout whose byte semantics this decoder implements.
@@ -2264,6 +2284,30 @@ mod tests {
         });
         assert!(matches!(error, CodecError::ResourceLimit(limit)
             if limit.operation == "collect paramesh descriptor entries"));
+    }
+
+    #[test]
+    fn paramesh_lzma_refuses_expansion_limits_before_materialization() {
+        use cadmpeg_core::decode::{DecodePolicy, ResourceDimension};
+        let chunk = stream_chunk(&[0x80], &[7; 1024]);
+        for total in [false, true] {
+            let mut policy = DecodePolicy::service();
+            if total {
+                policy.limits.max_decompressed_bytes_total = 1023;
+            } else {
+                policy.limits.max_decompressed_bytes_per_expand = 1023;
+            }
+            crate::test_support::with_decode_policy(&policy, |ctx| {
+                let error = inflate_stream_charged(ctx, &chunk[12..]).err().expect("expansion limit");
+                let CodecError::ResourceLimit(limit) = error else {
+                    panic!("expansion must refuse");
+                };
+                assert_eq!(limit.dimension, ResourceDimension::DecompressedBytes);
+                assert_eq!(limit.operation, "begin_expand");
+                assert_eq!(ctx.resource_refusal(), Some(limit));
+            });
+        }
+        assert_eq!(inflate_stream(&chunk[12..]).unwrap().bytes, [7; 1024]);
     }
 
     #[test]
