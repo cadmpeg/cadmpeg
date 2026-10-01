@@ -106,12 +106,14 @@ fn validate_value_root(
     property: &PropertyRecord,
     expected_tag: &str,
 ) -> Result<Option<String>, CodecError> {
-    let document = roxmltree::Document::parse(property.xml.text()).or_else(|error| {
+    let admitted_document = ctx.parse_xml(property.xml.text(), "FreeCAD XML tree").or_else(|error| {
+        if matches!(error, CodecError::ResourceLimit(_)) { return Err(error); }
         Err(CodecError::Malformed(ctx.format_retained(
             format_args!("invalid geometry property XML {}: {error}", property.id),
             "FreeCAD geometry XML error",
         )?))
     })?;
+    let document = admitted_document.document();
     let mut roots = document
         .root_element()
         .children()
@@ -279,12 +281,14 @@ fn point_transform(
     ctx: &DecodeContext<'_>,
     property: &PropertyRecord,
 ) -> Result<[[FiniteReal; 4]; 4], CodecError> {
-    let document = roxmltree::Document::parse(property.xml.text()).or_else(|error| {
+    let admitted_document = ctx.parse_xml(property.xml.text(), "FreeCAD XML tree").or_else(|error| {
+        if matches!(error, CodecError::ResourceLimit(_)) { return Err(error); }
         Err(CodecError::Malformed(ctx.format_retained(
             format_args!("invalid point property XML {}: {error}", property.id),
             "FreeCAD point XML error",
         )?))
     })?;
+    let document = admitted_document.document();
     let Some(text) = document
         .root_element()
         .children()

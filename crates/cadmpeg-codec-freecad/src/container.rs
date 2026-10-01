@@ -525,8 +525,9 @@ pub(crate) fn parse_document(
 ) -> Result<(DocumentFacts, String), CodecError> {
     let text = std::str::from_utf8(bytes)
         .map_err(|_| CodecError::Malformed("Document.xml is not UTF-8".into()))?;
-    let xml = match roxmltree::Document::parse(text) {
+    let admitted_xml = match ctx.parse_xml(text, "FreeCAD document XML tree") {
         Ok(xml) => xml,
+        Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
         Err(error) => {
             return Err(CodecError::Malformed(ctx.format_retained(
                 format_args!("invalid Document.xml: {error}"),
@@ -534,6 +535,7 @@ pub(crate) fn parse_document(
             )?))
         }
     };
+    let xml = admitted_xml.document();
     let root = xml.root_element();
     if root.tag_name().name() != "Document" {
         return Err(CodecError::WrongFormat(ctx.format_retained(

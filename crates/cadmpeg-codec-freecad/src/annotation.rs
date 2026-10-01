@@ -574,7 +574,8 @@ fn direct_value_attributes(
     expected_tag: &str,
     allowed_attributes: &[&str],
 ) -> Result<BTreeMap<String, String>, CodecError> {
-    let document = roxmltree::Document::parse(property.xml.text()).map_err(|error| {
+    let admitted_document = ctx.parse_xml(property.xml.text(), "FreeCAD XML tree").map_err(|error| {
+        if matches!(error, CodecError::ResourceLimit(_)) { return error; }
         annotation_malformed(
             ctx,
             format_args!(
@@ -583,6 +584,7 @@ fn direct_value_attributes(
             ),
         )
     })?;
+    let document = admitted_document.document();
     let root = document.root_element();
     if has_non_whitespace_text(root) {
         return Err(annotation_malformed(
@@ -667,7 +669,8 @@ fn strict_text_values(
         }
         return Ok(values);
     }
-    let document = roxmltree::Document::parse(property.xml.text()).map_err(|error| {
+    let admitted_document = ctx.parse_xml(property.xml.text(), "FreeCAD XML tree").map_err(|error| {
+        if matches!(error, CodecError::ResourceLimit(_)) { return error; }
         annotation_malformed(
             ctx,
             format_args!(
@@ -676,6 +679,7 @@ fn strict_text_values(
             ),
         )
     })?;
+    let document = admitted_document.document();
     let root = document.root_element();
     if has_non_whitespace_text(root) {
         return Err(annotation_malformed(

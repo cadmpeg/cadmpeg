@@ -149,7 +149,7 @@ fn design_boolean_scalar_keeps_case_insensitive_values_without_copy() {
             .expect("valid XML span"),
         };
         assert_eq!(
-            super::super::bool_property(&[&property], "Flag"),
+            super::super::bool_property(&cadmpeg_test_support::service_decode_context(), &[&property], "Flag").expect("admitted XML"),
             Some(expected)
         );
     }
