@@ -338,8 +338,8 @@ impl RejectionCounts {
 /// Complete chart-carrier scan result.
 #[derive(Debug, Clone, Default)]
 pub(crate) struct CurveScan {
-    /// Every structurally valid construction found in the source graph before
-    /// chart enrichment filters it. Native record extraction reuses this lane
+    /// Constructions remaining after cross-form collision selection and before
+    /// chart enrichment. Native record extraction reuses this lane
     /// so it does not parse the same graph a second time.
     pub(crate) source_constructions: Vec<CompositeCurve>,
     /// Structurally valid constructions with a solved chart or a typed inbound
@@ -1147,7 +1147,6 @@ pub(crate) fn chart_source_record_at(
         let Some(mut head) = View::over_retained(stream).child(preamble, stream.len()) else {
             continue;
         };
-        // Keep the sequential preamble unpack dense; rustfmt would undo the net deletion.
         #[rustfmt::skip]
         let (
             Some(base_parameter), Some(base_scale), Some(chart_count), Some(chordal_error),

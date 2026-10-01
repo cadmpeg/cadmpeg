@@ -31,7 +31,6 @@ use super::support_uv::{
 use super::{report_untransferred_streams, Counts, Scan};
 use crate::decode::ids::IdScope;
 use crate::framing::node_kind::NodeKind;
-use crate::geometry;
 use crate::loss::NxLossCode;
 use crate::topology::{Graph, Node};
 use cadmpeg_core::decode::{DecodeContext, View};
@@ -59,14 +58,10 @@ use std::collections::{BTreeMap, BTreeSet};
 
 pub(super) fn ordered_point_candidates<'a>(
     ctx: &DecodeContext<'_>,
-    stream: &[u8],
     graph: &'a Graph,
 ) -> Result<Vec<(FinitePoint3, &'a Node)>, CodecError> {
     ordered_fixed_candidates(
         ctx,
-        geometry::points(ctx, stream)?
-            .into_iter()
-            .map(|point| (point.pos, point.position)),
         graph,
         [NodeKind::Point],
         Node::point_position,
@@ -75,14 +70,10 @@ pub(super) fn ordered_point_candidates<'a>(
 
 pub(super) fn ordered_surface_candidates<'a>(
     ctx: &DecodeContext<'_>,
-    stream: &[u8],
     graph: &'a Graph,
 ) -> Result<Vec<(SurfaceGeometry, &'a Node)>, CodecError> {
     ordered_fixed_candidates(
         ctx,
-        geometry::surfaces(ctx, stream)?
-            .into_iter()
-            .map(|surface| (surface.pos, surface.geometry)),
         graph,
         [
             NodeKind::Plane,
@@ -97,14 +88,10 @@ pub(super) fn ordered_surface_candidates<'a>(
 
 pub(super) fn ordered_curve_candidates<'a>(
     ctx: &DecodeContext<'_>,
-    stream: &[u8],
     graph: &'a Graph,
 ) -> Result<Vec<(CurveGeometry, &'a Node)>, CodecError> {
     ordered_fixed_candidates(
         ctx,
-        geometry::curves(ctx, stream)?
-            .into_iter()
-            .map(|curve| (curve.pos, curve.geometry)),
         graph,
         [NodeKind::Line, NodeKind::Circle, NodeKind::Ellipse],
         Node::curve_geometry,
@@ -113,25 +100,11 @@ pub(super) fn ordered_curve_candidates<'a>(
 
 fn ordered_fixed_candidates<'a, T>(
     ctx: &DecodeContext<'_>,
-    fallback: impl IntoIterator<Item = (usize, T)>,
     graph: &'a Graph,
     kinds: impl IntoIterator<Item = NodeKind>,
     graph_value: impl Fn(&Node) -> Option<T>,
 ) -> Result<Vec<(T, &'a Node)>, CodecError> {
     let mut candidates = BTreeMap::new();
-    for (offset, value) in fallback {
-        ctx.charge_work(1, "scan NX analytic candidates")?;
-        let Some(node) = graph
-            .at_pos(offset)
-            .filter(|node| graph_value(node).is_some())
-        else {
-            continue;
-        };
-        if !candidates.contains_key(&offset) {
-            ctx.charge_collection_items(1, "nx analytic candidate index")?;
-        }
-        candidates.insert(offset, (value, node));
-    }
     for node in kinds.into_iter().flat_map(|kind| graph.of_kind(kind)) {
         ctx.charge_work(1, "scan NX analytic candidates")?;
         if let Some(value) = graph_value(node) {
@@ -351,7 +324,6 @@ pub(super) fn try_decode_geometry(
             )?));
         }
         let view = parsed.stream(si).view_for_geometry();
-        let semantic = parsed.semantic_bytes(si);
         let stream_name = ctx.format_retained(
             format_args!("nx:parasolid#{si}:{}", stream.kind().label()),
             "nx geometry stream name",
@@ -381,7 +353,7 @@ pub(super) fn try_decode_geometry(
         // The model is accumulated across streams. Completion must not retry
         // unresolved curves that an earlier stream already admitted.
         let procedural_start = ir.model.procedural_curves.len();
-        for (pi, (position, node)) in ordered_point_candidates(ctx, semantic, graph)?
+        for (pi, (position, node)) in ordered_point_candidates(ctx, graph)?
             .into_iter()
             .enumerate()
         {
@@ -412,7 +384,7 @@ pub(super) fn try_decode_geometry(
             points_by_xmt.insert(node.xmt, pid);
             counts.points += 1;
         }
-        for (fi, (geometry, node)) in ordered_surface_candidates(ctx, semantic, graph)?
+        for (fi, (geometry, node)) in ordered_surface_candidates(ctx, graph)?
             .into_iter()
             .enumerate()
         {
@@ -716,7 +688,7 @@ pub(super) fn try_decode_geometry(
             });
         }
 
-        for (ci, (geometry, node)) in ordered_curve_candidates(ctx, semantic, graph)?
+        for (ci, (geometry, node)) in ordered_curve_candidates(ctx, graph)?
             .into_iter()
             .enumerate()
         {
