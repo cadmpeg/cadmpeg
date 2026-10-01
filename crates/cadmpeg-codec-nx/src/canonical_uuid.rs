@@ -1,11 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Canonical lowercase UUID text retained from OM frames.
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
-#[serde(transparent)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct CanonicalUuid<S>(S);
 
-impl<S: AsRef<str>> CanonicalUuid<S> {
+impl<S: crate::immutable_text::ImmutableText> CanonicalUuid<S> {
     pub(crate) fn new(value: S) -> Result<Self, &'static str> {
         let text = value.as_ref();
         if text.len() != 36
@@ -24,6 +23,12 @@ impl<S: AsRef<str>> CanonicalUuid<S> {
 
     pub(crate) fn as_str(&self) -> &str {
         self.0.as_ref()
+    }
+}
+
+impl<S: crate::immutable_text::ImmutableText> serde::Serialize for CanonicalUuid<S> {
+    fn serialize<T: serde::Serializer>(&self, serializer: T) -> Result<T::Ok, T::Error> {
+        serializer.serialize_str(self.as_str())
     }
 }
 
@@ -68,6 +73,18 @@ mod tests {
                 .unwrap_err()
                 .to_string()
                 .contains("uuid"));
+        }
+    }
+    #[test]
+    fn canonicaluuid_serializes_the_checked_borrowed_and_owned_text() {
+        let text = "01234567-89ab-cdef-0123-456789abcdef";
+        let borrowed = super::CanonicalUuid::new(text).unwrap();
+        let owned = super::CanonicalUuid::new(text.to_owned()).unwrap();
+        for _ in 0..3 {
+            assert_eq!(borrowed.as_str(), text);
+            assert_eq!(owned.as_str(), text);
+            assert_eq!(serde_json::to_string(&borrowed).unwrap(), serde_json::to_string(text).unwrap());
+            assert_eq!(serde_json::to_string(&owned).unwrap(), serde_json::to_string(text).unwrap());
         }
     }
 }
