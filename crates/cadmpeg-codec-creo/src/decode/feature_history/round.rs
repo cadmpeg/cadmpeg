@@ -1249,7 +1249,11 @@ pub(in super::super) fn chamfer_constant_distance(
         if !is_support_plane || support_plane_ids.contains(id) {
             continue;
         }
-        ctx.insert_btree_set(&mut support_plane_ids, *id, "creo chamfer support plane IDs")?;
+        ctx.insert_btree_set(
+            &mut support_plane_ids,
+            *id,
+            "creo chamfer support plane IDs",
+        )?;
         let Some(plane) = reconciled_model_plane(&local_planes, ir, source_carriers, *id) else {
             return Ok(None);
         };

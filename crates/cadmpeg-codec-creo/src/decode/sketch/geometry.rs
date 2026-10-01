@@ -778,7 +778,11 @@ pub(in crate::decode) fn saved_section_missing_line_geometry(
         .iter()
         .filter_map(|row| trim_segment_id(definition, row))
     {
-        ctx.insert_btree_set(&mut trimmed_external_ids, id, "creo missing-line trimmed ID nodes")?;
+        ctx.insert_btree_set(
+            &mut trimmed_external_ids,
+            id,
+            "creo missing-line trimmed ID nodes",
+        )?;
     }
     let Some(missing) =
         crate::decode::uniqueness::exactly_one(segments.rows.ordinary().filter(|candidate| {

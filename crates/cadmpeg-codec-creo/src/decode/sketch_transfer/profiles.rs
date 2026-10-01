@@ -213,7 +213,11 @@ fn resolved_segment_profile_chains(
     }
     let mut remaining = BTreeSet::new();
     for index in 0..rows.len() {
-        ctx.insert_btree_set(&mut remaining, index, "creo segment profile remaining nodes")?;
+        ctx.insert_btree_set(
+            &mut remaining,
+            index,
+            "creo segment profile remaining nodes",
+        )?;
     }
     let mut profiles = Vec::new();
     while let Some(seed) = remaining.first().copied() {

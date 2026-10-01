@@ -291,9 +291,7 @@ fn curve_expression_parameter_names(
             } else {
                 ctx.admit_btree_entry(&occurrences, &key, "creo curve-expression occurrences")?;
                 let occurrence = match occurrences.entry(key) {
-                    std::collections::btree_map::Entry::Vacant(entry) => {
-                        entry.insert(0usize)
-                    }
+                    std::collections::btree_map::Entry::Vacant(entry) => entry.insert(0usize),
                     std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
                 };
                 *occurrence += 1;

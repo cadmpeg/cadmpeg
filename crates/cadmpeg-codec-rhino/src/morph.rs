@@ -841,12 +841,7 @@ pub(crate) fn project(
             let key = cadmpeg_core::text::NonBlankString::new(key).ok_or_else(|| {
                 cadmpeg_core::CodecError::malformed("blank generated Rhino morph key")
             })?;
-            ctx.insert_btree_map(
-                &mut parameters,
-                key,
-                record,
-                "Rhino morph property entries",
-            )?;
+            ctx.insert_btree_map(&mut parameters, key, record, "Rhino morph property entries")?;
         }
     }
     Ok(Feature {

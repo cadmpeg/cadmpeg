@@ -3372,7 +3372,12 @@ fn operation_state_group_table_before_counter_map(
                     "nx operation-state group paths",
                 )?;
             }
-            ctx.insert_btree_map(&mut best_by_end, *end, path, "nx operation-state group paths")?;
+            ctx.insert_btree_map(
+                &mut best_by_end,
+                *end,
+                path,
+                "nx operation-state group paths",
+            )?;
         }
     }
 
@@ -4686,7 +4691,11 @@ pub(crate) fn indexed_sections<'a>(
         temporary.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
             usize,
         >()))?;
-        ctx.insert_btree_set(&mut seen_record_starts, table_end, "nx OM seen record starts")?;
+        ctx.insert_btree_set(
+            &mut seen_record_starts,
+            table_end,
+            "nx OM seen record starts",
+        )?;
         ctx.reserve_scoped_vec(
             &mut temporary,
             &mut candidates,
@@ -4884,7 +4893,11 @@ pub(crate) fn offset_store_control_class_ordinals(
         if identities.contains(&identity) {
             break;
         }
-        ctx.insert_btree_set(&mut identities, identity, "nx offset-store class identities")?;
+        ctx.insert_btree_set(
+            &mut identities,
+            identity,
+            "nx offset-store class identities",
+        )?;
         maximum_identity = maximum_identity.max(identity);
         if maximum_identity < *minimum && boundary.replace(index + 1).is_some() {
             return Ok(None);

@@ -952,7 +952,11 @@ pub(crate) fn prototype_topology_rows(
     }
     let mut positional_ids = BTreeSet::new();
     for row in positional_rows {
-        ctx.insert_btree_set(&mut positional_ids, row.id, "creo positional topology ID nodes")?;
+        ctx.insert_btree_set(
+            &mut positional_ids,
+            row.id,
+            "creo positional topology ID nodes",
+        )?;
     }
     let mut referenced_ids = BTreeSet::new();
     for id in positional_rows
@@ -8967,7 +8971,12 @@ pub(crate) fn fc05_cylinder_cap_pairs(
 
     let mut faces = BTreeMap::<u32, [Option<NonZeroU32>; 2]>::new();
     for row in crate::identity::uniquely_identified_rows_checked(ctx, topology, |row| row.id)? {
-        ctx.insert_btree_map(&mut faces, row.id, row.faces, "creo fc05 topology-face nodes")?;
+        ctx.insert_btree_map(
+            &mut faces,
+            row.id,
+            row.faces,
+            "creo fc05 topology-face nodes",
+        )?;
     }
     let mut circle_counts = BTreeMap::<u32, usize>::new();
     for circle in circles {

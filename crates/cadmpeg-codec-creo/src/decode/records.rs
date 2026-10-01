@@ -5209,7 +5209,11 @@ pub(super) fn sketch_section_point_records(
         variables.reconciled_points(ctx)?;
     let mut point_ids = BTreeSet::new();
     for point_id in points.keys().copied().chain(ambiguous.iter().copied()) {
-        ctx.insert_btree_set(&mut point_ids, point_id, "creo sketch section point ID nodes")?;
+        ctx.insert_btree_set(
+            &mut point_ids,
+            point_id,
+            "creo sketch section point ID nodes",
+        )?;
     }
     crate::decode::collect_items(
         ctx,

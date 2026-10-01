@@ -303,7 +303,7 @@ fn add_typed_field_names<'a, K: legacy::LegacyCode>(
             continue;
         }
         if let Some(parent) = record.parent {
-            ctx.admit_btree_entry(&index, &parent, "creo legacy family typed-name nodes")?;
+            ctx.admit_btree_entry(index, &parent, "creo legacy family typed-name nodes")?;
             match index.entry(parent) {
                 std::collections::btree_map::Entry::Vacant(entry) => {
                     let mut names = Vec::new();

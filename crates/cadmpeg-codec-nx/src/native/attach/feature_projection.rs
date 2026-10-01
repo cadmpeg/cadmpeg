@@ -364,11 +364,7 @@ pub(super) fn body_surface_ids<'ctx>(
                 )
             })?;
         reservation.grow(cadmpeg_core::decode::u64_from_index(bytes))?;
-        ctx.insert_btree_set(
-            &mut ids,
-            face.surface.clone(),
-            "NX body surface identities",
-        )?;
+        ctx.insert_btree_set(&mut ids, face.surface.clone(), "NX body surface identities")?;
     }
     Ok(Some(ScopedSurfaceIds {
         ids,
@@ -2773,12 +2769,7 @@ pub(super) fn insert_hole_output_body(
         "NX hole output body",
     )?;
     bodies.push(body.clone());
-    ctx.insert_btree_map(
-        outputs,
-        operation.to_owned(),
-        bodies,
-        "NX hole output body",
-    )?;
+    outputs.insert(operation.to_owned(), bodies);
     Ok(())
 }
 
@@ -4288,7 +4279,12 @@ pub(super) fn simple_hole_chamfers(
                 cadmpeg_core::decode::u64_from_index(bytes),
                 "NX chamfer treatments",
             )?;
-            ctx.insert_btree_map(&mut treatments, operation, treatment, "NX chamfer treatments")?;
+            ctx.insert_btree_map(
+                &mut treatments,
+                operation,
+                treatment,
+                "NX chamfer treatments",
+            )?;
         }
     }
     Ok(treatments)

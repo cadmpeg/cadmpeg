@@ -4861,7 +4861,11 @@ pub(super) fn parasolid_topology_attribute_fields_have_untransferred_values(
             field_use.entity_51_record.as_str(),
             field_use.position.field_ordinal(),
         );
-        ctx.admit_btree_entry(&fields_by_identity, &key, "NX topology attribute field index")?;
+        ctx.admit_btree_entry(
+            &fields_by_identity,
+            &key,
+            "NX topology attribute field index",
+        )?;
         match fields_by_identity.entry(key) {
             std::collections::btree_map::Entry::Occupied(mut entry) => *entry.get_mut() = None,
             std::collections::btree_map::Entry::Vacant(entry) => {

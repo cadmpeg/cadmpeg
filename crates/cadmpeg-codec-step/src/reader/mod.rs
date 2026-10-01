@@ -1558,7 +1558,11 @@ fn inspect_opaque_offsets(
         if typed_records.contains(id) || offsets.contains(&record.span.start) {
             continue;
         }
-        ctx.insert_btree_set(&mut offsets, record.span.start, "step_inspect_opaque_offsets")?;
+        ctx.insert_btree_set(
+            &mut offsets,
+            record.span.start,
+            "step_inspect_opaque_offsets",
+        )?;
     }
     Ok(offsets)
 }

@@ -2205,7 +2205,11 @@ fn feature_entity_tables(
 ) -> Result<Vec<FeatureEntityTable>, CodecError> {
     let mut feature_ids_set = BTreeSet::new();
     for &feature_id in feature_ids {
-        ctx.insert_btree_set(&mut feature_ids_set, feature_id, "creo feature entity owner ids")?;
+        ctx.insert_btree_set(
+            &mut feature_ids_set,
+            feature_id,
+            "creo feature entity owner ids",
+        )?;
     }
     let mut surface_ids = BTreeSet::new();
     for row in rows {

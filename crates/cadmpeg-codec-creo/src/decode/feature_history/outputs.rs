@@ -846,12 +846,7 @@ pub(in super::super) fn insert_feature_source_property(
         format_args!("{value}"),
         "creo feature source property value",
     )?;
-    ctx.insert_btree_map(
-        properties,
-        key,
-        value,
-        "creo feature source property nodes",
-    )?;
+    ctx.insert_btree_map(properties, key, value, "creo feature source property nodes")?;
     Ok(())
 }
 

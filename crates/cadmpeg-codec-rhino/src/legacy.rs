@@ -2316,7 +2316,12 @@ fn append_legacy_brep(
                 })
                 .transpose()?,
         });
-        ctx.insert_btree_map(&mut group_edges, root, edge_id, "Rhino V1 Brep grouped edges")?;
+        ctx.insert_btree_map(
+            &mut group_edges,
+            root,
+            edge_id,
+            "Rhino V1 Brep grouped edges",
+        )?;
     }
     let mut shell_faces =
         ctx.retained_vec::<cadmpeg_ir::ids::FaceId>(face_count, "Rhino V1 shell faces")?;

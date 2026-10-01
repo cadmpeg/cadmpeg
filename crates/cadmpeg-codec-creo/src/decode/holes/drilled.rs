@@ -170,9 +170,7 @@ fn split_patch_table_is_counterbore(
             )?;
             let group = match cylinder_ids_by_source.entry(source_id) {
                 std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
-                std::collections::btree_map::Entry::Vacant(entry) => {
-                    entry.insert(Vec::new())
-                }
+                std::collections::btree_map::Entry::Vacant(entry) => entry.insert(Vec::new()),
             };
             ctx.reserve_vec(group, 1, "creo split-patch cylinder IDs")?;
             group.push(entry.entity_id);
@@ -184,9 +182,7 @@ fn split_patch_table_is_counterbore(
             )?;
             let group = match plane_ids_by_source.entry(source_id) {
                 std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
-                std::collections::btree_map::Entry::Vacant(entry) => {
-                    entry.insert(Vec::new())
-                }
+                std::collections::btree_map::Entry::Vacant(entry) => entry.insert(Vec::new()),
             };
             ctx.reserve_vec(group, 1, "creo split-patch plane IDs")?;
             group.push(entry.entity_id);
@@ -495,7 +491,11 @@ pub(in crate::decode) fn simple_drilled_hole_axis_placement(
             row.feature_id == feature_id && row.kind == crate::surface::SurfaceKind::Cylinder
         })
     }) {
-        ctx.insert_btree_set(&mut cylinder_ids, surface_id, "creo drilled cylinder ID nodes")?;
+        ctx.insert_btree_set(
+            &mut cylinder_ids,
+            surface_id,
+            "creo drilled cylinder ID nodes",
+        )?;
     }
     let Some(frame_records) = unique_available_positional_cylinder_frame_records(
         ctx,

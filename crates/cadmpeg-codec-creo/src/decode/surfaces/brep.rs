@@ -1288,9 +1288,7 @@ fn push_native_pcurve_candidate(
     ctx.admit_btree_entry(candidates, &key, "creo B-rep pcurve candidate nodes")?;
     let values = match candidates.entry(key) {
         std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
-        std::collections::btree_map::Entry::Vacant(entry) => {
-            entry.insert(Vec::new())
-        }
+        std::collections::btree_map::Entry::Vacant(entry) => entry.insert(Vec::new()),
     };
     ctx.reserve_vec(values, 1, "creo B-rep pcurve candidates")?;
     values.push((endpoints, offset));
@@ -1359,12 +1357,14 @@ impl<'a> BrepFaceCandidateIndexes<'a> {
         for lp in &scan.topology.loops {
             if let Some(face_id) = lp.face_id() {
                 let face_key = face_id.get();
-                ctx.admit_btree_entry(&loops_by_face, &face_key, "creo B-rep face-loop index nodes")?;
+                ctx.admit_btree_entry(
+                    &loops_by_face,
+                    &face_key,
+                    "creo B-rep face-loop index nodes",
+                )?;
                 let loops = match loops_by_face.entry(face_key) {
                     std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
-                    std::collections::btree_map::Entry::Vacant(entry) => {
-                        entry.insert(Vec::new())
-                    }
+                    std::collections::btree_map::Entry::Vacant(entry) => entry.insert(Vec::new()),
                 };
                 ctx.reserve_vec(loops, 1, "creo B-rep face-loop references")?;
                 loops.push(lp);
@@ -1696,7 +1696,11 @@ fn used_brep_vertices(
         .flatten()
         .copied()
     {
-        ctx.insert_btree_set(&mut used_vertices, vertex_id, "creo B-rep used vertex nodes")?;
+        ctx.insert_btree_set(
+            &mut used_vertices,
+            vertex_id,
+            "creo B-rep used vertex nodes",
+        )?;
     }
     Ok(used_vertices)
 }
@@ -1710,12 +1714,9 @@ fn brep_set_at<'a>(
     ctx.admit_btree_entry(map, &key, operation)?;
     Ok(match map.entry(key) {
         std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
-        std::collections::btree_map::Entry::Vacant(entry) => {
-            entry.insert(BTreeSet::new())
-        }
+        std::collections::btree_map::Entry::Vacant(entry) => entry.insert(BTreeSet::new()),
     })
 }
-
 
 struct BrepComponentTopology {
     component_face_curves: BTreeSet<u32>,
@@ -1774,7 +1775,11 @@ impl BrepComponentTopology {
                         half_edge.curve_id,
                         "creo B-rep curve incidence map nodes",
                     )?;
-                    ctx.insert_btree_set(curve_faces, *face_id, "creo B-rep curve incident face nodes")?;
+                    ctx.insert_btree_set(
+                        curve_faces,
+                        *face_id,
+                        "creo B-rep curve incident face nodes",
+                    )?;
                     let [start, end] = edge_vertices[&half_edge.curve_id];
                     for vertex_id in [start, end] {
                         ctx.insert_btree_set(vertices, vertex_id, "creo B-rep face vertex nodes")?;
@@ -1784,7 +1789,11 @@ impl BrepComponentTopology {
                             vertex_id,
                             "creo B-rep vertex incidence map nodes",
                         )?;
-                        ctx.insert_btree_set(vertex_faces, *face_id, "creo B-rep vertex incident face nodes")?;
+                        ctx.insert_btree_set(
+                            vertex_faces,
+                            *face_id,
+                            "creo B-rep vertex incident face nodes",
+                        )?;
                     }
                 }
             }
@@ -1792,18 +1801,26 @@ impl BrepComponentTopology {
         for incident_faces in faces_by_curve.values().chain(faces_by_vertex.values()) {
             for (index, first) in incident_faces.iter().enumerate() {
                 for second in incident_faces.iter().skip(index + 1) {
-                    ctx.insert_btree_set(brep_set_at(
+                    ctx.insert_btree_set(
+                        brep_set_at(
                             ctx,
                             &mut face_adjacency,
                             *first,
                             "creo B-rep adjacency face nodes",
-                        )?, *second, "creo B-rep adjacency neighbour nodes")?;
-                    ctx.insert_btree_set(brep_set_at(
+                        )?,
+                        *second,
+                        "creo B-rep adjacency neighbour nodes",
+                    )?;
+                    ctx.insert_btree_set(
+                        brep_set_at(
                             ctx,
                             &mut face_adjacency,
                             *second,
                             "creo B-rep adjacency face nodes",
-                        )?, *first, "creo B-rep adjacency neighbour nodes")?;
+                        )?,
+                        *first,
+                        "creo B-rep adjacency neighbour nodes",
+                    )?;
                 }
             }
         }

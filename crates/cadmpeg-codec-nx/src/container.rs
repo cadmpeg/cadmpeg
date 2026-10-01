@@ -969,7 +969,11 @@ fn parse_extref_record_index(
             cadmpeg_core::decode::u64_from_index(std::mem::size_of::<u32>()),
             "nx external reference record ids",
         )?;
-        ctx.insert_btree_set(&mut record_ids, record_id, "nx external reference record ids")?;
+        ctx.insert_btree_set(
+            &mut record_ids,
+            record_id,
+            "nx external reference record ids",
+        )?;
         let Some(offset) = View::u32_le_at(payload, at) else {
             return Ok(None);
         };
@@ -1480,7 +1484,12 @@ pub(crate) fn scan_legacy<'a>(
             cadmpeg_core::decode::u64_from_index(std::mem::size_of_val(&(stream.id(), span))),
             "legacy NX stream spans",
         )?;
-        ctx.insert_btree_map(&mut stream_spans, stream.id(), span, "legacy NX stream spans")?;
+        ctx.insert_btree_map(
+            &mut stream_spans,
+            stream.id(),
+            span,
+            "legacy NX stream spans",
+        )?;
         ctx.reserve_retained_vec(&mut stream_views, 1, "legacy NX stream views")?;
         stream_views.push(view);
     }

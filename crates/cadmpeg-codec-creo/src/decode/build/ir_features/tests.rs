@@ -5,9 +5,9 @@ use std::collections::{BTreeMap, BTreeSet};
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 
 use super::{
-    append_regeneration_edge, commit_regeneration_edges, compose_feature_id,
-    emit_model_features, merge_feature_dependencies, merge_feature_source_properties,
-    ordered_row_feature_ids, refresh_feature_outputs,
+    append_regeneration_edge, commit_regeneration_edges, compose_feature_id, emit_model_features,
+    merge_feature_dependencies, merge_feature_source_properties, ordered_row_feature_ids,
+    refresh_feature_outputs,
 };
 
 #[test]
@@ -625,7 +625,8 @@ fn operation_feature_identity_refuses_before_btree_node() {
     let (ctx, _) =
         DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
     let mut ids = BTreeSet::new();
-    let error = ctx.insert_btree_set(&mut ids, 40, "creo operation feature identity nodes")
+    let error = ctx
+        .insert_btree_set(&mut ids, 40, "creo operation feature identity nodes")
         .expect_err("one operation needs one identity node");
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)

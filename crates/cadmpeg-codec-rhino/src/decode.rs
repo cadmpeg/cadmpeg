@@ -64,7 +64,11 @@ fn instance_members_are_unique(
 ) -> Result<bool, cadmpeg_core::CodecError> {
     let mut unique_members = BTreeSet::new();
     for member in members {
-        ctx.insert_btree_set(&mut unique_members, *member, "Rhino instance unique members")?;
+        ctx.insert_btree_set(
+            &mut unique_members,
+            *member,
+            "Rhino instance unique members",
+        )?;
     }
     Ok(unique_members.len() == members.len())
 }
@@ -7193,7 +7197,11 @@ fn full_source_attributes(
     }
     let mut layer_index_counts = BTreeMap::<i32, usize>::new();
     for layer in &scan.metadata.layers {
-        ctx.admit_btree_entry(&layer_index_counts, &layer.index, "Rhino layer index counts")?;
+        ctx.admit_btree_entry(
+            &layer_index_counts,
+            &layer.index,
+            "Rhino layer index counts",
+        )?;
         *layer_index_counts.entry(layer.index).or_default() += 1;
     }
     let mut layer_index_occurrences = BTreeMap::<i32, usize>::new();

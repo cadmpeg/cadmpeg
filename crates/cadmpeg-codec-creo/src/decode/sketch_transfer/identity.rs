@@ -31,7 +31,11 @@ pub(in super::super) fn section_entity_external_ids(
             )
         })
     {
-        ctx.insert_btree_set(&mut ids, external_id, "creo section entity external ID nodes")?;
+        ctx.insert_btree_set(
+            &mut ids,
+            external_id,
+            "creo section entity external ID nodes",
+        )?;
     }
     Ok(ids)
 }

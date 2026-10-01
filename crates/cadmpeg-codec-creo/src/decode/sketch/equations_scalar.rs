@@ -1225,7 +1225,11 @@ fn scalar_equality_components(
 ) -> Result<Vec<BTreeSet<SectionScalarVariable>>, CodecError> {
     let mut remaining = BTreeSet::new();
     for variable in adjacency.keys().copied() {
-        ctx.insert_btree_set(&mut remaining, variable, "creo section scalar remaining nodes")?;
+        ctx.insert_btree_set(
+            &mut remaining,
+            variable,
+            "creo section scalar remaining nodes",
+        )?;
     }
     let mut components = Vec::new();
     while let Some(seed) = remaining.pop_first() {
