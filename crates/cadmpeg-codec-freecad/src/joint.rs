@@ -426,7 +426,8 @@ fn enumeration_value(
     ctx: &DecodeContext<'_>,
     property: &PropertyRecord,
 ) -> Result<String, CodecError> {
-    let document = roxmltree::Document::parse(property.xml.text()).map_err(|error| {
+    let admitted_document = ctx.parse_xml(property.xml.text(), "FreeCAD XML tree").map_err(|error| {
+        if matches!(error, CodecError::ResourceLimit(_)) { return error; }
         crate::resource::malformed_charged(
             ctx,
             format_args!(
@@ -436,6 +437,7 @@ fn enumeration_value(
             "fcstd joint diagnostic",
         )
     })?;
+    let document = admitted_document.document();
     let root = document.root_element();
     if !root.has_tag_name("Property") {
         return Err(crate::resource::malformed_charged(

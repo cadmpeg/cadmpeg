@@ -238,15 +238,11 @@ pub(crate) fn transfer(
 ) -> Result<Graph, CodecError> {
     let text = std::str::from_utf8(bytes)
         .map_err(|_| CodecError::Malformed("GuiDocument.xml is not UTF-8".into()))?;
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(bytes.len()),
-        "FCStd GUI XML lexical admission",
-    )?;
-    if let Some((nodes, _)) = crate::container::xml_envelope_counts(bytes) {
-        ctx.charge_collection_items(nodes, "FCStd GUI XML node tree")?;
-    }
-    let xml = roxmltree::Document::parse(text)
-        .map_err(|error| gui_malformed(ctx, format_args!("invalid GuiDocument.xml: {error}")))?;
+    let admitted_xml = ctx.parse_xml(text, "FreeCAD XML tree").map_err(|error| {
+        if matches!(error, CodecError::ResourceLimit(_)) { return error; }
+        gui_malformed(ctx, format_args!("invalid GuiDocument.xml: {error}"))
+    })?;
+    let xml = admitted_xml.document();
     let schema_declaration = crate::container::canonical_attribute(
         ctx,
         xml.root_element(),

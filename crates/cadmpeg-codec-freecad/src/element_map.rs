@@ -50,9 +50,11 @@ pub(crate) fn parse(
 ) -> Result<(StringTables, Vec<ElementMapRecord>), CodecError> {
     let text = std::str::from_utf8(document)
         .map_err(|_| CodecError::Malformed("Document.xml is not UTF-8".into()))?;
-    let xml = roxmltree::Document::parse(text).map_err(|error| {
+    let admitted_xml = ctx.parse_xml(text, "FreeCAD XML tree").map_err(|error| {
+        if matches!(error, CodecError::ResourceLimit(_)) { return error; }
         element_map_malformed(ctx, format_args!("invalid Document.xml: {error}"))
     })?;
+    let xml = admitted_xml.document();
     validate_string_hasher_framing(xml.root_element())?;
     let mut entry_data = HashMap::new();
     for entry in entries {
@@ -133,12 +135,14 @@ pub(crate) fn parse(
         .iter()
         .filter(|property| property.type_name == "Part::PropertyPartShape")
     {
-        let property_xml = roxmltree::Document::parse(property.xml.text()).map_err(|error| {
+        let admitted_property_xml = ctx.parse_xml(property.xml.text(), "FreeCAD XML tree").map_err(|error| {
+        if matches!(error, CodecError::ResourceLimit(_)) { return error; }
             element_map_malformed(
                 ctx,
                 format_args!("invalid shape property XML {}: {error}", property.id),
             )
         })?;
+    let property_xml = admitted_property_xml.document();
         let Some((part, carrier)) = direct_element_map(ctx, property_xml.root_element())? else {
             continue;
         };
