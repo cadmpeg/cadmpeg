@@ -435,7 +435,7 @@ fn degree_zero_nurbs_surface_has_an_exact_parameter_segment_bound() {
             .map(crate::features::FinitePoint3::get),
         Some(point)
     );
-    let bound = nurbs_surface_parameter_segment_chord_bound(
+    let bound = nurbs_surface_parameter_segment_chord_bound(&cadmpeg_test_support::service_decode_context(),
         &surface,
         [Point2::new(0.0, 0.0), Point2::new(1.0, 1.0)],
         [point, point],
@@ -462,7 +462,7 @@ fn degree_zero_nurbs_surface_patch_spans_use_their_matching_poles() {
     .unwrap();
     let poles = [Point3::new(1.0, 2.0, 3.0), Point3::new(4.0, 5.0, 6.0)];
     for (range, pole) in [([0.0, 1.0], poles[0]), ([1.0, 2.0], poles[1])] {
-        let bound = nurbs_surface_parameter_segment_chord_bound(
+        let bound = nurbs_surface_parameter_segment_chord_bound(&cadmpeg_test_support::service_decode_context(),
             &surface,
             [Point2::new(range[0], 0.0), Point2::new(range[1], 1.0)],
             [pole, pole],
@@ -496,7 +496,7 @@ fn nurbs_surface_parameter_segment_bound_splits_internal_knots() {
             .expect("surface endpoint")
             .get()
     });
-    let bound = nurbs_surface_parameter_segment_chord_bound(&surface, parameters, endpoints)
+    let bound = nurbs_surface_parameter_segment_chord_bound(&cadmpeg_test_support::service_decode_context(), &surface, parameters, endpoints)
         .expect("resource allocation did not fail")
         .expect("multi-span rational Bézier residual bound");
 

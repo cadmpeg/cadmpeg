@@ -223,21 +223,18 @@ pub(super) fn nurbs_surface_parameter_segment_chord_bound(
         .checked_mul(4)
         .and_then(|count| count.checked_add(2))
         .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
-    // Each split can search all patches. Restricting a tensor-product line
-    // costs at most its squared support times the combined degrees; the
-    // square of the split count also covers the in-place sort's comparisons.
+    // Restricting each tensor-product line costs at most its squared support
+    // times the combined degrees. IR admits split scans and sorting.
     let work = u
         .checked_mul(v)
         .and_then(|support| support.checked_mul(support))
         .and_then(|work| work.checked_mul(u.checked_add(v)?))
         .and_then(|work| work.checked_mul(64))
-        .and_then(|work| work.checked_add(patches))
         .and_then(|work| work.checked_mul(splits))
-        .and_then(|work| work.checked_add(splits.checked_mul(splits)?.checked_mul(64)?))
         .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
     ctx.charge_work(work, OPERATION)?;
     let result = cadmpeg_ir::eval::nurbs_surface_parameter_segment_chord_bound_with_budget(
-        surface, parameters, chord, &budget,
+        ctx, surface, parameters, chord, &budget,
     );
     ctx.charge_work(0, OPERATION)?;
     if budget.exhausted() {
