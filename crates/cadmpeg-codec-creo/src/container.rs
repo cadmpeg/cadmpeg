@@ -1354,7 +1354,8 @@ fn read_array_count(
             for _ in 0..3 {
                 match region.get(p) {
                     Some(&psb::token::ARRAY_OPEN) => {
-                        let (count, _) = psb::compact_int(region, p + 1);
+                        let (count, _) = psb::complete_compact_int(region, p + 1)
+                            .ok_or_else(|| CodecError::malformed("incomplete geometry census count"))?;
                         let Some(sum) = total.checked_add(count) else {
                             return Err(CodecError::malformed(ctx.format_retained(
                                 format_args!(
@@ -2096,13 +2097,12 @@ fn structural_feature_ids(
                 from = start;
                 continue;
             };
-            let (count, mut cursor) = psb::compact_int(payload, start + 1);
+            let (count, mut cursor) = psb::complete_compact_int(payload, start + 1)
+                .ok_or_else(|| CodecError::malformed("incomplete parent-feature count"))?;
             for _ in 0..count {
                 ctx.charge_work(2, "creo parent-feature entries")?;
-                let (id, next) = psb::compact_int(payload, cursor);
-                if next == cursor {
-                    break;
-                }
+                let (id, next) = psb::complete_compact_int(payload, cursor)
+                    .ok_or_else(|| CodecError::malformed("incomplete parent-feature entry"))?;
                 if id != 0 {
                     ctx.charge_work(24 * (u64::from(usize::BITS - ids.len().leading_zeros()) + 1), "creo structural feature identity work")?;
                     ctx.insert_btree_set(&mut ids, id, "creo structural feature ids")?;

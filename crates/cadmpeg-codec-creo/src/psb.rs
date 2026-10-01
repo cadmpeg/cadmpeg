@@ -110,23 +110,16 @@ pub(crate) fn token_at(data: &[u8], offset: usize) -> Option<Token> {
             Ok((_, end)) => (end - offset, TokenKind::EntityReference),
             Err(_) => (data.len() - offset, TokenKind::Truncated(head)),
         },
-        token::ARRAY_OPEN => {
-            let (_, end) = compact_int(data, offset + 1);
-            if end == offset + 1 {
-                (1, TokenKind::Truncated(head))
-            } else {
-                (end - offset, TokenKind::ArrayOpen)
-            }
-        }
-        token::SCALAR_BODY => {
-            let (_, dimensions_end) = compact_int(data, offset + 1);
-            let (_, count_end) = compact_int(data, dimensions_end);
-            if dimensions_end == offset + 1 || count_end == dimensions_end {
-                (data.len() - offset, TokenKind::Truncated(head))
-            } else {
-                (count_end - offset, TokenKind::ScalarBody)
-            }
-        }
+        token::ARRAY_OPEN => match complete_compact_int(data, offset + 1) {
+            Some((_, end)) => (end - offset, TokenKind::ArrayOpen),
+            None => (data.len() - offset, TokenKind::Truncated(head)),
+        },
+        token::SCALAR_BODY => match complete_compact_int(data, offset + 1)
+            .and_then(|(_, end)| complete_compact_int(data, end))
+        {
+            Some((_, end)) => (end - offset, TokenKind::ScalarBody),
+            None => (data.len() - offset, TokenKind::Truncated(head)),
+        },
         token::ARRAY_CLOSE => (1, TokenKind::ArrayClose),
         0xe2 => (1, TokenKind::CompoundOpen),
         token::COMPOUND_CLOSE => (1, TokenKind::CompoundClose),
@@ -146,10 +139,10 @@ pub(crate) fn token_at(data: &[u8], offset: usize) -> Option<Token> {
         }
         0x46 | 0x2d if offset + 8 <= data.len() => (8, TokenKind::WorldCoordinate),
         0x46 | 0x2d => (data.len() - offset, TokenKind::Truncated(head)),
-        0..=0xbf => {
-            let (_, end) = compact_int(data, offset);
-            (end - offset, TokenKind::CompactInt)
-        }
+        0..=0xbf => match complete_compact_int(data, offset) {
+            Some((_, end)) => (end - offset, TokenKind::CompactInt),
+            None => (data.len() - offset, TokenKind::Truncated(head)),
+        },
         0xe1 | 0xe4 | 0xe5 | 0xe6 | 0xe8 | 0xf1 | 0xf2 | 0xf3 | 0xf5 | 0xf6 => {
             (1, TokenKind::OtherStructural(head))
         }
@@ -160,6 +153,19 @@ pub(crate) fn token_at(data: &[u8], offset: usize) -> Option<Token> {
         length,
         kind,
     })
+}
+
+/// Decode a complete compact integer, excluding control bytes and incomplete heads.
+pub(crate) fn complete_compact_int(data: &[u8], offset: usize) -> Option<(u32, usize)> {
+    let &head = data.get(offset)?;
+    match head {
+        0..=0x7f => Some((u32::from(head), offset + 1)),
+        0x80..=0xbf => {
+            let &tail = data.get(offset + 1)?;
+            Some(((u32::from(head - 0x80) << 8) | u32::from(tail), offset + 2))
+        }
+        _ => None,
+    }
 }
 
 /// Decode a generic PSB compact integer at `offset` ([spec §3.1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/creo_prt.md#21-compact-integers)).
@@ -335,7 +341,7 @@ impl<'a> Cursor<'a> {
 #[cfg(test)]
 mod tests {
     use super::{
-        compact_int, is_short_form_float, reference_id, short_form_float, token, token_at, tokens,
+        complete_compact_int, compact_int, is_short_form_float, reference_id, short_form_float, token, token_at, tokens,
         Token, TokenKind,
     };
 
@@ -473,4 +479,23 @@ mod tests {
     fn short_form_float_rejects_truncated() {
         assert!(short_form_float(&[0x2f, 0x43], 0).is_none());
     }
+    #[test]
+    fn token_walker_exposes_incomplete_compact_heads() {
+        for (bytes, head) in [(&[0xf8, 0x81][..], 0xf8), (&[0xf9, 1, 0x81][..], 0xf9), (&[0x81][..], 0x81)] {
+            let tokens: Vec<_> = tokens(bytes).collect();
+            assert_eq!(tokens.len(), 1);
+            assert_eq!(tokens[0].kind, TokenKind::Truncated(head));
+            assert_eq!(tokens[0].length, bytes.len());
+        }
+    }
+
+    #[test]
+    fn complete_compact_count_rejects_absent_tail_and_control_bytes() {
+        assert_eq!(complete_compact_int(&[], 0), None);
+        assert_eq!(complete_compact_int(&[0x81], 0), None);
+        assert_eq!(complete_compact_int(&[0xf8], 0), None);
+        assert_eq!(complete_compact_int(&[0], 0), Some((0, 1)));
+        assert_eq!(complete_compact_int(&[0x81, 0x23], 0), Some((0x123, 2)));
+    }
+
 }
