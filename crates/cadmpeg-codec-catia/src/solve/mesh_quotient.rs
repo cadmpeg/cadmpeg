@@ -176,6 +176,24 @@ impl<T, F> MeshSolve<T, F> {
     }
 }
 
+impl<T> MeshSolve<T> {
+    /// Preserve session refusal and refuse a search whose local slice ended.
+    pub(crate) fn require_work(
+        self,
+        ctx: &DecodeContext<'_>,
+        budget: &WorkBudget<'_>,
+    ) -> Result<Self, CodecError> {
+        ctx.charge_work(0, "catia_mesh_topology_work")?;
+        if budget.exhausted() || matches!(self, Self::Failed(MeshCandidateFailure::Exhausted(_))) {
+            let limit = u64_from_index(budget.consumed());
+            let requested = limit.checked_add(1)
+                .ok_or_else(|| ctx.refuse_codec_limit("catia_mesh_topology_work", u64::MAX - 1, u64::MAX))?;
+            return Err(ctx.refuse_codec_limit("catia_mesh_topology_work", limit, requested));
+        }
+        Ok(self)
+    }
+}
+
 /// Mesh candidate topology and endpoint assignment.
 pub(crate) type MeshCandidateSolve = MeshSolve<(StandardTopology, Vec<usize>)>;
 
@@ -10031,6 +10049,9 @@ where
     FP: Fn(&[Option<[usize; 2]>]) -> bool,
     FC: Fn(&[Option<[usize; 2]>]) -> bool,
 {
+    let budget = inputs.budget;
+    let outcome = (|| -> Result<MeshCandidateSolve, CodecError> {
+
     let ParseStandardMeshCandidateOutcomeInputs {
         bytes,
         edge_faces,
@@ -10458,6 +10479,9 @@ where
             ))
         }
     })
+
+    })()?;
+    outcome.require_work(ctx, budget)
 }
 
 /// Solve a standard mesh whose repeated edge-face rows still carry alternate
@@ -10474,6 +10498,8 @@ pub(crate) fn parse_standard_mesh_candidate_outcome_with_face_assignments<F>(
 where
     F: FnMut(&[[usize; 2]], &WorkBudget<'_>) -> Result<MeshCandidateSolve, CodecError>,
 {
+    let outcome = (|| -> Result<MeshFaceDomainCandidateSolve, CodecError> {
+
     let mut solution: Option<(Vec<[usize; 2]>, StandardTopology, Vec<usize>)> = None;
     let mut rejection = None;
     let mut ambiguity = None;
@@ -10585,6 +10611,9 @@ where
             ))
         },
     )
+
+    })()?;
+    outcome.require_work(ctx, budget)
 }
 
 #[test]
@@ -13708,5 +13737,34 @@ fn boundary_component_face_keys_refuse_unadmitted_scan() {
         let CodecError::ResourceLimit(limit) = propagate_common_boundary_components(ctx, &domains, &candidates, &mut quotient).expect_err("face keys require work") else { panic!("resource refusal") };
         assert_eq!(limit.operation, "catia_component_face_key_scan");
         assert_eq!(ctx.resource_refusal(), Some(limit));
+    });
+}
+
+#[cfg(test)]
+#[test]
+fn face_domain_local_work_exhaustion_propagates_resource_refusal() {
+    crate::test_support::with_service_context(|ctx| {
+        let budget = ctx.work_budget(0);
+        let assignments = [vec![[0, 0]]];
+        let CodecError::ResourceLimit(limit) = parse_standard_mesh_candidate_outcome_with_face_assignments(
+            ctx,
+            MeshFaceAssignmentCandidates::Concrete { assignments: &assignments, face_count: 1 },
+            &budget,
+            |_, _| panic!("refused branch must not run"),
+        ).expect_err("local work refusal") else { panic!("resource refusal") };
+        assert_eq!(limit.operation, "catia_mesh_topology_work");
+        assert_eq!(ctx.resource_refusal(), Some(limit));
+    });
+}
+
+#[cfg(test)]
+#[test]
+fn mesh_work_guard_preserves_the_existing_session_refusal() {
+    crate::test_support::with_work_limit(0, |ctx| {
+        let CodecError::ResourceLimit(original) = ctx.charge_work(1, "catia_mesh_test_refusal").expect_err("work refusal") else { panic!("resource refusal") };
+        let budget = ctx.work_budget(0);
+        let result = MeshSolve::<()>::Failed(MeshCandidateFailure::Exhausted(MeshCandidateExhaustion::EndpointResolution)).require_work(ctx, &budget);
+        assert!(matches!(result, Err(CodecError::ResourceLimit(limit)) if limit == original));
+        assert_eq!(ctx.resource_refusal(), Some(original));
     });
 }
