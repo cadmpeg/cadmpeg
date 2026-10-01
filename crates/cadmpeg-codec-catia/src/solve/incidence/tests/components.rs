@@ -1036,8 +1036,8 @@ fn ordered_components_retain_unknown_edges_in_the_abstract_quotient() {
         },
     ])];
     let candidates = vec![Vec::new(), Vec::new()];
-    let mut quotient = MeshQuotient::new(repeated_domain(HashSet::from([0, 1]), 4));
     catia_test_context!(ctx);
+    let mut quotient = MeshQuotient::new(repeated_domain(HashSet::from([0, 1]), 4));
 
     crate::solve::mesh_quotient::propagate_common_boundary_components(
         &ctx,
@@ -1056,13 +1056,13 @@ fn ordered_components_retain_unknown_edges_in_the_abstract_quotient() {
 fn unordered_components_close_cycles_in_the_abstract_quotient() {
     let domains = [MeshFaceBoundaryDomain::UnorderedFullCycle(vec![2, 0, 1])];
     let candidates = vec![Vec::new(); 3];
+    catia_test_context!(ctx);
     let mut quotient = MeshQuotient::new(
         [0, 1, 1, 2, 2, 0]
             .into_iter()
             .map(|point| Arc::new(HashSet::from([point])))
             .collect(),
     );
-    catia_test_context!(ctx);
 
     crate::solve::mesh_quotient::propagate_common_boundary_components(
         &ctx,
@@ -1277,12 +1277,12 @@ fn deferred_components_select_gap_orders_in_the_abstract_quotient() {
         },
     )];
     let candidates = vec![Vec::new(); 4];
+    catia_test_context!(ctx);
     let mut quotient = MeshQuotient::new(
         (0..8)
             .map(|node| Arc::new(HashSet::from([[0, 1, 2, 3, 1, 2, 3, 0][node]])))
             .collect(),
     );
-    catia_test_context!(ctx);
 
     crate::solve::mesh_quotient::propagate_common_boundary_components(
         &ctx,

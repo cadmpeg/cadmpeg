@@ -24,7 +24,7 @@ use super::{
     UnionFind, MAX_MESH_CONSTRAINT_OPERATIONS,
 };
 
-impl MeshSelectionSearch<'_, '_> {
+impl<'storage, 'ctx> MeshSelectionSearch<'storage, 'ctx> {
     pub(super) fn should_stop(&self) -> bool {
         self.outcome.is_closed()
     }
@@ -59,12 +59,12 @@ impl MeshSelectionSearch<'_, '_> {
     #[cfg(test)]
     pub(super) fn remaining_equation_merge_capacity(
         &self,
-        quotient: &mut MeshQuotient,
+        quotient: &mut MeshQuotient<'storage>,
     ) -> Result<Option<usize>, CodecError> {
-        fn choice_component_reductions(
+        fn choice_component_reductions<'storage>(
             choice: &[[usize; 2]],
-            quotient: &mut MeshQuotient,
-            possible: &mut UnionFind,
+            quotient: &mut MeshQuotient<'storage>,
+            possible: &mut UnionFind<'_>,
         ) -> HashMap<usize, usize> {
             let mut equations = HashMap::<usize, Vec<[usize; 2]>>::new();
             for [left, right] in choice {
@@ -270,7 +270,7 @@ impl MeshSelectionSearch<'_, '_> {
     pub(super) fn face_projection_signature(
         &self,
         face: usize,
-        quotient: &mut MeshQuotient,
+        quotient: &mut MeshQuotient<'storage>,
     ) -> Result<MeshQuotientSignature, CodecError> {
         let mut root_set = HashSet::new();
         for use_ in self.assignments[face]
@@ -322,7 +322,7 @@ impl MeshSelectionSearch<'_, '_> {
     #[cfg(test)]
     pub(super) fn propagate_forced_face_equations(
         &self,
-        quotient: &mut MeshQuotient,
+        quotient: &mut MeshQuotient<'storage>,
     ) -> Result<bool, CodecError> {
         let budget = WorkBudget::new(usize::MAX);
         self.propagate_forced_face_equations_from(quotient, None, &budget)
@@ -330,7 +330,7 @@ impl MeshSelectionSearch<'_, '_> {
 
     pub(super) fn propagate_forced_face_equations_from(
         &self,
-        quotient: &mut MeshQuotient,
+        quotient: &mut MeshQuotient<'storage>,
         changed_edges: Option<&HashSet<usize>>,
         budget: &WorkBudget<'_>,
     ) -> Result<bool, CodecError> {
@@ -670,10 +670,10 @@ impl MeshSelectionSearch<'_, '_> {
 
     pub(super) fn prepare_selected_branch(
         &self,
-        quotient: &MeshQuotient,
+        quotient: &MeshQuotient<'storage>,
         changed_edges: &HashSet<usize>,
         propagation_budget: &WorkBudget<'_>,
-    ) -> Result<Option<MeshQuotient>, CodecError> {
+    ) -> Result<Option<MeshQuotient<'storage>>, CodecError> {
         let mut measured = quotient.clone_charged(self.ctx)?;
         if !self.has_exact_singleton_endpoint_domains()
             && !self.propagate_forced_face_equations_from(
@@ -711,13 +711,13 @@ impl MeshSelectionSearch<'_, '_> {
     }
 
     #[cfg(test)]
-    pub(crate) fn search(&mut self, quotient: &MeshQuotient) -> Result<(), CodecError> {
+    pub(crate) fn search(&mut self, quotient: &MeshQuotient<'storage>) -> Result<(), CodecError> {
         self.search_with_limit(quotient, MAX_MESH_CONSTRAINT_OPERATIONS)
     }
 
     pub(super) fn search_with_budget(
         &mut self,
-        quotient: &MeshQuotient,
+        quotient: &MeshQuotient<'storage>,
         budget: &WorkBudget<'_>,
         propagation_budget: &WorkBudget<'_>,
     ) -> Result<(), CodecError> {
@@ -726,10 +726,10 @@ impl MeshSelectionSearch<'_, '_> {
 
     pub(super) fn fixed_direction_options(
         &self,
-        measured: &MeshQuotient,
+        measured: &MeshQuotient<'storage>,
         face: usize,
         budget: Option<&WorkBudget<'_>>,
-    ) -> Result<Vec<MeshFixedDirectionOption>, CodecError> {
+    ) -> Result<Vec<MeshFixedDirectionOption<'storage>>, CodecError> {
         let Some(direction_options) = self
             .fixed_face_directions
             .get(face)
@@ -802,7 +802,7 @@ impl MeshSelectionSearch<'_, '_> {
 
     pub(super) fn search_fixed_direction_with_budget(
         &mut self,
-        quotient: &MeshQuotient,
+        quotient: &MeshQuotient<'storage>,
         budget: &WorkBudget<'_>,
     ) -> Result<(), CodecError> {
         if self.should_stop() {
@@ -997,7 +997,7 @@ impl MeshSelectionSearch<'_, '_> {
     #[cfg(test)]
     pub(super) fn search_with_limit(
         &mut self,
-        quotient: &MeshQuotient,
+        quotient: &MeshQuotient<'storage>,
         limit: usize,
     ) -> Result<(), CodecError> {
         let budget = WorkBudget::new(limit);
@@ -1007,7 +1007,7 @@ impl MeshSelectionSearch<'_, '_> {
 
     pub(super) fn selection_state_signature(
         &self,
-        quotient: &MeshQuotient,
+        quotient: &MeshQuotient<'storage>,
         prepared: bool,
     ) -> Result<MeshSelectionStateSignature, CodecError> {
         let mut quotient = quotient.clone_charged(self.ctx)?;
@@ -1036,7 +1036,7 @@ impl MeshSelectionSearch<'_, '_> {
 
     pub(super) fn search_from_state(
         &mut self,
-        quotient: &MeshQuotient,
+        quotient: &MeshQuotient<'storage>,
         prepared: bool,
         budget: &WorkBudget<'_>,
         propagation_budget: &WorkBudget<'_>,
@@ -1063,7 +1063,7 @@ impl MeshSelectionSearch<'_, '_> {
 
     pub(super) fn search_state(
         &mut self,
-        quotient: &MeshQuotient,
+        quotient: &MeshQuotient<'storage>,
         prepared: bool,
         budget: &WorkBudget<'_>,
         propagation_budget: &WorkBudget<'_>,
@@ -1468,7 +1468,7 @@ impl MeshSelectionSearch<'_, '_> {
         options.sort_unstable_by(
             |(left_assignment, left_directions, left_quotient),
              (right_assignment, right_directions, right_quotient)| {
-                let measure = |quotient: &MeshQuotient| {
+                let measure = |quotient: &MeshQuotient<'storage>| {
                     (0..quotient.union.len())
                         .filter(|&node| quotient.union.root(node) == node)
                         .fold((0usize, 0u128), |(count, freedom), node| {
@@ -1525,9 +1525,9 @@ pub(super) fn direction_work_estimate(
     })
 }
 
-pub(super) fn mesh_assignment_can_merge(
+pub(super) fn mesh_assignment_can_merge<'storage>(
     assignment: &MeshFaceBoundaryAssignment,
-    quotient: &mut MeshQuotient,
+    quotient: &mut MeshQuotient<'storage>,
 ) -> bool {
     pub(super) fn possible_ports(use_: MeshBoundaryEdgeCandidate, end: bool) -> [Option<usize>; 2] {
         let port = |reversed: bool| {
@@ -1868,10 +1868,10 @@ pub(super) fn reconstruct_singleton_coordinate_topology(
     Ok(Some(topology))
 }
 
-pub(super) fn resolve_mesh_selection_from_quotient(
-    ctx: &DecodeContext<'_>,
+pub(super) fn resolve_mesh_selection_from_quotient<'storage>(
+    ctx: &'storage DecodeContext<'_>,
     topology: StandardTopology,
-    mut quotient: MeshQuotient,
+    mut quotient: MeshQuotient<'storage>,
     vertex_points: &[[f64; 3]],
     edge_candidates: &[Vec<[usize; 2]>],
     port_identities: &[[u32; 2]],

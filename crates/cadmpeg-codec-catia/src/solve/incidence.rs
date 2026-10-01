@@ -408,12 +408,12 @@ fn prune_incidence_choices_with_explicit_support(
     }
 }
 
-fn incidence_choice_components(
-    ctx: &DecodeContext<'_>,
+fn incidence_choice_components<'storage>(
+    ctx: &'storage DecodeContext<'_>,
     choices: &[Vec<[usize; 2]>],
     edge_faces: &[[usize; 2]],
     boundary_domains: Option<&[MeshFaceBoundaryDomain]>,
-    mesh_quotient: Option<&MeshQuotient>,
+    mesh_quotient: Option<&MeshQuotient<'storage>>,
 ) -> Result<Vec<Vec<usize>>, CodecError> {
     let mut union = UnionFind::charged(ctx, choices.len(), "catia_incidence_choice_union")?;
     let mut point_nodes = HashMap::<(usize, usize), usize>::new();
@@ -2044,16 +2044,16 @@ pub(super) fn compact_boundary_domain_viable(
     })
 }
 
-enum CompactBoundaryAdvanceOutcome {
-    Complete(Vec<MeshQuotientGaugeState>),
+enum CompactBoundaryAdvanceOutcome<'storage> {
+    Complete(Vec<MeshQuotientGaugeState<'storage>>),
     Rejected,
     Exhausted,
 }
 
-fn copy_quotient_states(
-    ctx: &DecodeContext<'_>,
-    states: &[MeshQuotientGaugeState],
-) -> Result<Vec<MeshQuotientGaugeState>, CodecError> {
+fn copy_quotient_states<'storage>(
+    ctx: &'storage DecodeContext<'_>,
+    states: &[MeshQuotientGaugeState<'storage>],
+) -> Result<Vec<MeshQuotientGaugeState<'storage>>, CodecError> {
     let mut copy = Vec::new();
     ctx.reserve_vec(
         &mut copy,
@@ -2073,15 +2073,15 @@ fn copy_quotient_states(
     Ok(copy)
 }
 
-fn advance_compact_boundary_domains<'a>(
-    ctx: &DecodeContext<'_>,
+fn advance_compact_boundary_domains<'storage, 'a>(
+    ctx: &'storage DecodeContext<'_>,
     domains: impl IntoIterator<Item = &'a MeshFaceBoundaryDomain>,
     choices: &[Vec<[usize; 2]>],
     assignment: &[Option<[usize; 2]>],
     selected: Option<(usize, [usize; 2])>,
-    mut states: Vec<MeshQuotientGaugeState>,
+    mut states: Vec<MeshQuotientGaugeState<'storage>>,
     budget: &WorkBudget<'_>,
-) -> Result<CompactBoundaryAdvanceOutcome, CodecError> {
+) -> Result<CompactBoundaryAdvanceOutcome<'storage>, CodecError> {
     const MAX_QUOTIENT_STATES: usize = 4_096;
 
     let mut ordered = Vec::<Vec<MeshFaceBoundaryAssignment>>::new();
@@ -2354,13 +2354,13 @@ fn advance_compact_boundary_domains<'a>(
 }
 
 #[cfg(test)]
-pub(super) fn compact_boundary_domains_jointly_viable<'a>(
-    ctx: &DecodeContext<'_>,
+pub(super) fn compact_boundary_domains_jointly_viable<'storage, 'a>(
+    ctx: &'storage DecodeContext<'_>,
     domains: impl IntoIterator<Item = &'a MeshFaceBoundaryDomain>,
     choices: &[Vec<[usize; 2]>],
     assignment: &[Option<[usize; 2]>],
     selected: Option<(usize, [usize; 2])>,
-    quotient: &MeshQuotient,
+    quotient: &MeshQuotient<'storage>,
     budget: &WorkBudget<'_>,
 ) -> Result<bool, CodecError> {
     let mut initial = Vec::new();
@@ -2413,7 +2413,7 @@ fn restore_incidence_degrees(degrees: &mut [BTreeMap<usize, u8>], undo: Incidenc
     }
 }
 
-impl IncidenceComponentSearch<'_, '_> {
+impl<'storage, 'v> IncidenceComponentSearch<'storage, 'v> {
     fn candidate_pairs(
         &self,
         edge: usize,
@@ -3095,8 +3095,8 @@ impl IncidenceComponentSearch<'_, '_> {
     fn advance_ordered_faces(
         &mut self,
         faces: impl IntoIterator<Item = usize>,
-        quotient_states: Vec<MeshQuotientGaugeState>,
-    ) -> Result<Option<Vec<MeshQuotientGaugeState>>, CodecError> {
+        quotient_states: Vec<MeshQuotientGaugeState<'storage>>,
+    ) -> Result<Option<Vec<MeshQuotientGaugeState<'storage>>>, CodecError> {
         let Some(mesh_assignments) = self.mesh_assignments else {
             return Ok(Some(quotient_states));
         };
@@ -3384,7 +3384,7 @@ impl IncidenceComponentSearch<'_, '_> {
     fn search_face_configurations(
         &mut self,
         mut options: MeshFaceEndpointConfigurations,
-        quotient_states: &[MeshQuotientGaugeState],
+        quotient_states: &[MeshQuotientGaugeState<'storage>],
         coordinate_domains: Option<&Arc<MeshCoordinateRootDomains>>,
         component_faces: &[usize],
     ) -> Result<(), CodecError> {
@@ -3526,7 +3526,7 @@ impl IncidenceComponentSearch<'_, '_> {
     fn search_forced_face_configurations(
         &mut self,
         mut option: Vec<(usize, [usize; 2])>,
-        quotient_states: &[MeshQuotientGaugeState],
+        quotient_states: &[MeshQuotientGaugeState<'storage>],
         coordinate_domains: Option<&Arc<MeshCoordinateRootDomains>>,
         component_faces: &[usize],
     ) -> Result<(), CodecError> {
@@ -3613,7 +3613,7 @@ impl IncidenceComponentSearch<'_, '_> {
 
     fn search_with_quotient(
         &mut self,
-        quotient_states: &[MeshQuotientGaugeState],
+        quotient_states: &[MeshQuotientGaugeState<'storage>],
         coordinate_domains: Option<&Arc<MeshCoordinateRootDomains>>,
         component_faces: &[usize],
     ) -> Result<(), CodecError> {
@@ -3648,7 +3648,7 @@ impl IncidenceComponentSearch<'_, '_> {
 
     fn search_state(
         &mut self,
-        quotient_states: &[MeshQuotientGaugeState],
+        quotient_states: &[MeshQuotientGaugeState<'storage>],
         coordinate_domains: Option<&Arc<MeshCoordinateRootDomains>>,
         component_faces: &[usize],
     ) -> Result<(), CodecError> {
@@ -3681,7 +3681,7 @@ impl IncidenceComponentSearch<'_, '_> {
 
     fn search_edge_state(
         &mut self,
-        quotient_states: &[MeshQuotientGaugeState],
+        quotient_states: &[MeshQuotientGaugeState<'storage>],
         coordinate_domains: Option<&Arc<MeshCoordinateRootDomains>>,
         component_faces: &[usize],
     ) -> Result<(), CodecError> {
@@ -4483,14 +4483,14 @@ pub(super) fn partial_face_orientability_viable(
 
 #[allow(clippy::too_many_arguments)]
 #[cfg(test)]
-fn component_incidence_pair_solutions<F>(
-    ctx: &DecodeContext<'_>,
+fn component_incidence_pair_solutions<'storage, F>(
+    ctx: &'storage DecodeContext<'_>,
     choices: &[Vec<[usize; 2]>],
     edge_faces: &[[usize; 2]],
     face_count: usize,
     point_count: usize,
     mesh_assignments: Option<&[MeshFaceBoundaryDomain]>,
-    mesh_quotient: Option<&MeshQuotient>,
+    mesh_quotient: Option<&MeshQuotient<'storage>>,
     partial_solution_valid: Option<MeshPartialEndpointConstraint<'_>>,
     solution_valid: &F,
 ) -> Result<Option<Vec<Vec<[usize; 2]>>>, CodecError>
@@ -4513,14 +4513,14 @@ where
 
 #[allow(clippy::too_many_arguments)]
 #[cfg(test)]
-pub(super) fn component_incidence_pair_solution_outcome<F>(
-    ctx: &DecodeContext<'_>,
+pub(super) fn component_incidence_pair_solution_outcome<'storage, F>(
+    ctx: &'storage DecodeContext<'_>,
     choices: &[Vec<[usize; 2]>],
     edge_faces: &[[usize; 2]],
     face_count: usize,
     point_count: usize,
     mesh_assignments: Option<&[MeshFaceBoundaryDomain]>,
-    mesh_quotient: Option<&MeshQuotient>,
+    mesh_quotient: Option<&MeshQuotient<'storage>>,
     partial_solution_valid: Option<MeshPartialEndpointConstraint<'_>>,
     solution_valid: &F,
 ) -> Result<IncidenceSolve<Vec<Vec<[usize; 2]>>>, CodecError>
@@ -4561,14 +4561,14 @@ where
 
 #[allow(clippy::too_many_arguments)]
 #[cfg(test)]
-fn visit_component_incidence_pair_solutions<F, V>(
-    ctx: &DecodeContext<'_>,
+fn visit_component_incidence_pair_solutions<'storage, F, V>(
+    ctx: &'storage DecodeContext<'_>,
     choices: &[Vec<[usize; 2]>],
     edge_faces: &[[usize; 2]],
     face_count: usize,
     point_count: usize,
     mesh_assignments: Option<&[MeshFaceBoundaryDomain]>,
-    mesh_quotient: Option<&MeshQuotient>,
+    mesh_quotient: Option<&MeshQuotient<'storage>>,
     partial_solution_valid: Option<MeshPartialEndpointConstraint<'_>>,
     solution_valid: &F,
     visitor: &mut V,
@@ -4581,7 +4581,7 @@ where
     visit_component_incidence_pair_solutions_with_coordinate_root_policy(ctx, crate::solve::incidence::VisitComponentIncidencePairSolutionsWithCoordinateRootPolicyInputs { choices, edge_faces, face_count, point_count, mesh_assignments, mesh_quotient, coordinate_root_policy: CoordinateRootPolicy::RequireUnique, partial_solution_valid, solution_valid, visitor, session_budget: &budget })
 }
 
-struct VisitComponentIncidencePairSolutionsWithCoordinateRootPolicyInputs<
+struct VisitComponentIncidencePairSolutionsWithCoordinateRootPolicyInputs<'storage, 
     'input0,
     'input1,
     'input2,
@@ -4602,7 +4602,7 @@ struct VisitComponentIncidencePairSolutionsWithCoordinateRootPolicyInputs<
     face_count: usize,
     point_count: usize,
     mesh_assignments: Option<&'input2 [MeshFaceBoundaryDomain]>,
-    mesh_quotient: Option<&'input3 MeshQuotient>,
+    mesh_quotient: Option<&'input3 MeshQuotient<'storage>>,
     coordinate_root_policy: CoordinateRootPolicy,
     partial_solution_valid: Option<MeshPartialEndpointConstraint<'input4>>,
     solution_valid: &'input5 F,
@@ -4610,9 +4610,9 @@ struct VisitComponentIncidencePairSolutionsWithCoordinateRootPolicyInputs<
     session_budget: &'input8 WorkBudget<'input7>,
 }
 
-fn visit_component_incidence_pair_solutions_with_coordinate_root_policy<F, V>(
-    ctx: &DecodeContext<'_>,
-    inputs: VisitComponentIncidencePairSolutionsWithCoordinateRootPolicyInputs<
+fn visit_component_incidence_pair_solutions_with_coordinate_root_policy<'storage, F, V>(
+    ctx: &'storage DecodeContext<'_>,
+    inputs: VisitComponentIncidencePairSolutionsWithCoordinateRootPolicyInputs<'storage, 
         '_,
         '_,
         '_,
@@ -4875,7 +4875,7 @@ where
         search.search()?;
         Ok(search.state == IncidenceSearchState::Exhausted)
     }
-    struct VisitComponentsInputs<
+    struct VisitComponentsInputs<'storage, 
         'input0,
         'input1,
         'input2,
@@ -4914,7 +4914,7 @@ where
         edge_faces: &'input1 [[usize; 2]],
         face_edges: &'input2 [Vec<usize>],
         mesh_assignments: Option<&'input3 [MeshFaceBoundaryDomain]>,
-        mesh_quotient: Option<&'input4 MeshQuotient>,
+        mesh_quotient: Option<&'input4 MeshQuotient<'storage>>,
         coordinate_domains: Option<&'input5 MeshCoordinateRootDomains>,
         coordinate_root_policy: CoordinateRootPolicy,
         partial_solution_valid: Option<MeshPartialEndpointConstraint<'input6>>,
@@ -4933,9 +4933,9 @@ where
         boundary_propagation_budget: &'input23 WorkBudget<'input22>,
         session_budget: &'input25 WorkBudget<'input24>,
     }
-    fn visit_components<F, V>(
-        ctx: &DecodeContext<'_>,
-        inputs: VisitComponentsInputs<
+    fn visit_components<'storage, F, V>(
+        ctx: &'storage DecodeContext<'_>,
+        inputs: VisitComponentsInputs<'storage, 
             '_,
             '_,
             '_,
@@ -5741,7 +5741,7 @@ pub(crate) fn reconstruct_incidence_candidates(
     )
 }
 
-struct VisitIncidenceEndpointPairSolutionsInputs<
+struct VisitIncidenceEndpointPairSolutionsInputs<'storage, 
     'input0,
     'input1,
     'input2,
@@ -5765,16 +5765,16 @@ struct VisitIncidenceEndpointPairSolutionsInputs<
     edge_candidates: &'input3 [Vec<[usize; 2]>],
     face_count: usize,
     mesh_assignments: Option<&'input4 [MeshFaceBoundaryDomain]>,
-    mesh_quotient: Option<&'input5 MeshQuotient>,
+    mesh_quotient: Option<&'input5 MeshQuotient<'storage>>,
     partial_solution_valid: Option<MeshPartialEndpointConstraint<'input6>>,
     complete_solution_budget: Option<&'input8 WorkBudget<'input7>>,
     solution_valid: &'input9 F,
     visitor: &'input10 mut V,
 }
 
-fn visit_incidence_endpoint_pair_solutions<F, V>(
-    ctx: &DecodeContext<'_>,
-    inputs: VisitIncidenceEndpointPairSolutionsInputs<
+fn visit_incidence_endpoint_pair_solutions<'storage, F, V>(
+    ctx: &'storage DecodeContext<'_>,
+    inputs: VisitIncidenceEndpointPairSolutionsInputs<'storage, 
         '_,
         '_,
         '_,
@@ -5811,7 +5811,7 @@ where
     visit_incidence_endpoint_pair_solutions_with_coordinate_root_policy(ctx, crate::solve::incidence::VisitIncidenceEndpointPairSolutionsWithCoordinateRootPolicyInputs { edge_rows, vertex_points, edge_faces, edge_candidates, face_count, mesh_assignments, mesh_quotient, coordinate_root_policy: CoordinateRootPolicy::RequireUnique, partial_solution_valid, complete_solution_budget, solution_valid, visitor })
 }
 
-pub(super) struct VisitIncidenceEndpointPairSolutionsWithCoordinateRootPolicyInputs<
+pub(super) struct VisitIncidenceEndpointPairSolutionsWithCoordinateRootPolicyInputs<'storage, 
     'input0,
     'input1,
     'input2,
@@ -5835,7 +5835,7 @@ pub(super) struct VisitIncidenceEndpointPairSolutionsWithCoordinateRootPolicyInp
     pub(super) edge_candidates: &'input3 [Vec<[usize; 2]>],
     pub(super) face_count: usize,
     pub(super) mesh_assignments: Option<&'input4 [MeshFaceBoundaryDomain]>,
-    pub(super) mesh_quotient: Option<&'input5 MeshQuotient>,
+    pub(super) mesh_quotient: Option<&'input5 MeshQuotient<'storage>>,
     pub(super) coordinate_root_policy: CoordinateRootPolicy,
     pub(super) partial_solution_valid: Option<MeshPartialEndpointConstraint<'input6>>,
     pub(super) complete_solution_budget: Option<&'input8 WorkBudget<'input7>>,
@@ -5843,9 +5843,9 @@ pub(super) struct VisitIncidenceEndpointPairSolutionsWithCoordinateRootPolicyInp
     pub(super) visitor: &'input10 mut V,
 }
 
-pub(super) fn visit_incidence_endpoint_pair_solutions_with_coordinate_root_policy<F, V>(
-    ctx: &DecodeContext<'_>,
-    inputs: VisitIncidenceEndpointPairSolutionsWithCoordinateRootPolicyInputs<
+pub(super) fn visit_incidence_endpoint_pair_solutions_with_coordinate_root_policy<'storage, F, V>(
+    ctx: &'storage DecodeContext<'_>,
+    inputs: VisitIncidenceEndpointPairSolutionsWithCoordinateRootPolicyInputs<'storage, 
         '_,
         '_,
         '_,

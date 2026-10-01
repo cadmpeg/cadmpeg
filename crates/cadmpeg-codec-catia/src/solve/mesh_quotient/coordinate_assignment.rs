@@ -221,7 +221,7 @@ fn partial_compact_assignment_viable(
     }
 }
 
-pub(super) struct CloseCoordinateRootsWithIncidenceInputs<
+pub(super) struct CloseCoordinateRootsWithIncidenceInputs<'storage, 
     'input0,
     'input1,
     'input2,
@@ -231,7 +231,7 @@ pub(super) struct CloseCoordinateRootsWithIncidenceInputs<
     'input6,
     'input7,
 > {
-    pub(super) quotient: &'input0 mut MeshQuotient,
+    pub(super) quotient: &'input0 mut MeshQuotient<'storage>,
     pub(super) point_count: usize,
     pub(super) edge_candidates: &'input1 [Vec<[usize; 2]>],
     pub(super) incidence: Option<(&'input2 [[usize; 2]], &'input3 [MeshFaceBoundaryDomain])>,
@@ -241,9 +241,9 @@ pub(super) struct CloseCoordinateRootsWithIncidenceInputs<
     pub(super) exhausted: &'input7 Cell<bool>,
 }
 
-pub(super) fn close_coordinate_roots_with_incidence(
-    ctx: &DecodeContext<'_>,
-    inputs: CloseCoordinateRootsWithIncidenceInputs<'_, '_, '_, '_, '_, '_, '_, '_>,
+pub(super) fn close_coordinate_roots_with_incidence<'storage>(
+    ctx: &'storage DecodeContext<'_>,
+    inputs: CloseCoordinateRootsWithIncidenceInputs<'storage, '_, '_, '_, '_, '_, '_, '_, '_>,
 ) -> Result<Option<HashMap<usize, usize>>, CodecError> {
     const MAX_COORDINATE_CLOSURE_STATES: usize = 256;
     struct LocalIncidence<'a> {

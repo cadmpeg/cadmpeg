@@ -2,16 +2,18 @@
 //!
 //! Callers map their domain onto `0..len` node indices.
 
-use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::decode::{DecodeContext, ScopedReservation};
 use cadmpeg_core::CodecError;
 
 /// A disjoint-set forest with path compression on `find`.
-#[derive(Debug, Clone)]
-pub(crate) struct UnionFind {
+#[derive(Debug)]
+pub(crate) struct UnionFind<'storage> {
     parents: Vec<usize>,
+    /// Live parent storage for a temporary search snapshot.
+    _storage: Option<ScopedReservation<'storage>>,
 }
 
-impl UnionFind {
+impl UnionFind<'_> {
     pub(crate) fn charged(
         ctx: &DecodeContext<'_>,
         length: usize,
@@ -21,7 +23,7 @@ impl UnionFind {
         for (node, parent) in parents.iter_mut().enumerate() {
             *parent = node;
         }
-        Ok(Self { parents })
+        Ok(Self { parents, _storage: None })
     }
 
     /// Creates `length` singleton sets, one per node `0..length`.
@@ -29,17 +31,18 @@ impl UnionFind {
     pub(crate) fn new(length: usize) -> Self {
         Self {
             parents: (0..length).collect(),
+            _storage: None,
         }
     }
 
-    pub(crate) fn clone_charged(
+    pub(crate) fn clone_charged<'storage>(
         &self,
-        ctx: &DecodeContext<'_>,
+        ctx: &'storage DecodeContext<'_>,
         operation: &'static str,
-    ) -> Result<Self, CodecError> {
-        Ok(Self {
-            parents: ctx.copy_retained_slice(&self.parents, operation)?,
-        })
+    ) -> Result<UnionFind<'storage>, CodecError> {
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(self.parents.len()), operation)?;
+        let (parents, storage) = ctx.copy_temporary_slice(&self.parents, operation)?;
+        Ok(UnionFind { parents, _storage: Some(storage) })
     }
 
     /// Returns the number of nodes.
@@ -95,6 +98,11 @@ impl UnionFind {
 }
 
 #[cfg(test)]
+impl Clone for UnionFind<'_> {
+    fn clone(&self) -> Self { Self { parents: self.parents.clone(), _storage: None } }
+}
+
+#[cfg(test)]
 mod tests {
     use super::UnionFind;
 
@@ -125,18 +133,18 @@ mod tests {
     }
 
     #[test]
-    fn union_clone_refuses_retained_parent_bytes() {
+    fn union_clone_refuses_temporary_parent_bytes() {
         use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
         use cadmpeg_core::CodecError;
 
         let union = UnionFind::new(1);
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = 0;
+        policy.limits.max_materialized_bytes = 0;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
             .expect("empty root fits retained limit");
         assert!(matches!(
-            union.clone_charged(&ctx, "catia_union_clone_bytes"),
+            union.clone_charged(&ctx, "catia_union_clone_bytes").map(|copy| copy.len()),
             Err(CodecError::ResourceLimit(limit)) if limit.operation == "catia_union_clone_bytes"
         ));
         crate::test_support::with_service_context(|ctx| {
@@ -147,6 +155,26 @@ mod tests {
                     .len(),
                 1
             );
+        });
+    }
+
+    #[test]
+    fn union_snapshots_release_scoped_bytes_without_retaining_them() {
+        let union = UnionFind::new(1);
+        crate::test_support::with_retained_limit(0, |ctx| {
+            for _ in 0..64 {
+                assert_eq!(union.clone_charged(ctx, "catia_union_snapshot").expect("temporary snapshot").len(), 1);
+            }
+        });
+        crate::test_support::with_materialized_limit(u64::try_from(std::mem::size_of::<usize>()).expect("parent bytes"), |ctx| {
+            for _ in 0..64 {
+                assert_eq!(union.clone_charged(ctx, "catia_union_snapshot").expect("released snapshot bytes").len(), 1);
+            }
+            let first = union.clone_charged(ctx, "catia_union_snapshot").expect("one live snapshot");
+            let cadmpeg_core::CodecError::ResourceLimit(limit) = union.clone_charged(ctx, "catia_union_snapshot").expect_err("two simultaneous snapshots exceed storage") else { panic!("resource refusal required") };
+            assert_eq!(limit.dimension, cadmpeg_core::decode::ResourceDimension::MaterializedBytes);
+            assert_eq!(ctx.resource_refusal(), Some(limit));
+            assert_eq!(first.len(), 1);
         });
     }
 
