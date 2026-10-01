@@ -3980,7 +3980,7 @@ pub fn model_curve_point_by_id_with_budget(
     parameter: f64,
     budget: &WorkBudget<'_>,
 ) -> Result<FinitePoint3, EvaluationFailure<Point3>> {
-    let _guard = budget.recursion_guard().ok_or(EvaluationFailure::NoValue)?;
+    let _guard = budget.recursion_guard().map_err(EvaluationFailure::ResourceLimit)?;
     let point = model_curve_point_by_id_inner(index, curve_id, parameter, Some(budget));
     ModelEvaluationDepthGuard::finish_budgeted(budget, point)
 }
@@ -8477,7 +8477,7 @@ pub fn model_surface_point_by_id_with_budget(
     v: f64,
     budget: &WorkBudget<'_>,
 ) -> Result<FinitePoint3, EvaluationFailure<Point3>> {
-    let _guard = budget.recursion_guard().ok_or(EvaluationFailure::NoValue)?;
+    let _guard = budget.recursion_guard().map_err(EvaluationFailure::ResourceLimit)?;
     let point =
         model_surface_point::model_surface_point_by_id_inner(index, surface, u, v, Some(budget));
     ModelEvaluationDepthGuard::finish_budgeted(budget, point)
@@ -8600,7 +8600,7 @@ pub fn model_surface_partials_by_id_with_budget(
     v: f64,
     budget: &WorkBudget<'_>,
 ) -> Result<SurfacePartials<FinitePoint3, FiniteVector3>, EvaluationFailure<Point3>> {
-    let _guard = budget.recursion_guard().ok_or(EvaluationFailure::NoValue)?;
+    let _guard = budget.recursion_guard().map_err(EvaluationFailure::ResourceLimit)?;
     let partials = model_surface_first_order_by_id(index, surface, u, v, Some(budget))
         .and_then(SurfaceFirstOrder::partials);
     ModelEvaluationDepthGuard::finish_budgeted(budget, partials)

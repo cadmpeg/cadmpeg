@@ -622,15 +622,22 @@ pub struct WorkBudget<'a> {
 /// RAII guard for one recursive geometry-evaluation frame.
 #[derive(Debug)]
 pub struct WorkBudgetRecursionGuard<'budget, 'session> {
-    budget: &'budget WorkBudget<'session>,
+    account: WorkRecursionAccount<'budget, 'session>,
+}
+
+#[derive(Debug)]
+enum WorkRecursionAccount<'budget, 'session> {
+    Session { _guard: DepthGuard<'session> },
+    Independent(&'budget WorkBudget<'session>),
 }
 
 impl Drop for WorkBudgetRecursionGuard<'_, '_> {
     fn drop(&mut self) {
-        let Some(depth) = self.budget.recursion_depth.get().checked_sub(1) else {
-            return;
-        };
-        self.budget.recursion_depth.set(depth);
+        if let WorkRecursionAccount::Independent(budget) = &self.account {
+            if let Some(depth) = budget.recursion_depth.get().checked_sub(1) {
+                budget.recursion_depth.set(depth);
+            }
+        }
     }
 }
 
@@ -761,19 +768,29 @@ impl<'a> WorkBudget<'a> {
         self.limit - remaining
     }
 
-    /// Enters one recursive geometry-evaluation frame.
-    ///
-    /// The depth is shared by all model curve and surface calls using this
-    /// slice, so cross-carrier cycles cannot reset a local recursion limit.
-    pub fn recursion_guard(&self) -> Option<WorkBudgetRecursionGuard<'_, 'a>> {
-        const MAX_WORK_RECURSION_DEPTH: usize = 256;
-        if self.remaining.get().is_none() || self.recursion_depth.get() >= MAX_WORK_RECURSION_DEPTH
-        {
-            self.exhaust();
-            return None;
+    /// Enters a session frame, or an independent frame with a 256-frame ceiling.
+    /// Attached child slices share the active session depth.
+    pub fn recursion_guard(&self) -> Result<WorkBudgetRecursionGuard<'_, 'a>, ResourceLimit> {
+        if let Some(session) = self.session {
+            return session.enter_nested("work_budget_recursion").map(|guard| {
+                WorkBudgetRecursionGuard { account: WorkRecursionAccount::Session { _guard: guard } }
+            });
         }
-        self.recursion_depth.set(self.recursion_depth.get() + 1);
-        Some(WorkBudgetRecursionGuard { budget: self })
+        const INDEPENDENT_RECURSION_DEPTH: usize = 256;
+        let depth = self.recursion_depth.get();
+        if depth >= INDEPENDENT_RECURSION_DEPTH {
+            self.exhaust();
+            return Err(ResourceLimit {
+                dimension: ResourceDimension::RecursionDepth,
+                reason: ResourceFailure::BudgetExceeded,
+                limit: u64_from_index(INDEPENDENT_RECURSION_DEPTH),
+                used: u64_from_index(depth),
+                additional: 1,
+                operation: "work_budget_recursion",
+            });
+        }
+        self.recursion_depth.set(depth + 1);
+        Ok(WorkBudgetRecursionGuard { account: WorkRecursionAccount::Independent(self) })
     }
 
     /// Creates an independent child slice capped by this budget's remainder.
@@ -866,7 +883,7 @@ mod tests {
     use crate::decode::{DecodePolicy, ResourceDimension, ResourceFailure};
 
     fn descend(budget: &WorkBudget<'_>, depth: usize) -> usize {
-        let Some(_guard) = budget.recursion_guard() else {
+        let Ok(_guard) = budget.recursion_guard() else {
             return depth;
         };
         descend(budget, depth + 1)
@@ -877,6 +894,35 @@ mod tests {
         let budget = WorkBudget::new(10_000);
         assert_eq!(descend(&budget, 0), 256);
         assert!(budget.exhausted());
+    }
+
+    #[test]
+    fn attached_recursion_refuses_zero_session_depth() {
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_recursion_depth = 0;
+        let session = DecodeBudget::new(policy, 1);
+        let budget = WorkBudget::for_session(100, &session);
+        let failure = budget.recursion_guard().expect_err("zero depth refuses first frame");
+        assert_eq!(failure.dimension, ResourceDimension::RecursionDepth);
+        assert_eq!(failure.limit, 0);
+        assert_eq!(failure.used, 0);
+        assert_eq!(failure.additional, 1);
+        assert_eq!(session.fused(), Some(failure));
+    }
+
+    #[test]
+    fn attached_child_preserves_active_session_depth() {
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_recursion_depth = 1;
+        let session = DecodeBudget::new(policy, 1);
+        let budget = WorkBudget::for_session(100, &session);
+        let guard = budget.recursion_guard().expect("first frame fits");
+        let child = budget.session_child_slice(100);
+        let failure = child.recursion_guard().expect_err("child shares depth");
+        assert_eq!(failure.dimension, ResourceDimension::RecursionDepth);
+        assert_eq!(failure.used, 1);
+        drop(guard);
+        assert_eq!(session.recursion_depth.get(), 0);
     }
 
     #[test]
