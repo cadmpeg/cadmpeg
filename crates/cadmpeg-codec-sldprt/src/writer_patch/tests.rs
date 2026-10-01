@@ -8,7 +8,6 @@ use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
-use crate::container;
 use crate::test_support::container::make_block;
 use crate::test_support::container::make_cache_cell;
 use crate::test_support::container::make_directory_entry;
@@ -275,7 +274,7 @@ fn native_patch_edits_nurbs_carriers_beside_untyped_surfaces() {
         &mut encoded,
     )
     .unwrap();
-    assert!(crate::container::scan_bytes(&encoded)
+    assert!(crate::test_support::container::scan(&encoded)
         .blocks
         .iter()
         .flat_map(|block| block.ps_streams.iter())
@@ -367,7 +366,7 @@ fn native_patch_edits_points_without_dropping_untyped_surfaces() {
         .retained_record("sldprt:file:source-image#0")
         .and_then(|record| record.data())
         .unwrap();
-    let scan = container::scan_bytes(written);
+    let scan = crate::test_support::container::scan(written);
     assert!(scan.blocks.iter().any(|block| {
         block.section.name() == Some("Contents/Config-0-Deltas") && block.payload == deltas
     }));
@@ -577,7 +576,7 @@ fn auxiliary_edit_retains_opaque_partition_payload() {
     ));
     source.extend(make_cache_cell(90, "Contents/Config-0-Partition"));
     source.extend(make_cache_cell(100, "Contents/Keywords"));
-    let indexed = container::scan_bytes(&source);
+    let indexed = crate::test_support::container::scan(&source);
     let partition = indexed
         .blocks
         .iter()
@@ -606,7 +605,7 @@ fn auxiliary_edit_retains_opaque_partition_payload() {
     let trailer = directory.len() - 6;
     directory[trailer..trailer + 4].copy_from_slice(&[0x11, 0x22, 0x33, 0x44]);
     source.extend(directory);
-    let source_scan = container::scan_bytes(&source);
+    let source_scan = crate::test_support::container::scan(&source);
     let source_partition = source_scan
         .blocks
         .iter()
@@ -655,7 +654,7 @@ fn auxiliary_edit_retains_opaque_partition_payload() {
         &mut encoded,
     )
     .unwrap();
-    let written_scan = container::scan_bytes(&encoded);
+    let written_scan = crate::test_support::container::scan(&encoded);
     let written_partition = written_scan
         .blocks
         .iter()

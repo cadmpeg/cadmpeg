@@ -1520,6 +1520,9 @@ pub fn read_detection_prefix(
     prefix_len: usize,
     max_bytes: u64,
 ) -> io::Result<Vec<u8>> {
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::default())
+        .map_err(io::Error::other)?;
     let phase_one_len = match usize::try_from(max_bytes) {
         Ok(max_bytes) => prefix_len.min(max_bytes),
         // A ceiling the address space cannot name is above `prefix_len`, which
@@ -1531,10 +1534,10 @@ pub fn read_detection_prefix(
         "compound detection prefix bytes",
     )
     .map_err(io::Error::other)?;
-    let mut chunk =
-        cadmpeg_core::decode::alloc_filled(64 * 1024, 0_u8, "compound detection prefix chunk")
-            .map_err(io::Error::other)?
-            .into_boxed_slice();
+    let mut chunk = ctx
+        .alloc_filled(64 * 1024, 0_u8, "compound detection prefix chunk")
+        .map_err(io::Error::other)?
+        .into_boxed_slice();
     while bytes.len() < phase_one_len {
         let chunk_len = (phase_one_len - bytes.len()).min(chunk.len());
         let read = source.read(&mut chunk[..chunk_len])?;

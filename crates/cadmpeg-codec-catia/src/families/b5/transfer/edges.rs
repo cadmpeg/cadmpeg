@@ -5,7 +5,7 @@
 use std::collections::{BTreeMap, HashMap, HashSet};
 
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::eval::{curve_point, pcurve_uv, surface_point};
+use cadmpeg_ir::eval::admitted::{curve_point, pcurve_uv, surface_point};
 use cadmpeg_ir::geometry::{
     pcurve::PcurveGeometry, Curve, CurveGeometry, DirectedParameterRange, IntcurveSupportContext,
     IntcurveSupportSide, ProceduralCurve, ProceduralCurveDefinition, SolvedCurveGeometry,
@@ -182,14 +182,15 @@ pub(super) fn b5_edge_support_definition(
 }
 
 pub(super) fn b5_supports_follow_edge(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     supports: &[B5Support],
     endpoints: [[f64; 3]; 2],
     tolerances: [f64; 2],
     surfaces: &BTreeMap<u32, SurfacePlan>,
     pcurves: &BTreeMap<u32, (PcurveGeometry, bool, [FiniteReal; 2])>,
-) -> Result<bool, cadmpeg_core::decode::ResourceLimit> {
+) -> Result<bool, cadmpeg_core::CodecError> {
     for support in supports {
-        let Some([start, end]) = b5_support_endpoints(support, surfaces, pcurves)? else {
+        let Some([start, end]) = b5_support_endpoints(ctx, support, surfaces, pcurves)? else {
             return Ok(false);
         };
         if !(distance(start, endpoints[0]) <= tolerances[0]
@@ -202,14 +203,15 @@ pub(super) fn b5_supports_follow_edge(
 }
 
 pub(super) fn orient_b5_supports_to_edge(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     supports: &mut [B5Support],
     endpoints: [[f64; 3]; 2],
     tolerances: [f64; 2],
     surfaces: &BTreeMap<u32, SurfacePlan>,
     pcurves: &BTreeMap<u32, (PcurveGeometry, bool, [FiniteReal; 2])>,
-) -> Result<(), cadmpeg_core::decode::ResourceLimit> {
+) -> Result<(), cadmpeg_core::CodecError> {
     for support in supports {
-        let Some([start, end]) = b5_support_endpoints(support, surfaces, pcurves)? else {
+        let Some([start, end]) = b5_support_endpoints(ctx, support, surfaces, pcurves)? else {
             continue;
         };
         let forward_residuals = [distance(start, endpoints[0]), distance(end, endpoints[1])];
@@ -232,19 +234,20 @@ pub(super) fn orient_b5_supports_to_edge(
 }
 
 pub(super) fn b5_supports_agree(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     supports: &[B5Support],
     surfaces: &BTreeMap<u32, SurfacePlan>,
     pcurves: &BTreeMap<u32, (PcurveGeometry, bool, [FiniteReal; 2])>,
-) -> Result<bool, cadmpeg_core::decode::ResourceLimit> {
+) -> Result<bool, cadmpeg_core::CodecError> {
     let mut supports = supports.iter();
     let Some(first) = supports.next() else {
         return Ok(false);
     };
-    let Some(reference) = b5_support_endpoints(first, surfaces, pcurves)? else {
+    let Some(reference) = b5_support_endpoints(ctx, first, surfaces, pcurves)? else {
         return Ok(false);
     };
     for support in supports {
-        let Some(candidate) = b5_support_endpoints(support, surfaces, pcurves)? else {
+        let Some(candidate) = b5_support_endpoints(ctx, support, surfaces, pcurves)? else {
             return Ok(false);
         };
         let endpoint_error =
@@ -260,10 +263,11 @@ pub(super) fn b5_supports_agree(
 }
 
 pub(super) fn b5_support_endpoints(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     (surface, pcurve, range): &(u32, u32, [FiniteReal; 2]),
     surfaces: &BTreeMap<u32, SurfacePlan>,
     pcurves: &BTreeMap<u32, (PcurveGeometry, bool, [FiniteReal; 2])>,
-) -> Result<Option<[[f64; 3]; 2]>, cadmpeg_core::decode::ResourceLimit> {
+) -> Result<Option<[[f64; 3]; 2]>, cadmpeg_core::CodecError> {
     let Some(surface) = surfaces.get(surface) else {
         return Ok(None);
     };
@@ -274,13 +278,14 @@ pub(super) fn b5_support_endpoints(
         return Ok(None);
     }
     let lifted = range.map(
-        |parameter| -> Result<Option<[f64; 3]>, cadmpeg_core::decode::ResourceLimit> {
-            let Some(uv) = cadmpeg_ir::eval::finite_or_refusal(pcurve_uv(pcurve, parameter.get()))?
+        |parameter| -> Result<Option<[f64; 3]>, cadmpeg_core::CodecError> {
+            let Some(uv) =
+                cadmpeg_ir::eval::finite_or_refusal(pcurve_uv(ctx, pcurve, parameter.get())?)?
             else {
                 return Ok(None);
             };
             // A non-finite support point is compared as a finite one is.
-            let point = match surface_point(&surface.geometry, uv.u, uv.v) {
+            let point = match surface_point(ctx, &surface.geometry, uv.u, uv.v)? {
                 Ok(point) => point.get(),
                 Err(failure) => match failure.non_finite()? {
                     Some(point) => point,
@@ -298,25 +303,30 @@ pub(super) fn b5_support_endpoints(
 }
 
 pub(super) fn b5_supports_follow_curve(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     supports: &[B5Support],
     curve: &CurvePlan,
     surfaces: &BTreeMap<u32, SurfacePlan>,
     pcurves: &BTreeMap<u32, (PcurveGeometry, bool, [FiniteReal; 2])>,
-) -> Result<bool, cadmpeg_core::decode::ResourceLimit> {
+) -> Result<bool, cadmpeg_core::CodecError> {
     const EXACT_TOLERANCE: f64 = 1.0e-6;
 
     let Some(range) = curve_plan_parameter_range(curve) else {
         return Ok(false);
     };
-    let solved = range.map(|parameter| {
-        cadmpeg_ir::eval::finite_or_refusal(curve_point(&curve.geometry, parameter))
+    let solved = range.map(|parameter| -> Result<_, cadmpeg_core::CodecError> {
+        Ok(cadmpeg_ir::eval::finite_or_refusal(curve_point(
+            ctx,
+            &curve.geometry,
+            parameter,
+        )?)?)
     });
     let [start, end] = solved;
     let [Some(solved_start), Some(solved_end)] = [start?, end?] else {
         return Ok(false);
     };
     for support in supports {
-        let Some([start, end]) = b5_support_endpoints(support, surfaces, pcurves)? else {
+        let Some([start, end]) = b5_support_endpoints(ctx, support, surfaces, pcurves)? else {
             return Ok(false);
         };
         let endpoint_error = distance([solved_start.x, solved_start.y, solved_start.z], start)
@@ -566,4 +576,56 @@ pub(super) fn emit_edges(
         });
     }
     Ok(edge_id_map)
+}
+
+#[cfg(test)]
+mod endpoint_admission_tests {
+    use super::b5_support_endpoints;
+    use crate::families::b5::transfer::SurfacePlan;
+    use cadmpeg_ir::geometry::pcurve::{LinePcurve, PcurveGeometry};
+    use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
+    use cadmpeg_ir::math::{Point2, Point3, Vector3};
+    use std::collections::BTreeMap;
+
+    #[test]
+    fn b5_support_endpoints_propagate_caller_depth_refusal() {
+        let surfaces = BTreeMap::from([(
+            10,
+            SurfacePlan {
+                geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+                    cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
+                        Point3::new(0.0, 0.0, 0.0),
+                        Vector3::new(0.0, 0.0, 1.0),
+                        Vector3::new(1.0, 0.0, 0.0),
+                    )
+                    .expect("plane"),
+                )),
+                procedure: None,
+            },
+        )]);
+        let range = crate::test_support::test_b5::finite_pair([0.0, 1.0]);
+        let pcurves = BTreeMap::from([(
+            20,
+            (
+                PcurveGeometry::Line(
+                    LinePcurve::try_new(Point2::new(0.0, 0.0), Point2::new(1.0, 0.0))
+                        .expect("line"),
+                ),
+                false,
+                range,
+            ),
+        )]);
+        crate::test_support::with_depth_limit(0, |ctx| {
+            let error = b5_support_endpoints(ctx, &(10, 20, range), &surfaces, &pcurves)
+                .expect_err("caller depth refuses surface evaluation");
+            let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
+                panic!("resource refusal required")
+            };
+            assert_eq!(
+                limit.dimension,
+                cadmpeg_core::decode::ResourceDimension::RecursionDepth
+            );
+            assert_eq!(ctx.resource_refusal(), Some(limit));
+        });
+    }
 }

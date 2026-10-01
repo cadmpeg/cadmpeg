@@ -4693,8 +4693,8 @@ fn vector_list_property(
         }
         let Some(data) = entries
             .iter()
-            .find(|entry| entry.name == file)
-            .map(|entry| entry.data.as_slice())
+            .find(|entry| entry.name() == file)
+            .map(crate::native::EntryRecord::data)
         else {
             return Ok(None);
         };
@@ -5614,8 +5614,8 @@ fn part_fillet_edge_values(
     };
     let Some(data) = entries
         .iter()
-        .find(|entry| entry.name == *entry_name)
-        .map(|entry| entry.data.as_slice())
+        .find(|entry| entry.name() == *entry_name)
+        .map(crate::native::EntryRecord::data)
     else {
         return Ok(None);
     };
@@ -8219,8 +8219,8 @@ fn numeric_list(
         }
         let Some(data) = entries
             .iter()
-            .find(|entry| entry.name == file)
-            .map(|entry| entry.data.as_slice())
+            .find(|entry| entry.name() == file)
+            .map(crate::native::EntryRecord::data)
         else {
             return Ok(None);
         };

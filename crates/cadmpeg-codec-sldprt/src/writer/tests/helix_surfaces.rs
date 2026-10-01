@@ -37,11 +37,12 @@ fn semantic_writer_round_trips_reference_coordinate_system() {
         "Contents/Keywords",
         br#"<Keywords><CoordinateSystem Name="Fixture" Type="ReferenceCoordinateSystem" id="28" Origin="1mm,2mm,3mm" XAxis="1,0,0" YAxis="0,1,0" ZAxis="0,0,1"/></Keywords>"#,
     ));
-    let source_partition = container::select_active_parasolid_site(&container::scan_bytes(&source))
-        .unwrap()
-        .section
-        .payload()
-        .to_vec();
+    let source_partition =
+        container::select_active_parasolid_site(&crate::test_support::container::scan(&source))
+            .unwrap()
+            .section
+            .payload()
+            .to_vec();
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
@@ -92,7 +93,7 @@ fn semantic_writer_round_trips_reference_coordinate_system() {
         &mut encoded,
     )
     .unwrap();
-    let output_scan = container::scan_bytes(&encoded);
+    let output_scan = crate::test_support::container::scan(&encoded);
     let output_partition = container::select_active_parasolid_site(&output_scan)
         .unwrap()
         .section

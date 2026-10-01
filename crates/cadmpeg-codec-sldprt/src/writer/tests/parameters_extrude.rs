@@ -6,7 +6,6 @@ use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
-use crate::container;
 use crate::test_support::container::make_block;
 use crate::test_support::container::sldprt_with_body;
 use crate::test_support::history::resolved_feature_classes_with_ids;
@@ -938,7 +937,7 @@ fn semantic_writer_round_trips_feature_output_scope() {
         )
         .as_bytes(),
     ));
-    let source_partition = container::scan_bytes(&source)
+    let source_partition = crate::test_support::container::scan(&source)
         .blocks
         .iter()
         .find(|block| block.section.name() == Some("Contents/Config-0-Partition"))
@@ -965,7 +964,7 @@ fn semantic_writer_round_trips_feature_output_scope() {
         &mut encoded,
     )
     .unwrap();
-    let written_partition = container::scan_bytes(&encoded)
+    let written_partition = crate::test_support::container::scan(&encoded)
         .blocks
         .iter()
         .find(|block| block.section.name() == Some("Contents/Config-0-Partition"))

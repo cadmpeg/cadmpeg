@@ -113,7 +113,7 @@ pub(super) fn emit_topology(
 
     let scope = IdScope::stream_charged(ctx, stream_index)?;
     let mut valid_face_xmts = BTreeSet::new();
-    for shell in graph.body_shape_shells() {
+    for shell in graph.body_shape_shells(ctx)? {
         if let Some(faces) = graph.shell_face_xmts(ctx, shell)? {
             for face in faces {
                 ctx.charge_collection_items(1, "nx valid topology faces")?;
@@ -182,7 +182,7 @@ pub(super) fn emit_topology(
         }
     }
     let mut body_xmts = BTreeSet::new();
-    for shell in graph.body_shape_shells() {
+    for shell in graph.body_shape_shells(ctx)? {
         if let Some(body) = shell
             .shell_fields()
             .and_then(|fields| fields.body.map(u32::from))
@@ -197,7 +197,7 @@ pub(super) fn emit_topology(
             scope.id_charged(ctx, &cadmpeg_ir::identity_component!("body"), body_xmt)?;
         if let Some(node) = graph.get(NodeKind::Body, body_xmt) {
             annotate_node(ctx, annotations, id.as_str(), source_stream, node, "BODY")?;
-        } else if let Some(shell) = graph.body_shape_shells().find(|shell| {
+        } else if let Some(shell) = graph.body_shape_shells(ctx)?.find(|shell| {
             shell
                 .shell_fields()
                 .is_some_and(|fields| fields.body.map(u32::from) == Some(body_xmt))
@@ -231,7 +231,7 @@ pub(super) fn emit_topology(
 
     let mut regions: BTreeMap<u32, (RegionId, BodyId)> = BTreeMap::new();
     let mut shells: BTreeMap<u32, ShellId> = BTreeMap::new();
-    for node in graph.body_shape_shells() {
+    for node in graph.body_shape_shells(ctx)? {
         let Some(fields) = node.shell_fields() else {
             continue;
         };

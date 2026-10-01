@@ -1151,13 +1151,10 @@ fn native_store_preserves_midpoint_with_two_point_markers() {
             entity.local_id(),
         );
     }
-    let expected = crate::native::lanes::expected_lanes_charged(
-        &cadmpeg_test_support::service_decode_context(),
-        &native,
-    )
-    .unwrap()
-    .remove(0)
-    .1;
+    let context = cadmpeg_test_support::service_decode_context();
+    let expected_lanes = crate::native::lanes::expected_lanes_charged(&context, &native).unwrap();
+    let expected = expected_lanes.iter().next().unwrap().1.clone();
+    drop(expected_lanes);
     let lane = &mut native.feature_input_lanes[0];
     lane.scalars = expected.scalars;
     lane.relation_bindings = expected.relation_bindings;
@@ -1210,7 +1207,7 @@ fn native_store_rejects_relation_scalar_owner_disagreement() {
 }
 
 #[test]
-fn native_store_rejects_nonlocal_relation_scalar_groups() {
+fn relation_membership_rejects_duplicate_identity_before_native_store() {
     let mut source = sldprt_with_compact_relation_pair(&triangle_body());
     source.extend(make_block(
         0x42,
@@ -1222,21 +1219,19 @@ fn native_store_rejects_nonlocal_relation_scalar_groups() {
         .unwrap();
     let mut native = sldprt_native(decoded.ir());
     let duplicate = native.feature_input_lanes[0].relation_instances[0].scalar_refs()[0].clone();
-    native.feature_input_lanes[0].relation_instances[0]
+    let before = native.feature_input_lanes[0].relation_instances[0]
+        .scalars
+        .clone();
+    let error = native.feature_input_lanes[0].relation_instances[0]
         .scalars
         .push(&cadmpeg_test_support::service_decode_context(), &duplicate)
-        .unwrap();
-
-    let mut namespace = cadmpeg_ir::NativeNamespace::default();
-    let error = native
-        .store(
-            &cadmpeg_test_support::service_decode_context(),
-            &mut namespace,
-        )
         .unwrap_err();
-    assert!(
-        error.to_string().contains("relation instance")
-            && error.to_string().contains("inconsistent ownership")
+    assert!(error
+        .to_string()
+        .contains("scalar_refs identities must be distinct"));
+    assert_eq!(
+        native.feature_input_lanes[0].relation_instances[0].scalars,
+        before
     );
 }
 
@@ -1257,18 +1252,13 @@ fn native_load_rejects_nonadjacent_duplicate_relation_scalars() {
         .namespace("sldprt")
         .expect("SLDPRT namespace")
         .clone();
-    let mut relations: Vec<crate::records::FeatureInputRelationInstance> = namespace
+    let mut relations: Vec<serde_json::Value> = namespace
         .arena_as("feature_input_relation_instances")
         .unwrap();
     let relation = relations.first_mut().expect("relation instance");
-    assert_eq!(relation.scalar_refs().len(), 2);
-    relation
-        .scalars
-        .push(
-            &cadmpeg_test_support::service_decode_context(),
-            &relation.scalar_refs()[0].clone(),
-        )
-        .unwrap();
+    let refs = relation["scalar_refs"].as_array_mut().unwrap();
+    assert_eq!(refs.len(), 2);
+    refs.push(refs[0].clone());
     namespace
         .set_arena(
             &cadmpeg_test_support::service_decode_context(),
@@ -1795,4 +1785,82 @@ fn native_store_refuses_collection_limit() {
 #[test]
 fn native_store_refuses_nesting_limit() {
     assert_native_store_dimension_refusal(cadmpeg_core::decode::ResourceDimension::RecursionDepth);
+}
+
+#[test]
+fn expected_lane_reservations_cover_borrowed_results() {
+    let native = emitter_models()[1].clone();
+    let used = |drop_before_probe| {
+        let ctx = cadmpeg_test_support::service_decode_context();
+        let expected = crate::native::lanes::expected_lanes_charged(&ctx, &native).unwrap();
+        assert!(expected.iter().next().is_some());
+        if drop_before_probe {
+            drop(expected);
+        }
+        let error = ctx
+            .reserve_scoped(512 * 1024 * 1024, "probe live expected lanes")
+            .unwrap_err();
+        match error {
+            cadmpeg_core::CodecError::ResourceLimit(limit) => limit.used,
+            error => panic!("{error}"),
+        }
+    };
+    assert!(used(false) > used(true));
+}
+
+#[test]
+fn native_relation_membership_refuses_work_before_quadratic_validation() {
+    let refs: Vec<_> = (0..128)
+        .map(|index| format!("scalar-{index:032}"))
+        .collect();
+    let relation = serde_json::json!({"id": "sldprt:test:relation#0", "parent": "sldprt:test:lane#0", "ordinal": 0, "offset": 0,
+        "family": "circle_diameter", "class_ref": "class", "feature_ref": "feature", "operands": [], "scalar_refs": refs});
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    namespace
+        .set_arena(
+            &cadmpeg_test_support::service_decode_context(),
+            "feature_input_relation_instances",
+            &[relation],
+        )
+        .unwrap();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_work_units = 200_000;
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = crate::native::SldprtNative::load_charged(&ctx, &namespace).unwrap_err();
+    let error = cadmpeg_core::CodecError::from(error);
+    assert!(
+        matches!(&error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == "admit SLDPRT relation scalar membership"),
+        "{error:?}"
+    );
+}
+
+#[test]
+fn inline_relation_membership_refuses_work_before_quadratic_validation() {
+    let refs: Vec<_> = (0..128)
+        .map(|index| format!("scalar-{index:032}"))
+        .collect();
+    let relation = serde_json::json!({"id": "sldprt:test:relation#0", "parent": "sldprt:test:lane#0", "ordinal": 0, "offset": 0,
+        "family": "circle_diameter", "class_ref": "class", "feature_ref": "feature", "operands": [], "scalar_refs": refs});
+    let lane = serde_json::json!({"id": "sldprt:test:lane#0", "native_payload": "", "relation_instances": [relation]});
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    namespace
+        .set_arena(
+            &cadmpeg_test_support::service_decode_context(),
+            "feature_input_lanes",
+            &[lane],
+        )
+        .unwrap();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_work_units = 200_000;
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = crate::native::SldprtNative::load_charged(&ctx, &namespace).unwrap_err();
+    let error = cadmpeg_core::CodecError::from(error);
+    assert!(
+        matches!(&error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == "admit SLDPRT relation scalar membership"),
+        "{error:?}"
+    );
 }
