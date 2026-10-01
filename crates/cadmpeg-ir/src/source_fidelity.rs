@@ -457,17 +457,14 @@ impl SourceFidelity {
             Some(namespace) => namespace.arena_as_for_decode(ctx, "unknowns")?,
             None => Vec::new(),
         };
-        let mut existing_ids = BTreeSet::new();
-        for record in ir
-            .native
-            .0
-            .values()
-            .filter_map(|namespace| namespace.arenas().get("unknowns"))
-            .flatten()
-        {
-            ctx.charge_collection_items(1, "native unknown existing identities")?;
-            existing_ids.insert(record.id());
-        }
+        let (existing_ids, _identity_storage) = ctx.with_scoped_storage("native unknown existing identities", || {
+            let mut existing_ids = BTreeSet::new();
+            for record in ir.native.0.values().filter_map(|namespace| namespace.arenas().get("unknowns")).flatten() {
+                ctx.charge_work(u64_from_index(record.id().len()), "native unknown identity scan")?;
+                ctx.insert_btree_set(&mut existing_ids, record.id(), "native unknown existing identities")?;
+            }
+            Ok::<_, CodecError>(existing_ids)
+        })?;
         let mut retained = BTreeMap::new();
         for record in records {
             if self.retained_records.contains_key(record.id())
@@ -522,8 +519,7 @@ impl SourceFidelity {
                 SourceOwner::Root
             };
             let (id, record) = RetainedSourceRecord::from_unknown(stream, record)?;
-            ctx.charge_collection_items(1, "native unknown retained index")?;
-            retained.insert(id, record);
+            ctx.insert_btree_map(&mut retained, id, record, "native unknown retained index")?;
         }
 
         let mut native_records = Vec::new();
