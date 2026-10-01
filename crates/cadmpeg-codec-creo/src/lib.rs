@@ -58,6 +58,7 @@
 //! and feature evaluation remain incomplete. The decode report identifies
 //! these losses.
 
+mod axis;
 mod compress;
 mod container;
 mod coverage;
@@ -68,8 +69,8 @@ mod dialect;
 mod feature;
 mod identity;
 mod interpolation_grid;
-/// Byte-offset constants generated from `docs/layouts/creo.toml`.
 mod lane_refusal;
+/// Byte-offset constants generated from `docs/layouts/creo.toml`.
 mod layout;
 mod legacy;
 mod legacy_family;

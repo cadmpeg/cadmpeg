@@ -2280,8 +2280,8 @@ pub(super) fn datum_plane_records<'a>(
             id,
             datum_id: record.id,
             owner_feature_id: record.feature_id,
-            normal: record.plane.normal(),
-            plane_offset: record.plane.offset,
+            normal: record.plane().normal(),
+            plane_offset: record.plane().offset(),
             corners: record.corners(),
             offset: record.offset_in_payload,
             source_section: source_section_ref(scan, record.offset_in_payload),
@@ -2407,7 +2407,8 @@ mod curve_plane_projection_limit_tests {
     use crate::curve::{
         dummy_curve_prototype, CurvePrototypeTopology, FcCurveCoordinates, PrototypePcurveEndpoints,
     };
-    use crate::datum::{Axis, DatumCylinder, DatumPlane, DatumPlaneRecord};
+    use crate::axis::Axis;
+use crate::datum::{DatumCylinder, DatumPlane, DatumPlaneRecord};
     use crate::feature::definitions::{DefinitionIdentity, FeatureDefinition};
     use crate::placement::FeatureSectionTransform;
     use crate::surface::{
@@ -2471,17 +2472,7 @@ mod curve_plane_projection_limit_tests {
             u_axis: UnitVector3::X_AXIS,
             offset: 18,
         });
-        scan.planes.datums.push(DatumPlaneRecord {
-            id: 3,
-            feature_id: 2,
-            plane: DatumPlane {
-                axis: Axis::X,
-                offset: 1.0,
-            },
-            opposite_offset: 1.0,
-            in_plane_corners: [[None; 2]; 2],
-            offset_in_payload: 19,
-        });
+        scan.planes.datums.push(DatumPlaneRecord::new(3, 2, DatumPlane::new(Axis::X, 1.0).expect("valid datum fixture"), 1.0, [[None; 2]; 2], 19).expect("valid datum fixture"));
         scan.planes.datum_cylinders.push(DatumCylinder {
             id: 4,
             feature_id: 2,

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Simple drilled-hole recipes, envelopes, and dimension matching.
 
-use crate::decode::axis::Axis;
+use crate::axis::Axis;
 use crate::vecmath::unit_length;
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;

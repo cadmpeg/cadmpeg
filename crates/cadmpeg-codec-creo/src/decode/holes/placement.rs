@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Hole placement, cap outlines, and cylinder construction from envelopes.
 
-use crate::decode::axis::Axis;
+use crate::axis::Axis;
 use crate::vecmath::normalize;
 use crate::vecmath::unit_length;
 use cadmpeg_ir::features::LinearTermination;

@@ -857,7 +857,7 @@ pub(in super::super) fn schema_feature_definition(
     }
     if schema_class == Some(SchemaClass::DatumPlane) {
         if let Some(datum) = unique_feature_datum_plane(ctx, &scan.planes.datums, feature_id)? {
-            return Ok(datum_plane_feature_definition(&datum.plane));
+            return Ok(datum_plane_feature_definition(&datum.plane()));
         }
         if scan
             .planes
@@ -1042,9 +1042,9 @@ pub(in super::super) fn datum_plane_feature_definition(
     let normal = datum.normal();
     cadmpeg_ir::features::FeatureDatumPlaneFrame::new(
         Point3::new(
-            normal[0] * datum.offset,
-            normal[1] * datum.offset,
-            normal[2] * datum.offset,
+            normal[0] * datum.offset(),
+            normal[1] * datum.offset(),
+            normal[2] * datum.offset(),
         ),
         Vector3::from(normal),
         cadmpeg_ir::geometry::derive_reference_direction(Vector3::from(normal)),

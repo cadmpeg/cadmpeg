@@ -3,7 +3,8 @@
 //!
 //! Prototype rows identify curves and their generating features. Topology rows
 //! add the two face sides and successor curve for each native half-edge. Curve
-//! parameter bodies are not interpreted here.
+//! parameter records decode scalar bodies. Relation evaluation resolves
+//! assignments and recognizes exact cylindrical helix programs.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::num::NonZeroU32;
@@ -335,15 +336,28 @@ pub(crate) struct CurveExpressionHelix {
     /// Constant cylindrical radius in model millimeters.
     pub(crate) radius: cadmpeg_ir::scalar::PositiveLength,
     /// Signed axial rise from `t = 0` through `t = 1`.
-    pub(crate) height: f64,
+    pub(crate) height: cadmpeg_ir::scalar::FiniteReal,
     /// Native axial coordinate at `t = 0`.
-    pub(crate) z_start: f64,
+    pub(crate) z_start: cadmpeg_ir::scalar::FiniteReal,
     /// Positive angular travel in revolutions.
     pub(crate) revolutions: cadmpeg_ir::scalar::PositiveReal,
     /// Angular position at `t = 0`, in radians.
     pub(crate) start_angle: cadmpeg_ir::scalar::Angle,
     /// Whether angular travel decreases as `t` increases.
     pub(crate) clockwise: bool,
+}
+
+impl CurveExpressionHelix {
+    fn new(radius: f64, height: f64, z_start: f64, revolutions: f64, start_angle: f64, clockwise: bool) -> Option<Self> {
+        Some(Self {
+            radius: cadmpeg_ir::scalar::PositiveLength::new(radius)?,
+            height: cadmpeg_ir::scalar::FiniteReal::new(height)?,
+            z_start: cadmpeg_ir::scalar::FiniteReal::new(z_start)?,
+            revolutions: cadmpeg_ir::scalar::PositiveReal::new(revolutions)?,
+            start_angle: cadmpeg_ir::scalar::Angle::new(start_angle)?,
+            clockwise,
+        })
+    }
 }
 
 /// A curve row with a uniquely delimited topology suffix.
@@ -7351,14 +7365,7 @@ pub(crate) fn expression_helix(
             return None;
         }
         let angular_travel = theta.linear;
-        Some(CurveExpressionHelix {
-            radius: cadmpeg_ir::scalar::PositiveLength::new(radius.constant)?,
-            height: z.linear,
-            z_start: z.constant,
-            revolutions: cadmpeg_ir::scalar::PositiveReal::new(angular_travel.abs() / 360.0)?,
-            start_angle: cadmpeg_ir::scalar::Angle::new(theta.constant.to_radians())?,
-            clockwise: angular_travel < 0.0,
-        })
+        CurveExpressionHelix::new(radius.constant, z.linear, z.constant, angular_travel.abs() / 360.0, theta.constant.to_radians(), angular_travel < 0.0)
     })())
 }
 

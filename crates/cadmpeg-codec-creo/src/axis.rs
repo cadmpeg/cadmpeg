@@ -31,28 +31,28 @@ impl Axis {
 
 /// The direction of a signed model axis.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum Sign {
+pub(crate) enum Sign {
     Positive,
     Negative,
 }
 
 impl Sign {
     /// The unit scale for the direction.
-    pub(super) const fn scale(self) -> f64 {
+    pub(crate) const fn scale(self) -> f64 {
         match self {
             Self::Positive => 1.0,
             Self::Negative => -1.0,
         }
     }
     /// The opposite direction.
-    pub(super) const fn reversed(self) -> Self {
+    pub(crate) const fn reversed(self) -> Self {
         match self {
             Self::Positive => Self::Negative,
             Self::Negative => Self::Positive,
         }
     }
     /// The direction of a coordinate component, taking the IEEE sign bit.
-    pub(super) fn of_component(component: f64) -> Self {
+    pub(crate) fn of_component(component: f64) -> Self {
         if component.is_sign_negative() {
             Self::Negative
         } else {
@@ -66,6 +66,16 @@ impl From<crate::curve::ParameterSense> for Sign {
         match sense {
             crate::curve::ParameterSense::Increasing => Self::Positive,
             crate::curve::ParameterSense::Decreasing => Self::Negative,
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn model_axis_complements_follow_coordinate_order() {
+        for (axis, expected) in super::Axis::ALL.into_iter().zip([[1,2],[0,2],[0,1]]) {
+            assert_eq!(axis.complement().map(super::Axis::index), expected);
         }
     }
 }

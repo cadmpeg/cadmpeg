@@ -253,7 +253,7 @@ pub(in crate::decode) fn circular_sweep_cylinder_from_cap_outlines(
     let aligned_axis = super::placement::axis_aligned_with(axis, EPS_AXIS_ALIGNMENT)?;
     let radial = aligned_axis
         .complement()
-        .map(crate::decode::axis::Axis::index);
+        .map(crate::axis::Axis::index);
     let mut circles = outlines
         .into_iter()
         .filter_map(|cap| cap_square_center_radius(cap.corners, aligned_axis));

@@ -156,8 +156,8 @@ impl Layout {
 
 /// One enumerated binary section.
 ///
-/// The extent is a fact of the type. [`Section::new`] is the only constructor
-/// and it admits a section only when `offset..end` is a region of the file the
+/// The extent is a fact of the type. [`Section::scan`] is the only constructor
+/// and returns a section/payload pair only when `offset..end` is a region of the file the
 /// scan read, so no reader re-derives the sum and none of them can overflow.
 ///
 /// `offset` and `length` are private, so a struct literal outside this module
@@ -240,7 +240,7 @@ impl Section {
 
     /// Byte offset one past the section's last byte.
     ///
-    /// Plain `+`: [`Section::new`] admitted the sum, so it is a byte offset of
+    /// Plain `+`: [`Section::scan`] admitted the sum, so it is a byte offset of
     /// the file the scan read.
     pub(crate) fn end(&self) -> usize {
         self.offset + self.length

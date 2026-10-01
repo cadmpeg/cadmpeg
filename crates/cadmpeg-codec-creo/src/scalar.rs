@@ -8,7 +8,7 @@ use cadmpeg_core::decode::{index_from_u32, DecodeContext, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::units::FiniteVector;
 
-use crate::decode::axis::Axis;
+use crate::axis::Axis;
 use crate::psb::{compact_int, short_form_float};
 
 const EPS_SUPPORT_FRAME_AGREEMENT: f64 = 1.0e-9;

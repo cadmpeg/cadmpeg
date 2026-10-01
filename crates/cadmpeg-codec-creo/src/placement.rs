@@ -627,8 +627,8 @@ fn plane_equation(
     }
     if let Some(datum) = datum {
         return Some(SignedPlaneEquation {
-            normal: datum.plane.normal(),
-            offset: datum.plane.offset,
+            normal: datum.plane().normal(),
+            offset: datum.plane().offset(),
         });
     }
     if let Some(equation) = model_equation {
@@ -784,8 +784,8 @@ fn generated_datum_plane_equation(
                     .iter()
                     .filter(|datum| datum.feature_id == *other)
                     .map(|datum| SignedPlaneEquation {
-                        normal: datum.plane.normal(),
-                        offset: datum.plane.offset,
+                        normal: datum.plane().normal(),
+                        offset: datum.plane().offset(),
                     })
                     .chain(
                         sources
@@ -1038,8 +1038,8 @@ fn zero_offset_standard_section_plane_equation(
     )?;
     let mut candidates = sources.datums.iter().filter_map(|datum| {
         let equation = SignedPlaneEquation {
-            normal: datum.plane.normal(),
-            offset: datum.plane.offset,
+            normal: datum.plane().normal(),
+            offset: datum.plane().offset(),
         };
         let cap_alignment = dot(equation.normal, cap.normal).abs();
         let reference_alignment = dot(equation.normal, reference.normal).abs();

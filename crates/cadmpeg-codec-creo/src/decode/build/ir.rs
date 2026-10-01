@@ -642,7 +642,7 @@ fn transfer_datum_plane_surfaces(
     source_carriers: &mut SourceUnitCarriers,
 ) -> Result<(), CodecError> {
     for plane in &scan.planes.datums {
-        let normal = plane.plane.normal();
+        let normal = plane.plane().normal();
         let id = crate::identity::compose_checked::<SurfaceId>(
             ctx,
             &crate::identity::ACTDATUM_SURFACE,
@@ -667,9 +667,9 @@ fn transfer_datum_plane_surfaces(
                 geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                     cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                         Point3::new(
-                            normal[0] * plane.plane.offset,
-                            normal[1] * plane.plane.offset,
-                            normal[2] * plane.plane.offset,
+                            normal[0] * plane.plane().offset(),
+                            normal[1] * plane.plane().offset(),
+                            normal[2] * plane.plane().offset(),
                         ),
                         Vector3::from(normal),
                         cadmpeg_ir::geometry::derive_reference_direction(Vector3::from(normal)),

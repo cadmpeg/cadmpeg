@@ -14,31 +14,8 @@ const EPS_ACTIVE_CYLINDER_MIN: f64 = 1.0e-12;
 
 const EPS_DATUM_COORDINATE_AGREEMENT: f64 = 1.0e-9;
 
-/// Coordinate axis normal to a standard datum plane.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum Axis {
-    X,
-    Y,
-    Z,
-}
-
-impl Axis {
-    fn index(self) -> usize {
-        match self {
-            Self::X => 0,
-            Self::Y => 1,
-            Self::Z => 2,
-        }
-    }
-
-    fn in_plane_indices(self) -> [usize; 2] {
-        match self {
-            Self::X => [1, 2],
-            Self::Y => [0, 2],
-            Self::Z => [0, 1],
-        }
-    }
-}
+use crate::axis::Axis;
+use cadmpeg_ir::scalar::FiniteReal;
 
 /// An axis-aligned model-space datum plane with equation `x_axis = offset`.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -46,10 +23,12 @@ pub(crate) struct DatumPlane {
     /// Axis normal to the plane.
     pub(crate) axis: Axis,
     /// Constant coordinate along the normal axis.
-    pub(crate) offset: f64,
+    offset: FiniteReal,
 }
 
 impl DatumPlane {
+    pub(crate) fn new(axis: Axis, offset: f64) -> Option<Self> { Some(Self { axis, offset: FiniteReal::new(offset)? }) }
+    pub(crate) fn offset(self) -> f64 { self.offset.get() }
     /// The positive unit basis vector normal to the plane.
     pub(crate) fn normal(self) -> [f64; 3] {
         match self.axis {
@@ -68,25 +47,36 @@ pub(crate) struct DatumPlaneRecord {
     /// Modeling feature identifier from the owning `srf_array.feat_id`.
     pub(crate) feature_id: u32,
     /// Plane defined by the shared outline coordinate.
-    pub(crate) plane: DatumPlane,
+    plane: DatumPlane,
     /// Second outline corner's coordinate along the plane normal.
-    pub(crate) opposite_offset: f64,
+    opposite_offset: FiniteReal,
     /// Corner coordinates on the remaining axes, in XYZ order.
-    pub(crate) in_plane_corners: [[Option<f64>; 2]; 2],
+    in_plane_corners: [[Option<FiniteReal>; 2]; 2],
     /// Byte offset of the row's `geom_id` field in the original stream.
     pub(crate) offset_in_payload: usize,
 }
 
 impl DatumPlaneRecord {
+    pub(crate) fn new(id: u32, feature_id: u32, plane: DatumPlane, opposite_offset: f64, corners: [[Option<f64>; 2]; 2], offset_in_payload: usize) -> Option<Self> {
+        let opposite_offset = FiniteReal::new(opposite_offset)?;
+        let scale = plane.offset().abs().max(opposite_offset.get().abs()).max(1.0);
+        if (plane.offset() - opposite_offset.get()).abs() > EPS_DATUM_COORDINATE_AGREEMENT * scale { return None; }
+        let mut in_plane_corners = [[None; 2]; 2];
+        for (i, row) in corners.into_iter().enumerate() {
+            for (j, value) in row.into_iter().enumerate() { in_plane_corners[i][j] = match value { Some(value) => Some(FiniteReal::new(value)?), None => None }; }
+        }
+        Some(Self { id, feature_id, plane, opposite_offset, in_plane_corners, offset_in_payload })
+    }
+    pub(crate) fn plane(&self) -> DatumPlane { self.plane }
     /// The two outline corners in model-space XYZ.
     pub(crate) fn corners(&self) -> [[Option<f64>; 3]; 2] {
-        let [u, v] = self.plane.axis.in_plane_indices();
-        let offsets = [self.plane.offset, self.opposite_offset];
+        let [u, v] = self.plane.axis.complement().map(Axis::index);
+        let offsets = [self.plane.offset(), self.opposite_offset.get()];
         std::array::from_fn(|index| {
             let mut corner = [None; 3];
             corner[self.plane.axis.index()] = Some(offsets[index]);
-            corner[u] = self.in_plane_corners[index][0];
-            corner[v] = self.in_plane_corners[index][1];
+            corner[u] = self.in_plane_corners[index][0].map(FiniteReal::get);
+            corner[v] = self.in_plane_corners[index][1].map(FiniteReal::get);
             corner
         })
     }
@@ -334,21 +324,11 @@ fn positional_plane(
     };
     let candidate = (|| {
         let plane_offset = outline[axis.index()].value?;
-        let [u, v] = axis.in_plane_indices();
-        Some(DatumPlaneRecord {
-            id: row.id,
-            feature_id: row.feature_id,
-            plane: DatumPlane {
-                axis,
-                offset: plane_offset,
-            },
-            opposite_offset: outline[axis.index() + 3].value?,
-            in_plane_corners: [
+        let [u, v] = axis.complement().map(Axis::index);
+        Some(DatumPlaneRecord::new(row.id, row.feature_id, DatumPlane::new(axis, plane_offset)?, outline[axis.index() + 3].value?, [
                 [outline[u].value, outline[v].value],
                 [outline[u + 3].value, outline[v + 3].value],
-            ],
-            offset_in_payload: id_start,
-        })
+            ], id_start)?)
     })();
     Ok(candidate)
 }
@@ -411,18 +391,11 @@ pub(crate) fn named_plane(
     };
     let candidate = (|| {
         let offset = slots[axis.index()].value?;
-        let [u, v] = axis.in_plane_indices();
-        Some(DatumPlaneRecord {
-            id,
-            feature_id,
-            plane: DatumPlane { axis, offset },
-            opposite_offset: slots[axis.index() + 3].value?,
-            in_plane_corners: [
+        let [u, v] = axis.complement().map(Axis::index);
+        Some(DatumPlaneRecord::new(id, feature_id, DatumPlane::new(axis, offset)?, slots[axis.index() + 3].value?, [
                 [slots[u].value, slots[v].value],
                 [slots[u + 3].value, slots[v + 3].value],
-            ],
-            offset_in_payload: outline,
-        })
+            ], outline)?)
     })();
     Ok(candidate)
 }
