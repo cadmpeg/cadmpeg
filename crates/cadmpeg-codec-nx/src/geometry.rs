@@ -280,7 +280,7 @@ fn cone(s: &[u8], b: usize) -> Option<SurfaceGeometry> {
             frame,
             radius,
             PositiveReal::ONE,
-            Angle::from_assigned_real(sin_half.abs().atan2(cos_half.abs())),
+            Angle::from_assigned_real(sin_half.atan2(cos_half)),
         ),
     )))
 }
