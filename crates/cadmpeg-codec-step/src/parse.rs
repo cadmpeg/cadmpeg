@@ -1760,10 +1760,6 @@ fn validate_header_sections(
                             error.with_message("SECTION_LANGUAGE has invalid parameters")
                         })?;
                 budget.charge_collection_items(1, "step_section_language_names")?;
-                budget.charge_retained(
-                    u64_from_index(section.as_ref().map_or(0, String::len)),
-                    "step_section_language_name_copy",
-                )?;
                 let section_copy = section
                     .as_deref()
                     .map(|value| {
@@ -1791,10 +1787,6 @@ fn validate_header_sections(
                             error.with_message("SECTION_CONTEXT has invalid parameters")
                         })?;
                 budget.charge_collection_items(1, "step_section_context_names")?;
-                budget.charge_retained(
-                    u64_from_index(section.as_ref().map_or(0, String::len)),
-                    "step_section_context_name_copy",
-                )?;
                 let section_copy = section
                     .as_deref()
                     .map(|value| budget.copy_retained_text(value, "step_section_context_name_copy"))
