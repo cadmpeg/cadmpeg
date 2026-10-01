@@ -1102,3 +1102,5 @@ impl DesignBaseFeatureConstruction {
 
 #[cfg(test)]
 mod tests;
+
+mod identity_rewrite;

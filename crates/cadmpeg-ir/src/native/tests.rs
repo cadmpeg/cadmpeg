@@ -1190,3 +1190,46 @@ fn arena_write_error_refuses_before_allocating_its_box() {
         .unwrap_err();
     assert!(matches!(error, super::NativeConvertError::Arena { .. }));
 }
+
+#[test]
+fn typed_native_field_rewrite_preserves_session_refusals() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    use crate::ids::BodyId;
+    use crate::topology::{Body, BodyKind};
+    let body = Body {
+        id: BodyId::mint("test:model:body#one").unwrap(),
+        kind: BodyKind::Solid,
+        regions: Vec::new(),
+        transform: None,
+        name: Some("test:model:body#one".into()),
+        color: None,
+        visible: None,
+    };
+    let record = NativeRecord::from_typed(&body).unwrap();
+    for dimension in [ResourceDimension::CollectionItems, ResourceDimension::MaterializedBytes, ResourceDimension::RetainedBytes, ResourceDimension::WorkUnits, ResourceDimension::RecursionDepth] {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        match dimension {
+            ResourceDimension::CollectionItems => policy.limits.max_collection_items = 0,
+            ResourceDimension::MaterializedBytes => policy.limits.max_materialized_bytes = 0,
+            ResourceDimension::RetainedBytes => policy.limits.max_retained_bytes = 0,
+            ResourceDimension::WorkUnits => policy.limits.max_work_units = 0,
+            ResourceDimension::RecursionDepth => policy.limits.max_recursion_depth = 0,
+            _ => panic!("test covers reconstruction dimensions"),
+        }
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let error = record.rewrite_fields::<Body, _>(&ctx, |source| {
+            ctx.copy_retained_text(source, "test native target")
+        }).unwrap_err();
+        let CodecError::ResourceLimit(limit) = CodecError::from(error) else { panic!("typed native refusal must stay outside serde"); };
+        assert_eq!(limit.dimension, dimension);
+        assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(original)) if original == limit));
+    }
+    let ctx = super::test_ctx();
+    let fields = record.rewrite_fields::<Body, _>(&ctx, |source| {
+        ctx.format_retained(format_args!("test:occurrence:{}", source.strip_prefix("test:model:").unwrap()), "test native target")
+    }).unwrap();
+    assert_eq!(fields["name"], serde_json::json!("test:model:body#one"));
+    assert!(!fields.contains_key("id"));
+}

@@ -638,3 +638,5 @@ impl DesignExtrudePrologue {
         }
     }
 }
+
+mod identity_rewrite;

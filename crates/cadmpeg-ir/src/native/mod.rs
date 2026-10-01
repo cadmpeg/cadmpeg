@@ -385,6 +385,26 @@ impl NativeRecord {
         Ok(fields)
     }
 
+    /// Rewrite codec-owned typed fields with scoped intermediate storage.
+    pub fn rewrite_fields<T, F>(
+        &self,
+        ctx: &DecodeContext<'_>,
+        map: F,
+    ) -> Result<Map<String, Value>, NativeConvertError>
+    where
+        T: DeserializeOwned + Serialize + crate::schema::rewrite::typed::RewriteIdentities,
+        F: FnMut(&str) -> Result<String, cadmpeg_core::CodecError>,
+    {
+        let (rewritten, storage) = ctx.with_scoped_storage("rewrite typed native fields", || {
+            let typed: T = self.to_typed(ctx).map_err(cadmpeg_core::CodecError::from)?;
+            crate::schema::rewrite::identities(ctx, "rewrite typed native identities", typed, map)
+        })?;
+        let fields = Self::from_typed_for_decode(ctx, &rewritten, None).map(|record| record.fields);
+        drop(rewritten);
+        drop(storage);
+        fields
+    }
+
     /// One codec-owned field.
     ///
     /// `id` is not a codec-owned field and is never answered here.

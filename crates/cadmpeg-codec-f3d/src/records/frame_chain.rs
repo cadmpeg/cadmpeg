@@ -33,3 +33,5 @@ impl RecordFrameChain {
         self.byte_offset + delta
     }
 }
+
+mod identity_rewrite;

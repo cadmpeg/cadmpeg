@@ -539,36 +539,12 @@ impl EntityRewrite for OccurrenceScope<'_, '_> {
     type Error = CodecError;
 
     fn rewrite<T: cadmpeg_ir::schema::rewrite::typed::RewriteIdentities>(&mut self, entity: T) -> Result<T, CodecError> {
-        let mut map = cadmpeg_ir::schema::rewrite::typed::IdentityMap::new(self.ctx, "rewrite F3Z model identity", |id: &str| {
+        cadmpeg_ir::schema::rewrite::identities(self.ctx, "rewrite F3Z model identity", entity, |id: &str| {
             match rescope_charged(self.ctx, id, self.occurrence)? {
                 Some(rewritten) => Ok(rewritten),
                 None => self.ctx.copy_retained_text(id, "copy F3Z unchanged identity"),
             }
-        })?;
-        entity.rewrite_identities(self.ctx, &mut map)
-    }
-}
-
-fn rewrite_identity(
-    ctx: &DecodeContext<'_>,
-    id: &str,
-    occurrence: &str,
-    refusal: &std::cell::RefCell<Option<CodecError>>,
-) -> String {
-    if refusal.borrow().is_some() {
-        return String::new();
-    }
-    let rewritten = match rescope_charged(ctx, id, occurrence) {
-        Ok(Some(rewritten)) => Ok(rewritten),
-        Ok(None) => ctx.format_retained(format_args!("{id}"), "copy F3Z unchanged identity"),
-        Err(error) => Err(error),
-    };
-    match rewritten {
-        Ok(rewritten) => rewritten,
-        Err(error) => {
-            *refusal.borrow_mut() = Some(error);
-            String::new()
-        }
+        })
     }
 }
 
@@ -636,48 +612,15 @@ fn typed_fields(
     arena: &str,
     occurrence: &str,
 ) -> Result<Map<String, Value>, CodecError> {
-    let typed_error = |error: serde_json::Error| {
-        CodecError::from(cadmpeg_ir::native::NativeConvertError::InvalidCollection(
-            format_args!(
-                "F3D native arena `{arena}` record `{}` typed admission: {error}",
-                record.id()
-            )
-            .to_string(),
-        ))
-    };
     macro_rules! typed {
-        ($type:path) => {{
-            let mut value = Value::Object(record.fields_for_decode(ctx)?);
-            let Value::Object(fields) = &mut value else {
-                return Err(CodecError::malformed(
-                    "F3Z native record fields are not an object",
-                ));
-            };
-            ctx.charge_collection_items(1, "insert F3Z typed native identity field")?;
-            fields.insert(
-                "id".into(),
-                Value::String(ctx.format_retained(
-                    format_args!("{}", record.id()),
-                    "copy F3Z typed native identity",
-                )?),
-            );
-            let typed: $type = serde_json::from_value(value).map_err(typed_error)?;
-            let refusal = std::cell::RefCell::new(None);
-            let rewritten = cadmpeg_ir::schema::rewrite::identities(&typed, |id| {
-                rewrite_identity(ctx, id, occurrence, &refusal)
-            });
-            let value = serde_json::to_value(rewritten);
-            if let Some(error) = refusal.into_inner() {
-                return Err(error);
-            }
-            let Value::Object(mut fields) = value.map_err(typed_error)? else {
-                return Err(CodecError::malformed(
-                    "F3Z typed native record is not an object",
-                ));
-            };
-            fields.remove("id");
-            fields
-        }};
+        ($type:path) => {
+            record.rewrite_fields::<$type, _>(ctx, |id| {
+                match rescope_charged(ctx, id, occurrence)? {
+                    Some(rewritten) => Ok(rewritten),
+                    None => ctx.copy_retained_text(id, "copy F3Z unchanged native identity"),
+                }
+            })?
+        };
     }
 
     Ok(match arena {

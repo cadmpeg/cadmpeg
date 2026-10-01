@@ -2,6 +2,9 @@
 #![deny(clippy::disallowed_methods)]
 //! Fusion parametric-design records and links to the solved B-rep.
 
+#[macro_use]
+mod identity_rewrite;
+
 pub(crate) mod act;
 pub(crate) mod admission;
 pub(crate) mod bodies;

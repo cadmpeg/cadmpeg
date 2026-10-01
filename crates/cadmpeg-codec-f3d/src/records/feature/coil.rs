@@ -604,3 +604,5 @@ impl From<DesignCoilScope> for DesignCoilScopeWire {
 
 #[cfg(test)]
 mod tests;
+
+mod identity_rewrite;

@@ -2079,8 +2079,7 @@ impl EntityRewrite for StandardPopulationScope<'_, '_> {
     type Error = CodecError;
 
     fn rewrite<T: cadmpeg_ir::schema::rewrite::typed::RewriteIdentities>(&mut self, entity: T) -> Result<T, Self::Error> {
-        let mut map = cadmpeg_ir::schema::rewrite::typed::IdentityMap::new(self.ctx, "catia_standard_population_rewrite", |id: &str| rescope_standard_id(self.ctx, id, self.scope))?;
-        entity.rewrite_identities(self.ctx, &mut map)
+        cadmpeg_ir::schema::rewrite::identities(self.ctx, "catia_standard_population_rewrite", entity, |id: &str| rescope_standard_id(self.ctx, id, self.scope))
     }
 }
 

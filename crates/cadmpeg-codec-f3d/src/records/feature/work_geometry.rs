@@ -1288,3 +1288,5 @@ impl DesignWorkPointInput {
 }
 
 mod serialize;
+
+mod identity_rewrite;
