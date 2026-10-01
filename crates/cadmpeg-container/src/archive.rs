@@ -1197,6 +1197,38 @@ mod tests {
     }
 
     #[test]
+    fn expanded_zip_crc_refuses_before_hashing_the_output() {
+        let mut writer = zip::ZipWriter::new(Cursor::new(Vec::new()));
+        writer.start_file("part", SimpleFileOptions::default().compression_method(CompressionMethod::Deflated)).expect("entry");
+        writer.write_all(b"part").expect("payload");
+        let bytes = writer.finish().expect("archive").into_inner();
+        let arena = DecodeArena::new();
+        let (service, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service()).expect("root");
+        let snapshot = ArchiveSnapshot::new(&service, root).expect("snapshot");
+        let entry = &snapshot.entries[0];
+        let mut policy = DecodePolicy::service();
+        // Two read calls and one four-byte output copy consume this allowance.
+        policy.limits.max_work_units = 2 * 16 * 1024 + 4;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("fresh root");
+        let error = ArchiveSnapshot::open_expanded(&ctx, entry, Cursor::new(b"part"))
+            .expect_err("expanded CRC needs its own work");
+        assert!(matches!(error, CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::WorkUnits && limit.operation == "ZIP payload CRC"));
+    }
+
+    #[test]
+    fn zip_storage_declaration_admits_its_retained_text() {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("fresh root");
+        let error = super::declared_storage(&ctx, ZipCompression::Stored, 1, 2, &mut Default::default())
+            .expect_err("declaration text needs bytes before allocation");
+        assert!(matches!(error, CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::RetainedBytes && limit.operation == "ZIP storage declaration key"));
+    }
+
+    #[test]
     fn empty_zip_ledger_covers_its_end_record() {
         let bytes = zip::ZipWriter::new(Cursor::new(Vec::new()))
             .finish()
