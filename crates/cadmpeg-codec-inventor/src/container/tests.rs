@@ -61,7 +61,9 @@ fn container_summary_attribute_refuses_before_insert() {
     let node_bytes = 22 * std::mem::size_of::<String>()
         + 16 * std::mem::size_of::<usize>()
         + 2 * std::mem::align_of::<String>().max(std::mem::align_of::<usize>());
-    let nodes = if entry.attributes.is_empty() { 1 } else {
+    let nodes = if entry.attributes.is_empty() {
+        1
+    } else {
         usize::try_from(entry.attributes.len().ilog2()).expect("test tree height") + 2
     };
     let storage = cadmpeg_core::decode::u64_from_index(node_bytes * nodes);
