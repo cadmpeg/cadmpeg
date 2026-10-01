@@ -31,7 +31,7 @@ impl<'input> AdmittedXml<'input, '_> {
 #[derive(Clone, Copy)]
 enum XmlScan {
     Text,
-    Tag { closing: bool, quote: u8, last: u8 },
+    Tag { closing: bool, quote: u8, last: u8, attributes: u64 },
     Comment,
     Cdata,
     Instruction,
@@ -42,6 +42,7 @@ struct XmlBound {
     nodes: u64,
     attributes: u64,
     namespaces: u64,
+    max_attributes: u64,
     depth: u64,
 }
 
@@ -54,6 +55,7 @@ fn xml_bound(text: &str) -> XmlBound {
     let mut namespaces = 0;
     let mut depth = 0_u64;
     let mut maximum = 0;
+    let mut max_attributes = 0;
     let mut state = XmlScan::Text;
     for (index, &byte) in bytes.iter().enumerate() {
         markers += u64::from(byte == b'<');
@@ -66,14 +68,15 @@ fn xml_bound(text: &str) -> XmlBound {
                 else if tail.starts_with(b"<![CDATA[") { XmlScan::Cdata }
                 else if tail.starts_with(b"<?") { XmlScan::Instruction }
                 else if tail.starts_with(b"<!") { XmlScan::Declaration }
-                else { XmlScan::Tag { closing: tail.starts_with(b"</"), quote: 0, last: byte } }
+                else { XmlScan::Tag { closing: tail.starts_with(b"</"), quote: 0, last: byte, attributes: 0 } }
             }
-            XmlScan::Tag { closing, quote, last } => {
+            XmlScan::Tag { closing, quote, last, attributes } => {
                 if quote != 0 {
-                    XmlScan::Tag { closing, quote: if byte == quote { 0 } else { quote }, last }
+                    XmlScan::Tag { closing, quote: if byte == quote { 0 } else { quote }, last, attributes }
                 } else if matches!(byte, b'\'' | b'"') {
-                    XmlScan::Tag { closing, quote: byte, last }
+                    XmlScan::Tag { closing, quote: byte, last, attributes }
                 } else if byte == b'>' {
+                    max_attributes = max_attributes.max(attributes);
                     if closing {
                         if depth != 0 { depth -= 1; }
                     } else {
@@ -81,7 +84,11 @@ fn xml_bound(text: &str) -> XmlBound {
                         if last != b'/' { depth += 1; }
                     }
                     XmlScan::Text
-                } else { XmlScan::Tag { closing, quote, last: byte } }
+                } else {
+                    let attributes = attributes + u64::from(byte == b'=');
+                    max_attributes = max_attributes.max(attributes);
+                    XmlScan::Tag { closing, quote, last: byte, attributes }
+                }
             }
             XmlScan::Comment if tail.starts_with(b"-->") => XmlScan::Text,
             XmlScan::Cdata if tail.starts_with(b"]]>") => XmlScan::Text,
@@ -90,7 +97,7 @@ fn xml_bound(text: &str) -> XmlBound {
             other => other,
         };
     }
-    XmlBound { nodes: markers, attributes, namespaces, depth: maximum }
+    XmlBound { nodes: markers, attributes, namespaces, max_attributes, depth: maximum }
 }
 
 /// Holds nesting guards through the parser call without recursing in the
@@ -102,9 +109,10 @@ fn at_depth<T>(
     ctx.charge_work(depth, operation)?;
     ctx.charge_collection_items(depth, operation)?;
     let count = usize::try_from(depth).map_err(|_| ctx.refuse_codec_limit(operation, u64::MAX, depth))?;
-    let _reservation;
-    let (mut guards, reservation) = ctx.scoped_admitted_vec(count, operation)?;
-    _reservation = reservation;
+    let (_reservation, mut guards) = {
+        let (guards, reservation) = ctx.scoped_admitted_vec(count, operation)?;
+        (reservation, guards)
+    };
     for _ in 0..count { guards.push(ctx.enter_nested(operation)?); }
     let result = parse();
     drop(guards);
@@ -133,7 +141,10 @@ impl DecodeContext<'_> {
     /// strings and transient copies; 32 bytes per string cover Arc headers.
     /// The fixed 1024 bytes cover initial scratch capacities and parser state.
     /// Work covers the scan, parser scans and quadratic attribute/namespace
-    /// comparisons, including string comparisons and namespace insertion.
+    /// comparisons, including string comparisons and namespace insertion. Each
+    /// element compares its attributes locally: work uses maximum attributes
+    /// per tag, not the total across unrelated tags. Temporary node-ID, prefix,
+    /// text, attribute and namespace-index slots are admitted separately.
     pub fn parse_xml<'input>(
         &self,
         text: &'input str,
@@ -156,13 +167,19 @@ impl DecodeContext<'_> {
             node_bytes.checked_add(attribute_bytes)?.checked_add(namespace_bytes)?
                 .checked_add(inherited)?.checked_add(strings)?.checked_add(length.checked_mul(8)?)?.checked_add(1024)
         })().ok_or_else(|| self.tree_overflow(operation))?;
-        let comparisons = bound.attributes.checked_add(namespaces).and_then(|n| n.checked_add(1))
+        let comparisons = bound.max_attributes.checked_add(namespaces).and_then(|n| n.checked_add(1))
             .ok_or_else(|| self.tree_overflow(operation))?;
         let work = length.checked_mul(comparisons).and_then(|n| n.checked_mul(comparisons))
             .and_then(|n| n.checked_add(nodes)).ok_or_else(|| self.tree_overflow(operation))?;
         self.charge_collection_items(nodes, operation)?;
         self.charge_collection_items(bound.attributes, operation)?;
         self.charge_collection_items(namespaces, operation)?;
+        let scratch_items = nodes.checked_mul(3)
+            .and_then(|n| n.checked_add(bound.attributes))
+            .and_then(|n| n.checked_add(namespaces))
+            .and_then(|n| n.checked_add(nodes.checked_mul(namespaces)?))
+            .ok_or_else(|| self.tree_overflow(operation))?;
+        self.charge_collection_items(scratch_items, operation)?;
         self.charge_work(work, operation)?;
         let reservation = self.reserve_scoped(bytes, operation)?;
         let nodes_limit = u32::try_from(nodes).map_err(|_| self.tree_overflow(operation))?;
@@ -397,6 +414,7 @@ impl DecodeContext<'_> {
             })?;
         }
         self.charge_retained(retained, operation)?;
+        self.charge_collection_items(bound.values, operation)?;
         self.charge_work(bound.values, operation)?;
         at_depth(self, bound.depth, operation, || {
             serde_json::from_value(value).map_err(|error| self.tree_malformed(error, operation))
@@ -421,6 +439,24 @@ mod tests {
         let (limited, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).unwrap();
         let CodecError::ResourceLimit(limit) = limited.parse_xml("<r/>", "XML tree").unwrap_err() else { panic!("byte refusal"); };
         assert!(limit.additional >= 16 * ATTRIBUTE_RECORD_BOUND);
+    }
+
+    #[test]
+    fn tree_xml_work_compares_attributes_within_each_tag() {
+        let text = format!("<r>{}</r>", "<a x='0'/>".repeat(16));
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_work_units = 32 * u64_from_index(text.len());
+        let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).unwrap();
+        let tree = ctx.parse_xml(&text, "XML tree").unwrap();
+        assert_eq!(tree.document().root_element().children().count(), 16);
+    }
+
+    #[test]
+    fn tree_xml_unterminated_tag_keeps_attribute_work_bound() {
+        let attributes: String = (0..16).map(|index| format!(" x{index}='0'")).collect();
+        let text = format!("<r{attributes}");
+        assert_eq!(super::xml_bound(&text).max_attributes, 16);
     }
 
     #[test]

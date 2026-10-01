@@ -255,3 +255,18 @@ fn design_spreadsheet_dimensions_refuse_at_distinct_collection_limits() {
         });
     }
 }
+
+#[test]
+fn design_boolean_scalar_propagates_tree_refusal() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    let property = super::bool_property("owner", "Refine", true);
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = super::super::bool_property(&ctx, &[&property], "Refine").unwrap_err();
+    let cadmpeg_core::CodecError::ResourceLimit(limit) = error else { panic!("tree admission must refuse"); };
+    assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
+    assert_eq!(limit.operation, "FreeCAD direct property XML tree");
+    assert_eq!(ctx.resource_refusal(), Some(limit));
+}
