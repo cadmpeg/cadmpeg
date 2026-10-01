@@ -892,23 +892,9 @@ fn jt_probability_context_biases_unsigned_symbols_before_range_admission() {
         (0x8000_0002, None),
         (u32::MAX, None),
     ] {
-        let mut bits = Vec::new();
-        for (value, width) in [(32_u32, 6), (1, 6), (0, 6), (0, 32), (raw, 32), (1, 1)] {
-            bits.extend((0..width).rev().map(|shift| (value >> shift) & 1 != 0));
-        }
-        let mut context = vec![0, 1];
-        for chunk in bits.chunks(8) {
-            let mut byte = 0_u8;
-            for bit in chunk {
-                byte = (byte << 1) | u8::from(*bit);
-            }
-            context.push(byte << (8 - chunk.len()));
-        }
+        let (context, packet) = single_symbol_probability_packet(raw);
         let parsed = parse_probability_context(&context);
         assert_eq!(parsed.as_ref().map(|(entries, _)| entries[0].symbol), expected);
-        let mut packet = vec![1, 0, 0, 0, 3, 16, 0, 0, 0, 0, 0, 0, 0];
-        packet.extend(context);
-        packet.extend([0; 4]);
         assert_eq!(decode_int32_cdp2(&packet, 0), expected.map(|_| (vec![0], packet.len())));
         assert_eq!(frame_int32_cdp2(&packet, 0), expected.map(|_| (1, 3, packet.len())));
     }
@@ -950,5 +936,33 @@ fn jt_component_owner_keeps_scratch_reservation_live() {
         assert_eq!(component.len(), 2);
         assert!(ctx.reserve_scoped(1, "overlapping JT component copy").is_err());
         assert_eq!(component[0].get(), 0.0);
+    });
+}
+
+fn single_symbol_probability_packet(raw: u32) -> (Vec<u8>, Vec<u8>) {
+        let mut bits = Vec::new();
+        for (value, width) in [(32_u32, 6), (1, 6), (0, 6), (0, 32), (raw, 32), (1, 1)] {
+            bits.extend((0..width).rev().map(|shift| (value >> shift) & 1 != 0));
+        }
+        let mut context = vec![0, 1];
+        for chunk in bits.chunks(8) {
+            let mut byte = 0_u8;
+            for bit in chunk {
+                byte = (byte << 1) | u8::from(*bit);
+            }
+            context.push(byte << (8 - chunk.len()));
+        }
+    let mut packet = vec![1, 0, 0, 0, 3, 16, 0, 0, 0, 0, 0, 0, 0];
+    packet.extend_from_slice(&context);
+    packet.extend([0; 4]);
+    (context, packet)
+}
+
+#[test]
+fn jt_arithmetic_output_copy_refuses_work_before_formation() {
+    let (_, packet) = single_symbol_probability_packet(2);
+    crate::test_support::with_decode_context_over(&packet, |policy| policy.limits.max_work_units = 3, |ctx| {
+        let error = super::decode_int32_cdp2(ctx, &packet, 0).unwrap_err();
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits && limit.operation == "form JT arithmetic values"));
     });
 }
