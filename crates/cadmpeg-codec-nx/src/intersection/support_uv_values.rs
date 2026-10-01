@@ -110,7 +110,9 @@ impl SupportUvValues {
 
     #[cfg(test)]
     pub(super) fn support_uv(&self, sample_count: usize) -> SupportUv {
-        if sample_count < 2 { return [None, None]; }
+        if sample_count < 2 {
+            return [None, None];
+        }
         let first = self
             .values()
             .chunks_exact(self.packing.width())
@@ -253,7 +255,9 @@ mod physical_lane_tests {
             let packing = SupportUvPacking::try_from(marker).unwrap();
             crate::test_support::with_decode_context(|ctx| {
                 let scalars = vec![0.0; packing.width()];
-                let values = SupportUvValues::new_charged(ctx, packing, scalars.clone()).unwrap().unwrap();
+                let values = SupportUvValues::new_charged(ctx, packing, scalars.clone())
+                    .unwrap()
+                    .unwrap();
                 assert_eq!(values.count(), u32::try_from(scalars.len()).unwrap());
                 assert_eq!(values.marker(), marker);
                 assert_eq!(values.into_values(), scalars);

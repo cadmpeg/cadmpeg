@@ -25,10 +25,7 @@ pub(super) fn summarize(
         .checked_add(scan.streams.len())
         .ok_or_else(|| ctx.refuse_codec_limit("nx summary entries", 0, u64::MAX))?;
     let mut entries = ctx.collection_vec(entry_count, "nx summary entries")?;
-    let semantic_streams = scan
-        .streams
-        .iter()
-        .any(|stream| stream.kind() == parasolid::StreamKind::Partition)
+    let semantic_streams = (scan.count(ctx, parasolid::StreamKind::Partition)? != 0)
         .then(|| native::substrate::topology_streams(ctx, scan))
         .transpose()?;
 
@@ -393,4 +390,36 @@ fn insert_summary_attribute(
     }
     attributes.insert(key, rendered);
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn inspection_partition_search_refuses_unadmitted_stream_work() {
+        let file = crate::test_support::test_prt::single_part_prt();
+        let container =
+            crate::test_support::with_decode_context(|ctx| crate::container::scan_bytes(ctx, file))
+                .unwrap();
+        let scan = crate::decode::Scan {
+            container,
+            streams: vec![crate::parasolid::Stream {
+                file_offset: 0,
+                consumed: 0,
+                inflated: Vec::new(),
+                body: crate::parasolid::StreamBody::Preview,
+            }],
+        };
+        crate::test_support::with_decode_context_over(
+            &[],
+            |policy| policy.limits.max_work_units = 0,
+            |ctx| {
+                let error = super::summarize(ctx, &scan).unwrap_err();
+                assert!(
+                    matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+                    if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+                        && limit.operation == "count NX streams")
+                );
+            },
+        );
+    }
 }

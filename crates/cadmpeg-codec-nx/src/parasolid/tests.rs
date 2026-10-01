@@ -305,9 +305,13 @@ fn partition_values_require_a_unique_entity_reference() {
         let owned = crate::parasolid::referenced_value_record_offsets(ctx, &bytes)
             .unwrap()
             .0;
-        let (candidates, _candidate_guard) = super::value_records::value_record_candidates(ctx, &bytes).unwrap();
+        let (candidates, _candidate_guard) =
+            super::value_records::value_record_candidates(ctx, &bytes).unwrap();
         assert_eq!(candidates.len(), 3);
-        assert!(owned.is_empty(), "leading references cannot establish value ownership");
+        assert!(
+            owned.is_empty(),
+            "leading references cannot establish value ownership"
+        );
 
         bytes.extend_from_slice(&[0, 98]);
         bytes.extend_from_slice(&2u32.to_be_bytes());
@@ -782,7 +786,9 @@ fn structural_entity_references_do_not_own_value_records() {
     bytes.extend_from_slice(&10_u16.to_be_bytes());
     bytes.extend_from_slice(&2_u32.to_be_bytes());
     bytes.extend_from_slice(&0x21_u16.to_be_bytes());
-    for reference in 3..=8_u16 { bytes.extend_from_slice(&reference.to_be_bytes()); }
+    for reference in 3..=8_u16 {
+        bytes.extend_from_slice(&reference.to_be_bytes());
+    }
     bytes.extend_from_slice(&[0xaa, 0xbb]);
     let value_offset = bytes.len();
     bytes.extend_from_slice(&[0, 98]);
@@ -792,7 +798,9 @@ fn structural_entity_references_do_not_own_value_records() {
     crate::test_support::with_decode_context(|ctx| {
         let (owned, _) = super::referenced_value_record_offsets(ctx, &bytes).unwrap();
         assert!(!owned.contains(&value_offset));
-        let (references, _) = super::referenced_value_xmts(ctx, &bytes, super::ValueMultiplicity::UniqueSnapshot).unwrap();
+        let (references, _) =
+            super::referenced_value_xmts(ctx, &bytes, super::ValueMultiplicity::UniqueSnapshot)
+                .unwrap();
         assert!(!references.contains(&3));
         assert!(references.contains(&8));
     });

@@ -553,7 +553,8 @@ fn term_use_numeric_tails(
         if parsed_end != record.end || u32::from(term_use.xmt) != record.xmt {
             continue;
         }
-        let Some(tail) = TermUseNumericTail::read(stream, record.end, u32::from(term_use.xmt), term_use.form)
+        let Some(tail) =
+            TermUseNumericTail::read(stream, record.end, u32::from(term_use.xmt), term_use.form)
         else {
             continue;
         };

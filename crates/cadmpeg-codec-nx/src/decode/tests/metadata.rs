@@ -36,8 +36,6 @@ fn metadata_unknown_stream_slots_refuse_at_collection_limit() {
             policy.limits.max_collection_items = 0;
         },
         |ctx| {
-
-
             let error = super::super::build_metadata_ir(ctx, &scan, &dialects)
                 .expect_err("one unknown stream needs one collection item");
             assert!(matches!(
@@ -75,8 +73,6 @@ fn metadata_source_refuses_retained_attribute_limit() {
             policy.limits.max_retained_bytes = 0;
         },
         |ctx| {
-
-
             let error = super::super::build_metadata_ir(ctx, &scan, &dialects)
                 .expect_err("source attribute needs retained bytes");
             assert!(matches!(
@@ -111,8 +107,6 @@ fn metadata_unknown_stream_refuses_work_limit() {
                     policy.limits.max_work_units = 0;
                 },
                 |ctx| {
-
-
                     let error = super::super::build_metadata_ir(ctx, &scan, &dialects)
                         .expect_err("one unknown stream needs digest work");
                     assert!(matches!(

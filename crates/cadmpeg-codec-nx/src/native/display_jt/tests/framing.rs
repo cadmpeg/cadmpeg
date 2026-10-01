@@ -147,11 +147,13 @@ fn assert_compressed_jt_limit(
                     cadmpeg_test_support::decode::arena_registry_bytes();
             } else if dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems {
                 policy.limits.max_collection_items += 1;
+            } else if dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits {
+                // Admit the bounded-directory pass before the tested payload stage.
+                policy.limits.max_work_units +=
+                    cadmpeg_core::decode::u64_from_index(container.entries.len());
             }
         },
         |ctx| {
-
-
             let error = super::super::display_jt_compressed_element_sequences(
                 ctx,
                 &container,
@@ -168,8 +170,6 @@ fn assert_compressed_jt_limit(
                 &data,
                 |_| {},
                 |service| {
-
-
                     let (elements, sequences) =
                         super::super::display_jt_compressed_element_sequences(
                             service,

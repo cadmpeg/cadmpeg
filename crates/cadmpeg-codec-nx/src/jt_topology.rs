@@ -589,9 +589,15 @@ impl Decoder<'_> {
     fn next_active_face(&mut self, ctx: &DecodeContext<'_>) -> Result<Option<usize>, CodecError> {
         loop {
             ctx.charge_work(1, "check JT active suffix")?;
-            let Some(&face) = self.active.last() else { break; };
-            let Some(&removed) = self.removed.get(face) else { return Ok(None); };
-            if !removed { break; }
+            let Some(&face) = self.active.last() else {
+                break;
+            };
+            let Some(&removed) = self.removed.get(face) else {
+                return Ok(None);
+            };
+            if !removed {
+                break;
+            }
             self.active.pop();
         }
         let mut best: Option<usize> = None;
@@ -605,24 +611,40 @@ impl Decoder<'_> {
             }
             index -= 1;
             ctx.charge_work(1, "select JT active face")?;
-            let Some(&face) = self.active.get(index) else { return Ok(None); };
-            let Some(&removed) = self.removed.get(face) else { return Ok(None); };
+            let Some(&face) = self.active.get(index) else {
+                return Ok(None);
+            };
+            let Some(&removed) = self.removed.get(face) else {
+                return Ok(None);
+            };
             if removed {
-                let shifted = self.active.len().checked_sub(index)
+                let shifted = self
+                    .active
+                    .len()
+                    .checked_sub(index)
                     .and_then(|count| count.checked_sub(1))
                     .ok_or_else(|| CodecError::malformed("JT active index escapes lane"))?;
-                ctx.charge_work(cadmpeg_core::decode::u64_from_index(shifted), "shift JT active faces")?;
+                ctx.charge_work(
+                    cadmpeg_core::decode::u64_from_index(shifted),
+                    "shift JT active faces",
+                )?;
                 self.active.remove(index);
             } else {
-                let Some(candidate) = self.faces.get(face) else { return Ok(None); };
+                let Some(candidate) = self.faces.get(face) else {
+                    return Ok(None);
+                };
                 let better = match best {
                     Some(current) => {
-                        let Some(current) = self.faces.get(current) else { return Ok(None); };
+                        let Some(current) = self.faces.get(current) else {
+                            return Ok(None);
+                        };
                         candidate.vertices.empty() < current.vertices.empty()
                     }
                     None => true,
                 };
-                if better { best = Some(face); }
+                if better {
+                    best = Some(face);
+                }
             }
         }
         Ok(best)

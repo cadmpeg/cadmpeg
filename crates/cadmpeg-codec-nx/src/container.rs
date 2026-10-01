@@ -248,67 +248,98 @@ impl Region {
 
 impl<'a> Container<'a> {
     /// Number of directory entries in a region.
-    pub(crate) fn entry_count(&self, ctx: &DecodeContext<'_>, region: Region) -> Result<usize, CodecError> {
-        ctx.charge_work(u64_from_index(self.entries.len()), "count NX directory entries")?;
-        Ok(self.entries
+    pub(crate) fn entry_count(
+        &self,
+        ctx: &DecodeContext<'_>,
+        region: Region,
+    ) -> Result<usize, CodecError> {
+        ctx.charge_work(
+            u64_from_index(self.entries.len()),
+            "count NX directory entries",
+        )?;
+        Ok(self
+            .entries
             .iter()
             .filter(|entry| entry.region == region)
             .count())
     }
 
-    pub(crate) fn has_external_references(&self, ctx: &DecodeContext<'_>) -> Result<bool, CodecError> {
+    pub(crate) fn has_external_references(
+        &self,
+        ctx: &DecodeContext<'_>,
+    ) -> Result<bool, CodecError> {
         for entry in &self.entries {
             ctx.charge_work(1, "scan NX external reference entries")?;
-            ctx.charge_work(u64_from_index(entry.name.len()), "scan NX external reference names")?;
-            if entry.name.contains("ExternalReferences") { return Ok(true); }
+            ctx.charge_work(
+                u64_from_index(entry.name.len()),
+                "scan NX external reference names",
+            )?;
+            if entry.name.contains("ExternalReferences") {
+                return Ok(true);
+            }
         }
         Ok(false)
     }
 
     /// Return an absolute source span only when it is wholly owned by one
     /// catalogued directory entry.
-    pub(crate) fn bounded_entry_bytes(&self, ctx: &DecodeContext<'_>, offset: u64, byte_len: u64) -> Result<Option<&[u8]>, CodecError> {
-        ctx.charge_work(u64_from_index(self.entries.len()), "bound NX directory entry")?;
+    pub(crate) fn bounded_entry_bytes(
+        &self,
+        ctx: &DecodeContext<'_>,
+        offset: u64,
+        byte_len: u64,
+    ) -> Result<Option<&[u8]>, CodecError> {
+        ctx.charge_work(
+            u64_from_index(self.entries.len()),
+            "bound NX directory entry",
+        )?;
         let bytes = (|| {
-        let offset = usize::try_from(offset).ok()?;
-        let byte_len = usize::try_from(byte_len).ok()?;
-        let end = offset.checked_add(byte_len)?;
-        let owner_end = self
-            .entries
-            .iter()
-            .filter_map(|entry| {
-                let (start, entry_byte_len) = entry.file_span()?;
-                let start = usize::try_from(start).ok()?;
-                let entry_byte_len = usize::try_from(entry_byte_len).ok()?;
-                let entry_end = start.checked_add(entry_byte_len)?;
-                (start <= offset && end <= entry_end).then_some(entry_end)
-            })
-            .min()?;
-        (end <= owner_end)
-            .then(|| self.data.get(offset..end))
-            .flatten()
+            let offset = usize::try_from(offset).ok()?;
+            let byte_len = usize::try_from(byte_len).ok()?;
+            let end = offset.checked_add(byte_len)?;
+            let owner_end = self
+                .entries
+                .iter()
+                .filter_map(|entry| {
+                    let (start, entry_byte_len) = entry.file_span()?;
+                    let start = usize::try_from(start).ok()?;
+                    let entry_byte_len = usize::try_from(entry_byte_len).ok()?;
+                    let entry_end = start.checked_add(entry_byte_len)?;
+                    (start <= offset && end <= entry_end).then_some(entry_end)
+                })
+                .min()?;
+            (end <= owner_end)
+                .then(|| self.data.get(offset..end))
+                .flatten()
         })();
         Ok(bytes)
     }
 
     /// Return bytes from an absolute offset through the end of its bounded
     /// directory-entry span.
-    pub(crate) fn bounded_entry_tail(&self, ctx: &DecodeContext<'_>, offset: u64) -> Result<Option<&[u8]>, CodecError> {
-        ctx.charge_work(u64_from_index(self.entries.len()), "bound NX directory entry")?;
+    pub(crate) fn bounded_entry_tail(
+        &self,
+        ctx: &DecodeContext<'_>,
+        offset: u64,
+    ) -> Result<Option<&[u8]>, CodecError> {
+        ctx.charge_work(
+            u64_from_index(self.entries.len()),
+            "bound NX directory entry",
+        )?;
         let bytes = (|| {
-        let offset = usize::try_from(offset).ok()?;
-        let end = self
-            .entries
-            .iter()
-            .filter_map(|entry| {
-                let (start, byte_len) = entry.file_span()?;
-                let start = usize::try_from(start).ok()?;
-                let byte_len = usize::try_from(byte_len).ok()?;
-                let end = start.checked_add(byte_len)?;
-                (start <= offset && offset < end).then_some(end)
-            })
-            .min()?;
-        self.data.get(offset..end)
+            let offset = usize::try_from(offset).ok()?;
+            let end = self
+                .entries
+                .iter()
+                .filter_map(|entry| {
+                    let (start, byte_len) = entry.file_span()?;
+                    let start = usize::try_from(start).ok()?;
+                    let byte_len = usize::try_from(byte_len).ok()?;
+                    let end = start.checked_add(byte_len)?;
+                    (start <= offset && offset < end).then_some(end)
+                })
+                .min()?;
+            self.data.get(offset..end)
         })();
         Ok(bytes)
     }
@@ -828,18 +859,36 @@ fn locate_extref_string_table(
                 let Some(length) = View::u16_le_at(payload, pos).map(usize::from) else {
                     return Ok(None);
                 };
-                let Some(string_offset) = pos.checked_add(2) else { return Ok(None); };
-                let Some(end) = string_offset.checked_add(length) else { return Ok(None); };
-                let Some(raw) = payload.get(string_offset..end) else { return Ok(None); };
-                ctx.charge_work(u64_from_index(raw.len()), "validate NX external reference UTF-8")?;
-                let Ok(value) = std::str::from_utf8(raw) else { return Ok(None); };
-                ctx.charge_work(u64_from_index(raw.len()), "validate NX external reference controls")?;
-                if value.is_empty() || value.chars().any(char::is_control) { return Ok(None); }
+                let Some(string_offset) = pos.checked_add(2) else {
+                    return Ok(None);
+                };
+                let Some(end) = string_offset.checked_add(length) else {
+                    return Ok(None);
+                };
+                let Some(raw) = payload.get(string_offset..end) else {
+                    return Ok(None);
+                };
+                ctx.charge_work(
+                    u64_from_index(raw.len()),
+                    "validate NX external reference UTF-8",
+                )?;
+                let Ok(value) = std::str::from_utf8(raw) else {
+                    return Ok(None);
+                };
+                ctx.charge_work(
+                    u64_from_index(raw.len()),
+                    "validate NX external reference controls",
+                )?;
+                if value.is_empty() || value.chars().any(char::is_control) {
+                    return Ok(None);
+                }
                 pos = end;
             }
             Ok(Some(pos))
         })()?;
-        if valid != Some(payload.len()) { continue; }
+        if valid != Some(payload.len()) {
+            continue;
+        }
         return Ok(Some((marker, count, start)));
     }
     Ok(None)
@@ -869,7 +918,10 @@ fn parse_extref_string_table(
         let Some(raw) = payload.get(string_offset..end) else {
             return Ok(None);
         };
-        ctx.charge_work(u64_from_index(raw.len()), "read NX external reference UTF-8")?;
+        ctx.charge_work(
+            u64_from_index(raw.len()),
+            "read NX external reference UTF-8",
+        )?;
         let Ok(value) = std::str::from_utf8(raw) else {
             return Ok(None);
         };

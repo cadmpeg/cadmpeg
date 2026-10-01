@@ -1054,10 +1054,12 @@ fn jt_variable_bitlength_delta_cycles_refuse_code_work() {
         |policy| policy.limits.max_work_units = u64::from(bit_len),
         |ctx| {
             let error = super::decode_int32_cdp2(ctx, &packet, 0).unwrap_err();
-            assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            assert!(
+                matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
                 if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
                     && limit.operation == "decode JT bitlength code bits"
-                    && limit.additional == u64::from(bit_len)));
+                    && limit.additional == u64::from(bit_len))
+            );
         },
     );
     assert_eq!(decode_int32_cdp2(&packet, 0), Some((vec![0], packet.len())));

@@ -786,15 +786,31 @@ fn intersection_chart_rejects_nonfinite_millimeter_tolerance() {
 #[test]
 fn intersection_chart_layout_is_selected_by_stream_kind() {
     let ext11 = ext11_charted_intersection_curve_stream();
-    assert!(crate::test_support::with_decode_context(|ctx| {
-        crate::intersection::chart_source_records(
+
+    crate::test_support::with_decode_context(|ctx| {
+        let [chart] = crate::intersection::chart_source_records(
             ctx,
             &ext11,
             crate::intersection::ChartPointLayout::Xyz3,
         )
-    })
-    .unwrap()
-    .is_empty());
+        .unwrap()
+        .try_into()
+        .expect("one physical xyz3 reading");
+        assert_eq!(
+            chart.data.point_layout(),
+            crate::intersection::ChartPointLayout::Xyz3
+        );
+        assert_eq!(
+            chart.data.points(),
+            vec![cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0); 2]
+        );
+        assert_eq!(chart.data.native_parameters(), None);
+        assert!(chart
+            .data
+            .into_samples_charged(ctx, chart.preamble)
+            .unwrap()
+            .is_none());
+    });
     let [chart] = crate::test_support::with_decode_context(|ctx| {
         crate::intersection::chart_source_records(
             ctx,
@@ -868,13 +884,23 @@ fn physical_chart_parser_retains_single_and_coincident_point_lanes() {
         put_f64(&mut bytes, 36, 0.0);
         put_f64(&mut bytes, 44, super::MISSING_PARAMETER);
         put_f64(&mut bytes, 52, super::MISSING_PARAMETER);
-        for point in 0..count { put_vec3(&mut bytes, 60 + point * 24, [1.0, 2.0, 3.0]); }
+        for point in 0..count {
+            put_vec3(&mut bytes, 60 + point * 24, [1.0, 2.0, 3.0]);
+        }
         crate::test_support::with_decode_context(|ctx| {
-            let records = super::chart_source_records(ctx, &bytes, super::ChartPointLayout::Xyz3).unwrap();
+            let records =
+                super::chart_source_records(ctx, &bytes, super::ChartPointLayout::Xyz3).unwrap();
             assert_eq!(records.len(), 1);
             assert_eq!(records[0].data.count(), u32::try_from(count).unwrap());
-            assert_eq!(records[0].data.points(), vec![cadmpeg_ir::math::Point3::new(1000.0, 2000.0, 3000.0); count]);
-            assert!(super::chart_records(ctx, &bytes, super::ChartPointLayout::Xyz3).unwrap().is_empty());
+            assert_eq!(
+                records[0].data.points(),
+                vec![cadmpeg_ir::math::Point3::new(1000.0, 2000.0, 3000.0); count]
+            );
+            assert!(
+                super::chart_records(ctx, &bytes, super::ChartPointLayout::Xyz3)
+                    .unwrap()
+                    .is_empty()
+            );
         });
     }
 }
@@ -917,11 +943,30 @@ fn auxiliary_source_parsers_reject_reserved_record_identities() {
         put_ref(&mut uv, 6, identity);
         uv[8] = 2;
         crate::test_support::with_decode_context(|ctx| {
-            assert_eq!(super::chart_source_records(ctx, &chart, super::ChartPointLayout::Xyz3).unwrap().len(), usize::from(identity > 1));
-            assert_eq!(super::term_use_records(ctx, &term).unwrap().len(), usize::from(identity > 1));
-            assert_eq!(super::support_uv_records(ctx, &uv).unwrap().len(), usize::from(identity > 1));
-            assert_eq!(super::term_at(&term, 2, super::TermUseFraming::DescriptorInline, 0).is_some(), identity > 1);
-            assert_eq!(super::uv_at(ctx, &uv, 2, super::SupportUvFraming::DescriptorInline, 0).unwrap().is_some(), identity > 1);
+            assert_eq!(
+                super::chart_source_records(ctx, &chart, super::ChartPointLayout::Xyz3)
+                    .unwrap()
+                    .len(),
+                usize::from(identity > 1)
+            );
+            assert_eq!(
+                super::term_use_records(ctx, &term).unwrap().len(),
+                usize::from(identity > 1)
+            );
+            assert_eq!(
+                super::support_uv_records(ctx, &uv).unwrap().len(),
+                usize::from(identity > 1)
+            );
+            assert_eq!(
+                super::term_at(&term, 2, super::TermUseFraming::DescriptorInline, 0).is_some(),
+                identity > 1
+            );
+            assert_eq!(
+                super::uv_at(ctx, &uv, 2, super::SupportUvFraming::DescriptorInline, 0)
+                    .unwrap()
+                    .is_some(),
+                identity > 1
+            );
         });
     }
 }

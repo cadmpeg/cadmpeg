@@ -88,16 +88,13 @@ fn display_jt_segment_entity_refuses_before_identity_and_record_allocation() {
                 policy.limits.max_entities = 0;
             },
             |ctx| {
-
-                let error =
-                    super::display_jt_segments(ctx, &container, &documents).unwrap_err();
+                let error = super::display_jt_segments(ctx, &container, &documents).unwrap_err();
                 assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::Entities
             && limit.operation == "store DisplayJT segment"));
                 crate::test_support::with_decode_context(|service| {
                     let segments =
-                        super::display_jt_segments(service, &container, &documents)
-                            .unwrap();
+                        super::display_jt_segments(service, &container, &documents).unwrap();
                     assert_eq!(segments.len(), 1);
                 });
             },
@@ -154,7 +151,6 @@ fn display_jt_shape_element_entity_refuses_before_identity_and_record_allocation
             policy.limits.max_entities = 0;
         },
         |ctx| {
-
             let error = super::display_jt_shape_lod_elements(
                 ctx,
                 &container,
@@ -166,8 +162,7 @@ fn display_jt_shape_element_entity_refuses_before_identity_and_record_allocation
             && limit.operation == "store DisplayJT shape element"));
             crate::test_support::with_decode_context(|service| {
                 let elements =
-                    super::display_jt_shape_lod_elements(service, &container, &[segment])
-                        .unwrap();
+                    super::display_jt_shape_lod_elements(service, &container, &[segment]).unwrap();
                 assert_eq!(elements.len(), 1);
             });
         },
@@ -191,18 +186,29 @@ fn legacy_display_jt_expands_the_logical_container_member() {
     file[physical_start..physical_start + 4096].fill(0);
     file[physical_start..physical_start + jt.len()].copy_from_slice(&jt);
 
-    crate::test_support::with_decode_context_over(&file, |_| {}, |ctx| {
-        let (container, _) = crate::container::scan_legacy(ctx, View::over_retained(&file)).unwrap();
-        assert_ne!(container.data.view().location().space, View::over_retained(&file).location().space);
-        let indices = super::display_jt_indices(ctx, &container).unwrap();
-        let documents = super::display_jt_documents(ctx, &container, &indices).unwrap();
-        assert_eq!(documents.len(), 1);
-        assert_ne!(documents[0].source_offset, u64::try_from(physical_start + 28).unwrap());
-        let segments = super::display_jt_segments(ctx, &container, &documents).unwrap();
-        assert_eq!(segments.len(), 1);
-        let (elements, sequences) =
-            super::display_jt_compressed_element_sequences(ctx, &container, &segments).unwrap();
-        assert_eq!((elements.len(), sequences.len()), (1, 1));
-        assert_eq!(elements[0].object_id, 5);
-    });
+    crate::test_support::with_decode_context_over(
+        &file,
+        |_| {},
+        |ctx| {
+            let (container, _) =
+                crate::container::scan_legacy(ctx, View::over_retained(&file)).unwrap();
+            assert_ne!(
+                container.data.view().location().space,
+                View::over_retained(&file).location().space
+            );
+            let indices = super::display_jt_indices(ctx, &container).unwrap();
+            let documents = super::display_jt_documents(ctx, &container, &indices).unwrap();
+            assert_eq!(documents.len(), 1);
+            assert_ne!(
+                documents[0].source_offset,
+                u64::try_from(physical_start + 28).unwrap()
+            );
+            let segments = super::display_jt_segments(ctx, &container, &documents).unwrap();
+            assert_eq!(segments.len(), 1);
+            let (elements, sequences) =
+                super::display_jt_compressed_element_sequences(ctx, &container, &segments).unwrap();
+            assert_eq!((elements.len(), sequences.len()), (1, 1));
+            assert_eq!(elements[0].object_id, 5);
+        },
+    );
 }
