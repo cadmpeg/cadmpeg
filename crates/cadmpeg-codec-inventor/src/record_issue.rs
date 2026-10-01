@@ -123,7 +123,8 @@ impl TryFrom<RecordIssueWire> for RecordIssue {
         };
         let issue = Self {
             family,
-            segment_token: cadmpeg_ir::ids::IdentityKey::try_new(wire.segment_token).map_err(|error| error.to_string())?,
+            segment_token: cadmpeg_ir::ids::IdentityKey::try_new(wire.segment_token)
+                .map_err(|error| error.to_string())?,
             record_ordinal: wire.record_ordinal,
             detail: wire.detail,
         };

@@ -158,7 +158,10 @@ fn wire_records<'a>(
                     });
                 }
             }
-            ctx.charge_work(cadmpeg_core::decode::u64_from_index(data.len()), "FreeCAD application property digest")?;
+            ctx.charge_work(
+                cadmpeg_core::decode::u64_from_index(data.len()),
+                "FreeCAD application property digest",
+            )?;
             ctx.charge_retained(64, "FreeCAD application property digest")?;
             property_records.push(ApplicationPropertyWire {
                 id: crate::native::native_child_id_charged(
@@ -182,7 +185,10 @@ fn wire_records<'a>(
                 inert: is_inert(property),
             });
         }
-        ctx.charge_work(cadmpeg_core::decode::u64_from_index(data.len()), "FreeCAD application object digest")?;
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(data.len()),
+            "FreeCAD application object digest",
+        )?;
         ctx.charge_retained(64, "FreeCAD application object digest")?;
         records.push(ApplicationRecordWire {
             id: crate::native::native_id_charged(ctx, "application", &object.name)?,

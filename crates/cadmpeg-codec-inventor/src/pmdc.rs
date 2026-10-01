@@ -59,7 +59,9 @@ pub(crate) struct PmDcReference {
 struct ReferenceIndex(u32);
 
 impl From<ReferenceIndex> for u32 {
-    fn from(value: ReferenceIndex) -> Self { value.0 }
+    fn from(value: ReferenceIndex) -> Self {
+        value.0
+    }
 }
 
 impl TryFrom<u32> for ReferenceIndex {
@@ -76,11 +78,17 @@ impl TryFrom<u32> for ReferenceIndex {
 
 impl PmDcReference {
     pub(crate) fn new(index: u32, qualified: bool) -> Option<Self> {
-        Some(Self { index: ReferenceIndex::try_from(index).ok()?, qualified })
+        Some(Self {
+            index: ReferenceIndex::try_from(index).ok()?,
+            qualified,
+        })
     }
 
     pub(crate) const fn from_packed(value: u32) -> Self {
-        Self { index: ReferenceIndex(value & 0x7fff_ffff), qualified: value & 0x8000_0000 != 0 }
+        Self {
+            index: ReferenceIndex(value & 0x7fff_ffff),
+            qualified: value & 0x8000_0000 != 0,
+        }
     }
 
     pub(crate) const fn index(self) -> u32 {
@@ -102,7 +110,10 @@ impl PmDcReference {
         indices
             .into_iter()
             .zip(qualifiers)
-            .map(|(index, qualified)| Self::new(index, qualified).ok_or_else(|| "reference index exceeds 31 bits".to_owned()))
+            .map(|(index, qualified)| {
+                Self::new(index, qualified)
+                    .ok_or_else(|| "reference index exceeds 31 bits".to_owned())
+            })
             .collect()
     }
 
@@ -170,7 +181,10 @@ impl PmDcReferenceList {
         metadata: Option<PmDcListMetadata>,
         references: Vec<PmDcReference>,
     ) -> Option<Self> {
-        if metadata.as_ref().is_some_and(|value| !value.matches_marker(marker)) {
+        if metadata
+            .as_ref()
+            .is_some_and(|value| !value.matches_marker(marker))
+        {
             return None;
         }
         let items = match paired_items(metadata, references) {
@@ -313,7 +327,10 @@ impl PmDcU32List {
         metadata: Option<PmDcListMetadata>,
         values: Vec<u32>,
     ) -> Option<Self> {
-        if metadata.as_ref().is_some_and(|value| !value.matches_marker(marker)) {
+        if metadata
+            .as_ref()
+            .is_some_and(|value| !value.matches_marker(marker))
+        {
             return None;
         }
         let items = match paired_items(metadata, values) {
@@ -562,8 +579,12 @@ fn list_preamble(
             cursor.u32("list metadata 1")?,
         ]))
     };
-    cursor.source.counted(cadmpeg_core::decode::u64_from_index(count), 4)
-        .ok_or_else(|| CodecError::malformed("Inventor PmDc list count exceeds remaining payload"))?;
+    cursor
+        .source
+        .counted(cadmpeg_core::decode::u64_from_index(count), 4)
+        .ok_or_else(|| {
+            CodecError::malformed("Inventor PmDc list count exceeds remaining payload")
+        })?;
     ctx.charge_collection_items(cadmpeg_core::decode::u64_from_index(count), admission)?;
     Ok((count, metadata))
 }
@@ -719,12 +740,17 @@ mod tests {
     use cadmpeg_core::decode::{DecodeContext, View};
     use cadmpeg_core::CodecError;
 
-
     #[test]
     fn typed_lists_reject_marker_metadata_width_disagreement() {
         let reference = super::PmDcReference::from_packed(1);
-        for (marker, metadata) in [(8, super::PmDcListMetadata::U32([0; 2])), (2, super::PmDcListMetadata::U16([0; 2]))] {
-            assert!(super::PmDcReferenceList::new(marker, Some(metadata.clone()), vec![reference]).is_none());
+        for (marker, metadata) in [
+            (8, super::PmDcListMetadata::U32([0; 2])),
+            (2, super::PmDcListMetadata::U16([0; 2])),
+        ] {
+            assert!(
+                super::PmDcReferenceList::new(marker, Some(metadata.clone()), vec![reference])
+                    .is_none()
+            );
             assert!(super::PmDcU32List::new(marker, Some(metadata.clone()), vec![1]).is_none());
             let wire = serde_json::json!({"marker": marker, "metadata": metadata, "references": [reference]});
             assert!(serde_json::from_value::<super::PmDcReferenceList>(wire).is_err());
@@ -737,11 +763,24 @@ mod tests {
     fn references_reject_high_indices_on_every_construction_path() {
         assert!(super::PmDcReference::new(0x8000_0000, false).is_none());
         assert!(super::PmDcReference::zip(vec![0x8000_0000], vec![false]).is_err());
-        assert!(serde_json::from_value::<super::PmDcReference>(serde_json::json!({"index": 2147483648_u32, "qualified": false})).is_err());
-        for (packed, index, qualified) in [(0, 0, false), (0x8000_0000, 0, true), (u32::MAX, 0x7fff_ffff, true)] {
+        assert!(serde_json::from_value::<super::PmDcReference>(
+            serde_json::json!({"index": 2_147_483_648_u32, "qualified": false})
+        )
+        .is_err());
+        for (packed, index, qualified) in [
+            (0, 0, false),
+            (0x8000_0000, 0, true),
+            (u32::MAX, 0x7fff_ffff, true),
+        ] {
             let reference = super::PmDcReference::from_packed(packed);
-            assert_eq!((reference.index(), reference.qualified()), (index, qualified));
-            assert_eq!(serde_json::to_value(reference).expect("reference wire"), serde_json::json!({"index": index, "qualified": qualified}));
+            assert_eq!(
+                (reference.index(), reference.qualified()),
+                (index, qualified)
+            );
+            assert_eq!(
+                serde_json::to_value(reference).expect("reference wire"),
+                serde_json::json!({"index": index, "qualified": qualified})
+            );
         }
     }
 
@@ -754,27 +793,47 @@ mod tests {
             bytes.extend_from_slice(&1_000_000_u32.to_le_bytes());
             bytes.extend_from_slice(if marker == 8 { &[0; 4] } else { &[0; 8] });
             crate::test_support::test_fixtures::parse(&bytes, |ctx, root| {
-                assert!(matches!(reference_list(ctx, &mut Cursor::new(root), marker, "test"), Err(CodecError::Malformed(_))));
-                assert!(matches!(super::u32_list(ctx, &mut Cursor::new(root), marker, "test"), Err(CodecError::Malformed(_))));
+                assert!(matches!(
+                    reference_list(ctx, &mut Cursor::new(root), marker, "test"),
+                    Err(CodecError::Malformed(_))
+                ));
+                assert!(matches!(
+                    super::u32_list(ctx, &mut Cursor::new(root), marker, "test"),
+                    Err(CodecError::Malformed(_))
+                ));
             });
             let arena = DecodeArena::new();
             let mut policy = DecodePolicy::service();
             policy.limits.max_collection_items = 0;
-            let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("test context");
-            assert!(matches!(reference_list(&ctx, &mut Cursor::new(root), marker, "test"), Err(CodecError::Malformed(_))));
-            assert!(matches!(super::u32_list(&ctx, &mut Cursor::new(root), marker, "test"), Err(CodecError::Malformed(_))));
+            let (ctx, root) =
+                DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("test context");
+            assert!(matches!(
+                reference_list(&ctx, &mut Cursor::new(root), marker, "test"),
+                Err(CodecError::Malformed(_))
+            ));
+            assert!(matches!(
+                super::u32_list(&ctx, &mut Cursor::new(root), marker, "test"),
+                Err(CodecError::Malformed(_))
+            ));
         }
     }
 
     #[test]
     fn pmdc_counted_lists_admit_retained_storage() {
-        let bytes = [2_u8, 0, 0, 0x30, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0];
+        let bytes = [
+            2_u8, 0, 0, 0x30, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0,
+        ];
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_retained_bytes = 0;
-        let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("test context");
-        assert!(matches!(reference_list(&ctx, &mut Cursor::new(root), 2, "test"), Err(CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::RetainedBytes));
-        assert!(matches!(super::u32_list(&ctx, &mut Cursor::new(root), 2, "test"), Err(CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::RetainedBytes));
+        let (ctx, root) =
+            DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("test context");
+        assert!(
+            matches!(reference_list(&ctx, &mut Cursor::new(root), 2, "test"), Err(CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::RetainedBytes)
+        );
+        assert!(
+            matches!(super::u32_list(&ctx, &mut Cursor::new(root), 2, "test"), Err(CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::RetainedBytes)
+        );
     }
 
     #[test]

@@ -336,7 +336,13 @@ fn parses_side_entry_headers() {
 }
 
 fn legacy_entry(name: &str, data: &[u8]) -> EntryRecord {
-    crate::test_support::entry_record(crate::native::native_id("entry", name), name.into(), cadmpeg_core::container::ContainerRole::Auxiliary, Vec::new(), data.to_vec())
+    crate::test_support::entry_record(
+        crate::native::native_id("entry", name),
+        name.into(),
+        cadmpeg_core::container::ContainerRole::Auxiliary,
+        Vec::new(),
+        data.to_vec(),
+    )
 }
 
 #[test]

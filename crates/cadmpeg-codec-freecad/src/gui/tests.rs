@@ -1769,10 +1769,7 @@ fn retains_unregistered_gui_side_entries_as_opaque_archive_members() {
         .iter()
         .find(|entry| entry.name() == "state.bin")
         .expect("state entry");
-    assert_eq!(
-        entry.referenced_by(),
-        std::slice::from_ref(&property.id)
-    );
+    assert_eq!(entry.referenced_by(), std::slice::from_ref(&property.id));
     assert_eq!(entry.data(), payload);
 
     let logical = namespace

@@ -17,14 +17,20 @@ impl RecordTypeId {
         Self(type_id_string(value))
     }
 
-    pub(crate) fn as_str(&self) -> &str { &self.0 }
+    pub(crate) fn as_str(&self) -> &str {
+        &self.0
+    }
 }
 
 impl TryFrom<String> for RecordTypeId {
     type Error = &'static str;
 
     fn try_from(value: String) -> Result<Self, Self::Error> {
-        if value.len() == 32 && value.bytes().all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte)) {
+        if value.len() == 32
+            && value
+                .bytes()
+                .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+        {
             Ok(Self(value))
         } else {
             Err("type_id must contain 32 lowercase hexadecimal digits")
@@ -221,8 +227,15 @@ mod tests {
     fn located_records_reject_invalid_type_guids() {
         #[derive(serde::Deserialize)]
         struct Payload {}
-        impl super::RecordPayload for Payload { const KIND: &'static str = "test"; }
-        for type_id in ["not-a-guid", "", "0000000000000000000000000000000", "ABCDEF0123456789abcdef0123456789ab"] {
+        impl super::RecordPayload for Payload {
+            const KIND: &'static str = "test";
+        }
+        for type_id in [
+            "not-a-guid",
+            "",
+            "0000000000000000000000000000000",
+            "ABCDEF0123456789abcdef0123456789ab",
+        ] {
             assert!(super::RecordTypeId::try_from(type_id.to_owned()).is_err());
             let wire = serde_json::json!({"id": "inventor:pmdc:test#segment-0", "type_id": type_id, "segment_token": "segment", "record_ordinal": 0});
             assert!(serde_json::from_value::<super::Located<Payload>>(wire).is_err());
@@ -241,7 +254,12 @@ mod tests {
         }
 
         let token = cadmpeg_ir::ids::IdentityKey::encode_segment("segment");
-        let record = super::Located::new(Payload { value: 7 }, crate::record_identity::RecordTypeId::from_bytes([0; 16]), &token, 1);
+        let record = super::Located::new(
+            Payload { value: 7 },
+            crate::record_identity::RecordTypeId::from_bytes([0; 16]),
+            &token,
+            1,
+        );
         assert_native_limit(
             &record,
             serde_json::json!({

@@ -165,7 +165,7 @@ fn validate_native(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<Vec<Finding>, 
         .collect::<HashSet<_>>();
     let entry_names = entries
         .iter()
-        .map(|entry| entry.name())
+        .map(crate::native::EntryRecord::name)
         .collect::<HashSet<_>>();
     let property_ids = properties
         .iter()
@@ -673,7 +673,7 @@ fn validate_native(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<Vec<Finding>, 
         .chain(shape_payloads.iter().map(|record| record.id.as_str()))
         .chain(string_table_ids.iter().map(String::as_str))
         .chain(element_maps.iter().map(|record| record.id.as_str()))
-        .chain(entries.iter().map(|record| record.id()))
+        .chain(entries.iter().map(crate::native::EntryRecord::id))
         .collect::<HashSet<_>>();
     let mut logical_by_entry = BTreeMap::<&str, Vec<&native::LogicalSpan>>::new();
     for span in &logical {
@@ -945,8 +945,13 @@ impl CodecBackend for FcstdCodec {
                     .add_procedural_surface(&owner, procedural)
                     .map_err(|error| CodecError::malformed(error.to_string()))?;
             }
-            geometry_transferred |=
-                application_geometry::transfer(ctx, &mut ir, &graph.properties, &entry_records, &mut admitted_entities)?;
+            geometry_transferred |= application_geometry::transfer(
+                ctx,
+                &mut ir,
+                &graph.properties,
+                &entry_records,
+                &mut admitted_entities,
+            )?;
             let topology_occurrences = topology_transfer::transfer(
                 ctx,
                 &mut ir,

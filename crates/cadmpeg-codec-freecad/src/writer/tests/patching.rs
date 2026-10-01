@@ -16,25 +16,57 @@ use std::io::Cursor;
 #[test]
 fn unsafe_entry_names_refuse_construction_and_duplicates_remain_writer_limits() {
     crate::test_support::with_service_context(&[], |ctx| {
-        assert!(crate::native::EntryRecord::new(ctx, "test:native:entry#unsafe".into(), "../Document.xml".into(), cadmpeg_core::container::ContainerRole::Auxiliary, Vec::new(), Vec::new()).is_err());
+        assert!(crate::native::EntryRecord::new(
+            ctx,
+            "test:native:entry#unsafe".into(),
+            "../Document.xml".into(),
+            cadmpeg_core::container::ContainerRole::Auxiliary,
+            Vec::new(),
+            Vec::new()
+        )
+        .is_err());
     });
-    let entry = crate::test_support::entry_record("test:native:entry#document".into(), "Document.xml".into(), cadmpeg_core::container::ContainerRole::Auxiliary, Vec::new(), Vec::new());
-    let duplicate_error = validate_entry_names(&[entry.clone(), entry]).expect_err("duplicate output paths are refused");
-    assert!(matches!(duplicate_error, cadmpeg_core::CodecError::NotImplemented(_)));
+    let entry = crate::test_support::entry_record(
+        "test:native:entry#document".into(),
+        "Document.xml".into(),
+        cadmpeg_core::container::ContainerRole::Auxiliary,
+        Vec::new(),
+        Vec::new(),
+    );
+    let duplicate_error = validate_entry_names(&[entry.clone(), entry])
+        .expect_err("duplicate output paths are refused");
+    assert!(matches!(
+        duplicate_error,
+        cadmpeg_core::CodecError::NotImplemented(_)
+    ));
 }
 
 #[test]
 fn x65_backslash_entry_is_refused_by_constructor_reader_and_native_record() {
     crate::test_support::with_service_context(&[], |ctx| {
-        let error = crate::native::EntryRecord::new(ctx, "test:native:entry#backslash".into(), r"..\outside".into(), cadmpeg_core::container::ContainerRole::Auxiliary, Vec::new(), Vec::new()).expect_err("constructor refuses backslash");
+        let error = crate::native::EntryRecord::new(
+            ctx,
+            "test:native:entry#backslash".into(),
+            r"..\outside".into(),
+            cadmpeg_core::container::ContainerRole::Auxiliary,
+            Vec::new(),
+            Vec::new(),
+        )
+        .expect_err("constructor refuses backslash");
         assert!(error.to_string().contains("unsafe ZIP entry path"));
     });
     let wire = serde_json::json!({"id": "test:native:entry#backslash", "name": r"..\outside", "role": "auxiliary", "byte_len": 0, "sha256": cadmpeg_ir::hash::sha256_hex(&[]), "referenced_by": [], "data": []});
-    let error = serde_json::from_value::<crate::native::EntryRecord>(wire).expect_err("native entry refuses backslash");
+    let error = serde_json::from_value::<crate::native::EntryRecord>(wire)
+        .expect_err("native entry refuses backslash");
     assert!(error.to_string().contains("unsafe ZIP entry path"));
     let xml = b"<Document SchemaVersion=\"4\" FileVersion=\"1\"/>";
     let bytes = archive_entries(&[("Document.xml", xml), (r"..\outside", b"payload")]);
-    let error = FcstdCodec.inspect(&mut Cursor::new(bytes), &cadmpeg_core::decode::InspectOptions::default()).expect_err("reader refuses backslash");
+    let error = FcstdCodec
+        .inspect(
+            &mut Cursor::new(bytes),
+            &cadmpeg_core::decode::InspectOptions::default(),
+        )
+        .expect_err("reader refuses backslash");
     assert!(error.to_string().contains("unsafe ZIP entry path"));
 }
 

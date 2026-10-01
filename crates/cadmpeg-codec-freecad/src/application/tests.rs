@@ -45,7 +45,9 @@ fn application_identity_refuses_at_retained_limit() {
         order: 0,
         data: None,
     };
-    crate::test_support::assert_retained_refusal_at(&[], "FreeCAD native identity", |ctx| super::wire_records(ctx, &[object.clone()], &[], &[]).map(|_| ()));
+    crate::test_support::assert_retained_refusal_at(&[], "FreeCAD native identity", |ctx| {
+        super::wire_records(ctx, std::slice::from_ref(&object), &[], &[]).map(|_| ())
+    });
 }
 
 #[test]
@@ -74,7 +76,15 @@ fn application_property_identity_refuses_at_retained_limit() {
         xml: crate::native::RetainedXml::from_text("<Property/>".into(), 0)
             .expect("valid XML span"),
     };
-    crate::test_support::assert_retained_refusal_at(&[], "FreeCAD native child identity", |ctx| super::wire_records(ctx, &[object.clone()], &[property.clone()], &[]).map(|_| ()));
+    crate::test_support::assert_retained_refusal_at(&[], "FreeCAD native child identity", |ctx| {
+        super::wire_records(
+            ctx,
+            std::slice::from_ref(&object),
+            std::slice::from_ref(&property),
+            &[],
+        )
+        .map(|_| ())
+    });
 }
 
 #[test]
@@ -417,57 +427,127 @@ fn producer_specific_side_entries_remain_whole_until_their_grammar_is_registered
 #[test]
 fn application_hashes_refuse_work_before_digest_allocation() {
     let object = crate::native::ObjectRecord {
-        id: "fcstd:native:object#Owner".into(), name: "Owner".into(), type_name: "Vendor::Feature".into(), persistent_id: None, view_type: None,
-        attributes: std::collections::BTreeMap::new(), dependencies: Vec::new(), dependency_allow_partial: None, order: 0,
+        id: "fcstd:native:object#Owner".into(),
+        name: "Owner".into(),
+        type_name: "Vendor::Feature".into(),
+        persistent_id: None,
+        view_type: None,
+        attributes: std::collections::BTreeMap::new(),
+        dependencies: Vec::new(),
+        dependency_allow_partial: None,
+        order: 0,
         data: Some(crate::native::RetainedXml::from_text("<Object/>".into(), 0).expect("XML")),
     };
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
     policy.limits.max_work_units = 8;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
-    assert!(matches!(super::wire_records(&ctx, &[object], &[], &[]), Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.operation == "FreeCAD application object digest" && limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits));
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("context");
+    assert!(
+        matches!(super::wire_records(&ctx, &[object], &[], &[]), Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.operation == "FreeCAD application object digest" && limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits)
+    );
 }
 
 #[test]
 fn application_property_hash_refuses_work_and_digest_storage() {
     let object = crate::native::ObjectRecord {
-        id: "fcstd:native:object#Owner".into(), name: "Owner".into(), type_name: "Vendor::Feature".into(), persistent_id: None, view_type: None,
-        attributes: std::collections::BTreeMap::new(), dependencies: Vec::new(), dependency_allow_partial: None, order: 0, data: None,
+        id: "fcstd:native:object#Owner".into(),
+        name: "Owner".into(),
+        type_name: "Vendor::Feature".into(),
+        persistent_id: None,
+        view_type: None,
+        attributes: std::collections::BTreeMap::new(),
+        dependencies: Vec::new(),
+        dependency_allow_partial: None,
+        order: 0,
+        data: None,
     };
     let property = crate::native::PropertyRecord {
-        id: "fcstd:native:property#Owner:Value".into(), owner: object.id.clone(), name: "Value".into(), type_name: "App::PropertyString".into(), family: crate::native::PropertyFamily::Unknown,
-        status: None, body: crate::native::PropertyBody::Transient, order: 0,
+        id: "fcstd:native:property#Owner:Value".into(),
+        owner: object.id.clone(),
+        name: "Value".into(),
+        type_name: "App::PropertyString".into(),
+        family: crate::native::PropertyFamily::Unknown,
+        status: None,
+        body: crate::native::PropertyBody::Transient,
+        order: 0,
         xml: crate::native::RetainedXml::from_text("<Property/>".into(), 0).expect("XML"),
     };
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
     policy.limits.max_work_units = 10;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
-    assert!(matches!(super::wire_records(&ctx, &[object.clone()], &[property.clone()], &[]), Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.operation == "FreeCAD application property digest" && limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits));
-    crate::test_support::assert_retained_refusal_at(&[], "FreeCAD application property digest", |ctx| super::wire_records(ctx, &[object.clone()], &[property.clone()], &[]).map(|_| ()));
-    crate::test_support::assert_retained_refusal_at(&[], "FreeCAD application object digest", |ctx| super::wire_records(ctx, &[object.clone()], &[], &[]).map(|_| ()));
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("context");
+    assert!(
+        matches!(super::wire_records(&ctx, std::slice::from_ref(&object), std::slice::from_ref(&property), &[]), Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.operation == "FreeCAD application property digest" && limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits)
+    );
+    crate::test_support::assert_retained_refusal_at(
+        &[],
+        "FreeCAD application property digest",
+        |ctx| {
+            super::wire_records(
+                ctx,
+                std::slice::from_ref(&object),
+                std::slice::from_ref(&property),
+                &[],
+            )
+            .map(|_| ())
+        },
+    );
+    crate::test_support::assert_retained_refusal_at(
+        &[],
+        "FreeCAD application object digest",
+        |ctx| super::wire_records(ctx, std::slice::from_ref(&object), &[], &[]).map(|_| ()),
+    );
 }
 
 #[test]
 fn application_repeated_payloads_borrow_the_cached_digest() {
     let object = crate::native::ObjectRecord {
-        id: "fcstd:native:object#Owner".into(), name: "Owner".into(), type_name: "Vendor::Feature".into(), persistent_id: None, view_type: None,
-        attributes: std::collections::BTreeMap::new(), dependencies: Vec::new(), dependency_allow_partial: None, order: 0, data: None,
+        id: "fcstd:native:object#Owner".into(),
+        name: "Owner".into(),
+        type_name: "Vendor::Feature".into(),
+        persistent_id: None,
+        view_type: None,
+        attributes: std::collections::BTreeMap::new(),
+        dependencies: Vec::new(),
+        dependency_allow_partial: None,
+        order: 0,
+        data: None,
     };
     let properties = ["First", "Second"].map(|name| crate::native::PropertyRecord {
-        id: format!("fcstd:native:property#Owner:{name}"), owner: object.id.clone(), name: name.into(), type_name: "App::PropertyFileIncluded".into(), family: crate::native::PropertyFamily::File,
-        status: None, body: crate::native::PropertyBody::Persisted { values: Vec::new(), links: Vec::new(), side_entries: vec!["shared.bin".into()], dynamic: None }, order: 0,
+        id: format!("fcstd:native:property#Owner:{name}"),
+        owner: object.id.clone(),
+        name: name.into(),
+        type_name: "App::PropertyFileIncluded".into(),
+        family: crate::native::PropertyFamily::File,
+        status: None,
+        body: crate::native::PropertyBody::Persisted {
+            values: Vec::new(),
+            links: Vec::new(),
+            side_entries: vec!["shared.bin".into()],
+            dynamic: None,
+        },
+        order: 0,
         xml: crate::native::RetainedXml::from_text("<Property/>".into(), 0).expect("XML"),
     });
-    let entry = crate::test_support::entry_record("fcstd:native:entry#shared.bin".into(), "shared.bin".into(), cadmpeg_core::container::ContainerRole::Auxiliary, Vec::new(), vec![7; 4096]);
+    let entry = crate::test_support::entry_record(
+        "fcstd:native:entry#shared.bin".into(),
+        "shared.bin".into(),
+        cadmpeg_core::container::ContainerRole::Auxiliary,
+        Vec::new(),
+        vec![7; 4096],
+    );
     let digest = entry.sha256().as_ptr();
     let objects = [object];
     let entries = [entry];
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
     policy.limits.max_work_units = 22;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
-    let records = super::wire_records(&ctx, &objects, &properties, &entries).expect("only property XML is hashed");
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("context");
+    let records = super::wire_records(&ctx, &objects, &properties, &entries)
+        .expect("only property XML is hashed");
     for property in &records[0].property_records {
         assert_eq!(property.payloads[0].sha256.as_ptr(), digest);
         assert_eq!(property.payloads[0].sha256, entries[0].sha256());
