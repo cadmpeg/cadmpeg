@@ -525,3 +525,34 @@ fn inspect_enumerates_every_structure() {
         .iter()
         .any(|n| n.contains("active Parasolid B-rep candidate")));
 }
+
+#[test]
+fn inspection_inventory_refuses_unadmitted_payload_hash() {
+    let mut source = outer_header();
+    source.extend(make_block(0x20, "PreviewPNG", &[0; 64]));
+    let scan = container::scan_bytes(&source);
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = container::summarize(&ctx, &scan, crate::dialect::classify_layers(&cadmpeg_test_support::service_decode_context(), &scan).unwrap().layers().clone()).unwrap_err();
+    let CodecError::ResourceLimit(limit) = error else { panic!("expected resource refusal") };
+    assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+    assert_eq!(limit.operation, "hash SLDPRT inventory payload");
+    assert_eq!(ctx.resource_refusal(), Some(limit));
+}
+
+#[test]
+fn inspection_inventory_refuses_unadmitted_entry_storage() {
+    let mut source = outer_header();
+    source.extend(make_cache_cell(90, "Contents/DisplayLists"));
+    let scan = container::scan_bytes(&source);
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    assert!(matches!(container::summarize(&ctx, &scan, crate::dialect::classify_layers(&cadmpeg_test_support::service_decode_context(), &scan).unwrap().layers().clone()), Err(CodecError::ResourceLimit(_))));
+    let admitted = cadmpeg_test_support::service_decode_context();
+    let summary = container::summarize(&admitted, &scan, crate::dialect::classify_layers(&admitted, &scan).unwrap().layers().clone()).unwrap();
+    assert_eq!(summary.entries[0].name, "Contents/DisplayLists");
+}
