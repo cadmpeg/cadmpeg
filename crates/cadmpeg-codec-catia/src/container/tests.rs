@@ -1530,9 +1530,10 @@ fn brep_surface_source_is_scoped_and_destination_is_retained_once() {
             test_descriptor("SurfacicReps", 4, 2),
         ],
     };
-    crate::test_support::with_retained_limit(6, |ctx| {
+    crate::test_support::with_retained_limit(8, |ctx| {
         assert_eq!(
-            super::brep_stream(ctx, &data, &directory).expect("six retained output bytes"),
+            super::brep_stream(ctx, &data, &directory)
+                .expect("eight retained vector capacity bytes"),
             Some(data.to_vec())
         );
     });

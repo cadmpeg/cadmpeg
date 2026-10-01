@@ -1309,9 +1309,11 @@ mod tests {
                 "limit {limit}"
             );
         }
-        let limited = crate::test_support::with_retained_limit(0, |ctx| {
-            super::family_pcurves_from_records(ctx, &bytes, &records, ConsolidatedFamily::A)
-        });
+        let limited = crate::test_support::with_retained_refusal(
+            &[],
+            "catia_consolidated_pcurve_tail",
+            |ctx| super::family_pcurves_from_records(ctx, &bytes, &records, ConsolidatedFamily::A),
+        );
         assert!(
             matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
             if error.operation == "catia_consolidated_pcurve_tail")

@@ -82,11 +82,11 @@ fn reconstructed_mesh_copies_refuse_retained_bytes_before_growth() {
     };
     let selected: [MeshFaceBoundaryAssignment; 0] = [];
     assert!(matches!(
-        with_zero_retained(|ctx| reconstruct_mesh_selection(ctx, std::slice::from_ref(&row), &[], &selected, &[])),
+        crate::test_support::with_retained_refusal(&[], "catia_mesh_selection_handle_copy", |ctx| reconstruct_mesh_selection(ctx, std::slice::from_ref(&row), &[], &selected, &[])),
         Err(CodecError::ResourceLimit(limit)) if limit.operation == "catia_mesh_selection_handle_copy"
     ));
     assert!(matches!(
-        with_zero_retained(|ctx| reconstruct_mesh_selection(ctx, &[], &[[0.0, 0.0, 0.0]], &selected, &[])),
+        crate::test_support::with_retained_refusal(&[], "catia_mesh_selection_point_copy", |ctx| reconstruct_mesh_selection(ctx, &[], &[[0.0, 0.0, 0.0]], &selected, &[])),
         Err(CodecError::ResourceLimit(limit)) if limit.operation == "catia_mesh_selection_point_copy"
     ));
     crate::test_support::with_service_context(|ctx| {

@@ -103,3 +103,46 @@ pub(crate) fn with_depth_limit<T>(
         .expect("empty root fits the depth limit");
     run(&ctx)
 }
+
+/// Reach the same named text refusal after admitting new result slot storage.
+pub(crate) fn with_retained_refusal<T, E: std::fmt::Debug>(
+    input: &[u8],
+    operation: &str,
+    run: impl Fn(&cadmpeg_core::decode::DecodeContext<'_>) -> Result<T, E>,
+) -> Result<T, E> {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    let mut cap = 0;
+    for _ in 0..4096 {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = cap;
+        let (ctx, _) = DecodeContext::from_root_bytes(input, &arena, &policy).expect("root");
+        let result = run(&ctx);
+        let Some(refusal) = ctx.resource_refusal() else {
+            panic!(
+                "named retained refusal {operation} was not reached: {:?}",
+                result.err()
+            );
+        };
+        assert!(result.is_err());
+        assert_eq!(refusal.dimension, ResourceDimension::RetainedBytes);
+        let need = refusal
+            .used
+            .checked_add(refusal.additional)
+            .expect("retained need");
+        assert!(need > cap);
+        if refusal.operation == operation {
+            policy.limits.max_retained_bytes = need - 1;
+            let (ctx, _) = DecodeContext::from_root_bytes(input, &arena, &policy).expect("root");
+            let result = run(&ctx);
+            assert!(result.is_err());
+            let below = ctx.resource_refusal().expect("named refusal sets fuse");
+            assert_eq!(below.dimension, ResourceDimension::RetainedBytes);
+            assert_eq!(below.operation, operation);
+            assert_eq!(below.used.checked_add(below.additional), Some(need));
+            return result;
+        }
+        cap = need;
+    }
+    panic!("named retained refusal {operation} exceeded the boundary count");
+}

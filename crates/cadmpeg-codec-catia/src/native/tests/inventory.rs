@@ -898,7 +898,8 @@ fn native_alias_graph_link_refuses_retained_limit() {
     stream.extend(alias);
     let (bytes, _) = outer_container_catpart(&stream);
     let mut found = false;
-    for cap in 0..=4096 {
+    let mut cap = 0;
+    for _ in 0..4096 {
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let mut policy = cadmpeg_core::decode::DecodePolicy::service();
         policy.limits.max_retained_bytes = cap;
@@ -921,7 +922,11 @@ fn native_alias_graph_link_refuses_retained_limit() {
                 assert!(native.alias_rows[0].object_graph.is_some());
                 break;
             }
-            _ => {}
+            Err(cadmpeg_core::CodecError::ResourceLimit(limit)) => {
+                assert!(limit.used + limit.additional > cap);
+                cap = limit.used + limit.additional;
+            }
+            Err(error) => panic!("unexpected fixture refusal: {error:?}"),
         }
     }
     assert!(found, "retained sweep must reach the alias graph link");

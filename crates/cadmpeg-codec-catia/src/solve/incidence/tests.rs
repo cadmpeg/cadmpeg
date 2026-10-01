@@ -400,6 +400,10 @@ fn incidence_component_rejects_a_choice_that_strands_a_degree_one_vertex() {
     let propagation_budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
     let search = crate::solve::incidence::IncidenceComponentSearch {
         ctx: &ctx,
+        search_storage: RefCell::new(
+            ctx.reserve_scoped(0, "search test storage")
+                .expect("storage"),
+        ),
         choices: &choices,
         explicit_point_supports: Vec::new(),
         point_support_edges: Vec::new(),
@@ -452,6 +456,10 @@ fn incidence_component_indexes_and_revalidates_frontier_support() {
     let propagation_budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
     let mut search = crate::solve::incidence::IncidenceComponentSearch {
         ctx: &ctx,
+        search_storage: RefCell::new(
+            ctx.reserve_scoped(0, "search test storage")
+                .expect("storage"),
+        ),
         choices: &choices,
         explicit_point_supports,
         point_support_edges,
@@ -506,6 +514,10 @@ fn incidence_component_caches_implicit_frontier_support() {
     let propagation_budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
     let search = crate::solve::incidence::IncidenceComponentSearch {
         ctx: &ctx,
+        search_storage: RefCell::new(
+            ctx.reserve_scoped(0, "search test storage")
+                .expect("storage"),
+        ),
         choices: &choices,
         explicit_point_supports: Vec::new(),
         point_support_edges: Vec::new(),
@@ -563,6 +575,10 @@ fn incidence_implicit_frontier_witness_refuses_map_and_pair_growth() {
         let budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
         let search = crate::solve::incidence::IncidenceComponentSearch {
             ctx,
+            search_storage: RefCell::new(
+                ctx.reserve_scoped(0, "search test storage")
+                    .expect("storage"),
+            ),
             choices: &choices,
             explicit_point_supports: Vec::new(),
             point_support_edges: Vec::new(),
@@ -618,6 +634,10 @@ fn incidence_degree_support_budget_exhaustion_keeps_candidate_unknown() {
     let propagation_budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
     let mut search = crate::solve::incidence::IncidenceComponentSearch {
         ctx: &ctx,
+        search_storage: RefCell::new(
+            ctx.reserve_scoped(0, "search test storage")
+                .expect("storage"),
+        ),
         choices: &choices,
         explicit_point_supports: Vec::new(),
         point_support_edges: Vec::new(),
@@ -663,6 +683,10 @@ fn incidence_component_requires_degree_support_to_fit_every_incident_face() {
     let propagation_budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
     let search = crate::solve::incidence::IncidenceComponentSearch {
         ctx: &ctx,
+        search_storage: RefCell::new(
+            ctx.reserve_scoped(0, "search test storage")
+                .expect("storage"),
+        ),
         choices: &choices,
         explicit_point_supports: Vec::new(),
         point_support_edges: Vec::new(),
@@ -727,6 +751,10 @@ fn incidence_candidate_checks_ordered_faces_with_implicit_edge_domains() {
     let propagation_budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
     let search = crate::solve::incidence::IncidenceComponentSearch {
         ctx: &ctx,
+        search_storage: RefCell::new(
+            ctx.reserve_scoped(0, "search test storage")
+                .expect("storage"),
+        ),
         choices: &choices,
         explicit_point_supports: Vec::new(),
         point_support_edges: Vec::new(),
@@ -769,6 +797,10 @@ fn incidence_branch_reuses_candidate_viability_across_incident_face_frontiers() 
     let propagation_budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
     let search = crate::solve::incidence::IncidenceComponentSearch {
         ctx: &ctx,
+        search_storage: RefCell::new(
+            ctx.reserve_scoped(0, "search test storage")
+                .expect("storage"),
+        ),
         choices: &choices,
         explicit_point_supports: Vec::new(),
         point_support_edges: Vec::new(),
@@ -815,6 +847,10 @@ fn incidence_branch_stops_ranking_at_a_singleton_domain() {
     let propagation_budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
     let search = crate::solve::incidence::IncidenceComponentSearch {
         ctx: &ctx,
+        search_storage: RefCell::new(
+            ctx.reserve_scoped(0, "search test storage")
+                .expect("storage"),
+        ),
         choices: &choices,
         explicit_point_supports: Vec::new(),
         point_support_edges: Vec::new(),
@@ -870,6 +906,10 @@ fn incidence_component_uses_operation_budget_for_a_wide_rejected_frontier() {
     let propagation_budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
     let mut search = crate::solve::incidence::IncidenceComponentSearch {
         ctx: &ctx,
+        search_storage: RefCell::new(
+            ctx.reserve_scoped(0, "search test storage")
+                .expect("storage"),
+        ),
         choices: &choices,
         explicit_point_supports: Vec::new(),
         point_support_edges: Vec::new(),
@@ -919,6 +959,10 @@ fn incidence_solution_filter_propagates_collection_refusal() {
         };
         let mut search = crate::solve::incidence::IncidenceComponentSearch {
             ctx,
+            search_storage: RefCell::new(
+                ctx.reserve_scoped(0, "search test storage")
+                    .expect("storage"),
+            ),
             choices: &choices,
             explicit_point_supports: Vec::new(),
             point_support_edges: Vec::new(),
@@ -991,6 +1035,10 @@ fn incidence_component_schedules_partial_constraint_variables_first() {
     let propagation_budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
     let search = crate::solve::incidence::IncidenceComponentSearch {
         ctx: &ctx,
+        search_storage: RefCell::new(
+            ctx.reserve_scoped(0, "search test storage")
+                .expect("storage"),
+        ),
         choices: &choices,
         explicit_point_supports: Vec::new(),
         point_support_edges: Vec::new(),
@@ -1048,6 +1096,10 @@ fn incidence_component_assigns_canonical_class_members_in_order() {
     let propagation_budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
     let search = crate::solve::incidence::IncidenceComponentSearch {
         ctx: &ctx,
+        search_storage: RefCell::new(
+            ctx.reserve_scoped(0, "search test storage")
+                .expect("storage"),
+        ),
         choices: &choices,
         explicit_point_supports: Vec::new(),
         point_support_edges: Vec::new(),
@@ -1113,6 +1165,10 @@ fn incidence_component_declines_when_its_work_budget_is_exhausted() {
     let propagation_budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
     let mut search = crate::solve::incidence::IncidenceComponentSearch {
         ctx: &ctx,
+        search_storage: RefCell::new(
+            ctx.reserve_scoped(0, "search test storage")
+                .expect("storage"),
+        ),
         choices: &choices,
         explicit_point_supports: Vec::new(),
         point_support_edges: Vec::new(),
@@ -1165,6 +1221,10 @@ fn incidence_face_configuration_scan_does_not_charge_irrelevant_faces() {
     let propagation_budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
     let search = crate::solve::incidence::IncidenceComponentSearch {
         ctx: &ctx,
+        search_storage: RefCell::new(
+            ctx.reserve_scoped(0, "search test storage")
+                .expect("storage"),
+        ),
         choices: &choices,
         explicit_point_supports: Vec::new(),
         point_support_edges: Vec::new(),
@@ -1220,6 +1280,10 @@ fn exhausted_boundary_lookahead_does_not_exhaust_exact_incidence_search() {
     let propagation_budget = WorkBudget::new(0);
     let mut search = crate::solve::incidence::IncidenceComponentSearch {
         ctx: &ctx,
+        search_storage: RefCell::new(
+            ctx.reserve_scoped(0, "search test storage")
+                .expect("storage"),
+        ),
         choices: &choices,
         explicit_point_supports: Vec::new(),
         point_support_edges: Vec::new(),
@@ -1280,6 +1344,10 @@ fn incidence_face_configuration_branches_on_the_narrowest_estimated_face() {
     let propagation_budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
     let search = crate::solve::incidence::IncidenceComponentSearch {
         ctx: &ctx,
+        search_storage: RefCell::new(
+            ctx.reserve_scoped(0, "search test storage")
+                .expect("storage"),
+        ),
         choices: &choices,
         explicit_point_supports: Vec::new(),
         point_support_edges: Vec::new(),
@@ -1343,6 +1411,10 @@ fn incidence_face_configuration_branches_on_the_narrowest_projected_face() {
     let propagation_budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
     let search = crate::solve::incidence::IncidenceComponentSearch {
         ctx: &ctx,
+        search_storage: RefCell::new(
+            ctx.reserve_scoped(0, "search test storage")
+                .expect("storage"),
+        ),
         choices: &choices,
         explicit_point_supports: Vec::new(),
         point_support_edges: Vec::new(),
@@ -1407,6 +1479,10 @@ fn incidence_face_configuration_reuses_persistent_domains_across_assignments() {
     .expect("compiled face factors");
     let mut search = crate::solve::incidence::IncidenceComponentSearch {
         ctx: &ctx,
+        search_storage: RefCell::new(
+            ctx.reserve_scoped(0, "search test storage")
+                .expect("storage"),
+        ),
         choices: &choices,
         explicit_point_supports: Vec::new(),
         point_support_edges: Vec::new(),
@@ -1483,6 +1559,10 @@ fn incidence_face_factor_masks_roll_back_between_configuration_branches() {
     .expect("compiled face factors");
     let mut search = crate::solve::incidence::IncidenceComponentSearch {
         ctx: &ctx,
+        search_storage: RefCell::new(
+            ctx.reserve_scoped(0, "search test storage")
+                .expect("storage"),
+        ),
         choices: &choices,
         explicit_point_supports: Vec::new(),
         point_support_edges: Vec::new(),
@@ -1572,3 +1652,54 @@ fn persistent_face_configuration_preparation_retains_global_contradictions() {
 mod allocation_limits;
 mod components;
 mod face_configuration;
+
+#[test]
+fn rejected_endpoint_choice_rows_use_and_release_scoped_storage() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    use std::ops::ControlFlow;
+
+    for capacity in [0, std::mem::size_of::<Vec<[usize; 2]>>()] {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = 0;
+        policy.limits.max_materialized_bytes = u64::try_from(capacity).expect("small row storage");
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("test context");
+        let choices = [Vec::new()];
+        let result = super::visit_incidence_endpoint_pair_solutions_with_coordinate_root_policy(
+            &ctx,
+            super::VisitIncidenceEndpointPairSolutionsWithCoordinateRootPolicyInputs {
+                edge_rows: &[],
+                vertex_points: &[],
+                edge_faces: &[[0, 0]],
+                edge_candidates: &choices,
+                face_count: 1,
+                mesh_assignments: None,
+                mesh_quotient: None,
+                coordinate_root_policy: super::CoordinateRootPolicy::RequireUnique,
+                partial_solution_valid: None,
+                complete_solution_budget: None,
+                solution_valid: &|_| Ok(true),
+                visitor: &mut |_| Ok(ControlFlow::Continue(())),
+            },
+        );
+        if capacity == 0 {
+            assert!(matches!(result, Err(CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::MaterializedBytes
+                    && limit.operation == "catia incidence choice rows"
+                    && ctx.resource_refusal() == Some(limit)));
+        } else {
+            assert!(matches!(
+                result,
+                Ok(super::IncidenceSolve::Rejected(
+                    super::IncidenceRejection::ChoicePruning
+                ))
+            ));
+            ctx.reserve_scoped(
+                u64::try_from(capacity).expect("small row storage"),
+                "released choice rows",
+            )
+            .expect("the search releases its temporary row storage");
+        }
+    }
+}

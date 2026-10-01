@@ -1193,8 +1193,7 @@ impl MeshCoordinateRootDomains {
             "catia_coordinate_refine_candidate_rows",
             "catia_coordinate_refine_candidate_pairs",
         )?;
-        edge_candidates[edge] =
-            ctx.copy_slice(&[pair], "catia_coordinate_refine_selected_pair")?;
+        edge_candidates[edge] = ctx.copy_slice(&[pair], "catia_coordinate_refine_selected_pair")?;
         let Some(RefinedCoordinateDomains {
             domains,
             coverage_matching,
@@ -3552,8 +3551,6 @@ impl<'storage> MeshQuotient<'storage> {
 #[cfg(test)]
 #[test]
 fn quotient_clone_refuses_retained_domains_and_member_nodes() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-
     let quotient = MeshQuotient::new(vec![Arc::new(HashSet::from([0usize]))]);
     catia_test_context!(service_ctx);
     assert_eq!(
@@ -3563,22 +3560,16 @@ fn quotient_clone_refuses_retained_domains_and_member_nodes() {
             .len(),
         1
     );
-    for (limit, operation) in [
-        (0, "catia_quotient_clone_domains"),
-        (
-            cadmpeg_core::decode::u64_from_index(std::mem::size_of::<Arc<HashSet<usize>>>()),
-            "catia_quotient_clone_member_nodes",
-        ),
+    for operation in [
+        "catia_quotient_clone_domains",
+        "catia_quotient_clone_member_nodes",
     ] {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = limit;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-            .expect("empty root fits retained limit");
-        assert!(matches!(
-            quotient.clone_charged(&ctx),
-            Err(CodecError::ResourceLimit(error)) if error.operation == operation
-        ));
+        let refused = crate::test_support::with_retained_refusal(&[], operation, |ctx| {
+            quotient.clone_charged(ctx).map(|value| value.len())
+        });
+        assert!(
+            matches!(refused, Err(CodecError::ResourceLimit(error)) if error.operation == operation)
+        );
     }
 }
 
@@ -8213,10 +8204,8 @@ fn resolve_endpoint_configuration_relation_streaming(
                 };
                 let mut boundaries = Vec::new();
                 for boundary in &source.boundaries {
-                    let copy = ctx.copy_slice(
-                        boundary,
-                        "catia_relation_assignment_boundary_values",
-                    )?;
+                    let copy =
+                        ctx.copy_slice(boundary, "catia_relation_assignment_boundary_values")?;
                     ctx.push_vec(
                         &mut boundaries,
                         copy,

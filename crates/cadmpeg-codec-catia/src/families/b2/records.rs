@@ -625,8 +625,7 @@ pub(in crate::families) fn b2_use_metadata_from_records(
 ) -> Result<Vec<B2UseMetadata>, CodecError> {
     let mut uses = Vec::new();
     for frame in family_frames_from_records(records, ConsolidatedFamily::B, 0x06) {
-        let payload =
-            ctx.copy_slice(&data[frame.payload..frame.end], "catia_b2_use_payload")?;
+        let payload = ctx.copy_slice(&data[frame.payload..frame.end], "catia_b2_use_payload")?;
         let sense = match payload.last() {
             Some(0x84) => Some(B2UseSense::Sense84),
             Some(0x88) => Some(B2UseSense::Sense88),
@@ -1562,8 +1561,7 @@ pub(crate) fn b2_counted_61_from_records(
         if tail.is_empty() || tail.last() != Some(&0x03) {
             continue;
         }
-        let references =
-            ctx.copy_slice(&parsed[..count], "catia_b2_counted61_references")?;
+        let references = ctx.copy_slice(&parsed[..count], "catia_b2_counted61_references")?;
         let tail = ctx.copy_slice(tail, "catia_b2_counted61_tail")?;
         ctx.push_vec(
             &mut output,
@@ -3003,10 +3001,13 @@ pub(crate) fn b2_resolved_revolutions_from_records(
     data: &[u8],
     records: &[ConsolidatedRecord],
 ) -> Result<Vec<B2ResolvedRevolution>, CodecError> {
-    let (circles, _circle_storage) = ctx.with_scoped_storage("catia_b2_revolution_profiles", || ctx.collect_vec(
-        b2_circles_from_records(data, records),
-        "catia_b2_revolution_profiles",
-    ))?;
+    let (circles, _circle_storage) =
+        ctx.with_scoped_storage("catia_b2_revolution_profiles", || {
+            ctx.collect_vec(
+                b2_circles_from_records(data, records),
+                "catia_b2_revolution_profiles",
+            )
+        })?;
     ctx.collect_vec(
         b2_revolutions_from_records(data, records)
             .enumerate()

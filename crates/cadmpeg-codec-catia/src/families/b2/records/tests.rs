@@ -1091,9 +1091,10 @@ fn b2_counted_owner_encodings_refuse_collection_limit() {
 fn b2_counted_owner_tail_refuses_retained_limit() {
     let bytes = b2_adjacent_face_counted_owner_stream();
     let records = crate::wire::records::consolidated_records(&bytes);
-    let result = crate::test_support::with_retained_limit(0, |ctx| {
-        crate::families::b2::records::b2_counted_owners_from_records(ctx, &bytes, &records)
-    });
+    let result =
+        crate::test_support::with_retained_refusal(&[], "catia_b2_counted_owner_tail", |ctx| {
+            crate::families::b2::records::b2_counted_owners_from_records(ctx, &bytes, &records)
+        });
     assert!(
         matches!(result, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
         if limit.operation == "catia_b2_counted_owner_tail")

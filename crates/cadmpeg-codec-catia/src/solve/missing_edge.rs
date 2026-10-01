@@ -962,10 +962,9 @@ pub(crate) fn resolve_standard_edge_faces(
     serialized: &[[usize; 2]],
 ) -> Result<Option<Vec<[usize; 2]>>, CodecError> {
     let Some(runs) = standard_mesh_edge_runs(ctx, bytes)? else {
-        return Ok(Some(ctx.copy_slice(
-            serialized,
-            "catia standard serialized edge faces",
-        )?));
+        return Ok(Some(
+            ctx.copy_slice(serialized, "catia standard serialized edge faces")?,
+        ));
     };
     resolve_edge_faces_from_runs(ctx, serialized, &runs)
 }
@@ -1061,12 +1060,10 @@ pub(crate) fn standard_repeated_edge_face_handle_candidates(
     let Some(trims) = parse_trim_chain(ctx, bytes, face_start, face_count, handle_width)? else {
         return Ok(None);
     };
-    let (face_handles, _face_handle_storage) = ctx.with_scoped_storage(
-        "catia repeated edge face handles",
-        || {
-            let mut face_handles = ctx.collection_vec(
-                trims.len(), "catia repeated edge face handles",
-            )?;
+    let (face_handles, _face_handle_storage) =
+        ctx.with_scoped_storage("catia repeated edge face handles", || {
+            let mut face_handles =
+                ctx.collection_vec(trims.len(), "catia repeated edge face handles")?;
             for trim in trims {
                 let mut handles = HashSet::new();
                 ctx.reserve_set(
@@ -1078,8 +1075,7 @@ pub(crate) fn standard_repeated_edge_face_handle_candidates(
                 face_handles.push(handles);
             }
             Ok::<_, CodecError>(face_handles)
-        },
-    )?;
+        })?;
     repeated_edge_face_handle_candidates_from_sets(ctx, &edge_rows, &face_handles, serialized)
 }
 
@@ -1244,10 +1240,9 @@ pub(crate) fn repeated_face_endpoint_closures(
                     if self.solutions.len() == MAX_SOLUTIONS {
                         self.exhausted = true;
                     } else {
-                        let solution = self.ctx.copy_slice(
-                            assignment,
-                            "catia missing-edge solution assignment",
-                        )?;
+                        let solution = self
+                            .ctx
+                            .copy_slice(assignment, "catia missing-edge solution assignment")?;
                         self.ctx.push_vec(
                             &mut self.solutions,
                             solution,
@@ -1390,8 +1385,7 @@ pub(crate) fn repeated_face_endpoint_closures(
             .all(|face| face.values().all(|degree| *degree == 2));
         let mut solutions = Vec::new();
         if closed {
-            let completed =
-                ctx.copy_slice(edge_faces, "catia missing-edge closed faces")?;
+            let completed = ctx.copy_slice(edge_faces, "catia missing-edge closed faces")?;
             ctx.push_vec(
                 &mut solutions,
                 completed,
@@ -1430,8 +1424,7 @@ pub(crate) fn repeated_face_endpoint_closures(
         "catia missing-edge completed solutions",
     )?;
     for solution in search.solutions {
-        let mut completed =
-            ctx.copy_slice(edge_faces, "catia missing-edge completed faces")?;
+        let mut completed = ctx.copy_slice(edge_faces, "catia missing-edge completed faces")?;
         for ((edge, _), face) in branches.iter().zip(solution) {
             completed[*edge][1] = face;
         }
@@ -1531,8 +1524,7 @@ where
         }
         if at == branches.len() {
             if valid(assignment)? && !solutions.iter().any(|solution| solution == assignment) {
-                let solution =
-                    ctx.copy_slice(assignment, "catia_duplicate_face_solution")?;
+                let solution = ctx.copy_slice(assignment, "catia_duplicate_face_solution")?;
                 ctx.push_vec(solutions, solution, "catia_duplicate_face_solution_rows")?;
             }
             return Ok(());
@@ -1577,10 +1569,9 @@ where
         }
     }
     if unresolved.is_empty() {
-        return Ok(Some(ctx.copy_slice(
-            serialized,
-            "catia_duplicate_face_serialized",
-        )?));
+        return Ok(Some(
+            ctx.copy_slice(serialized, "catia_duplicate_face_serialized")?,
+        ));
     }
     let mut assignment = ctx.copy_slice(serialized, "catia_duplicate_face_serialized")?;
     let mut branches = Vec::new();
@@ -1914,8 +1905,7 @@ impl StandardMeshBoundaryContext {
         Ok(Some(Self {
             analysis: Arc::clone(&self.analysis),
             coverage,
-            edge_ports: ctx
-                .copy_slice(&self.edge_ports, "catia_mesh_context_edge_ports")?,
+            edge_ports: ctx.copy_slice(&self.edge_ports, "catia_mesh_context_edge_ports")?,
             edge_runs: ctx.copy_slice(&self.edge_runs, "catia_mesh_context_edge_runs")?,
             cycle_lengths: ctx.copy_retained_rows(
                 &self.cycle_lengths,
@@ -3107,11 +3097,10 @@ fn standard_mesh_missing_edge_assignment_domains(
                 return Some(Err(error));
             }
             for trail in &trails {
-                let copy =
-                    match ctx.copy_slice(&trail.edges, "catia_trail_order_input_edges") {
-                        Ok(copy) => copy,
-                        Err(error) => return Some(Err(error)),
-                    };
+                let copy = match ctx.copy_slice(&trail.edges, "catia_trail_order_input_edges") {
+                    Ok(copy) => copy,
+                    Err(error) => return Some(Err(error)),
+                };
                 trail_edges.push(copy);
             }
             let orders =
