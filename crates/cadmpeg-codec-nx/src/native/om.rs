@@ -5324,7 +5324,6 @@ pub(super) fn data_block_control_handle_pairs(
     }
     let mut pairs = Vec::new();
     for (data_block, mut block_references) in by_block {
-        let count = block_references.len();
         ctx.stable_sort_by(
             &mut block_references,
             |(left, _), (right, _)| left.source_offset.cmp(&right.source_offset),

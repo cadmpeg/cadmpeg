@@ -78,7 +78,12 @@ fn partial_compact_assignment_viable(
             {
                 ctx.push_vec(&mut edges, edge, "catia coordinate relevant edges")?;
             }
-            ctx.sort_unstable_by(&mut edges, Ord::cmp, |_| 0, "catia coordinate relevant edges sort")?;
+            ctx.sort_unstable_by(
+                &mut edges,
+                Ord::cmp,
+                |_| 0,
+                "catia coordinate relevant edges sort",
+            )?;
             edges.dedup();
             edges
         }
@@ -821,9 +826,7 @@ pub(super) fn close_coordinate_roots_with_incidence<'storage>(
             }
             ctx.sort_unstable_by(
                 &mut scanned_roots,
-                |left, right| {
-                    (domains[*left].len(), *left).cmp(&(domains[*right].len(), *right))
-                },
+                |left, right| (domains[*left].len(), *left).cmp(&(domains[*right].len(), *right)),
                 |_| 0,
                 "catia_coordinate_closure_scanned_roots_sort",
             )?;

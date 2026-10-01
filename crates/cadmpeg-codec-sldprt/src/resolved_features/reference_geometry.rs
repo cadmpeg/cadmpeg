@@ -484,7 +484,7 @@ pub(crate) fn enrich_history_reference_planes(
         ctx.sort_unstable_by(
             &mut native,
             Ord::cmp,
-            |native| native.len(),
+            String::len,
             "sort SLDPRT face native references",
         )?;
         native.dedup();
@@ -501,7 +501,7 @@ pub(crate) fn enrich_history_reference_planes(
         ctx.sort_unstable_by(
             &mut targets,
             Ord::cmp,
-            |target| target.len(),
+            String::len,
             "sort SLDPRT face feature targets",
         )?;
         targets.dedup();
@@ -725,7 +725,7 @@ pub(crate) fn enrich_history_reference_planes(
         ctx.sort_unstable_by(
             &mut sources,
             Ord::cmp,
-            |source| source.len(),
+            String::len,
             "sort SLDPRT reference plane sources",
         )?;
         sources.dedup();

@@ -3966,7 +3966,12 @@ fn deferred_face_quotient_options_limited<'storage>(
             )?;
         }
     }
-    ctx.sort_unstable_by(&mut base_nodes, Ord::cmp, |_| 0, "catia_deferred_base_nodes_sort")?;
+    ctx.sort_unstable_by(
+        &mut base_nodes,
+        Ord::cmp,
+        |_| 0,
+        "catia_deferred_base_nodes_sort",
+    )?;
     base_nodes.dedup();
     let mut local_by_base = HashMap::new();
     for (local, &base) in base_nodes.iter().enumerate() {
@@ -4697,7 +4702,12 @@ fn mesh_boundary_domain_edges(
             }
         }
     }
-    ctx.sort_unstable_by(&mut edges, Ord::cmp, |_| 0, "catia_boundary_domain_edges_sort")?;
+    ctx.sort_unstable_by(
+        &mut edges,
+        Ord::cmp,
+        |_| 0,
+        "catia_boundary_domain_edges_sort",
+    )?;
     edges.dedup();
     Ok(edges)
 }
@@ -4790,7 +4800,12 @@ pub(super) fn bounded_unordered_cycle_assignments<'storage>(
     }
     let edge_count = edges.len();
     let mut edges = ctx.copy_slice(edges, "catia_unordered_sorted_edges")?;
-    ctx.sort_unstable_by(&mut edges, Ord::cmp, |_| 0, "catia_unordered_sorted_edges_sort")?;
+    ctx.sort_unstable_by(
+        &mut edges,
+        Ord::cmp,
+        |_| 0,
+        "catia_unordered_sorted_edges_sort",
+    )?;
     edges.dedup();
     if edges.len() != edge_count {
         return Ok(None);
@@ -5362,7 +5377,12 @@ fn edge_class_search_constraint(
                 "catia_edge_class_normalized_pair_sort",
             )?;
         }
-        ctx.sort_unstable_by(row, Ord::cmp, |_| 0, "catia_edge_class_normalized_pairs_sort")?;
+        ctx.sort_unstable_by(
+            row,
+            Ord::cmp,
+            |_| 0,
+            "catia_edge_class_normalized_pairs_sort",
+        )?;
         row.dedup();
     }
     let mut active = ctx.alloc_filled(choices.len(), false, "catia_edge_class_active")?;
@@ -5644,7 +5664,7 @@ fn possible_face_choices_with_limit(
         ctx.sort_unstable_by(
             &mut face_choices,
             Ord::cmp,
-            |item| item.len(),
+            |item| std::mem::size_of_val(item.as_slice()),
             "catia_possible_face_choice_values_sort",
         )?;
         ctx.push_vec(
@@ -5744,7 +5764,7 @@ fn deduplicate_mesh_quotient_assignments(
                 ctx.sort_unstable_by(
                     &mut signature,
                     Ord::cmp,
-                    |item| item.len(),
+                    |item| std::mem::size_of_val(item.as_slice()),
                     "catia_mesh_quotient_signature_boundaries_sort",
                 )?;
                 ctx.insert_hash_set(&mut seen, signature, "catia_mesh_quotient_seen_assignments")
@@ -6315,7 +6335,12 @@ pub(super) fn mesh_face_endpoint_configurations(
         edge: usize,
         mut pair: [usize; 2],
     ) -> Result<bool, CodecError> {
-        ctx.sort_unstable_by(&mut pair, Ord::cmp, |_| 0, "catia_face_configuration_pair_sort")?;
+        ctx.sort_unstable_by(
+            &mut pair,
+            Ord::cmp,
+            |_| 0,
+            "catia_face_configuration_pair_sort",
+        )?;
         match configuration.iter().find(|(stored, _)| *stored == edge) {
             Some((_, stored)) => Ok(*stored == pair),
             None => {
@@ -6515,7 +6540,7 @@ pub(super) fn mesh_face_endpoint_configurations(
     ctx.sort_unstable_by(
         &mut results,
         Ord::cmp,
-        |item| item.len(),
+        |item| std::mem::size_of_val(item.as_slice()),
         "catia_face_configuration_result_rows_sort",
     )?;
     Ok(Some(results))
@@ -6617,7 +6642,12 @@ fn endpoint_configuration_for_assignment(
             return Ok(None);
         };
         let mut pair = pair;
-        ctx.sort_unstable_by(&mut pair, Ord::cmp, |_| 0, "catia_endpoint_assignment_pair_sort")?;
+        ctx.sort_unstable_by(
+            &mut pair,
+            Ord::cmp,
+            |_| 0,
+            "catia_endpoint_assignment_pair_sort",
+        )?;
         match pairs.get(&use_.edge) {
             Some(previous) if *previous != pair => return Ok(None),
             Some(_) => {}
@@ -6734,7 +6764,7 @@ fn endpoint_configuration_boundary_directions(
     ctx.sort_unstable_by(
         &mut solutions,
         Ord::cmp,
-        |item| item.len(),
+        |item| std::mem::size_of_val(item.as_slice()),
         "catia_endpoint_boundary_solutions_sort",
     )?;
     solutions.dedup();
