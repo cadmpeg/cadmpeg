@@ -48,7 +48,11 @@ pub(crate) struct SupportUvValues {
     count: u32,
 }
 impl SupportUvValues {
-    fn with_storage(packing: SupportUvPacking, values: Vec<f64>, mut finite: Vec<FiniteReal>) -> Result<Self, &'static str> {
+    fn with_storage(
+        packing: SupportUvPacking,
+        values: Vec<f64>,
+        mut finite: Vec<FiniteReal>,
+    ) -> Result<Self, &'static str> {
         let count = u32::try_from(values.len()).map_err(|_| "values: scalar count exceeds u32")?;
         if values.len() < packing.width() * 2 || !values.len().is_multiple_of(packing.width()) {
             return Err("values: must contain at least two complete tuples for marker");
@@ -59,14 +63,25 @@ impl SupportUvValues {
         for value in values {
             finite.push(FiniteReal::new(value).ok_or("values: scalars must be finite")?);
         }
-        Ok(Self { packing, values: finite, count })
+        Ok(Self {
+            packing,
+            values: finite,
+            count,
+        })
     }
 
-    pub(crate) fn new_charged(ctx: &DecodeContext<'_>, packing: SupportUvPacking, values: Vec<f64>) -> Result<Option<Self>, CodecError> {
+    pub(crate) fn new_charged(
+        ctx: &DecodeContext<'_>,
+        packing: SupportUvPacking,
+        values: Vec<f64>,
+    ) -> Result<Option<Self>, CodecError> {
         ctx.charge_work(u64_from_index(values.len()), "admit NX support-UV scalars")?;
-        let (finite, reservation) = ctx.temporary_vec(values.len(), "NX finite support-UV values")?;
+        let (finite, reservation) =
+            ctx.temporary_vec(values.len(), "NX finite support-UV values")?;
         let data = Self::with_storage(packing, values, finite).ok();
-        if data.is_some() { reservation.commit()?; }
+        if data.is_some() {
+            reservation.commit()?;
+        }
         Ok(data)
     }
 
@@ -204,10 +219,23 @@ mod constructor_tests {
 
     #[test]
     fn packed_uv_decode_and_wire_constructors_share_invariants() {
-        for packing in [SupportUvPacking::Form2, SupportUvPacking::Form3, SupportUvPacking::Form4] {
-            for values in [vec![], vec![0.0; 4], vec![0.0; 8], vec![0.0; 5], vec![f64::INFINITY; 8]] {
+        for packing in [
+            SupportUvPacking::Form2,
+            SupportUvPacking::Form3,
+            SupportUvPacking::Form4,
+        ] {
+            for values in [
+                vec![],
+                vec![0.0; 4],
+                vec![0.0; 8],
+                vec![0.0; 5],
+                vec![f64::INFINITY; 8],
+            ] {
                 crate::test_support::with_decode_context(|ctx| {
-                    assert_eq!(SupportUvValues::new_charged(ctx, packing, values.clone()).unwrap(), SupportUvValues::new(packing, values).ok());
+                    assert_eq!(
+                        SupportUvValues::new_charged(ctx, packing, values.clone()).unwrap(),
+                        SupportUvValues::new(packing, values).ok()
+                    );
                 });
             }
         }

@@ -603,9 +603,7 @@ fn decode_rejects_scanner_geometry_with_an_ambiguous_record_identity() {
             .unwrap();
     assert!(graph.get(NodeKind::Plane, 77).is_none());
     assert!(crate::test_support::with_decode_context(|ctx| {
-        ordered_surface_candidates(ctx, &graph)
-            .unwrap()
-            .is_empty()
+        ordered_surface_candidates(ctx, &graph).unwrap().is_empty()
     }));
 }
 
@@ -1129,10 +1127,19 @@ mod intersection_charts;
 #[test]
 fn graph_analytic_candidates_do_not_scan_discarded_fallbacks() {
     let stream = single_point_candidate_stream();
-    let graph = crate::test_support::with_decode_context(|ctx| crate::topology::Graph::parse(ctx, &stream)).unwrap();
-    crate::test_support::with_decode_context_over(&[], |policy| policy.limits.max_work_units = 1, |ctx| {
-        let candidates = ordered_point_candidates(ctx, &graph).unwrap();
-        assert_eq!(candidates.len(), 1);
-        assert_eq!(candidates[0].0.get(), cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0));
-    });
+    let graph =
+        crate::test_support::with_decode_context(|ctx| crate::topology::Graph::parse(ctx, &stream))
+            .unwrap();
+    crate::test_support::with_decode_context_over(
+        &[],
+        |policy| policy.limits.max_work_units = 1,
+        |ctx| {
+            let candidates = ordered_point_candidates(ctx, &graph).unwrap();
+            assert_eq!(candidates.len(), 1);
+            assert_eq!(
+                candidates[0].0.get(),
+                cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0)
+            );
+        },
+    );
 }

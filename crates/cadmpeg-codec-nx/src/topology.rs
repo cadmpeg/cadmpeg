@@ -652,8 +652,7 @@ impl Graph {
                     _ => return None,
                 };
                 at += 1;
-                let references: [u32; 6] =
-                    read_sequence_at::<6>(&node.bytes, &mut at)?;
+                let references: [u32; 6] = read_sequence_at::<6>(&node.bytes, &mut at)?;
                 let chart_with_optional_terms =
                     references[2] > 1 && references[3..=4].iter().all(|reference| *reference >= 1);
                 let null_witness = references[2..=4].iter().all(|reference| *reference == 1);
@@ -1092,7 +1091,8 @@ impl Graph {
             Self::select_non_overlapping_candidates(ctx, stream, ownership_candidates)?;
         let (ownership, _ownership_unique_reservation) =
             Self::select_unique_candidates(ctx, non_overlapping_ownership)?;
-        let (admitted_ownership, _admitted_reservation) = Self::admit_disjoint_ownership(ctx, ownership, &selected)?;
+        let (admitted_ownership, _admitted_reservation) =
+            Self::admit_disjoint_ownership(ctx, ownership, &selected)?;
         let mut graph = Self::default();
         let mut node_reservation = ctx.reserve_scoped(0, "NX topology node bytes")?;
         for candidate in selected.into_iter().chain(admitted_ownership) {
@@ -1120,8 +1120,9 @@ impl Graph {
         ownership: Vec<NodeCandidate>,
         selected: &[NodeCandidate],
     ) -> Result<(Vec<NodeCandidate>, ScopedReservation<'ctx>), CodecError> {
-        let work = ownership.len().checked_mul(selected.len())
-            .ok_or_else(|| ctx.refuse_codec_limit("compare NX ownership overlaps", u64::MAX - 1, u64::MAX))?;
+        let work = ownership.len().checked_mul(selected.len()).ok_or_else(|| {
+            ctx.refuse_codec_limit("compare NX ownership overlaps", u64::MAX - 1, u64::MAX)
+        })?;
         ctx.charge_work(u64_from_index(work), "compare NX ownership overlaps")?;
         let mut admitted_ownership = Vec::new();
         let mut admitted_reservation = ctx.reserve_scoped(0, "NX admitted ownership candidates")?;
@@ -1340,12 +1341,18 @@ impl Graph {
 
     /// Admit indexed node traversal before yielding records of one kind.
     pub(crate) fn of_kind_charged<'graph>(
-        &'graph self, ctx: &DecodeContext<'_>, kind: NodeKind,
+        &'graph self,
+        ctx: &DecodeContext<'_>,
+        kind: NodeKind,
     ) -> Result<impl Iterator<Item = &'graph Node>, CodecError> {
         let count = self.by_kind.get(&kind).map_or(0, Vec::len);
-        let work = count.checked_mul(self.nodes.len()).ok_or_else(||
-            ctx.refuse_codec_limit("iterate NX topology records", u64::MAX, u64::MAX))?;
-        ctx.charge_work(cadmpeg_core::decode::u64_from_index(work), "iterate NX topology records")?;
+        let work = count.checked_mul(self.nodes.len()).ok_or_else(|| {
+            ctx.refuse_codec_limit("iterate NX topology records", u64::MAX, u64::MAX)
+        })?;
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(work),
+            "iterate NX topology records",
+        )?;
         Ok(self.of_kind(kind))
     }
 
@@ -1478,14 +1485,21 @@ impl Graph {
     }
 
     /// Return SHELL nodes whose ownership fields define a body shape.
-    pub(crate) fn body_shape_shells(&self, ctx: &DecodeContext<'_>) -> Result<impl Iterator<Item = &Node> + '_, CodecError> {
+    pub(crate) fn body_shape_shells(
+        &self,
+        ctx: &DecodeContext<'_>,
+    ) -> Result<impl Iterator<Item = &Node> + '_, CodecError> {
         let shells = self.by_kind.get(&NodeKind::Shell).map_or(0, Vec::len);
-        let per_shell = self.shell_census_work_bound()
-            .ok_or_else(|| ctx.refuse_codec_limit("classify NX body shells", u64::MAX - 1, u64::MAX))?;
-        let work = shells.checked_mul(per_shell)
-            .ok_or_else(|| ctx.refuse_codec_limit("classify NX body shells", u64::MAX - 1, u64::MAX))?;
+        let per_shell = self.shell_census_work_bound().ok_or_else(|| {
+            ctx.refuse_codec_limit("classify NX body shells", u64::MAX - 1, u64::MAX)
+        })?;
+        let work = shells.checked_mul(per_shell).ok_or_else(|| {
+            ctx.refuse_codec_limit("classify NX body shells", u64::MAX - 1, u64::MAX)
+        })?;
         ctx.charge_work(u64_from_index(work), "classify NX body shells")?;
-        Ok(self.of_kind(NodeKind::Shell).filter(|shell| self.is_body_shape_shell(shell)))
+        Ok(self
+            .of_kind(NodeKind::Shell)
+            .filter(|shell| self.is_body_shape_shell(shell)))
     }
 
     /// Return whether every body-shape face has a non-empty valid loop chain
@@ -1535,16 +1549,25 @@ impl Graph {
     }
 
     /// Count faces owned by validated body-shape shells.
-    pub(crate) fn body_shape_face_count(&self, ctx: &DecodeContext<'_>) -> Result<usize, CodecError> {
+    pub(crate) fn body_shape_face_count(
+        &self,
+        ctx: &DecodeContext<'_>,
+    ) -> Result<usize, CodecError> {
         let shells = self.body_shape_shells(ctx)?;
         // The second census uses the same traversal bound as classification.
         let count = self.by_kind.get(&NodeKind::Shell).map_or(0, Vec::len);
-        let work = self.shell_census_work_bound().and_then(|n| n.checked_mul(count))
+        let work = self
+            .shell_census_work_bound()
+            .and_then(|n| n.checked_mul(count))
             .ok_or_else(|| ctx.refuse_codec_limit("count NX body faces", u64::MAX - 1, u64::MAX))?;
         ctx.charge_work(u64_from_index(work), "count NX body faces")?;
-        shells.filter_map(|shell| self.shell_face_count(shell)).try_fold(0usize, |count, next| {
-            count.checked_add(next).ok_or_else(|| ctx.refuse_codec_limit("count NX body faces", u64::MAX - 1, u64::MAX))
-        })
+        shells
+            .filter_map(|shell| self.shell_face_count(shell))
+            .try_fold(0usize, |count, next| {
+                count.checked_add(next).ok_or_else(|| {
+                    ctx.refuse_codec_limit("count NX body faces", u64::MAX - 1, u64::MAX)
+                })
+            })
     }
 
     /// Return the validated loop-to-FIN rings owned by a face.
@@ -1679,7 +1702,11 @@ impl Graph {
     /// Two complete node traversals and one lookup per node bound a census.
     /// Each lookup compares at most the full node population.
     fn shell_census_work_bound(&self) -> Option<usize> {
-        self.nodes.len().checked_mul(2)?.checked_add(1)?.checked_mul(self.nodes.len())
+        self.nodes
+            .len()
+            .checked_mul(2)?
+            .checked_add(1)?
+            .checked_mul(self.nodes.len())
     }
 
     fn is_body_shape_shell(&self, shell: &Node) -> bool {
@@ -1740,7 +1767,9 @@ impl Graph {
         shell: &Node,
     ) -> Result<Option<Vec<u32>>, CodecError> {
         ctx.charge_work(
-            u64_from_index(self.shell_census_work_bound().ok_or_else(|| ctx.refuse_codec_limit("validate NX shell faces", u64::MAX - 1, u64::MAX))?),
+            u64_from_index(self.shell_census_work_bound().ok_or_else(|| {
+                ctx.refuse_codec_limit("validate NX shell faces", u64::MAX - 1, u64::MAX)
+            })?),
             "validate NX shell faces",
         )?;
         let Some(count) = self.shell_face_count(shell) else {

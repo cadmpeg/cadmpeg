@@ -140,7 +140,10 @@ fn assert_shared_parse_matches_standalone(stream: &[u8]) {
     let graph =
         crate::test_support::with_decode_context(|ctx| crate::topology::Graph::parse(ctx, stream))
             .unwrap();
-    let shared = crate::test_support::with_decode_context(|ctx| crate::nurbs::parse_with_graph(ctx, stream, &graph)).unwrap();
+    let shared = crate::test_support::with_decode_context(|ctx| {
+        crate::nurbs::parse_with_graph(ctx, stream, &graph)
+    })
+    .unwrap();
     assert_same_surfaces(
         &shared.surfaces,
         &crate::test_support::with_decode_context(|ctx| crate::nurbs::surfaces(ctx, stream))
@@ -1103,10 +1106,16 @@ fn a_refused_curve_carrier_is_stated_not_dropped() {
 #[test]
 fn nurbs_surface_reads_sense_after_extended_common_header_reference() {
     let mut stream = bspline_partition_stream();
-    let at = stream.windows(4).position(|bytes| bytes == [0, 124, 0, 10]).unwrap();
+    let at = stream
+        .windows(4)
+        .position(|bytes| bytes == [0, 124, 0, 10])
+        .unwrap();
     stream[at + 18] = b'-';
     stream.splice(at + 8..at + 10, [0xff, 0xfe, 0, 2]);
-    let decoded = crate::test_support::with_decode_context(|ctx| crate::nurbs::surfaces(ctx, &stream)).unwrap().0;
+    let decoded =
+        crate::test_support::with_decode_context(|ctx| crate::nurbs::surfaces(ctx, &stream))
+            .unwrap()
+            .0;
     assert_eq!(decoded.len(), 1);
     let Some(SolvedSurfaceGeometry::Nurbs(surface)) = decoded[0].geometry.solved() else {
         panic!("expected NURBS surface");
@@ -1117,56 +1126,100 @@ fn nurbs_surface_reads_sense_after_extended_common_header_reference() {
 #[test]
 fn nurbs_shared_scan_refuses_exhausted_work() {
     let bytes = bspline_partition_stream();
-    let graph = crate::test_support::with_decode_context(|ctx| crate::topology::Graph::parse(ctx, &bytes)).unwrap();
-    crate::test_support::with_decode_context_over(&bytes, |policy| policy.limits.max_work_units = 0, |ctx| {
-        assert!(matches!(super::parse_with_graph(ctx, &bytes, &graph), Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.operation == "scan NX NURBS arrays"));
-    });
+    let graph =
+        crate::test_support::with_decode_context(|ctx| crate::topology::Graph::parse(ctx, &bytes))
+            .unwrap();
+    crate::test_support::with_decode_context_over(
+        &bytes,
+        |policy| policy.limits.max_work_units = 0,
+        |ctx| {
+            assert!(
+                matches!(super::parse_with_graph(ctx, &bytes, &graph), Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.operation == "scan NX NURBS arrays")
+            );
+        },
+    );
 }
 
 #[test]
 fn nurbs_array_index_refuses_scoped_storage_before_insertion() {
     let bytes = [0, 127, 0, 0, 0, 1, 0, 12, 0, 2];
-    crate::test_support::with_decode_context_over(&bytes, |policy| policy.limits.max_materialized_bytes = 0, |ctx| {
-        assert!(matches!(super::arrays(ctx, &bytes), Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.operation == "NX NURBS array index"));
-    });
+    crate::test_support::with_decode_context_over(
+        &bytes,
+        |policy| policy.limits.max_materialized_bytes = 0,
+        |ctx| {
+            assert!(
+                matches!(super::arrays(ctx, &bytes), Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.operation == "NX NURBS array index")
+            );
+        },
+    );
 }
 
 #[test]
 fn nurbs_auxiliary_lane_preserves_work_refusal() {
     let bytes = [0, 128, 0, 0, 0, 1, 0, 12, 0, 0, 0, 0, 0, 0, 0, 0];
-    crate::test_support::with_decode_context_over(&bytes, |policy| policy.limits.max_work_units = 0, |ctx| {
-        assert!(matches!(super::auxiliary_record_at(ctx, &bytes, 0), Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.operation == "validate NX NURBS floating-point lane"));
-    });
+    crate::test_support::with_decode_context_over(
+        &bytes,
+        |policy| policy.limits.max_work_units = 0,
+        |ctx| {
+            assert!(
+                matches!(super::auxiliary_record_at(ctx, &bytes, 0), Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.operation == "validate NX NURBS floating-point lane")
+            );
+        },
+    );
 }
 
 #[test]
 fn nurbs_prefix_refuses_scoped_storage_before_materializing() {
     let bytes = [0, 2];
-    crate::test_support::with_decode_context_over(&bytes, |policy| policy.limits.max_materialized_bytes = 0, |ctx| {
-        assert!(matches!(super::ArrayValues::U16(&bytes).u16_prefix(ctx, 1), Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.operation == "NX NURBS multiplicity prefix"));
-    });
+    crate::test_support::with_decode_context_over(
+        &bytes,
+        |policy| policy.limits.max_materialized_bytes = 0,
+        |ctx| {
+            assert!(
+                matches!(super::ArrayValues::U16(&bytes).u16_prefix(ctx, 1), Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.operation == "NX NURBS multiplicity prefix")
+            );
+        },
+    );
 }
 
 #[test]
 fn nurbs_expanded_knots_refuse_retained_storage() {
-    crate::test_support::with_decode_context_over(&[], |policy| policy.limits.max_retained_bytes = 0, |ctx| {
-        assert!(matches!(super::expand_knots(ctx, &[0.0, 1.0], &[2, 2], 4), Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.operation == "NX NURBS expanded knots"));
-    });
+    crate::test_support::with_decode_context_over(
+        &[],
+        |policy| policy.limits.max_retained_bytes = 0,
+        |ctx| {
+            assert!(
+                matches!(super::expand_knots(ctx, &[0.0, 1.0], &[2, 2], 4), Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.operation == "NX NURBS expanded knots")
+            );
+        },
+    );
 }
 
 #[test]
 fn nurbs_duplicate_payload_index_refuses_lookup_work() {
-    crate::test_support::with_decode_context_over(&[], |policy| policy.limits.max_work_units = 1, |ctx| {
-        let records = [Ok(Some((12, 7_u8))), Ok(Some((12, 7_u8)))];
-        assert!(matches!(super::unique_records(ctx, records), Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.operation == "resolve duplicate NX NURBS payload"));
-    });
+    crate::test_support::with_decode_context_over(
+        &[],
+        |policy| policy.limits.max_work_units = 1,
+        |ctx| {
+            let records = [Ok(Some((12, 7_u8))), Ok(Some((12, 7_u8)))];
+            assert!(
+                matches!(super::unique_records(ctx, records), Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.operation == "resolve duplicate NX NURBS payload")
+            );
+        },
+    );
 }
 
 #[test]
 fn nurbs_duplicate_array_index_refuses_lookup_work() {
     let record = [0, 127, 0, 0, 0, 1, 0, 12, 0, 2];
     let bytes = record.repeat(2);
-    crate::test_support::with_decode_context_over(&bytes, |policy| policy.limits.max_work_units = 21, |ctx| {
-        assert!(matches!(super::arrays(ctx, &bytes), Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.operation == "resolve duplicate NX NURBS array"));
-    });
+    crate::test_support::with_decode_context_over(
+        &bytes,
+        |policy| policy.limits.max_work_units = 21,
+        |ctx| {
+            assert!(
+                matches!(super::arrays(ctx, &bytes), Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.operation == "resolve duplicate NX NURBS array")
+            );
+        },
+    );
 }

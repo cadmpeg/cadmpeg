@@ -560,9 +560,11 @@ fn completed_history_reports_a_saved_body_census_mismatch() {
 
     assert_eq!(
         evaluate_saved_body_census(&ir),
-        BodyCensusEvaluation::mismatch(vec![
-                BodyId::mint("test:model:entity#body".to_string()).expect("identity grammar")
-            ], Vec::new()).unwrap()
+        BodyCensusEvaluation::mismatch(
+            vec![BodyId::mint("test:model:entity#body".to_string()).expect("identity grammar")],
+            Vec::new()
+        )
+        .unwrap()
     );
 }
 

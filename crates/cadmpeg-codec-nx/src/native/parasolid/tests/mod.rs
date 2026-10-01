@@ -132,32 +132,35 @@ fn native_value_records_use_only_ledger_owned_offsets() {
 #[test]
 fn native_value_records_refuse_collection_at_caller_limit() {
     crate::test_support::with_decode_context(|ctx| {
-    let inflated = crate::test_support::test_streams::parasolid_entity_records_stream();
-    let offset_count = crate::parasolid::referenced_value_record_offsets(ctx, &inflated).unwrap().0.len();
-    let streams = [stream(
-        crate::parasolid::ParasolidSubtype::Partition,
-        "SCH_TEST",
-        inflated,
-    )];
+        let inflated = crate::test_support::test_streams::parasolid_entity_records_stream();
+        let offset_count = crate::parasolid::referenced_value_record_offsets(ctx, &inflated)
+            .unwrap()
+            .0
+            .len();
+        let streams = [stream(
+            crate::parasolid::ParasolidSubtype::Partition,
+            "SCH_TEST",
+            inflated,
+        )];
 
-    crate::test_support::with_decode_context_over(
-        &streams[0].inflated,
-        |policy| {
-            policy.limits.max_collection_items = cadmpeg_core::decode::u64_from_index(offset_count);
-        },
-        |ctx| {
-            let error = super::parasolid_entity_value_records(ctx, &streams, &[])
-                .err()
-                .expect("owned-value discovery exceeds the collection allowance");
-            assert!(matches!(
-                error,
-                cadmpeg_core::CodecError::ResourceLimit(limit)
-                    if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
-                        && limit.operation == "NX attribute ownership groups"
-            ));
-        },
-    );
-
+        crate::test_support::with_decode_context_over(
+            &streams[0].inflated,
+            |policy| {
+                policy.limits.max_collection_items =
+                    cadmpeg_core::decode::u64_from_index(offset_count);
+            },
+            |ctx| {
+                let error = super::parasolid_entity_value_records(ctx, &streams, &[])
+                    .err()
+                    .expect("owned-value discovery exceeds the collection allowance");
+                assert!(matches!(
+                    error,
+                    cadmpeg_core::CodecError::ResourceLimit(limit)
+                        if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+                            && limit.operation == "NX attribute ownership groups"
+                ));
+            },
+        );
     });
 }
 

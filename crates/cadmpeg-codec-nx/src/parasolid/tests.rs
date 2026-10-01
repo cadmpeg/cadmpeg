@@ -22,28 +22,38 @@ fn token(text: &str) -> cadmpeg_parasolid::OwnedSchemaToken {
 #[test]
 fn legacy_stream_boundaries_require_complete_transmit_headers() {
     crate::test_support::with_decode_context(|ctx| {
-    let mut bytes = b"prefix".to_vec();
-    bytes.extend_from_slice(b"PS\x00\x00not a header");
-    let first = bytes.len();
-    let first_description = b": TRANSMIT FILE (partition) created by test";
-    bytes.extend_from_slice(b"PS");
-    bytes.extend_from_slice(
-        &(u32::try_from(first_description.len()).expect("fixture value fits u32")).to_be_bytes(),
-    );
-    bytes.extend_from_slice(first_description);
-    bytes.extend_from_slice(b"payload PS\x00\x00not a header");
-    let second = bytes.len();
-    let second_description = b": TRANSMIT FILE (deltas) created by test";
-    bytes.extend_from_slice(b"PS");
-    bytes.extend_from_slice(
-        &(u32::try_from(second_description.len()).expect("fixture value fits u32")).to_be_bytes(),
-    );
-    bytes.extend_from_slice(second_description);
+        let mut bytes = b"prefix".to_vec();
+        bytes.extend_from_slice(b"PS\x00\x00not a header");
+        let first = bytes.len();
+        let first_description = b": TRANSMIT FILE (partition) created by test";
+        bytes.extend_from_slice(b"PS");
+        bytes.extend_from_slice(
+            &(u32::try_from(first_description.len()).expect("fixture value fits u32"))
+                .to_be_bytes(),
+        );
+        bytes.extend_from_slice(first_description);
+        bytes.extend_from_slice(b"payload PS\x00\x00not a header");
+        let second = bytes.len();
+        let second_description = b": TRANSMIT FILE (deltas) created by test";
+        bytes.extend_from_slice(b"PS");
+        bytes.extend_from_slice(
+            &(u32::try_from(second_description.len()).expect("fixture value fits u32"))
+                .to_be_bytes(),
+        );
+        bytes.extend_from_slice(second_description);
 
-    assert_eq!(super::legacy_stream_start(ctx, &bytes, 0).unwrap(), Some(first));
-    assert_eq!(super::legacy_stream_start(ctx, &bytes, first + 4).unwrap(), Some(second));
-    assert_eq!(super::legacy_stream_start(ctx, &bytes, second + 4).unwrap(), None);
-
+        assert_eq!(
+            super::legacy_stream_start(ctx, &bytes, 0).unwrap(),
+            Some(first)
+        );
+        assert_eq!(
+            super::legacy_stream_start(ctx, &bytes, first + 4).unwrap(),
+            Some(second)
+        );
+        assert_eq!(
+            super::legacy_stream_start(ctx, &bytes, second + 4).unwrap(),
+            None
+        );
     });
 }
 
@@ -83,221 +93,259 @@ fn legacy_short_sections_are_bounded_by_complete_transmit_headers() {
 #[test]
 fn parasolid_entity_51_records_retain_layout_selected_references() {
     crate::test_support::with_decode_context(|ctx| {
-    let mut bytes = vec![0, 0x51];
-    bytes.extend_from_slice(&1u32.to_be_bytes());
-    bytes.extend_from_slice(&10u16.to_be_bytes());
-    bytes.extend_from_slice(&2u32.to_be_bytes());
-    bytes.extend_from_slice(&0x21u16.to_be_bytes());
-    for reference in 3..=8u16 {
-        bytes.extend_from_slice(&reference.to_be_bytes());
-    }
-    bytes.extend_from_slice(&[0xaa, 0xbb]);
+        let mut bytes = vec![0, 0x51];
+        bytes.extend_from_slice(&1u32.to_be_bytes());
+        bytes.extend_from_slice(&10u16.to_be_bytes());
+        bytes.extend_from_slice(&2u32.to_be_bytes());
+        bytes.extend_from_slice(&0x21u16.to_be_bytes());
+        for reference in 3..=8u16 {
+            bytes.extend_from_slice(&reference.to_be_bytes());
+        }
+        bytes.extend_from_slice(&[0xaa, 0xbb]);
 
-    let records = crate::parasolid::entity_51_records(ctx, &bytes).unwrap().records;
-    assert_eq!(records.len(), 1);
-    assert_eq!(records[0].offset, 0);
-    assert_eq!(records[0].byte_len, 26);
-    assert_eq!(u32::from(records[0].xmt), 10);
-    assert_eq!(records[0].sequence.get(), 2);
-    assert_eq!(records[0].definition_xmt, 0x21);
-    assert_eq!(records[0].leading_references, [3, 4, 5, 6, 7]);
-    assert_eq!(records[0].trailing_references.values(), [8]);
-    assert_eq!(
-        crate::parasolid::entity_51_record_at(ctx, &bytes, 0).unwrap(),
-        Some(records[0].clone())
-    );
-    assert!(crate::parasolid::entity_51_record_at(ctx, &bytes[..25], 0).unwrap().is_none());
-
+        let records = crate::parasolid::entity_51_records(ctx, &bytes)
+            .unwrap()
+            .records;
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0].offset, 0);
+        assert_eq!(records[0].byte_len, 26);
+        assert_eq!(u32::from(records[0].xmt), 10);
+        assert_eq!(records[0].sequence.get(), 2);
+        assert_eq!(records[0].definition_xmt, 0x21);
+        assert_eq!(records[0].leading_references, [3, 4, 5, 6, 7]);
+        assert_eq!(records[0].trailing_references.values(), [8]);
+        assert_eq!(
+            crate::parasolid::entity_51_record_at(ctx, &bytes, 0).unwrap(),
+            Some(records[0].clone())
+        );
+        assert!(crate::parasolid::entity_51_record_at(ctx, &bytes[..25], 0)
+            .unwrap()
+            .is_none());
     });
 }
 
 #[test]
 fn parasolid_entity_51_definition_uses_extended_xmt_framing() {
     crate::test_support::with_decode_context(|ctx| {
-    let mut bytes = vec![0, 0x51];
-    bytes.extend_from_slice(&1u32.to_be_bytes());
-    bytes.extend_from_slice(&10u16.to_be_bytes());
-    bytes.extend_from_slice(&2u32.to_be_bytes());
-    bytes.extend_from_slice(&(-7_233i16).to_be_bytes());
-    bytes.extend_from_slice(&1u16.to_be_bytes());
-    for reference in 3..=8u16 {
-        bytes.extend_from_slice(&reference.to_be_bytes());
-    }
+        let mut bytes = vec![0, 0x51];
+        bytes.extend_from_slice(&1u32.to_be_bytes());
+        bytes.extend_from_slice(&10u16.to_be_bytes());
+        bytes.extend_from_slice(&2u32.to_be_bytes());
+        bytes.extend_from_slice(&(-7_233i16).to_be_bytes());
+        bytes.extend_from_slice(&1u16.to_be_bytes());
+        for reference in 3..=8u16 {
+            bytes.extend_from_slice(&reference.to_be_bytes());
+        }
 
-    let record = crate::parasolid::entity_51_record_at(ctx, &bytes, 0).unwrap().unwrap();
-    assert_eq!(record.definition_xmt, 40_000);
-    assert_eq!(record.byte_len, 28);
-    assert!(crate::parasolid::entity_51_record_at(ctx, &bytes[..27], 0).unwrap().is_none());
-
+        let record = crate::parasolid::entity_51_record_at(ctx, &bytes, 0)
+            .unwrap()
+            .unwrap();
+        assert_eq!(record.definition_xmt, 40_000);
+        assert_eq!(record.byte_len, 28);
+        assert!(crate::parasolid::entity_51_record_at(ctx, &bytes[..27], 0)
+            .unwrap()
+            .is_none());
     });
 }
 
 #[test]
 fn parasolid_entity_51_reference_count_is_five_plus_flags() {
     crate::test_support::with_decode_context(|ctx| {
-    for flags in 1..=0x20u32 {
-        let mut direct = vec![0, 0x51];
-        direct.extend_from_slice(&flags.to_be_bytes());
-        direct.extend_from_slice(&10u16.to_be_bytes());
-        direct.extend_from_slice(&2u32.to_be_bytes());
-        direct.extend_from_slice(&0x21u16.to_be_bytes());
-        for reference in 0..flags + 5 {
-            direct.extend_from_slice(
-                &(u16::try_from(reference).expect("fixture value fits u16") + 3).to_be_bytes(),
+        for flags in 1..=0x20u32 {
+            let mut direct = vec![0, 0x51];
+            direct.extend_from_slice(&flags.to_be_bytes());
+            direct.extend_from_slice(&10u16.to_be_bytes());
+            direct.extend_from_slice(&2u32.to_be_bytes());
+            direct.extend_from_slice(&0x21u16.to_be_bytes());
+            for reference in 0..flags + 5 {
+                direct.extend_from_slice(
+                    &(u16::try_from(reference).expect("fixture value fits u16") + 3).to_be_bytes(),
+                );
+            }
+            direct.extend_from_slice(&[0xaa, 0xbb]);
+
+            let record = crate::parasolid::entity_51_record_at(ctx, &direct, 0)
+                .unwrap()
+                .unwrap();
+            assert_eq!(record.leading_references.len(), 5);
+            assert_eq!(
+                record.trailing_references.values().len(),
+                usize::try_from(flags).expect("fixture value fits usize")
+            );
+            assert_eq!(record.byte_len, direct.len() - 2);
+            assert!(
+                crate::parasolid::entity_51_record_at(ctx, &direct[..direct.len() - 3], 0)
+                    .unwrap()
+                    .is_none()
+            );
+
+            let mut prefixed = vec![0, 0x51];
+            prefixed.extend_from_slice(&flags.to_be_bytes());
+            prefixed.extend_from_slice(&10u16.to_be_bytes());
+            prefixed.extend_from_slice(&2u32.to_be_bytes());
+            prefixed.extend_from_slice(&0x21u16.to_be_bytes());
+            for reference in 0..flags + 5 {
+                prefixed.push(u8::from(reference % 2 == 0));
+                prefixed.extend_from_slice(
+                    &(u16::try_from(reference).expect("fixture value fits u16") + 3).to_be_bytes(),
+                );
+            }
+            prefixed.push(0);
+            prefixed.extend_from_slice(&[0xaa, 0xbb]);
+
+            let record = crate::parasolid::entity_51_record_at(ctx, &prefixed, 0)
+                .unwrap()
+                .unwrap();
+            assert_eq!(record.leading_references.len(), 5);
+            assert_eq!(
+                record.trailing_references.values().len(),
+                usize::try_from(flags).expect("fixture value fits usize")
+            );
+            assert_eq!(record.byte_len, prefixed.len() - 2);
+            assert!(
+                crate::parasolid::entity_51_record_at(ctx, &prefixed[..prefixed.len() - 3], 0)
+                    .unwrap()
+                    .is_none()
             );
         }
-        direct.extend_from_slice(&[0xaa, 0xbb]);
-
-        let record = crate::parasolid::entity_51_record_at(ctx, &direct, 0).unwrap().unwrap();
-        assert_eq!(record.leading_references.len(), 5);
-        assert_eq!(
-            record.trailing_references.values().len(),
-            usize::try_from(flags).expect("fixture value fits usize")
-        );
-        assert_eq!(record.byte_len, direct.len() - 2);
-        assert!(crate::parasolid::entity_51_record_at(ctx, &direct[..direct.len() - 3], 0).unwrap().is_none());
-
-        let mut prefixed = vec![0, 0x51];
-        prefixed.extend_from_slice(&flags.to_be_bytes());
-        prefixed.extend_from_slice(&10u16.to_be_bytes());
-        prefixed.extend_from_slice(&2u32.to_be_bytes());
-        prefixed.extend_from_slice(&0x21u16.to_be_bytes());
-        for reference in 0..flags + 5 {
-            prefixed.push(u8::from(reference % 2 == 0));
-            prefixed.extend_from_slice(
-                &(u16::try_from(reference).expect("fixture value fits u16") + 3).to_be_bytes(),
-            );
-        }
-        prefixed.push(0);
-        prefixed.extend_from_slice(&[0xaa, 0xbb]);
-
-        let record = crate::parasolid::entity_51_record_at(ctx, &prefixed, 0).unwrap().unwrap();
-        assert_eq!(record.leading_references.len(), 5);
-        assert_eq!(
-            record.trailing_references.values().len(),
-            usize::try_from(flags).expect("fixture value fits usize")
-        );
-        assert_eq!(record.byte_len, prefixed.len() - 2);
-        assert!(
-            crate::parasolid::entity_51_record_at(ctx, &prefixed[..prefixed.len() - 3], 0).unwrap().is_none()
-        );
-    }
-
     });
 }
 
 #[test]
 fn parasolid_entity_51_rejects_nonzero_upper_flag_bytes() {
     crate::test_support::with_decode_context(|ctx| {
-    let mut bytes = vec![0, 0x51];
-    bytes.extend_from_slice(&0x0100_0001u32.to_be_bytes());
-    bytes.extend_from_slice(&10u16.to_be_bytes());
-    bytes.extend_from_slice(&2u32.to_be_bytes());
-    bytes.extend_from_slice(&0x21u16.to_be_bytes());
-    for reference in 3..=8u16 {
-        bytes.extend_from_slice(&reference.to_be_bytes());
-    }
+        let mut bytes = vec![0, 0x51];
+        bytes.extend_from_slice(&0x0100_0001u32.to_be_bytes());
+        bytes.extend_from_slice(&10u16.to_be_bytes());
+        bytes.extend_from_slice(&2u32.to_be_bytes());
+        bytes.extend_from_slice(&0x21u16.to_be_bytes());
+        for reference in 3..=8u16 {
+            bytes.extend_from_slice(&reference.to_be_bytes());
+        }
 
-    assert!(crate::parasolid::entity_51_record_at(ctx, &bytes, 0).unwrap().is_none());
-
+        assert!(crate::parasolid::entity_51_record_at(ctx, &bytes, 0)
+            .unwrap()
+            .is_none());
     });
 }
 
 #[test]
 fn parasolid_field_names_require_a_complete_nonempty_reference_lane() {
     crate::test_support::with_decode_context(|ctx| {
-    let bytes = [
-        0xaa, 0x00, 0x63, 0x00, 0x00, 0x00, 0x03, 0x00, 0x19, 0x00, 0x1c, 0x00, 0x1d, 0x00, 0x1e,
-        0xbb,
-    ];
-    let records = crate::parasolid::field_names_records(ctx, &bytes).unwrap().records;
-    assert_eq!(records.len(), 1);
-    assert_eq!(records[0].offset, 1);
-    assert_eq!(records[0].byte_len, 14);
-    assert_eq!(u32::from(records[0].xmt), 25);
-    assert_eq!(
-        records[0]
-            .name_xmts
-            .as_slice()
-            .iter()
-            .copied()
-            .map(u32::from)
-            .collect::<Vec<_>>(),
-        [28, 29, 30]
-    );
-    assert!(crate::parasolid::field_names_record_at(ctx, &bytes[..14], 1, &mut ctx.reserve_scoped(0, "test NX field-name lane").unwrap()).unwrap().is_none());
+        let bytes = [
+            0xaa, 0x00, 0x63, 0x00, 0x00, 0x00, 0x03, 0x00, 0x19, 0x00, 0x1c, 0x00, 0x1d, 0x00,
+            0x1e, 0xbb,
+        ];
+        let records = crate::parasolid::field_names_records(ctx, &bytes)
+            .unwrap()
+            .records;
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0].offset, 1);
+        assert_eq!(records[0].byte_len, 14);
+        assert_eq!(u32::from(records[0].xmt), 25);
+        assert_eq!(
+            records[0]
+                .name_xmts
+                .as_slice()
+                .iter()
+                .copied()
+                .map(u32::from)
+                .collect::<Vec<_>>(),
+            [28, 29, 30]
+        );
+        assert!(crate::parasolid::field_names_record_at(
+            ctx,
+            &bytes[..14],
+            1,
+            &mut ctx.reserve_scoped(0, "test NX field-name lane").unwrap()
+        )
+        .unwrap()
+        .is_none());
 
-    let empty = [0x00, 0x63, 0, 0, 0, 0, 0, 25];
-    assert!(crate::parasolid::field_names_records(ctx, &empty).unwrap().records.is_empty());
-
+        let empty = [0x00, 0x63, 0, 0, 0, 0, 0, 25];
+        assert!(crate::parasolid::field_names_records(ctx, &empty)
+            .unwrap()
+            .records
+            .is_empty());
     });
 }
 
 #[test]
 fn parasolid_field_name_scan_does_not_admit_nested_counted_candidates() {
     crate::test_support::with_decode_context(|ctx| {
-    let mut bytes = vec![0x00, 0x63];
-    bytes.extend_from_slice(&6u32.to_be_bytes());
-    bytes.extend_from_slice(&10u16.to_be_bytes());
-    bytes.extend_from_slice(&[
-        0x00, 0x63, 0xff, 0x00, 0x00, 0x00, 0x01, 0x00, 0x20, 0x00, 0x30, 0x00, 0x00, 0x40,
-    ]);
+        let mut bytes = vec![0x00, 0x63];
+        bytes.extend_from_slice(&6u32.to_be_bytes());
+        bytes.extend_from_slice(&10u16.to_be_bytes());
+        bytes.extend_from_slice(&[
+            0x00, 0x63, 0xff, 0x00, 0x00, 0x00, 0x01, 0x00, 0x20, 0x00, 0x30, 0x00, 0x00, 0x40,
+        ]);
 
-    let records = crate::parasolid::field_names_records(ctx, &bytes).unwrap().records;
-    assert_eq!(records.len(), 1);
-    assert_eq!(records[0].offset, 0);
-    assert_eq!(
-        records[0]
-            .name_xmts
-            .as_slice()
-            .iter()
-            .copied()
-            .map(u32::from)
-            .collect::<Vec<_>>(),
-        [99, 256, 256, 8192, 12288, 64]
-    );
-
+        let records = crate::parasolid::field_names_records(ctx, &bytes)
+            .unwrap()
+            .records;
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0].offset, 0);
+        assert_eq!(
+            records[0]
+                .name_xmts
+                .as_slice()
+                .iter()
+                .copied()
+                .map(u32::from)
+                .collect::<Vec<_>>(),
+            [99, 256, 256, 8192, 12288, 64]
+        );
     });
 }
 
 #[test]
 fn partition_values_require_a_unique_entity_reference() {
     crate::test_support::with_decode_context(|ctx| {
-    let mut bytes = parasolid_entity_records_stream();
-    let owned = crate::parasolid::referenced_value_record_offsets(ctx, &bytes).unwrap().0;
-    assert_eq!(owned.len(), 3);
+        let mut bytes = parasolid_entity_records_stream();
+        let owned = crate::parasolid::referenced_value_record_offsets(ctx, &bytes)
+            .unwrap()
+            .0;
+        assert_eq!(owned.len(), 3);
 
-    bytes.extend_from_slice(&[0, 98]);
-    bytes.extend_from_slice(&2u32.to_be_bytes());
-    bytes.extend_from_slice(&200u16.to_be_bytes());
-    bytes.extend_from_slice(&[0, b'N', 0, b'X']);
+        bytes.extend_from_slice(&[0, 98]);
+        bytes.extend_from_slice(&2u32.to_be_bytes());
+        bytes.extend_from_slice(&200u16.to_be_bytes());
+        bytes.extend_from_slice(&[0, b'N', 0, b'X']);
 
-    assert_eq!(
-        crate::parasolid::referenced_value_record_offsets(ctx, &bytes).unwrap().0,
-        owned
-    );
-
+        assert_eq!(
+            crate::parasolid::referenced_value_record_offsets(ctx, &bytes)
+                .unwrap()
+                .0,
+            owned
+        );
     });
 }
 
 #[test]
 fn partition_character_values_can_be_owned_by_a_field_name_list() {
     crate::test_support::with_decode_context(|ctx| {
-    let mut bytes = parasolid_entity_records_stream();
-    let definition_offset = crate::parasolid::attribute_definitions(ctx, &bytes).unwrap().records[0].offset;
-    bytes[definition_offset + 24..definition_offset + 26].copy_from_slice(&34u16.to_be_bytes());
-    bytes.extend_from_slice(&[0, 0x63]);
-    bytes.extend_from_slice(&1u32.to_be_bytes());
-    bytes.extend_from_slice(&34u16.to_be_bytes());
-    bytes.extend_from_slice(&37u16.to_be_bytes());
-    let unicode_offset = bytes.len();
-    bytes.extend_from_slice(&[0, 98]);
-    bytes.extend_from_slice(&2u32.to_be_bytes());
-    bytes.extend_from_slice(&37u16.to_be_bytes());
-    bytes.extend_from_slice(&[0, b'N', 0, b'X']);
+        let mut bytes = parasolid_entity_records_stream();
+        let definition_offset = crate::parasolid::attribute_definitions(ctx, &bytes)
+            .unwrap()
+            .records[0]
+            .offset;
+        bytes[definition_offset + 24..definition_offset + 26].copy_from_slice(&34u16.to_be_bytes());
+        bytes.extend_from_slice(&[0, 0x63]);
+        bytes.extend_from_slice(&1u32.to_be_bytes());
+        bytes.extend_from_slice(&34u16.to_be_bytes());
+        bytes.extend_from_slice(&37u16.to_be_bytes());
+        let unicode_offset = bytes.len();
+        bytes.extend_from_slice(&[0, 98]);
+        bytes.extend_from_slice(&2u32.to_be_bytes());
+        bytes.extend_from_slice(&37u16.to_be_bytes());
+        bytes.extend_from_slice(&[0, b'N', 0, b'X']);
 
-    assert!(crate::parasolid::referenced_value_record_offsets(ctx, &bytes).unwrap().0.contains(&unicode_offset));
-
+        assert!(
+            crate::parasolid::referenced_value_record_offsets(ctx, &bytes)
+                .unwrap()
+                .0
+                .contains(&unicode_offset)
+        );
     });
 }
 
@@ -536,13 +584,14 @@ fn legal_owner_flags_carry_binary_values_and_exact_layout_length() {
 #[test]
 fn counted_value_identities_require_nonempty_payloads() {
     crate::test_support::with_decode_context(|ctx| {
-    for tag in [0x52, 0x53, 0x54, 0x55, 0x56, 0x57, 0x58, 0x59, 0x62] {
-        let bytes = [0, tag, 0, 0, 0, 0, 0, 17, 0];
-        assert!(
-            crate::parasolid::value_records::entity_value_record_identity_at(ctx, &bytes, 0).unwrap().is_none()
-        );
-    }
-
+        for tag in [0x52, 0x53, 0x54, 0x55, 0x56, 0x57, 0x58, 0x59, 0x62] {
+            let bytes = [0, tag, 0, 0, 0, 0, 0, 17, 0];
+            assert!(
+                crate::parasolid::value_records::entity_value_record_identity_at(ctx, &bytes, 0)
+                    .unwrap()
+                    .is_none()
+            );
+        }
     });
 }
 
@@ -575,66 +624,120 @@ fn a_packed_member_reporting_fewer_bytes_than_a_zlib_member_holds_is_refused_by_
 #[test]
 fn attribute_reference_lanes_refuse_scoped_storage() {
     let bytes = [0, 0x63, 0, 0, 0, 1, 0, 17, 0, 18];
-    crate::test_support::with_decode_context_over(&bytes, |policy| policy.limits.max_materialized_bytes = 0, |ctx| {
-        assert!(matches!(crate::parasolid::field_names_records(ctx, &bytes), Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.operation == "NX field-name reference lanes"));
-    });
+    crate::test_support::with_decode_context_over(
+        &bytes,
+        |policy| policy.limits.max_materialized_bytes = 0,
+        |ctx| {
+            assert!(
+                matches!(crate::parasolid::field_names_records(ctx, &bytes), Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.operation == "NX field-name reference lanes")
+            );
+        },
+    );
 }
 
 #[test]
 fn attribute_identifier_index_refuses_scoped_storage() {
     let bytes = [0, 0x4f, 0, 0, 0, 1, 0, 17, b'A'];
-    crate::test_support::with_decode_context_over(&bytes, |policy| policy.limits.max_materialized_bytes = 0, |ctx| {
-        assert!(matches!(crate::parasolid::attribute_definitions(ctx, &bytes), Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.operation == "NX attribute identifier index"));
-    });
+    crate::test_support::with_decode_context_over(
+        &bytes,
+        |policy| policy.limits.max_materialized_bytes = 0,
+        |ctx| {
+            assert!(
+                matches!(crate::parasolid::attribute_definitions(ctx, &bytes), Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.operation == "NX attribute identifier index")
+            );
+        },
+    );
 }
 
 #[test]
 fn owned_value_discovery_refuses_before_building_child_lanes() {
     let bytes = [0, 0x63, 0, 0, 0, 1, 0, 17, 0, 18];
-    crate::test_support::with_decode_context_over(&bytes, |policy| policy.limits.max_materialized_bytes = 0, |ctx| {
-        assert!(matches!(crate::parasolid::referenced_value_record_offsets(ctx, &bytes), Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.operation == "NX field-name reference lanes"));
-    });
+    crate::test_support::with_decode_context_over(
+        &bytes,
+        |policy| policy.limits.max_materialized_bytes = 0,
+        |ctx| {
+            assert!(
+                matches!(crate::parasolid::referenced_value_record_offsets(ctx, &bytes), Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.operation == "NX field-name reference lanes")
+            );
+        },
+    );
 }
 
 #[test]
 fn numeric_identity_probe_uses_no_payload_storage() {
     let bytes = [0, 0x52, 0, 0, 0, 1, 0, 17, 0, 0, 0, 9];
-    crate::test_support::with_decode_context_over(&bytes, |policy| { policy.limits.max_collection_items = 0; policy.limits.max_retained_bytes = 0; policy.limits.max_materialized_bytes = 0; }, |ctx| {
-        assert_eq!(crate::parasolid::value_records::entity_value_record_identity_at(ctx, &bytes, 0).unwrap(), Some((0x52, 17, 12)));
-    });
+    crate::test_support::with_decode_context_over(
+        &bytes,
+        |policy| {
+            policy.limits.max_collection_items = 0;
+            policy.limits.max_retained_bytes = 0;
+            policy.limits.max_materialized_bytes = 0;
+        },
+        |ctx| {
+            assert_eq!(
+                crate::parasolid::value_records::entity_value_record_identity_at(ctx, &bytes, 0)
+                    .unwrap(),
+                Some((0x52, 17, 12))
+            );
+        },
+    );
 }
 
 #[test]
 fn numeric_value_payload_refuses_retained_storage() {
     let bytes = [0, 0x52, 0, 0, 0, 1, 0, 17, 0, 0, 0, 9];
-    crate::test_support::with_decode_context_over(&bytes, |policy| policy.limits.max_retained_bytes = 0, |ctx| {
-        assert!(matches!(crate::parasolid::value_records::entity_value_records_at(ctx, &bytes, [0]), Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.operation == "NX numeric value payload"));
-    });
+    crate::test_support::with_decode_context_over(
+        &bytes,
+        |policy| policy.limits.max_retained_bytes = 0,
+        |ctx| {
+            assert!(
+                matches!(crate::parasolid::value_records::entity_value_records_at(ctx, &bytes, [0]), Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.operation == "NX numeric value payload")
+            );
+        },
+    );
 }
 
 #[test]
 fn unicode_value_conversion_refuses_scoped_scratch() {
     let bytes = [0, 0x62, 0, 0, 0, 1, 0, 17, 0, 65];
-    crate::test_support::with_decode_context_over(&bytes, |policy| policy.limits.max_materialized_bytes = 0, |ctx| {
-        assert!(matches!(crate::parasolid::value_records::entity_value_records_at(ctx, &bytes, [0]), Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.operation == "NX Unicode conversion scratch"));
-    });
+    crate::test_support::with_decode_context_over(
+        &bytes,
+        |policy| policy.limits.max_materialized_bytes = 0,
+        |ctx| {
+            assert!(
+                matches!(crate::parasolid::value_records::entity_value_records_at(ctx, &bytes, [0]), Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.operation == "NX Unicode conversion scratch")
+            );
+        },
+    );
 }
 
 #[test]
 fn embedded_stream_scan_refuses_exhausted_work() {
     let bytes = [0; 64];
-    crate::test_support::with_decode_context_over(&bytes, |policy| policy.limits.max_work_units = 0, |ctx| {
-        let mut streams = Vec::new();
-        assert!(matches!(super::append_all_zlib_streams(ctx, cadmpeg_core::decode::View::over_retained(&bytes), 0, &mut streams, false), Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.operation == "scan NX embedded stream bytes"));
-    });
+    crate::test_support::with_decode_context_over(
+        &bytes,
+        |policy| policy.limits.max_work_units = 0,
+        |ctx| {
+            let mut streams = Vec::new();
+            assert!(
+                matches!(super::append_all_zlib_streams(ctx, cadmpeg_core::decode::View::over_retained(&bytes), 0, &mut streams, false), Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.operation == "scan NX embedded stream bytes")
+            );
+        },
+    );
 }
 
 #[test]
 fn legacy_stream_scan_refuses_exhausted_work() {
     let bytes = [0; 64];
-    crate::test_support::with_decode_context_over(&bytes, |policy| policy.limits.max_work_units = 0, |ctx| {
-        assert!(matches!(super::extract_legacy_streams(ctx, cadmpeg_core::decode::View::over_retained(&bytes)), Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.operation == "scan NX legacy stream headers"));
-    });
+    crate::test_support::with_decode_context_over(
+        &bytes,
+        |policy| policy.limits.max_work_units = 0,
+        |ctx| {
+            assert!(
+                matches!(super::extract_legacy_streams(ctx, cadmpeg_core::decode::View::over_retained(&bytes)), Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.operation == "scan NX legacy stream headers")
+            );
+        },
+    );
 }
 
 #[test]
@@ -643,16 +746,28 @@ fn legacy_stream_slots_refuse_exhausted_collection() {
     let mut bytes = vec![b'P', b'S'];
     bytes.extend_from_slice(&u32::try_from(description.len()).unwrap().to_be_bytes());
     bytes.extend_from_slice(description);
-    crate::test_support::with_decode_context_over(&bytes, |policy| policy.limits.max_collection_items = 0, |ctx| {
-        assert!(matches!(super::extract_legacy_streams(ctx, cadmpeg_core::decode::View::over_retained(&bytes)), Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.operation == "NX embedded stream slots"));
-    });
+    crate::test_support::with_decode_context_over(
+        &bytes,
+        |policy| policy.limits.max_collection_items = 0,
+        |ctx| {
+            assert!(
+                matches!(super::extract_legacy_streams(ctx, cadmpeg_core::decode::View::over_retained(&bytes)), Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.operation == "NX embedded stream slots")
+            );
+        },
+    );
 }
 
 #[test]
 fn attribute_duplicate_identifier_index_refuses_lookup_work() {
     let record = [0, 0x4f, 0, 0, 0, 1, 0, 17, b'A'];
     let bytes = record.repeat(2);
-    crate::test_support::with_decode_context_over(&bytes, |policy| policy.limits.max_work_units = 21, |ctx| {
-        assert!(matches!(crate::parasolid::attribute_identifiers(ctx, &bytes), Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.operation == "resolve duplicate NX attribute identifier"));
-    });
+    crate::test_support::with_decode_context_over(
+        &bytes,
+        |policy| policy.limits.max_work_units = 21,
+        |ctx| {
+            assert!(
+                matches!(crate::parasolid::attribute_identifiers(ctx, &bytes), Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.operation == "resolve duplicate NX attribute identifier")
+            );
+        },
+    );
 }

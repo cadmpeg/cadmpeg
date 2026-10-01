@@ -55,62 +55,68 @@ fn deltas_point(xmt: u16, x: f64) -> Vec<u8> {
 #[test]
 fn deltas_walks_complete_status_prefixed_entity_51_records() {
     crate::test_support::with_decode_context(|ctx| {
-    let mut stream = vec![0, 81];
-    stream.extend_from_slice(&1u32.to_be_bytes());
-    stream.extend_from_slice(&10u16.to_be_bytes());
-    stream.extend_from_slice(&2u32.to_be_bytes());
-    stream.extend_from_slice(&0x21u16.to_be_bytes());
-    for (status, reference) in [1, 1, 0, 1, 0, 1].into_iter().zip(3..=8u16) {
-        stream.push(status);
-        stream.extend_from_slice(&reference.to_be_bytes());
-    }
-    stream.push(0);
-    let entity_len = stream.len();
-    stream.extend(status_framed_deltas_point_stream());
+        let mut stream = vec![0, 81];
+        stream.extend_from_slice(&1u32.to_be_bytes());
+        stream.extend_from_slice(&10u16.to_be_bytes());
+        stream.extend_from_slice(&2u32.to_be_bytes());
+        stream.extend_from_slice(&0x21u16.to_be_bytes());
+        for (status, reference) in [1, 1, 0, 1, 0, 1].into_iter().zip(3..=8u16) {
+            stream.push(status);
+            stream.extend_from_slice(&reference.to_be_bytes());
+        }
+        stream.push(0);
+        let entity_len = stream.len();
+        stream.extend(status_framed_deltas_point_stream());
 
-    let census =
-        crate::test_support::with_decode_context(|ctx| crate::deltas::census::walk(ctx, &stream))
-            .unwrap();
-    assert_eq!(census.records.len(), 2);
-    assert_eq!(census.records[0].kind(), 81);
-    assert_eq!(census.records[0].xmt, 10);
-    assert_eq!(census.records[0].family.node_id(), None);
-    assert_eq!(census.records[0].family.references(), [3, 4, 5, 6, 7, 8]);
-    assert_eq!(census.records[0].end, entity_len);
-    assert_eq!(
-        crate::test_support::with_decode_context(|ctx| census.full_counts(ctx)).unwrap()
-            ["ENTITY_51"],
-        1
-    );
-    assert_eq!(census.bytes_decoded(), stream.len());
-    let residual = crate::test_support::with_decode_context(|ctx| {
-        crate::deltas::semantic_residual(ctx, &stream)
-    })
-    .unwrap();
-    let retained = crate::parasolid::entity_51_records(ctx, &residual).unwrap().records;
-    assert_eq!(retained.len(), 1);
-    assert_eq!(u32::from(retained[0].xmt), 10);
-    assert!(residual[..stream.len()].iter().all(|byte| *byte == 0xff));
+        let census = crate::test_support::with_decode_context(|ctx| {
+            crate::deltas::census::walk(ctx, &stream)
+        })
+        .unwrap();
+        assert_eq!(census.records.len(), 2);
+        assert_eq!(census.records[0].kind(), 81);
+        assert_eq!(census.records[0].xmt, 10);
+        assert_eq!(census.records[0].family.node_id(), None);
+        assert_eq!(census.records[0].family.references(), [3, 4, 5, 6, 7, 8]);
+        assert_eq!(census.records[0].end, entity_len);
+        assert_eq!(
+            crate::test_support::with_decode_context(|ctx| census.full_counts(ctx)).unwrap()
+                ["ENTITY_51"],
+            1
+        );
+        assert_eq!(census.bytes_decoded(), stream.len());
+        let residual = crate::test_support::with_decode_context(|ctx| {
+            crate::deltas::semantic_residual(ctx, &stream)
+        })
+        .unwrap();
+        let retained = crate::parasolid::entity_51_records(ctx, &residual)
+            .unwrap()
+            .records;
+        assert_eq!(retained.len(), 1);
+        assert_eq!(u32::from(retained[0].xmt), 10);
+        assert!(residual[..stream.len()].iter().all(|byte| *byte == 0xff));
 
-    stream[entity_len - 1] = 1;
-    assert_eq!(
-        crate::test_support::with_decode_context(|ctx| crate::deltas::census::walk(ctx, &stream))
+        stream[entity_len - 1] = 1;
+        assert_eq!(
+            crate::test_support::with_decode_context(|ctx| crate::deltas::census::walk(
+                ctx, &stream
+            ))
             .unwrap()
             .records
             .iter()
             .filter(|record| record.kind() == 81)
             .count(),
-        1
-    );
-    stream[entity_len - 1] = 2;
-    assert!(
-        crate::test_support::with_decode_context(|ctx| crate::deltas::census::walk(ctx, &stream))
+            1
+        );
+        stream[entity_len - 1] = 2;
+        assert!(
+            crate::test_support::with_decode_context(|ctx| crate::deltas::census::walk(
+                ctx, &stream
+            ))
             .unwrap()
             .records
             .iter()
             .all(|record| record.kind() != 81)
-    );
-
+        );
     });
 }
 
@@ -306,60 +312,61 @@ fn deltas_does_not_share_a_consecutive_reference_byte() {
 #[test]
 fn deltas_walks_complete_entity_value_records() {
     crate::test_support::with_decode_context(|ctx| {
-    let mut stream = vec![0, 82];
-    stream.extend_from_slice(&1u32.to_be_bytes());
-    stream.extend_from_slice(&20u16.to_be_bytes());
-    stream.extend_from_slice(&u32::MAX.to_be_bytes());
-    stream.extend_from_slice(&[0, 83, 0xff]);
-    stream.extend_from_slice(&1u32.to_be_bytes());
-    stream.extend_from_slice(&21u16.to_be_bytes());
-    stream.extend_from_slice(&0.25f64.to_be_bytes());
-    stream.extend_from_slice(&[0, 84]);
-    stream.extend_from_slice(&3u32.to_be_bytes());
-    stream.extend_from_slice(&22u16.to_be_bytes());
-    stream.extend_from_slice(b"abc\0");
-    let decoded_len = stream.len();
-    stream.extend_from_slice(&[0xfe, 0xdc, 0xba]);
+        let mut stream = vec![0, 82];
+        stream.extend_from_slice(&1u32.to_be_bytes());
+        stream.extend_from_slice(&20u16.to_be_bytes());
+        stream.extend_from_slice(&u32::MAX.to_be_bytes());
+        stream.extend_from_slice(&[0, 83, 0xff]);
+        stream.extend_from_slice(&1u32.to_be_bytes());
+        stream.extend_from_slice(&21u16.to_be_bytes());
+        stream.extend_from_slice(&0.25f64.to_be_bytes());
+        stream.extend_from_slice(&[0, 84]);
+        stream.extend_from_slice(&3u32.to_be_bytes());
+        stream.extend_from_slice(&22u16.to_be_bytes());
+        stream.extend_from_slice(b"abc\0");
+        let decoded_len = stream.len();
+        stream.extend_from_slice(&[0xfe, 0xdc, 0xba]);
 
-    let census =
-        crate::test_support::with_decode_context(|ctx| crate::deltas::census::walk(ctx, &stream))
-            .unwrap();
-    assert_eq!(
-        census
-            .records
-            .iter()
-            .map(super::Record::kind)
-            .collect::<Vec<_>>(),
-        [82, 83, 84]
-    );
-    assert_eq!(
-        crate::test_support::with_decode_context(|ctx| census.full_counts(ctx)).unwrap()
-            ["ENTITY_52"],
-        1
-    );
-    assert_eq!(
-        crate::test_support::with_decode_context(|ctx| census.full_counts(ctx)).unwrap()
-            ["ENTITY_53"],
-        1
-    );
-    assert_eq!(
-        crate::test_support::with_decode_context(|ctx| census.full_counts(ctx)).unwrap()
-            ["ENTITY_54"],
-        1
-    );
-    assert_eq!(census.bytes_decoded(), decoded_len);
+        let census = crate::test_support::with_decode_context(|ctx| {
+            crate::deltas::census::walk(ctx, &stream)
+        })
+        .unwrap();
+        assert_eq!(
+            census
+                .records
+                .iter()
+                .map(super::Record::kind)
+                .collect::<Vec<_>>(),
+            [82, 83, 84]
+        );
+        assert_eq!(
+            crate::test_support::with_decode_context(|ctx| census.full_counts(ctx)).unwrap()
+                ["ENTITY_52"],
+            1
+        );
+        assert_eq!(
+            crate::test_support::with_decode_context(|ctx| census.full_counts(ctx)).unwrap()
+                ["ENTITY_53"],
+            1
+        );
+        assert_eq!(
+            crate::test_support::with_decode_context(|ctx| census.full_counts(ctx)).unwrap()
+                ["ENTITY_54"],
+            1
+        );
+        assert_eq!(census.bytes_decoded(), decoded_len);
 
-    let residual = crate::test_support::with_decode_context(|ctx| {
-        crate::deltas::semantic_residual(ctx, &stream)
-    })
-    .unwrap();
-    assert!(residual[..decoded_len].iter().all(|byte| *byte == 0xff));
-    assert_eq!(&residual[decoded_len..stream.len()], &[0xfe, 0xdc, 0xba]);
-    let value_records = crate::parasolid::value_records::entity_value_records(ctx, &residual).unwrap();
-    assert_eq!(value_records.integers[0].value.as_slice(), [u32::MAX]);
-    assert_eq!(value_records.doubles[0].value.raw_values(), [0.25]);
-    assert_eq!(value_records.strings[0].value.as_str(), "abc");
-
+        let residual = crate::test_support::with_decode_context(|ctx| {
+            crate::deltas::semantic_residual(ctx, &stream)
+        })
+        .unwrap();
+        assert!(residual[..decoded_len].iter().all(|byte| *byte == 0xff));
+        assert_eq!(&residual[decoded_len..stream.len()], &[0xfe, 0xdc, 0xba]);
+        let value_records =
+            crate::parasolid::value_records::entity_value_records(ctx, &residual).unwrap();
+        assert_eq!(value_records.integers[0].value.as_slice(), [u32::MAX]);
+        assert_eq!(value_records.doubles[0].value.raw_values(), [0.25]);
+        assert_eq!(value_records.strings[0].value.as_str(), "abc");
     });
 }
 
@@ -387,62 +394,64 @@ fn deltas_value_record_route_refuses_retained_limit() {
 #[test]
 fn deltas_walks_every_transformable_value_family() {
     crate::test_support::with_decode_context(|ctx| {
-    let mut stream = Vec::new();
-    for (kind, count, width) in [(85u8, 1u32, 24usize), (86, 1, 24), (87, 2, 24)] {
-        stream.extend_from_slice(&[0, kind]);
-        stream.extend_from_slice(&count.to_be_bytes());
-        stream.extend_from_slice(&u16::from(kind).to_be_bytes());
-        stream.resize(stream.len() + usize::try_from(count).unwrap() * width, 0);
-    }
-    stream.extend_from_slice(&[0, 88]);
-    stream.extend_from_slice(&1u32.to_be_bytes());
-    stream.extend_from_slice(&88u16.to_be_bytes());
-    stream.extend_from_slice(&7u32.to_be_bytes());
-    stream.extend_from_slice(&[0, 89]);
-    stream.extend_from_slice(&1u32.to_be_bytes());
-    stream.extend_from_slice(&89u16.to_be_bytes());
-    stream.resize(stream.len() + 24, 0);
-    stream.extend_from_slice(&[0, 98]);
-    stream.extend_from_slice(&2u32.to_be_bytes());
-    stream.extend_from_slice(&98u16.to_be_bytes());
-    stream.extend_from_slice(&[0, b'N', 0, b'X']);
-    let census =
-        crate::test_support::with_decode_context(|ctx| crate::deltas::census::walk(ctx, &stream))
-            .unwrap();
+        let mut stream = Vec::new();
+        for (kind, count, width) in [(85u8, 1u32, 24usize), (86, 1, 24), (87, 2, 24)] {
+            stream.extend_from_slice(&[0, kind]);
+            stream.extend_from_slice(&count.to_be_bytes());
+            stream.extend_from_slice(&u16::from(kind).to_be_bytes());
+            stream.resize(stream.len() + usize::try_from(count).unwrap() * width, 0);
+        }
+        stream.extend_from_slice(&[0, 88]);
+        stream.extend_from_slice(&1u32.to_be_bytes());
+        stream.extend_from_slice(&88u16.to_be_bytes());
+        stream.extend_from_slice(&7u32.to_be_bytes());
+        stream.extend_from_slice(&[0, 89]);
+        stream.extend_from_slice(&1u32.to_be_bytes());
+        stream.extend_from_slice(&89u16.to_be_bytes());
+        stream.resize(stream.len() + 24, 0);
+        stream.extend_from_slice(&[0, 98]);
+        stream.extend_from_slice(&2u32.to_be_bytes());
+        stream.extend_from_slice(&98u16.to_be_bytes());
+        stream.extend_from_slice(&[0, b'N', 0, b'X']);
+        let census = crate::test_support::with_decode_context(|ctx| {
+            crate::deltas::census::walk(ctx, &stream)
+        })
+        .unwrap();
 
-    assert_eq!(
-        census
-            .records
-            .iter()
-            .map(super::Record::kind)
-            .collect::<Vec<_>>(),
-        [85, 86, 87, 88, 89, 98]
-    );
-    for family in [
-        "ENTITY_55",
-        "ENTITY_56",
-        "ENTITY_57",
-        "ENTITY_58",
-        "ENTITY_59",
-    ] {
+        assert_eq!(
+            census
+                .records
+                .iter()
+                .map(super::Record::kind)
+                .collect::<Vec<_>>(),
+            [85, 86, 87, 88, 89, 98]
+        );
+        for family in [
+            "ENTITY_55",
+            "ENTITY_56",
+            "ENTITY_57",
+            "ENTITY_58",
+            "ENTITY_59",
+        ] {
+            assert_eq!(
+                crate::test_support::with_decode_context(|ctx| census.full_counts(ctx)).unwrap()
+                    [family],
+                1
+            );
+        }
         assert_eq!(
             crate::test_support::with_decode_context(|ctx| census.full_counts(ctx)).unwrap()
-                [family],
+                ["ENTITY_62"],
             1
         );
-    }
-    assert_eq!(
-        crate::test_support::with_decode_context(|ctx| census.full_counts(ctx)).unwrap()
-            ["ENTITY_62"],
-        1
-    );
 
-    let values = crate::parasolid::value_records::entity_value_records_at(ctx,
-        &stream,
-        census.records.iter().map(|record| record.offset),
-    ).unwrap();
-    assert_eq!(values.unicode[0].value.as_str(), "NX");
-
+        let values = crate::parasolid::value_records::entity_value_records_at(
+            ctx,
+            &stream,
+            census.records.iter().map(|record| record.offset),
+        )
+        .unwrap();
+        assert_eq!(values.unicode[0].value.as_str(), "NX");
     });
 }
 

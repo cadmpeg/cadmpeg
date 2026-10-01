@@ -127,7 +127,9 @@ pub enum BodyCensusEvaluation {
 impl BodyCensusEvaluation {
     /// Admit a verified census with unique identities in canonical order.
     pub fn verified(bodies: Vec<BodyId>) -> Result<Self, &'static str> {
-        Ok(Self::Verified { bodies: CanonicalBodyCensus::new(bodies)? })
+        Ok(Self::Verified {
+            bodies: CanonicalBodyCensus::new(bodies)?,
+        })
     }
 
     /// Admit unequal canonical censuses as mismatch evidence.
@@ -137,7 +139,9 @@ impl BodyCensusEvaluation {
         if rederived == saved {
             return Err("body census: mismatch requires different censuses");
         }
-        Ok(Self::Mismatch { evidence: BodyCensusDifference { rederived, saved } })
+        Ok(Self::Mismatch {
+            evidence: BodyCensusDifference { rederived, saved },
+        })
     }
 }
 
@@ -162,7 +166,9 @@ impl TryFrom<BodyCensusEvaluationWire> for BodyCensusEvaluation {
 
     fn try_from(wire: BodyCensusEvaluationWire) -> Result<Self, Self::Error> {
         Ok(match wire {
-            BodyCensusEvaluationWire::Verified { bodies } => Self::verified(bodies).map_err(str::to_owned)?,
+            BodyCensusEvaluationWire::Verified { bodies } => {
+                Self::verified(bodies).map_err(str::to_owned)?
+            }
             BodyCensusEvaluationWire::Mismatch { rederived, saved } => {
                 Self::mismatch(rederived, saved).map_err(str::to_owned)?
             }
@@ -195,9 +201,10 @@ impl From<BodyCensusEvaluation> for BodyCensusEvaluationWire {
     fn from(value: BodyCensusEvaluation) -> Self {
         match value {
             BodyCensusEvaluation::Verified { bodies } => Self::Verified { bodies: bodies.0 },
-            BodyCensusEvaluation::Mismatch { evidence } => {
-                Self::Mismatch { rederived: evidence.rederived.0, saved: evidence.saved.0 }
-            }
+            BodyCensusEvaluation::Mismatch { evidence } => Self::Mismatch {
+                rederived: evidence.rederived.0,
+                saved: evidence.saved.0,
+            },
             BodyCensusEvaluation::Unsupported { feature, reason } => Self::Unsupported {
                 feature: Some(feature),
                 reason: reason.as_str().into(),

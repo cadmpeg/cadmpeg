@@ -40,17 +40,28 @@ pub(crate) type SupportUv = [Option<SupportUvLane>; 2];
 pub(crate) struct SupportUvLane(Vec<FiniteVector<2>>);
 
 impl SupportUvLane {
-    fn present_with_storage(values: Vec<[f64; 2]>, mut checked: Vec<FiniteVector<2>>) -> Option<Self> {
+    fn present_with_storage(
+        values: Vec<[f64; 2]>,
+        mut checked: Vec<FiniteVector<2>>,
+    ) -> Option<Self> {
         (checked.is_empty() && checked.capacity() >= values.len()).then_some(())?;
         for pair in values {
-            if pair.contains(&MISSING_PARAMETER) { return None; }
+            if pair.contains(&MISSING_PARAMETER) {
+                return None;
+            }
             checked.push(FiniteVector::new(pair)?);
         }
         Some(Self(checked))
     }
 
-    pub(crate) fn from_present_values_scoped<'ctx>(ctx: &'ctx DecodeContext<'_>, values: Vec<[f64; 2]>) -> Result<Option<(Self, cadmpeg_core::decode::ScopedReservation<'ctx>)>, CodecError> {
-        ctx.charge_work(cadmpeg_core::decode::u64_from_index(values.len()), "admit NX chart support-UV lane")?;
+    pub(crate) fn from_present_values_scoped<'ctx>(
+        ctx: &'ctx DecodeContext<'_>,
+        values: Vec<[f64; 2]>,
+    ) -> Result<Option<(Self, cadmpeg_core::decode::ScopedReservation<'ctx>)>, CodecError> {
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(values.len()),
+            "admit NX chart support-UV lane",
+        )?;
         let (checked, reservation) = ctx.temporary_vec(values.len(), "NX chart support-UV lane")?;
         let lane = Self::present_with_storage(values, checked);
         Ok(lane.map(|lane| (lane, reservation)))
