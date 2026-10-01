@@ -72,10 +72,7 @@ impl<'a> Utf16View<'a> {
         ctx: &DecodeContext<'_>,
         operation: &'static str,
     ) -> Result<String, CodecError> {
-        self.charge_copy(ctx, operation)?;
-        let mut text = ctx.retained_string(self.utf8_len, operation)?;
-        text.extend(self.chars());
-        Ok(text)
+        ctx.utf16le_text(self.raw, self.raw.len() / 2, false, operation)
     }
 
     pub(crate) fn to_scoped<'ctx>(
@@ -124,5 +121,31 @@ impl std::fmt::Debug for Utf16View<'_> {
             }
         }
         formatter.write_str("\"")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Utf16View;
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    #[test]
+    fn borrowed_utf16_retained_copy_refuses_exact_utf8_budget() {
+        let view = Utf16View::new(&[0, 8]).unwrap();
+        for retained in [2, 3] {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_retained_bytes = retained;
+            let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).unwrap();
+            let result = view.to_retained(&ctx, "F3D UTF-16 test");
+            if retained == 2 {
+                assert!(matches!(result, Err(CodecError::ResourceLimit(limit))
+                    if limit.dimension == ResourceDimension::RetainedBytes && limit.additional == 3));
+            } else {
+                assert_eq!(result.unwrap(), "ࠀ");
+                assert!(ctx.charge_retained(1, "after F3D text").is_err());
+            }
+        }
     }
 }
