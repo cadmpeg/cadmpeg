@@ -100,3 +100,44 @@ fn nonlinear_line_search_ceiling_refuses_valid_non_improving_probes() {
     let error = nonlinear_ceiling_error("x*x+1", SMALL_NONZERO_SEED);
     assert!(matches!(error, CodecError::ResourceLimit(limit) if limit.operation == "creo nonlinear line-search ceiling"));
 }
+
+#[test]
+fn relation_local_exponent_nesting_ceiling_refuses() {
+    let source = format!("{}1", "1^".repeat(129));
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_recursion_depth = 1024;
+    let error = with_policy(policy, |ctx| parse_relation_expression::<CurveExpressionValue>(ctx, &source, &BTreeMap::new(), Default::default())).expect_err("local exponent nesting ceiling");
+    assert!(matches!(error, CodecError::ResourceLimit(limit) if limit.operation == "creo relation nesting ceiling"));
+}
+
+#[test]
+fn relation_local_function_nesting_ceiling_refuses() {
+    let source = format!("{}1{}", "abs(".repeat(129), ")".repeat(129));
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_recursion_depth = 1024;
+    let error = with_policy(policy, |ctx| parse_relation_expression::<CurveExpressionValue>(ctx, &source, &BTreeMap::new(), Default::default())).expect_err("local function nesting ceiling");
+    assert!(matches!(error, CodecError::ResourceLimit(limit) if limit.operation == "creo relation nesting ceiling"));
+}
+
+#[test]
+fn relation_unit_source_scan_refuses_work_before_nonrecursive_parse() {
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    let error = with_policy(policy, |ctx| relation_unit(ctx, "mm*mm/mm").map(|unit| unit.is_some())).expect_err("unit source work");
+    assert!(matches!(error, CodecError::ResourceLimit(limit) if limit.operation == "creo relation unit source scan"));
+}
+
+#[test]
+fn affine_pivot_and_coefficient_elimination_refuse_work() {
+    let solution = crate::test_support::assert_work_boundaries(
+        &["creo matrix row normalization", "creo matrix residual scan", "creo matrix pivot scan", "creo matrix pivot normalization", "creo matrix elimination"],
+        |ctx| solve_unique_affine_system(ctx, &mut [AffineEquationRow { coefficients: vec![1.0, 1.0], rhs: 5.0 }, AffineEquationRow { coefficients: vec![1.0, 2.0], rhs: 8.0 }], 2),
+    );
+    assert_eq!(solution, Some(vec![2.0, 3.0]));
+}
+
+#[test]
+fn relation_stack_operators_refuse_work_after_source_admission() {
+    let value = crate::test_support::assert_work_boundaries(&["creo relation source scan", "creo relation value operation work"], |ctx| parse_relation_expression::<CurveExpressionValue>(ctx, "1+2*3", &BTreeMap::new(), Default::default()));
+    assert_eq!(value, crate::curve::quantity_value(7.0, crate::curve::RelationDimension::default()));
+}
