@@ -655,12 +655,23 @@ fn appearance_utf16_refuses_exact_retained_budget() {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
     policy.limits.max_retained_bytes = 2;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-    assert!(matches!(super::definitions(&ctx, &scan), Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-        if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes && limit.additional == 3 && limit.operation == "retain SLDPRT appearance name"));
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root");
+    assert!(
+        matches!(super::definitions(&ctx, &scan), Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes && limit.additional == 3 && limit.operation == "retain SLDPRT appearance name")
+    );
     let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &cadmpeg_core::decode::DecodePolicy::service()).expect("empty root");
-    assert_eq!(super::definitions(&ctx, &scan).expect("service appearance")[0].name, "ࠀ");
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .expect("empty root");
+    assert_eq!(
+        super::definitions(&ctx, &scan).expect("service appearance")[0].name,
+        "ࠀ"
+    );
 }
 
 #[test]
@@ -670,7 +681,10 @@ fn appearance_utf16_refuses_work_before_decode() {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
     policy.limits.max_work_units = cadmpeg_core::decode::u64_from_index(length);
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-    assert!(matches!(super::definitions(&ctx, &scan), Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-        if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits && limit.operation == "decode SLDPRT appearance name"));
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root");
+    assert!(
+        matches!(super::definitions(&ctx, &scan), Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits && limit.operation == "decode SLDPRT appearance name")
+    );
 }

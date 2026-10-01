@@ -1646,9 +1646,8 @@ fn parse_directory(
                 cadmpeg_core::decode::u64_from_index(name_len) * 2,
                 "decode and check CFB directory name",
             )?;
-            let name = ctx.utf16le_text(
-                raw, (name_len - 2) / 2, false, "decode CFB directory name",
-            )?;
+            let name =
+                ctx.utf16le_text(raw, (name_len - 2) / 2, false, "decode CFB directory name")?;
             DirectoryName::new(name)?
         };
         let color = match raw[67] {
@@ -2847,18 +2846,37 @@ mod tests {
     #[test]
     fn directory_utf16_name_charges_exact_retained_utf8_bytes() {
         let mut directory = [0_u8; 128];
-        directory_entry(&mut directory, 0, "ࠀ", 2, NO_STREAM, NO_STREAM, NO_STREAM, END_OF_CHAIN, 0);
+        directory_entry(
+            &mut directory,
+            0,
+            "ࠀ",
+            2,
+            NO_STREAM,
+            NO_STREAM,
+            NO_STREAM,
+            END_OF_CHAIN,
+            0,
+        );
         let slot_bytes = cadmpeg_core::decode::u64_from_index(std::mem::size_of::<DirectorySlot>());
         for limit in [slot_bytes + 2, slot_bytes + 3] {
             let mut policy = DecodePolicy::service();
             policy.limits.max_retained_bytes = limit;
-            let result = with_context(&directory, &policy, |ctx| parse_directory(ctx, &directory, CompoundVersion::V3));
+            let result = with_context(&directory, &policy, |ctx| {
+                parse_directory(ctx, &directory, CompoundVersion::V3)
+            });
             if limit == slot_bytes + 2 {
                 assert!(matches!(result, Err(CodecError::ResourceLimit(refusal))
                     if refusal.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
                         && refusal.used == slot_bytes && refusal.additional == 3));
             } else {
-                assert_eq!(result.unwrap()[0].live().unwrap().name.as_str(), "ࠀ");
+                assert_eq!(
+                    result.expect("exact name budget")[0]
+                        .live()
+                        .expect("live root directory slot")
+                        .name
+                        .as_str(),
+                    "ࠀ"
+                );
             }
         }
     }

@@ -20,7 +20,8 @@ impl DecodeContext<'_> {
         trim_nul: bool,
         operation: &'static str,
     ) -> Result<String, CodecError> {
-        let (bytes, length) = admit_text(self, bytes, units, trim_nul, Surrogates::Reject, operation)?;
+        let (bytes, length) =
+            admit_text(self, bytes, units, trim_nul, Surrogates::Reject, operation)?;
         let mut text = self.retained_string(length, operation)?;
         write_text(&mut text, bytes, trim_nul, Surrogates::Reject)?;
         Ok(text)
@@ -34,7 +35,8 @@ impl DecodeContext<'_> {
         trim_nul: bool,
         operation: &'static str,
     ) -> Result<(String, ScopedReservation<'ctx>), CodecError> {
-        let (bytes, length) = admit_text(self, bytes, units, trim_nul, Surrogates::Reject, operation)?;
+        let (bytes, length) =
+            admit_text(self, bytes, units, trim_nul, Surrogates::Reject, operation)?;
         let (mut text, reservation) = self.reserve_scoped_text(length, operation)?;
         write_text(&mut text, bytes, trim_nul, Surrogates::Reject)?;
         Ok((text, reservation))
@@ -48,7 +50,8 @@ impl DecodeContext<'_> {
         trim_nul: bool,
         operation: &'static str,
     ) -> Result<String, CodecError> {
-        let (bytes, length) = admit_text(self, bytes, units, trim_nul, Surrogates::Replace, operation)?;
+        let (bytes, length) =
+            admit_text(self, bytes, units, trim_nul, Surrogates::Replace, operation)?;
         let mut text = self.retained_string(length, operation)?;
         write_text(&mut text, bytes, trim_nul, Surrogates::Replace)?;
         Ok(text)
@@ -62,12 +65,12 @@ impl DecodeContext<'_> {
         trim_nul: bool,
         operation: &'static str,
     ) -> Result<(String, ScopedReservation<'ctx>), CodecError> {
-        let (bytes, length) = admit_text(self, bytes, units, trim_nul, Surrogates::Replace, operation)?;
+        let (bytes, length) =
+            admit_text(self, bytes, units, trim_nul, Surrogates::Replace, operation)?;
         let (mut text, reservation) = self.reserve_scoped_text(length, operation)?;
         write_text(&mut text, bytes, trim_nul, Surrogates::Replace)?;
         Ok((text, reservation))
     }
-
 }
 
 fn admit_text<'a>(
@@ -98,7 +101,12 @@ fn admit_text<'a>(
     Ok((bytes, length))
 }
 
-fn write_text(text: &mut String, bytes: &[u8], trim_nul: bool, surrogates: Surrogates) -> Result<(), CodecError> {
+fn write_text(
+    text: &mut String,
+    bytes: &[u8],
+    trim_nul: bool,
+    surrogates: Surrogates,
+) -> Result<(), CodecError> {
     for character in characters(bytes, trim_nul, surrogates) {
         text.push(
             character.map_err(|_| CodecError::malformed("invalid UTF-16LE surrogate sequence"))?,
@@ -115,7 +123,8 @@ fn characters(
     let mut view = View::over_retained(bytes);
     char::decode_utf16(
         std::iter::from_fn(move || view.u16_le()).take_while(move |unit| !trim_nul || *unit != 0),
-    ).map(move |character| match (surrogates, character) {
+    )
+    .map(move |character| match (surrogates, character) {
         (Surrogates::Replace, Err(_)) => Ok(char::REPLACEMENT_CHARACTER),
         (_, character) => character,
     })
@@ -134,10 +143,14 @@ mod tests {
         policy.limits.max_retained_bytes = 11;
         policy.limits.max_work_units = 21;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-        let text = ctx.utf16le_lossy_text(&bytes, 5, false, "replacement test").expect("exact byte and work admission");
+        let text = ctx
+            .utf16le_lossy_text(&bytes, 5, false, "replacement test")
+            .expect("exact byte and work admission");
         assert_eq!(text, "�A�😀");
-        assert!(matches!(ctx.charge_retained(1, "after replacement"), Err(CodecError::ResourceLimit(limit))
-            if limit.dimension == ResourceDimension::RetainedBytes && limit.used == 11));
+        assert!(
+            matches!(ctx.charge_retained(1, "after replacement"), Err(CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::RetainedBytes && limit.used == 11)
+        );
     }
 
     #[test]
@@ -146,15 +159,22 @@ mod tests {
         let mut policy = DecodePolicy::default();
         policy.limits.max_retained_bytes = 2;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-        assert!(matches!(ctx.utf16le_lossy_text(&[0, 0xd8], 1, false, "replacement test"), Err(CodecError::ResourceLimit(limit))
-            if limit.dimension == ResourceDimension::RetainedBytes && limit.used == 0 && limit.additional == 3));
+        assert!(
+            matches!(ctx.utf16le_lossy_text(&[0, 0xd8], 1, false, "replacement test"), Err(CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::RetainedBytes && limit.used == 0 && limit.additional == 3)
+        );
     }
 
     #[test]
     fn utf16le_lossy_text_trims_first_nul() {
         let arena = DecodeArena::new();
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::default()).expect("empty root");
-        assert_eq!(ctx.utf16le_lossy_text(&[0, 0xd8, 0, 0, 0, 0xdc], 3, true, "replacement test").expect("terminated replacement text"), "�");
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::default())
+            .expect("empty root");
+        assert_eq!(
+            ctx.utf16le_lossy_text(&[0, 0xd8, 0, 0, 0, 0xdc], 3, true, "replacement test")
+                .expect("terminated replacement text"),
+            "�"
+        );
     }
 
     #[test]
@@ -163,8 +183,10 @@ mod tests {
         let mut policy = DecodePolicy::default();
         policy.limits.max_work_units = 0;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-        assert!(matches!(ctx.utf16le_lossy_text(&[0, 0xd8], 1, false, "replacement test"), Err(CodecError::ResourceLimit(limit))
-            if limit.dimension == ResourceDimension::WorkUnits));
+        assert!(
+            matches!(ctx.utf16le_lossy_text(&[0, 0xd8], 1, false, "replacement test"), Err(CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::WorkUnits)
+        );
     }
 
     #[test]
@@ -174,7 +196,8 @@ mod tests {
             let mut policy = DecodePolicy::default();
             policy.limits.max_retained_bytes = 0;
             policy.limits.max_materialized_bytes = temporary;
-            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+            let (ctx, _) =
+                DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
             let result = ctx.utf16le_lossy_scoped_text(&[0, 0xd8], 1, false, "replacement test");
             if temporary == 2 {
                 assert!(matches!(result, Err(CodecError::ResourceLimit(limit))
@@ -184,7 +207,9 @@ mod tests {
                 assert_eq!(text, "�");
                 drop(text);
                 drop(reservation);
-                let (text, _reservation) = ctx.utf16le_lossy_scoped_text(&[0, 0xdc], 1, false, "replacement test").expect("prior temporary storage released");
+                let (text, _reservation) = ctx
+                    .utf16le_lossy_scoped_text(&[0, 0xdc], 1, false, "replacement test")
+                    .expect("prior temporary storage released");
                 assert_eq!(text, "�");
             }
         }

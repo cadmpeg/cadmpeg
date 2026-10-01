@@ -110,17 +110,24 @@ fn definition_at(
     else {
         return Ok(None);
     };
-    let (decoded, _name_reservation) = match ctx.utf16le_scoped_text(raw_name, count, false, "decode SLDPRT appearance name") {
-        Ok(text) => text,
-        Err(cadmpeg_core::CodecError::Malformed(_)) => return Ok(None),
-        Err(error) => return Err(error),
-    };
-    ctx.charge_work(cadmpeg_core::decode::u64_from_index(decoded.len()), "trim SLDPRT appearance name")?;
+    let (decoded, _name_reservation) =
+        match ctx.utf16le_scoped_text(raw_name, count, false, "decode SLDPRT appearance name") {
+            Ok(text) => text,
+            Err(cadmpeg_core::CodecError::Malformed(_)) => return Ok(None),
+            Err(error) => return Err(error),
+        };
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(decoded.len()),
+        "trim SLDPRT appearance name",
+    )?;
     let trimmed = decoded.trim();
     if trimmed.is_empty() {
         return Ok(None);
     }
-    ctx.charge_work(cadmpeg_core::decode::u64_from_index(trimmed.len()), "retain SLDPRT appearance name")?;
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(trimmed.len()),
+        "retain SLDPRT appearance name",
+    )?;
     let name = ctx.copy_retained_text(trimmed, "retain SLDPRT appearance name")?;
     let source_name = clone_stream_name(ctx, section.source_stream())?;
     Ok(Some(AppearanceDefinition {

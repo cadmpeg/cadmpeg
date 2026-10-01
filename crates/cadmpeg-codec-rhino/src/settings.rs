@@ -1015,12 +1015,11 @@ fn decode_utf16_retained(
     error_offset: usize,
     operation: &'static str,
 ) -> Result<String, FramingError> {
-    ctx.utf16le_text(bytes, bytes.len() / 2, false, operation).map_err(|error| {
-        match error {
+    ctx.utf16le_text(bytes, bytes.len() / 2, false, operation)
+        .map_err(|error| match error {
             CodecError::ResourceLimit(limit) => FramingError::Resource(limit),
             _ => FramingError::structural(error_offset, "invalid UTF-16 surrogate sequence"),
-        }
-    })
+        })
 }
 
 /// A validated UTF-16 window whose retained copy can be deferred.
@@ -1035,12 +1034,20 @@ pub(crate) fn utf16_deferred<'a>(
 ) -> Result<DeferredUtf16<'a>, FramingError> {
     let bytes = utf16_payload(reader)?;
     let error_offset = reader.position();
-    ctx.charge_work(cadmpeg_core::decode::u64_from_index(bytes.len() / 2), "validate Rhino deferred UTF-16")?;
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(bytes.len() / 2),
+        "validate Rhino deferred UTF-16",
+    )?;
     let mut view = View::over_retained(bytes);
     for character in char::decode_utf16(std::iter::from_fn(|| view.u16_le())) {
-        character.map_err(|_| FramingError::structural(error_offset, "invalid UTF-16 surrogate sequence"))?;
+        character.map_err(|_| {
+            FramingError::structural(error_offset, "invalid UTF-16 surrogate sequence")
+        })?;
     }
-    Ok(DeferredUtf16 { bytes, error_offset })
+    Ok(DeferredUtf16 {
+        bytes,
+        error_offset,
+    })
 }
 
 impl DeferredUtf16<'_> {

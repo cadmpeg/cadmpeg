@@ -102,7 +102,8 @@ pub(crate) fn utf16_text(
     field: &'static str,
     operation: &'static str,
 ) -> Result<String, CodecError> {
-    let len = count.checked_mul(2)
+    let len = count
+        .checked_mul(2)
         .ok_or_else(|| CodecError::malformed("Inventor UTF-16 byte length overflow"))?;
     let mut candidate = *source;
     let bytes = take(&mut candidate, len, field)?;
@@ -184,11 +185,66 @@ mod tests {
     fn utf16_preflight_counts_utf8_bytes_and_rejects_invalid_pairs() {
         let ctx = cadmpeg_test_support::service_decode_context();
         let euro = [0xac, 0x20];
-        assert_eq!(utf16_text(&ctx, &mut View::over_retained(&euro), 1, "test text", "Inventor UTF-16 test").ok().map(|text| text.len()), Some(3));
+        assert_eq!(
+            utf16_text(
+                &ctx,
+                &mut View::over_retained(&euro),
+                1,
+                "test text",
+                "Inventor UTF-16 test"
+            )
+            .ok()
+            .map(|text| text.len()),
+            Some(3)
+        );
         let emoji = [0x3d, 0xd8, 0x00, 0xde];
-        assert_eq!(utf16_text(&ctx, &mut View::over_retained(&emoji), 2, "test text", "Inventor UTF-16 test").ok().map(|text| text.len()), Some(4));
-        assert_eq!(utf16_text(&ctx, &mut View::over_retained(&emoji), 3, "test text", "Inventor UTF-16 test").ok().map(|text| text.len()), None);
-        assert_eq!(utf16_text(&ctx, &mut View::over_retained(&emoji[..2]), 1, "test text", "Inventor UTF-16 test").ok().map(|text| text.len()), None);
-        assert_eq!(utf16_text(&ctx, &mut View::over_retained(&emoji[2..]), 1, "test text", "Inventor UTF-16 test").ok().map(|text| text.len()), None);
+        assert_eq!(
+            utf16_text(
+                &ctx,
+                &mut View::over_retained(&emoji),
+                2,
+                "test text",
+                "Inventor UTF-16 test"
+            )
+            .ok()
+            .map(|text| text.len()),
+            Some(4)
+        );
+        assert_eq!(
+            utf16_text(
+                &ctx,
+                &mut View::over_retained(&emoji),
+                3,
+                "test text",
+                "Inventor UTF-16 test"
+            )
+            .ok()
+            .map(|text| text.len()),
+            None
+        );
+        assert_eq!(
+            utf16_text(
+                &ctx,
+                &mut View::over_retained(&emoji[..2]),
+                1,
+                "test text",
+                "Inventor UTF-16 test"
+            )
+            .ok()
+            .map(|text| text.len()),
+            None
+        );
+        assert_eq!(
+            utf16_text(
+                &ctx,
+                &mut View::over_retained(&emoji[2..]),
+                1,
+                "test text",
+                "Inventor UTF-16 test"
+            )
+            .ok()
+            .map(|text| text.len()),
+            None
+        );
     }
 }

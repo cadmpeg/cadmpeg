@@ -972,7 +972,11 @@ impl<'a> MetaCursor<'a> {
             )));
         }
         crate::reader::utf16_text(
-            ctx, &mut self.source, len / 2, what, "retain RSe metadata UTF-16 field",
+            ctx,
+            &mut self.source,
+            len / 2,
+            what,
+            "retain RSe metadata UTF-16 field",
         )
     }
 }
@@ -1382,7 +1386,12 @@ mod tests {
         let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)
             .expect("metadata field fits input cap");
         let mut cursor = MetaCursor::new(root);
-        assert_eq!(cursor.length_prefixed_utf16(&ctx, "display name").expect("direct UTF-16 decode needs no temporary storage"), "A");
+        assert_eq!(
+            cursor
+                .length_prefixed_utf16(&ctx, "display name")
+                .expect("direct UTF-16 decode needs no temporary storage"),
+            "A"
+        );
     }
 
     #[test]

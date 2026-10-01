@@ -1170,13 +1170,19 @@ impl<'a> Cursor<'a> {
             ))
         })?;
         let bytes = crate::reader::take(&mut self.source, byte_len, field)?;
-        ctx.charge_work(cadmpeg_core::decode::u64_from_index(units), "trim Inventor PmApp UTF-16 string")?;
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(units),
+            "trim Inventor PmApp UTF-16 string",
+        )?;
         let mut length = bytes.len();
         while length >= 2 && bytes.get(length - 2..length) == Some(&[0, 0]) {
             length -= 2;
         }
         ctx.utf16le_text(
-            &bytes[..length], length / 2, false, "retain Inventor PmApp UTF-16 string",
+            &bytes[..length],
+            length / 2,
+            false,
+            "retain Inventor PmApp UTF-16 string",
         )
     }
 
@@ -1258,13 +1264,18 @@ mod tests {
             let arena = DecodeArena::new();
             let mut policy = DecodePolicy::service();
             policy.limits.max_retained_bytes = retained;
-            let (ctx, root) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+            let (ctx, root) =
+                cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+                    .expect("test root fits input admission");
             let result = Cursor::new(root).utf16(&ctx, "label");
             if retained == 4 {
                 assert!(matches!(result, Err(CodecError::ResourceLimit(limit))
                     if limit.dimension == ResourceDimension::RetainedBytes && limit.additional == 5));
             } else {
-                assert_eq!(result.unwrap(), "ࠀ\0A");
+                assert_eq!(
+                    result.expect("trimmed text fits five retained bytes"),
+                    "ࠀ\0A"
+                );
                 assert!(ctx.charge_retained(1, "after presentation text").is_err());
             }
         }

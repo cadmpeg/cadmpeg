@@ -1418,12 +1418,8 @@ pub(crate) fn xml_text_charged<'ctx>(
     let bytes = bytes.strip_prefix(&[0x86]).unwrap_or(bytes);
     if bytes.starts_with(&[0xff, 0xfe]) {
         let utf16 = &bytes[2..];
-        let (text, scope) = ctx.utf16le_lossy_scoped_text(
-            utf16,
-            utf16.len() / 2,
-            false,
-            operation,
-        )?;
+        let (text, scope) =
+            ctx.utf16le_lossy_scoped_text(utf16, utf16.len() / 2, false, operation)?;
         Ok(Some(EnvelopeText {
             text,
             _scope: Some(scope),

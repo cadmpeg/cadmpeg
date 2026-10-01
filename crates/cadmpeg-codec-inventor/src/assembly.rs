@@ -544,7 +544,11 @@ impl<'a> Cursor<'a> {
     ) -> Result<String, CodecError> {
         let count = self.count32(field, maximum)?;
         crate::reader::utf16_text(
-            ctx, &mut self.source, count, field, "retain Inventor assembly string",
+            ctx,
+            &mut self.source,
+            count,
+            field,
+            "retain Inventor assembly string",
         )
     }
 
@@ -612,7 +616,8 @@ mod tests {
             let arena = DecodeArena::new();
             let mut policy = DecodePolicy::service();
             policy.limits.max_retained_bytes = retained;
-            let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+            let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+                .expect("test root fits input admission");
             let mut cursor = super::Cursor::new(root);
             let result = cursor.utf16(&ctx, "label", 256);
             if retained == 2 {
@@ -620,7 +625,7 @@ mod tests {
                     if limit.dimension == ResourceDimension::RetainedBytes && limit.additional == 3));
                 assert_eq!(cursor.source.position(), 4);
             } else {
-                assert_eq!(result.unwrap(), "ࠀ");
+                assert_eq!(result.expect("three retained bytes fit exact text"), "ࠀ");
                 assert_eq!(cursor.source.position(), bytes.len());
                 assert!(ctx.charge_retained(1, "after assembly text").is_err());
             }
@@ -870,17 +875,19 @@ mod tests {
 
     #[test]
     fn assembly_record_tokens_refuse_retained_limit_before_copy() {
-        for (kind, type_id, payload, operation) in [
+        for (kind, type_id, payload, label, operation) in [
             (
                 SegmentKind::AmDc,
                 OCCURRENCE_TYPE,
                 occurrence_fixture(7, &[]),
+                "DCx",
                 "retain Inventor assembly occurrence token",
             ),
             (
                 SegmentKind::AmGraphics,
                 PLACEMENT_TYPE_CA,
                 placement_fixture(7, false, 0x8421, 0x7bde, &[]),
+                "GRx",
                 "retain Inventor assembly placement token",
             ),
         ] {
@@ -890,13 +897,14 @@ mod tests {
             let token_len = admitted.3.as_deref().expect("record token").len();
             let mut policy = DecodePolicy::service();
             policy.limits.max_retained_bytes =
-                cadmpeg_core::decode::u64_from_index(6 + token_len - 1);
+                cadmpeg_core::decode::u64_from_index(label.len() + token_len - 1);
             assert!(matches!(
                 inventory_with_record(kind, type_id, &payload, policy),
                 Err(CodecError::ResourceLimit(limit))
                     if limit.dimension == ResourceDimension::RetainedBytes
                         && limit.operation == operation
-                    && limit.used == 6
+                        && limit.used == cadmpeg_core::decode::u64_from_index(label.len())
+                        && limit.additional == cadmpeg_core::decode::u64_from_index(token_len)
             ));
         }
     }

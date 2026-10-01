@@ -98,10 +98,13 @@ fn copy_kernel_header(
     operation: &'static str,
 ) -> Result<BinaryHeader, CodecError> {
     let copy_text = |value: &Option<String>| {
-        value.as_deref().map(|value| {
-            ctx.charge_work(cadmpeg_core::decode::u64_from_index(value.len()), operation)?;
-            ctx.copy_retained_text(value, operation)
-        }).transpose()
+        value
+            .as_deref()
+            .map(|value| {
+                ctx.charge_work(cadmpeg_core::decode::u64_from_index(value.len()), operation)?;
+                ctx.copy_retained_text(value, operation)
+            })
+            .transpose()
     };
     Ok(BinaryHeader {
         width: header.width,
@@ -442,8 +445,13 @@ mod tests {
         let mut policy = DecodePolicy::service();
         policy.limits.max_retained_bytes = 17;
         policy.limits.max_work_units = 17;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        assert_eq!(super::copy_kernel_header(&ctx, &header, "header copy test").unwrap(), header);
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root context");
+        assert_eq!(
+            super::copy_kernel_header(&ctx, &header, "header copy test")
+                .expect("header strings fit exact byte and work admission"),
+            header
+        );
         assert!(matches!(ctx.charge_retained(1, "after header copy"),
             Err(CodecError::ResourceLimit(limit))
                 if limit.dimension == ResourceDimension::RetainedBytes && limit.used == 17));
@@ -456,10 +464,13 @@ mod tests {
             let arena = DecodeArena::new();
             let mut policy = DecodePolicy::service();
             policy.limits.max_retained_bytes = retained;
-            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-            assert!(matches!(super::copy_kernel_header(&ctx, &header, "header copy test"),
+            let (ctx, _) =
+                DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root context");
+            assert!(
+                matches!(super::copy_kernel_header(&ctx, &header, "header copy test"),
                 Err(CodecError::ResourceLimit(limit))
-                    if limit.dimension == ResourceDimension::RetainedBytes && limit.operation == "header copy test"));
+                    if limit.dimension == ResourceDimension::RetainedBytes && limit.operation == "header copy test")
+            );
         }
     }
 
@@ -469,11 +480,14 @@ mod tests {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_work_units = 0;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        assert!(matches!(super::copy_kernel_header(&ctx, &header, "header copy test"),
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root context");
+        assert!(
+            matches!(super::copy_kernel_header(&ctx, &header, "header copy test"),
             Err(CodecError::ResourceLimit(limit))
                 if limit.dimension == ResourceDimension::WorkUnits && limit.additional == 6
-                    && limit.operation == "header copy test"));
+                    && limit.operation == "header copy test")
+        );
     }
 
     #[test]
@@ -486,8 +500,13 @@ mod tests {
         let mut policy = DecodePolicy::service();
         policy.limits.max_retained_bytes = 0;
         policy.limits.max_work_units = 0;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        assert_eq!(super::copy_kernel_header(&ctx, &header, "header copy test").unwrap(), header);
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root context");
+        assert_eq!(
+            super::copy_kernel_header(&ctx, &header, "header copy test")
+                .expect("empty header strings need no admission"),
+            header
+        );
     }
 
     #[test]

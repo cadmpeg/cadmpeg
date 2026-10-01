@@ -4781,12 +4781,8 @@ fn parse_text_style(
             "Rhino legacy text style description",
         )?;
         let face_bytes = reader.take(128)?;
-        let windows_logfont_name = ctx.utf16le_lossy_text(
-            face_bytes,
-            64,
-            true,
-            "Rhino legacy font face",
-        )?;
+        let windows_logfont_name =
+            ctx.utf16le_lossy_text(face_bytes, 64, true, "Rhino legacy font face")?;
         let named_description =
             !description.is_empty() && !description.eq_ignore_ascii_case("Default");
         let postscript_name = if named_description

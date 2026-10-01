@@ -117,7 +117,10 @@ fn scan_length_user_units(
     const TOKEN: &[u8] = b"moLengthUserUnits_c";
     const STRING_MARKER: &[u8] = &[0xff, 0xfe, 0xff];
     let payload = section.payload();
-    ctx.charge_work(u64_from_index(payload.len()), "scan SLDPRT linear unit names")?;
+    ctx.charge_work(
+        u64_from_index(payload.len()),
+        "scan SLDPRT linear unit names",
+    )?;
     for offset in payload
         .windows(TOKEN.len())
         .enumerate()
@@ -144,7 +147,10 @@ fn scan_length_user_units(
         if bytes.is_empty() || bytes.len() % 2 != 0 {
             continue;
         }
-        ctx.charge_work(u64_from_index(bytes.len() / 2), "validate SLDPRT linear unit name")?;
+        ctx.charge_work(
+            u64_from_index(bytes.len() / 2),
+            "validate SLDPRT linear unit name",
+        )?;
         let scalars = || {
             char::decode_utf16(
                 (0..bytes.len() / 2).filter_map(|index| View::u16_le_at(bytes, index * 2)),

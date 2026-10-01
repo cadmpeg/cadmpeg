@@ -938,9 +938,7 @@ impl<'a> Cursor<'a> {
         field: &'static str,
         count: usize,
     ) -> Result<String, CodecError> {
-        crate::reader::utf16_text(
-            ctx, &mut self.view, count, field, "retain UFRxDoc string",
-        )
+        crate::reader::utf16_text(ctx, &mut self.view, count, field, "retain UFRxDoc string")
     }
 
     fn utf8(

@@ -794,9 +794,8 @@ fn decode_code_page(
                 "OLE Unicode code-page string has an odd byte length".into(),
             ));
         }
-        let value = ctx.utf16le_text(
-            bytes, bytes.len() / 2, false, "retain OLE property string",
-        )?;
+        let value =
+            ctx.utf16le_text(bytes, bytes.len() / 2, false, "retain OLE property string")?;
         return require_and_remove_null(value, "OLE Unicode code-page string");
     }
     let (content, had_null) = bytes
@@ -1002,7 +1001,11 @@ impl<'a> Cursor<'a> {
         field: &'static str,
     ) -> Result<String, CodecError> {
         let value = crate::reader::utf16_text(
-            ctx, &mut self.view, count, field, "retain OLE Unicode property string",
+            ctx,
+            &mut self.view,
+            count,
+            field,
+            "retain OLE Unicode property string",
         )?;
         require_and_remove_null(value, field)
     }
