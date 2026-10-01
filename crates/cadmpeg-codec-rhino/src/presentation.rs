@@ -2168,7 +2168,7 @@ fn parse_texture(
     }
     let id = uuid(&mut reader)?;
     let mapping_channel_id = reader.u32()?;
-    let legacy_file_path = crate::settings::utf16_deferred(&mut reader)?;
+    let legacy_file_path = crate::settings::utf16_deferred(ctx, &mut reader)?;
     let enabled = reader.bool()?;
     let texture_type = reader.u32()?;
     let mode = reader.u32()?;
@@ -2501,7 +2501,7 @@ fn parse_v2_v3_material(
 
     let archive_index = reader.i32()?;
     let plugin = uuid(&mut reader)?;
-    crate::settings::utf16_deferred(&mut reader)?;
+    crate::settings::utf16_deferred(ctx, &mut reader)?;
     let name = crate::settings::utf16_retained(ctx, &mut reader, "Rhino V2/V3 material name")?;
     let (id, reflection, transparent, index_of_refraction) = if minor >= 1 {
         (
@@ -2657,7 +2657,7 @@ fn parse_material(
     let transparency = read_finite(&mut reader, "transparency")?;
     let textures = texture_array(ctx, data, &mut reader, archive, losses)?;
     if !modern && minor >= 1 {
-        crate::settings::utf16_deferred(&mut reader)?;
+        crate::settings::utf16_deferred(ctx, &mut reader)?;
     }
     if minor >= 2 || modern {
         let count = reader.i32()?;

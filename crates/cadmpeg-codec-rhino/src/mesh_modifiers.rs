@@ -306,7 +306,7 @@ pub(crate) fn parse_attribute_userdata(
         optional_modifier(
             ctx,
             warnings,
-            parse_displacement(bytes, descriptor.payload_range.clone(), archive),
+            parse_displacement(ctx, bytes, descriptor.payload_range.clone(), archive),
             "displacement",
             descriptor.range.start,
         )?
@@ -317,7 +317,7 @@ pub(crate) fn parse_attribute_userdata(
         optional_modifier(
             ctx,
             warnings,
-            parse_edge_softening(bytes, descriptor.payload_range.clone()),
+            parse_edge_softening(ctx, bytes, descriptor.payload_range.clone()),
             "edge-softening",
             descriptor.range.start,
         )?
@@ -328,7 +328,7 @@ pub(crate) fn parse_attribute_userdata(
         optional_modifier(
             ctx,
             warnings,
-            parse_thickening(bytes, descriptor.payload_range.clone()),
+            parse_thickening(ctx, bytes, descriptor.payload_range.clone()),
             "thickening",
             descriptor.range.start,
         )?
@@ -339,7 +339,7 @@ pub(crate) fn parse_attribute_userdata(
         optional_modifier(
             ctx,
             warnings,
-            parse_curve_piping(bytes, descriptor.payload_range.clone()),
+            parse_curve_piping(ctx, bytes, descriptor.payload_range.clone()),
             "curve-piping",
             descriptor.range.start,
         )?
@@ -350,7 +350,7 @@ pub(crate) fn parse_attribute_userdata(
         optional_modifier(
             ctx,
             warnings,
-            parse_shut_lining(bytes, descriptor.payload_range.clone()),
+            parse_shut_lining(ctx, bytes, descriptor.payload_range.clone()),
             "shut-lining",
             descriptor.range.start,
         )?
@@ -407,54 +407,60 @@ fn first_matching_descriptor(
 }
 
 fn parse_displacement(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     bytes: &[u8],
     payload_range: std::ops::Range<usize>,
     archive: ArchiveVersion,
 ) -> Result<DisplacementModifier, FramingError> {
-    let (xml_version, xml) = parse_xml_userdata(bytes, payload_range)?;
+    let (xml_version, xml) = parse_xml_userdata(ctx, bytes, payload_range)?;
     parse_xml(&xml, xml_version, archive)
 }
 
 fn parse_edge_softening(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     bytes: &[u8],
     payload_range: std::ops::Range<usize>,
 ) -> Result<EdgeSofteningModifier, FramingError> {
-    let (xml_version, xml) = parse_xml_userdata(bytes, payload_range)?;
+    let (xml_version, xml) = parse_xml_userdata(ctx, bytes, payload_range)?;
     parse_edge_softening_xml(&xml, xml_version)
 }
 
 fn parse_thickening(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     bytes: &[u8],
     payload_range: std::ops::Range<usize>,
 ) -> Result<ThickeningModifier, FramingError> {
-    let (xml_version, xml) = parse_xml_userdata(bytes, payload_range)?;
+    let (xml_version, xml) = parse_xml_userdata(ctx, bytes, payload_range)?;
     parse_thickening_xml(&xml, xml_version)
 }
 
 fn parse_curve_piping(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     bytes: &[u8],
     payload_range: std::ops::Range<usize>,
 ) -> Result<CurvePipingModifier, FramingError> {
-    let (xml_version, xml) = parse_xml_userdata(bytes, payload_range)?;
+    let (xml_version, xml) = parse_xml_userdata(ctx, bytes, payload_range)?;
     parse_curve_piping_xml(&xml, xml_version)
 }
 
 fn parse_shut_lining(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     bytes: &[u8],
     payload_range: std::ops::Range<usize>,
 ) -> Result<ShutLiningModifier, FramingError> {
-    let (xml_version, xml) = parse_xml_userdata(bytes, payload_range)?;
+    let (xml_version, xml) = parse_xml_userdata(ctx, bytes, payload_range)?;
     parse_shut_lining_xml(&xml, xml_version)
 }
 
 fn parse_xml_userdata(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     bytes: &[u8],
     payload_range: std::ops::Range<usize>,
 ) -> Result<(i32, String), FramingError> {
     let mut reader = BoundedReader::new(bytes, payload_range.start, payload_range.end)?;
     let xml_version = reader.i32()?;
     let xml = match xml_version {
-        1 => settings::utf16(&mut reader)?,
+        1 => settings::utf16_retained(ctx, &mut reader, "Rhino modifier XML")?,
         XML_USERDATA_VERSION => {
             let length_offset = reader.position();
             let length = reader.i32()?;
