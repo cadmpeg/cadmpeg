@@ -242,11 +242,13 @@ dependencies = [
 name = "cadmpeg-core"
 version = "0.6.0"
 dependencies = [
+ "flate2",
  "memchr",
  "roxmltree",
  "serde",
  "serde_json",
  "thiserror",
+ "zstd",
 ]
 
 [[package]]

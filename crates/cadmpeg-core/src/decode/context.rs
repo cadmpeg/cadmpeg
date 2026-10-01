@@ -36,7 +36,12 @@ pub struct DecodeContext<'a> {
 impl<'a> DecodeContext<'a> {
     /// Creates one session before input acquisition and detection.
     pub fn new(arena: &'a DecodeArena, policy: &DecodePolicy, container_only: bool) -> Self {
-        Self { arena, container_only, budget: DecodeBudget::new(*policy, 0), derived_spaces: Cell::new(0) }
+        Self {
+            arena,
+            container_only,
+            budget: DecodeBudget::new(*policy, 0),
+            derived_spaces: Cell::new(0),
+        }
     }
 
     /// Reads the root input under `max_input_bytes`, copies it into the arena,
@@ -853,7 +858,10 @@ impl<'a> ExpandWriter<'_, 'a> {
     /// Finalizes the expansion, stores it in the arena, and registers its space.
     pub fn finalize(self) -> Result<View<'a>, CodecError> {
         self.check_exact()?;
-        let bytes = self.ctx.arena.alloc(self.ctx, self.buffer.into_boxed_slice())?;
+        let bytes = self
+            .ctx
+            .arena
+            .alloc(self.ctx, self.buffer.into_boxed_slice())?;
         let space = self.ctx.allocate_space()?;
         Ok(View::over_space(bytes, space))
     }
@@ -896,10 +904,13 @@ mod tests {
         policy.limits.max_collection_items = 0;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
         for _ in 0..2 {
-            let result = ctx.begin_expand(super::ExpandSpec::Exact(0))
-                .and_then(|writer| writer.finalize());
-            assert!(matches!(result, Err(crate::CodecError::ResourceLimit(limit))
-                if limit.dimension == ResourceDimension::CollectionItems));
+            let result = ctx
+                .begin_expand(super::ExpandSpec::Exact(0))
+                .and_then(super::ExpandWriter::finalize);
+            assert!(
+                matches!(result, Err(crate::CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::CollectionItems)
+            );
         }
     }
 
@@ -909,11 +920,18 @@ mod tests {
         let mut policy = DecodePolicy::service();
         policy.limits.max_collection_items = 1;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-        assert!(ctx.begin_expand(super::ExpandSpec::Exact(0)).expect("empty expansion")
-            .finalize().expect("first registry slot").window().is_empty());
-        assert!(matches!(ctx.begin_expand(super::ExpandSpec::Exact(0)).expect("empty expansion")
+        assert!(ctx
+            .begin_expand(super::ExpandSpec::Exact(0))
+            .expect("empty expansion")
+            .finalize()
+            .expect("first registry slot")
+            .window()
+            .is_empty());
+        assert!(
+            matches!(ctx.begin_expand(super::ExpandSpec::Exact(0)).expect("empty expansion")
             .finalize(), Err(crate::CodecError::ResourceLimit(limit))
-            if limit.dimension == ResourceDimension::CollectionItems && limit.used == 1));
+            if limit.dimension == ResourceDimension::CollectionItems && limit.used == 1)
+        );
     }
 
     struct RewindFails(Cursor<Vec<u8>>);

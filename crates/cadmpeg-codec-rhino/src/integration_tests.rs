@@ -61,7 +61,10 @@ fn archive_pipeline_aligns_versions_detection_inspection_units_and_container_onl
         let object =
             support::object_record(1, POINT_CLASS, &support::point_payload([1.0, 2.0, 3.0]));
         let bytes = support::archive_version(version, &[object]);
-        assert_eq!(cadmpeg_test_support::detection::confidence(&RhinoCodec, &bytes), Confidence::High);
+        assert_eq!(
+            cadmpeg_test_support::detection::confidence(&RhinoCodec, &bytes),
+            Confidence::High
+        );
         let summary = RhinoCodec
             .inspect(&mut Cursor::new(&bytes), &InspectOptions::default())
             .expect("3DM inspection");

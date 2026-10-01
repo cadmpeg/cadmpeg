@@ -55,7 +55,9 @@ fn looks_like_text_stream(prefix: &[u8]) -> bool {
         .split(|byte| matches!(byte, b' ' | b'\t' | b'\r'))
         .filter(|field| !field.is_empty());
     for _ in 0..4 {
-        let Some(field) = fields.next() else { return false; };
+        let Some(field) = fields.next() else {
+            return false;
+        };
         if !std::str::from_utf8(field).is_ok_and(|field| field.parse::<i64>().is_ok()) {
             return false;
         }

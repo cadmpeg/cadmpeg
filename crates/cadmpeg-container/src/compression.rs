@@ -3,9 +3,7 @@
 
 use std::io::Read;
 
-use cadmpeg_core::decode::{
-    DecodeContext, ExpandSpec, ExpandWriter, View,
-};
+use cadmpeg_core::decode::{DecodeContext, ExpandSpec, ExpandWriter, View};
 use cadmpeg_core::CodecError;
 use flate2::read::DeflateDecoder;
 use flate2::{Decompress, FlushDecompress, Status};
@@ -164,8 +162,8 @@ mod tests {
     use flate2::{write::DeflateEncoder, write::ZlibEncoder, Compression};
 
     use super::{
-        inflate_deflate, inflate_deflate_owned, inflate_zlib_exact,
-        inflate_zlib_member, inflate_zlib_member_owned,
+        inflate_deflate, inflate_deflate_owned, inflate_zlib_exact, inflate_zlib_member,
+        inflate_zlib_member_owned,
     };
 
     #[test]
@@ -346,9 +344,14 @@ mod tests {
             .finish()
             .expect("finishing an in-memory deflate encoder succeeds");
         let arena = DecodeArena::new();
-        let (ctx, root) = DecodeContext::from_root_bytes(&compressed, &arena, &DecodePolicy::default()).expect("root");
+        let (ctx, root) =
+            DecodeContext::from_root_bytes(&compressed, &arena, &DecodePolicy::default())
+                .expect("root");
         assert_eq!(
-            ctx.inflate_probe(root, 12, false).expect("probe").as_ref().map(|(bytes, _storage)| bytes.as_slice()),
+            ctx.inflate_probe(root, 12, false)
+                .expect("probe")
+                .as_ref()
+                .map(|(bytes, _storage)| bytes.as_slice()),
             Some(b"Document.xml".as_slice())
         );
         assert!(ctx.inflate_probe(root, 11, false).expect("probe").is_none());
@@ -364,9 +367,14 @@ mod tests {
             .finish()
             .expect("finishing an in-memory zlib encoder succeeds");
         let arena = DecodeArena::new();
-        let (ctx, root) = DecodeContext::from_root_bytes(&compressed, &arena, &DecodePolicy::default()).expect("root");
+        let (ctx, root) =
+            DecodeContext::from_root_bytes(&compressed, &arena, &DecodePolicy::default())
+                .expect("root");
         assert_eq!(
-            ctx.inflate_probe(root, 12, true).expect("probe").as_ref().map(|(bytes, _storage)| bytes.as_slice()),
+            ctx.inflate_probe(root, 12, true)
+                .expect("probe")
+                .as_ref()
+                .map(|(bytes, _storage)| bytes.as_slice()),
             Some(b"Document.xml".as_slice())
         );
         assert!(ctx.inflate_probe(root, 11, true).expect("probe").is_none());

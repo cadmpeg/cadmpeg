@@ -242,8 +242,16 @@ mod tests {
         assert_eq!(footer_offset, offset + size);
         assert_eq!(&file[footer_offset..], b"FOOTER\0\0\0\0\0\0\0\0");
         let arena = DecodeArena::new();
-        let (ctx, root) = DecodeContext::from_root_bytes(&file[offset..footer_offset], &arena, &DecodePolicy::default()).expect("root");
-        let (recovered, _storage) = ctx.inflate_probe(root, stream.len(), true).expect("probe").expect("zlib partition");
+        let (ctx, root) = DecodeContext::from_root_bytes(
+            &file[offset..footer_offset],
+            &arena,
+            &DecodePolicy::default(),
+        )
+        .expect("root");
+        let (recovered, _storage) = ctx
+            .inflate_probe(root, stream.len(), true)
+            .expect("probe")
+            .expect("zlib partition");
         assert_eq!(recovered, stream);
     }
 

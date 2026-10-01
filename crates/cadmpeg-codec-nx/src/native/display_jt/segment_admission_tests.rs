@@ -49,7 +49,9 @@ fn display_jt_inflate_propagates_retained_copy_limit() {
     crate::test_support::with_decode_context_over(
         &[],
         |policy| {
-            policy.limits.max_retained_bytes = 16;
+            // Registry storage precedes the payload's 16-byte allowance.
+            policy.limits.max_retained_bytes =
+                16 + cadmpeg_test_support::decode::arena_registry_bytes();
         },
         |ctx| {
             let error = super::inflate_display_jt(ctx, source).unwrap_err();

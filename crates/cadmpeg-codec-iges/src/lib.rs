@@ -135,9 +135,16 @@ fn document_digest(ir: &CadIr) -> Result<String, cadmpeg_core::CodecError> {
 impl CodecBackend for IgesCodec {
     const FORMAT: FormatId = FormatId::new(dialect::FORMAT);
 
-    fn detect_impl(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, prefix: cadmpeg_core::decode::View<'_>) -> Result<Confidence, cadmpeg_core::CodecError> {
+    fn detect_impl(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        prefix: cadmpeg_core::decode::View<'_>,
+    ) -> Result<Confidence, cadmpeg_core::CodecError> {
         let prefix = prefix.window();
-        ctx.charge_work(cadmpeg_core::decode::u64_from_index(prefix.len()), "detect input")?;
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(prefix.len()),
+            "detect input",
+        )?;
         Ok(representation::confidence(prefix))
     }
 

@@ -553,10 +553,7 @@ mod tests {
         }
         assert_eq!(values, [1, 2]);
         let view = View::over_space(&payload, SpaceId::ROOT);
-        assert_eq!(
-            view.counted(u64::from(u32::MAX), 4),
-            None
-        );
+        assert_eq!(view.counted(u64::from(u32::MAX), 4), None);
     }
 
     #[test]
@@ -780,6 +777,4 @@ mod tests {
         assert_eq!(view.i16_be(), Some(-5));
         assert_eq!(view.f32_le(), Some(1.5));
     }
-
-
 }

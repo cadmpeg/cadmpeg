@@ -500,7 +500,10 @@ use crate::container::classify;
 fn detect_high_on_f3d_zip_low_on_bare_zip() {
     let codec = F3dCodec;
     let f3d = synthetic_f3d(true);
-    assert_eq!(cadmpeg_test_support::detection::confidence(&codec, &f3d), Confidence::High);
+    assert_eq!(
+        cadmpeg_test_support::detection::confidence(&codec, &f3d),
+        Confidence::High
+    );
 
     // A ZIP whose visible prefix has no f3d markers.
     let mut bare = zip::ZipWriter::new(Cursor::new(Vec::new()));
@@ -511,9 +514,15 @@ fn detect_high_on_f3d_zip_low_on_bare_zip() {
     .unwrap();
     bare.write_all(b"hello").unwrap();
     let bare = bare.finish().unwrap().into_inner();
-    assert_eq!(cadmpeg_test_support::detection::confidence(&codec, &bare), Confidence::Low);
+    assert_eq!(
+        cadmpeg_test_support::detection::confidence(&codec, &bare),
+        Confidence::Low
+    );
 
-    assert_eq!(cadmpeg_test_support::detection::confidence(&codec, b"\x00\x01\x02\x03 not a zip"), Confidence::No);
+    assert_eq!(
+        cadmpeg_test_support::detection::confidence(&codec, b"\x00\x01\x02\x03 not a zip"),
+        Confidence::No
+    );
 }
 
 #[test]
@@ -559,10 +568,10 @@ fn f3d_brep_scan_propagates_header_string_limit() {
     use cadmpeg_core::CodecError;
 
     let bytes = synthetic_f3d(true);
-    let arena = DecodeArena::new();
     let mut cap = 0;
     let mut needed = None;
     for _ in 0..128 {
+        let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_retained_bytes = cap;
         let (limited, root) =
@@ -587,6 +596,7 @@ fn f3d_brep_scan_propagates_header_string_limit() {
         }
     }
     let needed = needed.expect("header string reached within fixture charges");
+    let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = needed - 1;
     let (limited, root) =

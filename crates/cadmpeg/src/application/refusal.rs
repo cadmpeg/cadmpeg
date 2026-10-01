@@ -78,7 +78,9 @@ impl From<serde_json::Error> for ApplicationError {
 impl From<cadmpeg_core::CodecError> for ApplicationError {
     fn from(error: cadmpeg_core::CodecError) -> Self {
         match error {
-            cadmpeg_core::CodecError::ResourceLimit(limit) => Self::Resource(cadmpeg_core::CodecError::ResourceLimit(limit)),
+            cadmpeg_core::CodecError::ResourceLimit(limit) => {
+                Self::Resource(cadmpeg_core::CodecError::ResourceLimit(limit))
+            }
             error => Self::Operational(error.into()),
         }
     }
@@ -110,7 +112,9 @@ impl ApplicationError {
         failure: DecodeFailure,
     ) -> Self {
         match failure {
-            DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit)) => Self::Resource(cadmpeg_core::CodecError::ResourceLimit(limit)),
+            DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit)) => {
+                Self::Resource(cadmpeg_core::CodecError::ResourceLimit(limit))
+            }
             DecodeFailure::Codec(cadmpeg_core::CodecError::Io(error)) => Self::Operational(
                 anyhow::Error::new(DecodeFailure::Codec(cadmpeg_core::CodecError::Io(error)))
                     .context(format!("decoding {} as {format_id}", path.display())),

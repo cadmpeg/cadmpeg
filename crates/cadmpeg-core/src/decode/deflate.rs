@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Scoped DEFLATE output for detection.
 
-use flate2::{Decompress, FlushDecompress, Status};
-use crate::CodecError;
 use super::{u64_from_index, DecodeContext, ScopedReservation, View};
+use crate::CodecError;
+use flate2::{Decompress, FlushDecompress, Status};
 
 impl DecodeContext<'_> {
     /// Inflates one raw or zlib member up to `cap`. An oversized or malformed
@@ -14,7 +14,10 @@ impl DecodeContext<'_> {
         cap: usize,
         zlib: bool,
     ) -> Result<Option<(Vec<u8>, ScopedReservation<'_>)>, CodecError> {
-        self.charge_work(u64_from_index(source.window().len()), "probe compressed input")?;
+        self.charge_work(
+            u64_from_index(source.window().len()),
+            "probe compressed input",
+        )?;
         // miniz_oxide uses a 32 KiB dictionary and fixed Huffman tables. This
         // 256 KiB bound includes the state and table storage for one decoder.
         let _workspace = self.reserve_scoped(256 * 1024, "DEFLATE probe workspace")?;
@@ -27,16 +30,22 @@ impl DecodeContext<'_> {
             self.charge_work(u64_from_index(chunk.len()), "DEFLATE probe step")?;
             let before_in = decoder.total_in();
             let before_out = decoder.total_out();
-            let status = match decoder.decompress(&source.window()[offset..], &mut chunk, FlushDecompress::None) {
-                Ok(status) => status,
-                Err(_) => return Ok(None),
+            let Ok(status) = decoder.decompress(
+                &source.window()[offset..],
+                &mut chunk,
+                FlushDecompress::None,
+            ) else {
+                return Ok(None);
             };
             let consumed = usize::try_from(decoder.total_in() - before_in)
                 .map_err(|_| CodecError::Malformed("DEFLATE probe input overflow".into()))?;
             let produced = usize::try_from(decoder.total_out() - before_out)
                 .map_err(|_| CodecError::Malformed("DEFLATE probe output overflow".into()))?;
             offset += consumed;
-            if cap.checked_sub(output.len()).is_none_or(|remaining| produced > remaining) {
+            if cap
+                .checked_sub(output.len())
+                .is_none_or(|remaining| produced > remaining)
+            {
                 return Ok(None);
             }
             self.charge_work(u64_from_index(produced), "DEFLATE probe copy")?;
@@ -54,10 +63,10 @@ impl DecodeContext<'_> {
 
 #[cfg(test)]
 mod tests {
-    use std::io::Write;
-    use flate2::{write::DeflateEncoder, Compression};
     use crate::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use crate::CodecError;
+    use flate2::{write::DeflateEncoder, Compression};
+    use std::io::Write;
 
     #[test]
     fn deflate_probe_output_reservation_lives_with_returned_bytes() {
@@ -68,12 +77,26 @@ mod tests {
             let arena = DecodeArena::new();
             let mut policy = DecodePolicy::service();
             policy.limits.max_materialized_bytes = 256 * 1024 + 12;
-            let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("root");
-            let probe = ctx.inflate_probe(root, 12, false).expect("probe").expect("evidence");
-            if release { drop(probe); }
-            let result = ctx.reserve_scoped(policy.limits.max_materialized_bytes, "probe output lifetime");
-            if release { assert!(result.is_ok()); }
-            else { assert!(matches!(result, Err(CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::MaterializedBytes && limit.used == 12)); }
+            let (ctx, root) =
+                DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("root");
+            let probe = ctx
+                .inflate_probe(root, 12, false)
+                .expect("probe")
+                .expect("evidence");
+            if release {
+                drop(probe);
+            }
+            let result = ctx.reserve_scoped(
+                policy.limits.max_materialized_bytes,
+                "probe output lifetime",
+            );
+            if release {
+                assert!(result.is_ok());
+            } else {
+                assert!(
+                    matches!(result, Err(CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::MaterializedBytes && limit.used == 12)
+                );
+            }
         }
     }
 
@@ -82,7 +105,11 @@ mod tests {
         let mut encoder = DeflateEncoder::new(Vec::new(), Compression::default());
         encoder.write_all(b"Document.xml").expect("encode");
         let bytes = encoder.finish().expect("finish");
-        for dimension in [ResourceDimension::WorkUnits, ResourceDimension::MaterializedBytes, ResourceDimension::CollectionItems] {
+        for dimension in [
+            ResourceDimension::WorkUnits,
+            ResourceDimension::MaterializedBytes,
+            ResourceDimension::CollectionItems,
+        ] {
             let arena = DecodeArena::new();
             let mut policy = DecodePolicy::service();
             match dimension {
@@ -91,12 +118,19 @@ mod tests {
                 ResourceDimension::CollectionItems => policy.limits.max_collection_items = 0,
                 _ => panic!("test dimension"),
             }
-            let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("root");
-            assert!(matches!(ctx.inflate_probe(root, 12, false), Err(CodecError::ResourceLimit(limit)) if limit.dimension == dimension));
+            let (ctx, root) =
+                DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("root");
+            assert!(
+                matches!(ctx.inflate_probe(root, 12, false), Err(CodecError::ResourceLimit(limit)) if limit.dimension == dimension)
+            );
         }
         let arena = DecodeArena::new();
-        let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service()).expect("root");
-        let (output, storage) = ctx.inflate_probe(root, 12, false).expect("probe").expect("evidence");
+        let (ctx, root) =
+            DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service()).expect("root");
+        let (output, storage) = ctx
+            .inflate_probe(root, 12, false)
+            .expect("probe")
+            .expect("evidence");
         assert_eq!(output, b"Document.xml");
         drop((output, storage));
         assert!(ctx.inflate_probe(root, 11, false).expect("probe").is_none());

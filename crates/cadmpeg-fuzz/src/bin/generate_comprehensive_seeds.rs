@@ -525,8 +525,16 @@ mod sldprt {
                 .expect("material block payload length");
             let payload_len = usize::try_from(payload_len).expect("host payload length");
             let arena = DecodeArena::new();
-            let (ctx, root) = DecodeContext::from_root_bytes(&file[at + 24 + name_len..], &arena, &DecodePolicy::default()).expect("root");
-            let (material, _storage) = ctx.inflate_probe(root, payload_len, false).expect("probe").expect("material block");
+            let (ctx, root) = DecodeContext::from_root_bytes(
+                &file[at + 24 + name_len..],
+                &arena,
+                &DecodePolicy::default(),
+            )
+            .expect("root");
+            let (material, _storage) = ctx
+                .inflate_probe(root, payload_len, false)
+                .expect("probe")
+                .expect("material block");
             assert!(material
                 .windows(6)
                 .any(|bytes| bytes == [0xff, 0xfe, 0xff, 1, 0xe9, 0]));

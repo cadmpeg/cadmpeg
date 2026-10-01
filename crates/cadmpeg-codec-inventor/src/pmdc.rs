@@ -596,7 +596,6 @@ pub(crate) fn u32_list(
     })
 }
 
-
 type PairedMapItems<V> = ([u32; 2], Vec<(PmDcReference, V)>);
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
@@ -797,7 +796,6 @@ mod tests {
             matches!(super::u32_list(&ctx, &mut Cursor::new(root), 2, "test"), Err(CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::RetainedBytes)
         );
     }
-
 
     #[test]
     fn pmdc_utf16_refuses_exact_utf8_retained_limit_before_decode() {

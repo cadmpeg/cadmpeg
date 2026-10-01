@@ -400,7 +400,9 @@ fn decode_propagates_spline_grid_collection_limit() {
         policy: DecodePolicy::service(),
         ..DecodeOptions::default()
     };
-    options.policy.limits.max_collection_items = 45;
+    // Input byte slots precede the parser's fixed 45-item allowance.
+    options.policy.limits.max_collection_items =
+        45 + cadmpeg_core::decode::u64_from_index(data.len());
     let error = CreoCodec
         .decode(&mut Cursor::new(data.clone()), &options)
         .expect_err("six scalar slots exceed the five-item limit");
@@ -436,7 +438,9 @@ fn decode_propagates_counted_scalar_array_collection_limit() {
         policy: DecodePolicy::service(),
         ..DecodeOptions::default()
     };
-    options.policy.limits.max_collection_items = 43;
+    // Input byte slots precede the parser's fixed 43-item allowance.
+    options.policy.limits.max_collection_items =
+        43 + cadmpeg_core::decode::u64_from_index(data.len());
     let error = CreoCodec
         .decode(&mut Cursor::new(data.clone()), &options)
         .expect_err("four scalar slots exceed the three-item limit");
@@ -464,7 +468,11 @@ fn decode_propagates_counted_scalar_array_collection_limit() {
 fn exact_collection_limit_for_decode(data: &[u8], options: &mut DecodeOptions) -> u64 {
     use cadmpeg_core::decode::ResourceDimension;
 
-    for _ in 0..512 {
+    // Each refusal advances by at least one item within the service ceiling.
+    for _ in 0..cadmpeg_core::decode::DecodePolicy::service()
+        .limits
+        .max_collection_items
+    {
         match CreoCodec.decode(&mut Cursor::new(data), options) {
             Ok(_) => return options.policy.limits.max_collection_items,
             Err(cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(

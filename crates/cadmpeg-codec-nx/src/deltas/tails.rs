@@ -184,7 +184,11 @@ mod tests {
 
     #[test]
     fn fixed_numeric_tail_reads_count_selected_finite_values() {
-        for (form, count) in [(crate::intersection::TermUseForm::LQuestion, 8), (crate::intersection::TermUseForm::Tf, 19), (crate::intersection::TermUseForm::Ts, 19)] {
+        for (form, count) in [
+            (crate::intersection::TermUseForm::LQuestion, 8),
+            (crate::intersection::TermUseForm::Tf, 19),
+            (crate::intersection::TermUseForm::Ts, 19),
+        ] {
             let mut bytes = vec![0; 2];
             for _ in 0..count {
                 bytes.extend_from_slice(&0_f64.to_be_bytes());
@@ -193,7 +197,9 @@ mod tests {
             assert_eq!(tail.values().values().len(), count);
             assert_eq!(tail.end(), bytes.len());
             assert_eq!(tail.term_use_xmt, 42);
-            assert!(super::TermUseNumericTail::read(&bytes[..bytes.len() - 1], 2, 42, form).is_none());
+            assert!(
+                super::TermUseNumericTail::read(&bytes[..bytes.len() - 1], 2, 42, form).is_none()
+            );
             bytes[2..10].copy_from_slice(&f64::INFINITY.to_be_bytes());
             assert!(super::TermUseNumericTail::read(&bytes, 2, 42, form).is_none());
         }

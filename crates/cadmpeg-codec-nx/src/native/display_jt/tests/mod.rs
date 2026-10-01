@@ -1421,7 +1421,9 @@ fn display_jt_base_node_body_bounds_ordered_attribute_ids() {
         super::parse_jt_base_node_body(&body, 9).expect("required invariant");
     assert_eq!(version, 1);
     assert_eq!(flags, 0x20);
-    let attributes = super::read_jt_object_ids(&ctx, attributes, "decode DisplayJT base node attributes").expect("admitted attributes");
+    let attributes =
+        super::read_jt_object_ids(&ctx, attributes, "decode DisplayJT base node attributes")
+            .expect("admitted attributes");
     assert_eq!(attributes, [7, 9]);
     assert_eq!(family, [4, 3, 2, 1]);
 
@@ -1436,7 +1438,9 @@ fn display_jt_base_node_body_bounds_ordered_attribute_ids() {
     let (version, flags, attributes, family) =
         super::parse_jt_base_node_body(&modern, 10).expect("required invariant");
     assert_eq!((version, flags), (2, 0x40));
-    let attributes = super::read_jt_object_ids(&ctx, attributes, "decode DisplayJT base node attributes").expect("admitted attributes");
+    let attributes =
+        super::read_jt_object_ids(&ctx, attributes, "decode DisplayJT base node attributes")
+            .expect("admitted attributes");
     assert_eq!(attributes, [11]);
     assert_eq!(family, [0xaa]);
 }
@@ -1475,7 +1479,8 @@ fn display_jt9_group_node_bounds_ordered_children_and_family_tail() {
     let (version, children, family) =
         super::parse_jt9_group_node_body(&body).expect("required invariant");
     assert_eq!(version, 1);
-    let children = super::read_jt_object_ids(&ctx, children, "decode DisplayJT group children").expect("admitted children");
+    let children = super::read_jt_object_ids(&ctx, children, "decode DisplayJT group children")
+        .expect("admitted children");
     assert_eq!(children, [7, 9]);
     assert_eq!(family, [4, 3, 2, 1]);
     body.truncate(body.len() - 5);
@@ -1722,7 +1727,9 @@ fn display_jt9_partition_node_requires_complete_bounds_and_ranges() {
     crate::test_support::with_decode_context_over(
         &[],
         |policy| {
-            policy.limits.max_retained_bytes = 0;
+            // One retained child ID precedes the filename's zero-byte allowance.
+            policy.limits.max_retained_bytes =
+                cadmpeg_core::decode::u64_from_index(std::mem::size_of::<u32>());
         },
         |limited| {
             assert!(
@@ -1760,7 +1767,9 @@ fn display_jt9_range_lod_requires_ordered_finite_limits() {
     for value in [1.0_f32, 2.0, 3.0] {
         body.extend_from_slice(&value.to_le_bytes());
     }
-    let node = super::parse_jt9_range_lod_node_body(&ctx, &body).expect("admitted range parser").expect("required invariant");
+    let node = super::parse_jt9_range_lod_node_body(&ctx, &body)
+        .expect("admitted range parser")
+        .expect("required invariant");
     assert_eq!(node.group_version, 1);
     assert_eq!(node.child_object_ids, [7, 9]);
     assert_eq!(node.lod_version, 1);
@@ -1788,7 +1797,9 @@ fn display_jt9_range_lod_requires_ordered_finite_limits() {
     let range_offset = body.len() - 20;
     body[range_offset..range_offset + 4].copy_from_slice(&5.0_f32.to_le_bytes());
     body[range_offset + 4..range_offset + 8].copy_from_slice(&4.0_f32.to_le_bytes());
-    assert!(super::parse_jt9_range_lod_node_body(&ctx, &body).expect("admitted range parser").is_none());
+    assert!(super::parse_jt9_range_lod_node_body(&ctx, &body)
+        .expect("admitted range parser")
+        .is_none());
 }
 
 #[test]

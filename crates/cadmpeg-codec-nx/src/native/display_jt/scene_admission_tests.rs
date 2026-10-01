@@ -18,12 +18,26 @@ fn display_jt_base_node_attributes_refuse_before_counted_vector() {
             policy.limits.max_collection_items = 0;
         },
         |ctx| {
-            let error = super::read_jt_object_ids(ctx, super::parse_jt_base_node_body(&body, 9).expect("bounded attributes").2, "decode DisplayJT base node attributes").unwrap_err();
+            let error = super::read_jt_object_ids(
+                ctx,
+                super::parse_jt_base_node_body(&body, 9)
+                    .expect("bounded attributes")
+                    .2,
+                "decode DisplayJT base node attributes",
+            )
+            .unwrap_err();
             assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::CollectionItems
             && limit.operation == "decode DisplayJT base node attributes"));
             crate::test_support::with_decode_context(|service| {
-                assert!(super::read_jt_object_ids(service, super::parse_jt_base_node_body(&body, 9).expect("bounded attributes").2, "decode DisplayJT base node attributes").is_ok());
+                assert!(super::read_jt_object_ids(
+                    service,
+                    super::parse_jt_base_node_body(&body, 9)
+                        .expect("bounded attributes")
+                        .2,
+                    "decode DisplayJT base node attributes"
+                )
+                .is_ok());
             });
         },
     );
@@ -45,12 +59,26 @@ fn display_jt_group_children_refuse_before_counted_vector() {
             policy.limits.max_collection_items = 0;
         },
         |ctx| {
-            let error = super::read_jt_object_ids(ctx, super::parse_jt9_group_node_body(&body).expect("bounded children").1, "decode DisplayJT group children").unwrap_err();
+            let error = super::read_jt_object_ids(
+                ctx,
+                super::parse_jt9_group_node_body(&body)
+                    .expect("bounded children")
+                    .1,
+                "decode DisplayJT group children",
+            )
+            .unwrap_err();
             assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::CollectionItems
             && limit.operation == "decode DisplayJT group children"));
             crate::test_support::with_decode_context(|service| {
-                assert!(super::read_jt_object_ids(service, super::parse_jt9_group_node_body(&body).expect("bounded children").1, "decode DisplayJT group children").is_ok());
+                assert!(super::read_jt_object_ids(
+                    service,
+                    super::parse_jt9_group_node_body(&body)
+                        .expect("bounded children")
+                        .1,
+                    "decode DisplayJT group children"
+                )
+                .is_ok());
             });
         },
     );
@@ -120,15 +148,18 @@ fn display_jt_range_vectors_refuse_before_conversion_allocation() {
     family.extend_from_slice(&1.0_f32.to_le_bytes());
 
     let read_vectors = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| -> Result<[Vec<super::FiniteBinary32>; 2], CodecError> {
-        let (first, rest) = super::parse_jt_f32_vector(ctx, &family[2..])?.expect("first vector");
-        let (second, _) = super::parse_jt_f32_vector(ctx, &rest[6..])?.expect("second vector");
+        let mut view = super::View::over_retained(&family[2..]);
+        let first = super::parse_jt_f32_vector(ctx, &mut view)?.expect("first vector");
+        view.take(6).expect("reserved value and range version");
+        let second = super::parse_jt_f32_vector(ctx, &mut view)?.expect("second vector");
         Ok([first, second])
     };
     crate::test_support::with_decode_context_over(
         &[],
         |policy| policy.limits.max_collection_items = 3,
         |ctx| {
-            let vectors = read_vectors(ctx).expect("one allocation for each vector fits three slots");
+            let vectors =
+                read_vectors(ctx).expect("one allocation for each vector fits three slots");
             assert_eq!(vectors.map(|values| values[0].get()), [0.5, 1.0]);
         },
     );

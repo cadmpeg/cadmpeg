@@ -136,8 +136,12 @@ pub(crate) fn read_bounded_text(path: &Path, max_bytes: u64) -> Result<String, C
     let ctx = DecodeContext::new(&arena, &policy, false);
     let mut bytes = Vec::new();
     ctx.complete_input(&mut file, &mut bytes)?;
-    ctx.charge_work(cadmpeg_core::decode::u64_from_index(bytes.len()), "validate text input UTF-8")?;
-    let text = String::from_utf8(bytes).map_err(|_| CodecError::Malformed("input is not UTF-8".into()))?;
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(bytes.len()),
+        "validate text input UTF-8",
+    )?;
+    let text =
+        String::from_utf8(bytes).map_err(|_| CodecError::Malformed("input is not UTF-8".into()))?;
     ctx.finish_session()?;
     Ok(text)
 }
@@ -154,7 +158,8 @@ pub(crate) fn load_matching_sidecar(
         return Err(anyhow!(
             "{} names no file, so it has no decode sidecar",
             cadir_path.display()
-        ).into());
+        )
+        .into());
     };
     if !path.exists() {
         return Ok(None);
@@ -167,7 +172,8 @@ pub(crate) fn load_matching_sidecar(
             "decode sidecar {} does not match {}",
             path.display(),
             cadir_path.display()
-        ).into());
+        )
+        .into());
     }
     Ok(Some(sidecar))
 }
@@ -289,7 +295,7 @@ pub(super) fn persist_decode_sidecar(
         return Err(anyhow!(
             "{} names no file, so it has no decode sidecar",
             cadir_path.display()
-        ).into());
+        ));
     };
     match origin {
         LoadOrigin::Decoded {
@@ -352,16 +358,16 @@ impl Write for TempFileWriter<'_> {
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::default_trait_access)]
 mod tests {
-    use std::fs::File;
-    use std::path::Path;
-    use cadmpeg_core::CodecError;
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    use cadmpeg_core::CodecError;
+    use std::fs::File;
     #[cfg(feature = "nx")]
     use std::io::Cursor;
+    use std::path::Path;
 
     use super::{
-        check_output_path, load_matching_sidecar, read_bounded_text,
-        FileDestination, OptionalFileDestination, OutputDestinations,
+        check_output_path, load_matching_sidecar, read_bounded_text, FileDestination,
+        OptionalFileDestination, OutputDestinations,
     };
     #[cfg(feature = "nx")]
     use cadmpeg_core::decode::InspectOptions;
@@ -376,13 +382,18 @@ mod tests {
     #[cfg(feature = "nx")]
     use cadmpeg_test_support::bytes::{put_u16, put_u32};
 
-    fn read_detection_input(path: &Path, prefix_len: usize, max_bytes: u64) -> Result<Vec<u8>, CodecError> {
+    fn read_detection_input(
+        path: &Path,
+        prefix_len: usize,
+        max_bytes: u64,
+    ) -> Result<Vec<u8>, CodecError> {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::default();
         policy.limits.max_input_bytes = max_bytes;
         let ctx = DecodeContext::new(&arena, &policy, false);
         let mut file = File::open(path)?;
-        let result = cadmpeg_container::compound::read_detection_prefix(&ctx, &mut file, prefix_len);
+        let result =
+            cadmpeg_container::compound::read_detection_prefix(&ctx, &mut file, prefix_len);
         ctx.finish_session()?;
         result
     }
@@ -519,7 +530,9 @@ mod tests {
         let path = directory.path().join("large.json");
         std::fs::write(&path, "12345").unwrap();
         let error = read_bounded_text(&path, 4).unwrap_err();
-        assert!(matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::InputBytes && limit.limit == 4));
+        assert!(
+            matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::InputBytes && limit.limit == 4)
+        );
     }
 
     #[test]
@@ -564,10 +577,16 @@ mod tests {
         assert_eq!(cli_prefix, bytes);
 
         let arena = DecodeArena::new();
-        let (ctx, root) = DecodeContext::from_root_bytes(&cli_prefix, &arena, &DecodePolicy::default()).expect("root");
+        let (ctx, root) =
+            DecodeContext::from_root_bytes(&cli_prefix, &arena, &DecodePolicy::default())
+                .expect("root");
         let catalog = InputCatalog::with_builtins();
-        let (candidates, _storage) = catalog.candidates(&ctx, root).expect("candidates");
-        let cli_candidates = candidates.into_iter()
+        let mut candidates = Vec::new();
+        let _storage = catalog
+            .candidates(&ctx, root, &mut candidates)
+            .expect("candidates");
+        let cli_candidates = candidates
+            .into_iter()
             .map(|(codec, confidence)| (codec.id(), confidence))
             .collect::<Vec<_>>();
         let mut source = Cursor::new(bytes);

@@ -634,13 +634,7 @@ fn e5_decode_route_propagates_orientation_collection_refusal() {
     for cap in 0..2048 {
         let mut policy = cadmpeg_core::decode::DecodePolicy::service();
         policy.limits.max_collection_items = cap;
-        let result = CatiaCodec.decode(
-            &mut Cursor::new(&file),
-            &DecodeOptions {
-                policy,
-                ..DecodeOptions::default()
-            },
-        );
+        let result = cadmpeg_test_support::decode::full(&CatiaCodec, &file, &policy);
         match result {
             Err(cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(
                 limit,
@@ -667,13 +661,7 @@ fn e5_topology_transfer_refuses_before_reference_maps() {
     for cap in 0..2048 {
         let mut policy = cadmpeg_core::decode::DecodePolicy::service();
         policy.limits.max_collection_items = cap;
-        match CatiaCodec.decode(
-            &mut Cursor::new(&file),
-            &DecodeOptions {
-                policy,
-                ..DecodeOptions::default()
-            },
-        ) {
+        match cadmpeg_test_support::decode::full(&CatiaCodec, &file, &policy) {
             Err(cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(
                 limit,
             ))) => {

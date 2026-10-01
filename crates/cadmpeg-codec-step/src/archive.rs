@@ -29,10 +29,16 @@ pub(crate) fn has_zip_magic(bytes: &[u8]) -> bool {
 }
 
 /// Returns whether a detection prefix names the required STEP root member.
-pub(crate) fn has_root_marker(ctx: &DecodeContext<'_>, prefix: View<'_>) -> Result<bool, CodecError> {
+pub(crate) fn has_root_marker(
+    ctx: &DecodeContext<'_>,
+    prefix: View<'_>,
+) -> Result<bool, CodecError> {
     // The root name is evidence only in the structured central directory.
     const MAX_PROBE_BYTES: usize = 1024 * 1024;
-    ctx.charge_work(u64_from_index(prefix.window().len().min(4)), "STEP ZIP detection magic")?;
+    ctx.charge_work(
+        u64_from_index(prefix.window().len().min(4)),
+        "STEP ZIP detection magic",
+    )?;
     if !has_zip_magic(prefix.window()) || prefix.window().len() > MAX_PROBE_BYTES {
         return Ok(false);
     }

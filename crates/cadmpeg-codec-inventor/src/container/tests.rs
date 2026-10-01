@@ -167,10 +167,22 @@ fn container_summary_loss_slot_refuses_before_loss_construction() {
 fn detects_only_structurally_corroborated_inventor_cfb() {
     let inventor = fixture(true);
     let unrelated = fixture(false);
-    assert_eq!(cadmpeg_test_support::detection::confidence(&InventorCodec, &inventor), Confidence::High);
-    assert_eq!(cadmpeg_test_support::detection::confidence(&InventorCodec, &unrelated), Confidence::No);
-    assert_eq!(cadmpeg_test_support::detection::confidence(&InventorCodec, b"not a compound file"), Confidence::No);
-    assert_eq!(cadmpeg_test_support::detection::confidence(&InventorCodec, &inventor[..400]), Confidence::No);
+    assert_eq!(
+        cadmpeg_test_support::detection::confidence(&InventorCodec, &inventor),
+        Confidence::High
+    );
+    assert_eq!(
+        cadmpeg_test_support::detection::confidence(&InventorCodec, &unrelated),
+        Confidence::No
+    );
+    assert_eq!(
+        cadmpeg_test_support::detection::confidence(&InventorCodec, b"not a compound file"),
+        Confidence::No
+    );
+    assert_eq!(
+        cadmpeg_test_support::detection::confidence(&InventorCodec, &inventor[..400]),
+        Confidence::No
+    );
 }
 
 #[test]

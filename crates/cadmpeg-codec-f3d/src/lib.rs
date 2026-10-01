@@ -176,13 +176,30 @@ impl CodecBackend for F3dCodec {
         validate::validate_native_charged(ctx, ir)
     }
 
-    fn detect_impl(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, prefix: cadmpeg_core::decode::View<'_>) -> Result<Confidence, cadmpeg_core::CodecError> {
+    fn detect_impl(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        prefix: cadmpeg_core::decode::View<'_>,
+    ) -> Result<Confidence, cadmpeg_core::CodecError> {
         let prefix = prefix.window();
-        ctx.charge_work(cadmpeg_core::decode::u64_from_index(prefix.len().min(ZIP_MAGIC.len())), "detect ZIP magic")?;
-        if !prefix.starts_with(ZIP_MAGIC) { return Ok(Confidence::No); }
-        for marker in container::DETECT_MARKERS.iter().chain(container::F3Z_DETECT_MARKERS) {
-            ctx.charge_work(cadmpeg_core::decode::u64_from_index(prefix.len()), "detect Fusion marker")?;
-            if contains(prefix, marker) { return Ok(Confidence::High); }
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(prefix.len().min(ZIP_MAGIC.len())),
+            "detect ZIP magic",
+        )?;
+        if !prefix.starts_with(ZIP_MAGIC) {
+            return Ok(Confidence::No);
+        }
+        for marker in container::DETECT_MARKERS
+            .iter()
+            .chain(container::F3Z_DETECT_MARKERS)
+        {
+            ctx.charge_work(
+                cadmpeg_core::decode::u64_from_index(prefix.len()),
+                "detect Fusion marker",
+            )?;
+            if contains(prefix, marker) {
+                return Ok(Confidence::High);
+            }
         }
         Ok(Confidence::Low)
     }

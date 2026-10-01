@@ -1097,9 +1097,18 @@ fn outer_data_declaration_uses_the_terminal_marker_after_long_class_names() {
 
 #[test]
 fn detect_high_on_outer_magic() {
-    assert_eq!(cadmpeg_test_support::detection::confidence(&CatiaCodec, OUTER_MAGIC), Confidence::High);
-    assert_eq!(cadmpeg_test_support::detection::confidence(&CatiaCodec, &standard_catpart()), Confidence::High);
-    assert_eq!(cadmpeg_test_support::detection::confidence(&CatiaCodec, b"PK\x03\x04 not catia"), Confidence::No);
+    assert_eq!(
+        cadmpeg_test_support::detection::confidence(&CatiaCodec, OUTER_MAGIC),
+        Confidence::High
+    );
+    assert_eq!(
+        cadmpeg_test_support::detection::confidence(&CatiaCodec, &standard_catpart()),
+        Confidence::High
+    );
+    assert_eq!(
+        cadmpeg_test_support::detection::confidence(&CatiaCodec, b"PK\x03\x04 not catia"),
+        Confidence::No
+    );
 }
 
 #[test]

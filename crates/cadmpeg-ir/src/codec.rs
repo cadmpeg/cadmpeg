@@ -275,7 +275,11 @@ pub trait CodecBackend {
     }
 
     /// Judge, from a leading byte prefix, whether this codec applies.
-    fn detect_impl(&self, ctx: &DecodeContext<'_>, prefix: View<'_>) -> Result<Confidence, CodecError>;
+    fn detect_impl(
+        &self,
+        ctx: &DecodeContext<'_>,
+        prefix: View<'_>,
+    ) -> Result<Confidence, CodecError>;
 
     /// Enumerate the acquired root view's streams/segments without decoding
     /// geometry.
@@ -386,7 +390,6 @@ pub trait Codec: sealed::Sealed {
         root: View<'_>,
         options: &DecodeOptions,
     ) -> Result<DecodeResult, DecodeFailure>;
-
 }
 
 impl<C: CodecBackend + ?Sized> Codec for C {
@@ -449,7 +452,7 @@ impl<C: CodecBackend + ?Sized> Codec for C {
         root: View<'_>,
         options: &DecodeOptions,
     ) -> Result<DecodeResult, DecodeFailure> {
-        let decoded = self.decode_impl(&ctx, root);
+        let decoded = self.decode_impl(ctx, root);
         let result = DecodeResult::new(decoded?, C::FORMAT, options.container_only);
         if result.report().format() != C::FORMAT.as_str() {
             return Err(CodecError::WrongFormat(format!(

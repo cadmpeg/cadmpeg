@@ -7,9 +7,9 @@
 //! format at once — and it settles nothing about a dialect.
 //! [`crate::resolve_and_inspect_with`] opens the resolved container.
 
-use cadmpeg_ir::codec::{Codec, Confidence, FormatId};
-use cadmpeg_core::decode::{DecodeContext, ScopedReservation, View, u64_from_index};
+use cadmpeg_core::decode::{u64_from_index, DecodeContext, ScopedReservation, View};
 use cadmpeg_core::CodecError;
+use cadmpeg_ir::codec::{Codec, Confidence, FormatId};
 
 /// Explicit input selection that bypasses content detection.
 #[derive(Debug, Clone, Copy)]
@@ -83,8 +83,20 @@ pub struct AmbiguousDetection {
 }
 
 impl AmbiguousDetection {
-    fn from_tie(ctx: &DecodeContext<'_>, confidence: Confidence, first: FormatId, second: FormatId, rest: impl Iterator<Item = FormatId>) -> Result<Self, CodecError> {
-        Ok(Self { confidence, candidates: ctx.collect_retained_vec([first, second].into_iter().chain(rest), "detection tie candidates")? })
+    fn from_tie(
+        ctx: &DecodeContext<'_>,
+        confidence: Confidence,
+        first: FormatId,
+        second: FormatId,
+        rest: impl Iterator<Item = FormatId>,
+    ) -> Result<Self, CodecError> {
+        Ok(Self {
+            confidence,
+            candidates: ctx.collect_retained_vec(
+                [first, second].into_iter().chain(rest),
+                "detection tie candidates",
+            )?,
+        })
     }
 
     /// Returns the confidence shared by the candidates.
@@ -228,34 +240,73 @@ impl InputCatalog {
     /// strongest candidate or tied candidates because loading and inspection
     /// need one resolution tier. The detected outcome retains a strongest-tier
     /// ambiguity.
-    pub fn candidates<'ctx>(&self, ctx: &'ctx DecodeContext<'_>, prefix: View<'_>) -> Result<(Vec<(&dyn Codec, Confidence)>, ScopedReservation<'ctx>), CodecError> {
-        ctx.with_scoped_storage("detection candidates", || {
+    /// Replaces `output`; the caller holds the returned reservation while the
+    /// candidate vector is live.
+    pub fn candidates<'catalog, 'ctx>(
+        &'catalog self,
+        ctx: &'ctx DecodeContext<'_>,
+        prefix: View<'_>,
+        output: &mut Vec<(&'catalog dyn Codec, Confidence)>,
+    ) -> Result<ScopedReservation<'ctx>, CodecError> {
+        let (matches, storage) = ctx.with_scoped_storage("detection candidates", || {
             let mut matches = Vec::new();
             for descriptor in &self.descriptors {
                 ctx.charge_work(1, "detect catalog entry")?;
-                let Some(codec) = descriptor.codec() else { continue; };
+                let Some(codec) = descriptor.codec() else {
+                    continue;
+                };
                 let confidence = codec.detect(ctx, prefix)?;
                 if confidence > Confidence::No {
-                    ctx.push_retained_vec(&mut matches, (codec, confidence), "detection candidates")?;
+                    ctx.push_retained_vec(
+                        &mut matches,
+                        (codec, confidence),
+                        "detection candidates",
+                    )?;
                 }
             }
-            ctx.stable_sort_by(&mut matches, |(_, left), (_, right)| right.cmp(left), |_| 0, "sort detection candidates")?;
-            Ok(matches)
-        })
+            ctx.stable_sort_by(
+                &mut matches,
+                |(_, left), (_, right)| right.cmp(left),
+                |_| 0,
+                "sort detection candidates",
+            )?;
+            Ok::<_, CodecError>(matches)
+        })?;
+        *output = matches;
+        Ok(storage)
     }
 
     /// Detects a format without hiding equal-confidence ambiguity.
-    pub fn detect(&self, ctx: &DecodeContext<'_>, prefix: View<'_>) -> Result<DetectionOutcome<'_>, CodecError> {
-        let (mut matches, _storage) = self.candidates(ctx, prefix)?;
-        ctx.charge_work(u64_from_index(matches.len()) * 2, "select strongest detection")?;
+    pub fn detect(
+        &self,
+        ctx: &DecodeContext<'_>,
+        prefix: View<'_>,
+    ) -> Result<DetectionOutcome<'_>, CodecError> {
+        let mut matches = Vec::new();
+        let _storage = self.candidates(ctx, prefix, &mut matches)?;
+        ctx.charge_work(
+            u64_from_index(matches.len()) * 2,
+            "select strongest detection",
+        )?;
         let Some(best_confidence) = matches.iter().map(|(_, confidence)| *confidence).max() else {
             return Ok(DetectionOutcome::None);
         };
         matches.retain(|(_, confidence)| *confidence == best_confidence);
         Ok(match matches.as_slice() {
             [] => DetectionOutcome::None,
-            [(codec, _)] => DetectionOutcome::Detected { codec: *codec, confidence: best_confidence },
-            [(first, _), (second, _), rest @ ..] => DetectionOutcome::Ambiguous(AmbiguousDetection::from_tie(ctx, best_confidence, first.id(), second.id(), rest.iter().map(|(codec, _)| codec.id()))?),
+            [(codec, _)] => DetectionOutcome::Detected {
+                codec: *codec,
+                confidence: best_confidence,
+            },
+            [(first, _), (second, _), rest @ ..] => {
+                DetectionOutcome::Ambiguous(AmbiguousDetection::from_tie(
+                    ctx,
+                    best_confidence,
+                    first.id(),
+                    second.id(),
+                    rest.iter().map(|(codec, _)| codec.id()),
+                )?)
+            }
         })
     }
 
@@ -274,7 +325,10 @@ impl InputCatalog {
         prefix: View<'_>,
         forced: Option<ForcedInput>,
     ) -> Result<ResolvedSource<'a>, ResolveSourceError> {
-        ctx.charge_work(u64_from_index(self.descriptors.len()), "resolve input source")?;
+        ctx.charge_work(
+            u64_from_index(self.descriptors.len()),
+            "resolve input source",
+        )?;
         ctx.charge_work(u64_from_index(prefix.window().len()), "detect CADIR prefix")?;
         match forced {
             Some(ForcedInput::Codec(native)) => {
@@ -296,7 +350,9 @@ impl InputCatalog {
             }
             Some(ForcedInput::Cadir) => Ok(ResolvedSource::Cadir),
             None => match self.detect(ctx, prefix)? {
-                DetectionOutcome::None if is_cadir_prefix(prefix.window()) => Ok(ResolvedSource::Cadir),
+                DetectionOutcome::None if is_cadir_prefix(prefix.window()) => {
+                    Ok(ResolvedSource::Cadir)
+                }
                 DetectionOutcome::None => Ok(ResolvedSource::Unrecognized),
                 DetectionOutcome::Detected { codec, confidence } => Ok(ResolvedSource::Native {
                     codec,
@@ -322,13 +378,26 @@ mod tests {
 
     #[test]
     fn detection_candidates_keep_workspace_and_slot_refusals_typed() {
-        for dimension in [cadmpeg_core::decode::ResourceDimension::MaterializedBytes, cadmpeg_core::decode::ResourceDimension::CollectionItems] {
+        for dimension in [
+            cadmpeg_core::decode::ResourceDimension::MaterializedBytes,
+            cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        ] {
             let arena = cadmpeg_core::decode::DecodeArena::new();
             let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-            if dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes { policy.limits.max_materialized_bytes = 0; }
-            else { policy.limits.max_collection_items = 0; }
-            let (ctx, root) = cadmpeg_core::decode::DecodeContext::from_root_bytes(b"PK\x03\x04", &arena, &policy).expect("root");
-            assert!(matches!(super::InputCatalog::with_builtins().candidates(&ctx, root),
+            if dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes {
+                policy.limits.max_materialized_bytes = 0;
+            } else {
+                policy.limits.max_collection_items = 0;
+            }
+            let (ctx, root) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+                b"PK\x03\x04",
+                &arena,
+                &policy,
+            )
+            .expect("root");
+            let catalog = InputCatalog::with_builtins();
+            let mut candidates = Vec::new();
+            assert!(matches!(catalog.candidates(&ctx, root, &mut candidates),
                 Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.dimension == dimension));
         }
     }
@@ -338,14 +407,27 @@ mod tests {
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let mut policy = cadmpeg_core::decode::DecodePolicy::default();
         policy.limits.max_work_units = 0;
-        let (ctx, root) = cadmpeg_core::decode::DecodeContext::from_root_bytes(b"PK\x03\x04", &arena, &policy).expect("root");
+        let (ctx, root) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(b"PK\x03\x04", &arena, &policy)
+                .expect("root");
         let catalog = InputCatalog::with_builtins();
-        assert!(matches!(catalog.detect(&ctx, root), Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits));
+        assert!(
+            matches!(catalog.detect(&ctx, root), Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits)
+        );
     }
 
-    fn resolve<'a>(catalog: &'a InputCatalog, prefix: &[u8], forced: Option<ForcedInput>) -> Result<ResolvedSource<'a>, super::ResolveSourceError> {
+    fn resolve<'a>(
+        catalog: &'a InputCatalog,
+        prefix: &[u8],
+        forced: Option<ForcedInput>,
+    ) -> Result<ResolvedSource<'a>, super::ResolveSourceError> {
         let arena = cadmpeg_core::decode::DecodeArena::new();
-        let (ctx, root) = cadmpeg_core::decode::DecodeContext::from_root_bytes(prefix, &arena, &cadmpeg_core::decode::DecodePolicy::default()).expect("root");
+        let (ctx, root) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            prefix,
+            &arena,
+            &cadmpeg_core::decode::DecodePolicy::default(),
+        )
+        .expect("root");
         let result = catalog.resolve_source(&ctx, root, forced);
         ctx.finish_session().expect("session");
         result
@@ -377,7 +459,12 @@ mod tests {
 
         let catalog = InputCatalog::with_builtins();
         let arena = cadmpeg_core::decode::DecodeArena::new();
-        let (ctx, root) = cadmpeg_core::decode::DecodeContext::from_root_bytes(b"PK\x03\x04 markerless", &arena, &cadmpeg_core::decode::DecodePolicy::default()).expect("root");
+        let (ctx, root) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            b"PK\x03\x04 markerless",
+            &arena,
+            &cadmpeg_core::decode::DecodePolicy::default(),
+        )
+        .expect("root");
         let DetectionOutcome::Ambiguous(tie) = catalog.detect(&ctx, root).expect("detect") else {
             panic!("markerless ZIP must remain ambiguous");
         };
@@ -433,8 +520,7 @@ mod tests {
     fn resolve_source_shares_forced_and_detected_paths() {
         let catalog = InputCatalog::with_builtins();
         assert!(matches!(
-            resolve(&catalog, b"", Some(ForcedInput::Cadir))
-                .unwrap(),
+            resolve(&catalog, b"", Some(ForcedInput::Cadir)).unwrap(),
             ResolvedSource::Cadir
         ));
         #[cfg(feature = "step")]
@@ -442,16 +528,16 @@ mod tests {
             use super::Selection;
             use cadmpeg_ir::codec::FormatId;
 
-            let ResolvedSource::Native { codec, selection } = resolve(&catalog,
-                    b"",
-                    Some(
-                        crate::forced_input("step")
-                            .expect("embedded registry loads")
-                            .expect("step is registered"),
-                    ),
-                )
-                .unwrap()
-            else {
+            let ResolvedSource::Native { codec, selection } = resolve(
+                &catalog,
+                b"",
+                Some(
+                    crate::forced_input("step")
+                        .expect("embedded registry loads")
+                        .expect("step is registered"),
+                ),
+            )
+            .unwrap() else {
                 panic!("forced step must resolve to native");
             };
             assert_eq!(codec.id(), FormatId::new("step"));
@@ -479,13 +565,11 @@ mod tests {
     fn resolve_source_distinguishes_cadir_from_unrecognized_bytes() {
         let catalog = InputCatalog::with_builtins();
         assert!(matches!(
-            resolve(&catalog, b" \n{\"ir_version\": 1}", None)
-                .unwrap(),
+            resolve(&catalog, b" \n{\"ir_version\": 1}", None).unwrap(),
             ResolvedSource::Cadir
         ));
         assert!(matches!(
-            resolve(&catalog, b"\xef\xbb\xbf\t{\"ir_version\": 1}", None)
-                .unwrap(),
+            resolve(&catalog, b"\xef\xbb\xbf\t{\"ir_version\": 1}", None).unwrap(),
             ResolvedSource::Cadir
         ));
         assert!(matches!(

@@ -66,7 +66,8 @@ use crate::writer::tests::round_trips::{
 use crate::{StepCodec, StepSchema, StepWriteOptions};
 
 fn assert_valid(result: &EditableDecodeResult) {
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone()).expect("resource allocation did not fail");
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{validation:#?}");
     assert!(result.ir().native.namespace("step").is_some());
 }
@@ -156,7 +157,10 @@ fn writer_pipeline_round_trips_the_full_cube_across_schemas_and_refuses_lossy_st
             bytes, repeated,
             "STEP output must be deterministic for {schema:?}"
         );
-        assert_eq!(cadmpeg_test_support::detection::confidence(&StepCodec::default(), &bytes), Confidence::High);
+        assert_eq!(
+            cadmpeg_test_support::detection::confidence(&StepCodec::default(), &bytes),
+            Confidence::High
+        );
         let result = EditableDecodeResult::from(
             StepCodec::default()
                 .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
