@@ -31,54 +31,98 @@ fn copy_paste_matrices_keep_their_source_locations() {
         let mut copied_rows: [[f64; 4]; 4] = source.into();
         copied_rows[0][3] = 2.0;
         let copied = SketchPlacementMatrix::try_from(copied_rows).unwrap();
-        for (at, rows) in [(start + source_at, source), (start + source_at + 156, copied)] {
+        for (at, rows) in [
+            (start + source_at, source),
+            (start + source_at + 156, copied),
+        ] {
             let rows: [[f64; 4]; 4] = rows.into();
             for (ordinal, value) in rows.into_iter().flatten().enumerate() {
                 bytes[at + ordinal * 8..at + ordinal * 8 + 8].copy_from_slice(&value.to_le_bytes());
             }
         }
         let mut scope = DesignParameterScope::empty(
-            "f3d:Design/BulkStream.dat:copy#88", DesignFeatureKind::CopyPaste, 1400,
+            "f3d:Design/BulkStream.dat:copy#88",
+            DesignFeatureKind::CopyPaste,
+            1400,
         );
-        scope.try_edit(|draft| {
-            draft.byte_offset = 88;
-            draft.reference_count_offset = 97;
-            draft.frame_length = u64::try_from(length).unwrap();
-            draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
-            draft.reference_members = ReferenceRun::unlocated(vec![1500]);
-            draft.layout_fixture_references();
-            draft.layout_fixture_tail();
-        }).unwrap();
+        scope
+            .try_edit(|draft| {
+                draft.byte_offset = 88;
+                draft.reference_count_offset = 97;
+                draft.frame_length = u64::try_from(length).unwrap();
+                draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
+                draft.reference_members = ReferenceRun::unlocated(vec![1500]);
+                draft.layout_fixture_references();
+                draft.layout_fixture_tail();
+            })
+            .unwrap();
         let occurrence = |index: u32, offset: u64, guid: &str, placement| {
             DesignComponentOccurrence::try_new(DesignComponentOccurrenceDraft {
                 id: format!("f3d:Design/BulkStream.dat:occurrence#{index}"),
                 class_tag: "269".to_owned().try_into().unwrap(),
-                record_index: index, byte_offset: offset, component_record_index: 1800,
-                component_guid: "11111111-2222-3333-4444-555555555555".to_owned().try_into().unwrap(),
-                occurrence_guid: guid.to_owned().try_into().unwrap(), placement,
-            }).unwrap()
+                record_index: index,
+                byte_offset: offset,
+                component_record_index: 1800,
+                component_guid: "11111111-2222-3333-4444-555555555555"
+                    .to_owned()
+                    .try_into()
+                    .unwrap(),
+                occurrence_guid: guid.to_owned().try_into().unwrap(),
+                placement,
+            })
+            .unwrap()
         };
         let occurrences = [
-            occurrence(1600, 0, "aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb", DesignComponentOccurrencePlacement::Base),
-            occurrence(1601, 1, "cccccccc-1111-2222-3333-dddddddddddd", DesignComponentOccurrencePlacement::Explicit {
-                ordinal: NonZeroU32::new(2).unwrap(), transform: copied,
-            }),
+            occurrence(
+                1600,
+                0,
+                "aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb",
+                DesignComponentOccurrencePlacement::Base,
+            ),
+            occurrence(
+                1601,
+                1,
+                "cccccccc-1111-2222-3333-dddddddddddd",
+                DesignComponentOccurrencePlacement::Explicit {
+                    ordinal: NonZeroU32::new(2).unwrap(),
+                    transform: copied,
+                },
+            ),
         ];
         let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
         for limit in [0, 36, 72] {
             let mut policy = cadmpeg_core::decode::DecodePolicy::service();
             policy.limits.max_retained_bytes = limit;
             crate::test_support::with_decode_policy(&policy, |ctx| {
-                let error = exact_copy_paste_component_operation(ctx, &bytes, &records, &scope, &occurrences).unwrap_err();
-                assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(failure)
+                let error = exact_copy_paste_component_operation(
+                    ctx,
+                    &bytes,
+                    &records,
+                    &scope,
+                    &occurrences,
+                )
+                .unwrap_err();
+                assert!(
+                    matches!(error, cadmpeg_core::CodecError::ResourceLimit(failure)
                     if failure.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
-                        && failure.operation == "retain F3D construction GUID"));
+                        && failure.operation == "retain F3D construction GUID")
+                );
             });
         }
-        let operation = crate::test_support::with_decode_context(|ctx| exact_copy_paste_component_operation(ctx, &bytes, &records, &scope, &occurrences)).unwrap().unwrap();
+        let operation = crate::test_support::with_decode_context(|ctx| {
+            exact_copy_paste_component_operation(ctx, &bytes, &records, &scope, &occurrences)
+        })
+        .unwrap()
+        .unwrap();
         assert_eq!(operation.source_transform, source);
         assert_eq!(operation.copied_transform, copied);
-        assert_eq!(operation.source_transform_offset, u64::try_from(start + source_at).unwrap());
-        assert_eq!(operation.copied_transform_offset, u64::try_from(start + source_at + 156).unwrap());
+        assert_eq!(
+            operation.source_transform_offset,
+            u64::try_from(start + source_at).unwrap()
+        );
+        assert_eq!(
+            operation.copied_transform_offset,
+            u64::try_from(start + source_at + 156).unwrap()
+        );
     }
 }

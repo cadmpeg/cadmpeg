@@ -82,20 +82,22 @@ fn declaration_fields(header: KernelHeaderRef<'_>) -> [(&'static str, Option<u32
         _ => None,
     };
     [
-        (DECLARED_SAVE_FORMAT_MAJOR, parsed.and_then(KernelHeader::save_format_major)),
-        (DECLARED_SAVE_FORMAT_MINOR, parsed.and_then(KernelHeader::save_format_minor)),
+        (
+            DECLARED_SAVE_FORMAT_MAJOR,
+            parsed.and_then(KernelHeader::save_format_major),
+        ),
+        (
+            DECLARED_SAVE_FORMAT_MINOR,
+            parsed.and_then(KernelHeader::save_format_minor),
+        ),
         (DECLARED_REFERENCE_WIDTH, width),
     ]
 }
 
 fn match_header(header: KernelHeaderRef<'_>) -> DialectMatch {
     match header {
-        KernelHeaderRef::Acis(header) => {
-            acis_match(header.metadata.save_format_major())
-        }
-        KernelHeaderRef::Asm(header) => {
-            DialectMatch::admitted(asm_binary_row(header.width))
-        }
+        KernelHeaderRef::Acis(header) => acis_match(header.metadata.save_format_major()),
+        KernelHeaderRef::Asm(header) => DialectMatch::admitted(asm_binary_row(header.width)),
         KernelHeaderRef::TextAsm(_) => DialectMatch::admitted(ACIS_TEXT_ASM),
         KernelHeaderRef::TextAcis(header) => {
             if acis_band_verified(header.save_format_major()) {
@@ -119,24 +121,41 @@ pub fn classify_layer(
     let mut declared = BTreeMap::new();
     for (key, value) in declaration_fields(header) {
         if let Some(value) = value {
-            ctx.charge_work(cadmpeg_core::decode::u64_from_index(key.len()) + 10, operation)?;
-            let key = cadmpeg_core::text::NonBlankString::new(ctx.copy_retained_text(key, operation)?)
-                .ok_or_else(|| cadmpeg_core::CodecError::malformed("empty kernel declaration key"))?;
+            ctx.charge_work(
+                cadmpeg_core::decode::u64_from_index(key.len()) + 10,
+                operation,
+            )?;
+            let key =
+                cadmpeg_core::text::NonBlankString::new(ctx.copy_retained_text(key, operation)?)
+                    .ok_or_else(|| {
+                        cadmpeg_core::CodecError::malformed("empty kernel declaration key")
+                    })?;
             let value = ctx.format_retained(format_args!("{value}"), operation)?;
             ctx.insert_btree_map(&mut declared, key, value, operation)?;
         }
     }
-    ctx.charge_work(cadmpeg_core::decode::u64_from_index(DECLARED_CARRIER.len()), operation)?;
-    let key = cadmpeg_core::text::NonBlankString::new(ctx.copy_retained_text(DECLARED_CARRIER, operation)?)
-        .ok_or_else(|| cadmpeg_core::CodecError::malformed("empty kernel carrier key"))?;
-    ctx.charge_work(cadmpeg_core::decode::u64_from_index(carrier.len()), operation)?;
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(DECLARED_CARRIER.len()),
+        operation,
+    )?;
+    let key = cadmpeg_core::text::NonBlankString::new(
+        ctx.copy_retained_text(DECLARED_CARRIER, operation)?,
+    )
+    .ok_or_else(|| cadmpeg_core::CodecError::malformed("empty kernel carrier key"))?;
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(carrier.len()),
+        operation,
+    )?;
     let value = ctx.copy_retained_text(carrier, operation)?;
     ctx.insert_btree_map(&mut declared, key, value, operation)?;
     let matched = match_header(header).with_declared(declared);
     match instance {
         LayerInstance::Sole => Ok(matched),
         LayerInstance::Tagged => {
-            ctx.charge_work(cadmpeg_core::decode::u64_from_index(carrier.len()), operation)?;
+            ctx.charge_work(
+                cadmpeg_core::decode::u64_from_index(carrier.len()),
+                operation,
+            )?;
             Ok(matched.with_instance(ctx.copy_retained_text(carrier, operation)?))
         }
     }
@@ -351,7 +370,8 @@ mod tests {
             KernelHeaderRef::Acis(&header),
             "stream@12",
             LayerInstance::Tagged,
-        ).unwrap();
+        )
+        .unwrap();
         assert_eq!(matched.declared()[DECLARED_CARRIER], "stream@12");
         assert_eq!(matched.instance(), Some("stream@12"));
     }
@@ -444,20 +464,44 @@ mod tests {
     #[test]
     fn kernel_layer_preserves_declaration_and_carrier_refusals() {
         for (retained, collections, expected) in [
-            (0, u64::MAX, cadmpeg_core::decode::ResourceDimension::RetainedBytes),
-            (u64::MAX, 0, cadmpeg_core::decode::ResourceDimension::CollectionItems),
-            (7, u64::MAX, cadmpeg_core::decode::ResourceDimension::RetainedBytes),
-            (16, u64::MAX, cadmpeg_core::decode::ResourceDimension::RetainedBytes),
+            (
+                0,
+                u64::MAX,
+                cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+            ),
+            (
+                u64::MAX,
+                0,
+                cadmpeg_core::decode::ResourceDimension::CollectionItems,
+            ),
+            (
+                7,
+                u64::MAX,
+                cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+            ),
+            (
+                16,
+                u64::MAX,
+                cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+            ),
         ] {
             let arena = cadmpeg_core::decode::DecodeArena::new();
             let mut policy = cadmpeg_core::decode::DecodePolicy::service();
             policy.limits.max_retained_bytes = retained;
             policy.limits.max_collection_items = collections;
-            let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-            let error = classify_layer(&ctx, KernelHeaderRef::Unknown, "stream@12", LayerInstance::Tagged).unwrap_err();
-            assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(failure)
-                if failure.dimension == expected && failure.operation == "retain kernel dialect declarations"));
+            let (ctx, _) =
+                cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            let error = classify_layer(
+                &ctx,
+                KernelHeaderRef::Unknown,
+                "stream@12",
+                LayerInstance::Tagged,
+            )
+            .unwrap_err();
+            assert!(
+                matches!(error, cadmpeg_core::CodecError::ResourceLimit(failure)
+                if failure.dimension == expected && failure.operation == "retain kernel dialect declarations")
+            );
         }
     }
-
 }

@@ -174,9 +174,12 @@ fn mirror_plane_binding_falls_back_when_identity_has_no_persistent_value() {
     let construction = scope.mirror_construction().expect("mirror construction");
     assert_eq!(
         construction.plane,
-        crate::records::feature::patterns::DesignPlane::from_parts(cadmpeg_ir::features::FinitePoint3::new(Point3::new(1.0, 2.0, 3.0))
-                .expect("finite plane origin"), cadmpeg_ir::features::FiniteVector3::new(Vector3::new(0.0, 0.0, 1.0))
-                .expect("finite plane normal"))
+        crate::records::feature::patterns::DesignPlane::from_parts(
+            cadmpeg_ir::features::FinitePoint3::new(Point3::new(1.0, 2.0, 3.0))
+                .expect("finite plane origin"),
+            cadmpeg_ir::features::FiniteVector3::new(Vector3::new(0.0, 0.0, 1.0))
+                .expect("finite plane normal")
+        )
     );
 
     operand.primary_identity = 44;
@@ -196,9 +199,12 @@ fn mirror_plane_binding_falls_back_when_identity_has_no_persistent_value() {
     let construction = scope.mirror_construction().expect("mirror construction");
     assert_eq!(
         construction.plane,
-        crate::records::feature::patterns::DesignPlane::from_parts(cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
-                .expect("finite plane origin"), cadmpeg_ir::features::FiniteVector3::new(Vector3::new(1.0, 0.0, 0.0))
-                .expect("finite plane normal"))
+        crate::records::feature::patterns::DesignPlane::from_parts(
+            cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
+                .expect("finite plane origin"),
+            cadmpeg_ir::features::FiniteVector3::new(Vector3::new(1.0, 0.0, 0.0))
+                .expect("finite plane normal")
+        )
     );
 }
 

@@ -503,7 +503,9 @@ mod tests {
                 ctx,
                 &bytes,
                 class_307_joint_origin::KIND_CODE_UNIT_COUNT,
-                11..=11, "retain F3D UTF-16 string")
+                11..=11,
+                "retain F3D UTF-16 string"
+            )
             .unwrap()),
             Some((
                 "JointOrigin".into(),

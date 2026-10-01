@@ -88,7 +88,8 @@ impl DesignRelaxedGuidText {
         ctx: &DecodeContext<'_>,
         operation: &'static str,
     ) -> Result<Self, CodecError> {
-        let work = u64_from_index(self.as_str().len()).checked_mul(2)
+        let work = u64_from_index(self.as_str().len())
+            .checked_mul(2)
             .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
         ctx.charge_work(work, operation)?;
         let text = ctx.copy_retained_text(self.as_str(), operation)?;

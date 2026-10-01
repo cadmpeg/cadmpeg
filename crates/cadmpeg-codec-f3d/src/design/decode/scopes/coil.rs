@@ -6,11 +6,11 @@ use cadmpeg_core::decode::u64_from_index;
 use super::shared_frames::exact_indexed_header_at;
 use super::shared_frames::marked_record_reference;
 use crate::bytes::f64s_at;
+use crate::bytes::lp_ascii_filtered_view;
 use crate::design::decode::operands::parse_entity_selection_frame;
 use crate::design::decode::operands::parse_entity_selection_prefix;
 use crate::design::decode::operands::parse_face_operand;
 use crate::design::decode::sketch::IndexedRecordOffsets;
-use crate::bytes::lp_ascii_filtered_view;
 use crate::ids::native_stream;
 use crate::layout::coil_compact_placement_identity_frame as coil_identity;
 use crate::layout::coil_compact_placement_matrix_frame as coil_matrix;
@@ -147,7 +147,10 @@ pub(super) fn exact_coil_placement(
                         scope.record_index,
                     ) =>
             {
-                let values = f64s_at::<16>(bytes, transform_start.checked_add(coil_modern_matrix::MATRIX)?)?;
+                let values = f64s_at::<16>(
+                    bytes,
+                    transform_start.checked_add(coil_modern_matrix::MATRIX)?,
+                )?;
                 let mut transform = [[0.0; 4]; 4];
                 for (ordinal, value) in values.into_iter().enumerate() {
                     transform[ordinal / 4][ordinal % 4] = value;
@@ -204,7 +207,8 @@ pub(super) fn exact_coil_placement(
                     && bytes.get(transform_start + coil_matrix::EXPLICIT_FORM_MARKER)
                         == Some(&0) =>
             {
-                let values = f64s_at::<16>(bytes, transform_start.checked_add(coil_matrix::MATRIX)?)?;
+                let values =
+                    f64s_at::<16>(bytes, transform_start.checked_add(coil_matrix::MATRIX)?)?;
                 let mut transform = [[0.0; 4]; 4];
                 for (ordinal, value) in values.into_iter().enumerate() {
                     transform[ordinal / 4][ordinal % 4] = value;
@@ -679,7 +683,10 @@ fn exact_long_coil_discriminators(
 }
 
 fn exact_long_coil_matrix(bytes: &[u8], start: usize) -> bool {
-    let Some(values) = start.checked_add(77).and_then(|at| f64s_at::<16>(bytes, at)) else {
+    let Some(values) = start
+        .checked_add(77)
+        .and_then(|at| f64s_at::<16>(bytes, at))
+    else {
         return false;
     };
     values.iter().all(|value| value.is_finite())

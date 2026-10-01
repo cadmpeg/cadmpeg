@@ -214,7 +214,8 @@ mod charged_string_tests {
         let mut policy = DecodePolicy::service();
         policy.limits.max_retained_bytes = 1;
         let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
-        let error = lp_utf16_bounded_charged(&ctx, &bytes, 0, 0..=1024, "retain F3D UTF-16 string").unwrap_err();
+        let error = lp_utf16_bounded_charged(&ctx, &bytes, 0, 0..=1024, "retain F3D UTF-16 string")
+            .unwrap_err();
         assert!(matches!(
             error,
             cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -502,7 +503,7 @@ fn parse_reference<'a>(
     cursor += 8;
     let inline_type_guid = if View::u32_le_at(bytes, cursor) == Some(36) {
         let (guid, end) = some!(ascii(cursor, 36..=36)?);
-        if !is_guid_hyphenated(&guid) {
+        if !is_guid_hyphenated(guid) {
             return Ok(None);
         }
         cursor = end;
@@ -551,7 +552,7 @@ fn parse_reference<'a>(
                 0 => {
                     cursor += 1;
                     let (guid, end) = some!(ascii(cursor, 36..=36)?);
-                    if !is_guid_hyphenated(&guid) {
+                    if !is_guid_hyphenated(guid) {
                         return Ok(None);
                     }
                     let (link_name, end) = some!(utf16(end, 0..=256)?);

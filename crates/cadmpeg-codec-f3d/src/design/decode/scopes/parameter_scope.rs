@@ -48,7 +48,7 @@ use crate::container::ContainerScan;
 use crate::design::decode::assembly::exact_legacy_as_built_421_operands;
 use crate::design::decode::operands::RecordFrame;
 use crate::design::decode::sketch::{native_scope_charged, IndexedRecordOffsets};
-use crate::design::decode::text::{design_record_id_charged};
+use crate::design::decode::text::design_record_id_charged;
 use crate::design::design_feature_family;
 use crate::design::DesignFeatureFamily;
 use crate::ids;
@@ -960,12 +960,17 @@ pub(in crate::design::decode) fn parse_parameter_scope(
             .rev()
             .take_while(|at| *at < kind_scan_end)
         {
-            let (kind, kind_end, _reservation) =
-                match lp_utf16_bounded_scoped(ctx, bytes, at, 1..=256, "f3d Design temporary UTF-16 text") {
-                    Ok(Some(decoded)) => decoded,
-                    Ok(None) => continue,
-                    Err(error) => return Some(Err(error)),
-                };
+            let (kind, kind_end, _reservation) = match lp_utf16_bounded_scoped(
+                ctx,
+                bytes,
+                at,
+                1..=256,
+                "f3d Design temporary UTF-16 text",
+            ) {
+                Ok(Some(decoded)) => decoded,
+                Ok(None) => continue,
+                Err(error) => return Some(Err(error)),
+            };
             if !kind.chars().all(|character| !character.is_control()) {
                 continue;
             }
@@ -1017,12 +1022,17 @@ pub(in crate::design::decode) fn parse_parameter_scope(
             fixed_candidate
         };
         let (kind_at, kind_end, tail_length, tail_form) = candidate?;
-        let (kind_text, confirmed_kind_end) =
-            match lp_utf16_bounded_charged(ctx, bytes, kind_at, 1..=256, "f3d Design UTF-16 text") {
-                Ok(Some(decoded)) => decoded,
-                Ok(None) => return None,
-                Err(error) => return Some(Err(error)),
-            };
+        let (kind_text, confirmed_kind_end) = match lp_utf16_bounded_charged(
+            ctx,
+            bytes,
+            kind_at,
+            1..=256,
+            "f3d Design UTF-16 text",
+        ) {
+            Ok(Some(decoded)) => decoded,
+            Ok(None) => return None,
+            Err(error) => return Some(Err(error)),
+        };
         if confirmed_kind_end != kind_end {
             return None;
         }
@@ -1355,8 +1365,13 @@ fn named_parameter_scope_tail_is_valid(
     let Some(label_at) = kind_end.checked_add(8) else {
         return Ok(None);
     };
-    let Some((label, label_end, _reservation)) =
-        lp_utf16_bounded_scoped(ctx, bytes, label_at, 0..=256, "f3d Design temporary UTF-16 text")?
+    let Some((label, label_end, _reservation)) = lp_utf16_bounded_scoped(
+        ctx,
+        bytes,
+        label_at,
+        0..=256,
+        "f3d Design temporary UTF-16 text",
+    )?
     else {
         return Ok(None);
     };

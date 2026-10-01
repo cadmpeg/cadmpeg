@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-use cadmpeg_core::decode::{DecodePolicy, ResourceDimension, u64_from_index};
+use cadmpeg_core::decode::{u64_from_index, DecodePolicy, ResourceDimension};
 
 #[test]
 fn xref_design_text_refuses_retained_transition() {
@@ -8,7 +8,9 @@ fn xref_design_text_refuses_retained_transition() {
     policy.limits.max_retained_bytes = u64_from_index("f3d:xref:design#0".len());
     crate::test_support::with_decode_policy(&policy, |ctx| {
         let error = crate::xref::parse(ctx, bytes).unwrap_err();
-        let cadmpeg_core::CodecError::ResourceLimit(limit) = error else { panic!("design text must be admitted"); };
+        let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
+            panic!("design text must be admitted");
+        };
         assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
         assert_eq!(limit.operation, "retain F3D xref design text");
         assert_eq!(Some(limit), ctx.resource_refusal());
@@ -22,7 +24,9 @@ fn xref_reference_text_refuses_retained_transition() {
     policy.limits.max_retained_bytes = u64_from_index("f3d:xref:reference#0".len());
     crate::test_support::with_decode_policy(&policy, |ctx| {
         let error = reference.into_record(ctx, 0).unwrap_err();
-        let cadmpeg_core::CodecError::ResourceLimit(limit) = error else { panic!("reference text must be admitted"); };
+        let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
+            panic!("reference text must be admitted");
+        };
         assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
         assert_eq!(limit.operation, "retain F3D xref reference text");
         assert_eq!(Some(limit), ctx.resource_refusal());

@@ -239,7 +239,9 @@ fn take_version_guid(
         let Some(guid_at) = initial.checked_add(prefix_len) else {
             continue;
         };
-        let Some((guid, next)) = lp_utf16_bounded_charged(ctx, bytes, guid_at, 36..=36, "retain F3D UTF-16 string")? else {
+        let Some((guid, next)) =
+            lp_utf16_bounded_charged(ctx, bytes, guid_at, 36..=36, "retain F3D UTF-16 string")?
+        else {
             continue;
         };
         if is_guid_hyphenated(&guid) {
@@ -267,7 +269,9 @@ fn take_version_urn(
         let Some(urn_at) = initial.checked_add(prefix_len) else {
             continue;
         };
-        let Some((urn, next)) = lp_utf16_bounded_charged(ctx, bytes, urn_at, 1..=1024, "retain F3D UTF-16 string")? else {
+        let Some((urn, next)) =
+            lp_utf16_bounded_charged(ctx, bytes, urn_at, 1..=1024, "retain F3D UTF-16 string")?
+        else {
             continue;
         };
         let urn = urn.as_bytes();

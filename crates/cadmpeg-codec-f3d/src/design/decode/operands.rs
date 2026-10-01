@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Parse edge, face, and body operand frames and recipe structure.
 
-use crate::bytes::{lp_utf16_bounded_charged};
+use crate::bytes::lp_utf16_bounded_charged;
 use crate::records::topology::{
     construction::DesignConstructionOperandRole, extrude_selection::DesignExtrudeFaceEncoding,
 };
@@ -23,7 +23,7 @@ use crate::design::decode::sketch::{
     next_indexed_record_offset, next_indexed_record_offset_with_index, IndexedRecordOffsets,
 };
 use crate::design::decode::text::design_record_id_charged;
-use crate::design::decode::text::{relaxed_guid_end};
+use crate::design::decode::text::relaxed_guid_end;
 use crate::design::{design_feature_family, DesignFeatureFamily};
 use crate::ids::native_stream;
 use crate::layout::class_338_sketch_curve_identity as class_338_curve;
@@ -3829,18 +3829,28 @@ pub(super) fn parse_entity_selection_prefix(
     } else {
         return None;
     };
-    let (asset_id, after_asset_id) =
-        match lp_utf16_bounded_charged(ctx, bytes, asset_start, 1..=256, "f3d Design UTF-16 text") {
-            Ok(Some(value)) => value,
-            Ok(None) => return None,
-            Err(error) => return Some(Err(error)),
-        };
-    let (context_id, after_context_id) =
-        match lp_utf16_bounded_charged(ctx, bytes, after_asset_id, 1..=256, "f3d Design UTF-16 text") {
-            Ok(Some(value)) => value,
-            Ok(None) => return None,
-            Err(error) => return Some(Err(error)),
-        };
+    let (asset_id, after_asset_id) = match lp_utf16_bounded_charged(
+        ctx,
+        bytes,
+        asset_start,
+        1..=256,
+        "f3d Design UTF-16 text",
+    ) {
+        Ok(Some(value)) => value,
+        Ok(None) => return None,
+        Err(error) => return Some(Err(error)),
+    };
+    let (context_id, after_context_id) = match lp_utf16_bounded_charged(
+        ctx,
+        bytes,
+        after_asset_id,
+        1..=256,
+        "f3d Design UTF-16 text",
+    ) {
+        Ok(Some(value)) => value,
+        Ok(None) => return None,
+        Err(error) => return Some(Err(error)),
+    };
     if !is_guid_relaxed(&asset_id)
         || !is_guid_relaxed(&context_id)
         || View::u32_le_at(bytes, after_context_id)? != 2
@@ -4494,18 +4504,28 @@ fn parse_body_recipe_operand_frame_with_index(
     }
     let nested_record_index = View::u64_le_at(bytes, cursor + 1)?;
     let asset_id_at = cursor.checked_add(15)?;
-    let (asset_id, after_asset_id) =
-        match lp_utf16_bounded_charged(ctx, bytes, asset_id_at, 1..=256, "f3d Design UTF-16 text") {
-            Ok(Some(value)) => value,
-            Ok(None) => return None,
-            Err(error) => return Some(Err(error)),
-        };
-    let (context_id, after_context_id) =
-        match lp_utf16_bounded_charged(ctx, bytes, after_asset_id, 1..=256, "f3d Design UTF-16 text") {
-            Ok(Some(value)) => value,
-            Ok(None) => return None,
-            Err(error) => return Some(Err(error)),
-        };
+    let (asset_id, after_asset_id) = match lp_utf16_bounded_charged(
+        ctx,
+        bytes,
+        asset_id_at,
+        1..=256,
+        "f3d Design UTF-16 text",
+    ) {
+        Ok(Some(value)) => value,
+        Ok(None) => return None,
+        Err(error) => return Some(Err(error)),
+    };
+    let (context_id, after_context_id) = match lp_utf16_bounded_charged(
+        ctx,
+        bytes,
+        after_asset_id,
+        1..=256,
+        "f3d Design UTF-16 text",
+    ) {
+        Ok(Some(value)) => value,
+        Ok(None) => return None,
+        Err(error) => return Some(Err(error)),
+    };
     let selector_tail_at = after_context_id.checked_add(4)?;
     let selector_tail: [u8; 4] = bytes
         .get(selector_tail_at..selector_tail_at.checked_add(4)?)?
@@ -4816,17 +4836,24 @@ fn parse_extrude_identity_member(
         ctx,
         bytes,
         start + extrude_member::ASSET_UUID_LENGTH,
-        1..=256, "f3d Design UTF-16 text") {
+        1..=256,
+        "f3d Design UTF-16 text",
+    ) {
         Ok(Some(value)) => value,
         Ok(None) => return None,
         Err(error) => return Some(Err(error)),
     };
-    let (context_id, after_context_id) =
-        match lp_utf16_bounded_charged(ctx, bytes, after_asset_id, 1..=256, "f3d Design UTF-16 text") {
-            Ok(Some(value)) => value,
-            Ok(None) => return None,
-            Err(error) => return Some(Err(error)),
-        };
+    let (context_id, after_context_id) = match lp_utf16_bounded_charged(
+        ctx,
+        bytes,
+        after_asset_id,
+        1..=256,
+        "f3d Design UTF-16 text",
+    ) {
+        Ok(Some(value)) => value,
+        Ok(None) => return None,
+        Err(error) => return Some(Err(error)),
+    };
     let tail_slot_offset = after_context_id.checked_add(4)?;
     let tail_slot_present = match bytes.get(tail_slot_offset)? {
         0 => false,
@@ -4915,18 +4942,28 @@ fn parse_edge_identity_member(
         return None;
     }
     let local_id = u64::from(View::u32_le_at(bytes, start + local_id_offset)?);
-    let (asset_id, after_asset_id) =
-        match lp_utf16_bounded_charged(ctx, bytes, start + asset_offset, 1..=256, "f3d Design UTF-16 text") {
-            Ok(Some(value)) => value,
-            Ok(None) => return None,
-            Err(error) => return Some(Err(error)),
-        };
-    let (context_id, _after_context_id) =
-        match lp_utf16_bounded_charged(ctx, bytes, after_asset_id, 1..=256, "f3d Design UTF-16 text") {
-            Ok(Some(value)) => value,
-            Ok(None) => return None,
-            Err(error) => return Some(Err(error)),
-        };
+    let (asset_id, after_asset_id) = match lp_utf16_bounded_charged(
+        ctx,
+        bytes,
+        start + asset_offset,
+        1..=256,
+        "f3d Design UTF-16 text",
+    ) {
+        Ok(Some(value)) => value,
+        Ok(None) => return None,
+        Err(error) => return Some(Err(error)),
+    };
+    let (context_id, _after_context_id) = match lp_utf16_bounded_charged(
+        ctx,
+        bytes,
+        after_asset_id,
+        1..=256,
+        "f3d Design UTF-16 text",
+    ) {
+        Ok(Some(value)) => value,
+        Ok(None) => return None,
+        Err(error) => return Some(Err(error)),
+    };
     if !is_guid_relaxed(&asset_id) || !is_guid_relaxed(&context_id) {
         return None;
     }
@@ -4983,12 +5020,12 @@ pub(in crate::design) fn parse_sketch_profile(
         return None;
     }
     relaxed_guid_end(bytes, start + 36)?;
-    let (asset_id, after_asset_id) = match lp_utf16_bounded_charged(ctx, bytes, start + 36, 1..=256, "f3d Design UTF-16 text")
-    {
-        Ok(Some(value)) => value,
-        Ok(None) => return None,
-        Err(error) => return Some(Err(error)),
-    };
+    let (asset_id, after_asset_id) =
+        match lp_utf16_bounded_charged(ctx, bytes, start + 36, 1..=256, "f3d Design UTF-16 text") {
+            Ok(Some(value)) => value,
+            Ok(None) => return None,
+            Err(error) => return Some(Err(error)),
+        };
     let (entity_suffix, after_entity_suffix) = utf16_decimal_u64(bytes, after_asset_id)?;
     let paired_at = next_indexed_record_offset(bytes, start + 11)?;
     let (paired_class_tag, after_paired_tag) =

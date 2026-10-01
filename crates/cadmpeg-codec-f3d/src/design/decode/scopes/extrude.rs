@@ -651,7 +651,10 @@ fn exact_class_296_two_sided_to_faces_extrude_prologue(
     {
         return None;
     }
-    let profile_normal = f64s_at::<3>(bytes, start.checked_add(class_296_two_faces::PROFILE_NORMAL)?)?;
+    let profile_normal = f64s_at::<3>(
+        bytes,
+        start.checked_add(class_296_two_faces::PROFILE_NORMAL)?,
+    )?;
     let profile_normal_squared = profile_normal
         .iter()
         .map(|component| component * component)
@@ -798,10 +801,16 @@ fn exact_class_296_legacy_one_sided_extrude_prologue(
     {
         return None;
     }
-    let profile_scalar_at_54 = f64s_at::<1>(bytes, start.checked_add(class_296_legacy_scalar_54::PROFILE_SCALAR_AT_54)?)?
+    let profile_scalar_at_54 = f64s_at::<1>(
+        bytes,
+        start.checked_add(class_296_legacy_scalar_54::PROFILE_SCALAR_AT_54)?,
+    )?
     .into_iter()
     .next()?;
-    let profile_scalar_at_70 = f64s_at::<1>(bytes, start.checked_add(class_296_legacy_scalar_70::PROFILE_SCALAR_AT_70)?)?
+    let profile_scalar_at_70 = f64s_at::<1>(
+        bytes,
+        start.checked_add(class_296_legacy_scalar_70::PROFILE_SCALAR_AT_70)?,
+    )?
     .into_iter()
     .next()?;
     let scalar_at_54 = profile_scalar_at_54.is_finite()

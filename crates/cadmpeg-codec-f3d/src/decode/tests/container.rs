@@ -535,8 +535,9 @@ fn text_brep_framing_propagates_sat_collection_limit() {
     let entry = "FusionAssetName[Active]/Breps.BlobParts/BREP0.sat";
     let archive = f3d_with_text_brep(&[entry]);
     let mut options = DecodeOptions::default();
-    // Archive admission and indexes consume 74 collection items before SAT framing.
-    options.policy.limits.max_collection_items = 74;
+    // Archive admission and indexes consume 74 items. The retained asset-folder
+    // destination admits one further slot before SAT framing.
+    options.policy.limits.max_collection_items = 74 + 1;
     let error = F3dCodec
         .decode(&mut Cursor::new(archive), &options)
         .expect_err("text B-rep framing must admit primitives");

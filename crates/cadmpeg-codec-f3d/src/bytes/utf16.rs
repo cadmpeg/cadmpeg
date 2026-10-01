@@ -13,7 +13,7 @@ pub(crate) struct Utf16View<'a> {
 
 impl<'a> Utf16View<'a> {
     pub(crate) fn new(raw: &'a [u8]) -> Option<Self> {
-        if raw.len() % 2 != 0 {
+        if !raw.len().is_multiple_of(2) {
             return None;
         }
         let mut view = View::over_retained(raw);

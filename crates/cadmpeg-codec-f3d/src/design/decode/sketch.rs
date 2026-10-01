@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Parse Design sketch placements, headers, relations, and geometry.
 
-use crate::bytes::{lp_utf16_bounded_charged};
+use crate::bytes::lp_utf16_bounded_charged;
 use cadmpeg_core::decode::u64_from_index;
 
 use crate::records::sketch_placement::{
@@ -1101,7 +1101,8 @@ pub(super) fn parse_settled_entity_header(
         Some(1) if bytes.get(start + 21..start + 25) == Some(&[0u8; 4]) => (true, start + 25),
         _ => return Ok(None),
     };
-    let Some((entity_id, end)) = lp_utf16_bounded_charged(ctx, bytes, string_offset, 1..=256, "f3d Design UTF-16 text")?
+    let Some((entity_id, end)) =
+        lp_utf16_bounded_charged(ctx, bytes, string_offset, 1..=256, "f3d Design UTF-16 text")?
     else {
         return Ok(None);
     };
@@ -1158,7 +1159,13 @@ pub(super) fn parse_genesis_entity_header(
     let Some(after_type) = lp_ascii_matches(bytes, after_key, b"IntrinsicMetaTypeuint64") else {
         return Ok(None);
     };
-    let Some((entity_id, end)) = lp_utf16_bounded_charged(ctx, bytes, after_type + 8, 1..=256, "f3d Design UTF-16 text")?
+    let Some((entity_id, end)) = lp_utf16_bounded_charged(
+        ctx,
+        bytes,
+        after_type + 8,
+        1..=256,
+        "f3d Design UTF-16 text",
+    )?
     else {
         return Ok(None);
     };
@@ -2207,7 +2214,13 @@ fn sketch_utf16_text(
     count_at: usize,
     count: usize,
 ) -> Result<Option<(String, usize)>, CodecError> {
-    lp_utf16_bounded_charged(ctx, payload, count_at, count..=count, "f3d Design UTF-16 text")
+    lp_utf16_bounded_charged(
+        ctx,
+        payload,
+        count_at,
+        count..=count,
+        "f3d Design UTF-16 text",
+    )
 }
 
 /// Decode sketch-text records carrying persistent identities, font metrics,
@@ -3091,7 +3104,7 @@ fn decode_sketch_point_record(payload: &[u8], class_version: u32) -> Option<Deco
     };
     let persistent_id = std::num::NonZeroU64::new(persistent_id)?;
     let (paired_reference, paired_type_guid) = take_local_sketch_reference(payload, &mut cursor)?;
-    let inline_typed = match (class_version, paired_type_guid.as_deref()) {
+    let inline_typed = match (class_version, paired_type_guid) {
         (8 | 10 | 11, None) => false,
         (10 | 11, Some(type_guid))
             if type_guid.eq_ignore_ascii_case(SKETCH_POINT_COMPANION_TYPE.0) =>
@@ -3133,7 +3146,7 @@ fn decode_sketch_point_record(payload: &[u8], class_version: u32) -> Option<Deco
     cursor = floats_at.checked_add(13)?;
     let (repeated_reference, repeated_type_guid) =
         take_local_sketch_reference(payload, &mut cursor)?;
-    let repeated_encoding_matches = match repeated_type_guid.as_deref() {
+    let repeated_encoding_matches = match repeated_type_guid {
         None => !inline_typed,
         Some(type_guid) => {
             inline_typed && type_guid.eq_ignore_ascii_case(SKETCH_POINT_COMPANION_TYPE.0)
@@ -3178,7 +3191,6 @@ fn decode_sketch_point_record(payload: &[u8], class_version: u32) -> Option<Deco
             let (trailing_reference, type_guid) =
                 take_local_sketch_reference(payload, &mut cursor)?;
             if type_guid
-                .as_deref()
                 .is_none_or(|type_guid| !type_guid.eq_ignore_ascii_case(SKETCH_CONTAINER_TYPE_GUID))
             {
                 return None;
@@ -3201,7 +3213,6 @@ fn decode_sketch_point_record(payload: &[u8], class_version: u32) -> Option<Deco
             let (trailing_reference, type_guid) =
                 take_local_sketch_reference(payload, &mut cursor)?;
             if type_guid
-                .as_deref()
                 .is_none_or(|type_guid| !type_guid.eq_ignore_ascii_case(SKETCH_CONTAINER_TYPE_GUID))
             {
                 return None;
@@ -3312,7 +3323,7 @@ fn decode_sketch_point_companion(
             match reference_encoding {
                 SketchPointCompanionReferenceEncoding::SameSegment if type_guid.is_none() => {}
                 SketchPointCompanionReferenceEncoding::InlineTyped
-                    if type_guid.as_deref().is_some_and(|type_guid| {
+                    if type_guid.is_some_and(|type_guid| {
                         type_guid.eq_ignore_ascii_case(registered_type.0)
                     }) => {}
                 _ => return None,
@@ -3327,7 +3338,6 @@ fn decode_sketch_point_companion(
         let inverse_encoding_matches = match reference_encoding {
             SketchPointCompanionReferenceEncoding::SameSegment => inverse_type_guid.is_none(),
             SketchPointCompanionReferenceEncoding::InlineTyped => inverse_type_guid
-                .as_deref()
                 .is_some_and(|type_guid| type_guid.eq_ignore_ascii_case(SKETCH_POINT_TYPE_GUID)),
         };
         if inverse != point_record_index || !inverse_encoding_matches || cursor != payload.len() {

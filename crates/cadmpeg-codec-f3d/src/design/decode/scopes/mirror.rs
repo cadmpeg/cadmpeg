@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Exact mirror scopes and mirror construction binding.
 
-use crate::bytes::{lp_utf16_bounded_charged};
+use crate::bytes::lp_utf16_bounded_charged;
 use cadmpeg_core::decode::u64_from_index;
 
 use super::shared_frames::marked_record_reference;
@@ -501,8 +501,13 @@ fn compact_feature_reference(
     else {
         return Ok(None);
     };
-    let Some((context_id, after_context_id)) =
-        lp_utf16_bounded_charged(ctx, bytes, after_asset_id, 1..=256, "f3d Design UTF-16 text")?
+    let Some((context_id, after_context_id)) = lp_utf16_bounded_charged(
+        ctx,
+        bytes,
+        after_asset_id,
+        1..=256,
+        "f3d Design UTF-16 text",
+    )?
     else {
         return Ok(None);
     };
