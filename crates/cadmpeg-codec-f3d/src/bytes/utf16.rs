@@ -27,6 +27,8 @@ impl<'a> Utf16View<'a> {
         // Construction validates every code unit before this iterator is available.
         char::decode_utf16(std::iter::from_fn(move || view.u16_le())).flatten()
     }
+    pub(crate) fn is_empty(self) -> bool { self.utf8_len == 0 }
+    pub(crate) fn is_guid_hyphenated(self) -> bool { self.len() == 36 && self.guid_prefix() }
     pub(crate) fn len(self) -> usize { self.utf8_len }
     pub(crate) fn eq_str(self, text: &str) -> bool { self.chars().eq(text.chars()) }
     pub(crate) fn eq_ignore_ascii_case(self, other: Self) -> bool {
