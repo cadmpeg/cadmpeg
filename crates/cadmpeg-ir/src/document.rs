@@ -1087,7 +1087,10 @@ impl Model {
                 crate::features::FeatureOperation::TreeNode { children, .. },
             ) = feature.evaluation.definition()
             {
-                ctx.charge_work(children.len() as u64, OPERATION)?;
+                ctx.charge_work(
+                    cadmpeg_core::decode::u64_from_index(children.len()),
+                    OPERATION,
+                )?;
             }
         }
         if let Err(error) = self.validate_regeneration_parent(child, parent) {

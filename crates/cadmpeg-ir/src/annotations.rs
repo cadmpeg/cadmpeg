@@ -899,6 +899,7 @@ mod tests {
 
     #[test]
     fn annotation_remap_refuses_nested_collection_and_retained_limits() {
+        const MAPPED: &str = "test:point#mapped";
         let run = |collection_limit, retained_limit| {
             let mut builder = super::AnnotationBuilder::new();
             let stream = super::StreamHandle::new(crate::stream_name!("test"));
@@ -918,7 +919,6 @@ mod tests {
             );
             (outcome, annotations)
         };
-        const MAPPED: &str = "test:point#mapped";
         assert!(
             matches!(run(0, u64::MAX).0, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
             if limit.operation == "test_annotation_remap")
