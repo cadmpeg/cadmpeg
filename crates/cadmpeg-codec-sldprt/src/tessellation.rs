@@ -1733,18 +1733,18 @@ impl PlanarTrim {
         }) {
             return Ok(false);
         }
-        Ok(mesh.triangles().iter().all(|triangle| {
+        for triangle in mesh.triangles() {
             let [Some(a), Some(b), Some(c)] = triangle.map(|index| {
-                projected
-                    .get(cadmpeg_core::decode::index_from_u32(index))
-                    .copied()
-            }) else {
-                return false;
-            };
-            holes
-                .iter()
-                .all(|hole| !hole.crosses_triangle([a, b, c], tolerance))
-        }))
+                projected.get(cadmpeg_core::decode::index_from_u32(index)).copied()
+            }) else { return Ok(false); };
+            if let Some(PlanarOuter::Polygon(boundary)) = &self.outer {
+                if !polygon_contains_triangle(ctx, boundary, [a, b, c], tolerance)? { return Ok(false); }
+            }
+            if holes.iter().any(|hole| hole.crosses_triangle([a, b, c], tolerance)) {
+                return Ok(false);
+            }
+        }
+        Ok(true)
     }
 }
 
@@ -2899,6 +2899,48 @@ fn polygon_contains(polygon: &[Point2], point: Point2, tolerance: f64) -> bool {
         }
     }
     inside
+}
+
+/// Checks each triangle edge interval between polygon boundary intersections.
+/// A simple polygon that contains the complete triangle boundary contains its interior.
+fn polygon_contains_triangle(
+    ctx: &DecodeContext<'_>, boundary: &[Point2], triangle: [Point2; 3], tolerance: f64,
+) -> Result<bool, cadmpeg_core::CodecError> {
+    let capacity = boundary.len().checked_mul(2).and_then(|count| count.checked_add(2))
+        .ok_or_else(|| ctx.refuse_codec_limit("test SLDPRT planar outer triangle", u64::MAX, u64::MAX))?;
+    for edge in 0..3 {
+        let start = triangle[edge]; let end = triangle[(edge + 1) % 3];
+        let du = end.u - start.u; let dv = end.v - start.v;
+        let length_squared = du * du + dv * dv;
+        if !length_squared.is_finite() { return Ok(false); }
+        if length_squared == 0.0 { continue; }
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(boundary.len()), "intersect SLDPRT planar outer triangle")?;
+        let (mut cuts, _reservation) = ctx.temporary_vec(capacity, "collect SLDPRT triangle boundary cuts")?;
+        cuts.extend([0.0_f64, 1.0]);
+        for (index, point) in boundary.iter().enumerate() {
+            let next = boundary[(index + 1) % boundary.len()];
+            let pu = point.u - start.u; let pv = point.v - start.v;
+            let projected = (pu * du + pv * dv) / length_squared;
+            if (0.0..=1.0).contains(&projected) { cuts.push(projected); }
+            let eu = next.u - point.u; let ev = next.v - point.v;
+            let denominator = du * ev - dv * eu;
+            if denominator == 0.0 { continue; }
+            let along_triangle = (pu * ev - pv * eu) / denominator;
+            let along_boundary = (pu * dv - pv * du) / denominator;
+            if (0.0..=1.0).contains(&along_triangle) && (0.0..=1.0).contains(&along_boundary) { cuts.push(along_triangle); }
+        }
+        ctx.stable_sort_by(&mut cuts, f64::total_cmp, |_| 0, "sort SLDPRT triangle boundary cuts")?;
+        for interval in cuts.windows(2) {
+            let parameter = interval[0] + (interval[1] - interval[0]) / 2.0;
+            let work = cadmpeg_core::decode::u64_from_index(boundary.len()).checked_mul(2)
+                .ok_or_else(|| ctx.refuse_codec_limit("test SLDPRT planar outer triangle", u64::MAX, u64::MAX))?;
+            ctx.charge_work(work, "test SLDPRT planar outer triangle")?;
+            if !polygon_contains(boundary, Point2::new(start.u + parameter * du, start.v + parameter * dv), tolerance) {
+                return Ok(false);
+            }
+        }
+    }
+    Ok(true)
 }
 
 fn polygon_strictly_contains(polygon: &[Point2], point: Point2, tolerance: f64) -> bool {

@@ -57,3 +57,18 @@ fn sole_surface_owner_respects_its_planar_trim() {
     assert!(model.tessellations[0].faces.is_empty());
     assert!(model.tessellations[0].body.is_none());
 }
+
+#[test]
+fn planar_trim_rejects_a_triangle_spanning_a_concave_outer() {
+    let boundary = [[0.,0.],[3.,0.],[3.,3.],[2.,3.],[2.,1.],[1.,1.],[1.,3.],[0.,3.]].map(|p| Point2::new(p[0],p[1])).to_vec();
+    let trim = PlanarTrim { frame: PlaneFrame::new(cadmpeg_ir::features::FinitePoint3::ZERO, Vector3::new(0.,0.,1.), Vector3::new(1.,0.,0.)).unwrap(), outer: Some(PlanarOuter::Polygon(boundary)), holes: Vec::new(), boundary_tolerance: 0. };
+    let mesh = cadmpeg_ir::tessellation::Tessellation::new(cadmpeg_ir::tessellation::TessellationId::mint("synthetic:test:tessellation#concave").unwrap(), cadmpeg_ir::tessellation::TessellationMesh::List { vertices: vec![Point3::new(0.5,2.5,0.),Point3::new(2.5,2.5,0.),Point3::new(1.5,0.5,0.)], triangles: vec![[0,1,2]] }, Vec::new()).unwrap();
+    assert!(!trim.contains_mesh(&cadmpeg_test_support::service_decode_context(), &mesh, cadmpeg_ir::transform::Transform::identity(), super::EPS_DISPLAY_QUANTIZATION).unwrap());
+}
+
+#[test]
+fn polygon_triangle_check_accepts_edges_on_the_outer_boundary() {
+    let boundary = [[0.,0.],[1.,0.],[1.,1.],[0.,1.]].map(|p| Point2::new(p[0],p[1]));
+    let ctx = cadmpeg_test_support::service_decode_context();
+    assert!(super::super::polygon_contains_triangle(&ctx, &boundary, [boundary[0],boundary[1],boundary[2]], super::EPS_DISPLAY_QUANTIZATION).unwrap());
+}
