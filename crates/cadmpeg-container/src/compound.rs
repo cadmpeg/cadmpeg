@@ -411,7 +411,8 @@ impl<'a> CompoundSnapshot<'a> {
             chain,
         } = &entry.data
         else {
-            return ctx.register_slice(self.root, ByteRange { start: 0, end: 0 });
+            let start = cadmpeg_core::decode::u64_from_index(self.root.start());
+            return ctx.register_slice(self.root, ByteRange { start, end: start });
         };
         let logical_size = usize::try_from(logical_size.get())
             .map_err(|_| CodecError::Malformed("CFB stream size does not fit memory".into()))?;
@@ -496,6 +497,12 @@ impl<'a> CompoundSnapshot<'a> {
             self.root.window().len(),
             sector,
         )?;
+        let start = self.root.start().checked_add(start).ok_or_else(|| {
+            CodecError::Malformed("CFB absolute sector start overflows".into())
+        })?;
+        let end = self.root.start().checked_add(end).ok_or_else(|| {
+            CodecError::Malformed("CFB absolute sector end overflows".into())
+        })?;
         self.root
             .child(start, end)
             .ok_or_else(|| CodecError::Malformed("CFB sector escapes input".into()))
@@ -1974,6 +1981,35 @@ mod tests {
             snapshot.entry("STORE"),
             Some(CompoundEntry::Storage(_))
         ));
+    }
+
+    #[test]
+    fn stream_open_uses_absolute_coordinates_for_nonzero_root_views() {
+        for prefix_len in [16, 1024] {
+            for empty in [false, true] {
+                let mut file = fixture();
+                if empty {
+                    directory_entry(sector_mut(&mut file, 0), 1, "Small", 2,
+                        NO_STREAM, 2, NO_STREAM, END_OF_CHAIN, 0);
+                    put_u32(sector_mut(&mut file, 10), 0, FREE_SECTOR);
+                }
+                let mut prefixed = vec![0_u8; prefix_len];
+                prefixed.extend_from_slice(&file);
+                let arena = DecodeArena::new();
+                let (ctx, root) = DecodeContext::from_root_bytes(&prefixed, &arena, &DecodePolicy::service())
+                    .expect("prefixed fixture fits policy");
+                let cfb = root.child(prefix_len, prefixed.len()).expect("CFB child view");
+                let snapshot = CompoundSnapshot::new(&ctx, cfb).expect("CFB parses within child view");
+                let small = snapshot.open(&ctx, snapshot.stream("Small").expect("small stream"))
+                    .expect("mini or empty stream opens within child view");
+                assert_eq!(small.window(), if empty { &b""[..] } else { &b"small"[..] });
+                assert_eq!(small.start(), if empty { 0 } else { prefix_len + 2 * SECTOR_SIZE });
+                assert_eq!(snapshot.regular_sector_view(2).expect("regular sector view").start(), prefix_len + 3 * SECTOR_SIZE);
+                let large = snapshot.open(&ctx, snapshot.stream("Store/Large").expect("regular stream"))
+                    .expect("regular stream opens within child view");
+                assert_eq!(large.window(), &[0x5a; 4096]);
+            }
+        }
     }
 
     #[test]
