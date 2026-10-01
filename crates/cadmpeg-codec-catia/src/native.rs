@@ -383,6 +383,7 @@ impl TryFrom<CatiaConsolidatedOwnerPacketWire> for CatiaConsolidatedOwnerPacket 
 
 /// One structurally complete consolidated `B:29` cone chart.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(try_from = "CatiaConsolidatedConeWire")]
 pub(crate) struct CatiaConsolidatedCone {
     /// Stable native-record identity.
     id: String,
@@ -408,6 +409,51 @@ pub(crate) struct CatiaConsolidatedCone {
     angular_scale: cadmpeg_ir::scalar::PositiveReal,
     /// Full-turn azimuth chart domain.
     angular_domain: cadmpeg_ir::topology::IncreasingParameterInterval,
+}
+
+#[derive(Deserialize)]
+struct CatiaConsolidatedConeWire {
+    id: String,
+    byte_offset: u64,
+    apex: FiniteVector<3>,
+    direction_x: crate::checked::RelaxedUnitVector3,
+    direction_y: crate::checked::RelaxedUnitVector3,
+    axis: crate::checked::RelaxedUnitVector3,
+    half_angle: cadmpeg_ir::scalar::Angle,
+    reference_radius: FiniteReal,
+    angular_range: cadmpeg_ir::topology::IncreasingParameterInterval,
+    slant_range: cadmpeg_ir::topology::IncreasingParameterInterval,
+    angular_scale: cadmpeg_ir::scalar::PositiveReal,
+    angular_domain: cadmpeg_ir::topology::IncreasingParameterInterval,
+}
+
+impl TryFrom<CatiaConsolidatedConeWire> for CatiaConsolidatedCone {
+    type Error = &'static str;
+
+    fn try_from(wire: CatiaConsolidatedConeWire) -> Result<Self, Self::Error> {
+        if crate::checked::UnitFrame3::right_handed(wire.axis, wire.direction_x, wire.direction_y).is_none()
+            || !(0.0 < wire.half_angle.get() && wire.half_angle.get() < std::f64::consts::FRAC_PI_2)
+            || !crate::analytic::periodic_angular_range_is_valid(
+                wire.angular_range.endpoints(), wire.angular_domain.endpoints())
+            || wire.slant_range.lower() < 0.0
+        {
+            return Err("invalid consolidated cone frame or chart");
+        }
+        Ok(Self {
+            id: wire.id,
+            byte_offset: wire.byte_offset,
+            apex: wire.apex,
+            direction_x: wire.direction_x,
+            direction_y: wire.direction_y,
+            axis: wire.axis,
+            half_angle: wire.half_angle,
+            reference_radius: wire.reference_radius,
+            angular_range: wire.angular_range,
+            slant_range: wire.slant_range,
+            angular_scale: wire.angular_scale,
+            angular_domain: wire.angular_domain,
+        })
+    }
 }
 
 /// Payload-layout discriminator of a consolidated arc-length circle.
