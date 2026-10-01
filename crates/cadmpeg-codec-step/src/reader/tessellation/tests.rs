@@ -1993,3 +1993,5 @@ fn complex_tessellated_face_keeps_exact_support_surface_reachable() {
             && finding.entity.as_deref() == Some("step:data:surface#79")
     }));
 }
+
+mod placement_work;

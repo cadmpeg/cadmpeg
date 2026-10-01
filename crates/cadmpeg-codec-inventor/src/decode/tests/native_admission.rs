@@ -1487,7 +1487,7 @@ fn empty_external_identity_does_not_fail_file_decode() {
         .expect("native namespace");
     let ufrx = UfrxRecord::read(namespace).expect("admitted UFRx arenas agree");
     assert_eq!(ufrx.external_references().len(), 1);
-    assert_eq!(ufrx.external_references()[0].ordinal, 1);
+    assert_eq!(ufrx.external_references()[0].ordinal(), 1);
     assert_eq!(ufrx.external_references()[0].reference_id, 8);
 }
 
