@@ -19,7 +19,7 @@
 use self::index::scan_carriers;
 use self::spline::patch_nurbs_curve;
 
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, View};
+use cadmpeg_core::decode::{u64_from_index, DecodeArena, DecodeContext, DecodePolicy, View};
 use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::geometry::analytic::{
     CircleCurve, ConeSurface, CylinderSurface, EllipseCurve, LineCurve, PlaneSurface,
@@ -233,7 +233,7 @@ fn parse_carrier_at_marker(
     let end = values_at.checked_add(n.checked_mul(8)?)?;
     let mut view = View::over_retained(body);
     view.seek(values_at)?;
-    let vals = view.read_counted(n as u64, 8, View::f64_be)?;
+    let vals = view.read_counted(u64_from_index(n), 8, View::f64_be)?;
     if vals.iter().any(|value| !value.is_finite()) {
         return None;
     }

@@ -3,7 +3,8 @@
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 
-use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::convert::{f64_from_i64, truncate_f64_to_i64};
+use cadmpeg_core::decode::{index_from_u32, u64_from_index, DecodeContext, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::annotations::Annotations;
 use cadmpeg_ir::report::loss::LossNote;
@@ -19,12 +20,12 @@ mod patch_slots;
 use patch_slots::{BooleanPatchSlot, FloatPatchSlot, IntegerPatchSlot};
 
 fn exact_count(value: f64) -> Option<i64> {
-    const MAX_EXCLUSIVE_COUNT: f64 = (1_u64 << 63) as f64;
+    const MAX_EXCLUSIVE_COUNT: f64 = 9_223_372_036_854_775_808.0;
     if !(0.0..MAX_EXCLUSIVE_COUNT).contains(&value) {
         return None;
     }
-    let count = value as i64;
-    (count as f64 == value).then_some(count)
+    let count = truncate_f64_to_i64(value)?;
+    (value.fract() == 0.0).then_some(count)
 }
 
 fn dimension_subtype(
@@ -99,13 +100,13 @@ fn agreed_dimension_records<'a>(
 ) -> Result<Vec<&'a PmiDimension>, CodecError> {
     let mut groups = BTreeMap::<&str, Vec<&PmiDimension>>::new();
     for record in records {
-        let key = record.cad_text.as_str();
-        if !groups.contains_key(key) {
-            ctx.charge_collection_items(1, "group SLDPRT PMI dimension names")?;
-        }
-        let group = groups.entry(key).or_default();
-        ctx.reserve_collection_vec(group, 1, "group SLDPRT PMI dimension records")?;
-        group.push(record);
+        ctx.push_btree_group(
+            &mut groups,
+            record.cad_text.as_str(),
+            record,
+            "group SLDPRT PMI dimension names",
+            "group SLDPRT PMI dimension records",
+        )?;
     }
 
     let mut representatives = Vec::new();
@@ -176,15 +177,16 @@ pub(crate) fn enrich_history_parameters_with_features(
     for (history_index, history) in histories.iter().enumerate() {
         for (feature_index, feature) in history.features.iter().enumerate() {
             if let Some(owner) = owners.get_mut(&feature.name) {
-                ctx.reserve_collection_vec(owner, 1, "collect SLDPRT PMI owner positions")?;
-                owner.push((history_index, feature_index));
+                ctx.push_vec(
+                    owner,
+                    (history_index, feature_index),
+                    "collect SLDPRT PMI owner positions",
+                )?;
             } else {
-                ctx.charge_collection_items(1, "index SLDPRT PMI history owners")?;
                 let name = copy_pmi_text(ctx, &feature.name, "copy SLDPRT PMI owner name")?;
-                let mut owner = Vec::new();
-                ctx.reserve_collection_vec(&mut owner, 1, "collect SLDPRT PMI owner positions")?;
+                let mut owner = ctx.collection_vec(1, "collect SLDPRT PMI owner positions")?;
                 owner.push((history_index, feature_index));
-                owners.insert(name, owner);
+                ctx.insert_btree_map(&mut owners, name, owner, "index SLDPRT PMI history owners")?;
             }
         }
     }
@@ -240,8 +242,12 @@ pub(crate) fn enrich_history_parameters_with_features(
         )?) else {
             continue;
         };
-        ctx.charge_collection_items(1, "insert SLDPRT PMI history parameter")?;
-        parameters.insert(name, expression);
+        ctx.insert_btree_map(
+            parameters,
+            name,
+            expression,
+            "insert SLDPRT PMI history parameter",
+        )?;
     }
     Ok(())
 }
@@ -314,7 +320,14 @@ pub(crate) fn patch_payload(
                 | PmiDimensionSubtype::Ordinate,
                 Some(ParameterValue::Length(length)),
             ) => length.get() / 1000.0,
-            (PmiDimensionSubtype::Count, Some(ParameterValue::Integer(count))) => *count as f64,
+            (PmiDimensionSubtype::Count, Some(ParameterValue::Integer(count))) => {
+                f64_from_i64(*count).ok_or_else(|| {
+                    cadmpeg_core::CodecError::NotImplemented(format!(
+                        "SLDPRT PMI record {} has a count beyond exact float range",
+                        record.id
+                    ))
+                })?
+            }
             _ => {
                 return Err(cadmpeg_core::CodecError::NotImplemented(format!(
                     "SLDPRT PMI record {} has a value incompatible with its dimension subtype",
@@ -399,12 +412,13 @@ pub(crate) fn apply_to_parameters(
     let mut feature_names = BTreeMap::<&str, Vec<&cadmpeg_ir::features::Feature>>::new();
     for feature in features {
         if let Some(name) = feature.name.as_deref() {
-            if !feature_names.contains_key(name) {
-                ctx.charge_collection_items(1, "index SLDPRT PMI feature names")?;
-            }
-            let group = feature_names.entry(name).or_default();
-            ctx.reserve_collection_vec(group, 1, "collect SLDPRT PMI named features")?;
-            group.push(feature);
+            ctx.push_btree_group(
+                &mut feature_names,
+                name,
+                feature,
+                "index SLDPRT PMI feature names",
+                "collect SLDPRT PMI named features",
+            )?;
         }
     }
     for record in agreed_dimension_records(ctx, records)? {
@@ -507,12 +521,17 @@ pub(crate) fn apply_to_parameters(
             parameter.pmi = Some(semantic);
             continue;
         }
-        let ordinal = parameters
+        let ordinal = match parameters
             .iter()
             .filter(|parameter| parameter.owner.as_ref() == Some(&owner.id))
             .map(|parameter| parameter.ordinal)
             .max()
-            .map_or(0, |ordinal| ordinal.saturating_add(1));
+        {
+            Some(ordinal) => ordinal.checked_add(1).ok_or_else(|| {
+                cadmpeg_core::CodecError::Malformed("SLDPRT PMI parameter ordinal overflows".into())
+            })?,
+            None => 0,
+        };
         ctx.reserve_collection_vec(parameters, 1, "collect SLDPRT PMI parameters")?;
         parameters.push(DesignParameter {
             id: ParameterId::compose(
@@ -665,7 +684,7 @@ fn collect_dimensions(
     output: DimensionOutput<'_>,
 ) -> Result<(), CodecError> {
     let DimensionOutput { records, seen } = output;
-    ctx.charge_work(payload.len() as u64, "scan SLDPRT PMI candidates")?;
+    ctx.charge_work(u64_from_index(payload.len()), "scan SLDPRT PMI candidates")?;
     for (guid, offset) in candidate_maps(payload) {
         let (mut normalized, _reservation) = crate::text_admission::reserve_scoped_string(
             ctx,
@@ -686,7 +705,7 @@ fn collect_dimensions(
                     annotations,
                     annotation_id,
                     stream,
-                    offset as u64,
+                    u64_from_index(offset),
                     "messagepack_dim_sem_data",
                     Exactness::ByteExact,
                 )?;
@@ -698,7 +717,7 @@ fn collect_dimensions(
                 let decimal_len = if offset == 0 {
                     1
                 } else {
-                    offset.ilog10() as usize + 1
+                    index_from_u32(offset.ilog10()) + 1
                 };
                 let capacity = "PMISemanticDataDB map at offset ".len()
                     + decimal_len
@@ -731,11 +750,11 @@ fn collect_dimensions(
             }
             Err(PmiParseError::Resource(error)) => return Err(error),
         }
-        ctx.charge_retained(normalized.len() as u64, "retain SLDPRT PMI candidate GUID")?;
-        ctx.charge_collection_items(1, "index SLDPRT PMI candidate GUID")?;
-        seen.try_reserve(1).map_err(|_| {
-            ctx.refuse_codec_limit("index SLDPRT PMI candidate GUID", u64::MAX - 1, u64::MAX)
-        })?;
+        ctx.charge_retained(
+            u64_from_index(normalized.len()),
+            "retain SLDPRT PMI candidate GUID",
+        )?;
+        ctx.reserve_set(seen, 1, "index SLDPRT PMI candidate GUID")?;
         seen.insert(normalized);
     }
     Ok(())
@@ -865,14 +884,14 @@ fn extract_dimension(
             ..
         }) => Some((
             copy_pmi_text(ctx, text, "retain SLDPRT PMI display text")?,
-            *data_offset as u64,
+            u64_from_index(*data_offset),
         )),
         _ => None,
     };
     Ok(Some(PmiDimension {
         id,
         parent: copy_pmi_text(ctx, parent, "retain SLDPRT PMI parent")?,
-        offset: offset as u64,
+        offset: u64_from_index(offset),
         guid: copy_pmi_text(ctx, guid, "retain SLDPRT PMI GUID")?,
         cad_text: copy_pmi_text(ctx, cad_text, "retain SLDPRT PMI CAD text")?,
         item_count,
@@ -882,19 +901,19 @@ fn extract_dimension(
             "retain SLDPRT PMI subtype",
         )?,
         value,
-        value_offset: value_field.data_offset as u64,
+        value_offset: u64_from_index(value_field.data_offset),
         precision: int_from(precision_field)
             .ok_or_else(|| "valPrecision is not an integer".to_string())?,
-        precision_offset: precision_field.data_offset as u64,
+        precision_offset: u64_from_index(precision_field.data_offset),
         display_text,
         basic: bool_from(basic_field).ok_or_else(|| "basic is not a boolean".to_string())?,
-        basic_offset: basic_field.data_offset as u64,
+        basic_offset: u64_from_index(basic_field.data_offset),
         inspection: bool_from(inspection_field)
             .ok_or_else(|| "inspection is not a boolean".to_string())?,
-        inspection_offset: inspection_field.data_offset as u64,
+        inspection_offset: u64_from_index(inspection_field.data_offset),
         reference_only: bool_from(reference_field)
             .ok_or_else(|| "reference_only is not a boolean".to_string())?,
-        reference_only_offset: reference_field.data_offset as u64,
+        reference_only_offset: u64_from_index(reference_field.data_offset),
     }))
 }
 
@@ -903,7 +922,10 @@ fn extract_dimension(
 /// Used only to decide whether a failed parse is an attributed PMI loss or an
 /// unrelated GUID/map collision. It is not the field locator.
 fn looks_like_pmi_map(payload: &[u8], offset: usize) -> bool {
-    let end = offset.saturating_add(1024).min(payload.len());
+    let Some(end) = offset.checked_add(1024) else {
+        return false;
+    };
+    let end = end.min(payload.len());
     let window = payload.get(offset..end).unwrap_or(&[]);
     contains_fixstr_key(window, "cadText") && contains_fixstr_key(window, "dimItems")
 }
@@ -912,8 +934,11 @@ fn contains_fixstr_key(window: &[u8], key: &str) -> bool {
     if key.len() >= 32 {
         return false;
     }
+    let Ok(key_len) = u8::try_from(key.len()) else {
+        return false;
+    };
     let mut encoded = Vec::with_capacity(key.len() + 1);
-    encoded.push(0xa0 | key.len() as u8);
+    encoded.push(0xa0 | key_len);
     encoded.extend_from_slice(key.as_bytes());
     window
         .windows(encoded.len())
@@ -1109,22 +1134,28 @@ fn parse_scalar<'a>(
             })
         }
         Marker::I8 => Some(SpannedValue {
-            kind: ValueKind::Int(i64::from(take_u8(bytes, cursor)? as i8)),
+            kind: ValueKind::Int(i64::from(i8::from_be_bytes(
+                take_u8(bytes, cursor)?.to_be_bytes(),
+            ))),
             start,
             data_offset: start + 1,
         }),
         Marker::I16 => Some(SpannedValue {
-            kind: ValueKind::Int(i64::from(take_u16(bytes, cursor)? as i16)),
+            kind: ValueKind::Int(i64::from(i16::from_be_bytes(
+                take_u16(bytes, cursor)?.to_be_bytes(),
+            ))),
             start,
             data_offset: start + 1,
         }),
         Marker::I32 => Some(SpannedValue {
-            kind: ValueKind::Int(i64::from(take_u32(bytes, cursor)? as i32)),
+            kind: ValueKind::Int(i64::from(i32::from_be_bytes(
+                take_u32(bytes, cursor)?.to_be_bytes(),
+            ))),
             start,
             data_offset: start + 1,
         }),
         Marker::I64 => Some(SpannedValue {
-            kind: ValueKind::Int(take_u64(bytes, cursor)? as i64),
+            kind: ValueKind::Int(i64::from_be_bytes(take_u64(bytes, cursor)?.to_be_bytes())),
             start,
             data_offset: start + 1,
         }),
@@ -1180,9 +1211,11 @@ fn parse_map<'a>(
     depth: usize,
     start: usize,
 ) -> Result<Option<SpannedValue<'a>>, CodecError> {
-    let remaining = bytes.len().saturating_sub(*cursor);
+    let Some(remaining) = bytes.len().checked_sub(*cursor) else {
+        return Ok(None);
+    };
     // Each entry is at least a one-byte key marker and a one-byte value marker.
-    let Some(len) = cadmpeg_core::decode::bounded_len(len as u64, 2, remaining) else {
+    let Some(len) = cadmpeg_core::decode::bounded_len(u64_from_index(len), 2, remaining) else {
         return Ok(None);
     };
     let mut values = BTreeMap::new();
@@ -1196,10 +1229,7 @@ fn parse_map<'a>(
         let Some(value) = parse_value(ctx, bytes, cursor, depth + 1)? else {
             return Ok(None);
         };
-        if !values.contains_key(key) {
-            ctx.charge_collection_items(1, "collect SLDPRT PMI map fields")?;
-        }
-        values.insert(key, value);
+        ctx.insert_btree_map(&mut values, key, value, "collect SLDPRT PMI map fields")?;
     }
     Ok(Some(SpannedValue {
         kind: ValueKind::Map(values),
@@ -1218,15 +1248,13 @@ fn parse_array<'a>(
 ) -> Result<Option<SpannedValue<'a>>, CodecError> {
     // Every element encodes as at least one marker byte, so a length exceeding
     // the unread input cannot be satisfied and is rejected before allocating.
-    let remaining = bytes.len().saturating_sub(*cursor);
-    let Some(len) = cadmpeg_core::decode::bounded_len(len as u64, 1, remaining) else {
+    let Some(remaining) = bytes.len().checked_sub(*cursor) else {
         return Ok(None);
     };
-    ctx.charge_collection_items(len as u64, "collect SLDPRT PMI array items")?;
-    let mut values = Vec::new();
-    values.try_reserve_exact(len).map_err(|_| {
-        ctx.refuse_codec_limit("collect SLDPRT PMI array items", u64::MAX - 1, u64::MAX)
-    })?;
+    let Some(len) = cadmpeg_core::decode::bounded_len(u64_from_index(len), 1, remaining) else {
+        return Ok(None);
+    };
+    let mut values = ctx.collection_vec(len, "collect SLDPRT PMI array items")?;
     for _ in 0..len {
         let Some(value) = parse_value(ctx, bytes, cursor, depth + 1)? else {
             return Ok(None);
@@ -1320,7 +1348,7 @@ fn int_from(value: &SpannedValue) -> Option<i64> {
 fn float_from(value: &SpannedValue) -> Option<FiniteReal> {
     match value.kind {
         ValueKind::Float(value) => FiniteReal::new(value),
-        ValueKind::Int(value) => FiniteReal::new(value as f64),
+        ValueKind::Int(value) => FiniteReal::new(f64_from_i64(value)?),
         _ => None,
     }
 }

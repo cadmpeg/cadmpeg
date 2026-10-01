@@ -134,6 +134,7 @@ pub(crate) enum SldprtLossCode {
 
 impl SldprtLossCode {
     /// Every code, in declaration order.
+    #[cfg(test)]
     const ALL: &'static [SldprtLossCode] = &[
         Self::ConfigActiveIdentityUnresolved,
         Self::ConfigActivePartitionMismatch,

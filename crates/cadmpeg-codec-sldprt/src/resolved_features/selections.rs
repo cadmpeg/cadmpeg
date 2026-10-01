@@ -669,13 +669,7 @@ pub(super) fn compact_surface_selections(
         else {
             continue;
         };
-        if !cylinder_reference_tokens.contains(&token) {
-            ctx.charge_collection_items(1, OPERATION)?;
-            cylinder_reference_tokens
-                .try_reserve(1)
-                .map_err(|_| ctx.refuse_codec_limit(OPERATION, 0, 1))?;
-            cylinder_reference_tokens.insert(token);
-        }
+        ctx.insert_hash_set(&mut cylinder_reference_tokens, token, OPERATION)?;
     }
     let mirror_surface_prefix = mirror_surface_type_prefix(lane);
     let objects = selection_objects(ctx, histories, lane, OPERATION)?;
@@ -1390,13 +1384,7 @@ fn operation_surface_selection_candidates(
         else {
             continue;
         };
-        if !component_face_tokens.contains(&token) {
-            ctx.charge_collection_items(1, OPERATION)?;
-            component_face_tokens
-                .try_reserve(1)
-                .map_err(|_| ctx.refuse_codec_limit(OPERATION, 0, 1))?;
-            component_face_tokens.insert(token);
-        }
+        ctx.insert_hash_set(&mut component_face_tokens, token, OPERATION)?;
     }
     for token in component_face_tokens {
         let repeated =
@@ -1990,6 +1978,7 @@ fn component_face_reference_at_impl(
         {
             return None;
         }
+        let nested_face_class_length = u16::try_from(NESTED_FACE_CLASS.len()).ok()?;
         let nested_face_class = payload
             .get(body_offset..body_offset + nested_face::COMPONENT_MARKER)
             .is_some_and(|body| {
@@ -1997,7 +1986,7 @@ fn component_face_reference_at_impl(
                     .any(|header| {
                         &header[..CLASS_MARKER.len()] == CLASS_MARKER
                             && header[CLASS_MARKER.len()..CLASS_MARKER.len() + 2]
-                                == (NESTED_FACE_CLASS.len() as u16).to_le_bytes()
+                                == nested_face_class_length.to_le_bytes()
                             && &header[CLASS_MARKER.len() + 2..] == NESTED_FACE_CLASS
                     })
             });
@@ -2082,13 +2071,15 @@ pub(super) fn component_face_reference_in_record(
     const CLASS: &[u8] = b"moCompFace_c";
     const OPERATION: &str = "decode SLDPRT component face record";
     let header_length = CLASS_MARKER.len() + 2 + CLASS.len();
+    let Ok(class_length) = u16::try_from(CLASS.len()) else {
+        return Ok(None);
+    };
     let mut candidate: Option<(usize, Vec<FeatureInputComponentPathEntry>)> = None;
     let mut ambiguous = false;
     for (offset, header) in payload.windows(header_length).enumerate() {
         ctx.charge_work(u64_from_index(header_length), OPERATION)?;
         if &header[..CLASS_MARKER.len()] != CLASS_MARKER
-            || header[CLASS_MARKER.len()..CLASS_MARKER.len() + 2]
-                != (CLASS.len() as u16).to_le_bytes()
+            || header[CLASS_MARKER.len()..CLASS_MARKER.len() + 2] != class_length.to_le_bytes()
             || &header[CLASS_MARKER.len() + 2..] != CLASS
         {
             continue;
@@ -2958,13 +2949,7 @@ pub(crate) fn generated_surface_identities(
         let Some(prefix) = prefix else {
             continue;
         };
-        if !prefixes.contains(&prefix) {
-            ctx.charge_collection_items(1, OPERATION)?;
-            prefixes
-                .try_reserve(1)
-                .map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
-            prefixes.insert(prefix);
-        }
+        ctx.insert_hash_set(&mut prefixes, prefix, OPERATION)?;
     }
 
     let mut result = Vec::<SurfaceIdentityFields>::new();
@@ -3393,8 +3378,8 @@ pub(super) fn variable_fillet_control_references(
     if !feature.kind.eq_ignore_ascii_case("VarFillet") {
         return Ok(None);
     }
-    ctx.charge_work(lane.names.len() as u64, OPERATION)?;
-    ctx.charge_work(lane.names.len() as u64, OPERATION)?;
+    ctx.charge_work(u64_from_index(lane.names.len()), OPERATION)?;
+    ctx.charge_work(u64_from_index(lane.names.len()), OPERATION)?;
     let Some(object_start) =
         feature_object_name(feature, lane).and_then(|name| usize::try_from(name.offset).ok())
     else {
@@ -3453,7 +3438,7 @@ pub(super) fn variable_fillet_control_references(
             .filter(|name| {
                 variable_fillet_dimension_index_for_feature(feature, &name.value).is_some()
             });
-        ctx.charge_work(lane.names.len() as u64, OPERATION)?;
+        ctx.charge_work(u64_from_index(lane.names.len()), OPERATION)?;
         let Some(name) = names.next() else {
             return Ok(None);
         };
@@ -4036,11 +4021,7 @@ fn compact_sparse_component_path(
         if failed.contains(&(cursor, remaining)) {
             return Ok(None);
         }
-        ctx.charge_collection_items(1, OPERATION)?;
-        failed
-            .try_reserve(1)
-            .map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
-        failed.insert((cursor, remaining));
+        ctx.insert_hash_set(failed, (cursor, remaining), OPERATION)?;
         let Some((instance, type_signature)) = entry_prefix(payload, cursor) else {
             return Ok(None);
         };
@@ -4603,7 +4584,8 @@ fn counted_legacy_profile_line_layout(payload: &[u8], offset: usize) -> bool {
 
 #[cfg(test)]
 pub(super) fn selection_vector_tail(payload: &mut Vec<u8>, entries: &[u32]) -> usize {
-    payload.extend_from_slice(&(entries.len() as u32).to_le_bytes());
+    let count = u32::try_from(entries.len()).expect("selection vector entry count fits u32");
+    payload.extend_from_slice(&count.to_le_bytes());
     payload.extend_from_slice(&[0, 2, 0, 0]);
     payload.extend_from_slice(&[0, 0, 0, 0]);
     let marker = payload.len();

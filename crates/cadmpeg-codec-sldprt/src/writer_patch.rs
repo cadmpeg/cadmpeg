@@ -473,7 +473,7 @@ fn patch_surfaces(
         patch_compact(
             payload,
             body_start,
-            raw_annotation_offset(annotations, &surface.id).ok()? as u64,
+            raw_annotation_offset(annotations, &surface.id).ok()?,
             &values,
         )?;
     }
@@ -524,15 +524,20 @@ fn patch_curves(
         patch_compact(
             payload,
             body_start,
-            raw_annotation_offset(annotations, &curve.id).ok()? as u64,
+            raw_annotation_offset(annotations, &curve.id).ok()?,
             &values,
         )?;
     }
     Some(())
 }
 
-fn patch_compact(payload: &mut [u8], body_start: usize, offset: u64, values: &[f64]) -> Option<()> {
-    let carrier = crate::brep::parse_carrier(payload.get(body_start..)?, offset as usize)?;
+fn patch_compact(
+    payload: &mut [u8],
+    body_start: usize,
+    offset: usize,
+    values: &[f64],
+) -> Option<()> {
+    let carrier = crate::brep::parse_carrier(payload.get(body_start..)?, offset)?;
     let end = match carrier {
         crate::brep::Carrier::Curve(carrier) => carrier.end,
         crate::brep::Carrier::Surface(carrier) => carrier.end,

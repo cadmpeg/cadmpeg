@@ -50,8 +50,7 @@ fn keyed_attributes<'name, 'value>(
         let name = copy_history_text(ctx, name, "retain SLDPRT history property name")?;
         let value = copy_history_text(ctx, value, "retain SLDPRT history property value")?;
         if let Some(name) = cadmpeg_core::text::NonBlankString::new(name) {
-            ctx.charge_collection_items(1, "index SLDPRT history properties")?;
-            kept.insert(name, value);
+            ctx.insert_btree_map(&mut kept, name, value, "index SLDPRT history properties")?;
         }
     }
     Ok(kept)
@@ -173,7 +172,7 @@ pub(crate) fn histories(
                         annotations,
                         id.as_str(),
                         stream,
-                        node.range().start as u64,
+                        cadmpeg_core::decode::u64_from_index(node.range().start),
                         "Configuration",
                         Exactness::ByteExact,
                     )?;
@@ -195,7 +194,13 @@ pub(crate) fn histories(
                     configurations.push(Configuration {
                         id,
                         parent: parent.clone(),
-                        ordinal: ordinal as u32,
+                        ordinal: u32::try_from(ordinal).map_err(|_| {
+                            ctx.refuse_codec_limit(
+                                "index SLDPRT history configuration ordinals",
+                                u64::MAX - 1,
+                                u64::MAX,
+                            )
+                        })?,
                         source_index: node
                             .attribute("SourceIndex")
                             .and_then(|value| value.parse().ok()),
@@ -231,21 +236,15 @@ pub(crate) fn histories(
             let feature_ids = feature_nodes().enumerate().try_fold(
                 HashMap::new(),
                 |mut ids, (ordinal, node)| {
-                    ctx.charge_collection_items(1, "index SLDPRT history feature IDs")?;
-                    ids.try_reserve(1).map_err(|_| {
-                        ctx.refuse_codec_limit(
-                            "index SLDPRT history feature IDs",
-                            u64::MAX - 1,
-                            u64::MAX,
-                        )
-                    })?;
-                    ids.insert(
+                    ctx.insert_hash_map(
+                        &mut ids,
                         node.range().start,
                         format!(
                             "sldprt:history:feature#{}",
                             history_record_key(source, ordinal)
                         ),
-                    );
+                        "index SLDPRT history feature IDs",
+                    )?;
                     Ok::<_, CodecError>(ids)
                 },
             )?;
@@ -258,7 +257,7 @@ pub(crate) fn histories(
                         annotations,
                         id.as_str(),
                         stream,
-                        node.range().start as u64,
+                        cadmpeg_core::decode::u64_from_index(node.range().start),
                         node.tag_name().name(),
                         Exactness::ByteExact,
                     )?;
@@ -347,8 +346,12 @@ pub(crate) fn histories(
                                 name,
                                 "retain SLDPRT dimension property name",
                             )?;
-                            ctx.charge_collection_items(1, "index SLDPRT dimension properties")?;
-                            dimension_properties.insert(name, properties);
+                            ctx.insert_btree_map(
+                                &mut dimension_properties,
+                                name,
+                                properties,
+                                "index SLDPRT dimension properties",
+                            )?;
                         }
                     }
                     let mut parameters = BTreeMap::new();
@@ -371,8 +374,12 @@ pub(crate) fn histories(
                             let value =
                                 copy_history_text(ctx, value, "retain SLDPRT parameter value")?;
                             if let Some(name) = cadmpeg_core::text::NonBlankString::new(name) {
-                                ctx.charge_collection_items(1, "index SLDPRT parameters")?;
-                                parameters.insert(name, value);
+                                ctx.insert_btree_map(
+                                    &mut parameters,
+                                    name,
+                                    value,
+                                    "index SLDPRT parameters",
+                                )?;
                             }
                         }
                     }
@@ -407,7 +414,13 @@ pub(crate) fn histories(
                         source_id: node
                             .attribute("id")
                             .and_then(|value| FeatureSource::try_from(value).ok()),
-                        ordinal: ordinal as u32,
+                        ordinal: u32::try_from(ordinal).map_err(|_| {
+                            ctx.refuse_codec_limit(
+                                "index SLDPRT history feature ordinals",
+                                u64::MAX - 1,
+                                u64::MAX,
+                            )
+                        })?,
                         name: copy_history_text(
                             ctx,
                             node.attribute("Name").unwrap_or(""),

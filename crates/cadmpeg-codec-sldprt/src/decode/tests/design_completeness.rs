@@ -323,7 +323,7 @@ fn design_completeness_audits_typed_construction_families() {
         ir.model.features.push(Feature {
             id: FeatureId::mint(format!("synthetic:test:id#construction-{ordinal}"))
                 .expect("identity grammar"),
-            ordinal: ordinal as u64,
+            ordinal: cadmpeg_core::decode::u64_from_index(ordinal),
             name: None,
             suppressed: Some(false),
             dependencies: cadmpeg_ir::features::DistinctMembers::default(),
@@ -480,7 +480,7 @@ fn post_process_completeness_delegates_to_the_wrapped_operation() {
         ir.model.features.push(Feature {
             id: FeatureId::mint(format!("synthetic:test:id#post-process-{ordinal}"))
                 .expect("identity grammar"),
-            ordinal: ordinal as u64,
+            ordinal: cadmpeg_core::decode::u64_from_index(ordinal),
             name: None,
             suppressed: Some(false),
             dependencies: cadmpeg_ir::features::DistinctMembers::default(),
@@ -676,7 +676,7 @@ fn design_completeness_checks_secondary_sweep_and_loft_paths() {
         ir.model.features.push(Feature {
             id: FeatureId::mint(format!("synthetic:test:id#path-feature-{ordinal}"))
                 .expect("identity grammar"),
-            ordinal: ordinal as u64,
+            ordinal: cadmpeg_core::decode::u64_from_index(ordinal),
             name: None,
             suppressed: Some(false),
             dependencies: cadmpeg_ir::features::DistinctMembers::default(),
@@ -803,7 +803,7 @@ fn design_completeness_rejects_explicitly_unresolved_operation_fields() {
         ir.model.features.push(Feature {
             id: FeatureId::mint(format!("synthetic:test:id#operation-{ordinal}"))
                 .expect("identity grammar"),
-            ordinal: ordinal as u64,
+            ordinal: cadmpeg_core::decode::u64_from_index(ordinal),
             name: None,
             suppressed: Some(false),
             dependencies: cadmpeg_ir::features::DistinctMembers::default(),
@@ -1013,7 +1013,7 @@ fn hole_completeness_checks_optional_operands_when_present() {
         ir.model.features.push(Feature {
             id: FeatureId::mint(format!("synthetic:test:id#hole-{ordinal}"))
                 .expect("identity grammar"),
-            ordinal: ordinal as u64,
+            ordinal: cadmpeg_core::decode::u64_from_index(ordinal),
             name: None,
             suppressed: Some(false),
             dependencies: cadmpeg_ir::features::DistinctMembers::default(),

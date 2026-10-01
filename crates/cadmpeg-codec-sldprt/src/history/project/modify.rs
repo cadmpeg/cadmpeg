@@ -70,7 +70,7 @@ pub(super) fn project_fillet(
                 continue;
             };
             ctx.charge_work(
-                feature.parameters.len() as u64,
+                cadmpeg_core::decode::u64_from_index(feature.parameters.len()),
                 "scan SLDPRT variable fillet positions",
             )?;
             let parameter = feature.parameters.iter().find_map(|(name, value)| {
@@ -635,7 +635,7 @@ pub(super) fn project_chamfer(
         .get("D2")
         .filter(|value| parse_bounded_angle_rad(value).is_some());
     ctx.charge_work(
-        feature.content.len() as u64,
+        cadmpeg_core::decode::u64_from_index(feature.content.len()),
         "scan SLDPRT chamfer dimension order",
     )?;
     let mut ordered_dimensions = feature.content.iter().filter_map(|content| match content {

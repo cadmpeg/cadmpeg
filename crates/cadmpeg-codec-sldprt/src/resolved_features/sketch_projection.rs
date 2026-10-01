@@ -2,7 +2,9 @@
 
 use super::assembly::contains_ascii_case_insensitive;
 use super::names::configuration;
-use super::sketch_edges::{project_edge, project_endpoint_constraints, project_point};
+use super::sketch_edges::{
+    project_edge, project_endpoint_constraints, project_point, EndpointConstraintSource,
+};
 use crate::container::ContainerScan;
 use cadmpeg_ir::annotations::Annotations;
 use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
@@ -58,11 +60,8 @@ fn index_brep<'a, T, K: Eq + Hash, V>(
     let count = u64::try_from(values.len())
         .map_err(|_| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
     ctx.charge_work(count, operation)?;
-    ctx.charge_collection_items(count, operation)?;
     let mut index = HashMap::new();
-    index
-        .try_reserve(values.len())
-        .map_err(|_| ctx.refuse_codec_limit(operation, count, count))?;
+    ctx.reserve_map(&mut index, values.len(), operation)?;
     for value in values {
         let (key, record) = entry(value);
         index.insert(key, record);
@@ -105,13 +104,15 @@ pub(crate) fn sketches(
             project_brep(
                 ctx,
                 &brep,
-                source.ordinal(),
-                stream_ordinal,
-                stream.offset,
-                source_stream,
-                &stream.header.description,
-                configuration.as_deref(),
-                &native_ref,
+                &BrepSketchSource {
+                    block_offset: source.ordinal(),
+                    stream_ordinal,
+                    stream_offset: stream.offset,
+                    source_stream,
+                    sketch_name: &stream.header.description,
+                    configuration: configuration.as_deref(),
+                    native_ref: &native_ref,
+                },
                 annotations,
                 &mut sketches,
                 &mut entities,
@@ -126,22 +127,35 @@ pub(crate) fn sketches(
     })
 }
 
-#[allow(clippy::too_many_arguments)]
-fn project_brep(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    brep: &crate::brep::graph::Brep,
+/// Where one decoded B-rep stream sits in its section and how its sketch is named.
+struct BrepSketchSource<'a> {
     block_offset: usize,
     stream_ordinal: usize,
     stream_offset: usize,
-    source_stream: &cadmpeg_ir::StreamName,
-    sketch_name: &str,
-    configuration: Option<&str>,
-    native_ref: &str,
+    source_stream: &'a cadmpeg_ir::StreamName,
+    sketch_name: &'a str,
+    configuration: Option<&'a str>,
+    native_ref: &'a str,
+}
+
+fn project_brep(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    brep: &crate::brep::graph::Brep,
+    source: &BrepSketchSource<'_>,
     annotations: &mut Annotations,
     sketches: &mut Vec<Sketch>,
     entities: &mut Vec<SketchEntity>,
     constraints: &mut Vec<SketchConstraint>,
 ) -> Result<(), cadmpeg_core::CodecError> {
+    let BrepSketchSource {
+        block_offset,
+        stream_ordinal,
+        stream_offset,
+        source_stream,
+        sketch_name,
+        configuration,
+        native_ref,
+    } = *source;
     let surfaces = index_brep(ctx, &brep.surfaces, |surface| {
         (&surface.id, &surface.geometry)
     })?;
@@ -191,13 +205,11 @@ fn project_brep(
                     continue;
                 };
                 for vertex_id in [&edge.start, &edge.end] {
-                    if !used_vertices.contains(vertex_id) {
-                        ctx.charge_collection_items(1, "collect SLDPRT sketch used vertices")?;
-                        used_vertices.try_reserve(1).map_err(|_| {
-                            ctx.refuse_codec_limit("collect SLDPRT sketch used vertices", 0, 1)
-                        })?;
-                        used_vertices.insert(vertex_id);
-                    }
+                    ctx.insert_hash_set(
+                        &mut used_vertices,
+                        vertex_id,
+                        "collect SLDPRT sketch used vertices",
+                    )?;
                 }
                 let entity_id = if let Some(id) = edge_entities.get(&edge.id) {
                     let id = retained_text(ctx, id.as_str(), "retain SLDPRT sketch entity ID")?;
@@ -315,10 +327,7 @@ fn project_brep(
                             .with_geometry_ref(geometry_ref)
                             .with_endpoint_refs(endpoint_refs),
                     );
-                    ctx.charge_collection_items(1, "index SLDPRT sketch edge entities")?;
-                    edge_entities.try_reserve(1).map_err(|_| {
-                        ctx.refuse_codec_limit("index SLDPRT sketch edge entities", 0, 1)
-                    })?;
+                    ctx.reserve_map(&mut edge_entities, 1, "index SLDPRT sketch edge entities")?;
                     let index_id = SketchEntityId::mint(retained_text(
                         ctx,
                         id.as_str(),
@@ -417,18 +426,20 @@ fn project_brep(
             annotations,
             sketch_id.as_str(),
             source_stream,
-            stream_offset as u64,
+            cadmpeg_core::decode::u64_from_index(stream_offset),
             "feature_input_profile",
             Exactness::Derived,
         )?;
         project_endpoint_constraints(
             ctx,
-            &sketch_id,
-            &entities[first_entity..],
-            block_offset,
-            stream_ordinal,
-            face_ordinal,
-            source_stream,
+            EndpointConstraintSource {
+                sketch: &sketch_id,
+                entities: &entities[first_entity..],
+                block_offset,
+                stream_ordinal,
+                face_ordinal,
+                stream: source_stream,
+            },
             annotations,
             constraints,
         )?;
@@ -613,7 +624,7 @@ mod projected_profile_orientation_tests {
 
 #[cfg(test)]
 mod projected_brep_output_tests {
-    use super::project_brep;
+    use super::{project_brep, BrepSketchSource};
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_ir::geometry::{
         analytic::PlaneSurface, SolvedSurfaceGeometry, Surface, SurfaceGeometry,
@@ -679,13 +690,15 @@ mod projected_brep_output_tests {
         let error = project_brep(
             &ctx,
             &brep,
-            0,
-            0,
-            0,
-            &stream,
-            "point sketch",
-            None,
-            "native:point",
+            &BrepSketchSource {
+                block_offset: 0,
+                stream_ordinal: 0,
+                stream_offset: 0,
+                source_stream: &stream,
+                sketch_name: "point sketch",
+                configuration: None,
+                native_ref: "native:point",
+            },
             &mut annotations,
             &mut sketches,
             &mut entities,
@@ -706,13 +719,15 @@ mod projected_brep_output_tests {
         project_brep(
             &ctx,
             &brep,
-            0,
-            0,
-            0,
-            &stream,
-            "point sketch",
-            None,
-            "native:point",
+            &BrepSketchSource {
+                block_offset: 0,
+                stream_ordinal: 0,
+                stream_offset: 0,
+                source_stream: &stream,
+                sketch_name: "point sketch",
+                configuration: None,
+                native_ref: "native:point",
+            },
             &mut annotations,
             &mut sketches,
             &mut entities,

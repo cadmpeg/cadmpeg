@@ -8,6 +8,8 @@ use std::num::NonZeroU16;
 pub(crate) mod target;
 
 use crate::native::SldprtNative;
+use cadmpeg_core::convert::{f32_from_f64, truncate_f64_to_u8};
+use cadmpeg_core::decode::index_from_u32;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::appearance::AppearanceTarget;
 use cadmpeg_ir::document::CadIr;
@@ -141,7 +143,7 @@ pub(crate) fn write_semantic_with_records(
         };
         vec![(
             "Contents/Config-0-Partition".to_string(),
-            parasolid_stream(&body, schema),
+            parasolid_stream(&body, schema)?,
         )]
     };
     let generated_partition_sections = partition_sections
@@ -449,13 +451,13 @@ fn section_directory_entries(
                     return Ok(retained.to_vec());
                 }
             }
-            Ok(directory_entry(
+            directory_entry(
                 *type_id,
                 size,
                 section,
                 source_entry.map_or([0; 14], |entry| entry.descriptor),
                 source_trailer.unwrap_or([0xe5, 0x4b, 0x57, 0x5b, 0, 0]),
-            ))
+            )
         })
         .collect()
 }
@@ -783,7 +785,7 @@ fn configuration_partitions(
             };
             Ok((
                 format!("Contents/Config-{index}-Partition"),
-                parasolid_stream(&body, schema),
+                parasolid_stream(&body, schema)?,
             ))
         })
         .collect()
@@ -1870,11 +1872,7 @@ pub(crate) fn validate_feature_graph(
     for feature in features {
         ctx.charge_work(1, "validate SLDPRT feature graph")?;
         if let Some(id) = feature.source_id {
-            ctx.charge_collection_items(1, "index SLDPRT feature graph")?;
-            by_id.try_reserve(1).map_err(|_| {
-                ctx.refuse_codec_limit("index SLDPRT feature graph", u64::MAX - 1, u64::MAX)
-            })?;
-            by_id.insert(id, feature);
+            ctx.insert_hash_map(&mut by_id, id, feature, "index SLDPRT feature graph")?;
         }
     }
     if by_id.len()
@@ -1887,11 +1885,12 @@ pub(crate) fn validate_feature_graph(
     }
     let mut by_record = HashMap::new();
     for feature in features {
-        ctx.charge_collection_items(1, "index SLDPRT feature graph")?;
-        by_record.try_reserve(1).map_err(|_| {
-            ctx.refuse_codec_limit("index SLDPRT feature graph", u64::MAX - 1, u64::MAX)
-        })?;
-        by_record.insert(feature.id.as_str(), feature);
+        ctx.insert_hash_map(
+            &mut by_record,
+            feature.id.as_str(),
+            feature,
+            "index SLDPRT feature graph",
+        )?;
     }
     if by_record.len() != features.len() {
         return Err(CodecError::Malformed("duplicate feature record id".into()));
@@ -1901,11 +1900,7 @@ pub(crate) fn validate_feature_graph(
         let mut parent = feature.parent_source_id();
         while let Some(id) = parent {
             ctx.charge_work(1, "walk SLDPRT feature graph")?;
-            ctx.charge_collection_items(1, "index SLDPRT feature graph parents")?;
-            seen.try_reserve(1).map_err(|_| {
-                ctx.refuse_codec_limit("index SLDPRT feature graph parents", u64::MAX - 1, u64::MAX)
-            })?;
-            if !seen.insert(id) {
+            if !ctx.insert_hash_set(&mut seen, id, "index SLDPRT feature graph parents")? {
                 return Err(CodecError::Malformed("feature parent cycle".into()));
             }
             let node = by_id
@@ -1917,11 +1912,7 @@ pub(crate) fn validate_feature_graph(
         let mut parent = feature.tree_parent_record_id();
         while let Some(id) = parent {
             ctx.charge_work(1, "walk SLDPRT feature graph")?;
-            ctx.charge_collection_items(1, "index SLDPRT feature graph parents")?;
-            seen.try_reserve(1).map_err(|_| {
-                ctx.refuse_codec_limit("index SLDPRT feature graph parents", u64::MAX - 1, u64::MAX)
-            })?;
-            if !seen.insert(id) {
+            if !ctx.insert_hash_set(&mut seen, id, "index SLDPRT feature graph parents")? {
                 return Err(CodecError::Malformed("feature tree cycle".into()));
             }
             let node = by_record.get(id).ok_or_else(|| {
@@ -2048,7 +2039,7 @@ fn xml_text(out: &mut String, value: &str) {
 }
 
 fn tessellation_payload(ir: &CadIr, length_scale: f64) -> Result<Vec<u8>, CodecError> {
-    type AuxiliaryWriter = fn(&mut Vec<u8>, &[u32]);
+    type AuxiliaryWriter = fn(&mut Vec<u8>, &[u32]) -> Result<(), CodecError>;
     let meshes = ir
         .model
         .tessellations
@@ -2077,7 +2068,7 @@ fn tessellation_payload(ir: &CadIr, length_scale: f64) -> Result<Vec<u8>, CodecE
             .iter()
             .flat_map(|run| run.to_le_bytes())
             .collect::<Vec<_>>();
-        descriptor(&mut out, 4, 8, 2, mesh.strip_lengths().len(), &strips);
+        descriptor(&mut out, 4, 8, 2, mesh.strip_lengths().len(), &strips)?;
         let mut positions = Vec::with_capacity(mesh.vertex_count() * 12);
         for point in mesh.vertices() {
             for value in [point.x, point.y, point.z] {
@@ -2086,14 +2077,14 @@ fn tessellation_payload(ir: &CadIr, length_scale: f64) -> Result<Vec<u8>, CodecE
                 );
             }
         }
-        descriptor(&mut out, 12, 100, 2, mesh.vertex_count(), &positions);
+        descriptor(&mut out, 12, 100, 2, mesh.vertex_count(), &positions)?;
         let mut normals = Vec::with_capacity(mesh.vertex_normals().len() * 12);
         for normal in mesh.vertex_normals() {
             for value in [normal.x, normal.y, normal.z] {
                 normals.extend_from_slice(&tessellation_f32(value, "normal")?.to_le_bytes());
             }
         }
-        descriptor(&mut out, 12, 100, 2, mesh.vertex_normals().len(), &normals);
+        descriptor(&mut out, 12, 100, 2, mesh.vertex_normals().len(), &normals)?;
         // `has_core_tessellation_channels` matches at least three channels, so
         // the remainder after the core three is the complete auxiliary run.
         // The display-list table carries exactly three auxiliary channels; the
@@ -2122,9 +2113,9 @@ fn tessellation_payload(ir: &CadIr, length_scale: f64) -> Result<Vec<u8>, CodecE
                 channel.item_size(),
                 channel.kind(),
                 channel.flags(),
-                channel.count() as usize,
+                index_from_u32(channel.count()),
                 channel.data(),
-            );
+            )?;
         }
         let list_c = mesh
             .strip_lengths()
@@ -2146,14 +2137,14 @@ fn tessellation_payload(ir: &CadIr, length_scale: f64) -> Result<Vec<u8>, CodecE
                     .iter()
                     .flat_map(|value| value.to_le_bytes())
                     .collect::<Vec<_>>();
-                descriptor(out, 4, 8, 2, list_c.len(), &data);
+                descriptor(out, 4, 8, 2, list_c.len(), &data)
             },
             |out, _| descriptor(out, 1, 8, 2, 0, &[]),
         ];
         // The run is empty or the exact three the table carries, so the
         // synthesized defaults fill in only for a mesh that states none.
         for append in append.iter().skip(auxiliary.len()) {
-            append(&mut out, &list_c);
+            append(&mut out, &list_c)?;
         }
     }
     Ok(out)
@@ -2288,22 +2279,28 @@ fn strip_rows<V: Clone>(
 }
 
 fn tessellation_f32(value: f64, role: &str) -> Result<f32, CodecError> {
-    let narrowed = value as f32;
-    if narrowed.is_finite() {
-        Ok(narrowed)
-    } else {
-        Err(CodecError::malformed(format_args!(
-            "SLDPRT tessellation {role} exceeds f32 range"
-        )))
-    }
+    f32_from_f64(value).ok_or_else(|| {
+        CodecError::malformed(format_args!("SLDPRT tessellation {role} exceeds f32 range"))
+    })
 }
 
-fn descriptor(out: &mut Vec<u8>, item_size: u32, kind: u32, flags: u32, count: usize, data: &[u8]) {
+fn descriptor(
+    out: &mut Vec<u8>,
+    item_size: u32,
+    kind: u32,
+    flags: u32,
+    count: usize,
+    data: &[u8],
+) -> Result<(), CodecError> {
+    let count = u32::try_from(count).map_err(|_| {
+        CodecError::NotImplemented("SLDPRT display-list channel count exceeds u32".into())
+    })?;
     out.extend_from_slice(&item_size.to_le_bytes());
     out.extend_from_slice(&kind.to_le_bytes());
     out.extend_from_slice(&flags.to_le_bytes());
-    out.extend_from_slice(&(count as u32).to_le_bytes());
+    out.extend_from_slice(&count.to_le_bytes());
     out.extend_from_slice(data);
+    Ok(())
 }
 
 fn body_material(ir: &CadIr) -> Result<Option<(String, Color)>, CodecError> {
@@ -2403,12 +2400,16 @@ fn material_payload(name: &str, color: Color) -> Result<Vec<u8>, CodecError> {
     }
     let mut out = b"moVisualProperties_c".to_vec();
     // Every `Color` construction path admits components in [0, 1], so the
-    // product is in [0, 255] and the cast is exact.
-    let component = |value: f32| (value * 255.0).round() as u8;
+    // rounded product is in [0, 255].
+    let component = |value: f32| {
+        truncate_f64_to_u8(f64::from((value * 255.0).round())).ok_or_else(|| {
+            CodecError::Malformed("SLDPRT material color component is out of range".into())
+        })
+    };
     out.extend_from_slice(&[
-        component(color.r()),
-        component(color.g()),
-        component(color.b()),
+        component(color.r())?,
+        component(color.g())?,
+        component(color.b())?,
         0,
     ]);
     out.extend_from_slice(&0u32.to_le_bytes());
@@ -2685,12 +2686,14 @@ pub(crate) fn brep_body(
     }
     write_body_hierarchy(
         ir,
-        &faces,
-        &surfaces,
-        &face_owners,
-        &color_attrs,
-        face_color_definition,
-        schema_32001,
+        &HierarchyIdentities {
+            faces: &faces,
+            surfaces: &surfaces,
+            face_owners: &face_owners,
+            color_attrs: &color_attrs,
+            face_color_definition,
+            schema_32001,
+        },
         &mut next,
         &mut out,
     )?;
@@ -2702,18 +2705,32 @@ pub(crate) fn brep_body(
     Ok(out)
 }
 
-#[allow(clippy::too_many_arguments)] // The native and typed hierarchy writers share these identity maps.
-fn write_body_hierarchy(
-    ir: &CadIr,
-    faces: &HashMap<cadmpeg_ir::ids::FaceId, u16>,
-    surfaces: &HashMap<cadmpeg_ir::ids::SurfaceId, u16>,
-    face_owners: &HashMap<cadmpeg_ir::ids::FaceId, u16>,
-    color_attrs: &HashMap<cadmpeg_ir::ids::FaceId, u16>,
+/// Attribute identities of the faces and surfaces that the native and typed
+/// hierarchy writers share.
+#[derive(Clone, Copy)]
+struct HierarchyIdentities<'a> {
+    faces: &'a HashMap<cadmpeg_ir::ids::FaceId, u16>,
+    surfaces: &'a HashMap<cadmpeg_ir::ids::SurfaceId, u16>,
+    face_owners: &'a HashMap<cadmpeg_ir::ids::FaceId, u16>,
+    color_attrs: &'a HashMap<cadmpeg_ir::ids::FaceId, u16>,
     face_color_definition: Option<(u16, u16)>,
     schema_32001: bool,
+}
+
+fn write_body_hierarchy(
+    ir: &CadIr,
+    identities: &HierarchyIdentities<'_>,
     next: &mut u16,
     out: &mut Vec<u8>,
 ) -> Result<(), CodecError> {
+    let HierarchyIdentities {
+        faces,
+        surfaces,
+        face_owners,
+        color_attrs,
+        face_color_definition,
+        schema_32001,
+    } = *identities;
     let shells = ir
         .model
         .shells
@@ -2807,7 +2824,7 @@ fn write_body_hierarchy(
     }
     write_typed_body_hierarchy(ir, faces, surfaces, next, out)?;
     if let Some((key_node, definition_node)) = face_color_definition {
-        attribute_definition(out, key_node, definition_node);
+        attribute_definition(out, key_node, definition_node)?;
     }
     let mut face_owner_items = face_owners.iter().collect::<Vec<_>>();
     face_owner_items.sort_by_key(|(left, _)| *left);
@@ -2889,7 +2906,19 @@ fn write_typed_body_hierarchy(
             .and_then(|region| region.shells.first())
             .map(|shell| shell_attrs[shell])
             .ok_or_else(|| CodecError::Malformed("typed region has no shell".into()))?;
-        typed_prefix(out, 0x0c, body_attr, 0x1000_0000 + index as u32);
+        typed_prefix(
+            out,
+            0x0c,
+            body_attr,
+            u32::try_from(index)
+                .ok()
+                .and_then(|index| 0x1000_0000_u32.checked_add(index))
+                .ok_or_else(|| {
+                    CodecError::NotImplemented(
+                        "SLDPRT typed topology node index exceeds the 32-bit range".into(),
+                    )
+                })?,
+        );
         for value in [5_u32, 6, 1, 1, 1, 1] {
             typed_ref(out, value)?;
         }
@@ -2933,7 +2962,14 @@ fn write_typed_body_hierarchy(
             out,
             0x0d,
             shell_attrs[&shell.id],
-            0x2000_0000 + index as u32,
+            u32::try_from(index)
+                .ok()
+                .and_then(|index| 0x2000_0000_u32.checked_add(index))
+                .ok_or_else(|| {
+                    CodecError::NotImplemented(
+                        "SLDPRT typed topology node index exceeds the 32-bit range".into(),
+                    )
+                })?,
         );
         for value in [1, body_attrs[body], 1, 1, 1, 1, region_attrs[&region.id], 1] {
             typed_ref(out, value)?;
@@ -2970,7 +3006,14 @@ fn write_typed_body_hierarchy(
             out,
             0x13,
             region_attrs[&region.id],
-            0x3000_0000 + index as u32,
+            u32::try_from(index)
+                .ok()
+                .and_then(|index| 0x3000_0000_u32.checked_add(index))
+                .ok_or_else(|| {
+                    CodecError::NotImplemented(
+                        "SLDPRT typed topology node index exceeds the 32-bit range".into(),
+                    )
+                })?,
         );
         for value in [1, body, next_region, previous_region, shell_head] {
             typed_ref(out, value)?;
@@ -2983,7 +3026,19 @@ fn write_typed_body_hierarchy(
             .get(&face.id)
             .copied()
             .ok_or_else(|| CodecError::Malformed("typed face has no shell".into()))?;
-        typed_prefix(out, 0x0e, faces[&face.id], 0x4000_0000 + index as u32);
+        typed_prefix(
+            out,
+            0x0e,
+            faces[&face.id],
+            u32::try_from(index)
+                .ok()
+                .and_then(|index| 0x4000_0000_u32.checked_add(index))
+                .ok_or_else(|| {
+                    CodecError::NotImplemented(
+                        "SLDPRT typed topology node index exceeds the 32-bit range".into(),
+                    )
+                })?,
+        );
         typed_ref(out, 1_u32)?;
         out.extend_from_slice(&MAGIC);
         for value in [1, 1, 0, shell, surfaces[&face.surface]] {
@@ -3017,11 +3072,19 @@ fn typed_ref(out: &mut Vec<u8>, value: impl Into<u32>) -> Result<(), CodecError>
             "SLDPRT typed reference exceeds the 31-bit XT pointer range".into(),
         ));
     }
+    let refuse = || {
+        CodecError::NotImplemented(
+            "SLDPRT typed reference exceeds the 31-bit XT pointer range".into(),
+        )
+    };
     if value <= 0x7ffe {
-        be16(out, value as u16);
+        be16(out, u16::try_from(value).map_err(|_| refuse())?);
     } else {
-        be16(out, 0x8000 | (value as u16 & 0x7fff));
-        be16(out, (value >> 15) as u16);
+        be16(
+            out,
+            0x8000 | u16::try_from(value & 0x7fff).map_err(|_| refuse())?,
+        );
+        be16(out, u16::try_from(value >> 15).map_err(|_| refuse())?);
     }
     Ok(())
 }
@@ -3079,15 +3142,25 @@ fn entity53(out: &mut Vec<u8>, attr: u16, color: Color) {
     }
 }
 
-fn attribute_definition(out: &mut Vec<u8>, key_node: u16, definition_node: u16) {
+fn attribute_definition(
+    out: &mut Vec<u8>,
+    key_node: u16,
+    definition_node: u16,
+) -> Result<(), CodecError> {
     const FAMILY: &[u8] = b"SDL/TYSA_COLOUR";
     tag(out, 0x4f);
-    be32(out, FAMILY.len() as u32);
+    be32(
+        out,
+        u32::try_from(FAMILY.len()).map_err(|_| {
+            CodecError::NotImplemented("SLDPRT attribute family name is too long".into())
+        })?,
+    );
     be16(out, key_node);
     out.extend_from_slice(FAMILY);
     tag(out, 0x50);
     be32(out, 2);
     be16(out, definition_node);
+    Ok(())
 }
 
 fn write_face_list(
@@ -3759,21 +3832,31 @@ fn compact(out: &mut Vec<u8>, kind: u8, attr: u16, values: &[f64]) {
         bef64(out, *value);
     }
 }
-fn parasolid_stream(body: &[u8], schema: &str) -> Vec<u8> {
+fn parasolid_stream(body: &[u8], schema: &str) -> Result<Vec<u8>, CodecError> {
     parasolid_stream_named(body, schema, "partition body")
 }
 
-pub(crate) fn parasolid_stream_named(body: &[u8], schema: &str, description: &str) -> Vec<u8> {
+pub(crate) fn parasolid_stream_named(
+    body: &[u8],
+    schema: &str,
+    description: &str,
+) -> Result<Vec<u8>, CodecError> {
     let description = description.as_bytes();
     let schema = schema.as_bytes();
+    let description_length = u16::try_from(description.len()).map_err(|_| {
+        CodecError::NotImplemented("Parasolid stream description exceeds 65535 bytes".into())
+    })?;
+    let schema_length = u8::try_from(schema.len()).map_err(|_| {
+        CodecError::NotImplemented("Parasolid stream schema name exceeds 255 bytes".into())
+    })?;
     let mut out = b"PS\0\0".to_vec();
-    be16(&mut out, description.len() as u16);
+    be16(&mut out, description_length);
     out.extend_from_slice(description);
     out.extend_from_slice(&[0, 0]);
-    out.push(schema.len() as u8);
+    out.push(schema_length);
     out.extend_from_slice(schema);
     out.extend_from_slice(body);
-    out
+    Ok(out)
 }
 fn block(payload: &[u8], section: &str, type_id: u32) -> Result<Vec<u8>, CodecError> {
     use flate2::write::DeflateEncoder;
@@ -3784,9 +3867,22 @@ fn block(payload: &[u8], section: &str, type_id: u32) -> Result<Vec<u8>, CodecEr
     let mut out = MARKER.to_vec();
     out.extend_from_slice(&type_id.to_le_bytes());
     out.extend_from_slice(&crc32fast::hash(payload).to_le_bytes());
-    out.extend_from_slice(&(compressed.len() as u32).to_le_bytes());
-    out.extend_from_slice(&(payload.len() as u32).to_le_bytes());
-    out.extend_from_slice(&(preamble.len() as u32).to_le_bytes());
+    let too_large = || CodecError::NotImplemented("SLDPRT block section is too large".into());
+    out.extend_from_slice(
+        &u32::try_from(compressed.len())
+            .map_err(|_| too_large())?
+            .to_le_bytes(),
+    );
+    out.extend_from_slice(
+        &u32::try_from(payload.len())
+            .map_err(|_| too_large())?
+            .to_le_bytes(),
+    );
+    out.extend_from_slice(
+        &u32::try_from(preamble.len())
+            .map_err(|_| too_large())?
+            .to_le_bytes(),
+    );
     out.extend_from_slice(&preamble);
     out.extend_from_slice(&compressed);
     Ok(out)
@@ -3798,7 +3894,7 @@ fn directory_entry(
     section: &str,
     descriptor: [u8; 14],
     trailer: [u8; 6],
-) -> Vec<u8> {
+) -> Result<Vec<u8>, CodecError> {
     let name = section
         .bytes()
         .map(|byte| byte.rotate_left(4))
@@ -3808,11 +3904,15 @@ fn directory_entry(
     out.extend_from_slice(&0u32.to_le_bytes());
     out.extend_from_slice(&size.to_le_bytes());
     out.extend_from_slice(&0u32.to_le_bytes());
-    out.extend_from_slice(&(name.len() as u32).to_le_bytes());
+    out.extend_from_slice(
+        &u32::try_from(name.len())
+            .map_err(|_| CodecError::NotImplemented("SLDPRT section name is too long".into()))?
+            .to_le_bytes(),
+    );
     out.extend_from_slice(&descriptor);
     out.extend_from_slice(&name);
     out.extend_from_slice(&trailer);
-    out
+    Ok(out)
 }
 fn tag(out: &mut Vec<u8>, kind: u8) {
     out.extend_from_slice(&[0, kind]);
@@ -4024,6 +4124,27 @@ mod nurbs_write_tests {
                 if message.contains("test:curve#high-multiplicity")
                     && message.contains("knot multiplicity")
         ));
+    }
+}
+
+#[cfg(test)]
+mod conversion_correction_tests {
+    use super::tessellation_f32;
+
+    #[test]
+    fn tessellation_f32_refuses_a_value_above_f32_max_that_the_cast_rounded_down() {
+        // A value a hair above `f32::MAX` rounded to `f32::MAX` under `as`; the
+        // sum with `1.0` would not do, since `1.0` is below the spacing of
+        // `f64` at that magnitude.
+        let just_above = f64::from(f32::MAX) * (1.0 + 1e-10);
+        assert!(just_above > f64::from(f32::MAX));
+        assert!(tessellation_f32(just_above, "position").is_err());
+        assert_eq!(
+            tessellation_f32(f64::from(f32::MAX), "position").expect("exact maximum"),
+            f32::MAX
+        );
+        assert!(tessellation_f32(f64::NAN, "position").is_err());
+        assert!(tessellation_f32(f64::INFINITY, "position").is_err());
     }
 }
 

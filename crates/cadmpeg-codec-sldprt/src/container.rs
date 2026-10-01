@@ -17,7 +17,8 @@ use cadmpeg_container::compression::{
 };
 use cadmpeg_core::bytes::contains;
 use cadmpeg_core::decode::{
-    DecodeArena, DecodeContext, DecodePolicy, ExpandSpec, ScopedReservation, View,
+    index_from_u32, u64_from_index, DecodeArena, DecodeContext, DecodePolicy, ExpandSpec,
+    ScopedReservation, View,
 };
 use cadmpeg_core::dialect::DialectLayers;
 use cadmpeg_core::{CodecError, ContainerEntry};
@@ -115,7 +116,7 @@ fn nibble_swap_name(raw: &[u8]) -> Option<String> {
         if !(0x20..0x7f).contains(&swapped) {
             return None;
         }
-        s.push(swapped as char);
+        s.push(char::from(swapped));
     }
     Some(s)
 }
@@ -280,7 +281,7 @@ impl<'a> Section<'a> {
     pub(crate) fn ordinal(self) -> usize {
         match self {
             Self::Block(block) => block.offset,
-            Self::Compound(stream) => stream.directory_id as usize,
+            Self::Compound(stream) => index_from_u32(stream.directory_id),
         }
     }
 
@@ -518,7 +519,7 @@ fn walk_native_markers(
             continue;
         }
         if let Some(block) = try_one_block(i)? {
-            i = block.offset + block_hdr::LEN + block.preamble_len + block.comp_sz as usize;
+            i = block.offset + block_hdr::LEN + block.preamble_len + index_from_u32(block.comp_sz);
             admission.reserve(&mut blocks, "admit SLDPRT block")?;
             blocks.push(block.into_block());
             continue;
@@ -741,9 +742,9 @@ fn read_block_frame(bytes: &[u8], off: usize) -> Option<(BlockFrame, usize, usiz
     let uncomp_sz = View::u32_le_at(bytes, off + block_hdr::UNCOMP_SZ)?;
     let pre_sz = View::u32_le_at(bytes, off + block_hdr::PRE_SZ)?;
 
-    let comp = comp_sz as usize;
-    let pre = pre_sz as usize;
-    let uncomp = uncomp_sz as usize;
+    let comp = index_from_u32(comp_sz);
+    let pre = index_from_u32(pre_sz);
+    let uncomp = index_from_u32(uncomp_sz);
     if comp == 0 || uncomp == 0 || uncomp > MAX_UNCOMP {
         return None;
     }
@@ -771,14 +772,14 @@ fn block_from_inflated(
     frame: &BlockFrame,
     inflated: Vec<u8>,
 ) -> Result<Option<RawBlock>, CodecError> {
-    if inflated.len() != frame.uncomp_sz as usize {
+    if inflated.len() != index_from_u32(frame.uncomp_sz) {
         return Ok(None);
     }
     if crc32fast::hash(&inflated) != frame.crc {
         return Ok(None);
     }
 
-    let payload_start = off + block_hdr::LEN + frame.pre_sz as usize;
+    let payload_start = off + block_hdr::LEN + index_from_u32(frame.pre_sz);
     let preamble = bytes
         .get(off + block_hdr::LEN..payload_start)
         .unwrap_or(&[]);
@@ -797,7 +798,7 @@ fn block_from_inflated(
         offset: off,
         type_id: frame.type_id,
         comp_sz: frame.comp_sz,
-        preamble_len: frame.pre_sz as usize,
+        preamble_len: index_from_u32(frame.pre_sz),
         section,
         family,
         payload: inflated,
@@ -808,7 +809,7 @@ fn block_from_inflated(
 fn try_block(bytes: &[u8], off: usize) -> Option<RawBlock> {
     let (frame, payload_start, payload_end) = read_block_frame(bytes, off)?;
     let payload = bytes.get(payload_start..payload_end)?;
-    let inflated = inflate_bounded_probe(payload, frame.uncomp_sz as usize)?;
+    let inflated = inflate_bounded_probe(payload, index_from_u32(frame.uncomp_sz))?;
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(bytes, &arena, &DecodePolicy::service()).ok()?;
     block_from_inflated(&ctx, bytes, off, &frame, inflated)
@@ -881,7 +882,7 @@ fn try_cache_cell_with<E>(
         return Ok(None);
     }
     let name_start = off + cache_hdr::LEN;
-    let Some(raw) = bytes.get(name_start..name_start + name_len as usize) else {
+    let Some(raw) = bytes.get(name_start..name_start + index_from_u32(name_len)) else {
         return Ok(None);
     };
     let Some(name) = name_from_bytes(raw)? else {
@@ -929,7 +930,7 @@ fn try_directory_entry_with<E>(
         return Ok(None);
     }
     let name_start = off + dir_ent::LEN;
-    let Some(raw) = bytes.get(name_start..name_start + name_len as usize) else {
+    let Some(raw) = bytes.get(name_start..name_start + index_from_u32(name_len)) else {
         return Ok(None);
     };
     let Some(descriptor) = bytes
@@ -939,7 +940,7 @@ fn try_directory_entry_with<E>(
         return Ok(None);
     };
     let Some(trailer) = bytes
-        .get(name_start + name_len as usize..name_start + name_len as usize + 6)
+        .get(name_start + index_from_u32(name_len)..name_start + index_from_u32(name_len) + 6)
         .and_then(|value| value.try_into().ok())
     else {
         return Ok(None);
@@ -983,8 +984,8 @@ pub(crate) fn summarize(scan: &ContainerScan, dialects: DialectLayers) -> Contai
             role: ContainerRole::Block,
             storage: EntryStorage::Compressed {
                 method: CompressionMethod::Deflate,
-                stored: Some(b.comp_sz as u64),
-                expanded: Some(b.uncomp_sz() as u64),
+                stored: Some(u64::from(b.comp_sz)),
+                expanded: Some(u64_from_index(b.uncomp_sz())),
             },
             attributes,
         });
@@ -997,7 +998,7 @@ pub(crate) fn summarize(scan: &ContainerScan, dialects: DialectLayers) -> Contai
         entries.push(ContainerEntry {
             name: d.name.clone(),
             role: ContainerRole::DirectoryEntry,
-            storage: EntryStorage::payload_only(VerbatimLabel::None, d.size as u64),
+            storage: EntryStorage::payload_only(VerbatimLabel::None, u64::from(d.size)),
             attributes,
         });
     }
@@ -1025,7 +1026,10 @@ pub(crate) fn summarize(scan: &ContainerScan, dialects: DialectLayers) -> Contai
         entries.push(ContainerEntry {
             name: stream.path.as_str().to_owned(),
             role: ContainerRole::CompoundStream,
-            storage: EntryStorage::verbatim(VerbatimLabel::Stored, stream.payload.len() as u64),
+            storage: EntryStorage::verbatim(
+                VerbatimLabel::Stored,
+                u64_from_index(stream.payload.len()),
+            ),
             attributes,
         });
     }

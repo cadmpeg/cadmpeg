@@ -11,7 +11,7 @@ fn reference_plane_error(policy: DecodePolicy) -> CodecError {
     payload[class_offset..class_offset + super::CLASS_MARKER.len()]
         .copy_from_slice(super::CLASS_MARKER);
     payload[class_offset + super::CLASS_MARKER.len()..class_offset + super::CLASS_MARKER.len() + 2]
-        .copy_from_slice(&(CLASS.len() as u16).to_le_bytes());
+        .copy_from_slice(&u16::try_from(CLASS.len()).unwrap().to_le_bytes());
     payload[class_offset + super::CLASS_MARKER.len() + 2..body].copy_from_slice(CLASS);
     for (relative, value) in [
         (8, 1.0e-16_f64),

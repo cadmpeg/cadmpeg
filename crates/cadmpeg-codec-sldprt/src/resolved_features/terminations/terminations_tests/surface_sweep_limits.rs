@@ -28,7 +28,11 @@ fn surface_sweep_projection_error(policy: DecodePolicy) -> cadmpeg_core::CodecEr
     ]);
     resolved.extend_from_slice(&[0xdd, 0x94, 0xff, 0xff, 1, 0]);
     let class = b"moCompReferenceCurve_c";
-    resolved.extend_from_slice(&(class.len() as u16).to_le_bytes());
+    resolved.extend_from_slice(
+        &u16::try_from(class.len())
+            .expect("class name length fits u16")
+            .to_le_bytes(),
+    );
     resolved.extend_from_slice(class);
     let prefix = resolved.len();
     resolved.resize(prefix + 133, 0);

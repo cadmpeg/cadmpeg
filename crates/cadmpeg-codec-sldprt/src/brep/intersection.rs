@@ -10,10 +10,9 @@
 //! co-parameterized support pcurve caches.
 
 use std::collections::HashMap;
-use std::hash::Hash;
 
 use cadmpeg_core::bytes::find_iter;
-use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::decode::{u64_from_index, DecodeContext, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::geometry::{nurbs::NurbsCurve, CurveGeometry, SolvedCurveGeometry};
 use cadmpeg_ir::math::{Point2, Point3};
@@ -80,54 +79,6 @@ struct SolvedChart {
     fit_tolerance_mm: f64,
     reversed: bool,
     endpoint_displacement: f64,
-}
-
-fn extend_group<K: Eq + Hash, V>(
-    ctx: &DecodeContext<'_>,
-    groups: &mut HashMap<K, Vec<V>>,
-    key: K,
-    values: Vec<V>,
-    key_operation: &'static str,
-    value_operation: &'static str,
-) -> Result<(), CodecError> {
-    if !groups.contains_key(&key) {
-        ctx.charge_collection_items(1, key_operation)?;
-        groups
-            .try_reserve(1)
-            .map_err(|_| ctx.refuse_codec_limit(key_operation, u64::MAX - 1, u64::MAX))?;
-    }
-    let count = u64::try_from(values.len())
-        .map_err(|_| ctx.refuse_codec_limit(value_operation, u64::MAX - 1, u64::MAX))?;
-    ctx.charge_collection_items(count, value_operation)?;
-    let group = groups.entry(key).or_default();
-    group
-        .try_reserve(values.len())
-        .map_err(|_| ctx.refuse_codec_limit(value_operation, u64::MAX - 1, u64::MAX))?;
-    group.extend(values);
-    Ok(())
-}
-
-fn push_group<K: Eq + Hash, V>(
-    ctx: &DecodeContext<'_>,
-    groups: &mut HashMap<K, Vec<V>>,
-    key: K,
-    value: V,
-    key_operation: &'static str,
-    value_operation: &'static str,
-) -> Result<(), CodecError> {
-    if !groups.contains_key(&key) {
-        ctx.charge_collection_items(1, key_operation)?;
-        groups
-            .try_reserve(1)
-            .map_err(|_| ctx.refuse_codec_limit(key_operation, u64::MAX - 1, u64::MAX))?;
-    }
-    ctx.charge_collection_items(1, value_operation)?;
-    let group = groups.entry(key).or_default();
-    group
-        .try_reserve(1)
-        .map_err(|_| ctx.refuse_codec_limit(value_operation, u64::MAX - 1, u64::MAX))?;
-    group.push(value);
-    Ok(())
 }
 
 /// Offsets of every `00 tt` tag, with the optional `0xff` escape skipped.
@@ -205,12 +156,10 @@ fn chart_records(
         let Some((attr, candidates)) = chart_candidates(ctx, bytes, body)? else {
             continue;
         };
-        extend_group(
-            ctx,
-            &mut out,
-            attr,
+        ctx.admit_hash_map_entry(&mut out, &attr, "collect Parasolid intersection charts")?;
+        ctx.extend_vec(
+            out.entry(attr).or_default(),
             candidates,
-            "collect Parasolid intersection charts",
             "collect Parasolid intersection chart candidates",
         )?;
     }
@@ -274,16 +223,8 @@ fn chart_candidates(
         if !(1..count - 1).all(|index| finite_point(bytes, block + index * stride).is_some()) {
             continue;
         }
-        ctx.charge_collection_items((count - 2) as u64, "decode Parasolid chart interior points")?;
-
-        let mut interior_points = Vec::new();
-        interior_points.try_reserve(count - 2).map_err(|_| {
-            ctx.refuse_codec_limit(
-                "decode Parasolid chart interior points",
-                u64::MAX - 1,
-                u64::MAX,
-            )
-        })?;
+        let mut interior_points =
+            ctx.collection_vec(count - 2, "decode Parasolid chart interior points")?;
         for index in 1..count - 1 {
             if let Some(point) = finite_point(bytes, block + index * stride) {
                 interior_points.push(point);
@@ -292,22 +233,17 @@ fn chart_candidates(
         if !extended && first == last && interior_points.iter().all(|point| *point == first) {
             continue;
         }
-        ctx.charge_collection_items(1, "collect Parasolid chart stride candidates")?;
-
-        candidates.try_reserve(1).map_err(|_| {
-            ctx.refuse_codec_limit(
-                "collect Parasolid chart stride candidates",
-                u64::MAX - 1,
-                u64::MAX,
-            )
-        })?;
-        candidates.push(Chart {
-            endpoints: [first, last],
-            interior_points,
-            base_parameter,
-            base_scale,
-            chordal_error,
-        });
+        ctx.push_vec(
+            &mut candidates,
+            Chart {
+                endpoints: [first, last],
+                interior_points,
+                base_parameter,
+                base_scale,
+                chordal_error,
+            },
+            "collect Parasolid chart stride candidates",
+        )?;
     }
     Ok((!candidates.is_empty()).then_some((attr, candidates)))
 }
@@ -341,8 +277,7 @@ fn term_at(
             continue;
         }
         if let Some(point) = finite_point(bytes, body + 6 + label_len) {
-            push_group(
-                ctx,
+            ctx.push_hash_group(
                 out,
                 attr,
                 point,
@@ -399,7 +334,7 @@ fn uv_at(
         return Ok(None);
     };
     if cadmpeg_core::decode::bounded_len(
-        count as u64,
+        u64_from_index(count),
         8,
         bytes.len().checked_sub(values_at).map_or(0, |len| len),
     ) != Some(count)
@@ -411,12 +346,7 @@ fn uv_at(
     {
         return Ok(None);
     }
-    ctx.charge_collection_items(count as u64, "decode Parasolid support UV values")?;
-
-    let mut values = Vec::new();
-    values.try_reserve(count).map_err(|_| {
-        ctx.refuse_codec_limit("decode Parasolid support UV values", u64::MAX - 1, u64::MAX)
-    })?;
+    let mut values = ctx.collection_vec(count, "decode Parasolid support UV values")?;
     for index in 0..count {
         if let Some(value) = View::f64_be_at(bytes, body + support_uv::LEN + index * 8) {
             values.push(value);
@@ -436,8 +366,7 @@ fn uv_records(
     let mut out: HashMap<u16, Vec<UvRecord>> = HashMap::new();
     for body in record_bodies(bytes, 0xcc) {
         if let Some((attr, shape)) = uv_at(ctx, bytes, body)? {
-            push_group(
-                ctx,
+            ctx.push_hash_group(
                 &mut out,
                 attr,
                 shape,
@@ -450,8 +379,7 @@ fn uv_records(
         let tail = label + b"values".len();
         if bytes.get(tail..tail + INLINE_UV_TAIL.len()) == Some(INLINE_UV_TAIL) {
             if let Some((attr, shape)) = uv_at(ctx, bytes, tail + INLINE_UV_TAIL.len())? {
-                push_group(
-                    ctx,
+                ctx.push_hash_group(
                     &mut out,
                     attr,
                     shape,
@@ -468,16 +396,6 @@ fn distance(a: [f64; 3], b: [f64; 3]) -> f64 {
     Point3::from(a).distance(Point3::from(b))
 }
 
-fn charge_items(
-    ctx: &DecodeContext<'_>,
-    count: usize,
-    operation: &'static str,
-) -> Result<(), CodecError> {
-    let count = u64::try_from(count)
-        .map_err(|_| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
-    ctx.charge_collection_items(count, operation)
-}
-
 /// Build the derived polyline curve for one validated composite.
 fn solved_curve(
     ctx: &DecodeContext<'_>,
@@ -489,15 +407,8 @@ fn solved_curve(
 ) -> Result<Option<(CurveGeometry, Vec<f64>, bool)>, CodecError> {
     let mut parameter = chart.base_parameter;
     let point_count = chart.interior_points.len() + 2;
-    charge_items(ctx, point_count, "construct intersection chart parameters")?;
-    let mut parameters = Vec::new();
-    parameters.try_reserve(point_count).map_err(|_| {
-        ctx.refuse_codec_limit(
-            "construct intersection chart parameters",
-            u64::MAX - 1,
-            u64::MAX,
-        )
-    })?;
+    let mut parameters =
+        ctx.collection_vec(point_count, "construct intersection chart parameters")?;
     parameters.push(parameter);
     let mut previous = chart.endpoints[0];
     for &point in chart
@@ -509,15 +420,7 @@ fn solved_curve(
         parameters.push(parameter);
         previous = point;
     }
-    charge_items(ctx, point_count, "construct intersection chart points")?;
-    let mut points = Vec::new();
-    points.try_reserve(point_count).map_err(|_| {
-        ctx.refuse_codec_limit(
-            "construct intersection chart points",
-            u64::MAX - 1,
-            u64::MAX,
-        )
-    })?;
+    let mut points = ctx.collection_vec(point_count, "construct intersection chart points")?;
     points.push(start);
     points.extend(chart.interior_points.iter().copied());
     points.push(end);
@@ -535,29 +438,20 @@ fn solved_curve(
     } else {
         (chart.base_parameter, parameter)
     };
-    charge_items(ctx, point_count + 2, "construct intersection chart knots")?;
-    let mut knots = Vec::new();
-    knots.try_reserve(point_count + 2).map_err(|_| {
-        ctx.refuse_codec_limit("construct intersection chart knots", u64::MAX - 1, u64::MAX)
-    })?;
+    let mut knots = ctx.collection_vec(point_count + 2, "construct intersection chart knots")?;
     knots.push(first);
     knots.extend(parameters.iter().copied());
     knots.push(last);
-    charge_items(ctx, point_count, "construct intersection curve controls")?;
-    let mut controls = Vec::new();
-    controls.try_reserve(point_count).map_err(|_| {
-        ctx.refuse_codec_limit(
-            "construct intersection curve controls",
-            u64::MAX - 1,
-            u64::MAX,
-        )
-    })?;
+    let mut controls = ctx.collection_vec(point_count, "construct intersection curve controls")?;
     controls.extend(
         points
             .iter()
             .map(|p| Point3::new(p[0] * LEN_TO_MM, p[1] * LEN_TO_MM, p[2] * LEN_TO_MM)),
     );
-    charge_items(ctx, point_count, "admit intersection curve poles")?;
+    ctx.charge_collection_items(
+        u64_from_index(point_count),
+        "admit intersection curve poles",
+    )?;
     let nurbs = match NurbsCurve::from_lanes(1, knots, controls, None, false) {
         Ok(nurbs) => nurbs,
         Err(error) => {
@@ -593,20 +487,13 @@ fn solved_support_uv(
         if record.width != UvWidth::Four || record.values.len() != expected_values {
             continue;
         }
-        charge_items(
-            ctx,
-            parameters.len() * 2,
-            "construct intersection support UV controls",
-        )?;
         let mut controls = [Vec::new(), Vec::new()];
         for (support, control_points) in controls.iter_mut().enumerate() {
-            control_points.try_reserve(parameters.len()).map_err(|_| {
-                ctx.refuse_codec_limit(
-                    "construct intersection support UV controls",
-                    u64::MAX - 1,
-                    u64::MAX,
-                )
-            })?;
+            ctx.reserve_vec(
+                control_points,
+                parameters.len(),
+                "construct intersection support UV controls",
+            )?;
             control_points.extend(
                 record
                     .values
@@ -754,16 +641,7 @@ pub(super) fn scan_intersection_carriers(
             selected.reversed,
             uvs.get(&uv_ref).map(Vec::as_slice),
         )?;
-        if !out.contains_key(&attr) {
-            ctx.charge_collection_items(1, "collect Parasolid intersection carriers")?;
-            out.try_reserve(1).map_err(|_| {
-                ctx.refuse_codec_limit(
-                    "collect Parasolid intersection carriers",
-                    u64::MAX - 1,
-                    u64::MAX,
-                )
-            })?;
-        }
+        ctx.admit_hash_map_entry(&mut out, &attr, "collect Parasolid intersection carriers")?;
         out.entry(attr).or_insert(IntersectionCarrier {
             carrier: CurveCarrier {
                 attr,
@@ -821,6 +699,7 @@ mod tests {
         chart_candidates, chart_records, scan_intersection_carriers, term_records, uv_at,
         uv_records, UvWidth, MISSING_PARAMETER,
     };
+    use cadmpeg_core::convert::f64_from_index;
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_ir::geometry::CurveGeometry;
     use cadmpeg_ir::geometry::SolvedCurveGeometry;
@@ -831,11 +710,19 @@ mod tests {
 
     fn chart(attr: u16, points: &[[f64; 3]]) -> Vec<u8> {
         let mut bytes = vec![0, 0x28];
-        bytes.extend_from_slice(&(points.len() as u32).to_be_bytes());
+        bytes.extend_from_slice(
+            &u32::try_from(points.len())
+                .expect("point count fits u32")
+                .to_be_bytes(),
+        );
         bytes.extend_from_slice(&attr.to_be_bytes());
         bytes.extend_from_slice(&0.0f64.to_be_bytes());
         bytes.extend_from_slice(&1.0f64.to_be_bytes());
-        bytes.extend_from_slice(&(points.len() as u32).to_be_bytes());
+        bytes.extend_from_slice(
+            &u32::try_from(points.len())
+                .expect("point count fits u32")
+                .to_be_bytes(),
+        );
         bytes.extend_from_slice(&1e-5f64.to_be_bytes());
         bytes.extend_from_slice(&[0u8; 8]);
         bytes.extend_from_slice(&MISSING_PARAMETER.to_be_bytes());
@@ -850,11 +737,19 @@ mod tests {
 
     fn extended_chart(attr: u16, points: &[[f64; 3]], tangent: [f64; 3]) -> Vec<u8> {
         let mut bytes = vec![0, 0x28];
-        bytes.extend_from_slice(&(points.len() as u32).to_be_bytes());
+        bytes.extend_from_slice(
+            &u32::try_from(points.len())
+                .expect("point count fits u32")
+                .to_be_bytes(),
+        );
         bytes.extend_from_slice(&attr.to_be_bytes());
         bytes.extend_from_slice(&0.0f64.to_be_bytes());
         bytes.extend_from_slice(&1.0f64.to_be_bytes());
-        bytes.extend_from_slice(&(points.len() as u32).to_be_bytes());
+        bytes.extend_from_slice(
+            &u32::try_from(points.len())
+                .expect("point count fits u32")
+                .to_be_bytes(),
+        );
         bytes.extend_from_slice(&1e-5f64.to_be_bytes());
         bytes.extend_from_slice(&[0u8; 8]);
         bytes.extend_from_slice(&MISSING_PARAMETER.to_be_bytes());
@@ -885,11 +780,19 @@ mod tests {
 
     fn uv(attr: u16, rows: usize) -> Vec<u8> {
         let mut bytes = vec![0, 0xcc];
-        bytes.extend_from_slice(&((rows * 4) as u32).to_be_bytes());
+        bytes.extend_from_slice(
+            &u32::try_from(rows * 4)
+                .expect("row count fits u32")
+                .to_be_bytes(),
+        );
         bytes.extend_from_slice(&attr.to_be_bytes());
         bytes.push(4);
         for index in 0..rows * 4 {
-            bytes.extend_from_slice(&(index as f64).to_be_bytes());
+            bytes.extend_from_slice(
+                &f64_from_index(index)
+                    .expect("index is exactly representable")
+                    .to_be_bytes(),
+            );
         }
         bytes
     }

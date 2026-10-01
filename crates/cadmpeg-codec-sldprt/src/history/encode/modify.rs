@@ -20,13 +20,6 @@ use cadmpeg_ir::features::{
 };
 use cadmpeg_ir::math::{Point3, Vector3};
 
-#[allow(
-    clippy::too_many_arguments,
-    clippy::trivially_copy_pass_by_ref,
-    clippy::ref_option,
-    clippy::ptr_arg,
-    reason = "Encoder arguments are borrowed from one FeatureDefinition match."
-)]
 impl NeutralFeatureEncoder<'_, '_, '_> {
     pub(super) fn encode_fillet(
         &self,
@@ -152,7 +145,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
     pub(super) fn encode_chamfer(
         &self,
         groups: &[ChamferGroup],
-        flip_direction: &bool,
+        flip_direction: bool,
     ) -> Result<NeutralFeatureEncoding, CodecError> {
         let feature = self.feature;
         let existing = self.existing;
@@ -165,7 +158,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
             };
             let edges = &group.edges;
             let spec = &group.spec;
-            if *flip_direction {
+            if flip_direction {
                 return Err(CodecError::NotImplemented(format!(
                     "SLDPRT feature {} uses an unsupported reversed chamfer reference side",
                     feature.id
@@ -346,8 +339,8 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
         &self,
         target: &BodySelection,
         tools: &BodySelection,
-        op: &cadmpeg_ir::features::BooleanKind,
-        keep_tools: &bool,
+        op: cadmpeg_ir::features::BooleanKind,
+        keep_tools: bool,
     ) -> Result<NeutralFeatureEncoding, CodecError> {
         let feature = self.feature;
         let existing = self.existing;
@@ -355,7 +348,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
             if existing.is_some_and(|record| {
                 !feature_family(record, "Combine")
                     && !feature_input_class(record, NativeClassKind::Combine)
-            }) || *keep_tools
+            }) || keep_tools
             {
                 return Err(CodecError::NotImplemented(format!(
                     "SLDPRT feature {} changes unsupported combine semantics",
@@ -379,7 +372,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
             }
             properties.insert(
                 cadmpeg_core::nonblank_literal!("Operation"),
-                resolved_boolean_op((*op).into(), &feature.id)?.into(),
+                resolved_boolean_op(op.into(), &feature.id)?.into(),
             );
             NeutralFeatureEncoding {
                 kind: existing.map_or_else(|| "Combine".into(), |record| record.kind.clone()),
@@ -395,7 +388,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
         &self,
         targets: &BodySelection,
         tools: &FaceSelection,
-        reverse: &Option<bool>,
+        reverse: Option<bool>,
     ) -> Result<NeutralFeatureEncoding, CodecError> {
         let feature = self.feature;
         let existing = self.existing;
@@ -436,7 +429,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
     pub(super) fn encode_delete_body(
         &self,
         bodies: &BodySelection,
-        mode: &BodyRetentionMode,
+        mode: BodyRetentionMode,
     ) -> Result<NeutralFeatureEncoding, CodecError> {
         let feature = self.feature;
         let existing = self.existing;
@@ -504,7 +497,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
     pub(super) fn encode_delete_face(
         &self,
         faces: &FaceSelection,
-        heal: &bool,
+        heal: bool,
     ) -> Result<NeutralFeatureEncoding, CodecError> {
         let feature = self.feature;
         let existing = self.existing;
@@ -643,8 +636,8 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
         &self,
         bodies: &BodySelection,
         translation: &Vector3,
-        rotation: &Option<AxisAngle>,
-        copies: &u32,
+        rotation: Option<&AxisAngle>,
+        copies: u32,
     ) -> Result<NeutralFeatureEncoding, CodecError> {
         let feature = self.feature;
         let existing = self.existing;
@@ -711,9 +704,9 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
     pub(super) fn encode_dome(
         &self,
         faces: &FaceSelection,
-        height: &Option<cadmpeg_ir::scalar::PositiveLength>,
-        elliptical: &Option<bool>,
-        reverse: &Option<bool>,
+        height: Option<&cadmpeg_ir::scalar::PositiveLength>,
+        elliptical: Option<bool>,
+        reverse: Option<bool>,
     ) -> Result<NeutralFeatureEncoding, CodecError> {
         let feature = self.feature;
         let existing = self.existing;
@@ -771,7 +764,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
 
     pub(super) fn encode_flex(
         &self,
-        axis: &Option<cadmpeg_ir::features::FeatureDirection3>,
+        axis: Option<&cadmpeg_ir::features::FeatureDirection3>,
         mode: &FlexMode,
     ) -> Result<NeutralFeatureEncoding, CodecError> {
         let feature = self.feature;
@@ -851,7 +844,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
     pub(super) fn encode_scale(
         &self,
         bodies: &BodySelection,
-        center: &Option<ScaleCenter>,
+        center: Option<&ScaleCenter>,
         factors: &ScaleFactors,
     ) -> Result<NeutralFeatureEncoding, CodecError> {
         let feature = self.feature;

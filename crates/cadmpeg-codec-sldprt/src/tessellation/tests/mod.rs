@@ -115,7 +115,7 @@ fn table() -> Vec<u8> {
 
 fn class(payload: &mut Vec<u8>, name: &str, sources: &[u32]) {
     payload.extend_from_slice(CLASS_MARKER);
-    payload.extend_from_slice(&(name.len() as u16).to_le_bytes());
+    payload.extend_from_slice(&(u16::try_from(name.len()).expect("length fits u16")).to_le_bytes());
     payload.extend_from_slice(name.as_bytes());
     for source in sources {
         payload.extend_from_slice(SCENE_SOURCE_MARKER);
@@ -363,7 +363,13 @@ fn test_nurbs_surface() -> NurbsSurface {
     let control_points = (0..3)
         .map(|u| {
             (0..3)
-                .map(|v| Point3::new(u as f64, v as f64, heights[u * 3 + v]))
+                .map(|v| {
+                    Point3::new(
+                        cadmpeg_core::convert::f64_from_index(u).expect("grid index is exact"),
+                        cadmpeg_core::convert::f64_from_index(v).expect("grid index is exact"),
+                        heights[u * 3 + v],
+                    )
+                })
                 .collect()
         })
         .collect();
@@ -920,12 +926,14 @@ fn cylindrical_trim_angle_collection_refuses_caller_limit() {
         &ctx,
         face,
         &surface.geometry,
-        &loops,
-        &coedges,
-        &edges,
-        &vertices,
-        &points,
-        &curves,
+        &super::TrimTopology {
+            loops: &loops,
+            coedges: &coedges,
+            edges: &edges,
+            vertices: &vertices,
+            points: &points,
+            curves: &curves,
+        },
     )
     .expect_err("angle collection exceeds the caller limit");
     assert!(
@@ -1002,12 +1010,14 @@ fn conical_trim_angle_collection_refuses_caller_limit() {
         &ctx,
         face,
         &surface.geometry,
-        &loops,
-        &coedges,
-        &edges,
-        &vertices,
-        &points,
-        &curves,
+        &super::TrimTopology {
+            loops: &loops,
+            coedges: &coedges,
+            edges: &edges,
+            vertices: &vertices,
+            points: &points,
+            curves: &curves,
+        },
     )
     .expect_err("angle collection exceeds the caller limit");
     assert!(

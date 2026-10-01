@@ -485,7 +485,11 @@ fn terminal_legacy_indexed_curve_retains_its_sibling_line_kind() {
         constructed_marker
     };
     let sibling = entity("sibling", 0, SketchInputKind::LineOrCircle);
-    let terminal = entity("terminal", detail as u64, SketchInputKind::Arc);
+    let terminal = entity(
+        "terminal",
+        cadmpeg_core::decode::u64_from_index(detail),
+        SketchInputKind::Arc,
+    );
 
     assert!(legacy_terminal_indexed_profile_line(
         &payload,

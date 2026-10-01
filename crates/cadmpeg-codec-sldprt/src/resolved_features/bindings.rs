@@ -58,7 +58,7 @@ pub(super) fn history_metadata_ids<'a>(
             if is_history_metadata_record(feature, &history.features)
                 && !ids.contains(feature.id.as_str())
             {
-                reserve_binding_set(ctx, &mut ids)?;
+                ctx.reserve_set(&mut ids, 1, SCALAR_BINDING_INDEX)?;
                 ids.insert(feature.id.as_str());
             }
         }
@@ -1019,10 +1019,11 @@ pub(crate) fn bind_mirror_surface_planes(
         })
     {
         ctx.charge_work(1, "index SLDPRT mirror surface planes")?;
-        ctx.charge_collection_items(1, "index SLDPRT mirror surface planes")?;
-        mirror_native_refs.try_reserve(1).map_err(|_| {
-            ctx.refuse_codec_limit("index SLDPRT mirror surface planes", u64::MAX - 1, u64::MAX)
-        })?;
+        ctx.reserve_set(
+            &mut mirror_native_refs,
+            1,
+            "index SLDPRT mirror surface planes",
+        )?;
         mirror_native_refs.insert(feature.id.as_str());
     }
     let mut faces_by_identity = HashMap::<(FeatureSourceId, u32), Vec<&str>>::new();
@@ -1345,10 +1346,7 @@ fn reserve_feature_binding_map<K: Eq + std::hash::Hash, V>(
     operation: &'static str,
 ) -> Result<(), cadmpeg_core::CodecError> {
     ctx.charge_work(1, operation)?;
-    ctx.charge_collection_items(1, operation)?;
-    values
-        .try_reserve(1)
-        .map_err(|_| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))
+    ctx.reserve_map(values, 1, operation)
 }
 
 fn collect_feature_binding_vec<T>(
@@ -1419,7 +1417,7 @@ pub(crate) fn bind_scalar_operands(
         bind_detached_legacy_sketch_objects(ctx, histories, &represented_sketches, lane)?;
         let mut features_by_id = HashMap::new();
         for feature in histories.iter().flat_map(|history| &history.features) {
-            reserve_binding_map(ctx, &mut features_by_id)?;
+            ctx.reserve_map(&mut features_by_id, 1, SCALAR_BINDING_INDEX)?;
             features_by_id.insert(feature.id.as_str(), feature);
         }
         for pair in starts.windows(2) {
@@ -1468,11 +1466,11 @@ pub(crate) fn finalize_lane_bindings(
     for entity in &lane.sketch_entities {
         if let (Some(feature), Some(local_id)) = (&entity.feature_ref, entity.local_id()) {
             if !marker_ids.contains_key(feature.as_str()) {
-                reserve_binding_map(ctx, &mut marker_ids)?;
+                ctx.reserve_map(&mut marker_ids, 1, SCALAR_BINDING_INDEX)?;
                 marker_ids.insert(copy_binding_text(ctx, feature)?, HashMap::new());
             }
             if let Some(by_local) = marker_ids.get_mut(feature.as_str()) {
-                reserve_binding_map(ctx, by_local)?;
+                ctx.reserve_map(by_local, 1, SCALAR_BINDING_INDEX)?;
                 let candidates = by_local.entry(local_id).or_default();
                 ctx.reserve_collection_vec(
                     candidates,
@@ -1533,7 +1531,7 @@ pub(crate) fn finalize_lane_bindings(
     let mut entities_by_feature = HashMap::<&str, Vec<&SketchInputEntity>>::new();
     for entity in &lane.sketch_entities {
         if let Some(feature) = entity.feature_ref.as_deref() {
-            reserve_binding_map(ctx, &mut entities_by_feature)?;
+            ctx.reserve_map(&mut entities_by_feature, 1, SCALAR_BINDING_INDEX)?;
             let entities = entities_by_feature.entry(feature).or_default();
             ctx.reserve_collection_vec(entities, 1, "collect SLDPRT scalar owner entities")?;
             entities.push(entity);
@@ -1557,7 +1555,7 @@ pub(crate) fn finalize_lane_bindings(
     }
     let mut scalar_owners = HashMap::new();
     for scalar in &lane.scalars {
-        reserve_binding_map(ctx, &mut scalar_owners)?;
+        ctx.reserve_map(&mut scalar_owners, 1, SCALAR_BINDING_INDEX)?;
         scalar_owners.insert(scalar.id.as_str(), scalar.feature_ref.as_deref());
     }
     for binding in &mut lane.relation_bindings {
@@ -1608,7 +1606,7 @@ fn represented_sketch_features(
             if lane.sketch_entities.iter().any(|entity| {
                 entity.offset() > start && entity.offset() < end && entity.coordinates_m.is_some()
             }) {
-                reserve_binding_set(ctx, &mut represented)?;
+                ctx.reserve_set(&mut represented, 1, SCALAR_BINDING_INDEX)?;
                 represented.insert(copy_binding_text(ctx, &feature.id)?);
             }
         }
@@ -1633,7 +1631,7 @@ pub(crate) fn bind_unresolved_detached_sketch_objects(
             })
         ) {
             if let Some(native) = feature.native_ref.as_deref() {
-                reserve_binding_set(ctx, &mut unresolved)?;
+                ctx.reserve_set(&mut unresolved, 1, SCALAR_BINDING_INDEX)?;
                 unresolved.insert(native);
             }
         }
@@ -1644,7 +1642,7 @@ pub(crate) fn bind_unresolved_detached_sketch_objects(
         .flat_map(|history| &history.features)
         .filter(|feature| feature.xml_tag == "Sketch" && !unresolved.contains(feature.id.as_str()))
     {
-        reserve_binding_set(ctx, &mut represented)?;
+        ctx.reserve_set(&mut represented, 1, SCALAR_BINDING_INDEX)?;
         represented.insert(copy_binding_text(ctx, &feature.id)?);
     }
     for lane in lanes
@@ -1821,7 +1819,7 @@ fn bind_detached_spatial_relation_objects(
     }
     let mut names = HashMap::new();
     for name in &lane.names {
-        reserve_binding_map(ctx, &mut names)?;
+        ctx.reserve_map(&mut names, 1, SCALAR_BINDING_INDEX)?;
         names.insert(name.id.as_str(), name.value.as_str());
     }
     let is_dimension_name = |name: &str| {
@@ -1992,7 +1990,7 @@ pub(super) fn normalize_indexed_curve_entities(
                 "scan SLDPRT terminal profile lines",
             )?;
             if legacy_terminal_indexed_profile_line(&lane.native_payload, curve, &markers) {
-                reserve_binding_set(ctx, &mut terminal)?;
+                ctx.reserve_set(&mut terminal, 1, SCALAR_BINDING_INDEX)?;
                 terminal.insert(copy_binding_text(ctx, curve.id())?);
             }
         }
@@ -2025,12 +2023,12 @@ pub(super) fn normalize_indexed_curve_entities(
             continue;
         };
         if !endpoints.contains_key(feature) {
-            reserve_binding_map(ctx, &mut endpoints)?;
+            ctx.reserve_map(&mut endpoints, 1, SCALAR_BINDING_INDEX)?;
             endpoints.insert(copy_binding_text(ctx, feature)?, HashSet::new());
         }
         if let Some(by_index) = endpoints.get_mut(feature) {
             for index in indices {
-                reserve_binding_set(ctx, by_index)?;
+                ctx.reserve_set(by_index, 1, SCALAR_BINDING_INDEX)?;
                 by_index.insert(index);
             }
         }
@@ -2060,7 +2058,7 @@ pub(super) fn normalize_indexed_curve_entities(
                 else {
                     continue;
                 };
-                reserve_binding_map(ctx, &mut coordinates)?;
+                ctx.reserve_map(&mut coordinates, 1, SCALAR_BINDING_INDEX)?;
                 coordinates.insert(offset, point);
             }
         }
@@ -2093,7 +2091,7 @@ fn bind_resolved_curve_vertices(
     let selected_axis_endpoints = {
         let mut markers_by_id = HashMap::new();
         for marker in &lane.sketch_entities {
-            reserve_binding_map(ctx, &mut markers_by_id)?;
+            ctx.reserve_map(&mut markers_by_id, 1, SCALAR_BINDING_INDEX)?;
             markers_by_id.insert(marker.id(), marker);
         }
         let markers = collect_binding_vec(ctx, lane.sketch_entities.iter())?;
@@ -2117,7 +2115,7 @@ fn bind_resolved_curve_vertices(
             .into_iter()
             .filter(|marker| marker.coordinates_m.is_some())
             {
-                reserve_binding_set(ctx, &mut selected)?;
+                ctx.reserve_set(&mut selected, 1, SCALAR_BINDING_INDEX)?;
                 selected.insert(copy_binding_text(ctx, marker.id())?);
             }
         }
@@ -2131,7 +2129,7 @@ fn bind_resolved_curve_vertices(
     loop {
         let mut markers_by_id = HashMap::new();
         for marker in &lane.sketch_entities {
-            reserve_binding_map(ctx, &mut markers_by_id)?;
+            ctx.reserve_map(&mut markers_by_id, 1, SCALAR_BINDING_INDEX)?;
             markers_by_id.insert(marker.id(), marker);
         }
         let markers = collect_binding_vec(ctx, lane.sketch_entities.iter())?;
@@ -2155,14 +2153,14 @@ fn bind_resolved_curve_vertices(
                 &markers,
             )?;
             if endpoints.len() == 2 {
-                reserve_binding_set(ctx, &mut resolved_curves)?;
+                ctx.reserve_set(&mut resolved_curves, 1, SCALAR_BINDING_INDEX)?;
                 resolved_curves.insert(copy_binding_text(ctx, curve.id())?);
             }
             for marker in endpoints
                 .into_iter()
                 .filter(|marker| marker.coordinates_m.is_some())
             {
-                reserve_binding_set(ctx, &mut resolved_endpoints)?;
+                ctx.reserve_set(&mut resolved_endpoints, 1, SCALAR_BINDING_INDEX)?;
                 resolved_endpoints.insert(copy_binding_text(ctx, marker.id())?);
             }
         }
@@ -2204,25 +2202,7 @@ fn copy_binding_text(
     )
 }
 
-fn reserve_binding_map<K: Eq + std::hash::Hash, V>(
-    ctx: &DecodeContext<'_>,
-    values: &mut HashMap<K, V>,
-) -> Result<(), cadmpeg_core::CodecError> {
-    ctx.charge_collection_items(1, "index SLDPRT scalar bindings")?;
-    values
-        .try_reserve(1)
-        .map_err(|_| ctx.refuse_codec_limit("index SLDPRT scalar bindings", u64::MAX - 1, u64::MAX))
-}
-
-fn reserve_binding_set<T: Eq + std::hash::Hash>(
-    ctx: &DecodeContext<'_>,
-    values: &mut HashSet<T>,
-) -> Result<(), cadmpeg_core::CodecError> {
-    ctx.charge_collection_items(1, "index SLDPRT scalar bindings")?;
-    values
-        .try_reserve(1)
-        .map_err(|_| ctx.refuse_codec_limit("index SLDPRT scalar bindings", u64::MAX - 1, u64::MAX))
-}
+const SCALAR_BINDING_INDEX: &str = "index SLDPRT scalar bindings";
 
 fn collect_binding_vec<T>(
     ctx: &DecodeContext<'_>,

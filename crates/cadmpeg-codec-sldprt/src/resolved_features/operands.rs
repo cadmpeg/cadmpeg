@@ -64,7 +64,11 @@ pub(crate) fn resolve_scalar_operand_markers<'a>(
     }
     let mut resolved_siblings = HashSet::new();
     for entity in resolved.iter().flatten() {
-        reserve_operand_set(ctx, &mut resolved_siblings)?;
+        ctx.reserve_set(
+            &mut resolved_siblings,
+            1,
+            "index SLDPRT scalar operand markers",
+        )?;
         resolved_siblings.insert(entity.id());
     }
     for (operand, target) in operands.iter().zip(&mut resolved) {
@@ -101,31 +105,10 @@ fn operand_marker_index<'a>(
     let mut result = HashMap::new();
     for entity in entities {
         ctx.charge_work(1, "index SLDPRT scalar operand markers")?;
-        ctx.charge_collection_items(1, "index SLDPRT scalar operand markers")?;
-        result.try_reserve(1).map_err(|_| {
-            ctx.refuse_codec_limit(
-                "index SLDPRT scalar operand markers",
-                u64::MAX - 1,
-                u64::MAX,
-            )
-        })?;
+        ctx.reserve_map(&mut result, 1, "index SLDPRT scalar operand markers")?;
         result.insert(entity.id(), *entity);
     }
     Ok(result)
-}
-
-fn reserve_operand_set<T: Eq + std::hash::Hash>(
-    ctx: &DecodeContext<'_>,
-    values: &mut HashSet<T>,
-) -> Result<(), CodecError> {
-    ctx.charge_collection_items(1, "index SLDPRT scalar operand markers")?;
-    values.try_reserve(1).map_err(|_| {
-        ctx.refuse_codec_limit(
-            "index SLDPRT scalar operand markers",
-            u64::MAX - 1,
-            u64::MAX,
-        )
-    })
 }
 
 #[cfg(test)]
@@ -492,7 +475,7 @@ fn linked_point_markers<'a>(
         if visited.contains(id) {
             continue;
         }
-        reserve_operand_set(ctx, &mut visited)?;
+        ctx.reserve_set(&mut visited, 1, "index SLDPRT scalar operand markers")?;
         visited.insert(id);
         let Some(entity) = by_id.get(id).copied() else {
             continue;

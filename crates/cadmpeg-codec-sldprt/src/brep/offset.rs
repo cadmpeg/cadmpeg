@@ -3,7 +3,7 @@
 
 use std::collections::HashMap;
 
-use cadmpeg_core::decode::View;
+use cadmpeg_core::decode::{u64_from_index, View};
 use cadmpeg_ir::scalar::FiniteReal;
 
 use super::LEN_TO_MM;
@@ -88,16 +88,14 @@ pub(super) fn scan(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     body: &[u8],
 ) -> Result<HashMap<u16, OffsetCarrier>, cadmpeg_core::CodecError> {
-    ctx.charge_work(body.len() as u64, "scan SLDPRT offset carriers")?;
+    ctx.charge_work(u64_from_index(body.len()), "scan SLDPRT offset carriers")?;
     let mut out = HashMap::new();
-    for offset in 0..body.len().saturating_sub(1) {
+    let Some(last_offset) = body.len().checked_sub(1) else {
+        return Ok(out);
+    };
+    for offset in 0..last_offset {
         if let Some((attr, carrier)) = parse_at(body, offset) {
-            if !out.contains_key(&attr) {
-                ctx.charge_collection_items(1, "index SLDPRT offset carriers")?;
-                out.try_reserve(1).map_err(|_| {
-                    ctx.refuse_codec_limit("index SLDPRT offset carriers", u64::MAX - 1, u64::MAX)
-                })?;
-            }
+            ctx.admit_hash_map_entry(&mut out, &attr, "index SLDPRT offset carriers")?;
             out.insert(attr, carrier);
         }
     }

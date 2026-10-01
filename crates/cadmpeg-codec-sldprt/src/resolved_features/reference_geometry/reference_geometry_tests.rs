@@ -32,7 +32,7 @@ fn reference_point_lane(layout: usize, form: u16, point: [f64; 3]) -> FeatureInp
     let point_start = name_end + layout;
     let mut payload = vec![0; point_start + 34];
     payload[..NAME_MARKER.len()].copy_from_slice(NAME_MARKER);
-    payload[NAME_MARKER.len()] = name.encode_utf16().count() as u8;
+    payload[NAME_MARKER.len()] = u8::try_from(name.encode_utf16().count()).unwrap();
     for (index, code_unit) in name.encode_utf16().enumerate() {
         let start = NAME_MARKER.len() + 1 + index * 2;
         payload[start..start + 2].copy_from_slice(&code_unit.to_le_bytes());
@@ -510,7 +510,7 @@ fn two_points_axis_data_frame_is_anchored_after_class_name() {
     let mut payload = vec![0; body + 88];
     payload[class_offset..class_offset + CLASS_MARKER.len()].copy_from_slice(CLASS_MARKER);
     payload[class_offset + CLASS_MARKER.len()..class_offset + CLASS_MARKER.len() + 2]
-        .copy_from_slice(&(class_name.len() as u16).to_le_bytes());
+        .copy_from_slice(&u16::try_from(class_name.len()).unwrap().to_le_bytes());
     payload[class_offset + CLASS_MARKER.len() + 2..body].copy_from_slice(class_name);
     for (offset, value) in [
         (0, 0.25_f64),
@@ -560,7 +560,7 @@ fn two_points_axis_data_frame_is_anchored_after_class_name() {
             id: "class".into(),
             parent: "lane".into(),
             ordinal: 0,
-            offset: class_offset as u64,
+            offset: cadmpeg_core::decode::u64_from_index(class_offset),
             name: String::from_utf8(class_name.to_vec()).unwrap(),
         }],
         names: vec![FeatureInputName {
@@ -883,7 +883,7 @@ fn tangent_plane_frame_is_anchored_to_its_constraint_class() {
     let root = 7;
     let mut payload = vec![0xaa; root];
     payload.extend(CLASS_MARKER);
-    payload.extend((CLASS.len() as u16).to_le_bytes());
+    payload.extend(u16::try_from(CLASS.len()).unwrap().to_le_bytes());
     payload.extend(CLASS.as_bytes());
     let body = payload.len();
     payload.resize(body + fixed_plane::LEN, 0);
@@ -921,7 +921,7 @@ fn offset_plane_face_reference_owns_a_fixed_plane_frame() {
     let root = 11;
     let mut payload = vec![0xaa; root];
     payload.extend(CLASS_MARKER);
-    payload.extend((CLASS.len() as u16).to_le_bytes());
+    payload.extend(u16::try_from(CLASS.len()).unwrap().to_le_bytes());
     payload.extend(CLASS.as_bytes());
     let body = payload.len();
     payload.resize(body + fixed_plane::LEN, 0);
@@ -947,7 +947,7 @@ fn fixed_reference_plane_accepts_repeated_normal_axis_form() {
         let root = 7;
         let mut payload = vec![0xaa; root];
         payload.extend(CLASS_MARKER);
-        payload.extend((CLASS.len() as u16).to_le_bytes());
+        payload.extend(u16::try_from(CLASS.len()).unwrap().to_le_bytes());
         payload.extend(CLASS.as_bytes());
         let body = payload.len();
         payload.resize(body + fixed_plane::LEN, 0);
@@ -997,7 +997,7 @@ fn named_reference_plane_data_classes_anchor_frame_lengths() {
         let root = 7;
         let mut payload = vec![0xaa; root];
         payload.extend(CLASS_MARKER);
-        payload.extend((class.len() as u16).to_le_bytes());
+        payload.extend(u16::try_from(class.len()).unwrap().to_le_bytes());
         payload.extend(class.as_bytes());
         payload.extend_from_slice(frame);
         (payload, root)
@@ -1116,7 +1116,7 @@ fn constraint_midplane_uses_its_normal_form_with_opaque_prefix() {
     const CLASS: &str = "moConstraintMidPlaneRefplaneData_c";
     let mut payload = vec![0xaa; 19];
     payload.extend(CLASS_MARKER);
-    payload.extend((CLASS.len() as u16).to_le_bytes());
+    payload.extend(u16::try_from(CLASS.len()).unwrap().to_le_bytes());
     payload.extend(CLASS.as_bytes());
     payload.extend([1, 2, 3, 4, 5, 6, 7, 8]);
     payload.extend(1.0e-16f64.to_le_bytes());
@@ -1151,7 +1151,7 @@ fn classless_reference_plane_enrichment_marks_a_constructed_midplane_axis() {
     let mut payload = vec![0; body + 48 + 16];
     payload[class_offset..class_offset + CLASS_MARKER.len()].copy_from_slice(CLASS_MARKER);
     payload[class_offset + CLASS_MARKER.len()..class_offset + CLASS_MARKER.len() + 2]
-        .copy_from_slice(&(CLASS.len() as u16).to_le_bytes());
+        .copy_from_slice(&u16::try_from(CLASS.len()).unwrap().to_le_bytes());
     payload[class_offset + CLASS_MARKER.len() + 2..body].copy_from_slice(CLASS);
     for (relative, value) in [
         (8, 1.0e-16_f64),
@@ -1518,6 +1518,18 @@ fn compact_offset_plane_source_requires_the_reference_record() {
     assert_eq!(compact_offset_plane_source(&payload), Some(3));
     payload[19] ^= 1;
     assert_eq!(compact_offset_plane_source(&payload), None);
+}
+#[test]
+fn ranges_overlap_orders_ends_past_usize_max_beyond_every_offset() {
+    use super::ranges_overlap;
+
+    assert!(ranges_overlap(0, 4, 3, 4));
+    assert!(!ranges_overlap(0, 3, 3, 4));
+    assert!(!ranges_overlap(3, 4, 0, 3));
+    // [1, usize::MAX + 1) contains usize::MAX; a saturated end excluded it.
+    assert!(ranges_overlap(usize::MAX, 1, 1, usize::MAX));
+    assert!(ranges_overlap(1, usize::MAX, usize::MAX, 1));
+    assert!(!ranges_overlap(0, usize::MAX, usize::MAX, 1));
 }
 mod coordinate_systems;
 mod offset_planes;

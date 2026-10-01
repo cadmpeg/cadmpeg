@@ -913,7 +913,11 @@ fn encoder_binds_multiple_source_less_sketches_by_object_id() {
             configuration: None,
             visible: None,
             placement: cadmpeg_ir::sketches::SketchPlacement::try_resolved(
-                Point3::new(0.0, 0.0, ordinal as f64),
+                Point3::new(
+                    0.0,
+                    0.0,
+                    cadmpeg_core::convert::f64_from_index(ordinal).expect("ordinal is exact"),
+                ),
                 Vector3::new(0.0, 0.0, 1.0),
                 Vector3::new(1.0, 0.0, 0.0),
             )
@@ -925,14 +929,17 @@ fn encoder_binds_multiple_source_less_sketches_by_object_id() {
             SketchEntityId::mint(format!("synthetic:test:sketch-entity#named-{ordinal}")).unwrap(),
             sketch_id.clone(),
             cadmpeg_ir::sketches::SketchGeometry::try_from(SketchGeometryDefinition::Point {
-                position: Point2::new(ordinal as f64, ordinal as f64 + 1.0),
+                position: Point2::new(
+                    cadmpeg_core::convert::f64_from_index(ordinal).expect("ordinal is exact"),
+                    cadmpeg_core::convert::f64_from_index(ordinal).expect("ordinal is exact") + 1.0,
+                ),
             })
             .unwrap(),
         ));
         ir.model.features.push(Feature {
             id: FeatureId::mint(format!("synthetic:test:feature#named-{ordinal}"))
                 .expect("identity grammar"),
-            ordinal: ordinal as u64,
+            ordinal: cadmpeg_core::decode::u64_from_index(ordinal),
             name: Some(name.into()),
             suppressed: Some(false),
             dependencies: cadmpeg_ir::features::DistinctMembers::default(),
@@ -1155,7 +1162,7 @@ fn encoder_writes_source_less_native_features() {
         ir.model.features.push(Feature {
             id: FeatureId::mint(format!("synthetic:test:feature#direct-{index}"))
                 .expect("identity grammar"),
-            ordinal: index as u64 + 1,
+            ordinal: cadmpeg_core::decode::u64_from_index(index) + 1,
             name: Some(format!("Direct {index}")),
             suppressed: Some(false),
             dependencies: cadmpeg_ir::features::DistinctMembers::default(),
@@ -1206,7 +1213,7 @@ fn encoder_writes_source_less_native_features() {
         ir.model.features.push(Feature {
             id: FeatureId::mint(format!("synthetic:test:feature#pattern-{index}"))
                 .expect("identity grammar"),
-            ordinal: index as u64 + 10,
+            ordinal: cadmpeg_core::decode::u64_from_index(index) + 10,
             name: Some(format!("Pattern {index}")),
             suppressed: Some(false),
             dependencies: (vec![seed_id.clone()]).try_into().unwrap(),

@@ -6,6 +6,7 @@ use super::super::super::typed_relations::marker_curve_endpoint_markers;
 use super::super::super::{LEGACY_EXTENDED_SKETCH_MARKER, LEGACY_SKETCH_MARKER};
 use crate::layout::compact_legacy_140_relation_display_curve as legacy_140;
 use crate::records::{SketchInputEntity, SketchInputKind, SketchRelationKind};
+use cadmpeg_core::decode::u64_from_index;
 use crate::resolved_features::endpoints::compact_indexed_curve_endpoint_indices;
 use crate::resolved_features::endpoints::compact_indexed_curve_record_end;
 use crate::resolved_features::endpoints::coordinate_roster_endpoint_offset;
@@ -435,7 +436,7 @@ fn legacy_compact_140_relation_continuation_resolves_zero_based_roster() {
             &format!("point-{index}"),
             index,
             None,
-            Some([index as f64, 0.0]),
+            Some([f64::from(u32::try_from(index).unwrap()), 0.0]),
             SketchInputKind::Point,
         ));
     }
@@ -677,7 +678,7 @@ fn extended_shifted_construction_line_indexes_coordinate_roster() {
             entity(
                 &format!("marker-{index}"),
                 10 + index * 10,
-                matches!(index, 4 | 8).then_some([index as f64, 0.0]),
+                matches!(index, 4 | 8).then_some([f64::from(u32::try_from(index).unwrap()), 0.0]),
             )
         })
         .collect::<Vec<_>>();
@@ -1429,7 +1430,7 @@ fn legacy_104_profile_line_uses_zero_based_point_roster() {
         constructed_marker.links = None;
         constructed_marker
     };
-    let curve = entity("curve", offset as u64, None);
+    let curve = entity("curve", u64_from_index(offset), None);
     let first = entity("first", 10, Some([0.0, 0.0]));
     let second = entity("second", 20, Some([1.0, 0.0]));
     let third = entity("third", 30, Some([1.0, 1.0]));
@@ -1529,7 +1530,7 @@ fn legacy_state_one_profile_line_uses_zero_based_point_roster() {
         constructed_marker.links = None;
         constructed_marker
     };
-    let curve = entity("curve", offset as u64, None);
+    let curve = entity("curve", u64_from_index(offset), None);
     let first = entity("first", 10, Some([0.0, 0.0]));
     let second = entity("second", 20, Some([1.0, 0.0]));
     let third = entity("third", 30, Some([1.0, 1.0]));
@@ -1715,7 +1716,7 @@ fn legacy_state_one_84_profile_line_uses_zero_based_point_roster() {
         constructed_marker.links = None;
         constructed_marker
     };
-    let curve = entity("curve", offset as u64, None);
+    let curve = entity("curve", u64_from_index(offset), None);
     let first = entity("first", 10, Some([0.0, 0.0]));
     let second = entity("second", 20, Some([1.0, 0.0]));
     let third = entity("third", 30, Some([1.0, 1.0]));
@@ -1811,7 +1812,7 @@ fn extended_state_one_84_profile_line_uses_one_based_point_roster() {
         constructed_marker.links = None;
         constructed_marker
     };
-    let curve = entity("curve", offset as u64, None);
+    let curve = entity("curve", u64_from_index(offset), None);
     let first = entity("first", 10, Some([0.0, 0.0]));
     let second = entity("second", 20, Some([1.0, 0.0]));
     let third = entity("third", 30, Some([1.0, 1.0]));

@@ -87,13 +87,7 @@ fn collect_index<K: Eq + Hash, V>(
     let mut index = HashMap::new();
     for (key, value) in items {
         ctx.charge_work(1, operation)?;
-        if !index.contains_key(&key) {
-            ctx.charge_collection_items(1, operation)?;
-            index
-                .try_reserve(1)
-                .map_err(|_| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
-        }
-        index.insert(key, value);
+        ctx.insert_hash_map(&mut index, key, value, operation)?;
     }
     Ok(index)
 }
@@ -321,21 +315,12 @@ pub(crate) fn class_intervals(
         let Ok(name_text) = std::str::from_utf8(name_bytes) else {
             continue;
         };
-        ctx.charge_retained(length as u64, "retain SLDPRT display class name")?;
-        let mut name = String::new();
-        name.try_reserve(length).map_err(|_| {
-            ctx.refuse_codec_limit("retain SLDPRT display class name", u64::MAX - 1, u64::MAX)
-        })?;
-        name.push_str(name_text);
-        ctx.charge_collection_items(1, "collect SLDPRT display class declarations")?;
-        declarations.try_reserve(1).map_err(|_| {
-            ctx.refuse_codec_limit(
-                "collect SLDPRT display class declarations",
-                u64::MAX - 1,
-                u64::MAX,
-            )
-        })?;
-        declarations.push((offset, name));
+        let name = ctx.copy_retained_text(name_text, "retain SLDPRT display class name")?;
+        ctx.push_vec(
+            &mut declarations,
+            (offset, name),
+            "collect SLDPRT display class declarations",
+        )?;
     }
     let mut declarations = declarations.into_iter().peekable();
     let mut intervals = Vec::new();
@@ -358,30 +343,22 @@ pub(crate) fn class_intervals(
             else {
                 continue;
             };
-            ctx.charge_collection_items(1, "collect SLDPRT display class sources")?;
-            source_ids.try_reserve(1).map_err(|_| {
-                ctx.refuse_codec_limit(
-                    "collect SLDPRT display class sources",
-                    u64::MAX - 1,
-                    u64::MAX,
-                )
-            })?;
-            source_ids.push(source);
+            ctx.push_vec(
+                &mut source_ids,
+                source,
+                "collect SLDPRT display class sources",
+            )?;
         }
-        ctx.charge_collection_items(1, "collect SLDPRT display class intervals")?;
-        intervals.try_reserve(1).map_err(|_| {
-            ctx.refuse_codec_limit(
-                "collect SLDPRT display class intervals",
-                u64::MAX - 1,
-                u64::MAX,
-            )
-        })?;
-        intervals.push(ClassInterval {
-            name,
-            class_offset: offset,
-            content,
-            source_ids,
-        });
+        ctx.push_vec(
+            &mut intervals,
+            ClassInterval {
+                name,
+                class_offset: offset,
+                content,
+                source_ids,
+            },
+            "collect SLDPRT display class intervals",
+        )?;
     }
     Ok(intervals)
 }
@@ -404,17 +381,8 @@ fn scene_classes(
             continue;
         }
         for source in class.source_ids {
-            ctx.charge_retained(class.name.len() as u64, "retain SLDPRT scene class name")?;
-            let mut name = String::new();
-            name.try_reserve(class.name.len()).map_err(|_| {
-                ctx.refuse_codec_limit("retain SLDPRT scene class name", u64::MAX - 1, u64::MAX)
-            })?;
-            name.push_str(&class.name);
-            ctx.charge_collection_items(1, "collect SLDPRT scene classes")?;
-            classes.try_reserve(1).map_err(|_| {
-                ctx.refuse_codec_limit("collect SLDPRT scene classes", u64::MAX - 1, u64::MAX)
-            })?;
-            classes.push((source, name));
+            let name = ctx.copy_retained_text(&class.name, "retain SLDPRT scene class name")?;
+            ctx.push_vec(&mut classes, (source, name), "collect SLDPRT scene classes")?;
         }
     }
     Ok(classes)
@@ -427,16 +395,7 @@ pub(crate) fn scene_feature_classes(
     let mut candidates = HashMap::<u32, Option<String>>::new();
     for section in scan.sections() {
         for (source, class) in scene_classes(ctx, section.payload())? {
-            if !candidates.contains_key(&source) {
-                ctx.charge_collection_items(1, "index SLDPRT scene class sources")?;
-                candidates.try_reserve(1).map_err(|_| {
-                    ctx.refuse_codec_limit(
-                        "index SLDPRT scene class sources",
-                        u64::MAX - 1,
-                        u64::MAX,
-                    )
-                })?;
-            }
+            ctx.admit_hash_map_entry(&mut candidates, &source, "index SLDPRT scene class sources")?;
             candidates
                 .entry(source)
                 .and_modify(|existing| {
@@ -450,15 +409,12 @@ pub(crate) fn scene_feature_classes(
     let mut resolved = HashMap::new();
     for (source, class) in candidates {
         if let Some(class) = class {
-            ctx.charge_collection_items(1, "collect SLDPRT scene feature classes")?;
-            resolved.try_reserve(1).map_err(|_| {
-                ctx.refuse_codec_limit(
-                    "collect SLDPRT scene feature classes",
-                    u64::MAX - 1,
-                    u64::MAX,
-                )
-            })?;
-            resolved.insert(source, class);
+            ctx.insert_hash_map(
+                &mut resolved,
+                source,
+                class,
+                "collect SLDPRT scene feature classes",
+            )?;
         }
     }
     Ok(resolved)
@@ -519,16 +475,18 @@ fn probe_table(
     let mut normals = Vec::new();
     let mut channels = Vec::new();
     for index in 0..6 {
-        let Some(item_size) = View::u32_le_at(bytes, at).map(|value| value as usize) else {
+        let Some(item_size_field) = View::u32_le_at(bytes, at) else {
             return Ok(None);
         };
+        let item_size = cadmpeg_core::decode::index_from_u32(item_size_field);
         let Some(kind) = View::u32_le_at(bytes, at + 4) else {
             return Ok(None);
         };
         let Some(flags) = View::u32_le_at(bytes, at + 8) else {
             return Ok(None);
         };
-        let Some(count) = View::u32_le_at(bytes, at + 12).map(|value| value as usize) else {
+        let Some(count) = View::u32_le_at(bytes, at + 12).map(cadmpeg_core::decode::index_from_u32)
+        else {
             return Ok(None);
         };
         let data = at + 16;
@@ -544,7 +502,7 @@ fn probe_table(
         ctx.reserve_collection_vec(&mut channels, 1, "decode display-list channels")?;
         let Ok(channel) = TessellationChannel::new(
             cadmpeg_ir::tessellation::ChannelAddressing::Vertex {},
-            item_size as u32,
+            item_size_field,
             kind,
             flags,
             crate::byte_admission::copy_retained(
@@ -562,7 +520,7 @@ fn probe_table(
                 let Some(length) = View::u32_le_at(bytes, data + i * 4) else {
                     return Ok(None);
                 };
-                strips.push(length as usize);
+                strips.push(cadmpeg_core::decode::index_from_u32(length));
             }
         } else if index == 1 && item_size == 12 && kind == 100 {
             ctx.reserve_collection_vec(&mut vertices, count, "decode display-list vertices")?;
@@ -648,14 +606,24 @@ fn parse_table(
     };
     let mut spans = Vec::new();
     ctx.reserve_collection_vec(&mut spans, strips.len(), "pair display-list strip spans")?;
-    spans.extend(strips.into_iter().map(|length| length as u32));
+    for length in strips {
+        spans.push(u32::try_from(length).map_err(|_| {
+            cadmpeg_core::CodecError::malformed("display-list strip length exceeds 32 bits")
+        })?);
+    }
     if normals.len() == vertices.len() {
-        ctx.charge_collection_items(vertices.len() as u64, "pair display-list shaded vertices")?;
         ctx.charge_collection_items(
-            vertices.len() as u64,
+            cadmpeg_core::decode::u64_from_index(vertices.len()),
+            "pair display-list shaded vertices",
+        )?;
+        ctx.charge_collection_items(
+            cadmpeg_core::decode::u64_from_index(vertices.len()),
             "partition display-list strip vertices",
         )?;
-        ctx.charge_collection_items(spans.len() as u64, "partition display-list strips")?;
+        ctx.charge_collection_items(
+            cadmpeg_core::decode::u64_from_index(spans.len()),
+            "partition display-list strips",
+        )?;
     }
     match TessellationMesh::from_strip_lanes(vertices, Some(normals), &spans) {
         Ok(mesh) => Ok(Some((Mesh { mesh, channels }, end))),
@@ -863,12 +831,8 @@ fn persistent_surface_references(
             at = end;
             continue;
         }
-        let _text_reservation =
-            ctx.reserve_scoped((count * 3) as u64, "decode display-list reference text")?;
-        let mut text = String::new();
-        text.try_reserve(count * 3).map_err(|_| {
-            ctx.refuse_codec_limit("decode display-list reference text", u64::MAX - 1, u64::MAX)
-        })?;
+        let (mut text, _text_reservation) =
+            ctx.reserve_scoped_text(count * 3, "decode display-list reference text")?;
         let mut malformed_text = false;
         for character in std::char::decode_utf16(units) {
             if let Ok(character) = character {
@@ -1051,6 +1015,14 @@ pub(crate) fn assign_unique_surface_owners(
             .map(|curve| (&curve.id, &curve.geometry)),
         "index SLDPRT tessellation curves",
     )?;
+    let topology = TrimTopology {
+        loops: &loops,
+        coedges: &coedges,
+        edges: &edges,
+        vertices: &vertices,
+        points: &points,
+        curves: &curves,
+    };
     let mut candidates = Vec::new();
     for face in &model.faces {
         ctx.charge_work(1, "select SLDPRT tessellation face candidates")?;
@@ -1075,17 +1047,7 @@ pub(crate) fn assign_unique_surface_owners(
             })
         })();
         if let Some(mut candidate) = candidate {
-            candidate.trim = analytic_trim(
-                ctx,
-                face,
-                candidate.surface,
-                &loops,
-                &coedges,
-                &edges,
-                &vertices,
-                &points,
-                &curves,
-            )?;
+            candidate.trim = analytic_trim(ctx, face, candidate.surface, &topology)?;
             ctx.reserve_collection_vec(
                 &mut candidates,
                 1,
@@ -1396,16 +1358,11 @@ pub(crate) fn assign_persistent_owners(
     let mut faces_by_identity = HashMap::<&PersistentFaceIdentity, Option<&FaceId>>::new();
     for (target, identity) in face_identities {
         ctx.charge_work(1, "index SLDPRT persistent face identities")?;
-        if !faces_by_identity.contains_key(identity) {
-            ctx.charge_collection_items(1, "index SLDPRT persistent face identities")?;
-            faces_by_identity.try_reserve(1).map_err(|_| {
-                ctx.refuse_codec_limit(
-                    "index SLDPRT persistent face identities",
-                    u64::MAX - 1,
-                    u64::MAX,
-                )
-            })?;
-        }
+        ctx.admit_hash_map_entry(
+            &mut faces_by_identity,
+            &identity,
+            "index SLDPRT persistent face identities",
+        )?;
         match faces_by_identity.entry(identity) {
             std::collections::hash_map::Entry::Vacant(entry) => {
                 entry.insert(Some(target));
@@ -1448,16 +1405,11 @@ pub(crate) fn assign_persistent_owners(
         ctx.charge_work(1, "index SLDPRT persistent tessellation bindings")?;
         let key = binding.tessellation.as_str();
         let identity = &binding.identity;
-        if !bindings_by_mesh.contains_key(key) {
-            ctx.charge_collection_items(1, "index SLDPRT persistent tessellation bindings")?;
-            bindings_by_mesh.try_reserve(1).map_err(|_| {
-                ctx.refuse_codec_limit(
-                    "index SLDPRT persistent tessellation bindings",
-                    u64::MAX - 1,
-                    u64::MAX,
-                )
-            })?;
-        }
+        ctx.admit_hash_map_entry(
+            &mut bindings_by_mesh,
+            &key,
+            "index SLDPRT persistent tessellation bindings",
+        )?;
         match bindings_by_mesh.entry(key) {
             std::collections::hash_map::Entry::Vacant(entry) => {
                 entry.insert(Some(identity));
@@ -1767,9 +1719,11 @@ impl PlanarTrim {
             return Ok(false);
         }
         Ok(mesh.triangles().iter().all(|triangle| {
-            let [Some(a), Some(b), Some(c)] =
-                triangle.map(|index| projected.get(index as usize).copied())
-            else {
+            let [Some(a), Some(b), Some(c)] = triangle.map(|index| {
+                projected
+                    .get(cadmpeg_core::decode::index_from_u32(index))
+                    .copied()
+            }) else {
                 return false;
             };
             holes
@@ -1802,18 +1756,32 @@ impl HoleConstraint<'_> {
     }
 }
 
-#[allow(clippy::too_many_arguments)]
+/// The indexed topology and curve maps that every trim grammar reads.
+#[derive(Clone, Copy)]
+struct TrimTopology<'a> {
+    loops: &'a HashMap<&'a cadmpeg_ir::ids::LoopId, &'a cadmpeg_ir::topology::Loop>,
+    coedges: &'a HashMap<&'a cadmpeg_ir::ids::CoedgeId, &'a cadmpeg_ir::topology::Coedge>,
+    edges: &'a HashMap<&'a cadmpeg_ir::ids::EdgeId, &'a cadmpeg_ir::topology::Edge>,
+    vertices: &'a HashMap<&'a cadmpeg_ir::ids::VertexId, &'a cadmpeg_ir::topology::Vertex>,
+    points: &'a HashMap<&'a cadmpeg_ir::ids::PointId, Point3>,
+    curves: &'a HashMap<&'a cadmpeg_ir::ids::CurveId, &'a CurveGeometry>,
+}
+
 fn closed_planar_circle(
     loop_: &cadmpeg_ir::topology::Loop,
     surface: &SurfaceGeometry,
     frame: PlaneFrame,
     tolerance: f64,
-    coedges: &HashMap<&cadmpeg_ir::ids::CoedgeId, &cadmpeg_ir::topology::Coedge>,
-    edges: &HashMap<&cadmpeg_ir::ids::EdgeId, &cadmpeg_ir::topology::Edge>,
-    vertices: &HashMap<&cadmpeg_ir::ids::VertexId, &cadmpeg_ir::topology::Vertex>,
-    points: &HashMap<&cadmpeg_ir::ids::PointId, Point3>,
-    curves: &HashMap<&cadmpeg_ir::ids::CurveId, &CurveGeometry>,
+    topology: &TrimTopology<'_>,
 ) -> Option<CircularHole> {
+    let TrimTopology {
+        coedges,
+        edges,
+        vertices,
+        points,
+        curves,
+        ..
+    } = *topology;
     let coedge = *coedges.get(&loop_.coedges()[0])?;
     let edge = *edges.get(&coedge.edge)?;
     if coedge.owner_loop != loop_.id || loop_.coedges().len() != 1 {
@@ -2008,13 +1976,22 @@ impl PlanarArc {
             sampling_tolerance,
         } = limits;
         let radius = self.first_radius.max(self.second_radius);
-        let (segments, boundary_tolerance) = planar_arc_segments(span, radius, sampling_tolerance);
+        let Some((segments, boundary_tolerance)) =
+            planar_arc_segments(span, radius, sampling_tolerance)
+        else {
+            return Ok(None);
+        };
         let solved_surface = require_some!(surface.solved());
         let mut points = Vec::new();
         for index in 0..segments {
             ctx.charge_work(1, "sample SLDPRT planar trim arc")?;
-            let parameter =
-                start_parameter + span * f64::from(index as u32) / f64::from(segments as u32);
+            let (Some(index_value), Some(segment_value)) = (
+                cadmpeg_core::convert::f64_from_index(index),
+                cadmpeg_core::convert::f64_from_index(segments),
+            ) else {
+                return Ok(None);
+            };
+            let parameter = start_parameter + span * index_value / segment_value;
             let point = self
                 .center
                 .translated(self.first_direction, self.first_radius * parameter.cos())
@@ -2069,32 +2046,39 @@ fn shortest_arc_span(start: f64, end: f64) -> Option<f64> {
 /// of twice the radius, which is not an error: the sagitta of the complete
 /// circle is the diameter, so a tolerance at or beyond it admits the whole
 /// circle in one segment, and the sine of the quarter span stays at one.
-fn planar_arc_segments(span: f64, radius: f64, tolerance: f64) -> (usize, f64) {
+///
+/// `None` when the segment count has no exact floating-point value.
+fn planar_arc_segments(span: f64, radius: f64, tolerance: f64) -> Option<(usize, f64)> {
     let half_chord = (0.5 * (tolerance / radius)).min(1.0).sqrt();
     let maximum_span = 4.0 * half_chord.asin();
     let requested = if maximum_span.is_finite() && maximum_span > EPS_CYLINDER_ANGLE {
-        (span.abs() / maximum_span).ceil() as usize
+        match cadmpeg_core::convert::truncate_f64_to_usize((span.abs() / maximum_span).ceil()) {
+            Some(count) => count,
+            None => MAX_PLANAR_TRIM_ARC_SEGMENTS,
+        }
     } else {
         MAX_PLANAR_TRIM_ARC_SEGMENTS
     };
     let segments = requested.clamp(1, MAX_PLANAR_TRIM_ARC_SEGMENTS);
-    let actual_span = span.abs() / f64::from(segments as u32);
+    let actual_span = span.abs() / cadmpeg_core::convert::f64_from_index(segments)?;
     let sine = (actual_span / 4.0).sin();
-    (segments, (radius * sine) * (2.0 * sine))
+    Some((segments, (radius * sine) * (2.0 * sine)))
 }
 
-#[allow(clippy::too_many_arguments)]
 fn planar_trim(
     ctx: &DecodeContext<'_>,
     face: &cadmpeg_ir::topology::Face,
     surface: &SurfaceGeometry,
-    loops: &HashMap<&cadmpeg_ir::ids::LoopId, &cadmpeg_ir::topology::Loop>,
-    coedges: &HashMap<&cadmpeg_ir::ids::CoedgeId, &cadmpeg_ir::topology::Coedge>,
-    edges: &HashMap<&cadmpeg_ir::ids::EdgeId, &cadmpeg_ir::topology::Edge>,
-    vertices: &HashMap<&cadmpeg_ir::ids::VertexId, &cadmpeg_ir::topology::Vertex>,
-    points: &HashMap<&cadmpeg_ir::ids::PointId, Point3>,
-    curves: &HashMap<&cadmpeg_ir::ids::CurveId, &CurveGeometry>,
+    topology: &TrimTopology<'_>,
 ) -> Result<Option<PlanarTrim>, cadmpeg_core::CodecError> {
+    let TrimTopology {
+        loops,
+        coedges,
+        edges,
+        vertices,
+        points,
+        curves,
+    } = *topology;
     let frame = require_some!(plane_frame(require_some!(surface.solved())));
     let tolerance = require_some!(FaceEvaluationTolerance::of(face)).get();
     let coordinate_scale = points
@@ -2117,7 +2101,7 @@ fn planar_trim(
         }
         if loop_.coedges().len() == 1 {
             let circle = require_some!(closed_planar_circle(
-                loop_, surface, frame, tolerance, coedges, edges, vertices, points, curves,
+                loop_, surface, frame, tolerance, topology,
             ));
             ctx.reserve_collection_vec(&mut circles, 1, "collect SLDPRT planar trim circles")?;
             circles.push(circle);
@@ -2281,18 +2265,13 @@ fn planar_trim(
     }))
 }
 
-#[allow(clippy::too_many_arguments)]
 fn planar_hole_trim(
     ctx: &DecodeContext<'_>,
     face: &cadmpeg_ir::topology::Face,
     surface: &SurfaceGeometry,
-    loops: &HashMap<&cadmpeg_ir::ids::LoopId, &cadmpeg_ir::topology::Loop>,
-    coedges: &HashMap<&cadmpeg_ir::ids::CoedgeId, &cadmpeg_ir::topology::Coedge>,
-    edges: &HashMap<&cadmpeg_ir::ids::EdgeId, &cadmpeg_ir::topology::Edge>,
-    vertices: &HashMap<&cadmpeg_ir::ids::VertexId, &cadmpeg_ir::topology::Vertex>,
-    points: &HashMap<&cadmpeg_ir::ids::PointId, Point3>,
-    curves: &HashMap<&cadmpeg_ir::ids::CurveId, &CurveGeometry>,
+    topology: &TrimTopology<'_>,
 ) -> Result<Option<PlanarTrim>, cadmpeg_core::CodecError> {
+    let loops = topology.loops;
     let frame = require_some!(plane_frame(require_some!(surface.solved())));
     let tolerance = require_some!(FaceEvaluationTolerance::of(face)).get();
     let mut has_polygon_loop = false;
@@ -2310,9 +2289,7 @@ fn planar_hole_trim(
         let loop_ = require_some!(loops.get(loop_id));
         if loop_.face == face.id && loop_.coedges().len() == 1 && loop_.vertices().next().is_none()
         {
-            if let Some(circle) = closed_planar_circle(
-                loop_, surface, frame, tolerance, coedges, edges, vertices, points, curves,
-            ) {
+            if let Some(circle) = closed_planar_circle(loop_, surface, frame, tolerance, topology) {
                 ctx.reserve_collection_vec(&mut holes, 1, "collect SLDPRT planar hole trim")?;
                 holes.push(PlanarHole::Circle(circle));
             }
@@ -2326,18 +2303,20 @@ fn planar_hole_trim(
     }))
 }
 
-#[allow(clippy::too_many_arguments)]
 fn cylindrical_trim(
     ctx: &DecodeContext<'_>,
     face: &cadmpeg_ir::topology::Face,
     surface: &SurfaceGeometry,
-    loops: &HashMap<&cadmpeg_ir::ids::LoopId, &cadmpeg_ir::topology::Loop>,
-    coedges: &HashMap<&cadmpeg_ir::ids::CoedgeId, &cadmpeg_ir::topology::Coedge>,
-    edges: &HashMap<&cadmpeg_ir::ids::EdgeId, &cadmpeg_ir::topology::Edge>,
-    vertices: &HashMap<&cadmpeg_ir::ids::VertexId, &cadmpeg_ir::topology::Vertex>,
-    points: &HashMap<&cadmpeg_ir::ids::PointId, Point3>,
-    curves: &HashMap<&cadmpeg_ir::ids::CurveId, &CurveGeometry>,
+    topology: &TrimTopology<'_>,
 ) -> Result<Option<CylindricalTrim>, cadmpeg_core::CodecError> {
+    let TrimTopology {
+        loops,
+        coedges,
+        edges,
+        vertices,
+        points,
+        curves,
+    } = *topology;
     let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) = surface else {
         return Ok(None);
     };
@@ -2433,18 +2412,20 @@ fn cylindrical_trim(
     )
 }
 
-#[allow(clippy::too_many_arguments)]
 fn conical_trim(
     ctx: &DecodeContext<'_>,
     face: &cadmpeg_ir::topology::Face,
     surface: &SurfaceGeometry,
-    loops: &HashMap<&cadmpeg_ir::ids::LoopId, &cadmpeg_ir::topology::Loop>,
-    coedges: &HashMap<&cadmpeg_ir::ids::CoedgeId, &cadmpeg_ir::topology::Coedge>,
-    edges: &HashMap<&cadmpeg_ir::ids::EdgeId, &cadmpeg_ir::topology::Edge>,
-    vertices: &HashMap<&cadmpeg_ir::ids::VertexId, &cadmpeg_ir::topology::Vertex>,
-    points: &HashMap<&cadmpeg_ir::ids::PointId, Point3>,
-    curves: &HashMap<&cadmpeg_ir::ids::CurveId, &CurveGeometry>,
+    topology: &TrimTopology<'_>,
 ) -> Result<Option<ConicalTrim>, cadmpeg_core::CodecError> {
+    let TrimTopology {
+        loops,
+        coedges,
+        edges,
+        vertices,
+        points,
+        curves,
+    } = *topology;
     let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface)) = surface else {
         return Ok(None);
     };
@@ -2679,39 +2660,28 @@ fn circular_interval_contains(start: f64, span: f64, angle: f64, tolerance: f64)
 }
 
 // The trim grammars share the same indexed topology maps.
-#[allow(clippy::too_many_arguments)]
 fn analytic_trim(
     ctx: &DecodeContext<'_>,
     face: &cadmpeg_ir::topology::Face,
     surface: &SurfaceGeometry,
-    loops: &HashMap<&cadmpeg_ir::ids::LoopId, &cadmpeg_ir::topology::Loop>,
-    coedges: &HashMap<&cadmpeg_ir::ids::CoedgeId, &cadmpeg_ir::topology::Coedge>,
-    edges: &HashMap<&cadmpeg_ir::ids::EdgeId, &cadmpeg_ir::topology::Edge>,
-    vertices: &HashMap<&cadmpeg_ir::ids::VertexId, &cadmpeg_ir::topology::Vertex>,
-    points: &HashMap<&cadmpeg_ir::ids::PointId, Point3>,
-    curves: &HashMap<&cadmpeg_ir::ids::CurveId, &CurveGeometry>,
+    topology: &TrimTopology<'_>,
 ) -> Result<Option<AnalyticTrim>, cadmpeg_core::CodecError> {
     match surface {
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(_)) => {
-            let trim = planar_trim(
-                ctx, face, surface, loops, coedges, edges, vertices, points, curves,
-            )?;
+            let trim = planar_trim(ctx, face, surface, topology)?;
             let trim = match trim {
                 Some(trim) => Some(trim),
-                None => planar_hole_trim(
-                    ctx, face, surface, loops, coedges, edges, vertices, points, curves,
-                )?,
+                None => planar_hole_trim(ctx, face, surface, topology)?,
             };
             Ok(trim.map(AnalyticTrim::Planar))
         }
-        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(_)) => cylindrical_trim(
-            ctx, face, surface, loops, coedges, edges, vertices, points, curves,
-        )
-        .map(|trim| trim.map(AnalyticTrim::Cylindrical)),
-        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(_)) => conical_trim(
-            ctx, face, surface, loops, coedges, edges, vertices, points, curves,
-        )
-        .map(|trim| trim.map(AnalyticTrim::Conical)),
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(_)) => {
+            cylindrical_trim(ctx, face, surface, topology)
+                .map(|trim| trim.map(AnalyticTrim::Cylindrical))
+        }
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(_)) => {
+            conical_trim(ctx, face, surface, topology).map(|trim| trim.map(AnalyticTrim::Conical))
+        }
         _ => Ok(None),
     }
 }

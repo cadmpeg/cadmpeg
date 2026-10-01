@@ -708,10 +708,12 @@ pub(super) fn typed_relation_definition_with_profile_axis(
                     sketch,
                     parameter,
                     (point(0)?, point(1)?),
-                    sketch_entities,
-                    markers_by_id,
-                    loci_by_marker,
-                    profile_axis,
+                    &DynamicMarkerPointIndex {
+                        sketch_entities,
+                        markers_by_id,
+                        loci_by_marker,
+                        profile_axis,
+                    },
                 )?
             }
             _ => None,
@@ -2780,20 +2782,31 @@ fn unique_dynamic_roster_line_angle_pair(
     })
 }
 
-#[allow(clippy::too_many_arguments)] // Keeps the two operand loci explicit beside the shared marker indexes.
+/// The sketch entities and marker indexes shared by the two operand loci of one
+/// dynamic point-pair relation.
+struct DynamicMarkerPointIndex<'a> {
+    sketch_entities: &'a [SketchEntity],
+    markers_by_id: &'a HashMap<&'a str, &'a SketchInputEntity>,
+    loci_by_marker: &'a HashMap<String, Vec<SketchLocus>>,
+    profile_axis: Option<ProfileAxis>,
+}
+
 fn unique_dynamic_marker_point_pair(
     ctx: &DecodeContext<'_>,
     relation: &FeatureInputRelationInstance,
     sketch: &SketchId,
     parameter: &cadmpeg_ir::features::DesignParameter,
     known: (Option<SketchLocus>, Option<SketchLocus>),
-    sketch_entities: &[SketchEntity],
-    markers_by_id: &HashMap<&str, &SketchInputEntity>,
-    loci_by_marker: &HashMap<String, Vec<SketchLocus>>,
-    profile_axis: Option<ProfileAxis>,
+    index: &DynamicMarkerPointIndex<'_>,
 ) -> Result<Option<(SketchLocus, SketchLocus)>, cadmpeg_core::CodecError> {
     const OPERATION: &str = "select SLDPRT dynamic point pairs";
 
+    let DynamicMarkerPointIndex {
+        sketch_entities,
+        markers_by_id,
+        loci_by_marker,
+        profile_axis,
+    } = *index;
     let (known_first, known_second) = known;
     let Some(cadmpeg_ir::features::ParameterValue::Length(expected)) = parameter.value.as_ref()
     else {
@@ -5301,11 +5314,7 @@ where
         operation,
     )?;
     let new_key = !map.contains_key(key);
-    if new_key {
-        ctx.charge_collection_items(1, operation)?;
-        map.try_reserve(1)
-            .map_err(|_| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
-    }
+    ctx.admit_hash_map_entry(map, key, operation)?;
     Ok(new_key)
 }
 
@@ -5361,9 +5370,7 @@ where
     )?;
     let new_key = !set.contains(key);
     if new_key {
-        ctx.charge_collection_items(1, operation)?;
-        set.try_reserve(1)
-            .map_err(|_| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
+        ctx.reserve_set(set, 1, operation)?;
     }
     Ok(new_key)
 }
@@ -6605,13 +6612,7 @@ pub(super) fn profile_loci_by_marker(
                 .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?,
             OPERATION,
         )?;
-        ctx.charge_collection_items(
-            cadmpeg_core::decode::u64_from_index(additions.len()),
-            OPERATION,
-        )?;
-        result
-            .try_reserve(additions.len())
-            .map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
+        ctx.reserve_map(&mut result, additions.len(), OPERATION)?;
         for (key, loci) in additions {
             ctx.charge_work(
                 key_bytes
@@ -6709,12 +6710,7 @@ pub(super) fn unique_linked_endpoint_locus(
                     OPERATION,
                 )?;
                 let point = quantize(point, quantum);
-                if !endpoints.contains_key(&point) {
-                    ctx.charge_collection_items(1, OPERATION)?;
-                    endpoints
-                        .try_reserve(1)
-                        .map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
-                }
+                ctx.admit_hash_map_entry(&mut endpoints, &point, OPERATION)?;
                 let loci = endpoints.entry(point).or_default();
                 ctx.charge_work(
                     cadmpeg_core::decode::u64_from_index(loci.len())
@@ -7123,19 +7119,9 @@ fn insert_compatible_locus(
 ) -> Result<(), cadmpeg_core::CodecError> {
     const OPERATION: &str = "index SLDPRT compatible marker loci";
     ctx.charge_work(64, OPERATION)?;
-    if !points.contains_key(&marker) {
-        ctx.charge_collection_items(1, OPERATION)?;
-        points
-            .try_reserve(1)
-            .map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
-    }
+    ctx.admit_hash_map_entry(points, &marker, OPERATION)?;
     let loci = points.entry(marker).or_default();
-    if !loci.contains(&locus) {
-        ctx.charge_collection_items(1, OPERATION)?;
-        loci.try_reserve(1)
-            .map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
-    }
-    loci.insert(locus);
+    ctx.insert_hash_set(loci, locus, OPERATION)?;
     Ok(())
 }
 

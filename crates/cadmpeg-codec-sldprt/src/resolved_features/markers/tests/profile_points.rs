@@ -89,8 +89,16 @@ fn current_indexed_line_uses_its_unique_reverse_incidence_pair() {
     };
     let entities = [
         entity("curve", 0, Some(7)),
-        entity("first", first as u64, Some(20)),
-        entity("second", second as u64, Some(21)),
+        entity(
+            "first",
+            cadmpeg_core::decode::u64_from_index(first),
+            Some(20),
+        ),
+        entity(
+            "second",
+            cadmpeg_core::decode::u64_from_index(second),
+            Some(21),
+        ),
     ];
     let markers = entities.iter().collect::<Vec<_>>();
 
@@ -102,7 +110,10 @@ fn current_indexed_line_uses_its_unique_reverse_incidence_pair() {
             &markers
         )
         .unwrap(),
-        Some([first as u64, second as u64])
+        Some([
+            cadmpeg_core::decode::u64_from_index(first),
+            cadmpeg_core::decode::u64_from_index(second)
+        ])
     );
 }
 

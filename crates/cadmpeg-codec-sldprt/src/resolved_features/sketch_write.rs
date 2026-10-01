@@ -510,7 +510,7 @@ fn generated_sketch_curve(
                 })?)),
                 start: start.get(),
                 end: end.get(),
-                param_range: [knots[curve.degree() as usize], knots[control_points.len()]],
+                param_range: [knots[cadmpeg_core::decode::index_from_u32(curve.degree())], knots[control_points.len()]],
             })
         }
         SketchGeometryDefinition::Point { .. }
@@ -989,15 +989,17 @@ fn edit_stream(
 }
 
 fn compressed_member(payload: &[u8], target: &[u8]) -> Option<(usize, usize)> {
-    for start in 0..payload.len().saturating_sub(1) {
+    let last = payload.len().checked_sub(1)?;
+    for start in 0..last {
         if payload[start] != 0x78 || !matches!(payload[start + 1], 0x01 | 0x9c | 0xda) {
             continue;
         }
         // Cap inflation at `target.len() + 1` bytes: this scan only accepts a member
         // whose inflated body equals `target`, so any stream that expands past the
         // target length can never match and need not be materialized.
-        let ceiling = target.len().saturating_add(1);
-        let mut decoder = flate2::read::ZlibDecoder::new(&payload[start..]).take(ceiling as u64);
+        let ceiling = target.len().checked_add(1)?;
+        let mut decoder = flate2::read::ZlibDecoder::new(&payload[start..])
+            .take(cadmpeg_core::decode::u64_from_index(ceiling));
         let mut inflated = Vec::with_capacity(ceiling);
         let mut chunk = [0_u8; 8192];
         let mut valid = true;
@@ -1012,7 +1014,8 @@ fn compressed_member(payload: &[u8], target: &[u8]) -> Option<(usize, usize)> {
             }
         }
         if valid && inflated == target {
-            return Some((start, start + decoder.into_inner().total_in() as usize));
+            let consumed = cadmpeg_core::decode::index_from_u64(decoder.into_inner().total_in())?;
+            return Some((start, start + consumed));
         }
     }
     None

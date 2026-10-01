@@ -786,7 +786,7 @@ fn deltas_stream_whose_header_overruns_its_payload() -> Vec<u8> {
     nested.extend_from_slice(&6u16.to_be_bytes());
     nested.extend_from_slice(b"deltas");
     nested.extend_from_slice(&[0x00, 0x00]);
-    nested.push(SCHEMA.len() as u8);
+    nested.push(u8::try_from(SCHEMA.len()).expect("length fits u8"));
     nested.extend_from_slice(SCHEMA);
 
     let mut description = b"deltas ".to_vec();
@@ -794,10 +794,12 @@ fn deltas_stream_whose_header_overruns_its_payload() -> Vec<u8> {
 
     let mut payload = Vec::new();
     payload.extend_from_slice(b"PS\0\0");
-    payload.extend_from_slice(&(description.len() as u16).to_be_bytes());
+    payload.extend_from_slice(
+        &(u16::try_from(description.len()).expect("length fits u16")).to_be_bytes(),
+    );
     payload.extend_from_slice(&description);
     payload.extend_from_slice(&[0x00, 0x00]);
-    payload.push(SCHEMA.len() as u8);
+    payload.push(u8::try_from(SCHEMA.len()).expect("length fits u8"));
     payload.extend_from_slice(SCHEMA);
     payload.extend_from_slice(&[0u8; 8]);
     payload

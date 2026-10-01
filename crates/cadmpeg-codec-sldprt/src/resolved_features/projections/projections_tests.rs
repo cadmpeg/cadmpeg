@@ -806,8 +806,8 @@ fn compact_surface_selection_binds_full_round_fillet_face_sets() {
             .map(|(ordinal, local_id)| FeatureInputSurfaceSelection {
                 id: format!("selection-{ordinal}"),
                 parent: "lane".into(),
-                ordinal: ordinal as u32,
-                offset: ordinal as u64,
+                ordinal: u32::try_from(ordinal).unwrap(),
+                offset: cadmpeg_core::decode::u64_from_index(ordinal),
                 selector: 0,
                 kind: crate::records::FeatureInputSurfaceSelectionKind::Component,
                 object_name_ref: "name".into(),
@@ -1358,7 +1358,7 @@ fn split_face_collects_distinct_generated_target_faces() {
                     local_id: None,
                 },
                 FeatureInputComponentPathEntry {
-                    instance: Some(0x8020 + ordinal as u16),
+                    instance: Some(0x8020 + u16::try_from(ordinal).unwrap()),
                     type_signature: last_signature,
                     local_id: Some(local_id),
                 },
@@ -1429,7 +1429,7 @@ fn variable_fillet_radii_join_control_vertices_to_edge_endpoints() {
     payload[56..60].copy_from_slice(&[0x20, 0x81, 0x08, 0]);
     payload[class_offset..class_offset + 4].copy_from_slice(super::super::CLASS_MARKER);
     payload[class_offset + 4..class_offset + 6]
-        .copy_from_slice(&(class_name.len() as u16).to_le_bytes());
+        .copy_from_slice(&u16::try_from(class_name.len()).unwrap().to_le_bytes());
     payload[class_offset + 6..class_offset + 6 + class_name.len()]
         .copy_from_slice(class_name.as_bytes());
     payload[class_offset + 6 + class_name.len()..class_offset + 8 + class_name.len()]
@@ -1503,7 +1503,7 @@ fn variable_fillet_radii_join_control_vertices_to_edge_endpoints() {
             id: "vertex-class".into(),
             parent: "lane".into(),
             ordinal: 0,
-            offset: class_offset as u64,
+            offset: cadmpeg_core::decode::u64_from_index(class_offset),
             name: class_name.into(),
         }],
         names: vec![
@@ -1627,13 +1627,14 @@ fn variable_fillet_legacy_edge_controls_apply_one_profile_to_endpointless_edges(
     payload[56..60].copy_from_slice(&[0x20, 0x81, 0x08, 0]);
     payload[class_offset..class_offset + 4].copy_from_slice(super::super::CLASS_MARKER);
     payload[class_offset + 4..class_offset + 6]
-        .copy_from_slice(&(class_name.len() as u16).to_le_bytes());
+        .copy_from_slice(&u16::try_from(class_name.len()).unwrap().to_le_bytes());
     payload[class_offset + 6..class_offset + 6 + class_name.len()]
         .copy_from_slice(class_name.as_bytes());
     payload[class_offset + 6 + class_name.len()..class_offset + 8 + class_name.len()]
         .copy_from_slice(&0x87d3_u16.to_le_bytes());
     let write_control = |payload: &mut [u8], marker: usize, edge_ids: &[u32]| {
-        payload[marker - 12..marker - 8].copy_from_slice(&(edge_ids.len() as u32).to_le_bytes());
+        payload[marker - 12..marker - 8]
+            .copy_from_slice(&u32::try_from(edge_ids.len()).unwrap().to_le_bytes());
         payload[marker - 8..marker - 4].copy_from_slice(&[0, 2, 0, 0]);
         payload[marker..marker + 16]
             .copy_from_slice(&super::super::selections::COMPACT_EDGE_VECTOR_MARKER);
@@ -1697,7 +1698,7 @@ fn variable_fillet_legacy_edge_controls_apply_one_profile_to_endpointless_edges(
             id: "edge-class".into(),
             parent: "lane".into(),
             ordinal: 0,
-            offset: class_offset as u64,
+            offset: cadmpeg_core::decode::u64_from_index(class_offset),
             name: class_name.into(),
         }],
         names: vec![

@@ -404,8 +404,11 @@ fn cosmetic_thread_reads_a_direct_component_edge_reference() {
     let marker = body_offset + 36;
     let mut payload = vec![0; marker + 18];
     payload[class_offset..class_offset + 4].copy_from_slice(CLASS_MARKER);
-    payload[class_offset + 4..class_offset + 6]
-        .copy_from_slice(&(class_name.len() as u16).to_le_bytes());
+    payload[class_offset + 4..class_offset + 6].copy_from_slice(
+        &u16::try_from(class_name.len())
+            .expect("length fits u16")
+            .to_le_bytes(),
+    );
     payload[class_offset + 6..body_offset].copy_from_slice(class_name.as_bytes());
     payload[marker - 12..marker - 8].copy_from_slice(&2u32.to_le_bytes());
     payload[marker - 8..marker - 4].copy_from_slice(&[0, 2, 0, 0]);
@@ -430,7 +433,7 @@ fn cosmetic_thread_reads_a_direct_component_edge_reference() {
             id: "component-edge".into(),
             parent: "lane".into(),
             ordinal: 0,
-            offset: class_offset as u64,
+            offset: cadmpeg_core::decode::u64_from_index(class_offset),
             name: class_name.into(),
         }],
         names: Vec::new(),
@@ -477,8 +480,11 @@ fn cosmetic_thread_reads_component_edge_reference_through_edge_ref_child() {
     let edge_ref_body = edge_ref_offset + 6 + edge_ref_name.len();
     let mut payload = vec![0; edge_ref_body];
     payload[component_edge_offset..component_edge_offset + 4].copy_from_slice(CLASS_MARKER);
-    payload[component_edge_offset + 4..component_edge_offset + 6]
-        .copy_from_slice(&(component_edge_name.len() as u16).to_le_bytes());
+    payload[component_edge_offset + 4..component_edge_offset + 6].copy_from_slice(
+        &u16::try_from(component_edge_name.len())
+            .expect("length fits u16")
+            .to_le_bytes(),
+    );
     payload[component_edge_offset + 6..component_edge_body]
         .copy_from_slice(component_edge_name.as_bytes());
     payload[component_edge_body..component_edge_body + 9]
@@ -488,8 +494,11 @@ fn cosmetic_thread_reads_component_edge_reference_through_edge_ref_child() {
     payload[component_edge_body + 13..component_edge_body + 17]
         .copy_from_slice(&102u32.to_le_bytes());
     payload[edge_ref_offset..edge_ref_offset + 4].copy_from_slice(CLASS_MARKER);
-    payload[edge_ref_offset + 4..edge_ref_offset + 6]
-        .copy_from_slice(&(edge_ref_name.len() as u16).to_le_bytes());
+    payload[edge_ref_offset + 4..edge_ref_offset + 6].copy_from_slice(
+        &u16::try_from(edge_ref_name.len())
+            .expect("length fits u16")
+            .to_le_bytes(),
+    );
     payload[edge_ref_offset + 6..edge_ref_body].copy_from_slice(edge_ref_name.as_bytes());
     payload.extend(4u32.to_le_bytes());
     payload.extend([0, 2, 0, 0]);
@@ -514,14 +523,14 @@ fn cosmetic_thread_reads_component_edge_reference_through_edge_ref_child() {
                 id: "component-edge".into(),
                 parent: "lane".into(),
                 ordinal: 0,
-                offset: component_edge_offset as u64,
+                offset: cadmpeg_core::decode::u64_from_index(component_edge_offset),
                 name: component_edge_name.into(),
             },
             FeatureInputClass {
                 id: "edge-ref".into(),
                 parent: "lane".into(),
                 ordinal: 1,
-                offset: edge_ref_offset as u64,
+                offset: cadmpeg_core::decode::u64_from_index(edge_ref_offset),
                 name: edge_ref_name.into(),
             },
         ],

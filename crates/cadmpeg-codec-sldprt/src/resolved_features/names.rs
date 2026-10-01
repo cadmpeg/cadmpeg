@@ -3,7 +3,7 @@
 use super::{is_class_token, CLASS_MARKER, NAME_MARKER};
 use crate::records::ObjectId;
 use crate::records::{FeatureInputClass, FeatureInputName, FeatureInputOperandKind};
-use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::decode::{index_from_u32, u64_from_index, DecodeContext, View};
 use cadmpeg_core::text::NonBlankString;
 
 fn retained_text(
@@ -26,7 +26,7 @@ fn record_id(
     let digits = if offset == 0 {
         1
     } else {
-        offset.ilog10() as usize + 1
+        index_from_u32(offset.ilog10()) + 1
     };
     let length = "sldprt:feature-input:"
         .len()
@@ -119,12 +119,15 @@ pub(crate) fn object_names(
         }
         let id = record_id(ctx, "name", lane_key, offset)?;
         let parent = retained_text(ctx, parent, "retain SLDPRT feature input name parent")?;
+        let ordinal = u32::try_from(ordinal).map_err(|_| {
+            ctx.refuse_codec_limit("collect SLDPRT feature input names", u64::MAX - 1, u64::MAX)
+        })?;
         ctx.reserve_collection_vec(&mut names, 1, "collect SLDPRT feature input names")?;
         names.push(FeatureInputName {
             id,
             parent,
-            ordinal: ordinal as u32,
-            offset: offset as u64,
+            ordinal,
+            offset: u64_from_index(offset),
             object_id,
             value,
         });
@@ -307,12 +310,19 @@ pub(crate) fn class_declarations(
         let id = record_id(ctx, "class", lane_key, offset)?;
         let parent = retained_text(ctx, parent, "retain SLDPRT feature input class parent")?;
         let name = retained_text(ctx, name, "retain SLDPRT feature input class name")?;
+        let ordinal = u32::try_from(ordinal).map_err(|_| {
+            ctx.refuse_codec_limit(
+                "collect SLDPRT feature input classes",
+                u64::MAX - 1,
+                u64::MAX,
+            )
+        })?;
         ctx.reserve_collection_vec(&mut classes, 1, "collect SLDPRT feature input classes")?;
         classes.push(FeatureInputClass {
             id,
             parent,
-            ordinal: ordinal as u32,
-            offset: offset as u64,
+            ordinal,
+            offset: u64_from_index(offset),
             name,
         });
     }

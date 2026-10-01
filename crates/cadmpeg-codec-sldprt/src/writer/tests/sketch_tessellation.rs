@@ -772,7 +772,7 @@ fn semantic_writer_round_trips_all_supported_lanes_together() {
         }
         assert!(scan.directory.iter().any(|entry| {
             entry.name == section
-                && entry.size as usize == block.uncomp_sz()
+                && cadmpeg_core::decode::index_from_u32(entry.size) == block.uncomp_sz()
                 && entry.type_id == block.type_id
         }));
     }

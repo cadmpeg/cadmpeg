@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Stream-scope entity metadata records.
 
+use cadmpeg_core::convert::f32_from_f64;
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_ir::topology::Color;
 use std::collections::{HashMap, HashSet};
@@ -135,7 +136,7 @@ fn scan_entities(
         let Some(disc) = View::u16_be_at(body, p + entity_hdr::DISC) else {
             continue;
         };
-        let flo = (flags & 0xff) as u8;
+        let [_, _, _, flo] = flags.to_be_bytes();
         if attr <= 1 || seq == 0 || !(1..=0x20).contains(&flo) {
             continue;
         }
@@ -186,7 +187,8 @@ fn color_record(body: &[u8], off: usize) -> Option<(u16, Color, usize)> {
     {
         return None;
     }
-    Some((attr, Color::new(r as f32, g as f32, b as f32, 1.0)?, p + 30))
+    let color = Color::new(f32_from_f64(r)?, f32_from_f64(g)?, f32_from_f64(b)?, 1.0)?;
+    Some((attr, color, p + 30))
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -203,30 +205,17 @@ fn linked_colors(
 ) -> Result<HashMap<(u16, u16), Vec<FramedColor>>, cadmpeg_core::CodecError> {
     let mut colors = HashMap::<(u16, u16), Vec<FramedColor>>::new();
     for parent in entities {
-        let ref_count = u64::try_from(parent.refs.len()).map_err(|_| {
-            ctx.refuse_codec_limit(
-                "collect Parasolid linked face references",
-                u64::MAX - 1,
-                u64::MAX,
-            )
-        })?;
-        ctx.charge_collection_items(ref_count, "collect Parasolid linked face references")?;
-        ctx.charge_collection_items(1, "collect Parasolid parent face reference")?;
-        let capacity = parent.refs.len().checked_add(1).ok_or_else(|| {
-            ctx.refuse_codec_limit(
-                "collect Parasolid linked face references",
-                u64::MAX - 1,
-                u64::MAX,
-            )
-        })?;
         let mut linked_faces = HashSet::new();
-        linked_faces.try_reserve(capacity).map_err(|_| {
-            ctx.refuse_codec_limit(
-                "collect Parasolid linked face references",
-                u64::MAX - 1,
-                u64::MAX,
-            )
-        })?;
+        ctx.reserve_set(
+            &mut linked_faces,
+            parent.refs.len(),
+            "collect Parasolid linked face references",
+        )?;
+        ctx.reserve_set(
+            &mut linked_faces,
+            1,
+            "collect Parasolid parent face reference",
+        )?;
         linked_faces.extend(parent.refs.iter().copied());
         linked_faces.insert(parent.attr);
         let mut at = parent.end;
@@ -239,19 +228,13 @@ fn linked_colors(
             };
             for face_attr in linked_faces.iter().copied().filter(|attr| *attr > 1) {
                 let key = (face_attr, color_attr);
-                if !colors.contains_key(&key) {
-                    ctx.charge_collection_items(1, "collect Parasolid linked color groups")?;
-                    colors.try_reserve(1).map_err(|_| {
-                        ctx.refuse_codec_limit(
-                            "collect Parasolid linked color groups",
-                            u64::MAX - 1,
-                            u64::MAX,
-                        )
-                    })?;
-                }
-                let group = colors.entry(key).or_default();
-                ctx.reserve_collection_vec(group, 1, "collect Parasolid linked colors")?;
-                group.push(framed);
+                ctx.push_hash_group(
+                    &mut colors,
+                    key,
+                    framed,
+                    "collect Parasolid linked color groups",
+                    "collect Parasolid linked colors",
+                )?;
             }
             at = end;
         }
@@ -415,7 +398,11 @@ mod tests {
     fn attribute_definition(family: &str, definition: u16) -> Vec<u8> {
         let name = family.as_bytes();
         let mut bytes = vec![0, 0x4f];
-        bytes.extend_from_slice(&(name.len() as u32).to_be_bytes());
+        bytes.extend_from_slice(
+            &u32::try_from(name.len())
+                .expect("name length fits u32")
+                .to_be_bytes(),
+        );
         bytes.extend_from_slice(&15_u16.to_be_bytes());
         bytes.extend_from_slice(name);
         bytes.extend_from_slice(&[0, 0x50]);

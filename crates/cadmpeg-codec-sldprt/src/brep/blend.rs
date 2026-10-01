@@ -7,7 +7,7 @@
 
 use std::collections::HashMap;
 
-use cadmpeg_core::decode::View;
+use cadmpeg_core::decode::{u64_from_index, View};
 
 use super::LEN_TO_MM;
 
@@ -157,17 +157,15 @@ pub(super) fn scan(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     bytes: &[u8],
 ) -> Result<BlendCarriers, cadmpeg_core::CodecError> {
-    ctx.charge_work(bytes.len() as u64, "scan SLDPRT blend carriers")?;
+    ctx.charge_work(u64_from_index(bytes.len()), "scan SLDPRT blend carriers")?;
     let mut blends = HashMap::new();
     let mut pairs = HashMap::new();
-    for offset in 0..bytes.len().saturating_sub(57) {
+    let Some(last_offset) = bytes.len().checked_sub(57) else {
+        return Ok(BlendCarriers { blends, pairs });
+    };
+    for offset in 0..last_offset {
         if let Some(carrier) = parse_blend(bytes, offset) {
-            if !blends.contains_key(&carrier.attr) {
-                ctx.charge_collection_items(1, "index SLDPRT blend carriers")?;
-                blends.try_reserve(1).map_err(|_| {
-                    ctx.refuse_codec_limit("index SLDPRT blend carriers", u64::MAX - 1, u64::MAX)
-                })?;
-            }
+            ctx.admit_hash_map_entry(&mut blends, &carrier.attr, "index SLDPRT blend carriers")?;
             blends.entry(carrier.attr).or_insert(carrier);
         }
         if let Some(raw) = parse_raw(bytes, offset) {
@@ -175,16 +173,11 @@ pub(super) fn scan(
                 && raw.values[0].abs() <= f64::EPSILON
                 && raw.values[1].abs() <= f64::EPSILON
             {
-                if !pairs.contains_key(&raw.attr) {
-                    ctx.charge_collection_items(1, "index SLDPRT blend support pairs")?;
-                    pairs.try_reserve(1).map_err(|_| {
-                        ctx.refuse_codec_limit(
-                            "index SLDPRT blend support pairs",
-                            u64::MAX - 1,
-                            u64::MAX,
-                        )
-                    })?;
-                }
+                ctx.admit_hash_map_entry(
+                    &mut pairs,
+                    &raw.attr,
+                    "index SLDPRT blend support pairs",
+                )?;
                 pairs.entry(raw.attr).or_insert(SupportPairCarrier {
                     supports: [raw.references[0], raw.references[1]],
                     intersection: raw.references[2],

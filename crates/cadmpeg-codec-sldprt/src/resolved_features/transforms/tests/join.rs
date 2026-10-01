@@ -566,10 +566,10 @@ fn unique_translation_joins_linked_endpoints_to_one_profile_entity() {
             .into_iter()
             .enumerate()
             .map(|(index, marker)| FeatureInputOperand {
-                offset: index as u64,
+                offset: cadmpeg_core::decode::u64_from_index(index),
                 reference_ref: format!("reference-{index}"),
                 kind: FeatureInputOperandKind::D6,
-                entity_index: index as u16,
+                entity_index: u16::try_from(index).expect("test index fits u16"),
                 entity_ref: Some(marker.into()),
             })
             .collect(),
@@ -807,8 +807,14 @@ fn line_handle_interior_points_identify_profile_entities() {
         let offset = ordinal * 27;
         native_payload[offset + 23..offset + 27].copy_from_slice(&[0x05, 0x00, 0x01, 0x00]);
         let mut handle = marker(id, Some(coordinates_m));
-        handle = handle.with_test_position(ordinal as u32, handle.offset());
-        handle = handle.with_test_position(handle.ordinal(), offset as u64);
+        handle = handle.with_test_position(
+            u32::try_from(ordinal).expect("test index fits u32"),
+            handle.offset(),
+        );
+        handle = handle.with_test_position(
+            handle.ordinal(),
+            cadmpeg_core::decode::u64_from_index(offset),
+        );
         handle.reclassify(SketchInputKind::LineOrCircle);
         markers.push(handle);
     }

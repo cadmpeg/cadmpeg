@@ -71,7 +71,7 @@ fn semantic_writer_rejects_compact_edge_selection_edits() {
                     id: "sldprt:test:edge-selection#0".into(),
                     parent: lane.id.clone(),
                     ordinal: 0,
-                    offset: marker as u64,
+                    offset: cadmpeg_core::decode::u64_from_index(marker),
                     object_name_ref: lane.names[0].id.clone(),
                     feature_ref,
                     local_edge_ids: vec![7],
@@ -161,7 +161,7 @@ fn semantic_writer_rejects_compact_surface_selection_edits() {
                     id: "sldprt:test:surface-selection#0".into(),
                     parent: lane.id.clone(),
                     ordinal: 0,
-                    offset: marker as u64,
+                    offset: cadmpeg_core::decode::u64_from_index(marker),
                     selector: 0,
                     kind: crate::records::FeatureInputSurfaceSelectionKind::Component,
                     object_name_ref: lane

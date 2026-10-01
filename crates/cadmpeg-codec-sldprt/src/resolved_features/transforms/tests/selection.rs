@@ -100,7 +100,10 @@ fn relation_point_materializes_under_one_proven_marker_transform() {
         .enumerate()
         .map(|(index, coordinates)| {
             let mut value = marker(&format!("anchor-{index}"), Some(coordinates));
-            value = value.with_test_position(value.ordinal(), (index * 27) as u64);
+            value = value.with_test_position(
+                value.ordinal(),
+                cadmpeg_core::decode::u64_from_index(index * 27),
+            );
             value
         })
         .collect::<Vec<_>>();
@@ -533,7 +536,10 @@ fn relation_point_coexists_with_nonpoint_native_carrier() {
         .enumerate()
         .map(|(index, coordinates)| {
             let mut value = marker(&format!("anchor-{index}"), Some(coordinates));
-            value = value.with_test_position(value.ordinal(), (index * 27) as u64);
+            value = value.with_test_position(
+                value.ordinal(),
+                cadmpeg_core::decode::u64_from_index(index * 27),
+            );
             value
         })
         .collect::<Vec<_>>();

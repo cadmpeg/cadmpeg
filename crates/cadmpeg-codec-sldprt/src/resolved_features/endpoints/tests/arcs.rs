@@ -867,7 +867,7 @@ fn legacy_compact_96_profile_line_falls_back_to_one_based_complete_roster() {
             format!("point-{index}"),
             index,
             SketchInputKind::Point,
-            Some([index as f64, 0.0]),
+            Some([f64::from(u32::try_from(index).unwrap()), 0.0]),
         )
     }));
     let markers = entities.iter().collect::<Vec<_>>();

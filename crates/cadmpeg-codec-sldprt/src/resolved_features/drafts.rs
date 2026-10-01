@@ -515,6 +515,7 @@ mod tests {
     use crate::records::FeatureSource;
     use crate::records::ObjectId;
     use crate::records::{Feature, FeatureHistory, FeatureInputClass, FeatureInputName};
+    use cadmpeg_core::decode::u64_from_index;
     use cadmpeg_ir::features::{FaceSelection, FeatureDefinition, FeatureId, FeatureOperation};
     use cadmpeg_ir::math::Vector3;
     use std::collections::BTreeMap;
@@ -672,14 +673,14 @@ mod tests {
                 id: "plane-ref".into(),
                 parent: "lane".into(),
                 ordinal: 0,
-                offset: class_offset as u64,
+                offset: u64_from_index(class_offset),
                 name: class_name.into(),
             }],
             names: vec![FeatureInputName {
                 id: "name".into(),
                 parent: "lane".into(),
                 ordinal: 0,
-                offset: object_start as u64,
+                offset: u64_from_index(object_start),
                 value: "Draft1".into(),
                 object_id: ObjectId::from_value(7),
             }],
@@ -799,7 +800,7 @@ mod tests {
                 id: "name".into(),
                 parent: "lane".into(),
                 ordinal: 0,
-                offset: object_start as u64,
+                offset: u64_from_index(object_start),
                 value: "Draft1".into(),
                 object_id: ObjectId::from_value(7),
             }],
@@ -915,7 +916,7 @@ mod tests {
                 id: "name".into(),
                 parent: "lane".into(),
                 ordinal: 0,
-                offset: object_start as u64,
+                offset: u64_from_index(object_start),
                 value: "Draft1".into(),
                 object_id: ObjectId::from_value(7),
             }],
@@ -1007,14 +1008,14 @@ mod tests {
                 id: "plane-ref".into(),
                 parent: "lane".into(),
                 ordinal: 0,
-                offset: class_offset as u64,
+                offset: u64_from_index(class_offset),
                 name: class_name.into(),
             }],
             names: vec![FeatureInputName {
                 id: "name".into(),
                 parent: "lane".into(),
                 ordinal: 0,
-                offset: object_start as u64,
+                offset: u64_from_index(object_start),
                 value: "Draft1".into(),
                 object_id: ObjectId::from_value(7),
             }],

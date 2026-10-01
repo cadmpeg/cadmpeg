@@ -229,7 +229,7 @@ fn duplicate_configuration_partition_identities_are_reported() {
     for id in ["first", "second"] {
         ir.model.configurations.push(DesignConfiguration {
             id: ConfigurationId::mint(format!("synthetic:test:id#{id}")).expect("identity grammar"),
-            ordinal: ir.model.configurations.len() as u32,
+            ordinal: u32::try_from(ir.model.configurations.len()).unwrap(),
             active: false,
             source_index: Some(5),
             name: Some(id.to_string()),
@@ -339,7 +339,7 @@ fn incomplete_configuration_names_are_reported() {
                 .expect("identity grammar"),
             ordinal,
             active: position == 1,
-            source_index: Some(position as u32),
+            source_index: Some(u32::try_from(position).unwrap()),
             name: Some(name.to_string()),
             material: None,
             properties: BTreeMap::new(),

@@ -4,7 +4,7 @@
 use super::copy_projected_feature_text;
 use crate::classification::{native_object_class, NativeClassKind};
 use crate::records::{Feature, FeatureContent};
-use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::decode::{u64_from_index, DecodeContext};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::{
     AngularTermination, BooleanOp, FeatureDefinition, FeatureOperation, PartialRevolveConstruction,
@@ -144,7 +144,10 @@ fn project_native_refs<T>(
     let Some(value) = value else {
         return Ok(references);
     };
-    ctx.charge_work(value.len() as u64, "project SLDPRT loft references")?;
+    ctx.charge_work(
+        u64_from_index(value.len()),
+        "project SLDPRT loft references",
+    )?;
     for source in value
         .split(',')
         .map(str::trim)
@@ -296,7 +299,7 @@ pub(super) fn project_revolve(
     native_by_source: &HashMap<String, &str>,
 ) -> Result<FeatureDefinition, CodecError> {
     ctx.charge_work(
-        feature.content.len() as u64,
+        u64_from_index(feature.content.len()),
         "scan SLDPRT revolve dimension order",
     )?;
     if feature
@@ -305,7 +308,7 @@ pub(super) fn project_revolve(
         .is_some_and(|condition| condition == "TwoSided")
     {
         ctx.charge_work(
-            feature.content.len() as u64,
+            u64_from_index(feature.content.len()),
             "scan SLDPRT revolve dimension order",
         )?;
     }

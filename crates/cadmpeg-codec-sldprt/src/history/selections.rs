@@ -956,10 +956,7 @@ fn reserve_selection_map<K: Eq + std::hash::Hash, V>(
 ) -> Result<(), CodecError> {
     const OPERATION: &str = "index SLDPRT topology selections";
     ctx.charge_work(1, OPERATION)?;
-    ctx.charge_collection_items(1, OPERATION)?;
-    values
-        .try_reserve(1)
-        .map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))
+    ctx.reserve_map(values, 1, OPERATION)
 }
 
 #[cfg(test)]

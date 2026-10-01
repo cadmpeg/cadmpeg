@@ -9,7 +9,6 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
 pub(crate) mod charged_clone;
-mod debug;
 pub(crate) mod operand_tag;
 pub(crate) mod relation_scalars;
 mod sketch_code;
@@ -69,6 +68,7 @@ impl PmiDimension {
 
 mod pmi_display_text_wire {
     use serde::{ser::SerializeMap, Deserialize, Deserializer, Serializer};
+    use std::borrow::Borrow;
 
     #[derive(Deserialize)]
     struct Wire {
@@ -79,11 +79,11 @@ mod pmi_display_text_wire {
     }
 
     // Serde passes the field by reference to this adapter.
-    #[allow(clippy::ref_option)]
     pub(super) fn serialize<S: Serializer>(
-        display: &Option<(String, u64)>,
+        display: &impl Borrow<Option<(String, u64)>>,
         serializer: S,
     ) -> Result<S::Ok, S::Error> {
+        let display: &Option<(String, u64)> = display.borrow();
         let mut map = serializer.serialize_map(None)?;
         if let Some((text, offset)) = display {
             map.serialize_entry("display_text", text)?;
@@ -119,8 +119,8 @@ fn default_pmi_item_count() -> u32 {
 }
 
 // Serde's `skip_serializing_if` contract passes the field by reference.
-#[allow(clippy::trivially_copy_pass_by_ref)]
-fn is_one(value: &u32) -> bool {
+fn is_one(value: &impl std::borrow::Borrow<u32>) -> bool {
+    let value: &u32 = value.borrow();
     *value == 1
 }
 
@@ -269,6 +269,7 @@ impl TreeParent {
 mod tree_parent_wire {
     use super::TreeParent;
     use serde::{ser::SerializeMap, Deserialize, Deserializer, Serializer};
+    use std::borrow::Borrow;
 
     #[derive(Deserialize)]
     struct Wire {
@@ -279,11 +280,11 @@ mod tree_parent_wire {
     }
 
     // Serde's field adapter borrows the complete optional parent field.
-    #[allow(clippy::ref_option)]
     pub(super) fn serialize<S: Serializer>(
-        parent: &Option<TreeParent>,
+        parent: &impl Borrow<Option<TreeParent>>,
         serializer: S,
     ) -> Result<S::Ok, S::Error> {
+        let parent: &Option<TreeParent> = parent.borrow();
         let mut map = serializer.serialize_map(None)?;
         if let Some(parent) = parent {
             if let Some(record) = parent.record_id() {
@@ -335,7 +336,7 @@ impl Feature {
 }
 
 /// One parametric construction-history feature (e.g. an extrude or fillet operation).
-#[derive(Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub(crate) struct Feature {
     /// Globally unique deterministic identifier for this native record.
     pub(crate) id: String,
@@ -685,7 +686,7 @@ pub(crate) struct FeatureInputEdgeSelection {
 }
 
 /// One compact feature-local surface-component selection.
-#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct FeatureInputSurfaceSelection {
     /// Globally unique deterministic identifier.
     pub(crate) id: String,
@@ -741,6 +742,7 @@ impl FeatureInputSurfaceSelection {
 mod surface_selection_kind_wire {
     use super::FeatureInputSurfaceSelectionKind;
     use serde::{ser::SerializeMap, Deserialize, Deserializer, Serializer};
+    use std::borrow::Borrow;
 
     #[derive(Deserialize)]
     struct Wire {
@@ -749,11 +751,11 @@ mod surface_selection_kind_wire {
     }
 
     // Serde field adapters borrow the field even when its type is Copy.
-    #[allow(clippy::trivially_copy_pass_by_ref)]
     pub(super) fn serialize<S: Serializer>(
-        kind: &FeatureInputSurfaceSelectionKind,
+        kind: &impl Borrow<FeatureInputSurfaceSelectionKind>,
         serializer: S,
     ) -> Result<S::Ok, S::Error> {
+        let kind: &FeatureInputSurfaceSelectionKind = kind.borrow();
         let mut map = serializer.serialize_map(None)?;
         if let FeatureInputSurfaceSelectionKind::ExtrusionEndpoint { endpoint_selector } = kind {
             map.serialize_entry("endpoint_selector", endpoint_selector)?;
@@ -847,7 +849,7 @@ pub(crate) struct FeatureInputRelationBinding {
 }
 
 /// One compact sketch-relation instance represented by related scalar records.
-#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct FeatureInputRelationInstance {
     /// Globally unique deterministic identifier for this relation instance.
     pub(crate) id: String,
@@ -936,7 +938,7 @@ pub(crate) struct FeatureInputReference {
 }
 
 /// One serialized UTF-16 object name in a feature-input stream.
-#[derive(Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub(crate) struct FeatureInputName {
     /// Globally unique deterministic identifier for this name record.
     pub(crate) id: String,
@@ -1011,7 +1013,7 @@ impl From<ObjectId> for u32 {
 }
 
 /// One named scalar serialized in native SI units.
-#[derive(Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub(crate) struct FeatureInputScalar {
     /// Globally unique deterministic identifier for this scalar record.
     pub(crate) id: String,
@@ -1162,7 +1164,7 @@ pub(crate) enum FeatureInputScalarRole {
 }
 
 /// One class declaration in a native feature-input stream.
-#[derive(Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub(crate) struct FeatureInputClass {
     /// Globally unique deterministic identifier for this declaration.
     pub(crate) id: String,
@@ -1247,7 +1249,7 @@ pub(crate) enum FeatureInputClassRole {
 }
 
 /// One typed sketch-entity marker inside a native feature-input stream.
-#[derive(Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 pub(crate) struct SketchInputEntity {
     /// Globally unique deterministic identifier for this native record.
     id: String,
@@ -1362,6 +1364,7 @@ impl SketchInputLinks {
 mod sketch_input_links_wire {
     use super::{SketchInputLink, SketchInputLinks};
     use serde::{ser::SerializeMap, Deserialize, Deserializer, Serializer};
+    use std::borrow::Borrow;
 
     #[derive(Deserialize)]
     struct Wire {
@@ -1372,11 +1375,11 @@ mod sketch_input_links_wire {
     }
 
     // Serde field adapters borrow the complete optional links field.
-    #[allow(clippy::ref_option)]
     pub(super) fn serialize<S: Serializer>(
-        links: &Option<SketchInputLinks>,
+        links: &impl Borrow<Option<SketchInputLinks>>,
         serializer: S,
     ) -> Result<S::Ok, S::Error> {
+        let links: &Option<SketchInputLinks> = links.borrow();
         let mut map = serializer.serialize_map(Some(if links.is_some() { 2 } else { 0 }))?;
         if let Some(links) = links {
             map.serialize_entry("links", links.entries())?;
@@ -1599,7 +1602,7 @@ pub(crate) struct SketchInputLink {
 }
 
 /// Kind of sketch entity referenced by a native feature-input marker.
-#[derive(Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(from = "SketchInputKindWire", into = "SketchInputKindWire")]
 pub(crate) enum SketchInputKind {
     /// A sketch point.

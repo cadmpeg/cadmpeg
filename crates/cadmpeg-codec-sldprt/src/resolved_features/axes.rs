@@ -16,6 +16,7 @@ use crate::layout::temporary_axis_reference_nine_scalar as temporary_axis;
 use crate::records::FeatureSource;
 use crate::records::ObjectId;
 use crate::records::{FeatureInputLane, FeatureInputName, SketchInputEntity, SketchInputKind};
+use cadmpeg_core::convert::f64_from_i64;
 use cadmpeg_core::decode::index_from_u64;
 use cadmpeg_core::decode::u64_from_index;
 use cadmpeg_core::decode::{DecodeContext, View};
@@ -94,7 +95,8 @@ pub(super) fn declared_line_reference_directions(
         return Ok(Vec::new());
     };
     let mut directions = Vec::new();
-    if let Some(direction) = line_reference_direction(&payload[..end], class_offset as u64) {
+    if let Some(direction) = line_reference_direction(&payload[..end], u64_from_index(class_offset))
+    {
         ctx.reserve_collection_vec(
             &mut directions,
             1,
@@ -510,8 +512,11 @@ fn revolution_line_reference_inputs(
             })
         })
     };
+    let Some(scan_end) = search_end.checked_sub(64) else {
+        return Ok(None);
+    };
     let mut candidates = Vec::new();
-    for handle_start in object_start..search_end.saturating_sub(64) {
+    for handle_start in object_start..scan_end {
         ctx.charge_work(1, "scan SLDPRT revolution line references")?;
         if payload.get(handle_start..handle_start + 4) != Some(HANDLE.as_slice()) {
             continue;
@@ -822,12 +827,12 @@ fn revolution_line_reference_inputs(
         if let Some(current) = ranks.get_mut(handle) {
             *current = (*current).max(*rank);
         } else {
-            let operation = "index SLDPRT revolution line reference ranks";
-            ctx.charge_collection_items(1, operation)?;
-            ranks
-                .try_reserve(1)
-                .map_err(|_| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
-            ranks.insert(*handle, *rank);
+            ctx.insert_hash_map(
+                &mut ranks,
+                *handle,
+                *rank,
+                "index SLDPRT revolution line reference ranks",
+            )?;
         }
     }
     let mut selected = Vec::new();
@@ -961,10 +966,7 @@ fn push_revolution_vote<T>(
         values.push(value);
         return Ok(());
     }
-    ctx.charge_collection_items(1, operation)?;
-    votes
-        .try_reserve(1)
-        .map_err(|_| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
+    ctx.reserve_map(votes, 1, operation)?;
     let id = crate::text_admission::format_retained(
         ctx,
         format_args!("{id}"),
@@ -995,14 +997,7 @@ pub(crate) fn enrich_history_revolution_inputs(
                 )
             })?;
         } else {
-            ctx.charge_collection_items(1, "index SLDPRT revolution feature names")?;
-            name_counts.try_reserve(1).map_err(|_| {
-                ctx.refuse_codec_limit(
-                    "index SLDPRT revolution feature names",
-                    u64::MAX - 1,
-                    u64::MAX,
-                )
-            })?;
+            ctx.reserve_map(&mut name_counts, 1, "index SLDPRT revolution feature names")?;
             let name = crate::text_admission::format_retained(
                 ctx,
                 format_args!("{}", feature.name),
@@ -1054,17 +1049,11 @@ pub(crate) fn enrich_history_revolution_inputs(
                     .filter_map(|lane| feature_object_name(feature, lane)?.object_id?.value()),
             ) {
                 ctx.charge_work(1, "index SLDPRT revolution profile sources")?;
-                if !sources.contains(&source) {
-                    ctx.charge_collection_items(1, "index SLDPRT revolution profile sources")?;
-                    sources.try_reserve(1).map_err(|_| {
-                        ctx.refuse_codec_limit(
-                            "index SLDPRT revolution profile sources",
-                            u64::MAX - 1,
-                            u64::MAX,
-                        )
-                    })?;
-                    sources.insert(source);
-                }
+                ctx.insert_hash_set(
+                    &mut sources,
+                    source,
+                    "index SLDPRT revolution profile sources",
+                )?;
             }
         }
         ctx.reserve_collection_vec(
@@ -1078,14 +1067,11 @@ pub(crate) fn enrich_history_revolution_inputs(
             if let Some(owner) = profile_source_owner.get_mut(feature.id.as_str()) {
                 *owner = history_index;
             } else {
-                ctx.charge_collection_items(1, "index SLDPRT revolution profile owners")?;
-                profile_source_owner.try_reserve(1).map_err(|_| {
-                    ctx.refuse_codec_limit(
-                        "index SLDPRT revolution profile owners",
-                        u64::MAX - 1,
-                        u64::MAX,
-                    )
-                })?;
+                ctx.reserve_map(
+                    &mut profile_source_owner,
+                    1,
+                    "index SLDPRT revolution profile owners",
+                )?;
                 let id = crate::text_admission::format_retained(
                     ctx,
                     format_args!("{}", feature.id),
@@ -1178,18 +1164,17 @@ pub(crate) fn enrich_history_revolution_inputs(
                                 .and_then(|owner| profile_sources.get(*owner))
                                 .is_some_and(|sources| sources.contains(first))
                         {
-                            ctx.charge_collection_items(
-                                1,
-                                "insert SLDPRT revolution profile property",
-                            )?;
                             let value = crate::text_admission::format_retained(
                                 ctx,
                                 format_args!("{first}"),
                                 "retain SLDPRT revolution profile property",
                             )?;
-                            feature
-                                .properties
-                                .insert(cadmpeg_core::nonblank_literal!("Profile"), value);
+                            ctx.insert_btree_map(
+                                &mut feature.properties,
+                                cadmpeg_core::nonblank_literal!("Profile"),
+                                value,
+                                "insert SLDPRT revolution profile property",
+                            )?;
                         }
                     }
                 }
@@ -1206,7 +1191,6 @@ pub(crate) fn enrich_history_revolution_inputs(
             if !feature.properties.contains_key("AxisOrigin")
                 && !feature.properties.contains_key("AxisDirection")
             {
-                ctx.charge_collection_items(2, "insert SLDPRT revolution axis properties")?;
                 let origin = crate::text_admission::format_retained(
                     ctx,
                     format_args!(
@@ -1227,12 +1211,18 @@ pub(crate) fn enrich_history_revolution_inputs(
                     ),
                     "retain SLDPRT revolution axis direction",
                 )?;
-                feature
-                    .properties
-                    .insert(cadmpeg_core::nonblank_literal!("AxisOrigin"), origin);
-                feature
-                    .properties
-                    .insert(cadmpeg_core::nonblank_literal!("AxisDirection"), direction);
+                ctx.insert_btree_map(
+                    &mut feature.properties,
+                    cadmpeg_core::nonblank_literal!("AxisOrigin"),
+                    origin,
+                    "insert SLDPRT revolution axis properties",
+                )?;
+                ctx.insert_btree_map(
+                    &mut feature.properties,
+                    cadmpeg_core::nonblank_literal!("AxisDirection"),
+                    direction,
+                    "insert SLDPRT revolution axis properties",
+                )?;
             }
         }
     }
@@ -1251,43 +1241,32 @@ pub(crate) fn bind_profile_revolution_axes(
     let mut native_by_id = HashMap::new();
     for feature in histories.iter().flat_map(|history| &history.features) {
         ctx.charge_work(1, "index SLDPRT native revolution features")?;
-        if !native_by_id.contains_key(feature.id.as_str()) {
-            ctx.charge_collection_items(1, "index SLDPRT native revolution features")?;
-            native_by_id.try_reserve(1).map_err(|_| {
-                ctx.refuse_codec_limit(
-                    "index SLDPRT native revolution features",
-                    u64::MAX - 1,
-                    u64::MAX,
-                )
-            })?;
-        }
-        native_by_id.insert(feature.id.as_str(), feature);
+        ctx.insert_hash_map(
+            &mut native_by_id,
+            feature.id.as_str(),
+            feature,
+            "index SLDPRT native revolution features",
+        )?;
     }
     let mut model_by_id = HashMap::new();
     for (index, feature) in model_features.iter().enumerate() {
         ctx.charge_work(1, "index SLDPRT model revolution features")?;
-        if !model_by_id.contains_key(&feature.id) {
-            ctx.charge_collection_items(1, "index SLDPRT model revolution features")?;
-            model_by_id.try_reserve(1).map_err(|_| {
-                ctx.refuse_codec_limit(
-                    "index SLDPRT model revolution features",
-                    u64::MAX - 1,
-                    u64::MAX,
-                )
-            })?;
-        }
-        model_by_id.insert(&feature.id, index);
+        ctx.insert_hash_map(
+            &mut model_by_id,
+            &feature.id,
+            index,
+            "index SLDPRT model revolution features",
+        )?;
     }
     let mut sketch_by_id = HashMap::new();
     for sketch in sketches {
         ctx.charge_work(1, "index SLDPRT revolution sketches")?;
-        if !sketch_by_id.contains_key(&sketch.id) {
-            ctx.charge_collection_items(1, "index SLDPRT revolution sketches")?;
-            sketch_by_id.try_reserve(1).map_err(|_| {
-                ctx.refuse_codec_limit("index SLDPRT revolution sketches", u64::MAX - 1, u64::MAX)
-            })?;
-        }
-        sketch_by_id.insert(&sketch.id, sketch);
+        ctx.insert_hash_map(
+            &mut sketch_by_id,
+            &sketch.id,
+            sketch,
+            "index SLDPRT revolution sketches",
+        )?;
     }
     let mut assignments = Vec::<(usize, cadmpeg_ir::features::RevolutionAxis)>::new();
 
@@ -1531,8 +1510,8 @@ fn profile_roster_construction_axis(
             QUANTUM,
         ))?;
         Some(Point2::new(
-            point.0 as f64 * QUANTUM,
-            point.1 as f64 * QUANTUM,
+            f64_from_i64(point.0)? * QUANTUM,
+            f64_from_i64(point.1)? * QUANTUM,
         ))
     };
     let (Some(start), Some(end)) = (project(native_start), project(native_end)) else {
@@ -1636,12 +1615,11 @@ fn profile_generated_surface_axis(
             if endpoint_ids.contains(endpoint.id()) {
                 continue;
             }
-            let operation = "index SLDPRT generated revolution axis endpoints";
-            ctx.charge_collection_items(1, operation)?;
-            endpoint_ids
-                .try_reserve(1)
-                .map_err(|_| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
-            endpoint_ids.insert(endpoint.id());
+            ctx.insert_hash_set(
+                &mut endpoint_ids,
+                endpoint.id(),
+                "index SLDPRT generated revolution axis endpoints",
+            )?;
             let Some(coordinates) = endpoint.coordinates_m else {
                 return Ok(None);
             };
@@ -1652,16 +1630,14 @@ fn profile_generated_surface_axis(
             )) else {
                 return Ok(None);
             };
+            let (Some(u_cells), Some(v_cells)) = (f64_from_i64(point.0), f64_from_i64(point.1))
+            else {
+                return Ok(None);
+            };
             let point = Point3::new(
-                origin.x
-                    + point.0 as f64 * QUANTUM * u_axis.x
-                    + point.1 as f64 * QUANTUM * v_axis.x,
-                origin.y
-                    + point.0 as f64 * QUANTUM * u_axis.y
-                    + point.1 as f64 * QUANTUM * v_axis.y,
-                origin.z
-                    + point.0 as f64 * QUANTUM * u_axis.z
-                    + point.1 as f64 * QUANTUM * v_axis.z,
+                origin.x + u_cells * QUANTUM * u_axis.x + v_cells * QUANTUM * v_axis.x,
+                origin.y + u_cells * QUANTUM * u_axis.y + v_cells * QUANTUM * v_axis.y,
+                origin.z + u_cells * QUANTUM * u_axis.z + v_cells * QUANTUM * v_axis.z,
             );
             let relative = Vector3::new(
                 point.x - axis.origin.x,
@@ -1762,11 +1738,11 @@ fn profile_curve_endpoint_ids<'a>(
             if (indexed_only && endpoint.object_index().is_none()) || ids.contains(endpoint.id()) {
                 continue;
             }
-            let operation = "index SLDPRT profile curve endpoints";
-            ctx.charge_collection_items(1, operation)?;
-            ids.try_reserve(1)
-                .map_err(|_| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
-            ids.insert(endpoint.id());
+            ctx.insert_hash_set(
+                &mut ids,
+                endpoint.id(),
+                "index SLDPRT profile curve endpoints",
+            )?;
         }
     }
     Ok(ids)

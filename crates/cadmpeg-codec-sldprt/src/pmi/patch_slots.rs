@@ -160,7 +160,8 @@ impl<'a> IntegerPatchSlot<'a> {
                 if !(-32..=127).contains(&value) {
                     return Err(invalid());
                 }
-                *byte = value as u8;
+                *byte =
+                    u8::from_be_bytes(i8::try_from(value).map_err(|_| invalid())?.to_be_bytes());
             }
             IntegerEncoding::U8(bytes) => write!(bytes, u8),
             IntegerEncoding::U16(bytes) => write!(bytes, u16),

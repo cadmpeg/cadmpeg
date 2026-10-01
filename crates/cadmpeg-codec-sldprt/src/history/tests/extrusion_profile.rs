@@ -596,13 +596,13 @@ fn decode_projects_feature_input_extrusion_operations() {
         payload.extend(std::iter::repeat_n(0, padding));
         if direct_class {
             payload.extend_from_slice(&[0xff, 0xff, 0x01, 0x00]);
-            payload.extend_from_slice(&(class_name.len() as u16).to_le_bytes());
+            payload.extend_from_slice(&u16::try_from(class_name.len()).unwrap().to_le_bytes());
             payload.extend_from_slice(class_name.as_bytes());
         } else {
             payload.extend_from_slice(&0x84d8u16.to_le_bytes());
         }
         payload.extend_from_slice(&[0x04, 0x80, 0xff, 0xfe, 0xff]);
-        payload.push(name.encode_utf16().count() as u8);
+        payload.push(u8::try_from(name.encode_utf16().count()).unwrap());
         for unit in name.encode_utf16() {
             payload.extend_from_slice(&unit.to_le_bytes());
         }

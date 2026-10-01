@@ -178,7 +178,7 @@ fn encoder_writes_source_less_datum_features() {
         ir.model.features.push(Feature {
             id: FeatureId::mint(format!("synthetic:test:feature#datum-{ordinal}"))
                 .expect("identity grammar"),
-            ordinal: ordinal as u64,
+            ordinal: cadmpeg_core::decode::u64_from_index(ordinal),
             name: Some(format!("Datum {ordinal}")),
             suppressed: Some(false),
             dependencies: cadmpeg_ir::features::DistinctMembers::default(),
@@ -409,7 +409,13 @@ fn encoder_partitions_source_less_bodies_by_configuration() {
     for (index, body) in ir.model.bodies.iter_mut().enumerate() {
         body.transform = Some(
             Transform::affine([
-                [1.0, 0.0, 0.0, (index as f64 + 1.0) * 10.0],
+                [
+                    1.0,
+                    0.0,
+                    0.0,
+                    (cadmpeg_core::convert::f64_from_index(index).expect("index is exact") + 1.0)
+                        * 10.0,
+                ],
                 [0.0, 1.0, 0.0, 0.0],
                 [0.0, 0.0, 1.0, 0.0],
             ])
@@ -447,7 +453,7 @@ fn encoder_partitions_source_less_bodies_by_configuration() {
         .map(|(index, body)| DesignConfiguration {
             id: ConfigurationId::mint(format!("synthetic:test:configuration#config-{index}"))
                 .expect("identity grammar"),
-            ordinal: index as u32,
+            ordinal: u32::try_from(index).expect("index fits u32"),
             active: false,
             source_index: None,
             name: format!("Config {index}").into(),

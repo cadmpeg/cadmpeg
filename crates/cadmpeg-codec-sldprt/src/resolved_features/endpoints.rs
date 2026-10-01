@@ -386,7 +386,7 @@ fn extended_tagged_indexed_curve_record_ends(payload: &[u8], offset: usize) -> b
             .get(offset + 353..offset + 357)
             .is_some_and(|identity| identity != [0; 4] && identity != [0xff; 4])
         && payload.get(offset + 357..offset + 359) == Some(&5u16.to_le_bytes())
-        && class_declaration_at(payload, offset.saturating_add(359))
+        && offset.checked_add(359).is_some_and(|at| class_declaration_at(payload, at))
 }
 
 pub(super) fn roster_curve_endpoint_markers<'a>(
@@ -760,7 +760,7 @@ fn extended_terminal_84_construction_line_endpoint_markers<'a>(
         || payload.get(offset + 72..offset + 80)
             != Some(&[0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00])
         || payload.get(offset + 80..offset + 84) != Some(&[0xff; 4])
-        || !sketch_marker_prefix_at(payload, offset.saturating_add(84))
+        || !offset.checked_add(84).is_some_and(|at| sketch_marker_prefix_at(payload, at))
     {
         return Ok(Vec::new());
     }
@@ -863,7 +863,7 @@ fn extended_geometry_locus_terminal_curve(payload: &[u8], offset: usize) -> bool
         && payload.get(offset + 60..offset + 64) == Some(&1u32.to_le_bytes())
         && payload.get(offset + 64..offset + 72) == Some(&(-1.0f64).to_le_bytes())
         && payload.get(offset + 72..offset + 102) == Some(&[0; 30])
-        && !sketch_marker_prefix_at(payload, offset.saturating_add(102))
+        && !offset.checked_add(102).is_some_and(|at| sketch_marker_prefix_at(payload, at))
 }
 
 fn extended_compact_endpoint_markers<'a>(
@@ -909,7 +909,7 @@ fn extended_compact_endpoint_markers<'a>(
         ) || payload.get(offset + 60..offset + 64) == Some(&1u32.to_le_bytes())
             && payload.get(offset + 64..offset + 72) == Some(&(-1.0f64).to_le_bytes())
             && payload.get(offset + 72..offset + 102) == Some(&[0; 30])
-            && !sketch_marker_prefix_at(payload, offset.saturating_add(102)))
+            && !offset.checked_add(102).is_some_and(|at| sketch_marker_prefix_at(payload, at)))
     {
         return Ok(Vec::new());
     }
@@ -1020,7 +1020,7 @@ fn legacy_compact_direct_endpoint_markers<'a>(
         || marker_native_code(payload, offset) != Some(2)
         || payload.get(offset + 23..offset + 27) != Some(&[0x04, 0x00, 0x02, 0x00])
         || compact_indexed_curve_endpoint_indices(payload, offset).is_none()
-        || !sketch_marker_prefix_at(payload, offset.saturating_add(84))
+        || !offset.checked_add(84).is_some_and(|at| sketch_marker_prefix_at(payload, at))
     {
         return Ok(Vec::new());
     }
@@ -2025,7 +2025,7 @@ fn same_index_radius_relation_curve_endpoint_markers<'a>(
 fn current_identity_linked_wide_curve_uses_one_based_roster(payload: &[u8], offset: usize) -> bool {
     payload.get(offset..offset + SKETCH_MARKER.len()) == Some(SKETCH_MARKER)
         && wide_indexed_curve_endpoint_indices(payload, offset).is_some()
-        && sketch_marker_prefix_at(payload, offset.saturating_add(92))
+        && offset.checked_add(92).is_some_and(|at| sketch_marker_prefix_at(payload, at))
         && payload
             .get(offset + 88..offset + 92)
             .is_some_and(|identity| identity != [0; 4] && identity != [0xff; 4])
@@ -2086,10 +2086,7 @@ fn reserve_point_solver_map<T>(
     if values.len() == values.capacity() {
         charge_endpoint_work(ctx, values.len(), 8, POINT_SOLVER_OPERATION)?;
     }
-    ctx.charge_collection_items(1, POINT_SOLVER_OPERATION)?;
-    values
-        .try_reserve(1)
-        .map_err(|_| ctx.refuse_codec_limit(POINT_SOLVER_OPERATION, u64::MAX - 1, u64::MAX))
+    ctx.reserve_map(values, 1, POINT_SOLVER_OPERATION)
 }
 
 fn insert_point_solver_index(
@@ -2104,10 +2101,7 @@ fn insert_point_solver_index(
     if values.len() == values.capacity() {
         charge_endpoint_work(ctx, values.len(), 8, POINT_SOLVER_OPERATION)?;
     }
-    ctx.charge_collection_items(1, POINT_SOLVER_OPERATION)?;
-    values
-        .try_reserve(1)
-        .map_err(|_| ctx.refuse_codec_limit(POINT_SOLVER_OPERATION, u64::MAX - 1, u64::MAX))?;
+    ctx.reserve_set(values, 1, POINT_SOLVER_OPERATION)?;
     Ok(values.insert(index))
 }
 
@@ -2817,12 +2811,12 @@ pub(super) fn coordinate_roster_arc_center(
         let current_wide = payload.get(offset..offset + SKETCH_MARKER.len()) == Some(SKETCH_MARKER)
             && marker_native_code(payload, offset) == Some(2)
             && wide_indexed_curve_endpoint_indices(payload, offset).is_some()
-            && sketch_marker_prefix_at(payload, offset.saturating_add(92));
+            && offset.checked_add(92).is_some_and(|at| sketch_marker_prefix_at(payload, at));
         let extended_wide = payload.get(offset..offset + LEGACY_EXTENDED_SKETCH_MARKER.len())
             == Some(LEGACY_EXTENDED_SKETCH_MARKER)
             && marker_native_code(payload, offset) == Some(2)
             && wide_indexed_curve_endpoint_indices(payload, offset).is_some()
-            && sketch_marker_prefix_at(payload, offset.saturating_add(92));
+            && offset.checked_add(92).is_some_and(|at| sketch_marker_prefix_at(payload, at));
         let extended_compact_104 = extended_compact_104_indexed_arc(payload, offset);
         let extended_profile_terminal = extended_profile_terminal_102_indexed_arc(payload, offset);
         let extended_geometry_104 = extended_geometry_104_indexed_arc(payload, offset);
@@ -4142,7 +4136,7 @@ pub(super) fn legacy_profile_radial_circle(
             })
             && sketch_marker_prefix_at(payload, offset.checked_add(112)?);
         let terminal_end = payload.get(offset + 104..offset + 128) == Some(&[0; 24])
-            && !sketch_marker_prefix_at(payload, offset.saturating_add(112));
+            && !offset.checked_add(112).is_some_and(|at| sketch_marker_prefix_at(payload, at));
         if circle.kind() != SketchInputKind::LineOrCircle
             || payload.get(offset..offset + LEGACY_SKETCH_MARKER.len())
                 != Some(LEGACY_SKETCH_MARKER)
@@ -4373,7 +4367,7 @@ fn extended_wide_repeated_circle_record(payload: &[u8], offset: usize) -> bool {
     let referenced = payload.get(offset + 102..offset + 104) == Some(&[0; 2])
         && View::u16_le_at(payload, offset + 84).is_some_and(|state| state != 0)
         && matches!(identities, [Some(first), Some(second)] if first != 0 && first != u32::MAX && second != 0 && second != u32::MAX)
-        && sketch_marker_prefix_at(payload, offset.saturating_add(112));
+        && offset.checked_add(112).is_some_and(|at| sketch_marker_prefix_at(payload, at));
     let terminal = extended_terminal_wide_repeated_circle_record(payload, offset);
     common && (referenced || terminal)
 }
@@ -4381,9 +4375,9 @@ fn extended_wide_repeated_circle_record(payload: &[u8], offset: usize) -> bool {
 fn extended_terminal_wide_repeated_circle_record(payload: &[u8], offset: usize) -> bool {
     (payload.get(offset + 102..offset + 134) == Some(&[0; 32])
         && payload.get(offset + 134..offset + 136) == Some(&[0x04, 0x00])
-        && class_declaration_at(payload, offset.saturating_add(136)))
+        && offset.checked_add(136).is_some_and(|at| class_declaration_at(payload, at)))
         || (payload.get(offset + 102..offset + 128) == Some(&[0; 26])
-            && class_declaration_at(payload, offset.saturating_add(128)))
+            && offset.checked_add(128).is_some_and(|at| class_declaration_at(payload, at)))
 }
 
 fn charge_endpoint_work(
@@ -4483,14 +4477,12 @@ fn reserve_endpoint_identity_map<T>(
 ) -> Result<(), CodecError> {
     charge_endpoint_work(ctx, key.len(), 4, operation)?;
     if !map.contains_key(key) {
-        ctx.charge_collection_items(1, operation)?;
         if map.len() == map.capacity() {
             for key in map.keys() {
                 charge_endpoint_work(ctx, key.len(), 4, operation)?;
             }
         }
-        map.try_reserve(1)
-            .map_err(|_| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
+        ctx.reserve_map(map, 1, operation)?;
     }
     Ok(())
 }
@@ -4716,7 +4708,7 @@ fn extended_marker84_line_uses_point_roster(payload: &[u8], offset: usize) -> bo
         && payload
             .get(offset + 80..offset + 84)
             .is_some_and(|identity| identity != [0; 4] && identity != [0xff; 4])
-        && sketch_marker_prefix_at(payload, offset.saturating_add(84))
+        && offset.checked_add(84).is_some_and(|at| sketch_marker_prefix_at(payload, at))
 }
 
 fn extended_state_one_84_profile_line_uses_point_roster(payload: &[u8], offset: usize) -> bool {
@@ -4792,7 +4784,7 @@ fn extended_compact_84_profile_line_uses_point_roster(payload: &[u8], offset: us
         && payload
             .get(offset + 80..offset + 84)
             .is_some_and(|identity| identity != [0; 4] && identity != [0xff; 4])
-        && sketch_marker_prefix_at(payload, offset.saturating_add(84))
+        && offset.checked_add(84).is_some_and(|at| sketch_marker_prefix_at(payload, at))
 }
 
 fn legacy_compact_84_profile_line_uses_point_roster(payload: &[u8], offset: usize) -> bool {
@@ -4826,7 +4818,7 @@ fn legacy_compact_84_profile_line_uses_point_roster(payload: &[u8], offset: usiz
         && payload
             .get(offset + 80..offset + 84)
             .is_some_and(|identity| identity != [0; 4] && identity != [0xff; 4])
-        && sketch_marker_prefix_at(payload, offset.saturating_add(84))
+        && offset.checked_add(84).is_some_and(|at| sketch_marker_prefix_at(payload, at))
 }
 
 pub(super) fn legacy_terminal_profile_endpoint_offset(
@@ -4853,7 +4845,7 @@ pub(super) fn legacy_terminal_profile_endpoint_offset(
             && payload
                 .get(offset + state_offset + 4..offset + end)
                 .is_some_and(|trailer| trailer.chunks_exact(4).all(|cell| cell != [0xff; 4]))
-            && sketch_marker_prefix_at(payload, offset.saturating_add(end)))
+            && offset.checked_add(end).is_some_and(|at| sketch_marker_prefix_at(payload, at)))
         .then_some(endpoint_offset)
     };
     if payload.get(offset + 56..offset + 64) == Some(&[0; 8]) {
@@ -4881,7 +4873,7 @@ pub(super) fn legacy_unlocated_geometry_handle(payload: &[u8], offset: usize) ->
             && payload.get(offset + sentinel_offset..offset + sentinel_offset + 4)
                 == Some(&[0xfe, 0xff, 0xff, 0xff])
             && payload.get(offset + sentinel_offset + 4..offset + end - 4) == Some(&[0; 42])
-            && sketch_marker_prefix_at(payload, offset.saturating_add(end))
+            && offset.checked_add(end).is_some_and(|at| sketch_marker_prefix_at(payload, at))
     };
     payload.get(offset + 56..offset + 64) == Some(&[0; 8]) && layout(64, 92, 142)
         || layout(56, 84, 134)
@@ -5082,7 +5074,9 @@ fn compact_legacy_96_profile_roster_curve_uses_complete_roster(
         ) == Some(&legacy_96_roster::ZERO_TAIL_IDENTITY_VALUE.to_le_bytes())
         && payload.get(offset + legacy_96_roster::ONE_TAIL_IDENTITY..offset + legacy_96_roster::LEN)
             == Some(&legacy_96_roster::ONE_TAIL_IDENTITY_VALUE.to_le_bytes())
-        && sketch_marker_prefix_at(payload, offset.saturating_add(legacy_96_roster::LEN))
+        && offset
+            .checked_add(legacy_96_roster::LEN)
+            .is_some_and(|at| sketch_marker_prefix_at(payload, at))
 }
 
 fn packed_legacy_curve_endpoint_indices(payload: &[u8], offset: usize) -> Option<[u32; 2]> {
@@ -5742,7 +5736,7 @@ fn legacy_state_five_curve_endpoint_offset(payload: &[u8], offset: usize) -> Opt
                     && second != u32::MAX
                     && first != second
         )
-        && sketch_marker_prefix_at(payload, offset.saturating_add(84));
+        && offset.checked_add(84).is_some_and(|at| sketch_marker_prefix_at(payload, at));
     if identity_trailer {
         Some(56)
     } else if payload.get(offset + 60..offset + 64) == Some(&0u32.to_le_bytes())
@@ -5816,7 +5810,7 @@ fn extended_compact_104_indexed_arc(payload: &[u8], offset: usize) -> bool {
     let geometry_selector = marker_is_geometry_locus(payload, offset)
         && payload.get(offset + 35..offset + 39) == Some(&[0x00, 0x00, 0x05, 0x00]);
     extended_compact_indexed_arc_header(payload, offset, profile_selector || geometry_selector)
-        && sketch_marker_prefix_at(payload, offset.saturating_add(104))
+        && offset.checked_add(104).is_some_and(|at| sketch_marker_prefix_at(payload, at))
 }
 
 fn extended_profile_terminal_102_indexed_arc(payload: &[u8], offset: usize) -> bool {
@@ -5830,10 +5824,9 @@ fn extended_profile_terminal_102_indexed_arc(payload: &[u8], offset: usize) -> b
     ) && payload
         .get(offset + profile_arc_terminal_102::ZERO_TAIL..offset + profile_arc_terminal_102::LEN)
         == Some(&[0; 8])
-        && !sketch_marker_prefix_at(
-            payload,
-            offset.saturating_add(profile_arc_terminal_102::LEN),
-        )
+        && !offset
+            .checked_add(profile_arc_terminal_102::LEN)
+            .is_some_and(|at| sketch_marker_prefix_at(payload, at))
 }
 
 fn extended_compact_indexed_arc_header(
@@ -5897,7 +5890,7 @@ fn extended_geometry_indexed_arc_header(payload: &[u8], offset: usize) -> bool {
 
 fn extended_geometry_104_indexed_arc(payload: &[u8], offset: usize) -> bool {
     extended_geometry_indexed_arc_header(payload, offset)
-        && sketch_marker_prefix_at(payload, offset.saturating_add(104))
+        && offset.checked_add(104).is_some_and(|at| sketch_marker_prefix_at(payload, at))
 }
 
 fn extended_geometry_116_indexed_arc(payload: &[u8], offset: usize) -> bool {
@@ -5907,7 +5900,7 @@ fn extended_geometry_116_indexed_arc(payload: &[u8], offset: usize) -> bool {
         && payload.get(offset + 106..offset + 112) == Some(&[0; 6])
         && View::u32_le_at(payload, offset + 112)
             .is_some_and(|identity| !matches!(identity, 0 | u32::MAX))
-        && sketch_marker_prefix_at(payload, offset.saturating_add(116))
+        && offset.checked_add(116).is_some_and(|at| sketch_marker_prefix_at(payload, at))
 }
 
 pub(super) fn indexed_arc_uses_coordinate_center(payload: &[u8], offset: usize) -> bool {
@@ -5942,7 +5935,7 @@ pub(super) fn indexed_arc_uses_coordinate_center(payload: &[u8], offset: usize) 
         && payload
             .get(offset + 80..offset + 84)
             .is_some_and(|identity| identity != [0; 4] && identity != [0xff; 4])
-        && sketch_marker_prefix_at(payload, offset.saturating_add(84));
+        && offset.checked_add(84).is_some_and(|at| sketch_marker_prefix_at(payload, at));
     let extended_compact = extended_compact_104_indexed_arc(payload, offset);
     let extended_profile_terminal = extended_profile_terminal_102_indexed_arc(payload, offset);
     let extended_geometry = extended_geometry_104_indexed_arc(payload, offset)
@@ -5950,12 +5943,12 @@ pub(super) fn indexed_arc_uses_coordinate_center(payload: &[u8], offset: usize) 
     let current_wide = payload.get(offset..offset + SKETCH_MARKER.len()) == Some(SKETCH_MARKER)
         && marker_native_code(payload, offset) == Some(2)
         && wide_indexed_curve_endpoint_indices(payload, offset).is_some()
-        && sketch_marker_prefix_at(payload, offset.saturating_add(92));
+        && offset.checked_add(92).is_some_and(|at| sketch_marker_prefix_at(payload, at));
     let extended_wide = payload.get(offset..offset + LEGACY_EXTENDED_SKETCH_MARKER.len())
         == Some(LEGACY_EXTENDED_SKETCH_MARKER)
         && marker_native_code(payload, offset) == Some(2)
         && wide_indexed_curve_endpoint_indices(payload, offset).is_some()
-        && sketch_marker_prefix_at(payload, offset.saturating_add(92));
+        && offset.checked_add(92).is_some_and(|at| sketch_marker_prefix_at(payload, at));
     current_compact_84
         || extended_compact_84
         || extended_compact
@@ -5971,7 +5964,7 @@ pub(super) fn current_indexed_arc_reverses_center_sweep(payload: &[u8], offset: 
         && marker_native_code(payload, offset) == Some(2)
         && wide_indexed_curve_endpoint_indices(payload, offset).is_some()
         && payload.get(offset + 80..offset + 84) == Some(&[0x00, 0x00, 0x02, 0x00])
-        && sketch_marker_prefix_at(payload, offset.saturating_add(92))
+        && offset.checked_add(92).is_some_and(|at| sketch_marker_prefix_at(payload, at))
 }
 
 pub(super) fn unique_arc_center_marker(
@@ -6266,7 +6259,7 @@ fn compact_legacy_curve_endpoint_indices_for_code(
     let terminal_record = payload.get(offset + 58..offset + 104) == Some(&[0; 46])
         && View::u16_le_at(payload, offset + 104)
             .is_some_and(|selector| selector != 0 && selector != u16::MAX)
-        && class_declaration_at(payload, offset.saturating_add(106));
+        && offset.checked_add(106).is_some_and(|at| class_declaration_at(payload, at));
     if !compact_legacy_marker_body(payload, offset)
         || marker_native_code(payload, offset) != Some(code)
         || marker_profile_curve_role(payload, offset) != Some(1)
@@ -6643,13 +6636,13 @@ pub(super) fn compact_indexed_curve_record_end(
     payload: &[u8],
     offset: usize,
 ) -> Option<CompactIndexedCurveRecordEnd> {
-    if sketch_marker_prefix_at(payload, offset.saturating_add(84)) {
+    if offset.checked_add(84).is_some_and(|at| sketch_marker_prefix_at(payload, at)) {
         return Some(CompactIndexedCurveRecordEnd::Marker84);
     }
     let terminal_116 = payload.get(offset + 60..offset + 64) == Some(&[0; 4])
         && payload.get(offset + 64..offset + 72) == Some(&(-1.0f64).to_le_bytes())
         && payload.get(offset + 72..offset + 116) == Some(&[0; 44])
-        && !sketch_marker_prefix_at(payload, offset.saturating_add(116));
+        && !offset.checked_add(116).is_some_and(|at| sketch_marker_prefix_at(payload, at));
     if terminal_116 {
         return Some(CompactIndexedCurveRecordEnd::Terminal116);
     }
@@ -6671,7 +6664,9 @@ pub(super) fn compact_indexed_curve_record_end(
         && payload.get(offset + 64..offset + 72) == Some(&(-1.0f64).to_le_bytes())
         && payload.get(offset + 72..offset + 120) == Some(&[0; 48])
         && continuation_kind.is_some_and(|kind| kind != 0 && kind != u16::MAX)
-        && (class_declaration_at(payload, offset.saturating_add(122)) || relation_continuation);
+        && (offset
+            .checked_add(122)
+            .is_some_and(|at| class_declaration_at(payload, at)) || relation_continuation);
     if continuation_120 {
         return Some(CompactIndexedCurveRecordEnd::Continuation120);
     }
@@ -6713,7 +6708,7 @@ pub(super) fn compact_indexed_curve_record_end(
             .is_some_and(|state| !matches!(state, [0, 0] | [0xff, 0xff]))
         && payload.get(offset + 84..offset + 88) == Some(&[0; 4])
         && payload.get(offset + 92..offset + 96) == Some(&1u32.to_le_bytes())
-        && sketch_marker_prefix_at(payload, offset.saturating_add(96));
+        && offset.checked_add(96).is_some_and(|at| sketch_marker_prefix_at(payload, at));
     let selector = View::i32_le_at(payload, offset + 72);
     let reference_sentinel = payload.get(offset + 78..offset + 94)
         == Some(&[
@@ -6723,11 +6718,11 @@ pub(super) fn compact_indexed_curve_record_end(
     let compact_104 = matches!(selector, Some(-1 | 1))
         && reference_sentinel
         && payload.get(offset + 94..offset + 96) == Some(&[0; 2])
-        && sketch_marker_prefix_at(payload, offset.saturating_add(104));
+        && offset.checked_add(104).is_some_and(|at| sketch_marker_prefix_at(payload, at));
     let terminal_102 = matches!(selector, Some(-1 | 1))
         && reference_sentinel
         && payload.get(offset + 94..offset + 102) == Some(&[0; 8])
-        && !sketch_marker_prefix_at(payload, offset.saturating_add(102));
+        && !offset.checked_add(102).is_some_and(|at| sketch_marker_prefix_at(payload, at));
     if compact_96 {
         Some(CompactIndexedCurveRecordEnd::Marker96)
     } else if compact_104 {
@@ -6766,16 +6761,17 @@ pub(super) fn terminal_relation_class_offset(payload: &[u8], offset: usize) -> O
             ])
         && payload.get(offset + 102..offset + 134) == Some(&[0; 32])
         && payload.get(offset + 134..offset + 136) == Some(&3u16.to_le_bytes())
-        && class_declaration_at(payload, offset.saturating_add(136));
+        && offset.checked_add(136).is_some_and(|at| class_declaration_at(payload, at));
     if current_terminal {
         return offset.checked_add(136);
     }
 
+    let end = offset.checked_add(122)?;
     (matches!(
         compact_indexed_curve_record_end(payload, offset),
         Some(CompactIndexedCurveRecordEnd::Continuation120)
-    ) && class_declaration_at(payload, offset.saturating_add(122)))
-    .then(|| offset.saturating_add(122))
+    ) && class_declaration_at(payload, end))
+    .then_some(end)
 }
 
 pub(super) fn wide_indexed_curve_endpoint_indices(
@@ -6861,7 +6857,9 @@ pub(super) fn legacy_wide_profile_roster_curve(payload: &[u8], offset: usize) ->
             offset + legacy_wide_104_roster::NEXT_OBJECT_INDEX
                 ..offset + legacy_wide_104_roster::LEN,
         ) == Some(&1u32.to_le_bytes())
-        && sketch_marker_prefix_at(payload, offset.saturating_add(legacy_wide_104_roster::LEN));
+        && offset
+            .checked_add(legacy_wide_104_roster::LEN)
+            .is_some_and(|at| sketch_marker_prefix_at(payload, at));
     let long = payload
         .get(
             offset + legacy_wide_112_roster::TRAILER_SELECTOR
@@ -6893,7 +6891,9 @@ pub(super) fn legacy_wide_profile_roster_curve(payload: &[u8], offset: usize) ->
             [Some(first), Some(second)]
                 if first != u32::MAX && second != u32::MAX && first != second
         )
-        && sketch_marker_prefix_at(payload, offset.saturating_add(legacy_wide_112_roster::LEN));
+        && offset
+            .checked_add(legacy_wide_112_roster::LEN)
+            .is_some_and(|at| sketch_marker_prefix_at(payload, at));
     short || long
 }
 
@@ -6909,7 +6909,7 @@ fn current_extended_wide_curve_body(payload: &[u8], offset: usize) -> bool {
 }
 
 fn wide_indexed_curve_record_ends_at(payload: &[u8], offset: usize, prefix: &[u8]) -> bool {
-    if sketch_marker_prefix_at(payload, offset.saturating_add(92)) {
+    if offset.checked_add(92).is_some_and(|at| sketch_marker_prefix_at(payload, at)) {
         return true;
     }
     if prefix == LEGACY_SKETCH_MARKER && payload.get(offset + 80..offset + 128) == Some(&[0; 48]) {
@@ -6918,7 +6918,7 @@ fn wide_indexed_curve_record_ends_at(payload: &[u8], offset: usize, prefix: &[u8
     if prefix == LEGACY_EXTENDED_SKETCH_MARKER
         && payload.get(offset + 80..offset + 128) == Some(&[0; 48])
         && payload.get(offset + 128..offset + 130) == Some(&[0x0a, 0x00])
-        && class_declaration_at(payload, offset.saturating_add(130))
+        && offset.checked_add(130).is_some_and(|at| class_declaration_at(payload, at))
     {
         return true;
     }
@@ -6929,7 +6929,7 @@ fn wide_indexed_curve_record_ends_at(payload: &[u8], offset: usize, prefix: &[u8
         && payload.get(offset + 92..offset + 96) == Some(&[0x00, 0x00, 0x01, 0x00])
         && payload.get(offset + 96..offset + 100) == Some(&[0; 4])
         && payload.get(offset + 100..offset + 104) == Some(&1u32.to_le_bytes())
-        && sketch_marker_prefix_at(payload, offset.saturating_add(104))
+        && offset.checked_add(104).is_some_and(|at| sketch_marker_prefix_at(payload, at))
     {
         return true;
     }
@@ -6956,7 +6956,7 @@ fn wide_indexed_curve_record_ends_at(payload: &[u8], offset: usize, prefix: &[u8
             ])
         && payload.get(offset + 102..offset + 104) == Some(&[0; 2])
         && matches!(identities, [Some(first), Some(second)] if first != u32::MAX && second != u32::MAX && first != second)
-        && sketch_marker_prefix_at(payload, offset.saturating_add(112));
+        && offset.checked_add(112).is_some_and(|at| sketch_marker_prefix_at(payload, at));
     referenced || legacy_terminal_wide_indexed_curve(payload, offset)
 }
 
@@ -6979,7 +6979,7 @@ fn legacy_terminal_wide_indexed_curve(payload: &[u8], offset: usize) -> bool {
             ])
         && payload.get(offset + 102..offset + 136) == Some(&[0; 34])
         && payload.get(offset + 136..offset + 138) == Some(&[0x05, 0x00])
-        && class_declaration_at(payload, offset.saturating_add(138))
+        && offset.checked_add(138).is_some_and(|at| class_declaration_at(payload, at))
 }
 
 fn class_declaration_at(payload: &[u8], offset: usize) -> bool {
@@ -7092,7 +7092,7 @@ fn legacy_compact_92_profile_line(payload: &[u8], offset: usize) -> bool {
         && payload.get(offset + 72..offset + 80) == Some(&(-1.0f64).to_le_bytes())
         && payload.get(offset + 80..offset + 84) == Some(&[0; 4])
         && (payload.get(offset + 84..offset + 92) == Some(&[0; 8]) || identity(84) && identity(88))
-        && (sketch_marker_prefix_at(payload, offset.saturating_add(92))
+        && (offset.checked_add(92).is_some_and(|at| sketch_marker_prefix_at(payload, at))
             || payload.get(offset + 80..offset + 128) == Some(&[0; 48]))
 }
 
@@ -7444,7 +7444,7 @@ pub(super) fn current_compact_roster_selected_axis(payload: &[u8], offset: usize
             payload.get(offset + 72..offset + 76),
             Some([0x00, 0x00, 0x00 | 0x02, 0x00])
         )
-        || !sketch_marker_prefix_at(payload, offset.saturating_add(84))
+        || !offset.checked_add(84).is_some_and(|at| sketch_marker_prefix_at(payload, at))
     {
         return false;
     }
