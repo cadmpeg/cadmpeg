@@ -2303,10 +2303,10 @@ pub(crate) fn parse_payloads(
 ) -> Result<Vec<ShapePayloadRecord>, CodecError> {
     let mut entries_by_name = BTreeMap::new();
     for entry in entries {
-        if !entries_by_name.contains_key(entry.name.as_str()) {
+        if !entries_by_name.contains_key(entry.name()) {
             ctx.charge_collection_items(1, "FreeCAD shape entry index")?;
         }
-        entries_by_name.insert(entry.name.as_str(), entry);
+        entries_by_name.insert(entry.name(), entry);
     }
     let mut payloads = Vec::new();
     for property in properties
@@ -2322,23 +2322,23 @@ pub(crate) fn parse_payloads(
                 "FreeCAD missing shape entry",
             )?));
         };
-        let payload = if entry.data.is_empty() {
+        let payload = if entry.data().is_empty() {
             ShapePayload::Empty
         } else if name
             .rsplit_once('.')
             .is_some_and(|(_, extension)| extension.eq_ignore_ascii_case("bin"))
         {
-            let (facts, version) = parse_binary_prefix(ctx, &entry.data)?;
+            let (facts, version) = parse_binary_prefix(ctx, entry.data())?;
             ShapePayload::Binary { facts, version }
         } else {
-            let (facts, version) = parse_text(ctx, &entry.data)?;
+            let (facts, version) = parse_text(ctx, entry.data())?;
             ShapePayload::Text { facts, version }
         };
         ctx.reserve_vec(&mut payloads, 1, "FreeCAD shape payload records")?;
         payloads.push(ShapePayloadRecord {
             id: crate::native::native_child_id_charged(ctx, "shape-payload", &property.id, &name)?,
             property: ctx.copy_retained_text(&property.id, "FreeCAD shape payload property")?,
-            entry: ctx.copy_retained_text(&entry.id, "FreeCAD shape payload entry")?,
+            entry: ctx.copy_retained_text(entry.id(), "FreeCAD shape payload entry")?,
             payload,
         });
     }

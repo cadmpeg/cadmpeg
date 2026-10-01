@@ -52,11 +52,11 @@ fn write_seekable(
     validate_entry_names(&entries)?;
     let source_document = entries
         .iter()
-        .find(|entry| entry.name == "Document.xml")
+        .find(|entry| entry.name() == "Document.xml")
         .ok_or_else(|| {
             CodecError::Malformed("FCStd native graph has no Document.xml entry".into())
         })?;
-    let document_xml = patch_document(&source_document.data, &properties)?;
+    let document_xml = patch_document(source_document.data(), &properties)?;
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let policy = cadmpeg_core::decode::DecodePolicy::default();
     let (ctx, _) =
@@ -72,7 +72,7 @@ fn write_seekable(
     validate_properties(&properties, &written_graph.properties)?;
     for property in &written_graph.properties {
         for entry in property.side_entries() {
-            if !entries.iter().any(|candidate| candidate.name == *entry) {
+            if !entries.iter().any(|candidate| candidate.name() == *entry) {
                 return Err(CodecError::malformed(format_args!(
                     "edited property {} references missing side entry {entry}",
                     property.id
@@ -87,19 +87,19 @@ fn write_seekable(
             .compression_method(zip::CompressionMethod::Deflated)
             .last_modified_time(zip::DateTime::default());
         entries.sort_by(|left, right| {
-            (left.name != "Document.xml", left.name.as_str())
-                .cmp(&(right.name != "Document.xml", right.name.as_str()))
+            (left.name() != "Document.xml", left.name())
+                .cmp(&(right.name() != "Document.xml", right.name()))
         });
         for entry in &entries {
             archive
-                .start_file(&entry.name, file_options)
+                .start_file(entry.name(), file_options)
                 .map_err(|error| {
-                    std::io::Error::other(format!("cannot write {}: {error}", entry.name))
+                    std::io::Error::other(format!("cannot write {}: {error}", entry.name()))
                 })?;
-            archive.write_all(if entry.name == "Document.xml" {
+            archive.write_all(if entry.name() == "Document.xml" {
                 &document_xml
             } else {
-                &entry.data
+                entry.data()
             })?;
         }
         archive.finish().map_err(|error| {
@@ -131,16 +131,10 @@ struct WriteOutcome {
 fn validate_entry_names(entries: &[EntryRecord]) -> Result<(), CodecError> {
     let mut names = HashSet::new();
     for entry in entries {
-        if !crate::native::is_safe_entry_name(&entry.name) {
-            return Err(CodecError::NotImplemented(format!(
-                "unsafe FCStd output entry name {:?}",
-                entry.name
-            )));
-        }
-        if !names.insert(entry.name.as_str()) {
+        if !names.insert(entry.name()) {
             return Err(CodecError::NotImplemented(format!(
                 "duplicate FCStd output entry {}",
-                entry.name
+                entry.name()
             )));
         }
     }

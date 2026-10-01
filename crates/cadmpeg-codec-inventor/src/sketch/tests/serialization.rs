@@ -21,10 +21,7 @@ fn point_tail_borrowed_wire_refuses_retained_limit_before_clone() {
         associations: PmDcReferenceList::new(
             8,
             Some(PmDcListMetadata::U16([1, 2])),
-            vec![PmDcReference {
-                index: 3,
-                qualified: false,
-            }],
+            vec![PmDcReference::new(3, false).expect("test reference index fits 31 bits")],
         )
         .expect("paired point associations"),
     };
@@ -52,10 +49,7 @@ fn point_tail_borrowed_wire_refuses_retained_limit_before_clone() {
 
 #[test]
 fn transform_payload_streams_flat_matrix_under_retained_limit() {
-    let reference = PmDcReference {
-        index: 3,
-        qualified: false,
-    };
+    let reference = PmDcReference::new(3, false).expect("test reference index fits 31 bits");
     let transform = PmDcTransformPayload {
         save_version_major: 16,
         header: PmDcContentHeader {

@@ -1615,7 +1615,7 @@ fn rejected_placement_digest_records_its_source_and_keeps_later_placements() {
         .expect("service admission")
         .is_none());
     assert_eq!(issues.len(), 1);
-    assert_eq!(issues[0].segment_token, "segment");
+    assert_eq!(issues[0].segment_token.as_str(), "segment");
     assert_eq!(issues[0].record_ordinal, 1);
     assert!(issues[0].detail.contains("suffix_sha256"));
     let mut wire = wire;

@@ -30,10 +30,7 @@ fn pmdc_reference_list_refuses_retained_limit_before_clone() {
     let list = PmDcReferenceList::new(
         8,
         Some(PmDcListMetadata::U16([1, 2])),
-        vec![PmDcReference {
-            index: 7,
-            qualified: false,
-        }],
+        vec![PmDcReference::new(7, false).expect("test reference index fits 31 bits")],
     )
     .expect("paired reference list");
     let wire = PmDcReferenceListWire::from(list.clone());
@@ -42,7 +39,7 @@ fn pmdc_reference_list_refuses_retained_limit_before_clone() {
 
 #[test]
 fn pmdc_integer_list_refuses_retained_limit_before_clone() {
-    let list = PmDcU32List::new(8, Some(PmDcListMetadata::U32([1, 2])), vec![7, 9])
+    let list = PmDcU32List::new(2, Some(PmDcListMetadata::U32([1, 2])), vec![7, 9])
         .expect("paired integer list");
     let wire = PmDcU32ListWire::from(list.clone());
     assert_borrowed_wire("inventor:pmdc:integers#1", &list, wire);
@@ -53,10 +50,7 @@ fn pmdc_paired_map_refuses_retained_limit_before_clone() {
     let map = PmDcPairedMap::new(
         Some([1, 2]),
         vec![(
-            PmDcReference {
-                index: 7,
-                qualified: false,
-            },
+            PmDcReference::new(7, false).expect("test reference index fits 31 bits"),
             9_u32,
         )],
     )
