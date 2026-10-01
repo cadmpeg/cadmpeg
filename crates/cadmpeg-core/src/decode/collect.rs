@@ -64,11 +64,31 @@ impl DecodeContext<'_> {
         count: usize,
         operation: &'static str,
     ) -> Result<(), CodecError> {
-        let bytes = count
-            .checked_mul(std::mem::size_of::<T>())
-            .ok_or_else(|| self.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
-        self.charge_retained(u64_from_index(bytes), operation)?;
-        self.reserve_vec(values, count, operation)
+        self.reserve_retained_vec_limit(values, count, operation).map_err(Into::into)
+    }
+
+    pub(crate) fn reserve_retained_vec_limit<T>(
+        &self,
+        values: &mut Vec<T>,
+        count: usize,
+        operation: &'static str,
+    ) -> Result<(), ResourceLimit> {
+        let bytes = count.checked_mul(std::mem::size_of::<T>()).ok_or(ResourceLimit {
+            dimension: ResourceDimension::RetainedBytes,
+            reason: super::ResourceFailure::BudgetExceeded,
+            limit: self.policy().limits.max_retained_bytes,
+            used: 0,
+            additional: u64::MAX,
+            operation,
+        })?;
+        self.charge_retained_limit(u64_from_index(bytes), operation)?;
+        self.charge_collection_items_limit(u64_from_index(count), operation)?;
+        values.try_reserve(count).map_err(|_| ResourceLimit::allocation_failed(
+            ResourceDimension::CollectionItems,
+            self.policy().limits.max_collection_items,
+            u64_from_index(count),
+            operation,
+        ))
     }
 
     /// Appends a value after admitting its slot and retained element storage.

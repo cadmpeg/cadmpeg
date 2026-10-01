@@ -3339,7 +3339,7 @@ pub(crate) fn decode_archive_member<'a>(
     decode_scanned_document(
         ctx,
         scan,
-        crate::report::ReportScope::ArchiveMember(dialects.try_clone_for_decode(ctx)?),
+        crate::report::ReportScope::ArchiveMember(dialects.try_clone_for_decode(ctx, "copy dialect layers")?),
     )
 }
 

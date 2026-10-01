@@ -153,7 +153,7 @@ pub(crate) fn classify_layers(
     );
     let host = NxDialect::of_container(&scan.container);
     let mut layers = DialectLayers::of(host.matched(scan.container.layout.version()));
-    let losses = cadmpeg_parasolid::push_extras(&mut layers, extra)
+    let losses = cadmpeg_parasolid::push_extras(ctx, &mut layers, extra)?
         .into_iter()
         .map(|message| NxLossCode::DialectLayerCollision.note(message))
         .collect();

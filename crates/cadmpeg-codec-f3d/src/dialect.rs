@@ -193,11 +193,15 @@ pub(crate) fn classify_layers(
     ctx: &DecodeContext<'_>,
     scan: &crate::container::ContainerScan<'_>,
 ) -> Result<(DialectLayers, Vec<LossNote>), CodecError> {
-    let primary = scan.kind.dialect().try_clone_for_decode(ctx)?;
+    let primary = scan.kind.dialect().try_clone_for_decode(ctx, "copy dialect layers")?;
     let mut layers = DialectLayers::of(primary);
     let mut losses = Vec::new();
     let mut add_layer = |layer: DialectMatch| -> Result<(), CodecError> {
-        if let Err(rejected) = layers.insert_charged(ctx, layer, "collect F3D dialect layers")? {
+        if let Err(rejected) = match layers.insert_for_decode(ctx, layer, "collect F3D dialect layers") {
+            Ok(()) => Ok(()),
+            Err(cadmpeg_core::dialect::DialectLayerError::Duplicate(layer)) => Err(layer),
+            Err(cadmpeg_core::dialect::DialectLayerError::ResourceLimit(limit)) => return Err(limit.into()),
+        } {
             ctx.reserve_vec(&mut losses, 1, "collect F3D dialect collision losses")?;
             let format = rejected.format();
             let instance = rejected.instance().unwrap_or("unidentified");

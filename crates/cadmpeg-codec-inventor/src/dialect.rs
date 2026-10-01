@@ -611,35 +611,13 @@ pub(crate) fn layers(
     primary: &DialectMatch,
     carrier: &ActiveCarrierState<'_>,
 ) -> Result<DialectLayers, CodecError> {
-    ctx.charge_collection_items(
-        cadmpeg_core::decode::u64_from_index(primary.declared().len()),
-        "copy Inventor primary dialect declarations",
-    )?;
-    for value in primary.declared().values() {
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(value.len()),
-            "copy Inventor primary dialect value",
-        )?;
-    }
-    if let Some(instance) = primary.instance() {
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(instance.len()),
-            "copy Inventor primary dialect instance",
-        )?;
-    }
-    if let cadmpeg_core::dialect::Admission::Unverified { using } = primary.admission() {
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(using.as_str().len()),
-            "copy Inventor primary dialect grammar",
-        )?;
-    }
-    let mut layers = DialectLayers::of(primary.clone());
+    let mut layers = DialectLayers::of(primary.try_clone_for_decode(ctx, "copy Inventor primary dialect")?);
     if let Some(kernel) = kernel_layer_for_state(ctx, carrier)? {
-        ctx.charge_collection_items(1, "collect Inventor kernel dialect layer")?;
-        layers.insert(kernel).map_err(|rejected| {
-            CodecError::malformed(format_args!(
+        layers.insert_for_decode(ctx, kernel, "collect Inventor kernel dialect layer").map_err(|error| match error {
+            cadmpeg_core::dialect::DialectLayerError::Duplicate(rejected) => CodecError::malformed(format_args!(
                 "duplicate Inventor dialect layer: {rejected:?}"
-            ))
+            )),
+            cadmpeg_core::dialect::DialectLayerError::ResourceLimit(limit) => limit.into(),
         })?;
     }
     Ok(layers)

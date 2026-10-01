@@ -201,7 +201,7 @@ pub(crate) fn classify_layers(
     let mut layers = DialectLayers::of(host.matched(ctx, declaration)?);
     let extra = cadmpeg_parasolid::extra_layers(kernels, &VERIFIED_KERNELS);
     let mut losses = Vec::new();
-    for message in cadmpeg_parasolid::push_extras(&mut layers, extra) {
+    for message in cadmpeg_parasolid::push_extras(ctx, &mut layers, extra)? {
         ctx.reserve_collection_vec(&mut losses, 1, "collect SLDPRT dialect collision losses")?;
         losses.push(SldprtLossCode::DialectLayerCollision.note(message));
     }
