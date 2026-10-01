@@ -109,7 +109,10 @@ impl From<TargetRefusal> for CodecError {
 /// that refuses the whole property set reports it as a malformed container.
 impl From<crate::text::NamedEntryError> for CodecError {
     fn from(refused: crate::text::NamedEntryError) -> Self {
-        Self::malformed(refused)
+        match refused {
+            crate::text::NamedEntryError::ResourceRefusal(limit) => Self::ResourceLimit(limit),
+            refused => Self::malformed(refused),
+        }
     }
 }
 

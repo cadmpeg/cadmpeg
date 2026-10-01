@@ -379,7 +379,7 @@ pub(super) fn emit_model_features(
                                     "creo native Feature kind",
                                 )?
                                 .into(),
-                            parameters: cadmpeg_core::text::named_entries_checked(
+                            parameters: cadmpeg_core::text::named_entries_for_decode(
                                 ctx,
                                 format_args!("creo:model:feature#{}", operation.feature_id),
                                 std::mem::take(&mut parameters),
@@ -481,7 +481,7 @@ pub(super) fn emit_model_features(
             merge_feature_source_properties(
                 ctx,
                 &mut existing.source_properties,
-                cadmpeg_core::text::named_entries_checked(
+                cadmpeg_core::text::named_entries_for_decode(
                     ctx,
                     format_args!("creo:model:feature#{}", operation.feature_id),
                     source_properties,
@@ -536,7 +536,7 @@ pub(super) fn emit_model_features(
             suppressed: Some(false),
             dependencies: DistinctMembers::try_from_unique_vec(dependencies)
                 .map_err(cadmpeg_core::CodecError::malformed)?,
-            source_properties: cadmpeg_core::text::named_entries_checked(
+            source_properties: cadmpeg_core::text::named_entries_for_decode(
                 ctx,
                 format_args!("creo:model:feature#{}", operation.feature_id),
                 source_properties,
@@ -611,7 +611,7 @@ pub(super) fn emit_model_features(
                     kind: ctx
                         .copy_retained_text(kind, "creo native row Feature kind")?
                         .into(),
-                    parameters: cadmpeg_core::text::named_entries_checked(
+                    parameters: cadmpeg_core::text::named_entries_for_decode(
                         ctx,
                         format_args!("creo:model:feature#{feature_id}"),
                         std::mem::take(&mut parameters),
@@ -672,7 +672,7 @@ pub(super) fn emit_model_features(
                 &prototype_feature_dependencies,
             )?)
             .map_err(cadmpeg_core::CodecError::malformed)?,
-            source_properties: cadmpeg_core::text::named_entries_checked(
+            source_properties: cadmpeg_core::text::named_entries_for_decode(
                 ctx,
                 format_args!("creo:model:feature#{feature_id}"),
                 source_properties,

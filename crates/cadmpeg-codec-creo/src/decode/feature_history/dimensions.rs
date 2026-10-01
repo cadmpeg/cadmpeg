@@ -536,7 +536,7 @@ pub(in super::super) fn transfer_feature_dimensions(
                 display: feature_dimension_display(dimension.dimension_type),
                 value,
                 dependencies: cadmpeg_ir::features::DistinctMembers::default(),
-                properties: cadmpeg_core::text::named_entries_checked(
+                properties: cadmpeg_core::text::named_entries_for_decode(
                     ctx,
                     id.as_str(),
                     properties,
