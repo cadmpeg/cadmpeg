@@ -148,12 +148,13 @@ fn parasolid_schema_evidence_emits_a_kernel_layer() {
 fn residual_parasolid_schema_charges_a_strict_dialect_loss() {
     let host = SldprtDialect::classify(Some("13100"));
     let kernel = cadmpeg_parasolid::classify_layer(
-        &cadmpeg_parasolid::OwnedSchemaToken::try_from("SCH_TEST_1_9999")
+        &cadmpeg_test_support::service_decode_context(),
+        cadmpeg_parasolid::OwnedSchemaToken::try_from("SCH_TEST_1_9999")
             .expect("the fixture text is a schema token"),
-        &cadmpeg_parasolid::Carrier::new("block@7:body+3".to_owned()),
+        cadmpeg_parasolid::Carrier::new("block@7:body+3".to_owned()),
         cadmpeg_core::dialect::LayerInstance::Sole,
         &VERIFIED_KERNELS,
-    );
+    ).expect("kernel classification fits policy");
     let layers = DialectLayers::of(host)
         .with(kernel.into_matched())
         .expect("distinct dialect layer keys");

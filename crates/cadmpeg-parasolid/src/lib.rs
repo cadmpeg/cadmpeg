@@ -7,6 +7,8 @@
 
 use std::collections::BTreeMap;
 
+use cadmpeg_core::decode::{DecodeContext, u64_from_index};
+use cadmpeg_core::CodecError;
 use cadmpeg_core::dialect::{Admission, DialectId, DialectLayers, DialectMatch, LayerInstance};
 
 include!("registry_ids.rs");
@@ -198,38 +200,39 @@ fn schema_row(schema: &str) -> DialectId {
 /// declarations, independent of whether the schema has a named registry row.
 /// `verified` lists the rows whose grammar the host applied and verified; every
 /// other row, and the residual row, is admitted without verification.
-#[must_use]
 pub fn classify_layer(
-    schema: &OwnedSchemaToken,
-    carrier: &Carrier,
+    ctx: &DecodeContext<'_>,
+    schema: OwnedSchemaToken,
+    carrier: Carrier,
     instance: LayerInstance,
     verified: &[DialectId],
-) -> ClassifiedLayer {
+) -> Result<ClassifiedLayer, CodecError> {
+    let work = u64_from_index(schema.value().len()).checked_mul(3)
+        .and_then(|work| work.checked_add(u64_from_index(verified.len())))
+        .ok_or_else(|| ctx.refuse_codec_limit("Parasolid classification work", u64::MAX, u64::MAX))?;
+    ctx.charge_work(work, "classify Parasolid schema")?;
     let id = schema_row(schema.value());
-    let declared = BTreeMap::from([
-        (
-            cadmpeg_core::nonblank_literal!("schema"),
-            schema.value().to_owned(),
-        ),
-        (
-            cadmpeg_core::nonblank_literal!("carrier"),
-            carrier.as_str().to_owned(),
-        ),
-    ]);
+    let mut declared = BTreeMap::new();
+    let schema_key = ctx.format_retained_with_work(format_args!("schema"), "retain Parasolid declaration key")?;
+    let schema_key = cadmpeg_core::text::NonBlankString::new(schema_key)
+        .ok_or_else(|| CodecError::malformed("empty Parasolid schema declaration key"))?;
+    ctx.insert_btree_map(&mut declared, schema_key, schema.0, "collect Parasolid declarations")?;
+    let carrier_key = ctx.format_retained_with_work(format_args!("carrier"), "retain Parasolid declaration key")?;
+    let carrier_key = cadmpeg_core::text::NonBlankString::new(carrier_key)
+        .ok_or_else(|| CodecError::malformed("empty Parasolid carrier declaration key"))?;
+    let carrier_text = ctx.format_retained_with_work(format_args!("{carrier}"), "retain Parasolid carrier declaration")?;
+    ctx.insert_btree_map(&mut declared, carrier_key, carrier_text, "collect Parasolid declarations")?;
     let matched = if verified.contains(&id) {
         DialectMatch::admitted(id)
     } else {
         DialectMatch::residual(id)
-    }
-    .with_declared(declared);
+    }.with_declared(declared);
     let matched = match instance {
         LayerInstance::Sole => matched,
-        LayerInstance::Tagged => matched.with_instance(carrier.as_str()),
+        LayerInstance::Tagged => matched.with_instance(
+            ctx.format_retained_with_work(format_args!("{carrier}"), "retain Parasolid layer instance")?),
     };
-    ClassifiedLayer {
-        matched,
-        carrier: carrier.clone(),
-    }
+    Ok(ClassifiedLayer { matched, carrier })
 }
 
 /// One classified Parasolid layer and the carrier it was read from.
@@ -267,20 +270,18 @@ impl ClassifiedLayer {
 /// A lone layer needs no instance. Several layers use their carrier paths as
 /// stable instance keys, so hosts cannot disagree about when identity needs a
 /// disambiguator.
-#[must_use]
 pub fn extra_layers(
+    ctx: &DecodeContext<'_>,
     streams: Vec<(OwnedSchemaToken, Carrier)>,
     verified: &[DialectId],
-) -> Vec<ClassifiedLayer> {
-    let instance = if streams.len() > 1 {
-        LayerInstance::Tagged
-    } else {
-        LayerInstance::Sole
-    };
-    streams
-        .into_iter()
-        .map(|(schema, carrier)| classify_layer(&schema, &carrier, instance, verified))
-        .collect()
+) -> Result<Vec<ClassifiedLayer>, CodecError> {
+    let instance = if streams.len() > 1 { LayerInstance::Tagged } else { LayerInstance::Sole };
+    ctx.charge_work(u64_from_index(streams.len()), "scan Parasolid schema carriers")?;
+    let mut layers = ctx.retained_vec(streams.len(), "collect Parasolid classified layers")?;
+    for (schema, carrier) in streams {
+        layers.push(classify_layer(ctx, schema, carrier, instance, verified)?);
+    }
+    Ok(layers)
 }
 
 /// Adds classified Parasolid layers and reports every uniqueness collision.
@@ -289,21 +290,30 @@ pub fn extra_layers(
 /// operation and its explanation so NX and SLDPRT cannot describe the same
 /// Parasolid collision differently.
 pub fn push_extras(
+    ctx: &DecodeContext<'_>,
     layers: &mut DialectLayers,
     extras: impl IntoIterator<Item = ClassifiedLayer>,
-) -> Vec<String> {
+) -> Result<Vec<String>, CodecError> {
     let mut collisions = Vec::new();
-    for layer in extras {
-        let format = layer.matched().format().to_owned();
-        let carrier = layer.carrier().clone();
-        if layers.insert(layer.into_matched()).is_err() {
-            collisions.push(format!(
+    for ClassifiedLayer { matched, carrier } in extras {
+        let count = u64_from_index(layers.iter().size_hint().0);
+        let key_bytes = u64_from_index(matched.format().len()).checked_add(
+            u64_from_index(matched.instance().map_or(0, str::len)))
+            .ok_or_else(|| ctx.refuse_codec_limit("Parasolid layer comparison work", u64::MAX, u64::MAX))?;
+        let work = count.checked_mul(key_bytes.checked_add(1).ok_or_else(||
+            ctx.refuse_codec_limit("Parasolid layer comparison work", u64::MAX, u64::MAX))?)
+            .ok_or_else(|| ctx.refuse_codec_limit("Parasolid layer comparison work", u64::MAX, u64::MAX))?;
+        ctx.charge_work(work, "compare Parasolid layer keys")?;
+        if let Err(rejected) = layers.insert_charged(ctx, matched, "collect Parasolid dialect layers")? {
+            let format = rejected.format();
+            let message = ctx.format_retained_with_work(format_args!(
                 "the container produced a duplicate {format} dialect layer at carrier {carrier}; \
                  the later classification was omitted"
-            ));
+            ), "retain Parasolid collision message")?;
+            ctx.push_retained_vec(&mut collisions, message, "collect Parasolid collision messages")?;
         }
     }
-    collisions
+    Ok(collisions)
 }
 
 /// Explain why a Parasolid layer was admitted without verification.
@@ -311,15 +321,14 @@ pub fn push_extras(
 /// Host codecs own their loss vocabulary. This helper owns the interpretation
 /// of the declarations produced by [`classify_layer`], so every host wraps the
 /// same kernel fact in its codec-specific loss code.
-#[must_use]
-pub fn unverified_message(matched: &DialectMatch) -> Option<String> {
+pub fn unverified_message(ctx: &DecodeContext<'_>, matched: &DialectMatch) -> Result<Option<String>, CodecError> {
     if matched.format() != FORMAT
         || !matches!(
             matched.admission(),
             Admission::Unverified { .. } | Admission::Residual
         )
     {
-        return None;
+        return Ok(None);
     }
 
     let schema = matched
@@ -331,20 +340,20 @@ pub fn unverified_message(matched: &DialectMatch) -> Option<String> {
         .get(DECLARED_CARRIER)
         .map_or("<unrecorded>", String::as_str);
     if matched.dialect() == &PARASOLID_UNKNOWN {
-        return Some(format!(
+        return Ok(Some(ctx.format_retained_with_work(format_args!(
             "The Parasolid stream at {carrier} declares schema {schema:?}, which has no declared \
              grammar. It was admitted as the `{}` residual layer without substituting another \
              schema grammar; bounded structural recovery retains the source stream.",
             matched.dialect()
-        ));
+        ), "retain Parasolid unverified message")?));
     }
-    Some(format!(
+    Ok(Some(ctx.format_retained_with_work(format_args!(
         "The Parasolid stream at {carrier} declares schema {schema:?}, which maps to the named \
          `{}` row, but the host did not verify that row's schema grammar. It was admitted \
          without substituting another schema grammar; bounded structural recovery retains the \
          source stream.",
         matched.dialect()
-    ))
+    ), "retain Parasolid unverified message")?))
 }
 
 #[cfg(test)]
@@ -372,6 +381,70 @@ mod tests {
 
     fn carrier(text: &str) -> Carrier {
         Carrier::new(text.to_owned())
+    }
+
+    #[test]
+    fn parasolid_classification_admits_copies_and_declarations() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        use cadmpeg_core::CodecError;
+
+        for dimension in [ResourceDimension::RetainedBytes, ResourceDimension::CollectionItems, ResourceDimension::WorkUnits] {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            match dimension {
+                ResourceDimension::RetainedBytes => policy.limits.max_retained_bytes = 0,
+                ResourceDimension::CollectionItems => policy.limits.max_collection_items = 0,
+                ResourceDimension::WorkUnits => policy.limits.max_work_units = 0,
+                _ => unreachable!(),
+            }
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+            let error = classify_layer(&ctx, token("SCH_TEST"), carrier("stream@12"), LayerInstance::Sole, &[])
+                .expect_err("classification uses caller limits");
+            assert!(matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == dimension));
+        }
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = 13 + 9;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+        let error = classify_layer(&ctx, token("SCH_TEST"), carrier("stream@12"), LayerInstance::Tagged, &[])
+            .expect_err("instance copy has no remaining bytes");
+        assert!(matches!(error, CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::RetainedBytes && limit.operation == "retain Parasolid layer instance"));
+    }
+
+    #[test]
+    fn parasolid_extra_layers_admit_output_vector_storage() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        use cadmpeg_core::CodecError;
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+        let error = extra_layers(&ctx, vec![(token("SCH_TEST"), carrier("stream@12"))], &[])
+            .expect_err("classified vector needs retained storage");
+        assert!(matches!(error, CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::RetainedBytes && limit.operation == "collect Parasolid classified layers"));
+    }
+
+    #[test]
+    fn parasolid_diagnostic_copies_use_the_caller_context() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        use cadmpeg_core::CodecError;
+        let service = cadmpeg_test_support::service_decode_context();
+        let first = classify_layer(&service, token("SCH_TEST"), carrier("stream@12"), LayerInstance::Tagged, &[]).unwrap();
+        let later = first.clone();
+        let mut layers = DialectLayers::of(first.into_matched());
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+        let error = push_extras(&ctx, &mut layers, [later.clone()]).expect_err("collision message needs bytes");
+        assert!(matches!(error, CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::RetainedBytes && limit.operation == "retain Parasolid collision message"));
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("fresh empty root");
+        let error = unverified_message(&ctx, later.matched()).expect_err("unverified message needs bytes");
+        assert!(matches!(error, CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::RetainedBytes && limit.operation == "retain Parasolid unverified message"));
     }
 
     #[test]
@@ -408,17 +481,19 @@ mod tests {
 
     #[test]
     fn named_schemas_and_the_format_suffix_map_to_their_rows_case_insensitively() {
+        let ctx = cadmpeg_test_support::service_decode_context();
         for (schema, expected) in [
             ("SCH_sw_33103_11000", "parasolid:sch-sw-33103"),
             ("SCH_Sw_32001_11000", "parasolid:sch-sw-32001"),
             ("SCH_3201255_32001_13006", "parasolid:format-13006"),
         ] {
             let matched = classify_layer(
-                &token(schema),
-                &carrier("stream@12"),
+                &ctx,
+                token(schema),
+                carrier("stream@12"),
                 LayerInstance::Sole,
                 &ALL_ROWS,
-            );
+            ).expect("classification fits policy");
             assert_eq!(matched.matched().dialect().as_str(), expected);
             assert_eq!(matched.matched().admission(), &Admission::Admitted);
             assert_eq!(matched.matched().declared()[DECLARED_SCHEMA], schema);
@@ -429,12 +504,14 @@ mod tests {
 
     #[test]
     fn residual_schemas_use_residual_admission_without_a_substitution() {
+        let ctx = cadmpeg_test_support::service_decode_context();
         let matched = classify_layer(
-            &token("SCH_TEST_1_9999"),
-            &carrier("block@7:body+3"),
+                &ctx,
+            token("SCH_TEST_1_9999"),
+            carrier("block@7:body+3"),
             LayerInstance::Tagged,
             &ALL_ROWS,
-        );
+        ).expect("classification fits policy");
 
         assert_eq!(matched.matched().dialect().as_str(), "parasolid:unknown");
         assert_eq!(matched.matched().admission(), &Admission::Residual);
@@ -448,49 +525,55 @@ mod tests {
         );
         assert_eq!(matched.matched().instance(), Some("block@7:body+3"));
         let message =
-            unverified_message(matched.matched()).expect("residual layer explains its recovery");
+            unverified_message(&ctx, matched.matched()).expect("message fits policy").expect("residual layer explains its recovery");
         assert!(message.contains("SCH_TEST_1_9999"));
         assert!(message.contains("block@7:body+3"));
     }
 
     #[test]
     fn several_layers_receive_carrier_instances() {
+        let ctx = cadmpeg_test_support::service_decode_context();
         let layers = extra_layers(
+            &ctx,
             vec![
                 (token("SCH_SW_33103_11000"), carrier("stream@12")),
                 (token("SCH_TEST_1_9999"), carrier("stream@48")),
             ],
             &ALL_ROWS,
-        );
+        ).expect("classification fits policy");
         assert_eq!(layers[0].matched().instance(), Some("stream@12"));
         assert_eq!(layers[1].matched().instance(), Some("stream@48"));
 
         let one = extra_layers(
+            &ctx,
             vec![(token("SCH_SW_33103_11000"), carrier("stream@12"))],
             &ALL_ROWS,
-        );
+        ).expect("classification fits policy");
         assert_eq!(one[0].matched().instance(), None);
     }
 
     #[test]
     fn push_extras_preserves_the_first_layer_and_reports_later_collisions() {
+        let ctx = cadmpeg_test_support::service_decode_context();
         let mut layers = DialectLayers::of(DialectMatch::admitted(
             DialectId::parse("nx:splmsstr").expect("valid host dialect id"),
         ));
         let first = classify_layer(
-            &token("SCH_SW_33103_11000"),
-            &carrier("stream@12"),
+                &ctx,
+            token("SCH_SW_33103_11000"),
+            carrier("stream@12"),
             LayerInstance::Tagged,
             &[],
-        );
+        ).expect("classification fits policy");
         let later = classify_layer(
-            &token("SCH_SW_32001_11000"),
-            &carrier("stream@12"),
+                &ctx,
+            token("SCH_SW_32001_11000"),
+            carrier("stream@12"),
             LayerInstance::Tagged,
             &[],
-        );
+        ).expect("classification fits policy");
 
-        let collisions = push_extras(&mut layers, [first.clone(), later]);
+        let collisions = push_extras(&ctx, &mut layers, [first.clone(), later]).expect("layers fit policy");
 
         assert_eq!(layers.iter().skip(1).collect::<Vec<_>>(), [first.matched()]);
         assert_eq!(
@@ -504,6 +587,7 @@ mod tests {
 
     #[test]
     fn every_parasolid_registry_row_is_produced() {
+        let ctx = cadmpeg_test_support::service_decode_context();
         let ids: BTreeSet<_> = [
             "SCH_SW_33103_11000",
             "SCH_SW_32001_11000",
@@ -512,11 +596,12 @@ mod tests {
         ]
         .map(|schema| {
             classify_layer(
-                &token(schema),
-                &carrier("carrier"),
+                &ctx,
+                token(schema),
+                carrier("carrier"),
                 LayerInstance::Sole,
                 &ALL_ROWS,
-            )
+            ).expect("classification fits policy")
             .matched()
             .dialect()
             .to_string()
@@ -531,12 +616,14 @@ mod tests {
 
     #[test]
     fn a_known_row_can_be_identified_without_claiming_host_verification() {
+        let ctx = cadmpeg_test_support::service_decode_context();
         let matched = classify_layer(
-            &token("SCH_3501171_35102_13006"),
-            &carrier("stream@12"),
+                &ctx,
+            token("SCH_3501171_35102_13006"),
+            carrier("stream@12"),
             LayerInstance::Sole,
             &[PARASOLID_SCH_SW_33103],
-        );
+        ).expect("classification fits policy");
 
         assert_eq!(
             matched.matched().dialect().as_str(),
@@ -544,7 +631,7 @@ mod tests {
         );
         assert_eq!(matched.matched().admission(), &Admission::Residual);
         let message =
-            unverified_message(matched.matched()).expect("unverified row explains its admission");
+            unverified_message(&ctx, matched.matched()).expect("message fits policy").expect("unverified row explains its admission");
         assert!(message.contains("host did not verify"));
         assert!(message.contains("parasolid:format-13006"));
     }
