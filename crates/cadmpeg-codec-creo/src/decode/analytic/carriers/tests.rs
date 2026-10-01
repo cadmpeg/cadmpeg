@@ -174,13 +174,10 @@ fn topology_bound_curve_input() -> (crate::container::ContainerScan<'static>, Ca
             next_edges: [11, 0],
             offset: 20,
         });
-    scan.topology.loops.push(crate::topology::Loop {
-        face_id: std::num::NonZeroU32::new(5),
-        half_edges: vec![crate::topology::HalfEdgeId {
+    scan.topology.loops.push(crate::test_support::closed_loop(std::num::NonZeroU32::new(5), vec![crate::topology::HalfEdgeId {
             curve_id: 11,
             side: crate::topology::Side::Zero,
-        }],
-    });
+        }]));
     let mut ir = CadIr::empty();
     ir.model.curves.push(Curve {
         id: CurveId::mint("creo:visibgeom:curve#11").expect("identity grammar"),
@@ -596,24 +593,18 @@ fn placed_carriers_rejects_duplicate_rowless_model_surface_ids() {
 
 #[test]
 fn loop_classifier_rejects_inner_edge_crossing_concave_outer() {
-    let outer = crate::topology::Loop {
-        face_id: std::num::NonZeroU32::new(5),
-        half_edges: (0..8)
+    let outer = crate::test_support::closed_loop(std::num::NonZeroU32::new(5), (0..8)
             .map(|index| crate::topology::HalfEdgeId {
                 curve_id: 10 + index,
                 side: crate::topology::Side::Zero,
             })
-            .collect(),
-    };
-    let inner = crate::topology::Loop {
-        face_id: std::num::NonZeroU32::new(5),
-        half_edges: (0..3)
+            .collect());
+    let inner = crate::test_support::closed_loop(std::num::NonZeroU32::new(5), (0..3)
             .map(|index| crate::topology::HalfEdgeId {
                 curve_id: 20 + index,
                 side: crate::topology::Side::Zero,
             })
-            .collect(),
-    };
+            .collect());
     let vertices = [
         (1, [0.0, 0.0, 0.0]),
         (2, [6.0, 0.0, 0.0]),
@@ -627,12 +618,11 @@ fn loop_classifier_rejects_inner_edge_crossing_concave_outer() {
         (10, [5.0, 0.5, 0.0]),
         (11, [5.0, 5.5, 0.0]),
     ];
-    let bindings = outer
-        .half_edges
+    let bindings = outer.half_edges()
         .iter()
         .copied()
         .zip(1..=8)
-        .chain(inner.half_edges.iter().copied().zip(9..=11))
+        .chain(inner.half_edges().iter().copied().zip(9..=11))
         .map(
             |(half_edge, start_vertex_id)| crate::topology::HalfEdgeVertexIncidence {
                 half_edge,
@@ -664,23 +654,19 @@ fn loop_classifier_rejects_inner_edge_crossing_concave_outer() {
 }
 
 fn planar_polygon_collection_error(limit: u64, two_loops: bool) -> CodecError {
-    let make_loop = |base: u32| crate::topology::Loop {
-        face_id: std::num::NonZeroU32::new(5),
-        half_edges: (0..3)
+    let make_loop = |base: u32| crate::test_support::closed_loop(std::num::NonZeroU32::new(5), (0..3)
             .map(|index| crate::topology::HalfEdgeId {
                 curve_id: base + index,
                 side: crate::topology::Side::Zero,
             })
-            .collect(),
-    };
+            .collect());
     let outer = make_loop(10);
     let inner = make_loop(20);
-    let bindings = outer
-        .half_edges
+    let bindings = outer.half_edges()
         .iter()
         .copied()
         .zip(1..=3)
-        .chain(inner.half_edges.iter().copied().zip(4..=6))
+        .chain(inner.half_edges().iter().copied().zip(4..=6))
         .map(
             |(half_edge, start_vertex_id)| crate::topology::HalfEdgeVertexIncidence {
                 half_edge,
@@ -742,24 +728,18 @@ fn ordered_planar_face_loops_refuses_polygon_collection() {
 
 #[test]
 fn parameter_loop_classifier_orders_unique_outer() {
-    let outer = crate::topology::Loop {
-        face_id: std::num::NonZeroU32::new(5),
-        half_edges: (0..4)
+    let outer = crate::test_support::closed_loop(std::num::NonZeroU32::new(5), (0..4)
             .map(|index| crate::topology::HalfEdgeId {
                 curve_id: 10 + index,
                 side: crate::topology::Side::Zero,
             })
-            .collect(),
-    };
-    let inner = crate::topology::Loop {
-        face_id: std::num::NonZeroU32::new(5),
-        half_edges: (0..4)
+            .collect());
+    let inner = crate::test_support::closed_loop(std::num::NonZeroU32::new(5), (0..4)
             .map(|index| crate::topology::HalfEdgeId {
                 curve_id: 20 + index,
                 side: crate::topology::Side::Zero,
             })
-            .collect(),
-    };
+            .collect());
     let outer_polygon = vec![[-2.0, -2.0], [2.0, -2.0], [2.0, 2.0], [-2.0, 2.0]];
     let inner_polygon = vec![[-1.0, -1.0], [1.0, -1.0], [1.0, 1.0], [-1.0, 1.0]];
 
@@ -772,8 +752,8 @@ fn parameter_loop_classifier_orders_unique_outer() {
     })
     .expect("service parameter loop ordering")
     .expect("one parameter-space outer loop");
-    assert_eq!(ordered[0].half_edges[0].curve_id, 10);
-    assert_eq!(ordered[1].half_edges[0].curve_id, 20);
+    assert_eq!(ordered[0].half_edges()[0].curve_id, 10);
+    assert_eq!(ordered[1].half_edges()[0].curve_id, 20);
 
     assert!(
         crate::decode::with_test_decode_ctx(|ctx| super::ordered_parameter_face_loops(
@@ -806,13 +786,10 @@ fn topology_bound_plane_rejects_duplicate_model_curve_ids() {
             next_edges: [11, 0],
             offset: 20,
         });
-    scan.topology.loops.push(crate::topology::Loop {
-        face_id: std::num::NonZeroU32::new(5),
-        half_edges: vec![crate::topology::HalfEdgeId {
+    scan.topology.loops.push(crate::test_support::closed_loop(std::num::NonZeroU32::new(5), vec![crate::topology::HalfEdgeId {
             curve_id: 11,
             side: crate::topology::Side::Zero,
-        }],
-    });
+        }]));
 
     let curve = Curve {
         id: CurveId::mint("creo:visibgeom:curve#11".to_string()).expect("identity grammar"),

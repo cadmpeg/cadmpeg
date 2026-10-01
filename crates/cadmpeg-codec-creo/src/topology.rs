@@ -84,10 +84,31 @@ pub(crate) struct HalfEdge {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Loop {
     /// The `srf_array` face identifier this loop bounds.
-    pub(crate) face_id: Option<NonZeroU32>,
+    face_id: Option<NonZeroU32>,
     /// The ring of half-edges in traversal order, starting from the first
     /// half-edge encountered for this face.
-    pub(crate) half_edges: Vec<HalfEdgeId>,
+    half_edges: Vec<HalfEdgeId>,
+}
+
+impl Loop {
+    pub(crate) fn new(ctx: &DecodeContext<'_>, face_id: Option<NonZeroU32>, half_edges: Vec<HalfEdgeId>, graph: &[HalfEdge]) -> Result<Option<Self>, CodecError> {
+        if half_edges.is_empty() { return Ok(None); }
+        let count = cadmpeg_core::decode::u64_from_index(half_edges.len());
+        let work = count.checked_mul(cadmpeg_core::decode::u64_from_index(graph.len()))
+            .and_then(|work| count.checked_mul(count).and_then(|unique| work.checked_add(unique)))
+            .ok_or_else(|| ctx.refuse_codec_limit("creo closed ring validation work", u64::MAX, u64::MAX))?;
+        ctx.charge_work(work, "creo closed ring validation work")?;
+        for (index, (id, next)) in half_edges.iter().zip(half_edges.iter().cycle().skip(1)).enumerate() {
+            if half_edges.iter().take(index).any(|previous| previous == id) { return Ok(None); }
+            let mut candidates = graph.iter().filter(|edge| edge.id == *id);
+            let Some(edge) = candidates.next() else { return Ok(None); };
+            if candidates.next().is_some() || edge.face_id != face_id || edge.next != Some(*next) { return Ok(None); }
+        }
+        Ok(Some(Self { face_id, half_edges }))
+    }
+
+    pub(crate) fn face_id(&self) -> Option<NonZeroU32> { self.face_id }
+    pub(crate) fn half_edges(&self) -> &[HalfEdgeId] { &self.half_edges }
 }
 
 /// One connected component of non-null `srf_array` face references.
@@ -97,9 +118,22 @@ pub(crate) struct Loop {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct FaceComponent {
     /// Sorted nonzero face identifiers in the connected component.
-    pub(crate) face_ids: Vec<u32>,
+    face_ids: Vec<u32>,
     /// Sorted curve identifiers whose two sides connect component faces.
-    pub(crate) curve_ids: Vec<u32>,
+    curve_ids: Vec<u32>,
+}
+
+impl FaceComponent {
+    pub(crate) fn new(ctx: &DecodeContext<'_>, face_ids: Vec<u32>, curve_ids: Vec<u32>) -> Result<Option<Self>, CodecError> {
+        let work = cadmpeg_core::decode::u64_from_index(face_ids.len()).checked_mul(2)
+            .and_then(|work| work.checked_add(cadmpeg_core::decode::u64_from_index(curve_ids.len())))
+            .ok_or_else(|| ctx.refuse_codec_limit("creo face component validation work", u64::MAX, u64::MAX))?;
+        ctx.charge_work(work, "creo face component validation work")?;
+        if face_ids.is_empty() || face_ids.contains(&0) || face_ids.windows(2).any(|pair| pair[0] >= pair[1]) || curve_ids.windows(2).any(|pair| pair[0] >= pair[1]) { return Ok(None); }
+        Ok(Some(Self { face_ids, curve_ids }))
+    }
+    pub(crate) fn face_ids(&self) -> &[u32] { &self.face_ids }
+    pub(crate) fn curve_ids(&self) -> &[u32] { &self.curve_ids }
 }
 
 /// One topological vertex represented by its incident half-edge orbit.
@@ -518,10 +552,8 @@ pub(crate) fn face_components(
         ctx.reserve_vec(&mut curve_ids, curves.len(), "creo component curve IDs")?;
         curve_ids.extend(curves);
         ctx.reserve_vec(&mut components, 1, "creo face components")?;
-        components.push(FaceComponent {
-            face_ids,
-            curve_ids,
-        });
+        let component = FaceComponent::new(ctx, face_ids, curve_ids)?.ok_or_else(|| CodecError::malformed("invalid derived Creo face component"))?;
+        components.push(component);
     }
     Ok(components)
 }
@@ -644,16 +676,15 @@ pub(crate) fn build(
             if seen.contains(&current) {
                 if current == edge.id {
                     for id in ring.iter().copied() {
+                        ctx.charge_work(cadmpeg_core::decode::u64_from_index(consumed.len()), "creo topology consumed membership")?;
                         if !consumed.contains(&id) {
                             ctx.charge_collection_items(1, "creo consumed topology half-edges")?;
                             consumed.insert(id);
                         }
                     }
                     ctx.reserve_vec(&mut loops, 1, "creo topology loops")?;
-                    loops.push(Loop {
-                        face_id: edge.face_id,
-                        half_edges: std::mem::take(&mut ring),
-                    });
+                    let closed = Loop::new(ctx, edge.face_id, std::mem::take(&mut ring), &edges)?.ok_or_else(|| CodecError::malformed("invalid derived Creo closed ring"))?;
+                    loops.push(closed);
                 }
                 break;
             }
@@ -667,6 +698,7 @@ pub(crate) fn build(
                 break;
             };
             if by_id(next).is_none_or(|entry| entry.face_id != edge.face_id) {
+                open_ended = true;
                 break;
             }
             current = next;

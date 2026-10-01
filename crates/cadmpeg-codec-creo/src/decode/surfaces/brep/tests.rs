@@ -147,10 +147,7 @@ fn brep_edge_indexes_preserve_model_curve_multiplicity() {
 fn face_candidate_scan() -> crate::container::ContainerScan<'static> {
     let mut scan = crate::container::scan_bytes_ok(Vec::new());
     scan.framing.layout = crate::container::Layout::Nd;
-    scan.topology.loops.push(crate::topology::Loop {
-        face_id: std::num::NonZeroU32::new(5),
-        half_edges: Vec::new(),
-    });
+    scan.topology.loops.push(crate::test_support::closed_loop(std::num::NonZeroU32::new(5), vec![crate::topology::HalfEdgeId { curve_id: 10, side: crate::topology::Side::Zero }]));
     scan
 }
 
@@ -209,13 +206,7 @@ fn brep_model_surface_count_nodes_refuse_collection_limit() {
 
 #[test]
 fn brep_boundary_curve_id_nodes_refuse_collection_limit() {
-    let mut scan = face_candidate_scan();
-    scan.topology.loops[0]
-        .half_edges
-        .push(crate::topology::HalfEdgeId {
-            curve_id: 10,
-            side: crate::topology::Side::Zero,
-        });
+    let scan = face_candidate_scan();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = 5;
@@ -471,18 +462,14 @@ fn native_triangle_collection_error(limit: u64, ordered: bool) -> CodecError {
         )
         .expect("valid PlaneSurface fixture"),
     ));
-    let lp = crate::topology::Loop {
-        face_id: std::num::NonZeroU32::new(5),
-        half_edges: (10..13)
+    let lp = crate::test_support::closed_loop(std::num::NonZeroU32::new(5), (10..13)
             .map(|curve_id| crate::topology::HalfEdgeId {
                 curve_id,
                 side: crate::topology::Side::Zero,
             })
-            .collect(),
-    };
+            .collect());
     let polygon = [[0.0, 0.0], [2.0, 0.0], [0.0, 2.0]];
-    let bindings = lp
-        .half_edges
+    let bindings = lp.half_edges()
         .iter()
         .copied()
         .enumerate()
@@ -508,8 +495,7 @@ fn native_triangle_collection_error(limit: u64, ordered: bool) -> CodecError {
             )
         })
         .collect::<BTreeMap<_, _>>();
-    let native_pcurves = lp
-        .half_edges
+    let native_pcurves = lp.half_edges()
         .iter()
         .enumerate()
         .map(|(index, half_edge)| {
@@ -601,16 +587,13 @@ fn circle_order_collection_error(limit: u64) -> CodecError {
         )
         .expect("valid PlaneSurface fixture"),
     ));
-    let make_loop = |base: u32| crate::topology::Loop {
-        face_id: std::num::NonZeroU32::new(5),
-        half_edges: [base, base + 1]
+    let make_loop = |base: u32| crate::test_support::closed_loop(std::num::NonZeroU32::new(5), [base, base + 1]
             .into_iter()
             .map(|curve_id| crate::topology::HalfEdgeId {
                 curve_id,
                 side: crate::topology::Side::Zero,
             })
-            .collect(),
-    };
+            .collect());
     let outer = make_loop(10);
     let inner = make_loop(20);
     let make_circle = |id: u32, radius| Curve {
@@ -792,10 +775,7 @@ fn rejection_detail_limit_error(limit: u64) -> CodecError {
         curve_id: 4,
         side: crate::topology::Side::Zero,
     };
-    let loop_record = crate::topology::Loop {
-        face_id: std::num::NonZeroU32::new(17),
-        half_edges: vec![half_edge],
-    };
+    let loop_record = crate::test_support::closed_loop(std::num::NonZeroU32::new(17), vec![half_edge]);
     let binding = crate::topology::HalfEdgeVertexIncidence {
         half_edge,
         start_vertex_id: 9,
@@ -1012,10 +992,7 @@ fn face_admission_diagnostics_record_unresolved_boundary_operands() {
         curve_id: 11,
         side: crate::topology::Side::One,
     };
-    let loop_record = crate::topology::Loop {
-        face_id: std::num::NonZeroU32::new(5),
-        half_edges: vec![resolved, unresolved],
-    };
+    let loop_record = crate::test_support::closed_loop(std::num::NonZeroU32::new(5), vec![resolved, unresolved]);
     let resolved_binding = crate::topology::HalfEdgeVertexIncidence {
         half_edge: resolved,
         start_vertex_id: 1,
@@ -1083,18 +1060,9 @@ fn legacy_brep_admission_retains_components_with_eligible_visible_faces() {
         offset: 0,
     });
     scan.topology.face_components = vec![
-        crate::topology::FaceComponent {
-            face_ids: vec![1],
-            curve_ids: vec![10],
-        },
-        crate::topology::FaceComponent {
-            face_ids: vec![5],
-            curve_ids: vec![11],
-        },
-        crate::topology::FaceComponent {
-            face_ids: vec![1, 5],
-            curve_ids: vec![12],
-        },
+        crate::decode::with_test_decode_ctx(|ctx| crate::topology::FaceComponent::new(ctx, vec![1], vec![10])).expect("component admission").expect("valid component fixture"),
+        crate::decode::with_test_decode_ctx(|ctx| crate::topology::FaceComponent::new(ctx, vec![5], vec![11])).expect("component admission").expect("valid component fixture"),
+        crate::decode::with_test_decode_ctx(|ctx| crate::topology::FaceComponent::new(ctx, vec![1, 5], vec![12])).expect("component admission").expect("valid component fixture"),
     ];
 
     assert_eq!(
@@ -1106,14 +1074,8 @@ fn legacy_brep_admission_retains_components_with_eligible_visible_faces() {
         .cloned()
         .collect::<Vec<_>>(),
         vec![
-            crate::topology::FaceComponent {
-                face_ids: vec![5],
-                curve_ids: vec![11],
-            },
-            crate::topology::FaceComponent {
-                face_ids: vec![1, 5],
-                curve_ids: vec![12],
-            },
+            crate::decode::with_test_decode_ctx(|ctx| crate::topology::FaceComponent::new(ctx, vec![5], vec![11])).expect("component admission").expect("valid component fixture"),
+            crate::decode::with_test_decode_ctx(|ctx| crate::topology::FaceComponent::new(ctx, vec![1, 5], vec![12])).expect("component admission").expect("valid component fixture"),
         ]
     );
 
@@ -1142,10 +1104,7 @@ fn admitted_face_component_refs_refuse_collection_limit() {
     let mut scan = crate::container::scan_bytes_ok(Vec::new());
     scan.topology
         .face_components
-        .push(crate::topology::FaceComponent {
-            face_ids: vec![5],
-            curve_ids: Vec::new(),
-        });
+        .push(crate::decode::with_test_decode_ctx(|ctx| crate::topology::FaceComponent::new(ctx, vec![5], Vec::new())).expect("component admission").expect("valid component fixture"));
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = 0;
@@ -1347,15 +1306,12 @@ fn native_parameter_loops_order_non_planar_cylindrical_face() {
         )
         .expect("valid CylinderSurface fixture"),
     ));
-    let make_loop = |first_curve| crate::topology::Loop {
-        face_id: std::num::NonZeroU32::new(5),
-        half_edges: (0_u32..4)
+    let make_loop = |first_curve| crate::test_support::closed_loop(std::num::NonZeroU32::new(5), (0_u32..4)
             .map(|index| crate::topology::HalfEdgeId {
                 curve_id: first_curve + index,
                 side: crate::topology::Side::Zero,
             })
-            .collect(),
-    };
+            .collect());
     let outer = make_loop(10);
     let inner = make_loop(20);
     let outer_polygon = [[0.0, 0.0], [1.0, 0.0], [1.0, 4.0], [0.0, 4.0]];
@@ -1368,7 +1324,7 @@ fn native_parameter_loops_order_non_planar_cylindrical_face() {
         (5_u32, (&inner, inner_polygon)),
     ] {
         for index in 0..4 {
-            let half_edge = lp.half_edges[index];
+            let half_edge = lp.half_edges()[index];
             let offset = u32::try_from(index).expect("four boundary edges");
             let next_offset = u32::try_from((index + 1) % 4).expect("four boundary edges");
             let start_vertex_id = base_vertex + offset;
@@ -1420,8 +1376,8 @@ fn native_parameter_loops_order_non_planar_cylindrical_face() {
         },
     )
     .expect("one parameter-space outer loop");
-    assert_eq!(ordered[0].half_edges[0].curve_id, 10);
-    assert_eq!(ordered[1].half_edges[0].curve_id, 20);
+    assert_eq!(ordered[0].half_edges()[0].curve_id, 10);
+    assert_eq!(ordered[1].half_edges()[0].curve_id, 20);
 }
 
 #[test]
@@ -1434,26 +1390,20 @@ fn native_parameter_loops_admit_proven_two_edge_circles() {
         )
         .expect("valid PlaneSurface fixture"),
     ));
-    let outer = crate::topology::Loop {
-        face_id: std::num::NonZeroU32::new(5),
-        half_edges: [10_u32, 11]
+    let outer = crate::test_support::closed_loop(std::num::NonZeroU32::new(5), [10_u32, 11]
             .into_iter()
             .map(|curve_id| crate::topology::HalfEdgeId {
                 curve_id,
                 side: crate::topology::Side::Zero,
             })
-            .collect(),
-    };
-    let inner = crate::topology::Loop {
-        face_id: std::num::NonZeroU32::new(5),
-        half_edges: [20_u32, 21]
+            .collect());
+    let inner = crate::test_support::closed_loop(std::num::NonZeroU32::new(5), [20_u32, 21]
             .into_iter()
             .map(|curve_id| crate::topology::HalfEdgeId {
                 curve_id,
                 side: crate::topology::Side::Zero,
             })
-            .collect(),
-    };
+            .collect());
     let bindings = [(10, 1, 2), (11, 2, 1), (20, 3, 4), (21, 4, 3)]
         .into_iter()
         .map(|(curve_id, start_vertex_id, end_vertex_id)| {
@@ -1541,8 +1491,8 @@ fn native_parameter_loops_admit_proven_two_edge_circles() {
         },
     )
     .expect("concentric two-edge circles have a proven outer loop");
-    assert_eq!(ordered[0].half_edges[0].curve_id, 10);
-    assert_eq!(ordered[1].half_edges[0].curve_id, 20);
+    assert_eq!(ordered[0].half_edges()[0].curve_id, 10);
+    assert_eq!(ordered[1].half_edges()[0].curve_id, 20);
 }
 
 #[test]
@@ -1618,22 +1568,16 @@ fn native_brep_rejects_ambiguous_model_carriers() {
                 }),
         )
         .collect();
-    scan.topology.loops.push(crate::topology::Loop {
-        face_id: std::num::NonZeroU32::new(5),
-        half_edges: [10_u32, 11, 12]
+    scan.topology.loops.push(crate::test_support::closed_loop(std::num::NonZeroU32::new(5), [10_u32, 11, 12]
             .into_iter()
             .map(|curve_id| crate::topology::HalfEdgeId {
                 curve_id,
                 side: crate::topology::Side::Zero,
             })
-            .collect(),
-    });
+            .collect()));
     scan.topology
         .face_components
-        .push(crate::topology::FaceComponent {
-            face_ids: vec![5],
-            curve_ids: vec![10, 11, 12],
-        });
+        .push(crate::decode::with_test_decode_ctx(|ctx| crate::topology::FaceComponent::new(ctx, vec![5], vec![10, 11, 12])).expect("component admission").expect("valid component fixture"));
     scan.topology.vertices = [1_u32, 2, 3]
         .into_iter()
         .zip([10_u32, 11, 12])

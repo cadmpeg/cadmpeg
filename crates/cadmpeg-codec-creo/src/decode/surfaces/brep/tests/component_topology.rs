@@ -8,20 +8,14 @@ use cadmpeg_core::CodecError;
 use super::super::BrepComponentTopology;
 
 fn topology_result(limit: u64, two_faces: bool) -> Result<BrepComponentTopology, CodecError> {
-    let first_loop = crate::topology::Loop {
-        face_id: std::num::NonZeroU32::new(5),
-        half_edges: vec![crate::topology::HalfEdgeId {
+    let first_loop = crate::test_support::closed_loop(std::num::NonZeroU32::new(5), vec![crate::topology::HalfEdgeId {
             curve_id: 10,
             side: crate::topology::Side::Zero,
-        }],
-    };
-    let second_loop = crate::topology::Loop {
-        face_id: std::num::NonZeroU32::new(6),
-        half_edges: vec![crate::topology::HalfEdgeId {
+        }]);
+    let second_loop = crate::test_support::closed_loop(std::num::NonZeroU32::new(6), vec![crate::topology::HalfEdgeId {
             curve_id: 10,
             side: crate::topology::Side::One,
-        }],
-    };
+        }]);
     let mut eligible_faces = BTreeMap::from([(5, vec![&first_loop])]);
     if two_faces {
         eligible_faces.insert(6, vec![&second_loop]);

@@ -110,8 +110,8 @@ pub(in crate::decode) fn transfer_topology_bound_planes(
             .topology
             .loops
             .iter()
-            .filter(|lp| lp.face_id == std::num::NonZeroU32::new(row.id))
-            .flat_map(|lp| lp.half_edges.iter())
+            .filter(|lp| lp.face_id() == std::num::NonZeroU32::new(row.id))
+            .flat_map(|lp| lp.half_edges().iter())
         {
             if unique_curve_ids.contains(&half_edge.curve_id) {
                 let (id, _id_reservation) = crate::identity::compose_scoped::<CurveId>(
@@ -696,7 +696,7 @@ fn projected_loop_polygon(
         return Ok(None);
     };
     let mut polygon = Vec::new();
-    for half_edge in &lp.half_edges {
+    for half_edge in lp.half_edges() {
         let Some(point) = incidence
             .get(half_edge)
             .and_then(|binding| solved_vertices.get(&binding.start_vertex_id))
@@ -895,7 +895,7 @@ fn face_boundary_plane(
     topology_bound_plane(
         ctx,
         loops.iter().flat_map(|lp| {
-            lp.half_edges
+            lp.half_edges()
                 .iter()
                 .filter_map(|half_edge| incidence.get(half_edge))
                 .filter_map(|binding| solved_vertices.get(&binding.start_vertex_id).copied())

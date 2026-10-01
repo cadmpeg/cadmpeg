@@ -7,15 +7,12 @@ use std::collections::BTreeMap;
 
 #[test]
 fn planar_loop_containment_selects_one_outer_boundary() {
-    let make_loop = |face_id: u32, first_curve: u32| crate::topology::Loop {
-        face_id: std::num::NonZeroU32::new(face_id),
-        half_edges: (0_u32..4)
+    let make_loop = |face_id: u32, first_curve: u32| crate::test_support::closed_loop(std::num::NonZeroU32::new(face_id), (0_u32..4)
             .map(|index| HalfEdgeId {
                 curve_id: first_curve + index,
                 side: crate::topology::Side::Zero,
             })
-            .collect(),
-    };
+            .collect());
     let outer = make_loop(9, 1);
     let inner = make_loop(9, 5);
     let incidences = (1..=8)
@@ -54,8 +51,8 @@ fn planar_loop_containment_selects_one_outer_boundary() {
     let ordered =
         ordered_planar_face_loops_service(vec![&inner, &outer], plane, &incidence, &points)
             .expect("unique outer loop");
-    assert_eq!(ordered[0].half_edges[0].curve_id, 1);
-    assert_eq!(ordered[1].half_edges[0].curve_id, 5);
+    assert_eq!(ordered[0].half_edges()[0].curve_id, 1);
+    assert_eq!(ordered[1].half_edges()[0].curve_id, 5);
 
     let disjoint_points = points
         .into_iter()
@@ -84,15 +81,12 @@ fn planar_loop_containment_selects_one_outer_boundary() {
 
 #[test]
 fn planar_loop_containment_derives_plane_from_solved_boundary_vertices() {
-    let make_loop = |first_curve: u32| crate::topology::Loop {
-        face_id: std::num::NonZeroU32::new(9),
-        half_edges: (0_u32..4)
+    let make_loop = |first_curve: u32| crate::test_support::closed_loop(std::num::NonZeroU32::new(9), (0_u32..4)
             .map(|index| HalfEdgeId {
                 curve_id: first_curve + index,
                 side: crate::topology::Side::Zero,
             })
-            .collect(),
-    };
+            .collect());
     let outer = make_loop(1);
     let inner = make_loop(5);
     let incidences = (1..=8)
@@ -126,8 +120,8 @@ fn planar_loop_containment_derives_plane_from_solved_boundary_vertices() {
 
     let ordered = ordered_face_loops_service(&[&inner, &outer], None, &incidence, &points)
         .expect("boundary vertices prove a unique plane");
-    assert_eq!(ordered[0].half_edges[0].curve_id, 1);
-    assert_eq!(ordered[1].half_edges[0].curve_id, 5);
+    assert_eq!(ordered[0].half_edges()[0].curve_id, 1);
+    assert_eq!(ordered[1].half_edges()[0].curve_id, 5);
 
     let non_planar = points
         .into_iter()

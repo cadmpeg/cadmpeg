@@ -182,7 +182,7 @@ impl FaceAdmissionDetail {
         incidence: &BTreeMap<HalfEdgeId, &crate::topology::HalfEdgeVertexIncidence>,
     ) -> Result<Self, cadmpeg_core::CodecError> {
         let mut detail = Self::face(face_id);
-        for half_edge in loops.iter().flat_map(|lp| lp.half_edges.iter()) {
+        for half_edge in loops.iter().flat_map(|lp| lp.half_edges().iter()) {
             if edge_vertices.contains_key(&half_edge.curve_id) {
                 continue;
             }
@@ -728,8 +728,7 @@ fn admitted_face_components<'a>(
         return Ok(admitted);
     }
     for component in &scan.topology.face_components {
-        if component
-            .face_ids
+        if component.face_ids()
             .iter()
             .any(|face_id| eligible_face_ids.contains(face_id))
         {
@@ -992,7 +991,7 @@ fn native_circle_loop_geometry(
     model_curves: &[Curve],
     source_carriers: &crate::decode::source_carriers::SourceUnitCarriers,
 ) -> Option<NativeCircleLoop> {
-    let [first, second] = lp.half_edges.as_slice() else {
+    let [first, second] = lp.half_edges() else {
         return None;
     };
     if first.curve_id == second.curve_id {
@@ -1162,7 +1161,7 @@ fn native_parameter_loop_polygon(
     let (face_id, surface) = face;
 
     let mut segments = Vec::new();
-    for half_edge in &lp.half_edges {
+    for half_edge in lp.half_edges() {
         let Some(binding) = incidence.get(half_edge) else {
             return Ok(None);
         };
@@ -1188,9 +1187,8 @@ fn native_parameter_loop_polygon(
     }
     if segments.len() < 3
         && (segments.len() != 2
-            || lp.half_edges[0].curve_id == lp.half_edges[1].curve_id
-            || lp
-                .half_edges
+            || lp.half_edges()[0].curve_id == lp.half_edges()[1].curve_id
+            || lp.half_edges()
                 .iter()
                 .any(|half_edge| !typed_nonlinear_curve_ids.contains(&half_edge.curve_id))
             || segments
@@ -1355,7 +1353,7 @@ impl<'a> BrepFaceCandidateIndexes<'a> {
     ) -> Result<Self, cadmpeg_core::CodecError> {
         let mut loops_by_face = BTreeMap::<u32, Vec<&crate::topology::Loop>>::new();
         for lp in &scan.topology.loops {
-            if let Some(face_id) = lp.face_id {
+            if let Some(face_id) = lp.face_id() {
                 let loops = match loops_by_face.entry(face_id.get()) {
                     std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
                     std::collections::btree_map::Entry::Vacant(entry) => {
@@ -1372,7 +1370,7 @@ impl<'a> BrepFaceCandidateIndexes<'a> {
             .topology
             .face_components
             .iter()
-            .flat_map(|component| component.face_ids.iter().copied())
+            .flat_map(|component| component.face_ids().iter().copied())
             .chain(loops_by_face.keys().copied())
         {
             if !topology_face_reference_ids.contains(&face_id) {
@@ -1390,7 +1388,7 @@ impl<'a> BrepFaceCandidateIndexes<'a> {
             .topology
             .face_components
             .iter()
-            .flat_map(|component| component.face_ids.iter().copied())
+            .flat_map(|component| component.face_ids().iter().copied())
             .chain(loops_by_face.keys().copied())
             .filter(|face_id| is_neutral_face_reference(scan, *face_id))
         {
@@ -1421,7 +1419,7 @@ impl<'a> BrepFaceCandidateIndexes<'a> {
         for curve_id in loops_by_face
             .values()
             .flatten()
-            .flat_map(|lp| lp.half_edges.iter().map(|half_edge| half_edge.curve_id))
+            .flat_map(|lp| lp.half_edges().iter().map(|half_edge| half_edge.curve_id))
         {
             if !boundary_curve_ids.contains(&curve_id) {
                 ctx.charge_collection_items(1, "creo B-rep boundary curve ID nodes")?;
@@ -1518,7 +1516,7 @@ impl BrepEligibleFaceIndexes {
         let mut emitted_half_edges = BTreeSet::new();
         for half_edge in eligible_loops
             .iter()
-            .flat_map(|lp| lp.half_edges.iter().copied())
+            .flat_map(|lp| lp.half_edges().iter().copied())
         {
             if !emitted_half_edges.contains(&half_edge) {
                 ctx.charge_collection_items(1, "creo B-rep emitted half-edge nodes")?;
@@ -1535,12 +1533,12 @@ impl BrepEligibleFaceIndexes {
         let mut closed_single_edge_curves = BTreeSet::new();
         for curve_id in &face_curves {
             let mut uses = eligible_loops.iter().filter(|lp| {
-                lp.half_edges
+                lp.half_edges()
                     .iter()
                     .any(|half_edge| half_edge.curve_id == *curve_id)
             });
-            if uses.next().is_some_and(|lp| lp.half_edges.len() == 1)
-                && uses.all(|lp| lp.half_edges.len() == 1)
+            if uses.next().is_some_and(|lp| lp.half_edges().len() == 1)
+                && uses.all(|lp| lp.half_edges().len() == 1)
             {
                 ctx.charge_collection_items(1, "creo B-rep single-edge curve nodes")?;
                 closed_single_edge_curves.insert(*curve_id);
@@ -1599,7 +1597,7 @@ impl BrepBodyIndexes {
         let mut neutral_edge_curves = BTreeSet::new();
         for curve_id in admitted_components
             .iter()
-            .flat_map(|component| component.curve_ids.iter().copied())
+            .flat_map(|component| component.curve_ids().iter().copied())
             .filter(|curve_id| admitted_edge_curves.contains(curve_id))
             .filter(|curve_id| {
                 !matches!(
@@ -1618,8 +1616,7 @@ impl BrepBodyIndexes {
         let mut body_components = Vec::new();
         for component in admitted_components {
             let mut faces = Vec::new();
-            for face_id in component
-                .face_ids
+            for face_id in component.face_ids()
                 .iter()
                 .copied()
                 .filter(|face_id| eligible_faces.contains_key(face_id))
@@ -1628,8 +1625,7 @@ impl BrepBodyIndexes {
                 faces.push(face_id);
             }
             let mut curves = BTreeSet::new();
-            for curve_id in component
-                .curve_ids
+            for curve_id in component.curve_ids()
                 .iter()
                 .copied()
                 .filter(|curve_id| neutral_edge_curves.contains(curve_id))
@@ -1744,7 +1740,7 @@ impl BrepComponentTopology {
                 "creo B-rep face vertex map nodes",
             )?;
             for native_loop in &eligible_faces[face_id] {
-                for half_edge in &native_loop.half_edges {
+                for half_edge in native_loop.half_edges() {
                     let curve_faces = brep_set_at(
                         ctx,
                         &mut faces_by_curve,
@@ -1945,7 +1941,7 @@ fn native_loop_ring(
     face_id: u32,
 ) -> Result<cadmpeg_ir::topology::LoopRing, cadmpeg_core::CodecError> {
     let mut coedge_ids = Vec::new();
-    for half_edge in &native_loop.half_edges {
+    for half_edge in native_loop.half_edges() {
         ctx.reserve_vec(&mut coedge_ids, 1, "creo B-rep ring coedge IDs")?;
         coedge_ids.push(crate::identity::compose_checked::<CoedgeId>(
             ctx,
@@ -2182,7 +2178,7 @@ pub(in super::super) fn transfer_native_brep(
             continue;
         };
         let has_unresolved_boundary_vertices = loops.iter().any(|lp| {
-            lp.half_edges
+            lp.half_edges()
                 .iter()
                 .any(|half_edge| !edge_vertices.contains_key(&half_edge.curve_id))
         });
@@ -2201,7 +2197,7 @@ pub(in super::super) fn transfer_native_brep(
             continue;
         }
         let has_ambiguous_boundary_curve = loops.iter().any(|lp| {
-            lp.half_edges.iter().any(|half_edge| {
+            lp.half_edges().iter().any(|half_edge| {
                 model_curve_counts
                     .get(&half_edge.curve_id)
                     .is_some_and(|count| *count > 1)
@@ -2216,7 +2212,7 @@ pub(in super::super) fn transfer_native_brep(
             continue;
         }
         let mut two_edge_loops_are_proven = true;
-        for lp in loops.iter().filter(|lp| lp.half_edges.len() == 2) {
+        for lp in loops.iter().filter(|lp| lp.half_edges().len() == 2) {
             let Some(surface) = exactly_one(
                 ir.model
                     .surfaces
@@ -2894,7 +2890,7 @@ pub(in super::super) fn transfer_native_brep(
                     )?,
                     boundary: cadmpeg_ir::topology::LoopBoundary::Ring(ring),
                 });
-                for half_edge in &native_loop.half_edges {
+                for half_edge in native_loop.half_edges() {
                     let id = crate::identity::compose_checked::<CoedgeId>(
                         ctx,
                         &crate::identity::VISIBGEOM_COEDGE,
