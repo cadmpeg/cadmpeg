@@ -110,7 +110,7 @@ impl TrimPacket {
         ctx.charge_work(u64_from_index(lengths), operation)?;
         let triangle_count = self.strip_lengths.iter().chain(&self.fan_lengths)
             .try_fold(self.independent_count, |count, &length| {
-                count.checked_add(if length >= 2 { length - 2 } else { 0 })
+                count.checked_add(match length { 0 | 1 => 0, length => length - 2 })
             }).ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
         let work = u64_from_index(triangle_count).checked_mul(3)
             .and_then(|work| work.checked_add(u64_from_index(self.handles.len())))
@@ -132,7 +132,7 @@ impl TrimPacket {
         for &length in &self.strip_lengths {
             let (strip, tail) = remaining.split_at(length);
             remaining = tail;
-            for index in 0..if length >= 2 { length - 2 } else { 0 } {
+            for (index, triple) in strip.windows(3).enumerate() {
                 ctx.charge_retained(
                     u64_from_index(std::mem::size_of::<[u32; 3]>()),
                     "catia_trim_triangles",
@@ -140,9 +140,9 @@ impl TrimPacket {
                 ctx.push_vec(
                     &mut triangles,
                     if index % 2 == 0 {
-                        [strip[index], strip[index + 1], strip[index + 2]]
+                        [triple[0], triple[1], triple[2]]
                     } else {
-                        [strip[index + 1], strip[index], strip[index + 2]]
+                        [triple[1], triple[0], triple[2]]
                     },
                     "catia_trim_triangles",
                 )?;
@@ -151,14 +151,15 @@ impl TrimPacket {
         for &length in &self.fan_lengths {
             let (fan, tail) = remaining.split_at(length);
             remaining = tail;
-            for index in 1..if length >= 1 { length - 1 } else { 0 } {
+            let Some((&center, rim)) = fan.split_first() else { continue; };
+            for pair in rim.windows(2) {
                 ctx.charge_retained(
                     u64_from_index(std::mem::size_of::<[u32; 3]>()),
                     "catia_trim_triangles",
                 )?;
                 ctx.push_vec(
                     &mut triangles,
-                    [fan[0], fan[index], fan[index + 1]],
+                    [center, pair[0], pair[1]],
                     "catia_trim_triangles",
                 )?;
             }

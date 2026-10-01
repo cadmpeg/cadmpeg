@@ -1962,6 +1962,7 @@ impl DistinctAssignment {
         point_count: usize,
     ) -> Result<Option<Self>, CodecError> {
         let (mut seen, _storage) = ctx.temporary_vec(point_count, "catia_distinct_assignment")?;
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(point_count), "catia_distinct_assignment")?;
         seen.resize(point_count, false);
         for &point in &points {
             ctx.charge_work(1, "catia_distinct_assignment")?;
@@ -2331,6 +2332,16 @@ mod reduced_matching_tests {
     use super::{reduced_distinct_matching, DistinctAssignment};
 
     #[test]
+fn distinct_assignment_initialization_refuses_work() {
+    crate::test_support::with_work_limit(0, |ctx| {
+        let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) = super::DistinctAssignment::new(ctx, vec![], 64) else { panic!("resource refusal required") };
+        assert_eq!(limit.operation, "catia_distinct_assignment");
+        assert_eq!(limit.additional, 64);
+        assert_eq!(ctx.resource_refusal(), Some(limit));
+    });
+}
+
+#[test]
     fn reduced_matching_reserves_later_singletons_before_domains() {
         crate::test_support::with_service_context(|ctx| {
             let budget = ctx.work_budget(100);
