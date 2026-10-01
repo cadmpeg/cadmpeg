@@ -387,7 +387,7 @@ impl CodecBackend for SldprtCodec {
     ) -> Result<ContainerSummary, CodecError> {
         let scan = container::scan(ctx, root)?;
         let classification = dialect::classify_layers(ctx, &scan)?;
-        let mut summary = container::summarize(&scan, classification.layers().clone_charged(ctx)?);
+        let mut summary = container::summarize(ctx, &scan, classification.layers().clone_charged(ctx)?)?;
         classification.append_losses(ctx, &mut summary.losses)?;
         Ok(summary)
     }
