@@ -709,7 +709,8 @@ pub(crate) fn scan<'a>(
             Err(cadmpeg_asm::stream_error::StreamFailure::NotImplemented(error)) => {
                 TextBrepFraming::UnsupportedLength(error)
             }
-            Err(cadmpeg_asm::stream_error::StreamFailure::Resource(error)) => return Err(error),
+            Err(cadmpeg_asm::stream_error::StreamFailure::Resource(error)) => return Err(error.into()),
+            Err(cadmpeg_asm::stream_error::StreamFailure::Operation(error)) => return Err(error.into_codec_error()),
         };
         ctx.reserve_map(&mut scan.text_breps, 1, "retain F3D text B-rep framing")?;
         let name = ctx.copy_retained_text(&entry.name, "retain F3D text B-rep name")?;

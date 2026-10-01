@@ -193,9 +193,9 @@ impl FieldReader<'_> {
                 reason: "field is not valid UTF-8".to_string(),
             })?;
         let word = if retained {
-            ctx.copy_retained_text(word, "retain SAT record name")?
+            ctx.copy_retained_text(word, "retain SAT record name").map_err(StreamFailure::from_operation)?
         } else {
-            ctx.copy_scoped_text(word, scratch, "SAT field")?
+            ctx.copy_scoped_text(word, scratch, "SAT field").map_err(StreamFailure::from_operation)?
         };
         Ok(Some((start, word)))
     }
@@ -228,7 +228,7 @@ impl FieldReader<'_> {
                 offset: self.pos + error.valid_up_to(),
                 reason: format!("@{len} string is not valid UTF-8"),
             })?;
-        let payload = ctx.copy_scoped_text(payload, scratch, "SAT string payload")?;
+        let payload = ctx.copy_scoped_text(payload, scratch, "SAT string payload").map_err(StreamFailure::from_operation)?;
         self.pos = end;
         Ok(payload)
     }
@@ -315,7 +315,7 @@ fn counted_string(
         offset: at + *pos + error.valid_up_to(),
         reason: format!("header {what} string is not valid UTF-8"),
     })?;
-    let value = ctx.copy_retained_text(value, "retain SAT header string")?;
+    let value = ctx.copy_retained_text(value, "retain SAT header string").map_err(StreamFailure::from_operation)?;
     *pos = end;
     Ok(value)
 }
@@ -451,7 +451,7 @@ fn record_error_reason(
         format_args!("record `{name}` {description}"),
         "SAT record error text",
     )
-    .map_err(StreamFailure::Resource)
+    .map_err(StreamFailure::from_operation)
 }
 
 /// Read the header and final branch marker without framing entity records.
@@ -464,7 +464,7 @@ pub fn parse_container(
     ctx.charge_work(
         cadmpeg_core::decode::u64_from_index(bytes.len()),
         "SAT container terminator scan",
-    )?;
+    ).map_err(StreamFailure::from_operation)?;
     let tail = bytes.trim_ascii_end();
     let marker = tail.rsplit(|byte| is_ws(*byte)).next();
     let branch = match marker {
@@ -495,10 +495,10 @@ pub fn parse(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<TextStream, Stream
         header.entity_count,
         &mut admitted_entities,
         "preflight SAT header entities",
-    )?;
+    ).map_err(StreamFailure::from_operation)?;
     // Record name field, then payload fields until the terminator.
     'stream: loop {
-        let mut scratch = ctx.reserve_scoped(0, "frame SAT record")?;
+        let mut scratch = ctx.reserve_scoped(0, "frame SAT record").map_err(StreamFailure::from_operation)?;
         let Some((rec_start, name)) = reader.next_field(ctx, &mut scratch, true)? else {
             break;
         };
@@ -558,25 +558,25 @@ pub fn parse(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<TextStream, Stream
                 Prim::Close => subtype_depth -= 1,
                 _ => {}
             }
-            ctx.charge_work(1, "lex SAT primitive")?;
-            ctx.push_scoped_vec(&mut scratch, &mut prims, prim, "frame SAT primitive")?;
+            ctx.charge_work(1, "lex SAT primitive").map_err(StreamFailure::from_operation)?;
+            ctx.push_scoped_vec(&mut scratch, &mut prims, prim, "frame SAT primitive").map_err(StreamFailure::from_operation)?;
         }
         let head = name.split_once('-').map_or(name.as_str(), |(head, _)| head);
         let candidates = head_shapes(head).len() + 1;
         let possible_tokens = prims
             .len()
             .checked_mul(candidates)
-            .ok_or_else(|| ctx.refuse_codec_limit("SAT typed token count", u64::MAX, u64::MAX))?;
+            .ok_or_else(|| ctx.refuse_codec_limit("SAT typed token count", u64::MAX, u64::MAX)).map_err(StreamFailure::from_operation)?;
         ctx.charge_work(
             cadmpeg_core::decode::u64_from_index(possible_tokens),
             "type SAT tokens",
-        )?;
+        ).map_err(StreamFailure::from_operation)?;
         let token_bytes = possible_tokens
             .checked_mul(std::mem::size_of::<Token>())
-            .ok_or_else(|| ctx.refuse_codec_limit("SAT token bytes", u64::MAX, u64::MAX))?;
-        scratch.grow(cadmpeg_core::decode::u64_from_index(token_bytes))?;
+            .ok_or_else(|| ctx.refuse_codec_limit("SAT token bytes", u64::MAX, u64::MAX)).map_err(StreamFailure::from_operation)?;
+        scratch.grow(cadmpeg_core::decode::u64_from_index(token_bytes)).map_err(StreamFailure::from_operation)?;
         let tokens = type_record(ctx, head, &prims, scale).map_err(|failure| match failure {
-            TypedRecordFailure::Resource(error) => StreamFailure::Resource(error),
+            TypedRecordFailure::Resource(error) => StreamFailure::from_operation(error),
             TypedRecordFailure::Type(failure) => {
                 let error = StreamError {
                     format: StreamFormat::Text,
@@ -592,21 +592,21 @@ pub fn parse(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<TextStream, Stream
         ctx.charge_retained(
             cadmpeg_core::decode::u64_from_index(tokens.len() * std::mem::size_of::<Token>()),
             "retain SAT typed tokens",
-        )?;
+        ).map_err(StreamFailure::from_operation)?;
         let population = records
             .len()
             .checked_add(1)
-            .ok_or_else(|| ctx.refuse_codec_limit("SAT record population", u64::MAX, u64::MAX))?;
+            .ok_or_else(|| ctx.refuse_codec_limit("SAT record population", u64::MAX, u64::MAX)).map_err(StreamFailure::from_operation)?;
         let population = cadmpeg_core::decode::u64_from_index(population);
         if population > admitted_entities {
             ctx.admit_entities(
                 population,
                 &mut admitted_entities,
                 "admit SAT native records",
-            )?;
+            ).map_err(StreamFailure::from_operation)?;
         }
 
-        ctx.reserve_vec(&mut records, 1, "frame SAT record")?;
+        ctx.reserve_vec(&mut records, 1, "frame SAT record").map_err(StreamFailure::from_operation)?;
         records.push(Record {
             index: records.len(),
             name,
@@ -1863,7 +1863,7 @@ mod tests {
                 let (ctx, _) = DecodeContext::from_root_bytes(&source, &arena, &policy)
                     .expect("source fits input limit");
                 let error = super::parse(&ctx, &source).expect_err("depth must refuse");
-                let StreamFailure::Resource(CodecError::ResourceLimit(refusal)) = error else {
+                let StreamFailure::Resource(refusal) = error else {
                     panic!("expected resource refusal, got {error:?}");
                 };
                 assert_eq!(refusal.dimension, ResourceDimension::RecursionDepth);
@@ -1925,7 +1925,7 @@ mod tests {
         policy.limits.max_collection_items = max_items;
         let (ctx, _) = DecodeContext::from_root_bytes(&source, &arena, &policy).unwrap();
         let error = super::parse(&ctx, &source).expect_err("collection refusal");
-        let StreamFailure::Resource(CodecError::ResourceLimit(limit)) = error else {
+        let StreamFailure::Resource(limit) = error else {
             panic!("expected resource refusal: {error:?}")
         };
         assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
@@ -2024,7 +2024,7 @@ mod tests {
             let (ctx, _) = DecodeContext::from_root_bytes(&source, &arena, &policy)
                 .expect("source fits input limit");
             let error = super::parse(&ctx, &source).expect_err("resource limit must refuse");
-            let StreamFailure::Resource(CodecError::ResourceLimit(limit)) = error else {
+            let StreamFailure::Resource(limit) = error else {
                 panic!("expected resource refusal, got {error:?}");
             };
             assert_eq!(limit.dimension, expected);
@@ -2067,7 +2067,7 @@ mod tests {
             let (ctx, _) = DecodeContext::from_root_bytes(&source, &arena, &policy)
                 .expect("source fits input limit");
             let error = super::parse(&ctx, &source).expect_err("string limit must refuse");
-            let StreamFailure::Resource(CodecError::ResourceLimit(refusal)) = error else {
+            let StreamFailure::Resource(refusal) = error else {
                 panic!("expected resource refusal, got {error:?}");
             };
             assert_eq!(refusal.dimension, dimension);
@@ -2088,7 +2088,7 @@ mod tests {
             let (ctx, _) = DecodeContext::from_root_bytes(&source, &arena, &policy)
                 .expect("source fits input limit");
             let error = super::parse(&ctx, &source).expect_err("typed string limit must refuse");
-            let StreamFailure::Resource(CodecError::ResourceLimit(refusal)) = error else {
+            let StreamFailure::Resource(refusal) = error else {
                 panic!("expected resource refusal, got {error:?}");
             };
             assert_eq!(refusal.dimension, ResourceDimension::RetainedBytes);
@@ -2162,7 +2162,7 @@ mod tests {
             let (ctx, _) = DecodeContext::from_root_bytes(&source, &arena, &policy)
                 .expect("source fits input limit");
             let error = super::parse(&ctx, &source).expect_err("error text exceeds retained limit");
-            let StreamFailure::Resource(CodecError::ResourceLimit(refusal)) = error else {
+            let StreamFailure::Resource(refusal) = error else {
                 panic!("expected resource refusal, got {error:?}");
             };
             assert_eq!(refusal.dimension, ResourceDimension::RetainedBytes);
@@ -2181,8 +2181,11 @@ mod tests {
                 | StreamFailure::Malformed(error)
                 | StreamFailure::NotImplemented(error),
             ) => Err(error),
+            Err(StreamFailure::Operation(error)) => {
+                panic!("test context operation failed: {error}")
+            }
             Err(StreamFailure::Resource(error)) => {
-                panic!("test stream exhausted a resource: {error}")
+                panic!("test stream exhausted a resource: {}", StreamFailure::Resource(error))
             }
         }
     }
