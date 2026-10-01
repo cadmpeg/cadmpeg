@@ -621,7 +621,7 @@ fn line_at(ctx: &DecodeContext<'_>, data: &[u8], start: usize) -> Result<String,
     let end = find(data, b"\n", start).unwrap_or(data.len());
     let bytes = &data[start..end];
     let text_work = cadmpeg_core::decode::u64_from_index(bytes.len())
-        .checked_mul(6)
+        .checked_mul(8)
         .ok_or_else(|| ctx.refuse_codec_limit("creo version text work", u64::MAX, u64::MAX))?;
     ctx.charge_work(text_work, "creo version text work")?;
     let mut line = ctx.copy_retained_lossy_utf8(bytes, "creo version line")?;
