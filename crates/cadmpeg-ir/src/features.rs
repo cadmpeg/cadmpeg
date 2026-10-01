@@ -1351,13 +1351,16 @@ impl<'de> Deserialize<'de> for ConfigurationEvaluation {
                 outputs: Vec<BodyId>,
             },
         }
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &cadmpeg_core::decode::DecodePolicy::default()).map_err(serde::de::Error::custom)?;
         Ok(match Wire::deserialize(deserializer)? {
             Wire::Suppressed {} => Self::Suppressed {},
-            Wire::Active { outputs } => Self::Active {
-                outputs: DistinctMembers::try_from(outputs, &ctx)
-                    .map_err(|error| serde::de::Error::custom(format!("outputs: {error}")))?,
+            Wire::Active { outputs } => {
+                let mut seen = std::collections::HashSet::new();
+                for output in &outputs {
+                    if !seen.insert(output) {
+                        return Err(serde::de::Error::custom("outputs: members must be distinct"));
+                    }
+                }
+                Self::Active { outputs: DistinctMembers(outputs) }
             },
         })
     }
@@ -6914,12 +6917,14 @@ impl<'a, T> IntoIterator for &'a DistinctMembers<T> {
 
 impl<'de, T: Deserialize<'de> + Eq + std::hash::Hash> Deserialize<'de> for DistinctMembers<T> {
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        {
-            let values = Vec::<T>::deserialize(deserializer)?;
-            let arena = cadmpeg_core::decode::DecodeArena::new();
-            let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &cadmpeg_core::decode::DecodePolicy::default()).map_err(serde::de::Error::custom)?;
-            Self::try_from(values, &ctx)
-        }.map_err(serde::de::Error::custom)
+        let values = Vec::<T>::deserialize(deserializer)?;
+        let mut seen = std::collections::HashSet::new();
+        for value in &values {
+            if !seen.insert(value) {
+                return Err(serde::de::Error::custom("members must be distinct"));
+            }
+        }
+        Ok(Self(values))
     }
 }
 
@@ -7231,9 +7236,20 @@ where
         D: serde::Deserializer<'de>,
     {
         let rows = Vec::<BodyMember<B>>::deserialize(deserializer)?;
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &cadmpeg_core::decode::DecodePolicy::default()).map_err(serde::de::Error::custom)?;
-        Self::try_from_rows(rows, &ctx).map_err(cadmpeg_core::CodecError::from).map_err(serde::de::Error::custom)?.map_err(serde::de::Error::custom)
+        if rows.is_empty() {
+            return Err(serde::de::Error::custom(BodySelectionError::Empty));
+        }
+        let mut bodies = std::collections::HashSet::new();
+        let mut native = std::collections::HashSet::new();
+        for row in &rows {
+            if !bodies.insert(&row.body) {
+                return Err(serde::de::Error::custom(BodySelectionError::RepeatedBody));
+            }
+            if !native.insert(&row.native) {
+                return Err(serde::de::Error::custom(BodySelectionError::RepeatedNativeMember));
+            }
+        }
+        Ok(Self(rows))
     }
 }
 
