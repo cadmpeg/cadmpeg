@@ -1060,9 +1060,12 @@ fn pcurve_trim_select_ignores_cartesian_point_coordinates() {
     let value = Value::List(vec![
         Value::Typed(
             "CARTESIAN_POINT".into(),
-            Box::new(Value::List(vec![Value::Real(17.0), Value::Real(23.0)])),
+            Box::new(Value::List(vec![
+                Value::Real(cadmpeg_ir::scalar::FiniteReal::new(17.0).expect("finite fixture")),
+                Value::Real(cadmpeg_ir::scalar::FiniteReal::new(23.0).expect("finite fixture")),
+            ])),
         ),
-        Value::Real(0.25),
+        Value::Real(cadmpeg_ir::scalar::FiniteReal::new(0.25).expect("finite fixture")),
     ]);
     assert_eq!(
         pcurve_trim_parameter(&value).map(FiniteReal::get),
@@ -1073,8 +1076,13 @@ fn pcurve_trim_select_ignores_cartesian_point_coordinates() {
 #[test]
 fn pcurve_trim_select_prefers_parameter_value() {
     let value = Value::List(vec![
-        Value::Real(17.0),
-        Value::Typed("PARAMETER_VALUE".into(), Box::new(Value::Real(0.25))),
+        Value::Real(cadmpeg_ir::scalar::FiniteReal::new(17.0).expect("finite fixture")),
+        Value::Typed(
+            "PARAMETER_VALUE".into(),
+            Box::new(Value::Real(
+                cadmpeg_ir::scalar::FiniteReal::new(0.25).expect("finite fixture"),
+            )),
+        ),
     ]);
     assert_eq!(
         pcurve_trim_parameter(&value).map(FiniteReal::get),
