@@ -217,6 +217,33 @@ impl<'a> ArchiveSnapshot<'a> {
         })
     }
 
+    /// Tests an indexed name without opening payloads or applying compression
+    /// and encryption admission. Temporary index storage remains scoped.
+    pub fn contains_name(ctx: &DecodeContext<'_>, root: View<'_>, name: &str) -> Result<bool, CodecError> {
+        let (found, _storage) = ctx.with_scoped_storage("ZIP name probe", || -> Result<bool, CodecError> {
+            preflight_central_directory(ctx, root.window())?;
+            // zip 8.6 stores each fixed metadata record in the builder and
+            // final index. Each record is below 1 KiB and each central entry
+            // occupies at least 46 encoded bytes. Raw names, comments,
+            // extras, parsed extra-field vectors and table rounding fit the
+            // remaining factor in this 64-byte-per-input-byte peak bound.
+            for _ in 0..64 {
+                ctx.charge_retained(cadmpeg_core::decode::u64_from_index(root.window().len()), "ZIP name probe workspace")?;
+            }
+            for _ in 0..16 {
+                ctx.charge_work(cadmpeg_core::decode::u64_from_index(root.window().len()), "ZIP name probe indexing")?;
+            }
+            let archive = zip::ZipArchive::new(Cursor::new(root.window()))
+                .map_err(|error| CodecError::malformed(format_args!("not a readable ZIP: {error}")))?;
+            for candidate in archive.file_names() {
+                ctx.charge_work(cadmpeg_core::decode::u64_from_index(candidate.len()), "ZIP name probe comparison")?;
+                if candidate == name { return Ok(true); }
+            }
+            Ok(false)
+        })?;
+        Ok(found)
+    }
+
     /// Returns central-directory records in archive order.
     pub fn entries(&self) -> &[EntryRecord] {
         &self.entries
@@ -546,6 +573,7 @@ fn central_directory_inventory(
             .zip(usize::try_from(name_end).ok())
             .and_then(|(start, end)| bytes.get(start..end))
             .ok_or_else(|| CodecError::Malformed("truncated ZIP central name".into()))?;
+        ctx.charge_work(name_len, "ZIP preflight name scan")?;
         let decoded_upper_bound = if name.is_ascii() {
             name_len
         } else {

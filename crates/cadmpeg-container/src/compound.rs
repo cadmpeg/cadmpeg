@@ -1306,7 +1306,8 @@ impl CompoundPrefixProbe {
             return Ok(Self::Malformed("invalid CFB header counts".into()));
         }
         let available = (prefix.len() - sector_size) / sector_size;
-        let mut fat_sectors = ctx.collection_vec(fat_count, "probe CFB FAT sectors")?;
+        ctx.charge_collection_items(cadmpeg_core::decode::u64_from_index(fat_count), "probe CFB FAT sectors")?;
+        let mut fat_sectors = ctx.retained_admitted_vec(fat_count, "probe CFB FAT sectors")?;
         let mut header_free_seen = false;
         ctx.charge_work(109, "CFB header DIFAT scan")?;
         for index in 0..109 {
@@ -1329,13 +1330,14 @@ impl CompoundPrefixProbe {
         }
         let mut next_difat = difat_start;
         let difat_entries = sector_size / 4 - 1;
+        let mut seen_difat_storage = ctx.reserve_scoped(0, "CFB probe visits")?;
         let mut seen_difat = BTreeSet::new();
         for _ in 0..difat_count {
             ctx.charge_work(cadmpeg_core::decode::u64_from_index(sector_size), "CFB probe DIFAT step")?;
             if cadmpeg_core::decode::index_from_u32(next_difat) >= available {
                 return Ok(Self::Incomplete);
             }
-            if !ctx.insert_btree_set(&mut seen_difat, next_difat, "CFB probe DIFAT visits")? {
+            if !ctx.insert_scoped_btree_set(&mut seen_difat_storage, &mut seen_difat, next_difat, "CFB probe DIFAT visits", "CFB probe DIFAT visits")? {
                 return Ok(Self::Malformed("CFB DIFAT chain is cyclic".into()));
             }
             let Some(raw) = sector_slice(prefix, sector_size, available, next_difat) else {
@@ -1384,11 +1386,13 @@ impl CompoundPrefixProbe {
             };
             // `available` counts only complete sectors, and each admitted
             // sector width is an exact multiple of four.
-            ctx.reserve_vec(&mut fat, raw.len() / 4, "CFB probe FAT words")?;
+            ctx.reserve_retained_vec(&mut fat, raw.len() / 4, "CFB probe FAT words")?;
             ctx.charge_work(cadmpeg_core::decode::u64_from_index(raw.len()), "CFB probe FAT words")?;
             fat.extend(raw.as_chunks::<4>().0.iter().copied().map(le_u32_array));
             loaded_fat_count += 1;
         }
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(loaded_fat_count), "CFB probe FAT roles")?;
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(seen_difat.len()), "CFB probe DIFAT roles")?;
         if fat_sectors
             .iter()
             .take(loaded_fat_count)
@@ -1408,6 +1412,7 @@ impl CompoundPrefixProbe {
             return Ok(Self::Malformed("CFB v3 declares directory sector count".into()));
         };
         let mut directory_chain = Vec::new();
+        let mut seen_directory_storage = ctx.reserve_scoped(0, "CFB probe visits")?;
         let mut seen_directory = BTreeSet::new();
         let mut current = directory_start;
         loop {
@@ -1422,10 +1427,10 @@ impl CompoundPrefixProbe {
                     Self::Malformed("CFB FAT does not address the directory sector".into())
                 });
             };
-            if !ctx.insert_btree_set(&mut seen_directory, current, "CFB probe directory visits")? {
+            if !ctx.insert_scoped_btree_set(&mut seen_directory_storage, &mut seen_directory, current, "CFB probe directory visits", "CFB probe directory visits")? {
                 return Ok(Self::Malformed("CFB directory chain is cyclic".into()));
             }
-            ctx.push_vec(&mut directory_chain, current, "CFB probe directory chain")?;
+            ctx.push_retained_vec(&mut directory_chain, current, "CFB probe directory chain")?;
             if next == END_OF_CHAIN {
                 break;
             }
@@ -1456,8 +1461,9 @@ impl CompoundPrefixProbe {
             return Ok(Self::Malformed(error.to_string()));
         }
         let mut names = Vec::new();
-        let mut pending = ctx.collection_vec(1, "CFB probe pending links")?;
+        let mut pending = ctx.retained_vec(1, "CFB probe pending links")?;
         pending.push((root.child, String::new()));
+        let mut seen_storage = ctx.reserve_scoped(0, "CFB probe visits")?;
         let mut seen = BTreeSet::new();
         while let Some((id, parent)) = pending.pop() {
             ctx.charge_work(cadmpeg_core::decode::u64_from_index(directory.len()), "CFB probe path step")?;
@@ -1470,7 +1476,7 @@ impl CompoundPrefixProbe {
             else {
                 return Ok(Self::Malformed("CFB directory link is out of range".into()));
             };
-            if !ctx.insert_btree_set(&mut seen, id, "CFB probe live entries")? {
+            if !ctx.insert_scoped_btree_set(&mut seen_storage, &mut seen, id, "CFB probe live entries", "CFB probe live entries")? {
                 return Ok(Self::Malformed("CFB directory link cycle".into()));
             }
             let path = if parent.is_empty() {
@@ -1478,22 +1484,25 @@ impl CompoundPrefixProbe {
             } else {
                 ctx.format_retained(format_args!("{parent}/{}", entry.name.as_str()), "CFB probe path")?
             };
-            ctx.push_vec(&mut names, ctx.copy_retained_text(&path, "CFB probe path copy")?, "CFB probe paths")?;
-            ctx.push_vec(&mut pending, (entry.left, ctx.copy_retained_text(&parent, "CFB probe parent copy")?), "CFB probe pending links")?;
-            ctx.push_vec(&mut pending, (entry.right, ctx.copy_retained_text(&parent, "CFB probe parent copy")?), "CFB probe pending links")?;
+            ctx.push_retained_vec(&mut names, ctx.copy_retained_text(&path, "CFB probe path copy")?, "CFB probe paths")?;
+            ctx.push_retained_vec(&mut pending, (entry.left, ctx.copy_retained_text(&parent, "CFB probe parent copy")?), "CFB probe pending links")?;
+            ctx.push_retained_vec(&mut pending, (entry.right, ctx.copy_retained_text(&parent, "CFB probe parent copy")?), "CFB probe pending links")?;
             if entry.kind == DirectoryKind::Storage {
                 if let Err(error) = validate_sibling_tree(ctx, &directory, entry.child) {
                     if matches!(error, CodecError::ResourceLimit(_)) { return Err(error); }
             return Ok(Self::Malformed(error.to_string()));
                 }
-                ctx.push_vec(&mut pending, (entry.child, path), "CFB probe pending links")?;
+                ctx.push_retained_vec(&mut pending, (entry.child, path), "CFB probe pending links")?;
             }
         }
-        if directory.iter().enumerate().skip(1).any(|(id, entry)| {
-            matches!(entry, DirectorySlot::Live(_))
-                && u32::try_from(id).ok().is_none_or(|id| !seen.contains(&id))
-        }) {
-            return Ok(Self::Malformed("CFB directory contains an unreachable live entry".into()));
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(directory.len()), "CFB probe reachability scan")?;
+        for (id, entry) in directory.iter().enumerate().skip(1) {
+            if matches!(entry, DirectorySlot::Live(_)) {
+                ctx.charge_work(cadmpeg_core::decode::u64_from_index(seen.len()), "CFB probe reachability lookup")?;
+                if u32::try_from(id).ok().is_none_or(|id| !seen.contains(&id)) {
+                    return Ok(Self::Malformed("CFB directory contains an unreachable live entry".into()));
+                }
+            }
         }
         Ok(Self::DirectoryEvidence(names))
         })
@@ -1528,6 +1537,7 @@ pub fn read_detection_prefix(
         if !incomplete { return Ok(bytes); }
         let used = cadmpeg_core::decode::u64_from_index(bytes.len());
         if used >= max_bytes {
+            ctx.charge_work(1, "CFB detection end probe")?;
             if source.read(&mut [0_u8; 1])? != 0 {
                 return Err(ctx.refuse_input_limit(1, "CFB detection input"));
             }

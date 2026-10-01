@@ -193,6 +193,7 @@ pub(crate) fn inspect(
         Err(InspectError::Cadir | InspectError::Unrecognized) => {
             return Err(inspect_unrecognized(path).into());
         }
+        Err(InspectError::Codec { error: cadmpeg_core::CodecError::ResourceLimit(limit), .. }) => return Err(cadmpeg_core::CodecError::ResourceLimit(limit).into()),
         Err(InspectError::Codec {
             selection,
             error: cadmpeg_core::CodecError::UnsupportedDialect { dialects, message },

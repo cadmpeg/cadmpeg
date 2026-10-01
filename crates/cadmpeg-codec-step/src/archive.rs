@@ -29,17 +29,18 @@ pub(crate) fn has_zip_magic(bytes: &[u8]) -> bool {
 }
 
 /// Returns whether a detection prefix names the required STEP root member.
-pub(crate) fn has_root_marker(prefix: &[u8]) -> bool {
-    // CE-07: the root name is evidence only when it is an entry in a
-    // structurally parsed ZIP central directory. Payloads, comments, and
-    // unrelated entry names are not root evidence.
+pub(crate) fn has_root_marker(ctx: &DecodeContext<'_>, prefix: View<'_>) -> Result<bool, CodecError> {
+    // The root name is evidence only in the structured central directory.
     const MAX_PROBE_BYTES: usize = 1024 * 1024;
-    if !has_zip_magic(prefix) || prefix.len() > MAX_PROBE_BYTES {
-        return false;
+    ctx.charge_work(u64_from_index(prefix.window().len().min(4)), "STEP ZIP detection magic")?;
+    if !has_zip_magic(prefix.window()) || prefix.window().len() > MAX_PROBE_BYTES {
+        return Ok(false);
     }
-    zip::ZipArchive::new(std::io::Cursor::new(prefix))
-        .ok()
-        .is_some_and(|archive| archive.file_names().any(|name| name == ROOT_NAME))
+    match ArchiveSnapshot::contains_name(ctx, prefix, ROOT_NAME) {
+        Ok(found) => Ok(found),
+        Err(error @ CodecError::ResourceLimit(_)) => Err(error),
+        Err(_) => Ok(false),
+    }
 }
 
 /// One STEP ZIP container whose required root member is proven present.
