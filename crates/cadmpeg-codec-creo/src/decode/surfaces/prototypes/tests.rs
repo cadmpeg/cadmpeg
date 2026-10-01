@@ -879,7 +879,8 @@ fn surface_prototype_frame_bounds_error_refuses_retained_limit() {
         crate::container::Section::scan("ND:0:VisibGeom:0".to_owned(), 32, 48, None, &[0u8; 48])
             .expect("section extent")
             .section;
-    let scan = crate::container::scan_bytes_ok(vec![0u8; 16]);
+    let mut scan = crate::test_support::empty_container_scan();
+    scan.framing.data = vec![0u8; 16].into();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = 0;

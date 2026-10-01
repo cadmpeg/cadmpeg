@@ -84,7 +84,7 @@ fn assert_placed_carrier_refusal(error: &CodecError, operation: &'static str) {
 
 #[test]
 fn placed_carriers_refuse_plane_carrier_node() {
-    let mut scan = crate::container::scan_bytes_ok(Vec::new());
+    let mut scan = crate::test_support::empty_container_scan();
     scan.planes
         .positional_frames
         .push(crate::surface::OutlinePlane {
@@ -102,7 +102,7 @@ fn placed_carriers_refuse_plane_carrier_node() {
 
 #[test]
 fn placed_carriers_refuse_row_id_node() {
-    let mut scan = crate::container::scan_bytes_ok(Vec::new());
+    let mut scan = crate::test_support::empty_container_scan();
     scan.surfaces
         .rows
         .push(carrier_row(7, crate::surface::SurfaceKind::Plane));
@@ -114,7 +114,7 @@ fn placed_carriers_refuse_row_id_node() {
 
 #[test]
 fn placed_carriers_refuse_row_count_node() {
-    let mut scan = crate::container::scan_bytes_ok(Vec::new());
+    let mut scan = crate::test_support::empty_container_scan();
     scan.surfaces
         .rows
         .push(carrier_row(7, crate::surface::SurfaceKind::Plane));
@@ -125,7 +125,7 @@ fn placed_carriers_refuse_row_count_node() {
 }
 
 fn rowless_cylinder_input() -> (crate::container::ContainerScan<'static>, CadIr) {
-    let scan = crate::container::scan_bytes_ok(Vec::new());
+    let scan = crate::test_support::empty_container_scan();
     let mut ir = CadIr::empty();
     ir.model.surfaces.push(cylinder_surface(7, 2.0));
     (scan, ir)
@@ -159,7 +159,7 @@ fn placed_carriers_refuse_rowless_carrier_node() {
 }
 
 fn topology_bound_curve_input() -> (crate::container::ContainerScan<'static>, CadIr) {
-    let mut scan = crate::container::scan_bytes_ok(Vec::new());
+    let mut scan = crate::test_support::empty_container_scan();
     scan.surfaces
         .rows
         .push(carrier_row(5, crate::surface::SurfaceKind::Plane));
@@ -363,7 +363,7 @@ fn existing_non_plane_carrier_conflicts_with_topology() {
 
 #[test]
 fn placed_carriers_reject_duplicate_model_surface_ids() {
-    let mut scan = crate::container::scan_bytes_ok(Vec::new());
+    let mut scan = crate::test_support::empty_container_scan();
     scan.surfaces
         .rows
         .push(carrier_row(7, crate::surface::SurfaceKind::Cylinder));
@@ -384,7 +384,7 @@ fn placed_carriers_reject_duplicate_model_surface_ids() {
 
 #[test]
 fn placed_carriers_prefers_unique_positional_cylinder_frame() {
-    let mut scan = crate::container::scan_bytes_ok(Vec::new());
+    let mut scan = crate::test_support::empty_container_scan();
     scan.surfaces
         .rows
         .push(carrier_row(7, crate::surface::SurfaceKind::Cylinder));
@@ -446,7 +446,7 @@ fn placed_carriers_prefers_unique_positional_cylinder_frame() {
 
 #[test]
 fn placed_carriers_keeps_non_inline_class913_model_carrier() {
-    let mut scan = crate::container::scan_bytes_ok(Vec::new());
+    let mut scan = crate::test_support::empty_container_scan();
     scan.features.rows.push(crate::feature::rows::FeatureRow {
         feature_id: 913,
         root_schema_class: Some(crate::feature::schema::SchemaClass::Round),
@@ -509,7 +509,7 @@ fn placed_carriers_keeps_non_inline_class913_model_carrier() {
 
 #[test]
 fn duplicate_model_surface_ids_remove_native_carrier() {
-    let mut scan = crate::container::scan_bytes_ok(Vec::new());
+    let mut scan = crate::test_support::empty_container_scan();
     scan.surfaces
         .rows
         .push(carrier_row(7, crate::surface::SurfaceKind::Plane));
@@ -560,7 +560,7 @@ fn duplicate_model_surface_ids_remove_native_carrier() {
 
 #[test]
 fn placed_carriers_admits_unique_rowless_model_surface() {
-    let scan = crate::container::scan_bytes_ok(Vec::new());
+    let scan = crate::test_support::empty_container_scan();
     let mut ir = CadIr::empty();
     ir.model.surfaces.push(cylinder_surface(7, 2.0));
 
@@ -581,7 +581,7 @@ fn placed_carriers_admits_unique_rowless_model_surface() {
 
 #[test]
 fn placed_carriers_rejects_duplicate_rowless_model_surface_ids() {
-    let scan = crate::container::scan_bytes_ok(Vec::new());
+    let scan = crate::test_support::empty_container_scan();
     let mut ir = CadIr::empty();
     ir.model
         .surfaces
@@ -798,7 +798,7 @@ fn parameter_loop_classifier_orders_unique_outer() {
 
 #[test]
 fn topology_bound_plane_rejects_duplicate_model_curve_ids() {
-    let mut scan = crate::container::scan_bytes_ok(Vec::new());
+    let mut scan = crate::test_support::empty_container_scan();
     scan.surfaces
         .rows
         .push(carrier_row(5, crate::surface::SurfaceKind::Plane));
@@ -854,7 +854,7 @@ fn topology_bound_plane_rejects_duplicate_model_curve_ids() {
 
 #[test]
 fn a_geometry_section_holds_every_offset_up_to_its_end_and_none_past_it() {
-    let mut scan = crate::container::scan_bytes_ok(Vec::new());
+    let mut scan = crate::test_support::empty_container_scan();
     let section =
         crate::container::Section::scan("VisibGeom".to_string(), 16, 48, None, &[0u8; 48])
             .expect("section extent")
@@ -876,7 +876,7 @@ fn a_geometry_section_holds_every_offset_up_to_its_end_and_none_past_it() {
 
 #[test]
 fn geometry_section_record_refuses_retained_identity_limit() {
-    let mut scan = crate::container::scan_bytes_ok(Vec::new());
+    let mut scan = crate::test_support::empty_container_scan();
     scan.framing.sections.push(
         crate::container::Section::scan("VisibGeom".to_string(), 16, 48, None, &[0u8; 48])
             .expect("section extent")

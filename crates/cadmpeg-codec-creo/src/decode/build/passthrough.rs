@@ -306,7 +306,8 @@ mod tests {
 
     #[test]
     fn passthrough_unknown_record_refuses_collection_limit() {
-        let mut scan = crate::container::scan_bytes_ok(vec![0u8; 48]);
+        let mut scan = crate::test_support::empty_container_scan();
+        scan.framing.data = vec![0u8; 48].into();
         scan.framing.sections.push(
             crate::container::Section::scan("ND:0:VisibGeom:0".to_owned(), 0, 48, None, &[0u8; 48])
                 .expect("section extent")
@@ -343,7 +344,8 @@ mod tests {
         )
         .expect("section extent")
         .section;
-        let mut scan = crate::container::scan_bytes_ok(vec![0u8; 16]);
+        let mut scan = crate::test_support::empty_container_scan();
+        scan.framing.data = vec![0u8; 16].into();
         scan.framing.sections.push(section);
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();

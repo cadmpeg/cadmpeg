@@ -105,7 +105,7 @@ fn plane_outline(id: u32, z: f64) -> crate::surface::OutlinePlane {
 }
 
 fn feature_plane_limit_error(limit: u64) -> cadmpeg_core::CodecError {
-    let mut scan = crate::container::scan_bytes_ok(Vec::new());
+    let mut scan = crate::test_support::empty_container_scan();
     scan.surfaces.rows.push(plane_row(31));
     scan.planes.outlines.push(plane_outline(31, 2.0));
     let arena = cadmpeg_core::decode::DecodeArena::new();
@@ -133,7 +133,7 @@ fn feature_plane_limit_error(limit: u64) -> cadmpeg_core::CodecError {
 
 #[test]
 fn feature_outline_planes_refuse_collection_limit() {
-    let mut scan = crate::container::scan_bytes_ok(Vec::new());
+    let mut scan = crate::test_support::empty_container_scan();
     scan.surfaces.rows.push(plane_row(31));
     scan.planes.outlines.push(plane_outline(31, 2.0));
     let arena = cadmpeg_core::decode::DecodeArena::new();
@@ -176,7 +176,7 @@ fn feature_plane_equations_refuse_collection_limit() {
 
 #[test]
 fn generated_arc_cylinder_id_nodes_refuse_collection_limit() {
-    let mut scan = crate::container::scan_bytes_ok(Vec::new());
+    let mut scan = crate::test_support::empty_container_scan();
     scan.features.entity_tables.push(
         crate::feature::entity::FeatureEntityTable::new(
             7,
@@ -340,7 +340,7 @@ fn generated_table_cap_classes_use_placed_cap_planes() {
             offset: 0,
             end_offset: 0,
         };
-    let mut scan = crate::container::scan_bytes_ok(Vec::new());
+    let mut scan = crate::test_support::empty_container_scan();
     scan.features.entity_tables.push(
         crate::feature::entity::FeatureEntityTable::new(
             7,
@@ -407,7 +407,7 @@ fn generated_table_cap_classes_use_placed_cap_planes() {
 
 #[test]
 fn feature_plane_extent_reconciles_native_and_transferred_carriers() {
-    let mut scan = crate::container::scan_bytes_ok(Vec::new());
+    let mut scan = crate::test_support::empty_container_scan();
     scan.surfaces.rows.extend([plane_row(31), plane_row(32)]);
     scan.planes
         .outlines
@@ -460,7 +460,7 @@ fn feature_plane_extent_reconciles_native_and_transferred_carriers() {
 
 #[test]
 fn feature_plane_extent_accepts_complete_transferred_carriers_without_local_frames() {
-    let mut scan = crate::container::scan_bytes_ok(Vec::new());
+    let mut scan = crate::test_support::empty_container_scan();
     scan.surfaces.rows.extend([plane_row(31), plane_row(32)]);
     let mut ir = CadIr::empty();
     ir.model
@@ -483,7 +483,7 @@ fn feature_plane_extent_accepts_complete_transferred_carriers_without_local_fram
 
 #[test]
 fn feature_plane_extent_rejects_ambiguous_or_non_plane_carriers() {
-    let mut scan = crate::container::scan_bytes_ok(Vec::new());
+    let mut scan = crate::test_support::empty_container_scan();
     scan.surfaces.rows.extend([plane_row(31), plane_row(32)]);
     scan.planes.outlines.extend([
         plane_outline(31, 2.0),
@@ -538,7 +538,7 @@ fn generated_arc_cylinder_extent_reconciles_transferred_carriers() {
         Some(34.0),
     )
     .expect("valid positional cylinder frame");
-    let mut scan = crate::container::scan_bytes_ok(Vec::new());
+    let mut scan = crate::test_support::empty_container_scan();
     scan.features.entity_tables.push(
         crate::feature::entity::FeatureEntityTable::new(
             7,

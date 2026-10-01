@@ -250,8 +250,10 @@ fn profile_circle(center: [f64; 2], radius: f64, reversed: bool) -> super::Profi
             radius: cadmpeg_ir::scalar::Length::new(radius).expect("positive radius"),
         },
         reversed,
-        start: [center[0] + radius, center[1]],
-        end: [center[0] + radius, center[1]],
+        start: cadmpeg_ir::units::FinitePoint2::new(Point2::new(center[0] + radius, center[1]))
+            .expect("finite"),
+        end: cadmpeg_ir::units::FinitePoint2::new(Point2::new(center[0] + radius, center[1]))
+            .expect("finite"),
     }
 }
 
@@ -262,8 +264,9 @@ fn profile_line(start: [f64; 2], end: [f64; 2]) -> super::ProfileEntity {
             end: Point2::new(end[0], end[1]),
         },
         reversed: false,
-        start,
-        end,
+        start: cadmpeg_ir::units::FinitePoint2::new(Point2::new(start[0], start[1]))
+            .expect("finite"),
+        end: cadmpeg_ir::units::FinitePoint2::new(Point2::new(end[0], end[1])).expect("finite"),
     }
 }
 
@@ -279,8 +282,8 @@ fn profile_nurbs_line() -> super::ProfileEntity {
     super::ProfileEntity {
         geometry: super::ProfileGeometry::Nurbs { curve },
         reversed: false,
-        start: [0.0, 0.0],
-        end: [1.0, 0.0],
+        start: cadmpeg_ir::units::FinitePoint2::new(Point2::new(0.0, 0.0)).expect("finite"),
+        end: cadmpeg_ir::units::FinitePoint2::new(Point2::new(1.0, 0.0)).expect("finite"),
     }
 }
 
@@ -300,6 +303,7 @@ fn profile_polyline_pairs_refuse_work_limit() {
             &[[0.0, 0.0], [1.0, 0.0]],
             &[[0.0, 1.0], [1.0, 1.0]],
             0.0,
+            [None, None],
         )
     })
     .expect_err("one segment pair exceeds zero work");
@@ -311,7 +315,7 @@ fn profile_segment_intersection_refuses_work_limit() {
     let first = profile_line([0.0, 0.0], [1.0, 0.0]);
     let second = profile_line([0.0, 1.0], [1.0, 1.0]);
     let error = under_work_limit(0, |ctx| {
-        super::profile_segments_intersect(ctx, &first, &second, 0.0)
+        super::profile_segments_intersect(ctx, &first, &second, 0.0, [None, None])
     })
     .expect_err("one geometry pair exceeds zero work");
     assert_work(&error, "creo profile segment intersection");
@@ -326,7 +330,7 @@ fn profile_nurbs_arc_intersection_refuses_segment_work() {
         "creo profile NURBS arc intersection segments",
         |limit| {
             under_work_limit(limit, |ctx| {
-                super::profile_segments_intersect(ctx, &first, &second, 0.01)
+                super::profile_segments_intersect(ctx, &first, &second, 0.01, [None, None])
             })
         },
     );
@@ -954,17 +958,20 @@ fn large_profile_circle_intersections_stay_finite() {
     assert!(super::line_arc_intersect(
         [[-2. * r, 0.], [2. * r, 0.]],
         arc,
-        1e-9
+        1e-9,
+        [None, None]
     ));
     assert!(super::arcs_intersect(
         arc,
         ([r, 0.], r, 0., std::f64::consts::TAU),
-        1e-9
+        1e-9,
+        [None, None]
     ));
     assert!(!super::arcs_intersect(
         arc,
         ([3. * r, 0.], r, 0., std::f64::consts::TAU),
-        1e-9
+        1e-9,
+        [None, None]
     ));
 }
 
@@ -975,13 +982,15 @@ fn small_segment_crossings_do_not_depend_on_cross_product_units() {
         assert!(super::segments_intersect(
             [[-scale, 0.0], [scale, 0.0]],
             [[0.0, -scale], [0.0, scale]],
-            DISTANCE_TOLERANCE
+            DISTANCE_TOLERANCE,
+            [None, None]
         ));
     }
     assert!(!super::segments_intersect(
         [[0.0, 0.0], [1e-5, 0.0]],
         [[0.0, 1e-5], [1e-5, 1e-5]],
-        DISTANCE_TOLERANCE
+        DISTANCE_TOLERANCE,
+        [None, None]
     ));
 }
 
@@ -1011,9 +1020,24 @@ fn numerical_ranges_profile_arc_tolerance_is_a_length_at_both_ends() {
 fn audit_regression_line_arc_endpoint_tolerance_has_length_units() {
     let line = [[0., 0.], [1000., 0.]];
     let arc = |center| ([center, 0.], 0.1, 0., std::f64::consts::TAU);
-    assert!(!super::line_arc_intersect(line, arc(1000.5), 0.001));
-    assert!(super::line_arc_intersect(line, arc(1000.1005), 0.001));
-    assert!(super::line_arc_intersect(line, arc(999.5), 0.001));
+    assert!(!super::line_arc_intersect(
+        line,
+        arc(1000.5),
+        0.001,
+        [None, None]
+    ));
+    assert!(super::line_arc_intersect(
+        line,
+        arc(1000.1005),
+        0.001,
+        [None, None]
+    ));
+    assert!(super::line_arc_intersect(
+        line,
+        arc(999.5),
+        0.001,
+        [None, None]
+    ));
 }
 
 #[test]
@@ -1162,3 +1186,5 @@ fn nurbs_profile_point_append_refuses_before_growth_at_the_common_ceiling() {
         assert_eq!(points.last(), Some(&[0.0; 2]));
     });
 }
+
+mod work_admission;

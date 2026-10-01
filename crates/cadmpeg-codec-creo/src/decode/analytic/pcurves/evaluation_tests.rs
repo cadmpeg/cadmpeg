@@ -67,7 +67,7 @@ fn model() -> CadIr {
 
 #[test]
 fn two_chart_mapping_propagates_evaluator_refusal() {
-    let scan = crate::container::scan_bytes_ok(Vec::new());
+    let scan = crate::test_support::empty_container_scan();
     let ir = model();
     let pcurve = crate::curve::TwoChartPcurveSamples {
         curve_id: 9,

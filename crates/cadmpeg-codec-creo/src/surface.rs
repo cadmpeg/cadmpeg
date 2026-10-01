@@ -668,13 +668,14 @@ fn parse_positional_spline_replay(
         return Ok(None);
     };
     Ok(crate::interpolation_grid::InterpolationGrid::try_new(
+        ctx,
         points,
         u_parameters,
         v_parameters,
         u_derivatives,
         v_derivatives,
         mixed_derivatives,
-    )
+    )?
     .map(|grid| (grid, cursor)))
 }
 

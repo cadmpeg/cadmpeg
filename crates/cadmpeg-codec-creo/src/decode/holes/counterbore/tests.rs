@@ -85,7 +85,7 @@ fn limit_ctx<'a>(
 }
 
 fn counterbore_source_limit_scan() -> crate::container::ContainerScan<'static> {
-    let mut scan = crate::container::scan_bytes_ok(Vec::new());
+    let mut scan = crate::test_support::empty_container_scan();
     let entry = |entity_id| crate::feature::entity::FeatureEntityTableEntry {
         entity_id,
         payload: crate::feature::entity::entry_payload(200, Some(5), None, None),
@@ -243,7 +243,7 @@ fn counterbore_generated_radii_refuse_collection_limit() {
 }
 
 fn boundary_scan() -> crate::container::ContainerScan<'static> {
-    let mut scan = crate::container::scan_bytes_ok(Vec::new());
+    let mut scan = crate::test_support::empty_container_scan();
     scan.surfaces.rows.extend([
         crate::surface::SurfaceRow {
             id: 1,
@@ -607,7 +607,7 @@ fn counterbore_source_corner_envelopes_refuse_collection_limit() {
         24, 45, 82, 36, 168, 193, 84, 201, 135, 18, 45, 89, 164, 168, 193, 84, 201, 135, 47, 34, 0,
         47, 32, 0, 47, 20, 0, 47, 36, 0, 47, 67, 0, 47, 24, 247, 24,
     ];
-    let mut scan = crate::container::scan_bytes_ok(Vec::new());
+    let mut scan = crate::test_support::empty_container_scan();
     for id in [10, 11] {
         let mut payload = vec![7, 0x24, 4, 0x01, 0, 0];
         payload.extend(replay);
@@ -666,7 +666,7 @@ fn counterbore_source_corner_envelopes_refuse_collection_limit() {
 
 #[test]
 fn counterbore_patch_rows_refuse_collection_limit() {
-    let mut scan = crate::container::scan_bytes_ok(Vec::new());
+    let mut scan = crate::test_support::empty_container_scan();
     let entry = |entity_id, source_id| crate::feature::entity::FeatureEntityTableEntry {
         entity_id,
         payload: crate::feature::entity::entry_payload(200, Some(source_id), None, None),

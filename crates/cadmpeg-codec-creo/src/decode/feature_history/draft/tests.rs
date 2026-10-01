@@ -48,7 +48,7 @@ fn hole_face_limit_error(
     operation: &'static str,
 ) {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-    let scan = crate::container::scan_bytes_ok(Vec::new());
+    let scan = crate::test_support::empty_container_scan();
     let mut ir = CadIr::empty();
     if resolved {
         ir.model.faces.push(resolved_hole_face());
@@ -118,7 +118,7 @@ fn hole_resolved_face_vector_refuses_collection_limit() {
 
 #[test]
 fn hole_resolved_face_keeps_its_native_reference() {
-    let scan = crate::container::scan_bytes_ok(Vec::new());
+    let scan = crate::test_support::empty_container_scan();
     let mut ir = CadIr::empty();
     ir.model.faces.push(resolved_hole_face());
     let selection = crate::decode::with_test_decode_ctx(|ctx| {
@@ -240,7 +240,7 @@ fn thicken_scan() -> crate::container::ContainerScan<'static> {
             offset: usize::try_from(entity_id).expect("fixture index fits usize"),
             end_offset: usize::try_from(entity_id).expect("fixture index fits usize"),
         };
-    let mut scan = crate::container::scan_bytes_ok(Vec::new());
+    let mut scan = crate::test_support::empty_container_scan();
     scan.features.entity_tables.push(
         crate::feature::entity::FeatureEntityTable::new(
             17,
@@ -360,7 +360,7 @@ fn thicken_fixture_generates_a_face_under_service_policy() {
 
 #[test]
 fn datum_feature_rejects_conflicting_local_and_transferred_plane_carriers() {
-    let mut scan = crate::container::scan_bytes_ok(Vec::new());
+    let mut scan = crate::test_support::empty_container_scan();
     scan.surfaces.rows.push(crate::surface::SurfaceRow {
         id: 6,
         kind: crate::surface::SurfaceKind::Plane,
@@ -437,7 +437,7 @@ fn datum_feature_rejects_conflicting_local_and_transferred_plane_carriers() {
 }
 
 fn unbounded_plane_scan() -> crate::container::ContainerScan<'static> {
-    let mut scan = crate::container::scan_bytes_ok(Vec::new());
+    let mut scan = crate::test_support::empty_container_scan();
     scan.surfaces.rows.push(crate::surface::SurfaceRow {
         id: 6,
         kind: crate::surface::SurfaceKind::Plane,
