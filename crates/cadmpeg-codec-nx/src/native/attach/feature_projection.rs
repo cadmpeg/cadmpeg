@@ -2365,7 +2365,7 @@ pub(super) fn selected_hole_operations(
                 .cmp(&operation_positions.get(second.as_str()))
                 .then_with(|| first.cmp(second))
         },
-        |operation| operation.len(),
+        String::len,
         "sort NX hole operations",
     )?;
     Ok(Some(operations))
@@ -3991,7 +3991,7 @@ pub(super) fn simple_hole_chamfers(
     ctx.stable_sort_by(
         &mut operations,
         Ord::cmp,
-        |operation| operation.len(),
+        String::len,
         "sort NX chamfer selected operations",
     )?;
     let Some(operations_by_body) = hole_operations_by_body(ctx, ir, &operations, outputs)? else {

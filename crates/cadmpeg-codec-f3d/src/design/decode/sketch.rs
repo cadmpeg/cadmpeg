@@ -477,7 +477,12 @@ pub(crate) fn decode_sketch_placements(
             .get(&(stream, placement.entity_id.suffix()))
             .copied();
     }
-    ctx.stable_sort_by(&mut out[..], |a, b| a.id.cmp(&b.id), |value| value.id.as_str().len(), "sort f3d design sketch 1")?;
+    ctx.stable_sort_by(
+        &mut out[..],
+        |a, b| a.id.cmp(&b.id),
+        |value| value.id.as_str().len(),
+        "sort f3d design sketch 1",
+    )?;
     Ok(out)
 }
 
@@ -897,11 +902,26 @@ fn finish_persistent_references(
     ctx: &DecodeContext<'_>,
     mut out: Vec<(usize, PersistentReference)>,
 ) -> Result<Vec<PersistentReference>, CodecError> {
-    ctx.stable_sort_by(&mut out[..], |left, right| { let left_key = { let (entry_ordinal, reference) = left; {
-        (*entry_ordinal, reference.byte_offset)
-    } }; let right_key = { let (entry_ordinal, reference) = right; {
-        (*entry_ordinal, reference.byte_offset)
-    } }; left_key.cmp(&right_key) }, |_| 0, "sort f3d design sketch 2")?;
+    ctx.stable_sort_by(
+        &mut out[..],
+        |left, right| {
+            let left_key = {
+                let (entry_ordinal, reference) = left;
+                {
+                    (*entry_ordinal, reference.byte_offset)
+                }
+            };
+            let right_key = {
+                let (entry_ordinal, reference) = right;
+                {
+                    (*entry_ordinal, reference.byte_offset)
+                }
+            };
+            left_key.cmp(&right_key)
+        },
+        |_| 0,
+        "sort f3d design sketch 2",
+    )?;
 
     let mut references = Vec::new();
     ctx.reserve_vec(
@@ -1543,7 +1563,12 @@ pub(crate) fn decode_entity_headers(
             )?;
         }
     }
-    ctx.stable_sort_by(&mut out[..], |a, b| a.id.cmp(&b.id), |value| value.id.as_str().len(), "sort f3d design sketch 3")?;
+    ctx.stable_sort_by(
+        &mut out[..],
+        |a, b| a.id.cmp(&b.id),
+        |value| value.id.as_str().len(),
+        "sort f3d design sketch 3",
+    )?;
     Ok(out)
 }
 
@@ -1652,7 +1677,12 @@ fn decode_headers_for_indices(
         let (_scope_reservation, scope) = native_scope_scoped(ctx, &entry.name)?;
         decode_headers_for_indices_from_stream(ctx, &entry.name, &scope, bytes, wanted, &mut out)?;
     }
-    ctx.stable_sort_by(&mut out[..], |a, b| a.id.cmp(&b.id), |value| value.id.as_str().len(), "sort f3d design sketch 4")?;
+    ctx.stable_sort_by(
+        &mut out[..],
+        |a, b| a.id.cmp(&b.id),
+        |value| value.id.as_str().len(),
+        "sort f3d design sketch 4",
+    )?;
     Ok(out)
 }
 
@@ -3735,7 +3765,12 @@ pub(crate) fn decode_sketch_surfaces(
             });
         }
     }
-    ctx.stable_sort_by(&mut out[..], |a, b| a.id.cmp(&b.id), |value| value.id.as_str().len(), "sort f3d design sketch 5")?;
+    ctx.stable_sort_by(
+        &mut out[..],
+        |a, b| a.id.cmp(&b.id),
+        |value| value.id.as_str().len(),
+        "sort f3d design sketch 5",
+    )?;
     Ok(out)
 }
 

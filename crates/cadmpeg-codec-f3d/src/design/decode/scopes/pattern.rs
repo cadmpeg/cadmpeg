@@ -305,11 +305,16 @@ fn exact_rectangular_pattern_instances(
                 }
             }
         }
-        if let Err(error) = ctx.stable_sort_by(&mut runs[..], |a, b| {
-            a.iter()
-                .map(|(_, offset)| *offset)
-                .cmp(b.iter().map(|(_, offset)| *offset))
-        }, |_| 0, "sort f3d design pattern 1") {
+        if let Err(error) = ctx.stable_sort_by(
+            &mut runs[..],
+            |a, b| {
+                a.iter()
+                    .map(|(_, offset)| *offset)
+                    .cmp(b.iter().map(|(_, offset)| *offset))
+            },
+            |_| 0,
+            "sort f3d design pattern 1",
+        ) {
             return Some(Err(error));
         }
         runs.dedup_by(|left, right| left == right);
@@ -600,15 +605,18 @@ pub(super) fn exact_circular_pattern_construction_with_owners(
                 angle_candidates.push((angle, *record_index, scalar.value_offset));
             }
         }
-        if let Err(error) =
-            ctx.stable_sort_by(&mut angle_candidates[..], |left, right| {
+        if let Err(error) = ctx.stable_sort_by(
+            &mut angle_candidates[..],
+            |left, right| {
                 left.0
                     .get()
                     .total_cmp(&right.0.get())
                     .then_with(|| left.1.cmp(&right.1))
                     .then_with(|| left.2.cmp(&right.2))
-            }, |_| 0, "sort f3d design pattern 2")
-        {
+            },
+            |_| 0,
+            "sort f3d design pattern 2",
+        ) {
             return Some(Err(error));
         }
         angle_candidates.dedup();

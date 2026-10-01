@@ -250,7 +250,12 @@ pub(crate) fn decode_dimension_recipe_records(
             });
         }
     }
-    ctx.stable_sort_by(&mut out[..], |a, b| a.id.cmp(&b.id), |value| value.id.as_str().len(), "sort f3d design dimension_frames 1")?;
+    ctx.stable_sort_by(
+        &mut out[..],
+        |a, b| a.id.cmp(&b.id),
+        |value| value.id.as_str().len(),
+        "sort f3d design dimension_frames 1",
+    )?;
     Ok(out)
 }
 
@@ -789,21 +794,33 @@ pub(crate) fn bind_recipe_reference_candidates_charged(
             _ => {}
         }
     }
-    ctx.stable_sort_by(&mut reference.candidate_faces[..], |a, b| {
-        a.as_str().cmp(b.as_str())
-    }, |_| 0, "sort f3d design dimension_frames 2")?;
+    ctx.stable_sort_by(
+        &mut reference.candidate_faces[..],
+        |a, b| a.as_str().cmp(b.as_str()),
+        |_| 0,
+        "sort f3d design dimension_frames 2",
+    )?;
     reference.candidate_faces.dedup();
-    ctx.stable_sort_by(&mut reference.candidate_edges[..], |a, b| {
-        a.as_str().cmp(b.as_str())
-    }, |_| 0, "sort f3d design dimension_frames 3")?;
+    ctx.stable_sort_by(
+        &mut reference.candidate_edges[..],
+        |a, b| a.as_str().cmp(b.as_str()),
+        |_| 0,
+        "sort f3d design dimension_frames 3",
+    )?;
     reference.candidate_edges.dedup();
-    ctx.stable_sort_by(&mut reference.alternate_selector_faces[..], |a, b| {
-        a.as_str().cmp(b.as_str())
-    }, |_| 0, "sort f3d design dimension_frames 4")?;
+    ctx.stable_sort_by(
+        &mut reference.alternate_selector_faces[..],
+        |a, b| a.as_str().cmp(b.as_str()),
+        |_| 0,
+        "sort f3d design dimension_frames 4",
+    )?;
     reference.alternate_selector_faces.dedup();
-    ctx.stable_sort_by(&mut reference.alternate_selector_edges[..], |a, b| {
-        a.as_str().cmp(b.as_str())
-    }, |_| 0, "sort f3d design dimension_frames 5")?;
+    ctx.stable_sort_by(
+        &mut reference.alternate_selector_edges[..],
+        |a, b| a.as_str().cmp(b.as_str()),
+        |_| 0,
+        "sort f3d design dimension_frames 5",
+    )?;
     reference.alternate_selector_edges.dedup();
     Ok(())
 }
@@ -827,7 +844,12 @@ pub(crate) fn bind_dimension_recipe_edge_operands(
                 "f3d dimension recipe edge ID text",
             )?;
         }
-        ctx.stable_sort_by(&mut ids[..], Ord::cmp, |_| 0, "sort f3d design dimension_frames 6")?;
+        ctx.stable_sort_by(
+            &mut ids[..],
+            Ord::cmp,
+            |_| 0,
+            "sort f3d design dimension_frames 6",
+        )?;
         ids.dedup();
         record.matching_edge_operand_ids = ids;
     }
@@ -851,7 +873,12 @@ pub(crate) fn dimension_recipe_matching_edge_operand_ids(
             "f3d dimension recipe edge ID text",
         )?;
     }
-    ctx.stable_sort_by(&mut ids, Ord::cmp, |_| 0, "sort f3d design dimension_frames 7")?;
+    ctx.stable_sort_by(
+        &mut ids,
+        Ord::cmp,
+        |_| 0,
+        "sort f3d design dimension_frames 7",
+    )?;
     ids.dedup();
     Ok(ids)
 }
@@ -1015,7 +1042,12 @@ pub(crate) fn decode_dimension_locus_pairs(
         ctx.reserve_vec(&mut out, 1, "f3d dimension locus pairs")?;
         out.push(pair);
     }
-    ctx.stable_sort_by(&mut out[..], |a, b| a.id.cmp(&b.id), |value| value.id.as_str().len(), "sort f3d design dimension_frames 8")?;
+    ctx.stable_sort_by(
+        &mut out[..],
+        |a, b| a.id.cmp(&b.id),
+        |value| value.id.as_str().len(),
+        "sort f3d design dimension_frames 8",
+    )?;
     Ok(out)
 }
 
@@ -1240,7 +1272,12 @@ pub(crate) fn decode_dimension_null_locus_pairs(
         ctx.reserve_vec(&mut out, 1, "f3d dimension null locus pairs")?;
         out.push(pair);
     }
-    ctx.stable_sort_by(&mut out[..], |a, b| a.id.cmp(&b.id), |value| value.id.as_str().len(), "sort f3d design dimension_frames 9")?;
+    ctx.stable_sort_by(
+        &mut out[..],
+        |a, b| a.id.cmp(&b.id),
+        |value| value.id.as_str().len(),
+        "sort f3d design dimension_frames 9",
+    )?;
     Ok(out)
 }
 
@@ -1511,7 +1548,12 @@ pub(crate) fn decode_dimension_annotation_frames(
             }
         }
     }
-    ctx.stable_sort_by(&mut out[..], |a, b| a.id.cmp(&b.id), |value| value.id.as_str().len(), "sort f3d design dimension_frames 10")?;
+    ctx.stable_sort_by(
+        &mut out[..],
+        |a, b| a.id.cmp(&b.id),
+        |value| value.id.as_str().len(),
+        "sort f3d design dimension_frames 10",
+    )?;
     Ok(out)
 }
 
@@ -1902,7 +1944,12 @@ pub(crate) fn decode_dimension_presentation_frames(
             out.push(frame);
         }
     }
-    ctx.stable_sort_by(&mut out[..], |a, b| a.id.cmp(&b.id), |value| value.id.as_str().len(), "sort f3d design dimension_frames 11")?;
+    ctx.stable_sort_by(
+        &mut out[..],
+        |a, b| a.id.cmp(&b.id),
+        |value| value.id.as_str().len(),
+        "sort f3d design dimension_frames 11",
+    )?;
     Ok(out)
 }
 
@@ -2091,7 +2138,12 @@ pub(crate) fn decode_dimension_locus_groups(
             out.push(group);
         }
     }
-    ctx.stable_sort_by(&mut out[..], |a, b| a.id.cmp(&b.id), |value| value.id.as_str().len(), "sort f3d design dimension_frames 12")?;
+    ctx.stable_sort_by(
+        &mut out[..],
+        |a, b| a.id.cmp(&b.id),
+        |value| value.id.as_str().len(),
+        "sort f3d design dimension_frames 12",
+    )?;
     Ok(out)
 }
 
@@ -2136,7 +2188,22 @@ fn find_dimension_locus_groups(
         }
         position = at.checked_add(1);
     }
-    ctx.stable_sort_by(&mut candidates[..], |left, right| { let left_key = { let group = left; group.byte_offset }; let right_key = { let group = right; group.byte_offset }; left_key.cmp(&right_key) }, |_| 0, "sort f3d design dimension_frames 13")?;
+    ctx.stable_sort_by(
+        &mut candidates[..],
+        |left, right| {
+            let left_key = {
+                let group = left;
+                group.byte_offset
+            };
+            let right_key = {
+                let group = right;
+                group.byte_offset
+            };
+            left_key.cmp(&right_key)
+        },
+        |_| 0,
+        "sort f3d design dimension_frames 13",
+    )?;
     candidates.dedup_by_key(|group| group.byte_offset);
     Ok(candidates)
 }

@@ -347,7 +347,7 @@ fn model_root_member(
     ctx.stable_sort_by(
         &mut candidates,
         Ord::cmp,
-        |candidate| candidate.len(),
+        String::len,
         "sort F3Z model candidates",
     )?;
     candidates.dedup();

@@ -273,12 +273,15 @@ mod admission_tests {
 
     #[test]
     fn creation_display_finalization_refuses_scoped_limit() {
-        let row: RmCreationDisplayDataRelation = serde_json::from_str(ROW).unwrap();
+        // The stable sort reserves scratch only above 20 values.
+        let rows: Vec<RmCreationDisplayDataRelation> = (0..21)
+            .map(|_| serde_json::from_str(ROW).unwrap())
+            .collect();
         let adjust_policy = |policy: &mut cadmpeg_core::decode::DecodePolicy| {
             policy.limits.max_materialized_bytes = 0;
         };
         let error = crate::test_support::with_decode_context_over(&[], adjust_policy, |ctx| {
-            finalize_relations(ctx, vec![row]).unwrap_err()
+            finalize_relations(ctx, rows).unwrap_err()
         });
         assert!(matches!(error, CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::MaterializedBytes));

@@ -8341,16 +8341,11 @@ pub(super) fn feature_sketch_point_uses(
         ctx.stable_sort_by(
             &mut point_block_uses,
             |left, right| {
-                (
-                    left.reference_ordinal,
-                    left.source_offset,
-                    left.id.as_str(),
-                )
-                    .cmp(&(
-                        right.reference_ordinal,
-                        right.source_offset,
-                        right.id.as_str(),
-                    ))
+                (left.reference_ordinal, left.source_offset, left.id.as_str()).cmp(&(
+                    right.reference_ordinal,
+                    right.source_offset,
+                    right.id.as_str(),
+                ))
             },
             |block_use| block_use.id.len(),
             "sort NX sketch point block uses",
