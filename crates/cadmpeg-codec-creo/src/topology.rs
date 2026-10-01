@@ -188,10 +188,13 @@ impl FaceComponent {
         &self.curve_ids
     }
     #[cfg(test)]
-    pub(crate) fn new_for_test(ctx: &DecodeContext<'_>, face_ids: Vec<u32>, curve_ids: Vec<u32>) -> Result<Option<Self>, CodecError> {
+    pub(crate) fn new_for_test(
+        ctx: &DecodeContext<'_>,
+        face_ids: Vec<u32>,
+        curve_ids: Vec<u32>,
+    ) -> Result<Option<Self>, CodecError> {
         Self::new(ctx, face_ids, curve_ids)
     }
-
 }
 
 /// One topological vertex represented by its incident half-edge orbit.
@@ -225,10 +228,13 @@ impl TopologicalVertex {
         &self.half_edges
     }
     #[cfg(test)]
-    pub(crate) fn new_for_test(ctx: &DecodeContext<'_>, id: u32, half_edges: Vec<HalfEdgeId>) -> Result<Option<Self>, CodecError> {
+    pub(crate) fn new_for_test(
+        ctx: &DecodeContext<'_>,
+        id: u32,
+        half_edges: Vec<HalfEdgeId>,
+    ) -> Result<Option<Self>, CodecError> {
         Self::new(ctx, id, half_edges)
     }
-
 }
 
 /// Start/end vertex binding for one oriented half-edge.
@@ -496,7 +502,9 @@ pub(crate) fn vertex_orbits(
                 .copied()
             {
                 ctx.charge_work(lookup_work, "creo vertex graph neighbours")?;
-                if visited.contains(&next) { continue; }
+                if visited.contains(&next) {
+                    continue;
+                }
                 ctx.reserve_vec(&mut pending, 1, "creo vertex orbit pending edges")?;
                 pending.push(next);
             }
@@ -511,7 +519,10 @@ pub(crate) fn vertex_orbits(
         };
         let mut half_edges = Vec::new();
         ctx.reserve_vec(&mut half_edges, orbit.len(), "creo vertex orbit half-edges")?;
-        ctx.charge_work(cadmpeg_core::decode::u64_from_index(orbit.len()), "creo vertex orbit projection")?;
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(orbit.len()),
+            "creo vertex orbit projection",
+        )?;
         half_edges.extend(orbit);
         ctx.reserve_vec(&mut vertices, 1, "creo topological vertices")?;
         let vertex = TopologicalVertex::new(ctx, id, half_edges)?
@@ -628,11 +639,17 @@ pub(crate) fn face_components(
         }
         let mut face_ids = Vec::new();
         ctx.reserve_vec(&mut face_ids, faces.len(), "creo component face IDs")?;
-        ctx.charge_work(cadmpeg_core::decode::u64_from_index(faces.len()), "creo face component projection")?;
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(faces.len()),
+            "creo face component projection",
+        )?;
         face_ids.extend(faces);
         let mut curve_ids = Vec::new();
         ctx.reserve_vec(&mut curve_ids, curves.len(), "creo component curve IDs")?;
-        ctx.charge_work(cadmpeg_core::decode::u64_from_index(curves.len()), "creo face component projection")?;
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(curves.len()),
+            "creo face component projection",
+        )?;
         curve_ids.extend(curves);
         ctx.reserve_vec(&mut components, 1, "creo face components")?;
         let component = FaceComponent::new(ctx, face_ids, curve_ids)?

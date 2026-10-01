@@ -1245,13 +1245,29 @@ fn unequal_mixed_round_cylinders_are_not_hidden_by_unresolved_torus() {
 
 #[test]
 fn opposite_reference_caps_select_one_round_envelope_axis() {
-    let circle =
-        |entity_id, axis, start: [f64; 3], end: [f64; 3]| {
-            let mut center = start;
-            let radial_lane = (0..3).find(|lane| start[*lane] != end[*lane]).expect("distinct cap endpoints");
-            center[radial_lane] = end[radial_lane];
-            crate::reference::ReferenceCircle::try_new(entity_id, crate::reference::ReferenceCircleCenter::Stored(cadmpeg_ir::features::FinitePoint3::new(center.into()).expect("finite circle center")), cadmpeg_ir::scalar::PositiveLength::new(2.0).expect("positive radius"), cadmpeg_ir::units::UnitVector3::new(cadmpeg_ir::math::Vector3::from(axis))
-                .expect("unit axis"), [cadmpeg_ir::features::FinitePoint3::new(start.into()).expect("finite start"), cadmpeg_ir::features::FinitePoint3::new(end.into()).expect("finite end")], 0).expect("checked reference geometry") };
+    let circle = |entity_id, axis, start: [f64; 3], end: [f64; 3]| {
+        let mut center = start;
+        let radial_lane = (0..3)
+            .find(|lane| start[*lane] != end[*lane])
+            .expect("distinct cap endpoints");
+        center[radial_lane] = end[radial_lane];
+        crate::reference::ReferenceCircle::try_new(
+            entity_id,
+            crate::reference::ReferenceCircleCenter::Stored(
+                cadmpeg_ir::features::FinitePoint3::new(center.into())
+                    .expect("finite circle center"),
+            ),
+            cadmpeg_ir::scalar::PositiveLength::new(2.0).expect("positive radius"),
+            cadmpeg_ir::units::UnitVector3::new(cadmpeg_ir::math::Vector3::from(axis))
+                .expect("unit axis"),
+            [
+                cadmpeg_ir::features::FinitePoint3::new(start.into()).expect("finite start"),
+                cadmpeg_ir::features::FinitePoint3::new(end.into()).expect("finite end"),
+            ],
+            0,
+        )
+        .expect("checked reference geometry")
+    };
     let envelope = crate::surface::Type24RoundEnvelope {
         diameter: 2.0,
         extent_endpoints: [[3.5, 8.0, -6.0], [5.5, 10.0, -4.0]],
@@ -1285,9 +1301,26 @@ fn opposite_reference_caps_select_one_round_envelope_axis() {
 
 #[test]
 fn coaxial_reference_circles_define_a_cylinder_frame() {
-    let circle =
-        |entity_id, center: [f64; 3], axis, start: [f64; 3]| crate::reference::ReferenceCircle::try_new(entity_id, crate::reference::ReferenceCircleCenter::Stored(cadmpeg_ir::features::FinitePoint3::new(center.into()).expect("finite center")), cadmpeg_ir::scalar::PositiveLength::new(2.0).expect("positive radius"), cadmpeg_ir::units::UnitVector3::new(cadmpeg_ir::math::Vector3::from(axis))
-                .expect("unit axis"), [cadmpeg_ir::features::FinitePoint3::new(start.into()).expect("finite start"), cadmpeg_ir::features::FinitePoint3::new(std::array::from_fn::<_, 3, _>(|lane| 2.0 * center[lane] - start[lane]).into()).expect("on-circle end")], 0).expect("checked reference geometry");
+    let circle = |entity_id, center: [f64; 3], axis, start: [f64; 3]| {
+        crate::reference::ReferenceCircle::try_new(
+            entity_id,
+            crate::reference::ReferenceCircleCenter::Stored(
+                cadmpeg_ir::features::FinitePoint3::new(center.into()).expect("finite center"),
+            ),
+            cadmpeg_ir::scalar::PositiveLength::new(2.0).expect("positive radius"),
+            cadmpeg_ir::units::UnitVector3::new(cadmpeg_ir::math::Vector3::from(axis))
+                .expect("unit axis"),
+            [
+                cadmpeg_ir::features::FinitePoint3::new(start.into()).expect("finite start"),
+                cadmpeg_ir::features::FinitePoint3::new(
+                    std::array::from_fn::<_, 3, _>(|lane| 2.0 * center[lane] - start[lane]).into(),
+                )
+                .expect("on-circle end"),
+            ],
+            0,
+        )
+        .expect("checked reference geometry")
+    };
     let first = circle(41, [3.0, 5.0, -2.0], [0.0, 0.0, 1.0], [3.0, 7.0, -2.0]);
     let second = circle(42, [3.0, 5.0, 4.0], [0.0, 0.0, -1.0], [1.0, 5.0, 4.0]);
 
@@ -1307,20 +1340,31 @@ fn coaxial_reference_circles_define_a_cylinder_frame() {
     assert!(reference_circle_pair_cylinder_frame(&[&first]).is_none());
 
     let unequal_radius = crate::reference::ReferenceCircle::try_new(
-        second.entity_id, crate::reference::ReferenceCircleCenter::Stored(second.center()),
-        cadmpeg_ir::scalar::PositiveLength::new(1.0).expect("positive radius"), second.axis(),
-        [cadmpeg_ir::features::FinitePoint3::new([2.0, 5.0, 4.0].into()).expect("start"),
-         cadmpeg_ir::features::FinitePoint3::new([4.0, 5.0, 4.0].into()).expect("end")], second.offset,
-    ).expect("valid unequal-radius circle");
+        second.entity_id,
+        crate::reference::ReferenceCircleCenter::Stored(second.center()),
+        cadmpeg_ir::scalar::PositiveLength::new(1.0).expect("positive radius"),
+        second.axis(),
+        [
+            cadmpeg_ir::features::FinitePoint3::new([2.0, 5.0, 4.0].into()).expect("start"),
+            cadmpeg_ir::features::FinitePoint3::new([4.0, 5.0, 4.0].into()).expect("end"),
+        ],
+        second.offset,
+    )
+    .expect("valid unequal-radius circle");
     assert!(reference_circle_pair_cylinder_frame(&[&first, &unequal_radius]).is_none());
 
     let displaced = circle(43, [3.5, 5.0, 4.0], [0.0, 0.0, 1.0], [3.5, 7.0, 4.0]);
     assert!(reference_circle_pair_cylinder_frame(&[&first, &displaced]).is_none());
 
     let derived_center = crate::reference::ReferenceCircle::try_new(
-        second.entity_id, crate::reference::ReferenceCircleCenter::Diameter, second.radius(),
-        cadmpeg_ir::units::UnitVector3::Z_AXIS, [second.start(), second.end()], second.offset,
-    ).expect("valid diameter-derived center");
+        second.entity_id,
+        crate::reference::ReferenceCircleCenter::Diameter,
+        second.radius(),
+        cadmpeg_ir::units::UnitVector3::Z_AXIS,
+        [second.start(), second.end()],
+        second.offset,
+    )
+    .expect("valid diameter-derived center");
     assert!(reference_circle_pair_cylinder_frame(&[&first, &derived_center]).is_none());
 }
 

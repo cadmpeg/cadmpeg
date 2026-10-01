@@ -4497,15 +4497,19 @@ pub(super) fn sketch_records<'a>(
                 }),
             table_headers: sketch_table_headers(ctx, definition)?,
             section_points: sketch_section_point_records(ctx, definition)?,
-            solved_external_ids: ctx.collect_vec(definition
+            solved_external_ids: ctx.collect_vec(
+                definition
                     .trim_entities
                     .iter()
-                    .flat_map(|table| table.solved_external_ids.iter().copied()), "creo native sketch solved external IDs")?,
+                    .flat_map(|table| table.solved_external_ids.iter().copied()),
+                "creo native sketch solved external IDs",
+            )?,
             variables: {
                 let resolved_coordinates = resolved_section_coordinates(ctx, definition)?;
                 let resolved_radii = resolved_section_radii(ctx, definition)?;
                 let resolved_scalars = resolved_section_scalar_values(ctx, definition)?;
-                ctx.try_collect_vec((definition.variables.iter().flat_map(|table| &table.rows)).map(|row| {
+                ctx.try_collect_vec(
+                    (definition.variables.iter().flat_map(|table| &table.rows)).map(|row| {
                         Ok::<_, CodecError>(CreoSketchVariable {
                             variable_type: row.variable_type.code(),
                             key: row.key,
@@ -4534,29 +4538,39 @@ pub(super) fn sketch_records<'a>(
                             },
                             offset: row.offset,
                         })
-                    }), "creo native sketch variables")?
+                    }),
+                    "creo native sketch variables",
+                )?
             },
-            equations: ctx.try_collect_vec((crate::feature::definitions::equation_table(
+            equations: ctx.try_collect_vec(
+                (crate::feature::definitions::equation_table(
                     ctx,
                     &definition.body,
                     0,
                     definition.body.len(),
                 )?
                 .into_iter()
-                .flat_map(|table| table.rows)).map(|equation| Ok::<_, CodecError>(CreoSketchEquation {
-                    equation_id: equation.equation_id,
-                    function_id: equation.function_id,
-                    explicit_argument_count: equation.explicit_argument_count,
-                    arguments: equation.arguments,
-                    arguments_body: equation.arguments_body,
-                    auxiliary_body: equation.auxiliary_body,
-                    body: equation.body,
-                    offset: definition.body_position(equation.offset)?.source()?.get(),
-                })), "creo native sketch equations")?,
-            segments: ctx.try_collect_vec((definition
+                .flat_map(|table| table.rows))
+                .map(|equation| {
+                    Ok::<_, CodecError>(CreoSketchEquation {
+                        equation_id: equation.equation_id,
+                        function_id: equation.function_id,
+                        explicit_argument_count: equation.explicit_argument_count,
+                        arguments: equation.arguments,
+                        arguments_body: equation.arguments_body,
+                        auxiliary_body: equation.auxiliary_body,
+                        body: equation.body,
+                        offset: definition.body_position(equation.offset)?.source()?.get(),
+                    })
+                }),
+                "creo native sketch equations",
+            )?,
+            segments: ctx.try_collect_vec(
+                (definition
                     .segments
                     .iter()
-                    .flat_map(|table| table.rows.ordinary())).map(|segment| {
+                    .flat_map(|table| table.rows.ordinary()))
+                .map(|segment| {
                     Ok::<_, CodecError>(CreoSketchSegment {
                         external_id: segment.external_id,
                         kind: match segment.kind {
@@ -4575,8 +4589,11 @@ pub(super) fn sketch_records<'a>(
                             .copy_retained(&segment.body, "creo native sketch segment body")?,
                         offset: segment.offset,
                     })
-                }), "creo native sketch segments")?,
-            circle_segments: ctx.collect_vec(definition
+                }),
+                "creo native sketch segments",
+            )?,
+            circle_segments: ctx.collect_vec(
+                definition
                     .segments
                     .iter()
                     .flat_map(|table| table.rows.circles())
@@ -4585,8 +4602,11 @@ pub(super) fn sketch_records<'a>(
                         center_id: segment.center_id,
                         radius_dimension_id: segment.radius_ref,
                         offset: segment.offset,
-                    }), "creo native sketch circle segments")?,
-            point_segments: ctx.collect_vec(definition
+                    }),
+                "creo native sketch circle segments",
+            )?,
+            point_segments: ctx.collect_vec(
+                definition
                     .segments
                     .iter()
                     .flat_map(|table| table.rows.points())
@@ -4594,8 +4614,11 @@ pub(super) fn sketch_records<'a>(
                         external_id: segment.external_id,
                         point_id: segment.point_id,
                         offset: segment.offset,
-                    }), "creo native sketch point segments")?,
-            centered_line_segments: ctx.collect_vec(definition
+                    }),
+                "creo native sketch point segments",
+            )?,
+            centered_line_segments: ctx.collect_vec(
+                definition
                     .segments
                     .iter()
                     .flat_map(|table| table.rows.centered_lines())
@@ -4603,8 +4626,11 @@ pub(super) fn sketch_records<'a>(
                         external_id: segment.external_id,
                         center_id: segment.center_id,
                         offset: segment.offset,
-                    }), "creo native sketch centered line segments")?,
-            reference_line_segments: ctx.collect_vec(definition
+                    }),
+                "creo native sketch centered line segments",
+            )?,
+            reference_line_segments: ctx.collect_vec(
+                definition
                     .segments
                     .iter()
                     .flat_map(|table| table.rows.reference_lines())
@@ -4614,8 +4640,11 @@ pub(super) fn sketch_records<'a>(
                         directions: segment.directions,
                         vertical_horizontal_constraint: segment.vertical_horizontal,
                         offset: segment.offset,
-                    }), "creo native sketch reference line segments")?,
-            bounded_curve_segments: ctx.collect_vec(definition
+                    }),
+                "creo native sketch reference line segments",
+            )?,
+            bounded_curve_segments: ctx.collect_vec(
+                definition
                     .segments
                     .iter()
                     .flat_map(|table| table.rows.bounded_curves())
@@ -4629,8 +4658,11 @@ pub(super) fn sketch_records<'a>(
                         radius_dimension_id: segment.radius_ref,
                         secondary_radius_dimension_id: segment.radius2_ref,
                         offset: segment.offset,
-                    }), "creo native sketch bounded curve segments")?,
-            conic_segments: ctx.collect_vec(definition
+                    }),
+                "creo native sketch bounded curve segments",
+            )?,
+            conic_segments: ctx.collect_vec(
+                definition
                     .segments
                     .iter()
                     .flat_map(|table| table.rows.conics())
@@ -4640,11 +4672,15 @@ pub(super) fn sketch_records<'a>(
                         first_coefficient_ref: segment.first_coefficient_ref,
                         second_coefficient_ref: segment.second_coefficient_ref,
                         offset: segment.offset,
-                    }), "creo native sketch conic segments")?,
-            opaque_segments: ctx.try_collect_vec((definition
+                    }),
+                "creo native sketch conic segments",
+            )?,
+            opaque_segments: ctx.try_collect_vec(
+                (definition
                     .segments
                     .iter()
-                    .flat_map(|table| table.rows.opaque())).map(|segment| {
+                    .flat_map(|table| table.rows.opaque()))
+                .map(|segment| {
                     Ok::<_, CodecError>(CreoSketchOpaqueSegment {
                         external_id: segment.external_id,
                         kind: segment.kind,
@@ -4661,8 +4697,11 @@ pub(super) fn sketch_records<'a>(
                         )?,
                         offset: segment.offset,
                     })
-                }), "creo native sketch opaque segments")?,
-            trim_entities: ctx.collect_vec(definition
+                }),
+                "creo native sketch opaque segments",
+            )?,
+            trim_entities: ctx.collect_vec(
+                definition
                     .trim_entities
                     .iter()
                     .flat_map(|table| &table.rows)
@@ -4676,22 +4715,32 @@ pub(super) fn sketch_records<'a>(
                             crate::feature::definitions::TrimEntityKind::Arc { .. } => "arc",
                         },
                         offset: entity.offset,
-                    }), "creo native sketch trim entities")?,
-            trim_vertices: ctx.try_collect_vec((definition
+                    }),
+                "creo native sketch trim entities",
+            )?,
+            trim_vertices: ctx.try_collect_vec(
+                (definition
                     .trim_vertices
                     .iter()
-                    .flat_map(|table| &table.rows)).map(|vertex| {
+                    .flat_map(|table| &table.rows))
+                .map(|vertex| {
                     Ok::<_, CodecError>(CreoSketchTrimVertex {
                         vertex_id: vertex.vertex_id,
-                        entities: ctx.collect_vec(vertex.entities.iter().copied(), "creo native sketch trim vertex entities")?,
+                        entities: ctx.collect_vec(
+                            vertex.entities.iter().copied(),
+                            "creo native sketch trim vertex entities",
+                        )?,
                         section_coordinates: vertex.section_coordinates.map(|point| {
                             let point = point.get();
                             [point.u, point.v]
                         }),
                         offset: vertex.offset,
                     })
-                }), "creo native sketch trim vertices")?,
-            order_rows: ctx.collect_vec(definition
+                }),
+                "creo native sketch trim vertices",
+            )?,
+            order_rows: ctx.collect_vec(
+                definition
                     .order_table
                     .iter()
                     .flat_map(|table| &table.rows)
@@ -4700,8 +4749,11 @@ pub(super) fn sketch_records<'a>(
                         internal_id: row.internal_id,
                         bitmask: row.bitmask,
                         offset: row.offset,
-                    }), "creo native sketch order rows")?,
-            saved_entities: ctx.collect_vec(definition
+                    }),
+                "creo native sketch order rows",
+            )?,
+            saved_entities: ctx.collect_vec(
+                definition
                     .saved_section
                     .iter()
                     .flat_map(|section| &section.entities)
@@ -4771,8 +4823,11 @@ pub(super) fn sketch_records<'a>(
                                 offset: dummy.offset,
                             }
                         }
-                    }), "creo native sketch saved entities")?,
-            dimensions: ctx.try_collect_vec((definition.dimensions.iter().flat_map(|table| &table.rows)).map(|dimension| {
+                    }),
+                "creo native sketch saved entities",
+            )?,
+            dimensions: ctx.try_collect_vec(
+                (definition.dimensions.iter().flat_map(|table| &table.rows)).map(|dimension| {
                     Ok::<_, CodecError>(CreoSketchDimension {
                         external_id: dimension.external_id,
                         dimension_type: dimension.dimension_type,
@@ -4819,14 +4874,17 @@ pub(super) fn sketch_records<'a>(
                                     Ok::<_, CodecError>(CreoSketchDimensionReferenceTable {
                                         declared_count: table.declared_count,
                                         entity_ref: table.entity_ref,
-                                        rows: ctx.collect_vec(table.rows.iter().map(|reference| {
+                                        rows: ctx.collect_vec(
+                                            table.rows.iter().map(|reference| {
                                                 CreoSketchDimensionReference {
                                                     item_id: reference.item_id,
                                                     sense: reference.sense,
                                                     point: reference.point,
                                                     offset: reference.offset,
                                                 }
-                                            }), "creo native sketch dimension references")?,
+                                            }),
+                                            "creo native sketch dimension references",
+                                        )?,
                                         offset: table.offset,
                                     })
                                 },
@@ -4834,8 +4892,11 @@ pub(super) fn sketch_records<'a>(
                             .transpose()?,
                         offset: dimension.offset,
                     })
-                }), "creo native sketch dimensions")?,
-            relations: ctx.try_collect_vec((definition.relations.iter().flat_map(|table| &table.rows)).map(|relation| {
+                }),
+                "creo native sketch dimensions",
+            )?,
+            relations: ctx.try_collect_vec(
+                (definition.relations.iter().flat_map(|table| &table.rows)).map(|relation| {
                     Ok::<_, CodecError>(CreoSketchRelation {
                         relation_id: relation.relation_id,
                         used: relation.used,
@@ -4851,24 +4912,34 @@ pub(super) fn sketch_records<'a>(
                             .copy_retained(&relation.body, "creo native sketch relation body")?,
                         offset: relation.offset,
                     })
-                }), "creo native sketch relations")?,
-            skamps: ctx.try_collect_vec((definition
+                }),
+                "creo native sketch relations",
+            )?,
+            skamps: ctx.try_collect_vec(
+                (definition
                     .relations
                     .iter()
-                    .flat_map(FeatureRelationTable::skamps)).map(|skamp| {
+                    .flat_map(FeatureRelationTable::skamps))
+                .map(|skamp| {
                     Ok::<_, CodecError>(CreoSketchSkamp {
                         id: skamp.id,
                         kind: skamp.kind,
                         flags: skamp.flags,
                         status: skamp.status,
-                        items: ctx.collect_vec(skamp.items.iter().map(|item| CreoSketchSkampItem {
+                        items: ctx.collect_vec(
+                            skamp.items.iter().map(|item| CreoSketchSkampItem {
                                 entity_id: item.entity_id,
                                 sense: item.sense,
-                            }), "creo native sketch skamp items")?,
+                            }),
+                            "creo native sketch skamp items",
+                        )?,
                         offset: skamp.offset,
                     })
-                }), "creo native sketch skamps")?,
-            relation_triples: ctx.collect_vec(definition
+                }),
+                "creo native sketch skamps",
+            )?,
+            relation_triples: ctx.collect_vec(
+                definition
                     .relations
                     .iter()
                     .flat_map(FeatureRelationTable::triples)
@@ -4877,7 +4948,9 @@ pub(super) fn sketch_records<'a>(
                         equation: triple.equation_id,
                         skamp: triple.skamp_id,
                         offset: triple.offset,
-                    }), "creo native sketch relation triples")?,
+                    }),
+                "creo native sketch relation triples",
+            )?,
         };
         ctx.reserve_vec(&mut records, 1, "creo sketch records")?;
         records.push(record);
@@ -5119,7 +5192,8 @@ pub(super) fn sketch_section_point_records(
             "creo sketch section point ID nodes",
         )?;
     }
-    ctx.collect_vec(point_ids.into_iter().map(|point_id| {
+    ctx.collect_vec(
+        point_ids.into_iter().map(|point_id| {
             let [u, v] = points.get(&point_id).copied().unwrap_or([None; 2]);
             let state = if ambiguous.contains(&point_id) {
                 CreoSketchPointState::Conflicting
@@ -5132,7 +5206,9 @@ pub(super) fn sketch_section_point_records(
                 }
             };
             CreoSketchSectionPoint { point_id, state }
-        }), "creo sketch section point records")
+        }),
+        "creo sketch section point records",
+    )
 }
 
 pub(super) fn feature_definition_records<'a>(
@@ -5417,10 +5493,26 @@ mod tests {
         let point = |coordinates: [f64; 3]| {
             FinitePoint3::new(coordinates.into()).expect("finite reference point")
         };
-        scan.references.lines.push(crate::reference::ReferenceLine::try_new(crate::reference::ReferenceLineKind::Line, point([0.0, 0.0, 0.0]), point([1.0, 0.0, 0.0]), 0).expect("checked reference geometry"));
-        scan.references
-            .circles
-            .push(crate::reference::ReferenceCircle::try_new(7, crate::reference::ReferenceCircleCenter::Stored(point([0.0, 0.0, 0.0])), PositiveLength::new(1.0).expect("positive radius"), UnitVector3::new([0.0, 0.0, 1.0].into()).expect("unit axis"), [point([1.0, 0.0, 0.0]), point([0.0, 1.0, 0.0])], 0).expect("checked reference geometry"));
+        scan.references.lines.push(
+            crate::reference::ReferenceLine::try_new(
+                crate::reference::ReferenceLineKind::Line,
+                point([0.0, 0.0, 0.0]),
+                point([1.0, 0.0, 0.0]),
+                0,
+            )
+            .expect("checked reference geometry"),
+        );
+        scan.references.circles.push(
+            crate::reference::ReferenceCircle::try_new(
+                7,
+                crate::reference::ReferenceCircleCenter::Stored(point([0.0, 0.0, 0.0])),
+                PositiveLength::new(1.0).expect("positive radius"),
+                UnitVector3::new([0.0, 0.0, 1.0].into()).expect("unit axis"),
+                [point([1.0, 0.0, 0.0]), point([0.0, 1.0, 0.0])],
+                0,
+            )
+            .expect("checked reference geometry"),
+        );
         scan.references
             .conics
             .push(crate::reference::ReferenceConic {
@@ -5437,9 +5529,20 @@ mod tests {
                 body: vec![0x31, 0x32],
                 offset: 0,
             });
-        scan.references
-            .ellipses
-            .push(crate::reference::ReferenceEllipse::try_new(8, point([0.0, 0.0, 0.0]), UnitVector3::new([0.0, 0.0, 1.0].into()).expect("unit axis"), UnitVector3::new([1.0, 0.0, 0.0].into()).expect("unit direction"), [PositiveLength::new(2.0).expect("positive radius"), PositiveLength::new(1.0).expect("positive radius")], 0).expect("checked reference geometry"));
+        scan.references.ellipses.push(
+            crate::reference::ReferenceEllipse::try_new(
+                8,
+                point([0.0, 0.0, 0.0]),
+                UnitVector3::new([0.0, 0.0, 1.0].into()).expect("unit axis"),
+                UnitVector3::new([1.0, 0.0, 0.0].into()).expect("unit direction"),
+                [
+                    PositiveLength::new(2.0).expect("positive radius"),
+                    PositiveLength::new(1.0).expect("positive radius"),
+                ],
+                0,
+            )
+            .expect("checked reference geometry"),
+        );
         scan
     }
 
@@ -5847,5 +5950,4 @@ mod tests {
         assert_eq!(records[0].body, &payload[3..]);
     }
     mod projection_admission;
-
 }

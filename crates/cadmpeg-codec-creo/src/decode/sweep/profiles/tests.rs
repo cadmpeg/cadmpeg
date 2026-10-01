@@ -250,8 +250,10 @@ fn profile_circle(center: [f64; 2], radius: f64, reversed: bool) -> super::Profi
             radius: cadmpeg_ir::scalar::Length::new(radius).expect("positive radius"),
         },
         reversed,
-        start: cadmpeg_ir::units::FinitePoint2::new(Point2::new(center[0] + radius, center[1])).expect("finite"),
-        end: cadmpeg_ir::units::FinitePoint2::new(Point2::new(center[0] + radius, center[1])).expect("finite"),
+        start: cadmpeg_ir::units::FinitePoint2::new(Point2::new(center[0] + radius, center[1]))
+            .expect("finite"),
+        end: cadmpeg_ir::units::FinitePoint2::new(Point2::new(center[0] + radius, center[1]))
+            .expect("finite"),
     }
 }
 
@@ -262,7 +264,8 @@ fn profile_line(start: [f64; 2], end: [f64; 2]) -> super::ProfileEntity {
             end: Point2::new(end[0], end[1]),
         },
         reversed: false,
-        start: cadmpeg_ir::units::FinitePoint2::new(Point2::new(start[0], start[1])).expect("finite"),
+        start: cadmpeg_ir::units::FinitePoint2::new(Point2::new(start[0], start[1]))
+            .expect("finite"),
         end: cadmpeg_ir::units::FinitePoint2::new(Point2::new(end[0], end[1])).expect("finite"),
     }
 }
@@ -300,7 +303,8 @@ fn profile_polyline_pairs_refuse_work_limit() {
             &[[0.0, 0.0], [1.0, 0.0]],
             &[[0.0, 1.0], [1.0, 1.0]],
             0.0,
-         [None, None])
+            [None, None],
+        )
     })
     .expect_err("one segment pair exceeds zero work");
     assert_work(&error, "creo profile polyline intersection pairs");
@@ -954,18 +958,21 @@ fn large_profile_circle_intersections_stay_finite() {
     assert!(super::line_arc_intersect(
         [[-2. * r, 0.], [2. * r, 0.]],
         arc,
-        1e-9
-    , [None, None]));
+        1e-9,
+        [None, None]
+    ));
     assert!(super::arcs_intersect(
         arc,
         ([r, 0.], r, 0., std::f64::consts::TAU),
-        1e-9
-    , [None, None]));
+        1e-9,
+        [None, None]
+    ));
     assert!(!super::arcs_intersect(
         arc,
         ([3. * r, 0.], r, 0., std::f64::consts::TAU),
-        1e-9
-    , [None, None]));
+        1e-9,
+        [None, None]
+    ));
 }
 
 #[test]
@@ -975,14 +982,16 @@ fn small_segment_crossings_do_not_depend_on_cross_product_units() {
         assert!(super::segments_intersect(
             [[-scale, 0.0], [scale, 0.0]],
             [[0.0, -scale], [0.0, scale]],
-            DISTANCE_TOLERANCE
-        , [None, None]));
+            DISTANCE_TOLERANCE,
+            [None, None]
+        ));
     }
     assert!(!super::segments_intersect(
         [[0.0, 0.0], [1e-5, 0.0]],
         [[0.0, 1e-5], [1e-5, 1e-5]],
-        DISTANCE_TOLERANCE
-    , [None, None]));
+        DISTANCE_TOLERANCE,
+        [None, None]
+    ));
 }
 
 #[test]
@@ -1011,9 +1020,24 @@ fn numerical_ranges_profile_arc_tolerance_is_a_length_at_both_ends() {
 fn audit_regression_line_arc_endpoint_tolerance_has_length_units() {
     let line = [[0., 0.], [1000., 0.]];
     let arc = |center| ([center, 0.], 0.1, 0., std::f64::consts::TAU);
-    assert!(!super::line_arc_intersect(line, arc(1000.5), 0.001, [None, None]));
-    assert!(super::line_arc_intersect(line, arc(1000.1005), 0.001, [None, None]));
-    assert!(super::line_arc_intersect(line, arc(999.5), 0.001, [None, None]));
+    assert!(!super::line_arc_intersect(
+        line,
+        arc(1000.5),
+        0.001,
+        [None, None]
+    ));
+    assert!(super::line_arc_intersect(
+        line,
+        arc(1000.1005),
+        0.001,
+        [None, None]
+    ));
+    assert!(super::line_arc_intersect(
+        line,
+        arc(999.5),
+        0.001,
+        [None, None]
+    ));
 }
 
 #[test]

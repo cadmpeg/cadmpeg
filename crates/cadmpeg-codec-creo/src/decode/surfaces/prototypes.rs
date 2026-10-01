@@ -126,7 +126,8 @@ fn prototype_spline_nurbs(
         u_derivatives,
         v_derivatives,
         mixed_derivatives,
-    )? else {
+    )?
+    else {
         return Ok(None);
     };
     interpolation_spline_surface(

@@ -52,12 +52,25 @@ fn fc05_witness_scan() -> crate::container::ContainerScan<'static> {
         max_residual: 0.0,
         offset: 7,
     });
-    scan.references
-        .circles
-        .push(crate::reference::ReferenceCircle::try_new(7, crate::reference::ReferenceCircleCenter::Stored(cadmpeg_ir::features::FinitePoint3::new([1.0, 0.0, 0.5].into())
-                .expect("finite center")), cadmpeg_ir::scalar::PositiveLength::new(1.0).expect("positive radius"), cadmpeg_ir::units::UnitVector3::Y_AXIS, [cadmpeg_ir::features::FinitePoint3::new([2.0, 0.0, 0.5].into())
-                .expect("finite start"), cadmpeg_ir::features::FinitePoint3::new([1.0, 0.0, 1.5].into())
-                .expect("finite end")], 8).expect("checked reference geometry"));
+    scan.references.circles.push(
+        crate::reference::ReferenceCircle::try_new(
+            7,
+            crate::reference::ReferenceCircleCenter::Stored(
+                cadmpeg_ir::features::FinitePoint3::new([1.0, 0.0, 0.5].into())
+                    .expect("finite center"),
+            ),
+            cadmpeg_ir::scalar::PositiveLength::new(1.0).expect("positive radius"),
+            cadmpeg_ir::units::UnitVector3::Y_AXIS,
+            [
+                cadmpeg_ir::features::FinitePoint3::new([2.0, 0.0, 0.5].into())
+                    .expect("finite start"),
+                cadmpeg_ir::features::FinitePoint3::new([1.0, 0.0, 1.5].into())
+                    .expect("finite end"),
+            ],
+            8,
+        )
+        .expect("checked reference geometry"),
+    );
     scan.curves
         .topology_rows
         .push(crate::curve::CurveTopologyRow {
@@ -446,7 +459,10 @@ fn plane_branch_constraint_work_refuses_work_limit() {
     let scan = stored_frame_branch_scan(true);
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = 0;
+    // Admit both identity passes; the first constraint step has no allowance.
+    let rows = cadmpeg_core::decode::u64_from_index(scan.surfaces.rows.len());
+    policy.limits.max_work_units =
+        2 * rows * 24 * (u64::from(u64::BITS - rows.leading_zeros()) + 1);
     let (ctx, _) =
         DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root admitted");
     let error = plane_candidates(&ctx, &scan)

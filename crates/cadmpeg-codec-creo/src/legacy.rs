@@ -57,8 +57,6 @@ pub(crate) enum PrincipalUnitSystem {
     InchPoundMassSecond,
     /// A complete legacy `unit_arr` length record with a source-specific scale.
     LegacyLengthScale(cadmpeg_ir::scalar::PositiveReal),
-    /// A binary selector whose unit definition is not known.
-    UnknownBinarySelector(u8),
 }
 
 impl PrincipalUnitSystem {
@@ -70,7 +68,6 @@ impl PrincipalUnitSystem {
             }
             Self::InchPoundMassSecond => cadmpeg_ir::scalar::PositiveReal::new(LEGACY_INCH_TO_MM),
             Self::LegacyLengthScale(scale) => Some(scale),
-            Self::UnknownBinarySelector(_) => None,
         }
     }
 }
@@ -84,7 +81,6 @@ impl std::fmt::Display for PrincipalUnitSystem {
             Self::LegacyLengthScale(scale) => {
                 write!(formatter, "legacy_length_scale_mm:{:.17}", scale.get())
             }
-            Self::UnknownBinarySelector(value) => write!(formatter, "unknown:{value}"),
         }
     }
 }
@@ -139,7 +135,11 @@ pub(crate) enum NumericPayload<T> {
 
 impl<T> NumericPayload<T> {
     /// Admits source runs whose count sum equals the extent product.
-    pub(crate) fn array(ctx: &DecodeContext<'_>, dimensions: Vec<u32>, runs: Vec<NumericRun<T>>) -> Result<Option<Self>, CodecError> {
+    pub(crate) fn array(
+        ctx: &DecodeContext<'_>,
+        dimensions: Vec<u32>,
+        runs: Vec<NumericRun<T>>,
+    ) -> Result<Option<Self>, CodecError> {
         Ok(numeric_array::NumericArray::try_new(ctx, dimensions, runs)?.map(Self::Array))
     }
 

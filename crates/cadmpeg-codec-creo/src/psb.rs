@@ -341,8 +341,8 @@ impl<'a> Cursor<'a> {
 #[cfg(test)]
 mod tests {
     use super::{
-        complete_compact_int, compact_int, is_short_form_float, reference_id, short_form_float, token, token_at, tokens,
-        Token, TokenKind,
+        compact_int, complete_compact_int, is_short_form_float, reference_id, short_form_float,
+        token, token_at, tokens, Token, TokenKind,
     };
 
     #[test]
@@ -481,7 +481,11 @@ mod tests {
     }
     #[test]
     fn token_walker_exposes_incomplete_compact_heads() {
-        for (bytes, head) in [(&[0xf8, 0x81][..], 0xf8), (&[0xf9, 1, 0x81][..], 0xf9), (&[0x81][..], 0x81)] {
+        for (bytes, head) in [
+            (&[0xf8, 0x81][..], 0xf8),
+            (&[0xf9, 1, 0x81][..], 0xf9),
+            (&[0x81][..], 0x81),
+        ] {
             let tokens: Vec<_> = tokens(bytes).collect();
             assert_eq!(tokens.len(), 1);
             assert_eq!(tokens[0].kind, TokenKind::Truncated(head));
@@ -497,5 +501,4 @@ mod tests {
         assert_eq!(complete_compact_int(&[0], 0), Some((0, 1)));
         assert_eq!(complete_compact_int(&[0x81, 0x23], 0), Some((0x123, 2)));
     }
-
 }

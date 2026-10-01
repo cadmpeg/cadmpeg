@@ -98,10 +98,18 @@ fn collection_boundary_sweep(
 fn reference_line_identity_and_count_refuse_below_limits() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
     let mut scan = scan_bytes_ok(crate::test_support::build_prt("reference", &[]));
-    scan.references.lines.push(crate::reference::ReferenceLine::try_new(crate::reference::ReferenceLineKind::Line3d {
-            entity_id: 7,
-            original_length: PositiveReal::new(1.0).expect("positive length"),
-        }, cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0)).expect("start"), cadmpeg_ir::features::FinitePoint3::new(Point3::new(1.0, 0.0, 0.0)).expect("end"), 0).expect("checked reference geometry"));
+    scan.references.lines.push(
+        crate::reference::ReferenceLine::try_new(
+            crate::reference::ReferenceLineKind::Line3d {
+                entity_id: 7,
+                original_length: PositiveReal::new(1.0).expect("positive length"),
+            },
+            cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0)).expect("start"),
+            cadmpeg_ir::features::FinitePoint3::new(Point3::new(1.0, 0.0, 0.0)).expect("end"),
+            0,
+        )
+        .expect("checked reference geometry"),
+    );
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = 0;
@@ -151,9 +159,12 @@ fn reference_line_identity_and_count_refuse_below_limits() {
     );
     scan.references.lines.pop();
     scan.references.lines[0] = crate::reference::ReferenceLine::try_new(
-        crate::reference::ReferenceLineKind::Line, scan.references.lines[0].start(),
-        scan.references.lines[0].end(), scan.references.lines[0].offset,
-    ).expect("finite planar line");
+        crate::reference::ReferenceLineKind::Line,
+        scan.references.lines[0].start(),
+        scan.references.lines[0].end(),
+        scan.references.lines[0].offset,
+    )
+    .expect("finite planar line");
     retained_boundary_sweep(
         &[
             "creo reference line identity",
@@ -175,11 +186,24 @@ fn reference_line_identity_and_count_refuse_below_limits() {
 fn reference_circle_identity_and_count_refuse_below_limits() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
     let mut scan = scan_bytes_ok(crate::test_support::build_prt("reference", &[]));
-    scan.references
-        .circles
-        .push(crate::reference::ReferenceCircle::try_new(7, crate::reference::ReferenceCircleCenter::Stored(cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
-                .expect("center")), cadmpeg_ir::scalar::PositiveLength::new(1.0).expect("radius"), cadmpeg_ir::units::UnitVector3::new([0.0, 0.0, 1.0].into()).expect("axis"), [cadmpeg_ir::features::FinitePoint3::new(Point3::new(1.0, 0.0, 0.0))
-                .expect("start"), cadmpeg_ir::features::FinitePoint3::new(Point3::new(-1.0, 0.0, 0.0)).expect("on-circle end")], 0).expect("checked reference geometry"));
+    scan.references.circles.push(
+        crate::reference::ReferenceCircle::try_new(
+            7,
+            crate::reference::ReferenceCircleCenter::Stored(
+                cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
+                    .expect("center"),
+            ),
+            cadmpeg_ir::scalar::PositiveLength::new(1.0).expect("radius"),
+            cadmpeg_ir::units::UnitVector3::new([0.0, 0.0, 1.0].into()).expect("axis"),
+            [
+                cadmpeg_ir::features::FinitePoint3::new(Point3::new(1.0, 0.0, 0.0)).expect("start"),
+                cadmpeg_ir::features::FinitePoint3::new(Point3::new(-1.0, 0.0, 0.0))
+                    .expect("on-circle end"),
+            ],
+            0,
+        )
+        .expect("checked reference geometry"),
+    );
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = 0;
@@ -233,11 +257,20 @@ fn reference_circle_identity_and_count_refuse_below_limits() {
 fn reference_ellipse_identity_and_count_refuse_below_limits() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
     let mut scan = scan_bytes_ok(crate::test_support::build_prt("reference", &[]));
-    scan.references
-        .ellipses
-        .push(crate::reference::ReferenceEllipse::try_new(8, cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
-                .expect("center"), cadmpeg_ir::units::UnitVector3::new([0.0, 0.0, 1.0].into()).expect("axis"), cadmpeg_ir::units::UnitVector3::new([1.0, 0.0, 0.0].into())
-                .expect("direction"), [cadmpeg_ir::scalar::PositiveLength::new(2.0).expect("major radius"), cadmpeg_ir::scalar::PositiveLength::new(1.0).expect("minor radius")], 0).expect("checked reference geometry"));
+    scan.references.ellipses.push(
+        crate::reference::ReferenceEllipse::try_new(
+            8,
+            cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0)).expect("center"),
+            cadmpeg_ir::units::UnitVector3::new([0.0, 0.0, 1.0].into()).expect("axis"),
+            cadmpeg_ir::units::UnitVector3::new([1.0, 0.0, 0.0].into()).expect("direction"),
+            [
+                cadmpeg_ir::scalar::PositiveLength::new(2.0).expect("major radius"),
+                cadmpeg_ir::scalar::PositiveLength::new(1.0).expect("minor radius"),
+            ],
+            0,
+        )
+        .expect("checked reference geometry"),
+    );
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = 0;
@@ -848,9 +881,17 @@ fn datum_plane_scaled_origin_overflow_refuses_unrepresentable_ir() {
 #[test]
 fn reference_line_origin_is_in_millimeters_at_ir_admission() {
     let mut scan = scan_bytes_ok(crate::test_support::build_prt("reference", &[]));
-    scan.references.lines.push(crate::reference::ReferenceLine::try_new(crate::reference::ReferenceLineKind::Line, cadmpeg_ir::features::FinitePoint3::new(Point3::new(1.0, 0.0, 0.0))
-            .expect("finite source point"), cadmpeg_ir::features::FinitePoint3::new(Point3::new(2.0, 0.0, 0.0))
-            .expect("finite source point"), 0).expect("checked reference geometry"));
+    scan.references.lines.push(
+        crate::reference::ReferenceLine::try_new(
+            crate::reference::ReferenceLineKind::Line,
+            cadmpeg_ir::features::FinitePoint3::new(Point3::new(1.0, 0.0, 0.0))
+                .expect("finite source point"),
+            cadmpeg_ir::features::FinitePoint3::new(Point3::new(2.0, 0.0, 0.0))
+                .expect("finite source point"),
+            0,
+        )
+        .expect("checked reference geometry"),
+    );
     let mut ir = CadIr::empty();
     let mut carriers = SourceUnitCarriers::new(PositiveReal::new(25.4));
     crate::decode::with_test_decode_ctx(|ctx| {
@@ -884,9 +925,17 @@ fn reference_line_origin_is_in_millimeters_at_ir_admission() {
 #[test]
 fn reference_line_scaled_origin_overflow_refuses_before_ir_admission() {
     let mut scan = scan_bytes_ok(crate::test_support::build_prt("reference", &[]));
-    scan.references.lines.push(crate::reference::ReferenceLine::try_new(crate::reference::ReferenceLineKind::Line, cadmpeg_ir::features::FinitePoint3::new(Point3::new(f64::MAX, 0.0, 0.0))
-            .expect("finite source point"), cadmpeg_ir::features::FinitePoint3::new(Point3::new(f64::MAX, 1.0, 0.0))
-            .expect("finite source point"), 0).expect("checked reference geometry"));
+    scan.references.lines.push(
+        crate::reference::ReferenceLine::try_new(
+            crate::reference::ReferenceLineKind::Line,
+            cadmpeg_ir::features::FinitePoint3::new(Point3::new(f64::MAX, 0.0, 0.0))
+                .expect("finite source point"),
+            cadmpeg_ir::features::FinitePoint3::new(Point3::new(f64::MAX, 1.0, 0.0))
+                .expect("finite source point"),
+            0,
+        )
+        .expect("checked reference geometry"),
+    );
     let mut ir = CadIr::empty();
     let mut carriers = SourceUnitCarriers::new(PositiveReal::new(25.4));
     crate::decode::with_test_decode_ctx(|ctx| {
@@ -906,11 +955,25 @@ fn reference_line_scaled_origin_overflow_refuses_before_ir_admission() {
 #[test]
 fn reference_circle_radius_is_in_millimeters_at_ir_admission() {
     let mut scan = scan_bytes_ok(crate::test_support::build_prt("reference", &[]));
-    scan.references
-        .circles
-        .push(crate::reference::ReferenceCircle::try_new(7, crate::reference::ReferenceCircleCenter::Stored(cadmpeg_ir::features::FinitePoint3::new(Point3::new(1.0, 0.0, 0.0))
-                .expect("finite center")), cadmpeg_ir::scalar::PositiveLength::new(2.0).expect("positive radius"), cadmpeg_ir::units::UnitVector3::new([0.0, 0.0, 1.0].into()).expect("unit axis"), [cadmpeg_ir::features::FinitePoint3::new(Point3::new(3.0, 0.0, 0.0))
-                .expect("finite start"), cadmpeg_ir::features::FinitePoint3::new(Point3::new(-1.0, 0.0, 0.0)).expect("on-circle end")], 0).expect("checked reference geometry"));
+    scan.references.circles.push(
+        crate::reference::ReferenceCircle::try_new(
+            7,
+            crate::reference::ReferenceCircleCenter::Stored(
+                cadmpeg_ir::features::FinitePoint3::new(Point3::new(1.0, 0.0, 0.0))
+                    .expect("finite center"),
+            ),
+            cadmpeg_ir::scalar::PositiveLength::new(2.0).expect("positive radius"),
+            cadmpeg_ir::units::UnitVector3::new([0.0, 0.0, 1.0].into()).expect("unit axis"),
+            [
+                cadmpeg_ir::features::FinitePoint3::new(Point3::new(3.0, 0.0, 0.0))
+                    .expect("finite start"),
+                cadmpeg_ir::features::FinitePoint3::new(Point3::new(-1.0, 0.0, 0.0))
+                    .expect("on-circle end"),
+            ],
+            0,
+        )
+        .expect("checked reference geometry"),
+    );
     let mut ir = CadIr::empty();
     let mut carriers = SourceUnitCarriers::new(PositiveReal::new(25.4));
     crate::decode::with_test_decode_ctx(|ctx| {
@@ -940,11 +1003,21 @@ fn reference_circle_radius_is_in_millimeters_at_ir_admission() {
 #[test]
 fn reference_ellipse_radii_are_in_millimeters_at_ir_admission() {
     let mut scan = scan_bytes_ok(crate::test_support::build_prt("reference", &[]));
-    scan.references
-        .ellipses
-        .push(crate::reference::ReferenceEllipse::try_new(8, cadmpeg_ir::features::FinitePoint3::new(Point3::new(1.0, 0.0, 0.0))
-                .expect("finite center"), cadmpeg_ir::units::UnitVector3::new([0.0, 0.0, 1.0].into()).expect("unit axis"), cadmpeg_ir::units::UnitVector3::new([1.0, 0.0, 0.0].into())
-                .expect("unit direction"), [cadmpeg_ir::scalar::PositiveLength::new(2.0).expect("positive radius"), cadmpeg_ir::scalar::PositiveLength::new(1.0).expect("positive radius")], 0).expect("checked reference geometry"));
+    scan.references.ellipses.push(
+        crate::reference::ReferenceEllipse::try_new(
+            8,
+            cadmpeg_ir::features::FinitePoint3::new(Point3::new(1.0, 0.0, 0.0))
+                .expect("finite center"),
+            cadmpeg_ir::units::UnitVector3::new([0.0, 0.0, 1.0].into()).expect("unit axis"),
+            cadmpeg_ir::units::UnitVector3::new([1.0, 0.0, 0.0].into()).expect("unit direction"),
+            [
+                cadmpeg_ir::scalar::PositiveLength::new(2.0).expect("positive radius"),
+                cadmpeg_ir::scalar::PositiveLength::new(1.0).expect("positive radius"),
+            ],
+            0,
+        )
+        .expect("checked reference geometry"),
+    );
     let mut ir = CadIr::empty();
     let mut carriers = SourceUnitCarriers::new(PositiveReal::new(25.4));
     crate::decode::with_test_decode_ctx(|ctx| {

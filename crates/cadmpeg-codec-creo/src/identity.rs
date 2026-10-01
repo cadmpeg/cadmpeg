@@ -121,8 +121,10 @@ pub(crate) fn uniquely_identified_rows_checked<'a, T>(
         ctx.admit_btree_entry(&counts, &key, "creo unique-row count nodes")?;
         match counts.entry(key) {
             std::collections::btree_map::Entry::Occupied(mut entry) => {
-                *entry.get_mut() = entry.get().checked_add(1).ok_or_else(|| ctx.refuse_codec_limit("creo unique-row multiplicity", u64::MAX, u64::MAX))?;
-            },
+                *entry.get_mut() = entry.get().checked_add(1).ok_or_else(|| {
+                    ctx.refuse_codec_limit("creo unique-row multiplicity", u64::MAX, u64::MAX)
+                })?;
+            }
             std::collections::btree_map::Entry::Vacant(entry) => {
                 entry.insert(1);
             }

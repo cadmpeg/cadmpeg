@@ -368,14 +368,19 @@ fn equation_scan() -> (crate::container::ContainerScan<'static>, usize) {
     definition.body = vec![0; 20];
     definition.body.extend_from_slice(b"eqtn_arr\0\xf2\xf8\x02\xf7\x80\x9f\xfb\xe2\xe0\x01id\0\x00\xe0\x05fcn_id\0\x02\xe0\x08arg_arr\0\xf8\x02\x11\x12\xe0\x01aux_data\0\xf6\xf1\xf7\x80\x9f\xe2");
     let row_start = definition.body.len();
-    definition.body.extend_from_slice(b"\x01\x04\x11\x12\xf6\xf2\xf7\x39\x99\x88\xe0\x02scale\0\x99\x88");
+    definition
+        .body
+        .extend_from_slice(b"\x01\x04\x11\x12\xf6\xf2\xf7\x39\x99\x88\xe0\x02scale\0\x99\x88");
     (scan, row_start)
 }
 
 #[test]
 fn equation_header_uses_definition_source_base() {
     let (scan, _) = equation_scan();
-    let headers = crate::decode::with_test_decode_ctx(|ctx| crate::decode::sketch_ids::sketch_table_headers(ctx, &scan.features.definitions[0])).expect("headers");
+    let headers = crate::decode::with_test_decode_ctx(|ctx| {
+        crate::decode::sketch_ids::sketch_table_headers(ctx, &scan.features.definitions[0])
+    })
+    .expect("headers");
     assert_eq!(headers.len(), 1);
     assert_eq!(headers[0].offset, 1020);
 }
@@ -396,18 +401,41 @@ fn equation_annotation_uses_definition_source_base() {
     let (scan, row_start) = equation_scan();
     let mut ir = cadmpeg_ir::document::CadIr::empty();
     let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
-    crate::decode::with_test_decode_ctx(|ctx| super::transfer_sketches(ctx, &scan, &mut ir, &mut annotations, &mut Vec::new(), &mut crate::decode::source_carriers::SourceUnitCarriers::default())).expect("transfer");
+    crate::decode::with_test_decode_ctx(|ctx| {
+        super::transfer_sketches(
+            ctx,
+            &scan,
+            &mut ir,
+            &mut annotations,
+            &mut Vec::new(),
+            &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
+        )
+    })
+    .expect("transfer");
     let annotations = annotations.build();
-    let equations = annotations.provenance.values().filter(|note| note.tag.as_deref() == Some("section_native_equation_constraint")).collect::<Vec<_>>();
+    let equations = annotations
+        .provenance
+        .values()
+        .filter(|note| note.tag.as_deref() == Some("section_native_equation_constraint"))
+        .collect::<Vec<_>>();
     assert_eq!(equations.len(), 1);
-    assert_eq!(equations[0].offset, cadmpeg_core::decode::u64_from_index(1000 + row_start));
+    assert_eq!(
+        equations[0].offset,
+        cadmpeg_core::decode::u64_from_index(1000 + row_start)
+    );
 }
 
 #[test]
 fn definition_body_position_refuses_out_of_bounds_and_source_overflow() {
     let (mut scan, _) = equation_scan();
     let definition = &mut scan.features.definitions[0];
-    assert!(matches!(definition.body_position(definition.body.len()), Err(CodecError::Malformed(_))));
+    assert!(matches!(
+        definition.body_position(definition.body.len()),
+        Err(CodecError::Malformed(_))
+    ));
     definition.offset = usize::MAX;
-    assert!(matches!(definition.body_position(1).expect("body position").source(), Err(CodecError::Malformed(_))));
+    assert!(matches!(
+        definition.body_position(1).expect("body position").source(),
+        Err(CodecError::Malformed(_))
+    ));
 }

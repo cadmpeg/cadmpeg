@@ -1278,14 +1278,40 @@ fn fc05_strict_cap_pair_accepts_a_reference_frame_when_tangency_improves() {
             offset: 43,
         });
     scan.references.circles.extend([
-        crate::reference::ReferenceCircle::try_new(11, crate::reference::ReferenceCircleCenter::Stored(cadmpeg_ir::features::FinitePoint3::new([2.0, 0.0, -3.0].into())
-                .expect("finite center")), cadmpeg_ir::scalar::PositiveLength::new(0.5).expect("positive radius"), cadmpeg_ir::units::UnitVector3::Y_AXIS, [cadmpeg_ir::features::FinitePoint3::new([2.5, 0.0, -3.0].into())
-                .expect("finite start"), cadmpeg_ir::features::FinitePoint3::new([2.0, 0.0, -2.5].into())
-                .expect("finite end")], 50).expect("checked reference geometry"),
-        crate::reference::ReferenceCircle::try_new(12, crate::reference::ReferenceCircleCenter::Stored(cadmpeg_ir::features::FinitePoint3::new([2.0, 38.0, -3.0].into())
-                .expect("finite center")), cadmpeg_ir::scalar::PositiveLength::new(0.5).expect("positive radius"), cadmpeg_ir::units::UnitVector3::Y_AXIS, [cadmpeg_ir::features::FinitePoint3::new([2.5, 38.0, -3.0].into())
-                .expect("finite start"), cadmpeg_ir::features::FinitePoint3::new([2.0, 38.0, -2.5].into())
-                .expect("finite end")], 51).expect("checked reference geometry"),
+        crate::reference::ReferenceCircle::try_new(
+            11,
+            crate::reference::ReferenceCircleCenter::Stored(
+                cadmpeg_ir::features::FinitePoint3::new([2.0, 0.0, -3.0].into())
+                    .expect("finite center"),
+            ),
+            cadmpeg_ir::scalar::PositiveLength::new(0.5).expect("positive radius"),
+            cadmpeg_ir::units::UnitVector3::Y_AXIS,
+            [
+                cadmpeg_ir::features::FinitePoint3::new([2.5, 0.0, -3.0].into())
+                    .expect("finite start"),
+                cadmpeg_ir::features::FinitePoint3::new([2.0, 0.0, -2.5].into())
+                    .expect("finite end"),
+            ],
+            50,
+        )
+        .expect("checked reference geometry"),
+        crate::reference::ReferenceCircle::try_new(
+            12,
+            crate::reference::ReferenceCircleCenter::Stored(
+                cadmpeg_ir::features::FinitePoint3::new([2.0, 38.0, -3.0].into())
+                    .expect("finite center"),
+            ),
+            cadmpeg_ir::scalar::PositiveLength::new(0.5).expect("positive radius"),
+            cadmpeg_ir::units::UnitVector3::Y_AXIS,
+            [
+                cadmpeg_ir::features::FinitePoint3::new([2.5, 38.0, -3.0].into())
+                    .expect("finite start"),
+                cadmpeg_ir::features::FinitePoint3::new([2.0, 38.0, -2.5].into())
+                    .expect("finite end"),
+            ],
+            51,
+        )
+        .expect("checked reference geometry"),
     ]);
     let origin_z = -(17.0 / 8.0);
     scan.planes.local_systems.push(PlaneLocalSystem {

@@ -83,7 +83,10 @@ pub(in crate::decode) fn saved_section_coordinate_witnesses(
             let (center, _) = saved_section_circle_values(definition, segment)?;
             Some((segment.center_id, center))
         });
-    ctx.collect_vec(ordinary.chain(circles), "creo saved section coordinate witnesses")
+    ctx.collect_vec(
+        ordinary.chain(circles),
+        "creo saved section coordinate witnesses",
+    )
 }
 
 fn append_point_on_line_equations(
@@ -316,7 +319,8 @@ pub(in crate::decode) fn resolved_section_coordinates(
     }
     let saved_segment_points =
         saved_section_coordinate_witnesses(ctx, definition, &ambiguous_point_ids)?;
-    let segments = ctx.collect_vec(definition
+    let segments = ctx.collect_vec(
+        definition
             .segments
             .iter()
             .flat_map(|table| table.rows.ordinary())
@@ -332,8 +336,11 @@ pub(in crate::decode) fn resolved_section_coordinates(
                     .point_ids()
                     .iter()
                     .all(|point_id| !ambiguous_point_ids.contains(point_id))
-            }), "creo section line segments")?;
-    let coincident_points = ctx.collect_vec(active_complete_section_skamps(definition).filter_map(|skamp| {
+            }),
+        "creo section line segments",
+    )?;
+    let coincident_points = ctx.collect_vec(
+        active_complete_section_skamps(definition).filter_map(|skamp| {
             let [first, second] = skamp.items.as_slice() else {
                 return None;
             };
@@ -371,8 +378,11 @@ pub(in crate::decode) fn resolved_section_coordinates(
                     SectionPointSource::Value(_) => true,
                 }))
             .then_some(pair)
-        }), "creo section coincident point pairs")?;
-    let same_coordinate_points = ctx.collect_vec(active_complete_section_skamps(definition)
+        }),
+        "creo section coincident point pairs",
+    )?;
+    let same_coordinate_points = ctx.collect_vec(
+        active_complete_section_skamps(definition)
             .filter_map(|skamp| section_skamp_same_coordinate_sources(definition, skamp))
             .filter(|(pair, _)| {
                 pair.iter()
@@ -383,7 +393,9 @@ pub(in crate::decode) fn resolved_section_coordinates(
                         }
                         SectionPointSource::Value(_) => true,
                     })
-            }), "creo section same-coordinate pairs")?;
+            }),
+        "creo section same-coordinate pairs",
+    )?;
     let mut point_on_line_coordinates = Vec::new();
     let mut saved_point_on_line_coordinates = Vec::new();
     for skamp in active_complete_section_skamps(definition) {
@@ -412,7 +424,8 @@ pub(in crate::decode) fn resolved_section_coordinates(
             }
         }
     }
-    let line_midpoint_constraints = ctx.collect_vec(active_complete_section_skamps(definition)
+    let line_midpoint_constraints = ctx.collect_vec(
+        active_complete_section_skamps(definition)
             .filter_map(|skamp| section_skamp_line_midpoint_sources(definition, skamp))
             .filter(|(point_sources, point)| {
                 point_sources.iter().all(|source| match source {
@@ -422,7 +435,9 @@ pub(in crate::decode) fn resolved_section_coordinates(
                     SectionPointSource::Point(point_id) => !ambiguous_point_ids.contains(point_id),
                     SectionPointSource::Value(_) => true,
                 }
-            }), "creo section line midpoint constraints")?;
+            }),
+        "creo section line midpoint constraints",
+    )?;
     let mut symmetric_point_constraints = Vec::new();
     for skamp in active_complete_section_skamps(definition) {
         let Some((axis, first, second, coordinate)) =
@@ -450,7 +465,8 @@ pub(in crate::decode) fn resolved_section_coordinates(
             symmetric_point_constraints.push((axis, first, second, coordinate));
         }
     }
-    let point_symmetric_constraints = ctx.collect_vec(active_complete_section_skamps(definition)
+    let point_symmetric_constraints = ctx.collect_vec(
+        active_complete_section_skamps(definition)
             .filter_map(|skamp| section_skamp_point_symmetry(definition, skamp))
             .filter(|(center, first, second)| {
                 !ambiguous_point_ids.contains(center)
@@ -460,7 +476,9 @@ pub(in crate::decode) fn resolved_section_coordinates(
                         }
                         SectionPointSource::Value(_) => true,
                     })
-            }), "creo section point symmetry constraints")?;
+            }),
+        "creo section point symmetry constraints",
+    )?;
     let auxiliary_constraints =
         section_equation_auxiliary_constraints(ctx, definition, &ambiguous_point_ids)?;
     let mut auxiliary_scalar_values = section_equation_scalar_seed_values(ctx, definition)?;
@@ -525,7 +543,8 @@ pub(in crate::decode) fn resolved_section_coordinates(
             linear_dimension_candidates.push((first, second, coordinate, magnitude, relation.sign));
         }
     }
-    let signed_dimension_candidates = ctx.collect_vec(linear_dimension_candidates.iter().filter_map(
+    let signed_dimension_candidates = ctx.collect_vec(
+        linear_dimension_candidates.iter().filter_map(
             |&(first, second, coordinate, magnitude, sign)| {
                 let delta = match sign {
                     1 => magnitude,
@@ -534,12 +553,17 @@ pub(in crate::decode) fn resolved_section_coordinates(
                 };
                 Some((first, second, coordinate, delta))
             },
-        ), "creo section signed dimension candidates")?;
-    let mut unsigned_dimension_candidates = ctx.collect_vec(linear_dimension_candidates.iter().filter_map(
+        ),
+        "creo section signed dimension candidates",
+    )?;
+    let mut unsigned_dimension_candidates = ctx.collect_vec(
+        linear_dimension_candidates.iter().filter_map(
             |&(first, second, coordinate, magnitude, sign)| {
                 (sign == 0).then_some((first, second, coordinate, magnitude))
             },
-        ), "creo section unsigned dimension candidates")?;
+        ),
+        "creo section unsigned dimension candidates",
+    )?;
     let unsigned_equation_distances =
         section_equation_unsigned_coordinate_distances(ctx, definition, &ambiguous_point_ids)?;
     ctx.reserve_vec(
@@ -582,11 +606,14 @@ pub(in crate::decode) fn resolved_section_coordinates(
             })
             .or_insert(Some(canonical_delta));
     }
-    let signed_dimensions = ctx.collect_vec(signed_dimensions
+    let signed_dimensions = ctx.collect_vec(
+        signed_dimensions
             .into_iter()
             .filter_map(|((first, second, coordinate), delta)| {
                 Some((first, second, coordinate, delta?))
-            }), "creo section canonical signed dimensions")?;
+            }),
+        "creo section canonical signed dimensions",
+    )?;
     let mut equations = Vec::new();
     for (&point_id, coordinates) in &points {
         for (coordinate, value) in SectionAxis::ALL
@@ -841,7 +868,8 @@ pub(in crate::decode) fn resolved_section_coordinates(
         &auxiliary_constraints,
         &mut auxiliary_scalar_values,
     )?;
-    let arc_midpoint_constraints = ctx.collect_vec(active_complete_section_skamps(definition)
+    let arc_midpoint_constraints = ctx.collect_vec(
+        active_complete_section_skamps(definition)
             .filter_map(|skamp| {
                 section_skamp_arc_midpoint_source(definition, skamp, &solved_coordinates)
             })
@@ -850,7 +878,9 @@ pub(in crate::decode) fn resolved_section_coordinates(
                     Some((point_id, midpoint))
                 }
                 SectionPointSource::Point(_) | SectionPointSource::Value(_) => None,
-            }), "creo section arc midpoint constraints")?;
+            }),
+        "creo section arc midpoint constraints",
+    )?;
     for &(point_id, midpoint) in &arc_midpoint_constraints {
         for (coordinate, value) in SectionAxis::ALL.into_iter().zip(midpoint) {
             push_coordinate_equation(

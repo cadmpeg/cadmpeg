@@ -353,6 +353,7 @@ fn geometry_array_census_overflow_error_refuses_retained_limit() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = 0;
+    policy.limits.max_work_units = u64::MAX;
     let (ctx, _) =
         DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root admitted");
     let error = super::super::read_array_count(&ctx, &region, b"srf_array")
@@ -362,13 +363,16 @@ fn geometry_array_census_overflow_error_refuses_retained_limit() {
         if resource.dimension == ResourceDimension::RetainedBytes
             && resource.operation == "creo geometry array census error")
     );
-    crate::decode::with_test_decode_ctx(|ctx| {
-        let error = super::super::read_array_count(ctx, &region, b"srf_array")
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = u64::MAX;
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root admitted");
+    {
+        let error = super::super::read_array_count(&ctx, &region, b"srf_array")
             .expect_err("sum exceeds the 32-bit census");
         assert!(error.to_string().contains("32-bit census"));
-        Ok::<(), cadmpeg_core::CodecError>(())
-    })
-    .expect("service error text admitted");
+    }
 }
 
 #[test]
@@ -990,10 +994,24 @@ fn legacy_framing_box_refuses_its_retained_slot() {
 #[test]
 fn direct_inspect_and_decode_reject_missing_creo_signature() {
     for bytes in [b"".as_slice(), b"PK\x03\x04", b"\x0e\x93\x13\x01NX"] {
-        assert!(matches!(CreoCodec.inspect(&mut Cursor::new(bytes), &cadmpeg_core::decode::InspectOptions::default()), Err(cadmpeg_core::CodecError::WrongFormat(_))));
+        assert!(matches!(
+            CreoCodec.inspect(
+                &mut Cursor::new(bytes),
+                &cadmpeg_core::decode::InspectOptions::default()
+            ),
+            Err(cadmpeg_core::CodecError::WrongFormat(_))
+        ));
         for container_only in [false, true] {
-            let options = DecodeOptions { container_only, ..DecodeOptions::default() };
-            assert!(matches!(CreoCodec.decode(&mut Cursor::new(bytes), &options), Err(cadmpeg_ir::codec::DecodeFailure::Codec(cadmpeg_core::CodecError::WrongFormat(_)))));
+            let options = DecodeOptions {
+                container_only,
+                ..DecodeOptions::default()
+            };
+            assert!(matches!(
+                CreoCodec.decode(&mut Cursor::new(bytes), &options),
+                Err(cadmpeg_ir::codec::DecodeFailure::Codec(
+                    cadmpeg_core::CodecError::WrongFormat(_)
+                ))
+            ));
         }
     }
 }

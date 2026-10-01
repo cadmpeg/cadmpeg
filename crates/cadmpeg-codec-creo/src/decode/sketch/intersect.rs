@@ -380,7 +380,10 @@ pub(in crate::decode) fn resolved_trim_vertex_coordinates(
             if entities.len() < 2 || entities.windows(2).any(|pair| pair[0] == pair[1]) {
                 continue;
             }
-            let mut derived = ctx.collect_vec(incident.get(vertex).into_iter().flatten().copied(), "creo sketch incident comparison copy")?;
+            let mut derived = ctx.collect_vec(
+                incident.get(vertex).into_iter().flatten().copied(),
+                "creo sketch incident comparison copy",
+            )?;
             ctx.sort_unstable_by(
                 &mut derived,
                 Ord::cmp,
@@ -391,7 +394,10 @@ pub(in crate::decode) fn resolved_trim_vertex_coordinates(
             if derived != *entities {
                 continue;
             }
-            let copied = ctx.collect_vec(entities.iter().copied(), "creo sketch explicit incident copy")?;
+            let copied = ctx.collect_vec(
+                entities.iter().copied(),
+                "creo sketch explicit incident copy",
+            )?;
             incident.insert(*vertex, copied);
         }
     }

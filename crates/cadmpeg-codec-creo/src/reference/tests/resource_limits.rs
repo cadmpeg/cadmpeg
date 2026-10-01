@@ -295,7 +295,15 @@ fn reference_ellipse_refuses_before_vec_growth() {
 
 #[test]
 fn arc_z_discovery_refuses_header_search_and_numeric_work() {
-    let circles = crate::test_support::assert_work_boundaries(&["creo arc-z prototype search", "creo arc-z block search", "creo arc-z row headers", "creo arc-z numeric trials"], |ctx| super::super::arc_z_circles(ctx, ARC_Z));
+    let circles = crate::test_support::assert_work_boundaries(
+        &[
+            "creo arc-z prototype search",
+            "creo arc-z block search",
+            "creo arc-z row headers",
+            "creo arc-z numeric trials",
+        ],
+        |ctx| super::super::arc_z_circles(ctx, ARC_Z),
+    );
     assert_eq!(circles.len(), 1);
 }
 
@@ -303,6 +311,9 @@ fn arc_z_discovery_refuses_header_search_and_numeric_work() {
 fn arc_z_failed_numeric_candidates_refuse_work() {
     let body = [0; 64];
     let cache = crate::scalar::ScalarCache::from_section(&body);
-    let circle = crate::test_support::assert_work_boundaries(&["creo arc-z numeric trials"], |ctx| super::super::arc_z_fields(ctx, &body, &cache, 1));
+    let circle =
+        crate::test_support::assert_work_boundaries(&["creo arc-z numeric trials"], |ctx| {
+            super::super::arc_z_fields(ctx, &body, &cache, 1)
+        });
     assert!(circle.is_none());
 }

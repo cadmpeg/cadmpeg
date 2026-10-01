@@ -12,8 +12,14 @@ pub(crate) struct InterpolationGrid {
     mixed_derivatives: [[f64; 3]; 4],
 }
 
-fn finite_vectors(ctx: &cadmpeg_core::decode::DecodeContext<'_>, vectors: &[[f64; 3]], operation: &'static str) -> Result<bool, cadmpeg_core::CodecError> {
-    let work = cadmpeg_core::decode::u64_from_index(vectors.len()).checked_mul(3).ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
+fn finite_vectors(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    vectors: &[[f64; 3]],
+    operation: &'static str,
+) -> Result<bool, cadmpeg_core::CodecError> {
+    let work = cadmpeg_core::decode::u64_from_index(vectors.len())
+        .checked_mul(3)
+        .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
     ctx.charge_work(work, operation)?;
     Ok(vectors.iter().flatten().all(|value| value.is_finite()))
 }
@@ -33,22 +39,45 @@ impl InterpolationGrid {
         let u_count = u_parameters.len();
         let v_count = v_parameters.len();
         let ordered_finite = |parameters: &[f64]| -> Result<bool, cadmpeg_core::CodecError> {
-            let work = cadmpeg_core::decode::u64_from_index(parameters.len()).checked_mul(3).ok_or_else(|| ctx.refuse_codec_limit("creo interpolation grid parameter validation", u64::MAX, u64::MAX))?;
+            let work = cadmpeg_core::decode::u64_from_index(parameters.len())
+                .checked_mul(3)
+                .ok_or_else(|| {
+                    ctx.refuse_codec_limit(
+                        "creo interpolation grid parameter validation",
+                        u64::MAX,
+                        u64::MAX,
+                    )
+                })?;
             ctx.charge_work(work, "creo interpolation grid parameter validation")?;
-            Ok(parameters.iter().all(|value| value.is_finite()) && parameters.windows(2).all(|pair| pair[0] < pair[1]))
+            Ok(parameters.iter().all(|value| value.is_finite())
+                && parameters.windows(2).all(|pair| pair[0] < pair[1]))
         };
         if !(u_count >= 2
             && v_count >= 2
             && ordered_finite(&u_parameters)?
             && ordered_finite(&v_parameters)?
             && finite_vectors(ctx, &points, "creo interpolation grid vector validation")?
-            && finite_vectors(ctx, &u_derivatives, "creo interpolation grid vector validation")?
-            && finite_vectors(ctx, &v_derivatives, "creo interpolation grid vector validation")?
-            && finite_vectors(ctx, &mixed_derivatives, "creo interpolation grid vector validation")?
+            && finite_vectors(
+                ctx,
+                &u_derivatives,
+                "creo interpolation grid vector validation",
+            )?
+            && finite_vectors(
+                ctx,
+                &v_derivatives,
+                "creo interpolation grid vector validation",
+            )?
+            && finite_vectors(
+                ctx,
+                &mixed_derivatives,
+                "creo interpolation grid vector validation",
+            )?
             && Some(points.len()) == u_count.checked_mul(v_count)
             && Some(u_derivatives.len()) == v_count.checked_mul(2)
             && Some(v_derivatives.len()) == u_count.checked_mul(2))
-        { return Ok(None); }
+        {
+            return Ok(None);
+        }
         Ok(Some(Self {
             points,
             u_parameters,
@@ -100,7 +129,18 @@ impl InterpolationGrid {
             u_derivative_count,
             "creo legacy spline u derivatives",
         )?;
-        ctx.charge_work(cadmpeg_core::decode::u64_from_index(u_derivative_count).checked_mul(3).ok_or_else(|| ctx.refuse_codec_limit("creo tangent grid boundary projection", u64::MAX, u64::MAX))?, "creo tangent grid boundary projection")?;
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(u_derivative_count)
+                .checked_mul(3)
+                .ok_or_else(|| {
+                    ctx.refuse_codec_limit(
+                        "creo tangent grid boundary projection",
+                        u64::MAX,
+                        u64::MAX,
+                    )
+                })?,
+            "creo tangent grid boundary projection",
+        )?;
         u_derivatives.extend(
             (0..v_count)
                 .map(|v| u_tangents[v])
@@ -115,7 +155,18 @@ impl InterpolationGrid {
             v_derivative_count,
             "creo legacy spline v derivatives",
         )?;
-        ctx.charge_work(cadmpeg_core::decode::u64_from_index(v_derivative_count).checked_mul(3).ok_or_else(|| ctx.refuse_codec_limit("creo tangent grid boundary projection", u64::MAX, u64::MAX))?, "creo tangent grid boundary projection")?;
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(v_derivative_count)
+                .checked_mul(3)
+                .ok_or_else(|| {
+                    ctx.refuse_codec_limit(
+                        "creo tangent grid boundary projection",
+                        u64::MAX,
+                        u64::MAX,
+                    )
+                })?,
+            "creo tangent grid boundary projection",
+        )?;
         v_derivatives.extend(
             (0..u_count)
                 .map(|u| v_tangents[u * v_count])
@@ -175,8 +226,26 @@ mod tests {
     use super::InterpolationGrid;
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 
-    fn try_new(points: Vec<[f64; 3]>, u_parameters: Vec<f64>, v_parameters: Vec<f64>, u_derivatives: Vec<[f64; 3]>, v_derivatives: Vec<[f64; 3]>, mixed_derivatives: [[f64; 3]; 4]) -> Option<InterpolationGrid> {
-        crate::decode::with_test_decode_ctx(|ctx| InterpolationGrid::try_new(ctx, points, u_parameters, v_parameters, u_derivatives, v_derivatives, mixed_derivatives)).expect("grid work admission")
+    fn try_new(
+        points: Vec<[f64; 3]>,
+        u_parameters: Vec<f64>,
+        v_parameters: Vec<f64>,
+        u_derivatives: Vec<[f64; 3]>,
+        v_derivatives: Vec<[f64; 3]>,
+        mixed_derivatives: [[f64; 3]; 4],
+    ) -> Option<InterpolationGrid> {
+        crate::decode::with_test_decode_ctx(|ctx| {
+            InterpolationGrid::try_new(
+                ctx,
+                points,
+                u_parameters,
+                v_parameters,
+                u_derivatives,
+                v_derivatives,
+                mixed_derivatives,
+            )
+        })
+        .expect("grid work admission")
     }
 
     fn from_full_tangent_grid(
@@ -403,14 +472,48 @@ mod tests {
     }
     #[test]
     fn grid_admission_refuses_parameter_and_vector_validation_work() {
-        let grid = crate::test_support::assert_work_boundaries(&["creo interpolation grid parameter validation", "creo interpolation grid vector validation"], |ctx| InterpolationGrid::try_new(ctx, vec![[0.0; 3]; 4], vec![0.0, 1.0], vec![0.0, 1.0], vec![[0.0; 3]; 4], vec![[0.0; 3]; 4], [[0.0; 3]; 4]));
+        let grid = crate::test_support::assert_work_boundaries(
+            &[
+                "creo interpolation grid parameter validation",
+                "creo interpolation grid vector validation",
+            ],
+            |ctx| {
+                InterpolationGrid::try_new(
+                    ctx,
+                    vec![[0.0; 3]; 4],
+                    vec![0.0, 1.0],
+                    vec![0.0, 1.0],
+                    vec![[0.0; 3]; 4],
+                    vec![[0.0; 3]; 4],
+                    [[0.0; 3]; 4],
+                )
+            },
+        );
         assert!(grid.is_some());
     }
 
     #[test]
     fn full_tangent_grid_refuses_validation_and_projection_work() {
-        let grid = crate::test_support::assert_work_boundaries(&["creo full tangent grid validation", "creo tangent grid boundary projection", "creo tangent grid corner projection", "creo interpolation grid parameter validation", "creo interpolation grid vector validation"], |ctx| InterpolationGrid::from_full_tangent_grid(ctx, vec![[0.0; 3]; 4], vec![0.0, 1.0], vec![0.0, 1.0], &[[0.0; 3]; 4], &[[0.0; 3]; 4], &[[0.0; 3]; 4]));
+        let grid = crate::test_support::assert_work_boundaries(
+            &[
+                "creo full tangent grid validation",
+                "creo tangent grid boundary projection",
+                "creo tangent grid corner projection",
+                "creo interpolation grid parameter validation",
+                "creo interpolation grid vector validation",
+            ],
+            |ctx| {
+                InterpolationGrid::from_full_tangent_grid(
+                    ctx,
+                    vec![[0.0; 3]; 4],
+                    vec![0.0, 1.0],
+                    vec![0.0, 1.0],
+                    &[[0.0; 3]; 4],
+                    &[[0.0; 3]; 4],
+                    &[[0.0; 3]; 4],
+                )
+            },
+        );
         assert!(grid.is_some());
     }
-
 }

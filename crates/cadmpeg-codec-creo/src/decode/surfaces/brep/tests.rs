@@ -1113,18 +1113,14 @@ fn legacy_brep_admission_retains_components_with_eligible_visible_faces() {
         .cloned()
         .collect::<Vec<_>>(),
         vec![
-            crate::decode::with_test_decode_ctx(|ctx| crate::topology::FaceComponent::new_for_test(
-                ctx,
-                vec![5],
-                vec![11]
-            ))
+            crate::decode::with_test_decode_ctx(
+                |ctx| crate::topology::FaceComponent::new_for_test(ctx, vec![5], vec![11])
+            )
             .expect("component admission")
             .expect("valid component fixture"),
-            crate::decode::with_test_decode_ctx(|ctx| crate::topology::FaceComponent::new_for_test(
-                ctx,
-                vec![1, 5],
-                vec![12]
-            ))
+            crate::decode::with_test_decode_ctx(
+                |ctx| crate::topology::FaceComponent::new_for_test(ctx, vec![1, 5], vec![12])
+            )
             .expect("component admission")
             .expect("valid component fixture"),
         ]

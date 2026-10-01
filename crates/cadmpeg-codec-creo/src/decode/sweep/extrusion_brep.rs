@@ -805,11 +805,14 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                             edge_index
                         ),
                         sense: Sense::Reversed,
-                        pcurves: ctx.collect_vec([PcurveUse {
+                        pcurves: ctx.collect_vec(
+                            [PcurveUse {
                                 pcurve: bottom_pcurve,
                                 isoparametric: None,
                                 parameter_range: None,
-                            }], "creo extrusion bottom coedge pcurve uses")?,
+                            }],
+                            "creo extrusion bottom coedge pcurve uses",
+                        )?,
                         use_curve: None,
                     },
                 )?;
@@ -874,11 +877,14 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                             ring_index
                         ),
                         sense: Sense::Forward,
-                        pcurves: ctx.collect_vec([PcurveUse {
+                        pcurves: ctx.collect_vec(
+                            [PcurveUse {
                                 pcurve: top_pcurve,
                                 isoparametric: None,
                                 parameter_range: None,
-                            }], "creo extrusion top coedge pcurve uses")?,
+                            }],
+                            "creo extrusion top coedge pcurve uses",
+                        )?,
                         use_curve: None,
                     },
                 )?;
@@ -1034,11 +1040,14 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                             edge: copy_id!(edge_uses[use_index].0),
                             radial_next,
                             sense: edge_uses[use_index].1,
-                            pcurves: ctx.collect_vec([PcurveUse {
+                            pcurves: ctx.collect_vec(
+                                [PcurveUse {
                                     pcurve,
                                     isoparametric: None,
                                     parameter_range: None,
-                                }], "creo extrusion side coedge pcurve uses")?,
+                                }],
+                                "creo extrusion side coedge pcurve uses",
+                            )?,
                             use_curve: None,
                         },
                     )?;
