@@ -144,7 +144,7 @@ fn finalize_result(
     source_fidelity: cadmpeg_ir::SourceFidelity,
 ) -> Result<Decoded, CodecError> {
     ir.finalize(ctx)?;
-    let hash = crate::decode::document_local_sha256_with_source(&ir, &source)?;
+    let hash = cadmpeg_ir::hash::document_local_sha256(ctx, &ir, Some(&source), "f3d", crate::ids::FILE_SOURCE_IMAGE_ID, "record F3Z document digest")?;
     ctx.insert_btree_map(
         &mut source.attributes,
         cadmpeg_core::nonblank_const!(cadmpeg_ir::hash::DOCUMENT_LOCAL_DIGEST_ATTRIBUTE),
