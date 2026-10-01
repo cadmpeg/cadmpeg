@@ -3419,7 +3419,8 @@ fn decode_scanned_document<'a>(
     // Every Design body-map pair names its owning BREP blob. Decode the
     // complete referenced set; a document-level model is not confined to one
     // arbitrary `.smbh` entry.
-    if let Some(primary_model_brep) = model_breps.first().copied() {
+    if !model_breps.is_empty() {
+        let mut primary_model_brep = None;
         let qualify_ids = model_breps.len() > 1;
         let mut brep = Brep::default();
         let mut body_visibilities = Vec::new();
@@ -3444,6 +3445,10 @@ fn decode_scanned_document<'a>(
             if let Some(keys) = selected_body_keys.get(blob_name) {
                 part.retain_body_keys(ctx, keys)?;
             }
+            if part.asm.surfaces.is_empty() && part.asm.points.is_empty() && part.asm.faces.is_empty() {
+                continue;
+            }
+            primary_model_brep.get_or_insert(candidate);
             let mut body_selectors = match selected_body_keys.get(blob_name) {
                 Some(keys) => part.body_selectors_for(ctx, keys)?,
                 None => part.body_selectors(ctx)?,
@@ -3513,7 +3518,7 @@ fn decode_scanned_document<'a>(
             brep.append(ctx, part)?;
             decoded_brep_count += 1;
         }
-        if decoded_brep_count != 0 {
+        if let Some(primary_model_brep) = primary_model_brep {
             return finish_model_decode(
                 ctx,
                 scan,
