@@ -364,50 +364,6 @@ impl<'a> View<'a> {
         bounded_len(count, min_element_size, self.remaining()).map(BoundedCount)
     }
 
-    /// Reads `count` elements of at least `element_size` encoded bytes each.
-    ///
-    /// The count is validated with [`View::counted`] before any allocation, and
-    /// the reader closure's first failure aborts the read.
-    pub fn read_counted<T>(
-        &mut self,
-        count: u64,
-        element_size: usize,
-        mut read: impl FnMut(&mut Self) -> Option<T>,
-    ) -> Option<Vec<T>> {
-        let count = self.counted(count, element_size)?.get();
-        let mut values = Vec::new();
-        values.try_reserve_exact(count).ok()?;
-        for _ in 0..count {
-            values.push(read(self)?);
-        }
-        Some(values)
-    }
-
-    /// Decodes `count` UTF-16LE code units from the current position.
-    ///
-    /// Strict `from_utf16`; unpaired surrogates and a truncated window yield
-    /// `None`. Does not advance on failure.
-    pub fn utf16_le(&mut self, count: usize) -> Option<String> {
-        let mut candidate = *self;
-        let units =
-            candidate.read_counted(crate::decode::u64_from_index(count), 2, View::u16_le)?;
-        let value = String::from_utf16(&units).ok()?;
-        *self = candidate;
-        Some(value)
-    }
-
-    /// Decodes `count` UTF-16LE code units at `offset` and returns the string
-    /// and end offset.
-    ///
-    /// Sequential readers should keep a live `View` and call [`View::utf16_le`]
-    /// instead.
-    pub fn utf16le_at(bytes: &[u8], offset: usize, count: usize) -> Option<(String, usize)> {
-        let mut view = View::over_retained(bytes);
-        view.seek(offset)?;
-        let units = view.read_counted(crate::decode::u64_from_index(count), 2, View::u16_le)?;
-        Some((String::from_utf16(&units).ok()?, view.position()))
-    }
-
     /// Builds an unexpected-eof error from the view's current state.
     fn eof(self, needed: u64) -> ParseError {
         ParseError {
@@ -587,16 +543,18 @@ mod tests {
     }
 
     #[test]
-    fn read_counted_allocates_only_plausible_lengths() {
+    fn counted_reads_only_plausible_lengths() {
         let payload = [1u8, 0, 0, 0, 2, 0, 0, 0];
         let mut view = View::over_space(&payload, SpaceId::ROOT);
-        let values = view
-            .read_counted(2, 4, View::u32_le)
-            .expect("two fixture values");
+        assert_eq!(view.counted(2, 4).map(BoundedCount::get), Some(2));
+        let mut values = [0; 2];
+        for value in &mut values {
+            *value = view.u32_le().expect("two fixture values");
+        }
         assert_eq!(values, [1, 2]);
-        let mut view = View::over_space(&payload, SpaceId::ROOT);
+        let view = View::over_space(&payload, SpaceId::ROOT);
         assert_eq!(
-            view.read_counted(u64::from(u32::MAX), 4, View::u32_le),
+            view.counted(u64::from(u32::MAX), 4),
             None
         );
     }
@@ -823,23 +781,5 @@ mod tests {
         assert_eq!(view.f32_le(), Some(1.5));
     }
 
-    #[test]
-    fn utf16le_matches_le_helper() {
-        assert_eq!(
-            View::utf16le_at(b"A\0B\0", 0, 2),
-            Some(("AB".to_string(), 4))
-        );
-        assert_eq!(View::utf16le_at(b"A\0B\0", 0, 3), None);
-        let mut view = View::over_space(b"A\0B\0", SpaceId::ROOT);
-        assert_eq!(view.utf16_le(2), Some("AB".to_string()));
-        assert_eq!(view.position(), 4);
-    }
 
-    #[test]
-    fn invalid_utf16_does_not_advance_the_view() {
-        let mut view = View::over_space(&[0x00, 0xd8, 0x41, 0x00], SpaceId::ROOT);
-        assert_eq!(view.utf16_le(1), None);
-        assert_eq!(view.position(), 0);
-        assert_eq!(view.u16_le(), Some(0xd800));
-    }
 }

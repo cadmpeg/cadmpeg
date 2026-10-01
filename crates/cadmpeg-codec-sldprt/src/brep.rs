@@ -19,7 +19,7 @@
 use self::index::scan_carriers;
 use self::spline::patch_nurbs_curve;
 
-use cadmpeg_core::decode::{u64_from_index, DecodeArena, DecodeContext, DecodePolicy, View};
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, View};
 use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::geometry::analytic::{
     CircleCurve, ConeSurface, CylinderSurface, EllipseCurve, LineCurve, PlaneSurface,
@@ -234,15 +234,19 @@ fn parse_carrier_at_marker(
     let end = values_at.checked_add(n.checked_mul(8)?)?;
     let mut view = View::over_retained(body);
     view.seek(values_at)?;
-    let vals = view.read_counted(u64_from_index(n), 8, View::f64_be)?;
+    let mut storage = [0_f64; 12];
+    let vals = storage.get_mut(..n)?;
+    for value in vals.iter_mut() {
+        *value = view.f64_be()?;
+    }
     if vals.iter().any(|value| !value.is_finite()) {
         return None;
     }
-    if !valid_carrier_frame(tt, &vals) || !valid_carrier_scalars(tt, &vals) {
+    if !valid_carrier_frame(tt, vals) || !valid_carrier_scalars(tt, vals) {
         return None;
     }
 
-    decode_carrier_values(tt, &vals, attr, off, end)
+    decode_carrier_values(tt, vals, attr, off, end)
 }
 
 /// Try to parse a compact analytic carrier whose tag byte pair `00 TT` begins at
