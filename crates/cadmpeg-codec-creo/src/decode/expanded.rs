@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Expanded-section arenas, feature surface replay associations, and FC05 native records.
 
+use crate::decode::native::CreoArena;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::{AnnotationBuilder, Exactness};
@@ -34,7 +35,7 @@ pub(super) fn attach_expanded_sections(
         ir,
         annotations,
         &UniformArena {
-            key: "expanded_sections",
+            key: CreoArena::ExpandedSections,
             records: &records,
             id: |record| &record.id,
             stream: |record| &record.name,
@@ -49,7 +50,7 @@ pub(super) fn attach_expanded_sections(
         ir,
         annotations,
         &UniformArena {
-            key: "double_xar_tables",
+            key: CreoArena::DoubleXarTables,
             records: &tables,
             id: |table| &table.id,
             stream: |table| &table.table.section_name,
@@ -59,7 +60,7 @@ pub(super) fn attach_expanded_sections(
         },
     )?;
     let primitive_arrays = primitive_scalar_array_records(ctx, scan)?;
-    store_arena(ctx, ir, "primitive_scalar_arrays", &primitive_arrays)?;
+    store_arena(ctx, ir, CreoArena::PrimitiveScalarArrays, &primitive_arrays)?;
     Ok(())
 }
 

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Native reference-geometry and model-namespace arena emission.
 
+use crate::decode::native::CreoArena;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::AnnotationBuilder;
@@ -51,7 +52,7 @@ pub(super) fn emit_reference_arenas(
         ir,
         annotations,
         &UniformArena {
-            key: "reference_lines",
+            key: CreoArena::ReferenceLines,
             records: &reference_line_records(ctx, scan)?,
             id: |record| &record.id,
             stream: |_| "MdlRefInfo",
@@ -65,7 +66,7 @@ pub(super) fn emit_reference_arenas(
         ir,
         annotations,
         &UniformArena {
-            key: "reference_circles",
+            key: CreoArena::ReferenceCircles,
             records: &reference_circle_records(ctx, scan)?,
             id: |record| &record.id,
             stream: |_| "MdlRefInfo",
@@ -79,7 +80,7 @@ pub(super) fn emit_reference_arenas(
         ir,
         annotations,
         &UniformArena {
-            key: "reference_conics",
+            key: CreoArena::ReferenceConics,
             records: &reference_conic_records(ctx, scan)?,
             id: |record| &record.id,
             stream: |_| "MdlRefInfo",
@@ -93,7 +94,7 @@ pub(super) fn emit_reference_arenas(
         ir,
         annotations,
         &UniformArena {
-            key: "reference_ellipses",
+            key: CreoArena::ReferenceEllipses,
             records: &reference_ellipse_records(ctx, scan)?,
             id: |record| &record.id,
             stream: |_| "MdlRefInfo",
@@ -123,7 +124,7 @@ pub(super) fn emit_geometry_arenas(
         ir,
         annotations,
         &UniformArena {
-            key: "surface_rows",
+            key: CreoArena::SurfaceRows,
             records: &surface_rows,
             id: |record| &record.id,
             stream: |record| record.source_section,
@@ -139,7 +140,7 @@ pub(super) fn emit_geometry_arenas(
         ir,
         annotations,
         &UniformArena {
-            key: "nonvisible_surface_rows",
+            key: CreoArena::NonvisibleSurfaceRows,
             records: &nonvisible_surface_rows,
             id: |record| &record.id,
             stream: |record| record.source_section,
@@ -159,7 +160,7 @@ pub(super) fn emit_geometry_arenas(
         ir,
         annotations,
         &UniformArena {
-            key: "cross_section_surface_rows",
+            key: CreoArena::CrossSectionSurfaceRows,
             records: &cross_section_surface_rows,
             id: |record| &record.id,
             stream: |record| record.source_section,
@@ -175,7 +176,7 @@ pub(super) fn emit_geometry_arenas(
         ir,
         annotations,
         &UniformArena {
-            key: "surface_contours",
+            key: CreoArena::SurfaceContours,
             records: &surface_contours,
             id: |record| &record.id,
             stream: |record| record.source_section,
@@ -191,7 +192,7 @@ pub(super) fn emit_geometry_arenas(
         ir,
         annotations,
         &UniformArena {
-            key: "nonvisible_surface_contours",
+            key: CreoArena::NonvisibleSurfaceContours,
             records: &nonvisible_surface_contours,
             id: |record| &record.id,
             stream: |record| record.source_section,
@@ -211,7 +212,7 @@ pub(super) fn emit_geometry_arenas(
         ir,
         annotations,
         &UniformArena {
-            key: "cross_section_surface_contours",
+            key: CreoArena::CrossSectionSurfaceContours,
             records: &cross_section_surface_contours,
             id: |record| &record.id,
             stream: |record| record.source_section,
@@ -227,7 +228,7 @@ pub(super) fn emit_geometry_arenas(
         ir,
         annotations,
         &UniformArena {
-            key: "surface_prototypes",
+            key: CreoArena::SurfacePrototypes,
             records: &surface_prototypes,
             id: |record| &record.id,
             stream: |record| record.source_section,
@@ -247,7 +248,7 @@ pub(super) fn emit_geometry_arenas(
         ir,
         annotations,
         &UniformArena {
-            key: "nonvisible_surface_prototypes",
+            key: CreoArena::NonvisibleSurfacePrototypes,
             records: &nonvisible_surface_prototypes,
             id: |record| &record.id,
             stream: |record| record.source_section,
@@ -262,7 +263,7 @@ pub(super) fn emit_geometry_arenas(
         ir,
         annotations,
         &UniformArena {
-            key: "tabulated_cylinder_curve_replays",
+            key: CreoArena::TabulatedCylinderCurveReplays,
             records: &tabulated_cylinder_curve_replays,
             id: |record| &record.id,
             stream: |record| record.source_section,
@@ -278,7 +279,7 @@ pub(super) fn emit_geometry_arenas(
         ir,
         annotations,
         &UniformArena {
-            key: "curve_parameters",
+            key: CreoArena::CurveParameters,
             records: &curve_parameters,
             id: |record| &record.id,
             stream: |record| record.source_section,
@@ -294,7 +295,7 @@ pub(super) fn emit_geometry_arenas(
         ir,
         annotations,
         &UniformArena {
-            key: "nonvisible_curve_parameters",
+            key: CreoArena::NonvisibleCurveParameters,
             records: &nonvisible_curve_parameters,
             id: |record| &record.id,
             stream: |record| record.source_section,
@@ -309,7 +310,7 @@ pub(super) fn emit_geometry_arenas(
         ir,
         annotations,
         &UniformArena {
-            key: "fc_curve_coordinates",
+            key: CreoArena::FcCurveCoordinates,
             records: &fc_curve_coordinates,
             id: |record| &record.id,
             stream: |record| record.source_section,
@@ -319,16 +320,16 @@ pub(super) fn emit_geometry_arenas(
         },
     )?;
     let fc05_circles = fc05_circle_records(ctx, scan)?;
-    store_arena(ctx, ir, "fc05_circles", &fc05_circles)?;
+    store_arena(ctx, ir, CreoArena::Fc05Circles, &fc05_circles)?;
     let fc05_cylinder_cap_pairs = fc05_cylinder_cap_pair_records(ctx, scan)?;
-    store_arena(ctx, ir, "fc05_cylinder_cap_pairs", &fc05_cylinder_cap_pairs)?;
+    store_arena(ctx, ir, CreoArena::Fc05CylinderCapPairs, &fc05_cylinder_cap_pairs)?;
     let prototype_pcurves = prototype_pcurve_records(ctx, scan)?;
-    store_arena(ctx, ir, "prototype_pcurves", &prototype_pcurves)?;
+    store_arena(ctx, ir, CreoArena::PrototypePcurves, &prototype_pcurves)?;
     let curve_prototype_topology = curve_prototype_topology_records(ctx, scan)?;
     store_arena(
         ctx,
         ir,
-        "curve_prototype_topology",
+        CreoArena::CurvePrototypeTopology,
         &curve_prototype_topology,
     )?;
     let curve_prototypes =
@@ -338,7 +339,7 @@ pub(super) fn emit_geometry_arenas(
         ir,
         annotations,
         &UniformArena {
-            key: "curve_prototypes",
+            key: CreoArena::CurvePrototypes,
             records: &curve_prototypes,
             id: |record| &record.id,
             stream: |record| record.source_section,
@@ -358,7 +359,7 @@ pub(super) fn emit_geometry_arenas(
         ir,
         annotations,
         &UniformArena {
-            key: "nonvisible_curve_prototypes",
+            key: CreoArena::NonvisibleCurvePrototypes,
             records: &nonvisible_curve_prototypes,
             id: |record| &record.id,
             stream: |record| record.source_section,
@@ -378,7 +379,7 @@ pub(super) fn emit_geometry_arenas(
         ir,
         annotations,
         &UniformArena {
-            key: "cross_section_curve_prototypes",
+            key: CreoArena::CrossSectionCurvePrototypes,
             records: &cross_section_curve_prototypes,
             id: |record| &record.id,
             stream: |record| record.source_section,
@@ -394,7 +395,7 @@ pub(super) fn emit_geometry_arenas(
         ir,
         annotations,
         &UniformArena {
-            key: "curve_topology_rows",
+            key: CreoArena::CurveTopologyRows,
             records: &curve_topology_rows,
             id: |record| &record.id,
             stream: |record| record.source_section,
@@ -414,7 +415,7 @@ pub(super) fn emit_geometry_arenas(
         ir,
         annotations,
         &UniformArena {
-            key: "nonvisible_curve_topology_rows",
+            key: CreoArena::NonvisibleCurveTopologyRows,
             records: &nonvisible_curve_topology_rows,
             id: |record| &record.id,
             stream: |record| record.source_section,
@@ -429,7 +430,7 @@ pub(super) fn emit_geometry_arenas(
         ir,
         annotations,
         &UniformArena {
-            key: "cross_section_curve_rows",
+            key: CreoArena::CrossSectionCurveRows,
             records: &cross_section_curve_rows,
             id: |record| &record.id,
             stream: |record| record.source_section,
@@ -439,14 +440,14 @@ pub(super) fn emit_geometry_arenas(
         },
     )?;
     let loop_array_frames = loop_array_frame_records(ctx, scan)?;
-    store_arena(ctx, ir, "loop_array_frames", &loop_array_frames)?;
+    store_arena(ctx, ir, CreoArena::LoopArrayFrames, &loop_array_frames)?;
     let loop_array_records = loop_array_record_records(ctx, scan)?;
     emit_uniform(
         ctx,
         ir,
         annotations,
         &UniformArena {
-            key: "loop_array_records",
+            key: CreoArena::LoopArrayRecords,
             records: &loop_array_records,
             id: |record| &record.id,
             stream: |record| record.source_section,
@@ -461,7 +462,7 @@ pub(super) fn emit_geometry_arenas(
         ir,
         annotations,
         &UniformArena {
-            key: "half_edges",
+            key: CreoArena::HalfEdges,
             records: &half_edges,
             id: |record| &record.id,
             stream: |record| record.source_section,
@@ -471,23 +472,23 @@ pub(super) fn emit_geometry_arenas(
         },
     )?;
     let native_loops = loop_records(ctx, scan)?;
-    store_arena(ctx, ir, "loops", &native_loops)?;
+    store_arena(ctx, ir, CreoArena::Loops, &native_loops)?;
     let topological_vertices = topological_vertex_records(ctx, scan)?;
-    store_arena(ctx, ir, "topological_vertices", &topological_vertices)?;
+    store_arena(ctx, ir, CreoArena::TopologicalVertices, &topological_vertices)?;
     let half_edge_vertex_incidence = half_edge_vertex_incidence_records(ctx, scan)?;
     store_arena(
         ctx,
         ir,
-        "half_edge_vertex_incidence",
+        CreoArena::HalfEdgeVertexIncidence,
         &half_edge_vertex_incidence,
     )?;
     let face_components = face_component_records(ctx, scan)?;
-    store_arena(ctx, ir, "face_components", &face_components)?;
+    store_arena(ctx, ir, CreoArena::FaceComponents, &face_components)?;
     let face_admission_rejections = brep_diagnostics.face_admission_rejection_records(ctx)?;
     store_arena(
         ctx,
         ir,
-        "brep_face_admission_rejections",
+        CreoArena::BrepFaceAdmissionRejections,
         &face_admission_rejections,
     )?;
     let surface_parameters = surface_parameter_records(
@@ -502,7 +503,7 @@ pub(super) fn emit_geometry_arenas(
         ir,
         annotations,
         &UniformArena {
-            key: "surface_parameters",
+            key: CreoArena::SurfaceParameters,
             records: &surface_parameters,
             id: |record| &record.id,
             stream: |record| record.source_section,
@@ -523,7 +524,7 @@ pub(super) fn emit_geometry_arenas(
         ir,
         annotations,
         &UniformArena {
-            key: "nonvisible_surface_parameters",
+            key: CreoArena::NonvisibleSurfaceParameters,
             records: &nonvisible_surface_parameters,
             id: |record| &record.id,
             stream: |record| record.source_section,
@@ -544,7 +545,7 @@ pub(super) fn emit_geometry_arenas(
         ir,
         annotations,
         &UniformArena {
-            key: "cross_section_surface_parameters",
+            key: CreoArena::CrossSectionSurfaceParameters,
             records: &cross_section_surface_parameters,
             id: |record| &record.id,
             stream: |record| record.source_section,
@@ -559,7 +560,7 @@ pub(super) fn emit_geometry_arenas(
         &scan.planes.local_systems,
         "creo:surface:plane_local_system",
     )?;
-    store_arena(ctx, ir, "plane_local_systems", &plane_local_systems)?;
+    store_arena(ctx, ir, CreoArena::PlaneLocalSystems, &plane_local_systems)?;
     let cross_section_plane_local_systems = plane_local_system_records(
         ctx,
         scan,
@@ -569,7 +570,7 @@ pub(super) fn emit_geometry_arenas(
     store_arena(
         ctx,
         ir,
-        "cross_section_plane_local_systems",
+        CreoArena::CrossSectionPlaneLocalSystems,
         &cross_section_plane_local_systems,
     )?;
     let plane_envelopes = plane_envelope_records(
@@ -578,7 +579,7 @@ pub(super) fn emit_geometry_arenas(
         &scan.planes.envelopes,
         "creo:surface:plane_envelope",
     )?;
-    store_arena(ctx, ir, "plane_envelopes", &plane_envelopes)?;
+    store_arena(ctx, ir, CreoArena::PlaneEnvelopes, &plane_envelopes)?;
     let cross_section_plane_envelopes = plane_envelope_records(
         ctx,
         scan,
@@ -588,7 +589,7 @@ pub(super) fn emit_geometry_arenas(
     store_arena(
         ctx,
         ir,
-        "cross_section_plane_envelopes",
+        CreoArena::CrossSectionPlaneEnvelopes,
         &cross_section_plane_envelopes,
     )?;
     let outline_planes = outline_plane_records(
@@ -597,14 +598,14 @@ pub(super) fn emit_geometry_arenas(
         &scan.planes.outlines,
         "creo:surface:outline_plane",
     )?;
-    store_arena(ctx, ir, "outline_planes", &outline_planes)?;
+    store_arena(ctx, ir, CreoArena::OutlinePlanes, &outline_planes)?;
     let positional_frame_planes = outline_plane_records(
         ctx,
         scan,
         &scan.planes.positional_frames,
         "creo:surface:positional_frame_plane",
     )?;
-    store_arena(ctx, ir, "positional_frame_planes", &positional_frame_planes)?;
+    store_arena(ctx, ir, CreoArena::PositionalFramePlanes, &positional_frame_planes)?;
     let cross_section_outline_planes = outline_plane_records(
         ctx,
         scan,
@@ -614,25 +615,25 @@ pub(super) fn emit_geometry_arenas(
     store_arena(
         ctx,
         ir,
-        "cross_section_outline_planes",
+        CreoArena::CrossSectionOutlinePlanes,
         &cross_section_outline_planes,
     )?;
     let datum_planes = datum_plane_records(ctx, scan)?;
-    store_arena(ctx, ir, "datum_planes", &datum_planes)?;
+    store_arena(ctx, ir, CreoArena::DatumPlanes, &datum_planes)?;
     let datum_cylinders = datum_cylinder_records(ctx, scan)?;
-    store_arena(ctx, ir, "datum_cylinders", &datum_cylinders)?;
+    store_arena(ctx, ir, CreoArena::DatumCylinders, &datum_cylinders)?;
     let feature_section_transforms = feature_section_transform_records(ctx, scan)?;
     store_arena(
         ctx,
         ir,
-        "feature_section_transforms",
+        CreoArena::FeatureSectionTransforms,
         &feature_section_transforms,
     )?;
     let feature_placement_instructions = feature_placement_instruction_records(ctx, scan)?;
     store_arena(
         ctx,
         ir,
-        "feature_placement_instructions",
+        CreoArena::FeaturePlacementInstructions,
         &feature_placement_instructions,
     )?;
     // Bespoke annotation: the arena payload drops the per-record source offset the
@@ -656,14 +657,14 @@ pub(super) fn emit_geometry_arenas(
         "creo native pcurve endpoint payload references",
     )?;
     pcurve_endpoint_payload.extend(pcurve_endpoints.iter().map(|(record, _)| record));
-    store_arena(ctx, ir, "pcurve_endpoints", &pcurve_endpoint_payload)?;
+    store_arena(ctx, ir, CreoArena::PcurveEndpoints, &pcurve_endpoint_payload)?;
     let feature_definitions = feature_definition_records(ctx, scan)?;
     emit_uniform(
         ctx,
         ir,
         annotations,
         &UniformArena {
-            key: "feature_definitions",
+            key: CreoArena::FeatureDefinitions,
             records: &feature_definitions,
             id: |definition| &definition.id,
             stream: |definition| definition.source_section,
@@ -678,7 +679,7 @@ pub(super) fn emit_geometry_arenas(
         ir,
         annotations,
         &UniformArena {
-            key: "feature_entities",
+            key: CreoArena::FeatureEntities,
             records: &feature_entities,
             id: |entity| &entity.id,
             stream: |_| "AllFeatur",
@@ -693,7 +694,7 @@ pub(super) fn emit_geometry_arenas(
         ir,
         annotations,
         &UniformArena {
-            key: "feature_entity_references",
+            key: CreoArena::FeatureEntityReferences,
             records: &feature_entity_references,
             id: |reference| &reference.id,
             stream: |_| "AllFeatur",
@@ -708,7 +709,7 @@ pub(super) fn emit_geometry_arenas(
         ir,
         annotations,
         &UniformArena {
-            key: "feature_entity_tables",
+            key: CreoArena::FeatureEntityTables,
             records: &feature_entity_tables,
             id: |table| &table.id,
             stream: |_| "AllFeatur",
@@ -723,7 +724,7 @@ pub(super) fn emit_geometry_arenas(
         ir,
         annotations,
         &UniformArena {
-            key: "feature_surface_replays",
+            key: CreoArena::FeatureSurfaceReplays,
             records: &feature_surface_replays,
             id: |association| &association.id,
             stream: |_| "AllFeatur",
@@ -738,7 +739,7 @@ pub(super) fn emit_geometry_arenas(
         ir,
         annotations,
         &UniformArena {
-            key: "feature_geometry_tables",
+            key: CreoArena::FeatureGeometryTables,
             records: &feature_geometry_tables,
             id: |table| &table.id,
             stream: |table| table.source_section,
@@ -753,7 +754,7 @@ pub(super) fn emit_geometry_arenas(
         ir,
         annotations,
         &UniformArena {
-            key: "feature_loop_history_entries",
+            key: CreoArena::FeatureLoopHistoryEntries,
             records: &feature_loop_history_entries,
             id: |entry| &entry.id,
             stream: |entry| entry.source_section,
@@ -768,7 +769,7 @@ pub(super) fn emit_geometry_arenas(
         ir,
         annotations,
         &UniformArena {
-            key: "feature_affected_ids",
+            key: CreoArena::FeatureAffectedIds,
             records: &feature_affected_ids,
             id: |record| &record.id,
             stream: |record| record.source_section,
@@ -783,7 +784,7 @@ pub(super) fn emit_geometry_arenas(
         ir,
         annotations,
         &UniformArena {
-            key: "feature_replay_affected_ids",
+            key: CreoArena::FeatureReplayAffectedIds,
             records: &feature_replay_affected_ids,
             id: |record| &record.id,
             stream: |record| record.source_section,
@@ -798,7 +799,7 @@ pub(super) fn emit_geometry_arenas(
         ir,
         annotations,
         &UniformArena {
-            key: "surface_merge_replay_affected_ids",
+            key: CreoArena::SurfaceMergeReplayAffectedIds,
             records: &surface_merge_replay_affected_ids,
             id: |record| &record.id,
             stream: |record| record.source_section,
@@ -813,7 +814,7 @@ pub(super) fn emit_geometry_arenas(
         ir,
         annotations,
         &UniformArena {
-            key: "feature_loop_restore_directions",
+            key: CreoArena::FeatureLoopRestoreDirections,
             records: &feature_loop_restore_directions,
             id: |record| &record.id,
             stream: |record| record.source_section,
@@ -828,7 +829,7 @@ pub(super) fn emit_geometry_arenas(
         ir,
         annotations,
         &UniformArena {
-            key: "feature_revolution_extents",
+            key: CreoArena::FeatureRevolutionExtents,
             records: &feature_revolution_extents,
             id: |record| &record.id,
             stream: |record| record.source_section,
@@ -843,7 +844,7 @@ pub(super) fn emit_geometry_arenas(
         ir,
         annotations,
         &UniformArena {
-            key: "feature_rows",
+            key: CreoArena::FeatureRows,
             records: &feature_rows,
             id: |record| &record.id,
             stream: |record| record.source_section,
@@ -858,7 +859,7 @@ pub(super) fn emit_geometry_arenas(
         ir,
         annotations,
         &UniformArena {
-            key: "depdb_recipe_rows",
+            key: CreoArena::DepdbRecipeRows,
             records: &depdb_recipe_rows,
             id: |record| &record.id,
             stream: |record| record.source_section,
@@ -873,7 +874,7 @@ pub(super) fn emit_geometry_arenas(
         ir,
         annotations,
         &UniformArena {
-            key: "feature_choices",
+            key: CreoArena::FeatureChoices,
             records: &feature_choices,
             id: |record| &record.id,
             stream: |record| record.source_section,
@@ -888,7 +889,7 @@ pub(super) fn emit_geometry_arenas(
         ir,
         annotations,
         &UniformArena {
-            key: "feature_choice_fields",
+            key: CreoArena::FeatureChoiceFields,
             records: &feature_choice_fields,
             id: |record| &record.id,
             stream: |record| record.source_section,
@@ -903,7 +904,7 @@ pub(super) fn emit_geometry_arenas(
         ir,
         annotations,
         &UniformArena {
-            key: "sketches",
+            key: CreoArena::Sketches,
             records: &sketches,
             id: |sketch| &sketch.id,
             stream: |sketch| &sketch.source_section,
@@ -927,13 +928,13 @@ pub(super) fn emit_geometry_arenas(
             Exactness::ByteExact,
         )?;
     }
-    store_arena(ctx, ir, "curve_expressions", &curve_expressions)?;
+    store_arena(ctx, ir, CreoArena::CurveExpressions, &curve_expressions)?;
     let feature_operation_states = feature_operation_state_records(ctx, scan)?;
     emit_arena(
         ctx,
         ir,
         annotations,
-        "feature_operation_states",
+        CreoArena::FeatureOperationStates,
         &feature_operation_states,
         |annotations, state| {
             let section = scan
@@ -960,7 +961,7 @@ pub(super) fn emit_geometry_arenas(
         ir,
         annotations,
         &UniformArena {
-            key: "feature_reference_names",
+            key: CreoArena::FeatureReferenceNames,
             records: &feature_reference_names,
             id: |record| &record.id,
             stream: |_| "MdlRefInfo",
@@ -979,7 +980,7 @@ pub(super) fn emit_geometry_arenas(
             "configuration_driver_table_pointer",
             Exactness::ByteExact,
         )?;
-        store_arena(ctx, ir, "configuration", &[family_table])?;
+        store_arena(ctx, ir, CreoArena::Configuration, &[family_table])?;
     }
     Ok(())
 }
