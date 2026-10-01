@@ -400,7 +400,7 @@ fn unknown_record_retention_preserves_its_resource_refusal() {
     let error = with_context(&[], &policy, |ctx| {
         super::build_result(
             ctx,
-            brep,
+            super::DecodeLayer::Model(brep),
             std::collections::BTreeMap::new(),
             &header,
             None,
@@ -461,7 +461,7 @@ fn sat_annotation_storage_uses_the_callers_collection_budget() {
     let error = with_context(&[], &policy, |ctx| {
         super::build_result(
             ctx,
-            brep,
+            super::DecodeLayer::Model(brep),
             std::collections::BTreeMap::new(),
             &header,
             None,
@@ -473,4 +473,41 @@ fn sat_annotation_storage_uses_the_callers_collection_budget() {
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::CollectionItems
             && limit.operation == "allocate annotation stream handle"));
+}
+
+#[test]
+fn sat_container_only_stops_before_entity_decode_for_all_encodings() {
+    let mut options = cadmpeg_ir::codec::DecodeOptions::default();
+    options.container_only = true;
+    options.policy.limits.max_entities = 0;
+    for bytes in [
+        text_sphere_stream(1.0),
+        binary_sphere_stream(BinaryFixtureKind::Asm),
+        binary_sphere_stream(BinaryFixtureKind::Acis),
+        acis_text_sphere_stream(21_800),
+    ] {
+        let result = SatCodec.decode(&mut Cursor::new(bytes), &options)
+            .expect("container facts require no entity admission");
+        assert!(result.report().container_only());
+        assert!(!result.report().geometry_transferred());
+        assert!(result.ir().model.surfaces.is_empty());
+        assert!(result.ir().model.faces.is_empty());
+        assert!(result.ir().model.shells.is_empty());
+        assert!(result.ir().model.bodies.is_empty());
+        assert!(result.ir().model.points.is_empty());
+        assert!(result.report().losses.is_empty());
+    }
+}
+
+#[test]
+fn sat_container_only_ignores_malformed_entity_payload() {
+    let source = String::from_utf8(text_sphere_stream(1.0)).expect("text fixture");
+    let source = source.replacen("asmheader $-1 -1 @13 232.4.0.65535 #", "asmheader @broken #", 1);
+    let mut options = cadmpeg_ir::codec::DecodeOptions::default();
+    options.container_only = true;
+    let result = SatCodec.decode(&mut Cursor::new(source.as_bytes()), &options)
+        .expect("container scope does not parse entities");
+    assert!(result.ir().model.surfaces.is_empty());
+    options.container_only = false;
+    assert!(SatCodec.decode(&mut Cursor::new(source.as_bytes()), &options).is_err());
 }

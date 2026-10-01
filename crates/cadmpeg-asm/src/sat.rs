@@ -453,6 +453,31 @@ fn record_error_reason(
     .map_err(StreamFailure::Resource)
 }
 
+/// Read the header and final branch marker without framing entity records.
+pub fn parse_container(
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+) -> Result<(TextHeader, Terminator), StreamFailure> {
+    let mut position = 0;
+    let header = parse_header(ctx, bytes, &mut position)?;
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(bytes.len()),
+        "SAT container terminator scan",
+    )?;
+    let tail = bytes.trim_ascii_end();
+    let marker = tail.rsplit(|byte| is_ws(*byte)).next();
+    let branch = match marker {
+        Some(b"End-of-ASM-data") => Terminator::Asm,
+        Some(b"End-of-ACIS-data") => Terminator::Acis,
+        _ => return Err(StreamError {
+            format: StreamFormat::Text,
+            offset: position,
+            reason: "text container has no final branch marker".to_string(),
+        }.into()),
+    };
+    Ok((header, branch))
+}
+
 /// Parse a complete text stream into its header and typed record table.
 pub fn parse(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<TextStream, StreamFailure> {
     let mut pos = 0usize;
