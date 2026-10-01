@@ -214,7 +214,8 @@ fn f3z_model_candidate_refuses_collection_limit() {
         DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default()).unwrap();
     let scan = crate::container::scan(&scan_context, root).unwrap();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
+    // Admit the manifest object, key, and root value before the description refusal.
+    policy.limits.max_collection_items = 3;
     let (limited, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let error = crate::f3z::archive::model_root(&limited, &scan).unwrap_err();
     assert!(
@@ -233,7 +234,8 @@ fn f3z_derived_model_match_refuses_work_limit() {
         DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default()).unwrap();
     let scan = crate::container::scan(&scan_context, root).unwrap();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = 0;
+    // Admit the manifest scan before testing the description scan.
+    policy.limits.max_work_units = u64_from_index(scan.entry_bytes("Manifest.json").unwrap().len());
     let (limited, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let error = crate::f3z::archive::model_root(&limited, &scan).unwrap_err();
     assert!(
