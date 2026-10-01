@@ -47,7 +47,7 @@ fn mesh_buffer_crc_refuses_its_own_scan_work() {
     with_expand_policy(&bytes, policy, |expand| {
         let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).unwrap();
         let error = read_buffer(expand, &mut reader, MeshBufferSpec{expected:4,name:"fixture"},
-            &mut Diagnostics::new(), &mut 0, &mut MeshBudget::new(), ArchiveVersion::V5).unwrap_err();
+            &mut Diagnostics::new(), &mut MeshBudget::new(), ArchiveVersion::V5).unwrap_err();
         assert!(matches!(error, GeometryError::Codec(CodecError::ResourceLimit(limit))
             if limit.dimension == ResourceDimension::WorkUnits
                 && limit.operation == "Rhino mesh buffer checksum bytes"
@@ -66,7 +66,7 @@ fn compressed_mesh_chunk_crc_propagates_work_refusal() {
             with_expand_policy(&bytes, policy, |expand| {
                 let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).unwrap();
                 read_buffer(expand, &mut reader, MeshBufferSpec{expected:4,name:"fixture"},
-                    &mut Diagnostics::new(), &mut 0, &mut MeshBudget::new(), ArchiveVersion::V5)
+                    &mut Diagnostics::new(), &mut MeshBudget::new(), ArchiveVersion::V5)
                     .map(|_| ()).map_err(codec_error)
             })
         });
