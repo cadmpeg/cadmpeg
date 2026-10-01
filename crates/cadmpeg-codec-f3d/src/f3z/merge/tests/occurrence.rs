@@ -402,7 +402,7 @@ fn occurrence_merge_refuses_native_record_collection_limit() {
                 id: "f3d:xref:design#0".into(),
                 ordinal: 0,
                 file_version: 1,
-                target_file_name: "part.f3d".into(),
+                target_file_name: "part.f3d".to_owned().try_into().unwrap(),
                 display_name: "Part".into(),
                 lineage_urn: "lineage".into(),
                 version_urn: "version".into(),
@@ -565,7 +565,8 @@ fn occurrence_merge_scopes_admitted_native_references_and_preserves_configuratio
 }
 
 #[test]
-fn occurrence_key_separates_fallback_and_authored_roles() {
+fn occurrence_key_preserves_authored_roles() {
+    assert!(crate::records::xref::RequiredXrefText::try_from(String::new()).is_err());
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let policy = cadmpeg_core::decode::DecodePolicy::service();
     let (ctx, _) =
@@ -574,17 +575,13 @@ fn occurrence_key_separates_fallback_and_authored_roles() {
         id: "f3d:xref:reference#1".into(),
         ordinal,
         occurrence_ordinal: 0,
-        from: "root.f3d".into(),
-        relative_path: "part.f3d".into(),
-        neutron_role: role.into(),
+        from: "root.f3d".to_owned().try_into().unwrap(),
+        relative_path: "part.f3d".to_owned().try_into().unwrap(),
+        neutron_role: role.to_owned().try_into().unwrap(),
         neutron_data: String::new(),
         transform: None,
     };
 
-    assert_eq!(
-        occurrence_key(&ctx, &reference("", 7)).unwrap(),
-        "ordinal-7/occurrence-0"
-    );
     assert_eq!(
         occurrence_key(&ctx, &reference("ordinal-7", 7)).unwrap(),
         "role-ordinal-7/reference-7/occurrence-0"
@@ -608,9 +605,9 @@ fn occurrence_key_separates_same_role_references_with_reset_ordinals() {
         id: format!("f3d:xref:reference#{ordinal}"),
         ordinal,
         occurrence_ordinal: 0,
-        from: "root.f3d".into(),
-        relative_path: format!("part-{ordinal}.f3d"),
-        neutron_role: "same-role".into(),
+        from: "root.f3d".to_owned().try_into().unwrap(),
+        relative_path: format!("part-{ordinal}.f3d").try_into().unwrap(),
+        neutron_role: "same-role".to_owned().try_into().unwrap(),
         neutron_data: String::new(),
         transform: None,
     };
@@ -633,9 +630,9 @@ fn occurrence_key_refuses_retained_limit() {
         id: "f3d:xref:reference#1".into(),
         ordinal: 1,
         occurrence_ordinal: 0,
-        from: "root.f3d".into(),
-        relative_path: "part.f3d".into(),
-        neutron_role: "role /#: value".into(),
+        from: "root.f3d".to_owned().try_into().unwrap(),
+        relative_path: "part.f3d".to_owned().try_into().unwrap(),
+        neutron_role: "role /#: value".to_owned().try_into().unwrap(),
         neutron_data: String::new(),
         transform: None,
     };

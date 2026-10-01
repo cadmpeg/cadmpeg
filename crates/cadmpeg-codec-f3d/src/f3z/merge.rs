@@ -140,7 +140,17 @@ impl MergeSession<'_, '_> {
                 .map_or(reference.relative_path.as_str(), |design| {
                     design.display_name.as_str()
                 });
-            if self.stack.contains(&reference.relative_path) {
+            let mut cycle = false;
+            for path in self.stack.iter() {
+                let work = cadmpeg_core::decode::u64_from_index(path.len()).checked_add(1)
+                    .ok_or_else(|| self.ctx.refuse_codec_limit("match F3Z reference cycle", u64::MAX - 1, u64::MAX))?;
+                self.ctx.charge_work(work, "match F3Z reference cycle")?;
+                if path == reference.relative_path.as_str() {
+                    cycle = true;
+                    break;
+                }
+            }
+            if cycle {
                 super::push_loss(
                     self.ctx,
                     &mut parent_report.losses,
@@ -152,7 +162,7 @@ impl MergeSession<'_, '_> {
                 )?;
                 continue;
             }
-            let Some(member) = self.archive.members.get(&reference.relative_path) else {
+            let Some(member) = self.archive.members.get(reference.relative_path.as_str()) else {
                 if self.scan.entry_view(&reference.relative_path).is_some() {
                     super::push_loss(
                         self.ctx,
@@ -409,15 +419,6 @@ fn occurrence_key(
     ctx: &DecodeContext<'_>,
     reference: &XrefReference,
 ) -> Result<String, CodecError> {
-    if reference.neutron_role.is_empty() {
-        return ctx.format_retained(
-            format_args!(
-                "ordinal-{}/occurrence-{}",
-                reference.ordinal, reference.occurrence_ordinal
-            ),
-            "retain F3Z occurrence key",
-        );
-    }
     let role = EscapedOccurrenceComponent(&reference.neutron_role);
     // `occurrence_ordinal` restarts for each Redirections reference. Keep the
     // source reference ordinal in the scope so two admitted rows carrying the
@@ -971,7 +972,7 @@ mod tests {
                     id: "f3d:xref:design#0".into(),
                     ordinal: 0,
                     file_version: 1,
-                    target_file_name: "part.f3d".into(),
+                    target_file_name: "part.f3d".to_owned().try_into().unwrap(),
                     display_name: "Part".into(),
                     lineage_urn: "lineage".into(),
                     version_urn: "version".into(),

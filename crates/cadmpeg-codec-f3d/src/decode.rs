@@ -4377,7 +4377,7 @@ struct XrefPropertyNote<'a>(&'a crate::records::xref::XrefReference);
 impl std::fmt::Display for XrefPropertyNote<'_> {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(formatter, "neutronRole {}", self.0.neutron_role)?;
-        if !self.0.neutron_data.is_empty() && self.0.neutron_data != self.0.neutron_role {
+        if !self.0.neutron_data.is_empty() && self.0.neutron_data != self.0.neutron_role.as_str() {
             write!(formatter, ", neutronData {}", self.0.neutron_data)?;
         }
         Ok(())

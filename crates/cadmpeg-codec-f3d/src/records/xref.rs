@@ -70,6 +70,34 @@ impl From<XrefPlacementTransform> for [[f64; 4]; 4] {
     }
 }
 
+/// Required XREF text. Whitespace is preserved; only an empty string is invalid.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(try_from = "String")]
+pub(crate) struct RequiredXrefText(String);
+
+impl RequiredXrefText {
+    pub(crate) fn as_str(&self) -> &str { &self.0 }
+}
+
+impl TryFrom<String> for RequiredXrefText {
+    type Error = &'static str;
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        if value.is_empty() { return Err("required XREF text must be non-empty"); }
+        Ok(Self(value))
+    }
+}
+
+impl std::ops::Deref for RequiredXrefText {
+    type Target = str;
+    fn deref(&self) -> &str { self.as_str() }
+}
+
+impl std::fmt::Display for RequiredXrefText {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(self.as_str())
+    }
+}
+
 /// One design entry of the top-level `RedirectionsStream.dat` table
 /// ([spec §1.4](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#14-external-references)).
 /// The first source entry describes the document itself; each further entry
@@ -84,7 +112,7 @@ pub(crate) struct XrefDesign {
     /// Source `file-version` integer.
     pub(crate) file_version: i64,
     /// The document's `.f3d` file name.
-    pub(crate) target_file_name: String,
+    pub(crate) target_file_name: RequiredXrefText,
     /// The document's display name.
     pub(crate) display_name: String,
     /// `urn:adsk.wipprod:dm.lineage:<key>` lineage identity.
@@ -106,13 +134,13 @@ pub(crate) struct XrefReference {
     #[serde(default)]
     pub(crate) occurrence_ordinal: u32,
     /// The referencing document's own file name.
-    pub(crate) from: String,
+    pub(crate) from: RequiredXrefText,
     /// The target design entry's `target_file_name`.
-    pub(crate) relative_path: String,
+    pub(crate) relative_path: RequiredXrefText,
     /// Occurrence-role GUID joining this reference to the Design-segment
     /// `DcXRefPCIFeature` record and the ACT GUID pool.
     /// The role also accepts a GUID prefix followed by an underscore and URN, beyond relaxed GUID text.
-    pub(crate) neutron_role: String,
+    pub(crate) neutron_role: RequiredXrefText,
     /// The independent `neutronData` property value. It is retained exactly
     /// and is never inferred from or aliased to `neutron_role`.
     pub(crate) neutron_data: String,
@@ -124,4 +152,32 @@ pub(crate) struct XrefReference {
         deserialize_with = "deserialize_transform"
     )]
     pub(crate) transform: Option<XrefPlacementTransform>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{XrefDesign, XrefReference};
+    #[test]
+    fn native_xref_required_text_refuses_empty_fields() {
+        let design = serde_json::json!({"id":"f3d:xref:design#0","ordinal":0,"file_version":1,
+            "target_file_name":"part.f3d","display_name":"","lineage_urn":"","version_urn":""});
+        let reference = serde_json::json!({"id":"f3d:xref:reference#0","ordinal":0,
+            "from":"root.f3d","relative_path":"part.f3d","neutron_role":"role","neutron_data":""});
+        let mut empty = design.clone();
+        empty["target_file_name"] = serde_json::json!("");
+        assert!(serde_json::from_value::<XrefDesign>(empty).is_err());
+        for field in ["from", "relative_path", "neutron_role"] {
+            let mut empty = reference.clone();
+            empty[field] = serde_json::json!("");
+            assert!(serde_json::from_value::<XrefReference>(empty).is_err(), "{field}");
+            let mut whitespace = reference.clone();
+            whitespace[field] = serde_json::json!(" ");
+            let record = serde_json::from_value::<XrefReference>(whitespace.clone()).unwrap();
+            whitespace["occurrence_ordinal"] = serde_json::json!(0);
+            assert_eq!(serde_json::to_value(record).unwrap(), whitespace);
+        }
+        let mut whitespace = design;
+        whitespace["target_file_name"] = serde_json::json!(" ");
+        assert_eq!(serde_json::to_value(serde_json::from_value::<XrefDesign>(whitespace.clone()).unwrap()).unwrap(), whitespace);
+    }
 }

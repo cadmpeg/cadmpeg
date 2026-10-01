@@ -613,7 +613,7 @@ fn redirections_keep_neutron_role_and_data_independent() {
     )
     .expect("redirections JSON");
     assert_eq!(table.references.len(), 1);
-    assert_eq!(table.references[0].neutron_role, "role-guid");
+    assert_eq!(table.references[0].neutron_role.as_str(), "role-guid");
     assert_eq!(table.references[0].neutron_data, "data-guid");
 }
 
@@ -702,7 +702,7 @@ fn redirections_property_keys_are_not_collapsed_before_admission() {
                 let native = f3d_native(decoded.ir());
                 assert_eq!(native.xref_references.len(), usize::from(valid), "{label}");
                 if valid {
-                    assert_eq!(native.xref_references[0].neutron_role, ROLE);
+                    assert_eq!(native.xref_references[0].neutron_role.as_str(), ROLE);
                     assert_eq!(native.xref_references[0].neutron_data,
                         if label == "empty independent data" { "" } else { "independent" });
                 }
@@ -731,9 +731,9 @@ fn external_reference_placements_project_as_root_occurrences_in_millimetres() {
             id: "f3d:xref:reference#0-occurrence-0".into(),
             ordinal: 0,
             occurrence_ordinal: 0,
-            from: "root.f3d".into(),
-            relative_path: "part.f3d".into(),
-            neutron_role: "role".into(),
+            from: "root.f3d".to_owned().try_into().unwrap(),
+            relative_path: "part.f3d".to_owned().try_into().unwrap(),
+            neutron_role: "role".to_owned().try_into().unwrap(),
             neutron_data: "data".into(),
             transform: Some(transform.try_into().unwrap()),
         }],
@@ -1870,8 +1870,8 @@ fn assembly_root_without_brep_is_not_a_blocking_loss() {
         crate::native::F3dNative::load(decoded.ir().native.namespace("f3d").unwrap()).unwrap();
     assert_eq!(native.xref_designs.len(), 2);
     assert_eq!(native.xref_references.len(), 1);
-    assert_eq!(native.xref_references[0].relative_path, "comp.f3d");
-    assert_eq!(native.xref_references[0].neutron_role, XREF_ROLE);
+    assert_eq!(native.xref_references[0].relative_path.as_str(), "comp.f3d");
+    assert_eq!(native.xref_references[0].neutron_role.as_str(), XREF_ROLE);
     let source = decoded.ir().source.as_ref().unwrap();
     assert_eq!(
         source.attributes.get("docstruct_type").map(String::as_str),
@@ -1901,7 +1901,7 @@ fn redirections_leaf_form_parses_empty_object_references() {
     )
     .unwrap();
     assert_eq!(table.designs.len(), 1);
-    assert_eq!(table.designs[0].target_file_name, "part.f3d");
+    assert_eq!(table.designs[0].target_file_name.as_str(), "part.f3d");
     assert!(table.references.is_empty());
 }
 
