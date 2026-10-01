@@ -3,7 +3,7 @@
 
 use crate::curve::curve_equation_prohibited_constructs;
 use crate::curve::evaluate_creo_math_function;
-use crate::curve::evaluate_creo_relation_function;
+use crate::curve::evaluate_creo_numeric_relation_function;
 use crate::curve::expression_records;
 use crate::curve::reevaluate_expression_records;
 use crate::curve::relation_round;
@@ -767,13 +767,12 @@ fn evaluates_creo_math_functions_without_treating_function_names_as_dependencies
         Some(-expected_remainder)
     );
     assert_eq!(
-        evaluate_creo_relation_function(
+        evaluate_creo_numeric_relation_function(
             CreoMathFunction::Mod,
             &[
                 CurveExpressionValue::Length(f64::MAX),
                 CurveExpressionValue::Length(tiny_divisor),
             ],
-            RelationEvaluationContext::default(),
         ),
         Some(CurveExpressionValue::Length(expected_remainder))
     );
