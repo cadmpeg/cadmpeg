@@ -588,7 +588,10 @@ fn decode_omits_occurrence_with_malformed_placement_and_reports_it() {
 
 #[test]
 fn decode_refuses_product_occurrence_output_exhaustion() {
-    for mode in [cadmpeg_core::decode::DecodeMode::Strict, cadmpeg_core::decode::DecodeMode::Salvage] {
+    for mode in [
+        cadmpeg_core::decode::DecodeMode::Strict,
+        cadmpeg_core::decode::DecodeMode::Salvage,
+    ] {
         let mut options = DecodeOptions::default();
         options.policy.mode = mode;
         let error = crate::reader::decode_with_test_occurrence_limits(
@@ -612,9 +615,12 @@ fn decode_refuses_product_occurrence_output_exhaustion() {
 #[test]
 fn decode_refuses_product_occurrence_member_output_exhaustion() {
     let error = crate::reader::decode_with_test_occurrence_limits(
-        &nested_subfigure_file(), DecodeOptions::default(), 1,
+        &nested_subfigure_file(),
+        DecodeOptions::default(),
+        1,
         crate::native::MAX_PRODUCT_OCCURRENCE_DEPTH,
-    ).unwrap_err();
+    )
+    .unwrap_err();
     assert!(matches!(error,
         cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
             if limit.dimension == ResourceDimension::Codec("iges_product_occurrence_output")
@@ -623,7 +629,10 @@ fn decode_refuses_product_occurrence_member_output_exhaustion() {
 
 #[test]
 fn decode_refuses_product_occurrence_depth_exhaustion() {
-    for mode in [cadmpeg_core::decode::DecodeMode::Strict, cadmpeg_core::decode::DecodeMode::Salvage] {
+    for mode in [
+        cadmpeg_core::decode::DecodeMode::Strict,
+        cadmpeg_core::decode::DecodeMode::Salvage,
+    ] {
         let mut options = DecodeOptions::default();
         options.policy.mode = mode;
         let error = IgesCodec
