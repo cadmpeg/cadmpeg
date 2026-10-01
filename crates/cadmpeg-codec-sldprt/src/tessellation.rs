@@ -809,6 +809,7 @@ fn persistent_surface_references(
     let mut references = Vec::new();
     let mut at = range.start();
     while at + 4 <= range.end() && at + 4 <= payload.len() {
+        ctx.charge_work(1, "scan display-list reference names")?;
         if payload.get(at..at + MARKER.len()) != Some(MARKER) {
             at += 1;
             continue;
@@ -827,7 +828,12 @@ fn persistent_surface_references(
             at += 1;
             continue;
         };
-        let (text, _text_reservation) = match ctx.utf16le_scoped_text(raw, count, false, "decode display-list reference text") {
+        let (text, _text_reservation) = match ctx.utf16le_scoped_text(
+            raw,
+            count,
+            false,
+            "decode display-list reference text",
+        ) {
             Ok(text) => text,
             Err(cadmpeg_core::CodecError::Malformed(_)) => {
                 at = end;
@@ -835,8 +841,13 @@ fn persistent_surface_references(
             }
             Err(error) => return Err(error),
         };
-        let parse_work = text.len().checked_mul(3).ok_or_else(|| ctx.refuse_codec_limit("parse display-list reference text", 0, u64::MAX))?;
-        ctx.charge_work(cadmpeg_core::decode::u64_from_index(parse_work), "parse display-list reference text")?;
+        let parse_work = text.len().checked_mul(3).ok_or_else(|| {
+            ctx.refuse_codec_limit("parse display-list reference text", 0, u64::MAX)
+        })?;
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(parse_work),
+            "parse display-list reference text",
+        )?;
         let mut fields = text.trim().split(',');
         let Some(_class_name) = fields
             .next()
