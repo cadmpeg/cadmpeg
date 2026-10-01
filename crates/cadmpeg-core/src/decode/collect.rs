@@ -390,17 +390,23 @@ impl DecodeContext<'_> {
         })
     }
 
-    /// Admits retained tree-record storage, owned bytes, one slot and one work unit.
+    /// Admits tree-record storage, owned bytes, one slot and one work unit.
+    ///
+    /// The collection-item ceiling bounds the insertion path when the caller
+    /// does not supply the current tree length. Charge the node-split bound at
+    /// that ceiling, including a possible new root.
     pub fn admit_retained_btree_record<K, V>(
         &self,
         owned_bytes: usize,
         operation: &'static str,
     ) -> Result<(), CodecError> {
-        let bytes = std::mem::size_of::<(K, V)>()
-            .checked_add(owned_bytes)
-            .ok_or_else(|| self.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
+        let count = usize::try_from(self.policy().limits.max_collection_items)
+            .map_err(|_| self.retained_size_overflow_limit(operation))?;
+        let bytes = self.tree_growth_bytes::<K, V>(count, operation)?
+            .checked_add(u64_from_index(owned_bytes))
+            .ok_or_else(|| self.retained_size_overflow_limit(operation))?;
         self.charge_collection_items(1, operation)?;
-        self.charge_retained(u64_from_index(bytes), operation)?;
+        self.charge_retained(bytes, operation)?;
         self.charge_work(1, operation)
     }
 
@@ -3518,6 +3524,8 @@ mod tests {
             .expect("truncate");
         assert_eq!(values, [7]);
     }
+    mod storage;
+
 }
 
 #[cfg(test)]
