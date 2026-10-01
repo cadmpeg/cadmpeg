@@ -79,7 +79,9 @@ fn descriptor_name_service(dirbuf: &[u8], ds: usize) -> String {
 
 fn reconstruct_service(data: &[u8], descriptor: &Descriptor, inner: usize) -> Vec<u8> {
     crate::test_support::with_service_context(|ctx| {
-        reconstruct_logical_stream(ctx, data, descriptor, inner)
+        let (stream, storage) = reconstruct_logical_stream(ctx, data, descriptor, inner)?;
+        storage.commit()?;
+        Ok::<_, cadmpeg_core::CodecError>(stream)
     })
     .expect("service budget admits logical stream")
 }
@@ -118,7 +120,9 @@ fn record_ranges_service(scan: &ContainerScan<'_>) -> Vec<std::ops::Range<usize>
 fn logical_stream_bytes_refuse_retained_limit() {
     let descriptor = test_descriptor("MainDataStream", 1, 3);
     let limited = crate::test_support::with_retained_limit(2, |ctx| {
-        reconstruct_logical_stream(ctx, b"01234", &descriptor, 0)
+        let (stream, storage) = reconstruct_logical_stream(ctx, b"01234", &descriptor, 0)?;
+        storage.commit()?;
+        Ok::<_, cadmpeg_core::CodecError>(stream)
     });
     assert!(
         matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
@@ -1471,4 +1475,32 @@ fn empty_directory_candidate_scans_refuse_work() {
             assert_eq!(ctx.resource_refusal(), Some(limit));
         });
     }
+}
+
+#[test]
+fn outer_declarations_release_their_reconstructed_stream() {
+    let data = [0_u8; 64];
+    let directory = InnerDir { inner: 0, descriptors: vec![test_descriptor("Data", 0, 64)] };
+    crate::test_support::with_retained_limit(0, |ctx| {
+        assert!(super::outer_container_declarations(ctx, &data, &directory).expect("discarded stream is temporary").is_empty());
+    });
+    crate::test_support::with_materialized_limit(0, |ctx| {
+        let cadmpeg_core::CodecError::ResourceLimit(limit) = super::outer_container_declarations(ctx, &data, &directory).expect_err("temporary stream storage must be admitted") else { panic!("resource refusal required") };
+        assert_eq!(limit.dimension, cadmpeg_core::decode::ResourceDimension::MaterializedBytes);
+        assert_eq!(ctx.resource_refusal(), Some(limit));
+    });
+}
+
+#[test]
+fn brep_surface_source_is_scoped_and_destination_is_retained_once() {
+    let data = [1_u8, 2, 3, 4, 5, 6];
+    let directory = InnerDir { inner: 0, descriptors: vec![test_descriptor("MainDataStream", 0, 4), test_descriptor("SurfacicReps", 4, 2)] };
+    crate::test_support::with_retained_limit(6, |ctx| {
+        assert_eq!(super::brep_stream(ctx, &data, &directory).expect("six retained output bytes"), Some(data.to_vec()));
+    });
+    crate::test_support::with_materialized_limit(0, |ctx| {
+        let cadmpeg_core::CodecError::ResourceLimit(limit) = super::brep_stream(ctx, &data, &directory).expect_err("stream scratch is admitted") else { panic!("resource refusal required") };
+        assert_eq!(limit.dimension, cadmpeg_core::decode::ResourceDimension::MaterializedBytes);
+        assert_eq!(ctx.resource_refusal(), Some(limit));
+    });
 }
