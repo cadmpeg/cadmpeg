@@ -185,7 +185,9 @@ pub(crate) fn bind_pattern_inputs(
                 };
                 let object = &lane.native_payload[start..end];
                 if needs_plane {
-                    if let Ok(Some((origin, normal, _))) = explicit_reference_plane_frame(object) {
+                    if let Ok(Some((origin, normal, _))) =
+                        explicit_reference_plane_frame(ctx, object)?
+                    {
                         push_feature_binding_candidate(
                             ctx,
                             &mut mirror_plane_assignments,

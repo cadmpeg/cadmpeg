@@ -391,6 +391,7 @@ fn explicit_sketch_dimension_scalar_preserves_display_outside_object_range() {
         .parameters
         .insert(cadmpeg_core::nonblank_literal!("D1"), "<MOD-DIAM>8".into());
     sync_changed_feature_scalars(
+        &cadmpeg_test_support::service_decode_context(),
         &histories,
         std::slice::from_mut(&mut lane),
         &HashSet::from([("feature".into(), cadmpeg_core::nonblank_literal!("D1"))]),

@@ -103,8 +103,15 @@ fn validate_native(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<Vec<Finding>, 
     let logical = arena!(namespace.arena_as::<native::LogicalSpan>("logical_ledger"));
     let coverage_records =
         arena!(namespace.arena_as::<native::ByteCoverageRecord>("byte_coverage"));
-    let string_tables = arena!(namespace
-        .arena_as_collection::<native::StringTableRecord, native::StringTables>("string_tables"));
+    let mut string_table_records =
+        arena!(namespace.arena_as::<native::StringTableRecord>("string_tables"));
+    ctx.stable_sort_by(
+        &mut string_table_records,
+        |left, right| left.index.cmp(&right.index),
+        |_| 0,
+        "FreeCAD native string tables sort",
+    )?;
+    let string_tables = arena!(native::StringTables::try_from(string_table_records));
     let string_tables = string_tables.as_slice();
     let element_maps =
         arena!(namespace.arena_as::<native::element_map::ElementMapRecord>("element_maps"));
@@ -656,7 +663,13 @@ fn validate_native(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<Vec<Finding>, 
         .as_ref()
         .and_then(|source| source.attributes.get("physical_archive_bytes"))
         .and_then(|value| value.parse().ok());
-    validate_span_chain("physical archive", &physical, physical_end, &mut findings);
+    validate_span_chain(
+        ctx,
+        "physical archive",
+        &physical,
+        physical_end,
+        &mut findings,
+    )?;
     let string_table_ids = string_tables
         .iter()
         .map(native::StringTableRecord::id)
@@ -740,13 +753,19 @@ fn finding(check: Check, message: impl Into<String>, entity: Option<String>) -> 
 }
 
 fn validate_span_chain(
+    ctx: &DecodeContext<'_>,
     label: &str,
     spans: &[native::ArchiveSpan],
     expected_end: Option<u64>,
     findings: &mut Vec<Finding>,
-) {
+) -> Result<(), CodecError> {
     let mut ordered = spans.iter().collect::<Vec<_>>();
-    ordered.sort_by_key(|span| span.span.start());
+    ctx.stable_sort_by(
+        &mut ordered,
+        |left, right| left.span.start().cmp(&right.span.start()),
+        |_| 0,
+        "FreeCAD archive span chain sort",
+    )?;
     let valid = ordered.first().is_some_and(|span| span.span.start() == 0)
         && ordered
             .windows(2)
@@ -759,6 +778,7 @@ fn validate_span_chain(
             None,
         ));
     }
+    Ok(())
 }
 
 fn validate_logical_chain(

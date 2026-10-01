@@ -247,7 +247,7 @@ mod tests {
         configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
     ) -> cadmpeg_core::CodecError {
         let store = vec![b"A".as_slice(); 7164];
-        let part = crate::test_support::test_om::composed_feature_history_payload(
+        let part = crate::test_support::test_om::composed_feature_history_payload_over_sort_scratch(
             &[(&[0xff; 4], "SKIN", BRANCH_PAYLOAD.to_vec())],
             &store,
         );

@@ -346,11 +346,70 @@ pub(crate) fn composed_feature_history_payload(
     operations: &[(&[u8], &str, Vec<u8>)],
     store_records: &[&[u8]],
 ) -> Vec<u8> {
-    let mut payload = Vec::new();
+    let mut header = Vec::new();
     for word in [32u32, 9, 11, 1, 1, 24] {
-        payload.extend_from_slice(&word.to_le_bytes());
+        header.extend_from_slice(&word.to_le_bytes());
     }
-    payload.resize(32, 0);
+    header.resize(32, 0);
+    composed_feature_history_payload_with_header(&header, operations, store_records)
+}
+
+/// Compose the same payload under a segment index with twenty-one
+/// feature-history links, one more than the stable sort sorts without scratch.
+///
+/// The first link addresses the operation section. The other twenty address an
+/// operation-free feature-history section appended after the offset store, so
+/// every route yields the records it yields for the plain payload.
+pub(crate) fn composed_feature_history_payload_over_sort_scratch(
+    operations: &[(&[u8], &str, Vec<u8>)],
+    store_records: &[&[u8]],
+) -> Vec<u8> {
+    let section_len = composed_feature_history_section(operations).len();
+    let store_len = composed_offset_store(store_records).len();
+    let header = over_sort_scratch_header(section_len + store_len);
+    let mut payload =
+        composed_feature_history_payload_with_header(&header, operations, store_records);
+    payload.extend_from_slice(&composed_feature_history_section(&[]));
+    payload
+}
+
+/// Wrap one feature-history `section` under the segment index of
+/// [`composed_feature_history_payload_over_sort_scratch`].
+pub(crate) fn feature_history_section_over_sort_scratch(section: &[u8]) -> Vec<u8> {
+    let mut payload = over_sort_scratch_header(section.len());
+    payload.extend_from_slice(section);
+    payload.extend_from_slice(&composed_feature_history_section(&[]));
+    payload
+}
+
+/// Segment index whose first link addresses the section that follows it and
+/// whose other twenty links address the operation-free section `body_len`
+/// bytes after that section starts.
+fn over_sort_scratch_header(body_len: usize) -> Vec<u8> {
+    const ROWS: u32 = 8;
+    let header_len = ROWS * 12;
+    let section = header_len;
+    let empty = header_len + u32::try_from(body_len).expect("fixture value fits u32");
+    let mut header = Vec::new();
+    for row in 0..ROWS {
+        let words = match row {
+            0 => [section, empty, empty],
+            1 => [1, 1, header_len],
+            _ => [empty; 3],
+        };
+        for word in words {
+            header.extend_from_slice(&word.to_le_bytes());
+        }
+    }
+    header
+}
+
+fn composed_feature_history_payload_with_header(
+    header: &[u8],
+    operations: &[(&[u8], &str, Vec<u8>)],
+    store_records: &[&[u8]],
+) -> Vec<u8> {
+    let mut payload = header.to_vec();
     payload.extend_from_slice(&composed_feature_history_section(operations));
 
     let mut store = composed_offset_store(store_records);

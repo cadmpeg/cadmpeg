@@ -34,6 +34,19 @@ pub(crate) fn composed_feature_history_prt() -> Vec<u8> {
     prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", payload)])
 }
 
+/// [`composed_feature_history_prt`] with one more feature-history link than the
+/// stable sort sorts without scratch.
+pub(crate) fn composed_feature_history_prt_over_sort_scratch() -> Vec<u8> {
+    let (operations, block1, block2, block3, block4, block5, block6) =
+        composed_feature_history_inputs();
+    let store_records: Vec<&[u8]> = vec![&block1, &block2, &block3, &block4, &block5, &block6];
+    let payload = super::test_om::composed_feature_history_payload_over_sort_scratch(
+        &operations,
+        &store_records,
+    );
+    prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", payload)])
+}
+
 /// A single body-extraction operation whose primary body field resolves to one
 /// feature-history-local offset-store block.
 pub(crate) fn extract_body_feature_history_prt() -> Vec<u8> {

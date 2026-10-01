@@ -3,22 +3,23 @@
 use cadmpeg_core::decode::{DecodePolicy, ResourceDimension};
 
 fn link_order_refusal(configure: impl FnOnce(&mut DecodePolicy)) -> cadmpeg_core::CodecError {
-    let link = crate::native::segments::SegmentOmLink {
-        id: "link".to_string(),
-        row: "row".to_string(),
-        slot: crate::native::segments::SegmentIndexSlot::TypeCode,
-        schema_role: crate::native::om::OmSchemaRole::FeatureHistory,
-        location: crate::native::segments::om_location::OmLocation::new(1, 0).unwrap(),
-    };
+    // One more link than the stable sort sorts without scratch.
+    let links = (0..21)
+        .map(|ordinal| crate::native::segments::SegmentOmLink {
+            id: format!("link-{ordinal}"),
+            row: "row".to_string(),
+            slot: crate::native::segments::SegmentIndexSlot::TypeCode,
+            schema_role: crate::native::om::OmSchemaRole::FeatureHistory,
+            location: crate::native::segments::om_location::OmLocation::new(1, 0).unwrap(),
+        })
+        .collect::<Vec<_>>();
 
     crate::test_support::with_decode_context_over(
         &[],
         |policy| {
             configure(policy);
         },
-        |ctx| {
-            crate::native::features::canonical_feature_history_links(ctx, vec![link]).unwrap_err()
-        },
+        |ctx| crate::native::features::canonical_feature_history_links(ctx, links).unwrap_err(),
     )
 }
 

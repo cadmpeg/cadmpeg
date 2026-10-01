@@ -191,7 +191,7 @@ fn class_outcome_keys_refuse_collection_limit() {
     let error = with_transaction_limits(&scan, 4, None, None, |expand| {
         let context = DecodeContext::new(&scan, expand).expect("transaction admitted");
         context
-            .class_outcomes()
+            .class_outcomes(expand.ctx())
             .expect_err("class key exceeds four collection items")
     });
     assert!(
@@ -201,7 +201,7 @@ fn class_outcome_keys_refuse_collection_limit() {
     let outcomes = with_transaction_limits(&scan, 6, None, None, |expand| {
         let context = DecodeContext::new(&scan, expand).expect("transaction admitted");
         context
-            .class_outcomes()
+            .class_outcomes(expand.ctx())
             .expect("service-size class outcome")
             .len()
     });
@@ -214,7 +214,7 @@ fn class_outcome_rows_refuse_collection_limit() {
     let error = with_transaction_limits(&scan, 5, None, None, |expand| {
         let context = DecodeContext::new(&scan, expand).expect("transaction admitted");
         context
-            .class_outcomes()
+            .class_outcomes(expand.ctx())
             .expect_err("class row exceeds five collection items")
     });
     assert!(
@@ -231,7 +231,7 @@ fn class_outcome_label_refuses_retained_limit() {
     let error = with_transaction_limits(&scan, 6, Some(retained_record_bytes), None, |expand| {
         let context = DecodeContext::new(&scan, expand).expect("transaction admitted");
         context
-            .class_outcomes()
+            .class_outcomes(expand.ctx())
             .expect_err("class label exceeds retained record bytes")
     });
     assert!(

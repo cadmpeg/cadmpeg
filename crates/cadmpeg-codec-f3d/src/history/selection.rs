@@ -1529,8 +1529,11 @@ pub(crate) fn bind_mirror_selection_planes(
             if primary_candidates.is_empty() && persistent_candidates.is_empty() {
                 design_geometry_mirror_plane(operand.primary_identity)
             } else {
-                let Some(candidate) =
-                    unique_mirror_plane_candidate(primary_candidates, persistent_candidates)
+                let Some(candidate) = unique_mirror_plane_candidate(
+                    decode,
+                    primary_candidates,
+                    persistent_candidates,
+                )?
                 else {
                     continue;
                 };
@@ -1626,27 +1629,41 @@ fn coincident_mirror_plane(
 }
 
 pub(super) fn unique_mirror_plane_candidate(
+    decode: &cadmpeg_core::decode::DecodeContext<'_>,
     mut primary: Vec<
         crate::records::topology::entity_selection::DesignEntitySelectionFaceCandidate,
     >,
     mut persistent: Vec<
         crate::records::topology::entity_selection::DesignEntitySelectionFaceCandidate,
     >,
-) -> Option<crate::records::topology::entity_selection::DesignEntitySelectionFaceCandidate> {
-    primary.sort_by(|left, right| left.history_id.cmp(&right.history_id));
+) -> Result<
+    Option<crate::records::topology::entity_selection::DesignEntitySelectionFaceCandidate>,
+    cadmpeg_core::CodecError,
+> {
+    decode.stable_sort_by(
+        &mut primary,
+        |left, right| left.history_id.cmp(&right.history_id),
+        |candidate| candidate.history_id.len(),
+        "f3d mirror plane primary candidates sort",
+    )?;
     primary.dedup();
     persistent.retain(|candidate| {
         primary
             .iter()
             .any(|context| context.history_id == candidate.history_id)
     });
-    persistent.sort_by(|left, right| left.history_id.cmp(&right.history_id));
+    decode.stable_sort_by(
+        &mut persistent,
+        |left, right| left.history_id.cmp(&right.history_id),
+        |candidate| candidate.history_id.len(),
+        "f3d mirror plane persistent candidates sort",
+    )?;
     persistent.dedup();
-    match persistent.len() {
+    Ok(match persistent.len() {
         1 => persistent.pop(),
         0 if primary.len() == 1 => primary.pop(),
         _ => None,
-    }
+    })
 }
 
 #[derive(Clone)]

@@ -830,14 +830,14 @@ fn circle_pair_constraint_refuses_nested_range_growth() {
     }];
     let options = [vec![[0, 1], [1, 2]]];
     let face_refusal = crate::test_support::with_collection_limit(0, |ctx| {
-        super::super::super::StandardCirclePairConstraint::new(ctx, &supports, &options)
+        super::super::super::StandardCirclePairConstraint::new(ctx, &supports, &options).map(|_| ())
     });
     assert!(
         matches!(face_refusal, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
         if limit.operation == "catia_standard_circle_constraint_faces")
     );
     let refused = crate::test_support::with_collection_limit(1, |ctx| {
-        super::super::super::StandardCirclePairConstraint::new(ctx, &supports, &options)
+        super::super::super::StandardCirclePairConstraint::new(ctx, &supports, &options).map(|_| ())
     });
     assert!(
         matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))

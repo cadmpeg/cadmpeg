@@ -705,13 +705,17 @@ fn coincident_circle_arc_arrangement_resolves_trimmed_faces() {
 fn sketch_arrangement_faces_declines_when_session_work_budget_is_exhausted() {
     let (sketch, entities, _, _) = coincident_circle_arc_arrangement();
     let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::default();
-    // The arrangement's charged sorts draw from the session allowance, so it must cover
-    // them for the walk, not a sort, to exhaust it.
-    policy.limits.max_work_units = 1930;
+    let policy = DecodePolicy::default();
     let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
         .expect("root context for session work budget");
-    let budget = ctx.work_budget(u64_from_index(MAX_ARRANGEMENT_WALK_WORK));
+    // Each walk unit owes the whole session allowance, so the first walk charge
+    // exhausts the session at any allowance while the arrangement's sorts, which
+    // run under the default allowance, stay admitted.
+    let scale = std::num::NonZeroU64::new(policy.limits.max_work_units)
+        .expect("default session work allowance is nonzero");
+    let budget = ctx
+        .work_budget(u64_from_index(MAX_ARRANGEMENT_WALK_WORK))
+        .with_session_work_scale(scale);
 
     assert!(
         sketch_arrangement_faces(&sketch, &entities, 1.0e-7, &budget, &ctx)

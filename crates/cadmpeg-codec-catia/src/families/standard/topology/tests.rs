@@ -321,7 +321,9 @@ fn standard_duplicate_search_refuses_work_limit() {
     );
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = 0;
+    // Three incident-face sorts of two 16-byte pairs (2 + 16 * 3 * 8 each) and
+    // one unresolved-edge sort of one 8-byte index (1 + 8 * 2 * 8) precede the scan.
+    policy.limits.max_work_units = 3 * (2 + 16 * 3 * 8) + (1 + 8 * 2 * 8);
     let (ctx, _) =
         DecodeContext::from_root_bytes(&[0], &arena, &policy).expect("fixture fits input limit");
     assert!(matches!(
