@@ -355,14 +355,10 @@ fn completed_scan_charged<'a>(
     cache_cells: Vec<CacheCell>,
     compound_streams: Vec<CompoundStream>,
 ) -> Result<ContainerScan<'a>, CodecError> {
-    let mut scan = assemble_scan(
-        source_image,
-        version,
-        blocks,
-        directory,
-        cache_cells,
-        compound_streams,
-    );
+    let mut scan = ContainerScan {
+        source_image, version, blocks, directory, cache_cells, compound_streams,
+        solidworks: SolidWorksEnvelopeScan::default(),
+    };
     let solidworks = scan_solidworks_envelopes(
         scan.sections()
             .map(|section| (section.name(), section.payload())),
@@ -370,25 +366,6 @@ fn completed_scan_charged<'a>(
     )?;
     scan.solidworks = solidworks;
     Ok(scan)
-}
-
-fn assemble_scan(
-    source_image: &[u8],
-    version: u32,
-    blocks: Vec<Block>,
-    directory: Vec<DirectoryEntry>,
-    cache_cells: Vec<CacheCell>,
-    compound_streams: Vec<CompoundStream>,
-) -> ContainerScan<'_> {
-    ContainerScan {
-        source_image,
-        version,
-        blocks,
-        directory,
-        cache_cells,
-        compound_streams,
-        solidworks: SolidWorksEnvelopeScan::default(),
-    }
 }
 
 fn native_version(bytes: &[u8]) -> u32 {
@@ -934,39 +911,8 @@ pub(crate) fn summarize(ctx: &DecodeContext<'_>, scan: &ContainerScan, dialects:
     ))
 }
 
-/// Describe the decoded container without constructing its entry inventory.
-#[cfg(test)]
-pub(crate) fn notes(scan: &ContainerScan<'_>) -> Vec<String> {
-    let active = match active_parasolid_summary(scan) {
-        Some((name, size, sch)) => format!(
-            "active Parasolid B-rep candidate: {} ({} bytes, schema {})",
-            name, size, sch.schema
-        ),
-        None => NO_ACTIVE_PARASOLID_NOTE.to_string(),
-    };
-    notes_with_active(scan, active)
-}
-
 const NO_ACTIVE_PARASOLID_NOTE: &str =
     "no unique active Parasolid partition located; available B-rep sites remain decodable";
-
-#[cfg(test)]
-fn notes_with_active(scan: &ContainerScan<'_>, active: String) -> Vec<String> {
-    vec![
-        format!(
-            "outer version word: 0x{:08x}; {} CRC-validated block(s), {} tail-directory \
-         entry/entries, {} cache-cell(s), {} compound stream(s)",
-            scan.version,
-            scan.blocks.len(),
-            scan.directory.len(),
-            scan.cache_cells.len(),
-            scan.compound_streams.len()
-        ),
-        active,
-        "Parasolid body streams supply the typed topology and analytic carriers used by decode"
-            .to_string(),
-    ]
-}
 
 pub(crate) fn notes_charged(ctx: &DecodeContext<'_>, scan: &ContainerScan<'_>) -> Result<Vec<String>, CodecError> {
     let mut notes = ctx.retained_vec(3, "collect SLDPRT container notes")?;

@@ -120,8 +120,7 @@ fn default_pmi_item_count() -> NonZeroU32 {
 }
 
 // Serde's `skip_serializing_if` contract passes the field by reference.
-fn is_one(value: &impl std::borrow::Borrow<NonZeroU32>) -> bool {
-    let value: &NonZeroU32 = value.borrow();
+fn is_one(value: &NonZeroU32) -> bool {
     value.get() == 1
 }
 
