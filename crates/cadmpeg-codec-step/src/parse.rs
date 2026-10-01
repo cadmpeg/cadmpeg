@@ -15,6 +15,7 @@ use std::sync::Arc;
 
 use cadmpeg_core::decode::{u64_from_index, DecodeContext};
 use cadmpeg_core::CodecError;
+use cadmpeg_ir::scalar::FiniteReal;
 
 use self::implementation_level::{DeclaredImplementationLevel, ImplementationLevel};
 
@@ -41,7 +42,7 @@ pub(crate) enum Value {
     /// Signed integer value.
     Integer(i64),
     /// Real value.
-    Real(f64),
+    Real(FiniteReal),
     /// Enumeration or logical name without delimiter dots.
     Enumeration(String),
     /// Raw string-token bytes before Part 21 escape decoding.

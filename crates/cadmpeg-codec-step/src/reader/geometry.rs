@@ -4576,7 +4576,7 @@ fn trim_parameter_value(
     match value {
         Value::Integer(value) => Ok(cadmpeg_core::convert::f64_from_i64(*value)
             .map(|value| scale * value + context.parameter_offset)),
-        Value::Real(value) => Ok(Some(scale * *value + context.parameter_offset)),
+        Value::Real(value) => Ok(Some(scale * value.get() + context.parameter_offset)),
         Value::Typed(name, value) if name == "PARAMETER_VALUE" => {
             trim_parameter_value(value, context)
         }
@@ -5699,7 +5699,7 @@ fn pcurve_trim_parameter(value: &Value) -> Option<FiniteReal> {
     fn bare_number(value: &Value) -> Option<f64> {
         match value {
             Value::Integer(value) => cadmpeg_core::convert::f64_from_i64(*value),
-            Value::Real(value) => Some(*value),
+            Value::Real(value) => Some(value.get()),
             _ => None,
         }
     }

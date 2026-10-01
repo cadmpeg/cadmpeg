@@ -702,19 +702,19 @@ fn tessellation_normal_rows_preserve_extreme_finite_directions() {
         .expect("empty test root");
     let rows = Value::List(vec![
         Value::List(vec![
-            Value::Real(f64::MAX),
-            Value::Real(0.0),
-            Value::Real(0.0),
+            Value::Real(cadmpeg_ir::scalar::FiniteReal::new(f64::MAX).expect("finite fixture")),
+            Value::Real(cadmpeg_ir::scalar::FiniteReal::new(0.0).expect("finite fixture")),
+            Value::Real(cadmpeg_ir::scalar::FiniteReal::new(0.0).expect("finite fixture")),
         ]),
         Value::List(vec![
-            Value::Real(2.0_f64.powi(-800)),
-            Value::Real(0.0),
-            Value::Real(0.0),
+            Value::Real(cadmpeg_ir::scalar::FiniteReal::new(2.0_f64.powi(-800)).expect("finite fixture")),
+            Value::Real(cadmpeg_ir::scalar::FiniteReal::new(0.0).expect("finite fixture")),
+            Value::Real(cadmpeg_ir::scalar::FiniteReal::new(0.0).expect("finite fixture")),
         ]),
         Value::List(vec![
-            Value::Real(f64::from_bits(1)),
-            Value::Real(0.0),
-            Value::Real(0.0),
+            Value::Real(cadmpeg_ir::scalar::FiniteReal::new(f64::from_bits(1)).expect("finite fixture")),
+            Value::Real(cadmpeg_ir::scalar::FiniteReal::new(0.0).expect("finite fixture")),
+            Value::Real(cadmpeg_ir::scalar::FiniteReal::new(0.0).expect("finite fixture")),
         ]),
     ]);
     assert_eq!(
@@ -735,9 +735,9 @@ fn tessellation_normal_rows_preserve_extreme_finite_directions() {
 #[test]
 fn tessellation_normal_rows_reserve_temporary_bytes_before_collection() {
     let rows = Value::List(vec![Value::List(vec![
-        Value::Real(0.0),
-        Value::Real(0.0),
-        Value::Real(1.0),
+        Value::Real(cadmpeg_ir::scalar::FiniteReal::new(0.0).expect("finite fixture")),
+        Value::Real(cadmpeg_ir::scalar::FiniteReal::new(0.0).expect("finite fixture")),
+        Value::Real(cadmpeg_ir::scalar::FiniteReal::new(1.0).expect("finite fixture")),
     ])]);
     let arena = DecodeArena::new();
     let service = DecodePolicy::service();
