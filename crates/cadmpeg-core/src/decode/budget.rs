@@ -712,31 +712,6 @@ pub fn refuse_local_limit(what: &'static str, limit: u64, requested: u64) -> Cod
     local_limit_error(what, limit, requested, what)
 }
 
-/// Allocates `count` copies of `value` with `try_reserve_exact` and no panic on OOM.
-///
-/// Use [`crate::decode::DecodeContext::alloc_filled`] when a decode session can also charge
-/// collection items. This helper is for call sites that only need the
-/// allocation bound.
-pub fn alloc_filled<T: Clone>(
-    count: usize,
-    value: T,
-    operation: &'static str,
-) -> Result<Vec<T>, CodecError> {
-    let mut out = Vec::new();
-    out.try_reserve_exact(count).map_err(|_| {
-        crate::CodecError::ResourceLimit(crate::decode::ResourceLimit::allocation_failed(
-            crate::decode::ResourceDimension::Codec(operation),
-            u64_from_index(count),
-            u64_from_index(count),
-            operation,
-        ))
-    })?;
-    for _ in 0..count {
-        out.push(value.clone());
-    }
-    Ok(out)
-}
-
 fn local_limit_error(
     what: &'static str,
     limit: u64,
