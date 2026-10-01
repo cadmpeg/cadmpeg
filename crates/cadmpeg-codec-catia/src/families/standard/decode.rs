@@ -6589,7 +6589,6 @@ fn attach_standard_topology(
             "catia_standard_circle_anchors",
         )
         .map_err(StandardTopologyError::Resource)?;
-    let mut mesh_search_exhausted = false;
     let native_fbb_topology = if edge_table_form == EdgeTableForm::FbbOnly && !has_open_face_domains
     {
         if let Some(pairs) = native_endpoint_pairs.as_ref() {
@@ -6933,11 +6932,9 @@ fn attach_standard_topology(
         } else {
             solve_mesh_candidate(&edge_faces, &supports, &edge_classes, work_budget)?
         };
-        Ok(match outcome {
+        Ok(match outcome.require_work(ctx, work_budget)? {
             mesh_quotient::MeshSolve::Solved(candidate) => Some(candidate),
             mesh_quotient::MeshSolve::Failed(failure) => {
-                mesh_search_exhausted |=
-                    matches!(failure, mesh_quotient::MeshCandidateFailure::Exhausted(_));
                 diagnostics.mesh_failure = Some(failure);
                 None
             }
@@ -6992,9 +6989,11 @@ fn attach_standard_topology(
             .map_err(StandardTopologyError::Resource)?;
         (topology, point_assignment)
     } else {
-        return Err((if mesh_search_exhausted || work_budget.exhausted() {
-            StandardTopologyFailure::TopologySearchExhausted
-        } else if matches!(
+        if work_budget.exhausted() {
+            ctx.charge_work(0, "catia_mesh_topology_work").map_err(StandardTopologyError::Resource)?;
+            return Err(StandardTopologyError::Resource(ctx.refuse_codec_limit("catia_mesh_topology_work", 0, 1)));
+        }
+        return Err((if matches!(
             diagnostics.mesh_failure,
             Some(mesh_quotient::MeshCandidateFailure::Ambiguous(_))
         ) {
