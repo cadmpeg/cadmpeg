@@ -266,9 +266,11 @@ mod tests {
         let source = "a".repeat(1024);
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-        policy.limits.max_retained_bytes = 1024 + u64::try_from(std::mem::size_of::<String>()).unwrap();
+        policy.limits.max_retained_bytes =
+            1024 + u64::try_from(std::mem::size_of::<String>()).unwrap();
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let copies = collect_retained_clones(&ctx, std::iter::once(&source), "clone test field").unwrap();
+        let copies =
+            collect_retained_clones(&ctx, std::iter::once(&source), "clone test field").unwrap();
         assert_eq!(copies, [source]);
     }
 }

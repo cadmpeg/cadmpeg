@@ -161,7 +161,9 @@ pub(crate) struct ExpectedLanes<'ctx, 'native> {
 }
 
 impl<'native> ExpectedLanes<'_, 'native> {
-    pub(crate) fn iter(&self) -> impl Iterator<Item = &(&'native FeatureInputLane, FeatureInputLane)> {
+    pub(crate) fn iter(
+        &self,
+    ) -> impl Iterator<Item = &(&'native FeatureInputLane, FeatureInputLane)> {
         self.pairs.iter()
     }
 }
@@ -272,7 +274,11 @@ pub(crate) fn expected_lanes_charged<'a, 'ctx>(
         expected_supplemental_lanes,
         ctx,
     )?);
-    Ok(ExpectedLanes { pairs: expected, _copies: copies, _derived: derived })
+    Ok(ExpectedLanes {
+        pairs: expected,
+        _copies: copies,
+        _derived: derived,
+    })
 }
 
 fn copy_feature_ref(

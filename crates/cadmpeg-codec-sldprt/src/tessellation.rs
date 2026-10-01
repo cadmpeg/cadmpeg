@@ -292,7 +292,10 @@ pub(crate) fn class_intervals(
     ctx: &DecodeContext<'_>,
     payload: &[u8],
 ) -> Result<Vec<ClassInterval>, cadmpeg_core::CodecError> {
-    ctx.charge_work(cadmpeg_core::decode::u64_from_index(payload.len()), "scan SLDPRT display class declarations")?;
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(payload.len()),
+        "scan SLDPRT display class declarations",
+    )?;
     let mut declarations = Vec::new();
     for (offset, marker) in payload.windows(CLASS_MARKER.len()).enumerate() {
         if marker != CLASS_MARKER {
@@ -334,7 +337,10 @@ pub(crate) fn class_intervals(
         let Some(records) = payload.get(start..end) else {
             continue;
         };
-        ctx.charge_work(cadmpeg_core::decode::u64_from_index(records.len()), "scan SLDPRT display class sources")?;
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(records.len()),
+            "scan SLDPRT display class sources",
+        )?;
         let mut source_ids = Vec::new();
         for window in records.windows(scene_src::LEN) {
             let Some(source) = window
@@ -1102,7 +1108,11 @@ pub(crate) fn assign_unique_surface_owners(
                     None => true,
                 };
                 if keep {
-                    ctx.reserve_collection_vec(&mut owners, 1, "collect SLDPRT tessellation owners")?;
+                    ctx.reserve_collection_vec(
+                        &mut owners,
+                        1,
+                        "collect SLDPRT tessellation owners",
+                    )?;
                     owners.push(candidate);
                 }
             }
@@ -1691,18 +1701,45 @@ impl PlanarTrim {
             ctx.reserve_collection_vec(&mut holes, 1, "collect SLDPRT planar trim constraints")?;
             holes.push(constraint);
         }
-        let outer_edges = match &self.outer { Some(PlanarOuter::Polygon(boundary)) => boundary.len(), Some(PlanarOuter::Circle(_)) => 1, None => 0 };
-        let point_work = cadmpeg_core::decode::u64_from_index(outer_edges).checked_mul(2).and_then(|outer_work| holes.iter().try_fold(outer_work, |work, hole| {
-            let edges = match hole { HoleConstraint::Polygon { boundary, .. } => boundary.len(), HoleConstraint::Circle { .. } => 1 };
-            work.checked_add(cadmpeg_core::decode::u64_from_index(edges).checked_mul(3)?)
-        })).and_then(|work| work.checked_mul(cadmpeg_core::decode::u64_from_index(projected.len())))
-            .ok_or_else(|| ctx.refuse_codec_limit("test SLDPRT planar trim points", u64::MAX, u64::MAX))?;
+        let outer_edges = match &self.outer {
+            Some(PlanarOuter::Polygon(boundary)) => boundary.len(),
+            Some(PlanarOuter::Circle(_)) => 1,
+            None => 0,
+        };
+        let point_work = cadmpeg_core::decode::u64_from_index(outer_edges)
+            .checked_mul(2)
+            .and_then(|outer_work| {
+                holes.iter().try_fold(outer_work, |work, hole| {
+                    let edges = match hole {
+                        HoleConstraint::Polygon { boundary, .. } => boundary.len(),
+                        HoleConstraint::Circle { .. } => 1,
+                    };
+                    work.checked_add(cadmpeg_core::decode::u64_from_index(edges).checked_mul(3)?)
+                })
+            })
+            .and_then(|work| {
+                work.checked_mul(cadmpeg_core::decode::u64_from_index(projected.len()))
+            })
+            .ok_or_else(|| {
+                ctx.refuse_codec_limit("test SLDPRT planar trim points", u64::MAX, u64::MAX)
+            })?;
         ctx.charge_work(point_work, "test SLDPRT planar trim points")?;
-        let triangle_work = holes.iter().try_fold(0u64, |work, hole| {
-            let triangles = match hole { HoleConstraint::Polygon { triangles, .. } => triangles.len(), HoleConstraint::Circle { .. } => 1 };
-            work.checked_add(cadmpeg_core::decode::u64_from_index(triangles).checked_mul(64)?)
-        }).and_then(|work| work.checked_add(1)).and_then(|work| work.checked_mul(cadmpeg_core::decode::u64_from_index(mesh.triangles().len())))
-            .ok_or_else(|| ctx.refuse_codec_limit("test SLDPRT planar trim triangles", u64::MAX, u64::MAX))?;
+        let triangle_work = holes
+            .iter()
+            .try_fold(0u64, |work, hole| {
+                let triangles = match hole {
+                    HoleConstraint::Polygon { triangles, .. } => triangles.len(),
+                    HoleConstraint::Circle { .. } => 1,
+                };
+                work.checked_add(cadmpeg_core::decode::u64_from_index(triangles).checked_mul(64)?)
+            })
+            .and_then(|work| work.checked_add(1))
+            .and_then(|work| {
+                work.checked_mul(cadmpeg_core::decode::u64_from_index(mesh.triangles().len()))
+            })
+            .ok_or_else(|| {
+                ctx.refuse_codec_limit("test SLDPRT planar trim triangles", u64::MAX, u64::MAX)
+            })?;
         ctx.charge_work(triangle_work, "test SLDPRT planar trim triangles")?;
         if projected.iter().any(|point| {
             self.outer.as_ref().is_some_and(|outer| !match outer {
@@ -1718,12 +1755,21 @@ impl PlanarTrim {
         }
         for triangle in mesh.triangles() {
             let [Some(a), Some(b), Some(c)] = triangle.map(|index| {
-                projected.get(cadmpeg_core::decode::index_from_u32(index)).copied()
-            }) else { return Ok(false); };
+                projected
+                    .get(cadmpeg_core::decode::index_from_u32(index))
+                    .copied()
+            }) else {
+                return Ok(false);
+            };
             if let Some(PlanarOuter::Polygon(boundary)) = &self.outer {
-                if !polygon_contains_triangle(ctx, boundary, [a, b, c], tolerance)? { return Ok(false); }
+                if !polygon_contains_triangle(ctx, boundary, [a, b, c], tolerance)? {
+                    return Ok(false);
+                }
             }
-            if holes.iter().any(|hole| hole.crosses_triangle([a, b, c], tolerance)) {
+            if holes
+                .iter()
+                .any(|hole| hole.crosses_triangle([a, b, c], tolerance))
+            {
                 return Ok(false);
             }
         }
@@ -2182,12 +2228,28 @@ fn planar_trim(
         }
         (PlanarOuter::Circle(outer), planar_holes)
     } else {
-        let boundary_count = polygons.iter().try_fold(cadmpeg_core::decode::u64_from_index(circles.len()), |count, polygon| count.checked_add(cadmpeg_core::decode::u64_from_index(polygon.len())))
-            .ok_or_else(|| ctx.refuse_codec_limit("compare SLDPRT planar trim boundaries", u64::MAX, u64::MAX))?;
-        let work = boundary_count.checked_mul(boundary_count)
-            .and_then(|work| work.checked_mul(cadmpeg_core::decode::u64_from_index(polygons.len()).checked_add(1)?))
+        let boundary_count = polygons
+            .iter()
+            .try_fold(
+                cadmpeg_core::decode::u64_from_index(circles.len()),
+                |count, polygon| {
+                    count.checked_add(cadmpeg_core::decode::u64_from_index(polygon.len()))
+                },
+            )
+            .ok_or_else(|| {
+                ctx.refuse_codec_limit("compare SLDPRT planar trim boundaries", u64::MAX, u64::MAX)
+            })?;
+        let work = boundary_count
+            .checked_mul(boundary_count)
+            .and_then(|work| {
+                work.checked_mul(
+                    cadmpeg_core::decode::u64_from_index(polygons.len()).checked_add(1)?,
+                )
+            })
             .and_then(|work| work.checked_mul(16))
-            .ok_or_else(|| ctx.refuse_codec_limit("compare SLDPRT planar trim boundaries", u64::MAX, u64::MAX))?;
+            .ok_or_else(|| {
+                ctx.refuse_codec_limit("compare SLDPRT planar trim boundaries", u64::MAX, u64::MAX)
+            })?;
         ctx.charge_work(work, "compare SLDPRT planar trim boundaries")?;
         let mut outer_index = None;
         for (index, outer) in polygons.iter().enumerate() {
@@ -2767,8 +2829,12 @@ fn triangulate_polygon(
     tolerance: f64,
 ) -> Result<Option<Vec<[Point2; 3]>>, cadmpeg_core::CodecError> {
     let count = cadmpeg_core::decode::u64_from_index(polygon.len());
-    let work = count.checked_mul(count).and_then(|work| work.checked_add(count))
-        .ok_or_else(|| ctx.refuse_codec_limit("test SLDPRT polygon simplicity", u64::MAX, u64::MAX))?;
+    let work = count
+        .checked_mul(count)
+        .and_then(|work| work.checked_add(count))
+        .ok_or_else(|| {
+            ctx.refuse_codec_limit("test SLDPRT polygon simplicity", u64::MAX, u64::MAX)
+        })?;
     ctx.charge_work(work, "test SLDPRT polygon simplicity")?;
     // The area admits only a polygon of finite vertices.
     let orientation = require_some!(simple_polygon_area_twice(polygon, tolerance))
@@ -2785,8 +2851,13 @@ fn triangulate_polygon(
     let mut triangles = Vec::new();
     while remaining.len() > 3 {
         let count = cadmpeg_core::decode::u64_from_index(remaining.len());
-        let work = count.checked_mul(5).and_then(|work| work.checked_add(2)).and_then(|work| work.checked_mul(count))
-            .ok_or_else(|| ctx.refuse_codec_limit("triangulate SLDPRT planar polygon", u64::MAX, u64::MAX))?;
+        let work = count
+            .checked_mul(5)
+            .and_then(|work| work.checked_add(2))
+            .and_then(|work| work.checked_mul(count))
+            .ok_or_else(|| {
+                ctx.refuse_codec_limit("triangulate SLDPRT planar polygon", u64::MAX, u64::MAX)
+            })?;
         ctx.charge_work(work, "triangulate SLDPRT planar polygon")?;
         let ear_position = (0..remaining.len()).find(|position| {
             let previous_position = (position + remaining.len() - 1) % remaining.len();
@@ -2887,48 +2958,100 @@ fn polygon_contains(polygon: &[Point2], point: Point2, tolerance: f64) -> bool {
 /// Checks each triangle edge interval between polygon boundary intersections.
 /// A simple polygon that contains the complete triangle boundary contains its interior.
 fn polygon_contains_triangle(
-    ctx: &DecodeContext<'_>, boundary: &[Point2], triangle: [Point2; 3], tolerance: f64,
+    ctx: &DecodeContext<'_>,
+    boundary: &[Point2],
+    triangle: [Point2; 3],
+    tolerance: f64,
 ) -> Result<bool, cadmpeg_core::CodecError> {
     let count = cadmpeg_core::decode::u64_from_index(boundary.len());
-    let work = count.checked_mul(count).and_then(|work| work.checked_add(count))
-        .ok_or_else(|| ctx.refuse_codec_limit("test SLDPRT planar outer simplicity", u64::MAX, u64::MAX))?;
+    let work = count
+        .checked_mul(count)
+        .and_then(|work| work.checked_add(count))
+        .ok_or_else(|| {
+            ctx.refuse_codec_limit("test SLDPRT planar outer simplicity", u64::MAX, u64::MAX)
+        })?;
     ctx.charge_work(work, "test SLDPRT planar outer simplicity")?;
-    if !is_simple_polygon(boundary, tolerance) || triangle.iter().any(|point| FinitePoint2::new(*point).is_none()) {
+    if !is_simple_polygon(boundary, tolerance)
+        || triangle
+            .iter()
+            .any(|point| FinitePoint2::new(*point).is_none())
+    {
         return Ok(false);
     }
-    let capacity = boundary.len().checked_mul(2).and_then(|count| count.checked_add(2))
-        .ok_or_else(|| ctx.refuse_codec_limit("test SLDPRT planar outer triangle", u64::MAX, u64::MAX))?;
+    let capacity = boundary
+        .len()
+        .checked_mul(2)
+        .and_then(|count| count.checked_add(2))
+        .ok_or_else(|| {
+            ctx.refuse_codec_limit("test SLDPRT planar outer triangle", u64::MAX, u64::MAX)
+        })?;
     for edge in 0..3 {
-        let start = triangle[edge]; let end = triangle[(edge + 1) % 3];
-        let du = end.u - start.u; let dv = end.v - start.v;
+        let start = triangle[edge];
+        let end = triangle[(edge + 1) % 3];
+        let du = end.u - start.u;
+        let dv = end.v - start.v;
         let length_squared = du * du + dv * dv;
-        if !length_squared.is_finite() { return Ok(false); }
-        if length_squared == 0.0 { continue; }
-        ctx.charge_work(cadmpeg_core::decode::u64_from_index(boundary.len()), "intersect SLDPRT planar outer triangle")?;
-        let (mut cuts, _reservation) = ctx.temporary_vec(capacity, "collect SLDPRT triangle boundary cuts")?;
+        if !length_squared.is_finite() {
+            return Ok(false);
+        }
+        if length_squared == 0.0 {
+            continue;
+        }
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(boundary.len()),
+            "intersect SLDPRT planar outer triangle",
+        )?;
+        let (mut cuts, _reservation) =
+            ctx.temporary_vec(capacity, "collect SLDPRT triangle boundary cuts")?;
         cuts.extend([0.0_f64, 1.0]);
         for (index, point) in boundary.iter().enumerate() {
             let next = boundary[(index + 1) % boundary.len()];
-            let pu = point.u - start.u; let pv = point.v - start.v;
+            let pu = point.u - start.u;
+            let pv = point.v - start.v;
             let projected = (pu * du + pv * dv) / length_squared;
-            if !projected.is_finite() { return Ok(false); }
-            if (0.0..=1.0).contains(&projected) { cuts.push(projected); }
-            let eu = next.u - point.u; let ev = next.v - point.v;
+            if !projected.is_finite() {
+                return Ok(false);
+            }
+            if (0.0..=1.0).contains(&projected) {
+                cuts.push(projected);
+            }
+            let eu = next.u - point.u;
+            let ev = next.v - point.v;
             let denominator = du * ev - dv * eu;
-            if !denominator.is_finite() { return Ok(false); }
-            if denominator == 0.0 { continue; }
+            if !denominator.is_finite() {
+                return Ok(false);
+            }
+            if denominator == 0.0 {
+                continue;
+            }
             let along_triangle = (pu * ev - pv * eu) / denominator;
             let along_boundary = (pu * dv - pv * du) / denominator;
-            if !along_triangle.is_finite() || !along_boundary.is_finite() { return Ok(false); }
-            if (0.0..=1.0).contains(&along_triangle) && (0.0..=1.0).contains(&along_boundary) { cuts.push(along_triangle); }
+            if !along_triangle.is_finite() || !along_boundary.is_finite() {
+                return Ok(false);
+            }
+            if (0.0..=1.0).contains(&along_triangle) && (0.0..=1.0).contains(&along_boundary) {
+                cuts.push(along_triangle);
+            }
         }
-        ctx.stable_sort_by(&mut cuts, f64::total_cmp, |_| 0, "sort SLDPRT triangle boundary cuts")?;
+        ctx.stable_sort_by(
+            &mut cuts,
+            f64::total_cmp,
+            |_| 0,
+            "sort SLDPRT triangle boundary cuts",
+        )?;
         for interval in cuts.windows(2) {
             let parameter = interval[0] + (interval[1] - interval[0]) / 2.0;
-            let work = cadmpeg_core::decode::u64_from_index(boundary.len()).checked_mul(2)
-                .ok_or_else(|| ctx.refuse_codec_limit("test SLDPRT planar outer triangle", u64::MAX, u64::MAX))?;
+            let work = cadmpeg_core::decode::u64_from_index(boundary.len())
+                .checked_mul(2)
+                .ok_or_else(|| {
+                    ctx.refuse_codec_limit("test SLDPRT planar outer triangle", u64::MAX, u64::MAX)
+                })?;
             ctx.charge_work(work, "test SLDPRT planar outer triangle")?;
-            if !polygon_contains(boundary, Point2::new(start.u + parameter * du, start.v + parameter * dv), tolerance) {
+            if !polygon_contains(
+                boundary,
+                Point2::new(start.u + parameter * du, start.v + parameter * dv),
+                tolerance,
+            ) {
                 return Ok(false);
             }
         }
@@ -3076,8 +3199,16 @@ fn circular_outer_and_holes(
     tolerance: f64,
 ) -> Result<Option<(CircularHole, Vec<CircularHole>)>, cadmpeg_core::CodecError> {
     let count = cadmpeg_core::decode::u64_from_index(circles.len());
-    let work = count.checked_mul(count).and_then(|work| work.checked_mul(2))
-        .ok_or_else(|| ctx.refuse_codec_limit("compare SLDPRT circular trim boundaries", u64::MAX, u64::MAX))?;
+    let work = count
+        .checked_mul(count)
+        .and_then(|work| work.checked_mul(2))
+        .ok_or_else(|| {
+            ctx.refuse_codec_limit(
+                "compare SLDPRT circular trim boundaries",
+                u64::MAX,
+                u64::MAX,
+            )
+        })?;
     ctx.charge_work(work, "compare SLDPRT circular trim boundaries")?;
     let mut outer_index = None;
     for (index, outer) in circles.iter().enumerate() {

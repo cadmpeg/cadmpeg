@@ -34,9 +34,14 @@ fn probe_x84_wrapped_double_length_admits_overflowed_cache_cell() {
     bytes[18..22].copy_from_slice(&l.to_le_bytes());
     bytes[22..26].copy_from_slice(&1_u32.to_le_bytes());
     bytes[26] = b'A'.rotate_left(4);
-    assert!(super::try_cache_cell_with(&bytes, 0, |raw|
-        super::nibble_swap_name_charged(&cadmpeg_test_support::service_decode_context(), raw)
-    ).unwrap().is_none());
+    assert!(
+        super::try_cache_cell_with(&bytes, 0, |raw| super::nibble_swap_name_charged(
+            &cadmpeg_test_support::service_decode_context(),
+            raw
+        ))
+        .unwrap()
+        .is_none()
+    );
 }
 
 fn marker_collection_refusal(marker: Vec<u8>) -> cadmpeg_core::decode::ResourceLimit {
@@ -326,7 +331,11 @@ fn scan_classifies_blocks_cells_and_directory() {
 
 #[test]
 fn empty_block_name_is_anonymous_but_has_offset_owner() {
-    assert_eq!(container::nibble_swap_name_charged(&cadmpeg_test_support::service_decode_context(), &[]).unwrap(), Some(String::new()));
+    assert_eq!(
+        container::nibble_swap_name_charged(&cadmpeg_test_support::service_decode_context(), &[])
+            .unwrap(),
+        Some(String::new())
+    );
 
     let mut source = outer_header();
     source.extend(make_block(0x44, "", b"anonymous payload"));
@@ -361,7 +370,16 @@ fn parasolid_partition_selection_retains_a_compound_stream_site() {
         None,
     )
     .expect("compound stream");
-    let scan = container::completed_scan_charged(&ctx, &[], 0, Vec::new(), Vec::new(), Vec::new(), vec![stream]).unwrap();
+    let scan = container::completed_scan_charged(
+        &ctx,
+        &[],
+        0,
+        Vec::new(),
+        Vec::new(),
+        Vec::new(),
+        vec![stream],
+    )
+    .unwrap();
 
     let site = container::select_active_parasolid_site(&scan).expect("compound partition");
     assert_eq!(site.name(), "Contents/Config-0-Partition");
@@ -537,8 +555,18 @@ fn inspection_inventory_refuses_unadmitted_payload_hash() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_work_units = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = container::summarize(&ctx, &scan, crate::dialect::classify_layers(&cadmpeg_test_support::service_decode_context(), &scan).unwrap().layers().clone()).unwrap_err();
-    let CodecError::ResourceLimit(limit) = error else { panic!("expected resource refusal") };
+    let error = container::summarize(
+        &ctx,
+        &scan,
+        crate::dialect::classify_layers(&cadmpeg_test_support::service_decode_context(), &scan)
+            .unwrap()
+            .layers()
+            .clone(),
+    )
+    .unwrap_err();
+    let CodecError::ResourceLimit(limit) = error else {
+        panic!("expected resource refusal")
+    };
     assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
     assert_eq!(limit.operation, "hash SLDPRT inventory payload");
     assert_eq!(ctx.resource_refusal(), Some(limit));
@@ -553,9 +581,27 @@ fn inspection_inventory_refuses_unadmitted_entry_storage() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    assert!(matches!(container::summarize(&ctx, &scan, crate::dialect::classify_layers(&cadmpeg_test_support::service_decode_context(), &scan).unwrap().layers().clone()), Err(CodecError::ResourceLimit(_))));
+    assert!(matches!(
+        container::summarize(
+            &ctx,
+            &scan,
+            crate::dialect::classify_layers(&cadmpeg_test_support::service_decode_context(), &scan)
+                .unwrap()
+                .layers()
+                .clone()
+        ),
+        Err(CodecError::ResourceLimit(_))
+    ));
     let admitted = cadmpeg_test_support::service_decode_context();
-    let summary = container::summarize(&admitted, &scan, crate::dialect::classify_layers(&admitted, &scan).unwrap().layers().clone()).unwrap();
+    let summary = container::summarize(
+        &admitted,
+        &scan,
+        crate::dialect::classify_layers(&admitted, &scan)
+            .unwrap()
+            .layers()
+            .clone(),
+    )
+    .unwrap();
     assert_eq!(summary.entries[0].name, "Contents/DisplayLists");
 }
 
@@ -567,7 +613,9 @@ fn marker_free_native_image_refuses_zero_scan_work() {
     policy.limits.max_work_units = 0;
     let (ctx, root) = DecodeContext::from_root_bytes(&source, &arena, &policy).unwrap();
     let error = container::scan(&ctx, root).err().unwrap();
-    assert!(matches!(error, CodecError::ResourceLimit(limit) if limit.operation == "scan SLDPRT native markers"));
+    assert!(
+        matches!(error, CodecError::ResourceLimit(limit) if limit.operation == "scan SLDPRT native markers")
+    );
 }
 
 #[test]
@@ -577,19 +625,34 @@ fn xml_validation_refuses_before_invalid_utf8_or_utf16_sizing() {
         let mut policy = DecodePolicy::service();
         policy.limits.max_work_units = 0;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let error = container::xml_text_charged(&ctx, &input, "test XML validation").err().unwrap();
-        assert!(matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::WorkUnits && limit.operation == "test XML validation"));
+        let error = container::xml_text_charged(&ctx, &input, "test XML validation")
+            .err()
+            .unwrap();
+        assert!(
+            matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::WorkUnits && limit.operation == "test XML validation")
+        );
     }
 }
 
 #[test]
 fn bad_block_crc_refuses_before_checksum_scan() {
     let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service(); policy.limits.max_work_units = 0;
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let frame = super::BlockFrame { type_id: 0, crc: 0, comp_sz: 1, uncomp_sz: 4, pre_sz: 0 };
-    let error = super::block_from_inflated(&ctx, &[], 0, &frame, vec![1; 4]).err().unwrap();
-    assert!(matches!(error, CodecError::ResourceLimit(limit) if limit.operation == "validate SLDPRT block CRC"));
+    let frame = super::BlockFrame {
+        type_id: 0,
+        crc: 0,
+        comp_sz: 1,
+        uncomp_sz: 4,
+        pre_sz: 0,
+    };
+    let error = super::block_from_inflated(&ctx, &[], 0, &frame, vec![1; 4])
+        .err()
+        .unwrap();
+    assert!(
+        matches!(error, CodecError::ResourceLimit(limit) if limit.operation == "validate SLDPRT block CRC")
+    );
 }
 
 #[test]
@@ -597,11 +660,16 @@ fn oversized_block_expansion_is_a_resource_refusal() {
     let mut source = outer_header();
     let mut block = make_block(0x20, "PreviewPNG", b"png");
     let declared = u32::try_from(super::MAX_UNCOMP).unwrap() + 1;
-    block[super::block_hdr::UNCOMP_SZ..super::block_hdr::UNCOMP_SZ + 4].copy_from_slice(&declared.to_le_bytes());
+    block[super::block_hdr::UNCOMP_SZ..super::block_hdr::UNCOMP_SZ + 4]
+        .copy_from_slice(&declared.to_le_bytes());
     source.extend(block);
     let ctx = cadmpeg_test_support::service_decode_context();
-    let error = container::scan(&ctx, cadmpeg_core::decode::View::over_retained(&source)).err().unwrap();
-    assert!(matches!(error, CodecError::ResourceLimit(limit) if limit.operation == "expand SLDPRT native block" && limit.additional == 1));
+    let error = container::scan(&ctx, cadmpeg_core::decode::View::over_retained(&source))
+        .err()
+        .unwrap();
+    assert!(
+        matches!(error, CodecError::ResourceLimit(limit) if limit.operation == "expand SLDPRT native block" && limit.additional == 1)
+    );
 }
 
 #[test]
@@ -621,7 +689,9 @@ fn compound_scan_preserves_malformed_open_error() {
     let error = container::scan(
         &cadmpeg_test_support::service_decode_context(),
         cadmpeg_core::decode::View::over_retained(&COMPOUND_FILE_MAGIC),
-    ).err().unwrap();
+    )
+    .err()
+    .unwrap();
     assert!(matches!(error, CodecError::Malformed(_)));
 }
 
@@ -630,18 +700,44 @@ fn invalid_marker_name_refuses_work_before_validation() {
     let mut raw = vec![b'A'.rotate_left(4); 64];
     raw[63] = 0;
     let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service(); policy.limits.max_work_units = 0;
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    assert!(matches!(super::nibble_swap_name_charged(&ctx, &raw), Err(CodecError::ResourceLimit(limit)) if limit.operation == "validate SLDPRT section name"));
+    assert!(
+        matches!(super::nibble_swap_name_charged(&ctx, &raw), Err(CodecError::ResourceLimit(limit)) if limit.operation == "validate SLDPRT section name")
+    );
 }
 
 #[test]
 fn inventory_compound_classification_refuses_work_before_signature_scan() {
-    let stream = CompoundStream { path: cadmpeg_ir::stream_name!("Contents/Unknown"), directory_id: 0, start_sector: 0, payload: vec![0; 64], decoded_payload: None, ps_streams: Vec::new() };
-    let scan = container::completed_scan_charged(&cadmpeg_test_support::service_decode_context(), &[], 0, Vec::new(), Vec::new(), Vec::new(), vec![stream]).unwrap();
-    let dialects = crate::dialect::classify_layers(&cadmpeg_test_support::service_decode_context(), &scan).unwrap().layers().clone();
+    let stream = CompoundStream {
+        path: cadmpeg_ir::stream_name!("Contents/Unknown"),
+        directory_id: 0,
+        start_sector: 0,
+        payload: vec![0; 64],
+        decoded_payload: None,
+        ps_streams: Vec::new(),
+    };
+    let scan = container::completed_scan_charged(
+        &cadmpeg_test_support::service_decode_context(),
+        &[],
+        0,
+        Vec::new(),
+        Vec::new(),
+        Vec::new(),
+        vec![stream],
+    )
+    .unwrap();
+    let dialects =
+        crate::dialect::classify_layers(&cadmpeg_test_support::service_decode_context(), &scan)
+            .unwrap()
+            .layers()
+            .clone();
     let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service(); policy.limits.max_work_units = 64;
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 64;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    assert!(matches!(container::summarize(&ctx, &scan, dialects), Err(CodecError::ResourceLimit(limit)) if limit.operation == "classify SLDPRT inventory payload"));
+    assert!(
+        matches!(container::summarize(&ctx, &scan, dialects), Err(CodecError::ResourceLimit(limit)) if limit.operation == "classify SLDPRT inventory payload")
+    );
 }

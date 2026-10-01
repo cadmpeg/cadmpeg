@@ -47,7 +47,8 @@ fn patch_partition_inner(
         .find(|record| record.id.as_str() == "sldprt:file:source-image#0")?
         .data?;
     let arena = DecodeArena::new();
-    let (ctx, root) = match DecodeContext::from_root_bytes(source, &arena, &DecodePolicy::desktop()) {
+    let (ctx, root) = match DecodeContext::from_root_bytes(source, &arena, &DecodePolicy::desktop())
+    {
         Ok(context) => context,
         Err(error) => return Some(Err(error)),
     };

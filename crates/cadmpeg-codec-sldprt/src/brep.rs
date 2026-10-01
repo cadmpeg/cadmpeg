@@ -803,16 +803,26 @@ mod tests {
     #[test]
     fn a_cone_sine_just_above_one_is_refused() {
         let sine = 1.0 + 4.0e-10;
-        let bytes = compact_carrier(tag::CONE, 8,
-            &[0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.001, sine, 1.0e-8, 1.0, 0.0, 0.0]);
+        let bytes = compact_carrier(
+            tag::CONE,
+            8,
+            &[
+                0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.001, sine, 1.0e-8, 1.0, 0.0, 0.0,
+            ],
+        );
         assert!(parse_carrier(&bytes, 0).is_none());
     }
 
     #[test]
     fn a_negative_cone_sine_is_refused_without_changing_its_chart() {
         let root_half = std::f64::consts::FRAC_1_SQRT_2;
-        let bytes = compact_carrier(tag::CONE, 8,
-            &[0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.001, -root_half, root_half, 1.0, 0.0, 0.0]);
+        let bytes = compact_carrier(
+            tag::CONE,
+            8,
+            &[
+                0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.001, -root_half, root_half, 1.0, 0.0, 0.0,
+            ],
+        );
         assert!(parse_carrier(&bytes, 0).is_none());
     }
 
