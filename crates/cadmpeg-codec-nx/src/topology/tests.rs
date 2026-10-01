@@ -108,139 +108,157 @@ fn topology_graph_parse_refuses_work_limit() {
 
 #[test]
 fn topology_rejects_shell_with_broken_face_ownership_chain() {
-    let valid = topology_partition_stream();
-    let graph =
-        crate::test_support::with_decode_context(|ctx| crate::topology::Graph::parse(ctx, &valid))
-            .unwrap();
-    assert_eq!(graph.body_shape_shells().count(), 1);
+    crate::test_support::with_decode_context(|ctx| {
+        let valid = topology_partition_stream();
+        let graph = crate::test_support::with_decode_context(|ctx| {
+            crate::topology::Graph::parse(ctx, &valid)
+        })
+        .unwrap();
+        assert_eq!(graph.body_shape_shells(ctx).unwrap().count(), 1);
 
-    let mut broken = valid;
-    let face = broken
-        .windows(2)
-        .position(|window| window == [0, 14])
-        .expect("face record");
-    put_ref(&mut broken, face + 24, 99);
-    assert!(
-        crate::test_support::with_decode_context(|ctx| crate::topology::Graph::parse(ctx, &broken))
+        let mut broken = valid;
+        let face = broken
+            .windows(2)
+            .position(|window| window == [0, 14])
+            .expect("face record");
+        put_ref(&mut broken, face + 24, 99);
+        assert!(
+            crate::test_support::with_decode_context(|ctx| crate::topology::Graph::parse(
+                ctx, &broken
+            ))
             .unwrap()
-            .body_shape_shells()
+            .body_shape_shells(ctx)
+            .unwrap()
             .next()
             .is_none()
-    );
+        );
 
-    let mut independent_previous = topology_partition_stream();
-    let face = independent_previous
-        .windows(2)
-        .position(|window| window == [0, 14])
-        .expect("face record");
-    put_ref(&mut independent_previous, face + 20, 99);
-    assert_eq!(
-        crate::test_support::with_decode_context(|ctx| crate::topology::Graph::parse(
-            ctx,
-            &independent_previous
-        ))
-        .unwrap()
-        .body_shape_shells()
-        .count(),
-        1
-    );
+        let mut independent_previous = topology_partition_stream();
+        let face = independent_previous
+            .windows(2)
+            .position(|window| window == [0, 14])
+            .expect("face record");
+        put_ref(&mut independent_previous, face + 20, 99);
+        assert_eq!(
+            crate::test_support::with_decode_context(|ctx| crate::topology::Graph::parse(
+                ctx,
+                &independent_previous
+            ))
+            .unwrap()
+            .body_shape_shells(ctx)
+            .unwrap()
+            .count(),
+            1
+        );
+    });
 }
 
 #[test]
 fn topology_retains_shell_body_identity_without_body_record() {
-    let mut stream = topology_partition_stream();
-    let body = stream
-        .windows(4)
-        .position(|window| window == [0, 12, 0, 2])
-        .expect("body record");
-    stream[body..body + 24].fill(0xff);
+    crate::test_support::with_decode_context(|ctx| {
+        let mut stream = topology_partition_stream();
+        let body = stream
+            .windows(4)
+            .position(|window| window == [0, 12, 0, 2])
+            .expect("body record");
+        stream[body..body + 24].fill(0xff);
 
-    let graph =
-        crate::test_support::with_decode_context(|ctx| crate::topology::Graph::parse(ctx, &stream))
-            .unwrap();
-    assert!(graph.get(NodeKind::Body, 2).is_none());
-    assert_eq!(graph.body_shape_shells().count(), 1);
-
-    let mut input = Cursor::new(prt_with_partition(&stream));
-    let result = NxCodec
-        .decode(&mut input, &DecodeOptions::default())
+        let graph = crate::test_support::with_decode_context(|ctx| {
+            crate::topology::Graph::parse(ctx, &stream)
+        })
         .unwrap();
-    assert_eq!(result.ir().model.bodies.len(), 1);
-    assert_eq!(result.ir().model.bodies[0].id.as_str(), "nx:s0:body#2");
-    assert_eq!(result.ir().model.faces.len(), 1);
-    let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
-        .expect("resource allocation did not fail");
-    assert!(validation.is_ok(), "findings: {:?}", validation.findings);
+        assert!(graph.get(NodeKind::Body, 2).is_none());
+        assert_eq!(graph.body_shape_shells(ctx).unwrap().count(), 1);
+
+        let mut input = Cursor::new(prt_with_partition(&stream));
+        let result = NxCodec
+            .decode(&mut input, &DecodeOptions::default())
+            .unwrap();
+        assert_eq!(result.ir().model.bodies.len(), 1);
+        assert_eq!(result.ir().model.bodies[0].id.as_str(), "nx:s0:body#2");
+        assert_eq!(result.ir().model.faces.len(), 1);
+        let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
+            .expect("resource allocation did not fail");
+        assert!(validation.is_ok(), "findings: {:?}", validation.findings);
+    });
 }
 
 #[test]
 fn topology_accepts_complete_fixed_nodes_across_the_u32_identifier_domain() {
-    let mut stream = topology_partition_stream();
-    let fixed_nodes =
-        crate::test_support::with_decode_context(|ctx| crate::topology::Graph::parse(ctx, &stream))
-            .unwrap()
-            .nodes
-            .values()
-            .filter(|node| node.kind != NodeKind::Fin)
-            .map(|node| (node.pos, node.shift))
-            .collect::<Vec<_>>();
-    for (ordinal, (pos, shift)) in fixed_nodes.into_iter().enumerate() {
-        let node_id = u32::MAX - u32::try_from(ordinal).unwrap();
-        stream[pos + 4 + shift..pos + 8 + shift].copy_from_slice(&node_id.to_be_bytes());
-    }
-
-    let graph =
-        crate::test_support::with_decode_context(|ctx| crate::topology::Graph::parse(ctx, &stream))
-            .unwrap();
-
-    assert_eq!(graph.body_shape_shells().count(), 1);
-    assert_eq!(graph.body_shape_face_count(), 1);
-    assert!(
-        crate::test_support::with_decode_context(|ctx| graph.has_complete_body_topology(ctx))
-            .unwrap()
-    );
-    assert!(graph
+    crate::test_support::with_decode_context(|ctx| {
+        let mut stream = topology_partition_stream();
+        let fixed_nodes = crate::test_support::with_decode_context(|ctx| {
+            crate::topology::Graph::parse(ctx, &stream)
+        })
+        .unwrap()
         .nodes
         .values()
         .filter(|node| node.kind != NodeKind::Fin)
-        .all(|node| View::u32_be_at(&node.bytes, 4).is_some_and(|id| id > 1_000_000)));
+        .map(|node| (node.pos, node.shift))
+        .collect::<Vec<_>>();
+        for (ordinal, (pos, shift)) in fixed_nodes.into_iter().enumerate() {
+            let node_id = u32::MAX - u32::try_from(ordinal).unwrap();
+            stream[pos + 4 + shift..pos + 8 + shift].copy_from_slice(&node_id.to_be_bytes());
+        }
 
-    let mut input = Cursor::new(prt_with_partition(&stream));
-    let result = NxCodec
-        .decode(&mut input, &DecodeOptions::default())
+        let graph = crate::test_support::with_decode_context(|ctx| {
+            crate::topology::Graph::parse(ctx, &stream)
+        })
         .unwrap();
-    assert_eq!(result.ir().model.bodies.len(), 1);
-    assert_eq!(result.ir().model.faces.len(), 1);
-    let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
-        .expect("resource allocation did not fail");
-    assert!(validation.is_ok(), "findings: {:?}", validation.findings);
+
+        assert_eq!(graph.body_shape_shells(ctx).unwrap().count(), 1);
+        assert_eq!(graph.body_shape_face_count(ctx).unwrap(), 1);
+        assert!(crate::test_support::with_decode_context(
+            |ctx| graph.has_complete_body_topology(ctx)
+        )
+        .unwrap());
+        assert!(graph
+            .nodes
+            .values()
+            .filter(|node| node.kind != NodeKind::Fin)
+            .all(|node| View::u32_be_at(&node.bytes, 4).is_some_and(|id| id > 1_000_000)));
+
+        let mut input = Cursor::new(prt_with_partition(&stream));
+        let result = NxCodec
+            .decode(&mut input, &DecodeOptions::default())
+            .unwrap();
+        assert_eq!(result.ir().model.bodies.len(), 1);
+        assert_eq!(result.ir().model.faces.len(), 1);
+        let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
+            .expect("resource allocation did not fail");
+        assert!(validation.is_ok(), "findings: {:?}", validation.findings);
+    });
 }
 
 #[test]
 fn topology_accepts_high_node_identity_among_low_identity_neighbors() {
-    let mut stream = topology_partition_stream();
-    let initial_graph =
-        crate::test_support::with_decode_context(|ctx| crate::topology::Graph::parse(ctx, &stream))
-            .unwrap();
-    let face = initial_graph.get(NodeKind::Face, 4).unwrap();
-    let node_id_offset = face.pos + 4 + face.shift;
-    stream[node_id_offset..node_id_offset + 4].copy_from_slice(&u32::MAX.to_be_bytes());
+    crate::test_support::with_decode_context(|ctx| {
+        let mut stream = topology_partition_stream();
+        let initial_graph = crate::test_support::with_decode_context(|ctx| {
+            crate::topology::Graph::parse(ctx, &stream)
+        })
+        .unwrap();
+        let face = initial_graph.get(NodeKind::Face, 4).unwrap();
+        let node_id_offset = face.pos + 4 + face.shift;
+        stream[node_id_offset..node_id_offset + 4].copy_from_slice(&u32::MAX.to_be_bytes());
 
-    let graph =
-        crate::test_support::with_decode_context(|ctx| crate::topology::Graph::parse(ctx, &stream))
-            .unwrap();
+        let graph = crate::test_support::with_decode_context(|ctx| {
+            crate::topology::Graph::parse(ctx, &stream)
+        })
+        .unwrap();
 
-    assert_eq!(
-        graph
-            .get(NodeKind::Face, 4)
-            .and_then(crate::topology::Node::node_id),
-        Some(u32::MAX)
-    );
-    assert_eq!(graph.body_shape_face_count(), 1);
-    assert!(
-        crate::test_support::with_decode_context(|ctx| graph.has_complete_body_topology(ctx))
-            .unwrap()
-    );
+        assert_eq!(
+            graph
+                .get(NodeKind::Face, 4)
+                .and_then(crate::topology::Node::node_id),
+            Some(u32::MAX)
+        );
+        assert_eq!(graph.body_shape_face_count(ctx).unwrap(), 1);
+        assert!(crate::test_support::with_decode_context(
+            |ctx| graph.has_complete_body_topology(ctx)
+        )
+        .unwrap());
+    });
 }
 
 #[test]
@@ -535,45 +553,48 @@ fn topology_resolves_kernel_node_identity_only_within_one_unique_family() {
 
 #[test]
 fn topology_accepts_cached_last_face_and_implicit_region_identity() {
-    let mut stream = topology_partition_stream();
-    let shell = stream
-        .windows(4)
-        .position(|window| window == [0, 13, 0, 3])
-        .expect("shell record");
-    put_ref(&mut stream, shell + 22, 4);
-    let region = stream
-        .windows(4)
-        .position(|window| window == [0, 19, 0, 12])
-        .expect("region record");
-    stream[region..region + 16].fill(0xff);
-    let mut second_face = record(14, 39);
-    put_ref(&mut second_face, 2, 20);
-    put_f64(&mut second_face, 10, 0.000_2);
-    put_ref(&mut second_face, 18, 1);
-    put_ref(&mut second_face, 20, 1);
-    put_ref(&mut second_face, 22, 1);
-    put_ref(&mut second_face, 24, 3);
-    put_ref(&mut second_face, 26, 6);
-    second_face[28] = b'+';
-    stream.extend(second_face);
+    crate::test_support::with_decode_context(|ctx| {
+        let mut stream = topology_partition_stream();
+        let shell = stream
+            .windows(4)
+            .position(|window| window == [0, 13, 0, 3])
+            .expect("shell record");
+        put_ref(&mut stream, shell + 22, 4);
+        let region = stream
+            .windows(4)
+            .position(|window| window == [0, 19, 0, 12])
+            .expect("region record");
+        stream[region..region + 16].fill(0xff);
+        let mut second_face = record(14, 39);
+        put_ref(&mut second_face, 2, 20);
+        put_f64(&mut second_face, 10, 0.000_2);
+        put_ref(&mut second_face, 18, 1);
+        put_ref(&mut second_face, 20, 1);
+        put_ref(&mut second_face, 22, 1);
+        put_ref(&mut second_face, 24, 3);
+        put_ref(&mut second_face, 26, 6);
+        second_face[28] = b'+';
+        stream.extend(second_face);
 
-    let graph =
-        crate::test_support::with_decode_context(|ctx| crate::topology::Graph::parse(ctx, &stream))
-            .unwrap();
-    assert!(graph.get(NodeKind::Region, 12).is_none());
-    assert_eq!(graph.body_shape_shells().count(), 1);
-    assert_eq!(graph.body_shape_face_count(), 2);
-
-    let mut input = Cursor::new(prt_with_partition(&stream));
-    let result = NxCodec
-        .decode(&mut input, &DecodeOptions::default())
+        let graph = crate::test_support::with_decode_context(|ctx| {
+            crate::topology::Graph::parse(ctx, &stream)
+        })
         .unwrap();
-    assert_eq!(result.ir().model.regions.len(), 1);
-    assert_eq!(result.ir().model.regions[0].id.as_str(), "nx:s0:region#12");
-    assert_eq!(result.ir().model.faces.len(), 2);
-    let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
-        .expect("resource allocation did not fail");
-    assert!(validation.is_ok(), "findings: {:?}", validation.findings);
+        assert!(graph.get(NodeKind::Region, 12).is_none());
+        assert_eq!(graph.body_shape_shells(ctx).unwrap().count(), 1);
+        assert_eq!(graph.body_shape_face_count(ctx).unwrap(), 2);
+
+        let mut input = Cursor::new(prt_with_partition(&stream));
+        let result = NxCodec
+            .decode(&mut input, &DecodeOptions::default())
+            .unwrap();
+        assert_eq!(result.ir().model.regions.len(), 1);
+        assert_eq!(result.ir().model.regions[0].id.as_str(), "nx:s0:region#12");
+        assert_eq!(result.ir().model.faces.len(), 2);
+        let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
+            .expect("resource allocation did not fail");
+        assert!(validation.is_ok(), "findings: {:?}", validation.findings);
+    });
 }
 
 #[test]
@@ -770,22 +791,25 @@ fn topology_accepts_fixed_record_envelope_escape() {
 
 #[test]
 fn topology_prefers_escaped_body_shape_over_direct_extended_xmt() {
-    let mut stream = topology_partition_stream();
-    let shell = stream
-        .windows(4)
-        .position(|window| window == [0, 13, 0, 3])
-        .expect("shell record");
-    stream.insert(shell + 2, 0xff);
+    crate::test_support::with_decode_context(|ctx| {
+        let mut stream = topology_partition_stream();
+        let shell = stream
+            .windows(4)
+            .position(|window| window == [0, 13, 0, 3])
+            .expect("shell record");
+        stream.insert(shell + 2, 0xff);
 
-    let graph =
-        crate::test_support::with_decode_context(|ctx| crate::topology::Graph::parse(ctx, &stream))
-            .unwrap();
-    assert_eq!(
-        graph.get(NodeKind::Shell, 3).map(|node| node.pos),
-        Some(shell)
-    );
-    assert_eq!(graph.body_shape_shells().count(), 1);
-    assert_eq!(graph.body_shape_face_count(), 1);
+        let graph = crate::test_support::with_decode_context(|ctx| {
+            crate::topology::Graph::parse(ctx, &stream)
+        })
+        .unwrap();
+        assert_eq!(
+            graph.get(NodeKind::Shell, 3).map(|node| node.pos),
+            Some(shell)
+        );
+        assert_eq!(graph.body_shape_shells(ctx).unwrap().count(), 1);
+        assert_eq!(graph.body_shape_face_count(ctx).unwrap(), 1);
+    });
 }
 
 #[test]
@@ -1166,4 +1190,48 @@ fn topology_reference_views_reserve_only_one_as_null() {
             }
         }
     }
+}
+
+#[test]
+fn body_shape_classification_refuses_work_before_census() {
+    let stream = topology_partition_stream();
+    let graph = crate::test_support::with_decode_context(|ctx| Graph::parse(ctx, &stream)).unwrap();
+    crate::test_support::with_decode_context_over(
+        &[],
+        |policy| policy.limits.max_work_units = 0,
+        |ctx| {
+            let error = graph.body_shape_shells(ctx).err().unwrap();
+            assert!(
+                matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == "classify NX body shells")
+            );
+        },
+    );
+}
+
+#[test]
+fn ownership_selection_refuses_cross_product_work_before_comparison() {
+    let owner = super::NodeCandidate {
+        kind: NodeKind::Body,
+        xmt: 2,
+        pos: 0,
+        shift: 0,
+        end: 24,
+    };
+    let selected = super::NodeCandidate {
+        kind: NodeKind::Point,
+        xmt: 3,
+        pos: 24,
+        shift: 0,
+        end: 60,
+    };
+    crate::test_support::with_decode_context_over(
+        &[],
+        |policy| policy.limits.max_work_units = 0,
+        |ctx| {
+            let error = Graph::admit_disjoint_ownership(ctx, vec![owner], &[selected]).unwrap_err();
+            assert!(
+                matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == "compare NX ownership overlaps")
+            );
+        },
+    );
 }

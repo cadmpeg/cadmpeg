@@ -1616,26 +1616,27 @@ fn standard_carrier_surface_ids(
 }
 
 fn standard_carrier_endpoint_loci(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     pcurve: &PcurveGeometry,
     surface: &SurfaceGeometry,
     range: [f64; 2],
-) -> Result<Option<[Point3; 2]>, cadmpeg_core::decode::ResourceLimit> {
-    let start = match cadmpeg_ir::eval::pcurve_uv(pcurve, range[0]) {
+) -> Result<Option<[Point3; 2]>, cadmpeg_core::CodecError> {
+    let start = match cadmpeg_ir::eval::admitted::pcurve_uv(ctx, pcurve, range[0])? {
         Ok(start) => start,
-        Err(cadmpeg_ir::eval::EvaluationFailure::ResourceLimit(limit)) => return Err(limit),
+        Err(cadmpeg_ir::eval::EvaluationFailure::ResourceLimit(limit)) => return Err(limit.into()),
         Err(_) => return Ok(None),
     };
-    let end = match cadmpeg_ir::eval::pcurve_uv(pcurve, range[1]) {
+    let end = match cadmpeg_ir::eval::admitted::pcurve_uv(ctx, pcurve, range[1])? {
         Ok(end) => end,
-        Err(cadmpeg_ir::eval::EvaluationFailure::ResourceLimit(limit)) => return Err(limit),
+        Err(cadmpeg_ir::eval::EvaluationFailure::ResourceLimit(limit)) => return Err(limit.into()),
         Err(_) => return Ok(None),
     };
     // A non-finite locus is kept as the evaluation reached it.
-    let locus = |uv: cadmpeg_ir::units::FinitePoint2| match cadmpeg_ir::eval::surface_point(
-        surface, uv.u, uv.v,
-    ) {
-        Ok(point) => Ok(Some(point.get())),
-        Err(failure) => failure.non_finite(),
+    let locus = |uv: cadmpeg_ir::units::FinitePoint2| -> Result<_, cadmpeg_core::CodecError> {
+        match cadmpeg_ir::eval::admitted::surface_point(ctx, surface, uv.u, uv.v)? {
+            Ok(point) => Ok(Some(point.get())),
+            Err(failure) => Ok(failure.non_finite()?),
+        }
     };
     let Some(start) = locus(start)? else {
         return Ok(None);
@@ -2510,6 +2511,7 @@ fn append_resolved_consolidated_surface_curves(
                 };
                 if standard_endpoint_loci.is_none() {
                     standard_endpoint_loci = standard_carrier_endpoint_loci(
+                        admission.context(),
                         &geometry,
                         surface_geometry,
                         resolved.block.parameters.range.endpoints(),
@@ -4142,7 +4144,9 @@ mod tests {
             pos: 16,
             support_id: 1,
             extrapolation_sites: 0,
-            sites: vec![site(0.0, 0.0), site(1.0, 1.0)],
+            sites: vec![site(0.0, 0.0), site(1.0, 1.0)]
+                .try_into()
+                .expect("ordered fixture sites"),
             range: cadmpeg_ir::topology::IncreasingParameterInterval::new([0.0, 1.0])
                 .expect("increasing range"),
             tail: Vec::new(),

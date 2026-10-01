@@ -285,7 +285,7 @@ fn lexer_ignores_controls_inside_tokens_and_print_controls_between_tokens() {
         crate::test_support::with_service_context(b"1\n.5", crate::lex::lex_with_context).unwrap()
             [0]
         .kind,
-        TokenKind::Real(1.5)
+        TokenKind::Real(cadmpeg_ir::scalar::FiniteReal::new(1.5).expect("finite fixture"))
     );
 
     let tokens =
@@ -383,7 +383,7 @@ fn lexer_accepts_exponent_before_trailing_decimal_point() {
     let crate::lex::TokenKind::Real(value) = token else {
         panic!("expected a real token");
     };
-    assert!(value.abs() < 1e-15);
+    assert!(value.get().abs() < 1e-15);
 }
 
 #[test]
@@ -430,5 +430,31 @@ fn lexer_distinguishes_entity_and_value_occurrence_names() {
         let error = crate::test_support::with_service_context(input, crate::lex::lex_with_context)
             .expect_err("zero occurrence name");
         assert_eq!(error.message, "instance name must not be zero");
+    }
+}
+
+#[test]
+fn real_lexeme_rejects_binary64_overflow() {
+    for source in [b"1.E9999".as_slice(), b"-1.E9999".as_slice()] {
+        let error = crate::test_support::with_service_context(source, crate::lex::lex_with_context)
+            .expect_err("overflow cannot enter a real token");
+        assert!(error.message.contains("finite binary64 range"));
+        assert!(matches!(error.into_codec_error(), CodecError::Malformed(_)));
+    }
+}
+
+#[test]
+fn real_lexeme_preserves_finite_bits() {
+    for number in [-0.0, f64::MAX, f64::from_bits(1)] {
+        let source = format!("{number:.17e}");
+        let tokens = crate::test_support::with_service_context(
+            source.as_bytes(),
+            crate::lex::lex_with_context,
+        )
+        .expect("finite real token");
+        let crate::lex::TokenKind::Real(real) = tokens[0].kind else {
+            panic!("real token required")
+        };
+        assert_eq!(real.get().to_bits(), number.to_bits());
     }
 }

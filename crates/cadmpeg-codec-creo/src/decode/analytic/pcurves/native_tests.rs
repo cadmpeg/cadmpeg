@@ -89,13 +89,13 @@ fn assert_pcurve_domain_refusal(error: &CodecError, operation: &'static str) {
 
 fn path_activity_result(limit: u64) -> Result<super::PcurvePathActivity, CodecError> {
     let mut scan = crate::container::scan_bytes_ok(Vec::new());
-    scan.topology.loops.push(crate::topology::Loop {
-        face_id: std::num::NonZeroU32::new(5),
-        half_edges: vec![crate::topology::HalfEdgeId {
+    scan.topology.loops.push(crate::test_support::closed_loop(
+        std::num::NonZeroU32::new(5),
+        vec![crate::topology::HalfEdgeId {
             curve_id: 7,
             side: crate::topology::Side::Zero,
         }],
-    });
+    ));
     scan.curves
         .topology_rows
         .push(crate::curve::CurveTopologyRow {

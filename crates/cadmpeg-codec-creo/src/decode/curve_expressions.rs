@@ -107,9 +107,9 @@ fn curve_expression_helix_definition(
             [0.0, helix.revolutions.get() * std::f64::consts::TAU],
             cadmpeg_ir::geometry::HelixFrame {
                 center: Point3::new(
-                    origin.x + axis.x * helix.z_start,
-                    origin.y + axis.y * helix.z_start,
-                    origin.z + axis.z * helix.z_start,
+                    origin.x + axis.x * helix.z_start.get(),
+                    origin.y + axis.y * helix.z_start.get(),
+                    origin.z + axis.z * helix.z_start.get(),
                 ),
                 major: Vector3::new(
                     major_direction.x * helix.radius.get(),
@@ -122,9 +122,9 @@ fn curve_expression_helix_definition(
                     minor_direction.z * helix.radius.get(),
                 ),
                 pitch: Vector3::new(
-                    axis.x * helix.height / helix.revolutions.get(),
-                    axis.y * helix.height / helix.revolutions.get(),
-                    axis.z * helix.height / helix.revolutions.get(),
+                    axis.x * helix.height.get() / helix.revolutions.get(),
+                    axis.y * helix.height.get() / helix.revolutions.get(),
+                    axis.z * helix.height.get() / helix.revolutions.get(),
                 ),
                 axis,
             },
@@ -392,10 +392,10 @@ fn curve_expression_emitted_ordinals(
             indices.push(index);
         }
     }
-    crate::sort::stable_sort_by_key(
-        ctx,
+    ctx.stable_sort_by(
         indices.as_mut_slice(),
-        |index| parameter_ordinals[*index],
+        |left, right| parameter_ordinals[*left].cmp(&parameter_ordinals[*right]),
+        |_| std::mem::size_of::<u32>(),
         "creo curve expression emitted ordinals indices ordering",
     )?;
     let mut emitted = BTreeMap::new();
@@ -612,7 +612,7 @@ fn curve_expression_properties(
             &mut properties,
             "evaluated_canonical_value",
             ctx.format_retained(
-                format_args!("{}", quantity.value),
+                format_args!("{}", quantity.value()),
                 "creo curve-expression canonical value",
             )?,
         )?;
@@ -623,11 +623,11 @@ fn curve_expression_properties(
             ctx.format_retained(
                 format_args!(
                     "length:{},mass:{},time:{},angle:{},temperature:{}",
-                    quantity.length_power,
-                    quantity.mass_power,
-                    quantity.time_power,
-                    quantity.angle_power,
-                    quantity.temperature_power
+                    quantity.powers()[0],
+                    quantity.powers()[1],
+                    quantity.powers()[2],
+                    quantity.powers()[3],
+                    quantity.powers()[4]
                 ),
                 "creo curve-expression dimension value",
             )?,
@@ -903,15 +903,17 @@ pub(super) fn transfer_curve_expression_features(
                     )?))
                 }
                 other => other.and_then(|value| match value {
-                    crate::curve::CurveExpressionValue::Number(value) => Some(
-                        ParameterValue::Real(cadmpeg_ir::scalar::FiniteReal::new(*value)?),
-                    ),
+                    crate::curve::CurveExpressionValue::Number(value) => {
+                        Some(ParameterValue::Real(*value))
+                    }
                     crate::curve::CurveExpressionValue::Length(value) => Some(
-                        ParameterValue::Length(cadmpeg_ir::scalar::Length::new(*value)?),
+                        ParameterValue::Length(cadmpeg_ir::scalar::Length::new(value.get())?),
                     ),
-                    crate::curve::CurveExpressionValue::Angle(value) => Some(
-                        ParameterValue::Angle(cadmpeg_ir::scalar::Angle::new(value.to_radians())?),
-                    ),
+                    crate::curve::CurveExpressionValue::Angle(value) => {
+                        Some(ParameterValue::Angle(cadmpeg_ir::scalar::Angle::new(
+                            value.get().to_radians(),
+                        )?))
+                    }
                     crate::curve::CurveExpressionValue::Quantity(_)
                     | crate::curve::CurveExpressionValue::String(_) => None,
                 }),
@@ -1055,8 +1057,8 @@ pub(super) fn transfer_curve_expression_features(
                 Some(IrFeatureDefinition::Operation(
                     IrFeatureOperation::HelixNativeAxis {
                         axis_native_ref: cadmpeg_core::text::NonBlankString::new(axis_id)?,
-                        axial_rise: Length::new(helix.height)?,
-                        pitch: Length::new(helix.height / helix.revolutions.get())?,
+                        axial_rise: Length::new(helix.height.get())?,
+                        pitch: Length::new(helix.height.get() / helix.revolutions.get())?,
                         revolutions: helix.revolutions,
                         start_angle: helix.start_angle,
                         clockwise: helix.clockwise,

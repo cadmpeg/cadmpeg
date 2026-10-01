@@ -372,3 +372,104 @@ fn zero_header_resabs_preserves_default_and_records_loss() {
         .iter()
         .any(|loss| { loss.code.to_string() == "sat/header.tolerance-unresolved" }));
 }
+
+#[test]
+fn unknown_record_retention_preserves_its_resource_refusal() {
+    use crate::test_support::with_context;
+    use cadmpeg_core::decode::{DecodePolicy, ResourceDimension};
+
+    let source = text_sphere_stream(1.0);
+    let header = with_context(&source, &DecodePolicy::service(), |ctx| {
+        cadmpeg_asm::sat::parse(ctx, &source)
+            .expect("text stream parses")
+            .header
+            .as_kernel_header(ctx)
+            .expect("kernel header")
+    });
+    let mut brep = cadmpeg_asm::brep::AsmBrep::default();
+    brep.unknowns.push(cadmpeg_ir::UnknownRecord::retained(
+        cadmpeg_ir::ids::UnknownId::mint("sat:test:unknown#1").expect("unknown identity"),
+        0,
+        vec![1],
+        vec!["sat:test:unknown#2".into()],
+    ));
+    let (matched, kernel) = crate::dialect::layers(&crate::dialect::StreamEvidence::Text(None));
+    let mut policy = DecodePolicy::service();
+    // The empty transfer stores twelve native arenas before retaining unknown links.
+    policy.limits.max_collection_items = 12;
+    let error = with_context(&[], &policy, |ctx| {
+        super::build_result(
+            ctx,
+            brep,
+            std::collections::BTreeMap::new(),
+            &header,
+            None,
+            matched,
+            &kernel,
+        )
+    })
+    .expect_err("unknown link exceeds the remaining collection allowance");
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "native unknown product links"));
+}
+
+#[test]
+fn sat_encodings_admit_declared_and_actual_entities_once() {
+    let mut options = cadmpeg_ir::codec::DecodeOptions::default();
+    // Six native records and five emitted neutral entities.
+    options.policy.limits.max_entities = 11;
+    for bytes in [
+        text_sphere_stream(1.0),
+        binary_sphere_stream(BinaryFixtureKind::Asm),
+        binary_sphere_stream(BinaryFixtureKind::Acis),
+    ] {
+        let decoded = SatCodec
+            .decode(&mut Cursor::new(bytes), &options)
+            .expect("declared records share the actual population admission");
+        assert_eq!(decoded.ir().model.bodies.len(), 1);
+        assert_eq!(decoded.ir().model.surfaces.len(), 1);
+    }
+}
+
+#[test]
+fn sat_annotation_storage_uses_the_callers_collection_budget() {
+    use crate::test_support::with_context;
+    use cadmpeg_core::decode::{DecodePolicy, ResourceDimension};
+
+    let source = text_sphere_stream(1.0);
+    let header = with_context(&source, &DecodePolicy::service(), |ctx| {
+        cadmpeg_asm::sat::parse(ctx, &source)
+            .expect("text stream parses")
+            .header
+            .as_kernel_header(ctx)
+            .expect("kernel header")
+    });
+    let mut brep = cadmpeg_asm::brep::AsmBrep::default();
+    brep.annotation_records
+        .push(cadmpeg_asm::brep::annotations::AnnotationRecord {
+            id: "sat:brep:entity#1".into(),
+            stream: "stream".into(),
+            offset: 0,
+            tag: cadmpeg_asm::brep::annotations::AnnotationTag::Record("sphere-surface".into()),
+            derived_fields: Vec::new(),
+        });
+    let (matched, kernel) = crate::dialect::layers(&crate::dialect::StreamEvidence::Text(None));
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 12;
+    let error = with_context(&[], &policy, |ctx| {
+        super::build_result(
+            ctx,
+            brep,
+            std::collections::BTreeMap::new(),
+            &header,
+            None,
+            matched,
+            &kernel,
+        )
+    })
+    .expect_err("annotation stream handle exceeds the twelve native arena slots");
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "collect SAT annotation stream handles"));
+}

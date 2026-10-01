@@ -551,7 +551,15 @@ pub fn decode_with_purpose(
     purpose: DecodePurpose,
 ) -> Result<AsmBrep, cadmpeg_core::CodecError> {
     let header = asm_header::parse(ctx, bytes)?.map(|header| header.metadata);
-    decode_with_header(ctx, records, bytes, header, stream, format, purpose)
+    decode_with_header(
+        ctx,
+        records,
+        bytes,
+        header.as_ref(),
+        stream,
+        format,
+        purpose,
+    )
 }
 
 /// Decode a framed slice whose header the caller supplies.
@@ -564,7 +572,7 @@ pub fn decode_with_header(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     records: &[Record],
     bytes: &[u8],
-    header: Option<crate::kernel_header::KernelHeader>,
+    header: Option<&crate::kernel_header::KernelHeader>,
     stream: &str,
     format: IdFormat,
     purpose: DecodePurpose,
@@ -633,17 +641,10 @@ pub fn decode_with_header(
     let _subtype_index_reservation =
         ctx.reserve_scoped(definition_bytes, "index ASM subtype definitions")?;
     let token_table = nurbs::toks::SubtypeTable::from_records(ctx, records)?
-        .with_save_format_version(
-            header
-                .as_ref()
-                .and_then(|header| header.save_format_version),
-        );
+        .with_save_format_version(header.and_then(|header| header.save_format_version));
     nurbs::toks::admit_subtype_references(ctx, records, &token_table)?;
-    let save_format_major = header
-        .as_ref()
-        .and_then(crate::kernel_header::KernelHeader::save_format_major);
+    let save_format_major = header.and_then(crate::kernel_header::KernelHeader::save_format_major);
     let saved_entity_limit = header
-        .as_ref()
         .and_then(|header| header.entity_count)
         .and_then(|count| i64::try_from(count).ok());
     let header_scale = header.and_then(|header| header.scale).unwrap_or(1.0);

@@ -411,7 +411,7 @@ fn decode_propagates_spline_grid_collection_limit() {
         error,
         cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
             if limit.dimension == ResourceDimension::CollectionItems
-                && limit.operation == "admit Creo spline scalar grid"
+                && limit.operation == "creo named spline scalar slots"
     ));
 
     options.policy.limits.max_collection_items = 6;
@@ -447,7 +447,7 @@ fn decode_propagates_counted_scalar_array_collection_limit() {
         error,
         cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
             if limit.dimension == ResourceDimension::CollectionItems
-                && limit.operation == "admit Creo counted scalar array"
+                && limit.operation == "creo named spline scalar slots"
     ));
 
     options.policy.limits.max_collection_items = 4;

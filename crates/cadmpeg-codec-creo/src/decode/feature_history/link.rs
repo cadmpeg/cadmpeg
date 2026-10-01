@@ -21,10 +21,11 @@ pub(in super::super) fn link_feature_sketch_history(
 ) -> Result<(), CodecError> {
     for transform in &scan.features.section_transforms {
         if unique_feature_section_transform(
+            ctx,
             &scan.features.section_transforms,
             transform.definition_id,
             transform.offset,
-        )
+        )?
         .is_none()
         {
             continue;
@@ -39,7 +40,7 @@ pub(in super::super) fn link_feature_sketch_history(
             "creo linked feature lookup identity",
         )?;
         let Some(definition) =
-            unique_feature_definition_for_transform(&scan.features.definitions, transform)
+            unique_feature_definition_for_transform(ctx, &scan.features.definitions, transform)?
         else {
             continue;
         };

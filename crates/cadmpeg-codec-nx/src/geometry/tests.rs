@@ -17,15 +17,15 @@ use crate::framing::node_kind::NodeKind;
 use cadmpeg_core::decode::ResourceDimension;
 use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
 
-fn analytic_points(stream: &[u8]) -> Vec<super::DecodedPoint> {
+fn analytic_points(stream: &[u8]) -> Vec<cadmpeg_ir::features::FinitePoint3> {
     crate::test_support::with_decode_context(|ctx| super::points(ctx, stream).unwrap())
 }
 
-fn analytic_surfaces(stream: &[u8]) -> Vec<super::DecodedSurface> {
+fn analytic_surfaces(stream: &[u8]) -> Vec<SurfaceGeometry> {
     crate::test_support::with_decode_context(|ctx| super::surfaces(ctx, stream).unwrap())
 }
 
-fn analytic_curves(stream: &[u8]) -> Vec<super::DecodedCurve> {
+fn analytic_curves(stream: &[u8]) -> Vec<cadmpeg_ir::geometry::CurveGeometry> {
     crate::test_support::with_decode_context(|ctx| super::curves(ctx, stream).unwrap())
 }
 

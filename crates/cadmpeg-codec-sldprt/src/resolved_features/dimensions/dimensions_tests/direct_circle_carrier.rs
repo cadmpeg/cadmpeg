@@ -32,7 +32,7 @@ fn lane(feature: &str, marker: &str, relation: &str) -> FeatureInputLane {
             class_ref: "circle-class".into(),
             feature_ref: feature.into(),
             scalars: crate::records::relation_scalars::RelationScalars::from_refs(
-                Vec::new(),
+                vec!["sldprt:test:scalar#unselected-1".into()],
                 None,
                 None,
             )

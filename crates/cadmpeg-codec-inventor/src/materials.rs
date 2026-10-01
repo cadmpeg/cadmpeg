@@ -116,10 +116,7 @@ pub(crate) fn project_catalog(
                         cadmpeg_core::decode::u64_from_index(neutral_property_name(id).len()),
                         "Inventor appearance property name",
                     )?;
-                    properties.insert(
-                        neutral_property_name(id).to_owned(),
-                        cadmpeg_protein::appearance::finite_scalar(record, id, *value)?,
-                    );
+                    properties.insert(neutral_property_name(id).to_owned(), *value);
                 }
                 for guid in property.connections() {
                     if let Some(texture) = textures.get(guid) {
@@ -252,7 +249,7 @@ fn color_property(record: &cadmpeg_protein::DecodedRecord, id: &str) -> Option<C
     else {
         return None;
     };
-    let components = [*r, *g, *b, *a].map(|value| {
+    let components = [r.get(), g.get(), b.get(), a.get()].map(|value| {
         if (0.0..=1.0).contains(&value) {
             cadmpeg_core::convert::f32_from_f64(value)
                 .and_then(cadmpeg_ir::scalar::UnitBinary32::new)
@@ -330,7 +327,9 @@ mod tests {
                     DecodedProperty {
                         value_offset: 0,
                         content: cadmpeg_protein::property::PropertyContent::Value {
-                            value: PropertyValue::Float(0.5),
+                            value: PropertyValue::Float(
+                                cadmpeg_ir::scalar::FiniteReal::new(0.5).expect("finite"),
+                            ),
                             connections: Vec::new(),
                         },
                     },
@@ -357,7 +356,9 @@ mod tests {
                         DecodedProperty {
                             value_offset: 0,
                             content: cadmpeg_protein::property::PropertyContent::Value {
-                                value: PropertyValue::Color([0.0, 0.25, 1.0, 1.0]),
+                                value: PropertyValue::Color([0.0, 0.25, 1.0, 1.0].map(|value| {
+                                    cadmpeg_ir::scalar::FiniteReal::new(value).expect("finite")
+                                })),
                                 connections: vec![texture_guid.into()],
                             },
                         },
@@ -385,6 +386,13 @@ mod tests {
             cadmpeg_ir::topology::Color::new(0.0, 0.25, 1.0, 1.0)
         );
         for invalid in [1.0 + f64::EPSILON, -f64::EPSILON, f64::NAN, f64::INFINITY] {
+            let Some(invalid_component) = cadmpeg_ir::scalar::FiniteReal::new(invalid) else {
+                assert!(
+                    !invalid.is_finite(),
+                    "non-finite source is refused before a color can exist"
+                );
+                continue;
+            };
             let property = record
                 .properties
                 .get_mut("generic_diffuse")
@@ -394,7 +402,12 @@ mod tests {
             else {
                 panic!("color value property");
             };
-            *value = PropertyValue::Color([invalid, 0.25, 1.0, 1.0]);
+            *value = PropertyValue::Color([
+                invalid_component,
+                cadmpeg_ir::scalar::FiniteReal::new(0.25).expect("finite"),
+                cadmpeg_ir::scalar::FiniteReal::ONE,
+                cadmpeg_ir::scalar::FiniteReal::ONE,
+            ]);
             assert!(super::color_property(&record, "generic_diffuse").is_none());
         }
     }
@@ -503,7 +516,9 @@ mod tests {
                 DecodedProperty {
                     value_offset: 0,
                     content: cadmpeg_protein::property::PropertyContent::Value {
-                        value: PropertyValue::Color([0.0, 0.25, 1.0, 1.0]),
+                        value: PropertyValue::Color([0.0, 0.25, 1.0, 1.0].map(|value| {
+                            cadmpeg_ir::scalar::FiniteReal::new(value).expect("finite")
+                        })),
                         connections: vec!["duplicate-texture".into()],
                     },
                 },
@@ -552,7 +567,9 @@ mod tests {
                 DecodedProperty {
                     value_offset: 0,
                     content: cadmpeg_protein::property::PropertyContent::Value {
-                        value: PropertyValue::Color([0.0, 0.25, 1.0, 1.0]),
+                        value: PropertyValue::Color([0.0, 0.25, 1.0, 1.0].map(|value| {
+                            cadmpeg_ir::scalar::FiniteReal::new(value).expect("finite")
+                        })),
                         connections: vec![texture_guid.into()],
                     },
                 },
@@ -572,7 +589,7 @@ mod tests {
                     content: cadmpeg_protein::property::PropertyContent::Value {
                         value: PropertyValue::Distance {
                             unit: 0x0002_1008,
-                            value: 7.0,
+                            value: cadmpeg_ir::scalar::FiniteReal::new(7.0).expect("finite"),
                         },
                         connections: Vec::new(),
                     },

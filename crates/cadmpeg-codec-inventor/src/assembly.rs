@@ -338,7 +338,7 @@ pub(crate) fn inventory<'a>(
                 )?;
                 issues.push(RecordIssue {
                     family: RecordIssueFamily::Assembly,
-                    segment_token: segment.pair.token.as_str().into(),
+                    segment_token: segment.pair.token.key().clone(),
                     record_ordinal: record.ordinal,
                     detail: crate::issue_detail(error)?,
                 });
@@ -896,7 +896,7 @@ mod tests {
         )
         .expect("truncated occurrence becomes an issue");
         let detail_len = admitted.2[0].detail.len();
-        let token_len = admitted.2[0].segment_token.len();
+        let token_len = admitted.2[0].segment_token.as_str().len();
         for (limit_bytes, operation, used) in [
             (detail_len - 1, "retain Inventor assembly issue detail", 0),
             (

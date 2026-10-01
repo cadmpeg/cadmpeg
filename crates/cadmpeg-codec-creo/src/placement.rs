@@ -627,8 +627,8 @@ fn plane_equation(
     }
     if let Some(datum) = datum {
         return Some(SignedPlaneEquation {
-            normal: datum.plane.normal(),
-            offset: datum.plane.offset,
+            normal: datum.plane().normal(),
+            offset: datum.plane().offset(),
         });
     }
     if let Some(equation) = model_equation {
@@ -784,8 +784,8 @@ fn generated_datum_plane_equation(
                     .iter()
                     .filter(|datum| datum.feature_id == *other)
                     .map(|datum| SignedPlaneEquation {
-                        normal: datum.plane.normal(),
-                        offset: datum.plane.offset,
+                        normal: datum.plane().normal(),
+                        offset: datum.plane().offset(),
                     })
                     .chain(
                         sources
@@ -1038,8 +1038,8 @@ fn zero_offset_standard_section_plane_equation(
     )?;
     let mut candidates = sources.datums.iter().filter_map(|datum| {
         let equation = SignedPlaneEquation {
-            normal: datum.plane.normal(),
-            offset: datum.plane.offset,
+            normal: datum.plane().normal(),
+            offset: datum.plane().offset(),
         };
         let cap_alignment = dot(equation.normal, cap.normal).abs();
         let reference_alignment = dot(equation.normal, reference.normal).abs();
@@ -1379,10 +1379,10 @@ pub(crate) fn resolve(
             result.push(transform);
         }
     }
-    crate::sort::stable_sort_by_key(
-        ctx,
+    ctx.stable_sort_by(
         result.as_mut_slice(),
-        |transform| transform.offset,
+        |left, right| left.offset.cmp(&right.offset),
+        |_| 0,
         "creo resolve result ordering",
     )?;
     Ok(result)

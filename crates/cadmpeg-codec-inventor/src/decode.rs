@@ -2471,7 +2471,8 @@ fn admit_assembly_placement(
             )?;
             issues.push(RecordIssue {
                 family: RecordIssueFamily::Assembly,
-                segment_token,
+                segment_token: cadmpeg_ir::ids::IdentityKey::try_new(segment_token)
+                    .map_err(CodecError::malformed)?,
                 record_ordinal,
                 detail,
             });

@@ -121,13 +121,19 @@ pub(in super::super) fn transfer_sketches(
         if !feature_definition_has_sketch_design(ctx, definition)? {
             continue;
         }
-        let transform = definition.section_3d.as_ref().and_then(|section| {
-            unique_feature_section_transform(
-                &scan.features.section_transforms,
-                definition.identity.id(),
-                section.offset,
-            )
-        });
+        let transform = definition
+            .section_3d
+            .as_ref()
+            .map(|section| {
+                unique_feature_section_transform(
+                    ctx,
+                    &scan.features.section_transforms,
+                    definition.identity.id(),
+                    section.offset,
+                )
+            })
+            .transpose()?
+            .flatten();
         let placement = match transform {
             Some(transform) => cadmpeg_ir::sketches::SketchPlacement::try_resolved(
                 Point3::from(transform.origin()),

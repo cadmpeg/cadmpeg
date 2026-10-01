@@ -296,12 +296,12 @@ fn unit_scope_pending_refuses_collection_limit() {
 }
 
 #[test]
-fn unit_scope_walk_refuses_depth_limit() {
+fn unit_scope_reference_walk_refuses_depth_limit() {
     assert!(
         matches!(scope_refusal("#1=ITEM(#2);#2=ITEM();", 10, Some(1)),
         CodecError::ResourceLimit(refusal)
             if refusal.dimension == ResourceDimension::RecursionDepth
-                && refusal.operation == "step_unit_scope_walk")
+                && refusal.operation == "step_reference_value_walk")
     );
 }
 

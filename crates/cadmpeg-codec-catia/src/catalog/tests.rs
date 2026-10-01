@@ -161,3 +161,17 @@ fn catalog_parser_reads_exact_inclusive_length_dictionary() {
     assert_eq!(catalogs[0].entries[4].value, "Sketch");
     assert_eq!(catalogs[0].entries[5].value, "Pad");
 }
+
+#[test]
+fn catalog_scan_refuses_marker_free_work() {
+    let bytes = [0_u8; 64];
+    crate::test_support::with_work_limit(0, |ctx| {
+        let cadmpeg_core::CodecError::ResourceLimit(limit) =
+            super::parse(ctx, &bytes).expect_err("catalog scan consumes work")
+        else {
+            panic!("resource refusal required")
+        };
+        assert_eq!(limit.operation, "catia_catalog_scan");
+        assert_eq!(ctx.resource_refusal(), Some(limit));
+    });
+}

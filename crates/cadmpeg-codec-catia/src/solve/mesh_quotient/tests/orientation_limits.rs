@@ -24,19 +24,12 @@ fn mesh_orientation_options_refuse_collection_limit_before_declining() {
             .into(),
     );
     let run = |ctx: &DecodeContext<'_>| {
-        quotient.assignment_options_limited(
-            ctx,
-            &assignment,
-            &[vec![[0, 1]]],
-            &HashSet::new(),
-            1,
-            None,
-        )
+        quotient
+            .assignment_options_limited(ctx, &assignment, &[vec![[0, 1]]], &HashSet::new(), 1, None)
+            .map(|options| options.is_empty())
     };
     catia_test_context!(service_ctx);
-    assert!(run(&service_ctx)
-        .expect("service resource budget")
-        .is_empty());
+    assert!(run(&service_ctx).expect("service resource budget"));
 
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
@@ -52,21 +45,21 @@ fn mesh_orientation_options_refuse_collection_limit_before_declining() {
 
 #[test]
 fn quotient_edge_domains_refuse_materialized_limit_before_declining() {
-    let mut quotient = MeshQuotient::new(
-        [vec![0], vec![1]]
-            .map(|domain| Arc::new(domain.into_iter().collect()))
-            .into(),
-    );
     catia_test_context!(service_ctx);
-    assert!(!quotient
-        .edge_domains_viable(&service_ctx, &[vec![[2, 3]]])
-        .expect("service resource budget"));
-
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_materialized_bytes = 0;
     let (limited_ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
         .expect("fixture fits the input limit");
+    let mut quotient = MeshQuotient::new(
+        [vec![0], vec![1]]
+            .map(|domain| Arc::new(domain.into_iter().collect()))
+            .into(),
+    );
+    assert!(!quotient
+        .edge_domains_viable(&service_ctx, &[vec![[2, 3]]])
+        .expect("service resource budget"));
+
     let Err(CodecError::ResourceLimit(error)) =
         quotient.edge_domains_viable(&limited_ctx, &[vec![[2, 3]]])
     else {
@@ -121,12 +114,17 @@ fn label_directions_refuse_collection_limit_before_declining() {
             reversed: Some(false),
         }]],
     };
+    catia_test_context!(service_ctx);
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (limited_ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
+        .expect("fixture fits the input limit");
     let mut quotient = MeshQuotient::new(
         [vec![0], vec![1]]
             .map(|domain| Arc::new(domain.into_iter().collect()))
             .into(),
     );
-    catia_test_context!(service_ctx);
     assert!(quotient
         .merge_label_directions_in_place(
             &service_ctx,
@@ -138,11 +136,6 @@ fn label_directions_refuse_collection_limit_before_declining() {
         .expect("service resource budget")
         .is_none());
 
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
-    let (limited_ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
-        .expect("fixture fits the input limit");
     let Err(CodecError::ResourceLimit(error)) = quotient.merge_label_directions_in_place(
         &limited_ctx,
         &assignment,

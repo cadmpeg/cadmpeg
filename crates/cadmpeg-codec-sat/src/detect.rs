@@ -73,29 +73,50 @@ pub(crate) fn confidence(prefix: &[u8]) -> Confidence {
 }
 
 pub(crate) fn header_attributes(
+    ctx: &DecodeContext<'_>,
     header: &KernelHeader,
     family: Family,
     attributes: &mut BTreeMap<String, String>,
-) {
-    if let Some(version) = header.save_format_version {
-        attributes.insert("acis_save_format_version".to_string(), version.to_string());
+) -> Result<(), CodecError> {
+    for (key, value) in [
+        (
+            "acis_save_format_version",
+            header.save_format_version.map(u64::from),
+        ),
+        ("kernel_entity_count", header.entity_count),
+        ("kernel_flags", header.flags),
+    ] {
+        if let Some(value) = value {
+            let key = ctx.format_retained_with_work(
+                format_args!("{key}"),
+                "retain SAT header attribute key",
+            )?;
+            let value = ctx.format_retained_with_work(
+                format_args!("{value}"),
+                "retain SAT header attribute value",
+            )?;
+            ctx.insert_btree_map(attributes, key, value, "collect SAT header attributes")?;
+        }
     }
-    if let Some(count) = header.entity_count {
-        attributes.insert("kernel_entity_count".to_string(), count.to_string());
+    for (key, value) in [
+        ("product_family", header.product_family.as_deref()),
+        ("product_version", header.product_version.as_deref()),
+        ("save_date", header.save_date.as_deref()),
+        ("kernel_family", Some(family.as_str())),
+    ] {
+        if let Some(value) = value {
+            let key = ctx.format_retained_with_work(
+                format_args!("{key}"),
+                "retain SAT header attribute key",
+            )?;
+            let value = ctx.format_retained_with_work(
+                format_args!("{value}"),
+                "retain SAT header attribute value",
+            )?;
+            ctx.insert_btree_map(attributes, key, value, "collect SAT header attributes")?;
+        }
     }
-    if let Some(flags) = header.flags {
-        attributes.insert("kernel_flags".to_string(), flags.to_string());
-    }
-    if let Some(family) = &header.product_family {
-        attributes.insert("product_family".to_string(), family.clone());
-    }
-    if let Some(version) = &header.product_version {
-        attributes.insert("product_version".to_string(), version.clone());
-    }
-    if let Some(date) = &header.save_date {
-        attributes.insert("save_date".to_string(), date.clone());
-    }
-    attributes.insert("kernel_family".to_string(), family.as_str().to_string());
+    Ok(())
 }
 
 pub(crate) fn inspect(
@@ -115,7 +136,7 @@ pub(crate) fn inspect(
     let (matched, kernel) = match &kind {
         StreamKind::AsmBinary(header) => {
             let stream = crate::dialect::record_stream_start(bytes, Family::Asm, header);
-            header_attributes(&header.metadata, Family::Asm, &mut attributes);
+            header_attributes(ctx, &header.metadata, Family::Asm, &mut attributes)?;
             if header.metadata.has_history_partition() {
                 notes.push(
                     "the stream declares a construction-history partition; decode reads \
@@ -137,7 +158,7 @@ pub(crate) fn inspect(
                 header,
                 stream,
             };
-            header_attributes(&header.metadata, Family::Acis, &mut attributes);
+            header_attributes(ctx, &header.metadata, Family::Acis, &mut attributes)?;
             if header.metadata.has_history_partition() {
                 notes.push(
                     "the stream declares a construction-history partition; decode reads \
@@ -159,16 +180,41 @@ pub(crate) fn inspect(
             };
             let text = match &parsed {
                 Ok((kernel, stream)) => {
-                    header_attributes(kernel, stream.terminator.into(), &mut attributes);
-                    attributes.insert(
-                        "scale".to_string(),
-                        format!("{}", stream.header.scale().get()),
-                    );
-                    attributes.insert("records".to_string(), stream.records.len().to_string());
-                    attributes.insert(
-                        "terminator".to_string(),
-                        terminator_line(stream.terminator).to_string(),
-                    );
+                    header_attributes(ctx, kernel, stream.terminator.into(), &mut attributes)?;
+                    for (key, value) in [
+                        (
+                            "scale",
+                            ctx.format_retained_with_work(
+                                format_args!("{}", stream.header.scale().get()),
+                                "retain SAT scale attribute",
+                            )?,
+                        ),
+                        (
+                            "records",
+                            ctx.format_retained_with_work(
+                                format_args!("{}", stream.records.len()),
+                                "retain SAT record count attribute",
+                            )?,
+                        ),
+                        (
+                            "terminator",
+                            ctx.format_retained_with_work(
+                                format_args!("{}", terminator_line(stream.terminator)),
+                                "retain SAT terminator attribute",
+                            )?,
+                        ),
+                    ] {
+                        let key = ctx.format_retained_with_work(
+                            format_args!("{key}"),
+                            "retain SAT inspect attribute key",
+                        )?;
+                        ctx.insert_btree_map(
+                            &mut attributes,
+                            key,
+                            value,
+                            "collect SAT inspect attributes",
+                        )?;
+                    }
                     Some(TextEvidence {
                         branch: stream.terminator,
                         header: kernel,

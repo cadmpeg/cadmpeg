@@ -91,3 +91,15 @@ pub(crate) fn with_work_limit<T>(
         .expect("empty test root fits the work limit");
     run(&ctx)
 }
+
+pub(crate) fn with_depth_limit<T>(
+    max_recursion_depth: u64,
+    run: impl FnOnce(&cadmpeg_core::decode::DecodeContext<'_>) -> T,
+) -> T {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_recursion_depth = max_recursion_depth;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root fits the depth limit");
+    run(&ctx)
+}

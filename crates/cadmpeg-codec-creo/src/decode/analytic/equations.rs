@@ -802,10 +802,10 @@ fn real_polynomial_roots(
             multiple: false,
         });
     }
-    crate::sort::stable_sort_by(
-        ctx,
+    ctx.stable_sort_by(
         roots.as_mut_slice(),
         |left, right| left.value.total_cmp(&right.value),
+        |_| 0,
         "creo real polynomial roots roots ordering",
     )?;
     Ok(roots)

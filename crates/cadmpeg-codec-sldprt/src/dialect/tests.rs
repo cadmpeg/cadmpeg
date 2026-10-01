@@ -12,10 +12,10 @@
 #![allow(clippy::unwrap_used)]
 
 use super::{SldprtDialect, DECLARED_SW_VERSION, FORMAT, PARASOLID_FORMAT, VERIFIED_KERNELS};
-use crate::container::scan_bytes;
 use crate::loss::SldprtLossCode;
 use crate::test_support::container::make_block;
 use crate::test_support::container::outer_header;
+use crate::test_support::container::scan;
 use crate::test_support::container::sldprt_with_colliding_sites;
 use crate::test_support::container::synthetic_sldprt;
 use crate::SldprtCodec;
@@ -47,7 +47,7 @@ fn dialect_classification_refuses_collection_limit() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 
     let source = synthetic_sldprt();
-    let scan = scan_bytes(&source);
+    let scan = scan(&source);
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = 0;
     let arena = DecodeArena::new();
@@ -67,7 +67,7 @@ fn dialect_classification_refuses_retained_limit() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 
     let source = synthetic_sldprt();
-    let scan = scan_bytes(&source);
+    let scan = scan(&source);
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = 1;
     let arena = DecodeArena::new();
@@ -130,7 +130,7 @@ fn container_declaring(sw_version: &str) -> Vec<u8> {
 #[test]
 fn parasolid_schema_evidence_emits_a_kernel_layer() {
     let bytes = synthetic_sldprt();
-    let scan = scan_bytes(&bytes);
+    let scan = scan(&bytes);
     let classification = classify_layers(&scan);
     let layers = classification.layers();
     let kernel = layers
@@ -148,12 +148,14 @@ fn parasolid_schema_evidence_emits_a_kernel_layer() {
 fn residual_parasolid_schema_charges_a_strict_dialect_loss() {
     let host = SldprtDialect::classify(Some("13100"));
     let kernel = cadmpeg_parasolid::classify_layer(
-        &cadmpeg_parasolid::OwnedSchemaToken::try_from("SCH_TEST_1_9999")
+        &cadmpeg_test_support::service_decode_context(),
+        cadmpeg_parasolid::OwnedSchemaToken::try_from("SCH_TEST_1_9999")
             .expect("the fixture text is a schema token"),
-        &cadmpeg_parasolid::Carrier::new("block@7:body+3".to_owned()),
+        cadmpeg_parasolid::Carrier::new("block@7:body+3".to_owned()),
         cadmpeg_core::dialect::LayerInstance::Sole,
         &VERIFIED_KERNELS,
-    );
+    )
+    .expect("kernel classification fits policy");
     let layers = DialectLayers::of(host)
         .with(kernel.into_matched())
         .expect("distinct dialect layer keys");
@@ -175,7 +177,7 @@ fn residual_parasolid_schema_charges_a_strict_dialect_loss() {
 #[test]
 fn several_parasolid_streams_use_their_source_carriers_as_instances() {
     let bytes = sldprt_with_colliding_sites();
-    let scan = scan_bytes(&bytes);
+    let scan = scan(&bytes);
     let kernels = classify_layers(&scan)
         .layers()
         .iter()
@@ -193,7 +195,7 @@ fn several_parasolid_streams_use_their_source_carriers_as_instances() {
 #[test]
 fn duplicate_carrier_identity_is_omitted_with_a_typed_loss() {
     let bytes = sldprt_with_colliding_sites();
-    let mut scan = scan_bytes(&bytes);
+    let mut scan = scan(&bytes);
     scan.blocks.push(scan.blocks[0].clone());
 
     let classification = classify_layers(&scan);
@@ -446,7 +448,7 @@ fn the_scan_read_and_the_report_classify_the_same_declaration() {
     // than the identity of two expressions.
     for declaration in ["11999", "12000", "SW2019"] {
         let bytes = container_declaring(declaration);
-        let scan = scan_bytes(&bytes);
+        let scan = scan(&bytes);
 
         assert_eq!(
             crate::container::declared_sw_version(&scan),
@@ -464,7 +466,7 @@ fn the_scan_read_and_the_report_classify_the_same_declaration() {
 #[test]
 fn a_container_declaring_nothing_reaches_the_totality_row() {
     let bytes = outer_header();
-    let scan = scan_bytes(&bytes);
+    let scan = scan(&bytes);
     let matched = SldprtDialect::classify_scan(&scan);
 
     assert_eq!(crate::container::declared_sw_version(&scan), None);
@@ -477,7 +479,7 @@ fn a_container_declaring_nothing_reaches_the_totality_row() {
 #[test]
 fn exactly_one_entry_names_the_reporting_format() {
     let bytes = container_declaring("13100");
-    let scan = scan_bytes(&bytes);
+    let scan = scan(&bytes);
     let dialects = [SldprtDialect::classify_scan(&scan)];
 
     assert_eq!(dialects.len(), 1);

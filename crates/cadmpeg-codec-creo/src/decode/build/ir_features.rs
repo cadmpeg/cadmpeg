@@ -230,8 +230,9 @@ pub(super) fn emit_model_features(
             source_content: cadmpeg_ir::features::FeatureContent::default(),
 
             evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
-                if unique_feature_datum_plane(&scan.planes.datums, datum.feature_id).is_some() {
-                    datum_plane_feature_definition(&datum.plane)
+                if unique_feature_datum_plane(ctx, &scan.planes.datums, datum.feature_id)?.is_some()
+                {
+                    datum_plane_feature_definition(&datum.plane())
                 } else {
                     IrFeatureDefinition::Operation(IrFeatureOperation::Unresolved {
                         family: UnresolvedFamily::DatumPlane,

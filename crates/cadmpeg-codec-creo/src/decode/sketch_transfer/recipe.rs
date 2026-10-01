@@ -70,9 +70,10 @@ pub(in super::super) fn first_material_feature_by_definition_order(
 }
 
 pub(in super::super) fn feature_is_first_material_operation(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
     feature_id: u32,
-) -> bool {
+) -> Result<bool, cadmpeg_core::CodecError> {
     let mut target_offset = None;
     let mut earliest_other_offset: Option<usize> = None;
     for operation in &scan.features.operations {
@@ -108,7 +109,7 @@ pub(in super::super) fn feature_is_first_material_operation(
             continue;
         }
         let Some(definition) =
-            unique_feature_definition_for_transform(&scan.features.definitions, transform)
+            unique_feature_definition_for_transform(ctx, &scan.features.definitions, transform)?
         else {
             continue;
         };
@@ -121,7 +122,10 @@ pub(in super::super) fn feature_is_first_material_operation(
                 }));
         }
     }
-    target_offset.is_some_and(|target| earliest_other_offset.is_none_or(|other| other > target))
+    Ok(
+        target_offset
+            .is_some_and(|target| earliest_other_offset.is_none_or(|other| other > target)),
+    )
 }
 
 pub(in super::super) fn current_feature_recipe(

@@ -1497,7 +1497,7 @@ impl ValueExt for Value {
     }
     fn number(&self) -> Option<f64> {
         match self {
-            Value::Real(value) => Some(*value),
+            Value::Real(value) => Some(value.get()),
             Value::Integer(value) => cadmpeg_core::convert::f64_from_i64(*value),
             _ => None,
         }
