@@ -708,7 +708,7 @@ fn parse_member_run_head_placement(
             MEMBER_RUN_HEAD_FRAME
                 if bytes.get(head_at + 11..head_at + 22) == Some(&[0u8; 11][..]) =>
             {
-                let values = f64s_at(bytes, head_at + 22, 16)?;
+                let values = f64s_at::<16>(bytes, head_at + 22)?;
                 let mut transform = [[0.0; 4]; 4];
                 for (ordinal, value) in values.iter().copied().enumerate() {
                     transform[ordinal / 4][ordinal % 4] = value;
@@ -789,7 +789,7 @@ fn parse_sketch_placement_candidates(
         let form = match frame_length {
             201 => DesignSketchFrameForm::ScopeCompact,
             305 | 325 => {
-                let Some(values) = f64s_at(bytes, start + 48, 16) else {
+                let Some(values) = f64s_at::<16>(bytes, start + 48) else {
                     continue;
                 };
                 let mut transform = [[0.0; 4]; 4];
@@ -806,7 +806,7 @@ fn parse_sketch_placement_candidates(
                 }
             }
             329 => {
-                let Some(values) = f64s_at(bytes, start + 55, 16) else {
+                let Some(values) = f64s_at::<16>(bytes, start + 55) else {
                     continue;
                 };
                 let mut transform = [[0.0; 4]; 4];
@@ -833,7 +833,7 @@ fn parse_sketch_placement_candidates(
                 match (frame_length, bytes.get(start + 65)) {
                     (213, Some(&1)) => DesignSketchFrameForm::ScopeGenesisCompact,
                     (341, Some(&0)) => {
-                        let Some(values) = f64s_at(bytes, start + 66, 16) else {
+                        let Some(values) = f64s_at::<16>(bytes, start + 66) else {
                             continue;
                         };
                         let mut transform = [[0.0; 4]; 4];
@@ -2355,7 +2355,7 @@ fn read_sketch_text_color(payload: &[u8], cursor: &mut usize) -> Option<Color> {
 /// scale or shear. A run failing any of that is not a placement, so the record
 /// is misframed.
 fn read_text_placement(payload: &[u8], cursor: &mut usize) -> Option<TextPlacement<FinitePoint2>> {
-    let elements = f64s_at(payload, *cursor, 16)?;
+    let elements = f64s_at::<16>(payload, *cursor)?;
     *cursor = cursor.checked_add(128)?;
     let at = |row: usize, column: usize| elements[row * 4 + column];
     let constant = |value: f64, expected: f64| (value - expected).abs() <= TEXT_PLACEMENT_TOLERANCE;

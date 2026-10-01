@@ -49,11 +49,15 @@ pub(crate) fn utf16le_at(bytes: &[u8], offset: usize, count: usize) -> Option<(S
     View::utf16le_at(bytes, offset, count)
 }
 
-/// Read consecutive little-endian `f64` values at `offset`.
-pub(crate) fn f64s_at(bytes: &[u8], offset: usize, count: usize) -> Option<Vec<f64>> {
+/// Read a fixed little-endian `f64` lane into stack storage.
+pub(crate) fn f64s_at<const N: usize>(bytes: &[u8], offset: usize) -> Option<[f64; N]> {
     let mut view = View::over_retained(bytes);
     view.seek(offset)?;
-    view.read_counted(u64::try_from(count).ok()?, 8, View::f64_le)
+    let mut values = [0.0; N];
+    for value in &mut values {
+        *value = view.f64_le()?;
+    }
+    Some(values)
 }
 
 /// Read `N` consecutive little-endian `f64` values at `offset`, or `None`
@@ -63,7 +67,7 @@ pub(crate) fn finite_reals_at<const N: usize>(
     offset: usize,
 ) -> Option<[FiniteReal; N]> {
     let mut admitted = [FiniteReal::ZERO; N];
-    for (slot, value) in admitted.iter_mut().zip(f64s_at(bytes, offset, N)?) {
+    for (slot, value) in admitted.iter_mut().zip(f64s_at::<N>(bytes, offset)?) {
         *slot = FiniteReal::new(value)?;
     }
     Some(admitted)
@@ -609,6 +613,24 @@ pub(crate) fn lp_utf16_bytes(value: &str) -> Result<Vec<u8>, CodecError> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn fixed_real_lanes_need_no_decode_storage() {
+        let values = [1.0_f64, -2.0, 3.0];
+        let bytes: Vec<_> = values.into_iter().flat_map(f64::to_le_bytes).collect();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_materialized_bytes = 0;
+        policy.limits.max_retained_bytes = 0;
+        policy.limits.max_collection_items = 0;
+        crate::test_support::with_decode_policy(&policy, |ctx| {
+            assert_eq!(super::f64s_at::<3>(&bytes, 0), Some(values));
+            assert_eq!(super::f64s_at::<3>(&bytes[..23], 0), None);
+            assert_eq!(super::f64s_at::<3>(&bytes, usize::MAX), None);
+            assert_eq!(super::finite_reals_at::<3>(&bytes, 0).unwrap().map(cadmpeg_ir::scalar::FiniteReal::get), values);
+            assert_eq!(ctx.resource_refusal(), None);
+        });
+        let bytes = f64::NAN.to_le_bytes();
+        assert_eq!(super::finite_reals_at::<1>(&bytes, 0), None);
+    }
     #[test]
     fn lp_utf8_string_refuses_retained_limit() {
         let mut bytes = Vec::new();

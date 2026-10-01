@@ -113,7 +113,7 @@ pub(super) fn exact_symmetric_extrude_prologue(
         _ => return None,
     };
 
-    let profile_normal = f64s_at(bytes, start.checked_add(symmetric::PROFILE_NORMAL)?, 3)?;
+    let profile_normal = f64s_at::<3>(bytes, start.checked_add(symmetric::PROFILE_NORMAL)?)?;
     let profile_normal_squared = profile_normal
         .iter()
         .map(|component| component * component)

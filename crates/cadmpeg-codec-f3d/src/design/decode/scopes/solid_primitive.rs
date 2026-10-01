@@ -68,7 +68,7 @@ pub(super) fn exact_solid_primitive(
     };
     let matrix = |relative_offset: usize| {
         let matrix_at = start.checked_add(relative_offset)?;
-        let values = f64s_at(bytes, matrix_at, 16)?;
+        let values = f64s_at::<16>(bytes, matrix_at)?;
         let mut transform = [[0.0; 4]; 4];
         for (ordinal, value) in values.into_iter().enumerate() {
             transform[ordinal / 4][ordinal % 4] = value;
@@ -403,7 +403,7 @@ fn exact_shifted_cylinder_primitive_prologue(
             {
                 return None;
             }
-            let values = f64s_at(bytes, start + shifted_cylinder_502::MATRIX, 16)?;
+            let values = f64s_at::<16>(bytes, start + shifted_cylinder_502::MATRIX)?;
             let mut transform = [[0.0; 4]; 4];
             for (ordinal, value) in values.into_iter().enumerate() {
                 transform[ordinal / 4][ordinal % 4] = value;
