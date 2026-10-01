@@ -415,7 +415,9 @@ fn form_serializer_name_refuses_work_limit() {
     let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
-    policy.limits.max_work_units = 4;
+    // The two-offset sort takes its count plus sixteen bytes over three levels at eight units
+    // each, leaving nothing for the serializer name.
+    policy.limits.max_work_units = 2 + 16 * 3 * 8;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
     assert!(
         matches!(form_cage_serializers(&ctx, &bytes, &records), Err(CodecError::ResourceLimit(limit))
