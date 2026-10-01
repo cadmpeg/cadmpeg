@@ -104,21 +104,21 @@ pub(crate) fn patch_partition(
         scale,
     )?.is_none() { return Ok(None); }
     if patch_surfaces(
+        &ctx,
         ir,
         annotations,
         &native,
-        &mut payload,
-        header.body_offset,
+        body,
         scale,
-    ).is_none() { return Ok(None); }
+    )?.is_none() { return Ok(None); }
     if patch_curves(
+        &ctx,
         ir,
         annotations,
         &native,
-        &mut payload,
-        header.body_offset,
+        body,
         scale,
-    ).is_none() { return Ok(None); }
+    )?.is_none() { return Ok(None); }
     Ok(Some((
         block.section.source_stream().as_str().to_owned(),
         payload,
@@ -394,20 +394,20 @@ fn patch_points(
 }
 
 fn patch_surfaces(
+    ctx: &DecodeContext<'_>,
     ir: &CadIr,
     annotations: &Annotations,
     native: &crate::brep::graph::Brep,
     payload: &mut [u8],
-    body_start: usize,
     scale: f64,
-) -> Option<()> {
-    let old = native
+) -> Result<Option<()>, CodecError> {
+    let old = ctx.collect_hash_map(native
         .surfaces
         .iter()
         .map(|v| (&v.id, v))
-        .collect::<HashMap<_, _>>();
+        , "index SLDPRT patch surfaces")?;
     for surface in &ir.model.surfaces {
-        let baseline = old[&surface.id];
+        let Some(baseline) = old.get(&surface.id) else { return Ok(None); };
         match (&surface.geometry, &baseline.geometry) {
             (
                 SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { .. }),
@@ -421,46 +421,48 @@ fn patch_surfaces(
                 SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(new)),
                 SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(old)),
             ) => {
-                crate::brep::spline::patch_nurbs_surface(
-                    payload.get_mut(body_start..)?,
-                    raw_annotation_offset(annotations, &surface.id).ok()?,
+                if crate::brep::spline::patch_nurbs_surface(
+                    ctx,
+                    payload,
+                    raw_annotation_offset(annotations, &surface.id)?,
                     old,
                     new,
                     scale,
-                )?;
+                )?.is_none() { return Ok(None); }
                 continue;
             }
             _ if surface.geometry == baseline.geometry => continue,
             _ => {}
         }
-        let reference = super::writer::surface_reference(surface.geometry.solved()?);
+        let Some(solved) = surface.geometry.solved() else { return Ok(None); };
+        let reference = super::writer::surface_reference(solved);
         let (_, values) =
-            super::writer::surface_values(&surface.geometry, reference, scale).ok()?;
-        patch_compact(
+            super::writer::surface_values(&surface.geometry, reference, scale)?;
+        if patch_compact(
             payload,
-            body_start,
-            raw_annotation_offset(annotations, &surface.id).ok()?,
+            0,
+            raw_annotation_offset(annotations, &surface.id)?,
             &values,
-        )?;
+        ).is_none() { return Ok(None); }
     }
-    Some(())
+    Ok(Some(()))
 }
 
 fn patch_curves(
+    ctx: &DecodeContext<'_>,
     ir: &CadIr,
     annotations: &Annotations,
     native: &crate::brep::graph::Brep,
     payload: &mut [u8],
-    body_start: usize,
     scale: f64,
-) -> Option<()> {
-    let old = native
+) -> Result<Option<()>, CodecError> {
+    let old = ctx.collect_hash_map(native
         .curves
         .iter()
         .map(|v| (&v.id, v))
-        .collect::<HashMap<_, _>>();
+        , "index SLDPRT patch curves")?;
     for curve in &ir.model.curves {
-        let baseline = old[&curve.id];
+        let Some(baseline) = old.get(&curve.id) else { return Ok(None); };
         match (&curve.geometry, &baseline.geometry) {
             (
                 CurveGeometry::Solved(SolvedCurveGeometry::Unknown { .. }),
@@ -474,27 +476,28 @@ fn patch_curves(
                 CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(new)),
                 CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(old)),
             ) => {
-                crate::brep::spline::patch_nurbs_curve(
-                    payload.get_mut(body_start..)?,
-                    raw_annotation_offset(annotations, &curve.id).ok()?,
+                if crate::brep::spline::patch_nurbs_curve(
+                    ctx,
+                    payload,
+                    raw_annotation_offset(annotations, &curve.id)?,
                     old,
                     new,
                     scale,
-                )?;
+                )?.is_none() { return Ok(None); }
                 continue;
             }
             _ if curve.geometry == baseline.geometry => continue,
             _ => {}
         }
-        let (_, values) = super::writer::curve_values(&curve.geometry, scale).ok()?;
-        patch_compact(
+        let (_, values) = super::writer::curve_values(&curve.geometry, scale)?;
+        if patch_compact(
             payload,
-            body_start,
-            raw_annotation_offset(annotations, &curve.id).ok()?,
+            0,
+            raw_annotation_offset(annotations, &curve.id)?,
             &values,
-        )?;
+        ).is_none() { return Ok(None); }
     }
-    Some(())
+    Ok(Some(()))
 }
 
 fn patch_compact(
