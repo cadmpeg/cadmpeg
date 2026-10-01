@@ -4307,7 +4307,7 @@ mod curve_expression_projection_limit_tests {
             },
             expression: "2".into(),
             dependencies: vec!["q".into()],
-            value: Some(CurveExpressionValue::Number(2.0)),
+            value: Some(CurveExpressionValue::Number(cadmpeg_ir::scalar::FiniteReal::new(2.0).expect("finite relation fixture"))),
             activation: CurveExpressionActivation::Active,
             offset: 6,
         };
@@ -4336,7 +4336,7 @@ mod curve_expression_projection_limit_tests {
                 assignments: vec![assignment],
                 unknowns: vec![SolveUnknown {
                     name: "q".into(),
-                    solution: Some(CurveExpressionValue::Number(2.0)),
+                    solution: Some(CurveExpressionValue::Number(cadmpeg_ir::scalar::FiniteReal::new(2.0).expect("finite relation fixture"))),
                 }],
                 offset: 8,
                 for_offset: 9,

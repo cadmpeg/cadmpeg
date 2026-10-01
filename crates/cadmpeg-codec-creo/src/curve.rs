@@ -260,11 +260,11 @@ impl CurveExpressionAssignment {
 #[serde(untagged)]
 pub(crate) enum CurveExpressionValue {
     /// Dimensionless numeric value.
-    Number(f64),
+    Number(cadmpeg_ir::scalar::FiniteReal),
     /// Length in canonical millimeters.
-    Length(f64),
+    Length(cadmpeg_ir::scalar::FiniteReal),
     /// Angle in relation degrees.
-    Angle(f64),
+    Angle(cadmpeg_ir::scalar::FiniteReal),
     /// Quantity whose physical dimension has no dedicated neutral value type.
     Quantity(CurveExpressionQuantity),
     /// UTF-8 string value.
@@ -274,7 +274,7 @@ pub(crate) enum CurveExpressionValue {
 impl CurveExpressionValue {
     fn truth(&self) -> Option<bool> {
         match self {
-            Self::Number(value) => Some(*value != 0.0),
+            Self::Number(value) => Some(value.get() != 0.0),
             Self::Length(_) | Self::Angle(_) | Self::Quantity(_) | Self::String(_) => None,
         }
     }
@@ -283,29 +283,53 @@ impl CurveExpressionValue {
 /// Canonically scaled relation quantity represented by physical base powers.
 #[derive(Debug, Clone, Copy, PartialEq, serde::Serialize)]
 pub(crate) struct CurveExpressionQuantity {
-    /// Numeric value in canonical millimeter-kilogram-second-degree-kelvin units.
-    pub(crate) value: f64,
-    /// Power of length.
-    pub(crate) length_power: i8,
-    /// Power of mass.
-    pub(crate) mass_power: i8,
-    /// Power of time.
-    pub(crate) time_power: i8,
-    /// Power of plane angle.
-    pub(crate) angle_power: i8,
-    /// Power of temperature.
-    pub(crate) temperature_power: i8,
+    value: cadmpeg_ir::scalar::FiniteReal,
+    #[serde(flatten)]
+    dimension: ResidualRelationDimension,
+}
+
+/// Physical powers that have no dedicated relation value variant.
+#[derive(Debug, Clone, Copy, PartialEq, serde::Serialize)]
+struct ResidualRelationDimension {
+    length_power: i8,
+    mass_power: i8,
+    time_power: i8,
+    angle_power: i8,
+    temperature_power: i8,
+}
+
+impl ResidualRelationDimension {
+    fn new(dimension: RelationDimension) -> Option<Self> {
+        if [RelationDimension::default(), RelationDimension::LENGTH, RelationDimension::ANGLE].contains(&dimension) {
+            return None;
+        }
+        Some(Self {
+            length_power: dimension.length, mass_power: dimension.mass,
+            time_power: dimension.time, angle_power: dimension.angle,
+            temperature_power: dimension.temperature,
+        })
+    }
 }
 
 impl CurveExpressionQuantity {
+    pub(crate) fn new(value: f64, powers: [i8; 5]) -> Option<Self> {
+        let [length, mass, time, angle, temperature] = powers;
+        Some(Self {
+            value: cadmpeg_ir::scalar::FiniteReal::new(value)?,
+            dimension: ResidualRelationDimension::new(RelationDimension { length, mass, time, angle, temperature })?,
+        })
+    }
+
+    pub(crate) fn value(self) -> f64 { self.value.get() }
+
+    pub(crate) fn powers(self) -> [i8; 5] {
+        let dimension = self.dimension;
+        [dimension.length_power, dimension.mass_power, dimension.time_power, dimension.angle_power, dimension.temperature_power]
+    }
+
     fn dimension(self) -> RelationDimension {
-        RelationDimension {
-            length: self.length_power,
-            mass: self.mass_power,
-            time: self.time_power,
-            angle: self.angle_power,
-            temperature: self.temperature_power,
-        }
+        let [length, mass, time, angle, temperature] = self.powers();
+        RelationDimension { length, mass, time, angle, temperature }
     }
 }
 
@@ -2696,9 +2720,9 @@ trait ExpressionValue: Sized {
         &self,
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ) -> Result<Self, cadmpeg_core::CodecError>;
-    fn number(value: f64) -> Self;
+    fn number(value: f64) -> Option<Self>;
     fn reserved(name: &str) -> Option<Self> {
-        reserved_relation_scalar(name).map(Self::number)
+        reserved_relation_scalar(name).and_then(Self::number)
     }
     fn string(_value: String) -> Option<Self> {
         None
@@ -2772,8 +2796,8 @@ impl ExpressionValue for f64 {
         Ok(*self)
     }
 
-    fn number(value: f64) -> Self {
-        value
+    fn number(value: f64) -> Option<Self> {
+        Some(value)
     }
 
     fn add_checked(self, right: Self, ctx: &cadmpeg_core::decode::DecodeContext<'_>) -> Result<Option<Self>, cadmpeg_core::CodecError> {
@@ -2864,11 +2888,8 @@ impl ExpressionValue for AffineValue {
         Ok(*self)
     }
 
-    fn number(value: f64) -> Self {
-        Self {
-            constant: value,
-            linear: 0.0,
-        }
+    fn number(value: f64) -> Option<Self> {
+        Some(Self { constant: value, linear: 0.0 })
     }
 
     fn add_checked(self, right: Self, ctx: &cadmpeg_core::decode::DecodeContext<'_>) -> Result<Option<Self>, cadmpeg_core::CodecError> {
@@ -2918,12 +2939,12 @@ if right.linear == 0.0 && right.constant == 1.0 {
             return Some(self);
         }
         if right.linear == 0.0 && right.constant == 0.0 {
-            return Some(Self::number(1.0));
+            return Self::number(1.0);
         }
         (self.linear == 0.0 && right.linear == 0.0)
             .then(|| self.constant.powf(right.constant))
             .filter(|value| value.is_finite())
-            .map(Self::number)
+            .and_then(Self::number)
         };
         Ok(arithmetic())
     }
@@ -2931,24 +2952,24 @@ if right.linear == 0.0 && right.constant == 1.0 {
     fn compare_checked(self, right: Self, operator: ComparisonOperator, ctx: &cadmpeg_core::decode::DecodeContext<'_>) -> Result<Option<Self>, cadmpeg_core::CodecError> {
         ctx.charge_work(1, "creo relation value operation work")?;
         Ok((self.linear == 0.0 && right.linear == 0.0)
-            .then(|| Self::number(f64::from(operator.evaluate(self.constant, right.constant)))))
+            .then(|| Self::number(f64::from(operator.evaluate(self.constant, right.constant)))).flatten())
     }
 
     fn logical_and_checked(self, right: Self, ctx: &cadmpeg_core::decode::DecodeContext<'_>) -> Result<Option<Self>, cadmpeg_core::CodecError> {
         ctx.charge_work(1, "creo relation value operation work")?;
         Ok((self.linear == 0.0 && right.linear == 0.0)
-            .then(|| Self::number(f64::from(self.constant != 0.0 && right.constant != 0.0))))
+            .then(|| Self::number(f64::from(self.constant != 0.0 && right.constant != 0.0))).flatten())
     }
 
     fn logical_or_checked(self, right: Self, ctx: &cadmpeg_core::decode::DecodeContext<'_>) -> Result<Option<Self>, cadmpeg_core::CodecError> {
         ctx.charge_work(1, "creo relation value operation work")?;
         Ok((self.linear == 0.0 && right.linear == 0.0)
-            .then(|| Self::number(f64::from(self.constant != 0.0 || right.constant != 0.0))))
+            .then(|| Self::number(f64::from(self.constant != 0.0 || right.constant != 0.0))).flatten())
     }
 
     fn logical_not_checked(self, ctx: &cadmpeg_core::decode::DecodeContext<'_>) -> Result<Option<Self>, cadmpeg_core::CodecError> {
         ctx.charge_work(1, "creo relation value operation work")?;
-        Ok((self.linear == 0.0).then(|| Self::number(f64::from(self.constant == 0.0))))
+        Ok((self.linear == 0.0).then(|| Self::number(f64::from(self.constant == 0.0))).flatten())
     }
 
     fn function_checked(
@@ -2968,7 +2989,7 @@ scope.is_none().then_some(())?;
             (argument.linear == 0.0).then_some(())?;
             *slot = argument.constant;
         }
-        evaluate_creo_math_function(name, &constants[..arguments.len()]).map(Self::number)
+        evaluate_creo_math_function(name, &constants[..arguments.len()]).and_then(Self::number)
         };
         Ok(arithmetic())
     }
@@ -3047,7 +3068,7 @@ impl SimultaneousAffineValue {
     fn as_curve_value(&self) -> Option<CurveExpressionValue> {
         self.coefficients
             .is_empty()
-            .then(|| quantity_value(self.constant, self.dimension))
+            .then(|| quantity_value(self.constant, self.dimension)).flatten()
     }
 
 
@@ -3108,8 +3129,8 @@ impl ExpressionValue for SimultaneousAffineValue {
         })
     }
 
-    fn number(value: f64) -> Self {
-        Self::constant(value, RelationDimension::default())
+    fn number(value: f64) -> Option<Self> {
+        Some(Self::constant(value, RelationDimension::default()))
     }
 
     fn reserved(name: &str) -> Option<Self> {
@@ -3137,7 +3158,7 @@ impl ExpressionValue for SimultaneousAffineValue {
                 else {
                     return Ok(None);
                 };
-                return Ok(Some(if condition == 0.0 {
+                return Ok(Some(if condition.get() == 0.0 {
                     when_false.clone_admitted(ctx)?
                 } else {
                     when_true.clone_admitted(ctx)?
@@ -3228,7 +3249,7 @@ impl ExpressionValue for SimultaneousAffineValue {
                 if left.dimension != tolerance_dimension || tolerance < 0.0 {
                     return Ok(None);
                 }
-                return Ok(Some(Self::number(f64::from(difference.abs() <= tolerance))));
+                return Ok(Self::number(f64::from(difference.abs() <= tolerance)));
             }
             (CreoMathFunction::Pow, [base, exponent]) => {
                 return base.clone_admitted(ctx)?.power_checked(exponent.clone_admitted(ctx)?, ctx);
@@ -3342,10 +3363,10 @@ if !right.coefficients.is_empty() || right.dimension != RelationDimension::defau
             return Some(self);
         }
         if right.constant == 0.0 {
-            return Some(Self::number(1.0));
+            return Self::number(1.0);
         }
         let value = self.as_curve_value()?;
-        let exponent = CurveExpressionValue::Number(right.constant);
+        let exponent = CurveExpressionValue::Number(cadmpeg_ir::scalar::FiniteReal::new(right.constant)?);
         let result = quantity_power(value, exponent)?;
         let (value, dimension) = quantity_parts_ref(&result)?;
         value.is_finite().then(|| Self::constant(value, dimension))
@@ -3364,23 +3385,23 @@ if !right.coefficients.is_empty() || right.dimension != RelationDimension::defau
         let Some(difference) = self.constant_difference_admitted(&right, ctx)? else {
             return Ok(None);
         };
-        Ok(Some(Self::number(f64::from(
+        Ok(Self::number(f64::from(
             operator.evaluate(difference, 0.0),
-        ))))
+        )))
     }
 
     fn logical_and_checked(self, right: Self, ctx: &cadmpeg_core::decode::DecodeContext<'_>) -> Result<Option<Self>, cadmpeg_core::CodecError> {
         ctx.charge_work(1, "creo relation value operation work")?;
         let arithmetic = || {
 if self.constant_truth() == Some(false) || right.constant_truth() == Some(false) {
-            return Some(Self::number(0.0));
+            return Self::number(0.0);
         }
         let left = self.as_curve_value()?;
         let right = right.as_curve_value()?;
         let CurveExpressionValue::Number(value) = numeric_binary(left, right, |left, right| f64::from(left != 0.0 && right != 0.0))? else {
             return None;
         };
-        Some(Self::number(value))
+        Self::number(value.get())
         };
         Ok(arithmetic())
     }
@@ -3389,14 +3410,14 @@ if self.constant_truth() == Some(false) || right.constant_truth() == Some(false)
         ctx.charge_work(1, "creo relation value operation work")?;
         let arithmetic = || {
 if self.constant_truth() == Some(true) || right.constant_truth() == Some(true) {
-            return Some(Self::number(1.0));
+            return Self::number(1.0);
         }
         let left = self.as_curve_value()?;
         let right = right.as_curve_value()?;
         let CurveExpressionValue::Number(value) = numeric_binary(left, right, |left, right| f64::from(left != 0.0 || right != 0.0))? else {
             return None;
         };
-        Some(Self::number(value))
+        Self::number(value.get())
         };
         Ok(arithmetic())
     }
@@ -3405,10 +3426,10 @@ if self.constant_truth() == Some(true) || right.constant_truth() == Some(true) {
         ctx.charge_work(1, "creo relation value operation work")?;
         let arithmetic = || {
 let value = self.as_curve_value()?;
-        let CurveExpressionValue::Number(value) = numeric_binary(value, CurveExpressionValue::Number(0.0), |left, _| f64::from(left == 0.0))? else {
+        let CurveExpressionValue::Number(value) = numeric_binary(value, CurveExpressionValue::Number(cadmpeg_ir::scalar::FiniteReal::ZERO), |left, _| f64::from(left == 0.0))? else {
             return None;
         };
-        Some(Self::number(value))
+        Self::number(value.get())
         };
         Ok(arithmetic())
     }
@@ -4329,8 +4350,8 @@ impl ExpressionValue for DimensionProbeValue {
         })
     }
 
-    fn number(value: f64) -> Self {
-        Self::numeric(Some(value))
+    fn number(value: f64) -> Option<Self> {
+        Some(Self::numeric(Some(value)))
     }
 
     fn reserved(name: &str) -> Option<Self> {
@@ -4985,8 +5006,8 @@ impl ExpressionValue for CurveExpressionValue {
         copy_expression_value(ctx, self, "creo relation referenced string value")
     }
 
-    fn number(value: f64) -> Self {
-        Self::Number(value)
+    fn number(value: f64) -> Option<Self> {
+        cadmpeg_ir::scalar::FiniteReal::new(value).map(Self::Number)
     }
 
     fn string(value: String) -> Option<Self> {
@@ -4995,9 +5016,9 @@ impl ExpressionValue for CurveExpressionValue {
 
     fn reserved(name: &str) -> Option<Self> {
         if name.eq_ignore_ascii_case("g") {
-            Some(quantity_value(9_800.0, RelationDimension::ACCELERATION))
+            quantity_value(9_800.0, RelationDimension::ACCELERATION)
         } else {
-            reserved_relation_scalar(name).map(Self::number)
+            reserved_relation_scalar(name).and_then(Self::number)
         }
     }
 
@@ -5007,10 +5028,10 @@ impl ExpressionValue for CurveExpressionValue {
 let Self::Number(value) = self else {
             return None;
         };
-        Some(quantity_value(
-            value * unit.scale + unit.offset,
+        quantity_value(
+            value.get() * unit.scale + unit.offset,
             unit.dimension,
-        ))
+        )
         };
         Ok(arithmetic())
     }
@@ -5046,10 +5067,10 @@ let Self::Number(value) = self else {
         let arithmetic = || {
 let (left, left_dimension) = quantity_parts_ref(&self)?;
         let (right, right_dimension) = quantity_parts_ref(&right)?;
-        Some(quantity_value(
+        quantity_value(
             left * right,
             left_dimension.combine(right_dimension, false)?,
-        ))
+        )
         };
         Ok(arithmetic())
     }
@@ -5059,10 +5080,10 @@ let (left, left_dimension) = quantity_parts_ref(&self)?;
         let arithmetic = || {
 let (left, left_dimension) = quantity_parts_ref(&self)?;
         let (right, right_dimension) = quantity_parts_ref(&right)?;
-        Some(quantity_value(
+        quantity_value(
             left / right,
             left_dimension.combine(right_dimension, true)?,
-        ))
+        )
         };
         Ok(arithmetic())
     }
@@ -5080,7 +5101,7 @@ let (left, left_dimension) = quantity_parts_ref(&self)?;
         ctx.charge_work(1, "creo relation value operation work")?;
         let arithmetic = || {
 let result = match (self, right) {
-            (Self::Number(left), Self::Number(right)) => operator.evaluate(left, right),
+            (Self::Number(left), Self::Number(right)) => operator.evaluate(left.get(), right.get()),
             (Self::String(left), Self::String(right)) => match operator {
                 ComparisonOperator::Equal => left == right,
                 ComparisonOperator::NotEqual => left != right,
@@ -5093,7 +5114,7 @@ let result = match (self, right) {
                 operator.evaluate(left, right)
             }
         };
-        Some(Self::Number(f64::from(result)))
+        Self::number(f64::from(result))
         };
         Ok(arithmetic())
     }
@@ -5118,7 +5139,7 @@ let result = match (self, right) {
 let Self::Number(value) = self else {
             return None;
         };
-        Some(Self::Number(f64::from(value == 0.0)))
+        Self::number(f64::from(value.get() == 0.0))
         };
         Ok(arithmetic())
     }
@@ -5157,16 +5178,16 @@ let Self::Number(value) = self else {
                 let (decimals, scientific) = match controls {
                     [] => (None, false),
                     [Number(decimals)] => {
-                        let Some(decimals) = relation_precision(*decimals) else {
+                        let Some(decimals) = relation_precision(decimals.get()) else {
                             return Ok(None);
                         };
                         (Some(decimals), false)
                     }
                     [Number(decimals), Number(scientific)] => {
-                        let Some(decimals) = relation_precision(*decimals) else {
+                        let Some(decimals) = relation_precision(decimals.get()) else {
                             return Ok(None);
                         };
-                        (Some(decimals), *scientific != 0.0)
+                        (Some(decimals), scientific.get() != 0.0)
                     }
                     _ => return Ok(None),
                 };
@@ -5188,7 +5209,7 @@ let Self::Number(value) = self else {
                 let (mut key, _reservation) =
                     ctx.format_scoped(format_args!("{name}"), "creo relation exists lookup key")?;
                 key.make_ascii_lowercase();
-                Ok(symbols.contains(&key).then_some(Number(1.0)))
+                Ok(symbols.contains(&key).then_some(Number(cadmpeg_ir::scalar::FiniteReal::ONE)))
             }
             (CreoMathFunction::Search, [String(value), String(needle)]) => {
                 ctx.charge_work(
@@ -5198,21 +5219,19 @@ let Self::Number(value) = self else {
                 let position = value
                     .find(needle)
                     .map_or(0, |byte| value[..byte].chars().count() + 1);
-                Ok(Some(Number(
+                Ok(Self::number(
                     cadmpeg_core::convert::f64_from_index(position).ok_or_else(|| {
                         cadmpeg_core::CodecError::malformed(
                             "Creo numeric value cannot be represented exactly",
                         )
                     })?,
-                )))
+                ))
             }
             (CreoMathFunction::Extract, [String(value), Number(position), Number(length)]) => {
-                if !position.is_finite()
-                    || !length.is_finite()
-                    || position.fract() != 0.0
-                    || length.fract() != 0.0
-                    || *position <= 0.0
-                    || *length < 0.0
+                if position.get().fract() != 0.0
+                    || length.get().fract() != 0.0
+                    || position.get() <= 0.0
+                    || length.get() < 0.0
                 {
                     return Ok(None);
                 }
@@ -5221,7 +5240,7 @@ let Self::Number(value) = self else {
                     "creo relation extract scan",
                 )?;
                 let character_count = value.chars().count();
-                if *position
+                if position.get()
                     > cadmpeg_core::convert::f64_from_index(character_count).ok_or_else(|| {
                         cadmpeg_core::CodecError::malformed(
                             "Creo numeric value cannot be represented exactly",
@@ -5231,13 +5250,13 @@ let Self::Number(value) = self else {
                     return Ok(Some(String(std::string::String::new())));
                 }
                 let start =
-                    cadmpeg_core::convert::truncate_f64_to_usize(*position).ok_or_else(|| {
+                    cadmpeg_core::convert::truncate_f64_to_usize(position.get()).ok_or_else(|| {
                         cadmpeg_core::CodecError::malformed(
                             "Creo numeric value cannot be represented exactly",
                         )
                     })? - 1;
                 let remaining = character_count - start;
-                let length = if *length
+                let length = if length.get()
                     >= cadmpeg_core::convert::f64_from_index(remaining).ok_or_else(|| {
                         cadmpeg_core::CodecError::malformed(
                             "Creo numeric value cannot be represented exactly",
@@ -5245,7 +5264,7 @@ let Self::Number(value) = self else {
                     })? {
                     remaining
                 } else {
-                    cadmpeg_core::convert::truncate_f64_to_usize(*length).ok_or_else(|| {
+                    cadmpeg_core::convert::truncate_f64_to_usize(length.get()).ok_or_else(|| {
                         cadmpeg_core::CodecError::malformed(
                             "Creo numeric value cannot be represented exactly",
                         )
@@ -5265,7 +5284,7 @@ let Self::Number(value) = self else {
                 )?)))
             }
             (CreoMathFunction::If, [Number(condition), String(when_true), String(when_false)]) => {
-                let selected = if *condition == 0.0 {
+                let selected = if condition.get() == 0.0 {
                     when_false
                 } else {
                     when_true
@@ -5280,7 +5299,7 @@ let Self::Number(value) = self else {
                     cadmpeg_core::decode::u64_from_index(value.len()),
                     "creo relation text length work",
                 )?;
-                Ok(Some(Number(
+                Ok(Self::number(
                     cadmpeg_core::convert::f64_from_index(value.chars().count()).ok_or_else(
                         || {
                             cadmpeg_core::CodecError::malformed(
@@ -5288,38 +5307,38 @@ let Self::Number(value) = self else {
                             )
                         },
                     )?,
-                )))
+                ))
             }
             (CreoMathFunction::StringStarts, [String(value), String(prefix)]) => {
                 ctx.charge_work(
                     cadmpeg_core::decode::u64_from_index(prefix.len()),
                     "creo relation text prefix work",
                 )?;
-                Ok(Some(Number(f64::from(value.starts_with(prefix)))))
+                Ok(Self::number(f64::from(value.starts_with(prefix))))
             }
             (CreoMathFunction::StringEnds, [String(value), String(suffix)]) => {
                 ctx.charge_work(
                     cadmpeg_core::decode::u64_from_index(value.len()),
                     "creo relation text suffix work",
                 )?;
-                Ok(Some(Number(f64::from(value.ends_with(suffix)))))
+                Ok(Self::number(f64::from(value.ends_with(suffix))))
             }
             (CreoMathFunction::StringMatch, [String(value), String(expected)]) => {
                 ctx.charge_work(
                     cadmpeg_core::decode::u64_from_index(value.len()),
                     "creo relation text match work",
                 )?;
-                Ok(Some(Number(f64::from(value == expected))))
+                Ok(Self::number(f64::from(value == expected)))
             }
             (CreoMathFunction::StringPattern, [String(value), String(pattern)]) => {
                 Ok(relation_string_pattern_admitted(ctx, value, pattern)?
-                    .map(|matched| Number(f64::from(matched))))
+                    .and_then(|matched| Self::number(f64::from(matched))))
             }
             (CreoMathFunction::Pow, [base, Number(exponent)]) => {
                 let Some((value, dimension)) = quantity_parts_ref(base) else {
                     return Ok(None);
                 };
-                Ok(quantity_power(quantity_value(value, dimension), Number(*exponent)))
+                Ok(quantity_value(value, dimension).and_then(|base| quantity_power(base, Number(*exponent))))
             }
             _ => Ok(evaluate_creo_numeric_relation_function(name, arguments)),
         }
@@ -5327,24 +5346,11 @@ let Self::Number(value) = self else {
 
     fn negate_checked(self, ctx: &cadmpeg_core::decode::DecodeContext<'_>) -> Result<Option<Self>, cadmpeg_core::CodecError> {
         ctx.charge_work(1, "creo relation negation work")?;
-        Ok(match self {
-            Self::Number(value) => Some(Self::Number(-value)),
-            Self::Length(value) => Some(Self::Length(-value)),
-            Self::Angle(value) => Some(Self::Angle(-value)),
-            Self::Quantity(mut value) => {
-                value.value = -value.value;
-                Some(Self::Quantity(value))
-            }
-            Self::String(_) => None,
-        })
+        Ok(quantity_parts_ref(&self).and_then(|(value, dimension)| quantity_value(-value, dimension)))
     }
 
     fn finite(&self) -> bool {
-        match self {
-            Self::Number(value) | Self::Length(value) | Self::Angle(value) => value.is_finite(),
-            Self::Quantity(value) => value.value.is_finite(),
-            Self::String(_) => true,
-        }
+        true
     }
 }
 
@@ -5356,36 +5362,30 @@ fn quantity_additive(
     let (left, left_dimension) = quantity_parts_ref(left)?;
     let (right, right_dimension) = quantity_parts_ref(right)?;
     (left_dimension == right_dimension).then_some(())?;
-    Some(quantity_value(operation(left, right), left_dimension))
+    quantity_value(operation(left, right), left_dimension)
 }
 
 fn quantity_parts_ref(value: &CurveExpressionValue) -> Option<(f64, RelationDimension)> {
     match value {
-        CurveExpressionValue::Number(value) => Some((*value, RelationDimension::default())),
-        CurveExpressionValue::Length(value) => Some((*value, RelationDimension::LENGTH)),
-        CurveExpressionValue::Angle(value) => Some((*value, RelationDimension::ANGLE)),
-        CurveExpressionValue::Quantity(value) => Some((value.value, value.dimension())),
+        CurveExpressionValue::Number(value) => Some((value.get(), RelationDimension::default())),
+        CurveExpressionValue::Length(value) => Some((value.get(), RelationDimension::LENGTH)),
+        CurveExpressionValue::Angle(value) => Some((value.get(), RelationDimension::ANGLE)),
+        CurveExpressionValue::Quantity(value) => Some((value.value(), value.dimension())),
         CurveExpressionValue::String(_) => None,
     }
 }
 
-fn quantity_value(value: f64, dimension: RelationDimension) -> CurveExpressionValue {
-    if dimension == RelationDimension::default() {
+fn quantity_value(value: f64, dimension: RelationDimension) -> Option<CurveExpressionValue> {
+    let value = cadmpeg_ir::scalar::FiniteReal::new(value)?;
+    Some(if dimension == RelationDimension::default() {
         CurveExpressionValue::Number(value)
     } else if dimension == RelationDimension::LENGTH {
         CurveExpressionValue::Length(value)
     } else if dimension == RelationDimension::ANGLE {
         CurveExpressionValue::Angle(value)
     } else {
-        CurveExpressionValue::Quantity(CurveExpressionQuantity {
-            value,
-            length_power: dimension.length,
-            mass_power: dimension.mass,
-            time_power: dimension.time,
-            angle_power: dimension.angle,
-            temperature_power: dimension.temperature,
-        })
-    }
+        CurveExpressionValue::Quantity(CurveExpressionQuantity::new(value.get(), [dimension.length, dimension.mass, dimension.time, dimension.angle, dimension.temperature])?)
+    })
 }
 
 fn numeric_binary(
@@ -5395,7 +5395,7 @@ fn numeric_binary(
 ) -> Option<CurveExpressionValue> {
     match (left, right) {
         (CurveExpressionValue::Number(left), CurveExpressionValue::Number(right)) => {
-            Some(CurveExpressionValue::Number(operation(left, right)))
+            CurveExpressionValue::number(operation(left.get(), right.get()))
         }
         _ => None,
     }
@@ -5700,7 +5700,7 @@ impl<V: ExpressionValue> ExpressionParser<'_, V> {
             .ok()?
             .parse()
             .ok()?;
-        Some(V::number(value))
+        V::number(value)
     }
 
     fn identifier_or_function(&mut self) -> Option<V> {
@@ -6003,18 +6003,19 @@ fn quantity_power(value: CurveExpressionValue, right: CurveExpressionValue) -> O
             return None;
         };
         let (value, dimension) = quantity_parts_ref(&value)?;
+        let exponent = exponent.get();
         if dimension == RelationDimension::default() {
-            return Some(CurveExpressionValue::Number(value.powf(exponent)));
+            return CurveExpressionValue::number(value.powf(exponent));
         }
         let integer = exponent.trunc();
         (integer == exponent).then_some(())?;
         let exponent =
             i8::try_from(i16::try_from(cadmpeg_core::convert::truncate_f64_to_i32(integer)?).ok()?)
                 .ok()?;
-        Some(quantity_value(
+        quantity_value(
             value.powi(i32::from(exponent)),
             dimension.scale(exponent)?,
-        ))
+        )
     }
 
 fn evaluate_creo_numeric_relation_function(
@@ -6026,19 +6027,19 @@ fn evaluate_creo_numeric_relation_function(
         (
             name @ (CreoMathFunction::Sin | CreoMathFunction::Cos | CreoMathFunction::Tan),
             [Angle(value)],
-        ) => Number(evaluate_creo_math_function(name, &[*value])?),
+        ) => CurveExpressionValue::number(evaluate_creo_math_function(name, &[value.get()])?)?,
         (
             name @ (CreoMathFunction::Asin | CreoMathFunction::Acos | CreoMathFunction::Atan),
             [Number(value)],
-        ) => Angle(evaluate_creo_math_function(name, &[*value])?),
+        ) => cadmpeg_ir::scalar::FiniteReal::new(evaluate_creo_math_function(name, &[value.get()])?).map(Angle)?,
         (CreoMathFunction::Atan2, [left, right]) => {
             let (left, left_dimension) = quantity_parts_ref(left)?;
             let (right, right_dimension) = quantity_parts_ref(right)?;
             (left_dimension == right_dimension).then_some(())?;
-            Angle(evaluate_creo_math_function(
+            cadmpeg_ir::scalar::FiniteReal::new(evaluate_creo_math_function(
                 CreoMathFunction::Atan2,
                 &[left, right],
-            )?)
+            )?).map(Angle)?
         }
         (CreoMathFunction::If, [Number(condition), when_true, when_false]) => {
             match (when_true, when_false) {
@@ -6049,9 +6050,9 @@ fn evaluate_creo_numeric_relation_function(
                     (true_dimension == false_dimension).then_some(())?;
                 }
             }
-            let selected = if *condition == 0.0 { when_false } else { when_true };
+            let selected = if condition.get() == 0.0 { when_false } else { when_true };
             let (value, dimension) = quantity_parts_ref(selected)?;
-            quantity_value(value, dimension)
+            quantity_value(value, dimension)?
         }
         (CreoMathFunction::Sign, [value, sign]) => {
             let (value, dimension) = quantity_parts_ref(value)?;
@@ -6063,13 +6064,13 @@ fn evaluate_creo_numeric_relation_function(
                     value.abs()
                 },
                 dimension,
-            )
+            )?
         }
         (CreoMathFunction::Mod, [left, right]) => {
             let (left, left_dimension) = quantity_parts_ref(left)?;
             let (right, right_dimension) = quantity_parts_ref(right)?;
             (left_dimension == right_dimension && right != 0.0).then_some(())?;
-            quantity_value(left % right, left_dimension)
+            quantity_value(left % right, left_dimension)?
         }
         (CreoMathFunction::Bound, [value, lower, upper]) => {
             let (value, value_dimension) = quantity_parts_ref(value)?;
@@ -6079,7 +6080,7 @@ fn evaluate_creo_numeric_relation_function(
                 && value_dimension == upper_dimension
                 && lower < upper)
                 .then_some(())?;
-            quantity_value(value.clamp(lower, upper), value_dimension)
+            quantity_value(if value < lower { lower } else if value > upper { upper } else { value }, value_dimension)?
         }
         (CreoMathFunction::Dead, [value, lower, upper]) => {
             let (value, value_dimension) = quantity_parts_ref(value)?;
@@ -6096,29 +6097,29 @@ fn evaluate_creo_numeric_relation_function(
             } else {
                 0.0
             };
-            quantity_value(value, value_dimension)
+            quantity_value(value, value_dimension)?
         }
         (CreoMathFunction::Pow, [base, Number(exponent)]) => {
             {
             let (value, dimension) = quantity_parts_ref(base)?;
-            quantity_power(quantity_value(value, dimension), Number(*exponent))?
+            quantity_power(quantity_value(value, dimension)?, Number(*exponent))?
         }
         }
         (CreoMathFunction::Sqrt, [argument]) => {
             let (value, dimension) = quantity_parts_ref(argument)?;
             (value >= 0.0).then_some(())?;
-            quantity_value(value.sqrt(), dimension.root(2)?)
+            quantity_value(value.sqrt(), dimension.root(2)?)?
         }
         (CreoMathFunction::Abs, [argument]) => {
             let (value, dimension) = quantity_parts_ref(argument)?;
-            quantity_value(value.abs(), dimension)
+            quantity_value(value.abs(), dimension)?
         }
         (name @ (CreoMathFunction::Ceil | CreoMathFunction::Floor), [argument]) => {
             let (value, dimension) = quantity_parts_ref(argument)?;
             quantity_value(
                 relation_round(value, 0.0, matches!(name, CreoMathFunction::Ceil))?,
                 dimension,
-            )
+            )?
         }
         (
             name @ (CreoMathFunction::Ceil | CreoMathFunction::Floor),
@@ -6128,11 +6129,11 @@ fn evaluate_creo_numeric_relation_function(
             quantity_value(
                 relation_round(
                     value,
-                    *decimal_places,
+                    decimal_places.get(),
                     matches!(name, CreoMathFunction::Ceil),
                 )?,
                 dimension,
-            )
+            )?
         }
         (name @ (CreoMathFunction::Min | CreoMathFunction::Max), [left, right]) => {
             let (left_value, left_dimension) = quantity_parts_ref(left)?;
@@ -6152,7 +6153,7 @@ fn evaluate_creo_numeric_relation_function(
                 && left_dimension == tolerance_dimension
                 && tolerance >= 0.0)
                 .then_some(())?;
-            Number(f64::from((left - right).abs() <= tolerance))
+            CurveExpressionValue::number(f64::from((left - right).abs() <= tolerance))?
         }
         _ => {
             let mut numbers = [0.0; 3];
@@ -6161,15 +6162,15 @@ fn evaluate_creo_numeric_relation_function(
                 let Number(value) = argument else {
                     return None;
                 };
-                *slot = *value;
+                *slot = value.get();
             }
-            Number(evaluate_creo_math_function(
+            CurveExpressionValue::number(evaluate_creo_math_function(
                 name,
                 &numbers[..arguments.len()],
-            )?)
+            )?)?
         }
     };
-    value.finite().then_some(value)
+    Some(value)
 }
 
 
@@ -6296,7 +6297,7 @@ fn apply_declared_relation_unit(
     let Some(unit) = relation_unit(ctx, declared_unit)? else { return Ok(None); };
     Ok(match (value, unit.dimension) {
         (CurveExpressionValue::Number(value), _) => {
-            Some(quantity_value(value * unit.scale + unit.offset, unit.dimension))
+            quantity_value(value.get() * unit.scale + unit.offset, unit.dimension)
         }
         (value @ CurveExpressionValue::Length(_), RelationDimension::LENGTH)
         | (value @ CurveExpressionValue::Angle(_), RelationDimension::ANGLE) => Some(value),
@@ -6677,7 +6678,8 @@ fn solve_affine_expression_block(
     let mut values = Vec::new();
     ctx.reserve_vec(&mut values, solution.len(), "creo affine solved values")?;
     for (value, dimension) in solution.into_iter().zip(variable_dimensions) {
-        values.push(quantity_value(value, *dimension));
+        let Some(value) = quantity_value(value, *dimension) else { return Ok(None); };
+        values.push(value);
     }
     Ok(Some(values))
 }
@@ -6751,7 +6753,8 @@ fn solve_nonlinear_expression_block(
     let mut solved = Vec::new();
     ctx.reserve_vec(&mut solved, solution.len(), "creo nonlinear solved values")?;
     for (value, dimension) in solution.into_iter().zip(variable_dimensions) {
-        solved.push(quantity_value(value, dimension));
+        let Some(value) = quantity_value(value, dimension) else { return Ok(None); };
+        solved.push(value);
     }
     Ok(Some(solved))
 }
@@ -7098,7 +7101,8 @@ fn evaluate_nonlinear_residuals(
         if !evaluation_values.contains_key(&key) {
             ctx.charge_collection_items(1, "creo nonlinear unknown value nodes")?;
         }
-        evaluation_values.insert(key, quantity_value(*value, *dimension));
+        let Some(value) = quantity_value(*value, *dimension) else { return Ok(None); };
+        evaluation_values.insert(key, value);
     }
     let mut residuals = Vec::new();
     for equation in &block.equations {

@@ -3169,15 +3169,15 @@ pub(crate) fn scan_bytes<'a>(
         let value = dimension
             .value
             .resolved()
-            .map(|value| match dimension.unit() {
+            .and_then(|value| match dimension.unit() {
                 feature::definitions::DimensionUnit::Radians => {
-                    CurveExpressionValue::Angle(value.to_degrees())
+                    cadmpeg_ir::scalar::FiniteReal::new(value.to_degrees()).map(CurveExpressionValue::Angle)
                 }
                 feature::definitions::DimensionUnit::Millimeters => {
-                    CurveExpressionValue::Length(value)
+                    cadmpeg_ir::scalar::FiniteReal::new(value).map(CurveExpressionValue::Length)
                 }
                 feature::definitions::DimensionUnit::SchemaDefined => {
-                    CurveExpressionValue::Number(value)
+                    cadmpeg_ir::scalar::FiniteReal::new(value).map(CurveExpressionValue::Number)
                 }
             });
         let (name, _reservation) = ctx.format_scoped(

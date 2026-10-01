@@ -368,7 +368,7 @@ fn dimension_conversion_result(
         offset: 0,
         for_offset: 1,
     };
-    let values = BTreeMap::from([("length".to_owned(), CurveExpressionValue::Length(1.0))]);
+    let values = BTreeMap::from([("length".to_owned(), CurveExpressionValue::Length(cadmpeg_ir::scalar::FiniteReal::new(1.0).expect("finite relation fixture")))]);
     crate::decode::with_test_decode_ctx(|ctx| {
         crate::curve::infer_solve_variable_dimensions(
             ctx,

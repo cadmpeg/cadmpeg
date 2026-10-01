@@ -1035,14 +1035,7 @@ fn quantity_property_result(
         .pop()
         .expect("complete curve expression");
     record.assignments[0].value = Some(crate::curve::CurveExpressionValue::Quantity(
-        crate::curve::CurveExpressionQuantity {
-            value: 3.5,
-            length_power: 1,
-            mass_power: 2,
-            time_power: 0,
-            angle_power: 0,
-            temperature_power: 0,
-        },
+        crate::curve::CurveExpressionQuantity::new(3.5, [1, 2, 0, 0, 0]).expect("valid residual dimension fixture"),
     ));
     let parameter_id = cadmpeg_ir::features::ParameterId::mint("test:test:parameter#a")
         .expect("valid parameter ID");
