@@ -26,23 +26,6 @@ impl ChartSamples {
             .ok_or_else(|| ctx.refuse_codec_limit("NX solved chart sample copy", 0, 0))?;
         Ok(Self { samples })
     }
-    #[cfg(test)]
-    fn from_source_charged(
-        ctx: &DecodeContext<'_>,
-        points: Vec<FinitePoint3>,
-        parameters: Vec<FiniteReal>,
-    ) -> Result<Option<Self>, CodecError> {
-        if points.len() != parameters.len() || points.len() < 2 {
-            return Ok(None);
-        }
-        ctx.charge_work(u64_from_index(points.len()), "form NX chart sample pairs")?;
-        let mut samples = ctx.retained_vec(points.len(), "NX chart sample pairs")?;
-        for (point, parameter) in points.into_iter().zip(parameters) {
-            samples.push((point, parameter));
-        }
-        Ok(crate::om::nonempty::NonEmpty::from_vec(samples).map(|samples| Self { samples }))
-    }
-
     fn from_xyz3_charged(
         ctx: &DecodeContext<'_>,
         points: Vec<FinitePoint3>,
@@ -610,10 +593,9 @@ mod tests {
 
 #[cfg(test)]
 mod admission_tests {
-    use super::{ChartPreamble, ChartSamples};
+    use super::{ChartPreamble, ChartSamples, SourceChartData};
     use cadmpeg_ir::features::FinitePoint3;
     use cadmpeg_ir::math::Point3;
-    use cadmpeg_ir::scalar::FiniteReal;
 
     fn points() -> Vec<FinitePoint3> {
         [0.0, 1000.0, 2000.0].into_iter().map(|x| FinitePoint3::new(Point3::new(x, 0.0, 0.0)).unwrap()).collect()
@@ -632,8 +614,8 @@ mod admission_tests {
     #[test]
     fn chart_pairing_refuses_work_before_source_pairing() {
         crate::test_support::with_decode_context_over(&[], |policy| policy.limits.max_work_units = 0, |ctx| {
-            let error = ChartSamples::from_source_charged(ctx, points(), vec![FiniteReal::ZERO; 3]).unwrap_err();
-            assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == "form NX chart sample pairs"));
+            let error = SourceChartData::ext11_charged(ctx, points().into_iter().map(FinitePoint3::get).collect(), vec![0.0; 3], [None, None]).unwrap_err();
+            assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == "admit NX ext11 chart"));
         });
     }
 

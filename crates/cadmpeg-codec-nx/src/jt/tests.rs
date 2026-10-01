@@ -885,8 +885,13 @@ fn dequantization_refuses_value_below_binary32_range_before_rounding() {
 }
 
 #[test]
-fn jt_probability_context_rejects_signed_symbol_bias_underflow() {
-    for raw in [0x8000_0000_u32, 0x8000_0001] {
+fn jt_probability_context_biases_unsigned_symbols_before_range_admission() {
+    for (raw, expected) in [
+        (0x8000_0000_u32, Some(i32::MAX - 1)),
+        (0x8000_0001, Some(i32::MAX)),
+        (0x8000_0002, None),
+        (u32::MAX, None),
+    ] {
         let mut bits = Vec::new();
         for (value, width) in [(32_u32, 6), (1, 6), (0, 6), (0, 32), (raw, 32), (1, 1)] {
             bits.extend((0..width).rev().map(|shift| (value >> shift) & 1 != 0));
@@ -899,12 +904,13 @@ fn jt_probability_context_rejects_signed_symbol_bias_underflow() {
             }
             context.push(byte << (8 - chunk.len()));
         }
-        assert!(parse_probability_context(&context).is_none());
+        let parsed = parse_probability_context(&context);
+        assert_eq!(parsed.as_ref().map(|(entries, _)| entries[0].symbol), expected);
         let mut packet = vec![1, 0, 0, 0, 3, 16, 0, 0, 0, 0, 0, 0, 0];
         packet.extend(context);
         packet.extend([0; 4]);
-        assert!(decode_int32_cdp2(&packet, 0).is_none());
-        assert!(frame_int32_cdp2(&packet, 0).is_none());
+        assert_eq!(decode_int32_cdp2(&packet, 0), expected.map(|_| (vec![0], packet.len())));
+        assert_eq!(frame_int32_cdp2(&packet, 0), expected.map(|_| (1, 3, packet.len())));
     }
 }
 
