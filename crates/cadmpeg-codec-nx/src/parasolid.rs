@@ -349,11 +349,7 @@ fn referenced_value_xmts<'ctx>(
             continue;
         }
         for record in records {
-            for xmt in record
-                .leading_references
-                .into_iter()
-                .chain(record.trailing_references.into_values())
-            {
+            for xmt in record.trailing_references.into_values() {
                 ctx.insert_scoped_btree_set(
                     &mut reference_guard,
                     &mut referenced,
