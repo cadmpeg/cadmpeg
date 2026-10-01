@@ -10,6 +10,7 @@ use serde::de::{DeserializeSeed, Error as _, MapAccess, SeqAccess, Visitor};
 struct CountJsonNodes<'a, 'b> {
     ctx: &'a DecodeContext<'b>,
     operation: &'static str,
+    collection_operation: &'static str,
     count: &'a Cell<u64>,
     overflowed: &'a Cell<bool>,
     refusal: &'a RefCell<Option<CodecError>>,
@@ -24,6 +25,10 @@ impl<'de> DeserializeSeed<'de> for CountJsonNodes<'_, '_> {
             return Err(D::Error::custom("JSON node count overflows"));
         };
         self.count.set(next);
+        if let Err(error) = self.ctx.charge_collection_items(1, self.collection_operation) {
+            self.refusal.replace(Some(error));
+            return Err(D::Error::custom("JSON collection limit exceeded"));
+        }
         deserializer.deserialize_any(self)
     }
 }
@@ -64,6 +69,7 @@ impl<'de> Visitor<'de> for CountJsonNodes<'_, '_> {
         CountJsonNodes {
             ctx: self.ctx,
             operation: self.operation,
+            collection_operation: self.collection_operation,
             count: self.count,
             overflowed: self.overflowed,
             refusal: self.refusal,
@@ -83,6 +89,7 @@ impl<'de> Visitor<'de> for CountJsonNodes<'_, '_> {
             .next_element_seed(CountJsonNodes {
                 ctx: self.ctx,
                 operation: self.operation,
+            collection_operation: self.collection_operation,
                 count: self.count,
                 overflowed: self.overflowed,
                 refusal: self.refusal,
@@ -104,6 +111,7 @@ impl<'de> Visitor<'de> for CountJsonNodes<'_, '_> {
             .next_key_seed(CountJsonNodes {
                 ctx: self.ctx,
                 operation: self.operation,
+            collection_operation: self.collection_operation,
                 count: self.count,
                 overflowed: self.overflowed,
                 refusal: self.refusal,
@@ -113,6 +121,7 @@ impl<'de> Visitor<'de> for CountJsonNodes<'_, '_> {
             map.next_value_seed(CountJsonNodes {
                 ctx: self.ctx,
                 operation: self.operation,
+            collection_operation: self.collection_operation,
                 count: self.count,
                 overflowed: self.overflowed,
                 refusal: self.refusal,
@@ -122,8 +131,8 @@ impl<'de> Visitor<'de> for CountJsonNodes<'_, '_> {
     }
 }
 
-/// Counts JSON values and object keys before a typed parse can allocate them.
-/// Invalid JSON is left to the caller's parser so its existing error stays intact.
+/// Admits each JSON value and object key before a typed parse can allocate it.
+/// A structural non-match returns false; callers must stop before materialization.
 pub(crate) fn preflight(
     ctx: &DecodeContext<'_>,
     payload: &[u8],
@@ -141,6 +150,7 @@ pub(crate) fn preflight(
     if (CountJsonNodes {
         ctx,
         operation: scan_operation,
+        collection_operation,
         count: &item_count,
         overflowed: &overflowed,
         refusal: &refusal,
@@ -157,6 +167,22 @@ pub(crate) fn preflight(
         }
         return Ok(false);
     }
-    ctx.charge_collection_items(item_count.get(), collection_operation)?;
     Ok(true)
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn invalid_json_prefix_preserves_collection_refusal() {
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_collection_items = 2;
+        crate::test_support::with_decode_policy(&policy, |ctx| {
+            let error = super::preflight(ctx, b"[0,0,0,", "JSON preflight", "JSON scan", "JSON nodes").unwrap_err();
+            let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
+                panic!("invalid prefix must preserve its admission refusal");
+            };
+            assert_eq!(limit.operation, "JSON nodes");
+            assert_eq!(Some(limit), ctx.resource_refusal());
+        });
+    }
 }
