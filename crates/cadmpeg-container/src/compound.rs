@@ -1755,25 +1755,31 @@ fn chain(
     let mut seen = BTreeSet::new();
     let mut current = start;
     while current != END_OF_CHAIN {
+        ctx.charge_work(1, "scan CFB sector chain")?;
         if cadmpeg_core::decode::index_from_u32(current) >= sector_count
-            || !seen.insert(current)
-            || seen.len() > limit
+            || seen.len() == limit
         {
             return malformed(format!(
                 "CFB {role} chain is cyclic, overlong, or out of range"
             ));
         }
-        if expected.is_none() {
-            ctx.charge_collection_items(1, "retain CFB sector chain")?;
-            ctx.charge_retained(
-                cadmpeg_core::decode::u64_from_index(std::mem::size_of::<u32>()),
-                "retain CFB sector chain",
-            )?;
+        if !ctx.insert_scoped_btree_set(
+            &mut traversal_scratch, &mut seen, current,
+            "compare CFB visited sectors", "walk CFB sector chain",
+        )? {
+            return malformed(format!("CFB {role} chain is cyclic, overlong, or out of range"));
         }
-        traversal_scratch.grow(cadmpeg_core::decode::u64_from_index(
-            std::mem::size_of::<u32>(),
-        ))?;
-        if current != start {
+        if expected.is_none() {
+            if current == start {
+                ctx.charge_collection_items(1, "retain CFB sector chain")?;
+                ctx.charge_retained(
+                    cadmpeg_core::decode::u64_from_index(std::mem::size_of::<u32>()),
+                    "retain CFB sector chain",
+                )?;
+            } else {
+                ctx.push_retained_vec(&mut output.rest, current, "retain CFB sector chain")?;
+            }
+        } else if current != start {
             output.rest.push(current);
         }
         current = *fat
@@ -1877,7 +1883,7 @@ mod tests {
     use cadmpeg_test_support::bytes::{put_u16, put_u32};
 
     use super::{
-        cfb_name_cmp, cfb_upper_unit, parse_directory, path_key, range_lock_sector,
+        chain, ChainLength, ChainRole, cfb_name_cmp, cfb_upper_unit, parse_directory, path_key, range_lock_sector,
         read_detection_prefix, validate_sibling_tree, CompoundEntry, CompoundPrefixProbe, CompoundSnapshot, CompoundState,
         CompoundVersion, DirectorySlot, DIFAT_SECTOR, END_OF_CHAIN, FAT_SECTOR, FREE_SECTOR, MAGIC,
         NO_STREAM, RANGE_LOCK_END,
@@ -1948,6 +1954,25 @@ mod tests {
             .expect_err("nested storage traversal exceeds active depth");
         assert!(matches!(error, CodecError::ResourceLimit(limit)
             if limit.dimension == cadmpeg_core::decode::ResourceDimension::RecursionDepth));
+    }
+
+    #[test]
+    fn sector_chain_admits_visited_storage_items_and_work_before_traversal() {
+        use cadmpeg_core::decode::ResourceDimension;
+        for dimension in [ResourceDimension::MaterializedBytes,
+            ResourceDimension::CollectionItems, ResourceDimension::WorkUnits] {
+            let mut policy = DecodePolicy::service();
+            match dimension {
+                ResourceDimension::MaterializedBytes => policy.limits.max_materialized_bytes = 0,
+                ResourceDimension::CollectionItems => policy.limits.max_collection_items = 1,
+                ResourceDimension::WorkUnits => policy.limits.max_work_units = 0,
+                _ => panic!("test selects traversal resources"),
+            }
+            let error = with_context(&[], &policy, |ctx| chain(ctx, &[END_OF_CHAIN], 1, 0,
+                Some(ChainLength::Declared(std::num::NonZeroUsize::new(1).expect("one sector"))),
+                ChainRole::Stream)).expect_err("visited traversal exceeds caller allowance");
+            assert!(matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == dimension));
+        }
     }
 
     #[test]
