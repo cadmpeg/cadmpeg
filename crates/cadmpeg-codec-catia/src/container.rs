@@ -193,6 +193,7 @@ pub(crate) fn finjpl_segments(
     if body_start >= end {
         return Ok(Vec::new());
     }
+    ctx.charge_work(u64_from_index(end - body_start), "catia_finjpl_scan")?;
     let positions = ctx.collect_vec(
         memchr::memmem::find_iter(&data[body_start..end], FINJPL_MARKER)
             .map(|relative| body_start + relative),
@@ -885,12 +886,11 @@ pub(crate) fn consolidated_record_sources(
     if let Some(outer) = scan.outer.as_ref() {
         add_directory(&mut sources, outer)?;
     } else {
-        let outer_end = scan
-            .inner
-            .as_ref()
-            .map(|directory| directory.inner)
-            .or_else(|| outer_stream_directory_range(&scan.data).map(|range| range.start))
-            .unwrap_or(scan.data.len());
+        let outer_end = match scan.inner.as_ref() {
+            Some(directory) => directory.inner,
+            None => outer_stream_directory_range(ctx, &scan.data)?
+                .map(|range| range.start).unwrap_or(scan.data.len()),
+        };
         let preamble = (outer_hdr::FILL_FF < outer_end)
             .then(|| SourceExtent::within(&scan.data, outer_hdr::FILL_FF, outer_end))
             .flatten();
@@ -973,6 +973,7 @@ pub(crate) fn fbb_run_ranges(
     ctx: &DecodeContext<'_>,
     body: &[u8],
 ) -> Result<Vec<Range<usize>>, CodecError> {
+    ctx.charge_work(u64_from_index(body.len()), "catia_fbb_scan")?;
     let mut ranges = Vec::new();
     let mut position = 0;
     while position + fbb_row::LEN <= body.len() {
@@ -997,11 +998,12 @@ pub(crate) fn is_fbb_row(bytes: &[u8]) -> bool {
         && bytes[1..fbb_row::ALPHA] == [0x04, 0x04, 0xff]
 }
 
-fn count_subslice(haystack: &[u8], needle: &[u8]) -> usize {
+fn count_subslice(ctx: &DecodeContext<'_>, haystack: &[u8], needle: &[u8]) -> Result<usize, CodecError> {
     if needle.is_empty() || haystack.len() < needle.len() {
-        return 0;
+        return Ok(0);
     }
-    memchr::memmem::find_iter(haystack, needle).count()
+    ctx.charge_work(u64_from_index(haystack.len()), "catia_census_marker_scan")?;
+    Ok(memchr::memmem::find_iter(haystack, needle).count())
 }
 
 /// Parse the nested-container stream directory by the self-consistency scan
@@ -1053,12 +1055,15 @@ pub(crate) fn parse_outer_stream_directory(
 }
 
 /// Parse and return the exact outer stream-directory byte range.
-pub(crate) fn outer_stream_directory_range(data: &[u8]) -> Option<Range<usize>> {
-    let dir_offset = usize::try_from(View::u32_be_at(data, outer_hdr::DIRECTORY_OFFSET)?).ok()?;
-    let dir_length = usize::try_from(View::u32_be_at(data, outer_hdr::DIRECTORY_LENGTH)?).ok()?;
-    let dir_end = dir_offset.checked_add(dir_length)?;
-    (dir_end == data.len() && directory_region_has_descriptor(data, 0, dir_offset, dir_length))
-        .then_some(dir_offset..dir_end)
+pub(crate) fn outer_stream_directory_range(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<Option<Range<usize>>, CodecError> {
+    let Some((dir_offset, dir_length, dir_end)) = (|| {
+        let dir_offset = usize::try_from(View::u32_be_at(data, outer_hdr::DIRECTORY_OFFSET)?).ok()?;
+        let dir_length = usize::try_from(View::u32_be_at(data, outer_hdr::DIRECTORY_LENGTH)?).ok()?;
+        let dir_end = dir_offset.checked_add(dir_length)?;
+        (dir_end == data.len()).then_some((dir_offset, dir_length, dir_end))
+    })() else { return Ok(None); };
+    Ok(directory_region_has_descriptor(ctx, data, 0, dir_offset, dir_length)?
+        .then_some(dir_offset..dir_end))
 }
 
 fn parse_outer_stream_directory_with_range(
@@ -1107,6 +1112,7 @@ fn parse_directory_region(
     // real descriptor. The extent count sits at `desc_offset + EXTENT_COUNT`.
     let mut o = 0usize;
     while o + 4 <= dirbuf.len() {
+        ctx.charge_work(1, "catia_directory_candidate_scan")?;
         let Some(k) = View::u32_be_at(dirbuf, o).and_then(|value| usize::try_from(value).ok())
         else {
             break;
@@ -1150,26 +1156,28 @@ fn parse_directory_region(
 }
 
 fn directory_region_has_descriptor(
+    ctx: &DecodeContext<'_>,
     data: &[u8],
     physical_base: usize,
     dir_offset: usize,
     dir_length: usize,
-) -> bool {
+) -> Result<bool, CodecError> {
     let Some(dir_end) = dir_offset.checked_add(dir_length) else {
-        return false;
+        return Ok(false);
     };
     let Some(magic_end) = dir_offset.checked_add(DIR_MAGIC.len()) else {
-        return false;
+        return Ok(false);
     };
     if dir_length == 0 || dir_end > data.len() || data.get(dir_offset..magic_end) != Some(DIR_MAGIC)
     {
-        return false;
+        return Ok(false);
     }
     let dirbuf = &data[dir_offset..dir_end];
     if dirbuf.len() < 4 {
-        return false;
+        return Ok(false);
     }
     for o in 0..=dirbuf.len() - 4 {
+        ctx.charge_work(1, "catia_directory_candidate_scan")?;
         let Some(k) = View::u32_be_at(dirbuf, o).and_then(|value| usize::try_from(value).ok())
         else {
             continue;
@@ -1183,7 +1191,7 @@ fn directory_region_has_descriptor(
         if k == 0 || extents_end > dirbuf.len() || o < stream_desc::EXTENT_COUNT {
             continue;
         }
-        let Some(cum) = validate_extents(dirbuf, o, k, physical_base, data.len()) else {
+        let Some(cum) = validate_extents(ctx, dirbuf, o, k, physical_base, data.len())? else {
             continue;
         };
         let ds = o - stream_desc::EXTENT_COUNT;
@@ -1191,10 +1199,10 @@ fn directory_region_has_descriptor(
             && View::u32_be_at(dirbuf, ds + stream_desc::LOGICAL_STREAM_LENGTH)
                 .is_some_and(|length| index_from_u32(length) == cum)
         {
-            return true;
+            return Ok(true);
         }
     }
-    false
+    Ok(false)
 }
 
 /// Validate the `k` 20-byte extent structs beginning at `o + 4`; returns the
@@ -1208,11 +1216,11 @@ fn parse_extents(
     physical_base: usize,
     file_len: usize,
 ) -> Result<Option<(Vec<Extent>, usize)>, CodecError> {
-    ctx.charge_work(u64_from_index(k), "catia_extent_validation")?;
-    let Some(cum) = validate_extents(dirbuf, o, k, physical_base, file_len) else {
+    let Some(cum) = validate_extents(ctx, dirbuf, o, k, physical_base, file_len)? else {
         return Ok(None);
     };
     let mut extents = Vec::new();
+    ctx.charge_work(u64_from_index(k), "catia_extent_copy")?;
     ctx.reserve_vec(&mut extents, k, "catia_directory_extents")?;
     for i in 0..k {
         let Some((extent, _, _)) = read_extent_fields(dirbuf, o, i) else {
@@ -1224,12 +1232,15 @@ fn parse_extents(
 }
 
 fn validate_extents(
+    ctx: &DecodeContext<'_>,
     dirbuf: &[u8],
     o: usize,
     k: usize,
     physical_base: usize,
     file_len: usize,
-) -> Option<usize> {
+) -> Result<Option<usize>, CodecError> {
+    ctx.charge_work(u64_from_index(k), "catia_extent_validation")?;
+    Ok((|| {
     let mut cum: usize = 0;
     for i in 0..k {
         let (extent, log_len, log_off) = read_extent_fields(dirbuf, o, i)?;
@@ -1247,6 +1258,7 @@ fn validate_extents(
         cum = next;
     }
     Some(cum)
+    })())
 }
 
 fn read_extent_fields(dirbuf: &[u8], o: usize, index: usize) -> Option<(Extent, u32, u32)> {
@@ -1711,7 +1723,7 @@ pub(crate) fn scan_bytes<'a>(
         a9_records,
         e5_markers: outer_body
             .as_ref()
-            .map_or(0, |body| count_subslice(body.bytes(), E5_MARKER)),
+            .map(|body| count_subslice(ctx, body.bytes(), E5_MARKER)).transpose()?.unwrap_or(0),
         ..Default::default()
     };
     if let Some(b) = main_data_stream.as_deref() {
@@ -1721,8 +1733,8 @@ pub(crate) fn scan_bytes<'a>(
             .iter()
             .map(|range| (range.end - range.start) / fbb_row::LEN)
             .sum();
-        census.edge_delimiters = count_subslice(b, EDGE_DELIMITER);
-        census.vertex_markers = count_subslice(b, VERTEX_MARKER);
+        census.edge_delimiters = count_subslice(ctx, b, EDGE_DELIMITER)?;
+        census.vertex_markers = count_subslice(ctx, b, VERTEX_MARKER)?;
     }
 
     let variant = identify_variant(
