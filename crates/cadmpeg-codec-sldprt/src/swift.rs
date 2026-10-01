@@ -632,15 +632,30 @@ fn parse_unique_root(
     Ok(parsed)
 }
 
+fn admit_swift_depth(
+    ctx: &DecodeContext<'_>,
+    depth: usize,
+    operation: &'static str,
+) -> Result<(), CodecError> {
+    if depth >= MAX_DEPTH {
+        let requested = u64_from_index(depth).checked_add(1).ok_or_else(|| {
+            ctx.refuse_codec_limit(operation, u64_from_index(MAX_DEPTH), u64::MAX)
+        })?;
+        return Err(ctx.refuse_codec_limit(operation, u64_from_index(MAX_DEPTH), requested));
+    }
+    Ok(())
+}
+
 fn parse_entity(
     ctx: &DecodeContext<'_>,
     cursor: &mut View<'_>,
     depth: usize,
 ) -> Result<Option<Entity>, CodecError> {
     let offset = cursor.position();
-    if depth >= MAX_DEPTH || pstr(cursor) != Some("Entity") {
+    if pstr(cursor) != Some("Entity") {
         return Ok(None);
     }
+    admit_swift_depth(ctx, depth, "parse SWIFT entity")?;
     let _depth_guard = ctx.enter_nested("parse SWIFT entity")?;
     ctx.charge_work(1, "parse SWIFT entity")?;
     let Some(class) = pstr(cursor) else {
@@ -865,9 +880,13 @@ fn read_objects(
         if entities.len() >= references.len() {
             return Ok(None);
         }
-        let Some(next_depth) = depth.checked_add(1) else {
-            return Ok(None);
-        };
+        let next_depth = depth.checked_add(1).ok_or_else(|| {
+            ctx.refuse_codec_limit(
+                "advance SWIFT recursion depth",
+                u64_from_index(MAX_DEPTH),
+                u64::MAX,
+            )
+        })?;
         let Some(entity) = parse_entity(ctx, cursor, next_depth)? else {
             return Ok(None);
         };
@@ -926,9 +945,13 @@ fn read_related(
     }
     let mut related = Vec::new();
     for (name, class) in descriptors {
-        let Some(next_depth) = depth.checked_add(1) else {
-            return Ok(None);
-        };
+        let next_depth = depth.checked_add(1).ok_or_else(|| {
+            ctx.refuse_codec_limit(
+                "advance SWIFT recursion depth",
+                u64_from_index(MAX_DEPTH),
+                u64::MAX,
+            )
+        })?;
         let Some(entity) = parse_entity(ctx, cursor, next_depth)? else {
             return Ok(None);
         };
@@ -1593,11 +1616,12 @@ fn feature_reaches(
     visited: &mut BTreeSet<String>,
     depth: usize,
 ) -> Result<bool, CodecError> {
-    let _depth = ctx.enter_nested("traverse SWIFT feature reachability")?;
     ctx.charge_work(1, "traverse SWIFT feature reachability")?;
-    if depth >= MAX_DEPTH || visited.contains(id) {
+    if visited.contains(id) {
         return Ok(false);
     }
+    admit_swift_depth(ctx, depth, "traverse SWIFT feature reachability")?;
+    let _depth = ctx.enter_nested("traverse SWIFT feature reachability")?;
     let owned_id = crate::text_admission::format_retained(
         ctx,
         format_args!("{id}"),
@@ -1608,9 +1632,13 @@ fn feature_reaches(
         let Some(feature) = feature_index.get(id) else {
             return Ok(false);
         };
-        let Some(next_depth) = depth.checked_add(1) else {
-            return Ok(false);
-        };
+        let next_depth = depth.checked_add(1).ok_or_else(|| {
+            ctx.refuse_codec_limit(
+                "advance SWIFT recursion depth",
+                u64_from_index(MAX_DEPTH),
+                u64::MAX,
+            )
+        })?;
         for child in child_feature_ids(feature) {
             if child == target
                 || feature_reaches(ctx, child, target, feature_index, visited, next_depth)?
@@ -1719,11 +1747,12 @@ fn collect_rotational_projections(
     depth: usize,
     projections: &mut Vec<FiniteReal>,
 ) -> Result<(), CodecError> {
-    let _depth = ctx.enter_nested("scan SWIFT rotational features")?;
     ctx.charge_work(1, "scan SWIFT rotational features")?;
-    if depth >= MAX_DEPTH || visited.contains(id) {
+    if visited.contains(id) {
         return Ok(());
     }
+    admit_swift_depth(ctx, depth, "scan SWIFT rotational features")?;
+    let _depth = ctx.enter_nested("scan SWIFT rotational features")?;
     let owned_id = crate::text_admission::format_retained(
         ctx,
         format_args!("{id}"),
@@ -1744,9 +1773,13 @@ fn collect_rotational_projections(
             projections.push(projection);
             return Ok(());
         }
-        let Some(next_depth) = depth.checked_add(1) else {
-            return Ok(());
-        };
+        let next_depth = depth.checked_add(1).ok_or_else(|| {
+            ctx.refuse_codec_limit(
+                "advance SWIFT recursion depth",
+                u64_from_index(MAX_DEPTH),
+                u64::MAX,
+            )
+        })?;
         for child in child_feature_ids(feature) {
             collect_rotational_projections(
                 ctx,
@@ -1922,11 +1955,12 @@ fn collect_diameter_contributors(
     depth: usize,
     values: &mut Vec<PositiveReal>,
 ) -> Result<(), CodecError> {
-    let _depth = ctx.enter_nested("scan SWIFT diameter features")?;
     ctx.charge_work(1, "scan SWIFT diameter features")?;
-    if depth >= MAX_DEPTH || visited.contains(id) {
+    if visited.contains(id) {
         return Ok(());
     }
+    admit_swift_depth(ctx, depth, "scan SWIFT diameter features")?;
+    let _depth = ctx.enter_nested("scan SWIFT diameter features")?;
     let owned_id = crate::text_admission::format_retained(
         ctx,
         format_args!("{id}"),
@@ -1947,9 +1981,13 @@ fn collect_diameter_contributors(
             values.push(diameter);
             return Ok(());
         }
-        let Some(next_depth) = depth.checked_add(1) else {
-            return Ok(());
-        };
+        let next_depth = depth.checked_add(1).ok_or_else(|| {
+            ctx.refuse_codec_limit(
+                "advance SWIFT recursion depth",
+                u64_from_index(MAX_DEPTH),
+                u64::MAX,
+            )
+        })?;
         for child in child_feature_ids(feature) {
             collect_diameter_contributors(ctx, child, feature_index, visited, next_depth, values)?;
         }
@@ -2537,11 +2575,12 @@ fn measurement_for_feature(
     depth: usize,
     direct_measurement: impl Copy + Fn(&Entity) -> Option<PositiveReal>,
 ) -> Result<Option<PositiveReal>, CodecError> {
-    let _depth = ctx.enter_nested("measure SWIFT feature geometry")?;
     ctx.charge_work(1, "measure SWIFT feature geometry")?;
-    if depth >= MAX_DEPTH || visited.contains(id) {
+    if visited.contains(id) {
         return Ok(None);
     }
+    admit_swift_depth(ctx, depth, "measure SWIFT feature geometry")?;
+    let _depth = ctx.enter_nested("measure SWIFT feature geometry")?;
     let owned_id = crate::text_admission::format_retained(
         ctx,
         format_args!("{id}"),
@@ -2555,9 +2594,13 @@ fn measurement_for_feature(
         if let Some(measurement) = direct_measurement(feature) {
             return Ok(Some(measurement));
         }
-        let Some(next_depth) = depth.checked_add(1) else {
-            return Ok(None);
-        };
+        let next_depth = depth.checked_add(1).ok_or_else(|| {
+            ctx.refuse_codec_limit(
+                "advance SWIFT recursion depth",
+                u64_from_index(MAX_DEPTH),
+                u64::MAX,
+            )
+        })?;
         let mut first: Option<PositiveReal> = None;
         for child in child_feature_ids(feature) {
             let Some(value) = measurement_for_feature(
@@ -2963,16 +3006,21 @@ fn visit_expanded_feature_ids<'a>(
     let Some(feature) = feature_index.get(id) else {
         return visit(id);
     };
-    if short_class(&feature.class) != "GdtPattern" || depth >= MAX_DEPTH {
+    if short_class(&feature.class) != "GdtPattern" {
         return visit(id);
     }
+    admit_swift_depth(ctx, depth, "expand SWIFT target features")?;
     let Some(subfeatures) = direct_subfeature_ids(feature) else {
         return visit(id);
     };
     for subfeature in subfeatures {
-        let Some(next_depth) = depth.checked_add(1) else {
-            return visit(id);
-        };
+        let next_depth = depth.checked_add(1).ok_or_else(|| {
+            ctx.refuse_codec_limit(
+                "advance SWIFT recursion depth",
+                u64_from_index(MAX_DEPTH),
+                u64::MAX,
+            )
+        })?;
         if !visit_expanded_feature_ids(ctx, subfeature, feature_index, next_depth, visit)? {
             return Ok(false);
         }

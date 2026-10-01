@@ -45,10 +45,6 @@ macro_rules! loss_codes {
 }
 
 loss_codes! {
-    /// Product-occurrence expansion stopped at the configured output limit.
-    OccurrenceExpansionOutputTruncated => "occurrence.expansion-output-truncated",
-    /// Product-occurrence expansion stopped at the configured nesting-depth limit.
-    OccurrenceExpansionDepthTruncated => "occurrence.expansion-depth-truncated",
     /// Product-occurrence root inference was suppressed by a malformed member list.
     OccurrenceRootInferenceBlocked => "occurrence.root-inference-blocked",
     /// Product-occurrence expansion omitted an instance or member with malformed placement data.
@@ -132,9 +128,7 @@ impl IgesLossCode {
                 Severity::Blocking
             }
             Self::ProceduralReduced => Severity::Info,
-            Self::OccurrenceExpansionOutputTruncated
-            | Self::OccurrenceExpansionDepthTruncated
-            | Self::OccurrenceRootInferenceBlocked
+            Self::OccurrenceRootInferenceBlocked
             | Self::OccurrencePlacementMalformed
             | Self::EntityRetainedUnprojected
             | Self::EntityOutsideEnvelope
@@ -173,10 +167,9 @@ impl IgesLossCode {
     /// The shared cross-codec category this loss reports under.
     const fn shared_taxonomy(self) -> LossTaxonomy {
         match self {
-            Self::OccurrenceExpansionOutputTruncated
-            | Self::OccurrenceExpansionDepthTruncated
-            | Self::OccurrenceRootInferenceBlocked
-            | Self::OccurrencePlacementMalformed => LossTaxonomy::DecodeDiagnostic,
+            Self::OccurrenceRootInferenceBlocked | Self::OccurrencePlacementMalformed => {
+                LossTaxonomy::DecodeDiagnostic
+            }
             Self::EntityRetainedUnprojected
             | Self::EntityOutsideEnvelope
             | Self::EntityNotProjected => LossTaxonomy::RecordNotTyped,
@@ -255,8 +248,6 @@ mod tests {
         assert_eq!(
             codes,
             [
-                "occurrence.expansion-output-truncated",
-                "occurrence.expansion-depth-truncated",
                 "occurrence.root-inference-blocked",
                 "occurrence.placement-malformed",
                 "entity.retained-unprojected",

@@ -83,10 +83,7 @@ pub(crate) fn pmdc_reference(
     field: &'static str,
 ) -> Result<PmDcReference, CodecError> {
     let value = u32(view, field)?;
-    Ok(PmDcReference {
-        index: value & 0x7fff_ffff,
-        qualified: value & 0x8000_0000 != 0,
-    })
+    Ok(PmDcReference::from_packed(value))
 }
 
 pub(crate) fn take<'a>(

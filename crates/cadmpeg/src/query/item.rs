@@ -9,7 +9,7 @@
 use std::fmt;
 
 use anyhow::{bail, Context, Result};
-use cadmpeg_core::decode::alloc_filled;
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use clap::Args;
 use serde::de::{DeserializeSeed, IgnoredAny, MapAccess, SeqAccess, Visitor};
 use serde::{Deserialize, Deserializer};
@@ -357,6 +357,8 @@ fn first_parent_keys(values: &[serde_json::Value], path: &str) -> Option<Vec<Str
 /// JSON strings/numbers/bools are bare; tab/newline in a string become `\t`/
 /// `\n`; null or absent is an empty cell; arrays/objects are compact JSON.
 fn project_fields(values: &[serde_json::Value], paths: &[String]) -> Result<(String, Vec<String>)> {
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::default())?;
     if paths.is_empty() {
         bail!("--fields requires at least one dotted path");
     }
@@ -364,7 +366,7 @@ fn project_fields(values: &[serde_json::Value], paths: &[String]) -> Result<(Str
     out.push_str(&paths.join("\t"));
     out.push('\n');
 
-    let mut empty_counts = alloc_filled(paths.len(), 0usize, "cli query field counts")?;
+    let mut empty_counts = ctx.alloc_filled(paths.len(), 0usize, "cli query field counts")?;
     let row_count = values.len();
     for value in values {
         for (i, path) in paths.iter().enumerate() {

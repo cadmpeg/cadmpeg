@@ -557,7 +557,7 @@ fn unique_translation_joins_linked_endpoints_to_one_profile_entity() {
         class_ref: "class".into(),
         feature_ref: "feature-native".into(),
         scalars: crate::records::relation_scalars::RelationScalars::from_refs(
-            Vec::new(),
+            vec!["sldprt:test:scalar#unselected-1".into()],
             None,
             None,
         )

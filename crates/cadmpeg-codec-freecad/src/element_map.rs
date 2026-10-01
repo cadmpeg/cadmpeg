@@ -56,10 +56,10 @@ pub(crate) fn parse(
     validate_string_hasher_framing(xml.root_element())?;
     let mut entry_data = HashMap::new();
     for entry in entries {
-        if !entry_data.contains_key(entry.name.as_str()) {
+        if !entry_data.contains_key(entry.name()) {
             ctx.reserve_map(&mut entry_data, 1, "FreeCAD element entry lookup")?;
         }
-        entry_data.insert(entry.name.as_str(), entry.data.as_slice());
+        entry_data.insert(entry.name(), entry.data());
     }
 
     let mut tables = Vec::new();
