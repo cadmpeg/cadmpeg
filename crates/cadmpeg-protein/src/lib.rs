@@ -616,7 +616,7 @@ fn decode_record(
         let content = match property {
             Property::Reference { multiple } => {
                 let count = (*multiple)
-                    .then(|| read_count(record, &mut at, id))
+                    .then(|| read_count(ctx, record, &mut at, id))
                     .transpose()
                     .map_err(|error| value_error(error, at))?;
                 let targets = read_connections(ctx, record, &mut at)
@@ -705,7 +705,7 @@ fn read_property(
         // multiple-value declaration does not add another count prefix.
         ValueLayout::TextureUri => read_texture_uri(ctx, bytes, at, id),
         ValueLayout::Multiple(carrier) => {
-            let count = read_count(bytes, at, id)?;
+            let count = read_count(ctx, bytes, at, id)?;
             let mut values = ctx.collection_vec(count, "Protein multiple property members")?;
             for _ in 0..count {
                 values.push(read_value(ctx, bytes, at, carrier, id)?);
@@ -737,7 +737,7 @@ fn read_texture_uri(
             "Protein TextureURI property {id} has invalid kind {kind}"
         )));
     }
-    let count = read_count(bytes, at, id)?;
+    let count = read_count(ctx, bytes, at, id)?;
     let mut paths = ctx.collection_vec(count, "Protein texture URI paths")?;
     for _ in 0..count {
         paths.push(take_lp_utf8_capped(ctx, bytes, at, 1_048_576)?.ok_or_else(malformed)?);
@@ -745,15 +745,15 @@ fn read_texture_uri(
     Ok(PropertyValue::TextureUri(paths))
 }
 
-fn read_count(bytes: &[u8], at: &mut usize, id: &str) -> Result<usize, CodecError> {
+fn read_count(ctx: &DecodeContext<'_>, bytes: &[u8], at: &mut usize, id: &str) -> Result<usize, CodecError> {
     let count = usize::try_from(read_u32_le(bytes, at).ok_or_else(|| {
         CodecError::malformed(format_args!("Protein property {id} is truncated"))
     })?)
     .map_err(|_| CodecError::Malformed("Protein value count exceeds usize".into()))?;
-    if count > 1_024 {
-        return Err(CodecError::malformed(format_args!(
-            "Protein property {id} has implausible value count {count}"
-        )));
+    const MAX_RECOVERY_VALUES: u64 = 1_024;
+    let population = cadmpeg_core::decode::u64_from_index(count);
+    if population > MAX_RECOVERY_VALUES {
+        return Err(ctx.refuse_codec_limit("Protein counted value recovery", MAX_RECOVERY_VALUES, population));
     }
     Ok(count)
 }
@@ -851,7 +851,7 @@ fn read_connections(
             kind[0]
         )));
     }
-    let count = read_count(bytes, at, "connection")?;
+    let count = read_count(ctx, bytes, at, "connection")?;
     let mut connections = ctx.collection_vec(count, "Protein connected asset GUIDs")?;
     for _ in 0..count {
         connections.push(
@@ -1250,6 +1250,28 @@ mod tests {
             Err(CodecError::ResourceLimit(limit))
                 if limit.dimension == ResourceDimension::CollectionItems
         ));
+    }
+
+    #[test]
+    fn large_complete_protein_lists_report_a_resource_ceiling() {
+        let mut repeated = 1_025_u32.to_le_bytes().to_vec();
+        repeated.extend(std::iter::repeat_n(0_u8, 1_025 * 4));
+        let mut paths = vec![0_u8];
+        paths.extend_from_slice(&repeated);
+        let mut connections = vec![1_u8, 1];
+        connections.extend_from_slice(&repeated);
+        with_service_context(&repeated, |ctx| {
+            let error = super::read_property(ctx, &repeated, &mut 0, super::ValueLayout::Multiple(ValueCarrier::Integer), "values").expect_err("recovery ceiling");
+            assert!(matches!(error, CodecError::ResourceLimit(limit) if matches!(limit.dimension, ResourceDimension::Codec("Protein counted value recovery"))));
+        });
+        with_service_context(&paths, |ctx| {
+            let error = read_texture_uri(ctx, &paths, &mut 0, "paths").expect_err("URI recovery ceiling");
+            assert!(matches!(error, CodecError::ResourceLimit(limit) if matches!(limit.dimension, ResourceDimension::Codec("Protein counted value recovery"))));
+        });
+        with_service_context(&connections, |ctx| {
+            let error = read_connections(ctx, &connections, &mut 0).expect_err("connection recovery ceiling");
+            assert!(matches!(error, CodecError::ResourceLimit(limit) if matches!(limit.dimension, ResourceDimension::Codec("Protein counted value recovery"))));
+        });
     }
 
     #[test]
