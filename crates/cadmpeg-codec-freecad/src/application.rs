@@ -31,7 +31,7 @@ pub(crate) fn matches_native(
 ) -> Result<bool, NativeConvertError> {
     let mut expected = wire_records(ctx, objects, properties, entries)?;
     expected.sort_by(|left, right| left.id.cmp(&right.id));
-    let mut actual = namespace.arena_iter_as::<serde_json::Value>("applications");
+    let mut actual = namespace.arena_iter_as_for_decode::<serde_json::Value>(ctx, "applications");
     for record in expected {
         let Some(actual) = actual.next() else {
             return Ok(false);

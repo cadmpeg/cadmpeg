@@ -554,7 +554,7 @@ fn reload_native_arena<T: serde::de::DeserializeOwned>(
     let Some(namespace) = ir.native.namespace("f3d") else {
         return Ok(Vec::new());
     };
-    namespace.arena_as_charged(decode, name).map_err(Into::into)
+    namespace.arena_as_for_decode(decode, name).map_err(Into::into)
 }
 
 /// Read-only indexes over the loaded `f3d` native namespace, shared by the

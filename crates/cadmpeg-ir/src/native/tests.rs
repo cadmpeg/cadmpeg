@@ -38,17 +38,11 @@ fn native_charging_writer_refuses_retained_limit_before_record_buffer_growth() {
     let (limited, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let mut writer = super::ChargingJsonWriter {
         ctx: &limited,
-        bytes: Vec::new(),
         refusal: None,
     };
-    assert!(writer.write_all(json).is_err());
-    assert!(writer.bytes.is_empty());
-    assert_eq!(writer.bytes.capacity(), 0);
-    assert!(
-        matches!(writer.refusal, Some(cadmpeg_core::CodecError::ResourceLimit(limit))
-        if limit.dimension == ResourceDimension::RetainedBytes
-            && limit.operation == "serialize native record")
-    );
+    writer.write_all(json).unwrap();
+    assert!(writer.refusal.is_none());
+    policy.limits.max_retained_bytes += cadmpeg_core::decode::u64_from_index(4 * std::mem::size_of::<NativeRecord>());
 
     let (limited, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let calls = Cell::new(0);
@@ -111,7 +105,7 @@ fn native_writer_refuses_before_serializing_later_field() {
 
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = 1;
+    policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(4 * std::mem::size_of::<NativeRecord>()) + 1;
     let (limited, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let visits = Cell::new(0);
     let record = Record {
@@ -148,7 +142,7 @@ fn native_arena_sort_scratch_refuses_materialized_limit_before_stable_sort() {
         serde_json::json!({"id":"test:native:record#same","ordinal":2}),
         serde_json::json!({"id":"test:native:record#first","ordinal":3}),
     ];
-    let scratch = u64::try_from(records.len() * std::mem::size_of::<NativeRecord>()).unwrap();
+    let scratch = u64::try_from(records.len() * std::mem::size_of::<usize>()).unwrap();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_materialized_bytes = scratch - 1;
@@ -203,7 +197,7 @@ fn native_arena_json_copy_refuses_retained_limit_before_materialization() {
         panic!("native storage must preserve the resource refusal")
     };
     assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
-    assert_eq!(limit.operation, "serialize native record");
+    assert_eq!(limit.operation, "store native record");
     assert!(namespace.arenas().is_empty());
 
     let (service, _) =
@@ -235,11 +229,11 @@ fn native_arena_typed_load_refuses_retained_limit_before_value_clone() {
 
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes =
-        u64::try_from(serde_json::to_vec(&record).unwrap().len()).unwrap() - 1;
+        cadmpeg_core::decode::u64_from_index(4 * std::mem::size_of::<serde_json::Value>()) - 1;
     let (limited, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     super::TYPED_RECORD_CLONE_COUNT.with(|count| count.set(0));
     let error = namespace
-        .arena_as_charged::<serde_json::Value>(&limited, "records")
+        .arena_as_for_decode::<serde_json::Value>(&limited, "records")
         .unwrap_err();
     super::TYPED_RECORD_CLONE_COUNT.with(|count| assert_eq!(count.get(), 0));
     assert!(matches!(
@@ -250,7 +244,7 @@ fn native_arena_typed_load_refuses_retained_limit_before_value_clone() {
     ));
     assert_eq!(
         namespace
-            .arena_as_charged::<serde_json::Value>(&service, "records")
+            .arena_as_for_decode::<serde_json::Value>(&service, "records")
             .unwrap(),
         vec![record]
     );
@@ -274,7 +268,7 @@ fn native_arena_typed_load_refuses_collection_limit_before_vec_growth() {
     let (limited, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     super::TYPED_RECORD_CLONE_COUNT.with(|count| count.set(0));
     let error = namespace
-        .arena_as_charged::<serde_json::Value>(&limited, "records")
+        .arena_as_for_decode::<serde_json::Value>(&limited, "records")
         .unwrap_err();
     super::TYPED_RECORD_CLONE_COUNT.with(|count| assert_eq!(count.get(), 0));
     assert!(matches!(
@@ -578,6 +572,11 @@ fn complete_document_refuses_duplicate_native_keys_at_every_depth() {
 
 #[test]
 fn deeply_nested_native_values_survive_every_stored_record_reader() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_recursion_depth = cadmpeg_core::decode::u64_from_index(super::MAX_NATIVE_NESTING_DEPTH + 2);
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+
     #[derive(Debug, PartialEq, Serialize, serde::Deserialize)]
     struct Record {
         id: String,
@@ -600,7 +599,7 @@ fn deeply_nested_native_values_survive_every_stored_record_reader() {
         nested: nested.clone(),
     };
     assert_eq!(NativeRecord::from_typed(&typed).unwrap(), constructed);
-    assert_eq!(constructed.to_typed::<Record>().unwrap(), typed);
+    assert_eq!(constructed.to_typed::<Record>(&ctx).unwrap(), typed);
 
     let mut document = crate::CadIr::empty();
     document
@@ -615,7 +614,7 @@ fn deeply_nested_native_values_survive_every_stored_record_reader() {
     assert_eq!(record.field("nested"), Some(nested));
     assert_eq!(record.field("missing"), None);
     assert_eq!(record.field("id"), None);
-    assert_eq!(record.to_typed::<Record>().unwrap(), typed);
+    assert_eq!(record.to_typed::<Record>(&ctx).unwrap(), typed);
     assert_eq!(
         serde_json::to_string(&admitted).unwrap(),
         serde_json::to_string(&document).unwrap()
@@ -627,6 +626,11 @@ fn deeply_nested_native_values_survive_every_stored_record_reader() {
 /// `fields`, `field`, `to_typed` and `Drop` — then descends a bounded value.
 #[test]
 fn a_field_nested_past_the_native_bound_never_enters_a_record() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_recursion_depth = cadmpeg_core::decode::u64_from_index(super::MAX_NATIVE_NESTING_DEPTH + 2);
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+
     use crate::native::{NativeConvertError, MAX_NATIVE_NESTING_DEPTH};
 
     #[derive(Debug, PartialEq, serde::Deserialize)]
@@ -654,7 +658,7 @@ fn a_field_nested_past_the_native_bound_never_enters_a_record() {
     assert_eq!(
         record(admitted.clone())
             .unwrap()
-            .to_typed::<Record>()
+            .to_typed::<Record>(&ctx)
             .unwrap(),
         Record {
             id: id.to_owned(),
@@ -1036,18 +1040,18 @@ fn native_arena_charged_load_preserves_values_and_error_context() {
     namespace.set_arena(&ctx, "records", &records).unwrap();
     assert_eq!(
         namespace
-            .arena_as_charged::<serde_json::Value>(&ctx, "records")
+            .arena_as_for_decode::<serde_json::Value>(&ctx, "records")
             .unwrap(),
         records
     );
 
     let first = namespace.arenas()["records"][0]
-        .to_typed_charged::<Record>(&ctx)
+        .to_typed::<Record>(&ctx)
         .unwrap();
     assert_eq!(first.id.as_str(), "test:native:record#first");
     assert_eq!(first.value, 7);
     let NativeConvertError::Arena { arena, source } = namespace
-        .arena_as_charged::<Record>(&ctx, "records")
+        .arena_as_for_decode::<Record>(&ctx, "records")
         .unwrap_err()
     else {
         panic!("arena error context");
@@ -1102,4 +1106,42 @@ fn native_arena_sort_refuses_work_limit() {
     assert!(matches!(cadmpeg_core::CodecError::from(error),
         cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::WorkUnits));
+}
+
+#[test]
+fn native_json_writer_has_no_storage_charge() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use std::io::Write;
+    let arena = DecodeArena::new();
+    let bytes = br#"{"id":"test:native:record#first","payload":"a retained string"}"#;
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    policy.limits.max_materialized_bytes = 0;
+    policy.limits.max_collection_items = 0;
+    policy.limits.max_work_units = cadmpeg_core::decode::u64_from_index(bytes.len());
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut writer = super::ChargingJsonWriter { ctx: &ctx, refusal: None };
+    writer.write_all(bytes).unwrap();
+    assert!(writer.refusal.is_none());
+    assert!(writer.write_all(b" ").is_err());
+    assert!(matches!(writer.refusal, Some(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.dimension == ResourceDimension::WorkUnits && limit.additional == 1));
+}
+
+#[test]
+fn native_sort_uses_only_index_permutation_storage() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    let records = [
+        serde_json::json!({"id":"test:native:record#same","ordinal":1}),
+        serde_json::json!({"id":"test:native:record#same","ordinal":2}),
+        serde_json::json!({"id":"test:native:record#first","ordinal":3}),
+    ];
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_materialized_bytes = cadmpeg_core::decode::u64_from_index(records.len() * std::mem::size_of::<usize>());
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let sorted = crate::native::arena_from(&ctx, records.iter().map(Ok::<_, crate::native::NativeConvertError>)).unwrap();
+    assert_eq!(sorted[0].id(), "test:native:record#first");
+    assert_eq!(sorted[1].field("ordinal"), Some(serde_json::json!(1)));
+    assert_eq!(sorted[2].field("ordinal"), Some(serde_json::json!(2)));
 }

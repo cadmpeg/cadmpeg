@@ -24,7 +24,7 @@ thread_local! {
 #[cfg(test)]
 pub(crate) fn test_ctx() -> DecodeContext<'static> {
     let arena = Box::leak(Box::new(cadmpeg_core::decode::DecodeArena::new()));
-    DecodeContext::from_root_bytes(&[], arena, &cadmpeg_core::decode::DecodePolicy::default())
+    DecodeContext::from_root_bytes(&[], arena, &cadmpeg_core::decode::DecodePolicy::service())
         .expect("empty test input fits the service policy")
         .0
 }
@@ -198,75 +198,25 @@ impl NativeConvertError {
     }
 }
 
-/// Holds one typed record's JSON and charges each write before its buffer grows.
+/// Charges serialized writes without retaining their bytes.
 struct ChargingJsonWriter<'a, 'b> {
     ctx: &'a DecodeContext<'b>,
-    bytes: Vec<u8>,
     refusal: Option<cadmpeg_core::CodecError>,
 }
 
 impl Write for ChargingJsonWriter<'_, '_> {
     fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
-        let work = u64::try_from(bytes.len())
-            .ok()
-            .and_then(|length| length.checked_mul(4))
-            .ok_or_else(|| {
-                self.ctx.refuse_codec_limit(
-                    "serialize native record work size",
-                    u64::MAX - 1,
-                    u64::MAX,
-                )
-            });
-        if let Err(error) =
-            work.and_then(|work| self.ctx.charge_work(work, "serialize native record"))
-        {
+        if let Err(error) = self.ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(bytes.len()),
+            "serialize native record",
+        ) {
             self.refusal = Some(error);
             return Err(std::io::Error::other("native record resource limit"));
         }
-        let needed = self.bytes.len().checked_add(bytes.len()).ok_or_else(|| {
-            self.refusal = Some(self.ctx.refuse_codec_limit(
-                "serialize native record length",
-                u64::MAX - 1,
-                u64::MAX,
-            ));
-            std::io::Error::other("native record JSON length exceeds usize")
-        })?;
-        let current_capacity = self.bytes.capacity();
-        if needed > current_capacity {
-            let next_capacity = current_capacity
-                .checked_mul(2)
-                .map_or(needed, |double| needed.max(double));
-            let additional = next_capacity - current_capacity;
-            let amount = cadmpeg_core::decode::u64_from_index(additional);
-            if let Err(error) = self.ctx.charge_retained(amount, "serialize native record") {
-                self.refusal = Some(error);
-                return Err(std::io::Error::other("native record resource limit"));
-            }
-            if self
-                .bytes
-                .try_reserve_exact(next_capacity - self.bytes.len())
-                .is_err()
-            {
-                self.refusal = Some(cadmpeg_core::CodecError::ResourceLimit(
-                    cadmpeg_core::decode::ResourceLimit::allocation_failed(
-                        cadmpeg_core::decode::ResourceDimension::Codec(
-                            "serialize native record allocation",
-                        ),
-                        u64::MAX - 1,
-                        amount,
-                        "serialize native record allocation",
-                    ),
-                ));
-                return Err(std::io::Error::other("native record allocation failed"));
-            }
-        }
-        self.bytes.extend_from_slice(bytes);
         Ok(bytes.len())
     }
 
-    fn flush(&mut self) -> std::io::Result<()> {
-        Ok(())
-    }
+    fn flush(&mut self) -> std::io::Result<()> { Ok(()) }
 }
 
 /// Schema descriptor for a native record's identity and open field map.
@@ -383,10 +333,10 @@ impl NativeRecord {
             &arena,
             &cadmpeg_core::decode::DecodePolicy::default(),
         )?;
-        Self::from_typed_with_sink(&ctx, record, None)
+        Self::from_typed_for_decode(&ctx, record, None)
     }
 
-    fn from_typed_with_sink<T: Serialize>(
+    fn from_typed_for_decode<T: Serialize>(
         ctx: &DecodeContext<'_>,
         record: &T,
         sink: Option<&dyn canon::ByteSink>,
@@ -423,14 +373,10 @@ impl NativeRecord {
     }
 
     /// Clone codec-owned fields after admitting the value tree and its bytes.
-    pub fn fields_charged(
-        &self,
-        ctx: &DecodeContext<'_>,
-    ) -> Result<Map<String, Value>, NativeConvertError> {
-        let Value::Object(mut fields) = self.to_typed_charged::<Value>(ctx)? else {
+    pub fn fields_for_decode(&self, ctx: &DecodeContext<'_>) -> Result<Map<String, Value>, NativeConvertError> {
+        let Value::Object(fields) = copy_value_for_decode(ctx, &self.fields)? else {
             return Err(NativeConvertError::NonObject);
         };
-        fields.remove("id");
         Ok(fields)
     }
 
@@ -442,223 +388,36 @@ impl NativeRecord {
         self.fields.get(name).cloned()
     }
 
-    /// Deserialize the record into a codec-owned typed record.
-    ///
-    /// `serde_json::from_value` descends the value with no recursion counter.
-    /// It needs none: a stored field entered through [`Self::new`], which
-    /// measures it, so the descent is already inside
-    /// [`MAX_NATIVE_NESTING_DEPTH`].
-    fn to_typed<T: DeserializeOwned>(&self) -> Result<T, NativeConvertError> {
+    fn to_typed<T: DeserializeOwned>(&self, ctx: &DecodeContext<'_>) -> Result<T, NativeConvertError> {
+        let record = copy_value_for_decode(ctx, self)?;
         #[cfg(test)]
         TYPED_RECORD_CLONE_COUNT.with(|count| count.set(count.get() + 1));
-        let mut record = self.fields.clone();
-        record.insert("id".to_owned(), Value::String(self.id.as_str().to_owned()));
-        serde_json::from_value(Value::Object(record)).map_err(|source| {
-            NativeConvertError::ReadRecord {
-                id: self.id.clone(),
-                source,
-            }
-        })
-    }
-
-    fn to_typed_charged<T: DeserializeOwned>(
-        &self,
-        ctx: &DecodeContext<'_>,
-    ) -> Result<T, NativeConvertError> {
-        struct ByteCount {
-            bytes: u64,
-            overflowed: bool,
-        }
-
-        impl std::io::Write for ByteCount {
-            fn write(&mut self, buffer: &[u8]) -> std::io::Result<usize> {
-                let next = self
-                    .bytes
-                    .checked_add(cadmpeg_core::decode::u64_from_index(buffer.len()));
-                let Some(next) = next else {
-                    self.overflowed = true;
-                    return Err(std::io::Error::other("native record byte count overflow"));
-                };
-                self.bytes = next;
-                Ok(buffer.len())
-            }
-
-            fn flush(&mut self) -> std::io::Result<()> {
-                Ok(())
-            }
-        }
-
-        fn charge_value_tree(
-            ctx: &DecodeContext<'_>,
-            value: &Value,
-        ) -> Result<(), cadmpeg_core::CodecError> {
-            let _depth = ctx.enter_nested("load native record value")?;
-            ctx.charge_work(3, "inspect native record value")?;
-            let children: &[Value] = match value {
-                Value::Array(values) => values,
-                Value::Object(values) => {
-                    ctx.charge_collection_items(
-                        cadmpeg_core::decode::u64_from_index(values.len()),
-                        "load native record object fields",
-                    )?;
-                    charge_map_work(ctx, values)?;
-                    for (key, child) in values {
-                        charge_text_work(ctx, key)?;
-                        charge_value_tree(ctx, child)?;
-                    }
-                    return Ok(());
-                }
-                Value::String(text) => {
-                    charge_text_work(ctx, text)?;
-                    return Ok(());
-                }
-                _ => return Ok(()),
-            };
-            ctx.charge_collection_items(
-                cadmpeg_core::decode::u64_from_index(children.len()),
-                "load native record array elements",
-            )?;
-            for child in children {
-                charge_value_tree(ctx, child)?;
-            }
-            Ok(())
-        }
-
-        fn charge_map_work(
-            ctx: &DecodeContext<'_>,
-            values: &Map<String, Value>,
-        ) -> Result<(), cadmpeg_core::CodecError> {
-            let levels = if values.len() > 1 {
-                values.len().ilog2() + 1
-            } else {
-                1
-            };
-            for key in values.keys() {
-                let work = u64::try_from(key.len())
-                    .ok()
-                    .and_then(|length| length.checked_add(1))
-                    .and_then(|length| length.checked_mul(u64::from(levels)))
-                    .ok_or_else(|| {
-                        ctx.refuse_codec_limit("copy native record object", u64::MAX - 1, u64::MAX)
-                    })?;
-                ctx.charge_work(work, "copy native record object")?;
-            }
-            Ok(())
-        }
-
-        fn charge_text_work(
-            ctx: &DecodeContext<'_>,
-            text: &str,
-        ) -> Result<(), cadmpeg_core::CodecError> {
-            let work = u64::try_from(text.len())
-                .ok()
-                .and_then(|length| length.checked_mul(12))
-                .and_then(|work| work.checked_add(1))
-                .ok_or_else(|| {
-                    ctx.refuse_codec_limit("inspect native record text", u64::MAX - 1, u64::MAX)
-                })?;
-            ctx.charge_work(work, "inspect native record text")
-        }
-
-        fn copy_admitted_text(
-            ctx: &DecodeContext<'_>,
-            text: &str,
-        ) -> Result<String, cadmpeg_core::CodecError> {
-            let mut copy = String::new();
-            copy.try_reserve_exact(text.len()).map_err(|_| {
-                ctx.refuse_codec_limit("load typed native record", u64::MAX - 1, u64::MAX)
-            })?;
-            copy.push_str(text);
-            Ok(copy)
-        }
-
-        fn copy_admitted_value(
-            ctx: &DecodeContext<'_>,
-            value: &Value,
-        ) -> Result<Value, cadmpeg_core::CodecError> {
-            let _depth = ctx.enter_nested("load native record value")?;
-            Ok(match value {
-                Value::Null => Value::Null,
-                Value::Bool(value) => Value::Bool(*value),
-                Value::Number(value) => Value::Number(value.clone()),
-                Value::String(value) => Value::String(copy_admitted_text(ctx, value)?),
-                Value::Array(values) => {
-                    let mut copied = Vec::new();
-                    copied.try_reserve_exact(values.len()).map_err(|_| {
-                        ctx.refuse_codec_limit(
-                            "load native record array elements",
-                            u64::MAX - 1,
-                            u64::MAX,
-                        )
-                    })?;
-                    for value in values {
-                        copied.push(copy_admitted_value(ctx, value)?);
-                    }
-                    Value::Array(copied)
-                }
-                Value::Object(values) => {
-                    let mut copied = Map::new();
-                    for (key, value) in values {
-                        copied.insert(
-                            copy_admitted_text(ctx, key)?,
-                            copy_admitted_value(ctx, value)?,
-                        );
-                    }
-                    Value::Object(copied)
-                }
-            })
-        }
-
-        ctx.charge_collection_items(1, "load typed native record")?;
-        ctx.charge_collection_items(
-            cadmpeg_core::decode::u64_from_index(self.fields.len()),
-            "load native record fields",
-        )?;
-        ctx.charge_collection_items(1, "load native record identity field")?;
-        charge_text_work(ctx, self.id.as_str())?;
-        charge_map_work(ctx, &self.fields)?;
-        for (key, value) in &self.fields {
-            charge_text_work(ctx, key)?;
-            charge_value_tree(ctx, value)?;
-        }
-        let mut counter = ByteCount {
-            bytes: 0,
-            overflowed: false,
-        };
-        let counted = serde_json::to_writer(&mut counter, self);
-        if counter.overflowed {
-            return Err(ctx
-                .refuse_codec_limit("native record byte count", u64::MAX - 1, u64::MAX)
-                .into());
-        }
-        counted?;
-        ctx.charge_retained(counter.bytes, "load typed native record")?;
-        #[cfg(test)]
-        TYPED_RECORD_CLONE_COUNT.with(|count| count.set(count.get() + 1));
-        let mut record = Map::new();
-        for (key, value) in &self.fields {
-            record.insert(
-                copy_admitted_text(ctx, key)?,
-                copy_admitted_value(ctx, value)?,
-            );
-        }
-        record.insert(
-            copy_admitted_text(ctx, "id")?,
-            Value::String(copy_admitted_text(ctx, self.id.as_str())?),
-        );
-        match serde_json::from_value(Value::Object(record)) {
+        match serde_json::from_value(record) {
             Ok(value) => Ok(value),
-            Err(source) => {
-                charge_text_work(ctx, self.id.as_str())?;
-                let id = ctx.format_retained(
-                    format_args!("{}", self.id.as_str()),
-                    "retain native record error identity",
-                )?;
-                Err(NativeConvertError::ReadRecord {
-                    id: crate::ids::Identity::new(id)?,
-                    source,
-                })
-            }
+            Err(source) => Err(NativeConvertError::ReadRecord {
+                id: self.id.try_clone_for_decode(ctx, "retain native record error identity")?,
+                source,
+            }),
+        }
+    }
+}
+
+/// Copies a value through the canonical serializer's charged allocations.
+fn copy_value_for_decode<T: Serialize + ?Sized>(ctx: &DecodeContext<'_>, value: &T) -> Result<Value, NativeConvertError> {
+    let copied = value.serialize(canon::CanonValue::for_record_with_sink(ctx, None));
+    ctx.charge_work(0, "construct canonical native value")?;
+    Ok(copied.map_err(|error| error.into_native(ctx))?.into_value())
+}
+
+/// Adds an arena name to a semantic typed-record refusal.
+fn read_record<T: DeserializeOwned>(ctx: &DecodeContext<'_>, arena: &str, record: &NativeRecord) -> Result<T, NativeConvertError> {
+    match record.to_typed(ctx) {
+        Ok(value) => Ok(value),
+        Err(source) if source.resource_limit().is_some() => Err(source),
+        Err(source) => {
+            let arena = ctx.copy_retained_text(arena, "retain native arena error name")?;
+            ctx.charge_retained(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<NativeConvertError>()), "retain native arena error")?;
+            Err(NativeConvertError::Arena { arena, source: Box::new(source) })
         }
     }
 }
@@ -728,15 +487,14 @@ where
     let mut converted = Vec::new();
     for (ordinal, record) in records.into_iter().enumerate() {
         let record = record?;
-        ctx.reserve_vec(&mut converted, 1, "store native record")
+        ctx.reserve_retained_vec(&mut converted, 1, "store native record")
             .map_err(|error| E::from(NativeConvertError::Resource(error)))?;
         let writer = RefCell::new(ChargingJsonWriter {
             ctx,
-            bytes: Vec::new(),
             refusal: None,
         });
         let sink = |bytes: &[u8]| writer.borrow_mut().write_all(bytes);
-        let result = NativeRecord::from_typed_with_sink(ctx, &record, Some(&sink));
+        let result = NativeRecord::from_typed_for_decode(ctx, &record, Some(&sink));
         let record = match result {
             Ok(record) => record,
             Err(error) => {
@@ -745,6 +503,13 @@ where
                     .refusal
                     .take()
                     .map_or(error, NativeConvertError::Resource);
+                if source.resource_limit().is_some() {
+                    return Err(E::from(source));
+                }
+                ctx.charge_retained(
+                    cadmpeg_core::decode::u64_from_index(std::mem::size_of::<NativeConvertError>()),
+                    "retain native write error",
+                ).map_err(|error| E::from(NativeConvertError::Resource(error)))?;
                 return Err(E::from(NativeConvertError::WriteRecord {
                     ordinal,
                     source: Box::new(source),
@@ -755,7 +520,7 @@ where
     }
     let scratch_bytes = converted
         .len()
-        .checked_mul(std::mem::size_of::<NativeRecord>())
+        .checked_mul(std::mem::size_of::<usize>())
         .map(cadmpeg_core::decode::u64_from_index)
         .ok_or_else(|| {
             E::from(NativeConvertError::Resource(ctx.refuse_codec_limit(
@@ -899,64 +664,35 @@ impl NativeNamespace {
 
     /// Admit an arena through a codec-owned collection constructor.
     pub fn arena_as_collection<T, C>(&self, name: &str) -> Result<C, NativeConvertError>
-    where
-        T: DeserializeOwned,
-        C: TryFrom<Vec<T>, Error = NativeConvertError>,
-    {
-        C::try_from(self.arena_as(name)?)
+    where T: DeserializeOwned, C: TryFrom<Vec<T>, Error = NativeConvertError> {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let policy = cadmpeg_core::decode::DecodePolicy::default();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
+        self.arena_as_collection_for_decode(&ctx, name)
+    }
+
+    /// Admits a typed collection using the caller's decode budget.
+    pub fn arena_as_collection_for_decode<T, C>(&self, ctx: &DecodeContext<'_>, name: &str) -> Result<C, NativeConvertError>
+    where T: DeserializeOwned, C: TryFrom<Vec<T>, Error = NativeConvertError> {
+        C::try_from(self.arena_as_for_decode(ctx, name)?)
     }
 
     /// Deserialize an arena into codec-owned typed records.
     pub fn arena_as<T: DeserializeOwned>(&self, name: &str) -> Result<Vec<T>, NativeConvertError> {
-        self.arena_iter_as(name).collect()
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let policy = cadmpeg_core::decode::DecodePolicy::default();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
+        self.arena_as_for_decode(&ctx, name)
     }
 
     /// Deserialize one arena with admission before each retained typed copy.
-    pub fn arena_as_charged<T: DeserializeOwned>(
-        &self,
-        ctx: &DecodeContext<'_>,
-        name: &str,
-    ) -> Result<Vec<T>, NativeConvertError> {
-        let Some((arena, records)) = self.arenas.get_key_value(name) else {
-            return Ok(Vec::new());
-        };
+    pub fn arena_as_for_decode<T: DeserializeOwned>(&self, ctx: &DecodeContext<'_>, name: &str) -> Result<Vec<T>, NativeConvertError> {
         let mut typed = Vec::new();
-        for record in records {
-            let value = match record.to_typed_charged(ctx) {
-                Ok(value) => value,
-                Err(source) if source.resource_limit().is_some() => return Err(source),
-                Err(source) => {
-                    ctx.charge_work(
-                        u64::try_from(arena.len()).map_err(|_| {
-                            ctx.refuse_codec_limit(
-                                "retain native arena error name",
-                                u64::MAX - 1,
-                                u64::MAX,
-                            )
-                        })?,
-                        "retain native arena error name",
-                    )?;
-                    let arena = ctx.format_retained(
-                        format_args!("{arena}"),
-                        "retain native arena error name",
-                    )?;
-                    return Err(NativeConvertError::Arena {
-                        arena,
-                        source: Box::new(source),
-                    });
-                }
-            };
-            typed.try_reserve(1).map_err(|_| {
-                NativeConvertError::Resource(cadmpeg_core::CodecError::ResourceLimit(
-                    cadmpeg_core::decode::ResourceLimit::allocation_failed(
-                        cadmpeg_core::decode::ResourceDimension::Codec("load typed native record"),
-                        0,
-                        1,
-                        "load typed native record",
-                    ),
-                ))
-            })?;
-            typed.push(value);
+        if let Some((arena, records)) = self.arenas.get_key_value(name) {
+            for record in records {
+                ctx.reserve_retained_vec(&mut typed, 1, "load typed native record")?;
+                typed.push(read_record(ctx, arena, record)?);
+            }
         }
         Ok(typed)
     }
@@ -967,23 +703,22 @@ impl NativeNamespace {
     /// caller that consumes and releases each one — reshaping an arena, or
     /// reducing it for hashing — never holds the typed population alongside
     /// whatever it produces from it.
-    pub fn arena_iter_as<'a, T: DeserializeOwned + 'a>(
-        &'a self,
-        name: &str,
-    ) -> impl Iterator<Item = Result<T, NativeConvertError>> + 'a {
-        self.arenas
-            .get_key_value(name)
-            .into_iter()
-            .flat_map(|(arena, records)| {
-                records.iter().map(move |record| {
-                    record
-                        .to_typed()
-                        .map_err(|source| NativeConvertError::Arena {
-                            arena: arena.clone(),
-                            source: Box::new(source),
-                        })
-                })
+    pub fn arena_iter_as<'a, T: DeserializeOwned + 'a>(&'a self, name: &str) -> impl Iterator<Item = Result<T, NativeConvertError>> + 'a {
+        self.arenas.get_key_value(name).into_iter().flat_map(|(name, records)| {
+            records.iter().map(move |record| {
+                let arena = cadmpeg_core::decode::DecodeArena::new();
+                let policy = cadmpeg_core::decode::DecodePolicy::default();
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
+                read_record(&ctx, name, record)
             })
+        })
+    }
+
+    /// Reads typed records lazily using the caller's decode budget.
+    pub fn arena_iter_as_for_decode<'a, T: DeserializeOwned + 'a>(&'a self, ctx: &'a DecodeContext<'_>, name: &str) -> impl Iterator<Item = Result<T, NativeConvertError>> + 'a {
+        self.arenas.get_key_value(name).into_iter().flat_map(move |(arena, records)| {
+            records.iter().map(move |record| read_record(ctx, arena, record))
+        })
     }
 }
 
