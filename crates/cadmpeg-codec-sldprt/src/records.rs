@@ -2125,6 +2125,7 @@ impl SketchRelationKind {
 
 #[cfg(test)]
 mod tests {
+    use super::PmiDimension;
     use cadmpeg_test_support::refusal::{refusal, states_the_key};
 
     #[test]
@@ -2688,6 +2689,29 @@ mod tests {
         for key in ["source_id", "input_class", "text"] {
             states_the_key(key, &refusal::<super::Feature>(key));
         }
+    }
+
+    #[test]
+    fn pmi_dimension_count_refuses_zero_and_keeps_the_default_wire() {
+        let dimension = PmiDimension {
+            id: "dimension".into(), parent: "block".into(), offset: 0, guid: "guid".into(), cad_text: "D1@Pattern1".into(),
+            item_count: std::num::NonZeroU32::MIN, subtype: "".into(),
+            value: cadmpeg_ir::scalar::FiniteReal::new(1.0).expect("finite test dimension"),
+            value_offset: 0, precision: 0, precision_offset: 0, display_text: None,
+            basic: false, basic_offset: 0, inspection: false, inspection_offset: 0,
+            reference_only: false, reference_only_offset: 0,
+        };
+        let wire = serde_json::to_value(&dimension).unwrap();
+        assert!(wire.get("item_count").is_none());
+        let decoded: PmiDimension = serde_json::from_value(wire.clone()).unwrap();
+        assert_eq!(decoded, dimension);
+        let mut explicit = wire.clone();
+        explicit["item_count"] = serde_json::json!(1);
+        let decoded: PmiDimension = serde_json::from_value(explicit).unwrap();
+        assert_eq!(serde_json::to_value(decoded).unwrap(), wire);
+        let mut zero = wire;
+        zero["item_count"] = serde_json::json!(0);
+        assert!(serde_json::from_value::<PmiDimension>(zero).is_err());
     }
 }
 
