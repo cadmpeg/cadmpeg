@@ -117,7 +117,9 @@ fn insert_attribute(
     value: String,
 ) -> Result<(), CodecError> {
     ctx.charge_collection_items(1, "step_inspect_attributes")?;
-    attributes.insert(key.into(), value);
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(key.len()), "step_inspect_attribute_key")?;
+    let key = ctx.copy_retained_text(key, "step_inspect_attribute_key")?;
+    attributes.insert(key, value);
     Ok(())
 }
 
@@ -178,7 +180,7 @@ fn inspect_parsed_exchange(
             ctx,
             &mut attributes,
             "anchor_count",
-            exchange.anchors().len().to_string(),
+            ctx.format_retained(format_args!("{}", exchange.anchors().len()), "step_inspect_attribute_count")?,
         )?;
         ctx.push_vec(
             &mut entries,
@@ -197,7 +199,7 @@ fn inspect_parsed_exchange(
             ctx,
             &mut attributes,
             "external_count",
-            exchange.references().len().to_string(),
+            ctx.format_retained(format_args!("{}", exchange.references().len()), "step_inspect_attribute_count")?,
         )?;
         insert_attribute(
             ctx,
@@ -248,7 +250,7 @@ fn inspect_parsed_exchange(
             ctx,
             &mut attributes,
             "entity_count",
-            section.records.len().to_string(),
+            ctx.format_retained(format_args!("{}", section.records.len()), "step_inspect_attribute_count")?,
         )?;
         insert_attribute(ctx, &mut attributes, "unknown_entities", unknown)?;
         ctx.push_vec(
@@ -272,7 +274,7 @@ fn inspect_parsed_exchange(
             ctx,
             &mut attributes,
             "dependency_count",
-            dependency_count.to_string(),
+            ctx.format_retained(format_args!("{}", dependency_count), "step_inspect_attribute_count")?,
         )?;
         insert_attribute(
             ctx,
@@ -713,6 +715,30 @@ mod tests {
     use cadmpeg_ir::codec::{Codec, Confidence, DecodeOptions};
 
     use super::{insert_attribute, starts_with_step_magic, StepCodec};
+
+    const INSPECTION_TEXT_SOURCE: &[u8] = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;";
+
+    #[test]
+    fn inspection_count_text_refuses_retained_limit() {
+        inspect_text_refuses(INSPECTION_TEXT_SOURCE, "step_inspect_attribute_count");
+    }
+
+    #[test]
+    fn inspection_attribute_key_refuses_retained_limit() {
+        inspect_text_refuses(INSPECTION_TEXT_SOURCE, "step_inspect_attribute_key");
+    }
+
+    #[test]
+    fn inspection_owned_attribute_value_is_not_charged_twice() {
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_retained_bytes = 13;
+        crate::test_support::with_policy_context(b"", &policy, |_, ctx| {
+            let mut attributes = std::collections::BTreeMap::new();
+            let value = ctx.copy_retained_text("1", "step_test_attribute_value").expect("one-byte value");
+            insert_attribute(ctx, &mut attributes, "entity_count", value).expect("twelve-byte key fits once");
+            assert_eq!(attributes["entity_count"], "1");
+        });
+    }
 
     #[test]
     fn inspect_attribute_refuses_collection_limit() {
