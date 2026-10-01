@@ -1836,3 +1836,5 @@ mod patterns;
 mod resource_limits;
 
 mod materials;
+
+mod utf16;
