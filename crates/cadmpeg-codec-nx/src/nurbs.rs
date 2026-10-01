@@ -70,20 +70,25 @@ pub(crate) fn surfaces(
     let descriptors = surface_descriptors(ctx, bytes)?;
     let graph = Graph::parse(ctx, bytes)?;
     let mut refusals = Vec::new();
-    let surfaces = decode_surfaces(&graph, &arrays, &payloads, &descriptors, &mut refusals);
+    let surfaces = decode_surfaces(ctx, &graph, &arrays, &payloads, &descriptors, &mut refusals)?;
     Ok((surfaces, refusals))
 }
 
 fn decode_surfaces(
+    ctx: &DecodeContext<'_>,
     graph: &Graph,
     arrays: &Arrays<'_, '_>,
     payloads: &BTreeMap<u32, Option<Payload<'_>>>,
     descriptors: &BTreeMap<u32, Option<SurfaceDescriptor>>,
     refusals: &mut Vec<CarrierRefusal>,
-) -> Vec<Surface> {
-    graph
-        .of_kind(NodeKind::BSurface)
-        .filter_map(|node| {
+) -> Result<Vec<Surface>, CodecError> {
+    let mut records = Vec::new();
+    for node in graph.of_kind_charged(ctx, NodeKind::BSurface)? {
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(descriptors.len()), "resolve NX NURBS descriptor")?;
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(payloads.len()), "resolve NX NURBS payload")?;
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(arrays.u16s.len()), "resolve NX NURBS multiplicities")?;
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(arrays.f64s.len()), "resolve NX NURBS knots")?;
+        let candidate: Option<Result<_, CodecError>> = (|| {
             let refs = node.compact_tail_references::<2>()?;
             let descriptor = descriptors.get(&refs[0])?.as_ref()?;
             descriptor
@@ -98,99 +103,92 @@ fn decode_surfaces(
             if !(stride == 3 || stride == 4) || value_count != expected_values {
                 return None;
             }
-            let u_mult = arrays
+            let (u_mult, _u_mult_reservation) = propagate_resource!(arrays
                 .u16s
                 .get(&descriptor.u_mult)?.as_ref()?
-                .u16_prefix(descriptor.u_distinct)?;
-            let v_mult = arrays
+                .u16_prefix(ctx, descriptor.u_distinct))?;
+            let (v_mult, _v_mult_reservation) = propagate_resource!(arrays
                 .u16s
                 .get(&descriptor.v_mult)?.as_ref()?
-                .u16_prefix(descriptor.v_distinct)?;
-            let u_knots = arrays
+                .u16_prefix(ctx, descriptor.v_distinct))?;
+            let (u_knots, _u_knots_reservation) = propagate_resource!(arrays
                 .f64s
                 .get(&descriptor.u_knots)?.as_ref()?
-                .f64_prefix(descriptor.u_distinct)?;
-            let v_knots = arrays
+                .f64_prefix(ctx, descriptor.u_distinct))?;
+            let (v_knots, _v_knots_reservation) = propagate_resource!(arrays
                 .f64s
                 .get(&descriptor.v_knots)?.as_ref()?
-                .f64_prefix(descriptor.v_distinct)?;
-            let full_u = expand_knots(
+                .f64_prefix(ctx, descriptor.v_distinct))?;
+            let full_u = propagate_resource!(expand_knots(ctx,
                 &u_knots,
                 &u_mult,
                 required_knot_count(descriptor.u_degree, descriptor.u_count)?,
-            )?;
-            let full_v = expand_knots(
+            ))?;
+            let full_v = propagate_resource!(expand_knots(ctx,
                 &v_knots,
                 &v_mult,
                 required_knot_count(descriptor.v_degree, descriptor.v_count)?,
-            )?;
+            ))?;
             valid_basis(descriptor.u_degree, descriptor.u_count, &full_u)?;
             valid_basis(descriptor.v_degree, descriptor.v_count, &full_v)?;
-            let mut control_points = Vec::new();
-            let mut weights = (stride == 4).then(Vec::new);
-            for pole_index in 0..poles {
-                let base = pole_index.checked_mul(stride)?;
-                let weight = NonZeroReal::new(if stride == 4 {
-                    payload.value_at(base.checked_add(3)?)?
-                } else {
-                    1.0
-                })?;
-                let pole = [
-                    payload.value_at(base)?,
-                    payload.value_at(base.checked_add(1)?)?,
-                    payload.value_at(base.checked_add(2)?)?,
-                ];
-                control_points.push(weighted_mm_point(pole, weight)?);
-                if let Some(weights) = &mut weights {
-                    weights.push(weight);
+            propagate_resource!(ctx.charge_work(cadmpeg_core::decode::u64_from_index(poles), "materialize NX NURBS poles"));
+            let pole_at = |index: usize| {
+                let base = index.checked_mul(stride)?;
+                let weight = NonZeroReal::new(if stride == 4 { payload.value_at(base.checked_add(3)?)? } else { 1.0 })?;
+                let point = weighted_mm_point([payload.value_at(base)?, payload.value_at(base.checked_add(1)?)?, payload.value_at(base.checked_add(2)?)?], weight)?;
+                Some((point, weight))
+            };
+            let poles = if stride == 4 {
+                let mut rows = propagate_resource!(ctx.retained_vec(descriptor.u_count, "NX NURBS rational grid rows"));
+                for row in 0..descriptor.u_count {
+                    let mut points = propagate_resource!(ctx.retained_vec(descriptor.v_count, "NX NURBS rational poles"));
+                    for column in 0..descriptor.v_count {
+                        let (point, weight) = pole_at(row.checked_mul(descriptor.v_count)?.checked_add(column)?)?;
+                        points.push(cadmpeg_ir::geometry::nurbs::WeightedPole3 { point, weight });
+                    }
+                    rows.push(points);
                 }
-            }
+                NurbsPoleGrid::Rational { rows }
+            } else {
+                let mut rows = propagate_resource!(ctx.retained_vec(descriptor.u_count, "NX NURBS polynomial grid rows"));
+                for row in 0..descriptor.u_count {
+                    let mut points = propagate_resource!(ctx.retained_vec(descriptor.v_count, "NX NURBS polynomial poles"));
+                    for column in 0..descriptor.v_count {
+                        points.push(pole_at(row.checked_mul(descriptor.v_count)?.checked_add(column)?)?.0);
+                    }
+                    rows.push(points);
+                }
+                NurbsPoleGrid::Polynomial { rows }
+            };
             let normal_reversed = node.common_header()?.0 == cadmpeg_ir::topology::Sense::Reversed;
-            let surface = NurbsPoleGrid::from_checked_lanes(
-                control_points
-                    .chunks(descriptor.v_count)
-                    .map(<[_]>::to_vec)
-                    .collect(),
-                weights.map(|values| {
-                    values
-                        .chunks(descriptor.v_count)
-                        .map(<[_]>::to_vec)
-                        .collect()
-                }),
-            )
-            .and_then(|poles| {
-                NurbsSurface::new(
-                    NurbsSurfaceAxis::new(
-                        u32::from(descriptor.u_degree),
-                        full_u,
-                        descriptor.u_periodic,
-                    ),
-                    NurbsSurfaceAxis::new(
-                        u32::from(descriptor.v_degree),
-                        full_v,
-                        descriptor.v_periodic,
-                    ),
-                    poles,
-                    normal_reversed,
-                )
-            });
+            propagate_resource!(ctx.charge_work(cadmpeg_core::decode::u64_from_index(propagate_resource!(full_u.len().checked_add(full_v.len()).and_then(|count| count.checked_mul(2)).and_then(|count| count.checked_add(descriptor.u_count)).ok_or_else(|| ctx.refuse_codec_limit("validate NX NURBS surface", u64::MAX, u64::MAX)))), "validate NX NURBS surface"));
+            let surface = NurbsSurface::new(
+                NurbsSurfaceAxis::new(u32::from(descriptor.u_degree), full_u, descriptor.u_periodic),
+                NurbsSurfaceAxis::new(u32::from(descriptor.v_degree), full_v, descriptor.v_periodic),
+                poles, normal_reversed,
+            );
             let surface = match surface {
                 Ok(surface) => surface,
+                Err(NurbsError::ResourceLimit(limit)) => return Some(Err(limit.into())),
                 Err(error) => {
-                    refusals.push(CarrierRefusal {
+                    propagate_resource!(ctx.push_retained_vec(refusals, CarrierRefusal {
                         pos: node.pos,
                         family: "B_SURFACE",
                         error,
-                    });
+                    }, "NX NURBS carrier refusals"));
                     return None;
                 }
             };
-            Some(Surface {
+            Some(Ok(Surface {
                 pos: node.pos,
                 geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)),
-            })
-        })
-        .collect()
+            }))
+        })();
+        if let Some(record) = candidate.transpose()? {
+            ctx.push_retained_vec(&mut records, record, "NX NURBS geometry records")?;
+        }
+    }
+    Ok(records)
 }
 
 /// Decode dimension-2 `B_CURVE` families as surface parameter-space curves.
@@ -204,20 +202,25 @@ pub(crate) fn pcurves(
     let descriptors = curve_descriptors(ctx, bytes)?;
     let graph = Graph::parse(ctx, bytes)?;
     let mut refusals = Vec::new();
-    let pcurves = decode_pcurves(&graph, &arrays, &controls, &descriptors, &mut refusals);
+    let pcurves = decode_pcurves(ctx, &graph, &arrays, &controls, &descriptors, &mut refusals)?;
     Ok((pcurves, refusals))
 }
 
 fn decode_pcurves(
+    ctx: &DecodeContext<'_>,
     graph: &Graph,
     arrays: &Arrays<'_, '_>,
     controls: &BTreeMap<u32, Option<Payload<'_>>>,
     descriptors: &BTreeMap<u32, Option<CurveDescriptor>>,
     refusals: &mut Vec<CarrierRefusal>,
-) -> Vec<Pcurve> {
-    graph
-        .of_kind(NodeKind::BCurve)
-        .filter_map(|node| {
+) -> Result<Vec<Pcurve>, CodecError> {
+    let mut records = Vec::new();
+    for node in graph.of_kind_charged(ctx, NodeKind::BCurve)? {
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(descriptors.len()), "resolve NX NURBS descriptor")?;
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(controls.len()), "resolve NX NURBS payload")?;
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(arrays.u16s.len()), "resolve NX NURBS multiplicities")?;
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(arrays.f64s.len()), "resolve NX NURBS knots")?;
+        let candidate: Option<Result<_, CodecError>> = (|| {
             let refs = node.compact_tail_references::<2>()?;
             let descriptor = descriptors.get(&refs[0])?.as_ref()?;
             (descriptor.basis.dimension == 2).then_some(())?;
@@ -228,67 +231,63 @@ fn decode_pcurves(
             if !(stride == 2 || stride == 3) || value_count != expected_values {
                 return None;
             }
-            let mult = arrays
+            let (mult, _mult_reservation) = propagate_resource!(arrays
                 .u16s
                 .get(&descriptor.references.multiplicities())?.as_ref()?
-                .u16_prefix(descriptor.basis.distinct)?;
-            let distinct = arrays
+                .u16_prefix(ctx, descriptor.basis.distinct))?;
+            let (distinct, _distinct_reservation) = propagate_resource!(arrays
                 .f64s
                 .get(&descriptor.references.knots())?.as_ref()?
-                .f64_prefix(descriptor.basis.distinct)?;
-            let knots = expand_knots(
+                .f64_prefix(ctx, descriptor.basis.distinct))?;
+            let knots = propagate_resource!(expand_knots(ctx,
                 &distinct,
                 &mult,
                 required_knot_count(descriptor.basis.degree, descriptor.basis.poles)?,
-            )?;
+            ))?;
             valid_basis(descriptor.basis.degree, descriptor.basis.poles, &knots)?;
-            let mut control_points = Vec::new();
-            let mut weights = (stride == 3).then(Vec::new);
-            for pole_index in 0..descriptor.basis.poles {
-                let base = pole_index.checked_mul(stride)?;
-                let weight = NonZeroReal::new(if stride == 3 {
-                    control.value_at(base.checked_add(2)?)?
-                } else {
-                    1.0
-                })?;
-                let pole = [
-                    control.value_at(base)?,
-                    control.value_at(base.checked_add(1)?)?,
-                ];
-                control_points.push(weighted_point2(pole, weight)?);
-                if let Some(weights) = &mut weights {
-                    weights.push(weight);
+            propagate_resource!(ctx.charge_work(cadmpeg_core::decode::u64_from_index(descriptor.basis.poles), "materialize NX NURBS poles"));
+            let pole_at = |index: usize| {
+                let base = index.checked_mul(stride)?;
+                let weight = NonZeroReal::new(if stride == 3 { control.value_at(base.checked_add(2)?)? } else { 1.0 })?;
+                let point = weighted_point2([control.value_at(base)?, control.value_at(base.checked_add(1)?)?], weight)?;
+                Some((point, weight))
+            };
+            let poles = if stride == 3 {
+                let mut points = propagate_resource!(ctx.retained_vec(descriptor.basis.poles, "NX NURBS rational poles"));
+                for index in 0..descriptor.basis.poles {
+                    let (point, weight) = pole_at(index)?;
+                    points.push(cadmpeg_ir::geometry::pcurve::WeightedPole2 { point, weight });
                 }
-            }
-            let nurbs = cadmpeg_ir::geometry::pcurve::PcurveNurbsPoles::from_checked_lanes(
-                control_points,
-                weights,
-            )
-            .and_then(|poles| {
-                cadmpeg_ir::geometry::pcurve::PcurveNurbs::new(
-                    u32::from(descriptor.basis.degree),
-                    knots,
-                    poles,
-                    descriptor.basis.periodic,
-                )
-            });
+                cadmpeg_ir::geometry::pcurve::PcurveNurbsPoles::Rational { points }
+            } else {
+                let mut points = propagate_resource!(ctx.retained_vec(descriptor.basis.poles, "NX NURBS polynomial poles"));
+                for index in 0..descriptor.basis.poles { points.push(pole_at(index)?.0); }
+                cadmpeg_ir::geometry::pcurve::PcurveNurbsPoles::Polynomial { points }
+            };
+            propagate_resource!(ctx.charge_work(cadmpeg_core::decode::u64_from_index(propagate_resource!(knots.len().checked_mul(2).ok_or_else(|| ctx.refuse_codec_limit("validate NX NURBS curve", u64::MAX, u64::MAX)))), "validate NX NURBS curve"));
+            let nurbs = cadmpeg_ir::geometry::pcurve::PcurveNurbs::new(u32::from(descriptor.basis.degree), knots, poles, descriptor.basis.periodic);
             let nurbs = match nurbs {
                 Ok(nurbs) => nurbs,
+                Err(NurbsError::ResourceLimit(limit)) => return Some(Err(limit.into())),
                 Err(error) => {
-                    refusals.push(CarrierRefusal {
+                    propagate_resource!(ctx.push_retained_vec(refusals, CarrierRefusal {
                         pos: node.pos,
                         family: "B_CURVE pcurve",
                         error,
-                    });
+                    }, "NX NURBS carrier refusals"));
                     return None;
                 }
             };
-            Some(Pcurve {
+            Some(Ok(Pcurve {
                 pos: node.pos,
                 geometry: PcurveGeometry::Nurbs { nurbs },
-            })
-        })
-        .collect()
+            }))
+        })();
+        if let Some(record) = candidate.transpose()? {
+            ctx.push_retained_vec(&mut records, record, "NX NURBS geometry records")?;
+        }
+    }
+    Ok(records)
 }
 
 /// Decode valid NURBS curve record families in source order.
@@ -304,20 +303,25 @@ pub(crate) fn curves(
     let descriptors = curve_descriptors(ctx, bytes)?;
     let graph = Graph::parse(ctx, bytes)?;
     let mut refusals = Vec::new();
-    let curves = decode_curves(&graph, &arrays, &controls, &descriptors, &mut refusals);
+    let curves = decode_curves(ctx, &graph, &arrays, &controls, &descriptors, &mut refusals)?;
     Ok((curves, refusals))
 }
 
 fn decode_curves(
+    ctx: &DecodeContext<'_>,
     graph: &Graph,
     arrays: &Arrays<'_, '_>,
     controls: &BTreeMap<u32, Option<Payload<'_>>>,
     descriptors: &BTreeMap<u32, Option<CurveDescriptor>>,
     refusals: &mut Vec<CarrierRefusal>,
-) -> Vec<Curve> {
-    graph
-        .of_kind(NodeKind::BCurve)
-        .filter_map(|node| {
+) -> Result<Vec<Curve>, CodecError> {
+    let mut records = Vec::new();
+    for node in graph.of_kind_charged(ctx, NodeKind::BCurve)? {
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(descriptors.len()), "resolve NX NURBS descriptor")?;
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(controls.len()), "resolve NX NURBS payload")?;
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(arrays.u16s.len()), "resolve NX NURBS multiplicities")?;
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(arrays.f64s.len()), "resolve NX NURBS knots")?;
+        let candidate: Option<Result<_, CodecError>> = (|| {
             let refs = node.compact_tail_references::<2>()?;
             let descriptor = descriptors.get(&refs[0])?.as_ref()?;
             matches!(descriptor.basis.dimension, 3 | 4).then_some(())?;
@@ -330,68 +334,63 @@ fn decode_curves(
             {
                 return None;
             }
-            let mult = arrays
+            let (mult, _mult_reservation) = propagate_resource!(arrays
                 .u16s
                 .get(&descriptor.references.multiplicities())?.as_ref()?
-                .u16_prefix(descriptor.basis.distinct)?;
-            let distinct = arrays
+                .u16_prefix(ctx, descriptor.basis.distinct))?;
+            let (distinct, _distinct_reservation) = propagate_resource!(arrays
                 .f64s
                 .get(&descriptor.references.knots())?.as_ref()?
-                .f64_prefix(descriptor.basis.distinct)?;
-            let knots = expand_knots(
+                .f64_prefix(ctx, descriptor.basis.distinct))?;
+            let knots = propagate_resource!(expand_knots(ctx,
                 &distinct,
                 &mult,
                 required_knot_count(descriptor.basis.degree, descriptor.basis.poles)?,
-            )?;
+            ))?;
             valid_basis(descriptor.basis.degree, descriptor.basis.poles, &knots)?;
-            let mut control_points = Vec::new();
-            let mut weights = (stride == 4).then(Vec::new);
-            for pole_index in 0..descriptor.basis.poles {
-                let base = pole_index.checked_mul(stride)?;
-                let weight = NonZeroReal::new(if stride == 4 {
-                    control.value_at(base.checked_add(3)?)?
-                } else {
-                    1.0
-                })?;
-                let pole = [
-                    control.value_at(base)?,
-                    control.value_at(base.checked_add(1)?)?,
-                    control.value_at(base.checked_add(2)?)?,
-                ];
-                control_points.push(weighted_mm_point(pole, weight)?);
-                if let Some(weights) = &mut weights {
-                    weights.push(weight);
+            propagate_resource!(ctx.charge_work(cadmpeg_core::decode::u64_from_index(descriptor.basis.poles), "materialize NX NURBS poles"));
+            let pole_at = |index: usize| {
+                let base = index.checked_mul(stride)?;
+                let weight = NonZeroReal::new(if stride == 4 { control.value_at(base.checked_add(3)?)? } else { 1.0 })?;
+                let point = weighted_mm_point([control.value_at(base)?, control.value_at(base.checked_add(1)?)?, control.value_at(base.checked_add(2)?)?], weight)?;
+                Some((point, weight))
+            };
+            let poles = if stride == 4 {
+                let mut points = propagate_resource!(ctx.retained_vec(descriptor.basis.poles, "NX NURBS rational poles"));
+                for index in 0..descriptor.basis.poles {
+                    let (point, weight) = pole_at(index)?;
+                    points.push(cadmpeg_ir::geometry::nurbs::WeightedPole3 { point, weight });
                 }
-            }
-            let curve = cadmpeg_ir::geometry::nurbs::NurbsPoles3::from_checked_lanes(
-                control_points,
-                weights,
-            )
-            .and_then(|poles| {
-                NurbsCurve::new(
-                    u32::from(descriptor.basis.degree),
-                    knots,
-                    poles,
-                    descriptor.basis.periodic,
-                )
-            });
+                cadmpeg_ir::geometry::nurbs::NurbsPoles3::Rational { points }
+            } else {
+                let mut points = propagate_resource!(ctx.retained_vec(descriptor.basis.poles, "NX NURBS polynomial poles"));
+                for index in 0..descriptor.basis.poles { points.push(pole_at(index)?.0); }
+                cadmpeg_ir::geometry::nurbs::NurbsPoles3::Polynomial { points }
+            };
+            propagate_resource!(ctx.charge_work(cadmpeg_core::decode::u64_from_index(propagate_resource!(knots.len().checked_mul(2).ok_or_else(|| ctx.refuse_codec_limit("validate NX NURBS curve", u64::MAX, u64::MAX)))), "validate NX NURBS curve"));
+            let curve = NurbsCurve::new(u32::from(descriptor.basis.degree), knots, poles, descriptor.basis.periodic);
             let curve = match curve {
                 Ok(curve) => curve,
+                Err(NurbsError::ResourceLimit(limit)) => return Some(Err(limit.into())),
                 Err(error) => {
-                    refusals.push(CarrierRefusal {
+                    propagate_resource!(ctx.push_retained_vec(refusals, CarrierRefusal {
                         pos: node.pos,
                         family: "B_CURVE",
                         error,
-                    });
+                    }, "NX NURBS carrier refusals"));
                     return None;
                 }
             };
-            Some(Curve {
+            Some(Ok(Curve {
                 pos: node.pos,
                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)),
-            })
-        })
-        .collect()
+            }))
+        })();
+        if let Some(record) = candidate.transpose()? {
+            ctx.push_retained_vec(&mut records, record, "NX NURBS geometry records")?;
+        }
+    }
+    Ok(records)
 }
 
 /// All NURBS geometry families decoded from one graph and one byte view.
@@ -428,26 +427,26 @@ pub(crate) fn parse_with_graph(ctx: &DecodeContext<'_>, bytes: &[u8], graph: &Gr
     let mut refusals = Vec::new();
     Ok(Parsed {
         surfaces: decode_surfaces(
-            graph,
+            ctx, graph,
             &arrays,
             &surface_payloads,
             &surface_descriptors,
             &mut refusals,
-        ),
+        )?,
         curves: decode_curves(
-            graph,
+            ctx, graph,
             &arrays,
             &curve_payloads,
             &curve_descriptors,
             &mut refusals,
-        ),
+        )?,
         pcurves: decode_pcurves(
-            graph,
+            ctx, graph,
             &arrays,
             &curve_payloads,
             &curve_descriptors,
             &mut refusals,
-        ),
+        )?,
         refusals,
     })
 }
@@ -493,26 +492,27 @@ struct ArrayRecord<'a> {
 }
 
 impl ArrayValues<'_> {
-    fn u16_prefix(&self, count: usize) -> Option<Vec<u16>> {
-        let ArrayValues::U16(raw) = self else {
-            return None;
-        };
-        let end = count.checked_mul(2)?;
-        let raw = raw.get(..end)?;
-        (0..count)
-            .map(|index| View::u16_be_at(raw, index.checked_mul(2)?))
-            .collect()
+    fn u16_prefix<'ctx>(&self, ctx: &'ctx DecodeContext<'_>, count: usize) -> Result<Option<(Vec<u16>, ScopedReservation<'ctx>)>, CodecError> {
+        let ArrayValues::U16(raw) = self else { return Ok(None); };
+        let Some(raw) = count.checked_mul(2).and_then(|end| raw.get(..end)) else { return Ok(None); };
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(count), "read NX NURBS multiplicities")?;
+        let (mut values, reservation) = ctx.temporary_vec(count, "NX NURBS multiplicity prefix")?;
+        for bytes in raw.chunks_exact(2) {
+            let Some(value) = View::u16_be_at(bytes, 0) else { return Ok(None); };
+            values.push(value);
+        }
+        Ok(Some((values, reservation)))
     }
-
-    fn f64_prefix(&self, count: usize) -> Option<Vec<f64>> {
-        let ArrayValues::F64(raw) = self else {
-            return None;
-        };
-        let end = count.checked_mul(8)?;
-        let raw = raw.get(..end)?;
-        (0..count)
-            .map(|index| View::f64_be_at(raw, index.checked_mul(8)?))
-            .collect()
+    fn f64_prefix<'ctx>(&self, ctx: &'ctx DecodeContext<'_>, count: usize) -> Result<Option<(Vec<f64>, ScopedReservation<'ctx>)>, CodecError> {
+        let ArrayValues::F64(raw) = self else { return Ok(None); };
+        let Some(raw) = count.checked_mul(8).and_then(|end| raw.get(..end)) else { return Ok(None); };
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(count), "read NX NURBS knots")?;
+        let (mut values, reservation) = ctx.temporary_vec(count, "NX NURBS knot prefix")?;
+        for bytes in raw.chunks_exact(8) {
+            let Some(value) = View::f64_be_at(bytes, 0) else { return Ok(None); };
+            values.push(value);
+        }
+        Ok(Some((values, reservation)))
     }
 }
 
@@ -1062,28 +1062,22 @@ fn required_knot_count(degree: u16, control_count: usize) -> Option<usize> {
 }
 
 fn expand_knots(
-    distinct: &[f64],
-    multiplicities: &[u16],
-    required_count: usize,
-) -> Option<Vec<f64>> {
-    // The knot order is the carrier's own refusal, not this reader's: a
-    // decreasing knot lane is a record of the right kind that the carrier
-    // states a reason for, so it travels to `from_lanes` and is reported.
-    if distinct.len() != multiplicities.len() {
-        return None;
-    }
-    let expanded_count = multiplicities.iter().try_fold(0usize, |total, &count| {
+    ctx: &DecodeContext<'_>,
+    distinct: &[f64], multiplicities: &[u16], required_count: usize,
+) -> Result<Option<Vec<f64>>, CodecError> {
+    if distinct.len() != multiplicities.len() { return Ok(None); }
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(multiplicities.len()), "count NX NURBS knots")?;
+    let Some(count) = multiplicities.iter().try_fold(0usize, |total, &count| {
         (count > 0).then_some(())?;
         total.checked_add(usize::from(count))
-    })?;
-    (expanded_count == required_count).then_some(())?;
-    let mut out = Vec::new();
+    }) else { return Ok(None); };
+    if count != required_count { return Ok(None); }
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(count), "expand NX NURBS knots")?;
+    let mut out = ctx.retained_vec(count, "NX NURBS expanded knots")?;
     for (&value, &count) in distinct.iter().zip(multiplicities) {
-        for _ in 0..usize::from(count) {
-            out.push(value);
-        }
+        for _ in 0..usize::from(count) { out.push(value); }
     }
-    Some(out)
+    Ok(Some(out))
 }
 
 fn valid_basis(degree: u16, control_count: usize, knots: &[f64]) -> Option<()> {
