@@ -306,7 +306,7 @@ pub(crate) fn parse_attribute_userdata(
         optional_modifier(
             ctx,
             warnings,
-            parse_displacement(bytes, descriptor.payload_range.clone(), archive),
+            parse_displacement(ctx, bytes, descriptor.payload_range.clone(), archive),
             "displacement",
             descriptor.range.start,
         )?
@@ -317,7 +317,7 @@ pub(crate) fn parse_attribute_userdata(
         optional_modifier(
             ctx,
             warnings,
-            parse_edge_softening(bytes, descriptor.payload_range.clone()),
+            parse_edge_softening(ctx, bytes, descriptor.payload_range.clone()),
             "edge-softening",
             descriptor.range.start,
         )?
@@ -328,7 +328,7 @@ pub(crate) fn parse_attribute_userdata(
         optional_modifier(
             ctx,
             warnings,
-            parse_thickening(bytes, descriptor.payload_range.clone()),
+            parse_thickening(ctx, bytes, descriptor.payload_range.clone()),
             "thickening",
             descriptor.range.start,
         )?
@@ -339,7 +339,7 @@ pub(crate) fn parse_attribute_userdata(
         optional_modifier(
             ctx,
             warnings,
-            parse_curve_piping(bytes, descriptor.payload_range.clone()),
+            parse_curve_piping(ctx, bytes, descriptor.payload_range.clone()),
             "curve-piping",
             descriptor.range.start,
         )?
@@ -350,7 +350,7 @@ pub(crate) fn parse_attribute_userdata(
         optional_modifier(
             ctx,
             warnings,
-            parse_shut_lining(bytes, descriptor.payload_range.clone()),
+            parse_shut_lining(ctx, bytes, descriptor.payload_range.clone()),
             "shut-lining",
             descriptor.range.start,
         )?
@@ -406,45 +406,45 @@ fn first_matching_descriptor(
         })
 }
 
-fn parse_displacement(
+fn parse_displacement(ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     bytes: &[u8],
     payload_range: std::ops::Range<usize>,
     archive: ArchiveVersion,
 ) -> Result<DisplacementModifier, FramingError> {
     let (xml_version, xml) = parse_xml_userdata(bytes, payload_range)?;
-    parse_xml(&xml, xml_version, archive)
+    parse_xml(ctx, &xml, xml_version, archive)
 }
 
-fn parse_edge_softening(
+fn parse_edge_softening(ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     bytes: &[u8],
     payload_range: std::ops::Range<usize>,
 ) -> Result<EdgeSofteningModifier, FramingError> {
     let (xml_version, xml) = parse_xml_userdata(bytes, payload_range)?;
-    parse_edge_softening_xml(&xml, xml_version)
+    parse_edge_softening_xml(ctx, &xml, xml_version)
 }
 
-fn parse_thickening(
+fn parse_thickening(ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     bytes: &[u8],
     payload_range: std::ops::Range<usize>,
 ) -> Result<ThickeningModifier, FramingError> {
     let (xml_version, xml) = parse_xml_userdata(bytes, payload_range)?;
-    parse_thickening_xml(&xml, xml_version)
+    parse_thickening_xml(ctx, &xml, xml_version)
 }
 
-fn parse_curve_piping(
+fn parse_curve_piping(ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     bytes: &[u8],
     payload_range: std::ops::Range<usize>,
 ) -> Result<CurvePipingModifier, FramingError> {
     let (xml_version, xml) = parse_xml_userdata(bytes, payload_range)?;
-    parse_curve_piping_xml(&xml, xml_version)
+    parse_curve_piping_xml(ctx, &xml, xml_version)
 }
 
-fn parse_shut_lining(
+fn parse_shut_lining(ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     bytes: &[u8],
     payload_range: std::ops::Range<usize>,
 ) -> Result<ShutLiningModifier, FramingError> {
     let (xml_version, xml) = parse_xml_userdata(bytes, payload_range)?;
-    parse_shut_lining_xml(&xml, xml_version)
+    parse_shut_lining_xml(ctx, &xml, xml_version)
 }
 
 fn parse_xml_userdata(
@@ -486,14 +486,16 @@ fn parse_xml_userdata(
     Ok((xml_version, xml))
 }
 
-fn parse_xml(
+fn parse_xml(ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     xml: &str,
     xml_version: i32,
     archive: ArchiveVersion,
 ) -> Result<DisplacementModifier, FramingError> {
-    let document = roxmltree::Document::parse(xml).map_err(|error| {
+    let admitted_document = ctx.parse_xml(xml, "Rhino mesh modifier XML tree").map_err(|error| {
+        if matches!(error, cadmpeg_core::CodecError::ResourceLimit(_)) { return error.into(); }
         FramingError::unpositioned(format!("invalid displacement XML: {error}"))
     })?;
+    let document = admitted_document.document();
     let root = document.root_element();
     if !same_name(root, "xml") {
         return Err(FramingError::unpositioned(format!(
@@ -535,13 +537,15 @@ fn parse_xml(
     })
 }
 
-fn parse_edge_softening_xml(
+fn parse_edge_softening_xml(ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     xml: &str,
     xml_version: i32,
 ) -> Result<EdgeSofteningModifier, FramingError> {
-    let document = roxmltree::Document::parse(xml).map_err(|error| {
+    let admitted_document = ctx.parse_xml(xml, "Rhino mesh modifier XML tree").map_err(|error| {
+        if matches!(error, cadmpeg_core::CodecError::ResourceLimit(_)) { return error.into(); }
         FramingError::unpositioned(format!("invalid edge-softening XML: {error}"))
     })?;
+    let document = admitted_document.document();
     let root = document.root_element();
     if !same_name(root, "xml") {
         return Err(FramingError::unpositioned(format!(
@@ -567,9 +571,13 @@ fn parse_edge_softening_xml(
     })
 }
 
-fn parse_thickening_xml(xml: &str, xml_version: i32) -> Result<ThickeningModifier, FramingError> {
-    let document = roxmltree::Document::parse(xml)
-        .map_err(|error| FramingError::unpositioned(format!("invalid thickening XML: {error}")))?;
+fn parse_thickening_xml(ctx: &cadmpeg_core::decode::DecodeContext<'_>, xml: &str, xml_version: i32) -> Result<ThickeningModifier, FramingError> {
+    let admitted_document = ctx.parse_xml(xml, "Rhino mesh modifier XML tree")
+        .map_err(|error| {
+            if matches!(error, cadmpeg_core::CodecError::ResourceLimit(_)) { return error.into(); }
+            FramingError::unpositioned(format!("invalid thickening XML: {error}"))
+        })?;
+    let document = admitted_document.document();
     let root = document.root_element();
     if !same_name(root, "xml") {
         return Err(FramingError::unpositioned(format!(
@@ -592,13 +600,15 @@ fn parse_thickening_xml(xml: &str, xml_version: i32) -> Result<ThickeningModifie
     })
 }
 
-fn parse_curve_piping_xml(
+fn parse_curve_piping_xml(ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     xml: &str,
     xml_version: i32,
 ) -> Result<CurvePipingModifier, FramingError> {
-    let document = roxmltree::Document::parse(xml).map_err(|error| {
+    let admitted_document = ctx.parse_xml(xml, "Rhino mesh modifier XML tree").map_err(|error| {
+        if matches!(error, cadmpeg_core::CodecError::ResourceLimit(_)) { return error.into(); }
         FramingError::unpositioned(format!("invalid curve-piping XML: {error}"))
     })?;
+    let document = admitted_document.document();
     let root = document.root_element();
     if !same_name(root, "xml") {
         return Err(FramingError::unpositioned(format!(
@@ -622,9 +632,13 @@ fn parse_curve_piping_xml(
     })
 }
 
-fn parse_shut_lining_xml(xml: &str, xml_version: i32) -> Result<ShutLiningModifier, FramingError> {
-    let document = roxmltree::Document::parse(xml)
-        .map_err(|error| FramingError::unpositioned(format!("invalid shut-lining XML: {error}")))?;
+fn parse_shut_lining_xml(ctx: &cadmpeg_core::decode::DecodeContext<'_>, xml: &str, xml_version: i32) -> Result<ShutLiningModifier, FramingError> {
+    let admitted_document = ctx.parse_xml(xml, "Rhino mesh modifier XML tree")
+        .map_err(|error| {
+            if matches!(error, cadmpeg_core::CodecError::ResourceLimit(_)) { return error.into(); }
+            FramingError::unpositioned(format!("invalid shut-lining XML: {error}"))
+        })?;
+    let document = admitted_document.document();
     let root = document.root_element();
     if !same_name(root, "xml") {
         return Err(FramingError::unpositioned(format!(
@@ -918,30 +932,30 @@ mod tests {
     #[test]
     fn shut_lining_profile_refuses_positive_overflow() {
         let xml = "<xml><shut-lining-object-data><curve><profile>2147483648</profile></curve></shut-lining-object-data></xml>";
-        assert!(super::parse_shut_lining_xml(xml, 2).is_err());
+        assert!(super::parse_shut_lining_xml(&cadmpeg_test_support::service_decode_context(), xml, 2).is_err());
     }
 
     #[test]
     fn shut_lining_profile_refuses_negative_overflow() {
         let xml = "<xml><shut-lining-object-data><curve><profile>-2147483649</profile></curve></shut-lining-object-data></xml>";
-        assert!(super::parse_shut_lining_xml(xml, 2).is_err());
+        assert!(super::parse_shut_lining_xml(&cadmpeg_test_support::service_decode_context(), xml, 2).is_err());
     }
 
     #[test]
     fn shut_lining_profile_refuses_nan() {
         let xml = "<xml><shut-lining-object-data><curve><profile>NaN</profile></curve></shut-lining-object-data></xml>";
-        assert!(super::parse_shut_lining_xml(xml, 2).is_err());
+        assert!(super::parse_shut_lining_xml(&cadmpeg_test_support::service_decode_context(), xml, 2).is_err());
     }
 
     #[test]
     fn shut_lining_profile_refuses_infinity() {
         let xml = "<xml><shut-lining-object-data><curve><profile>inf</profile></curve></shut-lining-object-data></xml>";
-        assert!(super::parse_shut_lining_xml(xml, 2).is_err());
+        assert!(super::parse_shut_lining_xml(&cadmpeg_test_support::service_decode_context(), xml, 2).is_err());
     }
     #[test]
     fn shut_lining_profile_refuses_negative_infinity() {
         let xml = "<xml><shut-lining-object-data><curve><profile>-inf</profile></curve></shut-lining-object-data></xml>";
-        assert!(super::parse_shut_lining_xml(xml, 2).is_err());
+        assert!(super::parse_shut_lining_xml(&cadmpeg_test_support::service_decode_context(), xml, 2).is_err());
     }
 
     use super::{
@@ -1110,7 +1124,7 @@ mod tests {
         let xml = format!(
             "<xml><new-displacement-object-data><{field} type=\"{kind}\">{value}</{field}></new-displacement-object-data></xml>"
         );
-        let error = parse_xml(&xml, 2, ArchiveVersion::V6).expect_err("malformed field");
+        let error = parse_xml(&cadmpeg_test_support::service_decode_context(), &xml, 2, ArchiveVersion::V6).expect_err("malformed field");
         assert!(error.to_string().contains(field), "{error}");
 
         let payload = v2_payload(&xml);
@@ -1231,7 +1245,7 @@ mod tests {
     /// whole names no offset instead of naming byte 0.
     #[test]
     fn an_xml_refusal_names_no_byte() {
-        let error = parse_xml("<unterminated", 2, ArchiveVersion::V6).expect_err("invalid XML");
+        let error = parse_xml(&cadmpeg_test_support::service_decode_context(), "<unterminated", 2, ArchiveVersion::V6).expect_err("invalid XML");
         assert!(matches!(
             error,
             FramingError::Unpositioned { ref message }
