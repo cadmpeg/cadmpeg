@@ -1167,7 +1167,7 @@ pub(super) fn decode(
             ctx.push_vec(
                 &mut ir.model.curves,
                 Curve {
-                    id: curve.clone(),
+                    id: curve.try_clone_for_decode(ctx, "step_curve_identity_copy")?,
                     geometry: CurveGeometry::Solved(geometry),
                     source_object: None,
                 },
@@ -1307,7 +1307,7 @@ pub(super) fn decode(
             ctx.push_vec(
                 &mut ir.model.curves,
                 Curve {
-                    id: curve.clone(),
+                    id: curve.try_clone_for_decode(ctx, "step_curve_identity_copy")?,
                     geometry: CurveGeometry::Solved(copied_geometry),
                     source_object: None,
                 },
@@ -1392,7 +1392,7 @@ pub(super) fn decode(
             ctx.push_vec(
                 &mut ir.model.curves,
                 Curve {
-                    id: curve.clone(),
+                    id: curve.try_clone_for_decode(ctx, "step_curve_identity_copy")?,
                     geometry: CurveGeometry::Solved(SolvedCurveGeometry::Composite {
                         segments,
                         self_intersect,
@@ -1490,7 +1490,7 @@ pub(super) fn decode(
         ctx.push_vec(
             &mut ir.model.curves,
             Curve {
-                id: curve.clone(),
+                id: curve.try_clone_for_decode(ctx, "step_curve_identity_copy")?,
                 geometry: CurveGeometry::Solved(copied_geometry),
                 source_object: None,
             },
@@ -1608,7 +1608,7 @@ pub(super) fn decode(
             ctx.push_vec(
                 &mut ir.model.curves,
                 Curve {
-                    id: curve.clone(),
+                    id: curve.try_clone_for_decode(ctx, "step_curve_identity_copy")?,
                     geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown {
                         record: exchange
                             .records()
@@ -1732,7 +1732,7 @@ pub(super) fn decode(
         ctx.push_vec(
             &mut ir.model.surfaces,
             Surface {
-                id: surface.clone(),
+                id: surface.try_clone_for_decode(ctx, "step_surface_identity_copy")?,
                 geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
                 source_object: None,
             },
@@ -2021,7 +2021,7 @@ pub(super) fn decode(
             ctx.push_vec(
                 &mut ir.model.surfaces,
                 Surface {
-                    id: surface.clone(),
+                    id: surface.try_clone_for_decode(ctx, "step_surface_identity_copy")?,
                     geometry: SurfaceGeometry::Solved(copied_geometry),
                     source_object: None,
                 },
@@ -2152,7 +2152,7 @@ pub(super) fn decode(
             ctx.push_vec(
                 &mut ir.model.surfaces,
                 Surface {
-                    id: surface.clone(),
+                    id: surface.try_clone_for_decode(ctx, "step_surface_identity_copy")?,
                     geometry: SurfaceGeometry::Solved(copied_geometry),
                     source_object: None,
                 },
@@ -2214,7 +2214,7 @@ pub(super) fn decode(
             ctx.push_vec(
                 &mut ir.model.surfaces,
                 Surface {
-                    id: surface.clone(),
+                    id: surface.try_clone_for_decode(ctx, "step_surface_identity_copy")?,
                     geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown {
                         record: None,
                     }),
@@ -2296,7 +2296,7 @@ pub(super) fn decode(
             ctx.push_vec(
                 &mut ir.model.surfaces,
                 Surface {
-                    id: surface.clone(),
+                    id: surface.try_clone_for_decode(ctx, "step_surface_identity_copy")?,
                     geometry: SurfaceGeometry::Solved(geometry),
                     source_object: None,
                 },

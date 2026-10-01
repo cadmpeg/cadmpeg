@@ -1957,35 +1957,6 @@ pub struct PcurveNurbs {
 }
 
 impl PcurveNurbs {
-    /// Copy admitted knots and poles with fallible storage allocation.
-    ///
-    /// # Errors
-    ///
-    /// Returns an allocation error when a knot or pole lane cannot reserve storage.
-    pub fn try_clone(&self) -> Result<Self, std::collections::TryReserveError> {
-        let knots = self.knots.try_clone()?;
-        let poles = match &self.poles {
-            PcurveNurbsPoles::Polynomial { points } => {
-                let mut copied = Vec::new();
-                copied.try_reserve_exact(points.len())?;
-                copied.extend_from_slice(points);
-                PcurveNurbsPoles::Polynomial { points: copied }
-            }
-            PcurveNurbsPoles::Rational { points } => {
-                let mut copied = Vec::new();
-                copied.try_reserve_exact(points.len())?;
-                copied.extend_from_slice(points);
-                PcurveNurbsPoles::Rational { points: copied }
-            }
-        };
-        Ok(Self {
-            degree: self.degree,
-            knots,
-            poles,
-            periodic: self.periodic,
-        })
-    }
-
     /// Copy the admitted knot and pole lanes through the decode budget.
     pub fn try_clone_for_decode(
         &self,
@@ -2478,6 +2449,7 @@ impl PcurveGeometry {
         ctx: &DecodeContext<'_>,
         operation: &'static str,
     ) -> Result<Self, CodecError> {
+        ctx.charge_work(1, operation)?;
         Ok(match self {
             Self::Line(value) => Self::Line(*value),
             Self::PolarHarmonic(value) => Self::PolarHarmonic(*value),

@@ -38,11 +38,12 @@ macro_rules! selection_field_deserializer {
 macro_rules! clone_copy_for_decode {
     ($type:ty) => {
         impl crate::features::decode_clone::CloneForDecode for $type {
-            fn clone_for_decode(
+            fn try_clone_for_decode(
                 &self,
-                _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-                _operation: &'static str,
+                ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+                operation: &'static str,
             ) -> Result<Self, cadmpeg_core::CodecError> {
+                ctx.charge_work(1, operation)?;
                 Ok(*self)
             }
         }
@@ -53,26 +54,26 @@ macro_rules! clone_record_for_decode {
     ($type:ty $(, [$($generic:ident),+])?; { $($field:ident),* }) => {
         impl $(<$($generic: crate::features::decode_clone::CloneForDecode),+>)?
             crate::features::decode_clone::CloneForDecode for $type {
-            fn clone_for_decode(
+            fn try_clone_for_decode(
                 &self,
                 ctx: &cadmpeg_core::decode::DecodeContext<'_>,
                 clone_operation: &'static str,
             ) -> Result<Self, cadmpeg_core::CodecError> {
                 let Self { $($field),* } = self;
-                Ok(Self { $($field: crate::features::decode_clone::CloneForDecode::clone_for_decode($field, ctx, clone_operation)?),* })
+                Ok(Self { $($field: crate::features::decode_clone::CloneForDecode::try_clone_for_decode($field, ctx, clone_operation)?),* })
             }
         }
     };
     ($type:ty $(, [$($generic:ident),+])?; ( $($field:ident),* )) => {
         impl $(<$($generic: crate::features::decode_clone::CloneForDecode),+>)?
             crate::features::decode_clone::CloneForDecode for $type {
-            fn clone_for_decode(
+            fn try_clone_for_decode(
                 &self,
                 ctx: &cadmpeg_core::decode::DecodeContext<'_>,
                 clone_operation: &'static str,
             ) -> Result<Self, cadmpeg_core::CodecError> {
                 let Self($($field),*) = self;
-                Ok(Self($(crate::features::decode_clone::CloneForDecode::clone_for_decode($field, ctx, clone_operation)?),*))
+                Ok(Self($(crate::features::decode_clone::CloneForDecode::try_clone_for_decode($field, ctx, clone_operation)?),*))
             }
         }
     };
@@ -84,15 +85,16 @@ macro_rules! clone_enum_for_decode {
     }) => {
         impl $(<$($generic: crate::features::decode_clone::CloneForDecode),+>)?
             crate::features::decode_clone::CloneForDecode for $type {
-            fn clone_for_decode(
+            fn try_clone_for_decode(
                 &self,
                 ctx: &cadmpeg_core::decode::DecodeContext<'_>,
                 clone_operation: &'static str,
             ) -> Result<Self, cadmpeg_core::CodecError> {
+                ctx.charge_work(1, clone_operation)?;
                 match self {
                     $(Self::$variant $(($($tuple),*))? $({$($field),*})? => Ok(Self::$variant
-                        $(($(crate::features::decode_clone::CloneForDecode::clone_for_decode($tuple, ctx, clone_operation)?),*))?
-                        $({$($field: crate::features::decode_clone::CloneForDecode::clone_for_decode($field, ctx, clone_operation)?),*})?
+                        $(($(crate::features::decode_clone::CloneForDecode::try_clone_for_decode($tuple, ctx, clone_operation)?),*))?
+                        $({$($field: crate::features::decode_clone::CloneForDecode::try_clone_for_decode($field, ctx, clone_operation)?),*})?
                     ),)*
                 }
             }
@@ -105,7 +107,6 @@ mod decode_clone;
 pub mod edge_treatments;
 use edge_treatments::{ChamferGroup, FilletGroup, FullRoundFilletGroup, RadiusSpec};
 
-mod charged_copies;
 
 pub mod holes;
 use holes::{HoleBottom, HolePlacement, HoleProfileFilter, HoleShape};
@@ -4160,12 +4161,12 @@ impl FeatureOperation {
 
 impl FeatureDefinition {
     /// Copy the admitted definition after charging each owned field allocation.
-    pub fn clone_for_decode(
+    pub fn try_clone_for_decode(
         &self,
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         operation: &'static str,
     ) -> Result<Self, cadmpeg_core::CodecError> {
-        decode_clone::CloneForDecode::clone_for_decode(self, ctx, operation)
+        decode_clone::CloneForDecode::try_clone_for_decode(self, ctx, operation)
     }
 
     /// The operation this definition performs, its post-processing layer aside.
@@ -6301,162 +6302,6 @@ pub enum FaceSelection {
     Native(String),
 }
 
-impl FaceSelection {
-    /// Copy a decoded face selection after admitting each retained member and text field.
-    pub fn try_clone_charged(
-        &self,
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-        operation: &'static str,
-    ) -> Result<Self, cadmpeg_core::CodecError> {
-        use cadmpeg_core::CodecError;
-        match self {
-            Self::Unresolved => Ok(Self::Unresolved),
-            Self::Faces(faces) => {
-                let mut copied = Vec::new();
-                for face in faces {
-                    ctx.charge_work(1, operation)?;
-                    let text = copy_feature_selection_text(ctx, face.as_str(), operation)?;
-                    let id = FaceId::mint(text)
-                        .map_err(|_| CodecError::malformed("invalid decoded face ID"))?;
-                    reserve_feature_selection_copy(ctx, &mut copied, operation)?;
-                    copied.push(id);
-                }
-                Ok(Self::Faces(copied))
-            }
-            Self::Resolved { faces, native } => {
-                let mut copied = Vec::new();
-                for face in faces {
-                    ctx.charge_work(1, operation)?;
-                    let text = copy_feature_selection_text(ctx, face.as_str(), operation)?;
-                    let id = FaceId::mint(text)
-                        .map_err(|_| CodecError::malformed("invalid decoded face ID"))?;
-                    reserve_feature_selection_copy(ctx, &mut copied, operation)?;
-                    copied.push(id);
-                }
-                let native = copy_feature_selection_text(ctx, native, operation)?;
-                Ok(Self::Resolved {
-                    faces: copied,
-                    native,
-                })
-            }
-            Self::Historical {
-                state,
-                faces,
-                native,
-            } => {
-                let state_text = copy_feature_selection_text(ctx, state.as_str(), operation)?;
-                let state = FeatureInputTopologyId::mint(state_text)
-                    .map_err(|_| CodecError::malformed("invalid decoded topology state ID"))?;
-                let mut copied = Vec::new();
-                for face in faces.as_slice() {
-                    ctx.charge_work(1, operation)?;
-                    let text = copy_feature_selection_text(ctx, face.as_str(), operation)?;
-                    let id = HistoricalFaceId::mint(text)
-                        .map_err(|_| CodecError::malformed("invalid decoded historical face ID"))?;
-                    reserve_feature_selection_copy(ctx, &mut copied, operation)?;
-                    copied.push(id);
-                }
-                let native_text = copy_feature_selection_text(ctx, native.as_str(), operation)?;
-                let native = NonBlankString::new(native_text)
-                    .ok_or_else(|| CodecError::malformed("blank decoded face selection"))?;
-                Ok(Self::Historical {
-                    state,
-                    faces: SelectionMembers(copied),
-                    native,
-                })
-            }
-            Self::HistoricalPartial {
-                state,
-                faces,
-                unresolved,
-                native,
-            } => {
-                let state_text = copy_feature_selection_text(ctx, state.as_str(), operation)?;
-                let state = FeatureInputTopologyId::mint(state_text)
-                    .map_err(|_| CodecError::malformed("invalid decoded topology state ID"))?;
-                let mut copied_faces = Vec::new();
-                for face in faces.as_slice() {
-                    ctx.charge_work(1, operation)?;
-                    let text = copy_feature_selection_text(ctx, face.as_str(), operation)?;
-                    let id = HistoricalFaceId::mint(text)
-                        .map_err(|_| CodecError::malformed("invalid decoded historical face ID"))?;
-                    reserve_feature_selection_copy(ctx, &mut copied_faces, operation)?;
-                    copied_faces.push(id);
-                }
-                let mut copied_unresolved = Vec::new();
-                for name in unresolved.as_slice() {
-                    ctx.charge_work(1, operation)?;
-                    let text = copy_feature_selection_text(ctx, name, operation)?;
-                    reserve_feature_selection_copy(ctx, &mut copied_unresolved, operation)?;
-                    copied_unresolved.push(text);
-                }
-                let native_text = copy_feature_selection_text(ctx, native.as_str(), operation)?;
-                let native = NonBlankString::new(native_text)
-                    .ok_or_else(|| CodecError::malformed("blank decoded face selection"))?;
-                Ok(Self::HistoricalPartial {
-                    state,
-                    faces: DistinctMembers(copied_faces),
-                    unresolved: NativeSelections(copied_unresolved),
-                    native,
-                })
-            }
-            Self::Generated { faces, native } => {
-                let mut copied = Vec::new();
-                for face in faces.as_slice() {
-                    ctx.charge_work(1, operation)?;
-                    let feature_text =
-                        copy_feature_selection_text(ctx, face.feature.as_str(), operation)?;
-                    let feature = FeatureId::mint(feature_text)
-                        .map_err(|_| CodecError::malformed("invalid decoded feature ID"))?;
-                    let local =
-                        copy_feature_selection_text(ctx, face.local_id.as_str(), operation)?;
-                    let face = GeneratedFaceRef::new(feature, local)
-                        .map_err(|_| CodecError::malformed("invalid decoded generated face"))?;
-                    reserve_feature_selection_copy(ctx, &mut copied, operation)?;
-                    copied.push(face);
-                }
-                let native_text = copy_feature_selection_text(ctx, native.as_str(), operation)?;
-                let native = SelectionReference::try_from(native_text)
-                    .map_err(|_| CodecError::malformed("invalid decoded face selection"))?;
-                Ok(Self::Generated {
-                    faces: NonEmptyMembers(copied),
-                    native,
-                })
-            }
-            Self::Native(native) => Ok(Self::Native(copy_feature_selection_text(
-                ctx, native, operation,
-            )?)),
-        }
-    }
-}
-
-fn copy_feature_selection_text(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    text: &str,
-    operation: &'static str,
-) -> Result<String, cadmpeg_core::CodecError> {
-    let work = text
-        .len()
-        .checked_mul(4)
-        .and_then(|bytes| bytes.checked_add(1))
-        .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
-    ctx.charge_work(cadmpeg_core::decode::u64_from_index(work), operation)?;
-    ctx.format_retained(format_args!("{text}"), operation)
-}
-
-fn reserve_feature_selection_copy<T>(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    values: &mut Vec<T>,
-    operation: &'static str,
-) -> Result<(), cadmpeg_core::CodecError> {
-    let work = values
-        .len()
-        .checked_add(1)
-        .and_then(|count| count.checked_mul(std::mem::size_of::<T>()))
-        .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
-    ctx.charge_work(cadmpeg_core::decode::u64_from_index(work), operation)?;
-    ctx.reserve_vec(values, 1, operation)
-}
 
 /// A nonempty sequence of members in source order.
 ///
@@ -9764,3 +9609,24 @@ cadmpeg_core::named_optional_field!(
 );
 cadmpeg_core::named_optional_field!(deserialize_context, BinderTarget, "context");
 cadmpeg_core::named_optional_field!(deserialize_form, FlexForm, "form");
+
+macro_rules! feature_copy_api {
+    ($($ty:ty),+ $(,)?) => { $(impl $ty {
+        /// Copy owned feature fields through the caller context.
+        pub fn try_clone_for_decode(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, operation: &'static str) -> Result<Self, cadmpeg_core::CodecError> {
+            decode_clone::CloneForDecode::try_clone_for_decode(self, ctx, operation)
+        }
+    })+ };
+}
+feature_copy_api!(PlanarProfileRef, VertexSelection, LinearTermination, ParameterValue, Feature, ConfigurationFeatureState, FaceSelection);
+impl Feature {
+    /// Copy the evaluated construction state for one configuration.
+    pub fn configuration_state(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, operation: &'static str) -> Result<ConfigurationFeatureState, cadmpeg_core::CodecError> {
+        use decode_clone::CloneForDecode;
+        Ok(ConfigurationFeatureState {
+            evaluation: if self.suppressed.unwrap_or(false) { ConfigurationEvaluation::Suppressed {} } else { ConfigurationEvaluation::Active { outputs: self.evaluation.outputs.try_clone_for_decode(ctx, operation)? } },
+            dependencies: self.dependencies.try_clone_for_decode(ctx, operation)?,
+            definition: self.evaluation.definition.try_clone_for_decode(ctx, operation)?,
+        })
+    }
+}

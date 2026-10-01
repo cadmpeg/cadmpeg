@@ -15,7 +15,7 @@ fn feature_definition_copy_refuses_retained_text_before_allocation() {
     let mut policy = DecodePolicy::default();
     policy.limits.max_retained_bytes = u64::try_from("source雪%".len() - 1).unwrap();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    assert!(matches!(definition.clone_for_decode(&ctx, OPERATION),
+    assert!(matches!(definition.try_clone_for_decode(&ctx, OPERATION),
         Err(CodecError::ResourceLimit(failure)) if failure.dimension == ResourceDimension::RetainedBytes
             && failure.operation == OPERATION));
 }
@@ -33,7 +33,7 @@ fn feature_definition_copy_refuses_nested_collection_before_allocation() {
     // One outer cell and two nested native selections need three items.
     policy.limits.max_collection_items = 2;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    assert!(matches!(member.clone_for_decode(&ctx, OPERATION),
+    assert!(matches!(member.try_clone_for_decode(&ctx, OPERATION),
         Err(CodecError::ResourceLimit(failure)) if failure.dimension == ResourceDimension::CollectionItems
             && failure.used == 1 && failure.additional == 2 && failure.operation == OPERATION));
 }
@@ -47,7 +47,7 @@ fn feature_definition_copy_refuses_collection_work() {
     let mut policy = DecodePolicy::default();
     policy.limits.max_work_units = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    assert!(matches!(definition.clone_for_decode(&ctx, OPERATION),
+    assert!(matches!(definition.try_clone_for_decode(&ctx, OPERATION),
         Err(CodecError::ResourceLimit(failure)) if failure.dimension == ResourceDimension::WorkUnits
             && failure.operation == OPERATION));
 }
@@ -77,7 +77,7 @@ fn feature_definition_copy_preserves_nested_fields_and_wire_bytes() {
         let arena = DecodeArena::new();
         let policy = DecodePolicy::default();
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let copied = definition.clone_for_decode(&ctx, OPERATION).unwrap();
+        let copied = definition.try_clone_for_decode(&ctx, OPERATION).unwrap();
         assert_eq!(copied, definition);
         assert_eq!(
             serde_json::to_vec(&copied).unwrap(),
@@ -95,7 +95,7 @@ fn feature_definition_copy_refuses_retained_identity_before_allocation() {
     let mut policy = DecodePolicy::default();
     policy.limits.max_retained_bytes = u64::try_from(length - 1).unwrap();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    assert!(matches!(definition.clone_for_decode(&ctx, OPERATION),
+    assert!(matches!(definition.try_clone_for_decode(&ctx, OPERATION),
         Err(CodecError::ResourceLimit(failure)) if failure.dimension == ResourceDimension::RetainedBytes
             && failure.operation == OPERATION));
 }
@@ -114,7 +114,7 @@ fn feature_definition_copy_refuses_retained_parameter_key_before_allocation() {
     let mut policy = DecodePolicy::default();
     policy.limits.max_retained_bytes = u64::try_from(key.len() - 1).unwrap();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    assert!(matches!(definition.clone_for_decode(&ctx, OPERATION),
+    assert!(matches!(definition.try_clone_for_decode(&ctx, OPERATION),
         Err(CodecError::ResourceLimit(failure)) if failure.dimension == ResourceDimension::RetainedBytes
             && failure.operation == OPERATION));
 }
@@ -132,7 +132,27 @@ fn feature_definition_copy_refuses_parameter_map_work() {
     let mut policy = DecodePolicy::default();
     policy.limits.max_work_units = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    assert!(matches!(definition.clone_for_decode(&ctx, OPERATION),
+    assert!(matches!(definition.try_clone_for_decode(&ctx, OPERATION),
         Err(CodecError::ResourceLimit(failure)) if failure.dimension == ResourceDimension::WorkUnits
             && failure.operation == OPERATION));
+}
+
+#[test]
+fn feature_parameter_map_copy_charges_each_owned_allocation_once() {
+    let key = "distance";
+    let value = "value";
+    let definition = FeatureDefinition::Operation(FeatureOperation::Native {
+        kind: NativeFeatureKind::Fillet,
+        parameters: std::collections::BTreeMap::from([(
+            cadmpeg_core::text::NonBlankString::new(key.to_owned()).unwrap(),
+            value.to_owned(),
+        )]),
+    });
+    let needed = std::mem::size_of::<(cadmpeg_core::text::NonBlankString, String)>() + key.len() + value.len();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = u64::try_from(needed).unwrap();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    assert_eq!(definition.try_clone_for_decode(&ctx, OPERATION).unwrap(), definition);
+    assert!(matches!(ctx.charge_retained(1, OPERATION), Err(CodecError::ResourceLimit(limit)) if limit.used == u64::try_from(needed).unwrap()));
 }

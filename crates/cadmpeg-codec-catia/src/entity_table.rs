@@ -97,7 +97,7 @@ pub(crate) struct RangeInterval {
 }
 
 /// One item in an embedded numeric value packet.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) enum NumericPacketItem {
     /// `0xE6` followed by the exact IEEE-754 binary64 bits.
     Binary64 {

@@ -3111,7 +3111,7 @@ impl<'a> DecodeContext<'a> {
                 self.ir.model.points.push(Point::new(
                     point_id.try_clone_for_decode(ctx, "Rhino typed identity copy")?,
                     position,
-                    Some(association.clone()),
+                    Some(association.try_clone_for_decode(ctx, "Rhino source association copy")?),
                 ));
                 self.ir.model.vertices.push(Vertex {
                     id: vertex_id.try_clone_for_decode(ctx, "Rhino typed identity copy")?,
@@ -3197,7 +3197,7 @@ impl<'a> DecodeContext<'a> {
                     self.ir.model.points.push(Point::new(
                         point_id.try_clone_for_decode(ctx, "Rhino typed identity copy")?,
                         position,
-                        Some(association.clone()),
+                        Some(association.try_clone_for_decode(ctx, "Rhino source association copy")?),
                     ));
                     self.ir.model.vertices.push(Vertex {
                         id: vertex_id.try_clone_for_decode(ctx, "Rhino typed identity copy")?,
@@ -3299,7 +3299,7 @@ impl<'a> DecodeContext<'a> {
                     self.ir.model.surfaces.push(Surface {
                         id: surface_id.try_clone_for_decode(ctx, "Rhino typed identity copy")?,
                         geometry: geometry.into_geometry(),
-                        source_object: Some(association.clone()),
+                        source_object: Some(association.try_clone_for_decode(ctx, "Rhino source association copy")?),
                     });
                     set_exactness(
                         &mut self.annotations,
@@ -3489,9 +3489,9 @@ impl<'a> DecodeContext<'a> {
                 candidate.model.surfaces.push(Surface {
                     id: surface_id.try_clone_for_decode(ctx, "Rhino typed identity copy")?,
                     geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
-                        boundary.boundary.lateral.clone(),
+                        boundary.boundary.lateral.try_clone_for_decode(ctx, "Rhino extrusion lateral surface copy")?,
                     )),
-                    source_object: Some(association.clone()),
+                    source_object: Some(association.try_clone_for_decode(ctx, "Rhino source association copy")?),
                 });
                 candidate
                     .model
@@ -3535,7 +3535,7 @@ impl<'a> DecodeContext<'a> {
                     "rhino:object:tessellation#{key}.cache-{index}"
                 ))
                 .map_err(|error| error.to_string())?;
-                mesh.tessellation.source_object = Some(association.clone());
+                mesh.tessellation.source_object = Some(association.try_clone_for_decode(ctx, "Rhino source association copy")?);
                 annotate_derived(candidate_annotations, mesh.tessellation.id.as_str());
                 links.push(mesh.tessellation.id.to_string());
                 candidate.model.tessellations.push(mesh.tessellation);
@@ -4106,7 +4106,7 @@ fn stage_extrusion_caps(
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                 cadmpeg_ir::geometry::analytic::PlaneSurface::new(origin, frame),
             )),
-            source_object: Some(association.clone()),
+            source_object: Some(association.try_clone_for_decode(ctx, "Rhino source association copy")?),
         });
         let mut loop_ids = ctx.collection_vec(boundaries.len(), "Rhino extrusion cap loop IDs")?;
         for (profile, committed) in boundaries.iter().enumerate() {
@@ -4129,9 +4129,9 @@ fn stage_extrusion_caps(
                 ir.model.curves.push(Curve {
                     id: id.try_clone_for_decode(ctx, "Rhino typed identity copy")?,
                     geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-                        boundary.end_nurbs.clone(),
+                        boundary.end_nurbs.try_clone_for_decode(ctx, "Rhino extrusion end curve copy")?,
                     )),
-                    source_object: Some(association.clone()),
+                    source_object: Some(association.try_clone_for_decode(ctx, "Rhino source association copy")?),
                 });
                 annotate_derived(annotations, &id.to_string());
                 id
@@ -4212,7 +4212,7 @@ fn stage_extrusion_caps(
             ir.model.points.push(Point::new(
                 point_id.try_clone_for_decode(ctx, "Rhino typed identity copy")?,
                 endpoint,
-                Some(association.clone()),
+                Some(association.try_clone_for_decode(ctx, "Rhino source association copy")?),
             ));
             ir.model.vertices.push(Vertex {
                 id: vertex_id.try_clone_for_decode(ctx, "Rhino typed identity copy")?,
@@ -4514,7 +4514,7 @@ fn stage_brep_carriers(
                 archive,
                 crate::mesh::MeshDecodeOptions {
                     writer_version,
-                    association: Some(association.clone()),
+                    association: Some(association.try_clone_for_decode(ctx, "Rhino source association copy")?),
                     id: crate::mesh::MeshId::Ready(
                         cadmpeg_ir::tessellation::TessellationId::mint(id).map_err(|error| {
                             cadmpeg_core::CodecError::Malformed(error.to_string())
@@ -4650,7 +4650,7 @@ fn stage_brep_carriers(
                 staged.draft.model_mut().surfaces.push(Surface {
                     id: id.try_clone_for_decode(ctx, "Rhino typed identity copy")?,
                     geometry: geometry.into_geometry(),
-                    source_object: Some(association.clone()),
+                    source_object: Some(association.try_clone_for_decode(ctx, "Rhino source association copy")?),
                 });
                 staged.draft.exactness(
                     id.to_string(),
@@ -4832,7 +4832,7 @@ fn stage_brep(input: BrepTransferInput<'_>) -> Result<BrepDraft, crate::curves::
         staged.draft.model_mut().points.push(Point::new(
             point_id.try_clone_for_decode(ctx, "Rhino typed identity copy")?,
             position,
-            Some(association.clone()),
+            Some(association.try_clone_for_decode(ctx, "Rhino source association copy")?),
         ));
         staged.draft.model_mut().vertices.push(Vertex {
             id: vertex_id.try_clone_for_decode(ctx, "Rhino typed identity copy")?,
@@ -5524,7 +5524,7 @@ fn stage_brep_procedural_surface(
     staged.draft.model_mut().surfaces.push(Surface {
         id: surface_id.try_clone_for_decode(context.ctx, "Rhino typed identity copy")?,
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(geometry)),
-        source_object: Some(context.association.clone()),
+        source_object: Some(context.association.try_clone_for_decode(context.ctx, "Rhino source association copy")?),
     });
     let procedural_id = cadmpeg_ir::ids::ProceduralSurfaceId::compose(
         &cadmpeg_ir::identity_namespace!("rhino", "object", "procedural-surface"),
@@ -5626,7 +5626,7 @@ fn stage_curve_tree(
     staged.draft.model_mut().curves.push(Curve {
         id: id.try_clone_for_decode(ctx, "Rhino typed identity copy")?,
         geometry,
-        source_object: Some(association.clone()),
+        source_object: Some(association.try_clone_for_decode(ctx, "Rhino source association copy")?),
     });
     staged.draft.exactness(id.to_string(), Exactness::Derived);
     staged.links.push(id.to_string());
@@ -6234,7 +6234,7 @@ fn commit_curve_tree(
     ir.model.curves.push(Curve {
         id: id.try_clone_for_decode(ctx, "Rhino typed identity copy")?,
         geometry,
-        source_object: Some(source.association.clone()),
+        source_object: Some(source.association.try_clone_for_decode(ctx, "Rhino source association copy")?),
     });
     set_exactness(annotations, &id, Exactness::Derived);
     if let Some(definition) = definition {

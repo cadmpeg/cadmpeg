@@ -207,7 +207,7 @@ impl ObjectRecord {
 }
 
 /// Token in a `7C09` record head.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) enum HeadToken {
     /// Initial head lead.
     Lead(u8),
@@ -303,7 +303,7 @@ pub(crate) enum ReferenceSchemaPreamble {
 }
 
 /// Item within a count-prefixed `0x3b` list.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) enum ListItem {
     /// Referenced object ordinal.
     Reference {
@@ -322,7 +322,7 @@ pub(crate) enum ListItem {
 }
 
 /// One allocation row in a `0x3c` bulk table.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct BulkTableRow {
     /// Row identity encoded by the compact, paged, or escaped atom form.
     row_id: u32,

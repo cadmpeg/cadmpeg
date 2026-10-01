@@ -2,7 +2,7 @@
 
 use crate::assemble::quintic_jet_pcurve;
 use crate::families::e5::decode::{
-    copy_e5_curve, e5_occurrence_intersection_cache, e5_support_occurrence_intersection_context,
+    e5_occurrence_intersection_cache, e5_support_occurrence_intersection_context,
     parameter_range_agreement_tolerance, E5OccurrenceIntersectionSide,
     EPS_E5_DECODE_EXACT_GEOMETRY,
 };
@@ -55,7 +55,7 @@ fn e5_boundary_nurbs_cache_refuses_before_copy() {
         )
         .expect("valid linear NURBS"),
     ));
-    let refused = crate::test_support::with_collection_limit(0, |ctx| copy_e5_curve(ctx, &curve));
+    let refused = crate::test_support::with_collection_limit(0, |ctx| (&curve).try_clone_for_decode(ctx, "catia_e5_boundary_curve_copy"));
     assert!(
         matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
         if limit.operation == "catia_e5_boundary_curve_copy")

@@ -64,32 +64,6 @@ pub struct PolygonalSurface {
 }
 
 impl PolygonalSurface {
-    /// Copy the admitted vertex and triangle lanes under the caller's limits.
-    pub fn try_clone_charged(
-        &self,
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-        operation: &'static str,
-    ) -> Result<Self, cadmpeg_core::CodecError> {
-        let count = self
-            .vertices
-            .len()
-            .checked_add(self.triangles.len())
-            .and_then(|count| count.checked_mul(32))
-            .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
-        ctx.charge_work(cadmpeg_core::decode::u64_from_index(count), operation)?;
-        let mut vertices = Vec::new();
-        ctx.reserve_vec(&mut vertices, self.vertices.len(), operation)?;
-        vertices.extend_from_slice(&self.vertices);
-        let mut triangles = Vec::new();
-        ctx.reserve_vec(&mut triangles, self.triangles.len(), operation)?;
-        triangles.extend_from_slice(&self.triangles);
-        Ok(Self {
-            vertices,
-            triangles,
-            chordal_deflection: self.chordal_deflection,
-        })
-    }
-
     /// Admitted polygon vertices in source order.
     pub fn vertices(&self) -> &[FinitePoint3] {
         &self.vertices
@@ -517,46 +491,6 @@ impl PolylineSamples<FiniteReal, FinitePoint3> {
 }
 
 impl PolylineCurve {
-    /// Copy the admitted samples without changing their parameter witness.
-    pub fn try_clone_charged(
-        &self,
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-        operation: &'static str,
-    ) -> Result<Self, cadmpeg_core::CodecError> {
-        let work = self
-            .samples
-            .count()
-            .checked_mul(32)
-            .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
-        ctx.charge_work(cadmpeg_core::decode::u64_from_index(work), operation)?;
-        let samples = match &self.samples {
-            PolylineSamples::Unparameterized { points } => {
-                let mut copied = Vec::new();
-                ctx.reserve_vec(&mut copied, points.len(), operation)?;
-                copied.extend_from_slice(points.as_slice());
-                PolylineSamples::Unparameterized {
-                    points: copied
-                        .try_into()
-                        .map_err(cadmpeg_core::CodecError::malformed)?,
-                }
-            }
-            PolylineSamples::Parameterized { vertices } => {
-                let mut copied = Vec::new();
-                ctx.reserve_vec(&mut copied, vertices.len(), operation)?;
-                copied.extend_from_slice(vertices.as_slice());
-                PolylineSamples::Parameterized {
-                    vertices: copied
-                        .try_into()
-                        .map_err(cadmpeg_core::CodecError::malformed)?,
-                }
-            }
-        };
-        Ok(Self {
-            samples,
-            chordal_deflection: self.chordal_deflection,
-        })
-    }
-
     /// Copy the sample lane through the decode collection budget.
     pub fn try_clone_for_decode(
         &self,

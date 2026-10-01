@@ -190,18 +190,18 @@ pub(super) fn termination(
 ) -> Result<LinearTermination, CodecError> {
     Ok(match source {
         LinearTermination::ToFace { face, offset } => LinearTermination::ToFace {
-            face: face.try_clone_charged(ctx, OPERATION)?,
+            face: face.try_clone_for_decode(ctx, OPERATION)?,
             offset: *offset,
         },
         LinearTermination::ToVertex { vertex: selected } => LinearTermination::ToVertex {
             vertex: vertex(ctx, selected)?,
         },
         LinearTermination::OffsetFromFace { face, offset } => LinearTermination::OffsetFromFace {
-            face: face.try_clone_charged(ctx, OPERATION)?,
+            face: face.try_clone_for_decode(ctx, OPERATION)?,
             offset: *offset,
         },
         LinearTermination::ToShape { target } => LinearTermination::ToShape {
-            target: target.try_clone_charged(ctx, OPERATION)?,
+            target: target.try_clone_for_decode(ctx, OPERATION)?,
         },
         _ => source.clone(),
     })

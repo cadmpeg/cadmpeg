@@ -1462,7 +1462,7 @@ impl MeshQuotient {
         let union = self
             .union
             .clone_charged(ctx, "catia_quotient_clone_union")?;
-        let domains = ctx.copy_retained_slice(&self.domains, "catia_quotient_clone_domains")?;
+        let domains = ctx.try_collect_retained_with(&self.domains, "catia_quotient_clone_domains", |domain| Ok::<_, CodecError>(Arc::clone(domain)))?;
         let mut members = Vec::new();
         ctx.reserve_vec(
             &mut members,

@@ -6028,64 +6028,6 @@ pub(crate) struct CurveTransfer {
     pub(crate) procedural: Vec<(CurveId, ProceduralCurve)>,
 }
 
-fn clone_curve_geometry(
-    ctx: &DecodeContext<'_>,
-    geometry: &CurveGeometry,
-) -> Result<CurveGeometry, CodecError> {
-    match geometry {
-        CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)) => {
-            Ok(CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-                nurbs.try_clone_for_decode(ctx, "FreeCAD NURBS curve copy")?,
-            )))
-        }
-        _ => Ok(geometry.clone()),
-    }
-}
-
-fn clone_surface_geometry(
-    ctx: &DecodeContext<'_>,
-    geometry: &SurfaceGeometry,
-) -> Result<SurfaceGeometry, CodecError> {
-    match geometry {
-        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(nurbs)) => {
-            Ok(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
-                nurbs.try_clone_for_decode(ctx, "FreeCAD NURBS surface copy")?,
-            )))
-        }
-        _ => Ok(geometry.clone()),
-    }
-}
-
-pub(crate) fn clone_source_association(
-    ctx: &DecodeContext<'_>,
-    source: &SourceObjectAssociation,
-) -> Result<SourceObjectAssociation, CodecError> {
-    Ok(SourceObjectAssociation {
-        format: source.format,
-        object_id: cadmpeg_core::text::NonBlankString::new(ctx.copy_retained_text(
-            source.object_id.as_str(),
-            "FreeCAD geometry source association",
-        )?)
-        .ok_or_else(|| CodecError::malformed("source object_id must not be empty"))?,
-        name: source
-            .name
-            .as_deref()
-            .map(|name| ctx.copy_retained_text(name, "FreeCAD geometry source name"))
-            .transpose()?,
-        color: source.color,
-        visible: source.visible,
-        layer: source
-            .layer
-            .as_deref()
-            .map(|layer| ctx.copy_retained_text(layer, "FreeCAD geometry source layer"))
-            .transpose()?,
-        instance_path: ctx.copy_retained_strings(
-            &source.instance_path,
-            "FreeCAD geometry source instance path",
-        )?,
-    })
-}
-
 fn model_identity<I>(
     ctx: &DecodeContext<'_>,
     kind: &str,
@@ -6374,8 +6316,8 @@ fn append_text_curve(
     ctx.reserve_vec(&mut transfer.curves, 1, "FreeCAD transferred curves")?;
     transfer.curves.push(Curve {
         id,
-        geometry: clone_curve_geometry(ctx, &geometry)?,
-        source_object: Some(clone_source_association(ctx, association)?),
+        geometry: (&geometry).try_clone_for_decode(ctx, "FreeCAD curve geometry copy")?,
+        source_object: Some((association).try_clone_for_decode(ctx, "FreeCAD geometry source association")?),
     });
     Ok(geometry)
 }
@@ -6785,8 +6727,8 @@ fn append_text_surface(
     ctx.reserve_vec(&mut transfer.surfaces, 1, "FreeCAD transferred surfaces")?;
     transfer.surfaces.push(Surface {
         id,
-        geometry: clone_surface_geometry(ctx, &geometry)?,
-        source_object: Some(clone_source_association(ctx, association)?),
+        geometry: (&geometry).try_clone_for_decode(ctx, "FreeCAD surface geometry copy")?,
+        source_object: Some((association).try_clone_for_decode(ctx, "FreeCAD geometry source association")?),
     });
     Ok(geometry)
 }

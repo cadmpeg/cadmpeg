@@ -676,7 +676,7 @@ use cadmpeg_core::CodecError;
 use std::collections::BTreeMap;
 
 pub(super) trait CloneForDecode: Sized {
-    fn clone_for_decode(
+    fn try_clone_for_decode(
         &self,
         ctx: &DecodeContext<'_>,
         operation: &'static str,
@@ -684,113 +684,105 @@ pub(super) trait CloneForDecode: Sized {
 }
 
 impl CloneForDecode for String {
-    fn clone_for_decode(
+    fn try_clone_for_decode(
         &self,
         ctx: &DecodeContext<'_>,
         operation: &'static str,
     ) -> Result<Self, CodecError> {
-        String::from_utf8(ctx.copy_retained(self.as_bytes(), operation)?)
-            .map_err(|_| CodecError::malformed("admitted feature text is not UTF-8"))
+        ctx.copy_retained_text(self, operation)
     }
 }
 
 impl<T: CloneForDecode> CloneForDecode for Vec<T> {
-    fn clone_for_decode(
+    fn try_clone_for_decode(
         &self,
         ctx: &DecodeContext<'_>,
         operation: &'static str,
     ) -> Result<Self, CodecError> {
-        let count =
-            u64::try_from(self.len()).map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
-        ctx.charge_collection_items(count, operation)?;
-        ctx.charge_work(count, operation)?;
         let mut copied = Vec::new();
-        copied
-            .try_reserve(self.len())
-            .map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
+        ctx.reserve_retained_vec(&mut copied, self.len(), operation)?;
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(self.len()), operation)?;
         for member in self {
-            copied.push(member.clone_for_decode(ctx, operation)?);
+            copied.push(member.try_clone_for_decode(ctx, operation)?);
         }
         Ok(copied)
     }
 }
 
 impl<T: CloneForDecode> CloneForDecode for Option<T> {
-    fn clone_for_decode(
+    fn try_clone_for_decode(
         &self,
         ctx: &DecodeContext<'_>,
         operation: &'static str,
     ) -> Result<Self, CodecError> {
         self.as_ref()
-            .map(|value| value.clone_for_decode(ctx, operation))
+            .map(|value| value.try_clone_for_decode(ctx, operation))
             .transpose()
     }
 }
 
 impl<T: CloneForDecode> CloneForDecode for Box<T> {
-    fn clone_for_decode(
+    fn try_clone_for_decode(
         &self,
         ctx: &DecodeContext<'_>,
         operation: &'static str,
     ) -> Result<Self, CodecError> {
-        Ok(Box::new(self.as_ref().clone_for_decode(ctx, operation)?))
+        copy_box(self.as_ref(), ctx, operation)
     }
 }
 
 impl<T: CloneForDecode> CloneForDecode for [T; 2] {
-    fn clone_for_decode(
+    fn try_clone_for_decode(
         &self,
         ctx: &DecodeContext<'_>,
         operation: &'static str,
     ) -> Result<Self, CodecError> {
         Ok([
-            self[0].clone_for_decode(ctx, operation)?,
-            self[1].clone_for_decode(ctx, operation)?,
+            self[0].try_clone_for_decode(ctx, operation)?,
+            self[1].try_clone_for_decode(ctx, operation)?,
         ])
     }
 }
 
 impl<T: CloneForDecode> CloneForDecode for [T; 3] {
-    fn clone_for_decode(
+    fn try_clone_for_decode(
         &self,
         ctx: &DecodeContext<'_>,
         operation: &'static str,
     ) -> Result<Self, CodecError> {
         Ok([
-            self[0].clone_for_decode(ctx, operation)?,
-            self[1].clone_for_decode(ctx, operation)?,
-            self[2].clone_for_decode(ctx, operation)?,
+            self[0].try_clone_for_decode(ctx, operation)?,
+            self[1].try_clone_for_decode(ctx, operation)?,
+            self[2].try_clone_for_decode(ctx, operation)?,
         ])
     }
 }
 
 impl<K: CloneForDecode + Ord, V: CloneForDecode> CloneForDecode for BTreeMap<K, V> {
-    fn clone_for_decode(
+    fn try_clone_for_decode(
         &self,
         ctx: &DecodeContext<'_>,
         operation: &'static str,
     ) -> Result<Self, CodecError> {
         let mut copied = BTreeMap::new();
         for (key, value) in self {
-            ctx.charge_collection_items(1, operation)?;
-            ctx.charge_work(1, operation)?;
-            copied.insert(
-                key.clone_for_decode(ctx, operation)?,
-                value.clone_for_decode(ctx, operation)?,
-            );
+            ctx.admit_retained_btree_record::<K,V>(0, operation)?;
+            let key = key.try_clone_for_decode(ctx, operation)?;
+            let value = value.try_clone_for_decode(ctx, operation)?;
+            ctx.charge_work(cadmpeg_core::decode::u64_from_index(copied.len()).checked_add(1).ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX-1, u64::MAX))?, operation)?;
+            copied.insert(key, value);
         }
         Ok(copied)
     }
 }
 
 impl CloneForDecode for cadmpeg_core::text::NonBlankString {
-    fn clone_for_decode(
+    fn try_clone_for_decode(
         &self,
         ctx: &DecodeContext<'_>,
         operation: &'static str,
     ) -> Result<Self, CodecError> {
-        let text = String::from_utf8(ctx.copy_retained(self.as_str().as_bytes(), operation)?)
-            .map_err(|_| CodecError::malformed("admitted feature text is not UTF-8"))?;
+        let text = ctx.copy_retained_text(self.as_str(), operation)?;
         cadmpeg_core::text::NonBlankString::new(text)
             .ok_or_else(|| CodecError::malformed("admitted feature text is blank"))
     }
@@ -799,17 +791,12 @@ impl CloneForDecode for cadmpeg_core::text::NonBlankString {
 macro_rules! clone_id_for_decode {
     ($type:ty) => {
         impl CloneForDecode for $type {
-            fn clone_for_decode(
+            fn try_clone_for_decode(
                 &self,
                 ctx: &DecodeContext<'_>,
                 operation: &'static str,
             ) -> Result<Self, CodecError> {
-                let copied =
-                    String::from_utf8(ctx.copy_retained(self.as_str().as_bytes(), operation)?)
-                        .map_err(|_| {
-                            CodecError::malformed("admitted feature identity is not UTF-8")
-                        })?;
-                Self::try_from(copied).map_err(CodecError::malformed)
+                <$type>::try_clone_for_decode(self, ctx, operation)
             }
         }
     };
@@ -864,3 +851,20 @@ clone_id_for_decode!(crate::sketches::SpatialSketchId);
 
 #[cfg(test)]
 mod tests;
+
+clone_enum_for_decode!(super::ConfigurationEvaluation; { Suppressed {}, Active { outputs } });
+clone_record_for_decode!(super::ConfigurationFeatureState; { evaluation, dependencies, definition });
+clone_record_for_decode!(super::FeatureEvaluation; { definition, outputs });
+clone_record_for_decode!(super::Feature; { id, ordinal, name, suppressed, dependencies, source_properties, source_tag, source_text, source_content, evaluation, native_ref });
+clone_record_for_decode!(super::FeatureContent; (field0));
+clone_enum_for_decode!(super::FeatureSourceContent; { Text(value), Parameter(value), Feature(value) });
+clone_enum_for_decode!(super::ParameterValue; { Length(value), Angle(value), Real(value), Integer(value), Boolean(value), String(value) });
+clone_id_for_decode!(super::ParameterId);
+clone_copy_for_decode!(i64);
+
+/// Copy a boxed field after admitting its retained allocation.
+pub(super) fn copy_box<T: CloneForDecode>(value: &T, ctx: &DecodeContext<'_>, operation: &'static str) -> Result<Box<T>, CodecError> {
+    ctx.charge_retained(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<T>()), operation)?;
+    ctx.charge_collection_items(1, operation)?;
+    Ok(Box::new(CloneForDecode::try_clone_for_decode(value, ctx, operation)?))
+}

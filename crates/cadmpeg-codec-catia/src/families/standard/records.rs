@@ -119,7 +119,7 @@ impl AnalyticSurfaceKind {
 }
 
 /// A located per-face analytic surface record.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub(crate) struct SurfacePrefix {
     /// Offset of the `00 33 <kind>` signature within the BREP stream.
     pub(super) pos: usize,
@@ -130,7 +130,7 @@ pub(crate) struct SurfacePrefix {
 }
 
 /// One face-local record in the standard `SurfacicReps` surface roster.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub(super) enum StandardSurfaceRecord {
     /// Fixed-length analytic carrier record.
     Analytic(SurfacePrefix),
@@ -721,7 +721,7 @@ pub(super) fn decode_plane(params: &PlaneParams) -> Option<SurfaceGeometry> {
 }
 
 /// Geometry family carried by one positional standard `0x60` edge row.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub(super) enum StandardCurveGeometry {
     /// The line equation is derived from endpoints or adjacent surfaces.
     Line,
@@ -739,7 +739,7 @@ pub(super) enum StandardCurveGeometry {
 /// One row of the standard positional edge-support/incidence table (spec
 /// [§5.5](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/catia.md#55-0x60-curve-support-edge-incidence-table)): `60 <tag:u24le> <curve_body> <face_ref> <face_ref>`, one row per
 /// spine edge.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub(super) struct StandardCurveSupport {
     /// Offset of the `0x60` row marker in the BREP stream.
     pub(super) pos: usize,

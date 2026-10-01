@@ -2207,7 +2207,7 @@ pub(crate) fn project_compact_surface_selections(
         }
         let native_key =
             ctx.format_retained(format_args!("{native}"), ALIAS_OPERATION)?;
-        let face_copy = face.try_clone_charged(ctx, ALIAS_OPERATION)?;
+        let face_copy = face.try_clone_for_decode(ctx, ALIAS_OPERATION)?;
         if !face_aliases.contains_key(native) {
             ctx.charge_collection_items(1, ALIAS_OPERATION)?;
             face_aliases
@@ -2230,7 +2230,7 @@ pub(crate) fn project_compact_surface_selections(
         let Some(face) = face_aliases.get(target.as_str()) else {
             continue;
         };
-        let face = face.try_clone_charged(ctx, ALIAS_OPERATION)?;
+        let face = face.try_clone_for_decode(ctx, ALIAS_OPERATION)?;
         if let FaceSelection::Generated { faces, .. } = &face {
             for producer in faces.iter().map(|face| &face.feature) {
                 ctx.charge_work(1, ALIAS_OPERATION)?;

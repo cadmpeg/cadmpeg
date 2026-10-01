@@ -1947,19 +1947,7 @@ fn append_legacy_brep(
         let root = roots[index];
         if let Some(curve) = &record.curve {
             if let std::collections::btree_map::Entry::Vacant(entry) = group_curve.entry(root) {
-                admit_v1_temporary_items::<f64>(
-                    ctx,
-                    &mut workspace,
-                    curve.knots().len(),
-                    "Rhino V1 grouped curve knots",
-                )?;
-                admit_v1_temporary_items::<cadmpeg_ir::geometry::nurbs::WeightedPole3<FinitePoint3>>(
-                    ctx,
-                    &mut workspace,
-                    curve.pole_count(),
-                    "Rhino V1 grouped curve poles",
-                )?;
-                entry.insert(curve.clone());
+                entry.insert(curve.try_clone_for_decode(ctx, "Rhino V1 grouped curve copy")?);
             }
         }
         group_tolerance
@@ -2262,22 +2250,17 @@ fn append_legacy_brep(
     let mut group_edges = BTreeMap::new();
     for (edge_index, root) in group_roots.iter().copied().enumerate() {
         let curve_id = if let Some(curve) = group_curve.remove(&root) {
-            admit_v1_values::<f64>(ctx, curve.knots().len(), "Rhino V1 Brep edge curve knots")?;
-            admit_v1_values::<cadmpeg_ir::geometry::nurbs::WeightedPole3<FinitePoint3>>(
-                ctx,
-                curve.pole_count(),
-                "Rhino V1 Brep edge curve poles",
-            )?;
             let id = cadmpeg_ir::ids::CurveId::compose(
                 &cadmpeg_ir::identity_namespace!("rhino", "object", "curve"),
                 legacy_identity_key(format!("{suffix}.edge-{edge_index}"))?,
             );
+            let domain = curve_domain(&curve)?;
             model.curves.push(Curve {
                 id: id.try_clone_for_decode(ctx, "Rhino V1 typed identity copy")?,
-                geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve.clone())),
+                geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)),
                 source_object: None,
             });
-            Some((id, curve_domain(&curve)?))
+            Some((id, domain))
         } else {
             None
         };

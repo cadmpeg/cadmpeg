@@ -284,6 +284,10 @@ impl<'a> DecodeContext<'a> {
         self.budget.charge_retained(bytes, operation)
     }
 
+    pub(crate) fn retained_size_overflow_limit(&self, operation: &'static str) -> ResourceLimit {
+        self.budget.retained_size_overflow_limit(operation)
+    }
+
     pub(crate) fn charge_retained_limit(
         &self,
         bytes: u64,
@@ -298,9 +302,9 @@ impl<'a> DecodeContext<'a> {
         operation: &'static str,
         build: impl FnOnce() -> Result<T, E>,
     ) -> Result<(T, ScopedReservation<'_>), E> {
-        let scope = self.budget.storage_scope(operation);
-        let value = build()?;
-        Ok((value, scope.finish()))
+        let mut storage = self.reserve_scoped(0, operation)?;
+        let value = storage.with_storage(build)?;
+        Ok((value, storage))
     }
 
     pub(crate) fn collection_allocation_failed_limit(
@@ -1016,6 +1020,21 @@ mod tests {
         }), Err(crate::CodecError::ResourceLimit(limit))
             if limit.dimension == super::ResourceDimension::MaterializedBytes
                 && limit.additional == 4));
+    }
+
+    #[test]
+    fn scoped_copy_extends_existing_reservation_without_double_charging() {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_materialized_bytes = 6;
+        policy.limits.max_retained_bytes = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let mut storage = ctx.reserve_scoped(2, "temporary record").unwrap();
+        let text = storage.with_storage(|| ctx.copy_retained_text("abcd", "temporary text")).unwrap();
+        assert_eq!(text, "abcd");
+        assert!(matches!(ctx.reserve_scoped(1, "full scope"), Err(crate::CodecError::ResourceLimit(limit)) if limit.used == 6));
+        drop(text);
+        drop(storage);
     }
 
     #[test]

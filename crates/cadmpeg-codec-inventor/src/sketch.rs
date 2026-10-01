@@ -1916,13 +1916,7 @@ fn resolve_parameter(
         constraint.identity.segment_token, ordinal
     );
     let parameter = parameters.get(&native)?;
-    Some(
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(parameter.as_str().len()),
-            "retain Inventor sketch constraint parameter id",
-        )
-        .map(|()| parameter.clone()),
-    )
+    Some(parameter.try_clone_for_decode(ctx, "retain Inventor sketch constraint parameter id"))
 }
 
 fn native_operand(

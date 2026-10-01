@@ -6,7 +6,6 @@ use std::collections::BTreeMap;
 use crate::decode::build::units::{malformed_refusal, not_implemented_refusal};
 
 use cadmpeg_core::decode::DecodeContext;
-use cadmpeg_core::text::NonBlankString;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{DesignParameter, Feature, FeatureDefinition, ParameterValue};
@@ -19,7 +18,6 @@ use cadmpeg_ir::products::Occurrence;
 use cadmpeg_ir::scalar::PositiveReal;
 use cadmpeg_ir::sketches::{
     Sketch, SketchConstraint, SketchEntity, SketchEntityId, SketchGeometry,
-    SketchGeometryDefinition,
 };
 use cadmpeg_ir::topology::{Body, Coedge, Edge, EdgeCarrier, Face, Point, Vertex};
 use cadmpeg_ir::transform::Transform;
@@ -34,86 +32,6 @@ pub(super) struct SourceUnitCarriers {
 }
 
 impl SourceUnitCarriers {
-    fn copy_sketch_geometry(
-        ctx: &DecodeContext<'_>,
-        geometry: &SketchGeometry,
-    ) -> Result<SketchGeometry, CodecError> {
-        let copy_nonblank = |value: &NonBlankString, operation: &'static str| {
-            NonBlankString::new(ctx.copy_retained_text(value.as_str(), operation)?)
-                .ok_or_else(|| malformed_refusal(ctx, "admitted sketch text became blank"))
-        };
-        match geometry.definition() {
-            SketchGeometryDefinition::Nurbs { curve } => {
-                let operation = "creo source sketch NURBS copy";
-                Ok(SketchGeometry::nurbs(
-                    curve.try_clone_for_decode(ctx, operation)?,
-                ))
-            }
-            SketchGeometryDefinition::Text {
-                text,
-                font_family,
-                font_weight,
-                height,
-                width_factor,
-                placement,
-                horizontal_alignment,
-                vertical_alignment,
-            } => Ok(SketchGeometry::from_admitted_definition(
-                SketchGeometryDefinition::Text {
-                    text: copy_nonblank(text, "creo source sketch text")?,
-                    font_family: copy_nonblank(font_family, "creo source sketch font")?,
-                    font_weight: *font_weight,
-                    height: *height,
-                    width_factor: *width_factor,
-                    placement: *placement,
-                    horizontal_alignment: *horizontal_alignment,
-                    vertical_alignment: *vertical_alignment,
-                },
-            )),
-            SketchGeometryDefinition::ExternalReference {
-                document,
-                object,
-                subelements,
-            } => {
-                let document = document
-                    .as_ref()
-                    .map(|value| ctx.copy_retained_text(value, "creo source sketch document"))
-                    .transpose()?;
-                let object = copy_nonblank(object, "creo source sketch object")?;
-                let mut selectors = Vec::new();
-                ctx.reserve_vec(
-                    &mut selectors,
-                    subelements.len(),
-                    "creo source sketch subelements",
-                )?;
-                for value in subelements {
-                    selectors
-                        .push(ctx.copy_retained_text(value, "creo source sketch subelement text")?);
-                }
-                Ok(SketchGeometry::from_admitted_definition(
-                    SketchGeometryDefinition::ExternalReference {
-                        document,
-                        object,
-                        subelements: selectors,
-                    },
-                ))
-            }
-            SketchGeometryDefinition::Native { native_kind } => Ok(
-                SketchGeometry::from_admitted_definition(SketchGeometryDefinition::Native {
-                    native_kind: copy_nonblank(native_kind, "creo source sketch native kind")?,
-                }),
-            ),
-            SketchGeometryDefinition::Point { .. }
-            | SketchGeometryDefinition::Line { .. }
-            | SketchGeometryDefinition::ReferenceLine { .. }
-            | SketchGeometryDefinition::Circle { .. }
-            | SketchGeometryDefinition::Arc { .. }
-            | SketchGeometryDefinition::Ellipse { .. }
-            | SketchGeometryDefinition::Hyperbola { .. }
-            | SketchGeometryDefinition::Parabola { .. } => Ok(geometry.clone()),
-        }
-    }
-
     pub(super) fn new(length_scale_mm: Option<PositiveReal>) -> Self {
         Self {
             length_scale_mm: length_scale_mm.filter(|scale| scale.get() != 1.0),
@@ -259,7 +177,7 @@ impl SourceUnitCarriers {
                 ctx.copy_retained_text(entity.id().as_str(), "creo source sketch entity IDs")?,
             )
             .map_err(CodecError::malformed)?;
-            let source_geometry = Self::copy_sketch_geometry(ctx, &entity.geometry)?;
+            let source_geometry = entity.geometry.try_clone_for_decode(ctx, "creo source sketch geometry copy")?;
             let source_geometry = if let Some(scale) = self.length_scale_mm {
                 let unscaled = std::mem::replace(&mut entity.geometry, source_geometry);
                 let scaled =
@@ -755,15 +673,15 @@ mod tests {
         policy.limits.max_collection_items = 8;
         let (ctx, _) =
             DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root admitted");
-        let error = SourceUnitCarriers::copy_sketch_geometry(&ctx, &geometry)
+        let error = geometry.try_clone_for_decode(&ctx, "creo source sketch geometry copy")
             .expect_err("six knots and three poles exceed the limit");
         assert!(
             matches!(error, CodecError::ResourceLimit(resource)
-            if resource.operation == "creo source sketch NURBS copy"),
+            if resource.operation == "creo source sketch geometry copy"),
             "{error:?}"
         );
         let copy = crate::decode::with_test_decode_ctx(|ctx| {
-            SourceUnitCarriers::copy_sketch_geometry(ctx, &geometry)
+            geometry.try_clone_for_decode(ctx, "creo source sketch geometry copy")
         })
         .expect("service copy");
         assert_eq!(copy, geometry);
@@ -787,15 +705,15 @@ mod tests {
         );
         let arena = DecodeArena::new();
         for (geometry, limit, operation) in [
-            (&text, 6, "creo source sketch text"),
-            (&text, 10, "creo source sketch font"),
-            (&native, 5, "creo source sketch native kind"),
+            (&text, 6, "creo source sketch geometry copy"),
+            (&text, 10, "creo source sketch geometry copy"),
+            (&native, 5, "creo source sketch geometry copy"),
         ] {
             let mut policy = DecodePolicy::service();
             policy.limits.max_retained_bytes = limit;
             let (ctx, _) =
                 DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root admitted");
-            let error = SourceUnitCarriers::copy_sketch_geometry(&ctx, geometry)
+            let error = geometry.try_clone_for_decode(&ctx, "creo source sketch geometry copy")
                 .expect_err("retained source text exceeds its limit");
             assert!(
                 matches!(error, CodecError::ResourceLimit(resource)
@@ -805,7 +723,7 @@ mod tests {
         }
         for geometry in [&text, &native] {
             let copy = crate::decode::with_test_decode_ctx(|ctx| {
-                SourceUnitCarriers::copy_sketch_geometry(ctx, geometry)
+                geometry.try_clone_for_decode(ctx, "creo source sketch geometry copy")
             })
             .expect("service copy");
             assert_eq!(&copy, geometry);
@@ -825,24 +743,24 @@ mod tests {
         item_policy.limits.max_collection_items = 1;
         let (ctx, _) =
             DecodeContext::from_root_bytes(&[], &arena, &item_policy).expect("empty root admitted");
-        let error = SourceUnitCarriers::copy_sketch_geometry(&ctx, &geometry)
+        let error = geometry.try_clone_for_decode(&ctx, "creo source sketch geometry copy")
             .expect_err("two selectors exceed the item limit");
         assert!(
             matches!(error, CodecError::ResourceLimit(resource)
-            if resource.operation == "creo source sketch subelements"),
+            if resource.operation == "creo source sketch geometry copy"),
             "{error:?}"
         );
         for (limit, operation) in [
-            (2, "creo source sketch document"),
-            (6, "creo source sketch object"),
-            (10, "creo source sketch subelement text"),
-            (14, "creo source sketch subelement text"),
+            (2, "creo source sketch geometry copy"),
+            (6, "creo source sketch geometry copy"),
+            (10, "creo source sketch geometry copy"),
+            (14, "creo source sketch geometry copy"),
         ] {
             let mut policy = DecodePolicy::service();
             policy.limits.max_retained_bytes = limit;
             let (ctx, _) =
                 DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root admitted");
-            let error = SourceUnitCarriers::copy_sketch_geometry(&ctx, &geometry)
+            let error = geometry.try_clone_for_decode(&ctx, "creo source sketch geometry copy")
                 .expect_err("external reference copy exceeds its retained limit");
             assert!(
                 matches!(error, CodecError::ResourceLimit(resource)
@@ -851,7 +769,7 @@ mod tests {
             );
         }
         let copy = crate::decode::with_test_decode_ctx(|ctx| {
-            SourceUnitCarriers::copy_sketch_geometry(ctx, &geometry)
+            geometry.try_clone_for_decode(ctx, "creo source sketch geometry copy")
         })
         .expect("service copy");
         assert_eq!(copy, geometry);
@@ -2651,13 +2569,13 @@ mod tests {
                 policy.limits.max_collection_items = cap;
                 let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
                 assert!(
-                    matches!(SourceUnitCarriers::copy_sketch_geometry(&ctx, &geometry),
-                    Err(CodecError::ResourceLimit(resource)) if resource.operation == "creo source sketch NURBS copy")
+                    matches!(geometry.try_clone_for_decode(&ctx, "creo source sketch geometry copy"),
+                    Err(CodecError::ResourceLimit(resource)) if resource.operation == "creo source sketch geometry copy")
                 );
             }
             assert_eq!(
                 crate::decode::with_test_decode_ctx(
-                    |ctx| SourceUnitCarriers::copy_sketch_geometry(ctx, &geometry)
+                    |ctx| geometry.try_clone_for_decode(ctx, "creo source sketch geometry copy")
                 )
                 .expect("service"),
                 geometry

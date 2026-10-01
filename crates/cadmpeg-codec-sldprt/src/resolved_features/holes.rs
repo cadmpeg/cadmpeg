@@ -674,11 +674,7 @@ pub(crate) fn enrich_history_cosmetic_thread_diameters(
                     let Some(producer) = features_by_id.get(producer.as_str()).copied() else {
                         continue;
                     };
-                    let Some(value) = crate::history::project::solid::threaded_hole_major_diameter(
-                        producer,
-                        &features_by_source,
-                        &history.features,
-                    ) else {
+                    let Some(value) = crate::history::project::solid::threaded_hole_major_diameter(ctx, producer, &features_by_source, &history.features)? else {
                         continue;
                     };
                     if let Some(existing) = diameter {

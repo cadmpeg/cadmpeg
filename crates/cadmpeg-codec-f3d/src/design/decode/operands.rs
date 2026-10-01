@@ -404,7 +404,7 @@ pub(crate) fn bind_work_point_input_carriers(
         let Some(construction) = scope.work_point_construction_mut() else {
             continue;
         };
-        let mut inputs = ctx.copy_slice(construction.rule.inputs(), "f3d WorkPoint input copy")?;
+        let mut inputs = ctx.try_collect_retained_with(construction.rule.inputs(), "f3d WorkPoint input copy", |input| input.try_clone_for_decode(ctx, "f3d WorkPoint input copy"))?;
         for input in &mut inputs {
             let mut edge_matches = edge_operands.iter().filter(|operand| {
                 native_stream(&operand.id) == Some(stream.as_str())

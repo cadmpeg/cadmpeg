@@ -702,7 +702,7 @@ pub(in super::super) fn resolved_sketch_profiles(
                 }
                 SketchGeometryDefinition::Line { .. }
                 | SketchGeometryDefinition::Arc { .. }
-                | SketchGeometryDefinition::Circle { .. } => source_geometry.clone(),
+                | SketchGeometryDefinition::Circle { .. } => source_geometry.try_clone_for_decode(ctx, "creo resolved analytic profile copy")?,
                 _ => return Ok(None),
             };
             let Some(row) = ProfileEntity::new(ctx, source_geometry, entity_use.reversed)? else {

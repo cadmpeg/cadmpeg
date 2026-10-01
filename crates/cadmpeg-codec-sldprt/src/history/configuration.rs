@@ -89,7 +89,7 @@ fn apply_configuration_state(
     feature: &mut cadmpeg_ir::features::Feature,
     state: &cadmpeg_ir::features::ConfigurationFeatureState,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    let state = state.try_clone_charged(ctx, "retain SLDPRT configuration feature state")?;
+    let state = state.try_clone_for_decode(ctx, "retain SLDPRT configuration feature state")?;
     let (outputs, suppressed) = match state.evaluation {
         ConfigurationEvaluation::Suppressed {} => {
             (cadmpeg_ir::features::DistinctMembers::default(), true)
@@ -118,7 +118,7 @@ fn copy_configuration_features(
     let mut copied = Vec::new();
     ctx.reserve_vec(&mut copied, features.len(), OPERATION)?;
     for feature in features {
-        copied.push(feature.try_clone_charged(ctx, OPERATION)?);
+        copied.push(feature.try_clone_for_decode(ctx, OPERATION)?);
     }
     Ok(copied)
 }
@@ -159,7 +159,7 @@ fn copy_configuration_state_features(
             continue;
         };
         ctx.reserve_vec(&mut copied, 1, OPERATION)?;
-        let mut feature = feature.try_clone_charged(ctx, OPERATION)?;
+        let mut feature = feature.try_clone_for_decode(ctx, OPERATION)?;
         apply_configuration_state(ctx, &mut feature, state)?;
         copied.push(feature);
     }
@@ -850,7 +850,7 @@ pub(crate) fn project_configuration_sketch_states(
                     .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
                 ctx.charge_work(cadmpeg_core::decode::u64_from_index(work), OPERATION)?;
                 ctx.reserve_vec(&mut saved_values, 1, OPERATION)?;
-                let copied = value.try_clone_charged(ctx, OPERATION)?;
+                let copied = value.try_clone_for_decode(ctx, OPERATION)?;
                 saved_values.push((index, parameter.value.replace(copied)));
             }
             crate::resolved_features::profiles::bind_sketch_profiles(
@@ -1123,7 +1123,7 @@ fn inherit_configuration_shared_semantics(
                 | cadmpeg_ir::features::FaceSelection::Native(_) => true,
             };
             if incomplete {
-                *face = base_face.try_clone_charged(ctx, "copy SLDPRT configuration datum face")?;
+                *face = base_face.try_clone_for_decode(ctx, "copy SLDPRT configuration datum face")?;
             }
         }
         return Ok(());
@@ -1157,7 +1157,7 @@ fn inherit_configuration_hole_semantics(
     else {
         return Ok(());
     };
-    let mut construction = shape.construction().try_clone_charged(ctx, OPERATION)?;
+    let mut construction = shape.construction().try_clone_for_decode(ctx, OPERATION)?;
     let mut exit_kind = *shape.exit_kind();
     let mut diameter = shape.diameter();
     let FeatureDefinition::Operation(FeatureOperation::Hole {
@@ -1186,13 +1186,13 @@ fn inherit_configuration_hole_semantics(
     if missing_face {
         *face = base_face
             .as_ref()
-            .map(|value| value.try_clone_charged(ctx, "copy SLDPRT configuration hole face"))
+            .map(|value| value.try_clone_for_decode(ctx, "copy SLDPRT configuration hole face"))
             .transpose()?;
     }
     if profile.is_none() {
         *profile = base_profile
             .as_ref()
-            .map(|value| value.try_clone_charged(ctx, "copy SLDPRT configuration hole profile"))
+            .map(|value| value.try_clone_for_decode(ctx, "copy SLDPRT configuration hole profile"))
             .transpose()?;
     }
     if profile_filter.is_none() {
@@ -1231,7 +1231,7 @@ fn inherit_configuration_hole_semantics(
             if specification.is_none() {
                 *specification = base_specification
                     .as_deref()
-                    .map(|value| value.try_clone_boxed_charged(ctx, OPERATION))
+                    .map(|value| value.try_clone_for_decode(ctx, OPERATION))
                     .transpose()?;
             }
         }
@@ -1243,7 +1243,7 @@ fn inherit_configuration_hole_semantics(
                         if kind.is_unresolved()
                 ) =>
         {
-            *construction = base_construction.try_clone_charged(ctx, OPERATION)?;
+            *construction = base_construction.try_clone_for_decode(ctx, OPERATION)?;
         }
         _ => {}
     }
@@ -1259,7 +1259,7 @@ fn inherit_configuration_hole_semantics(
     {
         *extent = base_extent
             .as_ref()
-            .map(|value| value.try_clone_charged(ctx, "copy SLDPRT configuration hole termination"))
+            .map(|value| value.try_clone_for_decode(ctx, "copy SLDPRT configuration hole termination"))
             .transpose()?;
     }
     if bottom.is_none() {
@@ -1428,7 +1428,7 @@ fn copy_configuration_plane_reference(
             feature: copy_configuration_feature_id(ctx, feature, OPERATION)?,
         }),
         DatumPlaneReference::Face { face } => Ok(DatumPlaneReference::Face {
-            face: face.try_clone_charged(ctx, OPERATION)?,
+            face: face.try_clone_for_decode(ctx, OPERATION)?,
         }),
         DatumPlaneReference::ResolvedPlane { frame } => {
             Ok(DatumPlaneReference::ResolvedPlane { frame: *frame })
@@ -1655,7 +1655,7 @@ fn configuration_surface_carriers(
         let mut surfaces = Vec::new();
         ctx.reserve_vec(&mut surfaces, ir.model.surfaces.len(), OPERATION)?;
         for surface in &ir.model.surfaces {
-            surfaces.push(surface.try_clone_charged(ctx, OPERATION)?);
+            surfaces.push(surface.try_clone_for_decode(ctx, OPERATION)?);
         }
         return Ok(surfaces);
     };
@@ -1720,7 +1720,7 @@ fn configuration_surface_carriers(
                 .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
             ctx.charge_work(cadmpeg_core::decode::u64_from_index(work), OPERATION)?;
             ctx.reserve_vec(&mut surfaces, 1, OPERATION)?;
-            surfaces.push(surface.try_clone_charged(ctx, OPERATION)?);
+            surfaces.push(surface.try_clone_for_decode(ctx, OPERATION)?);
         }
     }
     Ok(surfaces)

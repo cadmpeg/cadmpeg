@@ -285,7 +285,7 @@ impl AnnotationBuilder {
             let id = ctx.copy_retained_text(id, operation)?;
             annotations
                 .provenance
-                .insert(id, source.copy_charged(ctx, operation)?);
+                .insert(id, source.try_clone_for_decode(ctx, operation)?);
         }
         for (id, note) in &self.annotations.exactness {
             ctx.charge_collection_items(1, operation)?;

@@ -2,7 +2,8 @@
 //! Design dimension recipe records: loci, annotation frames and presentation frames.
 
 use crate::records::admission::RecordAdmission;
-use cadmpeg_core::decode::u64_from_index;
+use cadmpeg_core::decode::{u64_from_index, DecodeContext};
+use cadmpeg_core::CodecError;
 
 use super::identity::Located;
 use super::recipes::ConstructionRecipeKind;
@@ -92,6 +93,23 @@ pub(crate) struct DesignRecipeReference {
     /// different native selector, before a historical state supersedes them.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub(crate) alternate_selector_edges: Vec<EdgeId>,
+}
+
+impl DesignRecipeReference {
+    pub(crate) fn try_clone_for_decode(&self, ctx: &DecodeContext<'_>, operation: &'static str) -> Result<Self, CodecError> {
+        Ok(Self {
+            selector: self.selector,
+            selector_offset: self.selector_offset,
+            token: ctx.copy_retained_text(&self.token, operation)?,
+            token_offset: self.token_offset,
+            design_reference: self.design_reference,
+            design_reference_offset: self.design_reference_offset,
+            candidate_faces: ctx.try_collect_retained_with(&self.candidate_faces, operation, |id| id.try_clone_for_decode(ctx, operation))?,
+            candidate_edges: ctx.try_collect_retained_with(&self.candidate_edges, operation, |id| id.try_clone_for_decode(ctx, operation))?,
+            alternate_selector_faces: ctx.try_collect_retained_with(&self.alternate_selector_faces, operation, |id| id.try_clone_for_decode(ctx, operation))?,
+            alternate_selector_edges: ctx.try_collect_retained_with(&self.alternate_selector_edges, operation, |id| id.try_clone_for_decode(ctx, operation))?,
+        })
+    }
 }
 
 /// Paired-locus frame nested under a dimensional parameter companion.

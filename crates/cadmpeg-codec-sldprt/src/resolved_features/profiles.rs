@@ -3184,16 +3184,7 @@ fn transform_sketch_block_geometry(
     let angle = |value: Angle| Angle::new(value.get() + rotation);
     match geometry.definition() {
         SketchGeometryDefinition::Nurbs { curve } => {
-            let count = curve
-                .pole_rows()
-                .count()
-                .checked_add(curve.knots().len())
-                .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
-            ctx.charge_collection_items(u64_from_index(count), OPERATION)?;
-            ctx.charge_work(u64_from_index(count), OPERATION)?;
-            let mut copied = curve
-                .try_clone()
-                .map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
+            let mut copied = curve.try_clone_for_decode(ctx, OPERATION)?;
             if copied
                 .try_map_control_points_in_place(|pole| {
                     point(pole.get()).and_then(FinitePoint2::new).ok_or(())

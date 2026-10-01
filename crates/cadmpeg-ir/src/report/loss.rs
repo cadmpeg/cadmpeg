@@ -588,7 +588,7 @@ impl LossNote {
             provenance: self
                 .provenance
                 .as_ref()
-                .map(|value| value.clone_admitted(ctx, operation))
+                .map(|value| value.try_clone_for_decode(ctx, operation))
                 .transpose()?,
         })
     }
