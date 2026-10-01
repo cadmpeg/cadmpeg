@@ -1,5 +1,5 @@
 use crate::families::standard::topology::{
-    solve_boundary_orientation_constraints, EdgeBoundaryLayout, EdgeRow, StandardTopology,
+    solve_boundary_orientation_constraints, EdgeBoundaryLayout, EdgeRow, StandardTopologyDraft,
 };
 use crate::solve::mesh_quotient::selection_search::mesh_assignment_can_merge;
 use crate::solve::mesh_quotient::{
@@ -1603,11 +1603,7 @@ fn partial_mesh_selection_survives_optional_deduction_exhaustion() {
     }]];
     let edge_candidates = vec![vec![[0, 1]], vec![[0, 1]]];
     let edge_rows = vec![
-        EdgeRow {
-            kind: 1,
-            handles: vec![0, 1],
-            boundary_layout: EdgeBoundaryLayout::InteriorWithFlankingCorners,
-        };
+        EdgeRow::new(1, vec![0, 1], EdgeBoundaryLayout::InteriorWithFlankingCorners).expect("admitted edge row");
         2
     ];
     let vertex_points = vec![[0.0; 3], [1.0, 0.0, 0.0]];

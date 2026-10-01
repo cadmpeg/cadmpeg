@@ -9,11 +9,7 @@ fn endpoint_incidence_builds_oriented_tetrahedron_cycles() {
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
         .expect("service decode context");
     let rows: Vec<_> = (0..6)
-        .map(|edge| EdgeRow {
-            kind: 1,
-            handles: vec![edge * 2, edge * 2 + 1],
-            boundary_layout: EdgeBoundaryLayout::InteriorWithFlankingCorners,
-        })
+        .map(|edge| EdgeRow::new(1, vec![edge * 2, edge * 2 + 1], EdgeBoundaryLayout::InteriorWithFlankingCorners).expect("admitted edge row"))
         .collect();
     let points = vec![
         [0.0, 0.0, 0.0],

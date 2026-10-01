@@ -9,12 +9,12 @@ use crate::families::standard::fbb::standard_face_count;
 use crate::families::standard::fbb::standard_fbb_groups;
 use crate::families::standard::fbb::EDGE_DELIMITER;
 use crate::families::standard::tests::triangle_packet;
-use crate::families::standard::topology::Boundary;
+use crate::families::standard::topology::BoundaryDraft;
 use crate::families::standard::topology::CoedgeUse;
 use crate::families::standard::topology::EdgeBoundaryLayout;
 use crate::families::standard::topology::EdgeRow;
-use crate::families::standard::topology::FaceTopology;
-use crate::families::standard::topology::StandardTopology;
+use crate::families::standard::topology::FaceTopologyDraft;
+use crate::families::standard::topology::StandardTopologyDraft;
 use crate::families::standard::topology::TrimRecord;
 use crate::solve::mesh_gauge::canonicalize_mesh_vertex_labels;
 use crate::solve::mesh_gauge::mesh_candidates_equivalent;
@@ -354,8 +354,8 @@ fn standard_edge_row_arity_uses_widened_count_form() {
             .expect("service resource budget")
             .expect("widened row arity");
     assert_eq!(rows.len(), 2);
-    assert_eq!(rows[0].handles, vec![10, 11]);
-    assert_eq!(rows[1].handles, vec![20, 21]);
+    assert_eq!(rows[0].handles(), vec![10, 11]);
+    assert_eq!(rows[1].handles(), vec![20, 21]);
     assert_eq!(vertex_header, bytes.len() - 3);
 }
 
@@ -373,11 +373,11 @@ fn two_handle_standard_rows_select_u8_complete_boundary_layout() {
         crate::test_support::with_service_context(|ctx| parse_edge_tables_at(ctx, &bytes, 0))
             .expect("service resource budget")
             .expect("u8 edge rows");
-    assert_eq!(rows[0].handles, [2, 0]);
-    assert_eq!(rows[1].handles, [0, 1]);
+    assert_eq!(rows[0].handles(), [2, 0]);
+    assert_eq!(rows[1].handles(), [0, 1]);
     assert!(rows
         .iter()
-        .all(|row| row.boundary_layout == EdgeBoundaryLayout::CompleteBoundaryRun));
+        .all(|row| row.boundary_layout() == EdgeBoundaryLayout::CompleteBoundaryRun));
     assert_eq!(vertex_header, bytes.len() - 3);
 }
 
@@ -387,9 +387,9 @@ fn coordinate_rows_canonicalize_logical_vertex_labels() {
     let policy = cadmpeg_core::decode::DecodePolicy::service();
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
         .expect("fixture fits the input limit");
-    let topology = |start_vertex, end_vertex| StandardTopology {
-        faces: vec![FaceTopology {
-            boundaries: vec![Boundary::new(vec![CoedgeUse {
+    let topology = |start_vertex, end_vertex| StandardTopologyDraft {
+        faces: vec![FaceTopologyDraft {
+            boundaries: vec![BoundaryDraft::new(vec![CoedgeUse {
                 edge_row: 0,
                 reversed: false,
                 start_vertex,
@@ -397,11 +397,7 @@ fn coordinate_rows_canonicalize_logical_vertex_labels() {
             }])
             .expect("nonempty topology boundary")],
         }],
-        edge_rows: vec![EdgeRow {
-            kind: 1,
-            handles: vec![0, 1],
-            boundary_layout: EdgeBoundaryLayout::CompleteBoundaryRun,
-        }],
+        edge_rows: vec![EdgeRow::new(1, vec![0, 1], EdgeBoundaryLayout::CompleteBoundaryRun).expect("admitted edge row")],
         vertex_points: vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]],
         logical_vertex_count: 2,
     };
@@ -436,9 +432,9 @@ fn mesh_candidate_comparison_ignores_boundary_cycle_start() {
     let policy = cadmpeg_core::decode::DecodePolicy::service();
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
         .expect("fixture fits the input limit");
-    let mut topology = StandardTopology {
-        faces: vec![FaceTopology {
-            boundaries: vec![Boundary::new(vec![
+    let mut topology = StandardTopologyDraft {
+        faces: vec![FaceTopologyDraft {
+            boundaries: vec![BoundaryDraft::new(vec![
                 CoedgeUse {
                     edge_row: 0,
                     reversed: false,
@@ -455,16 +451,8 @@ fn mesh_candidate_comparison_ignores_boundary_cycle_start() {
             .expect("nonempty topology boundary")],
         }],
         edge_rows: vec![
-            EdgeRow {
-                kind: 1,
-                handles: vec![0, 1],
-                boundary_layout: EdgeBoundaryLayout::CompleteBoundaryRun,
-            },
-            EdgeRow {
-                kind: 1,
-                handles: vec![1, 0],
-                boundary_layout: EdgeBoundaryLayout::CompleteBoundaryRun,
-            },
+            EdgeRow::new(1, vec![0, 1], EdgeBoundaryLayout::CompleteBoundaryRun).expect("admitted edge row"),
+            EdgeRow::new(1, vec![1, 0], EdgeBoundaryLayout::CompleteBoundaryRun).expect("admitted edge row"),
         ],
         vertex_points: vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]],
         logical_vertex_count: 2,
@@ -484,7 +472,7 @@ fn mesh_candidate_comparison_ignores_boundary_direction_and_order() {
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
         .expect("fixture fits the input limit");
     let boundary = |edges: &[(usize, usize, usize)]| {
-        Boundary::new(
+        BoundaryDraft::new(
             edges
                 .iter()
                 .map(|&(edge_row, start_vertex, end_vertex)| CoedgeUse {
@@ -498,14 +486,10 @@ fn mesh_candidate_comparison_ignores_boundary_direction_and_order() {
         .expect("nonempty topology boundary")
     };
     let edge_rows = (0..4)
-        .map(|edge| EdgeRow {
-            kind: 1,
-            handles: vec![edge, edge + 1],
-            boundary_layout: EdgeBoundaryLayout::CompleteBoundaryRun,
-        })
+        .map(|edge| EdgeRow::new(1, vec![edge, edge + 1], EdgeBoundaryLayout::CompleteBoundaryRun).expect("admitted edge row"))
         .collect::<Vec<_>>();
-    let left_topology = StandardTopology {
-        faces: vec![FaceTopology {
+    let left_topology = StandardTopologyDraft {
+        faces: vec![FaceTopologyDraft {
             boundaries: vec![
                 boundary(&[(0, 0, 1), (1, 1, 0)]),
                 boundary(&[(2, 2, 3), (3, 3, 2)]),
@@ -543,28 +527,20 @@ fn mesh_candidate_comparison_preserves_same_class_edge_row_interchange() {
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
         .expect("fixture fits the input limit");
     let edge_rows = vec![
-        EdgeRow {
-            kind: 2,
-            handles: vec![10, 11],
-            boundary_layout: EdgeBoundaryLayout::InteriorWithFlankingCorners,
-        },
-        EdgeRow {
-            kind: 2,
-            handles: vec![10, 12],
-            boundary_layout: EdgeBoundaryLayout::InteriorWithFlankingCorners,
-        },
+        EdgeRow::new(2, vec![10, 11], EdgeBoundaryLayout::InteriorWithFlankingCorners).expect("admitted edge row"),
+        EdgeRow::new(2, vec![10, 12], EdgeBoundaryLayout::InteriorWithFlankingCorners).expect("admitted edge row"),
     ];
-    let topology = |swapped: bool| StandardTopology {
-        faces: vec![FaceTopology {
+    let topology = |swapped: bool| StandardTopologyDraft {
+        faces: vec![FaceTopologyDraft {
             boundaries: vec![
-                Boundary::new(vec![CoedgeUse {
+                BoundaryDraft::new(vec![CoedgeUse {
                     edge_row: usize::from(swapped),
                     reversed: false,
                     start_vertex: 0,
                     end_vertex: 1,
                 }])
                 .expect("nonempty topology boundary"),
-                Boundary::new(vec![CoedgeUse {
+                BoundaryDraft::new(vec![CoedgeUse {
                     edge_row: usize::from(!swapped),
                     reversed: false,
                     start_vertex: 1,
@@ -590,20 +566,12 @@ fn mesh_candidate_comparison_collapses_unbound_observable_edge_gauge() {
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
         .expect("fixture fits the input limit");
     let edge_rows = vec![
-        EdgeRow {
-            kind: 2,
-            handles: vec![10, 11],
-            boundary_layout: EdgeBoundaryLayout::InteriorWithFlankingCorners,
-        },
-        EdgeRow {
-            kind: 2,
-            handles: vec![20, 21],
-            boundary_layout: EdgeBoundaryLayout::InteriorWithFlankingCorners,
-        },
+        EdgeRow::new(2, vec![10, 11], EdgeBoundaryLayout::InteriorWithFlankingCorners).expect("admitted edge row"),
+        EdgeRow::new(2, vec![20, 21], EdgeBoundaryLayout::InteriorWithFlankingCorners).expect("admitted edge row"),
     ];
-    let topology = |swapped: bool| StandardTopology {
-        faces: vec![FaceTopology {
-            boundaries: vec![Boundary::new(if swapped {
+    let topology = |swapped: bool| StandardTopologyDraft {
+        faces: vec![FaceTopologyDraft {
+            boundaries: vec![BoundaryDraft::new(if swapped {
                 vec![
                     CoedgeUse {
                         edge_row: 1,
@@ -665,7 +633,7 @@ fn mesh_candidate_comparison_rejects_two_invalid_candidates() {
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
         .expect("fixture fits the input limit");
     let invalid = (
-        StandardTopology {
+        StandardTopologyDraft {
             faces: Vec::new(),
             edge_rows: Vec::new(),
             vertex_points: Vec::new(),

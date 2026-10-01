@@ -8,11 +8,11 @@ use super::{
     copy_mesh_assignment, copy_mesh_boundary_directions, copy_mesh_edge_rows,
     distinct_domain_matching_with_budget, initial_mesh_quotient,
     mesh_candidates_equivalent_with_context, orient_face_cycles, reconstruct_mesh_selection,
-    same_unordered_pair, Arc, Boundary, CodecError, CoedgeUse, DecodeContext, EdgeRow,
-    FaceTopology, HashMap, HashSet, MeshBoundaryEdgeCandidate, MeshCandidateFailure,
+    same_unordered_pair, Arc, BoundaryDraft, CodecError, CoedgeUse, DecodeContext, EdgeRow,
+    FaceTopologyDraft, HashMap, HashSet, MeshBoundaryEdgeCandidate, MeshCandidateFailure,
     MeshCandidateGauge, MeshEndpointResolve, MeshFaceBoundaryAssignment, MeshFaceSelection,
     MeshFixedDirectionOption, MeshQuotient, MeshQuotientSignature, MeshSelectionSearch,
-    MeshSelectionStateSignature, MeshSolve, SearchOutcome, StandardTopology, VecDeque, WorkBudget,
+    MeshSelectionStateSignature, MeshSolve, SearchOutcome, StandardTopologyDraft, VecDeque, WorkBudget,
     MAX_FACE_EQUATION_CACHE_ENTRIES, MAX_SELECTION_STATE_MEMO_ENTRIES,
 };
 
@@ -1544,7 +1544,7 @@ pub(in crate::solve) fn parse_standard_mesh_endpoint_candidates(
     bytes: &[u8],
     edge_faces: &[[usize; 2]],
     edge_candidates: &[Vec<[usize; 2]>],
-) -> Result<Option<(StandardTopology, Vec<usize>)>, CodecError> {
+) -> Result<Option<(StandardTopologyDraft, Vec<usize>)>, CodecError> {
     let Some(face_run) = largest_fbb_run(bytes) else {
         return Ok(None);
     };
@@ -1789,7 +1789,7 @@ pub(super) fn reconstruct_singleton_coordinate_topology(
     edge_candidates: &[Vec<[usize; 2]>],
     selected: &[MeshFaceBoundaryAssignment],
     directions: &[Vec<Vec<bool>>],
-) -> Result<Option<StandardTopology>, CodecError> {
+) -> Result<Option<StandardTopologyDraft>, CodecError> {
     if selected.len() != directions.len() {
         return Ok(None);
     }
@@ -1828,14 +1828,14 @@ pub(super) fn reconstruct_singleton_coordinate_topology(
                     end_vertex,
                 });
             }
-            let Some(boundary) = Boundary::new(coedges) else {
+            let Some(boundary) = BoundaryDraft::new(coedges) else {
                 return Ok(None);
             };
             boundaries.push(boundary);
         }
-        faces.push(FaceTopology { boundaries });
+        faces.push(FaceTopologyDraft { boundaries });
     }
-    let topology = StandardTopology {
+    let topology = StandardTopologyDraft {
         faces,
         edge_rows: copy_mesh_edge_rows(ctx, edge_rows)?,
         vertex_points: ctx.copy_retained_slice(vertex_points, "catia_singleton_topology_points")?,
@@ -1849,7 +1849,7 @@ pub(super) fn reconstruct_singleton_coordinate_topology(
 
 pub(super) fn resolve_mesh_selection_from_quotient<'storage>(
     ctx: &'storage DecodeContext<'_>,
-    topology: StandardTopology,
+    topology: StandardTopologyDraft,
     mut quotient: MeshQuotient<'storage>,
     vertex_points: &[[f64; 3]],
     edge_candidates: &[Vec<[usize; 2]>],
@@ -2223,7 +2223,7 @@ pub(super) fn resolve_singleton_mesh_selection(
         return Ok(None);
     }
     let mut materialize =
-        |assignment: &[usize]| -> Result<Option<(StandardTopology, Vec<usize>)>, CodecError> {
+        |assignment: &[usize]| -> Result<Option<(StandardTopologyDraft, Vec<usize>)>, CodecError> {
             if assignment.len() != roots.len() {
                 return Ok(None);
             }

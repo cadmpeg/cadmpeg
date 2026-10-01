@@ -4,7 +4,7 @@
 use super::{
     possible_face_choices, possible_face_equations, repeated_domain, Arc, EdgeBoundaryLayout,
     EdgeRow, HashSet, MeshBoundaryEdgeCandidate, MeshFaceBoundaryAssignment, MeshQuotient,
-    MeshSelectionSearch, RefCell, SearchOutcome, StandardTopology, WorkBudget,
+    MeshSelectionSearch, RefCell, SearchOutcome, StandardTopologyDraft, WorkBudget,
     MAX_MESH_CONSTRAINT_OPERATIONS,
 };
 
@@ -212,7 +212,7 @@ fn completed_mesh_search_continues_to_check_uniqueness() {
         selected: Vec::new(),
         visited_states: HashSet::new(),
         outcome: SearchOutcome::Solved((
-            StandardTopology {
+            StandardTopologyDraft {
                 faces: Vec::new(),
                 edge_rows: Vec::new(),
                 vertex_points: Vec::new(),
@@ -239,16 +239,12 @@ fn completed_mesh_search_refuses_edge_and_point_collection_limits() {
             reversed: Some(false),
         }]],
     }]];
-    let edge_rows = vec![EdgeRow {
-        kind: 1,
-        handles: vec![0],
-        boundary_layout: EdgeBoundaryLayout::CompleteBoundaryRun,
-    }];
+    let edge_rows = vec![{ assert!(EdgeRow::new(1, vec![0], EdgeBoundaryLayout::CompleteBoundaryRun).is_none()); EdgeRow::new(1, vec![0, 0], EdgeBoundaryLayout::CompleteBoundaryRun).expect("admitted edge row") }];
     let edge_candidates = vec![vec![[0, 0]]];
     let vertex_points = [[0.0; 3]];
     let domain = Arc::new(HashSet::from([0]));
     let quotient = MeshQuotient::new(vec![domain.clone(), domain]);
-    let run = |ctx: &DecodeContext<'_>| -> Result<SearchOutcome<(StandardTopology, Vec<usize>)>, CodecError> {
+    let run = |ctx: &DecodeContext<'_>| -> Result<SearchOutcome<(StandardTopologyDraft, Vec<usize>)>, CodecError> {
         let mut search = MeshSelectionSearch {
             ctx,
             assignments: &assignments,
@@ -412,11 +408,7 @@ fn forced_face_selection_does_not_exhaust_the_work_budget() {
         }]],
     }]];
     let edge_candidates = vec![vec![[0, 0]]];
-    let edge_rows = vec![EdgeRow {
-        kind: 1,
-        handles: vec![0],
-        boundary_layout: EdgeBoundaryLayout::CompleteBoundaryRun,
-    }];
+    let edge_rows = vec![{ assert!(EdgeRow::new(1, vec![0], EdgeBoundaryLayout::CompleteBoundaryRun).is_none()); EdgeRow::new(1, vec![0, 0], EdgeBoundaryLayout::CompleteBoundaryRun).expect("admitted edge row") }];
     let mut search = MeshSelectionSearch {
         ctx: &ctx,
         assignments: &assignments,
@@ -469,11 +461,7 @@ fn overmerged_face_options_do_not_exhaust_the_work_budget() {
     }]];
     let edge_candidates = vec![Vec::new(); 2];
     let edge_rows = vec![
-        EdgeRow {
-            kind: 1,
-            handles: vec![0],
-            boundary_layout: EdgeBoundaryLayout::CompleteBoundaryRun,
-        };
+        { assert!(EdgeRow::new(1, vec![0], EdgeBoundaryLayout::CompleteBoundaryRun).is_none()); EdgeRow::new(1, vec![0, 0], EdgeBoundaryLayout::CompleteBoundaryRun).expect("admitted edge row") };
         2
     ];
     let mut search = MeshSelectionSearch {

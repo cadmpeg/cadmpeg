@@ -143,11 +143,7 @@ fn duplicate_face_reference_slot_is_completed_by_face_closure() {
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
         .expect("service decode context");
     let rows = (0..3)
-        .map(|handle| EdgeRow {
-            kind: 0,
-            handles: vec![handle],
-            boundary_layout: EdgeBoundaryLayout::CompleteBoundaryRun,
-        })
+        .map(|handle| { assert!(EdgeRow::new(0, vec![handle], EdgeBoundaryLayout::CompleteBoundaryRun).is_none()); EdgeRow::new(1, vec![handle, handle], EdgeBoundaryLayout::CompleteBoundaryRun).expect("admitted edge row") })
         .collect::<Vec<_>>();
     let faces = complete_duplicate_face_slots(
         &ctx,
@@ -171,11 +167,7 @@ fn duplicate_face_completion_keeps_sparse_endpoint_identities() {
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
         .expect("service decode context");
     let rows = (0..3)
-        .map(|handle| EdgeRow {
-            kind: 0,
-            handles: vec![handle],
-            boundary_layout: EdgeBoundaryLayout::CompleteBoundaryRun,
-        })
+        .map(|handle| { assert!(EdgeRow::new(0, vec![handle], EdgeBoundaryLayout::CompleteBoundaryRun).is_none()); EdgeRow::new(1, vec![handle, handle], EdgeBoundaryLayout::CompleteBoundaryRun).expect("admitted edge row") })
         .collect::<Vec<_>>();
     let faces = complete_duplicate_face_slots(
         &ctx,
@@ -203,11 +195,7 @@ fn independent_duplicate_face_slots_have_one_canonical_search_order() {
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
         .expect("service decode context");
     let rows = (0..12)
-        .map(|edge| EdgeRow {
-            kind: 1,
-            handles: vec![edge],
-            boundary_layout: EdgeBoundaryLayout::CompleteBoundaryRun,
-        })
+        .map(|edge| { assert!(EdgeRow::new(1, vec![edge], EdgeBoundaryLayout::CompleteBoundaryRun).is_none()); EdgeRow::new(1, vec![edge, edge], EdgeBoundaryLayout::CompleteBoundaryRun).expect("admitted edge row") })
         .collect::<Vec<_>>();
     let serialized = vec![[0, 0]; rows.len()];
     let points = (0..rows.len())
@@ -318,11 +306,7 @@ fn duplicate_face_completion_rejects_out_of_range_faces() {
     let policy = cadmpeg_core::decode::DecodePolicy::service();
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
         .expect("service decode context");
-    let rows = vec![EdgeRow {
-        kind: 0,
-        handles: vec![0, 1],
-        boundary_layout: EdgeBoundaryLayout::CompleteBoundaryRun,
-    }];
+    let rows = vec![{ assert!(EdgeRow::new(0, vec![0, 1], EdgeBoundaryLayout::CompleteBoundaryRun).is_none()); EdgeRow::new(1, vec![0, 1], EdgeBoundaryLayout::CompleteBoundaryRun).expect("admitted edge row") }];
     assert!(
         complete_duplicate_face_slots(&ctx, &rows, &[[0, 2]], &[[0, 1]], 2, None, None,)
             .expect("service resource budget")
@@ -337,26 +321,10 @@ fn equivalent_edge_rows_share_one_incidence_assignment_gauge() {
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
         .expect("service decode context");
     let rows = vec![
-        EdgeRow {
-            kind: 0,
-            handles: vec![0],
-            boundary_layout: EdgeBoundaryLayout::CompleteBoundaryRun,
-        },
-        EdgeRow {
-            kind: 0,
-            handles: vec![1],
-            boundary_layout: EdgeBoundaryLayout::CompleteBoundaryRun,
-        },
-        EdgeRow {
-            kind: 0,
-            handles: vec![2, 3],
-            boundary_layout: EdgeBoundaryLayout::CompleteBoundaryRun,
-        },
-        EdgeRow {
-            kind: 0,
-            handles: vec![4, 5],
-            boundary_layout: EdgeBoundaryLayout::CompleteBoundaryRun,
-        },
+        { assert!(EdgeRow::new(0, vec![0], EdgeBoundaryLayout::CompleteBoundaryRun).is_none()); EdgeRow::new(1, vec![0, 0], EdgeBoundaryLayout::CompleteBoundaryRun).expect("admitted edge row") },
+        { assert!(EdgeRow::new(0, vec![1], EdgeBoundaryLayout::CompleteBoundaryRun).is_none()); EdgeRow::new(1, vec![1, 1], EdgeBoundaryLayout::CompleteBoundaryRun).expect("admitted edge row") },
+        { assert!(EdgeRow::new(0, vec![2, 3], EdgeBoundaryLayout::CompleteBoundaryRun).is_none()); EdgeRow::new(1, vec![2, 3], EdgeBoundaryLayout::CompleteBoundaryRun).expect("admitted edge row") },
+        { assert!(EdgeRow::new(0, vec![4, 5], EdgeBoundaryLayout::CompleteBoundaryRun).is_none()); EdgeRow::new(1, vec![4, 5], EdgeBoundaryLayout::CompleteBoundaryRun).expect("admitted edge row") },
     ];
     let faces = complete_duplicate_face_slots(
         &ctx,

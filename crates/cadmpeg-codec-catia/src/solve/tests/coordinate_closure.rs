@@ -880,11 +880,7 @@ fn closed_edge_is_a_single_coedge_boundary_on_each_incident_face() {
     catia_test_context!(ctx);
     let topology = reconstruct_incidence(
         &ctx,
-        vec![EdgeRow {
-            kind: 0,
-            handles: vec![7, 7],
-            boundary_layout: EdgeBoundaryLayout::CompleteBoundaryRun,
-        }],
+        vec![{ assert!(EdgeRow::new(0, vec![7, 7], EdgeBoundaryLayout::CompleteBoundaryRun).is_none()); EdgeRow::new(1, vec![7, 7], EdgeBoundaryLayout::CompleteBoundaryRun).expect("admitted edge row") }],
         vec![[1.0, 0.0, 0.0]],
         &[[0, 1]],
         &[[0, 0]],

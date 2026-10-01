@@ -315,7 +315,7 @@ fn standard_topology_accepts_delimiters_between_counted_edge_tables() {
         topology
             .edge_rows()
             .iter()
-            .map(|row| row.kind)
+            .map(|row| row.kind())
             .collect::<Vec<_>>(),
         vec![1, 1, 2, 2]
     );
@@ -326,7 +326,7 @@ fn standard_topology_accepts_delimiters_between_counted_edge_tables() {
         .expect("service resource budget")
         .expect("edge rows")
         .iter()
-        .map(|row| row.kind)
+        .map(|row| row.kind())
         .collect::<Vec<_>>(),
         vec![1, 1, 2, 2]
     );
@@ -395,7 +395,7 @@ fn fbb_topology_reads_u24_mesh_and_edge_handles() {
     })
     .expect("service resource budget")
     .expect("valid FBB topology");
-    assert_eq!(topology.edge_rows()[0].handles, vec![0x01_0010, 0x01_0011]);
+    assert_eq!(topology.edge_rows()[0].handles(), vec![0x01_0010, 0x01_0011]);
     assert_eq!(topology.faces()[0].boundaries[0].coedges.len(), 8);
     assert_eq!(topology.logical_vertex_count(), 8);
     assert_eq!(topology.vertex_points().len(), 4);
@@ -492,7 +492,7 @@ fn fbb_only_topology_uses_complete_boundary_runs_and_scoped_ports() {
     assert_eq!(topology.face_count(), 1);
     assert_eq!(topology.edge_rows().len(), 4);
     assert!(topology.edge_rows().iter().all(|row| {
-        row.boundary_layout
+        row.boundary_layout()
             == crate::families::standard::topology::EdgeBoundaryLayout::CompleteBoundaryRun
     }));
     let ports = crate::test_support::with_service_context(|ctx| {
@@ -530,11 +530,11 @@ fn fbb_topology_recovers_unique_flanking_rows_without_reclassifying_complete_row
     assert_eq!(topology.face_count(), 1);
     assert_eq!(topology.faces()[0].boundaries[0].coedges.len(), 5);
     assert_eq!(
-        topology.edge_rows()[0].boundary_layout,
+        topology.edge_rows()[0].boundary_layout(),
         crate::families::standard::topology::EdgeBoundaryLayout::InteriorWithFlankingCorners
     );
     assert!(topology.edge_rows()[1..].iter().all(|row| {
-        row.boundary_layout
+        row.boundary_layout()
             == crate::families::standard::topology::EdgeBoundaryLayout::CompleteBoundaryRun
     }));
 }
@@ -576,7 +576,7 @@ fn fbb_topology_reads_u16_mesh_and_edge_handles() {
     })
     .expect("service resource budget")
     .expect("valid u16 FBB topology");
-    assert_eq!(topology.edge_rows()[0].handles, vec![0x1010, 0x1011]);
+    assert_eq!(topology.edge_rows()[0].handles(), vec![0x1010, 0x1011]);
     assert_eq!(topology.faces()[0].boundaries[0].coedges.len(), 4);
     assert_eq!(topology.vertex_points().len(), 4);
 }
@@ -617,7 +617,7 @@ fn fbb_topology_reads_u8_mesh_and_edge_handles() {
     })
     .expect("service resource budget")
     .expect("valid u8 FBB topology");
-    assert_eq!(topology.edge_rows()[0].handles, vec![0x10, 0x11]);
+    assert_eq!(topology.edge_rows()[0].handles(), vec![0x10, 0x11]);
     assert_eq!(topology.faces()[0].boundaries[0].coedges.len(), 4);
     assert_eq!(topology.vertex_points().len(), 4);
     assert_eq!(

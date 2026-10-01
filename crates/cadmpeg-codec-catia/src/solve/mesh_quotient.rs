@@ -52,8 +52,8 @@ use crate::families::standard::fbb::{largest_fbb_run, parse_edge_tables, parse_v
 #[cfg(test)]
 use crate::families::standard::topology::EdgeBoundaryLayout;
 use crate::families::standard::topology::{
-    incidence_cycles, orient_face_cycles, reconstruct_mesh_selection, Boundary, CoedgeUse, EdgeRow,
-    FaceTopology, StandardTopology,
+    incidence_cycles, orient_face_cycles, reconstruct_mesh_selection, BoundaryDraft, CoedgeUse, EdgeRow,
+    FaceTopologyDraft, StandardTopologyDraft,
 };
 use crate::solve::incidence::{
     compact_boundary_domain_viable, deferred_boundary_assignment, deferred_boundary_cycle_matches,
@@ -195,7 +195,7 @@ impl<T> MeshSolve<T> {
 }
 
 /// Mesh candidate topology and endpoint assignment.
-pub(crate) type MeshCandidateSolve = MeshSolve<(StandardTopology, Vec<usize>)>;
+pub(crate) type MeshCandidateSolve = MeshSolve<(StandardTopologyDraft, Vec<usize>)>;
 
 /// Non-solved mesh candidate outcomes stored on topology diagnostics.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -247,7 +247,7 @@ impl<T> SearchOutcome<T> {
 }
 
 /// Selected face domains, topology, and endpoint assignment.
-type MeshFaceDomainCandidateSolve = MeshSolve<(Vec<[usize; 2]>, StandardTopology, Vec<usize>)>;
+type MeshFaceDomainCandidateSolve = MeshSolve<(Vec<[usize; 2]>, StandardTopologyDraft, Vec<usize>)>;
 
 #[derive(Clone, Copy)]
 pub(crate) enum MeshFaceAssignmentCandidates<'a> {
@@ -263,7 +263,7 @@ pub(crate) enum MeshFaceAssignmentCandidates<'a> {
 }
 
 type MeshEndpointResolve =
-    MeshSolve<(StandardTopology, Vec<usize>), MeshCandidateFailure<(), (), ()>>;
+    MeshSolve<(StandardTopologyDraft, Vec<usize>), MeshCandidateFailure<(), (), ()>>;
 
 fn copy_mesh_endpoint_resolution(
     ctx: &DecodeContext<'_>,
@@ -4879,7 +4879,7 @@ fn advance_boundary_component_states<'storage>(
             .checked_add(1)
             .and_then(|end| end.checked_sub(next.len()))
         else {
-            return Ok(None);
+            return Err(ctx.refuse_codec_limit("catia_boundary_component_states", u64_from_index(limit), u64::MAX));
         };
         if remaining == 0 {
             return Err(ctx.refuse_codec_limit("catia_boundary_component_states", u64_from_index(limit), u64_from_index(next.len())));
@@ -5528,7 +5528,7 @@ struct MeshSelectionSearch<'a, 'ctx> {
     edge_has_fixed_direction: Vec<bool>,
     selected: Vec<MeshFaceSelection>,
     visited_states: HashSet<MeshSelectionStateSignature>,
-    outcome: SearchOutcome<(StandardTopology, Vec<usize>)>,
+    outcome: SearchOutcome<(StandardTopologyDraft, Vec<usize>)>,
     face_equation_cache: MeshFaceEquationCache,
 }
 
@@ -8388,7 +8388,7 @@ fn resolve_endpoint_configuration_relation_streaming(
 
 fn mesh_candidate_point_pairs(
     ctx: &DecodeContext<'_>,
-    topology: &StandardTopology,
+    topology: &StandardTopologyDraft,
     point_assignment: &[usize],
 ) -> Result<Option<Vec<Option<[usize; 2]>>>, CodecError> {
     let Some(edge_vertices) = topology.edge_vertices(ctx)? else {
@@ -9256,7 +9256,7 @@ fn resolve_fixed_mesh_endpoint_assignment_domains(
         port_identities: &'input5 [[u32; 2]],
         budget: &'input7 WorkBudget<'input6>,
         candidate_gauge: Option<MeshCandidateGauge<'input8>>,
-        outcome: &'input9 mut SearchOutcome<(StandardTopology, Vec<usize>)>,
+        outcome: &'input9 mut SearchOutcome<(StandardTopologyDraft, Vec<usize>)>,
     }
     fn visit(
         ctx: &DecodeContext<'_>,
@@ -10497,7 +10497,7 @@ where
 {
     let outcome = (|| -> Result<MeshFaceDomainCandidateSolve, CodecError> {
 
-    let mut solution: Option<(Vec<[usize; 2]>, StandardTopology, Vec<usize>)> = None;
+    let mut solution: Option<(Vec<[usize; 2]>, StandardTopologyDraft, Vec<usize>)> = None;
     let mut rejection = None;
     let mut ambiguity = None;
     let mut exhaustion = None;
@@ -10850,7 +10850,7 @@ fn face_domain_solver_returns_the_unique_concrete_assignment() {
             visited.push(faces.to_vec());
             Ok(if faces[0][1] == 2 {
                 MeshSolve::Solved((
-                    StandardTopology {
+                    StandardTopologyDraft {
                         faces: Vec::new(),
                         edge_rows: Vec::new(),
                         vertex_points: Vec::new(),
@@ -10888,7 +10888,7 @@ fn face_domain_solution_copy_refuses_before_retaining_assignment() {
             &budget,
             |_, _| {
                 Ok(MeshSolve::Solved((
-                    StandardTopology {
+                    StandardTopologyDraft {
                         faces: Vec::new(),
                         edge_rows: Vec::new(),
                         vertex_points: Vec::new(),
@@ -10930,7 +10930,7 @@ fn face_domain_solver_evaluates_only_endpoint_closed_assignments() {
             visited.push(faces.to_vec());
             Ok(if faces[0][1] == 2 {
                 MeshSolve::Solved((
-                    StandardTopology {
+                    StandardTopologyDraft {
                         faces: Vec::new(),
                         edge_rows: Vec::new(),
                         vertex_points: Vec::new(),
@@ -10970,7 +10970,7 @@ fn face_domain_solver_reports_distinct_assignments_as_ambiguity() {
         &budget,
         |assignment, _| {
             Ok(MeshSolve::Solved((
-                StandardTopology {
+                StandardTopologyDraft {
                     faces: Vec::new(),
                     edge_rows: Vec::new(),
                     vertex_points: Vec::new(),
@@ -10994,11 +10994,7 @@ fn face_domain_solver_reports_distinct_assignments_as_ambiguity() {
 fn endpoint_configuration_relation_solves_cycle_orientation_globally() {
     catia_test_context!(ctx);
     let edge_rows = (0..3)
-        .map(|_| EdgeRow {
-            kind: 1,
-            handles: Vec::new(),
-            boundary_layout: EdgeBoundaryLayout::CompleteBoundaryRun,
-        })
+        .map(|_| EdgeRow::new(1, Vec::new(), EdgeBoundaryLayout::CompleteBoundaryRun).expect("admitted edge row"))
         .collect::<Vec<_>>();
     let vertex_points = vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]];
     let edge_candidates = vec![vec![[0, 1]], vec![[1, 2]], vec![[0, 2]]];
@@ -11064,11 +11060,7 @@ fn endpoint_configuration_relation_charges_covered_and_assigned_edges() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 
     let edge_rows = (0..3)
-        .map(|_| EdgeRow {
-            kind: 1,
-            handles: Vec::new(),
-            boundary_layout: EdgeBoundaryLayout::CompleteBoundaryRun,
-        })
+        .map(|_| EdgeRow::new(1, Vec::new(), EdgeBoundaryLayout::CompleteBoundaryRun).expect("admitted edge row"))
         .collect::<Vec<_>>();
     let vertex_points = [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]];
     let edge_candidates = vec![vec![[0, 1]], vec![[1, 2]], vec![[0, 2]]];
@@ -11174,11 +11166,7 @@ fn singleton_mesh_selection_charges_matching_and_materialization_arrays() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 
     let edge_rows = (0..3)
-        .map(|_| EdgeRow {
-            kind: 1,
-            handles: Vec::new(),
-            boundary_layout: EdgeBoundaryLayout::CompleteBoundaryRun,
-        })
+        .map(|_| EdgeRow::new(1, Vec::new(), EdgeBoundaryLayout::CompleteBoundaryRun).expect("admitted edge row"))
         .collect::<Vec<_>>();
     let vertex_points = [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]];
     let candidates = vec![vec![[0, 1]], vec![[1, 2]], vec![[0, 2]]];
@@ -11275,11 +11263,7 @@ fn general_mesh_search_charges_unselected_and_face_state_arrays() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 
     let edge_rows = (0..2)
-        .map(|_| EdgeRow {
-            kind: 1,
-            handles: Vec::new(),
-            boundary_layout: EdgeBoundaryLayout::CompleteBoundaryRun,
-        })
+        .map(|_| EdgeRow::new(1, Vec::new(), EdgeBoundaryLayout::CompleteBoundaryRun).expect("admitted edge row"))
         .collect::<Vec<_>>();
     let vertex_points = [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]];
     let candidates = [vec![[0, 0], [1, 1]], vec![[0, 0], [1, 1]]];
@@ -11354,11 +11338,7 @@ fn fixed_mesh_search_charges_edge_direction_and_selection_arrays() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 
     let edge_rows = (0..2)
-        .map(|_| EdgeRow {
-            kind: 1,
-            handles: Vec::new(),
-            boundary_layout: EdgeBoundaryLayout::CompleteBoundaryRun,
-        })
+        .map(|_| EdgeRow::new(1, Vec::new(), EdgeBoundaryLayout::CompleteBoundaryRun).expect("admitted edge row"))
         .collect::<Vec<_>>();
     let vertex_points = [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]];
     let candidates = [vec![[0, 0]], vec![[1, 1]]];
@@ -11435,11 +11415,7 @@ fn fixed_mesh_direction_overflow_charges_general_face_state() {
     const BOUNDARY_COUNT: usize = 13;
     let edge_count = BOUNDARY_COUNT * 2 + 1;
     let edge_rows = (0..edge_count)
-        .map(|_| EdgeRow {
-            kind: 1,
-            handles: Vec::new(),
-            boundary_layout: EdgeBoundaryLayout::CompleteBoundaryRun,
-        })
+        .map(|_| EdgeRow::new(1, Vec::new(), EdgeBoundaryLayout::CompleteBoundaryRun).expect("admitted edge row"))
         .collect::<Vec<_>>();
     let candidates = vec![vec![[0, 1]]; edge_count];
     let identities = (0..edge_count)
@@ -11556,11 +11532,7 @@ fn fixed_mesh_direction_overflow_charges_general_face_state() {
 fn fixed_endpoint_pairs_materialize_duplicate_boundary_assignments() {
     catia_test_context!(ctx);
     let edge_rows = (0..3)
-        .map(|_| EdgeRow {
-            kind: 1,
-            handles: Vec::new(),
-            boundary_layout: EdgeBoundaryLayout::CompleteBoundaryRun,
-        })
+        .map(|_| EdgeRow::new(1, Vec::new(), EdgeBoundaryLayout::CompleteBoundaryRun).expect("admitted edge row"))
         .collect::<Vec<_>>();
     let vertex_points = vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]];
     let edge_candidates = vec![vec![[0, 1]], vec![[1, 2]], vec![[0, 2]]];
@@ -13357,11 +13329,7 @@ fn singleton_mesh_path_handles_many_independent_face_cycles() {
                 0.0,
             ],
         ]);
-        edge_rows.extend((0..4).map(|_| EdgeRow {
-            kind: 1,
-            handles: Vec::new(),
-            boundary_layout: EdgeBoundaryLayout::CompleteBoundaryRun,
-        }));
+        edge_rows.extend((0..4).map(|_| EdgeRow::new(1, Vec::new(), EdgeBoundaryLayout::CompleteBoundaryRun).expect("admitted edge row")));
         edge_candidates.extend([
             vec![[point, point + 1]],
             vec![[point + 1, point + 2]],
@@ -13415,11 +13383,7 @@ fn singleton_mesh_path_filters_endpoint_incompatible_face_assignments() {
     catia_test_context!(ctx);
     let budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
     let edge_rows = (0..3)
-        .map(|_| EdgeRow {
-            kind: 1,
-            handles: Vec::new(),
-            boundary_layout: EdgeBoundaryLayout::CompleteBoundaryRun,
-        })
+        .map(|_| EdgeRow::new(1, Vec::new(), EdgeBoundaryLayout::CompleteBoundaryRun).expect("admitted edge row"))
         .collect::<Vec<_>>();
     let vertex_points = vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]];
     let edge_candidates = vec![vec![[0, 1]], vec![[1, 2]], vec![[2, 0]]];
@@ -13466,11 +13430,7 @@ fn singleton_mesh_path_filters_endpoint_incompatible_face_assignments() {
 fn singleton_mesh_path_handles_closed_endpoint_pairs() {
     catia_test_context!(ctx);
     let budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
-    let edge_rows = vec![EdgeRow {
-        kind: 1,
-        handles: Vec::new(),
-        boundary_layout: EdgeBoundaryLayout::CompleteBoundaryRun,
-    }];
+    let edge_rows = vec![EdgeRow::new(1, Vec::new(), EdgeBoundaryLayout::CompleteBoundaryRun).expect("admitted edge row")];
     let vertex_points = vec![[0.0, 0.0, 0.0]];
     let edge_candidates = vec![vec![[0, 0]]];
     let assignments = vec![vec![MeshFaceBoundaryAssignment {
@@ -13541,7 +13501,7 @@ mod direct_matching_tests {
     use super::{initial_mesh_quotient, MAX_MESH_CONSTRAINT_OPERATIONS};
     use crate::families::standard::topology::EdgeBoundaryLayout;
     use crate::families::standard::topology::EdgeRow;
-    use crate::families::standard::topology::StandardTopology;
+    use crate::families::standard::topology::StandardTopologyDraft;
     use cadmpeg_core::decode::WorkBudget;
 
     #[test]
@@ -13552,15 +13512,11 @@ mod direct_matching_tests {
 
         catia_test_context!(ctx);
         let edge_rows = (0..3)
-            .map(|edge| EdgeRow {
-                kind: 1,
-                handles: vec![u32::try_from(edge).expect("fixture value fits u32")],
-                boundary_layout: EdgeBoundaryLayout::CompleteBoundaryRun,
-            })
+            .map(|edge| { assert!(EdgeRow::new(1, vec![u32::try_from(edge).expect("fixture value fits u32")], EdgeBoundaryLayout::CompleteBoundaryRun).is_none()); EdgeRow::new(1, vec![u32::try_from(edge).expect("fixture value fits u32"), u32::try_from(edge).expect("fixture value fits u32")], EdgeBoundaryLayout::CompleteBoundaryRun).expect("admitted edge row") })
             .collect::<Vec<_>>();
-        let topology = StandardTopology {
-            faces: vec![crate::families::standard::topology::FaceTopology {
-                boundaries: vec![crate::families::standard::topology::Boundary::new(vec![
+        let topology = StandardTopologyDraft {
+            faces: vec![crate::families::standard::topology::FaceTopologyDraft {
+                boundaries: vec![crate::families::standard::topology::BoundaryDraft::new(vec![
                     crate::families::standard::topology::CoedgeUse {
                         edge_row: 0,
                         reversed: false,
