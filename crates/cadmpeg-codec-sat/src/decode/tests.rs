@@ -400,7 +400,7 @@ fn unknown_record_retention_preserves_its_resource_refusal() {
     let error = with_context(&[], &policy, |ctx| {
         super::build_result(
             ctx,
-            super::DecodeLayer::Model(brep),
+            Some(brep),
             std::collections::BTreeMap::new(),
             &header,
             None,
@@ -461,7 +461,7 @@ fn sat_annotation_storage_uses_the_callers_collection_budget() {
     let error = with_context(&[], &policy, |ctx| {
         super::build_result(
             ctx,
-            super::DecodeLayer::Model(brep),
+            Some(brep),
             std::collections::BTreeMap::new(),
             &header,
             None,
