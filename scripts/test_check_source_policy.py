@@ -913,12 +913,104 @@ class AuthoringPaths(TempSourceCase):
         self.assertEqual(self.findings("authoring_path"), [])
 
 
+class DecodeSorts(TempSourceCase):
+    def test_each_slice_sort_with_context_parameter_is_rejected(self) -> None:
+        for method in sorted(policy.SLICE_SORT_METHODS):
+            with self.subTest(method=method):
+                self.write("crates/demo/src/lib.rs",
+                           f"fn read(budget: &DecodeContext<'_>) {{\n    values.{method}(compare);\n}}\n")
+                findings = self.findings("uncharged_decode_sort")
+                self.assertEqual([(item.path, item.line) for item in findings],
+                                 [("crates/demo/src/lib.rs", 2)])
+                self.assertIn("ctx.stable_sort_by", findings[0].message)
+                self.assertIn("ctx.sort_unstable_by", findings[0].message)
+
+    def test_context_local_and_self_field_are_rejected(self) -> None:
+        self.write("crates/demo/src/lib.rs", """
+struct Reader<'a> { ctx: &'a cadmpeg_core::decode::DecodeContext<'a> }
+impl Reader<'_> {
+    fn read(&self) { self.ctx.charge_work(1, "read")?; values.sort(); }
+}
+fn local() {
+    let allowance: &DecodeContext<'_> = context;
+    values.sort_unstable();
+}
+""")
+        self.assertEqual([item.line for item in self.findings("uncharged_decode_sort")], [4, 8])
+
+    def test_field_declared_in_another_module_is_rejected(self) -> None:
+        self.write("crates/demo/src/types.rs", "struct Reader<'a> { budget: &'a DecodeContext<'a> }")
+        self.write("crates/demo/src/read.rs", "impl Reader<'_> { fn read(&self) { self.budget; values.sort(); } }")
+        self.assertEqual(len(self.findings("uncharged_decode_sort")), 1)
+
+    def test_each_slice_sort_without_context_is_accepted(self) -> None:
+        self.write("crates/demo/src/lib.rs", "fn write() {\n" + "\n".join(
+            f"    values.{method}(compare);" for method in sorted(policy.SLICE_SORT_METHODS)
+        ) + "\n}\n")
+        self.assertEqual(self.findings("uncharged_decode_sort"), [])
+
+    def test_core_sort_implementations_are_accepted(self) -> None:
+        for path in sorted(policy.DECODE_SORT_EXEMPT_FILES):
+            self.write(path, "fn sort(ctx: &DecodeContext<'_>) { values.sort_unstable_by(compare); }")
+        self.assertEqual(self.findings("uncharged_decode_sort"), [])
+
+    def test_cfg_test_sorts_and_non_code_are_accepted(self) -> None:
+        self.write("crates/demo/src/lib.rs", """
+#[cfg(test)]
+mod tests { fn read(ctx: &DecodeContext<'_>) { values.sort(); } }
+#[cfg(test)]
+fn read(ctx: &DecodeContext<'_>) { values.sort_unstable(); }
+fn production(ctx: &DecodeContext<'_>) {
+    // values.sort();
+    let text = "values.sort_unstable();";
+    ctx.stable_sort_by(values, compare, key_bytes, "values")?;
+    ctx.sort_unstable_by(values, compare, key_bytes, "values")?;
+}
+""")
+        # The admitted unstable operation has the same method name as a slice call.
+        self.assertEqual(self.findings("uncharged_decode_sort"), [])
+
+    def test_function_boundaries_do_not_leak_context(self) -> None:
+        self.write("crates/demo/src/lib.rs", """
+fn read(ctx: &DecodeContext<'_>) {
+    fn write() { values.sort(); }
+    values.sort();
+}
+fn write() { values.sort_unstable(); }
+""")
+        self.assertEqual([item.line for item in self.findings("uncharged_decode_sort")], [4])
+
+    def test_closures_keep_context_and_generics_keep_function_scope(self) -> None:
+        self.write("crates/demo/src/lib.rs", """
+fn read<T: Copy>(ctx: &DecodeContext<'_>) {
+    records.map(|values| values.sort_unstable());
+}
+""")
+        self.assertEqual([item.line for item in self.findings("uncharged_decode_sort")], [3])
+
+
 class SourcePolicyCommand(TempSourceCase):
     def run_check(self, *args: str) -> tuple[int, str]:
         output = io.StringIO()
         with redirect_stdout(output):
             result = policy.main(list(args))
         return result, output.getvalue()
+
+    def test_crate_filter_keeps_only_selected_crate_findings(self) -> None:
+        self.write("crates/demo/src/lib.rs", "fn f() { let x = 1e-9; }\n")
+        self.write("crates/other/src/lib.rs", "fn f() { let x = 1e-8; }\n")
+        result, output = self.run_check("--json", "--crate", "demo")
+        self.assertEqual(result, 1)
+        self.assertEqual([item["path"] for item in json.loads(output)["findings"]],
+                         ["crates/demo/src/lib.rs"])
+        result, output = self.run_check("--json", "--crate", "demo", "--crate", "other")
+        self.assertEqual(result, 1)
+        self.assertEqual(len(json.loads(output)["findings"]), 2)
+
+    def test_unknown_crate_filter_is_rejected(self) -> None:
+        with patch("sys.stderr", new=io.StringIO()), self.assertRaises(SystemExit) as error:
+            self.run_check("--crate", "absent")
+        self.assertEqual(error.exception.code, 2)
 
     def test_clean_source_needs_no_git_or_ledger(self) -> None:
         self.write("crates/demo/src/lib.rs", "fn f() {}\n")
