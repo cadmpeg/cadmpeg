@@ -204,7 +204,7 @@ fn cacheless_helix_curve_inversion_is_seeded_and_forward_validated() {
     let target =
         super::model_curve_point_by_id(&index, &curve_id, target_parameter).expect("helix target");
 
-    let inverse = crate::eval::model_curve_parameter_near_point_in_index(
+    let inverse = crate::eval::model_curve_parameter_near_point_in_index(&cadmpeg_test_support::service_decode_context(),
         &crate::index::ModelIndex::new(&ir),
         &curve_id,
         target.get(),
@@ -225,7 +225,7 @@ fn cacheless_helix_curve_inversion_is_seeded_and_forward_validated() {
         residual <= ir.tolerances.linear.get(),
         "residual={residual}"
     );
-    assert!(crate::eval::model_curve_parameter_near_point_in_index(
+    assert!(crate::eval::model_curve_parameter_near_point_in_index(&cadmpeg_test_support::service_decode_context(),
         &crate::index::ModelIndex::new(&ir),
         &curve_id,
         target.get(),

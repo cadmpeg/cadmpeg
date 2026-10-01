@@ -6,11 +6,12 @@ fn bounded_nurbs_interval_search_keeps_a_fixed_working_set() {
         .map(|index| crate::scalar::FiniteReal::from_index(index).expect("test index is exact"))
         .collect::<Vec<_>>();
     let seed = crate::scalar::FiniteReal::new(5_000.5).expect("finite seed");
-    let intervals = super::super::bounded_nearest_intervals(&boundaries, seed)
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let intervals = super::super::bounded_nearest_intervals(&ctx, &boundaries, seed)
         .expect("resource allocation did not fail");
 
-    assert_eq!(intervals.len(), 512);
-    assert!(intervals
+    assert_eq!(intervals.0.len(), 512);
+    assert!(intervals.0
         .iter()
         .any(|interval| interval.map(crate::scalar::FiniteReal::get) == [5_000.0, 5_001.0]));
 }
@@ -43,4 +44,48 @@ fn bounded_nurbs_boundary_witness_preserves_seed_priority() {
             .expect("resource allocation did not fail"),
         super::super::BoundaryWitness::Found(crate::scalar::FiniteReal::ONE)
     );
+}
+
+#[test]
+fn bounded_curve_search_preserves_caller_refusals_and_uses_scoped_storage() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    use crate::geometry::nurbs::NurbsCurve;
+    use crate::math::Point3;
+    use crate::scalar::FiniteReal;
+    let curve = NurbsCurve::from_lanes(1, vec![0.0, 0.0, 1.0, 1.0],
+        vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)], None, false).unwrap();
+    let boundaries = [FiniteReal::ZERO, FiniteReal::ONE];
+    for dimension in [ResourceDimension::MaterializedBytes, ResourceDimension::CollectionItems,
+        ResourceDimension::WorkUnits, ResourceDimension::RecursionDepth] {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        match dimension {
+            ResourceDimension::MaterializedBytes => policy.limits.max_materialized_bytes = 0,
+            ResourceDimension::CollectionItems => policy.limits.max_collection_items = 0,
+            ResourceDimension::WorkUnits => policy.limits.max_work_units = 0,
+            ResourceDimension::RecursionDepth => policy.limits.max_recursion_depth = 0,
+            _ => unreachable!(),
+        }
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let error = super::super::nurbs_curve_parameter_near_point(&ctx, &curve, Point3::new(0.25, 0.0, 0.0), 0.0, 0.5).unwrap_err();
+        assert!(matches!(&error, CodecError::ResourceLimit(limit) if limit.dimension == dimension));
+        assert_eq!(ctx.finish_session().unwrap_err().to_string(), error.to_string());
+        if dimension != ResourceDimension::RecursionDepth {
+            let arena = DecodeArena::new();
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            let error = super::super::bounded_nearest_intervals(&ctx, &boundaries, FiniteReal::HALF).unwrap_err();
+            assert!(matches!(&error, CodecError::ResourceLimit(limit) if limit.dimension == dimension));
+            assert_eq!(ctx.finish_session().unwrap_err().to_string(), error.to_string());
+        }
+    }
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    assert_eq!(super::super::nurbs_curve_parameter_near_point(&ctx, &curve, Point3::new(0.25, 0.0, 0.0), 0.0, 0.5).unwrap(), Some(FiniteReal::new(0.25).unwrap()));
+    let intervals = super::super::bounded_nearest_intervals(&ctx, &boundaries, FiniteReal::HALF).unwrap();
+    assert_eq!(intervals.0, vec![boundaries]);
+    drop(intervals);
+    ctx.finish_session().unwrap();
 }

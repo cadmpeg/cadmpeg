@@ -1751,34 +1751,31 @@ struct NurbsSearchWindow<'a> {
 /// forward-evaluated within `tolerance`; `None` also covers malformed input or
 /// exhaustion of the bounded certified search.
 pub fn nurbs_curve_parameter_near_point(
+    ctx: &DecodeContext<'_>,
     curve: &NurbsCurve,
     point: Point3,
     tolerance: f64,
     seed: f64,
-) -> Result<Option<FiniteReal>, ResourceLimit> {
+) -> Result<Option<FiniteReal>, CodecError> {
     let Some(tolerance) = NonNegativeLength::new(tolerance) else {
         return Ok(None);
     };
     let Some(seed) = FiniteReal::new(seed) else {
         return Ok(None);
     };
-    nurbs_curve_parameter_near_point_with_nonnegative_tolerance(curve, point, tolerance, seed)
+    nurbs_curve_parameter_near_point_with_nonnegative_tolerance(ctx, curve, point, tolerance, seed)
 }
 
 /// [`nurbs_curve_parameter_near_point`] with an admitted tolerance and seed.
 fn nurbs_curve_parameter_near_point_with_nonnegative_tolerance(
+    ctx: &DecodeContext<'_>,
     curve: &NurbsCurve,
     point: Point3,
     tolerance: NonNegativeLength,
     seed: FiniteReal,
-) -> Result<Option<FiniteReal>, ResourceLimit> {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes_limit(
-        &[],
-        &arena,
-        &cadmpeg_core::decode::DecodePolicy::default(),
-    )?;
-    let scratch = decode::Scratch::new(&ctx);
+) -> Result<Option<FiniteReal>, CodecError> {
+    let _depth = ctx.enter_nested("IR NURBS curve inversion depth")?;
+    let scratch = decode::Scratch::new(ctx);
     let result = (|| {
         let tolerance = tolerance.get();
         let Some(degree) = usize::try_from(curve.degree()).ok() else {
@@ -1791,15 +1788,21 @@ fn nurbs_curve_parameter_near_point_with_nonnegative_tolerance(
         if degree == 0 || !point.is_finite() {
             return Ok(None);
         }
-        let Some(weights) = validated_nurbs_curve_weights(curve)? else {
+        let mut source_storage = ctx.reserve_scoped(0, "IR curve inversion source scratch")?;
+        let Some(weights) = validated_nurbs_curve_weights(ctx, &mut source_storage, curve)? else {
             return Ok(None);
         };
+        let speed_work = u64_from_index(count).checked_mul(128)
+            .and_then(|work| work.checked_add(u64_from_index(curve.knots().len()).checked_mul(2)?))
+            .ok_or_else(|| ctx.refuse_codec_limit("IR curve inversion speed bound", u64::MAX - 1, u64::MAX))?;
+        ctx.charge_work(speed_work, "IR curve inversion speed bound")?;
         let Some(speed_bound) = nurbs_curve_speed_bound_about(curve, point).map(FiniteReal::get)
         else {
             return Ok(None);
         };
         let mut poles = Vec::new();
-        scratch::reserve_exact(&mut poles, count, "IR curve inversion controls")?;
+        ctx.reserve_scoped_vec(&mut source_storage, &mut poles, count, "IR curve inversion controls")?;
+        ctx.charge_work(u64_from_index(count), "IR curve inversion controls copy")?;
         for index in 0..count {
             let Some(pole) = curve.pole_rows().point_at(index) else {
                 return Ok(None);
@@ -1824,23 +1827,25 @@ fn nurbs_curve_parameter_near_point_with_nonnegative_tolerance(
         };
         let seed = domain.project(ExtendedReal::from_finite(seed));
         let mut boundaries = Vec::new();
-        scratch::reserve_exact(
-            &mut boundaries,
+        ctx.reserve_scoped_vec(
+            &mut source_storage, &mut boundaries,
             count - degree + 1,
             "IR curve inversion boundaries",
         )?;
+        ctx.charge_work(u64_from_index(count - degree + 1), "IR curve inversion boundary copy")?;
         for index in degree..=count {
             let Some(boundary) = curve.knots().finite_knot(index) else {
                 return Ok(None);
             };
             boundaries.push(boundary);
         }
+        ctx.charge_work(u64_from_index(boundaries.len()), "IR curve inversion boundary witness scan")?;
         match nearest_boundary_witness(&boundaries, seed, tolerance, distance)? {
             BoundaryWitness::Found(parameter) => return Ok(Some(parameter)),
             BoundaryWitness::Invalid => return Ok(None),
             BoundaryWitness::NoMatch => {}
         }
-        if let Some(parameter) = nurbs_curve_parameter_near_point_newton(
+        if let Some(parameter) = nurbs_curve_parameter_near_point_newton(ctx,
             curve,
             &poles,
             weights.values(),
@@ -1854,9 +1859,10 @@ fn nurbs_curve_parameter_near_point_with_nonnegative_tolerance(
         )? {
             return Ok(Some(parameter));
         }
-        let mut intervals = bounded_nearest_intervals(&boundaries, seed)?;
+        let mut intervals = bounded_nearest_intervals(ctx, &boundaries, seed)?;
         let mut examined = 0usize;
-        while let Some([start, end]) = intervals.pop() {
+        while let Some([start, end]) = intervals.0.pop() {
+            ctx.charge_work(1, "IR curve inversion interval scan")?;
             examined += 1;
             if examined > NURBS_SEARCH_MAX_INTERVALS {
                 return Ok(None);
@@ -1882,8 +1888,9 @@ fn nurbs_curve_parameter_near_point_with_nonnegative_tolerance(
                 interval_distance_to_parameter(halves[1], seed)
                     < interval_distance_to_parameter(halves[0], seed),
             );
-            intervals.push(halves[1 - nearer]);
-            intervals.push(halves[nearer]);
+            ctx.charge_work(2, "IR curve inversion interval split")?;
+            ctx.push_scoped_vec(&mut intervals.1, &mut intervals.0, halves[1 - nearer], "IR curve inversion search intervals")?;
+            ctx.push_scoped_vec(&mut intervals.1, &mut intervals.0, halves[nearer], "IR curve inversion search intervals")?;
         }
         Ok(None)
     })();
@@ -1892,6 +1899,7 @@ fn nurbs_curve_parameter_near_point_with_nonnegative_tolerance(
 }
 
 fn nurbs_curve_parameter_near_point_newton(
+    ctx: &DecodeContext<'_>,
     curve: &NurbsCurve,
     poles: &[FinitePoint3],
     weights: Option<&[f64]>,
@@ -1899,19 +1907,15 @@ fn nurbs_curve_parameter_near_point_newton(
     tolerance: f64,
     seed: FiniteReal,
     search: NurbsSearchWindow<'_>,
-) -> Result<Option<FiniteReal>, ResourceLimit> {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes_limit(
-        &[],
-        &arena,
-        &cadmpeg_core::decode::DecodePolicy::default(),
-    )?;
-    let scratch = decode::Scratch::new(&ctx);
+) -> Result<Option<FiniteReal>, CodecError> {
+    let scratch = decode::Scratch::new(ctx);
     let result = (|| {
+        ctx.charge_work(u64_from_index(search.boundaries.len()), "IR curve inversion Newton interval scan")?;
         let window =
             parameter_interval_containing(search.boundaries, seed).unwrap_or(search.domain);
         let mut parameter = window.project(ExtendedReal::from_finite(seed));
         for _ in 0..MODEL_CURVE_PARAMETER_SEARCH_MAX_NEWTON_ITERATIONS {
+            ctx.charge_work(1, "IR curve inversion Newton iteration")?;
             let Some(position) = finite_or_refusal(nurbs_curve_point_evaluation(
                 &scratch,
                 curve.degree(),
@@ -1988,8 +1992,10 @@ impl ValidatedNurbsWeights {
 
 /// A rational weight copy has at most one value per admitted control pole.
 fn validated_nurbs_curve_weights(
+    ctx: &DecodeContext<'_>,
+    storage: &mut cadmpeg_core::decode::ScopedReservation<'_>,
     curve: &NurbsCurve,
-) -> Result<Option<ValidatedNurbsWeights>, ResourceLimit> {
+) -> Result<Option<ValidatedNurbsWeights>, CodecError> {
     if nurbs_curve_parameter_domain(curve).is_none() {
         return Ok(None);
     }
@@ -1997,11 +2003,12 @@ fn validated_nurbs_curve_weights(
         return Ok(Some(ValidatedNurbsWeights::Unit));
     }
     let mut weights = Vec::new();
-    scratch::reserve_exact(
-        &mut weights,
+    ctx.reserve_scoped_vec(
+        storage, &mut weights,
         curve.pole_count(),
         "IR curve inversion weights",
     )?;
+    ctx.charge_work(u64_from_index(curve.pole_count()), "IR curve inversion weight scan")?;
     for index in 0..curve.pole_count() {
         let Some(weight) = curve.pole_rows().weight_at(index) else {
             return Ok(None);
@@ -2072,24 +2079,25 @@ impl Ord for SearchInterval {
 }
 
 /// Retain only the nearest knot intervals that the bounded search can visit.
-fn bounded_nearest_intervals(
+fn bounded_nearest_intervals<'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
     boundaries: &[FiniteReal],
     seed: FiniteReal,
-) -> Result<Vec<[FiniteReal; 2]>, ResourceLimit> {
-    let mut nearest = BinaryHeap::new();
+) -> Result<(Vec<[FiniteReal; 2]>, cadmpeg_core::decode::ScopedReservation<'ctx>), CodecError> {
+    let mut heap_storage = ctx.reserve_scoped(0, "IR curve inversion interval heap")?;
+    let mut heap_values = Vec::new();
     let capacity = boundaries.len().min(NURBS_SEARCH_MAX_INTERVALS + 1);
-    nearest.try_reserve(capacity).map_err(|_| {
-        cadmpeg_core::decode::ResourceLimit::allocation_failed(
-            cadmpeg_core::decode::ResourceDimension::Codec("IR curve inversion interval heap"),
-            cadmpeg_core::decode::u64_from_index(capacity),
-            cadmpeg_core::decode::u64_from_index(capacity),
-            "IR curve inversion interval heap",
-        )
-    })?;
+    ctx.reserve_scoped_vec(&mut heap_storage, &mut heap_values, capacity, "IR curve inversion interval heap")?;
+    let mut nearest = BinaryHeap::from(heap_values);
+    let levels = u64::from(usize::BITS - capacity.leading_zeros()) + 1;
+    // One insertion and removal use at most four heap paths. Each interval
+    // comparison tests at most three scalar keys.
+    let work = u64_from_index(boundaries.len()).checked_mul(levels)
+        .and_then(|work| work.checked_mul(12))
+        .ok_or_else(|| ctx.refuse_codec_limit("IR curve inversion heap scan", u64::MAX - 1, u64::MAX))?;
+    ctx.charge_work(work, "IR curve inversion heap scan")?;
     for pair in boundaries.windows(2) {
-        if pair[0] >= pair[1] {
-            continue;
-        }
+        if pair[0] >= pair[1] { continue; }
         let candidate = SearchInterval {
             bounds: [pair[0], pair[1]],
             distance: interval_distance_to_parameter([pair[0], pair[1]], seed),
@@ -2102,11 +2110,13 @@ fn bounded_nearest_intervals(
         }
     }
     let mut intervals = nearest.into_vec();
-    intervals.sort_unstable_by(|first, second| second.cmp(first));
+    ctx.sort_unstable_by(&mut intervals, |first, second| second.cmp(first), |_| 0, "IR curve inversion interval sort")?;
+    let mut storage = ctx.reserve_scoped(0, "IR curve inversion intervals")?;
     let mut result = Vec::new();
-    scratch::reserve_exact(&mut result, intervals.len(), "IR curve inversion intervals")?;
+    ctx.reserve_scoped_vec(&mut storage, &mut result, intervals.len(), "IR curve inversion intervals")?;
+    ctx.charge_work(u64_from_index(intervals.len()), "IR curve inversion interval copy")?;
     result.extend(intervals.into_iter().map(|interval| interval.bounds));
-    Ok(result)
+    Ok((result, storage))
 }
 
 /// Retain the final valid knot intervals without materializing the full partition.
@@ -4903,12 +4913,13 @@ fn model_curve_point_by_id_inner(
 /// Batch callers must reuse one index so carrier inversion remains linear in
 /// the document population rather than rebuilding the index for every edge.
 pub fn model_curve_parameter_near_point_in_index(
+    ctx: &DecodeContext<'_>,
     index: &crate::index::ModelIndex<'_>,
     curve_id: &crate::ids::CurveId,
     point: Point3,
     seed: f64,
-) -> Result<Option<FiniteReal>, ResourceLimit> {
-    model_curve_parameter_near_point_with_tolerance(
+) -> Result<Option<FiniteReal>, CodecError> {
+    model_curve_parameter_near_point_with_tolerance(ctx,
         index,
         curve_id,
         point,
@@ -4923,27 +4934,30 @@ pub fn model_curve_parameter_near_point_in_index(
 /// by the inversion. Callers that admit an evaluated geometric residual above
 /// the document default must pass that same admission bound here.
 pub fn model_curve_parameter_near_point_in_index_with_tolerance(
+    ctx: &DecodeContext<'_>,
     index: &crate::index::ModelIndex<'_>,
     curve_id: &crate::ids::CurveId,
     point: Point3,
     seed: f64,
     tolerance: f64,
-) -> Result<Option<FiniteReal>, ResourceLimit> {
+) -> Result<Option<FiniteReal>, CodecError> {
     let Some(tolerance) = NonNegativeLength::new(tolerance) else {
         return Ok(None);
     };
-    model_curve_parameter_near_point_with_tolerance(index, curve_id, point, seed, tolerance)
+    model_curve_parameter_near_point_with_tolerance(ctx, index, curve_id, point, seed, tolerance)
 }
 
 /// Invert a model curve with an admitted tolerance.
 fn model_curve_parameter_near_point_with_tolerance(
+    ctx: &DecodeContext<'_>,
     index: &crate::index::ModelIndex<'_>,
     curve_id: &crate::ids::CurveId,
     point: Point3,
     seed: f64,
     tolerance: NonNegativeLength,
-) -> Result<Option<FiniteReal>, ResourceLimit> {
-    let _depth = ModelEvaluationDepthGuard::enter(None)?;
+) -> Result<Option<FiniteReal>, CodecError> {
+    let _depth = ctx.enter_nested("IR model curve inversion depth")?;
+    ctx.charge_work(u64_from_index(curve_id.as_str().len()), "IR model curve inversion identity hash")?;
     let Some(curve) = index.curves(curve_id.as_str()) else {
         return Ok(None);
     };
@@ -4964,7 +4978,7 @@ fn model_curve_parameter_near_point_with_tolerance(
                 else {
                     return Ok(None);
                 };
-                return model_curve_parameter_near_point_with_tolerance(
+                return model_curve_parameter_near_point_with_tolerance(ctx,
                     index,
                     source,
                     basis_point,
@@ -4985,7 +4999,7 @@ fn model_curve_parameter_near_point_with_tolerance(
                         return Ok(None);
                     }
                     let source_seed = if *sense { start + seed } else { end - seed };
-                    let Some(source_parameter) = model_curve_parameter_near_point_with_tolerance(
+                    let Some(source_parameter) = model_curve_parameter_near_point_with_tolerance(ctx,
                         index,
                         source,
                         point,
@@ -5024,7 +5038,7 @@ fn model_curve_parameter_near_point_with_tolerance(
                     seed,
                     tolerance,
                     procedural.definition(),
-                );
+                ).map_err(CodecError::from);
             }
             _ => {}
         }
@@ -5033,7 +5047,7 @@ fn model_curve_parameter_near_point_with_tolerance(
         let Some(seed) = FiniteReal::new(seed) else {
             return Ok(None);
         };
-        return direct_curve_parameter_near_point(cache, point, seed, tolerance);
+        return direct_curve_parameter_near_point(ctx, cache, point, seed, tolerance);
     }
     if !matches!(&curve.geometry, CurveGeometry::Procedural { .. }) {
         let Some(seed) = FiniteReal::new(seed) else {
@@ -5042,7 +5056,7 @@ fn model_curve_parameter_near_point_with_tolerance(
         let Some(geometry) = curve.geometry.solved() else {
             return Ok(None);
         };
-        return direct_curve_parameter_near_point(geometry, point, seed, tolerance);
+        return direct_curve_parameter_near_point(ctx, geometry, point, seed, tolerance);
     }
     let Some(construction) = curve.geometry.procedural_construction() else {
         return Ok(None);
@@ -5227,7 +5241,7 @@ fn model_curve_parameter_near_point_with_tolerance(
                 else {
                     continue;
                 };
-                nurbs_curve_parameter_near_point_with_nonnegative_tolerance(
+                nurbs_curve_parameter_near_point_with_nonnegative_tolerance(ctx,
                     &isocurve,
                     point,
                     admitted_tolerance,
@@ -5357,11 +5371,12 @@ fn helix_parameter_near_point(
 
 /// Invert a direct curve carrier near a caller-selected parameter seed.
 pub(crate) fn curve_parameter_near_point(
+    ctx: &DecodeContext<'_>,
     geometry: &CurveGeometry,
     point: Point3,
     seed: f64,
     tolerance: f64,
-) -> Result<Option<FiniteReal>, ResourceLimit> {
+) -> Result<Option<FiniteReal>, CodecError> {
     let Some(geometry) = geometry.solved() else {
         return Ok(None);
     };
@@ -5371,16 +5386,19 @@ pub(crate) fn curve_parameter_near_point(
     let Some(tolerance) = NonNegativeLength::new(tolerance) else {
         return Ok(None);
     };
-    direct_curve_parameter_near_point(geometry, point, seed, tolerance)
+    direct_curve_parameter_near_point(ctx, geometry, point, seed, tolerance)
 }
 
 fn direct_curve_parameter_near_point(
+    ctx: &DecodeContext<'_>,
     geometry: &SolvedCurveGeometry,
     point: Point3,
     seed: FiniteReal,
     admitted_tolerance: NonNegativeLength,
-) -> Result<Option<FiniteReal>, ResourceLimit> {
-    let result = (|| -> Option<Result<FiniteReal, ResourceLimit>> {
+) -> Result<Option<FiniteReal>, CodecError> {
+    let _depth = ctx.enter_nested("IR direct curve inversion depth")?;
+    ctx.charge_work(1, "IR direct curve inversion")?;
+    let result = (|| -> Option<Result<FiniteReal, CodecError>> {
         let tolerance = admitted_tolerance.get();
         let components = |origin: Point3, axis: Vector3, reference: Vector3| -> (f64, f64, f64) {
             let delta = Vector3::new(point.x - origin.x, point.y - origin.y, point.z - origin.z);
@@ -5443,7 +5461,7 @@ fn direct_curve_parameter_near_point(
                 FiniteReal::new((transverse / minor_radius).asinh())?
             }
             SolvedCurveGeometry::Nurbs(curve) => {
-                match nurbs_curve_parameter_near_point_with_nonnegative_tolerance(
+                match nurbs_curve_parameter_near_point_with_nonnegative_tolerance(ctx,
                     curve,
                     point,
                     admitted_tolerance,
@@ -5455,8 +5473,15 @@ fn direct_curve_parameter_near_point(
                 }
             }
             SolvedCurveGeometry::Polyline(polyline) => {
-                let (points, parameters) = polyline_samples(polyline)?;
-                polyline_parameter_near_point(&points, &parameters, point, tolerance, seed)?
+                let samples = match polyline_samples(ctx, polyline) {
+                    Ok(Some(samples)) => samples,
+                    Ok(None) => return None,
+                    Err(error) => return Some(Err(error)),
+                };
+                if let Err(error) = ctx.charge_work(u64_from_index(samples.0.len()), "IR polyline inversion segment scan") {
+                    return Some(Err(error));
+                }
+                polyline_parameter_near_point(&samples.0, &samples.1, point, tolerance, seed)?
             }
             SolvedCurveGeometry::Transformed(placed) => {
                 let (basis_point, tolerance_scale) =
@@ -5464,7 +5489,7 @@ fn direct_curve_parameter_near_point(
                 // The scale is a finite norm, so the admission refuses only an
                 // overflowed product.
                 let basis_tolerance = NonNegativeLength::new(tolerance * tolerance_scale)?;
-                match direct_curve_parameter_near_point(
+                match direct_curve_parameter_near_point(ctx,
                     placed.basis(),
                     basis_point,
                     seed,
@@ -5486,10 +5511,10 @@ fn direct_curve_parameter_near_point(
                 return None
             }
         };
-        let evaluated = match finite_or_refusal(curve_point_solved(geometry, parameter.get())) {
+        let evaluated = match decode::curve_point_solved_for_decode(ctx, geometry, parameter.get()).and_then(finite_or_refusal) {
             Ok(Some(point)) => point,
             Ok(None) => return None,
-            Err(limit) => return Some(Err(limit)),
+            Err(limit) => return Some(Err(limit.into())),
         };
         let error = evaluated.distance(point);
         (error.is_finite() && error <= tolerance).then_some(Ok(parameter))

@@ -50,7 +50,7 @@ fn numerical_followup_curve_search_rejects_a_nonzero_zero_tolerance_residual() {
     )
     .unwrap();
     assert_eq!(
-        nurbs_curve_parameter_near_point(&curve, Point3::new(0., 1e-200, 0.), 0., 0.)
+        nurbs_curve_parameter_near_point(&cadmpeg_test_support::service_decode_context(), &curve, Point3::new(0., 1e-200, 0.), 0., 0.)
             .expect("resource allocation did not fail"),
         None
     );
@@ -69,7 +69,7 @@ fn curve_search_admits_its_tolerance_before_the_search() {
     let point = Point3::new(0.25, 1e-3, 0.);
     for tolerance in [-1e-3, f64::NAN, f64::INFINITY] {
         assert_eq!(
-            nurbs_curve_parameter_near_point(&curve, point, tolerance, 0.5)
+            nurbs_curve_parameter_near_point(&cadmpeg_test_support::service_decode_context(), &curve, point, tolerance, 0.5)
                 .expect("resource allocation did not fail"),
             None
         );
@@ -77,12 +77,12 @@ fn curve_search_admits_its_tolerance_before_the_search() {
     let tolerance = crate::scalar::NonNegativeLength::new(2e-3).unwrap();
     let seed = crate::scalar::FiniteReal::new(0.5).unwrap();
     let parameter =
-        nurbs_curve_parameter_near_point_with_nonnegative_tolerance(&curve, point, tolerance, seed)
+        nurbs_curve_parameter_near_point_with_nonnegative_tolerance(&cadmpeg_test_support::service_decode_context(), &curve, point, tolerance, seed)
             .expect("resource allocation did not fail");
     assert!(parameter.is_some());
     assert_eq!(
         parameter,
-        nurbs_curve_parameter_near_point(&curve, point, tolerance.get(), 0.5)
+        nurbs_curve_parameter_near_point(&cadmpeg_test_support::service_decode_context(), &curve, point, tolerance.get(), 0.5)
             .expect("resource allocation did not fail")
     );
 }
@@ -105,7 +105,7 @@ fn numerical_followup_rational_search_retains_common_weight_scaling() {
             Some(1.0)
         );
         assert_eq!(
-            nurbs_curve_parameter_near_point(&curve, poles[0], 0., 0.)
+            nurbs_curve_parameter_near_point(&cadmpeg_test_support::service_decode_context(), &curve, poles[0], 0., 0.)
                 .expect("resource allocation did not fail")
                 .map(crate::scalar::FiniteReal::get),
             Some(0.0)
@@ -143,9 +143,9 @@ fn implicit_unit_weights_match_explicit_unit_weights_in_curve_search() {
         nurbs_curve_speed_bound(&explicit)
     );
     assert_eq!(
-        nurbs_curve_parameter_near_point(&implicit, Point3::new(0.25, 0.0, 0.0), 0.0, 0.5)
+        nurbs_curve_parameter_near_point(&cadmpeg_test_support::service_decode_context(), &implicit, Point3::new(0.25, 0.0, 0.0), 0.0, 0.5)
             .expect("resource allocation did not fail"),
-        nurbs_curve_parameter_near_point(&explicit, Point3::new(0.25, 0.0, 0.0), 0.0, 0.5)
+        nurbs_curve_parameter_near_point(&cadmpeg_test_support::service_decode_context(), &explicit, Point3::new(0.25, 0.0, 0.0), 0.0, 0.5)
             .expect("resource allocation did not fail")
     );
     let controls = [Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)];
@@ -234,7 +234,7 @@ fn analytic_line_search_preserves_subnormal_scale_residuals() {
         .unwrap(),
     );
     assert_eq!(
-        direct_curve_parameter_near_point(
+        direct_curve_parameter_near_point(&cadmpeg_test_support::service_decode_context(),
             &line,
             Point3::new(0., 1e-200, 0.),
             crate::scalar::FiniteReal::ZERO,

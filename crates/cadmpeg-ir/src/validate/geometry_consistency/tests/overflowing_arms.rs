@@ -106,7 +106,7 @@ fn a_coedge_placed_pcurve_whose_mapped_points_overflow_misses_the_vertices_by_na
     }];
     let coedge_id = coedge.id.as_str().to_owned();
     let mut findings = Vec::new();
-    super::check_pcurve_surface_consistency(&ir, &mut findings)
+    super::check_pcurve_surface_consistency(&cadmpeg_test_support::service_decode_context(), &ir, &mut findings)
         .expect("resource allocation did not fail");
     assert!(
         findings.iter().any(|finding| {

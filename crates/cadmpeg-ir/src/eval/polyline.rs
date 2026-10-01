@@ -12,17 +12,23 @@ use crate::scalar::{FiniteReal, SegmentPosition};
 ///
 /// A sample row carries its own parameter, so the two lists this returns agree
 /// by construction. An unparameterized polyline evaluates on its sample index.
-pub(super) fn polyline_samples(
+pub(super) fn polyline_samples<'ctx>(
+    ctx: &'ctx cadmpeg_core::decode::DecodeContext<'_>,
     polyline: &PolylineCurve,
-) -> Option<(Vec<FinitePoint3>, Vec<FiniteReal>)> {
-    let points: Vec<FinitePoint3> = polyline.points().collect();
-    let parameters = match polyline.parameters() {
-        Some(parameters) => parameters.collect(),
-        None => (0..points.len())
-            .map(FiniteReal::from_index)
-            .collect::<Option<Vec<_>>>()?,
-    };
-    Some((points, parameters))
+) -> Result<Option<(Vec<FinitePoint3>, Vec<FiniteReal>, cadmpeg_core::decode::ScopedReservation<'ctx>)>, cadmpeg_core::CodecError> {
+    let mut storage = ctx.reserve_scoped(0, "IR polyline inversion samples")?;
+    let points = storage.with_storage(|| ctx.collect_vec(polyline.points(), "IR polyline inversion points"))?;
+    let mut parameters = Vec::new();
+    ctx.reserve_scoped_vec(&mut storage, &mut parameters, points.len(), "IR polyline inversion parameters")?;
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(points.len()), "IR polyline inversion parameter scan")?;
+    match polyline.parameters() {
+        Some(values) => parameters.extend(values),
+        None => for index in 0..points.len() {
+            let Some(parameter) = FiniteReal::from_index(index) else { return Ok(None); };
+            parameters.push(parameter);
+        },
+    }
+    Ok(Some((points, parameters, storage)))
 }
 
 /// The point of a sampled polyline at `t`, interpolated on the first

@@ -479,7 +479,7 @@ fn surface_offset_support_constrains_the_embedded_base_curve() {
 fn untrimmed_pcurve_uses_a_vertex_derived_parameter_interval() {
     let ir = untrimmed_surface_curve();
     let mut findings = Vec::new();
-    super::check_pcurve_surface_consistency(&ir, &mut findings)
+    super::check_pcurve_surface_consistency(&cadmpeg_test_support::service_decode_context(), &ir, &mut findings)
         .expect("resource allocation did not fail");
     assert!(findings.is_empty(), "{findings:#?}");
 
@@ -497,7 +497,7 @@ fn untrimmed_pcurve_uses_a_vertex_derived_parameter_interval() {
         2.0,
     )
     .unwrap();
-    super::check_pcurve_surface_consistency(&mismatched, &mut findings)
+    super::check_pcurve_surface_consistency(&cadmpeg_test_support::service_decode_context(), &mismatched, &mut findings)
         .expect("resource allocation did not fail");
     assert_eq!(findings.len(), 1);
     assert!(findings[0].message.contains("pcurve mapped through"));
@@ -572,7 +572,7 @@ fn trimmed_surface_pcurve_uses_the_local_parameterization_for_validation() {
     .unwrap();
 
     let mut findings = Vec::new();
-    super::check_pcurve_surface_consistency(&ir, &mut findings)
+    super::check_pcurve_surface_consistency(&cadmpeg_test_support::service_decode_context(), &ir, &mut findings)
         .expect("resource allocation did not fail");
     assert!(findings.is_empty(), "{findings:#?}");
 }
@@ -595,7 +595,7 @@ fn untrimmed_nurbs_pcurve_uses_its_own_endpoint_parameters() {
         .unwrap(),
     };
     let mut findings = Vec::new();
-    super::check_pcurve_surface_consistency(&ir, &mut findings)
+    super::check_pcurve_surface_consistency(&cadmpeg_test_support::service_decode_context(), &ir, &mut findings)
         .expect("resource allocation did not fail");
     assert!(findings.is_empty(), "{findings:#?}");
 }
@@ -626,7 +626,7 @@ fn stale_trimmed_pcurve_range_can_use_a_vertex_derived_interval() {
         .unwrap(),
     );
     let mut findings = Vec::new();
-    super::check_pcurve_surface_consistency(&ir, &mut findings)
+    super::check_pcurve_surface_consistency(&cadmpeg_test_support::service_decode_context(), &ir, &mut findings)
         .expect("resource allocation did not fail");
     assert!(findings.is_empty(), "{findings:#?}");
 }
@@ -749,7 +749,7 @@ fn line_pcurve_recovers_vertices_from_nurbs_surface_domain_seeds() {
     let seeds = pcurve_parameter_seeds_on_surface(&context, &pcurve);
     assert!(seeds.iter().any(|seed| seed.get() == 0.5));
 
-    let ranges = edge_pcurve_parameter_ranges(
+    let ranges = edge_pcurve_parameter_ranges(&cadmpeg_test_support::service_decode_context(),
         &context,
         None,
         Point3::new(1.0, 0.0, 0.5625),
@@ -1364,7 +1364,7 @@ fn a_coedge_pcurve_whose_mapped_points_overflow_misses_the_vertices_by_nan() {
     }];
     let coedge_id = coedge.id.as_str().to_owned();
     let mut findings = Vec::new();
-    check_pcurve_surface_consistency(&ir, &mut findings).expect("resource allocation did not fail");
+    check_pcurve_surface_consistency(&cadmpeg_test_support::service_decode_context(), &ir, &mut findings).expect("resource allocation did not fail");
     assert!(
         findings.iter().any(|finding| {
             finding.entity.as_deref() == Some(coedge_id.as_str())

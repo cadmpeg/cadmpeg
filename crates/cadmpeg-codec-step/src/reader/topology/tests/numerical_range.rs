@@ -268,7 +268,7 @@ fn pcurve_locus_finds_an_interior_curve_branch_near_the_float_limit() {
     let index = ModelIndex::new_model_only(&ir);
     let midpoint = lower.midpoint(upper);
     for x in [0.5, 0.6] {
-        assert!(curve_parameter_near_point(
+        assert!(curve_parameter_near_point(&cadmpeg_test_support::service_decode_context(),
             &index,
             &curve_id,
             Point3::new(x, 0.0, 0.0),

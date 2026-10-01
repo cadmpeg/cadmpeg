@@ -8958,16 +8958,17 @@ fn nurbs_surface_boundary_curves(
 }
 
 fn nurbs_boundary_contains_point(
+    ctx: &DecodeContext<'_>,
     curve: &NurbsCurve,
     point: Point3,
-) -> Result<bool, cadmpeg_core::decode::ResourceLimit> {
+) -> Result<bool, cadmpeg_core::CodecError> {
     let Some([lower, upper]) = cadmpeg_ir::eval::nurbs_curve_parameter_domain(curve)
         .map(cadmpeg_ir::topology::IncreasingParameterInterval::endpoints)
     else {
         return Ok(false);
     };
     for seed in [lower, 0.5 * (lower + upper), upper] {
-        if cadmpeg_ir::eval::nurbs_curve_parameter_near_point(
+        if cadmpeg_ir::eval::nurbs_curve_parameter_near_point(ctx,
             curve,
             point,
             NURBS_SURFACE_MEMBERSHIP_TOLERANCE,
@@ -9032,7 +9033,7 @@ fn standard_shared_nurbs_boundary_pair_options(
                     both = false;
                     break;
                 };
-                if !nurbs_boundary_contains_point(boundary, *point)? {
+                if !nurbs_boundary_contains_point(ctx, boundary, *point)? {
                     both = false;
                     break;
                 }
