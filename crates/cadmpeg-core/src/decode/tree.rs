@@ -93,17 +93,18 @@ fn xml_bound(text: &str) -> XmlBound {
     XmlBound { nodes: markers, attributes, namespaces, depth: maximum }
 }
 
-/// Holds all nesting guards through the parser call. Each step is admitted
-/// before recursion, including nesting already active in the caller.
+/// Holds nesting guards through the parser call without recursing in the
+/// admission code. Guard slots and their temporary storage are admitted first.
 fn at_depth<T>(
-    ctx: &DecodeContext<'_>,
-    depth: u64,
-    operation: &'static str,
+    ctx: &DecodeContext<'_>, depth: u64, operation: &'static str,
     parse: impl FnOnce() -> Result<T, CodecError>,
 ) -> Result<T, CodecError> {
-    if depth == 0 { return parse(); }
-    let _guard = ctx.enter_nested(operation)?;
-    at_depth(ctx, depth - 1, operation, parse)
+    ctx.charge_work(depth, operation)?;
+    ctx.charge_collection_items(depth, operation)?;
+    let count = usize::try_from(depth).map_err(|_| ctx.refuse_codec_limit(operation, u64::MAX, depth))?;
+    let (mut guards, _reservation) = ctx.scoped_admitted_vec(count, operation)?;
+    for _ in 0..count { guards.push(ctx.enter_nested(operation)?); }
+    parse()
 }
 
 impl DecodeContext<'_> {
@@ -166,6 +167,180 @@ impl DecodeContext<'_> {
     }
 }
 
+/// serde_json 1.0.151 uses a BTreeMap without `preserve_order`. A leaf has
+/// eleven (String, Value) slots; an internal node adds twelve pointers.
+/// 4096 bytes per potential entry cover two nodes, split/root growth and
+/// alignment, including a one-entry root where capacity rounding dominates.
+const JSON_MAP_ENTRY_BOUND: u64 = 4096;
+const RAW_VALUE_TOKEN: &[u8] = b"$serde_json::private::RawValue";
+
+#[derive(Default)]
+struct JsonStringScan {
+    active: bool,
+    escaped: bool,
+    unicode_digits: u8,
+    unicode_value: u32,
+    matched: usize,
+    possible: bool,
+}
+
+impl JsonStringScan {
+    fn decoded(&mut self, byte: Option<u8>) {
+        if byte.is_some() && byte == RAW_VALUE_TOKEN.get(self.matched).copied() {
+            self.matched += 1;
+        } else {
+            self.possible = false;
+        }
+    }
+
+    /// Returns true only when a completed string spells the raw-value token.
+    fn byte(&mut self, byte: u8) -> bool {
+        if self.unicode_digits != 0 {
+            if let Some(digit) = char::from(byte).to_digit(16) {
+                self.unicode_value = self.unicode_value * 16 + digit;
+            } else { self.possible = false; }
+            self.unicode_digits -= 1;
+            if self.unicode_digits == 0 { self.decoded(u8::try_from(self.unicode_value).ok()); }
+        } else if self.escaped {
+            self.escaped = false;
+            if byte == b'u' { self.unicode_digits = 4; self.unicode_value = 0; }
+            else {
+                self.decoded(match byte {
+                    b'"' | b'\\' | b'/' => Some(byte),
+                    b'b' => Some(8), b'f' => Some(12), b'n' => Some(b'\n'),
+                    b'r' => Some(b'\r'), b't' => Some(b'\t'), _ => None,
+                });
+            }
+        } else if byte == b'\\' { self.escaped = true; }
+        else if byte == b'"' {
+            self.active = false;
+            return self.possible && self.matched == RAW_VALUE_TOKEN.len();
+        } else { self.decoded(Some(byte)); }
+        false
+    }
+}
+
+struct JsonBound {
+    values: u64,
+    entries: u64,
+    depth: u64,
+    bytes: u64,
+}
+
+impl DecodeContext<'_> {
+    /// Bounds serde_json 1.0.151 trees in one scan. Delimiters '[' '{' ',' ':'
+    /// plus one bound value slots. All array capacities together are at most
+    /// six slots per value (doubling plus minimum four). Map entry capacity is
+    /// charged per colon. Eight input lengths cover decoded
+    /// strings, growing scratch and temporary copies; 1024 covers parser state.
+    /// The raw_value feature can parse strings again when a first key spells
+    /// its private token, including escaped spellings. For that carrier,
+    /// opening delimiters and escapes bound replay depth and hidden delimiters;
+    /// eight input lengths per level cover simultaneous replay strings/scratch.
+    /// Work includes replay scans, map comparisons and copies before parsing.
+    fn json_bound(&self, text: &str, operation: &'static str) -> Result<JsonBound, CodecError> {
+        let length = u64_from_index(text.len());
+        self.charge_work(length, operation)?;
+        let mut values = 0_u64;
+        let mut entries = 0_u64;
+        let mut depth = 0_u64;
+        let mut maximum = 0_u64;
+        let mut openings = 0_u64;
+        let mut escapes = 0_u64;
+        let mut raw = false;
+        let mut string = JsonStringScan::default();
+        for &byte in text.as_bytes() {
+            values += u64::from(matches!(byte, b'[' | b'{' | b',' | b':'));
+            entries += u64::from(byte == b':');
+            openings += u64::from(matches!(byte, b'[' | b'{'));
+            escapes += u64::from(byte == b'\\');
+            if string.active { raw |= string.byte(byte); continue; }
+            match byte {
+                b'"' => string = JsonStringScan { active: true, possible: true, ..JsonStringScan::default() },
+                b'[' | b'{' => { depth += 1; maximum = maximum.max(depth); }
+                b']' | b'}' if depth != 0 => depth -= 1,
+                _ => {},
+            }
+        }
+        values = values.checked_add(1).ok_or_else(|| self.tree_overflow(operation))?;
+        let levels = if raw {
+            maximum = openings.checked_add(escapes).ok_or_else(|| self.tree_overflow(operation))?;
+            values = values.checked_add(escapes).ok_or_else(|| self.tree_overflow(operation))?;
+            entries = entries.checked_add(escapes).ok_or_else(|| self.tree_overflow(operation))?;
+            maximum.checked_add(1).ok_or_else(|| self.tree_overflow(operation))?
+        } else { 1 };
+        let bytes = (|| {
+            values.checked_mul(6)?.checked_mul(u64_from_index(std::mem::size_of::<serde_json::Value>()))?
+                .checked_add(entries.checked_mul(JSON_MAP_ENTRY_BOUND)?)?
+                .checked_add(length.checked_mul(8)?.checked_mul(levels)?)?.checked_add(1024)
+        })().ok_or_else(|| self.tree_overflow(operation))?;
+        Ok(JsonBound { values, entries, depth: maximum, bytes })
+    }
+
+    fn parse_json_tree(
+        &self, text: &str, operation: &'static str,
+    ) -> Result<(serde_json::Value, ScopedReservation<'_>, JsonBound), CodecError> {
+        let bound = self.json_bound(text, operation)?;
+        self.charge_collection_items(bound.values, operation)?;
+        let work = u64_from_index(text.len()).checked_mul(bound.entries.checked_add(1)
+            .ok_or_else(|| self.tree_overflow(operation))?)
+            .and_then(|n| n.checked_mul(bound.depth.checked_add(1)?))
+            .ok_or_else(|| self.tree_overflow(operation))?;
+        self.charge_work(work, operation)?;
+        let reservation = self.reserve_scoped(bound.bytes, operation)?;
+        let value = at_depth(self, bound.depth, operation, || {
+            serde_json::from_str(text).map_err(|error| CodecError::malformed(format_args!("{error}")))
+        })?;
+        Ok((value, reservation, bound))
+    }
+
+    /// Parses a value tree under collection, work, scoped storage and depth
+    /// admission. Keep the returned reservation alive with the returned Value.
+    /// serde_json's own 128-level recursion ceiling also applies.
+    pub fn parse_json_value(
+        &self, text: &str, operation: &'static str,
+    ) -> Result<(serde_json::Value, ScopedReservation<'_>), CodecError> {
+        let (value, reservation, _) = self.parse_json_tree(text, operation)?;
+        Ok((value, reservation))
+    }
+
+    /// Parses types with derived Deserialize: structs, enums, vectors, maps,
+    /// strings and scalars. Custom allocating deserializers are outside this
+    /// bound. The retained typed result is admitted as twice the value-tree
+    /// storage plus size_of::<T>(); conversion charges one work unit per value.
+    /// Source validation with the derived deserializer preserves duplicate-field
+    /// errors that Value maps erase. Its temporary result has a separate scoped
+    /// admission of twice the tree bytes plus size_of::<T>(); scan and conversion
+    /// work are charged before validation. The tree admission remains live.
+    pub fn parse_json<T: serde::de::DeserializeOwned>(
+        &self, text: &str, operation: &'static str,
+    ) -> Result<T, CodecError> {
+        let (value, _reservation, bound) = self.parse_json_tree(text, operation)?;
+        let retained = bound.bytes.checked_mul(2)
+            .and_then(|n| n.checked_add(u64_from_index(std::mem::size_of::<T>())))
+            .ok_or_else(|| self.tree_overflow(operation))?;
+        let validation_work = u64_from_index(text.len()).checked_mul(bound.values)
+            .and_then(|n| n.checked_mul(bound.depth.checked_add(1)?))
+            .ok_or_else(|| self.tree_overflow(operation))?;
+        self.charge_work(validation_work, operation)?;
+        self.charge_collection_items(bound.values, operation)?;
+        {
+            let _validation = self.reserve_scoped(retained, operation)?;
+            at_depth(self, bound.depth, operation, || {
+                let validated: T = serde_json::from_str(text)
+                    .map_err(|error| CodecError::malformed(format_args!("{error}")))?;
+                drop(validated);
+                Ok(())
+            })?;
+        }
+        self.charge_retained(retained, operation)?;
+        self.charge_work(bound.values, operation)?;
+        at_depth(self, bound.depth, operation, || {
+            serde_json::from_value(value).map_err(|error| CodecError::malformed(format_args!("{error}")))
+        })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -215,4 +390,91 @@ mod tests {
         ctx.parse_xml("<r a='>'><!-- <a> --><![CDATA[<b>]]><?pi <c> ?></r>", "XML tree").unwrap();
         assert!(matches!(ctx.parse_xml("<r><s/></r>", "XML tree"), Err(CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::RecursionDepth));
     }
+    #[derive(Debug, serde::Deserialize, PartialEq)]
+    struct JsonRecord { name: String, values: Vec<u64> }
+
+    #[test]
+    fn tree_json_value_success_and_capacity_rounding() {
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &DecodePolicy::default()).unwrap();
+        for text in ["[0]", "{}", "0", "\"a\""] {
+            let (value, _scope) = ctx.parse_json_value(text, "JSON tree").unwrap();
+            assert_eq!(value, serde_json::from_str::<serde_json::Value>(text).unwrap());
+            let bound = ctx.json_bound(text, "JSON bound").unwrap();
+            assert!(bound.bytes >= 4 * u64_from_index(std::mem::size_of::<serde_json::Value>()) + 1024);
+        }
+    }
+
+    #[test]
+    fn tree_json_typed_success() {
+        let ctx = crate::decode::DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(b"", &ctx, &DecodePolicy::default()).unwrap();
+        let record: JsonRecord = ctx.parse_json(r#"{"name":"r","values":[0]}"#, "typed JSON tree").unwrap();
+        assert_eq!(record, JsonRecord { name: "r".into(), values: vec![0] });
+    }
+
+    #[test]
+    fn tree_json_resource_dimensions() {
+        for typed in [false, true] {
+            for dimension in [ResourceDimension::CollectionItems, ResourceDimension::MaterializedBytes,
+                ResourceDimension::WorkUnits, ResourceDimension::RecursionDepth, ResourceDimension::RetainedBytes] {
+                if !typed && dimension == ResourceDimension::RetainedBytes { continue; }
+                let mut policy = DecodePolicy::default();
+                match dimension {
+                    ResourceDimension::CollectionItems => policy.limits.max_collection_items = 0,
+                    ResourceDimension::MaterializedBytes => policy.limits.max_materialized_bytes = 0,
+                    ResourceDimension::WorkUnits => policy.limits.max_work_units = 0,
+                    ResourceDimension::RecursionDepth => policy.limits.max_recursion_depth = 0,
+                    ResourceDimension::RetainedBytes => policy.limits.max_retained_bytes = 0,
+                    _ => panic!("test dimension"),
+                }
+                let arena = DecodeArena::new();
+                let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).unwrap();
+                let error = if typed { ctx.parse_json::<Vec<u64>>("[0]", "typed JSON tree").unwrap_err() }
+                    else { ctx.parse_json_value("[0]", "JSON tree").unwrap_err() };
+                let CodecError::ResourceLimit(limit) = error else { panic!("resource refusal"); };
+                assert_eq!(limit.dimension, dimension);
+                assert_eq!(ctx.resource_refusal(), Some(limit));
+            }
+        }
+    }
+
+    #[test]
+    fn tree_json_malformed_preserves_parse_route() {
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &DecodePolicy::default()).unwrap();
+        assert!(matches!(ctx.parse_json_value("[", "JSON tree"), Err(CodecError::Malformed(_))));
+        assert!(matches!(ctx.parse_json::<JsonRecord>("[", "typed JSON tree"), Err(CodecError::Malformed(_))));
+        assert!(matches!(ctx.parse_json::<JsonRecord>("{}", "typed JSON tree"), Err(CodecError::Malformed(_))));
+        assert!(ctx.resource_refusal().is_none());
+    }
+
+    #[test]
+    fn tree_json_typed_preserves_duplicate_field_errors() {
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &DecodePolicy::default()).unwrap();
+        let text = r#"{"name":"a","name":"b","values":[]}"#;
+        assert!(matches!(ctx.parse_json::<JsonRecord>(text, "typed JSON tree"), Err(CodecError::Malformed(_))));
+        assert!(ctx.resource_refusal().is_none());
+        let (value, _scope) = ctx.parse_json_value(text, "JSON tree").unwrap();
+        assert_eq!(value["name"], "b");
+    }
+
+    #[test]
+    fn tree_json_lexical_and_raw_carrier_depth() {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_recursion_depth = 1;
+        let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).unwrap();
+        ctx.parse_json_value(r#"["[[["]"#, "JSON tree").unwrap();
+        let text = r#"{"$serde_json::private::RawValue":"\u005b0\u005d"}"#;
+        assert!(matches!(ctx.parse_json_value(text, "JSON tree"), Err(CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::RecursionDepth));
+        let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &DecodePolicy::default()).unwrap();
+        let (value, _scope) = ctx.parse_json_value(text, "JSON tree").unwrap();
+        assert_eq!(value, serde_json::json!([0]));
+        let escaped_key = r#"{"\u0024serde_json::private::RawValue":"[0]"}"#;
+        let bound = ctx.json_bound(escaped_key, "JSON bound").unwrap();
+        assert!(bound.depth >= 2);
+    }
+
 }
