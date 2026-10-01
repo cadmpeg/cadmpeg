@@ -108,7 +108,7 @@ pub(super) fn model_root(
         CodecError::malformed(format_args!("{MANIFEST_ENTRY} is not valid JSON: {error}"))
     })?;
     let manifest: ManifestJson = ctx.parse_json(text, "parse F3Z manifest JSON").map_err(|error| {
-        if matches!(error, CodecError::ResourceLimit(_)) { return error; }
+        let CodecError::Malformed(error) = error else { return error; };
         CodecError::malformed(format_args!("{MANIFEST_ENTRY} is not valid JSON: {error}"))
     })?;
     model_root_member(ctx, scan, &manifest.root)
@@ -257,7 +257,7 @@ fn model_root_member(
         CodecError::malformed(format_args!("{DESIGN_DESCRIPTION_ENTRY} is not valid JSON: {error}"))
     })?;
     let description: DesignDescriptionJson = ctx.parse_json(text, "match F3Z derived model reference").map_err(|error| {
-        if matches!(error, CodecError::ResourceLimit(_)) { return error; }
+        let CodecError::Malformed(error) = error else { return error; };
         CodecError::malformed(format_args!("{DESIGN_DESCRIPTION_ENTRY} is not valid JSON: {error}"))
     })?;
     let mut candidates = Vec::new();

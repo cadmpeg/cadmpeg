@@ -941,7 +941,7 @@ fn append_spreadsheet(
         )
     })?;
     let admitted_xml = ctx.parse_xml(property.xml.text(), "FreeCAD XML tree").map_err(|error| {
-        if matches!(error, CodecError::ResourceLimit(_)) { return error; }
+        let CodecError::Malformed(error) = error else { return error; };
         malformed_design(
             ctx,
             format_args!("invalid spreadsheet {}: {error}", property.id),
@@ -1151,7 +1151,7 @@ fn spreadsheet_dimensions(
         return Ok(Vec::new());
     };
     let admitted_xml = ctx.parse_xml(property.xml.text(), "FreeCAD XML tree").map_err(|error| {
-        if matches!(error, CodecError::ResourceLimit(_)) { return error; }
+        let CodecError::Malformed(error) = error else { return error; };
         malformed_design(
             ctx,
             format_args!("invalid spreadsheet dimension {}: {error}", property.id),
@@ -1669,7 +1669,7 @@ fn parse_sketch(
             ));
         }
         let admitted_xml = ctx.parse_xml(geometry.xml.text(), "FreeCAD XML tree").map_err(|error| {
-        if matches!(error, CodecError::ResourceLimit(_)) { return error; }
+        let CodecError::Malformed(error) = error else { return error; };
             malformed_design(
                 ctx,
                 format_args!("invalid sketch geometry {}: {error}", geometry.id),
@@ -1731,7 +1731,7 @@ fn parse_sketch(
             ));
         }
         let admitted_xml = ctx.parse_xml(external_geometry.xml.text(), "FreeCAD XML tree").map_err(|error| {
-        if matches!(error, CodecError::ResourceLimit(_)) { return error; }
+        let CodecError::Malformed(error) = error else { return error; };
             malformed_design(
                 ctx,
                 format_args!(
@@ -2464,7 +2464,7 @@ fn parse_constraints(
         ));
     }
     let admitted_xml = ctx.parse_xml(property.xml.text(), "FreeCAD XML tree").map_err(|error| {
-        if matches!(error, CodecError::ResourceLimit(_)) { return error; }
+        let CodecError::Malformed(error) = error else { return error; };
         malformed_design(
             ctx,
             format_args!("invalid sketch constraints {}: {error}", property.id),

@@ -718,7 +718,7 @@ fn root_value<'a>(
         _ => return Ok(None),
     };
     let admitted_xml = ctx.parse_xml(property.xml.text(), "FreeCAD XML tree").map_err(|error| {
-        if matches!(error, CodecError::ResourceLimit(_)) { return error; }
+        let CodecError::Malformed(error) = error else { return error; };
         drawing_malformed(
             ctx,
             format_args!("drawing property {} has invalid XML: {error}", property.id),

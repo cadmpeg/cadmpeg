@@ -1741,7 +1741,7 @@ fn classify_rdk_material_payload(ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         FramingError::structural(payload_range.start, "legacy RDK XML is not UTF-8")
     })?;
     let admitted_document = ctx.parse_xml(xml, "Rhino legacy RDK XML tree").map_err(|error| {
-        if matches!(error, CodecError::ResourceLimit(_)) { return error.into(); }
+        let CodecError::Malformed(error) = error else { return error.into(); };
         FramingError::structural(
             payload_range.start,
             format!("legacy RDK XML is malformed: {error}"),

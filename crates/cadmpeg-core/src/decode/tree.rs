@@ -102,7 +102,9 @@ fn at_depth<T>(
     ctx.charge_work(depth, operation)?;
     ctx.charge_collection_items(depth, operation)?;
     let count = usize::try_from(depth).map_err(|_| ctx.refuse_codec_limit(operation, u64::MAX, depth))?;
-    let (mut guards, _reservation) = ctx.scoped_admitted_vec(count, operation)?;
+    let _reservation;
+    let (mut guards, reservation) = ctx.scoped_admitted_vec(count, operation)?;
+    _reservation = reservation;
     for _ in 0..count { guards.push(ctx.enter_nested(operation)?); }
     let result = parse();
     drop(guards);
@@ -110,6 +112,13 @@ fn at_depth<T>(
 }
 
 impl DecodeContext<'_> {
+    fn tree_malformed(&self, error: impl std::fmt::Display, operation: &'static str) -> CodecError {
+        match self.format_retained(format_args!("{error}"), operation) {
+            Ok(message) => CodecError::Malformed(message),
+            Err(error) => error,
+        }
+    }
+
     fn tree_overflow(&self, operation: &'static str) -> CodecError {
         self.refuse_codec_limit(operation, u64::MAX, u64::MAX)
     }
@@ -162,7 +171,7 @@ impl DecodeContext<'_> {
                 nodes_limit, ..roxmltree::ParsingOptions::default()
             }).map_err(|error| match error {
                 roxmltree::Error::NodesLimitReached => self.refuse_codec_limit(operation, u64::from(nodes_limit), nodes),
-                other => CodecError::malformed(format_args!("{other}")),
+                other => self.tree_malformed(other, operation),
             })
         })?;
         Ok(AdmittedXml { document, _reservation: reservation })
@@ -219,6 +228,48 @@ impl JsonStringScan {
             return self.possible && self.matched == RAW_VALUE_TOKEN.len();
         } else { self.decoded(Some(byte)); }
         false
+    }
+}
+
+/// Builds an ordinary JSON tree for derived typed conversion. The Value
+/// deserializer's private raw-value carrier is not part of derived JSON data;
+/// ignored extension members must remain ordinary objects during admission.
+struct PlainJson;
+
+impl<'de> serde::de::DeserializeSeed<'de> for PlainJson {
+    type Value = serde_json::Value;
+    fn deserialize<D: serde::Deserializer<'de>>(self, parser: D) -> Result<Self::Value, D::Error> {
+        parser.deserialize_any(self)
+    }
+}
+
+impl<'de> serde::de::Visitor<'de> for PlainJson {
+    type Value = serde_json::Value;
+    fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("a JSON value")
+    }
+    fn visit_unit<E: serde::de::Error>(self) -> Result<Self::Value, E> { Ok(serde_json::Value::Null) }
+    fn visit_bool<E: serde::de::Error>(self, value: bool) -> Result<Self::Value, E> { Ok(serde_json::Value::Bool(value)) }
+    fn visit_i64<E: serde::de::Error>(self, value: i64) -> Result<Self::Value, E> { Ok(serde_json::Value::Number(value.into())) }
+    fn visit_u64<E: serde::de::Error>(self, value: u64) -> Result<Self::Value, E> { Ok(serde_json::Value::Number(value.into())) }
+    fn visit_f64<E: serde::de::Error>(self, value: f64) -> Result<Self::Value, E> {
+        serde_json::Number::from_f64(value).map(serde_json::Value::Number)
+            .ok_or_else(|| E::custom("JSON number is not finite"))
+    }
+    fn visit_str<E: serde::de::Error>(self, value: &str) -> Result<Self::Value, E> { Ok(serde_json::Value::String(value.to_owned())) }
+    fn visit_string<E: serde::de::Error>(self, value: String) -> Result<Self::Value, E> { Ok(serde_json::Value::String(value)) }
+    fn visit_seq<A: serde::de::SeqAccess<'de>>(self, mut sequence: A) -> Result<Self::Value, A::Error> {
+        let mut values = Vec::new();
+        while let Some(value) = sequence.next_element_seed(PlainJson)? { values.push(value); }
+        Ok(serde_json::Value::Array(values))
+    }
+    fn visit_map<A: serde::de::MapAccess<'de>>(self, mut map: A) -> Result<Self::Value, A::Error> {
+        let mut values = serde_json::Map::new();
+        while let Some(key) = map.next_key::<String>()? {
+            let value = map.next_value_seed(PlainJson)?;
+            drop(values.insert(key, value));
+        }
+        Ok(serde_json::Value::Object(values))
     }
 }
 
@@ -280,7 +331,7 @@ impl DecodeContext<'_> {
     }
 
     fn parse_json_tree(
-        &self, text: &str, operation: &'static str,
+        &self, text: &str, operation: &'static str, interpret_raw: bool,
     ) -> Result<(serde_json::Value, ScopedReservation<'_>, JsonBound), CodecError> {
         let bound = self.json_bound(text, operation)?;
         self.charge_collection_items(bound.values, operation)?;
@@ -291,7 +342,16 @@ impl DecodeContext<'_> {
         self.charge_work(work, operation)?;
         let reservation = self.reserve_scoped(bound.bytes, operation)?;
         let value = at_depth(self, bound.depth, operation, || {
-            serde_json::from_str(text).map_err(|error| CodecError::malformed(format_args!("{error}")))
+            if interpret_raw {
+                serde_json::from_str(text).map_err(|error| self.tree_malformed(error, operation))
+            } else {
+                use serde::de::DeserializeSeed;
+                let mut parser = serde_json::Deserializer::from_str(text);
+                PlainJson.deserialize(&mut parser).and_then(|value| {
+                    parser.end()?;
+                    Ok(value)
+                }).map_err(|error| self.tree_malformed(error, operation))
+            }
         })?;
         Ok((value, reservation, bound))
     }
@@ -302,7 +362,7 @@ impl DecodeContext<'_> {
     pub fn parse_json_value(
         &self, text: &str, operation: &'static str,
     ) -> Result<(serde_json::Value, ScopedReservation<'_>), CodecError> {
-        let (value, reservation, _) = self.parse_json_tree(text, operation)?;
+        let (value, reservation, _) = self.parse_json_tree(text, operation, true)?;
         Ok((value, reservation))
     }
 
@@ -313,11 +373,12 @@ impl DecodeContext<'_> {
     /// Source validation with the derived deserializer preserves duplicate-field
     /// errors that Value maps erase. Its temporary result has a separate scoped
     /// admission of twice the tree bytes plus size_of::<T>(); scan and conversion
-    /// work are charged before validation. The tree admission remains live.
+    /// work are charged before validation. Typed trees use ordinary map members
+    /// rather than Value's private raw-value carrier. The admission remains live.
     pub fn parse_json<T: serde::de::DeserializeOwned>(
         &self, text: &str, operation: &'static str,
     ) -> Result<T, CodecError> {
-        let (value, _reservation, bound) = self.parse_json_tree(text, operation)?;
+        let (value, _reservation, bound) = self.parse_json_tree(text, operation, false)?;
         let retained = bound.bytes.checked_mul(2)
             .and_then(|n| n.checked_add(u64_from_index(std::mem::size_of::<T>())))
             .ok_or_else(|| self.tree_overflow(operation))?;
@@ -330,7 +391,7 @@ impl DecodeContext<'_> {
             let _validation = self.reserve_scoped(retained, operation)?;
             at_depth(self, bound.depth, operation, || {
                 let validated: T = serde_json::from_str(text)
-                    .map_err(|error| CodecError::malformed(format_args!("{error}")))?;
+                    .map_err(|error| self.tree_malformed(error, operation))?;
                 drop(validated);
                 Ok(())
             })?;
@@ -338,15 +399,16 @@ impl DecodeContext<'_> {
         self.charge_retained(retained, operation)?;
         self.charge_work(bound.values, operation)?;
         at_depth(self, bound.depth, operation, || {
-            serde_json::from_value(value).map_err(|error| CodecError::malformed(format_args!("{error}")))
+            serde_json::from_value(value).map_err(|error| self.tree_malformed(error, operation))
         })
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::decode::{DecodeArena, DecodePolicy, ResourceDimension};
+    use super::ATTRIBUTE_RECORD_BOUND;
+    use crate::decode::{u64_from_index, DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use crate::CodecError;
 
     #[test]
     fn tree_xml_success_and_capacity_rounding() {
@@ -392,6 +454,21 @@ mod tests {
         ctx.parse_xml("<r a='>'><!-- <a> --><![CDATA[<b>]]><?pi <c> ?></r>", "XML tree").unwrap();
         assert!(matches!(ctx.parse_xml("<r><s/></r>", "XML tree"), Err(CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::RecursionDepth));
     }
+    #[test]
+    fn tree_malformed_diagnostic_preserves_retained_refusal() {
+        for json in [false, true] {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::default();
+            policy.limits.max_retained_bytes = 0;
+            let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).unwrap();
+            let error = if json { ctx.parse_json_value("[", "JSON tree").unwrap_err() }
+                else { ctx.parse_xml("<r>", "XML tree").unwrap_err() };
+            let CodecError::ResourceLimit(limit) = error else { panic!("diagnostic admission must refuse"); };
+            assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
+            assert_eq!(ctx.resource_refusal(), Some(limit));
+        }
+    }
+
     #[test]
     fn invalid_json_prefix_preserves_collection_refusal() {
         let mut policy = DecodePolicy::service();
@@ -463,6 +540,15 @@ mod tests {
         assert!(matches!(ctx.parse_json::<JsonRecord>("[", "typed JSON tree"), Err(CodecError::Malformed(_))));
         assert!(matches!(ctx.parse_json::<JsonRecord>("{}", "typed JSON tree"), Err(CodecError::Malformed(_))));
         assert!(ctx.resource_refusal().is_none());
+    }
+
+    #[test]
+    fn tree_json_typed_preserves_ignored_raw_carrier_extensions() {
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &DecodePolicy::default()).unwrap();
+        let text = r#"{"name":"r","values":[],"extension":{"$serde_json::private::RawValue":"not-json"}}"#;
+        let record: JsonRecord = ctx.parse_json(text, "typed JSON tree").unwrap();
+        assert_eq!(record, JsonRecord { name: "r".into(), values: Vec::new() });
     }
 
     #[test]

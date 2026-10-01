@@ -252,7 +252,7 @@ fn parse_component_reference_data<'ctx>(
         CodecError::malformed(format_args!("{COMPONENT_REFERENCE_ENTRY} is not valid JSON: {error}"))
     })?;
     let (value, reservation) = ctx.parse_json_value(text, "parse F3D component reference JSON").map_err(|error| {
-        if matches!(error, CodecError::ResourceLimit(_)) { return error; }
+        let CodecError::Malformed(error) = error else { return error; };
         CodecError::malformed(format_args!("{COMPONENT_REFERENCE_ENTRY} is not valid JSON: {error}"))
     })?;
     if !value.is_object() {
@@ -307,7 +307,7 @@ fn parse(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<XrefTable, CodecError>
         CodecError::malformed(format_args!("{REDIRECTIONS_ENTRY} is not valid JSON: {error}"))
     })?;
     let parsed: RedirectionsJson = ctx.parse_json(text, "parse F3D redirections JSON").map_err(|error| {
-        if matches!(error, CodecError::ResourceLimit(_)) { return error; }
+        let CodecError::Malformed(error) = error else { return error; };
         CodecError::malformed(format_args!("{REDIRECTIONS_ENTRY} is not valid JSON: {error}"))
     })?;
     if parsed.name != "RedirectionsStream" {

@@ -427,7 +427,7 @@ fn enumeration_value(
     property: &PropertyRecord,
 ) -> Result<String, CodecError> {
     let admitted_document = ctx.parse_xml(property.xml.text(), "FreeCAD XML tree").map_err(|error| {
-        if matches!(error, CodecError::ResourceLimit(_)) { return error; }
+        let CodecError::Malformed(error) = error else { return error; };
         crate::resource::malformed_charged(
             ctx,
             format_args!(
