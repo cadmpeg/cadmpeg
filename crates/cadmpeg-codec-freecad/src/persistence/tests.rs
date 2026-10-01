@@ -1207,3 +1207,18 @@ fn link_child_scan_propagates_work_refusal() {
         assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(_)));
     });
 }
+
+#[test]
+fn object_declaration_framing_precedes_collection_admission() {
+    for document in [
+        r#"<Document><Objects Count="0"><Object name="A"/><Object name="B"/></Objects><ObjectData Count="0"/></Document>"#,
+        r#"<Document><Objects Count="1000000"/><ObjectData Count="0"/></Document>"#,
+    ] {
+        let xml = roxmltree::Document::parse(document).expect("framed XML");
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_collection_items = 0;
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(document.as_bytes(), &arena, &policy).expect("root");
+        assert!(matches!(super::parse_document(document, &xml, crate::dialect::FcstdDialect::Schema4, &ctx), Err(cadmpeg_core::CodecError::Malformed(_))));
+    }
+}

@@ -90,6 +90,22 @@ fn parse_document(
                 "FCStd persistence diagnostic",
             )
         })?;
+    let mut actual_count = 0_usize;
+    for _node in objects_node.children().filter(|node| node.has_tag_name(record_tag)) {
+        ctx.charge_work(1, "FCStd object declaration framing")?;
+        actual_count = actual_count.checked_add(1).ok_or_else(|| {
+            ctx.refuse_codec_limit("FCStd object declaration framing", u64::MAX, u64::MAX)
+        })?;
+    }
+    if actual_count != declared_count {
+        return Err(crate::resource::malformed_charged(
+            ctx,
+            format_args!(
+                "{declarations_tag} Count={declared_count} but {actual_count} declarations were found"
+            ),
+            "FCStd persistence diagnostic",
+        ));
+    }
     let object_limit = usize::try_from(ctx.policy().limits.max_entities)
         .ok()
         .map_or(MAX_OBJECTS, |policy| policy.min(MAX_OBJECTS));
@@ -318,16 +334,6 @@ fn parse_document(
         });
     }
 
-    if declared_count != objects.len() {
-        return Err(crate::resource::malformed_charged(
-            ctx,
-            format_args!(
-                "{declarations_tag} Count={declared_count} but {} declarations were found",
-                objects.len()
-            ),
-            "FCStd persistence diagnostic",
-        ));
-    }
     if !dependency_map.is_empty() {
         return Err(CodecError::Malformed(
             "ObjectDeps names do not match object declarations".into(),
