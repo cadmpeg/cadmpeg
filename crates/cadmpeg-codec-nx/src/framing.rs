@@ -8,6 +8,7 @@
 #![deny(clippy::disallowed_methods)]
 
 use crate::framing::node_kind::NodeKind;
+use crate::framing::xmt_reference::NonNullXmt;
 use cadmpeg_core::decode::View;
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -38,14 +39,17 @@ use crate::layout::vertex_node as vertex;
 /// One structurally complete fixed-record interpretation.
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct FixedRecordFrame {
-    /// Record XMT identity.
-    pub(crate) xmt: u32,
-    /// Bytes inserted after the record type before the logical payload.
-    pub(crate) shift: usize,
-    /// Additional bytes inserted by extended references after the XMT.
-    pub(crate) payload_shift: usize,
-    /// First byte after the complete record.
-    pub(crate) end: usize,
+    xmt: NonNullXmt,
+    shift: usize,
+    payload_shift: usize,
+    end: usize,
+}
+
+impl FixedRecordFrame {
+    pub(crate) fn xmt(self) -> NonNullXmt { self.xmt }
+    pub(crate) fn shift(self) -> usize { self.shift }
+    pub(crate) fn payload_shift(self) -> usize { self.payload_shift }
+    pub(crate) fn end(self) -> usize { self.end }
 }
 
 /// The framing grammar admits at most the direct and escaped readings at one
@@ -58,14 +62,17 @@ pub(crate) fn fixed_record_candidates(
     stream: &[u8],
     pos: usize,
     kind: NodeKind,
-    len: usize,
 ) -> FixedRecordCandidates {
     let mut candidates = [None; 2];
-    if let Some((xmt, shift)) = read_xmt(stream, pos + 2) {
+    let len = fixed_len(kind);
+    let Some(identity_at) = pos.checked_add(2) else { return candidates; };
+    if stream.get(pos..identity_at) != Some(&[0, kind.code()]) { return candidates; }
+    if let Some((xmt, shift)) = read_xmt(stream, identity_at) {
         candidates[0] = complete_frame(stream, pos, kind, len, xmt, shift);
     }
-    if stream.get(pos + 2) == Some(&0xff) {
-        if let Some((xmt, shift)) = read_xmt(stream, pos + 3) {
+    if stream.get(identity_at) == Some(&0xff) {
+        let Some(escaped_at) = identity_at.checked_add(1) else { return candidates; };
+        if let Some((xmt, shift)) = read_xmt(stream, escaped_at) {
             candidates[1] = complete_frame(stream, pos, kind, len, xmt, shift + 1);
         }
     }
@@ -80,10 +87,7 @@ fn complete_frame(
     xmt: u32,
     shift: usize,
 ) -> Option<FixedRecordFrame> {
-    // 1 is Parasolid's null reference. A record itself cannot occupy it.
-    if xmt <= 1 {
-        return None;
-    }
+    let xmt = NonNullXmt::try_from(xmt).ok()?;
     let payload_shift = payload_shift(stream, pos, kind, shift)?;
     let end = pos
         .checked_add(len)?
@@ -106,13 +110,13 @@ pub(crate) fn fixed_record_boundary(stream: &[u8], end: usize) -> bool {
     if stream.get(end) != Some(&0) {
         return false;
     }
-    let Some(&kind) = stream.get(end + 1) else {
+    let Some(&kind) = end.checked_add(1).and_then(|at| stream.get(at)) else {
         return false;
     };
     let Ok(kind) = NodeKind::try_from(kind) else {
         return false;
     };
-    fixed_record_candidates(stream, end, kind, fixed_len(kind))
+    fixed_record_candidates(stream, end, kind)
         .iter()
         .flatten()
         .next()
@@ -338,4 +342,21 @@ mod tests {
         assert_eq!(skip_sequence_at(&[0xff, 0xfe, 0x00], &mut at, 1), None);
         assert_eq!(at, 0);
     }
+    #[test]
+    fn fixed_frame_requires_nonnull_identity_and_a_bounded_complete_span() {
+        let mut bytes = vec![0xff; 9];
+        bytes.extend_from_slice(&[0; 40]);
+        bytes[9..13].copy_from_slice(&[0, 29, 0, 2]);
+        let frame = super::fixed_record_candidates(&bytes, 9, super::NodeKind::Point)[0].unwrap();
+        assert_eq!(u32::from(frame.xmt()), 2);
+        assert_eq!(frame.end(), bytes.len());
+        assert_eq!((frame.shift(), frame.payload_shift()), (0, 0));
+        assert!(super::fixed_record_candidates(&bytes[..48], 9, super::NodeKind::Point).iter().all(Option::is_none));
+        assert!(super::fixed_record_candidates(&bytes, usize::MAX, super::NodeKind::Point).iter().all(Option::is_none));
+        for identity in [0_u16, 1] {
+            bytes[11..13].copy_from_slice(&identity.to_be_bytes());
+            assert!(super::fixed_record_candidates(&bytes, 9, super::NodeKind::Point).iter().all(Option::is_none));
+        }
+    }
+
 }
