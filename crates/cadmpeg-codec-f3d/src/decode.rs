@@ -2349,7 +2349,7 @@ impl<'a> F3dDecodeSession<'a> {
         session_state: DecodeSessionState,
     ) -> Result<(Self, SessionPath), CodecError> {
         let DecodeSessionState {
-            mut admitted_entities,
+            admitted_entities: _,
             report_scope,
         } = session_state;
         let mut report = crate::report::build_decode_report(
@@ -2382,7 +2382,7 @@ impl<'a> F3dDecodeSession<'a> {
             build_geometry_ir(ctx, scan, primary_model_brep, brep)?;
         // ASM transfer already charged its delta; keep the running counter in
         // sync so a later admit_entities call cannot double-count those bodies.
-        admitted_entities = admitted_entities.max(u64_from_index(ir.model.entity_count()));
+        let mut admitted_entities = u64_from_index(ir.model.entity_count());
         let AsmTransferRemainder {
             unknowns,
             stats: _,
@@ -3141,8 +3141,6 @@ impl<'a> F3dDecodeSession<'a> {
                         &self.native.design_parameter_scopes,
                         table,
                     );
-                    self.native.xref_designs.clone_from(&table.designs);
-                    self.native.xref_references.clone_from(&table.references);
                 }
                 FinalizePath::Bodyless(DeferredBodylessInputs {
                     xref: xref_table,
@@ -3219,11 +3217,6 @@ impl<'a> F3dDecodeSession<'a> {
                     &mut self.admitted_entities,
                     "admit F3D entities",
                 )?;
-                self.native
-                    .store(ctx, self.ir.native.namespace_mut("f3d"))?;
-                let annotations =
-                    populate_annotations(ctx, &self.ir, scan, &self.native, None, &self.unknowns)?;
-                let source_image = preserve_source_image(ctx, scan)?;
                 if mesh_projection.count > 0 {
                     apply_mesh_body_classification(
                         ctx,
@@ -3253,11 +3246,18 @@ impl<'a> F3dDecodeSession<'a> {
                 match inputs.xref {
                     Ok(Some(table)) => {
                         apply_assembly_classification(self.ctx, &mut self.report, scan, &table)?;
+                        self.native.xref_designs = table.designs;
+                        self.native.xref_references = table.references;
                     }
                     Ok(None) => {}
                     Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
                     Err(error) => report_xref_parse_loss(ctx, &mut self.report, &error)?,
                 }
+                self.native
+                    .store(ctx, self.ir.native.namespace_mut("f3d"))?;
+                let annotations =
+                    populate_annotations(ctx, &self.ir, scan, &self.native, None, &self.unknowns)?;
+                let source_image = preserve_source_image(ctx, scan)?;
                 let mut admitted_entities = self.admitted_entities;
                 return decode_result(
                     ctx,
@@ -3349,9 +3349,8 @@ fn decode_scanned_document<'a>(
     report_scope: crate::report::ReportScope,
 ) -> Result<AuthoredDecoded, CodecError> {
     let mut admitted_entities = 0_u64;
-    ctx.admit_entities(
+    ctx.charge_entities(
         u64_from_index(scan.entries.len()),
-        &mut admitted_entities,
         "admit F3D archive entries",
     )?;
 
