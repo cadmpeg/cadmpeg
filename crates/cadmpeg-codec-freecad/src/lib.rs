@@ -182,6 +182,7 @@ fn validate_native(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<Vec<Finding>, 
                 None,
             ));
         }
+        Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
         Err(error) => findings.push(finding(
             Check::ReferentialIntegrity,
             error.to_string(),
