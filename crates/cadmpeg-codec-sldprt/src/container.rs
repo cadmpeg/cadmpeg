@@ -474,7 +474,8 @@ fn compound_stream(
     bytes: Vec<u8>,
     decoded_bytes: Option<Vec<u8>>,
 ) -> Result<CompoundStream, CodecError> {
-    let ps_streams = crate::parasolid::extract_streams_with_offsets(&bytes, ctx)?;
+    let semantic_payload = decoded_bytes.as_deref().unwrap_or(&bytes);
+    let ps_streams = crate::parasolid::extract_streams_with_offsets(semantic_payload, ctx)?;
     let path = match cadmpeg_ir::StreamName::try_from(path) {
         Ok(path) => path,
         Err(_) => cadmpeg_ir::stream_name!("compound@").with_suffix(directory_id),
