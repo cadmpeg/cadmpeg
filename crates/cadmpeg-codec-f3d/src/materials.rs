@@ -885,7 +885,7 @@ fn appearances_from_schema_records(
                         neutral_property_name(id),
                         "copy F3D appearance property name",
                     )?,
-                    cadmpeg_protein::appearance::finite_scalar(record, id, *value)?,
+                    *value,
                     "collect F3D appearance properties",
                 )?;
             }
@@ -974,7 +974,7 @@ fn color_property(record: &cadmpeg_protein::DecodedRecord, id: &str) -> Option<C
     else {
         return None;
     };
-    decoded_color([*r, *g, *b, *a])
+    decoded_color([r.get(), g.get(), b.get(), a.get()])
 }
 
 fn decoded_color(values: [f64; 4]) -> Option<Color> {

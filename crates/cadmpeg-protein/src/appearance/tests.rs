@@ -13,7 +13,7 @@ fn distance_record(unit: u32, value: f64) -> crate::DecodedRecord {
             crate::property::DecodedProperty {
                 value_offset: 0,
                 content: crate::property::PropertyContent::Value {
-                    value: crate::property::PropertyValue::Distance { unit, value },
+                    value: crate::property::PropertyValue::Distance { unit, value: cadmpeg_ir::scalar::FiniteReal::new(value).expect("finite source distance") },
                     connections: Vec::new(),
                 },
             },
@@ -83,7 +83,11 @@ fn numerical_audit_distance_conversion_rejects_nonfinite_results() {
         (0x200e, f64::INFINITY),
         (0x200e, f64::NAN),
     ] {
-        let record = distance_record(unit, value);
+        let Some(value) = cadmpeg_ir::scalar::FiniteReal::new(value) else {
+            assert!(!value.is_finite(), "source is refused before constructing a distance");
+            continue;
+        };
+        let record = distance_record(unit, value.get());
         assert_eq!(
             super::distance_property(&record, "Depth"),
             Err(super::DistanceError::NonFinite)
@@ -121,7 +125,7 @@ fn float_record(schema: &str, suffix: &str, value: f64) -> crate::DecodedRecord 
         crate::property::DecodedProperty {
             value_offset: 0,
             content: crate::property::PropertyContent::Value {
-                value: crate::property::PropertyValue::Float(value),
+                value: crate::property::PropertyValue::Float(cadmpeg_ir::scalar::FiniteReal::new(value).expect("finite source float")),
                 connections: Vec::new(),
             },
         },
@@ -129,8 +133,7 @@ fn float_record(schema: &str, suffix: &str, value: f64) -> crate::DecodedRecord 
     record
 }
 
-/// The projection admits every mapping and bump float where it builds the
-/// payload, so a non-finite one refuses the asset.
+/// Mapping and bump floats refuse non-finite source values before construction.
 #[test]
 fn a_non_finite_texture_float_property_is_refused() {
     for suffix in [
@@ -142,16 +145,7 @@ fn a_non_finite_texture_float_property_is_refused() {
         "bumpmap_NormalScale",
     ] {
         for value in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
-            let record = float_record("BumpMapSchema", suffix, value);
-            let Err(error) = texture_for_test(&record) else {
-                panic!("{suffix} {value} is refused");
-            };
-            assert!(
-                error
-                    .to_string()
-                    .contains(&format!("property {suffix} is non-finite")),
-                "{suffix}: {error}"
-            );
+            assert!(cadmpeg_ir::scalar::FiniteReal::new(value).is_none(), "{suffix} {value} is refused before constructing the property");
         }
         let finite = float_record("BumpMapSchema", suffix, 0.5);
         assert!(texture_for_test(&finite).is_ok(), "{suffix}");
