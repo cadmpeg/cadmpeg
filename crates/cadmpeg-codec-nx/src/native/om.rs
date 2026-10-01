@@ -3076,17 +3076,12 @@ fn parse_material_texture_catalog(
     let Some(xml) = xml_stream_text(payload) else {
         return Ok(None);
     };
-    let document_bytes = payload
-        .len()
-        .checked_mul(16)
-        .ok_or_else(|| ctx.refuse_codec_limit("NX material catalog XML size", 0, 1))?;
-    let _document_guard = ctx.reserve_scoped(
-        cadmpeg_core::decode::u64_from_index(document_bytes),
-        "NX material catalog XML",
-    )?;
-    let Ok(document) = roxmltree::Document::parse(xml) else {
-        return Ok(None);
-    };
+    let admitted_document = match ctx.parse_xml(xml, "decode XML tree") {
+                Ok(tree) => tree,
+                Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
+                Err(_) => { return Ok(None); }
+            };
+            let document = admitted_document.document();
     let root = document.root_element();
     if root.tag_name().name() != "folderContents" {
         return Ok(None);
@@ -3772,13 +3767,12 @@ pub(super) fn configurations(
     let Some(xml) = xml_stream_text(payload) else {
         return Ok(Vec::new());
     };
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(xml.len()),
-        "nx arrangement XML scan",
-    )?;
-    let Ok(document) = roxmltree::Document::parse(xml) else {
-        return Ok(Vec::new());
-    };
+    let admitted_document = match ctx.parse_xml(xml, "decode XML tree") {
+                Ok(tree) => tree,
+                Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
+                Err(_) => { return Ok(Vec::new()); }
+            };
+            let document = admitted_document.document();
     let root = document.root_element();
     if root.tag_name().name() != "Arrangements" {
         return Ok(Vec::new());
@@ -3930,13 +3924,12 @@ fn parse_part_attributes(
     let Some(xml) = xml_stream_text(payload) else {
         return Ok(None);
     };
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(xml.len()),
-        "nx part attribute XML scan",
-    )?;
-    let Ok(document) = roxmltree::Document::parse(xml) else {
-        return Ok(None);
-    };
+    let admitted_document = match ctx.parse_xml(xml, "decode XML tree") {
+                Ok(tree) => tree,
+                Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
+                Err(_) => { return Ok(None); }
+            };
+            let document = admitted_document.document();
     let root = document.root_element();
     let Some(version) = root
         .attribute("version")
