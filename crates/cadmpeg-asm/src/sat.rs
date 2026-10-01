@@ -380,49 +380,50 @@ fn parse_header(
         }
         .into());
     }
-    let float = |field: Option<&[u8]>, what: &str| -> Result<f64, StreamError> {
+    let float = |field: Option<&[u8]>, what: &str| -> Result<f64, StreamFailure> {
         field
             .and_then(|field| std::str::from_utf8(field).ok())
             .and_then(|field| field.parse().ok())
-            .ok_or_else(|| StreamError {
+            .ok_or_else(|| StreamFailure::Malformed(StreamError {
                 format: StreamFormat::Text,
                 offset: at,
-                reason: format!("header line has no {what} field"),
-            })
+                reason: format!("header line has no valid {what} value"),
+            }))
     };
-    let scale = PositiveReal::new(float(line3[0], "scale")?).ok_or_else(|| StreamError {
-        format: StreamFormat::Text,
-        offset: at,
-        reason: "header scale must be finite and positive".to_string(),
-    })?;
+    let scale = PositiveReal::new(float(line3[0], "scale")?).ok_or_else(||
+        StreamFailure::Malformed(StreamError {
+            format: StreamFormat::Text,
+            offset: at,
+            reason: "header scale must be finite and positive".to_string(),
+        })
+    )?;
     let raw_resabs = float(line3[1], "resabs")?;
     let raw_resnor = float(line3[2], "resnor")?;
     let (Some(resabs), Some(resnor)) = (
         NonNegativeReal::new(raw_resabs),
         NonNegativeReal::new(raw_resnor),
     ) else {
-        return Err(StreamError {
+        return Err(StreamFailure::Malformed(StreamError {
             format: StreamFormat::Text,
             offset: at,
             reason: "header tolerances must be finite and nonnegative".to_string(),
-        }
-        .into());
+        }));
     };
     let normalized_resabs = resabs_cm(scale, resabs);
     if resabs.get() > 0.0 && (!normalized_resabs.is_finite() || normalized_resabs == 0.0) {
-        return Err(StreamError {
+        return Err(StreamFailure::NotImplemented(StreamError {
             format: StreamFormat::Text,
             offset: at,
             reason: "header resabs cannot be represented in centimetres".to_string(),
-        }
-        .into());
+        }));
     }
-    let normalized_resabs_cm =
-        NonNegativeReal::new(normalized_resabs).ok_or_else(|| StreamError {
+    let normalized_resabs_cm = NonNegativeReal::new(normalized_resabs).ok_or_else(||
+        StreamFailure::NotImplemented(StreamError {
             format: StreamFormat::Text,
             offset: at,
             reason: "header resabs cannot be represented in centimetres".to_string(),
-        })?;
+        })
+    )?;
     Ok(TextHeader {
         save_format_version,
         entity_count,
