@@ -9,7 +9,7 @@ use std::fmt::Write;
 
 use crate::container::ContainerScan;
 use crate::design::decode::sketch::{native_scope_charged, next_indexed_record_offset};
-use crate::design::decode::text::lp_ascii_filtered_view;
+use crate::bytes::lp_ascii_filtered_view;
 use crate::design::decode::text::lp_utf16_bounded_charged;
 use crate::records::feature::assembly_features::DesignComponentOccurrence;
 

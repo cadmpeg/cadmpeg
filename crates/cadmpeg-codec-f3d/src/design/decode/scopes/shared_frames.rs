@@ -5,7 +5,7 @@
 use crate::bytes::f64s_at;
 use crate::bytes::take_reference;
 use crate::design::decode::sketch::IndexedRecordOffsets;
-use crate::design::decode::text::lp_ascii_filtered_view;
+use crate::bytes::lp_ascii_filtered_view;
 use crate::records::feature::extrude::DesignExtrudeOperation;
 use cadmpeg_core::decode::View;
 use cadmpeg_ir::scalar::FiniteReal;

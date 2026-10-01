@@ -10,7 +10,7 @@ use cadmpeg_core::CodecError;
 
 use crate::bytes::{take_reference, Reference};
 use crate::container::ContainerScan;
-use crate::design::decode::text::lp_ascii_filtered_view;
+use crate::bytes::lp_ascii_filtered_view;
 use crate::design::decode::text::{design_record_id_charged, lp_utf16_bounded_charged};
 use crate::ids::native_stream;
 use crate::records::{
@@ -628,7 +628,7 @@ fn meta_scope_matches_bulk(scope: &str, bulk_entry_name: &str) -> bool {
 }
 
 fn local_reference(
-    reference: &Reference,
+    reference: &Reference<&str, crate::bytes::utf16::Utf16View<'_>>,
     type_guids_by_entity: &HashMap<u64, Vec<&str>>,
 ) -> Option<u64> {
     let (target, inline_type_guid) = reference.local()?;

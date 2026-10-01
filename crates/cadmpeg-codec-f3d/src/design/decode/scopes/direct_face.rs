@@ -10,7 +10,7 @@ use super::shared_frames::marked_record_reference;
 use super::thicken_shell::exact_legacy_thicken_class_347;
 use super::thicken_shell::exact_shell_class_369_261;
 use crate::design::decode::sketch::IndexedRecordOffsets;
-use crate::design::decode::text::lp_ascii_filtered_view;
+use crate::bytes::lp_ascii_filtered_view;
 use crate::design::design_feature_family;
 use crate::design::DesignFeatureFamily;
 use crate::records::feature::body_ops::DesignScaleOperation;

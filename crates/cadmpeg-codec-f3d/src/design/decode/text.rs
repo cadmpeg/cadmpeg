@@ -6,26 +6,6 @@ use std::ops::RangeInclusive;
 use cadmpeg_core::decode::{DecodeContext, ScopedReservation, View};
 use cadmpeg_core::CodecError;
 
-/// Read an ASCII-only length-prefixed field without copying its contents.
-pub(in crate::design::decode) fn lp_ascii_filtered_view(
-    bytes: &[u8],
-    at: usize,
-    bounds: RangeInclusive<usize>,
-    allowed: fn(&u8) -> bool,
-) -> Option<(&str, usize)> {
-    let length = usize::try_from(View::u32_le_at(bytes, at)?).ok()?;
-    if !bounds.contains(&length) {
-        return None;
-    }
-    let start = at.checked_add(4)?;
-    let end = start.checked_add(length)?;
-    let raw = bytes.get(start..end)?;
-    if !raw.iter().all(allowed) {
-        return None;
-    }
-    Some((std::str::from_utf8(raw).ok()?, end))
-}
-
 /// Validate a borrowed three-digit class tag before making its fixed-size copy.
 pub(in crate::design::decode) fn class_tag_from_view(
     value: &str,
@@ -225,8 +205,9 @@ pub(super) fn lp_utf16_bounded_scoped<'a>(
 
 #[cfg(test)]
 mod tests {
+    use crate::bytes::lp_ascii_filtered_view;
     use super::{
-        class_tag_from_view, fixed_guid_ascii, fixed_utf16_ascii_eq, lp_ascii_filtered_view,
+        class_tag_from_view, fixed_guid_ascii, fixed_utf16_ascii_eq,
         relaxed_guid_end,
     };
 
@@ -246,7 +227,7 @@ mod tests {
             for unit in value.encode_utf16() {
                 bytes.extend_from_slice(&unit.to_le_bytes());
             }
-            let owned = crate::bytes::lp_utf16_bounded(&bytes, 0, 1..=256)
+            let owned = crate::test_support::with_decode_context(|ctx| crate::bytes::lp_utf16_bounded_charged(ctx, &bytes, 0, 1..=256).unwrap())
                 .and_then(|(value, end)| crate::bytes::is_guid_relaxed(&value).then_some(end));
             assert_eq!(relaxed_guid_end(&bytes, 0), owned);
         }
@@ -267,7 +248,7 @@ mod tests {
             for unit in value.encode_utf16() {
                 bytes.extend_from_slice(&unit.to_le_bytes());
             }
-            let prior = crate::bytes::lp_utf16_bounded(&bytes, 0, 36..=36)
+            let prior = crate::test_support::with_decode_context(|ctx| crate::bytes::lp_utf16_bounded_charged(ctx, &bytes, 0, 36..=36).unwrap())
                 .filter(|(text, _)| crate::bytes::is_guid_relaxed(text));
             let current = fixed_guid_ascii(&bytes, 0)
                 .map(|(guid, end)| (String::from_utf8(guid.to_vec()).unwrap(), end));
@@ -291,7 +272,7 @@ mod tests {
                 bytes.extend_from_slice(&unit.to_le_bytes());
             }
             let decoded =
-                crate::bytes::lp_utf16_bounded(&bytes, 0, expected.len()..=expected.len())
+                crate::test_support::with_decode_context(|ctx| crate::bytes::lp_utf16_bounded_charged(ctx, &bytes, 0, expected.len()..=expected.len()).unwrap())
                     .and_then(|(text, end)| (text == expected).then_some(end));
             assert_eq!(fixed_utf16_ascii_eq(&bytes, 0, expected), decoded);
             bytes.pop();
@@ -309,7 +290,7 @@ mod tests {
                 let predicates: [fn(&u8) -> bool; 2] = [u8::is_ascii_graphic, u8::is_ascii_digit];
                 for allowed in predicates {
                     let original =
-                        crate::bytes::lp_ascii_filtered(&bytes, 0, bounds.clone(), allowed);
+                        crate::test_support::with_decode_context(|ctx| crate::bytes::lp_ascii_strict_charged(ctx, &bytes, 0, bounds.clone()).unwrap()).filter(|(text, _)| text.as_bytes().iter().all(allowed));
                     let borrowed = lp_ascii_filtered_view(&bytes, 0, bounds.clone(), allowed)
                         .map(|(value, end)| (value.to_owned(), end));
                     assert_eq!(borrowed, original);

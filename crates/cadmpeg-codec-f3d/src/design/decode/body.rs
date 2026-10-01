@@ -511,7 +511,7 @@ fn local_reference_candidates(
                 candidates.push(LocalReferenceCandidate {
                     target,
                     end: end + 1,
-                    inline_type_guid,
+                    inline_type_guid: inline_type_guid.map(|guid| ctx.copy_retained_text(guid, "retain F3D local reference type GUID")).transpose()?,
                     padding: ReferencePadding::TwoZeros,
                 });
             }

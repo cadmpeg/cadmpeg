@@ -7,7 +7,7 @@ use super::shared_frames::marked_record_reference;
 use super::shared_frames::rigid_transform_at;
 use crate::design::decode::sketch::next_indexed_record_offset;
 use crate::design::decode::sketch::IndexedRecordOffsets;
-use crate::design::decode::text::lp_ascii_filtered_view;
+use crate::bytes::lp_ascii_filtered_view;
 use crate::design::decode::text::lp_utf16_bounded_scoped;
 use crate::design::decode::text::{fixed_guid_end, fixed_utf16_ascii_eq};
 use crate::design::decode::text::{
@@ -160,6 +160,10 @@ pub(super) fn exact_component_insert_construction(
     scope: &DesignParameterScope,
 ) -> Result<Option<DesignComponentInsertConstruction>, CodecError> {
     let parsed = (|| {
+        macro_rules! admitted {
+            ($value:expr) => { match $value { Ok(value) => value, Err(error) => return Some(Err(error)) } };
+        }
+
         let start = usize::try_from(scope.byte_offset()).ok()?;
         let relation_record_index = *scope.reference_members().values().next()?;
         if scope.kind() != scope::DesignFeatureKind::ComponentInsert
@@ -335,14 +339,11 @@ pub(super) fn exact_component_insert_construction(
             }
             (carrier_record_index, placements)
         } else if scope.class_tag.as_str() == "426" && scope.paired_class_tag.as_str() == "258" {
-            exact_component_insert_class_426_relation(
-                bytes,
-                records,
-                relation_at,
-                start,
-                relation_record_index,
-                scope.record_index,
-            )?
+            let (carrier_record_index, role, role_offset) = exact_component_insert_class_426_relation(
+                bytes, records, relation_at, start, relation_record_index, scope.record_index,
+            )?;
+            let role = admitted!(role.to_retained(ctx, "retain F3D UTF-16 string"));
+            (carrier_record_index, admitted!(ctx.collect_vec([(role, role_offset, None)], "f3d component insert placements")))
         } else {
             if relation_at >= start
                 || next_indexed_record_offset(bytes, relation_at + 1)? != relation_at + 57
@@ -372,7 +373,7 @@ pub(super) fn exact_component_insert_construction(
                     Ok(None) => return None,
                     Err(error) => return Some(Err(error)),
                 };
-                (carrier_record_index, vec![(role, role_offset, None)])
+                (carrier_record_index, admitted!(ctx.collect_vec([(role, role_offset, None)], "f3d component insert placements")))
             } else if scope.class_tag.as_str() == "296" && scope.paired_class_tag.as_str() == "263"
             {
                 let (role, role_offset) = crate::xref::grouped_component_insert_identity(
@@ -381,7 +382,8 @@ pub(super) fn exact_component_insert_construction(
                     relation_at,
                     carrier_record_index,
                 )?;
-                (carrier_record_index, vec![(role, role_offset, None)])
+                let role = admitted!(role.to_retained(ctx, "retain F3D UTF-16 string"));
+                (carrier_record_index, admitted!(ctx.collect_vec([(role, role_offset, None)], "f3d component insert placements")))
             } else if scope.class_tag.as_str() == "410" && scope.paired_class_tag.as_str() == "261"
             {
                 let (role, role_offset) = crate::xref::grouped_component_insert_identity_class380(
@@ -390,7 +392,8 @@ pub(super) fn exact_component_insert_construction(
                     relation_at,
                     carrier_record_index,
                 )?;
-                (carrier_record_index, vec![(role, role_offset, None)])
+                let role = admitted!(role.to_retained(ctx, "retain F3D UTF-16 string"));
+                (carrier_record_index, admitted!(ctx.collect_vec([(role, role_offset, None)], "f3d component insert placements")))
             } else if scope.class_tag.as_str() == "434" && scope.paired_class_tag.as_str() == "266"
             {
                 let (role, role_offset) = crate::xref::grouped_component_insert_identity_class341(
@@ -399,7 +402,8 @@ pub(super) fn exact_component_insert_construction(
                     relation_at,
                     carrier_record_index,
                 )?;
-                (carrier_record_index, vec![(role, role_offset, None)])
+                let role = admitted!(role.to_retained(ctx, "retain F3D UTF-16 string"));
+                (carrier_record_index, admitted!(ctx.collect_vec([(role, role_offset, None)], "f3d component insert placements")))
             } else if scope.class_tag.as_str() == "414" && scope.paired_class_tag.as_str() == "264"
             {
                 let (role, role_offset, carrier_transform_offset) =
@@ -417,7 +421,7 @@ pub(super) fn exact_component_insert_construction(
                     };
                 (
                     carrier_record_index,
-                    vec![(role, role_offset, carrier_transform_offset)],
+                    admitted!(ctx.collect_vec([(role, role_offset, carrier_transform_offset)], "f3d component insert placements")),
                 )
             } else {
                 let mut placements = Vec::new();
@@ -498,16 +502,14 @@ pub(super) fn exact_component_insert_construction(
     parsed.transpose()
 }
 
-type ComponentInsertClass426Relation = (u32, Vec<(String, usize, Option<usize>)>);
-
-fn exact_component_insert_class_426_relation(
-    bytes: &[u8],
+fn exact_component_insert_class_426_relation<'a>(
+    bytes: &'a [u8],
     records: &IndexedRecordOffsets,
     relation_at: usize,
     scope_at: usize,
     relation_record_index: u32,
     scope_record_index: u32,
-) -> Option<ComponentInsertClass426Relation> {
+) -> Option<(u32, crate::bytes::utf16::Utf16View<'a>, usize)> {
     let relation_end = relation_at + component_insert_relation_345::LEN;
     let (relation_class, relation_after_tag) =
         lp_ascii_filtered_view(bytes, relation_at, 3..=3, u8::is_ascii_digit)?;
@@ -604,7 +606,7 @@ fn exact_component_insert_class_426_relation(
         relation_at,
         carrier_record_index,
     )?;
-    Some((carrier_record_index, vec![(role, role_offset, None)]))
+    Some((carrier_record_index, role, role_offset))
 }
 
 fn exact_component_insert_carrier_334(
