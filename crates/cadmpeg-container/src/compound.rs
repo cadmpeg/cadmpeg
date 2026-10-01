@@ -1611,7 +1611,6 @@ fn parse_directory(
     )?;
     let retained = entry_count
         .checked_mul(std::mem::size_of::<DirectorySlot>())
-        .and_then(|size| size.checked_add(bytes.len()))
         .ok_or_else(|| CodecError::Malformed("CFB directory storage size overflow".into()))?;
     ctx.charge_retained(
         cadmpeg_core::decode::u64_from_index(retained),
@@ -1644,11 +1643,12 @@ fn parse_directory(
                 return malformed("invalid CFB directory name length or terminator");
             }
             ctx.charge_work(
-                cadmpeg_core::decode::u64_from_index(name_len) * 3,
+                cadmpeg_core::decode::u64_from_index(name_len) * 2,
                 "decode and check CFB directory name",
             )?;
-            let (name, _) = View::utf16le_at(raw, 0, (name_len - 2) / 2)
-                .ok_or_else(|| CodecError::Malformed("invalid UTF-16 CFB directory name".into()))?;
+            let name = ctx.utf16le_text(
+                raw, (name_len - 2) / 2, false, "decode CFB directory name",
+            )?;
             DirectoryName::new(name)?
         };
         let color = match raw[67] {
@@ -2842,6 +2842,25 @@ mod tests {
         assert_eq!(path_key("Store/alpha"), path_key("store/ALPHA"));
         assert_ne!(path_key("ß"), path_key("SS"));
         assert_eq!(cfb_upper_unit(0xd800), 0xd800);
+    }
+
+    #[test]
+    fn directory_utf16_name_charges_exact_retained_utf8_bytes() {
+        let mut directory = [0_u8; 128];
+        directory_entry(&mut directory, 0, "ࠀ", 2, NO_STREAM, NO_STREAM, NO_STREAM, END_OF_CHAIN, 0);
+        let slot_bytes = cadmpeg_core::decode::u64_from_index(std::mem::size_of::<DirectorySlot>());
+        for limit in [slot_bytes + 2, slot_bytes + 3] {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_retained_bytes = limit;
+            let result = with_context(&directory, &policy, |ctx| parse_directory(ctx, &directory, CompoundVersion::V3));
+            if limit == slot_bytes + 2 {
+                assert!(matches!(result, Err(CodecError::ResourceLimit(refusal))
+                    if refusal.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
+                        && refusal.used == slot_bytes && refusal.additional == 3));
+            } else {
+                assert_eq!(result.unwrap()[0].live().unwrap().name.as_str(), "ࠀ");
+            }
+        }
     }
 
     #[test]
