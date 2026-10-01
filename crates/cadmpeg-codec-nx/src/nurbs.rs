@@ -524,6 +524,7 @@ fn arrays<'bytes, 'ctx>(ctx: &'ctx DecodeContext<'_>, bytes: &'bytes [u8]) -> Re
         if let Some(record) = array_record_at(ctx, bytes, pos)? {
             let index = match record.values { ArrayValues::U16(_) => &mut u16s, ArrayValues::F64(_) => &mut f64s };
             if !ctx.insert_scoped_btree_map_if_vacant(&mut index.reservation, &mut index.records, record.reference, Some(record.values), "index NX NURBS arrays", "NX NURBS array index")? {
+                ctx.charge_work(cadmpeg_core::decode::u64_from_index(index.records.len()), "resolve duplicate NX NURBS array")?;
                 if let Some(value) = index.records.get_mut(&record.reference) { *value = None; }
             }
         }
@@ -1031,6 +1032,7 @@ fn unique_records<'ctx, T>(ctx: &'ctx DecodeContext<'_>, records: impl IntoItera
     for record in records {
         let Some((xmt, record)) = record? else { continue; };
         if !ctx.insert_scoped_btree_map_if_vacant(&mut index.reservation, &mut index.records, xmt, Some(record), "index NX NURBS payload", "NX NURBS payload index")? {
+            ctx.charge_work(cadmpeg_core::decode::u64_from_index(index.records.len()), "resolve duplicate NX NURBS payload")?;
             if let Some(value) = index.records.get_mut(&xmt) { *value = None; }
         }
     }

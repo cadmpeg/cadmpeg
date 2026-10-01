@@ -537,6 +537,7 @@ fn attribute_identifiers<'bytes, 'ctx>(ctx: &'ctx DecodeContext<'_>, bytes: &'by
         if let Some(identifier) = candidate.transpose()? {
             let key = u32::from(identifier.xmt);
             if !ctx.insert_scoped_btree_map_if_vacant(&mut reservation, &mut index, key, Some(identifier), "index NX attribute identifiers", "NX attribute identifier index")? {
+                ctx.charge_work(cadmpeg_core::decode::u64_from_index(index.len()), "resolve duplicate NX attribute identifier")?;
                 if let Some(value) = index.get_mut(&key) { *value = None; }
             }
         }
