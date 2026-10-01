@@ -454,7 +454,7 @@ fn header_directory_refuses_retained_name_limit_before_copy() {
         &file,
         |policy| {
             policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(
-                std::mem::size_of::<DirEntry>() + "/Root/UG_PART/UG_PART".len() - 1,
+                4 * std::mem::size_of::<DirEntry>() + "/Root/UG_PART/UG_PART".len() - 1,
             );
         },
         |ctx| {

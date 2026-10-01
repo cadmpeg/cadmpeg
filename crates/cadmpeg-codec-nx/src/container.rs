@@ -1622,15 +1622,12 @@ fn try_entry(
             "directory entry {ordinal} extends beyond its bounded region"
         )));
     }
-    ctx.charge_retained(
-        cadmpeg_core::decode::u64_from_index(name_len),
-        "retain NX directory name",
-    )?;
+
     let Ok(value) = std::str::from_utf8(raw) else {
         return Ok(None);
     };
     let mut name = String::new();
-    cadmpeg_core::decode::DecodeContext::reserve_admitted_string(
+    ctx.try_reserve_retained_text(
         &mut name,
         name_len,
         "retain NX directory name",
