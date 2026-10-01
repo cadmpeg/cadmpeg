@@ -5037,7 +5037,9 @@ mod reference_allocation_tests {
     fn law_operator_copy_refuses_retained_limit() {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = 0;
+        policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(
+            std::mem::size_of::<super::EmbeddedLawExpression>(),
+        );
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let tokens = [Token::Str("ABS".into()), Token::Double(1.0)];
         let error = resource_error(law_expression(&ctx, &mut Cur::at(&tokens, 0), 0).unwrap());

@@ -1922,7 +1922,9 @@ fn source_attribute_string_refuses_retained_limit() {
     };
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = 0;
+    policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(
+        4 * std::mem::size_of::<cadmpeg_ir::attributes::AttributeValue>(),
+    );
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let error = source_attribute(&ctx, &record, AttributeTarget::Document, FORMAT)
         .expect_err("one attribute string exceeds zero retained bytes");

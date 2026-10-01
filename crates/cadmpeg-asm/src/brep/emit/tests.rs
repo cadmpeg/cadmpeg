@@ -30,7 +30,8 @@ fn body_source_stream_copy_refuses_retained_limit() {
     policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(
         super::super::id(crate::asm_format!("f3d"), 1)
             .as_str()
-            .len(),
+            .len()
+            + 4 * std::mem::size_of::<crate::brep::records::BodyNativeKey>(),
     );
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let records = [Record {
@@ -70,7 +71,11 @@ fn edge_continuity_copy_refuses_retained_limit() {
 
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = 0;
+    policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(
+        4 * (std::mem::size_of::<cadmpeg_ir::topology::Edge>()
+            + std::mem::size_of::<crate::brep::records::EdgeOwnership>()
+            + std::mem::size_of::<crate::brep::records::EdgeContinuity>()),
+    );
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let mut tokens = vec![Token::Long(0); 11];
     tokens[3] = Token::Ref(1);
