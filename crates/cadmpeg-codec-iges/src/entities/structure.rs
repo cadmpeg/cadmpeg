@@ -3173,10 +3173,10 @@ pub(super) fn project(
     }
 
     drop(index);
-    let mut commit_session = CommitSession::new_for_decode(ir, ctx)?;
+    let mut commit_session = CommitSession::new(ir, ctx)?;
     for (entry, candidate) in legacy_face_candidates {
         if commit_session
-            .commit_model_for_decode(candidate, ctx)?
+            .commit_model(candidate)?
             .is_err()
         {
             super::push_entity_loss(

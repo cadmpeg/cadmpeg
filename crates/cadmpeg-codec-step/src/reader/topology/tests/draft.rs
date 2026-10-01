@@ -49,10 +49,10 @@ fn cross_root_surface_filter_tracks_successful_commits_only() {
     let rejected_id = "step:data:surface#implicit-face-2";
     let mut ir = CadIr::empty();
     let ctx = cadmpeg_test_support::service_decode_context();
-    let mut session = CommitSession::new_for_decode(&mut ir, &ctx).unwrap();
+    let mut session = CommitSession::new(&mut ir, &ctx).unwrap();
 
     session
-        .commit_model_for_decode(surface_draft(committed_id), &ctx)
+        .commit_model(surface_draft(committed_id))
         .unwrap()
         .expect("first root commit");
     let mut second_root = surface_draft(committed_id);
@@ -72,7 +72,7 @@ fn cross_root_surface_filter_tracks_successful_commits_only() {
         })
         .expect("insert invalid root reference");
     assert!(session
-        .commit_model_for_decode(rejected_root, &ctx)
+        .commit_model(rejected_root)
         .unwrap()
         .is_err());
 

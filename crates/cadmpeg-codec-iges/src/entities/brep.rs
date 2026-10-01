@@ -1069,7 +1069,7 @@ pub(super) fn project(
 
     // The session holds the document's exclusive borrow. Its identity index
     // remains unbuilt until the first body reaches commit admission.
-    let mut commit_session = CommitSession::new_for_decode(ir, ctx)?;
+    let mut commit_session = CommitSession::new(ir, ctx)?;
     for definition in body_definitions {
         let ir = commit_session.document();
         let entry = definition.entry;
@@ -1765,7 +1765,7 @@ pub(super) fn project(
         candidate.model_mut().finalize(ctx)?;
         drop(model_index);
         if commit_session
-            .commit_model_for_decode(candidate, ctx)?
+            .commit_model(candidate)?
             .is_err()
         {
             super::push_entity_loss(

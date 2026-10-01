@@ -3144,10 +3144,10 @@ pub(super) fn project(
         staged.push((entry, candidate, candidate_boundary_vertex_derivations));
     }
     drop(carrier_index);
-    let mut commit_session = CommitSession::new_for_decode(ir, ctx)?;
+    let mut commit_session = CommitSession::new(ir, ctx)?;
     for (entry, candidate, derivations) in staged {
         if commit_session
-            .commit_model_for_decode(candidate, ctx)?
+            .commit_model(candidate)?
             .is_err()
         {
             super::push_entity_loss(
