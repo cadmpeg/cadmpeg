@@ -180,11 +180,15 @@ impl ReferenceJson {
                 "references[{ordinal}].properties is missing neutronData"
             ))
         })?;
+        let id = ctx.format_retained(
+            format_args!("f3d:xref:reference#{ordinal}"),
+            "retain F3D xref record ID",
+        )?;
+        for text in [&from, &relative_path, &neutron_role, &neutron_data] {
+            ctx.charge_retained(u64_from_index(text.capacity()), "retain F3D xref reference text")?;
+        }
         Ok(XrefReference {
-            id: ctx.format_retained(
-                format_args!("f3d:xref:reference#{ordinal}"),
-                "retain F3D xref record ID",
-            )?,
+            id,
             ordinal: ordinal_at(ordinal)?,
             occurrence_ordinal: 0,
             from,
@@ -333,11 +337,15 @@ fn parse(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<XrefTable, CodecError>
             &design.target_file_name,
             format_args!("designs[{ordinal}].targetFileName"),
         )?;
+        let id = ctx.format_retained(
+            format_args!("f3d:xref:design#{ordinal}"),
+            "retain F3D xref record ID",
+        )?;
+        for text in [&design.target_file_name, &design.display_name, &design.lineage_urn, &design.version_urn] {
+            ctx.charge_retained(u64_from_index(text.capacity()), "retain F3D xref design text")?;
+        }
         designs.push(XrefDesign {
-            id: ctx.format_retained(
-                format_args!("f3d:xref:design#{ordinal}"),
-                "retain F3D xref record ID",
-            )?,
+            id,
             ordinal: ordinal_at(ordinal)?,
             file_version: design.file_version,
             target_file_name: design.target_file_name,

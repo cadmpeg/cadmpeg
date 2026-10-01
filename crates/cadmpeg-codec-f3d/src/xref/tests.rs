@@ -1927,3 +1927,5 @@ fn repeated_target_component_insert_preserves_caller_refusal() {
         assert_eq!(Some(limit), ctx.resource_refusal());
     });
 }
+
+mod retained_text;
