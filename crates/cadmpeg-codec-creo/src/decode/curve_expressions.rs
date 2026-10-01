@@ -666,7 +666,7 @@ fn curve_expression_properties(
         let value = join_cyclic_dependency_names(ctx, &cyclic_dependencies)?;
         insert_curve_expression_property(ctx, &mut properties, "cyclic_dependencies", value)?;
     }
-    cadmpeg_core::text::named_entries_checked(ctx, parameter_id.as_str(), properties)
+    cadmpeg_core::text::named_entries_for_decode(ctx, parameter_id.as_str(), properties).map_err(Into::into)
 }
 
 fn native_curve_expression_definition(
