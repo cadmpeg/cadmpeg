@@ -810,7 +810,9 @@ fn attribute_family(
         if let AttributeValue::String(name) = value {
             let work = cadmpeg_core::decode::u64_from_index(name.len())
                 .checked_add(cadmpeg_core::decode::u64_from_index(family.len()))
-                .ok_or_else(|| ctx.refuse_codec_limit("compare Fusion attribute family", 0, u64::MAX))?;
+                .ok_or_else(|| {
+                    ctx.refuse_codec_limit("compare Fusion attribute family", 0, u64::MAX)
+                })?;
             ctx.charge_work(work, "compare Fusion attribute family")?;
             if name == family {
                 return Ok(Some(index));
@@ -851,7 +853,12 @@ fn persistent_design_links(
     let AttributeTarget::Body(_) = &attribute.target else {
         return Ok(Vec::new());
     };
-    let Some((version, group_count, rest)) = generic_tag_payload(ctx, attribute)? else {
+    let Some(GenericTagPayload {
+        version,
+        group_count,
+        rest,
+    }) = generic_tag_payload(ctx, attribute)?
+    else {
         return Ok(Vec::new());
     };
     let group_width = match version {
@@ -910,7 +917,12 @@ fn persistent_subentity_tags(
     ) {
         return Ok(Vec::new());
     }
-    let Some((version, group_count, rest)) = generic_tag_payload(ctx, attribute)? else {
+    let Some(GenericTagPayload {
+        version,
+        group_count,
+        rest,
+    }) = generic_tag_payload(ctx, attribute)?
+    else {
         return Ok(Vec::new());
     };
     // Each group consumes at least four leading attribute values from `rest`.
@@ -997,6 +1009,13 @@ enum GenericTagVersion {
     V3,
 }
 
+/// Generic-tag fields after the equal supported envelope versions are checked.
+struct GenericTagPayload<'a> {
+    version: GenericTagVersion,
+    group_count: usize,
+    rest: &'a [AttributeValue],
+}
+
 /// Return the common generic-tag version, group count, and payload.
 ///
 /// The two leading integers are an equal envelope version. Versions two and
@@ -1005,17 +1024,22 @@ enum GenericTagVersion {
 fn generic_tag_payload<'a>(
     ctx: &DecodeContext<'_>,
     attribute: &'a SourceAttribute,
-) -> Result<Option<(GenericTagVersion, usize, &'a [AttributeValue])>, CodecError> {
+) -> Result<Option<GenericTagPayload<'a>>, CodecError> {
     let Some(family) = attribute_family(ctx, attribute, "generic_tag_attrib_def")? else {
         return Ok(None);
     };
     let Some(values) = attribute.values.get(family + 1..) else {
         return Ok(None);
     };
-    let [AttributeValue::Integer(left_version), AttributeValue::Integer(right_version), AttributeValue::Integer(-1), AttributeValue::String(marker), AttributeValue::Integer(group_count), rest @ ..] = values else {
+    let [AttributeValue::Integer(left_version), AttributeValue::Integer(right_version), AttributeValue::Integer(-1), AttributeValue::String(marker), AttributeValue::Integer(group_count), rest @ ..] =
+        values
+    else {
         return Ok(None);
     };
-    ctx.charge_work(cadmpeg_core::decode::u64_from_index(marker.len()), "compare Fusion generic-tag marker")?;
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(marker.len()),
+        "compare Fusion generic-tag marker",
+    )?;
     if left_version != right_version || marker != "generic_tag_attrib_def " || *group_count < 0 {
         return Ok(None);
     }
@@ -1027,7 +1051,11 @@ fn generic_tag_payload<'a>(
     let Ok(group_count) = usize::try_from(*group_count) else {
         return Ok(None);
     };
-    Ok(Some((version, group_count, rest)))
+    Ok(Some(GenericTagPayload {
+        version,
+        group_count,
+        rest,
+    }))
 }
 
 fn retained_attribute_target(target: &AttributeTarget, reachable: &HashSet<String>) -> bool {

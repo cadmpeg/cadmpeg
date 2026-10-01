@@ -2050,8 +2050,9 @@ fn validate_body_bounds(ctx: &Ctx<'_, '_>, findings: &mut Vec<Finding>) -> Resul
                 entity.module() == Some(records::entity_header::DESIGN_MODULE_BODY)
                     && entity.byte_offset == bounds.entity_byte_offset()
             })
-            && bounds.body_binding_ids()
-                .eq(expected_bindings.iter().map(|binding| binding.id().as_str()));
+            && bounds.body_binding_ids().eq(expected_bindings
+                .iter()
+                .map(|binding| binding.id().as_str()));
         let valid = if valid_frame {
             ctx.decode.insert_hash_set(
                 &mut bounded_bodies,

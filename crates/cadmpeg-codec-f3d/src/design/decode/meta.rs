@@ -133,19 +133,26 @@ fn copy_design_type(
         design_type.byte_offset,
         "f3d design type id suffix",
     )?;
-    ctx.charge_work(cadmpeg_core::decode::u64_from_index(id.len()).checked_mul(8)
-        .ok_or_else(|| ctx.refuse_codec_limit("admit F3D type identity", 0, u64::MAX))?,
-        "admit F3D type identity")?;
-    SegmentType::try_new(id, crate::records::entity_header::SegmentTypeData {
-        byte_offset: design_type.byte_offset,
-        type_guid: design_type.type_guid.clone(),
-        type_guid_offset: design_type.type_guid_offset,
-        base_type_guid: design_type.base_type_guid.clone(),
-        version: design_type.version,
-        version_offset: design_type.version_offset,
-        module,
-        entities,
-    }).map_err(CodecError::Malformed)
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(id.len())
+            .checked_mul(8)
+            .ok_or_else(|| ctx.refuse_codec_limit("admit F3D type identity", 0, u64::MAX))?,
+        "admit F3D type identity",
+    )?;
+    SegmentType::try_new(
+        id,
+        crate::records::entity_header::SegmentTypeData {
+            byte_offset: design_type.byte_offset,
+            type_guid: design_type.type_guid.clone(),
+            type_guid_offset: design_type.type_guid_offset,
+            base_type_guid: design_type.base_type_guid.clone(),
+            version: design_type.version,
+            version_offset: design_type.version_offset,
+            module,
+            entities,
+        },
+    )
+    .map_err(CodecError::Malformed)
 }
 
 fn insert_component_naming_space(

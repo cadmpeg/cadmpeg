@@ -168,7 +168,12 @@ fn segment_type_native_retained_limit_refuses_before_record_clone() {
 #[test]
 fn segment_type_rejects_unbound_native_identity() {
     let valid = segment("");
-    for id in ["", "f3d:native/MetaStream.dat:design-type#1", "f3d:native/MetaStream.dat:other#0", "f3d:native/BulkStream.dat:design-type#0"] {
+    for id in [
+        "",
+        "f3d:native/MetaStream.dat:design-type#1",
+        "f3d:native/MetaStream.dat:other#0",
+        "f3d:native/BulkStream.dat:design-type#0",
+    ] {
         let mut wire = SegmentTypeWire::from(valid.clone());
         wire.id = id.into();
         assert!(SegmentType::try_from(wire).is_err());

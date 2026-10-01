@@ -7,38 +7,42 @@ fn design_type(
 ) -> crate::records::entity_header::SegmentType {
     use crate::records::entity_header::{BaseTypeGuid, SegmentType, DESIGN_MODULE_FUSION};
     let is_timeline = type_guid == crate::design::decode::meta::FEATURE_TIMELINE_TYPE_GUID;
-    SegmentType::try_new(id.into(), crate::records::entity_header::SegmentTypeData {
-        byte_offset: id.rsplit_once('#').unwrap().1.parse().unwrap(),
-        type_guid: type_guid.to_owned().try_into().unwrap(),
-        type_guid_offset: 4,
-        base_type_guid: if is_timeline {
-            BaseTypeGuid::Guid {
-                value: crate::design::decode::meta::FEATURE_TIMELINE_BASE_TYPE_GUID
-                    .to_owned()
-                    .try_into()
-                    .unwrap(),
-                offset: 8,
-            }
-        } else {
-            BaseTypeGuid::Absent
+    SegmentType::try_new(
+        id.into(),
+        crate::records::entity_header::SegmentTypeData {
+            byte_offset: id.rsplit_once('#').unwrap().1.parse().unwrap(),
+            type_guid: type_guid.to_owned().try_into().unwrap(),
+            type_guid_offset: 4,
+            base_type_guid: if is_timeline {
+                BaseTypeGuid::Guid {
+                    value: crate::design::decode::meta::FEATURE_TIMELINE_BASE_TYPE_GUID
+                        .to_owned()
+                        .try_into()
+                        .unwrap(),
+                    offset: 8,
+                }
+            } else {
+                BaseTypeGuid::Absent
+            },
+            version: if is_timeline {
+                crate::design::decode::meta::FEATURE_TIMELINE_TYPE_VERSIONS[1]
+            } else {
+                1
+            },
+            version_offset: 44,
+            module: DESIGN_MODULE_FUSION.into(),
+            entities: crate::records::identity::ReferenceRun::located(
+                entities
+                    .iter()
+                    .map(|value| crate::records::identity::Located {
+                        value: *value,
+                        offset: 100,
+                    })
+                    .collect(),
+            ),
         },
-        version: if is_timeline {
-            crate::design::decode::meta::FEATURE_TIMELINE_TYPE_VERSIONS[1]
-        } else {
-            1
-        },
-        version_offset: 44,
-        module: DESIGN_MODULE_FUSION.into(),
-        entities: crate::records::identity::ReferenceRun::located(
-            entities
-                .iter()
-                .map(|value| crate::records::identity::Located {
-                    value: *value,
-                    offset: 100,
-                })
-                .collect(),
-        ),
-    }).unwrap()
+    )
+    .unwrap()
 }
 
 fn native() -> crate::native::F3dNative {
@@ -236,10 +240,12 @@ fn timeline_duplicate_type_entity_refuses_retained_limit() {
 #[test]
 fn timeline_invalid_record_finding_refuses_collection_limit() {
     let mut native = native();
-    native.design_types[1].set_entities(crate::records::identity::ReferenceRun::located(vec![crate::records::identity::Located {
+    native.design_types[1].set_entities(crate::records::identity::ReferenceRun::located(vec![
+        crate::records::identity::Located {
             value: 17,
             offset: 100,
-        }]));
+        },
+    ]));
     let error = timeline_error_with(native, 9, u64::MAX);
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -250,10 +256,12 @@ fn timeline_invalid_record_finding_refuses_collection_limit() {
 #[test]
 fn timeline_invalid_record_entity_refuses_retained_limit() {
     let mut native = native();
-    native.design_types[1].set_entities(crate::records::identity::ReferenceRun::located(vec![crate::records::identity::Located {
+    native.design_types[1].set_entities(crate::records::identity::ReferenceRun::located(vec![
+        crate::records::identity::Located {
             value: 17,
             offset: 100,
-        }]));
+        },
+    ]));
     let error = timeline_error_with(native, u64::MAX, 0);
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)

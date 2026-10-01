@@ -3445,7 +3445,10 @@ fn decode_scanned_document<'a>(
             if let Some(keys) = selected_body_keys.get(blob_name) {
                 part.retain_body_keys(ctx, keys)?;
             }
-            if part.asm.surfaces.is_empty() && part.asm.points.is_empty() && part.asm.faces.is_empty() {
+            if part.asm.surfaces.is_empty()
+                && part.asm.points.is_empty()
+                && part.asm.faces.is_empty()
+            {
                 continue;
             }
             primary_model_brep.get_or_insert(candidate);
@@ -3489,28 +3492,42 @@ fn decode_scanned_document<'a>(
                     .flatten()
                 {
                     let id = crate::ids::native_scoped_id_charged(
-                        ctx, &candidate.name, "body-visibility", body_selector,
+                        ctx,
+                        &candidate.name,
+                        "body-visibility",
+                        body_selector,
                     )?;
                     let identity_work = cadmpeg_core::decode::u64_from_index(id.len())
-                        .checked_add(cadmpeg_core::decode::u64_from_index(visibility.stream.len()))
+                        .checked_add(cadmpeg_core::decode::u64_from_index(
+                            visibility.stream.len(),
+                        ))
                         .and_then(|length| length.checked_mul(8))
-                        .ok_or_else(|| ctx.refuse_codec_limit("admit F3D body visibility identity", 0, u64::MAX))?;
+                        .ok_or_else(|| {
+                            ctx.refuse_codec_limit(
+                                "admit F3D body visibility identity",
+                                0,
+                                u64::MAX,
+                            )
+                        })?;
                     ctx.charge_work(identity_work, "admit F3D body visibility identity")?;
-                    let visibility = crate::records::bodies::BodyVisibility::try_from(crate::records::bodies::BodyVisibilityWire {
-                        id,
-                        body: body
-                            .id
-                            .try_clone_for_decode(ctx, "retain F3D visible body ID")?,
-                        stream: ctx.copy_retained_text(
-                            &visibility.stream,
-                            "retain F3D body visibility stream",
-                        )?,
-                        byte_offset: visibility.byte_offset,
-                        asm_body_key_offset: visibility.asm_body_key_offset,
-                        asm_body_key: body_selector,
-                        entity_suffix: visibility.entity_suffix,
-                        visible: visibility.visible,
-                    }).map_err(CodecError::Malformed)?;
+                    let visibility = crate::records::bodies::BodyVisibility::try_from(
+                        crate::records::bodies::BodyVisibilityWire {
+                            id,
+                            body: body
+                                .id
+                                .try_clone_for_decode(ctx, "retain F3D visible body ID")?,
+                            stream: ctx.copy_retained_text(
+                                &visibility.stream,
+                                "retain F3D body visibility stream",
+                            )?,
+                            byte_offset: visibility.byte_offset,
+                            asm_body_key_offset: visibility.asm_body_key_offset,
+                            asm_body_key: body_selector,
+                            entity_suffix: visibility.entity_suffix,
+                            visible: visibility.visible,
+                        },
+                    )
+                    .map_err(CodecError::Malformed)?;
                     ctx.push_vec(
                         &mut body_visibilities,
                         visibility,

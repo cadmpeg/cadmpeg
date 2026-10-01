@@ -516,7 +516,8 @@ fn occurrence_merge_scopes_admitted_native_references_and_preserves_configuratio
         asm_body_key: 3,
         entity_suffix: 1,
         visible: true,
-    }).unwrap();
+    })
+    .unwrap();
     let mut component = Native::default();
     component
         .namespace_mut("f3d")
