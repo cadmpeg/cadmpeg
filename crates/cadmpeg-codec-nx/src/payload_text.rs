@@ -1,11 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Nonempty Unicode text without control characters.
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
-#[serde(transparent)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct PayloadText<S>(S);
 
-impl<S: AsRef<str>> PayloadText<S> {
+impl<S: crate::immutable_text::ImmutableText> PayloadText<S> {
     pub(crate) fn new(value: S) -> Result<Self, &'static str> {
         let text = value.as_ref();
         if text.is_empty() || text.chars().any(char::is_control) {
@@ -23,6 +22,12 @@ impl<S: AsRef<str>> PayloadText<S> {
 impl PayloadText<&str> {
     pub(crate) fn into_owned(self) -> PayloadText<String> {
         PayloadText(self.0.to_owned())
+    }
+}
+
+impl<S: crate::immutable_text::ImmutableText> serde::Serialize for PayloadText<S> {
+    fn serialize<T: serde::Serializer>(&self, serializer: T) -> Result<T::Ok, T::Error> {
+        serializer.serialize_str(self.as_str())
     }
 }
 
@@ -56,6 +61,24 @@ mod tests {
             let json = serde_json::to_string(text).unwrap();
             let error = serde_json::from_str::<PayloadText<String>>(&json).unwrap_err();
             assert!(error.to_string().contains("value"));
+        }
+    }
+    #[test]
+    fn payloadtext_serializes_the_checked_borrowed_and_owned_text() {
+        let text = "μ Name";
+        let borrowed = super::PayloadText::new(text).unwrap();
+        let owned = super::PayloadText::new(text.to_owned()).unwrap();
+        for _ in 0..3 {
+            assert_eq!(borrowed.as_str(), text);
+            assert_eq!(owned.as_str(), text);
+            assert_eq!(
+                serde_json::to_string(&borrowed).unwrap(),
+                serde_json::to_string(text).unwrap()
+            );
+            assert_eq!(
+                serde_json::to_string(&owned).unwrap(),
+                serde_json::to_string(text).unwrap()
+            );
         }
     }
 }

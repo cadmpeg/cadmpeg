@@ -140,7 +140,7 @@ pub(crate) enum BlendBoundFraming {
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct ChartSourceRecord {
     /// Cross-reference index of the chart.
-    pub(crate) xmt: u32,
+    pub(crate) xmt: NonNullXmt,
     /// Checked chart preamble.
     pub(crate) preamble: ChartPreamble,
     /// Points with exactly the fields admitted by their Hvec layout.
@@ -197,7 +197,7 @@ impl TermUseForm {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) struct TermUse {
     /// Cross-reference index of the endpoint record.
-    pub(crate) xmt: u32,
+    pub(crate) xmt: NonNullXmt,
     /// Endpoint form, including its required leading count.
     pub(crate) form: TermUseForm,
     /// Endpoint position in millimetres.
@@ -224,7 +224,7 @@ pub(crate) enum SupportUvFraming {
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct SupportUvRecord {
     /// Cross-reference index of the values array.
-    pub(crate) xmt: u32,
+    pub(crate) xmt: NonNullXmt,
     /// Exact finite packed support tuples.
     pub(crate) values: SupportUvValues,
     /// Serialized record framing.
@@ -679,7 +679,7 @@ fn scan_with_auxiliaries(
                             .and_then(|witness| {
                                 Some((
                                     witness.endpoints,
-                                    PositiveReal::new(witness.tolerance * 1000.0)?,
+                                    PositiveReal::new(witness.tolerance() * 1000.0)?,
                                 ))
                             }),
                     ) {
@@ -1035,7 +1035,7 @@ fn chart_records(
     let mut complemented = BTreeSet::new();
     let mut duplicates = BTreeSet::new();
     for source in chart_source_records(ctx, stream, point_layout)? {
-        if duplicates.contains(&source.xmt) {
+        if duplicates.contains(&u32::from(source.xmt)) {
             continue;
         }
         let Some(fit_tolerance) = source.preamble.fit_tolerance() else {
@@ -1052,8 +1052,8 @@ fn chart_records(
             fit_tolerance,
             ext_support_uv,
         };
-        ctx.admit_btree_entry(&out, &source.xmt, "NX chart identity index")?;
-        match out.entry(source.xmt) {
+        ctx.admit_btree_entry(&out, &u32::from(source.xmt), "NX chart identity index")?;
+        match out.entry(u32::from(source.xmt)) {
             std::collections::btree_map::Entry::Vacant(entry) => {
                 ctx.charge_retained(
                     cadmpeg_core::decode::u64_from_index(std::mem::size_of::<(u32, Chart)>()),
@@ -1062,7 +1062,7 @@ fn chart_records(
                 entry.insert(candidate);
             }
             std::collections::btree_map::Entry::Occupied(mut entry) => {
-                let complements = !complemented.contains(&source.xmt)
+                let complements = !complemented.contains(&u32::from(source.xmt))
                     && has_native_parameters
                     && entry
                         .get()
@@ -1085,14 +1085,14 @@ fn chart_records(
                     entry.get_mut().ext_support_uv = candidate.ext_support_uv;
                     ctx.insert_btree_set(
                         &mut complemented,
-                        source.xmt,
+                        u32::from(source.xmt),
                         "NX complemented chart identities",
                     )?;
                 } else {
                     entry.remove();
                     ctx.insert_btree_set(
                         &mut duplicates,
-                        source.xmt,
+                        u32::from(source.xmt),
                         "NX duplicate chart identities",
                     )?;
                 }
@@ -1152,6 +1152,9 @@ pub(crate) fn chart_source_record_at(
             continue;
         };
         let Some((xmt, xmt_len)) = read_xmt(stream, base + 4) else {
+            continue;
+        };
+        let Ok(xmt) = NonNullXmt::try_from(xmt) else {
             continue;
         };
         let preamble = base + 4 + xmt_len;
@@ -1310,7 +1313,7 @@ fn term_records(
     for term in term_use_records(ctx, stream)? {
         ctx.insert_btree_map(
             &mut records,
-            term.xmt,
+            u32::from(term.xmt),
             Point3::from(term.point.get()),
             "NX term-use map keys",
         )?;
@@ -1337,7 +1340,7 @@ pub(crate) fn term_use_records(
                 &mut reservation,
                 &mut out,
                 &mut duplicates,
-                term.xmt,
+                u32::from(term.xmt),
                 term,
             )?;
         }
@@ -1352,7 +1355,7 @@ pub(crate) fn term_use_records(
                     &mut reservation,
                     &mut out,
                     &mut duplicates,
-                    term.xmt,
+                    u32::from(term.xmt),
                     term,
                 )?;
             }
@@ -1390,6 +1393,7 @@ fn term_at(
         .child(base, stream.len())?
         .u32_be()?;
     let (xmt, xmt_len) = read_xmt(stream, base + 4)?;
+    let xmt = NonNullXmt::try_from(xmt).ok()?;
     let payload = base + 4 + xmt_len;
     let form = match (count, stream.get(payload..payload + 2)?) {
         (1, b"L?") => TermUseForm::LQuestion,
@@ -1417,7 +1421,7 @@ fn uv_records(
     for record in support_uv_records(ctx, stream)? {
         ctx.insert_btree_map(
             &mut records,
-            record.xmt,
+            u32::from(record.xmt),
             record.values,
             "NX support-UV map keys",
         )?;
@@ -1446,7 +1450,7 @@ pub(crate) fn support_uv_records(
                     &mut reservation,
                     &mut out,
                     &mut duplicates,
-                    record.xmt,
+                    u32::from(record.xmt),
                     record,
                 )?;
                 // A complete counted UV lane owns its scalar payload. Do not
@@ -1474,7 +1478,7 @@ pub(crate) fn support_uv_records(
                     &mut reservation,
                     &mut out,
                     &mut duplicates,
-                    record.xmt,
+                    u32::from(record.xmt),
                     record,
                 )?;
                 label_start = end;
@@ -1528,6 +1532,9 @@ fn uv_at(
         return Ok(None);
     };
     let Some((xmt, xmt_len)) = read_xmt(stream, base + 4) else {
+        return Ok(None);
+    };
+    let Ok(xmt) = NonNullXmt::try_from(xmt) else {
         return Ok(None);
     };
     let Some(payload) = base.checked_add(4).and_then(|at| at.checked_add(xmt_len)) else {

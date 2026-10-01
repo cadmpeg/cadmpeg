@@ -550,10 +550,11 @@ fn term_use_numeric_tails(
         else {
             continue;
         };
-        if parsed_end != record.end || term_use.xmt != record.xmt {
+        if parsed_end != record.end || u32::from(term_use.xmt) != record.xmt {
             continue;
         }
-        let Some(tail) = TermUseNumericTail::read(stream, record.end, term_use.xmt, term_use.form)
+        let Some(tail) =
+            TermUseNumericTail::read(stream, record.end, u32::from(term_use.xmt), term_use.form)
         else {
             continue;
         };
@@ -2138,7 +2139,7 @@ fn merge_records(
                     .ok()
                     .and_then(|kind| graph.get(kind, xmt))
                 {
-                    merged[node.pos..node.end()].fill(0xff);
+                    merged[node.pos()..node.end()].fill(0xff);
                 }
             }
         }
@@ -3474,9 +3475,9 @@ fn consume_intersection_auxiliary(
             offset,
             crate::intersection::ChartPointLayout::Ext11,
         )? {
-        (RecordFamily::Chart, chart.xmt, end)
+        (RecordFamily::Chart, u32::from(chart.xmt), end)
     } else if let Some((term, end)) = crate::intersection::term_use_at(stream, offset) {
-        (RecordFamily::TermUse, term.xmt, end)
+        (RecordFamily::TermUse, u32::from(term.xmt), end)
     } else if let Some((bound, end)) = crate::intersection::blend_bound_at(stream, offset) {
         let headers = bound.state.header_references();
         let references = [
@@ -3499,7 +3500,7 @@ fn consume_intersection_auxiliary(
         else {
             return Ok(None);
         };
-        (RecordFamily::SupportUv, support_uv.xmt, end)
+        (RecordFamily::SupportUv, u32::from(support_uv.xmt), end)
     };
     let Some(bytes) = stream.get(offset..end) else {
         return Ok(None);

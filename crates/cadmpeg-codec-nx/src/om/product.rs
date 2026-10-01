@@ -3,11 +3,10 @@
 
 use crate::printable_string::PrintableString;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
-#[serde(transparent)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct ProductText<S>(PrintableString<S>);
 
-impl<S: AsRef<str>> ProductText<S> {
+impl<S: crate::immutable_text::ImmutableText> ProductText<S> {
     fn new(value: S) -> Result<Self, &'static str> {
         let value = PrintableString::new(value)
             .map_err(|_| "product_version/version: requires printable ASCII")?;
@@ -32,6 +31,12 @@ impl ProductText<&str> {
         owned.push_str(value);
         ProductText::new(owned)
             .map_err(|_| ctx.refuse_codec_limit("validate NX store version", 0, 1))
+    }
+}
+
+impl<S: crate::immutable_text::ImmutableText> serde::Serialize for ProductText<S> {
+    fn serialize<T: serde::Serializer>(&self, serializer: T) -> Result<T::Ok, T::Error> {
+        serializer.serialize_str(self.as_str())
     }
 }
 

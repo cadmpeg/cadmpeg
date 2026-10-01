@@ -19,5 +19,6 @@ mod emission;
 mod metadata;
 mod parameterization;
 mod pcurves;
+mod scans;
 mod selection;
 mod support_uv;

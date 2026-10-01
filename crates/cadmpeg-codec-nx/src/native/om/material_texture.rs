@@ -267,7 +267,6 @@ mod tests {
     use crate::container::{Container, DirEntry, DirEntryBody, Region};
     use cadmpeg_core::decode::{DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
-    use std::borrow::Cow;
     use std::sync::OnceLock;
 
     const TIFF: &[u8] = &[b'I', b'I', 42, 0, 8, 0, 0, 0, 0, 0];
@@ -278,7 +277,7 @@ mod tests {
 
     fn container_of(count: usize) -> Container<'static> {
         Container {
-            data: Cow::Borrowed(TIFF),
+            data: TIFF.into(),
             physical_size: cadmpeg_core::decode::u64_from_index(TIFF.len()),
             layout: crate::container::test_modern_layout(6),
             entries: (0..count)

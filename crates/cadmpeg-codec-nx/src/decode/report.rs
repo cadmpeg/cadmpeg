@@ -347,7 +347,7 @@ pub(super) fn build_geometry_report(
         ))?;
     }
 
-    if scan.count(StreamKind::Deltas) > 0 {
+    if scan.count(ctx, StreamKind::Deltas)? > 0 {
         let unmatched_tombstones = unmatched_delta_tombstone_counts.values().sum::<usize>();
         let unmatched_tombstone_detail = JoinedCounts {
             counts: unmatched_delta_tombstone_counts,
@@ -377,7 +377,7 @@ pub(super) fn build_geometry_report(
                  digests. Semantic intersection and NURBS records were retained in the semantic \
                  lane. Every \
                  terminal tombstone resolved to an exact current or earlier-added key.",
-                scan.count(StreamKind::Deltas)
+                scan.count(ctx, StreamKind::Deltas)?
             ))?;
         } else {
             push_report_loss(ctx, &mut losses, NxLossCode::DeltasUnmatchedTombstones, format_args!(
@@ -385,7 +385,7 @@ pub(super) fn build_geometry_report(
                     Equal-schema deltas were paired with the preceding partition. Exact-key revisions in current body-sequence intervals were applied using the last \
                  event for each key, but {unmatched_tombstones} terminal tombstone(s) have no exact \
                  current or earlier-added key and remain unresolved: {unmatched_tombstone_detail}.",
-                scan.count(StreamKind::Deltas)
+                scan.count(ctx, StreamKind::Deltas)?
             ))?;
         }
     }
@@ -400,7 +400,7 @@ pub(super) fn build_geometry_report(
                  Booleans do not resolve every intermediate body object to a partition image. \
                  Carriers from all sub-bodies are emitted without the unresolved composition that \
                  would remove interior/construction faces.",
-                scan.count(StreamKind::Partition)
+                scan.count(ctx, StreamKind::Partition)?
             ),
         )?;
     }

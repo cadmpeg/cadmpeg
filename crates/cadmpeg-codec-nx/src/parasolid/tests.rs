@@ -305,7 +305,13 @@ fn partition_values_require_a_unique_entity_reference() {
         let owned = crate::parasolid::referenced_value_record_offsets(ctx, &bytes)
             .unwrap()
             .0;
-        assert_eq!(owned.len(), 3);
+        let (candidates, _candidate_guard) =
+            super::value_records::value_record_candidates(ctx, &bytes).unwrap();
+        assert_eq!(candidates.len(), 3);
+        assert!(
+            owned.is_empty(),
+            "leading references cannot establish value ownership"
+        );
 
         bytes.extend_from_slice(&[0, 98]);
         bytes.extend_from_slice(&2u32.to_be_bytes());
@@ -771,4 +777,36 @@ fn attribute_duplicate_identifier_index_refuses_lookup_work() {
             );
         },
     );
+}
+
+#[test]
+fn structural_entity_references_do_not_own_value_records() {
+    let mut bytes = vec![0, 0x51];
+    bytes.extend_from_slice(&1_u32.to_be_bytes());
+    bytes.extend_from_slice(&10_u16.to_be_bytes());
+    bytes.extend_from_slice(&2_u32.to_be_bytes());
+    bytes.extend_from_slice(&0x21_u16.to_be_bytes());
+    for reference in 3..=8_u16 {
+        bytes.extend_from_slice(&reference.to_be_bytes());
+    }
+    bytes.extend_from_slice(&[0xaa, 0xbb]);
+    let value_offset = bytes.len();
+    bytes.extend_from_slice(&[0, 98]);
+    bytes.extend_from_slice(&2_u32.to_be_bytes());
+    bytes.extend_from_slice(&3_u16.to_be_bytes());
+    bytes.extend_from_slice(&[0, b'N', 0, b'X']);
+    crate::test_support::with_decode_context(|ctx| {
+        let (owned, _) = super::referenced_value_record_offsets(ctx, &bytes).unwrap();
+        assert!(!owned.contains(&value_offset));
+        let (references, _) =
+            super::referenced_value_xmts(ctx, &bytes, super::ValueMultiplicity::UniqueSnapshot)
+                .unwrap();
+        assert!(!references.contains(&3));
+        assert!(references.contains(&8));
+    });
+    bytes[24..26].copy_from_slice(&3_u16.to_be_bytes());
+    crate::test_support::with_decode_context(|ctx| {
+        let (owned, _) = super::referenced_value_record_offsets(ctx, &bytes).unwrap();
+        assert!(owned.contains(&value_offset));
+    });
 }
