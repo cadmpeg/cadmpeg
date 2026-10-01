@@ -1128,39 +1128,19 @@ impl<'a> Cursor<'a> {
         ctx: &DecodeContext<'_>,
         field: &'static str,
     ) -> Result<PmDcPairedReferenceList<[u32; 2]>, CodecError> {
-        let marker = [
-            self.u16("graphics reference-list marker 0")?,
-            self.u16("graphics reference-list marker 1")?,
-        ];
-        if marker != [2, 0x3000] {
-            return Err(CodecError::malformed(format_args!(
-                "PmGraphics {field} has marker {marker:?}, expected [2, 12288]"
-            )));
-        }
-        let count = usize::try_from(self.u32("graphics reference-list count")?).map_err(|_| {
-            CodecError::Malformed("Inventor numeric value exceeds target range".into())
-        })?;
-        ctx.charge_collection_items(
-            cadmpeg_core::decode::u64_from_index(count),
-            "admit Inventor PmGraphics references",
-        )?;
-        if count == 0 {
-            return Ok(PmDcPairedReferenceList::default());
-        }
-        let metadata = [
-            self.u32("graphics reference-list metadata 0")?,
-            self.u32("graphics reference-list metadata 1")?,
-        ];
-        let mut references =
-            DecodeContext::admitted_vec(count, "admit Inventor PmGraphics references")?;
-        for _ in 0..count {
-            references.push(self.node_reference("graphics reference-list entry")?);
-        }
-        PmDcPairedReferenceList::new(Some(metadata), references).ok_or_else(|| {
-            CodecError::Malformed(
-                "Inventor graphics reference list metadata disagrees with length".into(),
-            )
-        })
+        let mut cursor = crate::pmdc::Cursor::new(self.source);
+        let list = crate::pmdc::reference_list(ctx, &mut cursor, 2, field)?;
+        self.source = cursor.into_view();
+        let (_, metadata, references) = list.into_parts();
+        let metadata = match metadata {
+            None => None,
+            Some(crate::pmdc::PmDcListMetadata::U32(values)) => Some(values),
+            Some(crate::pmdc::PmDcListMetadata::U16(_)) => {
+                return Err(CodecError::malformed("graphics reference metadata must be u32"));
+            }
+        };
+        PmDcPairedReferenceList::new(metadata, references)
+            .ok_or_else(|| CodecError::malformed("graphics reference metadata disagrees with length"))
     }
 
     fn utf16(
@@ -1264,6 +1244,28 @@ mod tests {
     use cadmpeg_ir::appearance::Appearance;
     use cadmpeg_ir::ids::{BodyId, FaceId};
     use cadmpeg_ir::topology::Color;
+
+
+    #[test]
+    fn graphics_reference_lists_use_bounded_retained_grammar() {
+        let mut bytes = vec![2_u8, 0, 0, 0x30];
+        bytes.extend_from_slice(&1_000_000_u32.to_le_bytes());
+        bytes.extend_from_slice(&[0; 8]);
+        crate::test_support::test_fixtures::parse(&bytes, |ctx, root| {
+            assert!(matches!(super::Cursor::new(root).reference_list(ctx, "test"), Err(CodecError::Malformed(_))));
+        });
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = 0;
+        let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("test context");
+        assert!(matches!(super::Cursor::new(root).reference_list(&ctx, "test"), Err(CodecError::Malformed(_))));
+        bytes[4..8].copy_from_slice(&1_u32.to_le_bytes());
+        bytes.extend_from_slice(&[0; 4]);
+        policy.limits.max_collection_items = DecodePolicy::service().limits.max_collection_items;
+        policy.limits.max_retained_bytes = 0;
+        let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("test context");
+        assert!(matches!(super::Cursor::new(root).reference_list(&ctx, "test"), Err(CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::RetainedBytes));
+    }
 
     #[test]
     fn presentation_projection_refuses_collection_limit_before_face_key_index() {
