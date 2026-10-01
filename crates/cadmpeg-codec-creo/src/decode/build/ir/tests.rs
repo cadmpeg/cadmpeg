@@ -27,13 +27,20 @@ fn retained_boundary_sweep(
     let arena = DecodeArena::new();
     let mut observed = std::collections::BTreeSet::new();
     let mut exact_cap = None;
-    for limit in 0..4096 {
+    let mut limit = 0_u64;
+    for _ in 0..4096 {
         let mut policy = DecodePolicy::service();
         policy.limits.max_retained_bytes = limit;
         let (ctx, _) =
             DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root admitted");
         match run(&ctx) {
             Err(CodecError::ResourceLimit(resource)) => {
+                let need = resource
+                    .used
+                    .checked_add(resource.additional)
+                    .expect("retained need");
+                assert!(need > limit);
+                limit = need;
                 assert_eq!(resource.dimension, ResourceDimension::RetainedBytes);
                 observed.insert(resource.operation);
             }
@@ -562,7 +569,8 @@ fn display_strip_error_text_refuses_below_retained_limits() {
     ] {
         let mut observed = false;
         let mut service_error = None;
-        for limit in 0..2048 {
+        let mut limit = 0_u64;
+        for _ in 0..4096 {
             let mut policy = DecodePolicy::service();
             policy.limits.max_retained_bytes = limit;
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
@@ -570,6 +578,9 @@ fn display_strip_error_text_refuses_below_retained_limits() {
             match transfer_display_tessellations(&ctx, scan, &mut CadIr::empty(),
                 &mut cadmpeg_ir::AnnotationBuilder::new()) {
                 Err(CodecError::ResourceLimit(resource)) => {
+                    let need = resource.used.checked_add(resource.additional).expect("retained need");
+                    assert!(need > limit);
+                    limit = need;
                     assert_eq!(resource.dimension, ResourceDimension::RetainedBytes);
                     observed |= resource.operation == operation;
                 }

@@ -169,6 +169,7 @@ pub(in super::super) fn transfer_constrained_slot_fillet_cylinders(
     annotations: &mut AnnotationBuilder,
     source_carriers: &mut crate::decode::source_carriers::SourceUnitCarriers,
 ) -> Result<usize, cadmpeg_core::CodecError> {
+    let mut local_storage = ctx.reserve_scoped(0, "Creo feature selection workspace")?;
     let mut round_feature_ids = BTreeSet::new();
     for row in scan
         .features
@@ -176,11 +177,13 @@ pub(in super::super) fn transfer_constrained_slot_fillet_cylinders(
         .iter()
         .filter(|row| row.root_schema_class == Some(SchemaClass::Round))
     {
-        ctx.insert_btree_set(
-            &mut round_feature_ids,
-            row.feature_id,
-            "creo constrained round feature ID nodes",
-        )?;
+        local_storage.with_storage(|| {
+            ctx.insert_btree_set(
+                &mut round_feature_ids,
+                row.feature_id,
+                "creo constrained round feature ID nodes",
+            )
+        })?;
     }
     let mut transferred = 0;
     for feature_id in round_feature_ids {
@@ -393,6 +396,7 @@ pub(in super::super) fn transfer_hole_cylinders(
     annotations: &mut AnnotationBuilder,
     source_carriers: &mut crate::decode::source_carriers::SourceUnitCarriers,
 ) -> Result<usize, cadmpeg_core::CodecError> {
+    let mut local_storage = ctx.reserve_scoped(0, "Creo feature selection workspace")?;
     let mut hole_feature_ids = BTreeSet::new();
     for feature_id in scan
         .features
@@ -401,11 +405,13 @@ pub(in super::super) fn transfer_hole_cylinders(
         .filter(|row| row.root_schema_class == Some(SchemaClass::Hole))
         .map(|row| row.feature_id)
     {
-        ctx.insert_btree_set(
-            &mut hole_feature_ids,
-            feature_id,
-            "creo hole cylinder feature ID nodes",
-        )?;
+        local_storage.with_storage(|| {
+            ctx.insert_btree_set(
+                &mut hole_feature_ids,
+                feature_id,
+                "creo hole cylinder feature ID nodes",
+            )
+        })?;
     }
     let mut transferred = 0;
     for feature_id in hole_feature_ids {
@@ -1659,6 +1665,7 @@ pub(in super::super) fn transfer_circular_sweep_cylinders(
     annotations: &mut AnnotationBuilder,
     source_carriers: &mut crate::decode::source_carriers::SourceUnitCarriers,
 ) -> Result<usize, cadmpeg_core::CodecError> {
+    let mut local_storage = ctx.reserve_scoped(0, "Creo feature selection workspace")?;
     let mut sweep_feature_ids = BTreeSet::new();
     for feature_id in scan
         .features
@@ -1674,11 +1681,13 @@ pub(in super::super) fn transfer_circular_sweep_cylinders(
         })
         .map(|row| row.feature_id)
     {
-        ctx.insert_btree_set(
-            &mut sweep_feature_ids,
-            feature_id,
-            "creo circular sweep feature ID nodes",
-        )?;
+        local_storage.with_storage(|| {
+            ctx.insert_btree_set(
+                &mut sweep_feature_ids,
+                feature_id,
+                "creo circular sweep feature ID nodes",
+            )
+        })?;
     }
     let mut transferred = 0;
     for feature_id in sweep_feature_ids {

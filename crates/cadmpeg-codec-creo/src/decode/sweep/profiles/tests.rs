@@ -810,7 +810,12 @@ fn overflowing_circular_pcurve_refuses_before_error_text_copy() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     let mut policy = DecodePolicy::service();
 
-    policy.limits.max_retained_bytes = u64::try_from(REASON.len()).expect("reason length") - 1;
+    let output_slots = cadmpeg_core::decode::u64_from_index(
+        12 * std::mem::size_of::<f64>()
+            + 9 * std::mem::size_of::<cadmpeg_ir::geometry::pcurve::WeightedPole2>(),
+    );
+    policy.limits.max_retained_bytes =
+        output_slots + u64::try_from(REASON.len()).expect("reason length") - 1;
     let arena = DecodeArena::new();
     let (ctx, _) =
         DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root admitted");
@@ -830,8 +835,8 @@ fn overflowing_circular_pcurve_refuses_before_error_text_copy() {
     };
     assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
     assert_eq!(limit.operation, "creo circular pcurve refusal text");
-    assert_eq!(limit.used, 0);
-    assert_eq!(limit.limit + 1, limit.additional);
+    assert_eq!(limit.used, output_slots);
+    assert_eq!(limit.limit + 1, limit.used + limit.additional);
     assert!(refusal.take_records().is_empty());
     let absent = crate::decode::with_test_decode_ctx(|ctx| {
         super::circular_pcurve(

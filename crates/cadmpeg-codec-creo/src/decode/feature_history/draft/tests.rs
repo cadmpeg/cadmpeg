@@ -58,11 +58,57 @@ fn hole_face_limit_error(
     if let Some(limit) = collection {
         policy.limits.max_collection_items = limit;
     }
-    if let Some(limit) = retained {
-        policy.limits.max_retained_bytes = limit;
+    if retained.is_some() {
+        policy.limits.max_retained_bytes = crate::test_support::allocation_limit_at(
+            cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+            Some(operation),
+            |cap| {
+                let trial_arena = cadmpeg_core::decode::DecodeArena::new();
+                let mut trial_policy = policy;
+                trial_policy.limits.max_retained_bytes = cap;
+                let (trial_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+                    &[],
+                    &trial_arena,
+                    &trial_policy,
+                )
+                .expect("root");
+                hole_face_selection(
+                    &trial_ctx,
+                    &scan,
+                    &ir,
+                    9,
+                    11,
+                    &std::collections::BTreeMap::new(),
+                    &std::collections::BTreeSet::new(),
+                )
+            },
+        );
     }
-    if let Some(limit) = materialized {
-        policy.limits.max_materialized_bytes = limit;
+    if materialized.is_some() {
+        policy.limits.max_materialized_bytes = crate::test_support::allocation_limit_at(
+            cadmpeg_core::decode::ResourceDimension::MaterializedBytes,
+            Some(operation),
+            |cap| {
+                let trial_arena = cadmpeg_core::decode::DecodeArena::new();
+                let mut trial_policy = policy;
+                trial_policy.limits.max_materialized_bytes = cap;
+                let (trial_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+                    &[],
+                    &trial_arena,
+                    &trial_policy,
+                )
+                .expect("root");
+                hole_face_selection(
+                    &trial_ctx,
+                    &scan,
+                    &ir,
+                    9,
+                    11,
+                    &std::collections::BTreeMap::new(),
+                    &std::collections::BTreeSet::new(),
+                )
+            },
+        );
     }
     let (ctx, _) =
         DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
@@ -150,13 +196,33 @@ fn hole_generated_native_copy_refuses_retained_limit() {
             "creo:model:feature#3",
         )
         .expect("identity grammar")]);
-    let native = "creo:visibgeom:surface#11";
-    let producer = "creo:model:feature#3";
-    let local = "surface#11";
+
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes =
-        cadmpeg_core::decode::u64_from_index(native.len() + producer.len() + local.len());
+    policy.limits.max_retained_bytes = crate::test_support::allocation_limit_at(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        Some("creo hole generated native selection"),
+        |cap| {
+            let trial_arena = cadmpeg_core::decode::DecodeArena::new();
+            let mut trial_policy = policy;
+            trial_policy.limits.max_retained_bytes = cap;
+            let (trial_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+                &[],
+                &trial_arena,
+                &trial_policy,
+            )
+            .expect("root");
+            hole_face_selection(
+                &trial_ctx,
+                &scan,
+                &CadIr::empty(),
+                9,
+                11,
+                &result_surface_ids,
+                &available_features,
+            )
+        },
+    );
     let (ctx, _) =
         DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
     let error = hole_face_selection(
@@ -282,8 +348,23 @@ fn thicken_resource_error(collection: Option<u64>, retained: Option<u64>, operat
     if let Some(limit) = collection {
         policy.limits.max_collection_items = limit;
     }
-    if let Some(limit) = retained {
-        policy.limits.max_retained_bytes = limit;
+    if retained.is_some() {
+        policy.limits.max_retained_bytes = crate::test_support::allocation_limit_at(
+            cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+            Some(operation),
+            |cap| {
+                let trial_arena = cadmpeg_core::decode::DecodeArena::new();
+                let mut trial_policy = policy;
+                trial_policy.limits.max_retained_bytes = cap;
+                let (trial_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+                    &[],
+                    &trial_arena,
+                    &trial_policy,
+                )
+                .expect("root");
+                thicken_feature_definition(&trial_ctx, &scan, &CadIr::empty(), 17)
+            },
+        );
     }
     let (ctx, _) =
         DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");

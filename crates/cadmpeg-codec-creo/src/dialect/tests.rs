@@ -62,14 +62,15 @@ fn legacy_declared_nodes_charge_each_key_before_insertion() {
 }
 
 fn assert_legacy_retained_boundary(operation: &'static str) {
-    let found = (0..1024).any(|limit| {
-        matches!(
-            legacy_classification_with_limits(u64::MAX, limit),
-            Err(cadmpeg_core::CodecError::ResourceLimit(refusal))
-                if refusal.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
-                    && refusal.operation == operation
-        )
-    });
+    let cap = crate::test_support::allocation_limit_at(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        Some(operation),
+        |cap| legacy_classification_with_limits(u64::MAX, cap),
+    );
+    let found = matches!(legacy_classification_with_limits(u64::MAX, cap),
+        Err(cadmpeg_core::CodecError::ResourceLimit(refusal))
+        if refusal.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes && refusal.operation == operation);
+
     assert!(found, "{operation} refuses immediately below its text need");
 }
 

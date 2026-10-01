@@ -33,7 +33,7 @@ use cadmpeg_ir::features::{
 };
 use cadmpeg_ir::ids::{BodyId, CoedgeId, EdgeId, FaceId, LoopId, RegionId, ShellId, SurfaceId};
 use cadmpeg_ir::topology::{Body, BodyKind, Coedge, Face, Loop as IrLoop, Region, Sense, Shell};
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 
@@ -258,9 +258,14 @@ fn generated_input_lookup_refuses_before_scoped_text() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_materialized_bytes = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-    let error =
-        generated_input_output_bodies(&ctx, &scan, &CadIr::empty(), 40, &mut BTreeSet::new())
-            .expect_err("lookup needs scoped text");
+    let error = generated_input_output_bodies(
+        &ctx,
+        &scan,
+        &CadIr::empty(),
+        40,
+        &mut super::FeatureOutputHistory::new(&ctx).expect("history storage"),
+    )
+    .expect_err("lookup needs scoped text");
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::MaterializedBytes
@@ -339,8 +344,14 @@ fn generated_edge_body_refuses_before_merge_row() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = 2;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-    let error = generated_edge_output_bodies(&ctx, &scan, &ir, &edges, &mut BTreeSet::new())
-        .expect_err("visited producer and its body use the two admitted rows");
+    let error = generated_edge_output_bodies(
+        &ctx,
+        &scan,
+        &ir,
+        &edges,
+        &mut super::FeatureOutputHistory::new(&ctx).expect("history storage"),
+    )
+    .expect_err("visited producer and its body use the two admitted rows");
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::CollectionItems
@@ -394,8 +405,14 @@ fn generated_input_body_refuses_before_merge_row() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = 3;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-    let error = generated_input_output_bodies(&ctx, &scan, &ir, 10, &mut BTreeSet::new())
-        .expect_err("generated dependency, visited producer, and its body use three rows");
+    let error = generated_input_output_bodies(
+        &ctx,
+        &scan,
+        &ir,
+        10,
+        &mut super::FeatureOutputHistory::new(&ctx).expect("history storage"),
+    )
+    .expect_err("generated dependency, visited producer, and its body use three rows");
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::CollectionItems

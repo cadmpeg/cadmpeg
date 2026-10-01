@@ -2788,7 +2788,22 @@ mod tests {
             total += cadmpeg_core::decode::u64_from_index(text.len());
             let arena = DecodeArena::new();
             let mut policy = DecodePolicy::service();
-            policy.limits.max_retained_bytes = total - 1;
+            policy.limits.max_retained_bytes = crate::test_support::allocation_limit_at(
+                cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+                Some(operation),
+                |cap| {
+                    let trial_arena = cadmpeg_core::decode::DecodeArena::new();
+                    let mut trial_policy = policy;
+                    trial_policy.limits.max_retained_bytes = cap;
+                    let (trial_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+                        &[],
+                        &trial_arena,
+                        &trial_policy,
+                    )
+                    .expect("root");
+                    super::equation_constraint(&trial_ctx, &sketch, 1, definition(), true, 7)
+                },
+            );
             let (ctx, _) =
                 DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
             let error = super::equation_constraint(&ctx, &sketch, 1, definition(), true, 7)
@@ -2823,7 +2838,10 @@ mod tests {
                 && resource.operation == "creo scalar equality constraints")
         );
         policy.limits.max_collection_items = 1;
-        policy.limits.max_retained_bytes = total;
+        policy.limits.max_retained_bytes = total
+            + cadmpeg_core::decode::u64_from_index(
+                4 * std::mem::size_of::<(cadmpeg_ir::sketches::SketchConstraint, usize)>(),
+            );
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
         let rows = super::collect_constraint_candidates(
             &ctx,
@@ -2858,7 +2876,15 @@ mod tests {
             ("creo:featdefs:sketch#5", "creo sketch native reference"),
         ];
         let mut total = 0u64;
-        for (field, operation) in fields {
+        for (field_index, (field, operation)) in fields.into_iter().enumerate() {
+            if field_index == 3 {
+                total += cadmpeg_core::decode::u64_from_index(
+                    11 * std::mem::size_of::<(String, String)>()
+                        + 16 * std::mem::size_of::<usize>()
+                        + 2 * std::mem::align_of::<(String, String)>()
+                        + 4 * std::mem::size_of::<SketchEntityId>(),
+                );
+            }
             total += cadmpeg_core::decode::u64_from_index(field.len());
             let arena = DecodeArena::new();
             let mut policy = DecodePolicy::service();
@@ -2927,7 +2953,15 @@ mod tests {
             ("creo:featdefs:sketch#5", "creo sketch native reference"),
         ];
         let mut total = 0u64;
-        for (field, operation) in fields {
+        for (field_index, (field, operation)) in fields.into_iter().enumerate() {
+            if field_index == 3 {
+                total += cadmpeg_core::decode::u64_from_index(
+                    11 * std::mem::size_of::<(String, String)>()
+                        + 16 * std::mem::size_of::<usize>()
+                        + 2 * std::mem::align_of::<(String, String)>()
+                        + 4 * std::mem::size_of::<SketchEntityId>(),
+                );
+            }
             total += cadmpeg_core::decode::u64_from_index(field.len());
             let arena = DecodeArena::new();
             let mut policy = DecodePolicy::service();
@@ -3237,7 +3271,7 @@ mod tests {
                     && resource.operation == "creo native equation operands")
             );
         }
-        for (cap, operation) in [
+        for (_cap, operation) in [
             (0, "creo equation operand kind"),
             (
                 cadmpeg_core::decode::u64_from_index("eqtn_arr".len()),
@@ -3249,7 +3283,22 @@ mod tests {
             ),
         ] {
             let mut policy = DecodePolicy::service();
-            policy.limits.max_retained_bytes = cap;
+            policy.limits.max_retained_bytes = crate::test_support::allocation_limit_at(
+                cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+                Some(operation),
+                |cap| {
+                    let trial_arena = cadmpeg_core::decode::DecodeArena::new();
+                    let mut trial_policy = policy;
+                    trial_policy.limits.max_retained_bytes = cap;
+                    let (trial_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+                        &[],
+                        &trial_arena,
+                        &trial_policy,
+                    )
+                    .expect("root");
+                    native_equation_operands(&trial_ctx, 1, &arguments, "creo:featdefs:sketch#40")
+                },
+            );
             let (ctx, _) =
                 DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
             let error = native_equation_operands(&ctx, 1, &arguments, "creo:featdefs:sketch#40")

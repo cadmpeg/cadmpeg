@@ -74,10 +74,18 @@ fn relation_parse_limit_error_with_context<V: ExpressionValue + std::fmt::Debug>
 
 #[test]
 fn relation_integer_format_refuses_retained_text() {
-    let error = relation_parse_limit_error(
-        "itos(2)",
-        &BTreeMap::<String, CurveExpressionValue>::new(),
-        |policy| policy.limits.max_retained_bytes = 0,
+    let error = crate::test_support::last_refusal_at(
+        &[],
+        ResourceDimension::RetainedBytes,
+        "creo relation integer text",
+        |ctx| {
+            crate::curve::parse_relation_expression(
+                ctx,
+                "itos(2)",
+                &BTreeMap::<String, CurveExpressionValue>::new(),
+                RelationEvaluationContext::default(),
+            )
+        },
     );
     assert!(matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::RetainedBytes
@@ -86,10 +94,18 @@ fn relation_integer_format_refuses_retained_text() {
 
 #[test]
 fn relation_real_format_refuses_retained_text() {
-    let error = relation_parse_limit_error(
-        "rtos(1.234,2)",
-        &BTreeMap::<String, CurveExpressionValue>::new(),
-        |policy| policy.limits.max_retained_bytes = 0,
+    let error = crate::test_support::last_refusal_at(
+        &[],
+        ResourceDimension::RetainedBytes,
+        "creo relation real text",
+        |ctx| {
+            crate::curve::parse_relation_expression(
+                ctx,
+                "rtos(1.234,2)",
+                &BTreeMap::<String, CurveExpressionValue>::new(),
+                RelationEvaluationContext::default(),
+            )
+        },
     );
     assert!(matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::RetainedBytes
@@ -98,10 +114,18 @@ fn relation_real_format_refuses_retained_text() {
 
 #[test]
 fn relation_scientific_format_refuses_scratch_text() {
-    let error = relation_parse_limit_error(
-        "rtos(0.01234,2,TRUE)",
-        &BTreeMap::<String, CurveExpressionValue>::new(),
-        |policy| policy.limits.max_materialized_bytes = 0,
+    let error = crate::test_support::last_refusal_at(
+        &[],
+        ResourceDimension::MaterializedBytes,
+        "creo relation scientific scratch",
+        |ctx| {
+            crate::curve::parse_relation_expression::<CurveExpressionValue>(
+                ctx,
+                "rtos(0.01234,2,TRUE)",
+                &BTreeMap::<String, CurveExpressionValue>::new(),
+                RelationEvaluationContext::default(),
+            )
+        },
     );
     assert!(matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::MaterializedBytes
@@ -110,10 +134,18 @@ fn relation_scientific_format_refuses_scratch_text() {
 
 #[test]
 fn relation_scientific_format_refuses_retained_text() {
-    let error = relation_parse_limit_error(
-        "rtos(0.01234,2,TRUE)",
-        &BTreeMap::<String, CurveExpressionValue>::new(),
-        |policy| policy.limits.max_retained_bytes = 0,
+    let error = crate::test_support::last_refusal_at(
+        &[],
+        ResourceDimension::RetainedBytes,
+        "creo relation real text",
+        |ctx| {
+            crate::curve::parse_relation_expression(
+                ctx,
+                "rtos(0.01234,2,TRUE)",
+                &BTreeMap::<String, CurveExpressionValue>::new(),
+                RelationEvaluationContext::default(),
+            )
+        },
     );
     assert!(matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::RetainedBytes
@@ -151,6 +183,7 @@ fn relation_model_type_refuses_retained_copy() {
 #[test]
 fn relation_extract_refuses_scanning_work() {
     let error = crate::test_support::last_refusal_at(
+        &[],
         ResourceDimension::WorkUnits,
         "creo relation extract scan",
         |ctx| {
@@ -169,10 +202,18 @@ fn relation_extract_refuses_scanning_work() {
 
 #[test]
 fn relation_extract_refuses_retained_substring() {
-    let error = relation_parse_limit_error(
-        "extract('abc',2,1)",
-        &BTreeMap::<String, CurveExpressionValue>::new(),
-        |policy| policy.limits.max_retained_bytes = 3,
+    let error = crate::test_support::last_refusal_at(
+        &[],
+        ResourceDimension::RetainedBytes,
+        "creo relation extracted text",
+        |ctx| {
+            crate::curve::parse_relation_expression(
+                ctx,
+                "extract('abc',2,1)",
+                &BTreeMap::<String, CurveExpressionValue>::new(),
+                RelationEvaluationContext::default(),
+            )
+        },
     );
     assert!(matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::RetainedBytes
@@ -193,10 +234,18 @@ fn relation_extract_preserves_utf8_character_boundaries() {
 
 #[test]
 fn relation_conditional_string_refuses_retained_clone() {
-    let error = relation_parse_limit_error(
-        "if(1,'abc','def')",
-        &BTreeMap::<String, CurveExpressionValue>::new(),
-        |policy| policy.limits.max_retained_bytes = 6,
+    let error = crate::test_support::last_refusal_at(
+        &[],
+        ResourceDimension::RetainedBytes,
+        "creo relation conditional string",
+        |ctx| {
+            crate::curve::parse_relation_expression(
+                ctx,
+                "if(1,'abc','def')",
+                &BTreeMap::<String, CurveExpressionValue>::new(),
+                RelationEvaluationContext::default(),
+            )
+        },
     );
     assert!(matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::RetainedBytes
@@ -206,14 +255,21 @@ fn relation_conditional_string_refuses_retained_clone() {
 #[test]
 fn relation_exists_refuses_scoped_lookup_key() {
     let symbols = std::collections::BTreeSet::from(["driver".to_owned()]);
-    let error = relation_parse_limit_error_with_context(
-        "exists('driver')",
-        &BTreeMap::<String, CurveExpressionValue>::new(),
-        RelationEvaluationContext {
-            existing_symbols: Some(&symbols),
-            ..RelationEvaluationContext::default()
+    let error = crate::test_support::last_refusal_at(
+        &[],
+        ResourceDimension::MaterializedBytes,
+        "creo relation exists lookup key",
+        |ctx| {
+            crate::curve::parse_relation_expression::<CurveExpressionValue>(
+                ctx,
+                "exists('driver')",
+                &BTreeMap::<String, CurveExpressionValue>::new(),
+                RelationEvaluationContext {
+                    existing_symbols: Some(&symbols),
+                    ..RelationEvaluationContext::default()
+                },
+            )
         },
-        |policy| policy.limits.max_materialized_bytes = 0,
     );
     assert!(matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::MaterializedBytes
@@ -303,6 +359,7 @@ fn relation_affine_difference_refuses_new_coefficient_node() {
 #[test]
 fn relation_affine_comparison_refuses_coefficient_work() {
     let error = crate::test_support::last_refusal_at(
+        &[],
         ResourceDimension::WorkUnits,
         "creo affine coefficient comparison work",
         |ctx| {
@@ -451,9 +508,19 @@ fn relation_lookup_refuses_scoped_key_copy() {
             cadmpeg_ir::scalar::FiniteReal::new(2.0).expect("finite relation fixture"),
         ),
     )]);
-    let error = relation_parse_limit_error("DRIVER", &values, |policy| {
-        policy.limits.max_materialized_bytes = 5;
-    });
+    let error = crate::test_support::last_refusal_at(
+        &[],
+        ResourceDimension::MaterializedBytes,
+        "creo relation lookup key",
+        |ctx| {
+            crate::curve::parse_relation_expression::<CurveExpressionValue>(
+                ctx,
+                "DRIVER",
+                &values,
+                RelationEvaluationContext::default(),
+            )
+        },
+    );
     assert!(matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::MaterializedBytes
             && resource.operation == "creo relation lookup key"));
@@ -504,6 +571,7 @@ fn relation_group_refuses_recursive_step() {
 #[test]
 fn relation_function_refuses_work() {
     let error = crate::test_support::last_refusal_at(
+        &[],
         ResourceDimension::WorkUnits,
         "creo relation function work",
         |ctx| {
@@ -537,6 +605,7 @@ fn relation_exponent_refuses_recursive_step() {
 #[test]
 fn relation_exponent_refuses_work() {
     let error = crate::test_support::last_refusal_at(
+        &[],
         ResourceDimension::WorkUnits,
         "creo relation exponent work",
         |ctx| {
@@ -556,6 +625,7 @@ fn relation_exponent_refuses_work() {
 #[test]
 fn relation_group_refuses_work() {
     let error = crate::test_support::last_refusal_at(
+        &[],
         ResourceDimension::WorkUnits,
         "creo relation group work",
         |ctx| {
@@ -626,7 +696,15 @@ fn relation_dimension_symbol_refuses_temporary_name_bytes() {
 
 #[test]
 fn relation_dimension_symbol_refuses_retained_name_bytes() {
-    let error = relation_symbol_error(1, 0, 3);
+    let error = relation_symbol_error(
+        1,
+        crate::test_support::allocation_limit_at(
+            cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+            Some("creo external relation symbol names"),
+            |cap| Err::<(), _>(relation_symbol_error(1, cap, 3)),
+        ),
+        3,
+    );
     assert!(matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::RetainedBytes
             && resource.operation == "creo external relation symbol names"));
@@ -634,7 +712,13 @@ fn relation_dimension_symbol_refuses_retained_name_bytes() {
 
 #[test]
 fn relation_dimension_symbol_refuses_map_node() {
-    let error = relation_symbol_error(0, 3, 3);
+    let error = relation_symbol_error(
+        0,
+        cadmpeg_core::decode::DecodePolicy::service()
+            .limits
+            .max_retained_bytes,
+        3,
+    );
     assert!(matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::CollectionItems
             && resource.operation == "creo external relation symbol nodes"));
@@ -1724,7 +1808,13 @@ fn prohibited_construct_error(
 
 #[test]
 fn prohibited_relation_keyword_refuses_node() {
-    let error = prohibited_construct_error("IF a", 0, 32);
+    let error = prohibited_construct_error(
+        "IF a",
+        0,
+        cadmpeg_core::decode::DecodePolicy::service()
+            .limits
+            .max_retained_bytes,
+    );
     assert!(matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::CollectionItems
             && resource.operation == "creo prohibited construct nodes"));
@@ -1732,7 +1822,13 @@ fn prohibited_relation_keyword_refuses_node() {
 
 #[test]
 fn prohibited_function_refuses_node() {
-    let error = prohibited_construct_error("r=AbS(1)", 0, 32);
+    let error = prohibited_construct_error(
+        "r=AbS(1)",
+        0,
+        cadmpeg_core::decode::DecodePolicy::service()
+            .limits
+            .max_retained_bytes,
+    );
     assert!(matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::CollectionItems
             && resource.operation == "creo prohibited construct nodes"));
@@ -1748,7 +1844,13 @@ fn prohibited_function_refuses_retained_name() {
 
 #[test]
 fn prohibited_relation_keyword_refuses_output_vector() {
-    let error = prohibited_construct_error("IF a", 1, 32);
+    let error = prohibited_construct_error(
+        "IF a",
+        1,
+        cadmpeg_core::decode::DecodePolicy::service()
+            .limits
+            .max_retained_bytes,
+    );
     assert!(matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::CollectionItems
             && resource.operation == "creo prohibited construct records"));

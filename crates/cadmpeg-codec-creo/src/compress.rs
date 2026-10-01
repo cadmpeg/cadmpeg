@@ -65,7 +65,9 @@ pub(crate) fn decode(
     }
     output.write(&[final_byte])?;
     let mut written = 1;
-    let mut stack = ctx.collection_vec(dictionary_limit, "creo LZW stack slots")?;
+    let mut stack_storage = ctx.reserve_scoped(0, "Creo LZW stack storage")?;
+    let mut stack = stack_storage
+        .with_storage(|| ctx.collection_vec(dictionary_limit, "creo LZW stack slots"))?;
 
     if written == expected_length {
         return finish_expansion(output, reservation).map(Some);

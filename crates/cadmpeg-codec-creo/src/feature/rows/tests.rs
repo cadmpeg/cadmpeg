@@ -154,7 +154,15 @@ fn feature_row_output_refuses_before_vec_growth() {
 
 #[test]
 fn feature_row_body_refuses_before_retained_copy() {
-    let error = limited_rows(6, 7).expect_err("eight-byte body needs retention");
+    let error = limited_rows(
+        6,
+        crate::test_support::allocation_limit_at(
+            cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+            Some("creo feature row bodies"),
+            |cap| limited_rows(6, cap),
+        ),
+    )
+    .expect_err("eight-byte body needs retention");
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::RetainedBytes
             && limit.operation == "creo feature row bodies"));

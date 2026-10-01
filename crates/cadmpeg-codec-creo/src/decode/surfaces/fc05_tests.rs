@@ -118,8 +118,15 @@ fn fc05_cap_transfer_preserves_curve_and_surface_geometry() {
 
 #[test]
 fn fc05_cap_curve_identity_refuses_retained_limit() {
-    let error =
-        transfer_with_retained_limit(0, false).expect_err("curve identity exceeds retained limit");
+    let error = transfer_with_retained_limit(
+        crate::test_support::allocation_limit_at(
+            cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+            Some("creo FC05 cap circle identity"),
+            |cap| transfer_with_retained_limit(cap, false),
+        ),
+        false,
+    )
+    .expect_err("curve identity exceeds retained limit");
     assert!(matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::RetainedBytes
             && resource.operation == "creo FC05 cap circle identity"));
@@ -139,9 +146,12 @@ fn fc05_cap_curve_source_object_refuses_retained_limit() {
 
 #[test]
 fn fc05_axis_cylinder_identity_refuses_retained_limit() {
-    let curve_id = CurveId::compose(&crate::identity::VISIBGEOM_CURVE, 7);
     let error = transfer_with_retained_limit(
-        cadmpeg_core::decode::u64_from_index(curve_id.as_str().len()),
+        crate::test_support::allocation_limit_at(
+            cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+            Some("creo FC05 axis cylinder identity"),
+            |cap| transfer_with_retained_limit(cap, true),
+        ),
         true,
     )
     .expect_err("axis cylinder identity exceeds retained limit");

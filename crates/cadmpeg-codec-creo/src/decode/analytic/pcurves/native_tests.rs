@@ -934,7 +934,28 @@ fn planar_nurbs_projection_refuses_nonfinite_reason_copy() {
     ));
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_retained_bytes = 0;
+    policy.limits.max_retained_bytes = crate::test_support::allocation_limit_at(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        Some("creo planar projected NURBS refusal text"),
+        |cap| {
+            let trial_arena = cadmpeg_core::decode::DecodeArena::new();
+            let mut trial_policy = policy;
+            trial_policy.limits.max_retained_bytes = cap;
+            let (trial_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+                &[],
+                &trial_arena,
+                &trial_policy,
+            )
+            .expect("root");
+            planar_curve_pcurve(
+                &trial_ctx,
+                &diagonal_plane,
+                &nurbs,
+                &"nonfinite projection",
+                &mut crate::lane_refusal::LaneRefusals::new(),
+            )
+        },
+    );
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
         .expect("empty root");
     let error = planar_curve_pcurve(

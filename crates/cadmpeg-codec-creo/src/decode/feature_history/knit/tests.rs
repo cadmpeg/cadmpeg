@@ -137,7 +137,22 @@ fn knit_native_selection_refuses_retained_limit() {
     let scan = one_knit_scan();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = 0;
+    policy.limits.max_retained_bytes = crate::test_support::allocation_limit_at(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        Some("creo knit native selection"),
+        |cap| {
+            let trial_arena = cadmpeg_core::decode::DecodeArena::new();
+            let mut trial_policy = policy;
+            trial_policy.limits.max_retained_bytes = cap;
+            let (trial_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+                &[],
+                &trial_arena,
+                &trial_policy,
+            )
+            .expect("root");
+            knit_surface_feature_definition(&trial_ctx, &scan, 416)
+        },
+    );
     let (ctx, _) =
         DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
     let error = knit_surface_feature_definition(&ctx, &scan, 416)
@@ -153,13 +168,25 @@ fn knit_native_selection_refuses_retained_limit() {
 fn knit_generated_native_copy_refuses_retained_limit() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
     let scan = one_knit_scan();
-    let native = "creo:allfeatur:surface_merge_quilts#416:103";
-    let producer = "creo:model:feature#97";
-    let local = "surface#98";
+
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes =
-        cadmpeg_core::decode::u64_from_index(native.len() + producer.len() * 2 + local.len());
+    policy.limits.max_retained_bytes = crate::test_support::allocation_limit_at(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        Some("creo knit generated native selection"),
+        |cap| {
+            let trial_arena = cadmpeg_core::decode::DecodeArena::new();
+            let mut trial_policy = policy;
+            trial_policy.limits.max_retained_bytes = cap;
+            let (trial_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+                &[],
+                &trial_arena,
+                &trial_policy,
+            )
+            .expect("root");
+            knit_surface_feature_definition(&trial_ctx, &scan, 416)
+        },
+    );
     let (ctx, _) =
         DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
     let error = knit_surface_feature_definition(&ctx, &scan, 416)
@@ -213,13 +240,40 @@ fn generated_face_reference_error(
     if let Some(limit) = collection {
         policy.limits.max_collection_items = limit;
     }
-    if let Some(limit) = retained {
-        policy.limits.max_retained_bytes = limit;
+    if retained.is_some() {
+        policy.limits.max_retained_bytes = crate::test_support::allocation_limit_at(
+            cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+            Some(operation),
+            |cap| {
+                let trial_arena = cadmpeg_core::decode::DecodeArena::new();
+                let mut trial_policy = policy;
+                trial_policy.limits.max_retained_bytes = cap;
+                let (trial_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+                    &[],
+                    &trial_arena,
+                    &trial_policy,
+                )
+                .expect("root");
+                generated_surface_face_refs(
+                    &trial_ctx,
+                    &[201],
+                    std::slice::from_ref(&row),
+                    &results,
+                    &available,
+                )
+            },
+        );
     }
     let (ctx, _) =
         DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
-    let error = generated_surface_face_refs(&ctx, &[201], &[row], &results, &available)
-        .expect_err("one generated face exceeds the resource limit");
+    let error = generated_surface_face_refs(
+        &ctx,
+        &[201],
+        std::slice::from_ref(&row),
+        &results,
+        &available,
+    )
+    .expect_err("one generated face exceeds the resource limit");
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
         if resource.operation == operation),
@@ -304,8 +358,23 @@ fn topology_limit_error(
     if let Some(limit) = collection {
         policy.limits.max_collection_items = limit;
     }
-    if let Some(limit) = retained {
-        policy.limits.max_retained_bytes = limit;
+    if retained.is_some() {
+        policy.limits.max_retained_bytes = crate::test_support::allocation_limit_at(
+            cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+            Some(operation),
+            |cap| {
+                let trial_arena = cadmpeg_core::decode::DecodeArena::new();
+                let mut trial_policy = policy;
+                trial_policy.limits.max_retained_bytes = cap;
+                let (trial_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+                    &[],
+                    &trial_arena,
+                    &trial_policy,
+                )
+                .expect("root");
+                super::feature_result_topology(&trial_ctx, &tables, &rows, &curve_rows, 17)
+            },
+        );
     }
     let (ctx, _) =
         DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");

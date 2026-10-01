@@ -733,11 +733,26 @@ fn model_geometry_section_vec_refuses_before_growth() {
     use cadmpeg_core::CodecError;
 
     assert_eq!(
-        model_geometry_section_with_limits(1, 32).expect("one section admitted"),
+        model_geometry_section_with_limits(
+            1,
+            crate::test_support::allocation_limit_at(
+                cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+                None,
+                |cap| model_geometry_section_with_limits(u64::MAX, cap)
+            )
+        )
+        .expect("one section admitted"),
         1
     );
-    let error = model_geometry_section_with_limits(0, 32)
-        .expect_err("one selected section requires a vector item");
+    let error = model_geometry_section_with_limits(
+        0,
+        crate::test_support::allocation_limit_at(
+            cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+            None,
+            |cap| model_geometry_section_with_limits(u64::MAX, cap),
+        ),
+    )
+    .expect_err("one selected section requires a vector item");
     assert!(matches!(
         error,
         CodecError::ResourceLimit(limit)
@@ -751,8 +766,15 @@ fn copied_section_name_refuses_before_retained_text_growth() {
     use cadmpeg_core::decode::ResourceDimension;
     use cadmpeg_core::CodecError;
 
-    let error =
-        model_geometry_section_with_limits(1, 0).expect_err("section name needs retained bytes");
+    let error = model_geometry_section_with_limits(
+        1,
+        crate::test_support::allocation_limit_at(
+            cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+            Some("creo copied section names"),
+            |cap| model_geometry_section_with_limits(1, cap),
+        ),
+    )
+    .expect_err("section name needs retained bytes");
     assert!(matches!(
         error,
         CodecError::ResourceLimit(limit)

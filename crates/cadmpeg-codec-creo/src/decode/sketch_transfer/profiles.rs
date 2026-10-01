@@ -835,8 +835,22 @@ mod tests {
             );
         }
         let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes =
-            cadmpeg_core::decode::u64_from_index("creo:featdefs:sketch_entity#917:42".len()) - 1;
+        policy.limits.max_retained_bytes = crate::test_support::allocation_limit_at(
+            cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+            Some("creo sketch entity identity"),
+            |cap| {
+                let trial_arena = cadmpeg_core::decode::DecodeArena::new();
+                let mut trial_policy = policy;
+                trial_policy.limits.max_retained_bytes = cap;
+                let (trial_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+                    &[],
+                    &trial_arena,
+                    &trial_policy,
+                )
+                .expect("root");
+                resolved_profile_chains(&trial_ctx, &definition, &sketch, &emitted)
+            },
+        );
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
         let error = resolved_profile_chains(&ctx, &definition, &sketch, &emitted)
             .expect_err("profile entity ID exceeds retained cap");

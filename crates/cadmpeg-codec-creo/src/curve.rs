@@ -1685,7 +1685,10 @@ fn expression_assignment_target(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     source: &str,
 ) -> Result<Option<CurveExpressionTarget>, cadmpeg_core::CodecError> {
-    if let Some((name, arguments)) = expression_target_function_call(ctx, source)? {
+    let mut target_storage = ctx.reserve_scoped(0, "Creo parsed target arguments")?;
+    if let Some((name, arguments)) =
+        target_storage.with_storage(|| expression_target_function_call(ctx, source))?
+    {
         if name.eq_ignore_ascii_case("value") {
             let [parameter, row, rest @ ..] = arguments.as_slice() else {
                 return Ok(None);
@@ -6016,15 +6019,18 @@ impl<V: ExpressionValue> ExpressionParser<'_, V> {
         self.cursor += 1;
         self.nesting += 1;
         self.whitespace();
+        let mut argument_storage =
+            self.admit(self.ctx.reserve_scoped(0, "Creo relation argument storage"))?;
         let mut arguments = Vec::new();
         if self.source.get(self.cursor) != Some(&b')') {
             loop {
-                let argument = self.logical_or()?;
-                self.admit(self.ctx.reserve_vec(
-                    &mut arguments,
-                    1,
-                    "creo relation function arguments",
-                ))?;
+                let parsed = argument_storage
+                    .with_storage(|| Ok::<_, cadmpeg_core::CodecError>(self.logical_or()));
+                let argument = self.admit(parsed)??;
+                self.admit(argument_storage.with_storage(|| {
+                    self.ctx
+                        .reserve_vec(&mut arguments, 1, "creo relation function arguments")
+                }))?;
                 arguments.push(argument);
                 self.whitespace();
                 if self.source.get(self.cursor) != Some(&b',') {

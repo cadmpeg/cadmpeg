@@ -146,13 +146,12 @@ fn legacy_conflicting_id_set_refuses_before_new_node() {
 #[test]
 fn legacy_declaration_name_refuses_before_retained_copy() {
     let data = b"@size 1 1\n0 1 9\n";
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = 3;
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
-    let error = super::scan(&ctx, data, std::iter::once(0..data.len()))
-        .expect_err("four name bytes exceed the retained limit");
+    let error = crate::test_support::last_refusal_at(
+        &[],
+        ResourceDimension::RetainedBytes,
+        "creo legacy declaration names",
+        |ctx| super::scan(ctx, data, std::iter::once(0..data.len())),
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::RetainedBytes
@@ -298,7 +297,22 @@ fn assert_object_retained_refusal(data: &[u8], operation: &'static str) {
     let (persistence, parents) = object_fixture_parts(data);
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = 0;
+    policy.limits.max_retained_bytes = crate::test_support::allocation_limit_at(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        Some(operation),
+        |cap| {
+            let trial_arena = cadmpeg_core::decode::DecodeArena::new();
+            let mut trial_policy = policy;
+            trial_policy.limits.max_retained_bytes = cap;
+            let (trial_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+                &[],
+                &trial_arena,
+                &trial_policy,
+            )
+            .expect("root");
+            super::object_records(&trial_ctx, data, &persistence.scopes, &parents)
+        },
+    );
     let (ctx, _) =
         DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
     let error = super::object_records(&ctx, data, &persistence.scopes, &parents)
@@ -416,7 +430,22 @@ fn legacy_model_name_refuses_before_retained_copy() {
         .expect("the fixture states every scope inside its own bytes");
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = 3;
+    policy.limits.max_retained_bytes = crate::test_support::allocation_limit_at(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        Some("creo legacy model name"),
+        |cap| {
+            let trial_arena = cadmpeg_core::decode::DecodeArena::new();
+            let mut trial_policy = policy;
+            trial_policy.limits.max_retained_bytes = cap;
+            let (trial_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+                &[],
+                &trial_arena,
+                &trial_policy,
+            )
+            .expect("root");
+            persistence.model_name(&trial_ctx)
+        },
+    );
     let (ctx, _) =
         DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
     let error = persistence

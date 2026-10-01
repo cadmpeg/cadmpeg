@@ -190,7 +190,11 @@ fn circular_sweep_retained_refusal(limit: u64) -> cadmpeg_core::CodecError {
 
 #[test]
 fn hole_cylinder_identity_refuses_retained_limit() {
-    let error = hole_retained_refusal(0);
+    let error = hole_retained_refusal(crate::test_support::allocation_limit_at(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        Some("creo hole cylinder identity"),
+        |cap| Err::<(), _>(hole_retained_refusal(cap)),
+    ));
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
         if resource.operation == "creo hole cylinder identity"),
@@ -214,7 +218,11 @@ fn hole_cylinder_source_id_refuses_retained_limit() {
 
 #[test]
 fn circular_sweep_cylinder_identity_refuses_retained_limit() {
-    let error = circular_sweep_retained_refusal(0);
+    let error = circular_sweep_retained_refusal(crate::test_support::allocation_limit_at(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        Some("creo circular sweep cylinder identity"),
+        |cap| Err::<(), _>(circular_sweep_retained_refusal(cap)),
+    ));
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
         if resource.operation == "creo circular sweep cylinder identity"),
@@ -296,7 +304,28 @@ fn constrained_slot_cylinder_identity_refuses_retained_limit() {
     let scan = super::slot_fillet_scan();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = 0;
+    policy.limits.max_retained_bytes = crate::test_support::allocation_limit_at(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        Some("creo constrained slot cylinder identity"),
+        |cap| {
+            let trial_arena = cadmpeg_core::decode::DecodeArena::new();
+            let mut trial_policy = policy;
+            trial_policy.limits.max_retained_bytes = cap;
+            let (trial_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+                &[],
+                &trial_arena,
+                &trial_policy,
+            )
+            .expect("root");
+            super::super::transfer_constrained_slot_fillet_cylinders(
+                &trial_ctx,
+                &scan,
+                &mut cadmpeg_ir::document::CadIr::empty(),
+                &mut cadmpeg_ir::annotations::AnnotationBuilder::new(),
+                &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
+            )
+        },
+    );
     let (ctx, _) =
         DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
     let error = super::super::transfer_constrained_slot_fillet_cylinders(

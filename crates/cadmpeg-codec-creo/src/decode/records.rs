@@ -1033,8 +1033,18 @@ mod feature_entity_table_record_tests {
         let scan = scan_with_table();
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes =
-            cadmpeg_core::decode::u64_from_index("creo:allfeatur:entity_table#12".len()) - 1;
+        policy.limits.max_retained_bytes = crate::test_support::allocation_limit_at(
+            ResourceDimension::RetainedBytes,
+            Some("creo feature entity table record id"),
+            |cap| {
+                let trial_arena = DecodeArena::new();
+                let mut trial_policy = policy;
+                trial_policy.limits.max_retained_bytes = cap;
+                let (trial_ctx, _) =
+                    DecodeContext::from_root_bytes(&[], &trial_arena, &trial_policy).expect("root");
+                feature_entity_table_records(&trial_ctx, &scan)
+            },
+        );
         let (ctx, _) =
             DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty source is admitted");
         let Err(error) = feature_entity_table_records(&ctx, &scan) else {
@@ -3981,14 +3991,17 @@ pub(super) fn feature_operation_state_records<'a>(
     ctx: &DecodeContext<'_>,
     scan: &'a ContainerScan<'_>,
 ) -> Result<Vec<CreoFeatureOperationState<'a>>, CodecError> {
+    let mut state_storage = ctx.reserve_scoped(0, "Creo operation state lookup storage")?;
     let mut current_offsets = BTreeMap::new();
     for state in &scan.features.operations {
-        ctx.insert_btree_map(
-            &mut current_offsets,
-            state.feature_id,
-            state.offset,
-            "creo native feature current-offset nodes",
-        )?;
+        state_storage.with_storage(|| {
+            ctx.insert_btree_map(
+                &mut current_offsets,
+                state.feature_id,
+                state.offset,
+                "creo native feature current-offset nodes",
+            )
+        })?;
     }
     let mut ordinals = BTreeMap::<u32, usize>::new();
     let mut records = Vec::new();
@@ -3997,12 +4010,14 @@ pub(super) fn feature_operation_state_records<'a>(
         let next_ordinal = state_ordinal.checked_add(1).ok_or_else(|| {
             ctx.refuse_codec_limit("creo native feature state ordinal", u64::MAX, u64::MAX)
         })?;
-        ctx.insert_btree_map(
-            &mut ordinals,
-            state.feature_id,
-            next_ordinal,
-            "creo native feature ordinal nodes",
-        )?;
+        state_storage.with_storage(|| {
+            ctx.insert_btree_map(
+                &mut ordinals,
+                state.feature_id,
+                next_ordinal,
+                "creo native feature ordinal nodes",
+            )
+        })?;
         let name = CreoOperationNameRecord {
             display_name_stored: state.name.display_name_stored(),
             stored_name: state
@@ -5182,8 +5197,18 @@ mod sketch_projection_limit_tests {
 
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes =
-            cadmpeg_core::decode::u64_from_index("creo:featdefs:sketch#7".len() + "unknown".len());
+        policy.limits.max_retained_bytes = crate::test_support::allocation_limit_at(
+            ResourceDimension::RetainedBytes,
+            Some("creo native sketch variable value body"),
+            |cap| {
+                let trial_arena = DecodeArena::new();
+                let mut trial_policy = policy;
+                trial_policy.limits.max_retained_bytes = cap;
+                let (trial_ctx, _) =
+                    DecodeContext::from_root_bytes(&[], &trial_arena, &trial_policy).expect("root");
+                sketch_records(&trial_ctx, &scan)
+            },
+        );
         let (ctx, _) =
             DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
         let Err(error) = sketch_records(&ctx, &scan) else {
@@ -5843,8 +5868,15 @@ mod tests {
 
     #[test]
     fn native_feature_state_name_refuses_replacement_limit() {
-        let error = operation_state_records_with_limits(3, 3)
-            .expect_err("one invalid name needs four replacement bytes");
+        let error = operation_state_records_with_limits(
+            crate::test_support::allocation_limit_at(
+                cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+                Some("creo native feature state name"),
+                |cap| operation_state_records_with_limits(cap, 3),
+            ),
+            3,
+        )
+        .expect_err("one invalid name needs four replacement bytes");
         assert!(
             matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
             if resource.dimension == ResourceDimension::RetainedBytes
@@ -5854,8 +5886,15 @@ mod tests {
 
     #[test]
     fn native_feature_state_prefix_refuses_retained_limit() {
-        let error = operation_state_records_with_limits(4, 3)
-            .expect_err("the source prefix needs another retained byte");
+        let error = operation_state_records_with_limits(
+            crate::test_support::allocation_limit_at(
+                cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+                Some("creo native feature state prefix"),
+                |cap| operation_state_records_with_limits(cap, 3),
+            ),
+            3,
+        )
+        .expect_err("the source prefix needs another retained byte");
         assert!(
             matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
             if resource.dimension == ResourceDimension::RetainedBytes
@@ -5865,10 +5904,15 @@ mod tests {
 
     #[test]
     fn native_feature_state_id_refuses_retained_limit() {
-        let id_len =
-            cadmpeg_core::decode::u64_from_index("creo:mdlstatus:feature_state#40:0".len());
-        let error = operation_state_records_with_limits(5 + id_len - 1, 3)
-            .expect_err("the state ID needs its full retained length");
+        let error = operation_state_records_with_limits(
+            crate::test_support::allocation_limit_at(
+                cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+                Some("creo native feature state IDs"),
+                |cap| operation_state_records_with_limits(cap, 3),
+            ),
+            3,
+        )
+        .expect_err("the state ID needs its full retained length");
         assert!(
             matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
             if resource.dimension == ResourceDimension::RetainedBytes

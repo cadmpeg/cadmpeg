@@ -6268,6 +6268,7 @@ fn saved_positional_generated_entities(
     let (Some(order_table), Some(segments)) = (order_table, segments) else {
         return Ok(Vec::new());
     };
+    let mut generated_storage = ctx.reserve_scoped(0, "Creo saved generated lookup storage")?;
     let mut generated_segments = BTreeMap::new();
     for row in &order_table.rows {
         if order_table.internal_id(row.external_id) != Some(row.internal_id)
@@ -6278,12 +6279,14 @@ fn saved_positional_generated_entities(
         let Some(segment) = segments.unique_segment(row.external_id) else {
             continue;
         };
-        ctx.insert_btree_map(
-            &mut generated_segments,
-            row.internal_id,
-            segment,
-            "creo saved generated segment nodes",
-        )?;
+        generated_storage.with_storage(|| {
+            ctx.insert_btree_map(
+                &mut generated_segments,
+                row.internal_id,
+                segment,
+                "creo saved generated segment nodes",
+            )
+        })?;
     }
     let mut starts = Vec::new();
     for separator in start..end {
@@ -6307,11 +6310,18 @@ fn saved_positional_generated_entities(
             continue;
         }
         if payload[after_id..header_end].contains(&0xe2) {
-            ctx.reserve_vec(&mut starts, 1, "creo saved generated row starts")?;
+            generated_storage.with_storage(|| {
+                ctx.reserve_vec(&mut starts, 1, "creo saved generated row starts")
+            })?;
             starts.push(row_start);
         }
     }
-    ctx.sort_unstable_by(&mut starts, Ord::cmp, |_| 0, "creo saved generated row starts sort")?;
+    ctx.sort_unstable_by(
+        &mut starts,
+        Ord::cmp,
+        |_| 0,
+        "creo saved generated row starts sort",
+    )?;
     starts.dedup();
 
     let mut entities = Vec::new();

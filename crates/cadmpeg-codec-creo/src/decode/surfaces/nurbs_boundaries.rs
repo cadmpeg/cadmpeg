@@ -1361,6 +1361,7 @@ mod tests {
         let run = |limit| shared_generator_with_limits(u64::MAX, limit);
         let (first, second) = shared_generator_surfaces();
         let error = crate::test_support::last_refusal_at(
+            &[],
             ResourceDimension::WorkUnits,
             "creo generator separation angle evaluations",
             |ctx| {
@@ -1388,6 +1389,7 @@ mod tests {
         let run = |limit| shared_generator_with_limits(u64::MAX, limit);
         let (first, second) = shared_generator_surfaces();
         let error = crate::test_support::last_refusal_at(
+            &[],
             ResourceDimension::WorkUnits,
             "creo generator separation distance tests",
             |ctx| {
