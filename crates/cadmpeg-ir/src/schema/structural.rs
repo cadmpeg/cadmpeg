@@ -4,7 +4,7 @@
 use std::cell::RefCell;
 use std::collections::BTreeMap;
 use std::mem::size_of;
-use cadmpeg_core::decode::{u64_from_index, DecodeContext, DepthGuard, ScopedReservation};
+use cadmpeg_core::decode::{u64_from_index, DecodeContext, DepthGuard, ResourceLimit, ScopedReservation};
 use cadmpeg_core::CodecError;
 use serde::ser::{SerializeMap, SerializeSeq, SerializeStruct, SerializeStructVariant, SerializeTuple, SerializeTupleStruct, SerializeTupleVariant};
 use serde::{Serialize, Serializer};
@@ -28,7 +28,11 @@ impl std::ops::DerefMut for Projection<'_> {
 /// Project each node directly, preserving the source floating-point values.
 pub fn project<'ctx>(ctx: &'ctx DecodeContext<'_>, value: &(impl Serialize + ?Sized), operation: &'static str) -> Result<Projection<'ctx>, CodecError> {
     let storage = RefCell::new(ctx.reserve_scoped(0, operation)?);
-    let result = value.serialize(Projector { ctx, storage: &storage, operation });
+    let refusal = RefCell::new(None);
+    let result = value.serialize(Projector { ctx, storage: &storage, refusal: &refusal, operation });
+    if let Some(limit) = refusal.into_inner() {
+        return Err(CodecError::ResourceLimit(limit));
+    }
     ctx.charge_work(0, operation)?;
     let value = result.map_err(|error| error.into_codec(ctx, operation))?;
     Ok(Projection { value, _storage: storage.into_inner() })
@@ -63,8 +67,16 @@ struct Projector<'s, 'ctx, 'arena> {
     ctx: &'ctx DecodeContext<'arena>,
     storage: &'s RefCell<ScopedReservation<'ctx>>,
     operation: &'static str,
+    refusal: &'s RefCell<Option<ResourceLimit>>,
 }
 impl<'s, 'ctx, 'arena> Projector<'s, 'ctx, 'arena> {
+    fn admit<T>(self, result: Result<T, CodecError>) -> Result<T, Error> {
+        if let Err(CodecError::ResourceLimit(limit)) = &result {
+            let mut refusal = self.refusal.borrow_mut();
+            if refusal.is_none() { *refusal = Some(*limit); }
+        }
+        result.map_err(Error::Resource)
+    }
     fn node(self) -> Result<DepthGuard<'ctx>, Error> {
         self.ctx.charge_work(1, self.operation)?;
         Ok(self.ctx.enter_nested(self.operation)?)
@@ -72,7 +84,7 @@ impl<'s, 'ctx, 'arena> Projector<'s, 'ctx, 'arena> {
     fn text(self, text: &str) -> Result<Value, Error> {
         let _depth = self.node()?;
         self.ctx.charge_work(u64_from_index(text.len()), self.operation)?;
-        Ok(Value::String(self.ctx.copy_scoped_text(text, &mut self.storage.borrow_mut(), self.operation)?))
+        Ok(Value::String(self.admit(self.ctx.copy_scoped_text(text, &mut self.storage.borrow_mut(), self.operation))?))
     }
     fn boxed(self, value: Value) -> Result<Box<Value>, Error> {
         self.ctx.charge_collection_items(1, self.operation)?;
@@ -81,13 +93,15 @@ impl<'s, 'ctx, 'arena> Projector<'s, 'ctx, 'arena> {
     }
     fn sequence(self, variant: Option<&'static str>) -> Result<Sequence<'s, 'ctx, 'arena>, Error> {
         let depth = self.node()?;
+        let variant_depth = variant.map(|_| self.node()).transpose()?;
         let variant = variant.map(|name| self.text(name)).transpose()?;
-        Ok(Sequence { values: Vec::new(), variant, projector: self, _depth: depth })
+        Ok(Sequence { values: Vec::new(), variant, projector: self, _depth: depth, _variant_depth: variant_depth })
     }
     fn map(self, variant: Option<&'static str>) -> Result<Object<'s, 'ctx, 'arena>, Error> {
         let depth = self.node()?;
+        let variant_depth = variant.map(|_| self.node()).transpose()?;
         let variant = variant.map(|name| self.text(name)).transpose()?;
-        Ok(Object { values: BTreeMap::new(), key: None, longest: 0, variant, projector: self, _depth: depth })
+        Ok(Object { values: BTreeMap::new(), key: None, longest: 0, variant, projector: self, _depth: depth, _variant_depth: variant_depth })
     }
     fn entry(self, entries: &mut BTreeMap<Value, Value>, key: Value, value: Value, longest: &mut u64) -> Result<(), Error> {
         *longest = (*longest).max(key_work(self.ctx, &key, self.operation)?);
@@ -95,7 +109,7 @@ impl<'s, 'ctx, 'arena> Projector<'s, 'ctx, 'arena> {
         self.ctx.charge_work(comparisons, self.operation)?;
         if let Some(previous) = entries.get_mut(&key) {
             *previous = value;
-        } else if !self.ctx.insert_scoped_btree_map_if_vacant(&mut self.storage.borrow_mut(), entries, key, value, self.operation, self.operation)? {
+        } else if !self.admit(self.ctx.insert_scoped_btree_map_if_vacant(&mut self.storage.borrow_mut(), entries, key, value, self.operation, self.operation))? {
             return Err(serde::ser::Error::custom("structural map lost a vacant key"));
         }
         Ok(())
@@ -153,7 +167,7 @@ impl<'s, 'ctx, 'arena> Serializer for Projector<'s, 'ctx, 'arena> {
     fn serialize_str(self, value: &str) -> Result<Value, Error> { self.text(value) }
     fn serialize_bytes(self, value: &[u8]) -> Result<Value, Error> {
         let _depth = self.node()?;
-        let bytes = self.storage.borrow_mut().with_storage(|| self.ctx.copy_retained_slice(value, self.operation))?;
+        let bytes = self.admit(self.storage.borrow_mut().with_storage(|| self.ctx.copy_retained_slice(value, self.operation)))?;
         Ok(Value::Bytes(bytes))
     }
     fn serialize_none(self) -> Result<Value, Error> { let _depth = self.node()?; Ok(Value::Option(None)) }
@@ -177,11 +191,12 @@ struct Sequence<'s, 'ctx, 'arena> {
     variant: Option<Value>,
     projector: Projector<'s, 'ctx, 'arena>,
     _depth: DepthGuard<'ctx>,
+    _variant_depth: Option<DepthGuard<'ctx>>,
 }
 impl Sequence<'_, '_, '_> {
     fn field<T: Serialize + ?Sized>(&mut self, value: &T) -> Result<(), Error> {
         let value = value.serialize(self.projector)?;
-        self.projector.ctx.push_scoped_vec(&mut self.projector.storage.borrow_mut(), &mut self.values, value, self.projector.operation)?;
+        self.projector.admit(self.projector.ctx.push_scoped_vec(&mut self.projector.storage.borrow_mut(), &mut self.values, value, self.projector.operation))?;
         Ok(())
     }
     fn finish(self) -> Result<Value, Error> { self.projector.variant(self.variant, Value::Seq(self.values)) }
@@ -208,6 +223,7 @@ struct Object<'s, 'ctx, 'arena> {
     variant: Option<Value>,
     projector: Projector<'s, 'ctx, 'arena>,
     _depth: DepthGuard<'ctx>,
+    _variant_depth: Option<DepthGuard<'ctx>>,
 }
 impl Object<'_, '_, '_> {
     fn field<T: Serialize + ?Sized>(&mut self, key: &'static str, value: &T) -> Result<(), Error> {

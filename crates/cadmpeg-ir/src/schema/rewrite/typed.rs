@@ -3,7 +3,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use cadmpeg_core::decode::{u64_from_index, DecodeContext, ScopedReservation};
+use cadmpeg_core::decode::{u64_from_index, DecodeContext, ResourceLimit, ScopedReservation};
 use cadmpeg_core::CodecError;
 
 /// Rewrite owned fields without projecting or reconstructing a serde value.
@@ -28,6 +28,7 @@ pub struct IdentityMap<'ctx, F> {
     longest: usize,
     operation: &'static str,
     refused: Option<String>,
+    resource_refusal: Option<ResourceLimit>,
 }
 
 impl<'ctx, F: FnMut(&str) -> Result<String, CodecError>> IdentityMap<'ctx, F> {
@@ -41,6 +42,7 @@ impl<'ctx, F: FnMut(&str) -> Result<String, CodecError>> IdentityMap<'ctx, F> {
             longest: 0,
             operation,
             refused: None,
+            resource_refusal: None,
         })
     }
 
@@ -53,6 +55,9 @@ impl<'ctx, F: FnMut(&str) -> Result<String, CodecError>> IdentityMap<'ctx, F> {
 
     /// Return any mapping refusal that an enclosing field walk intercepted.
     pub fn finish(&self, ctx: &DecodeContext<'_>) -> Result<(), CodecError> {
+        if let Some(limit) = self.resource_refusal {
+            return Err(CodecError::ResourceLimit(limit));
+        }
         ctx.charge_work(0, self.operation)?;
         match &self.refused {
             Some(message) => Err(CodecError::Malformed(ctx.copy_retained_text(message, self.operation)?)),
@@ -62,6 +67,19 @@ impl<'ctx, F: FnMut(&str) -> Result<String, CodecError>> IdentityMap<'ctx, F> {
 
     /// Replace an identity once and refuse invalid or colliding targets.
     pub fn identity(&mut self, ctx: &DecodeContext<'_>, source: &str) -> Result<String, CodecError> {
+        let result = self.replace_identity(ctx, source);
+        if let Err(CodecError::ResourceLimit(limit)) = &result {
+            if self.resource_refusal.is_none() {
+                self.resource_refusal = Some(*limit);
+            }
+        }
+        result
+    }
+
+    fn replace_identity(&mut self, ctx: &DecodeContext<'_>, source: &str) -> Result<String, CodecError> {
+        if let Some(limit) = self.resource_refusal {
+            return Err(CodecError::ResourceLimit(limit));
+        }
         let operation = self.operation;
         self.longest = self.longest.max(source.len());
         let work = u64_from_index(self.longest)
@@ -139,11 +157,15 @@ impl<T: RewriteIdentities> RewriteIdentities for Vec<T> {
 impl<T: RewriteIdentities, const N: usize> RewriteIdentities for [T; N] {
     fn rewrite_identities<F: FnMut(&str) -> Result<String, CodecError>>(self, ctx: &DecodeContext<'_>, map: &mut IdentityMap<'_, F>) -> Result<Self, CodecError> {
         let _depth = ctx.enter_nested("identity rewrite array")?;
-        let (mut values, _storage) = ctx.temporary_vec(N, "identity rewrite array")?;
+        let mut storage = ctx.reserve_scoped(0, "identity rewrite array")?;
+        let mut values = Vec::new();
+        ctx.reserve_scoped_vec(&mut storage, &mut values, N, "identity rewrite array")?;
         for value in self {
             values.push(value.rewrite_identities(ctx, map)?);
         }
-        values.try_into().map_err(|_| CodecError::malformed("identity rewrite changed array length"))
+        let result = values.try_into().map_err(|_| CodecError::malformed("identity rewrite changed array length"));
+        drop(storage);
+        result
     }
 }
 

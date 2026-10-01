@@ -61,3 +61,17 @@ fn structural_projection_holds_and_releases_its_storage_reservation() {
     assert!(matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::MaterializedBytes));
     drop(first);
 }
+
+#[test]
+fn structural_projection_counts_both_variant_containers() {
+    #[derive(Serialize)]
+    enum Shape { Tuple(), Struct {} }
+    for shape in [Shape::Tuple(), Shape::Struct {}] {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_recursion_depth = 1;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let error = project(&ctx, &shape, "project variant containers").unwrap_err();
+        assert!(matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::RecursionDepth && limit.used == 1 && limit.additional == 1));
+    }
+}

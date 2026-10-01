@@ -155,3 +155,23 @@ fn a_serializer_cannot_swallow_a_rewrite_collision() {
         serde_json::json!(["test:model:point#a", "test:model:point#b"])
     );
 }
+
+#[test]
+fn a_field_walk_cannot_swallow_a_callback_resource_refusal() {
+    let original = cadmpeg_core::decode::ResourceLimit {
+        dimension: cadmpeg_core::decode::ResourceDimension::MaterializedBytes,
+        reason: cadmpeg_core::decode::ResourceFailure::AllocationFailed,
+        limit: 4096,
+        used: 128,
+        additional: 256,
+        operation: "test identity callback allocation",
+    };
+    let source = SwallowsElementErrors([id("a"), id("b")]);
+    let calls = std::cell::Cell::new(0);
+    let error = identities(&cadmpeg_test_support::service_decode_context(), "test identity rewrite", source, |_| {
+        calls.set(calls.get() + 1);
+        Err(CodecError::ResourceLimit(original))
+    }).unwrap_err();
+    assert!(matches!(error, CodecError::ResourceLimit(limit) if limit == original));
+    assert_eq!(calls.get(), 1);
+}
