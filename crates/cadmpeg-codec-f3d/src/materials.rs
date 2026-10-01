@@ -647,8 +647,11 @@ pub(crate) fn decode_with_body_bindings<'a>(
         let catalog = definition_catalog(ctx, protein)?;
         let schema_catalog = cadmpeg_protein::SchemaCatalog::load(ctx, protein)?;
         let mut appearances = if let Some(mut schema_catalog) = schema_catalog {
-            let outcome =
-                cadmpeg_protein::decode_frames_admitted(ctx, &mut schema_catalog, &record_frames)?;
+            let outcome = cadmpeg_protein::decode_frames_admitted(
+                ctx,
+                &mut schema_catalog,
+                record_frames.frames(),
+            )?;
             for rejected in &outcome.rejected {
                 let note = ctx.format_retained(
                     format_args!(
@@ -670,12 +673,12 @@ pub(crate) fn decode_with_body_bindings<'a>(
                 decoded.iter().map(|appearance| appearance.id.as_str()),
                 "index F3D schema appearance IDs",
             )?;
-            let mut fixed = decode_fixed_logical_records(ctx, &record_frames)?;
+            let mut fixed = decode_fixed_logical_records(ctx, record_frames.frames())?;
             fixed.retain(|appearance| !decoded_ids.contains(appearance.id.as_str()));
             ctx.append_vec(&mut decoded, &mut { fixed }, "merge F3D fixed appearances")?;
             decoded
         } else {
-            decode_fixed_logical_records(ctx, &record_frames)?
+            decode_fixed_logical_records(ctx, record_frames.frames())?
         };
         for appearance in &mut appearances {
             if let Some(name) = appearance.name.as_deref() {
@@ -703,7 +706,12 @@ pub(crate) fn decode_with_body_bindings<'a>(
             "collect F3D asset appearances",
         )?;
     }
-    out.sort_by(|a, b| a.id.as_str().cmp(b.id.as_str()));
+    ctx.stable_sort_by(
+        &mut out,
+        |a, b| a.id.as_str().cmp(b.id.as_str()),
+        |item| item.id.as_str().len(),
+        "sort F3D appearance assets",
+    )?;
     if let Some(pair) = out
         .windows(2)
         .find(|pair| pair[0].id == pair[1].id && pair[0] != pair[1])
@@ -884,7 +892,7 @@ fn appearances_from_schema_records(
                         neutral_property_name(id),
                         "copy F3D appearance property name",
                     )?,
-                    cadmpeg_protein::appearance::finite_scalar(record, id, *value)?,
+                    *value,
                     "collect F3D appearance properties",
                 )?;
             }
@@ -895,11 +903,16 @@ fn appearances_from_schema_records(
                 }
             }
         }
-        connected.sort_by(|left, right| {
-            left.slot
-                .cmp(&right.slot)
-                .then_with(|| left.asset_guid.cmp(&right.asset_guid))
-        });
+        ctx.stable_sort_by(
+            &mut connected,
+            |left, right| {
+                left.slot
+                    .cmp(&right.slot)
+                    .then_with(|| left.asset_guid.cmp(&right.asset_guid))
+            },
+            |texture| texture.slot.len() + texture.asset_guid.len(),
+            "sort F3D connected textures",
+        )?;
         let base_color = appearance_base_color(record);
         let appearance = Appearance {
             id: crate::ids::appearance_id_charged(ctx, &record.guid)?,
@@ -974,7 +987,7 @@ fn color_property(record: &cadmpeg_protein::DecodedRecord, id: &str) -> Option<C
     else {
         return None;
     };
-    decoded_color([*r, *g, *b, *a])
+    decoded_color([r.get(), g.get(), b.get(), a.get()])
 }
 
 fn decoded_color(values: [f64; 4]) -> Option<Color> {
@@ -1138,12 +1151,17 @@ fn decode_body_appearance_overrides(
             )?;
         }
     }
-    out.sort_by(|left, right| {
-        left.body
-            .cmp(&right.body)
-            .then_with(|| left.entity_suffix.cmp(&right.entity_suffix))
-            .then_with(|| left.visual_guid.cmp(&right.visual_guid))
-    });
+    ctx.stable_sort_by(
+        &mut out,
+        |left, right| {
+            left.body
+                .cmp(&right.body)
+                .then_with(|| left.entity_suffix.cmp(&right.entity_suffix))
+                .then_with(|| left.visual_guid.cmp(&right.visual_guid))
+        },
+        |item| item.body.as_str().len() + item.visual_guid.len(),
+        "sort F3D body appearance overrides",
+    )?;
     out.dedup_by(|left, right| {
         left.body == right.body
             && left.entity_suffix == right.entity_suffix
@@ -1291,7 +1309,7 @@ fn legacy_face_appearance_assignments(
             cursor += 4;
         } else {
             let Some((display_name, display_name_end)) =
-                lp_utf16_bounded_charged(ctx, bytes, cursor, 1..=256)?
+                lp_utf16_bounded_charged(ctx, bytes, cursor, 1..=256, "retain F3D UTF-16 string")?
             else {
                 continue;
             };
@@ -1853,8 +1871,13 @@ fn decode_act_channels(
                     valid = false;
                     break;
                 };
-                let Some((guid, after_guid)) =
-                    lp_utf16_bounded_charged(ctx, bytes, after_name, 1..=64)?
+                let Some((guid, after_guid)) = lp_utf16_bounded_charged(
+                    ctx,
+                    bytes,
+                    after_name,
+                    1..=64,
+                    "retain F3D UTF-16 string",
+                )?
                 else {
                     valid = false;
                     break;
@@ -1867,7 +1890,13 @@ fn decode_act_channels(
                 cursor = after_guid;
             }
             if valid {
-                if let Some((entity, end)) = lp_utf16_bounded_charged(ctx, bytes, cursor, 1..=64)? {
+                if let Some((entity, end)) = lp_utf16_bounded_charged(
+                    ctx,
+                    bytes,
+                    cursor,
+                    1..=64,
+                    "retain F3D UTF-16 string",
+                )? {
                     if let Some(suffix) = entity_suffix(&entity) {
                         if !out.contains_key(&suffix) {
                             ctx.reserve_map(&mut out, 1, "index F3D ACT entities")?;
@@ -1964,7 +1993,9 @@ fn lp_utf16_string_at(
     bytes: &[u8],
     offset: usize,
 ) -> Result<Option<(String, usize)>, CodecError> {
-    let Some((value, end)) = lp_utf16_bounded_charged(ctx, bytes, offset, 2..=256)? else {
+    let Some((value, end)) =
+        lp_utf16_bounded_charged(ctx, bytes, offset, 2..=256, "retain F3D UTF-16 string")?
+    else {
         return Ok(None);
     };
     if value.chars().any(char::is_control) {
@@ -2013,7 +2044,7 @@ fn definition_catalog<'a>(
     };
     let frames = cadmpeg_protein::framing::record_frames_admitted(ctx, entry.window())?;
     let mut definitions = std::collections::HashMap::new();
-    for frame in frames {
+    for frame in frames.frames() {
         let definition = decode_definition_catalog_record(ctx, frame.bytes())?;
         merge_definition_catalog_record(ctx, &mut definitions, definition)?;
     }

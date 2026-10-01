@@ -1,12 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Parse edge, face, and body operand frames and recipe structure.
 
+use crate::bytes::lp_utf16_bounded_charged;
 use crate::records::topology::{
     construction::DesignConstructionOperandRole, extrude_selection::DesignExtrudeFaceEncoding,
 };
 
 use cadmpeg_core::container::ContainerRole;
 
+use crate::bytes::lp_ascii_filtered_view;
 use crate::bytes::{is_guid_relaxed, take_reference};
 use crate::container::ContainerScan;
 use crate::design::decode::dimension_frames::{
@@ -21,9 +23,7 @@ use crate::design::decode::sketch::{
     next_indexed_record_offset, next_indexed_record_offset_with_index, IndexedRecordOffsets,
 };
 use crate::design::decode::text::design_record_id_charged;
-use crate::design::decode::text::{
-    lp_ascii_filtered_view, lp_utf16_bounded_charged, relaxed_guid_end,
-};
+use crate::design::decode::text::relaxed_guid_end;
 use crate::design::{design_feature_family, DesignFeatureFamily};
 use crate::ids::native_stream;
 use crate::layout::class_338_sketch_curve_identity as class_338_curve;
@@ -134,7 +134,12 @@ pub(crate) fn decode_edge_operands(
         }
     }
     for offsets in stream_offsets.values_mut() {
-        offsets.sort_unstable();
+        ctx.sort_unstable_by(
+            offsets,
+            Ord::cmp,
+            |_| 0,
+            "sort f3d edge operand stream offsets",
+        )?;
     }
     let mut record_offset_index: HashMap<&str, IndexedRecordOffsets> = HashMap::new();
     let mut out = Vec::new();
@@ -238,7 +243,12 @@ pub(crate) fn decode_edge_operands(
             out.push(operand);
         }
     }
-    crate::design::sort::sort_by(ctx, &mut out[..], |a, b| a.id.cmp(&b.id))?;
+    ctx.stable_sort_by(
+        &mut out[..],
+        |a, b| a.id.cmp(&b.id),
+        |value| value.id.as_str().len(),
+        "sort f3d design operands 1",
+    )?;
     Ok(out)
 }
 
@@ -334,7 +344,12 @@ pub(crate) fn decode_edge_treatment_vertex_operands(
             });
         }
     }
-    crate::design::sort::sort_by(ctx, &mut out[..], |left, right| left.id.cmp(&right.id))?;
+    ctx.stable_sort_by(
+        &mut out[..],
+        |left, right| left.id.cmp(&right.id),
+        |value| value.id.as_str().len(),
+        "sort f3d design operands 2",
+    )?;
     Ok(out)
 }
 
@@ -816,7 +831,12 @@ pub(crate) fn decode_edge_identity_operands(
             );
         }
     }
-    crate::design::sort::sort_by(ctx, &mut out[..], |a, b| a.id.cmp(&b.id))?;
+    ctx.stable_sort_by(
+        &mut out[..],
+        |a, b| a.id.cmp(&b.id),
+        |value| value.id.as_str().len(),
+        "sort f3d design operands 3",
+    )?;
     Ok(out)
 }
 
@@ -1099,7 +1119,12 @@ pub(crate) fn decode_face_operands(
             }
         }
     }
-    crate::design::sort::sort_by(ctx, &mut out[..], |a, b| a.id.cmp(&b.id))?;
+    ctx.stable_sort_by(
+        &mut out[..],
+        |a, b| a.id.cmp(&b.id),
+        |value| value.id.as_str().len(),
+        "sort f3d design operands 4",
+    )?;
     Ok(out)
 }
 
@@ -1258,7 +1283,12 @@ pub(crate) fn decode_face_source_groups(
             )?;
         }
     }
-    crate::design::sort::sort_by(ctx, &mut out[..], |a, b| a.id.cmp(&b.id))?;
+    ctx.stable_sort_by(
+        &mut out[..],
+        |a, b| a.id.cmp(&b.id),
+        |value| value.id.as_str().len(),
+        "sort f3d design operands 5",
+    )?;
     Ok(out)
 }
 
@@ -1489,9 +1519,12 @@ pub(crate) fn bind_face_operand_candidates(
                 push_operand_face_candidate(ctx, &mut operand.candidate_faces, face)?;
             }
         }
-        crate::design::sort::sort_by(ctx, &mut operand.candidate_faces[..], |left, right| {
-            left.as_str().cmp(right.as_str())
-        })?;
+        ctx.stable_sort_by(
+            &mut operand.candidate_faces[..],
+            |left, right| left.as_str().cmp(right.as_str()),
+            |_| 0,
+            "sort f3d design operands 6",
+        )?;
         operand.candidate_faces.dedup();
         let referenced =
             referenced_operand_faces(ctx, &operand.recipe_references, design_reference)?;
@@ -1515,10 +1548,11 @@ pub(crate) fn bind_face_operand_candidates(
                 face,
             )?;
         }
-        crate::design::sort::sort_by(
-            ctx,
+        ctx.stable_sort_by(
             &mut operand.alternate_selector_candidate_faces[..],
             |left, right| left.as_str().cmp(right.as_str()),
+            |_| 0,
+            "sort f3d design operands 7",
         )?;
         operand.alternate_selector_candidate_faces.dedup();
     }
@@ -1554,9 +1588,12 @@ pub(crate) fn bind_edge_operand_candidates(
                 push_operand_face_candidate(ctx, &mut operand.candidate_faces, face)?;
             }
         }
-        crate::design::sort::sort_by(ctx, &mut operand.candidate_faces[..], |a, b| {
-            a.as_str().cmp(b.as_str())
-        })?;
+        ctx.stable_sort_by(
+            &mut operand.candidate_faces[..],
+            |a, b| a.as_str().cmp(b.as_str()),
+            |_| 0,
+            "sort f3d design operands 8",
+        )?;
         operand.candidate_faces.dedup();
     }
     Ok(())
@@ -1693,7 +1730,12 @@ pub(crate) fn decode_extrude_selection_groups(
             }
         }
     }
-    crate::design::sort::sort_by(ctx, &mut out[..], |a, b| a.id.cmp(&b.id))?;
+    ctx.stable_sort_by(
+        &mut out[..],
+        |a, b| a.id.cmp(&b.id),
+        |value| value.id.as_str().len(),
+        "sort f3d design operands 9",
+    )?;
     Ok(out)
 }
 
@@ -1816,7 +1858,12 @@ pub(crate) fn decode_construction_operand_groups(
             assign_extrude_face_roles(scope, &mut out[scope_group_start..]);
         }
     }
-    crate::design::sort::sort_by(ctx, &mut out[..], |a, b| a.id.cmp(&b.id))?;
+    ctx.stable_sort_by(
+        &mut out[..],
+        |a, b| a.id.cmp(&b.id),
+        |value| value.id.as_str().len(),
+        "sort f3d design operands 10",
+    )?;
     Ok(out)
 }
 
@@ -1881,7 +1928,12 @@ pub(crate) fn decode_loft_legacy_body_carriers(
             push_loft_legacy_body_carrier(ctx, &mut out, carrier, &entry.name, header.byte_offset)?;
         }
     }
-    crate::design::sort::sort_by(ctx, &mut out[..], |left, right| left.id.cmp(&right.id))?;
+    ctx.stable_sort_by(
+        &mut out[..],
+        |left, right| left.id.cmp(&right.id),
+        |value| value.id.as_str().len(),
+        "sort f3d design operands 11",
+    )?;
     out.dedup_by(|left, right| left.id == right.id);
     Ok(out)
 }
@@ -2139,9 +2191,26 @@ pub(crate) fn decode_fillet_radius_groups(
             }),
             "f3d Fillet scope groups",
         )?;
-        crate::design::sort::sort_by_key(ctx, &mut scope_groups[..], |group| {
-            group.scope_reference_ordinal
-        })?;
+        ctx.stable_sort_by(
+            &mut scope_groups[..],
+            |left, right| {
+                let left_key = {
+                    let group = left;
+                    {
+                        group.scope_reference_ordinal
+                    }
+                };
+                let right_key = {
+                    let group = right;
+                    {
+                        group.scope_reference_ordinal
+                    }
+                };
+                left_key.cmp(&right_key)
+            },
+            |_| 0,
+            "sort f3d design operands 12",
+        )?;
         let mut owned_parameters = ctx.collect_vec(
             owners
                 .iter()
@@ -2157,7 +2226,22 @@ pub(crate) fn decode_fillet_radius_groups(
                 }),
             "f3d Fillet owned parameters",
         )?;
-        crate::design::sort::sort_by_key(ctx, &mut owned_parameters[..], |(ordinal, _)| *ordinal)?;
+        ctx.stable_sort_by(
+            &mut owned_parameters[..],
+            |left, right| {
+                let left_key = {
+                    let (ordinal, _) = left;
+                    *ordinal
+                };
+                let right_key = {
+                    let (ordinal, _) = right;
+                    *ordinal
+                };
+                left_key.cmp(&right_key)
+            },
+            |_| 0,
+            "sort f3d design operands 13",
+        )?;
         let radii = ctx.collect_vec(
             owned_parameters.iter().filter_map(|(_, parameter)| {
                 (parameter.source_kind() == "Radius").then_some(*parameter)
@@ -2307,7 +2391,12 @@ pub(crate) fn decode_fillet_radius_groups(
             weights.first().map(|parameter| parameter.record_index),
         )?;
     }
-    crate::design::sort::sort_by(ctx, &mut out[..], |a, b| a.id.cmp(&b.id))?;
+    ctx.stable_sort_by(
+        &mut out[..],
+        |a, b| a.id.cmp(&b.id),
+        |value| value.id.as_str().len(),
+        "sort f3d design operands 14",
+    )?;
     Ok(out)
 }
 
@@ -3159,7 +3248,12 @@ pub(crate) fn decode_construction_operand_identities(
             out.push(identity);
         }
     }
-    crate::design::sort::sort_by(ctx, &mut out[..], |a, b| a.id.cmp(&b.id))?;
+    ctx.stable_sort_by(
+        &mut out[..],
+        |a, b| a.id.cmp(&b.id),
+        |value| value.id.as_str().len(),
+        "sort f3d design operands 15",
+    )?;
     out.dedup_by(|left, right| left.id == right.id);
     Ok(out)
 }
@@ -3178,7 +3272,22 @@ fn collect_stream_lost_edges<'a>(
         ctx.reserve_vec(&mut edges, 1, "f3d lost-edge stream records")?;
         edges.push(edge);
     }
-    crate::design::sort::sort_by_key(ctx, &mut edges[..], |edge| edge.record_byte_offset())?;
+    ctx.stable_sort_by(
+        &mut edges[..],
+        |left, right| {
+            let left_key = {
+                let edge = left;
+                edge.record_byte_offset()
+            };
+            let right_key = {
+                let edge = right;
+                edge.record_byte_offset()
+            };
+            left_key.cmp(&right_key)
+        },
+        |_| 0,
+        "sort f3d design operands 16",
+    )?;
     Ok(edges)
 }
 
@@ -3663,7 +3772,12 @@ pub(crate) fn decode_extrude_selection_members(
             }
         }
     }
-    crate::design::sort::sort_by(ctx, &mut out[..], |a, b| a.id.cmp(&b.id))?;
+    ctx.stable_sort_by(
+        &mut out[..],
+        |a, b| a.id.cmp(&b.id),
+        |value| value.id.as_str().len(),
+        "sort f3d design operands 17",
+    )?;
     Ok(out)
 }
 
@@ -3713,7 +3827,12 @@ pub(crate) fn decode_entity_selection_operands(
             }
         }
     }
-    crate::design::sort::sort_by(ctx, &mut out[..], |a, b| a.id.cmp(&b.id))?;
+    ctx.stable_sort_by(
+        &mut out[..],
+        |a, b| a.id.cmp(&b.id),
+        |value| value.id.as_str().len(),
+        "sort f3d design operands 18",
+    )?;
     Ok(out)
 }
 
@@ -3833,18 +3952,28 @@ pub(super) fn parse_entity_selection_prefix(
     } else {
         return None;
     };
-    let (asset_id, after_asset_id) =
-        match lp_utf16_bounded_charged(ctx, bytes, asset_start, 1..=256) {
-            Ok(Some(value)) => value,
-            Ok(None) => return None,
-            Err(error) => return Some(Err(error)),
-        };
-    let (context_id, after_context_id) =
-        match lp_utf16_bounded_charged(ctx, bytes, after_asset_id, 1..=256) {
-            Ok(Some(value)) => value,
-            Ok(None) => return None,
-            Err(error) => return Some(Err(error)),
-        };
+    let (asset_id, after_asset_id) = match lp_utf16_bounded_charged(
+        ctx,
+        bytes,
+        asset_start,
+        1..=256,
+        "f3d Design UTF-16 text",
+    ) {
+        Ok(Some(value)) => value,
+        Ok(None) => return None,
+        Err(error) => return Some(Err(error)),
+    };
+    let (context_id, after_context_id) = match lp_utf16_bounded_charged(
+        ctx,
+        bytes,
+        after_asset_id,
+        1..=256,
+        "f3d Design UTF-16 text",
+    ) {
+        Ok(Some(value)) => value,
+        Ok(None) => return None,
+        Err(error) => return Some(Err(error)),
+    };
     if !is_guid_relaxed(&asset_id)
         || !is_guid_relaxed(&context_id)
         || View::u32_le_at(bytes, after_context_id)? != 2
@@ -4147,9 +4276,26 @@ pub(crate) fn decode_body_recipe_operands(
         stream_recipes.push(recipe);
     }
     for stream_recipes in body_recipes_by_stream.values_mut() {
-        crate::design::sort::sort_by_key(ctx, &mut stream_recipes[..], |recipe| {
-            recipe.byte_offset
-        })?;
+        ctx.stable_sort_by(
+            &mut stream_recipes[..],
+            |left, right| {
+                let left_key = {
+                    let recipe = left;
+                    {
+                        recipe.byte_offset
+                    }
+                };
+                let right_key = {
+                    let recipe = right;
+                    {
+                        recipe.byte_offset
+                    }
+                };
+                left_key.cmp(&right_key)
+            },
+            |_| 0,
+            "sort f3d design operands 19",
+        )?;
     }
     let mut record_offset_index: HashMap<&str, IndexedRecordOffsets> = HashMap::new();
     let mut out = Vec::new();
@@ -4273,7 +4419,12 @@ pub(crate) fn decode_body_recipe_operands(
             }
         }
     }
-    crate::design::sort::sort_by(ctx, &mut out[..], |a, b| a.id.cmp(&b.id))?;
+    ctx.stable_sort_by(
+        &mut out[..],
+        |a, b| a.id.cmp(&b.id),
+        |value| value.id.as_str().len(),
+        "sort f3d design operands 20",
+    )?;
     let mut owner_counts = HashMap::<String, u32>::new();
     for operand in &out {
         if let Some(count) = owner_counts.get_mut(&operand.id) {
@@ -4498,18 +4649,28 @@ fn parse_body_recipe_operand_frame_with_index(
     }
     let nested_record_index = View::u64_le_at(bytes, cursor + 1)?;
     let asset_id_at = cursor.checked_add(15)?;
-    let (asset_id, after_asset_id) =
-        match lp_utf16_bounded_charged(ctx, bytes, asset_id_at, 1..=256) {
-            Ok(Some(value)) => value,
-            Ok(None) => return None,
-            Err(error) => return Some(Err(error)),
-        };
-    let (context_id, after_context_id) =
-        match lp_utf16_bounded_charged(ctx, bytes, after_asset_id, 1..=256) {
-            Ok(Some(value)) => value,
-            Ok(None) => return None,
-            Err(error) => return Some(Err(error)),
-        };
+    let (asset_id, after_asset_id) = match lp_utf16_bounded_charged(
+        ctx,
+        bytes,
+        asset_id_at,
+        1..=256,
+        "f3d Design UTF-16 text",
+    ) {
+        Ok(Some(value)) => value,
+        Ok(None) => return None,
+        Err(error) => return Some(Err(error)),
+    };
+    let (context_id, after_context_id) = match lp_utf16_bounded_charged(
+        ctx,
+        bytes,
+        after_asset_id,
+        1..=256,
+        "f3d Design UTF-16 text",
+    ) {
+        Ok(Some(value)) => value,
+        Ok(None) => return None,
+        Err(error) => return Some(Err(error)),
+    };
     let selector_tail_at = after_context_id.checked_add(4)?;
     let selector_tail: [u8; 4] = bytes
         .get(selector_tail_at..selector_tail_at.checked_add(4)?)?
@@ -4627,10 +4788,11 @@ pub(crate) fn bind_body_recipe_operand_candidates(
                     }
                 }
             }
-            crate::design::sort::sort_by(
-                ctx,
+            ctx.stable_sort_by(
                 &mut reference.candidate_faces[..],
                 |left, right| left.as_str().cmp(right.as_str()),
+                |_| 0,
+                "sort f3d design operands 21",
             )?;
             reference.candidate_faces.dedup();
         }
@@ -4736,12 +4898,32 @@ pub(crate) fn bind_extrude_selection_identities(
             ctx.reserve_vec(&mut matches, 1, "f3d Extrude identity matches")?;
             matches.push(identity);
         }
-        crate::design::sort::sort_by_key(ctx, &mut matches[..], |identity| {
-            identity
-                .wrappers()
-                .first()
-                .map(|wrapper| wrapper.byte_offset)
-        })?;
+        ctx.stable_sort_by(
+            &mut matches[..],
+            |left, right| {
+                let left_key = {
+                    let identity = left;
+                    {
+                        identity
+                            .wrappers()
+                            .first()
+                            .map(|wrapper| wrapper.byte_offset)
+                    }
+                };
+                let right_key = {
+                    let identity = right;
+                    {
+                        identity
+                            .wrappers()
+                            .first()
+                            .map(|wrapper| wrapper.byte_offset)
+                    }
+                };
+                left_key.cmp(&right_key)
+            },
+            |_| 0,
+            "sort f3d design operands 22",
+        )?;
 
         let mut ids = Vec::new();
         ctx.reserve_vec(&mut ids, matches.len(), "f3d Extrude identity IDs")?;
@@ -4821,17 +5003,23 @@ fn parse_extrude_identity_member(
         bytes,
         start + extrude_member::ASSET_UUID_LENGTH,
         1..=256,
+        "f3d Design UTF-16 text",
     ) {
         Ok(Some(value)) => value,
         Ok(None) => return None,
         Err(error) => return Some(Err(error)),
     };
-    let (context_id, after_context_id) =
-        match lp_utf16_bounded_charged(ctx, bytes, after_asset_id, 1..=256) {
-            Ok(Some(value)) => value,
-            Ok(None) => return None,
-            Err(error) => return Some(Err(error)),
-        };
+    let (context_id, after_context_id) = match lp_utf16_bounded_charged(
+        ctx,
+        bytes,
+        after_asset_id,
+        1..=256,
+        "f3d Design UTF-16 text",
+    ) {
+        Ok(Some(value)) => value,
+        Ok(None) => return None,
+        Err(error) => return Some(Err(error)),
+    };
     let tail_slot_offset = after_context_id.checked_add(4)?;
     let tail_slot_present = match bytes.get(tail_slot_offset)? {
         0 => false,
@@ -4920,18 +5108,28 @@ fn parse_edge_identity_member(
         return None;
     }
     let local_id = u64::from(View::u32_le_at(bytes, start + local_id_offset)?);
-    let (asset_id, after_asset_id) =
-        match lp_utf16_bounded_charged(ctx, bytes, start + asset_offset, 1..=256) {
-            Ok(Some(value)) => value,
-            Ok(None) => return None,
-            Err(error) => return Some(Err(error)),
-        };
-    let (context_id, _after_context_id) =
-        match lp_utf16_bounded_charged(ctx, bytes, after_asset_id, 1..=256) {
-            Ok(Some(value)) => value,
-            Ok(None) => return None,
-            Err(error) => return Some(Err(error)),
-        };
+    let (asset_id, after_asset_id) = match lp_utf16_bounded_charged(
+        ctx,
+        bytes,
+        start + asset_offset,
+        1..=256,
+        "f3d Design UTF-16 text",
+    ) {
+        Ok(Some(value)) => value,
+        Ok(None) => return None,
+        Err(error) => return Some(Err(error)),
+    };
+    let (context_id, _after_context_id) = match lp_utf16_bounded_charged(
+        ctx,
+        bytes,
+        after_asset_id,
+        1..=256,
+        "f3d Design UTF-16 text",
+    ) {
+        Ok(Some(value)) => value,
+        Ok(None) => return None,
+        Err(error) => return Some(Err(error)),
+    };
     if !is_guid_relaxed(&asset_id) || !is_guid_relaxed(&context_id) {
         return None;
     }
@@ -4988,12 +5186,12 @@ pub(in crate::design) fn parse_sketch_profile(
         return None;
     }
     relaxed_guid_end(bytes, start + 36)?;
-    let (asset_id, after_asset_id) = match lp_utf16_bounded_charged(ctx, bytes, start + 36, 1..=256)
-    {
-        Ok(Some(value)) => value,
-        Ok(None) => return None,
-        Err(error) => return Some(Err(error)),
-    };
+    let (asset_id, after_asset_id) =
+        match lp_utf16_bounded_charged(ctx, bytes, start + 36, 1..=256, "f3d Design UTF-16 text") {
+            Ok(Some(value)) => value,
+            Ok(None) => return None,
+            Err(error) => return Some(Err(error)),
+        };
     let (entity_suffix, after_entity_suffix) = utf16_decimal_u64(bytes, after_asset_id)?;
     let paired_at = next_indexed_record_offset(bytes, start + 11)?;
     let (paired_class_tag, after_paired_tag) =

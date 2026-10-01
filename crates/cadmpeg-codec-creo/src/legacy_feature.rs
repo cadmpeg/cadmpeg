@@ -71,17 +71,18 @@ impl<'a> Index<'a> {
                 object.offset,
                 "creo legacy feature object index IDs",
             )?;
+            ctx.admit_btree_entry(&objects, &id, "creo legacy feature object index nodes")?;
             match objects.entry(id) {
                 std::collections::btree_map::Entry::Vacant(entry) => {
-                    ctx.charge_collection_items(1, "creo legacy feature object index nodes")?;
                     entry.insert(object);
                 }
                 std::collections::btree_map::Entry::Occupied(_) => return Ok(None),
             }
             if let Some(parent) = object.parent {
-                match children.entry((parent, object.name.as_str())) {
+                let key = (parent, object.name.as_str());
+                ctx.admit_btree_entry(&children, &key, "creo legacy feature child index nodes")?;
+                match children.entry(key) {
                     std::collections::btree_map::Entry::Vacant(entry) => {
-                        ctx.charge_collection_items(1, "creo legacy feature child index nodes")?;
                         let mut rows = Vec::new();
                         ctx.reserve_vec(&mut rows, 1, "creo legacy feature child index rows")?;
                         rows.push(object);
@@ -190,17 +191,18 @@ pub(crate) fn scan(
             edge_ids: unique_feature_edge_ids(ctx, topology_rows, feature_id)?,
             offset: feature.offset,
         };
+        ctx.admit_btree_entry(&rounds, &feature_id, "creo legacy round index nodes")?;
         match rounds.entry(feature_id) {
             std::collections::btree_map::Entry::Vacant(entry) => {
-                ctx.charge_collection_items(1, "creo legacy round index nodes")?;
                 entry.insert(round);
             }
             std::collections::btree_map::Entry::Occupied(mut entry) => {
                 entry.insert(round);
-                if !ambiguous_feature_ids.contains(&feature_id) {
-                    ctx.charge_collection_items(1, "creo legacy ambiguous round IDs")?;
-                    ambiguous_feature_ids.insert(feature_id);
-                }
+                ctx.insert_btree_set(
+                    &mut ambiguous_feature_ids,
+                    feature_id,
+                    "creo legacy ambiguous round IDs",
+                )?;
             }
         }
     }
@@ -253,8 +255,11 @@ fn full_data_dimension_rows<'a>(
         if seen.contains(element_id.as_str()) {
             return Ok(None);
         }
-        ctx.charge_collection_items(1, "creo legacy dimension identities")?;
-        seen.insert(element_id.as_str());
+        ctx.insert_btree_set(
+            &mut seen,
+            element_id.as_str(),
+            "creo legacy dimension identities",
+        )?;
         let Some(element) = index.objects.get(element_id.as_str()).copied() else {
             return Ok(None);
         };
@@ -325,8 +330,7 @@ fn unique_feature_edge_ids(
         if seen.contains(&row.id) {
             return Ok(None);
         }
-        ctx.charge_collection_items(1, "creo legacy round edge identities")?;
-        seen.insert(row.id);
+        ctx.insert_btree_set(&mut seen, row.id, "creo legacy round edge identities")?;
         ctx.reserve_vec(&mut ids, 1, "creo legacy round edge IDs")?;
         ids.push(row.id);
     }

@@ -19,7 +19,7 @@ fn crc32(data: &[u8]) -> u32 {
     h.finalize()
 }
 
-fn make_cache_cell(logical_len: u32, name: &str) -> Vec<u8> {
+fn make_cache_cell(logical_len: u32, name: &str) -> std::io::Result<Vec<u8>> {
     let swapped = swap_name(name);
     let mut b = Vec::new();
     b.extend_from_slice(&MARKER);
@@ -27,12 +27,16 @@ fn make_cache_cell(logical_len: u32, name: &str) -> Vec<u8> {
     b.extend_from_slice(&(logical_len * 2).to_le_bytes());
     b.extend_from_slice(&(logical_len / 2).to_le_bytes());
     b.extend_from_slice(&logical_len.to_le_bytes());
-    b.extend_from_slice(&(swapped.len() as u32).to_le_bytes());
+    b.extend_from_slice(
+        &u32::try_from(swapped.len())
+            .map_err(|_| std::io::Error::other("swapped name length fits u32"))?
+            .to_le_bytes(),
+    );
     b.extend_from_slice(&swapped);
-    b
+    Ok(b)
 }
 
-fn make_directory_entry(type_id: u32, size: u32, name: &str) -> Vec<u8> {
+fn make_directory_entry(type_id: u32, size: u32, name: &str) -> std::io::Result<Vec<u8>> {
     let swapped = swap_name(name);
     let mut b = Vec::new();
     b.extend_from_slice(&MARKER);
@@ -40,22 +44,30 @@ fn make_directory_entry(type_id: u32, size: u32, name: &str) -> Vec<u8> {
     b.extend_from_slice(&0u32.to_le_bytes());
     b.extend_from_slice(&size.to_le_bytes());
     b.extend_from_slice(&0u32.to_le_bytes());
-    b.extend_from_slice(&(swapped.len() as u32).to_le_bytes());
+    b.extend_from_slice(
+        &u32::try_from(swapped.len())
+            .map_err(|_| std::io::Error::other("swapped name length fits u32"))?
+            .to_le_bytes(),
+    );
     b.extend_from_slice(&[0u8; 14]);
     b.extend_from_slice(&swapped);
     b.extend_from_slice(&[0xe5, 0x4b, 0x57, 0x5b, 0x00, 0x00]);
-    b
+    Ok(b)
 }
 
-fn parasolid_payload(description: &str, schema: &str) -> Vec<u8> {
+fn parasolid_payload(description: &str, schema: &str) -> std::io::Result<Vec<u8>> {
     let mut b = Vec::new();
     b.extend_from_slice(&[b'P', b'S', 0x00, 0x00]);
-    b.extend_from_slice(&(description.len() as u16).to_be_bytes());
+    b.extend_from_slice(
+        &u16::try_from(description.len())
+            .map_err(|_| std::io::Error::other("description length fits u16"))?
+            .to_be_bytes(),
+    );
     b.extend_from_slice(description.as_bytes());
     b.extend_from_slice(&[0x00, 0x00]);
-    b.push(schema.len() as u8);
+    b.push(u8::try_from(schema.len()).map_err(|_| std::io::Error::other("schema length fits u8"))?);
     b.extend_from_slice(schema.as_bytes());
-    b
+    Ok(b)
 }
 
 pub fn outer_header() -> Vec<u8> {
@@ -264,18 +276,34 @@ pub fn make_block(type_id: u32, section: &str, payload: &[u8]) -> std::io::Resul
     b.extend_from_slice(&MARKER);
     b.extend_from_slice(&type_id.to_le_bytes());
     b.extend_from_slice(&crc32(payload).to_le_bytes());
-    b.extend_from_slice(&(comp.len() as u32).to_le_bytes());
-    b.extend_from_slice(&(payload.len() as u32).to_le_bytes());
-    b.extend_from_slice(&(preamble.len() as u32).to_le_bytes());
+    b.extend_from_slice(
+        &u32::try_from(comp.len())
+            .map_err(std::io::Error::other)?
+            .to_le_bytes(),
+    );
+    b.extend_from_slice(
+        &u32::try_from(payload.len())
+            .map_err(std::io::Error::other)?
+            .to_le_bytes(),
+    );
+    b.extend_from_slice(
+        &u32::try_from(preamble.len())
+            .map_err(std::io::Error::other)?
+            .to_le_bytes(),
+    );
     b.extend_from_slice(&preamble);
     b.extend_from_slice(&comp);
     Ok(b)
 }
 
-pub fn parasolid_with_body(description: &str, schema: &str, body: &[u8]) -> Vec<u8> {
-    let mut b = parasolid_payload(description, schema);
+pub fn parasolid_with_body(
+    description: &str,
+    schema: &str,
+    body: &[u8],
+) -> std::io::Result<Vec<u8>> {
+    let mut b = parasolid_payload(description, schema)?;
     b.extend_from_slice(body);
-    b
+    Ok(b)
 }
 
 pub fn synthetic_sldprt() -> std::io::Result<Vec<u8>> {
@@ -288,10 +316,10 @@ pub fn synthetic_sldprt() -> std::io::Result<Vec<u8>> {
     f.extend_from_slice(&make_block(
         0x20,
         "Contents/Config-0-Partition",
-        &parasolid_payload("partition body", "SCH_SW_33103_11000"),
+        &parasolid_payload("partition body", "SCH_SW_33103_11000")?,
     )?);
-    f.extend_from_slice(&make_cache_cell(90, "Contents/DisplayLists"));
-    f.extend_from_slice(&make_directory_entry(0x30, 2, "[Content_Types].xml"));
+    f.extend_from_slice(&make_cache_cell(90, "Contents/DisplayLists")?);
+    f.extend_from_slice(&make_directory_entry(0x30, 2, "[Content_Types].xml")?);
     Ok(f)
 }
 
@@ -300,7 +328,7 @@ pub fn sldprt_with_body(body: &[u8]) -> std::io::Result<Vec<u8>> {
     f.extend_from_slice(&make_block(
         0x20,
         "Contents/Config-0-Partition",
-        &parasolid_with_body("partition body", "SCH_SW_33103_11000", body),
+        &parasolid_with_body("partition body", "SCH_SW_33103_11000", body)?,
     )?);
     Ok(f)
 }

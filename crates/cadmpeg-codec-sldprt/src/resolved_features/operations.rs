@@ -6,7 +6,7 @@ use crate::classification::{classify, FeatureClass};
 use crate::layout::extrusion_sparse_operation_trailer as sparse_tr;
 use crate::records::ObjectId;
 use crate::records::{Feature, FeatureInputLane, FeatureInputName};
-use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::decode::{u64_from_index, DecodeContext, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::{BooleanOp, FeatureDefinition, FeatureOperation};
 use std::collections::HashMap;
@@ -20,13 +20,7 @@ fn collect_index<K: Eq + Hash, V>(
     let mut index = HashMap::new();
     for (key, value) in items {
         ctx.charge_work(1, operation)?;
-        if !index.contains_key(&key) {
-            ctx.charge_collection_items(1, operation)?;
-            index
-                .try_reserve(1)
-                .map_err(|_| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
-        }
-        index.insert(key, value);
+        ctx.insert_hash_map(&mut index, key, value, operation)?;
     }
     Ok(index)
 }
@@ -81,7 +75,7 @@ fn feature_operation_code(
     let direct_class = lane
         .classes
         .iter()
-        .find(|class| class.offset + 6 + class.name.len() as u64 == name.offset);
+        .find(|class| class.offset + 6 + u64_from_index(class.name.len()) == name.offset);
     if let Some(class) = direct_class {
         let class_offset = usize::try_from(class.offset).ok()?;
         if lane
@@ -585,14 +579,21 @@ pub(crate) fn enrich_history_split_lines(
                 objects.push((name.offset, feature));
             }
         }
-        objects.sort_unstable_by_key(|(offset, _)| *offset);
+        ctx.sort_unstable_by(
+            &mut objects,
+            |(left, _), (right, _)| left.cmp(right),
+            |_| 0,
+            "sort SLDPRT split-line objects",
+        )?;
         for (index, (start, feature)) in objects.iter().enumerate() {
             if feature.input_class.as_deref() != Some("moPLine_c") {
                 continue;
             }
             let end = objects
                 .get(index + 1)
-                .map_or(lane.native_payload.len() as u64, |(offset, _)| *offset);
+                .map_or(u64_from_index(lane.native_payload.len()), |(offset, _)| {
+                    *offset
+                });
             let project_classes = lane
                 .classes
                 .iter()
@@ -607,14 +608,7 @@ pub(crate) fn enrich_history_split_lines(
                     observation.1 = true;
                 }
             } else {
-                ctx.charge_collection_items(1, "index SLDPRT split-line observations")?;
-                observations.try_reserve(1).map_err(|_| {
-                    ctx.refuse_codec_limit(
-                        "index SLDPRT split-line observations",
-                        u64::MAX - 1,
-                        u64::MAX,
-                    )
-                })?;
+                ctx.reserve_map(&mut observations, 1, "index SLDPRT split-line observations")?;
                 let key = copy_retained_string(
                     ctx,
                     &feature.id,
@@ -647,10 +641,7 @@ pub(crate) fn enrich_history_split_lines(
             if let Some(existing) = tools.get_mut(&feature.id) {
                 *existing = value;
             } else {
-                ctx.charge_collection_items(1, "index SLDPRT split-line tools")?;
-                tools.try_reserve(1).map_err(|_| {
-                    ctx.refuse_codec_limit("index SLDPRT split-line tools", u64::MAX - 1, u64::MAX)
-                })?;
+                ctx.reserve_map(&mut tools, 1, "index SLDPRT split-line tools")?;
                 let key =
                     copy_retained_string(ctx, &feature.id, "retain SLDPRT split-line tool key")?;
                 tools.insert(key, value);
@@ -662,19 +653,24 @@ pub(crate) fn enrich_history_split_lines(
         .flat_map(|history| &mut history.features)
     {
         if observations.get(&feature.id) == Some(&(true, false)) {
-            if !feature.properties.contains_key(SPLIT_LINE_MODE_PROPERTY) {
-                ctx.charge_collection_items(1, "bind SLDPRT split-line mode")?;
-            }
-            feature.properties.insert(
-                cadmpeg_core::nonblank_const!(SPLIT_LINE_MODE_PROPERTY),
-                SPLIT_LINE_PROJECTION_MODE.into(),
-            );
+            let mode_key = cadmpeg_core::nonblank_const!(SPLIT_LINE_MODE_PROPERTY);
+            ctx.admit_btree_entry(
+                &feature.properties,
+                &mode_key,
+                "bind SLDPRT split-line mode",
+            )?;
+            feature
+                .properties
+                .insert(mode_key, SPLIT_LINE_PROJECTION_MODE.into());
             if let Some(tool) = tools.get(&feature.id) {
-                if !feature.properties.contains_key(SPLIT_LINE_TOOL_PROPERTY) {
-                    ctx.charge_collection_items(1, "bind SLDPRT split-line tool")?;
-                }
+                let tool_key = cadmpeg_core::nonblank_const!(SPLIT_LINE_TOOL_PROPERTY);
+                ctx.admit_btree_entry(
+                    &feature.properties,
+                    &tool_key,
+                    "bind SLDPRT split-line tool",
+                )?;
                 feature.properties.insert(
-                    cadmpeg_core::nonblank_const!(SPLIT_LINE_TOOL_PROPERTY),
+                    tool_key,
                     copy_retained_string(ctx, tool, "retain SLDPRT split-line tool property")?,
                 );
             }

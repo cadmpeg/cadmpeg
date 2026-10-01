@@ -55,12 +55,13 @@ fn one_carrier_vertex_collection_error(limit: u64) -> CodecError {
         curve_id: 7,
         side: crate::topology::Side::Zero,
     };
-    scan.topology
-        .vertices
-        .push(crate::topology::TopologicalVertex {
-            id: 1,
-            half_edges: vec![half_edge],
-        });
+    scan.topology.vertices.push(
+        crate::decode::with_test_decode_ctx(|ctx| {
+            crate::topology::TopologicalVertex::new(ctx, 1, vec![half_edge])
+        })
+        .expect("vertex admission")
+        .expect("valid vertex fixture"),
+    );
     scan.topology.half_edges.push(crate::topology::HalfEdge {
         id: half_edge,
         face_id: std::num::NonZeroU32::new(5),
@@ -193,9 +194,13 @@ fn solve_topological_vertices_refuses_carrier_point_node() {
             ),
         );
     }
-    scan.topology
-        .vertices
-        .push(crate::topology::TopologicalVertex { id: 1, half_edges });
+    scan.topology.vertices.push(
+        crate::decode::with_test_decode_ctx(|ctx| {
+            crate::topology::TopologicalVertex::new(ctx, 1, half_edges)
+        })
+        .expect("vertex admission")
+        .expect("valid vertex fixture"),
+    );
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = 18;
@@ -244,17 +249,18 @@ fn pcurve_vertex_case() -> (
         face_1_endpoints: [[1.0, 2.0], [3.0, 4.0]],
         offset: 0,
     });
-    scan.topology.loops.push(crate::topology::Loop {
-        face_id: std::num::NonZeroU32::new(10),
-        half_edges: vec![side_zero],
-    });
+    scan.topology.loops.push(crate::test_support::closed_loop(
+        std::num::NonZeroU32::new(10),
+        vec![side_zero],
+    ));
     for (vertex_id, id, face_id, end_vertex_id) in [(1, side_zero, 10, 2), (2, side_one, 11, 1)] {
-        scan.topology
-            .vertices
-            .push(crate::topology::TopologicalVertex {
-                id: vertex_id,
-                half_edges: vec![id],
-            });
+        scan.topology.vertices.push(
+            crate::decode::with_test_decode_ctx(|ctx| {
+                crate::topology::TopologicalVertex::new(ctx, vertex_id, vec![id])
+            })
+            .expect("vertex admission")
+            .expect("valid vertex fixture"),
+        );
         scan.topology.half_edges.push(crate::topology::HalfEdge {
             id,
             face_id: std::num::NonZeroU32::new(face_id),
@@ -264,8 +270,9 @@ fn pcurve_vertex_case() -> (
             .half_edge_vertex_incidence
             .push(crate::topology::HalfEdgeVertexIncidence {
                 half_edge: id,
-                start_vertex_id: vertex_id,
-                end_vertex_id: Some(end_vertex_id),
+                start_vertex_id: std::num::NonZeroU32::new(vertex_id)
+                    .expect("one-based vertex fixture"),
+                end_vertex_id: std::num::NonZeroU32::new(end_vertex_id),
             });
     }
     let mut ir = cadmpeg_ir::document::CadIr::empty();
@@ -336,7 +343,17 @@ fn analytic_vertex_result(
             curve_id: 8,
             side: crate::topology::Side::Zero,
         };
-        scan.topology.vertices[0].half_edges.push(id);
+        let mut members = scan.topology.vertices[0].half_edges().to_vec();
+        members.push(id);
+        scan.topology.vertices[0] = crate::decode::with_test_decode_ctx(|ctx| {
+            crate::topology::TopologicalVertex::new(
+                ctx,
+                scan.topology.vertices[0].id.get(),
+                members,
+            )
+        })
+        .expect("orbit admission")
+        .expect("ordered orbit fixture");
         scan.topology.half_edges.push(crate::topology::HalfEdge {
             id,
             face_id: std::num::NonZeroU32::new(10),
@@ -397,13 +414,23 @@ fn ambiguous_vertex_result(limit: u64) -> Result<super::SolvedTopologicalVertice
         face_1_endpoints: [[5.0, 6.0], [7.0, 8.0]],
         offset: 0,
     });
-    scan.topology.loops.push(crate::topology::Loop {
-        face_id: std::num::NonZeroU32::new(10),
-        half_edges: vec![side_zero],
-    });
+    scan.topology.loops.push(crate::test_support::closed_loop(
+        std::num::NonZeroU32::new(10),
+        vec![side_zero],
+    ));
     for (vertex_index, id, face_id, end_vertex_id) in [(0, side_zero, 10, 2), (1, side_one, 11, 1)]
     {
-        scan.topology.vertices[vertex_index].half_edges.push(id);
+        let mut members = scan.topology.vertices[vertex_index].half_edges().to_vec();
+        members.push(id);
+        scan.topology.vertices[vertex_index] = crate::decode::with_test_decode_ctx(|ctx| {
+            crate::topology::TopologicalVertex::new(
+                ctx,
+                scan.topology.vertices[vertex_index].id.get(),
+                members,
+            )
+        })
+        .expect("orbit admission")
+        .expect("ordered orbit fixture");
         scan.topology.half_edges.push(crate::topology::HalfEdge {
             id,
             face_id: std::num::NonZeroU32::new(face_id),
@@ -413,8 +440,11 @@ fn ambiguous_vertex_result(limit: u64) -> Result<super::SolvedTopologicalVertice
             .half_edge_vertex_incidence
             .push(crate::topology::HalfEdgeVertexIncidence {
                 half_edge: id,
-                start_vertex_id: u32::try_from(vertex_index + 1).expect("two vertices"),
-                end_vertex_id: Some(end_vertex_id),
+                start_vertex_id: std::num::NonZeroU32::new(
+                    u32::try_from(vertex_index + 1).expect("two vertices"),
+                )
+                .expect("one-based vertex fixture"),
+                end_vertex_id: std::num::NonZeroU32::new(end_vertex_id),
             });
     }
     let arena = DecodeArena::new();

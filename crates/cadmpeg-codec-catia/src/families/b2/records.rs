@@ -1687,7 +1687,7 @@ pub(crate) fn b2_class5b5c_records_from_records(
         ctx.push_vec(
             &mut output,
             B2Class5b5cRecord {
-                frame: ConsolidatedRawFrame::from_record(record, payload),
+                frame: ConsolidatedRawFrame::from_record(record, payload)?,
                 source_index: record.source_index,
                 source_offset: record.source_range.start,
                 class,
@@ -3537,7 +3537,12 @@ pub(in crate::families) fn b2_offset_supports_from_records(
     let extra = b2_construction_offset_supports_from_records(ctx, data, records)?;
     ctx.reserve_vec(&mut offsets, extra.len(), "catia_b2_offset_supports")?;
     offsets.extend(extra);
-    offsets.sort_unstable_by_key(|offset| offset.pos);
+    ctx.sort_unstable_by(
+        &mut offsets,
+        |left, right| left.pos.cmp(&right.pos),
+        |_| 0,
+        "catia_b2_offset_supports_sort",
+    )?;
     Ok(offsets)
 }
 

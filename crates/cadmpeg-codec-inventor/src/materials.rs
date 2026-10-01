@@ -43,7 +43,9 @@ pub(crate) fn project_catalog(
         .collect::<Vec<_>>();
     let mut guid_counts: HashMap<&str, usize> = HashMap::new();
     for record in &records {
-        match guid_counts.entry(record.guid.as_str()) {
+        let guid = record.guid.as_str();
+        ctx.admit_hash_map_entry(&mut guid_counts, &guid, "Inventor material GUID counts")?;
+        match guid_counts.entry(guid) {
             std::collections::hash_map::Entry::Occupied(mut entry) => {
                 *entry.get_mut() = entry
                     .get()
@@ -51,7 +53,6 @@ pub(crate) fn project_catalog(
                     .ok_or_else(|| CodecError::Malformed("Protein GUID count overflows".into()))?;
             }
             std::collections::hash_map::Entry::Vacant(entry) => {
-                ctx.charge_collection_items(1, "Inventor material GUID counts")?;
                 entry.insert(1_usize);
             }
         }
@@ -67,7 +68,12 @@ pub(crate) fn project_catalog(
             duplicate_guids.push((*guid).to_owned());
         }
     }
-    duplicate_guids.sort();
+    ctx.stable_sort_by(
+        &mut duplicate_guids,
+        Ord::cmp,
+        std::string::String::len,
+        "Inventor duplicate material GUID sort",
+    )?;
 
     let mut textures = BTreeMap::new();
     let mut untyped_distance_properties = 0_usize;
@@ -89,12 +95,16 @@ pub(crate) fn project_catalog(
             }
             TextureAssetResult::Usable(texture) => texture,
         };
-        ctx.charge_collection_items(1, "Inventor material texture catalog")?;
         ctx.charge_retained(
             cadmpeg_core::decode::u64_from_index(texture.asset_guid.len()),
             "Inventor material texture key",
         )?;
-        textures.insert(texture.asset_guid.clone(), texture);
+        ctx.insert_btree_map(
+            &mut textures,
+            texture.asset_guid.clone(),
+            texture,
+            "Inventor material texture catalog",
+        )?;
     }
     let mut appearances = Vec::new();
     for (instance_ordinal, instance) in instances.iter().enumerate() {
@@ -111,15 +121,16 @@ pub(crate) fn project_catalog(
                 if let Some(cadmpeg_protein::property::PropertyValue::Float(value)) =
                     property.value()
                 {
-                    ctx.charge_collection_items(1, "Inventor appearance properties")?;
                     ctx.charge_retained(
                         cadmpeg_core::decode::u64_from_index(neutral_property_name(id).len()),
                         "Inventor appearance property name",
                     )?;
-                    properties.insert(
+                    ctx.insert_btree_map(
+                        &mut properties,
                         neutral_property_name(id).to_owned(),
-                        cadmpeg_protein::appearance::finite_scalar(record, id, *value)?,
-                    );
+                        *value,
+                        "Inventor appearance properties",
+                    )?;
                 }
                 for guid in property.connections() {
                     if let Some(texture) = textures.get(guid) {
@@ -127,11 +138,16 @@ pub(crate) fn project_catalog(
                     }
                 }
             }
-            connected.sort_by(|left, right| {
-                left.slot
-                    .cmp(&right.slot)
-                    .then_with(|| left.asset_guid.cmp(&right.asset_guid))
-            });
+            ctx.stable_sort_by(
+                &mut connected,
+                |left, right| {
+                    left.slot
+                        .cmp(&right.slot)
+                        .then_with(|| left.asset_guid.cmp(&right.asset_guid))
+                },
+                |item| item.slot.len() + item.asset_guid.len(),
+                "Inventor appearance texture sort",
+            )?;
             let base_color = [
                 "generic_diffuse",
                 "opaque_albedo",
@@ -253,7 +269,7 @@ fn color_property(record: &cadmpeg_protein::DecodedRecord, id: &str) -> Option<C
     else {
         return None;
     };
-    let components = [*r, *g, *b, *a].map(|value| {
+    let components = [r.get(), g.get(), b.get(), a.get()].map(|value| {
         if (0.0..=1.0).contains(&value) {
             cadmpeg_core::convert::f32_from_f64(value)
                 .and_then(cadmpeg_ir::scalar::UnitBinary32::new)
@@ -331,7 +347,9 @@ mod tests {
                     DecodedProperty {
                         value_offset: 0,
                         content: cadmpeg_protein::property::PropertyContent::Value {
-                            value: PropertyValue::Float(0.5),
+                            value: PropertyValue::Float(
+                                cadmpeg_ir::scalar::FiniteReal::new(0.5).expect("finite"),
+                            ),
                             connections: Vec::new(),
                         },
                     },
@@ -358,7 +376,9 @@ mod tests {
                         DecodedProperty {
                             value_offset: 0,
                             content: cadmpeg_protein::property::PropertyContent::Value {
-                                value: PropertyValue::Color([0.0, 0.25, 1.0, 1.0]),
+                                value: PropertyValue::Color([0.0, 0.25, 1.0, 1.0].map(|value| {
+                                    cadmpeg_ir::scalar::FiniteReal::new(value).expect("finite")
+                                })),
                                 connections: vec![texture_guid.into()],
                             },
                         },
@@ -386,6 +406,13 @@ mod tests {
             cadmpeg_ir::topology::Color::new(0.0, 0.25, 1.0, 1.0)
         );
         for invalid in [1.0 + f64::EPSILON, -f64::EPSILON, f64::NAN, f64::INFINITY] {
+            let Some(invalid_component) = cadmpeg_ir::scalar::FiniteReal::new(invalid) else {
+                assert!(
+                    !invalid.is_finite(),
+                    "non-finite source is refused before a color can exist"
+                );
+                continue;
+            };
             let property = record
                 .properties
                 .get_mut("generic_diffuse")
@@ -395,7 +422,12 @@ mod tests {
             else {
                 panic!("color value property");
             };
-            *value = PropertyValue::Color([invalid, 0.25, 1.0, 1.0]);
+            *value = PropertyValue::Color([
+                invalid_component,
+                cadmpeg_ir::scalar::FiniteReal::new(0.25).expect("finite"),
+                cadmpeg_ir::scalar::FiniteReal::ONE,
+                cadmpeg_ir::scalar::FiniteReal::ONE,
+            ]);
             assert!(super::color_property(&record, "generic_diffuse").is_none());
         }
     }
@@ -504,7 +536,9 @@ mod tests {
                 DecodedProperty {
                     value_offset: 0,
                     content: cadmpeg_protein::property::PropertyContent::Value {
-                        value: PropertyValue::Color([0.0, 0.25, 1.0, 1.0]),
+                        value: PropertyValue::Color([0.0, 0.25, 1.0, 1.0].map(|value| {
+                            cadmpeg_ir::scalar::FiniteReal::new(value).expect("finite")
+                        })),
                         connections: vec!["duplicate-texture".into()],
                     },
                 },
@@ -553,7 +587,9 @@ mod tests {
                 DecodedProperty {
                     value_offset: 0,
                     content: cadmpeg_protein::property::PropertyContent::Value {
-                        value: PropertyValue::Color([0.0, 0.25, 1.0, 1.0]),
+                        value: PropertyValue::Color([0.0, 0.25, 1.0, 1.0].map(|value| {
+                            cadmpeg_ir::scalar::FiniteReal::new(value).expect("finite")
+                        })),
                         connections: vec![texture_guid.into()],
                     },
                 },
@@ -573,7 +609,7 @@ mod tests {
                     content: cadmpeg_protein::property::PropertyContent::Value {
                         value: PropertyValue::Distance {
                             unit: 0x0002_1008,
-                            value: 7.0,
+                            value: cadmpeg_ir::scalar::FiniteReal::new(7.0).expect("finite"),
                         },
                         connections: Vec::new(),
                     },

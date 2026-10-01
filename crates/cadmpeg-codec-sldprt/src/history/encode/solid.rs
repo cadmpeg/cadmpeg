@@ -16,27 +16,54 @@ use cadmpeg_ir::features::{
     InnerWireTaper, LinearTermination, PlanarProfileRef, ProfileRef,
 };
 
-#[allow(
-    clippy::too_many_arguments,
-    clippy::trivially_copy_pass_by_ref,
-    clippy::ref_option,
-    clippy::ptr_arg,
-    reason = "Encoder arguments are borrowed from one FeatureDefinition match."
-)]
+/// The decoded fields of one `Extrude` operation, borrowed from the feature definition.
+#[derive(Clone, Copy)]
+pub(super) struct ExtrudeDefinition<'a> {
+    pub(super) profile: &'a ProfileRef,
+    pub(super) direction: &'a ExtrudeDirection,
+    pub(super) start: &'a ExtrudeStart,
+    pub(super) extent: &'a ExtrudeExtent,
+    pub(super) op: &'a BooleanOp,
+    pub(super) solid: Option<bool>,
+    pub(super) face_maker: Option<&'a FaceMaker>,
+    pub(super) inner_wire_taper: Option<&'a InnerWireTaper>,
+    pub(super) length_along_profile_normal: Option<bool>,
+    pub(super) allow_multi_profile_faces: Option<bool>,
+}
+
+/// The decoded fields of one `Hole` operation, borrowed from the feature definition.
+#[derive(Clone, Copy)]
+pub(super) struct HoleDefinition<'a> {
+    pub(super) profile: Option<&'a cadmpeg_ir::features::PlanarProfileRef>,
+    pub(super) profile_filter: Option<&'a HoleProfileFilter>,
+    pub(super) face: Option<&'a FaceSelection>,
+    pub(super) placements: Option<&'a [HolePlacement]>,
+    pub(super) construction: &'a HoleConstruction,
+    pub(super) exit_kind: Option<&'a HoleKind>,
+    pub(super) diameter: Option<&'a cadmpeg_ir::scalar::PositiveLength>,
+    pub(super) extent: Option<&'a LinearTermination>,
+    pub(super) bottom: Option<&'a HoleBottom>,
+    pub(super) taper_angle: Option<&'a cadmpeg_ir::scalar::InteriorAngle>,
+    pub(super) allow_multi_profile_faces: Option<bool>,
+}
+
 impl NeutralFeatureEncoder<'_, '_, '_> {
     pub(super) fn encode_extrude(
         &self,
-        profile: &ProfileRef,
-        direction: &ExtrudeDirection,
-        start: &ExtrudeStart,
-        extent: &ExtrudeExtent,
-        op: &BooleanOp,
-        solid: &Option<bool>,
-        face_maker: &Option<FaceMaker>,
-        inner_wire_taper: &Option<InnerWireTaper>,
-        length_along_profile_normal: &Option<bool>,
-        allow_multi_profile_faces: &Option<bool>,
+        definition: ExtrudeDefinition<'_>,
     ) -> Result<NeutralFeatureEncoding, CodecError> {
+        let ExtrudeDefinition {
+            profile,
+            direction,
+            start,
+            extent,
+            op,
+            solid,
+            face_maker,
+            inner_wire_taper,
+            length_along_profile_normal,
+            allow_multi_profile_faces,
+        } = definition;
         let feature = self.feature;
         let existing = self.existing;
         let record_sources = self.record_sources;
@@ -77,7 +104,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
             if !matches!(start, cadmpeg_ir::features::ExtrudeStart::ProfilePlane {})
                 || second_side_draft.is_some()
                 || direction_source.is_some()
-                || *solid == Some(false)
+                || solid == Some(false)
                 || face_maker.is_some()
                 || inner_wire_taper.is_some()
                 || any_side_offset
@@ -363,18 +390,21 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
 
     pub(super) fn encode_hole(
         &self,
-        profile: &Option<cadmpeg_ir::features::PlanarProfileRef>,
-        profile_filter: &Option<HoleProfileFilter>,
-        face: &Option<FaceSelection>,
-        placements: &Option<Vec<HolePlacement>>,
-        construction: &HoleConstruction,
-        exit_kind: &Option<HoleKind>,
-        diameter: &Option<cadmpeg_ir::scalar::PositiveLength>,
-        extent: &Option<LinearTermination>,
-        bottom: &Option<HoleBottom>,
-        taper_angle: &Option<cadmpeg_ir::scalar::InteriorAngle>,
-        allow_multi_profile_faces: &Option<bool>,
+        definition: HoleDefinition<'_>,
     ) -> Result<NeutralFeatureEncoding, CodecError> {
+        let HoleDefinition {
+            profile,
+            profile_filter,
+            face,
+            placements,
+            construction,
+            exit_kind,
+            diameter,
+            extent,
+            bottom,
+            taper_angle,
+            allow_multi_profile_faces,
+        } = definition;
         let feature = self.feature;
         let existing = self.existing;
         let (kind, specification) = match construction {
@@ -578,7 +608,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     properties.remove("Face");
                 }
             }
-            match placements.as_deref().unwrap_or_default() {
+            match placements.unwrap_or_default() {
                 [cadmpeg_ir::features::holes::HolePlacement::Directed {
                     position,
                     direction,

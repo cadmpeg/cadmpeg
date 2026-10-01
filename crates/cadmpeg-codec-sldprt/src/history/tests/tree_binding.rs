@@ -368,7 +368,14 @@ fn decode_binds_repeated_instances_by_class_token() {
     let mut payload = resolved_feature_classes_with_ids(&[("Fillet_c", "Seed", 41)]);
     for (name, object_id) in [("TokenSeed", 42u32), ("TokenOnly", 43)] {
         payload.extend_from_slice(&0x37a5u16.to_le_bytes());
-        payload.extend_from_slice(&[0x04, 0x80, 0xff, 0xfe, 0xff, name.len() as u8]);
+        payload.extend_from_slice(&[
+            0x04,
+            0x80,
+            0xff,
+            0xfe,
+            0xff,
+            u8::try_from(name.len()).unwrap(),
+        ]);
         for unit in name.encode_utf16() {
             payload.extend_from_slice(&unit.to_le_bytes());
         }
@@ -439,7 +446,14 @@ fn decode_does_not_bind_ambiguous_repeated_class_token() {
     ]);
     for (name, object_id) in [("FilletToken", 43u32), ("PlaneToken", 44), ("Unknown", 45)] {
         payload.extend_from_slice(&0x37a5u16.to_le_bytes());
-        payload.extend_from_slice(&[0x04, 0x80, 0xff, 0xfe, 0xff, name.len() as u8]);
+        payload.extend_from_slice(&[
+            0x04,
+            0x80,
+            0xff,
+            0xfe,
+            0xff,
+            u8::try_from(name.len()).unwrap(),
+        ]);
         for unit in name.encode_utf16() {
             payload.extend_from_slice(&unit.to_le_bytes());
         }

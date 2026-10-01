@@ -32,10 +32,7 @@ fn insert_dimension_property(
 ) -> Result<(), cadmpeg_core::CodecError> {
     let key = ctx.copy_retained_text(key, "creo dimension property key")?;
     let value = ctx.format_retained(format_args!("{value}"), "creo dimension property value")?;
-    if !properties.contains_key(&key) {
-        ctx.charge_collection_items(1, "creo dimension property nodes")?;
-    }
-    properties.insert(key, value);
+    ctx.insert_btree_map(properties, key, value, "creo dimension property nodes")?;
     Ok(())
 }
 
@@ -243,10 +240,11 @@ pub(in super::super) fn planned_feature_dimension_parameter_ids(
             let Ok(parameter) = ParameterId::try_from(text) else {
                 continue;
             };
-            if !ids.contains(&parameter) {
-                ctx.charge_collection_items(1, "creo planned dimension parameter ID nodes")?;
-            }
-            ids.insert(parameter);
+            ctx.insert_btree_set(
+                &mut ids,
+                parameter,
+                "creo planned dimension parameter ID nodes",
+            )?;
         }
     }
     Ok(ids)
@@ -312,9 +310,7 @@ pub(in super::super) fn feature_dimension_parameter_layout(
     let mut local_counts = BTreeMap::<(&SketchId, u32), usize>::new();
     for (sketch, external_id) in keys {
         let key = (sketch, *external_id);
-        if !local_counts.contains_key(&key) {
-            ctx.charge_collection_items(1, "creo dimension layout count nodes")?;
-        }
+        ctx.admit_btree_entry(&local_counts, &key, "creo dimension layout count nodes")?;
         *local_counts.entry(key).or_insert(0) += 1;
     }
     let mut next_ordinals = BTreeMap::<&SketchId, u32>::new();
@@ -322,9 +318,11 @@ pub(in super::super) fn feature_dimension_parameter_layout(
     let mut layout = Vec::new();
     ctx.reserve_vec(&mut layout, keys.len(), "creo dimension parameter layout")?;
     for (sketch, external_id) in keys {
-        if !next_ordinals.contains_key(sketch) {
-            ctx.charge_collection_items(1, "creo dimension layout ordinal nodes")?;
-        }
+        ctx.admit_btree_entry(
+            &next_ordinals,
+            &sketch,
+            "creo dimension layout ordinal nodes",
+        )?;
         let ordinal = next_ordinals.entry(sketch).or_default();
         let assigned = *ordinal;
         let Some(next) = ordinal.checked_add(1) else {
@@ -333,9 +331,11 @@ pub(in super::super) fn feature_dimension_parameter_layout(
         *ordinal = next;
         let key = (sketch, *external_id);
         let occurrence = if local_counts[&key] > 1 {
-            if !local_occurrences.contains_key(&key) {
-                ctx.charge_collection_items(1, "creo dimension layout occurrence nodes")?;
-            }
+            ctx.admit_btree_entry(
+                &local_occurrences,
+                &key,
+                "creo dimension layout occurrence nodes",
+            )?;
             let next = local_occurrences.entry(key).or_insert(0);
             let assigned = *next;
             *next += 1;
@@ -379,12 +379,13 @@ pub(in super::super) fn transfer_feature_dimensions(
     let mut feature_ids = BTreeSet::new();
     for feature in &ir.model.features {
         if !feature_ids.contains(&feature.id) {
-            ctx.charge_collection_items(1, "creo dimension owner feature ID nodes")?;
-            feature_ids.insert(
+            ctx.insert_btree_set(
+                &mut feature_ids,
                 feature
                     .id
                     .try_clone_for_decode(ctx, "creo dimension owner feature IDs")?,
-            );
+                "creo dimension owner feature ID nodes",
+            )?;
         }
     }
     let mut candidates = Vec::new();
@@ -412,12 +413,16 @@ pub(in super::super) fn transfer_feature_dimensions(
             ));
         }
     }
-    crate::sort::stable_sort_by_key(
-        ctx,
+    ctx.stable_sort_by(
         candidates.as_mut_slice(),
-        |(_, definition, source_ordinal, _)| {
-            (definition.offset, definition.identity.id(), *source_ordinal)
+        |(_, left, left_ordinal, _), (_, right, right_ordinal, _)| {
+            (left.offset, left.identity.id(), *left_ordinal).cmp(&(
+                right.offset,
+                right.identity.id(),
+                *right_ordinal,
+            ))
         },
+        |_| std::mem::size_of::<usize>() + std::mem::size_of::<u32>(),
         "creo transfer feature dimensions candidates ordering",
     )?;
     let mut keys = Vec::new();
@@ -433,9 +438,11 @@ pub(in super::super) fn transfer_feature_dimensions(
     };
     let mut unique_external_ids = BTreeMap::new();
     for (_, external_id) in &keys {
-        if !unique_external_ids.contains_key(external_id) {
-            ctx.charge_collection_items(1, "creo unique dimension external ID nodes")?;
-        }
+        ctx.admit_btree_entry(
+            &unique_external_ids,
+            external_id,
+            "creo unique dimension external ID nodes",
+        )?;
         *unique_external_ids.entry(*external_id).or_insert(0usize) += 1;
     }
     let transferred = layout.len();
@@ -458,14 +465,15 @@ pub(in super::super) fn transfer_feature_dimensions(
             continue;
         };
         if unique_external_ids[&dimension.external_id] == 1 {
-            ctx.charge_collection_items(1, "creo relation parameter nodes")?;
-            relation_parameters.insert(
+            ctx.insert_btree_map(
+                &mut relation_parameters,
                 ctx.format_retained(
                     format_args!("d{}", dimension.external_id),
                     "creo relation parameter names",
                 )?,
                 id.try_clone_for_decode(ctx, "creo relation parameter identities")?,
-            );
+                "creo relation parameter nodes",
+            )?;
         }
         annotate(
             ctx,

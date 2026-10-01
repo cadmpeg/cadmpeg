@@ -1693,15 +1693,12 @@ pub(super) fn half_edge_records<'a>(
 ) -> Result<Vec<CreoHalfEdgeRecord<'a>>, CodecError> {
     let mut topology_rows = BTreeMap::new();
     for row in &scan.curves.topology_rows {
-        match topology_rows.entry(row.id) {
-            std::collections::btree_map::Entry::Occupied(mut entry) => {
-                entry.insert(row);
-            }
-            std::collections::btree_map::Entry::Vacant(entry) => {
-                ctx.charge_collection_items(1, "creo native half edge topology row nodes")?;
-                entry.insert(row);
-            }
-        }
+        ctx.insert_btree_map(
+            &mut topology_rows,
+            row.id,
+            row,
+            "creo native half edge topology row nodes",
+        )?;
     }
     let mut records = Vec::new();
     for edge in &scan.topology.half_edges {
@@ -1742,8 +1739,8 @@ pub(super) fn loop_records<'a>(
         ctx.reserve_vec(&mut records, 1, "creo native loop records")?;
         records.push(CreoLoopRecord {
             id,
-            face_id: record.face_id.map_or(0, std::num::NonZeroU32::get),
-            half_edges: &record.half_edges,
+            face_id: record.face_id().map_or(0, std::num::NonZeroU32::get),
+            half_edges: record.half_edges(),
         });
     }
     Ok(records)
@@ -1755,12 +1752,14 @@ pub(super) fn loop_array_frame_records<'a>(
 ) -> Result<Vec<CreoLoopArrayFrameRecord<'a>>, CodecError> {
     let mut counts = BTreeMap::<usize, usize>::new();
     for record in &scan.loop_arrays.records {
+        ctx.admit_btree_entry(
+            &counts,
+            &record.frame_offset,
+            "creo native loop array frame count nodes",
+        )?;
         let count = match counts.entry(record.frame_offset) {
             std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
-            std::collections::btree_map::Entry::Vacant(entry) => {
-                ctx.charge_collection_items(1, "creo native loop array frame count nodes")?;
-                entry.insert(0)
-            }
+            std::collections::btree_map::Entry::Vacant(entry) => entry.insert(0),
         };
         *count = count.checked_add(1).ok_or_else(|| {
             ctx.refuse_codec_limit("creo native loop array frame counts", u64::MAX, u64::MAX)
@@ -1832,8 +1831,8 @@ pub(super) fn topological_vertex_records<'a>(
         ctx.reserve_vec(&mut records, 1, "creo native topological vertex records")?;
         records.push(CreoTopologicalVertexRecord {
             id,
-            vertex_id: record.id,
-            half_edges: &record.half_edges,
+            vertex_id: record.id.get(),
+            half_edges: record.half_edges(),
         });
     }
     Ok(records)
@@ -1860,8 +1859,8 @@ pub(super) fn half_edge_vertex_incidence_records(
         records.push(CreoHalfEdgeVertexIncidenceRecord {
             id,
             half_edge: half_edge_ref(record.half_edge),
-            start_vertex_id: record.start_vertex_id,
-            end_vertex_id: record.end_vertex_id,
+            start_vertex_id: record.start_vertex_id.get(),
+            end_vertex_id: record.end_vertex_id.map(std::num::NonZeroU32::get),
         });
     }
     Ok(records)
@@ -1880,8 +1879,8 @@ pub(super) fn face_component_records<'a>(
         ctx.reserve_vec(&mut records, 1, "creo native face component records")?;
         records.push(CreoFaceComponentRecord {
             id,
-            face_ids: &record.face_ids,
-            curve_ids: &record.curve_ids,
+            face_ids: record.face_ids(),
+            curve_ids: record.curve_ids(),
         });
     }
     Ok(records)
@@ -1896,9 +1895,7 @@ mod topology_projection_limit_tests {
     };
     use crate::curve::CurveTopologyRow;
     use crate::loop_array::{LoopArrayFrame, LoopArrayRecord};
-    use crate::topology::{
-        FaceComponent, HalfEdge, HalfEdgeId, HalfEdgeVertexIncidence, Loop, Side, TopologicalVertex,
-    };
+    use crate::topology::{HalfEdge, HalfEdgeId, HalfEdgeVertexIncidence, Side};
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use std::num::NonZeroU32;
 
@@ -1922,25 +1919,31 @@ mod topology_projection_limit_tests {
             face_id: NonZeroU32::new(1),
             next: Some(half_edge),
         });
-        scan.topology.loops.push(Loop {
-            face_id: NonZeroU32::new(1),
-            half_edges: vec![half_edge],
-        });
-        scan.topology.vertices.push(TopologicalVertex {
-            id: 1,
-            half_edges: vec![half_edge],
-        });
+        scan.topology.loops.push(crate::test_support::closed_loop(
+            NonZeroU32::new(1),
+            vec![half_edge],
+        ));
+        scan.topology.vertices.push(
+            crate::decode::with_test_decode_ctx(|ctx| {
+                crate::topology::TopologicalVertex::new(ctx, 1, vec![half_edge])
+            })
+            .expect("vertex admission")
+            .expect("valid vertex fixture"),
+        );
         scan.topology
             .half_edge_vertex_incidence
             .push(HalfEdgeVertexIncidence {
                 half_edge,
-                start_vertex_id: 1,
-                end_vertex_id: Some(1),
+                start_vertex_id: std::num::NonZeroU32::new(1).expect("one-based vertex fixture"),
+                end_vertex_id: std::num::NonZeroU32::new(1),
             });
-        scan.topology.face_components.push(FaceComponent {
-            face_ids: vec![1],
-            curve_ids: vec![8],
-        });
+        scan.topology.face_components.push(
+            crate::decode::with_test_decode_ctx(|ctx| {
+                crate::topology::FaceComponent::new(ctx, vec![1], vec![8])
+            })
+            .expect("component admission")
+            .expect("valid component fixture"),
+        );
         scan.loop_arrays.frames.push(LoopArrayFrame {
             offset: 17,
             variant: None,
@@ -2280,8 +2283,8 @@ pub(super) fn datum_plane_records<'a>(
             id,
             datum_id: record.id,
             owner_feature_id: record.feature_id,
-            normal: record.plane.normal(),
-            plane_offset: record.plane.offset,
+            normal: record.plane().normal(),
+            plane_offset: record.plane().offset(),
             corners: record.corners(),
             offset: record.offset_in_payload,
             source_section: source_section_ref(scan, record.offset_in_payload),
@@ -2350,10 +2353,10 @@ pub(super) fn feature_section_transform_records<'a>(
             source_section: source_section_ref(scan, record.offset),
         });
     }
-    crate::sort::stable_sort_by(
-        ctx,
+    ctx.stable_sort_by(
         records.as_mut_slice(),
         |left, right| left.id.cmp(&right.id),
+        |record| record.id.len(),
         "creo feature section transform records records ordering",
     )?;
     records.dedup_by(|left, right| left.id == right.id);
@@ -2404,10 +2407,11 @@ mod curve_plane_projection_limit_tests {
         feature_section_transform_records, outline_plane_records, plane_envelope_records,
         plane_local_system_records, prototype_pcurve_records,
     };
+    use crate::axis::Axis;
     use crate::curve::{
         dummy_curve_prototype, CurvePrototypeTopology, FcCurveCoordinates, PrototypePcurveEndpoints,
     };
-    use crate::datum::{Axis, DatumCylinder, DatumPlane, DatumPlaneRecord};
+    use crate::datum::{DatumCylinder, DatumPlane, DatumPlaneRecord};
     use crate::feature::definitions::{DefinitionIdentity, FeatureDefinition};
     use crate::placement::FeatureSectionTransform;
     use crate::surface::{
@@ -2471,17 +2475,17 @@ mod curve_plane_projection_limit_tests {
             u_axis: UnitVector3::X_AXIS,
             offset: 18,
         });
-        scan.planes.datums.push(DatumPlaneRecord {
-            id: 3,
-            feature_id: 2,
-            plane: DatumPlane {
-                axis: Axis::X,
-                offset: 1.0,
-            },
-            opposite_offset: 1.0,
-            in_plane_corners: [[None; 2]; 2],
-            offset_in_payload: 19,
-        });
+        scan.planes.datums.push(
+            DatumPlaneRecord::new(
+                3,
+                2,
+                DatumPlane::new(Axis::X, 1.0).expect("valid datum fixture"),
+                1.0,
+                [[None; 2]; 2],
+                19,
+            )
+            .expect("valid datum fixture"),
+        );
         scan.planes.datum_cylinders.push(DatumCylinder {
             id: 4,
             feature_id: 2,
@@ -3371,12 +3375,10 @@ fn curve_id_counts(
 ) -> Result<BTreeMap<u32, usize>, CodecError> {
     let mut counts = BTreeMap::<u32, usize>::new();
     for id in ids {
+        ctx.admit_btree_entry(&counts, &id, operation)?;
         let count = match counts.entry(id) {
             std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
-            std::collections::btree_map::Entry::Vacant(entry) => {
-                ctx.charge_collection_items(1, operation)?;
-                entry.insert(0)
-            }
+            std::collections::btree_map::Entry::Vacant(entry) => entry.insert(0),
         };
         *count = (*count)
             .checked_add(1)
@@ -3981,22 +3983,26 @@ pub(super) fn feature_operation_state_records<'a>(
 ) -> Result<Vec<CreoFeatureOperationState<'a>>, CodecError> {
     let mut current_offsets = BTreeMap::new();
     for state in &scan.features.operations {
-        if !current_offsets.contains_key(&state.feature_id) {
-            ctx.charge_collection_items(1, "creo native feature current-offset nodes")?;
-        }
-        current_offsets.insert(state.feature_id, state.offset);
+        ctx.insert_btree_map(
+            &mut current_offsets,
+            state.feature_id,
+            state.offset,
+            "creo native feature current-offset nodes",
+        )?;
     }
     let mut ordinals = BTreeMap::<u32, usize>::new();
     let mut records = Vec::new();
     for state in &scan.features.operation_states {
         let state_ordinal = ordinals.get(&state.feature_id).copied().unwrap_or_default();
-        if !ordinals.contains_key(&state.feature_id) {
-            ctx.charge_collection_items(1, "creo native feature ordinal nodes")?;
-        }
         let next_ordinal = state_ordinal.checked_add(1).ok_or_else(|| {
             ctx.refuse_codec_limit("creo native feature state ordinal", u64::MAX, u64::MAX)
         })?;
-        ordinals.insert(state.feature_id, next_ordinal);
+        ctx.insert_btree_map(
+            &mut ordinals,
+            state.feature_id,
+            next_ordinal,
+            "creo native feature ordinal nodes",
+        )?;
         let name = CreoOperationNameRecord {
             display_name_stored: state.name.display_name_stored(),
             stored_name: state
@@ -4130,10 +4136,10 @@ pub(super) fn pcurve_endpoint_records(
             pcurve.offset,
         ));
     }
-    crate::sort::stable_sort_by_key(
-        ctx,
+    ctx.stable_sort_by(
         records.as_mut_slice(),
-        |(_, offset)| *offset,
+        |(_, left), (_, right)| left.cmp(right),
+        |_| 0,
         "creo pcurve endpoint records records ordering",
     )?;
     Ok(records)
@@ -4316,7 +4322,9 @@ mod curve_expression_projection_limit_tests {
             },
             expression: "2".into(),
             dependencies: vec!["q".into()],
-            value: Some(CurveExpressionValue::Number(2.0)),
+            value: Some(CurveExpressionValue::Number(
+                cadmpeg_ir::scalar::FiniteReal::new(2.0).expect("finite relation fixture"),
+            )),
             activation: CurveExpressionActivation::Active,
             offset: 6,
         };
@@ -4345,7 +4353,9 @@ mod curve_expression_projection_limit_tests {
                 assignments: vec![assignment],
                 unknowns: vec![SolveUnknown {
                     name: "q".into(),
-                    solution: Some(CurveExpressionValue::Number(2.0)),
+                    solution: Some(CurveExpressionValue::Number(
+                        cadmpeg_ir::scalar::FiniteReal::new(2.0).expect("finite relation fixture"),
+                    )),
                 }],
                 offset: 8,
                 for_offset: 9,
@@ -5199,10 +5209,11 @@ pub(super) fn sketch_section_point_records(
         variables.reconciled_points(ctx)?;
     let mut point_ids = BTreeSet::new();
     for point_id in points.keys().copied().chain(ambiguous.iter().copied()) {
-        if !point_ids.contains(&point_id) {
-            ctx.charge_collection_items(1, "creo sketch section point ID nodes")?;
-            point_ids.insert(point_id);
-        }
+        ctx.insert_btree_set(
+            &mut point_ids,
+            point_id,
+            "creo sketch section point ID nodes",
+        )?;
     }
     crate::decode::collect_items(
         ctx,

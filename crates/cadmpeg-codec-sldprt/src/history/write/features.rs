@@ -70,7 +70,8 @@ fn synchronize_feature_input_names(
                 .iter()
                 .filter(|class| class.name == input_class)
             {
-                let name_offset = class.offset + 6 + class.name.len() as u64;
+                let name_offset =
+                    class.offset + 6 + cadmpeg_core::decode::u64_from_index(class.name.len());
                 if let Some((name_index, _)) = lane
                     .names
                     .iter()

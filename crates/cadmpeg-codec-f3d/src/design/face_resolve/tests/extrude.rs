@@ -817,7 +817,7 @@ fn extrude_profile_hierarchy_refuses_work_limit() {
 
     let (scope, groups) = extrude_root_fixture();
     let mut policy = DecodePolicy::default();
-    policy.limits.max_work_units = 1;
+    policy.limits.max_work_units = 386;
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(

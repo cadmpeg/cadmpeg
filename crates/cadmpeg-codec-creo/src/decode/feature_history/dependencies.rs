@@ -107,10 +107,11 @@ pub(in super::super) fn feature_output_surface_dependencies(
         .flat_map(|table| &table.entries)
         .filter(|entry| entry.source_entity_id() == Some(feature_id))
     {
-        if !owned_entities.contains(&entry.entity_id) {
-            ctx.charge_collection_items(1, "creo output surface owned entity nodes")?;
-            owned_entities.insert(entry.entity_id);
-        }
+        ctx.insert_btree_set(
+            &mut owned_entities,
+            entry.entity_id,
+            "creo output surface owned entity nodes",
+        )?;
     }
     let mut dependencies = Vec::new();
     for entry in tables
@@ -388,11 +389,13 @@ pub(in super::super) fn add_surface_prototype_feature_dependencies(
         if consumer == 0 || consumer == producer {
             continue;
         }
+        ctx.admit_btree_entry(
+            dependencies,
+            &consumer,
+            "creo prototype dependency consumers",
+        )?;
         let producers = match dependencies.entry(consumer) {
-            std::collections::btree_map::Entry::Vacant(entry) => {
-                ctx.charge_collection_items(1, "creo prototype dependency consumers")?;
-                entry.insert(Vec::new())
-            }
+            std::collections::btree_map::Entry::Vacant(entry) => entry.insert(Vec::new()),
             std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
         };
         if !producers.contains(&producer) {
@@ -460,8 +463,7 @@ pub(in super::super) fn reconcile_feature_links(
             ctx.copy_retained_text(feature.id.as_str(), "creo emitted feature identity text")?,
         )
         .map_err(cadmpeg_core::CodecError::malformed)?;
-        ctx.charge_collection_items(1, "creo emitted feature identity nodes")?;
-        emitted.insert(id);
+        ctx.insert_btree_set(&mut emitted, id, "creo emitted feature identity nodes")?;
     }
     let mut regeneration_edges = Vec::new();
     let mut updates = output_updates.into_iter();
@@ -588,10 +590,11 @@ pub(in super::super) fn reconcile_feature_links(
             break;
         };
         let index = remaining.remove(position);
-        if !preceding.contains(&ir.model.features[index].id) {
-            ctx.charge_collection_items(1, "creo preceding feature identity nodes")?;
-            preceding.insert(&ir.model.features[index].id);
-        }
+        ctx.insert_btree_set(
+            &mut preceding,
+            &ir.model.features[index].id,
+            "creo preceding feature identity nodes",
+        )?;
         ordered.push(index);
     }
     ordered.extend(remaining);

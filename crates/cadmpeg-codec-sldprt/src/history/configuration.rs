@@ -47,13 +47,7 @@ impl<'features> ConfigurationDefinitions<'features> {
                 .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))
         })?;
         let mut definitions = HashMap::new();
-        ctx.charge_collection_items(
-            cadmpeg_core::decode::u64_from_index(features.len()),
-            OPERATION,
-        )?;
-        definitions
-            .try_reserve(features.len())
-            .map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
+        ctx.reserve_map(&mut definitions, features.len(), OPERATION)?;
         for feature in features {
             let work = key_bytes
                 .checked_add(feature.id.as_str().len())
@@ -218,8 +212,7 @@ fn insert_configuration_value<K: Ord, V>(
     let bytes = key_bytes
         .checked_add(key_len)
         .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
-    ctx.charge_collection_items(1, OPERATION)?;
-    values.insert(key, value);
+    ctx.insert_btree_map(values, key, value, OPERATION)?;
     *key_bytes = bytes;
     Ok(())
 }
@@ -859,13 +852,15 @@ pub(crate) fn project_configuration_sketch_states(
             crate::resolved_features::profiles::bind_sketch_profiles(
                 ctx,
                 &mut features,
-                &mut ir.model.sketches,
-                &mut ir.model.sketch_entities,
-                &mut ir.model.sketch_constraints,
+                crate::resolved_features::profiles::SketchArenas {
+                    sketches: &mut ir.model.sketches,
+                    sketch_entities: &mut ir.model.sketch_entities,
+                    sketch_constraints: &mut ir.model.sketch_constraints,
+                    annotations,
+                },
                 &parameters,
                 histories,
                 scoped_lanes,
-                annotations,
             )?;
             crate::resolved_features::profiles::project_compact_sketch_profiles(
                 ctx,
@@ -1344,11 +1339,7 @@ fn configuration_reference_plane_frame<'features>(
             if visiting.contains(feature_id) {
                 return Ok(None);
             }
-            ctx.charge_collection_items(1, OPERATION)?;
-            visiting
-                .try_reserve(1)
-                .map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
-            visiting.insert(feature_id);
+            ctx.insert_hash_set(visiting, feature_id, OPERATION)?;
             let Some(definition) = features.get(ctx, feature_id)? else {
                 visiting.remove(feature_id);
                 return Ok(None);
@@ -1617,10 +1608,7 @@ impl<'id, T: Eq + std::hash::Hash> ConfigurationIdentitySet<'id, T> {
             .and_then(|bytes| bytes.checked_mul(4))
             .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
         ctx.charge_work(cadmpeg_core::decode::u64_from_index(work), operation)?;
-        ctx.charge_collection_items(1, operation)?;
-        self.ids
-            .try_reserve(1)
-            .map_err(|_| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
+        ctx.reserve_set(&mut self.ids, 1, operation)?;
         self.ids.insert(id);
         self.key_bytes = bytes;
         Ok(())
@@ -1736,14 +1724,11 @@ pub(crate) fn align_configuration_parameter_kinds(
     for parameter in &ir.model.parameters {
         ctx.charge_work(1, "scan SLDPRT configuration parameter kinds")?;
         if let Some(value) = &parameter.value {
-            ctx.charge_collection_items(1, "index SLDPRT configuration parameter kinds")?;
-            parameter_kinds.try_reserve(1).map_err(|_| {
-                ctx.refuse_codec_limit(
-                    "index SLDPRT configuration parameter kinds",
-                    u64::MAX - 1,
-                    u64::MAX,
-                )
-            })?;
+            ctx.reserve_map(
+                &mut parameter_kinds,
+                1,
+                "index SLDPRT configuration parameter kinds",
+            )?;
             parameter_kinds.insert(&parameter.id, value);
         }
     }
@@ -1784,12 +1769,10 @@ pub(crate) fn align_configuration_parameter_kinds(
             }
             (ParameterValue::Integer(_), ParameterValue::Real(real)) => {
                 let real = real.get();
-                if real < i64::MIN as f64 || real >= -(i64::MIN as f64) {
-                    None
-                } else {
-                    let integer = real as i64;
-                    (integer as f64 == real).then_some(ParameterValue::Integer(integer))
-                }
+                cadmpeg_core::convert::truncate_f64_to_i64(real).and_then(|integer| {
+                    (exact_integer_f64(integer) == Some(real))
+                        .then_some(ParameterValue::Integer(integer))
+                })
             }
             // Configuration lanes can provisionally classify an untyped scalar
             // as a length. The canonical integer wins only when the values agree.
@@ -1844,9 +1827,11 @@ pub(super) fn configuration_lane_assignments(
         else {
             continue;
         };
-        if !lanes_by_configuration.contains_key(&slot_index) {
-            ctx.charge_collection_items(1, "index SLDPRT configuration lane identities")?;
-        }
+        ctx.admit_btree_entry(
+            &lanes_by_configuration,
+            &slot_index,
+            "index SLDPRT configuration lane identities",
+        )?;
         let indices = lanes_by_configuration.entry(slot_index).or_default();
         ctx.reserve_vec(indices, 1, "collect SLDPRT configuration lane indices")?;
         indices.push(lane_index);
@@ -1940,16 +1925,11 @@ pub(crate) fn unresolved_configuration_lanes(
         .filter_map(|lane| lane.configuration.as_deref())
     {
         ctx.charge_work(1, "count SLDPRT configuration lane identities")?;
-        if !occurrences.contains_key(lane) {
-            ctx.charge_collection_items(1, "index SLDPRT configuration lane occurrences")?;
-            occurrences.try_reserve(1).map_err(|_| {
-                ctx.refuse_codec_limit(
-                    "index SLDPRT configuration lane occurrences",
-                    u64::MAX - 1,
-                    u64::MAX,
-                )
-            })?;
-        }
+        ctx.admit_hash_map_entry(
+            &mut occurrences,
+            &lane,
+            "index SLDPRT configuration lane occurrences",
+        )?;
         *occurrences.entry(lane).or_default() += 1;
     }
     let mut count = 0;

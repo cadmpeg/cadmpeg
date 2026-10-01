@@ -62,6 +62,7 @@ use crate::test_support::test_surface_fixtures::trimmed_plane_file;
 use crate::writer::Entity;
 use crate::{IgesCodec, IgesVersion};
 
+mod allocation;
 mod encode;
 mod extrusion_directrix;
 mod pcurve_orientation;
@@ -683,6 +684,7 @@ fn analytic_surface_family_uses_pointer_defined_iges_carriers() {
     ];
     for (geometry, expected_type) in cases {
         let entities = surface_entities(
+            &cadmpeg_test_support::service_decode_context(),
             geometry.solved().expect("solved carrier"),
             0,
             IgesVersion::V5_3,
@@ -708,7 +710,12 @@ fn cone_semi_angle_outside_iges_interval_is_not_implemented() {
     )
     .expect("the IR admits a finite signed cone angle");
     assert!(matches!(
-        surface_entities(&SolvedSurfaceGeometry::Cone(cone), 0, IgesVersion::V5_3),
+        surface_entities(
+            &cadmpeg_test_support::service_decode_context(),
+            &SolvedSurfaceGeometry::Cone(cone),
+            0,
+            IgesVersion::V5_3
+        ),
         Err(CodecError::NotImplemented(_))
     ));
 }
@@ -723,7 +730,12 @@ fn negative_sphere_radius_is_not_implemented() {
     )
     .expect("the IR admits a negative nonzero sphere radius");
     assert!(matches!(
-        surface_entities(&SolvedSurfaceGeometry::Sphere(sphere), 0, IgesVersion::V5_3),
+        surface_entities(
+            &cadmpeg_test_support::service_decode_context(),
+            &SolvedSurfaceGeometry::Sphere(sphere),
+            0,
+            IgesVersion::V5_3
+        ),
         Err(CodecError::NotImplemented(_))
     ));
 }
@@ -740,7 +752,12 @@ fn torus_radii_outside_iges_interval_are_not_implemented() {
         )
         .expect("the IR admits any finite nonzero tube radius");
         assert!(matches!(
-            surface_entities(&SolvedSurfaceGeometry::Torus(torus), 0, IgesVersion::V5_3),
+            surface_entities(
+                &cadmpeg_test_support::service_decode_context(),
+                &SolvedSurfaceGeometry::Torus(torus),
+                0,
+                IgesVersion::V5_3
+            ),
             Err(CodecError::NotImplemented(_))
         ));
     }
@@ -768,8 +785,14 @@ fn reversed_hyperbola_uses_an_equivalent_reflected_conic_frame() {
             .expect("end evaluates")
             .get(),
     };
-    let entity = oriented_curve_entity(&geometry, &span, Sense::Reversed, IgesVersion::V5_3)
-        .expect("a bounded hyperbola can be reversed exactly");
+    let entity = oriented_curve_entity(
+        &cadmpeg_test_support::service_decode_context(),
+        &geometry,
+        &span,
+        Sense::Reversed,
+        IgesVersion::V5_3,
+    )
+    .expect("a bounded hyperbola can be reversed exactly");
     assert_eq!((entity.type_code, entity.form), (104, 2));
     assert_eq!(
         entity
@@ -960,6 +983,7 @@ fn generated_full_circle_has_lexically_identical_endpoints() {
         .expect("valid CircleCurve fixture"),
     ));
     let entity = curve_entity(
+        &cadmpeg_test_support::service_decode_context(),
         geometry.solved().expect("solved carrier"),
         None,
         IgesVersion::V5_3,
@@ -990,6 +1014,7 @@ fn generated_circle_refuses_a_zero_length_edge_span() {
         end: Point3::new(0.0, 0.0, 0.0),
     };
     let Err(error) = curve_entity(
+        &cadmpeg_test_support::service_decode_context(),
         geometry.solved().expect("solved carrier"),
         Some(&span),
         IgesVersion::V5_3,
@@ -1182,6 +1207,7 @@ fn unrepresentable_conic_coefficients_are_not_implemented() {
     .expect("the IR admits finite ordered positive ellipse radii");
     assert!(matches!(
         curve_entity(
+            &cadmpeg_test_support::service_decode_context(),
             &SolvedCurveGeometry::Ellipse(ellipse),
             None,
             IgesVersion::V5_3
@@ -1202,6 +1228,7 @@ fn negative_nurbs_weights_are_not_implemented() {
     .expect("the IR admits finite nonzero signed NURBS weights");
     assert!(matches!(
         curve_entity(
+            &cadmpeg_test_support::service_decode_context(),
             &SolvedCurveGeometry::Nurbs(curve),
             Some(&CurveSpan {
                 range: cadmpeg_ir::units::FiniteVector::new([0.0, 1.0]).expect("finite test range"),
@@ -1229,7 +1256,12 @@ fn negative_nurbs_weights_are_not_implemented() {
     )
     .expect("the IR admits finite nonzero signed NURBS weights");
     assert!(matches!(
-        surface_entities(&SolvedSurfaceGeometry::Nurbs(surface), 0, IgesVersion::V5_3),
+        surface_entities(
+            &cadmpeg_test_support::service_decode_context(),
+            &SolvedSurfaceGeometry::Nurbs(surface),
+            0,
+            IgesVersion::V5_3
+        ),
         Err(CodecError::NotImplemented(_))
     ));
 }
@@ -1252,7 +1284,12 @@ fn empty_nurbs_surface_domain_is_not_implemented() {
     )
     .expect("the IR admits a nondecreasing knot vector with an empty active domain");
     assert!(matches!(
-        surface_entities(&SolvedSurfaceGeometry::Nurbs(surface), 0, IgesVersion::V5_3),
+        surface_entities(
+            &cadmpeg_test_support::service_decode_context(),
+            &SolvedSurfaceGeometry::Nurbs(surface),
+            0,
+            IgesVersion::V5_3
+        ),
         Err(CodecError::NotImplemented(_))
     ));
 }
@@ -1287,6 +1324,7 @@ fn hyperbola_endpoint_overflow_is_not_implemented() {
     };
     assert!(matches!(
         curve_entity(
+            &cadmpeg_test_support::service_decode_context(),
             &SolvedCurveGeometry::Hyperbola(hyperbola),
             Some(&span),
             IgesVersion::V5_3
@@ -1311,6 +1349,7 @@ fn parabola_endpoint_overflow_is_not_implemented() {
     };
     assert!(matches!(
         curve_entity(
+            &cadmpeg_test_support::service_decode_context(),
             &SolvedCurveGeometry::Parabola(parabola),
             Some(&span),
             IgesVersion::V5_3
@@ -1346,7 +1385,12 @@ fn zero_conic_parameter_span_is_not_implemented() {
         SolvedCurveGeometry::Hyperbola(hyperbola),
     ] {
         assert!(matches!(
-            curve_entity(&geometry, Some(&span), IgesVersion::V5_3),
+            curve_entity(
+                &cadmpeg_test_support::service_decode_context(),
+                &geometry,
+                Some(&span),
+                IgesVersion::V5_3
+            ),
             Err(CodecError::NotImplemented(_))
         ));
     }
@@ -1372,6 +1416,7 @@ fn decreasing_polyline_parameters_are_not_implemented() {
         .expect("the IR admits finite strictly decreasing polyline parameters");
     assert!(matches!(
         curve_entity(
+            &cadmpeg_test_support::service_decode_context(),
             &SolvedCurveGeometry::Polyline(polyline),
             Some(&CurveSpan {
                 range: cadmpeg_ir::units::FiniteVector::new([0.0, 1.0]).expect("finite test range"),
@@ -1403,6 +1448,7 @@ fn parabola_coefficient_that_overflows_is_not_implemented() {
         end: Point3::new(0.0, 0.0, 0.0),
     };
     let written = curve_entity(
+        &cadmpeg_test_support::service_decode_context(),
         &SolvedCurveGeometry::Parabola(parabola),
         Some(&span),
         IgesVersion::V5_3,

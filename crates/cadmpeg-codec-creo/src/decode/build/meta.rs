@@ -23,10 +23,7 @@ fn insert_source_attribute(
 ) -> Result<(), cadmpeg_core::CodecError> {
     let key = ctx.format_retained(format_args!("{key}"), "Creo source attribute key")?;
     let value = ctx.format_retained(format_args!("{value}"), "Creo source attribute value")?;
-    if !attributes.contains_key(&key) {
-        ctx.charge_collection_items(1, "Creo source attribute map nodes")?;
-    }
-    attributes.insert(key, value);
+    ctx.insert_btree_map(attributes, key, value, "Creo source attribute map nodes")?;
     Ok(())
 }
 

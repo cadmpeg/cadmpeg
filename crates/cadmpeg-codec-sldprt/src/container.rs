@@ -12,12 +12,10 @@ use cadmpeg_core::container::{CompressionMethod, ContainerRole, EntryStorage, Ve
 use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_container::compound::{CompoundEntry, CompoundPrefixProbe, CompoundSnapshot};
-use cadmpeg_container::compression::{
-    inflate_bounded_probe, inflate_deflate_owned, inflate_zlib_member_owned,
-};
+use cadmpeg_container::compression::{inflate_deflate_owned, inflate_zlib_member_owned};
 use cadmpeg_core::bytes::contains;
 use cadmpeg_core::decode::{
-    DecodeArena, DecodeContext, DecodePolicy, ExpandSpec, ScopedReservation, View,
+    index_from_u32, u64_from_index, DecodeContext, ExpandSpec, ScopedReservation, View,
 };
 use cadmpeg_core::dialect::DialectLayers;
 use cadmpeg_core::{CodecError, ContainerEntry};
@@ -33,8 +31,7 @@ use crate::layout::zlb_wrapper_header as zlb_hdr;
 /// Marker shared by block, cache-cell, and directory frames.
 pub(crate) const MARKER: [u8; 6] = block_hdr::MARKER_VALUE;
 
-/// Upper bound on a single decompressed block, guarding a corrupt `uncomp_sz`
-/// from driving an unbounded allocation. Real part streams sit far below this.
+/// Resource ceiling on the expansion of one native block.
 const MAX_UNCOMP: usize = 512 * 1024 * 1024;
 
 /// Classified decompressed payload signature.
@@ -105,25 +102,14 @@ fn is_bmp_thumbnail(payload: &[u8]) -> bool {
     header_size == 40 && matches!(bits_per_pixel, 1 | 4 | 8 | 16 | 24 | 32)
 }
 
-/// Decode a nibble-swapped section name.
-///
-/// Returns `None` when any decoded byte falls outside printable ASCII.
-fn nibble_swap_name(raw: &[u8]) -> Option<String> {
-    let mut s = String::with_capacity(raw.len());
-    for &b in raw {
-        let swapped = b.rotate_left(4);
-        if !(0x20..0x7f).contains(&swapped) {
-            return None;
-        }
-        s.push(swapped as char);
-    }
-    Some(s)
-}
-
 fn nibble_swap_name_charged(
     ctx: &DecodeContext<'_>,
     raw: &[u8],
 ) -> Result<Option<String>, CodecError> {
+    let work = u64_from_index(raw.len()).checked_mul(3).ok_or_else(|| {
+        ctx.refuse_codec_limit("validate SLDPRT section name", u64::MAX, u64::MAX)
+    })?;
+    ctx.charge_work(work, "validate SLDPRT section name")?;
     if !raw
         .iter()
         .all(|byte| (0x20..0x7f).contains(&byte.rotate_left(4)))
@@ -280,7 +266,7 @@ impl<'a> Section<'a> {
     pub(crate) fn ordinal(self) -> usize {
         match self {
             Self::Block(block) => block.offset,
-            Self::Compound(stream) => stream.directory_id as usize,
+            Self::Compound(stream) => index_from_u32(stream.directory_id),
         }
     }
 
@@ -361,70 +347,6 @@ pub(crate) fn looks_like_sldprt(prefix: &[u8]) -> bool {
         .any(|w| w == MARKER)
 }
 
-/// Scan an in-memory `.sldprt` image.
-///
-/// Truncated input produces a scan containing every structure that could be
-/// validated; missing outer-header bytes yield version zero.
-pub(crate) fn scan_bytes(bytes: &[u8]) -> ContainerScan<'_> {
-    if bytes.starts_with(&COMPOUND_FILE_MAGIC) {
-        let arena = DecodeArena::new();
-        let policy = DecodePolicy::default();
-        let compound_streams = DecodeContext::from_root_bytes(bytes, &arena, &policy)
-            .ok()
-            .and_then(|(ctx, root)| compound_streams(&ctx, root).ok())
-            .unwrap_or_default();
-        return completed_scan(
-            bytes,
-            0,
-            Vec::new(),
-            Vec::new(),
-            Vec::new(),
-            compound_streams,
-        );
-    }
-    let version = native_version(bytes);
-    let NativeMarkers {
-        blocks,
-        directory,
-        cache_cells,
-    } = walk_native_markers(
-        bytes,
-        &ScanAdmission::Probe,
-        |off| Ok(try_block(bytes, off)),
-        |off| Ok(try_cache_cell(bytes, off)),
-        |off| Ok(try_directory_entry(bytes, off)),
-    )
-    .unwrap_or_default();
-
-    completed_scan(bytes, version, blocks, directory, cache_cells, Vec::new())
-}
-
-fn completed_scan(
-    source_image: &[u8],
-    version: u32,
-    blocks: Vec<Block>,
-    directory: Vec<DirectoryEntry>,
-    cache_cells: Vec<CacheCell>,
-    compound_streams: Vec<CompoundStream>,
-) -> ContainerScan<'_> {
-    let mut scan = assemble_scan(
-        source_image,
-        version,
-        blocks,
-        directory,
-        cache_cells,
-        compound_streams,
-    );
-    let solidworks = scan_solidworks_envelopes(
-        scan.sections()
-            .map(|section| (section.name(), section.payload())),
-        &ScanAdmission::Probe,
-    )
-    .unwrap_or_default();
-    scan.solidworks = solidworks;
-    scan
-}
-
 fn completed_scan_charged<'a>(
     ctx: &DecodeContext<'_>,
     source_image: &'a [u8],
@@ -434,32 +356,7 @@ fn completed_scan_charged<'a>(
     cache_cells: Vec<CacheCell>,
     compound_streams: Vec<CompoundStream>,
 ) -> Result<ContainerScan<'a>, CodecError> {
-    let mut scan = assemble_scan(
-        source_image,
-        version,
-        blocks,
-        directory,
-        cache_cells,
-        compound_streams,
-    );
-    let solidworks = scan_solidworks_envelopes(
-        scan.sections()
-            .map(|section| (section.name(), section.payload())),
-        &ScanAdmission::Decode(ctx),
-    )?;
-    scan.solidworks = solidworks;
-    Ok(scan)
-}
-
-fn assemble_scan(
-    source_image: &[u8],
-    version: u32,
-    blocks: Vec<Block>,
-    directory: Vec<DirectoryEntry>,
-    cache_cells: Vec<CacheCell>,
-    compound_streams: Vec<CompoundStream>,
-) -> ContainerScan<'_> {
-    ContainerScan {
+    let mut scan = ContainerScan {
         source_image,
         version,
         blocks,
@@ -467,7 +364,14 @@ fn assemble_scan(
         cache_cells,
         compound_streams,
         solidworks: SolidWorksEnvelopeScan::default(),
-    }
+    };
+    let solidworks = scan_solidworks_envelopes(
+        scan.sections()
+            .map(|section| (section.name(), section.payload())),
+        &ScanAdmission::Decode(ctx),
+    )?;
+    scan.solidworks = solidworks;
+    Ok(scan)
 }
 
 fn native_version(bytes: &[u8]) -> u32 {
@@ -508,6 +412,9 @@ fn walk_native_markers(
     mut try_one_cell: impl FnMut(usize) -> Result<Option<CacheCell>, CodecError>,
     mut try_one_directory: impl FnMut(usize) -> Result<Option<DirectoryEntry>, CodecError>,
 ) -> Result<NativeMarkers, CodecError> {
+    if let ScanAdmission::Decode(ctx) = admission {
+        ctx.charge_work(u64_from_index(bytes.len()), "scan SLDPRT native markers")?;
+    }
     let mut blocks = Vec::new();
     let mut directory = Vec::new();
     let mut cache_cells = Vec::new();
@@ -518,7 +425,7 @@ fn walk_native_markers(
             continue;
         }
         if let Some(block) = try_one_block(i)? {
-            i = block.offset + block_hdr::LEN + block.preamble_len + block.comp_sz as usize;
+            i = block.offset + block_hdr::LEN + block.preamble_len + index_from_u32(block.comp_sz);
             admission.reserve(&mut blocks, "admit SLDPRT block")?;
             blocks.push(block.into_block());
             continue;
@@ -564,7 +471,7 @@ fn compound_stream(
 
 /// Scans an in-memory image while routing inflate through the decode budget.
 pub(crate) fn scan<'a>(
-    ctx: &DecodeContext<'a>,
+    ctx: &DecodeContext<'_>,
     root: View<'a>,
 ) -> Result<ContainerScan<'a>, CodecError> {
     if root.window().starts_with(&COMPOUND_FILE_MAGIC) {
@@ -606,9 +513,9 @@ pub(crate) fn scan<'a>(
 /// CFB directory/FAT/open is [`CompoundSnapshot`]; ZLB unwrap and Parasolid
 /// extract stay codec-local because they are `SolidWorks` payload semantics, not
 /// CFB.
-fn compound_streams<'a>(
-    ctx: &DecodeContext<'a>,
-    root: View<'a>,
+fn compound_streams(
+    ctx: &DecodeContext<'_>,
+    root: View<'_>,
 ) -> Result<Vec<CompoundStream>, CodecError> {
     let snapshot = CompoundSnapshot::new(ctx, root)?;
     let mut streams = Vec::new();
@@ -636,9 +543,9 @@ fn compound_streams<'a>(
     Ok(streams)
 }
 
-fn decode_wrapped_payload_budgeted<'a>(
-    ctx: &DecodeContext<'a>,
-    source: View<'a>,
+fn decode_wrapped_payload_budgeted(
+    ctx: &DecodeContext<'_>,
+    source: View<'_>,
 ) -> Result<Option<Vec<u8>>, CodecError> {
     let payload = source.window();
     if payload.get(..WRAPPED_PAYLOAD_MAGIC.len()) != Some(&WRAPPED_PAYLOAD_MAGIC) {
@@ -732,10 +639,10 @@ fn read_block_frame(bytes: &[u8], off: usize) -> Option<(BlockFrame, usize, usiz
     let uncomp_sz = View::u32_le_at(bytes, off + block_hdr::UNCOMP_SZ)?;
     let pre_sz = View::u32_le_at(bytes, off + block_hdr::PRE_SZ)?;
 
-    let comp = comp_sz as usize;
-    let pre = pre_sz as usize;
-    let uncomp = uncomp_sz as usize;
-    if comp == 0 || uncomp == 0 || uncomp > MAX_UNCOMP {
+    let comp = index_from_u32(comp_sz);
+    let pre = index_from_u32(pre_sz);
+    let uncomp = index_from_u32(uncomp_sz);
+    if comp == 0 || uncomp == 0 {
         return None;
     }
     let payload_start = off + block_hdr::LEN + pre;
@@ -762,14 +669,15 @@ fn block_from_inflated(
     frame: &BlockFrame,
     inflated: Vec<u8>,
 ) -> Result<Option<RawBlock>, CodecError> {
-    if inflated.len() != frame.uncomp_sz as usize {
+    if inflated.len() != index_from_u32(frame.uncomp_sz) {
         return Ok(None);
     }
+    ctx.charge_work(u64_from_index(inflated.len()), "validate SLDPRT block CRC")?;
     if crc32fast::hash(&inflated) != frame.crc {
         return Ok(None);
     }
 
-    let payload_start = off + block_hdr::LEN + frame.pre_sz as usize;
+    let payload_start = off + block_hdr::LEN + index_from_u32(frame.pre_sz);
     let preamble = bytes
         .get(off + block_hdr::LEN..payload_start)
         .unwrap_or(&[]);
@@ -779,6 +687,12 @@ fn block_from_inflated(
     // family label.
     let ps_streams = crate::parasolid::extract_streams_with_offsets(&inflated, ctx)?;
     let family = if ps_streams.is_empty() {
+        let work = u64_from_index(inflated.len())
+            .checked_mul(2)
+            .ok_or_else(|| {
+                ctx.refuse_codec_limit("classify SLDPRT block payload", u64::MAX, u64::MAX)
+            })?;
+        ctx.charge_work(work, "classify SLDPRT block payload")?;
         payload_family(&inflated)
     } else {
         PayloadFamily::Parasolid
@@ -788,7 +702,7 @@ fn block_from_inflated(
         offset: off,
         type_id: frame.type_id,
         comp_sz: frame.comp_sz,
-        preamble_len: frame.pre_sz as usize,
+        preamble_len: index_from_u32(frame.pre_sz),
         section,
         family,
         payload: inflated,
@@ -796,26 +710,22 @@ fn block_from_inflated(
     }))
 }
 
-fn try_block(bytes: &[u8], off: usize) -> Option<RawBlock> {
-    let (frame, payload_start, payload_end) = read_block_frame(bytes, off)?;
-    let payload = bytes.get(payload_start..payload_end)?;
-    let inflated = inflate_bounded_probe(payload, frame.uncomp_sz as usize)?;
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(bytes, &arena, &DecodePolicy::service()).ok()?;
-    block_from_inflated(&ctx, bytes, off, &frame, inflated)
-        .ok()
-        .flatten()
-}
-
-fn try_block_budgeted<'a>(
-    ctx: &DecodeContext<'a>,
-    root: View<'a>,
+fn try_block_budgeted(
+    ctx: &DecodeContext<'_>,
+    root: View<'_>,
     off: usize,
 ) -> Result<Option<RawBlock>, CodecError> {
     let bytes = root.window();
     let Some((frame, payload_start, payload_end)) = read_block_frame(bytes, off) else {
         return Ok(None);
     };
+    if index_from_u32(frame.uncomp_sz) > MAX_UNCOMP {
+        return Err(ctx.refuse_codec_limit(
+            "expand SLDPRT native block",
+            u64_from_index(MAX_UNCOMP),
+            u64::from(frame.uncomp_sz),
+        ));
+    }
     let Some(abs_start) = root.start().checked_add(payload_start) else {
         return Ok(None);
     };
@@ -835,18 +745,6 @@ fn try_block_budgeted<'a>(
         Err(_) => return Ok(None),
     };
     block_from_inflated(ctx, bytes, off, &frame, inflated)
-}
-
-/// Test a marker hit against the cache-cell relational invariant
-/// (`f@+10 == 2L`, `f@+14 == L/2`, `f@+18 == L`, `f@+22 == name_len`) plus a
-/// printable nibble-swapped name ([spec §2.2](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/sldprt.md#12-cache-cell-section-index-grid)).
-fn try_cache_cell(bytes: &[u8], off: usize) -> Option<CacheCell> {
-    match try_cache_cell_with(bytes, off, |raw| {
-        Ok::<_, std::convert::Infallible>(nibble_swap_name(raw))
-    }) {
-        Ok(cell) => cell,
-        Err(never) => match never {},
-    }
 }
 
 fn try_cache_cell_with<E>(
@@ -872,7 +770,7 @@ fn try_cache_cell_with<E>(
         return Ok(None);
     }
     let name_start = off + cache_hdr::LEN;
-    let Some(raw) = bytes.get(name_start..name_start + name_len as usize) else {
+    let Some(raw) = bytes.get(name_start..name_start + index_from_u32(name_len)) else {
         return Ok(None);
     };
     let Some(name) = name_from_bytes(raw)? else {
@@ -883,18 +781,6 @@ fn try_cache_cell_with<E>(
         logical_len: l,
         name,
     }))
-}
-
-/// Test a marker hit against the tail-directory frame: two zero words at +10 and
-/// +18, a size at +14, a name length at +22, a 14-byte descriptor, then a
-/// printable nibble-swapped name ([spec §2.3](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/sldprt.md#13-tail-section-directory)).
-fn try_directory_entry(bytes: &[u8], off: usize) -> Option<DirectoryEntry> {
-    match try_directory_entry_with(bytes, off, |raw| {
-        Ok::<_, std::convert::Infallible>(nibble_swap_name(raw))
-    }) {
-        Ok(entry) => entry,
-        Err(never) => match never {},
-    }
 }
 
 fn try_directory_entry_with<E>(
@@ -920,7 +806,7 @@ fn try_directory_entry_with<E>(
         return Ok(None);
     }
     let name_start = off + dir_ent::LEN;
-    let Some(raw) = bytes.get(name_start..name_start + name_len as usize) else {
+    let Some(raw) = bytes.get(name_start..name_start + index_from_u32(name_len)) else {
         return Ok(None);
     };
     let Some(descriptor) = bytes
@@ -930,7 +816,7 @@ fn try_directory_entry_with<E>(
         return Ok(None);
     };
     let Some(trailer) = bytes
-        .get(name_start + name_len as usize..name_start + name_len as usize + 6)
+        .get(name_start + index_from_u32(name_len)..name_start + index_from_u32(name_len) + 6)
         .and_then(|value| value.try_into().ok())
     else {
         return Ok(None);
@@ -950,78 +836,224 @@ fn try_directory_entry_with<E>(
 
 /// Convert a scan into the generic container inventory returned by
 /// [`cadmpeg_ir::Codec::inspect`].
-pub(crate) fn summarize(scan: &ContainerScan, dialects: DialectLayers) -> ContainerSummary {
+pub(crate) fn summarize(
+    ctx: &DecodeContext<'_>,
+    scan: &ContainerScan,
+    dialects: DialectLayers,
+) -> Result<ContainerSummary, CodecError> {
     let mut entries = Vec::new();
 
     for b in &scan.blocks {
+        ctx.charge_work(
+            u64_from_index(b.payload.len()),
+            "hash SLDPRT inventory payload",
+        )?;
+        ctx.charge_retained(64, "retain SLDPRT inventory digest")?;
         let mut attributes = BTreeMap::new();
-        attributes.insert("offset".to_string(), b.offset.to_string());
-        attributes.insert("type_id".to_string(), format!("0x{:08x}", b.type_id));
-        attributes.insert("family".to_string(), b.family.label().to_string());
-        attributes.insert("sha256".to_string(), sha256_hex(&b.payload));
+        ctx.insert_btree_map(
+            &mut attributes,
+            ctx.format_retained(format_args!("offset"), "retain SLDPRT inventory key")?,
+            ctx.format_retained(
+                format_args!("{}", b.offset),
+                "retain SLDPRT inventory value",
+            )?,
+            "collect SLDPRT inventory attributes",
+        )?;
+        ctx.insert_btree_map(
+            &mut attributes,
+            ctx.format_retained(format_args!("type_id"), "retain SLDPRT inventory key")?,
+            ctx.format_retained(
+                format_args!("0x{:08x}", b.type_id),
+                "retain SLDPRT inventory value",
+            )?,
+            "collect SLDPRT inventory attributes",
+        )?;
+        ctx.insert_btree_map(
+            &mut attributes,
+            ctx.format_retained(format_args!("family"), "retain SLDPRT inventory key")?,
+            ctx.format_retained(
+                format_args!("{}", b.family.label()),
+                "retain SLDPRT inventory value",
+            )?,
+            "collect SLDPRT inventory attributes",
+        )?;
+        ctx.insert_btree_map(
+            &mut attributes,
+            ctx.format_retained(format_args!("sha256"), "retain SLDPRT inventory key")?,
+            sha256_hex(&b.payload),
+            "collect SLDPRT inventory attributes",
+        )?;
         if let Some(stream) = b.ps_streams.first() {
-            attributes.insert(
-                "parasolid_schema".to_string(),
-                stream.header.schema.value().to_owned(),
-            );
-            attributes.insert(
-                "parasolid_description".to_string(),
-                stream.header.description.clone(),
-            );
+            ctx.insert_btree_map(
+                &mut attributes,
+                ctx.format_retained(
+                    format_args!("parasolid_schema"),
+                    "retain SLDPRT inventory key",
+                )?,
+                ctx.format_retained(
+                    format_args!("{}", stream.header.schema.value()),
+                    "retain SLDPRT inventory value",
+                )?,
+                "collect SLDPRT inventory attributes",
+            )?;
+            ctx.insert_btree_map(
+                &mut attributes,
+                ctx.format_retained(
+                    format_args!("parasolid_description"),
+                    "retain SLDPRT inventory key",
+                )?,
+                ctx.format_retained(
+                    format_args!("{}", stream.header.description),
+                    "retain SLDPRT inventory value",
+                )?,
+                "collect SLDPRT inventory attributes",
+            )?;
         }
-        entries.push(ContainerEntry {
-            name: b.section.source_stream().as_str().to_owned(),
-            role: ContainerRole::Block,
-            storage: EntryStorage::Compressed {
-                method: CompressionMethod::Deflate,
-                stored: Some(b.comp_sz as u64),
-                expanded: Some(b.uncomp_sz() as u64),
+        ctx.push_retained_vec(
+            &mut entries,
+            ContainerEntry {
+                name: ctx.format_retained(
+                    format_args!("{}", b.section.source_stream().as_str()),
+                    "retain SLDPRT inventory name",
+                )?,
+                role: ContainerRole::Block,
+                storage: EntryStorage::Compressed {
+                    method: CompressionMethod::Deflate,
+                    stored: Some(u64::from(b.comp_sz)),
+                    expanded: Some(u64_from_index(b.uncomp_sz())),
+                },
+                attributes,
             },
-            attributes,
-        });
+            "collect SLDPRT inventory entries",
+        )?;
     }
 
     for d in &scan.directory {
         let mut attributes = BTreeMap::new();
-        attributes.insert("offset".to_string(), d.offset.to_string());
-        attributes.insert("type_id".to_string(), format!("0x{:08x}", d.type_id));
-        entries.push(ContainerEntry {
-            name: d.name.clone(),
-            role: ContainerRole::DirectoryEntry,
-            storage: EntryStorage::payload_only(VerbatimLabel::None, d.size as u64),
-            attributes,
-        });
+        ctx.insert_btree_map(
+            &mut attributes,
+            ctx.format_retained(format_args!("offset"), "retain SLDPRT inventory key")?,
+            ctx.format_retained(
+                format_args!("{}", d.offset),
+                "retain SLDPRT inventory value",
+            )?,
+            "collect SLDPRT inventory attributes",
+        )?;
+        ctx.insert_btree_map(
+            &mut attributes,
+            ctx.format_retained(format_args!("type_id"), "retain SLDPRT inventory key")?,
+            ctx.format_retained(
+                format_args!("0x{:08x}", d.type_id),
+                "retain SLDPRT inventory value",
+            )?,
+            "collect SLDPRT inventory attributes",
+        )?;
+        ctx.push_retained_vec(
+            &mut entries,
+            ContainerEntry {
+                name: ctx.format_retained(
+                    format_args!("{}", d.name.as_str()),
+                    "retain SLDPRT inventory name",
+                )?,
+                role: ContainerRole::DirectoryEntry,
+                storage: EntryStorage::payload_only(VerbatimLabel::None, u64::from(d.size)),
+                attributes,
+            },
+            "collect SLDPRT inventory entries",
+        )?;
     }
 
     for c in &scan.cache_cells {
         let mut attributes = BTreeMap::new();
-        attributes.insert("offset".to_string(), c.offset.to_string());
-        attributes.insert("logical_len".to_string(), c.logical_len.to_string());
-        entries.push(ContainerEntry {
-            name: c.name.clone(),
-            role: ContainerRole::CacheCell,
-            storage: EntryStorage::payload_only(VerbatimLabel::None, u64::from(c.logical_len)),
-            attributes,
-        });
+        ctx.insert_btree_map(
+            &mut attributes,
+            ctx.format_retained(format_args!("offset"), "retain SLDPRT inventory key")?,
+            ctx.format_retained(
+                format_args!("{}", c.offset),
+                "retain SLDPRT inventory value",
+            )?,
+            "collect SLDPRT inventory attributes",
+        )?;
+        ctx.insert_btree_map(
+            &mut attributes,
+            ctx.format_retained(format_args!("logical_len"), "retain SLDPRT inventory key")?,
+            ctx.format_retained(
+                format_args!("{}", c.logical_len),
+                "retain SLDPRT inventory value",
+            )?,
+            "collect SLDPRT inventory attributes",
+        )?;
+        ctx.push_retained_vec(
+            &mut entries,
+            ContainerEntry {
+                name: ctx.format_retained(
+                    format_args!("{}", c.name.as_str()),
+                    "retain SLDPRT inventory name",
+                )?,
+                role: ContainerRole::CacheCell,
+                storage: EntryStorage::payload_only(VerbatimLabel::None, u64::from(c.logical_len)),
+                attributes,
+            },
+            "collect SLDPRT inventory entries",
+        )?;
     }
 
     for stream in &scan.compound_streams {
+        let family_work = u64_from_index(stream.payload.len())
+            .checked_mul(2)
+            .ok_or_else(|| {
+                ctx.refuse_codec_limit("classify SLDPRT inventory payload", u64::MAX, u64::MAX)
+            })?;
+        ctx.charge_work(family_work, "classify SLDPRT inventory payload")?;
+        ctx.charge_work(
+            u64_from_index(stream.payload.len()),
+            "hash SLDPRT inventory payload",
+        )?;
+        ctx.charge_retained(64, "retain SLDPRT inventory digest")?;
         let mut attributes = BTreeMap::new();
-        attributes.insert("start_sector".to_string(), stream.start_sector.to_string());
-        attributes.insert("sha256".to_string(), sha256_hex(&stream.payload));
-        attributes.insert(
-            "family".to_string(),
-            payload_family(&stream.payload).label().to_string(),
-        );
-        entries.push(ContainerEntry {
-            name: stream.path.as_str().to_owned(),
-            role: ContainerRole::CompoundStream,
-            storage: EntryStorage::verbatim(VerbatimLabel::Stored, stream.payload.len() as u64),
-            attributes,
-        });
+        ctx.insert_btree_map(
+            &mut attributes,
+            ctx.format_retained(format_args!("start_sector"), "retain SLDPRT inventory key")?,
+            ctx.format_retained(
+                format_args!("{}", stream.start_sector),
+                "retain SLDPRT inventory value",
+            )?,
+            "collect SLDPRT inventory attributes",
+        )?;
+        ctx.insert_btree_map(
+            &mut attributes,
+            ctx.format_retained(format_args!("sha256"), "retain SLDPRT inventory key")?,
+            sha256_hex(&stream.payload),
+            "collect SLDPRT inventory attributes",
+        )?;
+        ctx.insert_btree_map(
+            &mut attributes,
+            ctx.format_retained(format_args!("family"), "retain SLDPRT inventory key")?,
+            ctx.format_retained(
+                format_args!("{}", payload_family(&stream.payload).label()),
+                "retain SLDPRT inventory value",
+            )?,
+            "collect SLDPRT inventory attributes",
+        )?;
+        ctx.push_retained_vec(
+            &mut entries,
+            ContainerEntry {
+                name: ctx.format_retained(
+                    format_args!("{}", stream.path.as_str()),
+                    "retain SLDPRT inventory name",
+                )?,
+                role: ContainerRole::CompoundStream,
+                storage: EntryStorage::verbatim(
+                    VerbatimLabel::Stored,
+                    u64_from_index(stream.payload.len()),
+                ),
+                attributes,
+            },
+            "collect SLDPRT inventory entries",
+        )?;
     }
 
-    ContainerSummary::classified(
+    Ok(ContainerSummary::classified(
         dialects,
         if scan.compound_streams.is_empty() {
             cadmpeg_ir::ContainerKind::SldprtBlocks
@@ -1030,28 +1062,20 @@ pub(crate) fn summarize(scan: &ContainerScan, dialects: DialectLayers) -> Contai
         },
         entries,
         Vec::new(),
-        notes(scan),
-    )
-}
-
-/// Describe the decoded container without constructing its entry inventory.
-pub(crate) fn notes(scan: &ContainerScan<'_>) -> Vec<String> {
-    let active = match active_parasolid_summary(scan) {
-        Some((name, size, sch)) => format!(
-            "active Parasolid B-rep candidate: {} ({} bytes, schema {})",
-            name, size, sch.schema
-        ),
-        None => NO_ACTIVE_PARASOLID_NOTE.to_string(),
-    };
-    notes_with_active(scan, active)
+        notes_charged(ctx, scan)?,
+    ))
 }
 
 const NO_ACTIVE_PARASOLID_NOTE: &str =
     "no unique active Parasolid partition located; available B-rep sites remain decodable";
 
-fn notes_with_active(scan: &ContainerScan<'_>, active: String) -> Vec<String> {
-    vec![
-        format!(
+pub(crate) fn notes_charged(
+    ctx: &DecodeContext<'_>,
+    scan: &ContainerScan<'_>,
+) -> Result<Vec<String>, CodecError> {
+    let mut notes = ctx.retained_vec(3, "collect SLDPRT container notes")?;
+    notes.push(ctx.format_retained(
+        format_args!(
             "outer version word: 0x{:08x}; {} CRC-validated block(s), {} tail-directory \
          entry/entries, {} cache-cell(s), {} compound stream(s)",
             scan.version,
@@ -1060,53 +1084,30 @@ fn notes_with_active(scan: &ContainerScan<'_>, active: String) -> Vec<String> {
             scan.cache_cells.len(),
             scan.compound_streams.len()
         ),
-        active,
-        "Parasolid body streams supply the typed topology and analytic carriers used by decode"
-            .to_string(),
-    ]
-}
-
-pub(crate) fn notes_charged(
-    ctx: &DecodeContext<'_>,
-    scan: &ContainerScan<'_>,
-) -> Result<Vec<String>, CodecError> {
-    use std::fmt::Write;
-
-    let active = match active_parasolid_summary(scan) {
-        Some((name, size, sch)) => {
-            const PREFIX: &str = "active Parasolid B-rep candidate: ";
-            const MIDDLE: &str = " (";
-            const SUFFIX: &str = " bytes, schema ";
-            const CLOSE: &str = ")";
-            let schema = sch.schema.value();
-            let required = [
-                PREFIX.len(),
-                name.len(),
-                MIDDLE.len(),
-                size.to_string().len(),
-                SUFFIX.len(),
-                schema.len(),
-                CLOSE.len(),
-            ]
-            .into_iter()
-            .try_fold(0_usize, usize::checked_add)
-            .ok_or_else(|| {
-                ctx.refuse_codec_limit("retain SLDPRT active site note", u64::MAX, u64::MAX)
-            })?;
-            let mut active = String::new();
-            ctx.try_reserve_retained_text(&mut active, required, "retain SLDPRT active site note")?;
-            write!(
-                active,
-                "{PREFIX}{name}{MIDDLE}{size}{SUFFIX}{schema}{CLOSE}"
-            )
-            .map_err(|_| {
-                ctx.refuse_codec_limit("retain SLDPRT active site note", u64::MAX, u64::MAX)
-            })?;
-            active
-        }
-        None => NO_ACTIVE_PARASOLID_NOTE.to_string(),
-    };
-    Ok(notes_with_active(scan, active))
+        "retain SLDPRT container note",
+    )?);
+    notes.push(match active_parasolid_summary(scan) {
+        Some((name, size, schema)) => ctx.format_retained(
+            format_args!(
+                "active Parasolid B-rep candidate: {} ({} bytes, schema {})",
+                name,
+                size,
+                schema.schema.value()
+            ),
+            "retain SLDPRT active site note",
+        )?,
+        None => ctx.format_retained(
+            format_args!("{NO_ACTIVE_PARASOLID_NOTE}"),
+            "retain SLDPRT active site note",
+        )?,
+    });
+    notes.push(ctx.format_retained(
+        format_args!(
+            "Parasolid body streams supply the typed topology and analytic carriers used by decode"
+        ),
+        "retain SLDPRT geometry note",
+    )?);
+    Ok(notes)
 }
 
 pub(crate) fn active_parasolid_summary<'a>(
@@ -1393,27 +1394,12 @@ pub(crate) fn xml_text_charged<'ctx>(
     bytes: &[u8],
     operation: &'static str,
 ) -> Result<Option<EnvelopeText<'ctx>>, CodecError> {
+    ctx.charge_work(u64_from_index(bytes.len()), operation)?;
     let bytes = bytes.strip_prefix(&[0x86]).unwrap_or(bytes);
     if bytes.starts_with(&[0xff, 0xfe]) {
         let utf16 = &bytes[2..];
-        let chars = || {
-            char::decode_utf16(
-                (0..utf16.len() / 2).filter_map(|index| View::u16_le_at(utf16, index * 2)),
-            )
-            .map(|result| match result {
-                Ok(value) => value,
-                Err(_) => char::REPLACEMENT_CHARACTER,
-            })
-        };
-        let length = chars().try_fold(0usize, |length, value| {
-            length
-                .checked_add(value.len_utf8())
-                .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))
-        })?;
-        let (mut text, scope) = ctx.scoped_string(length, operation)?;
-        for value in chars() {
-            text.push(value);
-        }
+        let (text, scope) =
+            ctx.utf16le_lossy_scoped_text(utf16, utf16.len() / 2, false, operation)?;
         Ok(Some(EnvelopeText {
             text,
             _scope: Some(scope),
@@ -1503,13 +1489,29 @@ fn scan_solidworks_envelopes<'a>(
         let Some(text) = admission.text(payload)? else {
             continue;
         };
-        let Ok(document) = roxmltree::Document::parse(&text.text) else {
-            continue;
+        let admitted;
+        let probe_document;
+        let document = match admission {
+            ScanAdmission::Decode(ctx) => {
+                admitted = match ctx.parse_xml(&text.text, "SLDPRT envelope XML tree") {
+                    Ok(tree) => tree,
+                    Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
+                    Err(_) => continue,
+                };
+                admitted.document()
+            }
+            ScanAdmission::Probe => {
+                probe_document = match roxmltree::Document::parse(&text.text) {
+                    Ok(document) => document,
+                    Err(_) => continue,
+                };
+                &probe_document
+            }
         };
         let root = document.root_element();
         if is_features_manifest_name(section) && root.tag_name().name() == "swSolidWorks" {
             scan.manifest_active_configuration
-                .merge(manifest_active_configuration_in(admission, &document)?);
+                .merge(manifest_active_configuration_in(admission, document)?);
         }
         if root.tag_name().name().contains("Keywords") {
             for configuration in document

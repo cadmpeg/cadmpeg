@@ -34,10 +34,11 @@ pub(in super::super) fn filled_surface_feature_definition(
     feature_id: u32,
 ) -> Result<IrFeatureDefinition, CodecError> {
     let sketch = match unique_feature_profile_definition(
+        ctx,
         &scan.features.definitions,
         &scan.features.section_transforms,
         feature_id,
-    ) {
+    )? {
         Some(definition) => model_sketch_id(ctx, scan, definition)?,
         None => None,
     };
@@ -79,8 +80,11 @@ pub(in super::super) fn knit_class_100_operand_entity_ids(
             if seen.contains(&entry.entity_id) {
                 return Ok(None);
             }
-            ctx.charge_collection_items(1, "creo knit consumer identity nodes")?;
-            seen.insert(entry.entity_id);
+            ctx.insert_btree_set(
+                &mut seen,
+                entry.entity_id,
+                "creo knit consumer identity nodes",
+            )?;
             let consumer_position = (table.offset, entry.offset, table_index, entry_index);
             let mut producer = None;
             for (source_index, source_table) in tables.iter().enumerate() {
@@ -131,8 +135,7 @@ fn knit_operand_entity_ids(
             if seen.contains(&id) {
                 return Ok(None);
             }
-            ctx.charge_collection_items(1, "creo knit quilt identity nodes")?;
-            seen.insert(id);
+            ctx.insert_btree_set(&mut seen, id, "creo knit quilt identity nodes")?;
             ctx.reserve_vec(&mut copied, 1, "creo knit quilt IDs")?;
             copied.push(id);
         }
@@ -205,8 +208,7 @@ pub(in super::super) fn knit_operand_surface_ids(
         if surface.feature_id != producer || seen.contains(&surface_id) {
             return Ok(None);
         }
-        ctx.charge_collection_items(1, "creo knit surface identity nodes")?;
-        seen.insert(surface_id);
+        ctx.insert_btree_set(&mut seen, surface_id, "creo knit surface identity nodes")?;
         ctx.reserve_vec(&mut surface_ids, 1, "creo knit surface IDs")?;
         surface_ids.push(surface_id);
     }
@@ -366,10 +368,16 @@ pub(in super::super) fn feature_surface_transitions(
         {
             return Ok(None);
         }
-        ctx.charge_collection_items(1, "creo transition output identity nodes")?;
-        output_ids.insert(output.entity_id);
-        ctx.charge_collection_items(1, "creo transition intermediate identity nodes")?;
-        intermediate_ids.insert(intermediate_id);
+        ctx.insert_btree_set(
+            &mut output_ids,
+            output.entity_id,
+            "creo transition output identity nodes",
+        )?;
+        ctx.insert_btree_set(
+            &mut intermediate_ids,
+            intermediate_id,
+            "creo transition intermediate identity nodes",
+        )?;
         let mut matches = output_table.entries.iter().filter(|predecessor| {
             predecessor.class_id() == 214
                 && predecessor.entity_id == intermediate_id
@@ -392,8 +400,11 @@ pub(in super::super) fn feature_surface_transitions(
         {
             return Ok(None);
         }
-        ctx.charge_collection_items(1, "creo transition source identity nodes")?;
-        source_ids.insert(source_id);
+        ctx.insert_btree_set(
+            &mut source_ids,
+            source_id,
+            "creo transition source identity nodes",
+        )?;
         ctx.reserve_vec(&mut transitions, 1, "creo surface transitions")?;
         transitions.push((source_id, output.entity_id));
     }
@@ -508,8 +519,11 @@ pub(in super::super) fn feature_result_surface_ids(
             if row.feature_id != feature_id || seen.contains(&surface_id) {
                 return Ok(None);
             }
-            ctx.charge_collection_items(1, "creo feature result surface identity nodes")?;
-            seen.insert(surface_id);
+            ctx.insert_btree_set(
+                &mut seen,
+                surface_id,
+                "creo feature result surface identity nodes",
+            )?;
             ctx.reserve_vec(&mut surface_ids, 1, "creo feature result surface IDs")?;
             surface_ids.push(surface_id);
         }
@@ -529,11 +543,18 @@ pub(super) fn feature_result_surface_ids_by_feature(
         if unique_features.contains(&feature_id) {
             continue;
         }
-        ctx.charge_collection_items(1, "creo feature result feature identity nodes")?;
-        unique_features.insert(feature_id);
+        ctx.insert_btree_set(
+            &mut unique_features,
+            feature_id,
+            "creo feature result feature identity nodes",
+        )?;
         if let Some(surface_ids) = feature_result_surface_ids(ctx, tables, rows, feature_id)? {
-            ctx.charge_collection_items(1, "creo feature result surface map nodes")?;
-            by_feature.insert(feature_id, surface_ids);
+            ctx.insert_btree_map(
+                &mut by_feature,
+                feature_id,
+                surface_ids,
+                "creo feature result surface map nodes",
+            )?;
         }
     }
     Ok(by_feature)

@@ -1859,11 +1859,6 @@ fn parse_a8_class21_pcurve(
         if position.checked_add(minimum_known_bytes)? > payload.len() {
             return None;
         }
-        if let Err(error) = ctx
-            .charge_collection_items(u64_from_index(knot_count), "catia B5 pcurve distinct knots")
-        {
-            return Some(Err(error));
-        }
         let read_values = |position: &mut usize, values: &mut Vec<FiniteReal>| -> Option<()> {
             for _ in 0..knot_count {
                 values.push(f64_le(payload, *position)?);
@@ -1872,7 +1867,7 @@ fn parse_a8_class21_pcurve(
             Some(())
         };
         let mut distinct_knots = Vec::new();
-        if let Err(error) = cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+        if let Err(error) = ctx.reserve_vec(
             &mut distinct_knots,
             knot_count,
             "catia B5 pcurve distinct knots",
@@ -1880,17 +1875,10 @@ fn parse_a8_class21_pcurve(
             return Some(Err(error));
         }
         read_values(&mut position, &mut distinct_knots)?;
-        if let Err(error) =
-            ctx.charge_collection_items(u64_from_index(knot_count), "catia B5 pcurve knot values")
-        {
-            return Some(Err(error));
-        }
         let mut knot_values = Vec::new();
-        if let Err(error) = cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
-            &mut knot_values,
-            knot_count,
-            "catia B5 pcurve knot values",
-        ) {
+        if let Err(error) =
+            ctx.reserve_vec(&mut knot_values, knot_count, "catia B5 pcurve knot values")
+        {
             return Some(Err(error));
         }
         knot_values.extend(distinct_knots.iter().copied().map(FiniteReal::get));
@@ -1913,129 +1901,49 @@ fn parse_a8_class21_pcurve(
             }
             Some(())
         };
-        if let Err(error) =
-            ctx.charge_collection_items(u64_from_index(knot_count), "catia B5 pcurve u jet")
-        {
-            return Some(Err(error));
-        }
         let mut u = Vec::new();
-        if let Err(error) = cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
-            &mut u,
-            knot_count,
-            "catia B5 pcurve u jet",
-        ) {
+        if let Err(error) = ctx.reserve_vec(&mut u, knot_count, "catia B5 pcurve u jet") {
             return Some(Err(error));
         }
         read_lane(&mut position, &mut u)?;
-        if let Err(error) =
-            ctx.charge_collection_items(u64_from_index(knot_count), "catia B5 pcurve v jet")
-        {
-            return Some(Err(error));
-        }
         let mut v = Vec::new();
-        if let Err(error) = cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
-            &mut v,
-            knot_count,
-            "catia B5 pcurve v jet",
-        ) {
+        if let Err(error) = ctx.reserve_vec(&mut v, knot_count, "catia B5 pcurve v jet") {
             return Some(Err(error));
         }
         read_lane(&mut position, &mut v)?;
-        if let Err(error) =
-            ctx.charge_collection_items(u64_from_index(knot_count), "catia B5 pcurve du jet")
-        {
-            return Some(Err(error));
-        }
         let mut du = Vec::new();
-        if let Err(error) = cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
-            &mut du,
-            knot_count,
-            "catia B5 pcurve du jet",
-        ) {
+        if let Err(error) = ctx.reserve_vec(&mut du, knot_count, "catia B5 pcurve du jet") {
             return Some(Err(error));
         }
         read_lane(&mut position, &mut du)?;
-        if let Err(error) =
-            ctx.charge_collection_items(u64_from_index(knot_count), "catia B5 pcurve dv jet")
-        {
-            return Some(Err(error));
-        }
         let mut dv = Vec::new();
-        if let Err(error) = cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
-            &mut dv,
-            knot_count,
-            "catia B5 pcurve dv jet",
-        ) {
+        if let Err(error) = ctx.reserve_vec(&mut dv, knot_count, "catia B5 pcurve dv jet") {
             return Some(Err(error));
         }
         read_lane(&mut position, &mut dv)?;
-        if let Err(error) =
-            ctx.charge_collection_items(u64_from_index(knot_count), "catia B5 pcurve ddu jet")
-        {
-            return Some(Err(error));
-        }
         let mut ddu = Vec::new();
-        if let Err(error) = cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
-            &mut ddu,
-            knot_count,
-            "catia B5 pcurve ddu jet",
-        ) {
+        if let Err(error) = ctx.reserve_vec(&mut ddu, knot_count, "catia B5 pcurve ddu jet") {
             return Some(Err(error));
         }
         read_lane(&mut position, &mut ddu)?;
-        if let Err(error) =
-            ctx.charge_collection_items(u64_from_index(knot_count), "catia B5 pcurve ddv jet")
-        {
-            return Some(Err(error));
-        }
         let mut ddv = Vec::new();
-        if let Err(error) = cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
-            &mut ddv,
-            knot_count,
-            "catia B5 pcurve ddv jet",
-        ) {
+        if let Err(error) = ctx.reserve_vec(&mut ddv, knot_count, "catia B5 pcurve ddv jet") {
             return Some(Err(error));
         }
         read_lane(&mut position, &mut ddv)?;
-        if let Err(error) =
-            ctx.charge_collection_items(u64_from_index(knot_count), "catia B5 pcurve point jets")
-        {
-            return Some(Err(error));
-        }
         let mut points = Vec::new();
-        if let Err(error) = cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
-            &mut points,
-            knot_count,
-            "catia B5 pcurve point jets",
-        ) {
+        if let Err(error) = ctx.reserve_vec(&mut points, knot_count, "catia B5 pcurve point jets") {
             return Some(Err(error));
         }
         points.extend(u.into_iter().zip(v).map(|(u, v)| [u, v]));
-        if let Err(error) =
-            ctx.charge_collection_items(u64_from_index(knot_count), "catia B5 pcurve first jets")
-        {
-            return Some(Err(error));
-        }
         let mut first = Vec::new();
-        if let Err(error) = cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
-            &mut first,
-            knot_count,
-            "catia B5 pcurve first jets",
-        ) {
+        if let Err(error) = ctx.reserve_vec(&mut first, knot_count, "catia B5 pcurve first jets") {
             return Some(Err(error));
         }
         first.extend(du.into_iter().zip(dv).map(|(u, v)| [u, v]));
-        if let Err(error) =
-            ctx.charge_collection_items(u64_from_index(knot_count), "catia B5 pcurve second jets")
-        {
-            return Some(Err(error));
-        }
         let mut second = Vec::new();
-        if let Err(error) = cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
-            &mut second,
-            knot_count,
-            "catia B5 pcurve second jets",
-        ) {
+        if let Err(error) = ctx.reserve_vec(&mut second, knot_count, "catia B5 pcurve second jets")
+        {
             return Some(Err(error));
         }
         second.extend(ddu.into_iter().zip(ddv).map(|(u, v)| [u, v]));
@@ -2383,7 +2291,12 @@ pub(in crate::families) fn targeted_geometry_graph_from_frames(
     for record in candidates.into_values().flatten() {
         ctx.push_vec(&mut records, record, "catia_b5_targeted_geometry_records")?;
     }
-    records.sort_by_key(|record| record.offset);
+    ctx.stable_sort_by(
+        &mut records,
+        |left, right| left.offset.cmp(&right.offset),
+        |_| 0,
+        "catia_b5_targeted_geometry_sort",
+    )?;
     parse_from_records(ctx, bytes, &records, frames, false, refusal)
 }
 
@@ -3115,7 +3028,12 @@ fn bind_native_vertices(
         }
     }
     let mut ranked = ctx.collect_vec(logical_coordinates, "catia_b5_ranked_logical_vertices")?;
-    ranked.sort_unstable_by_key(|(vertex, _)| *vertex);
+    ctx.sort_unstable_by(
+        &mut ranked,
+        |(left, _), (right, _)| left.cmp(right),
+        |_| 0,
+        "catia_b5_ranked_logical_vertices_sort",
+    )?;
     let mut logical_vertex_indices = HashMap::new();
     let mut logical_vertices = Vec::new();
     for (rank, (object_id, point)) in ranked.into_iter().enumerate() {
@@ -5951,7 +5869,12 @@ fn admit_dependency_records(
         if found.is_empty() {
             break;
         }
-        found.sort_unstable_by_key(|record| record.offset);
+        ctx.sort_unstable_by(
+            &mut found,
+            |left, right| left.offset.cmp(&right.offset),
+            |_| 0,
+            "catia_b5_dependency_found_sort",
+        )?;
         pending.clear();
         for candidate in found {
             ctx.insert_hash_set(
@@ -6036,11 +5959,16 @@ fn framed_records_and_dependency_candidates(
         )?;
         ctx.push_vec(&mut records, (frame.end, record), "catia_b5_framed_records")?;
     }
-    records.sort_unstable_by(|(left_end, left), (right_end, right)| {
-        left_end
-            .cmp(right_end)
-            .then_with(|| right.offset.cmp(&left.offset))
-    });
+    ctx.sort_unstable_by(
+        &mut records,
+        |(left_end, left), (right_end, right)| {
+            left_end
+                .cmp(right_end)
+                .then_with(|| right.offset.cmp(&left.offset))
+        },
+        |_| 0,
+        "catia_b5_framed_records_sort",
+    )?;
     let mut ordered = Vec::new();
     for (_, record) in records {
         ctx.push_vec(&mut ordered, record, "catia_b5_ordered_framed_records")?;
@@ -6113,11 +6041,16 @@ fn indexed_topology_records_and_dependency_candidates(
             "catia_b5_indexed_topology_records",
         )?;
     }
-    records.sort_unstable_by(|(left_end, left), (right_end, right)| {
-        left_end
-            .cmp(right_end)
-            .then_with(|| right.offset.cmp(&left.offset))
-    });
+    ctx.sort_unstable_by(
+        &mut records,
+        |(left_end, left), (right_end, right)| {
+            left_end
+                .cmp(right_end)
+                .then_with(|| right.offset.cmp(&left.offset))
+        },
+        |_| 0,
+        "catia_b5_indexed_topology_records_sort",
+    )?;
     let mut ordered = Vec::new();
     for (_, record) in records {
         ctx.push_vec(&mut ordered, record, "catia_b5_ordered_indexed_records")?;
@@ -6325,19 +6258,20 @@ fn object_stream_run_ranges(
                 position = end;
                 continue;
             }
-            let allocation_end = position
-                .checked_add(15)
-                .filter(|&end| end <= bytes.len())
-                .filter(|&end| {
-                    crate::wire::records::scan_vertex_record_ranges(&bytes[position..end])
-                        .eq(std::iter::once(0..15))
-                })
-                .or_else(|| {
-                    external_grids
-                        .iter()
-                        .find(|range| range.start == position)
-                        .map(|range| range.end)
-                });
+            let coordinate_end = position.checked_add(15).filter(|&end| end <= bytes.len());
+            let allocation_end = if let Some(end) = coordinate_end {
+                crate::wire::records::scan_vertex_record_ranges(ctx, &bytes[position..end])?
+                    .eq(std::iter::once(0..15))
+                    .then_some(end)
+            } else {
+                None
+            };
+            let allocation_end = allocation_end.or_else(|| {
+                external_grids
+                    .iter()
+                    .find(|range| range.start == position)
+                    .map(|range| range.end)
+            });
             let Some(end) = allocation_end else {
                 break;
             };
@@ -6698,10 +6632,17 @@ pub(in crate::families) fn select_object_stream_population(
             )?;
         }
         let mut isolated = isolated_values;
-        isolated.sort_unstable_by_key(|index| {
-            let run = &runs[*index];
-            (run.stream_index, run.range.start)
-        });
+        ctx.sort_unstable_by(
+            &mut isolated,
+            |left, right| {
+                let left_run = &runs[*left];
+                let right_run = &runs[*right];
+                (left_run.stream_index, left_run.range.start)
+                    .cmp(&(right_run.stream_index, right_run.range.start))
+            },
+            |_| 0,
+            "catia_b5_selected_isolated_sort",
+        )?;
         for index in isolated {
             let run = &runs[index];
             let stream = &streams[run.stream_index];
@@ -6794,7 +6735,12 @@ fn owned_object_stream_population(
         )?;
     }
     let mut isolated = isolated_values;
-    isolated.sort_by_key(|(offset, _, _, _)| *offset);
+    ctx.stable_sort_by(
+        &mut isolated,
+        |(left, _, _, _), (right, _, _, _)| left.cmp(right),
+        |_| 0,
+        "catia_b5_population_isolated_sort",
+    )?;
 
     let mut population = ctx.copy_retained_slice(run, "catia_b5_topology_run_bytes")?;
     for (_, _, _, frame) in isolated {

@@ -83,9 +83,7 @@ impl Census {
         let mut counts = BTreeMap::new();
         for record in &self.records {
             let family = record.family_name();
-            if !counts.contains_key(family) {
-                ctx.charge_collection_items(1, "NX deltas full count families")?;
-            }
+            ctx.admit_btree_entry(&counts, &family, "NX deltas full count families")?;
             *counts.entry(family).or_default() += 1;
         }
         Ok(counts)
@@ -99,9 +97,7 @@ impl Census {
         let mut counts = BTreeMap::new();
         for tombstone in &self.tombstones {
             let family = tombstone.kind.name();
-            if !counts.contains_key(family) {
-                ctx.charge_collection_items(1, "NX deltas tombstone count families")?;
-            }
+            ctx.admit_btree_entry(&counts, &family, "NX deltas tombstone count families")?;
             *counts.entry(family).or_default() += 1;
         }
         Ok(counts)
@@ -139,6 +135,7 @@ pub(crate) fn walk(ctx: &DecodeContext<'_>, stream: &[u8]) -> Result<Census, Cod
         .map_or(0, |header| header.end);
     let mut value_boundary = true;
     let mut referenced_value_offsets = None::<BTreeSet<usize>>;
+    let mut referenced_offsets_guard = ctx.reserve_scoped(0, "NX referenced value offsets")?;
     let mut intersection_schema_anchor_seen = false;
     while offset + 4 <= stream.len() {
         ctx.charge_work(1, "walk NX deltas census")?;
@@ -226,14 +223,25 @@ pub(crate) fn walk(ctx: &DecodeContext<'_>, stream: &[u8]) -> Result<Census, Cod
         }
         if is_value_family(kind) && !value_boundary && referenced_value_offsets.is_none() {
             let mut offsets = BTreeSet::new();
-            for event_offset in crate::parasolid::referenced_value_event_offsets(stream) {
-                if !offsets.contains(&event_offset) {
-                    ctx.charge_collection_items(1, "NX referenced value offsets")?;
-                }
-                offsets.insert(event_offset);
+            let (events, _event_guard) =
+                crate::parasolid::referenced_value_event_offsets(ctx, stream)?;
+            for event_offset in events {
+                ctx.insert_scoped_btree_set(
+                    &mut referenced_offsets_guard,
+                    &mut offsets,
+                    event_offset,
+                    "index NX referenced offsets",
+                    "NX referenced value offsets",
+                )?;
             }
             referenced_value_offsets = Some(offsets);
         }
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(
+                referenced_value_offsets.as_ref().map_or(0, BTreeSet::len),
+            ),
+            "resolve NX referenced offset",
+        )?;
         let value_owned = !is_value_family(kind)
             || value_boundary
             || referenced_value_offsets
@@ -241,7 +249,9 @@ pub(crate) fn walk(ctx: &DecodeContext<'_>, stream: &[u8]) -> Result<Census, Cod
                 .is_some_and(|offsets| offsets.contains(&offset));
         if !value_owned {
             if let Some((parsed_kind, _, byte_len)) =
-                crate::parasolid::value_records::entity_value_record_identity_at(stream, offset)
+                crate::parasolid::value_records::entity_value_record_identity_at(
+                    ctx, stream, offset,
+                )?
             {
                 if parsed_kind == kind {
                     offset += byte_len;
@@ -380,38 +390,54 @@ fn populate_gap_events(
         }
     }
 
-    census
-        .events
-        .tagged_reference_lanes
-        .sort_unstable_by_key(|lane| lane.offset);
-    census
-        .events
-        .reference_type_maps
-        .sort_unstable_by_key(|map| map.offset);
-    census
-        .events
-        .reference_state_packets
-        .sort_unstable_by_key(|packet| packet.offset);
-    census
-        .events
-        .schema_reference_preambles
-        .sort_unstable_by_key(|preamble| preamble.offset);
-    census
-        .events
-        .inline_schema_declarations
-        .sort_unstable_by_key(|declaration| declaration.offset);
-    census
-        .events
-        .inline_body_states
-        .sort_unstable_by_key(|state| state.offset);
-    census
-        .events
-        .reference_marker_packets
-        .sort_unstable_by_key(|packet| packet.offset);
-    census
-        .events
-        .type_150_state_packets
-        .sort_unstable_by_key(|packet| packet.offset);
+    ctx.sort_unstable_by(
+        &mut census.events.tagged_reference_lanes,
+        |left, right| left.offset.cmp(&right.offset),
+        |_| 0,
+        "NX deltas tagged reference lanes",
+    )?;
+    ctx.sort_unstable_by(
+        &mut census.events.reference_type_maps,
+        |left, right| left.offset.cmp(&right.offset),
+        |_| 0,
+        "NX deltas reference type maps",
+    )?;
+    ctx.sort_unstable_by(
+        &mut census.events.reference_state_packets,
+        |left, right| left.offset.cmp(&right.offset),
+        |_| 0,
+        "NX deltas reference state packets",
+    )?;
+    ctx.sort_unstable_by(
+        &mut census.events.schema_reference_preambles,
+        |left, right| left.offset.cmp(&right.offset),
+        |_| 0,
+        "NX deltas schema reference preambles",
+    )?;
+    ctx.sort_unstable_by(
+        &mut census.events.inline_schema_declarations,
+        |left, right| left.offset.cmp(&right.offset),
+        |_| 0,
+        "NX deltas inline schema declarations",
+    )?;
+    ctx.sort_unstable_by(
+        &mut census.events.inline_body_states,
+        |left, right| left.offset.cmp(&right.offset),
+        |_| 0,
+        "NX deltas inline body states",
+    )?;
+    ctx.sort_unstable_by(
+        &mut census.events.reference_marker_packets,
+        |left, right| left.offset.cmp(&right.offset),
+        |_| 0,
+        "NX deltas reference marker packets",
+    )?;
+    ctx.sort_unstable_by(
+        &mut census.events.type_150_state_packets,
+        |left, right| left.offset.cmp(&right.offset),
+        |_| 0,
+        "NX deltas type 150 state packets",
+    )?;
     Ok(admitted_bytes)
 }
 

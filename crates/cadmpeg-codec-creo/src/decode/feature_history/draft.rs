@@ -259,9 +259,9 @@ pub(super) fn linear_extrusion_extent_and_direction(
     let unique_transform = transforms.next().is_none().then_some(first);
     let definition = match unique_transform {
         Some(Some(transform)) => {
-            unique_feature_definition_for_transform(&scan.features.definitions, transform)
+            unique_feature_definition_for_transform(ctx, &scan.features.definitions, transform)?
         }
-        Some(None) => unique_owned_feature_definition(&scan.features.definitions, feature_id),
+        Some(None) => unique_owned_feature_definition(ctx, &scan.features.definitions, feature_id)?,
         None => None,
     };
     let section = definition.and_then(|definition| definition.section_3d.as_ref());
@@ -343,17 +343,23 @@ pub(in super::super) fn schema_feature_definition(
         return Ok(definition);
     }
     if schema_class == Some(SchemaClass::Section) {
-        let definition =
-            section_definition_for_history_feature(scan, feature_id).filter(|definition| {
-                definition.section_3d.as_ref().is_some_and(|section| {
-                    unique_feature_section_transform(
+        let definition = match section_definition_for_history_feature(scan, feature_id) {
+            Some(definition) => match definition.section_3d.as_ref() {
+                Some(section)
+                    if unique_feature_section_transform(
+                        ctx,
                         &scan.features.section_transforms,
                         definition.identity.id(),
                         section.offset,
-                    )
-                    .is_some()
-                })
-            });
+                    )?
+                    .is_some() =>
+                {
+                    Some(definition)
+                }
+                _ => None,
+            },
+            None => None,
+        };
         let sketch = match definition {
             Some(definition) => model_sketch_id(ctx, scan, definition)?.filter(|sketch| {
                 ir.model
@@ -682,13 +688,12 @@ pub(in super::super) fn schema_feature_definition(
     {
         if let Some(sweep) = circular_sweep_geometry(ctx, scan, feature_id)? {
             let definition =
-                unique_owned_feature_definition(&scan.features.definitions, feature_id).filter(
-                    |definition| {
+                unique_owned_feature_definition(ctx, &scan.features.definitions, feature_id)?
+                    .filter(|definition| {
                         sweep
                             .section_definition_id
                             .is_none_or(|definition_id| definition_id == definition.identity.id())
-                    },
-                );
+                    });
             let profile = match definition {
                 Some(definition) => section_profile_ref(
                     ctx,
@@ -800,9 +805,11 @@ pub(in super::super) fn schema_feature_definition(
         let unique_transform = transforms.next().is_none().then_some(first);
         let definition = match unique_transform {
             Some(Some(transform)) => {
-                unique_feature_definition_for_transform(&scan.features.definitions, transform)
+                unique_feature_definition_for_transform(ctx, &scan.features.definitions, transform)?
             }
-            Some(None) => unique_owned_feature_definition(&scan.features.definitions, feature_id),
+            Some(None) => {
+                unique_owned_feature_definition(ctx, &scan.features.definitions, feature_id)?
+            }
             None => None,
         };
         let profile = match definition {
@@ -860,8 +867,8 @@ pub(in super::super) fn schema_feature_definition(
         ));
     }
     if schema_class == Some(SchemaClass::DatumPlane) {
-        if let Some(datum) = unique_feature_datum_plane(&scan.planes.datums, feature_id) {
-            return Ok(datum_plane_feature_definition(&datum.plane));
+        if let Some(datum) = unique_feature_datum_plane(ctx, &scan.planes.datums, feature_id)? {
+            return Ok(datum_plane_feature_definition(&datum.plane()));
         }
         if scan
             .planes
@@ -1046,9 +1053,9 @@ pub(in super::super) fn datum_plane_feature_definition(
     let normal = datum.normal();
     cadmpeg_ir::features::FeatureDatumPlaneFrame::new(
         Point3::new(
-            normal[0] * datum.offset,
-            normal[1] * datum.offset,
-            normal[2] * datum.offset,
+            normal[0] * datum.offset(),
+            normal[1] * datum.offset(),
+            normal[2] * datum.offset(),
         ),
         Vector3::from(normal),
         cadmpeg_ir::geometry::derive_reference_direction(Vector3::from(normal)),

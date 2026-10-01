@@ -1430,12 +1430,11 @@ fn insert_dimension_property(
     key: &'static str,
     value: fmt::Arguments<'_>,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    ctx.charge_collection_items(1, "Rhino dimension parameter entries")?;
     let key = ctx.copy_retained_text(key, "Rhino dimension parameter key")?;
     let key = cadmpeg_core::text::NonBlankString::new(key)
         .ok_or_else(|| cadmpeg_core::CodecError::malformed("generated dimension key is blank"))?;
     let value = ctx.format_retained(value, "Rhino dimension parameter value")?;
-    parameters.insert(key, value);
+    ctx.insert_btree_map(parameters, key, value, "Rhino dimension parameter entries")?;
     Ok(())
 }
 
@@ -1716,7 +1715,6 @@ pub(crate) fn project(
         match id {
             None => Ok(()),
             Some(id) if id.is_nil() => {
-                ctx.charge_collection_items(1, "Rhino dimension reference entries")?;
                 let role = ctx.copy_retained_text(role, "Rhino dimension reference key")?;
                 let role = cadmpeg_core::text::NonBlankString::new(role).ok_or_else(|| {
                     cadmpeg_core::CodecError::malformed(
@@ -1726,7 +1724,12 @@ pub(crate) fn project(
                 let mut selections =
                     ctx.collection_vec(1, "Rhino dimension reference selections")?;
                 selections.push(ReferenceSelection::new(ReferenceTarget::Null, Vec::new()));
-                references.insert(role, selections);
+                ctx.insert_btree_map(
+                    &mut references,
+                    role,
+                    selections,
+                    "Rhino dimension reference entries",
+                )?;
                 Ok(())
             }
             Some(_) => {

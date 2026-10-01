@@ -176,7 +176,10 @@ fn pattern_inputs_bind_adjacent_objects_and_line_reference_direction() {
         native_payload[offset..offset + 8].copy_from_slice(&value.to_le_bytes());
     }
     assert_eq!(
-        line_reference_direction(&native_payload, line_ref_offset as u64),
+        line_reference_direction(
+            &native_payload,
+            cadmpeg_core::decode::u64_from_index(line_ref_offset)
+        ),
         Some(Vector3::new(-1.0, 0.0, 0.0))
     );
     assert_eq!(
@@ -199,7 +202,10 @@ fn pattern_inputs_bind_adjacent_objects_and_line_reference_direction() {
         three_word_payload[offset..offset + 8].copy_from_slice(&value.to_le_bytes());
     }
     assert_eq!(
-        line_reference_direction(&three_word_payload, line_ref_offset as u64),
+        line_reference_direction(
+            &three_word_payload,
+            cadmpeg_core::decode::u64_from_index(line_ref_offset)
+        ),
         Some(Vector3::new(0.0, 0.6, 0.8))
     );
     let mut declared_variants = vec![0; 280];
@@ -476,7 +482,7 @@ fn pattern_inputs_bind_adjacent_objects_and_line_reference_direction() {
             id: "line-reference".into(),
             parent: "lane".into(),
             ordinal: 0,
-            offset: line_ref_offset as u64,
+            offset: cadmpeg_core::decode::u64_from_index(line_ref_offset),
             name: "moLineRef_w".into(),
         }],
         names: vec![
@@ -867,13 +873,15 @@ fn pattern_inputs_bind_adjacent_objects_and_line_reference_direction() {
         .copy_from_slice(&COMPACT_EDGE_VECTOR_MARKER);
     for (index, source) in [5u32, 40].into_iter().enumerate() {
         let entry = seed_path + 18 + index * 20;
-        mirror_lane.native_payload[entry..entry + 2]
-            .copy_from_slice(&(0x8001 + index as u16).to_le_bytes());
+        mirror_lane.native_payload[entry..entry + 2].copy_from_slice(
+            &(0x8001 + u16::try_from(index).expect("test index fits u16")).to_le_bytes(),
+        );
         mirror_lane.native_payload[entry + 4..entry + 8].copy_from_slice(&[1, 0, 1, 0]);
         mirror_lane.native_payload[entry + 8..entry + 12].copy_from_slice(&source.to_le_bytes());
         mirror_lane.native_payload[entry + 12..entry + 16].copy_from_slice(&9000u32.to_le_bytes());
-        mirror_lane.native_payload[entry + 16..entry + 20]
-            .copy_from_slice(&(index as u32 + 1).to_le_bytes());
+        mirror_lane.native_payload[entry + 16..entry + 20].copy_from_slice(
+            &(u32::try_from(index).expect("test index fits u32") + 1).to_le_bytes(),
+        );
     }
     features[0].dependencies.clear();
     features[0]
@@ -1162,7 +1170,8 @@ fn e1_line_distance_indices_address_coordinate_point_pairs() {
         .enumerate()
         .map(|(index, coordinates)| {
             let mut point = marker(&format!("point-{index}"), Some(coordinates));
-            point = point.with_test_position(point.ordinal(), index as u64);
+            point = point
+                .with_test_position(point.ordinal(), cadmpeg_core::decode::u64_from_index(index));
             point
         })
         .collect::<Vec<_>>();
@@ -1193,7 +1202,7 @@ fn e1_line_distance_indices_address_coordinate_point_pairs() {
         FeatureInputRelationInstance {
             id: id.into(),
             parent: "lane".into(),
-            ordinal: offset as u32,
+            ordinal: u32::try_from(offset).expect("relation offset fits u32"),
             offset,
             family: FeatureInputRelationFamily::LineLineDistance,
             class_ref: "class".into(),
@@ -1360,7 +1369,10 @@ fn roster_point_line_distance_materializes_one_solver_line() {
         .enumerate()
         .map(|(index, coordinates_m)| {
             let mut marker = marker(&format!("point-{index}"), Some(coordinates_m));
-            marker = marker.with_test_position(marker.ordinal(), index as u64);
+            marker = marker.with_test_position(
+                marker.ordinal(),
+                cadmpeg_core::decode::u64_from_index(index),
+            );
             marker
         })
         .collect::<Vec<_>>();
@@ -1579,7 +1591,10 @@ fn point_line_projection_uses_the_resolved_point_when_marker_frames_are_ambiguou
         .enumerate()
         .map(|(index, coordinates_m)| {
             let mut marker = marker(&format!("point-{index}"), Some(coordinates_m));
-            marker = marker.with_test_position(marker.ordinal(), index as u64);
+            marker = marker.with_test_position(
+                marker.ordinal(),
+                cadmpeg_core::decode::u64_from_index(index),
+            );
             marker
         })
         .collect::<Vec<_>>();
@@ -1740,10 +1755,10 @@ fn reused_point_handle_gets_one_solved_locus_per_dimension_relation() {
     let known_b = marker("known-b", Some([0.005, 0.0]));
     let missing = marker("missing", None);
     let operand = |index: usize, marker: &str| FeatureInputOperand {
-        offset: index as u64,
+        offset: cadmpeg_core::decode::u64_from_index(index),
         reference_ref: format!("reference-{index}"),
         kind: FeatureInputOperandKind::D6,
-        entity_index: index as u16,
+        entity_index: u16::try_from(index).expect("test index fits u16"),
         entity_ref: Some(marker.into()),
     };
     let relation =

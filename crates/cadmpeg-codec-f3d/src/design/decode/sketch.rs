@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Parse Design sketch placements, headers, relations, and geometry.
 
+use crate::bytes::lp_utf16_bounded_charged;
 use cadmpeg_core::decode::u64_from_index;
 
 use crate::records::sketch_placement::{
@@ -9,10 +10,11 @@ use crate::records::sketch_placement::{
 
 use cadmpeg_core::container::ContainerRole;
 
+use crate::bytes::lp_ascii_filtered_view;
 use crate::bytes::{f64s_at, take_reference, Reference};
 use crate::container::ContainerScan;
-use crate::design::decode::text::lp_utf16_bounded_charged;
-use crate::design::decode::text::{design_record_id_charged, lp_ascii_filtered_view};
+use crate::design::decode::text::design_record_id_charged;
+
 use crate::design::{design_feature_family, DesignFeatureFamily};
 use crate::ids::{self, native_stream};
 use crate::layout::sketch_container_visibility_member_prefix as visibility_member;
@@ -475,7 +477,12 @@ pub(crate) fn decode_sketch_placements(
             .get(&(stream, placement.entity_id.suffix()))
             .copied();
     }
-    crate::design::sort::sort_by(ctx, &mut out[..], |a, b| a.id.cmp(&b.id))?;
+    ctx.stable_sort_by(
+        &mut out[..],
+        |a, b| a.id.cmp(&b.id),
+        |value| value.id.as_str().len(),
+        "sort f3d design sketch 1",
+    )?;
     Ok(out)
 }
 
@@ -708,7 +715,7 @@ fn parse_member_run_head_placement(
             MEMBER_RUN_HEAD_FRAME
                 if bytes.get(head_at + 11..head_at + 22) == Some(&[0u8; 11][..]) =>
             {
-                let values = f64s_at(bytes, head_at + 22, 16)?;
+                let values = f64s_at::<16>(bytes, head_at + 22)?;
                 let mut transform = [[0.0; 4]; 4];
                 for (ordinal, value) in values.iter().copied().enumerate() {
                     transform[ordinal / 4][ordinal % 4] = value;
@@ -789,7 +796,7 @@ fn parse_sketch_placement_candidates(
         let form = match frame_length {
             201 => DesignSketchFrameForm::ScopeCompact,
             305 | 325 => {
-                let Some(values) = f64s_at(bytes, start + 48, 16) else {
+                let Some(values) = f64s_at::<16>(bytes, start + 48) else {
                     continue;
                 };
                 let mut transform = [[0.0; 4]; 4];
@@ -806,7 +813,7 @@ fn parse_sketch_placement_candidates(
                 }
             }
             329 => {
-                let Some(values) = f64s_at(bytes, start + 55, 16) else {
+                let Some(values) = f64s_at::<16>(bytes, start + 55) else {
                     continue;
                 };
                 let mut transform = [[0.0; 4]; 4];
@@ -833,7 +840,7 @@ fn parse_sketch_placement_candidates(
                 match (frame_length, bytes.get(start + 65)) {
                     (213, Some(&1)) => DesignSketchFrameForm::ScopeGenesisCompact,
                     (341, Some(&0)) => {
-                        let Some(values) = f64s_at(bytes, start + 66, 16) else {
+                        let Some(values) = f64s_at::<16>(bytes, start + 66) else {
                             continue;
                         };
                         let mut transform = [[0.0; 4]; 4];
@@ -895,9 +902,26 @@ fn finish_persistent_references(
     ctx: &DecodeContext<'_>,
     mut out: Vec<(usize, PersistentReference)>,
 ) -> Result<Vec<PersistentReference>, CodecError> {
-    crate::design::sort::sort_by_key(ctx, &mut out[..], |(entry_ordinal, reference)| {
-        (*entry_ordinal, reference.byte_offset)
-    })?;
+    ctx.stable_sort_by(
+        &mut out[..],
+        |left, right| {
+            let left_key = {
+                let (entry_ordinal, reference) = left;
+                {
+                    (*entry_ordinal, reference.byte_offset)
+                }
+            };
+            let right_key = {
+                let (entry_ordinal, reference) = right;
+                {
+                    (*entry_ordinal, reference.byte_offset)
+                }
+            };
+            left_key.cmp(&right_key)
+        },
+        |_| 0,
+        "sort f3d design sketch 2",
+    )?;
 
     let mut references = Vec::new();
     ctx.reserve_vec(
@@ -1099,7 +1123,8 @@ pub(super) fn parse_settled_entity_header(
         Some(1) if bytes.get(start + 21..start + 25) == Some(&[0u8; 4]) => (true, start + 25),
         _ => return Ok(None),
     };
-    let Some((entity_id, end)) = lp_utf16_bounded_charged(ctx, bytes, string_offset, 1..=256)?
+    let Some((entity_id, end)) =
+        lp_utf16_bounded_charged(ctx, bytes, string_offset, 1..=256, "f3d Design UTF-16 text")?
     else {
         return Ok(None);
     };
@@ -1156,7 +1181,13 @@ pub(super) fn parse_genesis_entity_header(
     let Some(after_type) = lp_ascii_matches(bytes, after_key, b"IntrinsicMetaTypeuint64") else {
         return Ok(None);
     };
-    let Some((entity_id, end)) = lp_utf16_bounded_charged(ctx, bytes, after_type + 8, 1..=256)?
+    let Some((entity_id, end)) = lp_utf16_bounded_charged(
+        ctx,
+        bytes,
+        after_type + 8,
+        1..=256,
+        "f3d Design UTF-16 text",
+    )?
     else {
         return Ok(None);
     };
@@ -1532,7 +1563,12 @@ pub(crate) fn decode_entity_headers(
             )?;
         }
     }
-    crate::design::sort::sort_by(ctx, &mut out[..], |a, b| a.id.cmp(&b.id))?;
+    ctx.stable_sort_by(
+        &mut out[..],
+        |a, b| a.id.cmp(&b.id),
+        |value| value.id.as_str().len(),
+        "sort f3d design sketch 3",
+    )?;
     Ok(out)
 }
 
@@ -1641,7 +1677,12 @@ fn decode_headers_for_indices(
         let (_scope_reservation, scope) = native_scope_scoped(ctx, &entry.name)?;
         decode_headers_for_indices_from_stream(ctx, &entry.name, &scope, bytes, wanted, &mut out)?;
     }
-    crate::design::sort::sort_by(ctx, &mut out[..], |a, b| a.id.cmp(&b.id))?;
+    ctx.stable_sort_by(
+        &mut out[..],
+        |a, b| a.id.cmp(&b.id),
+        |value| value.id.as_str().len(),
+        "sort f3d design sketch 4",
+    )?;
     Ok(out)
 }
 
@@ -2205,7 +2246,13 @@ fn sketch_utf16_text(
     count_at: usize,
     count: usize,
 ) -> Result<Option<(String, usize)>, CodecError> {
-    lp_utf16_bounded_charged(ctx, payload, count_at, count..=count)
+    lp_utf16_bounded_charged(
+        ctx,
+        payload,
+        count_at,
+        count..=count,
+        "f3d Design UTF-16 text",
+    )
 }
 
 /// Decode sketch-text records carrying persistent identities, font metrics,
@@ -2316,11 +2363,11 @@ enum SketchTextIdentity {
 
 /// Read one parameter-reference slot in the given form, advancing `cursor` by
 /// what that form occupies. An omitted member reads as a null reference.
-fn read_text_reference(
-    payload: &[u8],
+fn read_text_reference<'a>(
+    payload: &'a [u8],
     cursor: &mut usize,
     slot: TextReferenceSlot,
-) -> Option<Reference> {
+) -> Option<Reference<&'a str, crate::bytes::utf16::Utf16View<'a>>> {
     match slot {
         TextReferenceSlot::Omitted => Some(Reference::Null),
         TextReferenceSlot::Written => take_reference(payload, cursor),
@@ -2355,7 +2402,7 @@ fn read_sketch_text_color(payload: &[u8], cursor: &mut usize) -> Option<Color> {
 /// scale or shear. A run failing any of that is not a placement, so the record
 /// is misframed.
 fn read_text_placement(payload: &[u8], cursor: &mut usize) -> Option<TextPlacement<FinitePoint2>> {
-    let elements = f64s_at(payload, *cursor, 16)?;
+    let elements = f64s_at::<16>(payload, *cursor)?;
     *cursor = cursor.checked_add(128)?;
     let at = |row: usize, column: usize| elements[row * 4 + column];
     let constant = |value: f64, expected: f64| (value - expected).abs() <= TEXT_PLACEMENT_TOLERANCE;
@@ -2384,7 +2431,7 @@ fn read_text_placement(payload: &[u8], cursor: &mut usize) -> Option<TextPlaceme
 }
 
 /// The record index a reference names, absent when the reference is null.
-fn reference_index(reference: &Reference) -> Option<u32> {
+fn reference_index<G: AsRef<str>, L>(reference: &Reference<G, L>) -> Option<u32> {
     reference
         .target()
         .and_then(|target| u32::try_from(target).ok())
@@ -2994,10 +3041,10 @@ impl DecodedSketchPoint {
     }
 }
 
-fn take_local_sketch_reference(
-    payload: &[u8],
+fn take_local_sketch_reference<'a>(
+    payload: &'a [u8],
     cursor: &mut usize,
-) -> Option<(u32, Option<String>)> {
+) -> Option<(u32, Option<&'a str>)> {
     let reference = take_reference(payload, cursor)?;
     let (target, inline_type_guid) = reference.into_local()?;
     Some((u32::try_from(target).ok()?, inline_type_guid))
@@ -3089,7 +3136,7 @@ fn decode_sketch_point_record(payload: &[u8], class_version: u32) -> Option<Deco
     };
     let persistent_id = std::num::NonZeroU64::new(persistent_id)?;
     let (paired_reference, paired_type_guid) = take_local_sketch_reference(payload, &mut cursor)?;
-    let inline_typed = match (class_version, paired_type_guid.as_deref()) {
+    let inline_typed = match (class_version, paired_type_guid) {
         (8 | 10 | 11, None) => false,
         (10 | 11, Some(type_guid))
             if type_guid.eq_ignore_ascii_case(SKETCH_POINT_COMPANION_TYPE.0) =>
@@ -3131,7 +3178,7 @@ fn decode_sketch_point_record(payload: &[u8], class_version: u32) -> Option<Deco
     cursor = floats_at.checked_add(13)?;
     let (repeated_reference, repeated_type_guid) =
         take_local_sketch_reference(payload, &mut cursor)?;
-    let repeated_encoding_matches = match repeated_type_guid.as_deref() {
+    let repeated_encoding_matches = match repeated_type_guid {
         None => !inline_typed,
         Some(type_guid) => {
             inline_typed && type_guid.eq_ignore_ascii_case(SKETCH_POINT_COMPANION_TYPE.0)
@@ -3176,7 +3223,6 @@ fn decode_sketch_point_record(payload: &[u8], class_version: u32) -> Option<Deco
             let (trailing_reference, type_guid) =
                 take_local_sketch_reference(payload, &mut cursor)?;
             if type_guid
-                .as_deref()
                 .is_none_or(|type_guid| !type_guid.eq_ignore_ascii_case(SKETCH_CONTAINER_TYPE_GUID))
             {
                 return None;
@@ -3199,7 +3245,6 @@ fn decode_sketch_point_record(payload: &[u8], class_version: u32) -> Option<Deco
             let (trailing_reference, type_guid) =
                 take_local_sketch_reference(payload, &mut cursor)?;
             if type_guid
-                .as_deref()
                 .is_none_or(|type_guid| !type_guid.eq_ignore_ascii_case(SKETCH_CONTAINER_TYPE_GUID))
             {
                 return None;
@@ -3310,7 +3355,7 @@ fn decode_sketch_point_companion(
             match reference_encoding {
                 SketchPointCompanionReferenceEncoding::SameSegment if type_guid.is_none() => {}
                 SketchPointCompanionReferenceEncoding::InlineTyped
-                    if type_guid.as_deref().is_some_and(|type_guid| {
+                    if type_guid.is_some_and(|type_guid| {
                         type_guid.eq_ignore_ascii_case(registered_type.0)
                     }) => {}
                 _ => return None,
@@ -3325,7 +3370,6 @@ fn decode_sketch_point_companion(
         let inverse_encoding_matches = match reference_encoding {
             SketchPointCompanionReferenceEncoding::SameSegment => inverse_type_guid.is_none(),
             SketchPointCompanionReferenceEncoding::InlineTyped => inverse_type_guid
-                .as_deref()
                 .is_some_and(|type_guid| type_guid.eq_ignore_ascii_case(SKETCH_POINT_TYPE_GUID)),
         };
         if inverse != point_record_index || !inverse_encoding_matches || cursor != payload.len() {
@@ -3721,7 +3765,12 @@ pub(crate) fn decode_sketch_surfaces(
             });
         }
     }
-    crate::design::sort::sort_by(ctx, &mut out[..], |a, b| a.id.cmp(&b.id))?;
+    ctx.stable_sort_by(
+        &mut out[..],
+        |a, b| a.id.cmp(&b.id),
+        |value| value.id.as_str().len(),
+        "sort f3d design sketch 5",
+    )?;
     Ok(out)
 }
 

@@ -506,8 +506,7 @@ pub(crate) fn append_design_intent_losses(
         .count();
     let mut current_bodies = BTreeSet::new();
     for body in &ir.model.bodies {
-        ctx.charge_collection_items(1, "nx report current body set")?;
-        current_bodies.insert(&body.id);
+        ctx.insert_btree_set(&mut current_bodies, &body.id, "nx report current body set")?;
     }
     let mut incomplete_configuration_count = 0usize;
     for configuration in &ir.model.configurations {
@@ -558,10 +557,14 @@ pub(crate) fn append_design_intent_losses(
         if let FeatureDefinition::Operation(FeatureOperation::Native { kind, .. }) =
             feature.evaluation.definition()
         {
+            ctx.admit_btree_entry(
+                &native_feature_kinds,
+                &kind.as_str(),
+                "nx report native feature kinds",
+            )?;
             match native_feature_kinds.entry(kind.as_str()) {
                 std::collections::btree_map::Entry::Occupied(mut entry) => *entry.get_mut() += 1,
                 std::collections::btree_map::Entry::Vacant(entry) => {
-                    ctx.charge_collection_items(1, "nx report native feature kinds")?;
                     entry.insert(1);
                 }
             }
@@ -621,10 +624,14 @@ pub(crate) fn append_design_intent_losses(
             },
             _ => continue,
         };
+        ctx.admit_btree_entry(
+            &unresolved_feature_families,
+            &family,
+            "nx report unresolved feature families",
+        )?;
         match unresolved_feature_families.entry(family) {
             std::collections::btree_map::Entry::Occupied(mut entry) => *entry.get_mut() += 1,
             std::collections::btree_map::Entry::Vacant(entry) => {
-                ctx.charge_collection_items(1, "nx report unresolved feature families")?;
                 entry.insert(1);
             }
         }
@@ -649,8 +656,11 @@ pub(crate) fn append_design_intent_losses(
     let mut generated_body_outputs = BTreeSet::new();
     for state in &ir.model.feature_result_topologies {
         if !state.bodies().is_empty() {
-            ctx.charge_collection_items(1, "nx report generated body outputs")?;
-            generated_body_outputs.insert(&state.output_of);
+            ctx.insert_btree_set(
+                &mut generated_body_outputs,
+                &state.output_of,
+                "nx report generated body outputs",
+            )?;
         }
     }
     for feature in &ir.model.features {
@@ -685,12 +695,16 @@ pub(crate) fn append_design_intent_losses(
                                 && generated_body_outputs.contains(&feature.id))
                     })
             {
+                ctx.admit_btree_entry(
+                    &incomplete_feature_output_families,
+                    &family,
+                    "nx report incomplete output families",
+                )?;
                 match incomplete_feature_output_families.entry(family) {
                     std::collections::btree_map::Entry::Occupied(mut entry) => {
                         *entry.get_mut() += 1;
                     }
                     std::collections::btree_map::Entry::Vacant(entry) => {
-                        ctx.charge_collection_items(1, "nx report incomplete output families")?;
                         entry.insert(1);
                     }
                 }
@@ -902,10 +916,14 @@ pub(crate) fn append_design_intent_losses(
             }
             _ => continue,
         };
+        ctx.admit_btree_entry(
+            &incomplete_feature_construction_families,
+            &family,
+            "nx report incomplete construction families",
+        )?;
         match incomplete_feature_construction_families.entry(family) {
             std::collections::btree_map::Entry::Occupied(mut entry) => *entry.get_mut() += 1,
             std::collections::btree_map::Entry::Vacant(entry) => {
-                ctx.charge_collection_items(1, "nx report incomplete construction families")?;
                 entry.insert(1);
             }
         }
@@ -992,9 +1010,11 @@ pub(crate) fn append_design_intent_losses(
             ..
         }) = feature.evaluation.definition()
         {
-            ctx.charge_collection_items(1, "nx report active sketch identities")?;
-            active_sketch_ids
-                .insert(sketch.try_clone_for_decode(ctx, "nx report active sketch identity")?);
+            ctx.insert_btree_set(
+                &mut active_sketch_ids,
+                sketch.try_clone_for_decode(ctx, "nx report active sketch identity")?,
+                "nx report active sketch identities",
+            )?;
         }
     }
     let sketch_in_active_scope = |sketch: &cadmpeg_ir::sketches::SketchId| {

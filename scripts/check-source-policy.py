@@ -1330,6 +1330,576 @@ def scan_script_tests() -> list[Finding]:
     return findings
 
 
+# Results carrying EvaluationFailure retain the ResourceLimit arm until a
+# propagating conversion. Discover names from signatures, rather than keeping
+# a second catalog of the evaluator API.
+RUST_TOKEN = re.compile(r"[A-Za-z_][A-Za-z0-9_]*|::|->|=>|\.\.|[^\s]")
+EVALUATION_DROPS = {
+    "ok", "is_ok", "is_ok_and", "is_err", "is_err_and", "err",
+    "unwrap_or", "unwrap_or_else", "unwrap_or_default", "map_or", "map_or_else",
+}
+
+
+def evaluation_tokens(code: str):
+    tokens = list(RUST_TOKEN.finditer(code))
+    pairs: dict[int, int] = {}
+    parents: dict[int, int] = {}
+    stack: list[int] = []
+    closing = {")": "(", "]": "[", "}": "{"}
+    for index, token in enumerate(tokens):
+        if stack:
+            parents[index] = stack[-1]
+        if token[0] in "([{":
+            stack.append(index)
+        elif token[0] in closing and stack and tokens[stack[-1]][0] == closing[token[0]]:
+            opening = stack.pop()
+            pairs[opening] = index
+            pairs[index] = opening
+    return tokens, pairs, parents
+
+
+def evaluation_call_open(words: list[str], index: int) -> int | None:
+    opening = index + 1
+    if words[opening:opening + 2] == ["::", "<"]:
+        opening += 2
+        depth = 1
+        while opening < len(words) and depth:
+            depth += (words[opening] == "<") - (words[opening] == ">")
+            opening += 1
+    return opening if words[opening:opening + 1] == ["("] else None
+
+
+def evaluation_expression_start(words, pairs, index):
+    start = index
+    while start >= 2 and words[start - 1] in {"::", "."}:
+        start -= 2
+        if words[start] in {")", "]"} and start in pairs:
+            closing = words[start]
+            start = pairs[start]
+            if closing == ")" and start and re.fullmatch(r"[A-Za-z_]\w*", words[start - 1]):
+                start -= 1
+            elif closing == "]" and start:
+                start -= 1
+    return start
+
+
+def evaluation_signatures(tokens, pairs, parents):
+    """Yield declarations with return types and their enclosing impl type."""
+    for index, token in enumerate(tokens):
+        if token[0] != "fn" or index + 2 >= len(tokens):
+            continue
+        name = tokens[index + 1][0]
+        opening = index + 2
+        if tokens[opening][0] == "<":
+            depth = 1
+            opening += 1
+            while opening < len(tokens) and depth:
+                depth += (tokens[opening][0] == "<") - (tokens[opening][0] == ">")
+                opening += 1
+        if opening not in pairs or tokens[opening][0] != "(":
+            continue
+        stop = pairs[opening] + 1
+        end = stop
+        while end < len(tokens) and tokens[end][0] not in {"{", ";"}:
+            end += 1
+        output = [t[0] for t in tokens[stop:end]]
+        owner = None
+        parent = parents.get(index)
+        while parent is not None:
+            head = parent - 1
+            while head >= 0 and tokens[head][0] not in {";", "{", "}"}:
+                head -= 1
+            header = [t[0] for t in tokens[head + 1:parent]]
+            if "impl" in header:
+                # The self type follows `for` for trait impls, or `impl` and
+                # its generic parameters for inherent impls.
+                start = header.index("for") + 1 if "for" in header else header.index("impl") + 1
+                if start < len(header) and header[start] == "<":
+                    depth = 1
+                    start += 1
+                    while start < len(header) and depth:
+                        depth += (header[start] == "<") - (header[start] == ">")
+                        start += 1
+                if start < len(header):
+                    owner = header[start]
+                break
+            parent = parents.get(parent)
+        yield index, name, output, owner
+
+
+def evaluation_inline_module(tokens, parents, index) -> tuple[str, ...]:
+    modules = []
+    parent = parents.get(index)
+    while parent is not None:
+        if tokens[parent][0] == "{" and parent >= 2 and tokens[parent - 2][0] == "mod":
+            modules.append(tokens[parent - 1][0])
+        parent = parents.get(parent)
+    return tuple(reversed(modules))
+
+
+def evaluation_module(path: Path) -> tuple[str, ...]:
+    parts = Path(relative_path(path)).parts
+    source = parts[parts.index("src") + 1:]
+    crate = parts[1].replace("-", "_")
+    stem = Path(source[-1]).stem
+    return (crate, *source[:-1], *((stem,) if stem not in {"lib", "main", "mod"} else ()))
+
+
+def evaluation_imports(tokens, pairs):
+    """Expand grouped imports, including renamed functions and modules."""
+    imports = {}
+
+    def visit(start, stop, prefix):
+        path = list(prefix)
+        index = start
+        while index < stop:
+            word = tokens[index][0]
+            if word == "{":
+                end = pairs.get(index, stop)
+                visit(index + 1, end, tuple(path))
+                index = end + 1
+            elif word == ",":
+                path = list(prefix)
+                index += 1
+            elif word == "as" and path and index + 1 < stop:
+                imports[tokens[index + 1][0]] = tuple(path)
+                index += 2
+            elif word == "::":
+                index += 1
+            else:
+                path.append(word)
+                if index + 1 == stop or tokens[index + 1][0] in {",", "}"}:
+                    imports[word] = tuple(path[:-1] if word == "self" else path)
+                index += 1
+
+    for index, token in enumerate(tokens):
+        if token[0] == "use":
+            stop = index + 1
+            while stop < len(tokens) and tokens[stop][0] != ";":
+                stop += 1
+            visit(index + 1, stop, ())
+    return imports
+
+
+def scan_evaluation_refusals(sources: dict[Path, str]) -> list[Finding]:
+    parsed = {}
+    production = {}
+    functions = {}
+    methods = {}
+    returns = {}
+    retained = {}
+    for path, source in sources.items():
+        if not is_production_rs(path):
+            continue
+        code, _ = production_source(source)
+        tokens, pairs, parents = evaluation_tokens(code)
+        signatures = list(evaluation_signatures(tokens, pairs, parents))
+        production[path] = code
+        # Keep token trees only for evaluator owners. Consumer files are
+        # scanned one at a time, so workspace size does not retain every token.
+        if "EvaluationFailure" in code:
+            parsed[path] = tokens, pairs, parents, signatures
+        words = [t[0] for t in tokens]
+        for index, name, output, owner in signatures:
+            opening = evaluation_call_open(words, index + 1)
+            if opening in pairs:
+                parameters = words[opening + 1:pairs[opening]]
+                body = pairs[opening] + 1 + len(output)
+                if body in pairs and words[body] == "{":
+                    contents = words[body + 1:pairs[body]]
+                    for parameter in range(len(parameters) - 2):
+                        if parameters[parameter + 1:parameter + 3] == [":", "ResourceLimit"]:
+                            limit = parameters[parameter]
+                            if any(contents[offset:offset + 6] == ["resource", ":", "Some", "(", limit, ")"]
+                                   for offset in range(len(contents) - 5)):
+                                retained.setdefault(path, set()).add((owner, name))
+            result_type = next((word for word in output if re.fullmatch(r"[A-Za-z_]\w*", word)
+                                and word not in {"Result", "Option", "Self"}), None)
+            if result_type:
+                returns.setdefault(name, set()).add(result_type)
+            holds = "EvaluationFailure" in output
+            # Count the Result wrappers around the failure, including the
+            # outer admitted Result whose first `?` leaves an inner Result.
+            levels = output.count("Result") if holds else 0
+            if owner:
+                methods.setdefault((owner, name), set()).add(levels)
+            else:
+                functions[evaluation_module(path) + evaluation_inline_module(tokens, parents, index) + (name,)] = levels
+    names = {key[-1] for key, levels in functions.items() if levels}
+    method_names = {name for (_, name), levels in methods.items() if any(levels)}
+    findings = []
+    call_names = re.compile(r"\b(?:" + "|".join(sorted(names | method_names)) + r")\b") if names or method_names else None
+    for path, code in production.items():
+        if call_names is None or not call_names.search(code):
+            continue
+        if path in parsed:
+            tokens, pairs, parents, signatures = parsed[path]
+        else:
+            tokens, pairs, parents = evaluation_tokens(code)
+            signatures = list(evaluation_signatures(tokens, pairs, parents))
+        words = [t[0] for t in tokens]
+        module = evaluation_module(path)
+        imports = evaluation_imports(tokens, pairs)
+        local = {name: output.count("Result") if "EvaluationFailure" in output else 0
+                 for _, name, output, owner in signatures if owner is None}
+        declarations = {index + 1 for index, _, _, _ in signatures}
+        refused: dict[int, int] = {}
+        bindings: dict[str, list[tuple[int, int, int]]] = {}
+        candidate_names = names | method_names | imports.keys()
+
+        def qualify(parts):
+            parts = list(parts)
+            if parts and parts[0] in imports:
+                parts = list(imports[parts[0]]) + parts[1:]
+            if parts and parts[0] == "crate":
+                return (module[0], *parts[1:])
+            if parts and parts[0] == "self":
+                return (*module, *parts[1:])
+            if parts and parts[0] == "super":
+                base = module
+                while parts and parts[0] == "super":
+                    base = base[:-1]
+                    parts.pop(0)
+                return (*base, *parts)
+            absolute = tuple(parts)
+            return absolute if absolute in functions else (*module, *parts)
+
+        def function_level(index):
+            name = words[index]
+            if index in declarations:
+                return 0
+            if index > 0 and words[index - 1] == ".":
+                if name not in method_names:
+                    return 0
+                # Ambiguous standard method names need a stated receiver type.
+                receiver = words[index - 2] if index > 1 else ""
+                candidates = {owner for owner, method in methods if method == name
+                              and any(methods[(owner, method)])}
+                for owner in candidates:
+                    enclosing = [item for item in signatures if item[0] < index]
+                    if receiver == "self" and enclosing and enclosing[-1][3] == owner:
+                        return max(methods[(owner, name)])
+                    if receiver == ")" and index - 2 in pairs:
+                        constructor = pairs[index - 2]
+                        if words[constructor - 3:constructor - 1] == [owner, "::"]:
+                            return max(methods[(owner, name)])
+                    if re.search(r"\b" + re.escape(receiver) + r"\s*:\s*(?:&\s*(?:'\w+\s*)?(?:mut\s*)?)?(?:\w+::)*"
+                                 + re.escape(owner) + r"\b", code):
+                        return max(methods[(owner, name)])
+                    if re.search(r"\blet\s+(?:mut\s+)?" + re.escape(receiver)
+                                 + r"\s*=\s*(?:[\w]+::)*" + re.escape(owner) + r"::", code):
+                        return max(methods[(owner, name)])
+                    for constructor, result_types in returns.items():
+                        if result_types == {owner} and re.search(
+                            r"\blet\s+(?:mut\s+)?" + re.escape(receiver)
+                            + r"\s*=\s*(?:[\w]+::)*" + re.escape(constructor) + r"\s*\(", code
+                        ):
+                            return max(methods[(owner, name)])
+                if name not in {"map", "first", "second", "point", "normal", "evaluate", "tangent", "partials"}:
+                    return max(level for (owner, method), levels in methods.items()
+                               if method == name for level in levels)
+                return 0
+            if name not in names and name not in method_names and name not in imports:
+                return 0
+            start = index
+            while start >= 2 and words[start - 1] == "::":
+                start -= 2
+            parts = words[start:index + 1:2]
+            if start == index and name in local:
+                return local[name]
+            if len(parts) >= 2 and (parts[-2], name) in methods:
+                return max(methods[(parts[-2], name)])
+            return functions.get(qualify(parts), 0)
+
+        def report(index, form):
+            findings.append(Finding(
+                "evaluation_refusal", relative_path(path),
+                code.count("\n", 0, tokens[index].start()) + 1,
+                f"{form} drops an evaluator resource refusal; use finite_or_refusal, non_finite, or an explicit propagating ResourceLimit arm.",
+            ))
+
+        def carries_refusal(body, limit_bindings):
+            for call, name in enumerate(body):
+                if body[call + 1:call + 2] != ["("]:
+                    continue
+                closing = call + 2
+                depth = 1
+                while closing < len(body) and depth:
+                    depth += (body[closing] == "(") - (body[closing] == ")")
+                    closing += 1
+                argument = body[call + 2:closing - 1]
+                if name == "Err":
+                    for limit in limit_bindings:
+                        if argument in ([limit], [limit, ".", "into", "(", ")"]):
+                            return True
+                        if len(argument) >= 4 and argument[-4:] == ["ResourceLimit", "(", limit, ")"]:
+                            return True
+                for owner, constructor in retained.get(path, set()):
+                    if name == constructor and (owner is None or body[call - 2:call] == [owner, "::"]):
+                        if any(argument in ([limit], ["*", limit]) for limit in limit_bindings):
+                            return True
+            return False
+
+        def consume(start, end, level):
+            # Parentheses and value-preserving adapters retain the same error.
+            while level and end < len(words):
+                if words[end] == "?":
+                    level -= 1
+                    end += 1
+                elif words[end] == ")" and pairs.get(end) == start - 1:
+                    start -= 1
+                    end += 1
+                elif words[end] == "." and end + 1 < len(words) and evaluation_call_open(words, end + 1) is not None:
+                    name = words[end + 1]
+                    opening = evaluation_call_open(words, end + 1)
+                    close = pairs.get(opening)
+                    if close is None:
+                        break
+                    if name in EVALUATION_DROPS:
+                        report(end + 1, "." + name)
+                        return close + 1, 0
+                    if name == "map_err":
+                        body = words[opening + 1:close]
+                        while body and body[0] in {"move", "async"}:
+                            body = body[1:]
+                        if body and body[0] == "|" and "|" in body[1:]:
+                            delimiter = body.index("|", 1)
+                            pattern = body[1:delimiter]
+                            if ":" in pattern:
+                                pattern = pattern[:pattern.index(":")]
+                            arguments = {word for word in pattern
+                                         if re.fullmatch(r"[A-Za-z_]\w*", word) and word not in {"mut", "ref", "_"}}
+                            if not arguments.intersection(body[delimiter + 1:]):
+                                report(end + 1, ".map_err with an ignored failure")
+                                return close + 1, 0
+                    if name not in {"map", "map_err", "and_then", "as_ref", "as_mut", "copied", "cloned"}:
+                        break
+                    end = close + 1
+                else:
+                    break
+            return end, level
+
+        for index, word in enumerate(words):
+            # A new lexical binding shadows the old result even when its
+            # initializer has no evaluator type.
+            if index and (words[index - 1] == "let" or index > 1 and words[index - 2:index] == ["let", "mut"]):
+                parent = parents.get(index)
+                while parent is not None and words[parent] != "{":
+                    parent = parents.get(parent)
+                bindings.setdefault(word, []).append((index, 0, pairs.get(parent, len(words))))
+            level = function_level(index) if word in candidate_names else 0
+            opening = evaluation_call_open(words, index)
+            if level and opening in pairs:
+                refused[index] = level
+            elif level:
+                # A named evaluator callback is an implicit call for every
+                # iterator item. Result's IntoIterator discards its Err arm.
+                parent = parents.get(index)
+                if parent is not None and words[parent] == "(" and parent:
+                    adapter = words[parent - 1]
+                    close = pairs.get(parent, parent)
+                    if adapter in {"filter_map", "find_map", "flat_map"}:
+                        report(index, adapter + " evaluator callback")
+                    elif adapter == "map" and words[close + 1:close + 4] == [".", "flatten", "("]:
+                        report(index, "map(evaluator).flatten() iterator")
+            # Bound results retain the evaluator type; do not confuse a
+            # later lexical scope's binding.
+            if word in bindings:
+                active = [binding for binding in bindings[word] if index < binding[2]]
+                bindings[word] = active
+                if active:
+                    origin, bound_level, _ = active[-1]
+                    if bound_level and index > origin and (index == 0 or words[index - 1] not in {".", "::"}):
+                        refused[index] = bound_level
+            if index not in refused:
+                continue
+            start = evaluation_expression_start(words, pairs, index)
+            end = pairs[opening] + 1 if opening in pairs else index + 1
+            end, level = consume(start, end, refused[index])
+            if not level:
+                continue
+            # Only an unconverted RHS can bind an evaluation result. A nested
+            # finite_or_refusal call has a different return type.
+            head = start - 1
+            while head >= 0 and words[head] not in {";", "{", "}"}:
+                head -= 1
+            prefix = words[head + 1:start]
+            if len(prefix) >= 3 and prefix[0] == "let" and prefix[-1] == "=" and "(" not in prefix:
+                name = prefix[2] if prefix[1] == "mut" else prefix[1]
+                parent = parents.get(start)
+                while parent is not None and words[parent] != "{":
+                    parent = parents.get(parent)
+                bindings.setdefault(name, []).append((index, level, pairs.get(parent, len(words))))
+            if end < len(words) and words[end] in {"{", "else"}:
+                # if/while let Ok and let Ok ... else skip every error kind.
+                if "let" in prefix and "Ok" in prefix and "=" in prefix:
+                    report(index, "Ok pattern")
+                if "match" in prefix and words[end] == "{" and end in pairs:
+                    explicit = False
+                    arm = end + 1
+                    while arm < pairs[end]:
+                        arrow = arm
+                        while arrow < pairs[end] and words[arrow] != "=>":
+                            arrow = pairs[arrow] + 1 if arrow in pairs and words[arrow] in {"(", "[", "{"} else arrow + 1
+                        if arrow == pairs[end]:
+                            break
+                        body_end = arrow + 1
+                        if words[body_end] == "{":
+                            body_end = pairs.get(body_end, body_end) + 1
+                        else:
+                            while body_end < pairs[end] and words[body_end] != ",":
+                                body_end = pairs[body_end] + 1 if body_end in pairs and words[body_end] in {"(", "[", "{"} else body_end + 1
+                        pattern = words[arm:arrow]
+                        body = words[arrow + 1:body_end]
+                        if level > 1 and len(pattern) == 4 and pattern[:2] == ["Ok", "("] and pattern[-1] == ")":
+                            bindings.setdefault(pattern[2], []).append((arrow, level - 1, body_end))
+                        if "ResourceLimit" in pattern and "if" not in pattern:
+                            # An explicit refusal arm must return its limit;
+                            # naming the variant alone does not propagate it.
+                            limit_bindings = {word for word in pattern
+                                              if re.fullmatch(r"[A-Za-z_]\w*", word)
+                                              and word not in {"Err", "EvaluationFailure", "ResourceLimit", "_"}}
+                            explicit = carries_refusal(body, limit_bindings)
+                            if not explicit:
+                                report(index, "non-propagating ResourceLimit arm")
+                                break
+                        elif not explicit and (pattern[:1] == ["_"] or any(pattern[offset:offset + 3] in
+                                               (["Err", "(", "_"], ["Err", "(", ".."]) for offset in range(len(pattern) - 2))):
+                            report(index, "wildcard error arm")
+                            break
+                        arm = body_end + (words[body_end:body_end + 1] == [","])
+                elif "let" in prefix and "Err" in prefix and "ResourceLimit" in prefix and words[end] == "{" and end in pairs:
+                    resource = prefix.index("ResourceLimit")
+                    limit_bindings = set(prefix[resource + 2:]) - {"(", ")", "=", "&"}
+                    body = words[end + 1:pairs[end]]
+                    if "return" in body and carries_refusal(body, limit_bindings):
+                        # The returning guard removes the resource variant
+                        # from the result read after it, including borrowed guards.
+                        parent = parents.get(start)
+                        while parent is not None and words[parent] != "{":
+                            parent = parents.get(parent)
+                        bindings.setdefault(word, []).append((index, 0, pairs.get(parent, len(words))))
+                elif "let" in prefix and "Err" in prefix and "ResourceLimit" not in prefix and ("_" in prefix or ".." in prefix):
+                    report(index, "wildcard error pattern")
+            parent = parents.get(start)
+            while parent is not None:
+                if words[parent] == "(" and parent > 1:
+                    adapter = words[parent - 1]
+                    close = pairs.get(parent, parent)
+                    if adapter == "matches" or (adapter == "!" and parent > 2 and words[parent - 2] == "matches"):
+                        pattern = words[end:close]
+                        if "Ok" in pattern or ("Err" in pattern and "ResourceLimit" not in pattern and ("_" in pattern or ".." in pattern)):
+                            report(index, "matches! pattern")
+                    if adapter in {"filter_map", "find_map", "flat_map"}:
+                        report(index, adapter + " iterator")
+                    if adapter == "map" and words[close + 1:close + 4] == [".", "flatten", "("]:
+                        report(index, "map(...).flatten() iterator")
+                parent = parents.get(parent)
+    return findings
+
+
+SLICE_SORT_METHODS = {
+    "sort", "sort_by", "sort_by_key", "sort_unstable", "sort_unstable_by",
+    "sort_unstable_by_key", "sort_by_cached_key",
+}
+DECODE_SORT_EXEMPT_FILES = {
+    "crates/cadmpeg-core/src/decode/context.rs",
+    "crates/cadmpeg-core/src/decode/sort.rs",
+}
+DECODE_CONTEXT_BINDING = re.compile(
+    r"\b([A-Za-z_]\w*)\s*:\s*&\s*(?:'[A-Za-z_]\w*\s*)?(?:mut\s+)?"
+    r"(?:::\s*)?(?:[A-Za-z_]\w*\s*::\s*)*DecodeContext\b"
+)
+
+
+def scan_decode_sorts(sources: dict[Path, str]) -> list[Finding]:
+    """Reject slice sorts in functions borrowing a decode context.
+
+    Function scopes exclude nested function items. Closures keep their enclosing
+    context. Struct fields identify context access through a method's self value.
+    """
+    parsed = {}
+    context_fields: dict[tuple[str, str], set[str]] = {}
+    for path, source in sources.items():
+        if not is_production_rs(path):
+            continue
+        code, _ = production_source(source)
+        tokens, pairs, parents = evaluation_tokens(code)
+        words = [token[0] for token in tokens]
+        crate = Path(relative_path(path)).parts[1]
+        parsed[path] = code, tokens, pairs, parents, words, crate
+        for index, word in enumerate(words):
+            if word != "struct" or index + 1 >= len(words):
+                continue
+            opening = index + 2
+            while opening < len(words) and words[opening] not in {"{", ";", "("}:
+                opening += 1
+            if opening not in pairs or words[opening] != "{":
+                continue
+            fields = DECODE_CONTEXT_BINDING.findall(
+                code[tokens[opening].end():tokens[pairs[opening]].start()])
+            context_fields.setdefault((crate, words[index + 1]), set()).update(fields)
+
+    findings = []
+    for path, (code, tokens, pairs, parents, words, crate) in parsed.items():
+        if relative_path(path) in DECODE_SORT_EXEMPT_FILES:
+            continue
+        functions = []
+        for index, _, _, owner in evaluation_signatures(tokens, pairs, parents):
+            opening = index + 2
+            if words[opening] == "<":
+                depth = 1
+                opening += 1
+                while opening < len(words) and depth:
+                    depth += (words[opening] == "<") - (words[opening] == ">")
+                    opening += 1
+            body = pairs[opening] + 1
+            while body < len(words) and words[body] not in {"{", ";"}:
+                body += 1
+            if body not in pairs or words[body] != "{":
+                continue
+            functions.append((index, body, pairs[body], owner))
+        # A nested function does not borrow its enclosing function's locals.
+        contexts = {}
+        for index, body, end, owner in functions:
+            pieces = []
+            cursor = tokens[index].start()
+            for child, _, child_end, _ in functions:
+                if body < child < end:
+                    if tokens[child].start() >= cursor:
+                        pieces.append(code[cursor:tokens[child].start()])
+                        cursor = tokens[child_end].end()
+            pieces.append(code[cursor:tokens[end].end()])
+            scope = "".join(pieces)
+            fields = context_fields.get((crate, owner), set())
+            bindings = set(DECODE_CONTEXT_BINDING.findall(scope))
+            contexts[index] = bindings, fields, bool(bindings) or any(
+                re.search(r"\bself\s*\.\s*" + re.escape(field) + r"\b", scope)
+                for field in fields
+            )
+        for index, word in enumerate(words):
+            if word not in SLICE_SORT_METHODS or index == 0 or words[index - 1] != ".":
+                continue
+            if evaluation_call_open(words, index) is None:
+                continue
+            enclosing = [scope for scope in functions if scope[1] < index < scope[2]]
+            if not enclosing:
+                continue
+            bindings, fields, has_context = contexts[max(enclosing, key=lambda scope: scope[0])[0]]
+            if not has_context:
+                continue
+            # The context operation shares the slice method's unstable name.
+            receiver = words[index - 2] if index >= 2 else ""
+            if receiver in bindings or (receiver in fields and words[index - 4:index - 2] == ["self", "."]):
+                continue
+            findings.append(Finding(
+                "uncharged_decode_sort", relative_path(path),
+                code.count("\n", 0, tokens[index].start()) + 1,
+                f"Slice .{word} in decode code must use ctx.stable_sort_by or ctx.sort_unstable_by to admit comparison work and scratch.",
+            ))
+    return findings
+
+
 def check_source() -> list[Finding]:
     sources = {
         path.resolve(): path.read_text(encoding="utf-8", errors="replace")
@@ -1339,6 +1909,8 @@ def check_source() -> list[Finding]:
     for path, source in sources.items():
         if is_production_rs(path):
             findings.extend(scan_patterns(path, source))
+    findings.extend(scan_decode_sorts(sources))
+    findings.extend(scan_evaluation_refusals(sources))
     findings.extend(scan_wire_mirror_docs(sources))
     findings.extend(scan_module_visibility(sources))
     findings.extend(scan_authoring_paths())
@@ -1349,8 +1921,16 @@ def check_source() -> list[Finding]:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--json", action="store_true", help="emit structured findings")
+    parser.add_argument("--crate", action="append", default=[], metavar="NAME",
+                        help="report findings only for this crate (repeatable)")
     args = parser.parse_args(argv)
     findings = check_source()
+    if args.crate:
+        for name in args.crate:
+            if not re.fullmatch(r"[A-Za-z0-9_-]+", name) or not (ROOT / "crates" / name).is_dir():
+                parser.error(f"unknown crate: {name}")
+        roots = {f"crates/{name}/" for name in args.crate}
+        findings = [item for item in findings if any(item.path.startswith(root) for root in roots)]
     if args.json:
         print(json.dumps({"status": "fail" if findings else "ok",
                           "findings": [asdict(item) for item in findings]}, indent=2))

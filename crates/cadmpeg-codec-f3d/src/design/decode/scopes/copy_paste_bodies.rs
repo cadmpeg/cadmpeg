@@ -2,8 +2,8 @@
 //! Exact copy-paste bodies operation scopes.
 
 use super::shared_frames::marked_record_reference;
+use crate::bytes::lp_ascii_filtered_view;
 use crate::design::decode::sketch::IndexedRecordOffsets;
-use crate::design::decode::text::lp_ascii_filtered_view;
 use crate::records::feature::body_ops;
 use crate::records::feature::body_ops::DesignCopyPasteBodiesOperation;
 use crate::records::feature::scope;

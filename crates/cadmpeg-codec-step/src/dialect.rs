@@ -270,34 +270,38 @@ impl StepDialect {
 
         let mut declared = BTreeMap::new();
         if let Some(identifier) = first {
-            ctx.charge_collection_items(1, "step_dialect_declared_entries")?;
-            declared.insert(
+            ctx.insert_btree_map(
+                &mut declared,
                 cadmpeg_core::nonblank_const!(DECLARED_FILE_SCHEMA_IDENTIFIER),
                 ctx.copy_retained_text(identifier, "step_dialect_declared_text")?,
-            );
+                "step_dialect_declared_entries",
+            )?;
             if let Some((_, Some(arcs))) = split_schema_identifier(identifier) {
-                ctx.charge_collection_items(1, "step_dialect_declared_entries")?;
-                declared.insert(
+                ctx.insert_btree_map(
+                    &mut declared,
                     cadmpeg_core::nonblank_const!(DECLARED_LONG_FORM_ARCS),
                     ctx.copy_retained_text(arcs, "step_dialect_declared_text")?,
-                );
+                    "step_dialect_declared_entries",
+                )?;
             }
         }
         if exchange.schema_identifiers().nth(1).is_some() {
-            ctx.charge_collection_items(1, "step_dialect_declared_entries")?;
-            declared.insert(
+            ctx.insert_btree_map(
+                &mut declared,
                 cadmpeg_core::nonblank_const!(DECLARED_FILE_SCHEMA_IDENTIFIERS),
                 exchange.joined_schema_identifiers(ctx)?,
-            );
+                "step_dialect_declared_entries",
+            )?;
         }
-        ctx.charge_collection_items(1, "step_dialect_declared_entries")?;
-        declared.insert(
+        ctx.insert_btree_map(
+            &mut declared,
             cadmpeg_core::nonblank_const!(DECLARED_IMPLEMENTATION_LEVEL),
             ctx.copy_retained_text(
                 exchange.implementation_level(),
                 "step_dialect_declared_text",
             )?,
-        );
+            "step_dialect_declared_entries",
+        )?;
 
         Ok(if dialect == Self::Unknown {
             DialectMatch::unverified(dialect.id(), Grammar::of(&NEAREST_STRATEGY.id()))

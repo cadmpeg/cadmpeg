@@ -24,11 +24,66 @@ use crate::F3dCodec;
 pub(crate) fn with_decode_context<T>(
     f: impl FnOnce(&cadmpeg_core::decode::DecodeContext<'_>) -> T,
 ) -> T {
+    with_decode_policy(&cadmpeg_core::decode::DecodePolicy::service(), f)
+}
+
+pub(crate) fn with_decode_policy<T>(
+    policy: &cadmpeg_core::decode::DecodePolicy,
+    f: impl FnOnce(&cadmpeg_core::decode::DecodeContext<'_>) -> T,
+) -> T {
     let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy::service();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, policy)
         .expect("test decode context");
     f(&ctx)
+}
+
+/// Admit earlier requests until the selected operation refuses at its boundary.
+/// `skip` selects a later request when an operation labels multiple records.
+pub(crate) fn resource_refusal_at<T>(
+    dimension: cadmpeg_core::decode::ResourceDimension,
+    operation: &str,
+    mut skip: usize,
+    decode: impl Fn(&cadmpeg_core::decode::DecodeContext<'_>) -> Result<T, CodecError>,
+) -> CodecError {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    fn ceiling(policy: &mut DecodePolicy, dimension: ResourceDimension) -> &mut u64 {
+        match dimension {
+            ResourceDimension::CollectionItems => &mut policy.limits.max_collection_items,
+            ResourceDimension::RetainedBytes => &mut policy.limits.max_retained_bytes,
+            ResourceDimension::WorkUnits => &mut policy.limits.max_work_units,
+            _ => panic!("unsupported refusal dimension"),
+        }
+    }
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    *ceiling(&mut policy, dimension) = 0;
+    for _ in 0..4096 {
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let Err(CodecError::ResourceLimit(limit)) = decode(&ctx) else {
+            panic!("{operation} must refuse before decode completes");
+        };
+        assert_eq!(limit.dimension, dimension);
+        assert_eq!(ctx.resource_refusal(), Some(limit));
+        let threshold = limit.used.checked_add(limit.additional).unwrap();
+        assert!(threshold > *ceiling(&mut policy, dimension));
+        if limit.operation == operation && skip == 0 {
+            *ceiling(&mut policy, dimension) = threshold - 1;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            let Err(CodecError::ResourceLimit(refusal)) = decode(&ctx) else {
+                panic!("{operation} must refuse one unit below its boundary");
+            };
+            assert_eq!(refusal.dimension, dimension);
+            assert_eq!(refusal.operation, operation);
+            assert_eq!(refusal.used + refusal.additional, threshold);
+            assert_eq!(ctx.resource_refusal(), Some(refusal));
+            return CodecError::ResourceLimit(refusal);
+        }
+        if limit.operation == operation {
+            skip -= 1;
+        }
+        *ceiling(&mut policy, dimension) = threshold;
+    }
+    panic!("{operation} was not reached within 4096 admissions");
 }
 
 /// Plans an inherited write through the sealed encoder and writes its bytes.

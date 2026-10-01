@@ -126,7 +126,7 @@ fn planar_relation_projection_refuses_collection_limit() {
 #[test]
 fn planar_relation_projection_refuses_retained_limit() {
     let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = "relation".len() as u64;
+    policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index("relation".len());
     let error = project_with_policy(policy).unwrap_err();
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::RetainedBytes

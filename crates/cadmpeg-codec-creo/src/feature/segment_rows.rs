@@ -77,9 +77,10 @@ impl SegmentRows {
     ) -> Result<Self, CodecError> {
         let mut identities = BTreeMap::new();
         for (ordinal, row) in rows.iter().enumerate() {
-            match identities.entry(row.external_id()) {
+            let external_id = row.external_id();
+            ctx.admit_btree_entry(&identities, &external_id, "creo segment identity nodes")?;
+            match identities.entry(external_id) {
                 std::collections::btree_map::Entry::Vacant(entry) => {
-                    ctx.charge_collection_items(1, "creo segment identity nodes")?;
                     entry.insert(Some(ordinal));
                 }
                 std::collections::btree_map::Entry::Occupied(mut entry) => {

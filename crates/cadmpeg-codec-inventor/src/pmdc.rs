@@ -50,11 +50,55 @@ pub(crate) fn type_id_string(value: [u8; 16]) -> String {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct PmDcReference {
-    pub(crate) index: u32,
-    pub(crate) qualified: bool,
+    index: ReferenceIndex,
+    qualified: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(try_from = "u32", into = "u32")]
+struct ReferenceIndex(u32);
+
+impl From<ReferenceIndex> for u32 {
+    fn from(value: ReferenceIndex) -> Self {
+        value.0
+    }
+}
+
+impl TryFrom<u32> for ReferenceIndex {
+    type Error = &'static str;
+
+    fn try_from(value: u32) -> Result<Self, Self::Error> {
+        if value <= 0x7fff_ffff {
+            Ok(Self(value))
+        } else {
+            Err("reference index exceeds 31 bits")
+        }
+    }
 }
 
 impl PmDcReference {
+    pub(crate) fn new(index: u32, qualified: bool) -> Option<Self> {
+        Some(Self {
+            index: ReferenceIndex::try_from(index).ok()?,
+            qualified,
+        })
+    }
+
+    pub(crate) const fn from_packed(value: u32) -> Self {
+        Self {
+            index: ReferenceIndex(value & 0x7fff_ffff),
+            qualified: value & 0x8000_0000 != 0,
+        }
+    }
+
+    pub(crate) const fn index(self) -> u32 {
+        self.index.0
+    }
+
+    pub(crate) const fn qualified(self) -> bool {
+        self.qualified
+    }
+
     pub(crate) fn zip(indices: Vec<u32>, qualifiers: Vec<bool>) -> Result<Vec<Self>, String> {
         if indices.len() != qualifiers.len() {
             return Err(format!(
@@ -63,11 +107,14 @@ impl PmDcReference {
                 qualifiers.len()
             ));
         }
-        Ok(indices
+        indices
             .into_iter()
             .zip(qualifiers)
-            .map(|(index, qualified)| Self { index, qualified })
-            .collect())
+            .map(|(index, qualified)| {
+                Self::new(index, qualified)
+                    .ok_or_else(|| "reference index exceeds 31 bits".to_owned())
+            })
+            .collect()
     }
 
     /// The zero-based record ordinal this reference names.
@@ -75,7 +122,7 @@ impl PmDcReference {
     /// A `PmDc` reference is one-based. Index 0 is the null reference: it names
     /// no record, and it is not the record at ordinal 0.
     pub(crate) fn record_ordinal(self) -> Option<u32> {
-        self.index.checked_sub(1)
+        self.index().checked_sub(1)
     }
 }
 
@@ -134,6 +181,12 @@ impl PmDcReferenceList {
         metadata: Option<PmDcListMetadata>,
         references: Vec<PmDcReference>,
     ) -> Option<Self> {
+        if metadata
+            .as_ref()
+            .is_some_and(|value| !value.matches_marker(marker))
+        {
+            return None;
+        }
         let items = match paired_items(metadata, references) {
             PairedItems::Empty => None,
             PairedItems::Complete(metadata, references) => Some((metadata, references)),
@@ -274,6 +327,12 @@ impl PmDcU32List {
         metadata: Option<PmDcListMetadata>,
         values: Vec<u32>,
     ) -> Option<Self> {
+        if metadata
+            .as_ref()
+            .is_some_and(|value| !value.matches_marker(marker))
+        {
+            return None;
+        }
         let items = match paired_items(metadata, values) {
             PairedItems::Empty => None,
             PairedItems::Complete(metadata, values) => Some((metadata, values)),
@@ -341,6 +400,12 @@ pub(crate) enum PmDcListMetadata {
     U32([u32; 2]),
 }
 
+impl PmDcListMetadata {
+    fn matches_marker(&self, marker: u16) -> bool {
+        matches!((marker, self), (8, Self::U16(_))) || (marker != 8 && matches!(self, Self::U32(_)))
+    }
+}
+
 pub(crate) struct Cursor<'a> {
     source: View<'a>,
 }
@@ -348,6 +413,10 @@ pub(crate) struct Cursor<'a> {
 impl<'a> Cursor<'a> {
     pub(crate) const fn new(source: View<'a>) -> Self {
         Self { source }
+    }
+
+    pub(crate) fn into_view(self) -> View<'a> {
+        self.source
     }
 
     pub(crate) fn remaining(&self) -> usize {
@@ -419,23 +488,13 @@ impl<'a> Cursor<'a> {
                 "Inventor PmDc {field} exceeds 1048576 code units"
             )));
         }
-        let len = units.checked_mul(2).ok_or_else(|| {
-            CodecError::malformed(format_args!("Inventor PmDc {field} length overflows"))
-        })?;
-        let utf8_bytes = crate::reader::utf16_utf8_len(self.source, units).ok_or_else(|| {
-            CodecError::malformed(format_args!("Inventor PmDc {field} is not UTF-16"))
-        })?;
-        let _units = ctx.reserve_scoped(
-            cadmpeg_core::decode::u64_from_index(len),
-            "decode Inventor PmDc UTF-16 units",
-        )?;
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(utf8_bytes),
+        crate::reader::utf16_text(
+            ctx,
+            &mut self.source,
+            units,
+            "PmDc text",
             "retain Inventor PmDc string",
-        )?;
-        self.source.utf16_le(units).ok_or_else(|| {
-            CodecError::malformed(format_args!("Inventor PmDc {field} is not UTF-16"))
-        })
+        )
     }
 
     pub(crate) fn reference(&mut self, field: &'static str) -> Result<PmDcReference, CodecError> {
@@ -473,7 +532,7 @@ pub(crate) fn reference_list(
 ) -> Result<PmDcReferenceList, CodecError> {
     let (count, metadata) =
         list_preamble(ctx, cursor, marker, field, "admit Inventor PmDc references")?;
-    let mut references = DecodeContext::admitted_vec(count, "admit Inventor PmDc references")?;
+    let mut references = ctx.retained_admitted_vec(count, "admit Inventor PmDc references")?;
     for _ in 0..count {
         references.push(cursor.reference("reference-list entry")?);
     }
@@ -497,7 +556,6 @@ fn list_preamble(
     }
     let count = usize::try_from(cursor.u32("list count")?)
         .map_err(|_| CodecError::Malformed("Inventor numeric value exceeds target range".into()))?;
-    ctx.charge_collection_items(cadmpeg_core::decode::u64_from_index(count), admission)?;
     let metadata = if count == 0 {
         None
     } else if marker == 8 {
@@ -511,6 +569,13 @@ fn list_preamble(
             cursor.u32("list metadata 1")?,
         ]))
     };
+    cursor
+        .source
+        .counted(cadmpeg_core::decode::u64_from_index(count), 4)
+        .ok_or_else(|| {
+            CodecError::malformed("Inventor PmDc list count exceeds remaining payload")
+        })?;
+    ctx.charge_collection_items(cadmpeg_core::decode::u64_from_index(count), admission)?;
     Ok((count, metadata))
 }
 
@@ -522,7 +587,7 @@ pub(crate) fn u32_list(
 ) -> Result<PmDcU32List, CodecError> {
     let (count, metadata) =
         list_preamble(ctx, cursor, marker, field, "admit Inventor PmDc integers")?;
-    let mut values = DecodeContext::admitted_vec(count, "admit Inventor PmDc integers")?;
+    let mut values = ctx.retained_admitted_vec(count, "admit Inventor PmDc integers")?;
     for _ in 0..count {
         values.push(cursor.u32("integer-list value")?);
     }
@@ -666,6 +731,102 @@ mod tests {
     use cadmpeg_core::CodecError;
 
     #[test]
+    fn typed_lists_reject_marker_metadata_width_disagreement() {
+        let reference = super::PmDcReference::from_packed(1);
+        for (marker, metadata) in [
+            (8, super::PmDcListMetadata::U32([0; 2])),
+            (2, super::PmDcListMetadata::U16([0; 2])),
+        ] {
+            assert!(
+                super::PmDcReferenceList::new(marker, Some(metadata.clone()), vec![reference])
+                    .is_none()
+            );
+            assert!(super::PmDcU32List::new(marker, Some(metadata.clone()), vec![1]).is_none());
+            let wire = serde_json::json!({"marker": marker, "metadata": metadata, "references": [reference]});
+            assert!(serde_json::from_value::<super::PmDcReferenceList>(wire).is_err());
+            let wire = serde_json::json!({"marker": marker, "metadata": metadata, "values": [1]});
+            assert!(serde_json::from_value::<super::PmDcU32List>(wire).is_err());
+        }
+    }
+
+    #[test]
+    fn references_reject_high_indices_on_every_construction_path() {
+        assert!(super::PmDcReference::new(0x8000_0000, false).is_none());
+        assert!(super::PmDcReference::zip(vec![0x8000_0000], vec![false]).is_err());
+        assert!(serde_json::from_value::<super::PmDcReference>(
+            serde_json::json!({"index": 2_147_483_648_u32, "qualified": false})
+        )
+        .is_err());
+        for (packed, index, qualified) in [
+            (0, 0, false),
+            (0x8000_0000, 0, true),
+            (u32::MAX, 0x7fff_ffff, true),
+        ] {
+            let reference = super::PmDcReference::from_packed(packed);
+            assert_eq!(
+                (reference.index(), reference.qualified()),
+                (index, qualified)
+            );
+            assert_eq!(
+                serde_json::to_value(reference).expect("reference wire"),
+                serde_json::json!({"index": index, "qualified": qualified})
+            );
+        }
+    }
+
+    #[test]
+    fn pmdc_counted_lists_prove_extent_before_admission() {
+        for marker in [2_u16, 8] {
+            let mut bytes = Vec::new();
+            bytes.extend_from_slice(&marker.to_le_bytes());
+            bytes.extend_from_slice(&0x3000_u16.to_le_bytes());
+            bytes.extend_from_slice(&1_000_000_u32.to_le_bytes());
+            bytes.extend_from_slice(if marker == 8 { &[0; 4] } else { &[0; 8] });
+            crate::test_support::test_fixtures::parse(&bytes, |ctx, root| {
+                assert!(matches!(
+                    reference_list(ctx, &mut Cursor::new(root), marker, "test"),
+                    Err(CodecError::Malformed(_))
+                ));
+                assert!(matches!(
+                    super::u32_list(ctx, &mut Cursor::new(root), marker, "test"),
+                    Err(CodecError::Malformed(_))
+                ));
+            });
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_collection_items = 0;
+            let (ctx, root) =
+                DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("test context");
+            assert!(matches!(
+                reference_list(&ctx, &mut Cursor::new(root), marker, "test"),
+                Err(CodecError::Malformed(_))
+            ));
+            assert!(matches!(
+                super::u32_list(&ctx, &mut Cursor::new(root), marker, "test"),
+                Err(CodecError::Malformed(_))
+            ));
+        }
+    }
+
+    #[test]
+    fn pmdc_counted_lists_admit_retained_storage() {
+        let bytes = [
+            2_u8, 0, 0, 0x30, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0,
+        ];
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = 0;
+        let (ctx, root) =
+            DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("test context");
+        assert!(
+            matches!(reference_list(&ctx, &mut Cursor::new(root), 2, "test"), Err(CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::RetainedBytes)
+        );
+        assert!(
+            matches!(super::u32_list(&ctx, &mut Cursor::new(root), 2, "test"), Err(CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::RetainedBytes)
+        );
+    }
+
+    #[test]
     fn unique_by_refuses_collection_limit_before_second_map() {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
@@ -715,19 +876,19 @@ mod tests {
     }
 
     #[test]
-    fn pmdc_utf16_refuses_materialized_limit_before_code_units() {
+    fn pmdc_utf16_needs_no_materialized_code_units() {
         let bytes = [1_u8, 0, 0, 0, b'A', 0];
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        policy.limits.max_materialized_bytes = 1;
+        policy.limits.max_materialized_bytes = 0;
         let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)
             .expect("PmDc string fits input cap");
-        assert!(matches!(
-            Cursor::new(root).utf16(&ctx, "name"),
-            Err(CodecError::ResourceLimit(limit))
-                if limit.dimension == ResourceDimension::MaterializedBytes
-                    && limit.operation == "decode Inventor PmDc UTF-16 units"
-        ));
+        assert_eq!(
+            Cursor::new(root)
+                .utf16(&ctx, "name")
+                .expect("direct UTF-16 decode needs no temporary storage"),
+            "A"
+        );
     }
 
     #[test]

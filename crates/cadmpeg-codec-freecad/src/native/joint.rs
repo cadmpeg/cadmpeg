@@ -114,8 +114,12 @@ impl JointParameters {
                 },
                 ParameterKind::Native => JointParameter::Native { raw },
             };
-            ctx.charge_collection_items(1, "fcstd joint checked parameters")?;
-            checked.insert(name, parameter);
+            ctx.insert_btree_map(
+                &mut checked,
+                name,
+                parameter,
+                "fcstd joint checked parameters",
+            )?;
         }
         Ok(Self(checked))
     }

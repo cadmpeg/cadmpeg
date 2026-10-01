@@ -52,11 +52,14 @@ impl Serialize for HistoryArenaView<'_> {
         if !self.0.content.is_empty() {
             map.serialize_entry("content", &self.0.content)?;
         }
-        map.serialize_entry("configurations", &[] as &[()])?;
-        map.serialize_entry("features", &[] as &[()])?;
+        map.serialize_entry("configurations", NO_ENTRIES)?;
+        map.serialize_entry("features", NO_ENTRIES)?;
         map.end()
     }
 }
+
+/// An empty array for the native sections this view leaves unpopulated.
+const NO_ENTRIES: &[()] = &[];
 
 struct LanePayload<'a>(&'a [u8]);
 
@@ -89,7 +92,7 @@ impl Serialize for LaneArenaView<'_> {
             "references",
             "sketch_entities",
         ] {
-            map.serialize_entry(field, &[] as &[()])?;
+            map.serialize_entry(field, NO_ENTRIES)?;
         }
         map.end()
     }
@@ -335,9 +338,14 @@ impl SldprtNative {
                 namespace.arena_as_for_decode(ctx, $name)?
             };
         }
+        let lane_wires: Vec<crate::records::FeatureInputLaneWire> =
+            read_arena!("feature_input_lanes");
         let mut native = Self {
             feature_histories: read_arena!("feature_histories"),
-            feature_input_lanes: read_arena!("feature_input_lanes"),
+            feature_input_lanes: ctx.try_collect_vec(
+                lane_wires.into_iter().map(|wire| wire.admit(ctx)),
+                "admit SLDPRT native lanes",
+            )?,
             pmi_dimensions: read_arena!("pmi_dimensions"),
         };
         let configurations: Vec<crate::records::Configuration> = read_arena!("configurations");
@@ -357,8 +365,12 @@ impl SldprtNative {
         let references: Vec<FeatureInputReference> = read_arena!("feature_input_references");
         let relation_bindings: Vec<FeatureInputRelationBinding> =
             read_arena!("feature_input_relation_bindings");
-        let relation_instances: Vec<FeatureInputRelationInstance> =
+        let relation_wires: Vec<crate::records::FeatureInputRelationInstanceWire> =
             read_arena!("feature_input_relation_instances");
+        let relation_instances = ctx.try_collect_vec(
+            relation_wires.into_iter().map(|wire| wire.admit(ctx)),
+            "admit SLDPRT native relations",
+        )?;
         let scalars: Vec<FeatureInputScalar> = read_arena!("feature_input_scalars");
         let (history_ids, _history_ids_reservation) = ctx.collect_scoped_string_set(
             native.feature_histories.len(),

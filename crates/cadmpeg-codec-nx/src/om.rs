@@ -1123,7 +1123,12 @@ impl<'a> FixedEntityRecord<'a> {
                 },
             });
         }
-        references.sort_by_key(|reference| reference.offset);
+        ctx.stable_sort_by(
+            &mut references,
+            |left, right| left.offset.cmp(&right.offset),
+            |_| 0,
+            "sort NX record references",
+        )?;
         Ok(references)
     }
 }
@@ -2742,7 +2747,12 @@ pub(crate) fn sketch_payload_scalar_lanes(
             lanes.push(lane);
         }
     }
-    lanes.sort_by_key(FramedScalarRun::offset);
+    ctx.stable_sort_by(
+        &mut lanes,
+        |left, right| left.offset().cmp(&right.offset()),
+        |_| 0,
+        "sort NX sketch payload scalar lanes",
+    )?;
     Ok(lanes)
 }
 
@@ -2793,7 +2803,12 @@ pub(crate) fn sketch_payload_fixed_pairs(
             });
         }
     }
-    pairs.sort_by_key(|pair| pair.offset);
+    ctx.stable_sort_by(
+        &mut pairs,
+        |left, right| left.offset.cmp(&right.offset),
+        |_| 0,
+        "sort NX sketch payload pairs",
+    )?;
     Ok(pairs)
 }
 
@@ -2904,7 +2919,12 @@ pub(crate) fn datum_csys_payload_fixed_pairs(
             });
         }
     }
-    pairs.sort_by_key(|pair| pair.offset);
+    ctx.stable_sort_by(
+        &mut pairs,
+        |left, right| left.offset.cmp(&right.offset),
+        |_| 0,
+        "sort NX datum csys payload pairs",
+    )?;
     Ok(pairs)
 }
 
@@ -3015,7 +3035,12 @@ pub(crate) fn draft_construction_binary32_lanes(
             lanes.push(lane);
         }
     }
-    lanes.sort_by_key(FramedScalarRun::offset);
+    ctx.stable_sort_by(
+        &mut lanes,
+        |left, right| left.offset().cmp(&right.offset()),
+        |_| 0,
+        "sort NX draft construction lanes",
+    )?;
     Ok(lanes)
 }
 
@@ -3330,7 +3355,14 @@ fn operation_state_group_table_before_counter_map(
         )?;
         candidates.push((at, end));
     }
-    candidates.sort_by_key(|(start, end)| (*end, *start));
+    ctx.stable_sort_by(
+        &mut candidates,
+        |(left_start, left_end), (right_start, right_end)| {
+            (left_end, left_start).cmp(&(right_end, right_start))
+        },
+        |_| 0,
+        "sort NX operation state group candidates",
+    )?;
 
     let predecessor_bytes = candidates
         .len()
@@ -3367,13 +3399,17 @@ fn operation_state_group_table_before_counter_map(
         });
         if replace {
             if !best_by_end.contains_key(end) {
-                ctx.charge_collection_items(1, "nx operation-state group paths")?;
                 ctx.charge_retained(
                     cadmpeg_core::decode::u64_from_index(std::mem::size_of::<(usize, GroupPath)>()),
                     "nx operation-state group paths",
                 )?;
             }
-            best_by_end.insert(*end, path);
+            ctx.insert_btree_map(
+                &mut best_by_end,
+                *end,
+                path,
+                "nx operation-state group paths",
+            )?;
         }
     }
 
@@ -3703,7 +3739,12 @@ pub(crate) fn operation_common_frames(
             frames.push(frame);
         }
     }
-    frames.sort_by_key(CommonFrame::<usize>::offset);
+    ctx.stable_sort_by(
+        &mut frames,
+        |left, right| left.offset().cmp(&right.offset()),
+        |_| 0,
+        "sort NX common frames",
+    )?;
     Ok(frames)
 }
 
@@ -3988,7 +4029,12 @@ fn record_references(
             out.push(*tagged);
         }
     }
-    out.sort_by_key(|reference| reference.offset);
+    ctx.stable_sort_by(
+        &mut out,
+        |left, right| left.offset.cmp(&right.offset),
+        |_| 0,
+        "sort NX direct references",
+    )?;
     Ok(out)
 }
 
@@ -4684,11 +4730,14 @@ pub(crate) fn indexed_sections<'a>(
         if seen_record_starts.contains(&table_end) {
             continue;
         }
-        ctx.charge_collection_items(1, "nx OM seen record starts")?;
         temporary.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
             usize,
         >()))?;
-        seen_record_starts.insert(table_end);
+        ctx.insert_btree_set(
+            &mut seen_record_starts,
+            table_end,
+            "nx OM seen record starts",
+        )?;
         ctx.reserve_scoped_vec(
             &mut temporary,
             &mut candidates,
@@ -4775,11 +4824,10 @@ pub(crate) fn indexed_sections<'a>(
         if seen_record_starts.contains(&second) {
             continue;
         }
-        ctx.charge_collection_items(1, "nx OM seen record starts")?;
         temporary.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
             usize,
         >()))?;
-        seen_record_starts.insert(second);
+        ctx.insert_btree_set(&mut seen_record_starts, second, "nx OM seen record starts")?;
         ctx.reserve_scoped_vec(
             &mut temporary,
             &mut candidates,
@@ -4887,8 +4935,11 @@ pub(crate) fn offset_store_control_class_ordinals(
         if identities.contains(&identity) {
             break;
         }
-        ctx.charge_collection_items(1, "nx offset-store class identities")?;
-        identities.insert(identity);
+        ctx.insert_btree_set(
+            &mut identities,
+            identity,
+            "nx offset-store class identities",
+        )?;
         maximum_identity = maximum_identity.max(identity);
         if maximum_identity < *minimum && boundary.replace(index + 1).is_some() {
             return Ok(None);

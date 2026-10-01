@@ -87,10 +87,7 @@ fn insert_generating_segment_id(
     ids: &mut BTreeSet<u32>,
     id: u32,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    if !ids.contains(&id) {
-        ctx.charge_collection_items(1, "creo revolution generating segment IDs")?;
-        ids.insert(id);
-    }
+    ctx.insert_btree_set(ids, id, "creo revolution generating segment IDs")?;
     Ok(())
 }
 
@@ -111,10 +108,11 @@ pub(in super::super) fn transfer_resolved_revolution_surfaces(
     let mut transferred = 0;
     for transform in &scan.features.section_transforms {
         if unique_feature_section_transform(
+            ctx,
             &scan.features.section_transforms,
             transform.definition_id,
             transform.offset,
-        )
+        )?
         .is_none()
         {
             continue;
@@ -132,7 +130,7 @@ pub(in super::super) fn transfer_resolved_revolution_surfaces(
             continue;
         }
         let Some(definition) =
-            unique_feature_definition_for_transform(&scan.features.definitions, transform)
+            unique_feature_definition_for_transform(ctx, &scan.features.definitions, transform)?
         else {
             continue;
         };
@@ -545,10 +543,11 @@ pub(in super::super) fn transfer_resolved_revolution_vertex_orbit_curves(
     let mut pending = Vec::new();
     for transform in &scan.features.section_transforms {
         if unique_feature_section_transform(
+            ctx,
             &scan.features.section_transforms,
             transform.definition_id,
             transform.offset,
-        )
+        )?
         .is_none()
         {
             continue;
@@ -562,7 +561,7 @@ pub(in super::super) fn transfer_resolved_revolution_vertex_orbit_curves(
             continue;
         }
         let Some(definition) =
-            unique_feature_definition_for_transform(&scan.features.definitions, transform)
+            unique_feature_definition_for_transform(ctx, &scan.features.definitions, transform)?
         else {
             continue;
         };
@@ -661,10 +660,11 @@ pub(in super::super) fn transfer_resolved_extrusion_vertex_orbit_curves(
     let mut pending = Vec::new();
     for transform in &scan.features.section_transforms {
         if unique_feature_section_transform(
+            ctx,
             &scan.features.section_transforms,
             transform.definition_id,
             transform.offset,
-        )
+        )?
         .is_none()
         {
             continue;
@@ -676,7 +676,7 @@ pub(in super::super) fn transfer_resolved_extrusion_vertex_orbit_curves(
             continue;
         }
         let Some(definition) =
-            unique_feature_definition_for_transform(&scan.features.definitions, transform)
+            unique_feature_definition_for_transform(ctx, &scan.features.definitions, transform)?
         else {
             continue;
         };

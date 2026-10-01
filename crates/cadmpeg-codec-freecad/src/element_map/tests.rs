@@ -97,9 +97,11 @@ fn string_table_value_word_refuses_on_collection_limit() {
 #[test]
 fn string_table_record_refuses_on_collection_limit() {
     let document = b"<Document><StringHasher saveall=\"0\" threshold=\"0\" count=\"0\" new=\"1\"/><StringHasher2 count=\"0\"/></Document>";
-    let result = with_collection_limit(document, 0, |ctx| parse(ctx, document, 1, &[], &[]));
-    assert!(matches!(result, Err(CodecError::ResourceLimit(limit))
-            if limit.operation == "FreeCAD string table records"));
+    crate::test_support::assert_collection_refusal_at(
+        document,
+        "FreeCAD string table records",
+        |ctx| parse(ctx, document, 1, &[], &[]),
+    );
 }
 
 #[test]
@@ -336,13 +338,13 @@ fn parses_side_entry_headers() {
 }
 
 fn legacy_entry(name: &str, data: &[u8]) -> EntryRecord {
-    EntryRecord {
-        id: name.into(),
-        name: name.into(),
-        role: cadmpeg_core::container::ContainerRole::Auxiliary,
-        referenced_by: Vec::new(),
-        data: data.to_vec(),
-    }
+    crate::test_support::entry_record(
+        crate::native::native_id("entry", name),
+        name.into(),
+        cadmpeg_core::container::ContainerRole::Auxiliary,
+        Vec::new(),
+        data.to_vec(),
+    )
 }
 
 #[test]

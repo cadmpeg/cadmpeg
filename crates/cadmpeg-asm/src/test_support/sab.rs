@@ -20,7 +20,7 @@ pub fn frame(
             offset: start,
             reason: format!("fixture exceeds the service input limit: {error}"),
         })?;
-    match crate::sab::frame(&ctx, bytes, start, limit, width) {
+    match crate::sab::frame(&ctx, bytes, start, limit, width, None) {
         Ok(records) => Ok(records),
         Err(
             StreamFailure::Parse(error)
@@ -49,7 +49,7 @@ pub fn frame_history(
             offset: start,
             reason: format!("fixture exceeds the service input limit: {error}"),
         })?;
-    match crate::sab::frame_history(&ctx, bytes, start, limit, width) {
+    match crate::sab::frame_history(&ctx, bytes, start, limit, width, None) {
         Ok(records) => Ok(records),
         Err(
             StreamFailure::Parse(error)

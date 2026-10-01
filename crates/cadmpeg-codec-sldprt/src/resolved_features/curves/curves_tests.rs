@@ -15,7 +15,9 @@ use super::{
     tangent_bounded_curve, unique_dimensioned_rectangle_markers,
 };
 use crate::records::{SketchInputEntity, SketchInputKind, SketchInputLink};
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+use cadmpeg_core::decode::{
+    u64_from_index, DecodeArena, DecodeContext, DecodePolicy, ResourceDimension,
+};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::math::Point2;
 use cadmpeg_ir::scalar::{Angle, Length};
@@ -421,7 +423,7 @@ fn compact_line_chain_refuses_collection_limit() {
 fn compact_line_address_scan_refuses_work_limit() {
     let payload = compact_region_payload();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = (payload.len() - 1) as u64;
+    policy.limits.max_work_units = u64_from_index(payload.len() - 1);
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&payload, &arena, &policy).unwrap();
     let error = compact_line_region_addresses(&ctx, &payload).unwrap_err();
@@ -521,28 +523,28 @@ fn indexed_line_cycle_carries_rectangle_from_known_vertices() {
         marker("fourth", 300, None, None, SketchInputKind::Point),
         marker(
             "line-1",
-            CURVE_START as u64,
+            u64_from_index(CURVE_START),
             None,
             None,
             SketchInputKind::LineOrCircle,
         ),
         marker(
             "line-2",
-            (CURVE_START + 84) as u64,
+            u64_from_index(CURVE_START + 84),
             None,
             None,
             SketchInputKind::LineOrCircle,
         ),
         marker(
             "line-3",
-            (CURVE_START + 168) as u64,
+            u64_from_index(CURVE_START + 168),
             None,
             None,
             SketchInputKind::LineOrCircle,
         ),
         marker(
             "line-4",
-            (CURVE_START + 252) as u64,
+            u64_from_index(CURVE_START + 252),
             None,
             None,
             SketchInputKind::LineOrCircle,
@@ -605,7 +607,8 @@ fn indexed_line_cycle_carries_rectangle_from_known_vertices() {
     }
     let mut current_corners = three_corners.clone();
     for (index, marker) in current_corners.iter_mut().take(4).enumerate() {
-        *marker = marker.with_test_identity(Some(index as u32 + 1), marker.local_id());
+        *marker =
+            marker.with_test_identity(Some(u32::try_from(index).unwrap() + 1), marker.local_id());
     }
     for marker in current_corners.iter_mut().skip(4) {
         marker.reclassify(SketchInputKind::Arc);
@@ -690,7 +693,8 @@ fn indexed_line_cycle_carries_rectangle_from_known_vertices() {
         marker.reclassify(SketchInputKind::Point);
     }
     for (index, marker) in wide_markers[5..].iter_mut().enumerate() {
-        *marker = marker.with_test_position(marker.ordinal(), (CURVE_START + index * 92) as u64);
+        *marker =
+            marker.with_test_position(marker.ordinal(), u64_from_index(CURVE_START + index * 92));
         marker.reclassify(if index == 3 {
             SketchInputKind::Arc
         } else {
@@ -806,28 +810,28 @@ fn compact_legacy_object_index_cycle_carries_rectangle() {
         ),
         marker(
             "line-1",
-            CURVE_START as u64,
+            u64_from_index(CURVE_START),
             1,
             None,
             SketchInputKind::LineOrCircle,
         ),
         marker(
             "line-2",
-            (CURVE_START + 68) as u64,
+            u64_from_index(CURVE_START + 68),
             2,
             None,
             SketchInputKind::LineOrCircle,
         ),
         marker(
             "line-3",
-            (CURVE_START + 136) as u64,
+            u64_from_index(CURVE_START + 136),
             3,
             None,
             SketchInputKind::LineOrCircle,
         ),
         marker(
             "line-4",
-            (CURVE_START + 204) as u64,
+            u64_from_index(CURVE_START + 204),
             4,
             None,
             SketchInputKind::LineOrCircle,

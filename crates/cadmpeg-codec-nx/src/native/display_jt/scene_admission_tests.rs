@@ -66,23 +66,48 @@ fn display_jt_partition_name_refuses_before_utf16_allocation() {
     family.extend_from_slice(&0_u32.to_le_bytes());
     family.extend_from_slice(&1_u32.to_le_bytes());
     family.extend_from_slice(&u16::from(b'x').to_le_bytes());
-
+    let mut body = Vec::new();
+    body.extend_from_slice(&1_u16.to_le_bytes());
+    body.extend_from_slice(&0_u32.to_le_bytes());
+    body.extend_from_slice(&0_u32.to_le_bytes());
+    body.extend_from_slice(&1_u16.to_le_bytes());
+    body.extend_from_slice(&0_u32.to_le_bytes());
+    body.extend_from_slice(&family);
+    for _ in 0..13 {
+        body.extend_from_slice(&0_f32.to_le_bytes());
+    }
+    for _ in 0..6 {
+        body.extend_from_slice(&0_i32.to_le_bytes());
+    }
     crate::test_support::with_decode_context_over(
         &[],
         |policy| {
-            policy.limits.max_materialized_bytes = 1;
+            policy.limits.max_retained_bytes = 0;
+            policy.limits.max_materialized_bytes = 0;
         },
         |ctx| {
-            let error = super::admit_jt_partition_name(ctx, &family).unwrap_err();
+            let error = super::parse_jt9_partition_node_body(ctx, &body)
+                .err()
+                .expect("retained refusal");
             assert!(matches!(error, CodecError::ResourceLimit(limit)
-        if limit.dimension == ResourceDimension::MaterializedBytes
-            && limit.operation == "decode DisplayJT partition name"));
-            crate::test_support::with_decode_context(|service| {
-                assert!(matches!(
-                    super::admit_jt_partition_name(service, &family).unwrap(),
-                    super::JtOptionalReservation::Admitted(_)
-                ));
-            });
+                if limit.dimension == ResourceDimension::RetainedBytes && limit.additional == 1
+                    && limit.operation == "retain DisplayJT partition name"));
+            crate::test_support::with_decode_context_over(
+                &[],
+                |policy| {
+                    policy.limits.max_retained_bytes = 1;
+                    policy.limits.max_materialized_bytes = 0;
+                },
+                |service| {
+                    assert_eq!(
+                        super::parse_jt9_partition_node_body(service, &body)
+                            .expect("exact retained budget")
+                            .expect("complete partition")
+                            .file_name,
+                        "x"
+                    );
+                },
+            );
         },
     );
 }

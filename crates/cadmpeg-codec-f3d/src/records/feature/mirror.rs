@@ -196,7 +196,7 @@ impl TryFrom<DesignMirrorConstructionWire> for DesignMirrorConstruction {
             plane_selection_record_index: wire.plane_selection_record_index,
             plane: match (wire.plane_origin, wire.plane_normal) {
                 (None, None) => None,
-                (Some(origin), Some(normal)) => Some(DesignPlane { origin, normal }),
+                (Some(origin), Some(normal)) => Some(DesignPlane::from_parts(origin, normal).ok_or("plane_normal must be a unit vector")?),
                 _ => return Err("plane_origin and plane_normal must occur together".into()),
             },
         })
@@ -233,8 +233,10 @@ impl From<DesignMirrorConstruction> for DesignMirrorConstructionWire {
                 .plane_scope_record_index
                 .map(|reference| reference.offset),
             plane_selection_record_index: record.plane_selection_record_index,
-            plane_origin: record.plane.map(|plane| plane.origin),
-            plane_normal: record.plane.map(|plane| plane.normal),
+            plane_origin: record.plane.map(DesignPlane::origin),
+            plane_normal: record
+                .plane
+                .map(|plane| FiniteVector3::from(plane.normal())),
         }
     }
 }

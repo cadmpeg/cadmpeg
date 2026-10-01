@@ -61,10 +61,7 @@ pub(crate) fn extract_streams_with_offsets(
     let mut starts = starts.into_iter().peekable();
     while let Some((start, header)) = starts.next() {
         let end = starts.peek().map_or(payload.len(), |(offset, _)| *offset);
-        ctx.charge_collection_items(1, "collect direct Parasolid streams")?;
-        out.try_reserve(1).map_err(|_| {
-            ctx.refuse_codec_limit("collect direct Parasolid streams", u64::MAX - 1, u64::MAX)
-        })?;
+        ctx.reserve_vec(&mut out, 1, "collect direct Parasolid streams")?;
         let payload = ctx.copy_retained(&payload[start..end], "retain direct Parasolid stream")?;
         out.push(ExtractedStream {
             offset: start,
@@ -91,15 +88,7 @@ pub(crate) fn extract_streams_with_offsets(
         };
         if let Some(stream) = stream {
             if !stream_payload_present(ctx, &out, &stream.payload)? {
-                ctx.charge_collection_items(1, "collect wrapped Parasolid streams")?;
-                out.try_reserve(1).map_err(|_| {
-                    ctx.refuse_codec_limit(
-                        "collect wrapped Parasolid streams",
-                        u64::MAX - 1,
-                        u64::MAX,
-                    )
-                })?;
-                out.push(stream);
+                ctx.push_vec(&mut out, stream, "collect wrapped Parasolid streams")?;
             }
         }
     }
@@ -179,15 +168,7 @@ pub(crate) fn extract_streams_with_offsets(
             };
             if let Some(stream) = inner {
                 if !stream_payload_present(ctx, &out, &stream.payload)? {
-                    ctx.charge_collection_items(1, "collect nested Parasolid streams")?;
-                    out.try_reserve(1).map_err(|_| {
-                        ctx.refuse_codec_limit(
-                            "collect nested Parasolid streams",
-                            u64::MAX - 1,
-                            u64::MAX,
-                        )
-                    })?;
-                    out.push(stream);
+                    ctx.push_vec(&mut out, stream, "collect nested Parasolid streams")?;
                 }
             }
         }
@@ -320,11 +301,7 @@ fn chained_wrapped_stream(
         let Some(frame) = inflate_zlib_frame_budgeted(ctx, member, uncompressed_size)? else {
             return Ok(None);
         };
-        ctx.charge_collection_items(1, "collect Parasolid frames")?;
-        frame_outputs.try_reserve(1).map_err(|_| {
-            ctx.refuse_codec_limit("collect Parasolid frames", u64::MAX - 1, u64::MAX)
-        })?;
-        frame_outputs.push(frame);
+        ctx.push_vec(&mut frame_outputs, frame, "collect Parasolid frames")?;
         let Some(next_frames) = frames.checked_add(1) else {
             return Ok(None);
         };
@@ -378,7 +355,7 @@ fn inflate_zlib_frame_budgeted(
     if expected > MAX_WRAPPED_FRAME_UNCOMPRESSED {
         return Err(ctx.refuse_codec_limit(
             "inflate Parasolid frame",
-            MAX_WRAPPED_FRAME_UNCOMPRESSED as u64,
+            cadmpeg_core::decode::u64_from_index(MAX_WRAPPED_FRAME_UNCOMPRESSED),
             declared,
         ));
     }
@@ -422,7 +399,7 @@ fn inflate_zlib_frame_budgeted(
         }
         output.write(&chunk[..produced])?;
         if status == Status::StreamEnd {
-            if input_at != member.len() || output.written() != expected as u64 {
+            if input_at != member.len() || output.written() != declared {
                 return Ok(None);
             }
             reservation.commit()?;
@@ -444,11 +421,7 @@ fn direct_stream_headers(
             continue;
         }
         if let Some(header) = stream_header(ctx, &payload[start..])? {
-            ctx.charge_collection_items(1, "collect Parasolid headers")?;
-            headers.try_reserve(1).map_err(|_| {
-                ctx.refuse_codec_limit("collect Parasolid headers", u64::MAX - 1, u64::MAX)
-            })?;
-            headers.push((start, header));
+            ctx.push_vec(&mut headers, (start, header), "collect Parasolid headers")?;
         }
     }
     Ok(headers)
@@ -508,38 +481,16 @@ pub(crate) fn stream_header(
             u64::MAX,
         )
     })?;
-    ctx.charge_retained(
-        u64::try_from(description_len).map_err(|_| {
-            ctx.refuse_codec_limit(
-                "retain Parasolid stream description",
-                u64::MAX - 1,
-                u64::MAX,
-            )
-        })?,
+    let mut description = String::new();
+    ctx.try_reserve_retained_text(
+        &mut description,
+        description_len,
         "retain Parasolid stream description",
     )?;
-    let mut description = String::new();
-    description.try_reserve(description_len).map_err(|_| {
-        ctx.refuse_codec_limit(
-            "retain Parasolid stream description",
-            u64::MAX - 1,
-            u64::MAX,
-        )
-    })?;
     append_lossy_utf8(&mut description, description_bytes);
 
     let schema_text = token.value();
-    ctx.charge_retained(
-        u64::try_from(schema_text.len()).map_err(|_| {
-            ctx.refuse_codec_limit("retain Parasolid schema token", u64::MAX - 1, u64::MAX)
-        })?,
-        "retain Parasolid schema token",
-    )?;
-    let mut owned_schema = String::new();
-    owned_schema.try_reserve(schema_text.len()).map_err(|_| {
-        ctx.refuse_codec_limit("retain Parasolid schema token", u64::MAX - 1, u64::MAX)
-    })?;
-    owned_schema.push_str(schema_text);
+    let owned_schema = ctx.copy_retained_text(schema_text, "retain Parasolid schema token")?;
     let schema = cadmpeg_parasolid::OwnedSchemaToken::try_from(owned_schema)
         .map_err(|_| CodecError::Malformed("Parasolid schema token is invalid".into()))?;
 
@@ -626,8 +577,11 @@ pub(crate) fn mesh_polyline_from_header(
     if !schema.as_bytes().ends_with(b"_13006") {
         return Ok(None);
     }
+    let Some(scan_end) = payload.len().checked_sub(2) else {
+        return Ok(None);
+    };
     let mut candidates = Vec::new();
-    for tag_at in header.body_offset..payload.len().saturating_sub(2) {
+    for tag_at in header.body_offset..scan_end {
         if payload.get(tag_at..tag_at + 2) != Some(&[0x00, 0x22]) || tag_at < 4 {
             continue;
         }
@@ -650,16 +604,7 @@ pub(crate) fn mesh_polyline_from_header(
             cadmpeg_core::decode::u64_from_index(values.len()),
             "decode Parasolid mesh coordinates",
         )?;
-        ctx.charge_collection_items(
-            u64::try_from(point_count).map_err(|_| {
-                ctx.refuse_codec_limit("decode Parasolid mesh points", u64::MAX - 1, u64::MAX)
-            })?,
-            "decode Parasolid mesh points",
-        )?;
-        let mut points = Vec::new();
-        points.try_reserve(point_count).map_err(|_| {
-            ctx.refuse_codec_limit("decode Parasolid mesh points", u64::MAX - 1, u64::MAX)
-        })?;
+        let mut points = ctx.collection_vec(point_count, "decode Parasolid mesh points")?;
         for xyz in values.chunks_exact(24) {
             let (Some(x), Some(y), Some(z)) = (
                 View::f64_be_at(xyz, 0),
@@ -676,11 +621,11 @@ pub(crate) fn mesh_polyline_from_header(
             points.push(point);
         }
         if points.len() >= 2 {
-            ctx.charge_collection_items(1, "collect Parasolid mesh candidates")?;
-            candidates.try_reserve(1).map_err(|_| {
-                ctx.refuse_codec_limit("collect Parasolid mesh candidates", u64::MAX - 1, u64::MAX)
-            })?;
-            candidates.push((scalar_count, points));
+            ctx.push_vec(
+                &mut candidates,
+                (scalar_count, points),
+                "collect Parasolid mesh candidates",
+            )?;
         }
     }
     ctx.stable_sort_by(

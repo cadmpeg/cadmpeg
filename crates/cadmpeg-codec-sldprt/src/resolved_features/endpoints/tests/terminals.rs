@@ -9,7 +9,11 @@ use crate::resolved_features::endpoints::terminal_relation_class_offset;
 
 fn append_class_declaration(payload: &mut [u8], offset: usize, name: &[u8]) {
     payload[offset..offset + CLASS_MARKER.len()].copy_from_slice(CLASS_MARKER);
-    payload[offset + 4..offset + 6].copy_from_slice(&(name.len() as u16).to_le_bytes());
+    payload[offset + 4..offset + 6].copy_from_slice(
+        &u16::try_from(name.len())
+            .expect("class name length fits u16")
+            .to_le_bytes(),
+    );
     payload[offset + 6..offset + 6 + name.len()].copy_from_slice(name);
 }
 

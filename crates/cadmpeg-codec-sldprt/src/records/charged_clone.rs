@@ -25,10 +25,7 @@ impl CloneCharged for String {
         operation: &'static str,
     ) -> Result<Self, CodecError> {
         ctx.charge_work(cadmpeg_core::decode::u64_from_index(self.len()), operation)?;
-        let mut copy = String::new();
-        ctx.try_reserve_retained_text(&mut copy, self.len(), operation)?;
-        copy.push_str(self);
-        Ok(copy)
+        ctx.copy_retained_text(self, operation)
     }
 }
 
@@ -91,10 +88,7 @@ fn copy_history_text(ctx: &DecodeContext<'_>, value: &str) -> Result<String, Cod
         cadmpeg_core::decode::u64_from_index(value.len()),
         "clone SLDPRT history text",
     )?;
-    let mut copy = String::new();
-    ctx.try_reserve_retained_text(&mut copy, value.len(), "clone SLDPRT history text")?;
-    copy.push_str(value);
-    Ok(copy)
+    ctx.copy_retained_text(value, "clone SLDPRT history text")
 }
 
 fn clone_history_properties<K>(
@@ -108,8 +102,12 @@ where
 {
     let mut copy = BTreeMap::new();
     for (name, value) in properties {
-        ctx.charge_collection_items(1, operation)?;
-        copy.insert(key(ctx, name)?, copy_history_text(ctx, value)?);
+        ctx.insert_btree_map(
+            &mut copy,
+            key(ctx, name)?,
+            copy_history_text(ctx, value)?,
+            operation,
+        )?;
     }
     Ok(copy)
 }
@@ -184,11 +182,12 @@ fn clone_history_feature(
     };
     let mut dimension_properties = BTreeMap::new();
     for (name, properties) in &feature.dimension_properties {
-        ctx.charge_collection_items(1, operation)?;
-        dimension_properties.insert(
+        ctx.insert_btree_map(
+            &mut dimension_properties,
             copy_history_text(ctx, name)?,
             clone_history_properties(ctx, operation, properties, copy_history_key)?,
-        );
+            operation,
+        )?;
     }
     Ok(Feature {
         id: copy_history_text(ctx, &feature.id)?,

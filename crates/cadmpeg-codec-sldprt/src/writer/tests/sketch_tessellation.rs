@@ -32,7 +32,6 @@ use std::io::Cursor;
 use cadmpeg_ir::codec::write::Encoder;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
-use crate::container;
 use crate::SldprtCodec;
 
 #[test]
@@ -251,7 +250,7 @@ fn semantic_writer_applies_compressed_line_sketch_edits() {
         &mut written,
     )
     .unwrap();
-    let scan = container::scan_bytes(&written);
+    let scan = crate::test_support::container::scan(&written);
     let lane = scan
         .blocks
         .iter()
@@ -763,7 +762,7 @@ fn semantic_writer_round_trips_all_supported_lanes_together() {
         .retained_record("sldprt:file:source-image#0")
         .and_then(|record| record.data())
         .unwrap();
-    let scan = container::scan_bytes(written);
+    let scan = crate::test_support::container::scan(written);
     assert_eq!(scan.directory.len(), scan.blocks.len());
     for block in &scan.blocks {
         let section = block.section.name().unwrap();
@@ -772,7 +771,7 @@ fn semantic_writer_round_trips_all_supported_lanes_together() {
         }
         assert!(scan.directory.iter().any(|entry| {
             entry.name == section
-                && entry.size as usize == block.uncomp_sz()
+                && cadmpeg_core::decode::index_from_u32(entry.size) == block.uncomp_sz()
                 && entry.type_id == block.type_id
         }));
     }

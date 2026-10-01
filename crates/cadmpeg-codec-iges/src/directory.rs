@@ -560,9 +560,11 @@ pub(crate) fn summary_notes(
 ) -> Result<Vec<String>, CodecError> {
     let mut census = BTreeMap::<(i64, i64), usize>::new();
     for entry in entries {
-        if !census.contains_key(&(entry.entity_type, entry.form)) {
-            ctx.charge_collection_items(1, "iges directory summary groups")?;
-        }
+        ctx.admit_btree_entry(
+            &census,
+            &(entry.entity_type, entry.form),
+            "iges directory summary groups",
+        )?;
         *census.entry((entry.entity_type, entry.form)).or_default() += 1;
     }
     let mut notes = Vec::new();

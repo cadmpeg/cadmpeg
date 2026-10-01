@@ -150,17 +150,33 @@ pub(crate) enum EntryPayload {
     /// Class `200` source-section identifier, present when the compact id parsed.
     Source { entity: Option<u32> },
     /// Related entity carried by class `210`, related-form `214`, `219`, or `2017`.
-    Related {
-        /// The related class that owns the pair.
-        class: RelatedClass,
-        entity: u32,
-        state: RelatedState,
-    },
+    Related(RelatedPayload),
     /// Any other class, or a related class whose pair did not parse.
     Plain {
         /// The positional entry class.
         class: PlainClass,
     },
+}
+
+/// Related entity with the state domain of its owning class.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct RelatedPayload {
+    class: RelatedClass,
+    entity: u32,
+    state: RelatedState,
+}
+
+impl RelatedPayload {
+    pub(crate) fn new(class: RelatedClass, entity: u32, state: RelatedState) -> Option<Self> {
+        if state == RelatedState::One && class != RelatedClass::Class2017 {
+            return None;
+        }
+        Some(Self {
+            class,
+            entity,
+            state,
+        })
+    }
 }
 
 /// A positional entry class that owns no payload of its own. Class `200`
@@ -262,11 +278,8 @@ pub(crate) fn entry_payload(
             related_entity_id,
             related_entity_state.and_then(RelatedState::from_byte),
         ) {
-            (Some(entity), Some(state)) => EntryPayload::Related {
-                class,
-                entity,
-                state,
-            },
+            (Some(entity), Some(state)) => RelatedPayload::new(class, entity, state)
+                .map_or_else(|| plain_payload(class_id), EntryPayload::Related),
             _ => plain_payload(class_id),
         },
         _ => plain_payload(class_id),
@@ -295,7 +308,7 @@ impl FeatureEntityTableEntry {
     pub(crate) fn class_id(&self) -> u32 {
         match self.payload {
             EntryPayload::Source { .. } => 200,
-            EntryPayload::Related { class, .. } => class.class_id(),
+            EntryPayload::Related(related) => related.class.class_id(),
             EntryPayload::Plain { class } => class.get(),
         }
     }
@@ -309,14 +322,14 @@ impl FeatureEntityTableEntry {
 
     pub(crate) fn related_entity_id(&self) -> Option<u32> {
         match self.payload {
-            EntryPayload::Related { entity, .. } => Some(entity),
+            EntryPayload::Related(related) => Some(related.entity),
             _ => None,
         }
     }
 
     pub(crate) fn related_entity_state(&self) -> Option<u8> {
         match self.payload {
-            EntryPayload::Related { state, .. } => Some(state.as_u8()),
+            EntryPayload::Related(related) => Some(related.state.as_u8()),
             _ => None,
         }
     }
@@ -357,10 +370,7 @@ pub(super) fn generated_class_200_source_entity_ids(
         .iter()
         .filter_map(FeatureEntityTableEntry::source_entity_id)
     {
-        if !ids.contains(&id) {
-            ctx.charge_collection_items(1, "creo generated source entity ID nodes")?;
-            ids.insert(id);
-        }
+        ctx.insert_btree_set(&mut ids, id, "creo generated source entity ID nodes")?;
     }
     Ok(ids)
 }
@@ -398,10 +408,17 @@ pub(crate) fn entity_graph(
         let entity_id = u32::try_from(entities.len())
             .map_err(|_| CodecError::malformed("creo feature entity id exceeds u32"))?;
         ctx.reserve_vec(&mut entities, 1, "creo feature entity graph nodes")?;
+        let name_bytes = &payload[name_start..name_end];
+        let text_work = cadmpeg_core::decode::u64_from_index(name_bytes.len())
+            .checked_mul(6)
+            .ok_or_else(|| {
+                ctx.refuse_codec_limit("creo feature entity text work", u64::MAX, u64::MAX)
+            })?;
+        ctx.charge_work(text_work, "creo feature entity text work")?;
         entities.push(FeatureEntity {
             entity_id,
             type_byte: payload[token.offset + 1],
-            name: copy_lossy_entity_name(ctx, &payload[name_start..name_end])?,
+            name: ctx.copy_retained_lossy_utf8(name_bytes, "creo feature entity name")?,
             offset: token.offset,
         });
     }
@@ -427,10 +444,6 @@ pub(crate) fn entity_graph(
         }
     }
     Ok((entities, references))
-}
-
-fn copy_lossy_entity_name(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<String, CodecError> {
-    crate::text::copy_lossy_text(ctx, bytes, "creo feature entity name")
 }
 
 pub(super) fn read_entries(
@@ -489,11 +502,7 @@ pub(super) fn read_entries(
                             _ => return None,
                         };
                         Some((
-                            EntryPayload::Related {
-                                class,
-                                entity,
-                                state,
-                            },
+                            EntryPayload::Related(RelatedPayload::new(class, entity, state)?),
                             after_related,
                         ))
                     })
@@ -516,7 +525,7 @@ pub(super) fn read_entries(
                     .get(body_start)
                     .copied()
                     .filter(|state| matches!(state, 0 | 1)),
-                EntryPayload::Related { state, .. } => Some(state.as_u8()),
+                EntryPayload::Related(related) => Some(related.state.as_u8()),
                 EntryPayload::Plain { .. } => None,
             };
             let terminal_table_separator = (index + 1 == count
@@ -586,11 +595,12 @@ pub(crate) fn entity_tables(
         };
         let mut table_surface_ids = BTreeSet::new();
         for entry in &entries {
-            if surface_ids.contains(&entry.entity_id)
-                && !table_surface_ids.contains(&entry.entity_id)
-            {
-                ctx.charge_collection_items(1, "creo feature table surface ids")?;
-                table_surface_ids.insert(entry.entity_id);
+            if surface_ids.contains(&entry.entity_id) {
+                ctx.insert_btree_set(
+                    &mut table_surface_ids,
+                    entry.entity_id,
+                    "creo feature table surface ids",
+                )?;
             }
         }
         ctx.reserve_vec(&mut tables, 1, "creo feature entity tables")?;
@@ -608,10 +618,27 @@ pub(crate) fn entity_tables(
 #[cfg(test)]
 mod tests {
     use super::{dummy_table_entry, entity_graph, entity_tables, read_entries, FeatureEntityTable};
+    use super::{RelatedClass, RelatedPayload, RelatedState};
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
 
     const GRAPH: &[u8] = b"\xe0\0Sld_Features\0\xe0\0N\xff\0\xf7\0";
+
+    #[test]
+    fn related_payload_enforces_class_state_domain() {
+        for class in [
+            RelatedClass::Class210,
+            RelatedClass::Class214,
+            RelatedClass::Class219,
+            RelatedClass::Class2017,
+        ] {
+            assert!(RelatedPayload::new(class, 1, RelatedState::Zero).is_some());
+            assert_eq!(
+                RelatedPayload::new(class, 1, RelatedState::One).is_some(),
+                class == RelatedClass::Class2017
+            );
+        }
+    }
 
     #[test]
     fn entity_table_borrowed_readers_preserve_duplicate_source_order() {
@@ -739,5 +766,14 @@ mod tests {
         assert!(matches!(error, CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::CollectionItems
                 && limit.operation == "creo feature entity tables"));
+    }
+    #[test]
+    fn entity_graph_lossy_name_refuses_copy_work() {
+        let (entities, references) = crate::test_support::assert_work_boundaries(
+            &["creo feature entity text work"],
+            |ctx| entity_graph(ctx, GRAPH),
+        );
+        assert_eq!((entities.len(), references.len()), (2, 1));
+        assert_eq!(entities[1].name, "N\u{fffd}");
     }
 }

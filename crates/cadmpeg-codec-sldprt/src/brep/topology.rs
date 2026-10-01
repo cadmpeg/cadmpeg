@@ -429,16 +429,7 @@ fn parse_point(
             return Ok(None);
         }
     }
-    let count = u64::try_from(reference_count).map_err(|_| {
-        ctx.refuse_codec_limit("copy Parasolid point references", u64::MAX - 1, u64::MAX)
-    })?;
-    ctx.charge_collection_items(count, "copy Parasolid point references")?;
-    let mut refs = Vec::new();
-    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
-        &mut refs,
-        reference_count,
-        "copy Parasolid point references",
-    )?;
+    let mut refs = ctx.collection_vec(reference_count, "copy Parasolid point references")?;
     refs.extend_from_slice(&references[..reference_count]);
 
     Ok(Some(Point {
@@ -471,13 +462,13 @@ impl Tables {
         ctx: &DecodeContext<'_>,
         record: Bridge,
     ) -> Result<(), CodecError> {
-        insert_record(
-            ctx,
+        ctx.insert_hash_map(
             &mut self.bridges,
             record.attr,
             record,
             "index Parasolid topology bridges",
         )
+        .map(|_previous| ())
     }
 
     pub(super) fn loops(&self) -> &HashMap<u16, Loop> {
@@ -489,13 +480,13 @@ impl Tables {
         ctx: &DecodeContext<'_>,
         record: Loop,
     ) -> Result<(), CodecError> {
-        insert_record(
-            ctx,
+        ctx.insert_hash_map(
             &mut self.loops,
             record.attr,
             record,
             "index Parasolid topology loops",
         )
+        .map(|_previous| ())
     }
 
     pub(super) fn edge_uses(&self) -> &HashMap<u16, EdgeUse> {
@@ -507,13 +498,13 @@ impl Tables {
         ctx: &DecodeContext<'_>,
         record: EdgeUse,
     ) -> Result<(), CodecError> {
-        insert_record(
-            ctx,
+        ctx.insert_hash_map(
             &mut self.edge_uses,
             record.attr,
             record,
             "index Parasolid topology edge uses",
         )
+        .map(|_previous| ())
     }
 
     pub(super) fn coedges(&self) -> &HashMap<u16, Coedge> {
@@ -525,13 +516,13 @@ impl Tables {
         ctx: &DecodeContext<'_>,
         record: Coedge,
     ) -> Result<(), CodecError> {
-        insert_record(
-            ctx,
+        ctx.insert_hash_map(
             &mut self.coedges,
             record.attr,
             record,
             "index Parasolid topology coedges",
         )
+        .map(|_previous| ())
     }
 
     pub(super) fn vertex_uses(&self) -> &HashMap<u16, VertexUse> {
@@ -543,13 +534,13 @@ impl Tables {
         ctx: &DecodeContext<'_>,
         record: VertexUse,
     ) -> Result<(), CodecError> {
-        insert_record(
-            ctx,
+        ctx.insert_hash_map(
             &mut self.vertex_uses,
             record.attr,
             record,
             "index Parasolid topology vertex uses",
         )
+        .map(|_previous| ())
     }
 
     pub(crate) fn points(&self) -> &HashMap<u16, Point> {
@@ -557,13 +548,13 @@ impl Tables {
     }
 
     fn insert_point(&mut self, ctx: &DecodeContext<'_>, record: Point) -> Result<(), CodecError> {
-        insert_record(
-            ctx,
+        ctx.insert_hash_map(
             &mut self.points,
             record.attr,
             record,
             "index Parasolid topology points",
         )
+        .map(|_previous| ())
     }
 
     /// Merge deltas without replacing partition topology membership.
@@ -615,8 +606,7 @@ impl Tables {
             "merge Parasolid topology vertex uses",
         )?;
         for (attr, record) in deltas.points.drain() {
-            insert_record(
-                ctx,
+            ctx.insert_hash_map(
                 &mut self.points,
                 attr,
                 record,
@@ -625,23 +615,6 @@ impl Tables {
         }
         Ok(())
     }
-}
-
-fn insert_record<T>(
-    ctx: &DecodeContext<'_>,
-    target: &mut HashMap<u16, T>,
-    attr: u16,
-    record: T,
-    operation: &'static str,
-) -> Result<(), CodecError> {
-    if !target.contains_key(&attr) {
-        ctx.charge_collection_items(1, operation)?;
-        target
-            .try_reserve(1)
-            .map_err(|_| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
-    }
-    target.insert(attr, record);
-    Ok(())
 }
 
 fn retain_selected_bridges(
@@ -664,7 +637,7 @@ fn merge_missing<T>(
 ) -> Result<(), CodecError> {
     for (attr, record) in source {
         if !target.contains_key(&attr) {
-            insert_record(ctx, target, attr, record, operation)?;
+            ctx.insert_hash_map(target, attr, record, operation)?;
         }
     }
     Ok(())
@@ -731,16 +704,7 @@ fn insert_candidates<T: Candidate>(
         return Ok(());
     };
     let attr = first.attr();
-    if !target.contains_key(&attr) {
-        ctx.charge_collection_items(1, "index Parasolid topology candidates")?;
-        target.try_reserve(1).map_err(|_| {
-            ctx.refuse_codec_limit(
-                "index Parasolid topology candidates",
-                u64::MAX - 1,
-                u64::MAX,
-            )
-        })?;
-    }
+    ctx.admit_hash_map_entry(target, &attr, "index Parasolid topology candidates")?;
     let count = u64::try_from(records.len()).map_err(|_| {
         ctx.refuse_codec_limit(
             "collect Parasolid topology frame candidates",
@@ -766,8 +730,7 @@ fn insert_candidates<T: Candidate>(
                 .is_some_and(|record| record.offset() == first.offset())
             {
                 let candidates = entry.get_mut();
-                ctx.charge_collection_items(count, "collect Parasolid topology frame candidates")?;
-                cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+                ctx.reserve_vec(
                     candidates,
                     records.len(),
                     "collect Parasolid topology frame candidates",

@@ -60,7 +60,11 @@ fn prefix() -> io::Result<Vec<u8>> {
     // A card ordinal is one-based and bounded by the fixed global section, so
     // the ordinal carries its own width.
     for (index, chunk) in GLOBAL.chunks(CARD_DATA_COLUMNS).enumerate() {
-        bytes.extend(card(chunk, b'G', index as u32 + 1)?);
+        bytes.extend(card(
+            chunk,
+            b'G',
+            u32::try_from(index).map_err(io::Error::other)? + 1,
+        )?);
     }
     Ok(bytes)
 }

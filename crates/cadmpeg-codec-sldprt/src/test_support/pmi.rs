@@ -5,14 +5,14 @@
 /// Append a msgpack fixstr header and its bytes.
 pub(crate) fn fixstr(bytes: &mut Vec<u8>, value: &str) {
     assert!(value.len() < 32);
-    bytes.push(0xa0 | value.len() as u8);
+    bytes.push(0xa0 | u8::try_from(value.len()).expect("length fits u8"));
     bytes.extend_from_slice(value.as_bytes());
 }
 
 /// Append a msgpack fixarray or array16 header.
 pub(crate) fn push_array_header(bytes: &mut Vec<u8>, len: usize) {
     if len < 16 {
-        bytes.push(0x90 | len as u8);
+        bytes.push(0x90 | u8::try_from(len).expect("length fits u8"));
     } else if let Ok(len16) = u16::try_from(len) {
         bytes.push(0xdc);
         bytes.extend_from_slice(&len16.to_be_bytes());
@@ -85,7 +85,7 @@ pub(crate) fn pmi_semantic_payload_record_configured(
 ) -> Vec<u8> {
     fn push_map_header(bytes: &mut Vec<u8>, len: usize) {
         if len < 16 {
-            bytes.push(0x80 | len as u8);
+            bytes.push(0x80 | u8::try_from(len).expect("length fits u8"));
         } else if let Ok(len16) = u16::try_from(len) {
             bytes.push(0xde);
             bytes.extend_from_slice(&len16.to_be_bytes());

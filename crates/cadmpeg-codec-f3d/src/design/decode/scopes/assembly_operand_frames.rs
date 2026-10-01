@@ -131,7 +131,7 @@ pub(super) fn exact_assembly_operand_frames(
     }
     let frame = |reference_at: usize, transform_at: usize| {
         let reference_record_index = marked_record_reference(bytes, reference_at)?;
-        let values = f64s_at(bytes, transform_at, 16)?;
+        let values = f64s_at::<16>(bytes, transform_at)?;
         let mut transform = [[0.0; 4]; 4];
         for (ordinal, value) in values.into_iter().enumerate() {
             transform[ordinal / 4][ordinal % 4] = value;

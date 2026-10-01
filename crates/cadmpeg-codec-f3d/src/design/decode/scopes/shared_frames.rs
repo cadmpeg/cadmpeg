@@ -3,9 +3,9 @@
 //! scope families.
 
 use crate::bytes::f64s_at;
+use crate::bytes::lp_ascii_filtered_view;
 use crate::bytes::take_reference;
 use crate::design::decode::sketch::IndexedRecordOffsets;
-use crate::design::decode::text::lp_ascii_filtered_view;
 use crate::records::feature::extrude::DesignExtrudeOperation;
 use cadmpeg_core::decode::View;
 use cadmpeg_ir::scalar::FiniteReal;
@@ -30,7 +30,7 @@ pub(in crate::design::decode) fn rigid_transform_at(
     bytes: &[u8],
     at: usize,
 ) -> Option<crate::records::sketch_placement::SketchPlacementMatrix> {
-    let values = f64s_at(bytes, at, 16)?;
+    let values = f64s_at::<16>(bytes, at)?;
     let mut transform = [[0.0; 4]; 4];
     for (ordinal, value) in values.into_iter().enumerate() {
         transform[ordinal / 4][ordinal % 4] = value;

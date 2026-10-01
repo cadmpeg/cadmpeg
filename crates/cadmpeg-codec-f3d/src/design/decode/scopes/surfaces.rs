@@ -5,13 +5,13 @@ use cadmpeg_core::decode::u64_from_index;
 
 use super::shared_frames::exact_fixed_scalar;
 use super::shared_frames::marked_record_reference;
+use crate::bytes::lp_ascii_filtered_view;
 use crate::bytes::take_reference;
 use crate::design::decode::operands::parse_construction_operand_group;
 use crate::design::decode::operands::ConstructionOperandGroupParse;
 use crate::design::decode::operands::RecordFrame;
 use crate::design::decode::sketch::IndexedRecordOffsets;
 use crate::design::decode::text::fixed_relaxed_guid_text;
-use crate::design::decode::text::lp_ascii_filtered_view;
 use crate::design::design_feature_family;
 use crate::design::DesignFeatureFamily;
 use crate::records::feature::scope::DesignParameterScope;
@@ -556,7 +556,12 @@ pub(super) fn exact_ruled_surface_operation(
             return Some(Err(error));
         }
         edge_group_record_indices.extend(trailing_edge_groups);
-        let (direction_entity_id, direction_end) = fixed_relaxed_guid_text(bytes, cursor)?;
+        let (direction_entity_id, direction_end) = match fixed_relaxed_guid_text(ctx, bytes, cursor)
+        {
+            Ok(Some(value)) => value,
+            Ok(None) => return None,
+            Err(error) => return Some(Err(error)),
+        };
         let direction_absent =
             direction_entity_id.as_str() == "00000000-0000-0000-0000-000000000000";
         if direction_end.checked_add(3)? != reference_count_at

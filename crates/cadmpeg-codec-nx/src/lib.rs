@@ -74,6 +74,15 @@
 //! and attachment tier (record families, feature semantics, and IR writing) is
 //! crate-internal and reached only through the decode entry point.
 
+macro_rules! propagate_resource {
+    ($result:expr) => {
+        match $result {
+            Ok(value) => value,
+            Err(error) => return Some(Err(error)),
+        }
+    };
+}
+
 mod canonical_uuid;
 mod container;
 mod decode;
@@ -132,7 +141,11 @@ impl CodecBackend for NxCodec {
             native::display_jt::admission::DisplayJtGraph::from_namespace_with_context(
                 ctx, namespace,
             )
-            .and_then(|_| namespace.admit::<native::structure::occurrences::FastLoadOccurrences>())
+            .and_then(|_| {
+                native::structure::occurrences::FastLoadOccurrences::from_namespace_with_context(
+                    ctx, namespace,
+                )
+            })
         });
         Ok(match admitted {
             Ok(_) => Vec::new(),

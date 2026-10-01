@@ -21,9 +21,11 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureOperation};
 use cadmpeg_ir::products::{ExternalDocument, Occurrence, OccurrenceParent, PrototypeReference};
 
+use crate::bytes::utf16::Utf16View;
 use crate::bytes::{
-    is_guid_prefix, is_guid_relaxed, lp_ascii_filtered, lp_ascii_strict, lp_ascii_strict_charged,
-    lp_utf16_bounded, lp_utf16_bounded_charged, take_reference, take_reference_charged,
+    is_guid_prefix, is_guid_relaxed, lp_ascii_filtered_view, lp_ascii_strict,
+    lp_ascii_strict_charged, lp_utf16_bounded_charged, lp_utf16_bounded_view, take_reference,
+    take_reference_charged,
 };
 use crate::container::ContainerScan;
 use crate::layout::component_insert_grouped_identity_carrier as grouped_identity_layout;
@@ -144,9 +146,11 @@ impl ReferenceJson {
             relative_path,
             properties,
         } = self;
-        require_text(&from, format_args!("references[{ordinal}].from"))?;
-        require_text(
-            &relative_path,
+        let from_capacity = from.capacity();
+        let path_capacity = relative_path.capacity();
+        let from = required_text(from, format_args!("references[{ordinal}].from"))?;
+        let relative_path = required_text(
+            relative_path,
             format_args!("references[{ordinal}].relativePath"),
         )?;
         let mut role = None;
@@ -171,8 +175,9 @@ impl ReferenceJson {
                 "references[{ordinal}].properties is missing neutronRole"
             ))
         })?;
-        require_text(
-            &neutron_role,
+        let role_capacity = neutron_role.capacity();
+        let neutron_role = required_text(
+            neutron_role,
             format_args!("references[{ordinal}].properties.neutronRole.value"),
         )?;
         let neutron_data = data.ok_or_else(|| {
@@ -180,11 +185,20 @@ impl ReferenceJson {
                 "references[{ordinal}].properties is missing neutronData"
             ))
         })?;
+        let id = ctx.format_retained(
+            format_args!("f3d:xref:reference#{ordinal}"),
+            "retain F3D xref record ID",
+        )?;
+        for capacity in [
+            from_capacity,
+            path_capacity,
+            role_capacity,
+            neutron_data.capacity(),
+        ] {
+            ctx.charge_retained(u64_from_index(capacity), "retain F3D xref reference text")?;
+        }
         Ok(XrefReference {
-            id: ctx.format_retained(
-                format_args!("f3d:xref:reference#{ordinal}"),
-                "retain F3D xref record ID",
-            )?,
+            id,
             ordinal: ordinal_at(ordinal)?,
             occurrence_ordinal: 0,
             from,
@@ -200,13 +214,13 @@ fn redirections_error(message: impl std::fmt::Display) -> CodecError {
     CodecError::malformed(format_args!("{REDIRECTIONS_ENTRY}: {message}"))
 }
 
-fn require_text(value: &str, field: impl std::fmt::Display) -> Result<(), CodecError> {
-    if value.is_empty() {
-        return Err(redirections_error(format_args!(
-            "{field} must be non-empty"
-        )));
-    }
-    Ok(())
+fn required_text(
+    value: String,
+    field: impl std::fmt::Display,
+) -> Result<crate::records::xref::RequiredXrefText, CodecError> {
+    value
+        .try_into()
+        .map_err(|_| redirections_error(format_args!("{field} must be non-empty")))
 }
 
 /// Validate `ComponentReferenceData.json`, if present.
@@ -230,32 +244,41 @@ fn validate_component_reference_data(
     Ok(())
 }
 
-fn parse_component_reference_data(
-    ctx: &DecodeContext<'_>,
+fn parse_component_reference_data<'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
     bytes: &[u8],
-) -> Result<serde_json::Value, CodecError> {
-    let length = u64::try_from(bytes.len()).map_err(|_| {
-        ctx.refuse_codec_limit("preflight F3D component reference JSON", 0, u64::MAX)
-    })?;
-    let _reservation = ctx.reserve_scoped(length, "preflight F3D component reference JSON")?;
-    crate::json_budget::preflight(
-        ctx,
-        bytes,
-        "preflight F3D component reference JSON",
-        "scan F3D component reference JSON",
-        "parse F3D component reference JSON",
-    )?;
-    let value: serde_json::Value = serde_json::from_slice(bytes).map_err(|error| {
+) -> Result<
+    (
+        serde_json::Value,
+        cadmpeg_core::decode::ScopedReservation<'ctx>,
+    ),
+    CodecError,
+> {
+    ctx.charge_work(u64_from_index(bytes.len()), "validate F3D JSON UTF-8")?;
+    let text = std::str::from_utf8(bytes).map_err(|error| {
         CodecError::malformed(format_args!(
             "{COMPONENT_REFERENCE_ENTRY} is not valid JSON: {error}"
         ))
     })?;
+    let (reservation, value) = {
+        let (value, reservation) = ctx
+            .parse_json_value(text, "parse F3D component reference JSON")
+            .map_err(|error| {
+                let CodecError::Malformed(error) = error else {
+                    return error;
+                };
+                CodecError::malformed(format_args!(
+                    "{COMPONENT_REFERENCE_ENTRY} is not valid JSON: {error}"
+                ))
+            })?;
+        (reservation, value)
+    };
     if !value.is_object() {
         return Err(CodecError::malformed(format_args!(
             "{COMPONENT_REFERENCE_ENTRY} must contain a top-level JSON object"
         )));
     }
-    Ok(value)
+    Ok((value, reservation))
 }
 
 /// Parse the top-level `RedirectionsStream.dat` table, if present.
@@ -298,24 +321,36 @@ fn ordinal_at(position: usize) -> Result<u32, CodecError> {
 
 /// Parse `RedirectionsStream.dat` bytes into an [`XrefTable`].
 fn parse(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<XrefTable, CodecError> {
-    let length = u64::try_from(bytes.len())
-        .map_err(|_| ctx.refuse_codec_limit("parse F3D redirections JSON", 0, u64::MAX))?;
-    let _reservation = ctx.reserve_scoped(length, "parse F3D redirections JSON")?;
-    let parsed = serde_json::from_slice::<RedirectionsJson>(bytes).map_err(|error| {
+    ctx.charge_work(u64_from_index(bytes.len()), "validate F3D JSON UTF-8")?;
+    let text = std::str::from_utf8(bytes).map_err(|error| {
         CodecError::malformed(format_args!(
             "{REDIRECTIONS_ENTRY} is not valid JSON: {error}"
         ))
     })?;
+    let parsed: RedirectionsJson = ctx
+        .parse_json(text, "parse F3D redirections JSON")
+        .map_err(|error| {
+            let CodecError::Malformed(error) = error else {
+                return error;
+            };
+            CodecError::malformed(format_args!(
+                "{REDIRECTIONS_ENTRY} is not valid JSON: {error}"
+            ))
+        })?;
     if parsed.name != "RedirectionsStream" {
         return Err(redirections_error(format_args!(
             "name must be RedirectionsStream"
         )));
     }
     if parsed.schema_version != 0 {
-        return Err(redirections_error(format_args!(
-            "unsupported schema-version {}",
-            parsed.schema_version
-        )));
+        let message = ctx.format_retained(
+            format_args!(
+                "F3D {REDIRECTIONS_ENTRY}: unsupported schema-version {}",
+                parsed.schema_version
+            ),
+            "describe unsupported F3D redirections schema",
+        )?;
+        return Err(CodecError::NotImplemented(message));
     }
     if parsed.designs.is_empty() {
         return Err(redirections_error(
@@ -325,18 +360,31 @@ fn parse(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<XrefTable, CodecError>
     let mut designs = Vec::new();
     for (ordinal, design) in parsed.designs.into_iter().enumerate() {
         ctx.reserve_vec(&mut designs, 1, "admit F3D xref designs")?;
-        require_text(
-            &design.target_file_name,
+        let name_capacity = design.target_file_name.capacity();
+        let target_file_name = required_text(
+            design.target_file_name,
             format_args!("designs[{ordinal}].targetFileName"),
         )?;
+        let id = ctx.format_retained(
+            format_args!("f3d:xref:design#{ordinal}"),
+            "retain F3D xref record ID",
+        )?;
+        ctx.charge_retained(u64_from_index(name_capacity), "retain F3D xref design text")?;
+        for text in [
+            &design.display_name,
+            &design.lineage_urn,
+            &design.version_urn,
+        ] {
+            ctx.charge_retained(
+                u64_from_index(text.capacity()),
+                "retain F3D xref design text",
+            )?;
+        }
         designs.push(XrefDesign {
-            id: ctx.format_retained(
-                format_args!("f3d:xref:design#{ordinal}"),
-                "retain F3D xref record ID",
-            )?,
+            id,
             ordinal: ordinal_at(ordinal)?,
             file_version: design.file_version,
-            target_file_name: design.target_file_name,
+            target_file_name,
             display_name: design.display_name,
             lineage_urn: design.lineage_urn,
             version_urn: design.version_urn,
@@ -383,20 +431,14 @@ pub(crate) fn docstruct(
     let Some(payload) = view.take(count) else {
         return Ok(None);
     };
-    let length = u64::try_from(payload.len())
-        .map_err(|_| ctx.refuse_codec_limit("preflight F3D properties JSON", 0, u64::MAX))?;
-    let _reservation = ctx.reserve_scoped(length, "preflight F3D properties JSON")?;
-    if !crate::json_budget::preflight(
-        ctx,
-        payload,
-        "preflight F3D properties JSON",
-        "scan F3D properties JSON",
-        "parse F3D properties JSON",
-    )? {
+    ctx.charge_work(u64_from_index(payload.len()), "validate F3D JSON UTF-8")?;
+    let Ok(text) = std::str::from_utf8(payload) else {
         return Ok(None);
-    }
-    let Ok(value) = serde_json::from_slice::<serde_json::Value>(payload) else {
-        return Ok(None);
+    };
+    let (_reservation, value) = match ctx.parse_json_value(text, "parse F3D properties JSON") {
+        Ok((value, reservation)) => (reservation, value),
+        Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
+        Err(_) => return Ok(None),
     };
     let Some(docstruct) = value.get("docstruct") else {
         return Ok(None);
@@ -495,7 +537,7 @@ pub(crate) fn bind_component_insert_features(
             continue;
         };
         let mut matches = table.references.iter().filter(|reference| {
-            reference.neutron_role == construction.neutron_role
+            reference.neutron_role.as_str() == construction.neutron_role
                 && reference
                     .transform
                     .map(crate::records::xref::XrefPlacementTransform::rows)
@@ -638,13 +680,13 @@ fn bind_occurrences(
                     })
                     .any(|(construction_stream, construction)| {
                         construction_stream == stream
-                            && construction.neutron_role == reference.neutron_role
+                            && construction.neutron_role == reference.neutron_role.as_str()
                     })
                     && failures.iter().any(|failure| {
                         failure
                             .link_names
                             .iter()
-                            .any(|name| name == &reference.neutron_role)
+                            .any(|name| name == reference.neutron_role.as_str())
                     })
             }) {
                 ctx.reserve_vec(
@@ -696,9 +738,18 @@ fn copy_reference_charged(
         },
         ordinal: source.ordinal,
         occurrence_ordinal: source.occurrence_ordinal,
-        from: ctx.copy_retained_text(&source.from, operation)?,
-        relative_path: ctx.copy_retained_text(&source.relative_path, operation)?,
-        neutron_role: ctx.copy_retained_text(&source.neutron_role, operation)?,
+        from: ctx
+            .copy_retained_text(&source.from, operation)?
+            .try_into()
+            .map_err(CodecError::malformed)?,
+        relative_path: ctx
+            .copy_retained_text(&source.relative_path, operation)?
+            .try_into()
+            .map_err(CodecError::malformed)?,
+        neutron_role: ctx
+            .copy_retained_text(&source.neutron_role, operation)?
+            .try_into()
+            .map_err(CodecError::malformed)?,
         neutron_data: ctx.copy_retained_text(&source.neutron_data, operation)?,
         transform: source.transform,
     })
@@ -938,6 +989,7 @@ fn occurrence_placements_with_failures(
             ctx.reserve_vec(&mut failures, 1, "collect F3D xref placement failures")?;
             failures.push(OccurrencePlacementFailure { link_names });
         } else if let Some(link_name) = legacy_occurrence_role(body) {
+            let link_name = link_name.to_retained(ctx, "retain F3D UTF-16 string")?;
             let link_names = ctx.collect_vec([link_name], "collect F3D legacy xref role")?;
 
             ctx.reserve_vec(&mut failures, 1, "collect F3D xref placement failures")?;
@@ -954,8 +1006,13 @@ fn occurrence_placement(
     body: &[u8],
     serializer_magic: Option<u32>,
 ) -> Result<Option<OccurrencePlacement>, CodecError> {
-    if let Some(placement) = legacy_occurrence_placement(body) {
-        return Ok(Some(placement));
+    if let Some((role, transform)) = legacy_occurrence_placement(body) {
+        let role = role.to_retained(decode, "retain F3D UTF-16 string")?;
+        let link_names = decode.collect_vec([role], "collect F3D legacy xref role")?;
+        return Ok(Some(OccurrencePlacement {
+            link_names,
+            transform,
+        }));
     }
     if let Some(placement) = repeated_target_occurrence_placement(decode, body)? {
         return Ok(Some(placement));
@@ -971,7 +1028,7 @@ fn occurrence_placement(
         return Ok(None);
     };
     let mut link_names = decode.collection_vec(1, "collect F3D grouped placement link name")?;
-    link_names.push(link_name);
+    link_names.push(link_name.to_retained(decode, "retain F3D UTF-16 string")?);
     Ok(Some(OccurrencePlacement {
         link_names,
         transform: None,
@@ -1010,30 +1067,6 @@ macro_rules! xref_some {
     };
 }
 
-fn xref_utf16(
-    decode: &DecodeContext<'_>,
-    body: &[u8],
-    at: usize,
-    bounds: std::ops::RangeInclusive<usize>,
-) -> Result<Option<(String, usize)>, CodecError> {
-    {
-        let ctx = decode;
-        lp_utf16_bounded_charged(ctx, body, at, bounds)
-    }
-}
-
-fn xref_ascii(
-    decode: &DecodeContext<'_>,
-    body: &[u8],
-    at: usize,
-    bounds: std::ops::RangeInclusive<usize>,
-) -> Result<Option<(String, usize)>, CodecError> {
-    {
-        let ctx = decode;
-        lp_ascii_strict_charged(ctx, body, at, bounds)
-    }
-}
-
 fn repeated_target_occurrence_placement_details(
     decode: &DecodeContext<'_>,
     body: &[u8],
@@ -1045,7 +1078,13 @@ fn repeated_target_occurrence_placement_details(
     }
     at += 4;
     for _ in 0..2 {
-        let (guid, next) = xref_some!(xref_utf16(decode, body, at, 36..=36)?);
+        let (guid, next) = xref_some!(lp_utf16_bounded_charged(
+            decode,
+            body,
+            at,
+            36..=36,
+            "retain F3D UTF-16 string"
+        )?);
         if !is_guid_relaxed(&guid) {
             return Ok(None);
         }
@@ -1056,7 +1095,13 @@ fn repeated_target_occurrence_placement_details(
     }
     at += METADATA_MARKER.len();
 
-    let (component_guid, next) = xref_some!(xref_utf16(decode, body, at, 36..=36)?);
+    let (component_guid, next) = xref_some!(lp_utf16_bounded_charged(
+        decode,
+        body,
+        at,
+        36..=36,
+        "retain F3D UTF-16 string"
+    )?);
     if !is_guid_relaxed(&component_guid) {
         return Ok(None);
     }
@@ -1065,13 +1110,19 @@ fn repeated_target_occurrence_placement_details(
         return Ok(None);
     }
     at += 1;
-    let (type_guid, next) = xref_some!(xref_ascii(decode, body, at, 36..=36)?);
+    let (type_guid, next) = xref_some!(lp_ascii_strict_charged(decode, body, at, 36..=36)?);
     if !is_guid_relaxed(&type_guid) {
         return Ok(None);
     }
     at = next;
     let role_offset = at;
-    let (role, next) = xref_some!(xref_utf16(decode, body, at, 36..=256)?);
+    let (role, next) = xref_some!(lp_utf16_bounded_charged(
+        decode,
+        body,
+        at,
+        36..=256,
+        "retain F3D UTF-16 string"
+    )?);
     if !is_guid_prefix(&role) {
         return Ok(None);
     }
@@ -1098,7 +1149,13 @@ fn repeated_target_occurrence_placement_details(
         return Ok(None);
     }
     at += 4;
-    let (final_role, next) = xref_some!(xref_utf16(decode, body, at, 36..=256)?);
+    let (final_role, next) = xref_some!(lp_utf16_bounded_charged(
+        decode,
+        body,
+        at,
+        36..=256,
+        "retain F3D UTF-16 string"
+    )?);
     if !final_role.eq_ignore_ascii_case(&role) {
         return Ok(None);
     }
@@ -1125,29 +1182,18 @@ fn repeated_target_occurrence_placement_details(
 /// Bind a repeated-target occurrence carrier to a Component Insert scope
 /// through its relation record.
 pub(crate) fn repeated_target_component_insert(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     carrier_at: usize,
     relation_at: usize,
     carrier_record_index: u32,
     expected_transform: [[f64; 4]; 4],
-) -> Option<(String, usize, Option<usize>)> {
-    let decode_arena = cadmpeg_core::decode::DecodeArena::new();
-    let Ok((decode_ctx, _)) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        bytes,
-        &decode_arena,
-        &cadmpeg_core::decode::DecodePolicy::default(),
-    ) else {
-        return None;
-    };
-    let decode_ctx = &decode_ctx;
-
-    let body = bytes.get(carrier_at..relation_at)?;
-    if View::u64_le_at(body, 7)? != u64::from(carrier_record_index) {
-        return None;
+) -> Result<Option<(String, usize, Option<usize>)>, CodecError> {
+    let body = xref_some!(bytes.get(carrier_at..relation_at));
+    if xref_some!(View::u64_le_at(body, 7)) != u64::from(carrier_record_index) {
+        return Ok(None);
     }
-    let Ok(Some(details)) = repeated_target_occurrence_placement_details(decode_ctx, body) else {
-        return None;
-    };
+    let details = xref_some!(repeated_target_occurrence_placement_details(ctx, body)?);
     let transform = details.transform.map_or(
         [
             [1.0, 0.0, 0.0, 0.0],
@@ -1158,13 +1204,13 @@ pub(crate) fn repeated_target_component_insert(
         |(_, matrix)| matrix,
     );
     if transform != expected_transform {
-        return None;
+        return Ok(None);
     }
-    Some((
+    Ok(Some((
         details.role,
         carrier_at + details.role_offset,
         details.transform.map(|(offset, _)| carrier_at + offset),
-    ))
+    )))
 }
 
 /// Parse the grouped identity carrier used by the compact `Component Insert`
@@ -1176,7 +1222,7 @@ pub(crate) fn grouped_component_insert_identity(
     carrier_at: usize,
     relation_at: usize,
     carrier_record_index: u32,
-) -> Option<(String, usize)> {
+) -> Option<(Utf16View<'_>, usize)> {
     grouped_component_insert_identity_with_layout(
         bytes,
         carrier_at,
@@ -1193,7 +1239,7 @@ pub(crate) fn grouped_component_insert_identity_class380(
     carrier_at: usize,
     relation_at: usize,
     carrier_record_index: u32,
-) -> Option<(String, usize)> {
+) -> Option<(Utf16View<'_>, usize)> {
     grouped_component_insert_identity_with_layout(
         bytes,
         carrier_at,
@@ -1210,7 +1256,7 @@ pub(crate) fn grouped_component_insert_identity_class369(
     carrier_at: usize,
     relation_at: usize,
     carrier_record_index: u32,
-) -> Option<(String, usize)> {
+) -> Option<(Utf16View<'_>, usize)> {
     grouped_component_insert_identity_with_layout(
         bytes,
         carrier_at,
@@ -1227,7 +1273,7 @@ pub(crate) fn grouped_component_insert_identity_class341(
     carrier_at: usize,
     relation_at: usize,
     carrier_record_index: u32,
-) -> Option<(String, usize)> {
+) -> Option<(Utf16View<'_>, usize)> {
     grouped_component_insert_identity_with_layout(
         bytes,
         carrier_at,
@@ -1237,13 +1283,13 @@ pub(crate) fn grouped_component_insert_identity_class341(
     )
 }
 
-fn grouped_component_insert_identity_with_layout(
-    bytes: &[u8],
+fn grouped_component_insert_identity_with_layout<'a>(
+    bytes: &'a [u8],
     carrier_at: usize,
     relation_at: usize,
     carrier_record_index: u32,
     expected_class_tag: &str,
-) -> Option<(String, usize)> {
+) -> Option<(Utf16View<'a>, usize)> {
     const MARKER_AFTER_ROLE: &[u8] = &[0, 1, 0, 0, 0, 0, 1, 0, 0, 0];
     const CLASS_369_GUID_ROLE_MARKER: &[u8] = &[0, 3, 0, 0, 0, 0, 1, 0, 0, 0];
     const CLASS_369_EXTERNAL_ROLE_MARKER: &[u8] = &[0, 4, 0, 0, 0, 0, 1, 0, 0, 0];
@@ -1252,7 +1298,8 @@ fn grouped_component_insert_identity_with_layout(
     const CLASS_341_REPEAT_MARKER: &[u8] = &[1, 0, 0, 0, 0];
     const CLOSURE: &[u8] = &[0, 1, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0];
 
-    let (class_tag, after_tag) = lp_ascii_filtered(bytes, carrier_at, 3..=3, u8::is_ascii_digit)?;
+    let (class_tag, after_tag) =
+        lp_ascii_filtered_view(bytes, carrier_at, 3..=3, u8::is_ascii_digit)?;
     let carrier_span = relation_at.checked_sub(carrier_at)?;
     if class_tag != expected_class_tag
         || after_tag != carrier_at + 7
@@ -1275,12 +1322,12 @@ fn grouped_component_insert_identity_with_layout(
         bytes,
         carrier_at + grouped_identity_layout::OCCURRENCE_IDENTITY,
     )?;
-    let (component_guid, mut at) = lp_utf16_bounded(
+    let (component_guid, mut at) = lp_utf16_bounded_view(
         bytes,
         carrier_at + grouped_identity_layout::FIRST_COMPONENT_GUID,
         36..=36,
     )?;
-    if !is_guid_relaxed(&component_guid) {
+    if !component_guid.is_guid_relaxed() {
         return None;
     }
     if bytes.get(at) != Some(&0) {
@@ -1288,22 +1335,18 @@ fn grouped_component_insert_identity_with_layout(
     }
     at += 1;
     let (type_guid, next) = lp_ascii_strict(bytes, at, 36..=36)?;
-    if !is_guid_relaxed(&type_guid) {
+    if !is_guid_relaxed(type_guid) {
         return None;
     }
     at = next;
     let first_role_at = at;
     let variable_role = matches!(expected_class_tag, "341" | "369");
     let role_bounds = if variable_role { 36..=256 } else { 36..=36 };
-    let (role, next) = lp_utf16_bounded(bytes, at, role_bounds.clone())?;
+    let (role, next) = lp_utf16_bounded_view(bytes, at, role_bounds.clone())?;
     let valid_role = if variable_role {
-        is_guid_relaxed(&role)
-            || (is_guid_prefix(&role)
-                && role
-                    .get(36..)
-                    .is_some_and(|suffix| suffix.starts_with("_urn:")))
+        role.is_guid_relaxed() || role.is_guid_urn_role()
     } else {
-        is_guid_relaxed(&role)
+        role.is_guid_relaxed()
     };
     if !valid_role {
         return None;
@@ -1323,13 +1366,13 @@ fn grouped_component_insert_identity_with_layout(
     }
     at += marker_after_role.len();
 
-    let (metadata_guid_a, next) = lp_utf16_bounded(bytes, at, 36..=36)?;
-    if !is_guid_relaxed(&metadata_guid_a) {
+    let (metadata_guid_a, next) = lp_utf16_bounded_view(bytes, at, 36..=36)?;
+    if !metadata_guid_a.is_guid_relaxed() {
         return None;
     }
     at = next;
-    let (metadata_guid_b, next) = lp_utf16_bounded(bytes, at, 36..=36)?;
-    if !is_guid_relaxed(&metadata_guid_b) {
+    let (metadata_guid_b, next) = lp_utf16_bounded_view(bytes, at, 36..=36)?;
+    if !metadata_guid_b.is_guid_relaxed() {
         return None;
     }
     at = next;
@@ -1351,9 +1394,9 @@ fn grouped_component_insert_identity_with_layout(
         at += MARKER_AFTER_METADATA.len();
     }
 
-    let (repeated_component_guid, next) = lp_utf16_bounded(bytes, at, 36..=36)?;
-    if !is_guid_relaxed(&repeated_component_guid)
-        || !repeated_component_guid.eq_ignore_ascii_case(&component_guid)
+    let (repeated_component_guid, next) = lp_utf16_bounded_view(bytes, at, 36..=36)?;
+    if !repeated_component_guid.is_guid_relaxed()
+        || !repeated_component_guid.eq_ignore_ascii_case(component_guid)
     {
         return None;
     }
@@ -1363,13 +1406,12 @@ fn grouped_component_insert_identity_with_layout(
     }
     at += 1;
     let (repeated_type_guid, next) = lp_ascii_strict(bytes, at, 36..=36)?;
-    if !is_guid_relaxed(&repeated_type_guid) || !repeated_type_guid.eq_ignore_ascii_case(&type_guid)
-    {
+    if !is_guid_relaxed(repeated_type_guid) || !repeated_type_guid.eq_ignore_ascii_case(type_guid) {
         return None;
     }
     at = next;
-    let (repeated_role, next) = lp_utf16_bounded(bytes, at, role_bounds.clone())?;
-    if !repeated_role.eq_ignore_ascii_case(&role) {
+    let (repeated_role, next) = lp_utf16_bounded_view(bytes, at, role_bounds.clone())?;
+    if !repeated_role.eq_ignore_ascii_case(role) {
         return None;
     }
     at = next;
@@ -1378,8 +1420,8 @@ fn grouped_component_insert_identity_with_layout(
     }
     at += MARKER_AFTER_PLACEMENT.len();
 
-    let (final_role, next) = lp_utf16_bounded(bytes, at, role_bounds)?;
-    if !final_role.eq_ignore_ascii_case(&role) {
+    let (final_role, next) = lp_utf16_bounded_view(bytes, at, role_bounds)?;
+    if !final_role.eq_ignore_ascii_case(role) {
         return None;
     }
     at = next;
@@ -1442,7 +1484,7 @@ fn modern_occurrence_placement(
 /// after the repeated target envelope. The dynamic class tag is deliberately
 /// not an admission key: the type-table identity and exact member framing are
 /// the stable discriminators.
-fn legacy_occurrence_placement(body: &[u8]) -> Option<OccurrencePlacement> {
+fn legacy_occurrence_placement(body: &[u8]) -> Option<(Utf16View<'_>, Option<[[f64; 4]; 4]>)> {
     let mut at = legacy_occurrence_prefix(body)?;
     let identity_marker = *body.get(at)?;
     at += 1;
@@ -1459,8 +1501,8 @@ fn legacy_occurrence_placement(body: &[u8]) -> Option<OccurrencePlacement> {
         return None;
     }
     at += 4;
-    let (link_name, after_role) = lp_utf16_bounded(body, at, 36..=36)?;
-    if !is_guid_relaxed(&link_name) {
+    let (link_name, after_role) = lp_utf16_bounded_view(body, at, 36..=36)?;
+    if !link_name.is_guid_relaxed() {
         return None;
     }
     at = after_role;
@@ -1468,11 +1510,7 @@ fn legacy_occurrence_placement(body: &[u8]) -> Option<OccurrencePlacement> {
         return None;
     }
     at += 12;
-    (at == body.len()).then_some(OccurrencePlacement {
-        link_names: vec![link_name],
-
-        transform,
-    })
+    (at == body.len()).then_some((link_name, transform))
 }
 
 /// Return the role from a structurally valid legacy placement prefix.
@@ -1480,7 +1518,7 @@ fn legacy_occurrence_placement(body: &[u8]) -> Option<OccurrencePlacement> {
 /// The role is recovered even when the transform or closing tail is damaged,
 /// so the caller can report an undecoded typed placement against the correct
 /// external reference instead of treating it as an unrelated record.
-fn legacy_occurrence_role(body: &[u8]) -> Option<String> {
+fn legacy_occurrence_role(body: &[u8]) -> Option<Utf16View<'_>> {
     let mut at = legacy_occurrence_prefix(body)?;
     match *body.get(at)? {
         1 => at += 1,
@@ -1491,8 +1529,8 @@ fn legacy_occurrence_role(body: &[u8]) -> Option<String> {
         return None;
     }
     at += 4;
-    let (link_name, _) = lp_utf16_bounded(body, at, 36..=36)?;
-    is_guid_relaxed(&link_name).then_some(link_name)
+    let (link_name, _) = lp_utf16_bounded_view(body, at, 36..=36)?;
+    link_name.is_guid_relaxed().then_some(link_name)
 }
 
 /// Parse the shared prefix of the legacy identity and matrix forms.
@@ -1525,8 +1563,8 @@ fn legacy_occurrence_prefix(body: &[u8]) -> Option<usize> {
     }
     at += 4;
     for _ in 0..2 {
-        let (guid, next) = lp_utf16_bounded(body, at, 36..=36)?;
-        if !is_guid_relaxed(&guid) {
+        let (guid, next) = lp_utf16_bounded_view(body, at, 36..=36)?;
+        if !guid.is_guid_relaxed() {
             return None;
         }
         at = next;
@@ -1556,7 +1594,7 @@ fn take_legacy_occurrence_reference(body: &[u8], at: &mut usize) -> Option<()> {
     }
     *at += 1;
     let (type_guid, next) = lp_ascii_strict(body, *at, 36..=36)?;
-    if !is_guid_relaxed(&type_guid) {
+    if !is_guid_relaxed(type_guid) {
         return None;
     }
     *at = next;

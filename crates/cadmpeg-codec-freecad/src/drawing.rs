@@ -101,11 +101,12 @@ pub(crate) fn transfer(
                         .transpose()?,
                 );
             }
-            ctx.charge_collection_items(1, "fcstd drawing relationships")?;
-            relationships.insert(
+            ctx.insert_btree_map(
+                &mut relationships,
                 ctx.copy_retained_text(&property.name, "fcstd drawing relationship name")?,
                 links,
-            );
+                "fcstd drawing relationships",
+            )?;
         }
         let mut side_entries = Vec::new();
         for property in &owned {
@@ -233,11 +234,12 @@ pub(crate) fn transfer_neutral(
             for link in targets {
                 selections.push(relationship(link)?);
             }
-            ctx.charge_collection_items(1, "fcstd drawing relationship roles")?;
-            relationships.insert(
+            ctx.insert_btree_map(
+                &mut relationships,
                 ctx.copy_retained_text(role, "fcstd drawing relationship role")?,
                 selections,
-            );
+                "fcstd drawing relationship roles",
+            )?;
         }
         let template_id = if matches!(record.kind, TechDrawKind::Page { .. }) {
             record
@@ -261,11 +263,12 @@ pub(crate) fn transfer_neutral(
         ctx.reserve_vec(&mut model.drawings, 1, "fcstd neutral drawings")?;
         let mut parameters = BTreeMap::new();
         for (name, value) in &record.parameters {
-            ctx.charge_collection_items(1, "fcstd drawing neutral parameters")?;
-            parameters.insert(
+            ctx.insert_btree_map(
+                &mut parameters,
                 ctx.copy_retained_text(name, "fcstd drawing parameter name")?,
                 ctx.copy_retained_text(value, "fcstd drawing parameter value")?,
-            );
+                "fcstd drawing neutral parameters",
+            )?;
         }
         let mut assets = ctx.collection_vec(record.side_entries.len(), "fcstd drawing assets")?;
         for name in &record.side_entries {
@@ -600,11 +603,12 @@ fn drawing_parameters(
                 format_args!("drawing property {name} has no root value"),
             )
         })?;
-        ctx.charge_collection_items(1, "fcstd drawing parameters")?;
-        parameters.insert(
+        ctx.insert_btree_map(
+            &mut parameters,
             ctx.copy_retained_text(name, "fcstd drawing parameter name")?,
             ctx.copy_retained_text(&value.raw_xml, "fcstd drawing parameter XML")?,
-        );
+            "fcstd drawing parameters",
+        )?;
     }
     for name in VALIDATED_ONLY_NAMES {
         if let Some(property) = sole_named_property(ctx, "drawing", properties, name)? {
@@ -687,8 +691,11 @@ fn ensure_unique_property_names(
                 format_args!("drawing property {} occurs more than once", property.name),
             ));
         }
-        ctx.charge_collection_items(1, "fcstd drawing unique property names")?;
-        names.insert(property.name.as_str());
+        ctx.insert_btree_set(
+            &mut names,
+            property.name.as_str(),
+            "fcstd drawing unique property names",
+        )?;
     }
     Ok(())
 }
@@ -708,12 +715,18 @@ fn root_value<'a>(
         "LockPosition" | "Perspective" => ("Bool", &[]),
         _ => return Ok(None),
     };
-    let xml = roxmltree::Document::parse(property.xml.text()).map_err(|error| {
-        drawing_malformed(
-            ctx,
-            format_args!("drawing property {} has invalid XML: {error}", property.id),
-        )
-    })?;
+    let admitted_xml = ctx
+        .parse_xml(property.xml.text(), "FreeCAD XML tree")
+        .map_err(|error| {
+            let CodecError::Malformed(error) = error else {
+                return error;
+            };
+            drawing_malformed(
+                ctx,
+                format_args!("drawing property {} has invalid XML: {error}", property.id),
+            )
+        })?;
+    let xml = admitted_xml.document();
     let property_node = xml.root_element();
     let mut selected_order = None;
     let mut order = 0;

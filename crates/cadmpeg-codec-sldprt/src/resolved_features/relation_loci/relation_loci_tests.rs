@@ -67,7 +67,7 @@ fn dynamic_relation(
             .into_iter()
             .enumerate()
             .map(|(index, entity_index)| FeatureInputOperand {
-                offset: index as u64,
+                offset: cadmpeg_core::decode::u64_from_index(index),
                 reference_ref: format!("reference-{index}"),
                 kind: FeatureInputOperandKind::Native(NativeOperandTag::try_from(0x812a).unwrap()),
                 entity_index,

@@ -704,10 +704,12 @@ pub(super) fn typed_relation_definition_with_profile_axis(
                     sketch,
                     parameter,
                     (point(0)?, point(1)?),
-                    sketch_entities,
-                    markers_by_id,
-                    loci_by_marker,
-                    profile_axis,
+                    &DynamicMarkerPointIndex {
+                        sketch_entities,
+                        markers_by_id,
+                        loci_by_marker,
+                        profile_axis,
+                    },
                 )?
             }
             _ => None,
@@ -1929,7 +1931,12 @@ fn unique_repaired_profile_pair(
             OPERATION,
         )?;
         let mut pair = [known, partner];
-        pair.sort_unstable_by(|left, right| locus_key(left).cmp(&locus_key(right)));
+        ctx.sort_unstable_by(
+            &mut pair,
+            |left, right| locus_key(left).cmp(&locus_key(right)),
+            |locus| locus_key(locus).0.len(),
+            OPERATION,
+        )?;
         let [first, second] = pair;
         let pair = (first, second);
         if selected.as_ref().is_some_and(|selected| selected != &pair) {
@@ -2266,36 +2273,18 @@ pub(super) fn canonical_profile_loci(
             ));
         }
     }
-    let count = cadmpeg_core::decode::u64_from_index(indexed.len());
-    ctx.charge_work(count, OPERATION)?;
-    let max_bytes = indexed
-        .iter()
-        .map(|(_, _, locus)| locus_entity(locus).as_str().len())
-        .max()
-        .unwrap_or(0);
-    let levels = u64::from(u64::BITS - count.leading_zeros()) + 1;
-    ctx.charge_work(
-        count
-            .checked_mul(levels)
-            .and_then(|work| work.checked_mul(64))
-            .and_then(|work| {
-                cadmpeg_core::decode::u64_from_index(max_bytes)
-                    .checked_mul(8)
-                    .and_then(|bytes| bytes.checked_add(256))
-                    .and_then(|bytes| work.checked_mul(bytes))
-            })
-            .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?,
-        OPERATION,
-    )?;
     // Source order breaks equal geometric and identity keys without sort scratch.
-    indexed.sort_unstable_by(
+    ctx.sort_unstable_by(
+        &mut indexed,
         |(left_index, left_point, left_locus), (right_index, right_point, right_locus)| {
             quantize(*left_point, QUANTUM)
                 .cmp(&quantize(*right_point, QUANTUM))
                 .then_with(|| locus_key(left_locus).cmp(&locus_key(right_locus)))
                 .then_with(|| left_index.cmp(right_index))
         },
-    );
+        |(_, _, locus)| locus_key(locus).0.len(),
+        OPERATION,
+    )?;
     indexed.dedup_by(|(_, left_point, _), (_, right_point, _)| {
         quantize(*left_point, QUANTUM) == quantize(*right_point, QUANTUM)
     });
@@ -2466,7 +2455,12 @@ fn unique_repaired_entity_pair(
             super::transforms::copy_sketch_entity_identity(ctx, known, OPERATION)?,
             partner,
         ];
-        pair.sort();
+        ctx.stable_sort_by(
+            &mut pair,
+            Ord::cmp,
+            |entity| entity.as_str().len(),
+            OPERATION,
+        )?;
         let [first, second] = pair;
         let pair = (first, second);
         if selected.as_ref().is_some_and(|selected| selected != &pair) {
@@ -2776,20 +2770,31 @@ fn unique_dynamic_roster_line_angle_pair(
     })
 }
 
-#[allow(clippy::too_many_arguments)] // Keeps the two operand loci explicit beside the shared marker indexes.
+/// The sketch entities and marker indexes shared by the two operand loci of one
+/// dynamic point-pair relation.
+struct DynamicMarkerPointIndex<'a> {
+    sketch_entities: &'a [SketchEntity],
+    markers_by_id: &'a HashMap<&'a str, &'a SketchInputEntity>,
+    loci_by_marker: &'a HashMap<String, Vec<SketchLocus>>,
+    profile_axis: Option<ProfileAxis>,
+}
+
 fn unique_dynamic_marker_point_pair(
     ctx: &DecodeContext<'_>,
     relation: &FeatureInputRelationInstance,
     sketch: &SketchId,
     parameter: &cadmpeg_ir::features::DesignParameter,
     known: (Option<SketchLocus>, Option<SketchLocus>),
-    sketch_entities: &[SketchEntity],
-    markers_by_id: &HashMap<&str, &SketchInputEntity>,
-    loci_by_marker: &HashMap<String, Vec<SketchLocus>>,
-    profile_axis: Option<ProfileAxis>,
+    index: &DynamicMarkerPointIndex<'_>,
 ) -> Result<Option<(SketchLocus, SketchLocus)>, cadmpeg_core::CodecError> {
     const OPERATION: &str = "select SLDPRT dynamic point pairs";
 
+    let DynamicMarkerPointIndex {
+        sketch_entities,
+        markers_by_id,
+        loci_by_marker,
+        profile_axis,
+    } = *index;
     let (known_first, known_second) = known;
     let Some(cadmpeg_ir::features::ParameterValue::Length(expected)) = parameter.value.as_ref()
     else {
@@ -3487,28 +3492,12 @@ fn dynamic_line_operand_candidates(
     }
     entities.truncate(write);
     if entities.len() > 1 {
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(entities.len()),
+        ctx.sort_unstable_by(
+            &mut entities,
+            Ord::cmp,
+            |entity| entity.as_str().len(),
             OPERATION,
         )?;
-        let max_bytes = entities
-            .iter()
-            .map(|entity| entity.as_str().len())
-            .max()
-            .unwrap_or(0);
-        let levels = u64::from(usize::BITS - entities.len().leading_zeros());
-        let work = cadmpeg_core::decode::u64_from_index(entities.len())
-            .checked_mul(levels)
-            .and_then(|work| work.checked_mul(64))
-            .and_then(|work| {
-                cadmpeg_core::decode::u64_from_index(max_bytes)
-                    .checked_mul(2)
-                    .and_then(|bytes| bytes.checked_add(1))
-                    .and_then(|bytes| work.checked_mul(bytes))
-            })
-            .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
-        ctx.charge_work(work, OPERATION)?;
-        entities.sort_unstable();
         entities.dedup();
     }
     Ok(entities)
@@ -3768,31 +3757,12 @@ fn dynamic_marker_line_candidates(
             candidates.push(entity);
         }
     }
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(candidates.len()),
+    ctx.sort_unstable_by(
+        &mut candidates,
+        Ord::cmp,
+        |entity| entity.as_str().len(),
         OPERATION,
     )?;
-    let max_bytes = candidates
-        .iter()
-        .map(|entity| entity.as_str().len())
-        .max()
-        .unwrap_or(0);
-    let count = cadmpeg_core::decode::u64_from_index(candidates.len());
-    let levels = u64::from(u64::BITS - count.leading_zeros()) + 1;
-    ctx.charge_work(
-        count
-            .checked_mul(levels)
-            .and_then(|work| work.checked_mul(64))
-            .and_then(|work| {
-                cadmpeg_core::decode::u64_from_index(max_bytes)
-                    .checked_mul(2)
-                    .and_then(|bytes| bytes.checked_add(1))
-                    .and_then(|bytes| work.checked_mul(bytes))
-            })
-            .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?,
-        OPERATION,
-    )?;
-    candidates.sort_unstable();
     candidates.dedup();
     Ok(candidates)
 }
@@ -4330,32 +4300,6 @@ fn collect_relation_marker_candidates<'a>(
     Ok(candidates)
 }
 
-fn charge_relation_marker_sort(
-    ctx: &DecodeContext<'_>,
-    candidates: &[&SketchInputEntity],
-    operation: &'static str,
-) -> Result<(), cadmpeg_core::CodecError> {
-    let count = cadmpeg_core::decode::u64_from_index(candidates.len());
-    ctx.charge_work(count, operation)?;
-    let max_bytes = candidates
-        .iter()
-        .map(|marker| marker.id().len())
-        .max()
-        .unwrap_or(0);
-    let levels = u64::from(u64::BITS - count.leading_zeros()) + 1;
-    let work = count
-        .checked_mul(levels)
-        .and_then(|work| work.checked_mul(64))
-        .and_then(|work| {
-            cadmpeg_core::decode::u64_from_index(max_bytes)
-                .checked_mul(2)
-                .and_then(|bytes| bytes.checked_add(1))
-                .and_then(|bytes| work.checked_mul(bytes))
-        })
-        .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
-    ctx.charge_work(work, operation)
-}
-
 pub(super) fn relation_operand_marker<'a>(
     ctx: &DecodeContext<'_>,
     relation: &'a FeatureInputRelationInstance,
@@ -4377,8 +4321,12 @@ pub(super) fn relation_operand_marker<'a>(
                         SketchInputKind::Point | SketchInputKind::ConstrainedPoint
                     )
             })?;
-        charge_relation_marker_sort(ctx, &coordinate_handles, OPERATION)?;
-        coordinate_handles.sort_unstable_by_key(|marker| marker.offset());
+        ctx.sort_unstable_by(
+            &mut coordinate_handles,
+            |left, right| left.offset().cmp(&right.offset()),
+            |_| 0,
+            OPERATION,
+        )?;
         return Ok(coordinate_handles
             .get(usize::from(operand.entity_index))
             .map(|marker| marker.id()));
@@ -4480,13 +4428,17 @@ fn dynamic_relation_marker<'a>(
     }
     let mut ordinal =
         collect_relation_marker_candidates(ctx, relation, markers_by_id, direct_kind)?;
-    charge_relation_marker_sort(ctx, &ordinal, "sort SLDPRT ordinal operand markers")?;
-    ordinal.sort_unstable_by(|left, right| {
-        left.offset()
-            .cmp(&right.offset())
-            .then_with(|| left.ordinal().cmp(&right.ordinal()))
-            .then_with(|| left.id().cmp(right.id()))
-    });
+    ctx.sort_unstable_by(
+        &mut ordinal,
+        |left, right| {
+            left.offset()
+                .cmp(&right.offset())
+                .then_with(|| left.ordinal().cmp(&right.ordinal()))
+                .then_with(|| left.id().cmp(right.id()))
+        },
+        |marker| marker.id().len(),
+        "sort SLDPRT ordinal operand markers",
+    )?;
     Ok(ordinal
         .get(usize::from(operand.entity_index))
         .map(|marker| marker.id()))
@@ -5070,28 +5022,12 @@ pub(super) fn single_marker_line_entity(
         loci_by_marker,
         MarkerEntityFilter::Lines(sketch_entities),
     )?;
-    let count = cadmpeg_core::decode::u64_from_index(entities.len());
-    ctx.charge_work(count, OPERATION)?;
-    let max_bytes = entities
-        .iter()
-        .map(|identity| identity.as_str().len())
-        .max()
-        .unwrap_or(0);
-    let levels = u64::from(u64::BITS - count.leading_zeros()) + 1;
-    ctx.charge_work(
-        count
-            .checked_mul(levels)
-            .and_then(|work| work.checked_mul(64))
-            .and_then(|work| {
-                cadmpeg_core::decode::u64_from_index(max_bytes)
-                    .checked_mul(2)
-                    .and_then(|bytes| bytes.checked_add(1))
-                    .and_then(|bytes| work.checked_mul(bytes))
-            })
-            .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?,
-        OPERATION,
+    ctx.sort_unstable_by(
+        &mut entities,
+        Ord::cmp,
+        |entity| entity.as_str().len(),
+        "sort SLDPRT single marker line entities",
     )?;
-    entities.sort_unstable();
     entities.dedup();
     if entities.len() == 1 {
         return Ok(entities.into_iter().next());
@@ -5297,11 +5233,7 @@ where
         operation,
     )?;
     let new_key = !map.contains_key(key);
-    if new_key {
-        ctx.charge_collection_items(1, operation)?;
-        map.try_reserve(1)
-            .map_err(|_| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
-    }
+    ctx.admit_hash_map_entry(map, key, operation)?;
     Ok(new_key)
 }
 
@@ -5357,9 +5289,7 @@ where
     )?;
     let new_key = !set.contains(key);
     if new_key {
-        ctx.charge_collection_items(1, operation)?;
-        set.try_reserve(1)
-            .map_err(|_| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
+        ctx.reserve_set(set, 1, operation)?;
     }
     Ok(new_key)
 }
@@ -5427,25 +5357,13 @@ fn sort_profile_loci(
     loci: &mut Vec<SketchLocus>,
     operation: &'static str,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    const COMPARE_WORK_FACTOR: u64 = 64;
-    let count = cadmpeg_core::decode::u64_from_index(loci.len());
-    ctx.charge_work(count, operation)?;
-    let max_identity_bytes = loci.iter().fold(0u64, |bytes, locus| {
-        bytes.max(cadmpeg_core::decode::u64_from_index(
-            locus_key(locus).0.len(),
-        ))
-    });
-    let levels = u64::from(u64::BITS - count.leading_zeros()) + 1;
-    ctx.charge_work(
-        count
-            .checked_mul(levels)
-            .and_then(|work| work.checked_mul(COMPARE_WORK_FACTOR))
-            .and_then(|work| work.checked_mul(max_identity_bytes.checked_mul(2)?.checked_add(1)?))
-            .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?,
+    // Equal sort keys identify equal locus values.
+    ctx.sort_unstable_by(
+        loci.as_mut_slice(),
+        |left, right| locus_key(left).cmp(&locus_key(right)),
+        |locus| locus_key(locus).0.len(),
         operation,
     )?;
-    // Equal sort keys identify equal locus values.
-    loci.sort_unstable_by(|left, right| locus_key(left).cmp(&locus_key(right)));
     loci.dedup();
     Ok(())
 }
@@ -6576,13 +6494,7 @@ pub(super) fn profile_loci_by_marker(
                 .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?,
             OPERATION,
         )?;
-        ctx.charge_collection_items(
-            cadmpeg_core::decode::u64_from_index(additions.len()),
-            OPERATION,
-        )?;
-        result
-            .try_reserve(additions.len())
-            .map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
+        ctx.reserve_map(&mut result, additions.len(), OPERATION)?;
         for (key, loci) in additions {
             ctx.charge_work(
                 key_bytes
@@ -6680,12 +6592,7 @@ pub(super) fn unique_linked_endpoint_locus(
                     OPERATION,
                 )?;
                 let point = quantize(point, quantum);
-                if !endpoints.contains_key(&point) {
-                    ctx.charge_collection_items(1, OPERATION)?;
-                    endpoints
-                        .try_reserve(1)
-                        .map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
-                }
+                ctx.admit_hash_map_entry(&mut endpoints, &point, OPERATION)?;
                 let loci = endpoints.entry(point).or_default();
                 ctx.charge_work(
                     cadmpeg_core::decode::u64_from_index(loci.len())
@@ -7094,19 +7001,9 @@ fn insert_compatible_locus(
 ) -> Result<(), cadmpeg_core::CodecError> {
     const OPERATION: &str = "index SLDPRT compatible marker loci";
     ctx.charge_work(64, OPERATION)?;
-    if !points.contains_key(&marker) {
-        ctx.charge_collection_items(1, OPERATION)?;
-        points
-            .try_reserve(1)
-            .map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
-    }
+    ctx.admit_hash_map_entry(points, &marker, OPERATION)?;
     let loci = points.entry(marker).or_default();
-    if !loci.contains(&locus) {
-        ctx.charge_collection_items(1, OPERATION)?;
-        loci.try_reserve(1)
-            .map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
-    }
-    loci.insert(locus);
+    ctx.insert_hash_set(loci, locus, OPERATION)?;
     Ok(())
 }
 

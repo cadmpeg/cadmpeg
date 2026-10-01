@@ -170,9 +170,6 @@ impl SourceUnitCarriers {
         entities: Vec<SketchEntity>,
     ) -> Result<(), CodecError> {
         for mut entity in entities {
-            if !self.sketch_entities.contains_key(entity.id()) {
-                ctx.charge_collection_items(1, "creo source sketch entity nodes")?;
-            }
             let source_id = SketchEntityId::mint(
                 ctx.copy_retained_text(entity.id().as_str(), "creo source sketch entity IDs")?,
             )
@@ -189,7 +186,12 @@ impl SourceUnitCarriers {
             } else {
                 source_geometry
             };
-            self.sketch_entities.insert(source_id, source_geometry);
+            ctx.insert_btree_map(
+                &mut self.sketch_entities,
+                source_id,
+                source_geometry,
+                "creo source sketch entity nodes",
+            )?;
             ctx.reserve_vec(
                 &mut ir.model.sketch_entities,
                 1,
@@ -239,9 +241,6 @@ impl SourceUnitCarriers {
         ir: &mut CadIr,
         mut surface: Surface,
     ) -> Result<(), CodecError> {
-        if !self.surfaces.contains_key(&surface.id) {
-            ctx.charge_collection_items(1, "creo source surface nodes")?;
-        }
         let source_id = SurfaceId::mint(
             ctx.copy_retained_text(surface.id.as_str(), "creo source surface IDs")?,
         )
@@ -259,7 +258,12 @@ impl SourceUnitCarriers {
                 },
             )?;
         }
-        self.surfaces.insert(source_id, source_geometry);
+        ctx.insert_btree_map(
+            &mut self.surfaces,
+            source_id,
+            source_geometry,
+            "creo source surface nodes",
+        )?;
         ctx.reserve_vec(&mut ir.model.surfaces, 1, "creo model surfaces")?;
         ir.model.surfaces.push(surface);
         Ok(())
@@ -271,9 +275,6 @@ impl SourceUnitCarriers {
         surface: &mut Surface,
         mut geometry: SurfaceGeometry,
     ) -> Result<(), CodecError> {
-        if !self.surfaces.contains_key(&surface.id) {
-            ctx.charge_collection_items(1, "creo replacement source surface nodes")?;
-        }
         let source_id = SurfaceId::mint(
             ctx.copy_retained_text(surface.id.as_str(), "creo replacement source surface IDs")?,
         )
@@ -290,7 +291,12 @@ impl SourceUnitCarriers {
                 },
             )?;
         }
-        self.surfaces.insert(source_id, source_geometry);
+        ctx.insert_btree_map(
+            &mut self.surfaces,
+            source_id,
+            source_geometry,
+            "creo replacement source surface nodes",
+        )?;
         surface.geometry = geometry;
         Ok(())
     }
@@ -301,9 +307,6 @@ impl SourceUnitCarriers {
         ir: &mut CadIr,
         mut curve: Curve,
     ) -> Result<(), CodecError> {
-        if !self.curves.contains_key(&curve.id) {
-            ctx.charge_collection_items(1, "creo source curve nodes")?;
-        }
         let source_id =
             CurveId::mint(ctx.copy_retained_text(curve.id.as_str(), "creo source curve IDs")?)
                 .map_err(CodecError::malformed)?;
@@ -320,7 +323,12 @@ impl SourceUnitCarriers {
                 },
             )?;
         }
-        self.curves.insert(source_id, source_geometry);
+        ctx.insert_btree_map(
+            &mut self.curves,
+            source_id,
+            source_geometry,
+            "creo source curve nodes",
+        )?;
         ctx.reserve_vec(&mut ir.model.curves, 1, "creo model curves")?;
         ir.model.curves.push(curve);
         Ok(())
@@ -336,9 +344,6 @@ impl SourceUnitCarriers {
         curve: &mut Curve,
         mut geometry: CurveGeometry,
     ) -> Result<(), CodecError> {
-        if !self.curves.contains_key(&curve.id) {
-            ctx.charge_collection_items(1, "creo replacement source curve nodes")?;
-        }
         let source_id = CurveId::mint(
             ctx.copy_retained_text(curve.id.as_str(), "creo replacement source curve IDs")?,
         )
@@ -354,7 +359,12 @@ impl SourceUnitCarriers {
                 },
             )?;
         }
-        self.curves.insert(source_id, source_geometry);
+        ctx.insert_btree_map(
+            &mut self.curves,
+            source_id,
+            source_geometry,
+            "creo replacement source curve nodes",
+        )?;
         curve.geometry = geometry;
         Ok(())
     }
@@ -445,12 +455,16 @@ impl SourceUnitCarriers {
             if let Some(existing) = self.edge_parameter_ranges.get_mut(&edge.id) {
                 *existing = source_range;
             } else {
-                ctx.charge_collection_items(1, "creo source edge range nodes")?;
                 let id = EdgeId::mint(
                     ctx.copy_retained_text(edge.id.as_str(), "creo source edge range IDs")?,
                 )
                 .map_err(CodecError::malformed)?;
-                self.edge_parameter_ranges.insert(id, source_range);
+                ctx.insert_btree_map(
+                    &mut self.edge_parameter_ranges,
+                    id,
+                    source_range,
+                    "creo source edge range nodes",
+                )?;
             }
         }
         ctx.reserve_vec(&mut ir.model.edges, 1, "creo model edges")?;

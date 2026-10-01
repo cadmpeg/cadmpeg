@@ -8,11 +8,41 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use crate::pmdc::type_id_string;
 
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(try_from = "String")]
+pub(crate) struct RecordTypeId(String);
+
+impl RecordTypeId {
+    pub(crate) fn from_bytes(value: [u8; 16]) -> Self {
+        Self(type_id_string(value))
+    }
+
+    pub(crate) fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl TryFrom<String> for RecordTypeId {
+    type Error = &'static str;
+
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        if value.len() == 32
+            && value
+                .bytes()
+                .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+        {
+            Ok(Self(value))
+        } else {
+            Err("type_id must contain 32 lowercase hexadecimal digits")
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct RecordIdentity {
     pub(crate) segment_token: IdentityKey,
     pub(crate) record_ordinal: u32,
-    pub(crate) type_id: String,
+    pub(crate) type_id: RecordTypeId,
 }
 
 impl RecordIdentity {
@@ -46,7 +76,7 @@ pub(crate) struct Located<T> {
 impl<T> Located<T> {
     pub(crate) fn new(
         value: T,
-        type_id: String,
+        type_id: RecordTypeId,
         segment_token: IdentityKey,
         record_ordinal: u32,
     ) -> Self {
@@ -76,7 +106,7 @@ pub(crate) fn push_record<T>(
 
     records.push(Located::new(
         value,
-        type_id_string(type_id),
+        crate::record_identity::RecordTypeId::from_bytes(type_id),
         segment_token.try_clone_for_decode(ctx, "retain Inventor PmDc record segment token")?,
         ordinal,
     ));
@@ -111,7 +141,7 @@ impl<T> std::ops::Deref for Located<T> {
 #[derive(Deserialize)]
 struct LocatedWire<T> {
     id: String,
-    type_id: String,
+    type_id: RecordTypeId,
     segment_token: String,
     record_ordinal: u32,
     #[serde(flatten)]
@@ -159,7 +189,7 @@ impl<T: RecordPayload + Serialize> Serialize for Located<T> {
                 identity: &self.identity,
                 payload: std::marker::PhantomData,
             },
-            type_id: &self.identity.type_id,
+            type_id: self.identity.type_id.as_str(),
             segment_token: self.identity.segment_token.as_str(),
             record_ordinal: self.identity.record_ordinal,
             value: &self.payload,
@@ -190,6 +220,25 @@ mod tests {
     use cadmpeg_test_support::native_serialization::assert_native_limit;
 
     #[test]
+    fn located_records_reject_invalid_type_guids() {
+        #[derive(serde::Deserialize)]
+        struct Payload {}
+        impl super::RecordPayload for Payload {
+            const KIND: &'static str = "test";
+        }
+        for type_id in [
+            "not-a-guid",
+            "",
+            "0000000000000000000000000000000",
+            "ABCDEF0123456789abcdef0123456789ab",
+        ] {
+            assert!(super::RecordTypeId::try_from(type_id.to_owned()).is_err());
+            let wire = serde_json::json!({"id": "inventor:pmdc:test#segment-0", "type_id": type_id, "segment_token": "segment", "record_ordinal": 0});
+            assert!(serde_json::from_value::<super::Located<Payload>>(wire).is_err());
+        }
+    }
+
+    #[test]
     fn located_record_id_streams_once_with_retained_limit() {
         #[derive(serde::Serialize)]
         struct Payload {
@@ -203,7 +252,7 @@ mod tests {
         let token = cadmpeg_ir::ids::IdentityKey::encode_segment("segment");
         let record = super::Located::new(
             Payload { value: 7 },
-            "type".into(),
+            crate::record_identity::RecordTypeId::from_bytes([0; 16]),
             token
                 .try_clone_for_decode(
                     &cadmpeg_test_support::service_decode_context(),
@@ -215,7 +264,7 @@ mod tests {
         assert_native_limit(
             &record,
             serde_json::json!({
-                "id": "inventor:pmdc:test#segment-1", "type_id": "type",
+                "id": "inventor:pmdc:test#segment-1", "type_id": "00000000000000000000000000000000",
                 "segment_token": "segment", "record_ordinal": 1,
                 "value": 7
             }),

@@ -1,14 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Conversion from a PSB container to [`CadIr`].
 //!
-//! Decode transfers standard datum planes as derived plane surfaces and
-//! preserves each geometry section as an [`UnknownRecord`]. Source metadata
-//! records the namespace census, active units, and counts of decoded structural
-//! rows. The typed dialect match owns layout identity.
-//!
-//! Surface and curve namespaces contain useful topology and prototype data, but
-//! the placed body model is incomplete. The report therefore records blocking
-//! geometry and topology losses instead of emitting a partial B-rep.
+//! Decode transfers reference geometry, display meshes, features, sketches,
+//! and supported native, extrusion, revolution, and circular B-rep routes.
+//! Source metadata records the namespace census, units, and layout identity.
+//! Preserved native records and geometry sections retain unresolved source
+//! geometry. The report states geometry and topology losses for withheld data.
 
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
@@ -44,7 +41,6 @@ pub(crate) fn project_items<I, T>(
 }
 
 mod analytic;
-pub(crate) mod axis;
 mod build;
 mod coverage;
 mod curve_expressions;

@@ -2126,7 +2126,12 @@ fn connected_components(
                 }
             }
         }
-        component.sort_unstable();
+        ctx.sort_unstable_by(
+            &mut component,
+            Ord::cmp,
+            |_| 0,
+            "FreeCAD connected-component members sort",
+        )?;
         ctx.reserve_vec(&mut components, 1, "FreeCAD connected components")?;
         components.push(component);
     }

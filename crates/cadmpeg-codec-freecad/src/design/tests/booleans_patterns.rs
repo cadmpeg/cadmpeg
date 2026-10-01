@@ -5,8 +5,7 @@ use crate::design::tests::definition;
 use crate::native::{PropertyBody, PropertyFamily, PropertyRecord, RetainedXml};
 use crate::test_support::test_archive::{archive, archive_entries, assert_valid_document};
 use crate::FcstdCodec;
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-use cadmpeg_core::CodecError;
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 use cadmpeg_ir::{Codec, DecodeOptions};
 use std::io::Cursor;
@@ -289,13 +288,13 @@ fn float_list_entry(name: &str, values: &[f64]) -> crate::native::EntryRecord {
     for value in values {
         data.extend(value.to_le_bytes());
     }
-    crate::native::EntryRecord {
-        id: name.into(),
-        name: name.into(),
-        role: cadmpeg_core::container::ContainerRole::Auxiliary,
-        referenced_by: Vec::new(),
+    crate::test_support::entry_record(
+        crate::native::native_id("entry", name),
+        name.into(),
+        cadmpeg_core::container::ContainerRole::Auxiliary,
+        Vec::new(),
         data,
-    }
+    )
 }
 
 #[test]
@@ -311,31 +310,18 @@ fn uniform_pattern_intervals_report_collection_limit() {
             .expect("uniform locations");
     assert_eq!(admitted.len(), 4);
 
-    let mut policy = DecodePolicy::default();
-    policy.limits.max_collection_items = 2;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy).expect("context");
-    let error =
-        crate::design::pattern_locations(&ctx, &properties, "", 4, 0, ("Length", "Offset"), &[])
-            .expect_err("three intervals exceed the collection limit");
-    assert!(matches!(error, CodecError::ResourceLimit(limit)
-        if limit.dimension == ResourceDimension::CollectionItems
-            && limit.operation == "freecad pattern intervals"));
+    crate::test_support::assert_collection_refusal_at(&[0], "freecad pattern intervals", |ctx| {
+        crate::design::pattern_locations(ctx, &properties, "", 4, 0, ("Length", "Offset"), &[])
+    });
 }
 
 #[test]
 fn irregular_pattern_intervals_report_collection_limit() {
     let offset = pattern_scalar("Offset", 2.0);
     let properties = [&offset];
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::default();
-    policy.limits.max_collection_items = 2;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy).expect("context");
-    let error =
-        crate::design::pattern_locations(&ctx, &properties, "", 4, 1, ("Length", "Offset"), &[])
-            .expect_err("three intervals exceed the collection limit");
-    assert!(matches!(error, CodecError::ResourceLimit(limit)
-        if limit.dimension == ResourceDimension::CollectionItems
-            && limit.operation == "freecad pattern intervals"));
+    crate::test_support::assert_collection_refusal_at(&[0], "freecad pattern intervals", |ctx| {
+        crate::design::pattern_locations(ctx, &properties, "", 4, 1, ("Length", "Offset"), &[])
+    });
 }
 
 #[test]

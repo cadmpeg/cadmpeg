@@ -213,13 +213,7 @@ pub(crate) fn enrich_history_extrusion_terminations(
                     .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?,
                 OPERATION,
             )?;
-            if !names_by_id.contains_key(name.id.as_str()) {
-                ctx.charge_collection_items(1, OPERATION)?;
-                names_by_id
-                    .try_reserve(1)
-                    .map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
-            }
-            names_by_id.insert(name.id.as_str(), name);
+            ctx.insert_hash_map(&mut names_by_id, name.id.as_str(), name, OPERATION)?;
         }
         let scan_end = if lane.native_payload.len() >= 103 {
             lane.native_payload.len() - 103
@@ -285,11 +279,7 @@ pub(crate) fn enrich_history_extrusion_terminations(
             ctx.charge_work(u64_from_index(owner.id.len()), OPERATION)?;
             if !grouped_blind.contains_key(owner.id.as_str()) {
                 let key = copy_termination_text(ctx, &owner.id, OPERATION)?;
-                ctx.charge_collection_items(1, OPERATION)?;
-                grouped_blind
-                    .try_reserve(1)
-                    .map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
-                grouped_blind.insert(key, 0);
+                ctx.insert_hash_map(&mut grouped_blind, key, 0, OPERATION)?;
             }
             let count = grouped_blind.get_mut(owner.id.as_str()).ok_or_else(|| {
                 cadmpeg_core::CodecError::malformed("missing admitted blind vote count")
@@ -543,11 +533,7 @@ pub(crate) fn enrich_history_extrusion_terminations(
             .or(grouped);
             if !terminations.contains_key(feature_id.as_str()) {
                 let key = copy_termination_text(ctx, feature_id, OPERATION)?;
-                ctx.charge_collection_items(1, OPERATION)?;
-                terminations
-                    .try_reserve(1)
-                    .map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
-                terminations.insert(key, Vec::new());
+                ctx.insert_hash_map(&mut terminations, key, Vec::new(), OPERATION)?;
             }
             let votes = terminations.get_mut(feature_id.as_str()).ok_or_else(|| {
                 cadmpeg_core::CodecError::malformed("missing admitted termination vote bucket")
@@ -650,8 +636,7 @@ fn insert_termination_field(
     let name =
         cadmpeg_core::text::NonBlankString::new(copy_termination_text(ctx, name, operation)?)
             .ok_or_else(|| cadmpeg_core::CodecError::malformed("blank termination field name"))?;
-    ctx.charge_collection_items(1, operation)?;
-    fields.insert(name, value);
+    ctx.insert_btree_map(fields, name, value, operation)?;
     Ok(())
 }
 
@@ -896,11 +881,7 @@ pub(crate) fn enrich_history_combine_selections(
             ctx.charge_work(u64_from_index(feature_id.len()), OPERATION)?;
             if !selections.contains_key(feature_id.as_str()) {
                 let key = copy_termination_text(ctx, feature_id, OPERATION)?;
-                ctx.charge_collection_items(1, OPERATION)?;
-                selections
-                    .try_reserve(1)
-                    .map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
-                selections.insert(key, Vec::new());
+                ctx.insert_hash_map(&mut selections, key, Vec::new(), OPERATION)?;
             }
             let votes = selections.get_mut(feature_id.as_str()).ok_or_else(|| {
                 cadmpeg_core::CodecError::malformed("missing admitted combine vote bucket")
@@ -1120,11 +1101,7 @@ pub(crate) fn enrich_history_sweep_paths(
             )?;
             if !paths.contains_key(feature_id) {
                 let key = copy_termination_text(ctx, feature_id, OPERATION)?;
-                ctx.charge_collection_items(1, OPERATION)?;
-                paths
-                    .try_reserve(1)
-                    .map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
-                paths.insert(key, Vec::new());
+                ctx.insert_hash_map(&mut paths, key, Vec::new(), OPERATION)?;
             }
             if let Some(votes) = paths.get_mut(feature_id) {
                 ctx.reserve_vec(votes, 1, OPERATION)?;
@@ -1165,10 +1142,12 @@ pub(crate) fn enrich_history_sweep_paths(
         }
         if agreement {
             let path = copy_termination_text(ctx, first, OPERATION)?;
-            ctx.charge_collection_items(1, OPERATION)?;
-            feature
-                .properties
-                .insert(cadmpeg_core::nonblank_literal!("Path"), path);
+            ctx.insert_btree_map(
+                &mut feature.properties,
+                cadmpeg_core::nonblank_literal!("Path"),
+                path,
+                OPERATION,
+            )?;
         }
     }
     Ok(())
@@ -1197,18 +1176,12 @@ fn history_object_offsets(
         ctx.reserve_vec(&mut objects, 1, operation)?;
         objects.push((name.offset, id));
     }
-    let levels = if objects.len() > 1 {
-        objects.len().ilog2() + 1
-    } else {
-        1
-    };
-    ctx.charge_work(
-        u64_from_index(objects.len())
-            .checked_mul(u64::from(levels))
-            .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?,
+    ctx.sort_unstable_by(
+        &mut objects,
+        |left, right| left.0.cmp(&right.0),
+        |_| 0,
         operation,
     )?;
-    objects.sort_unstable_by_key(|object| object.0);
     Ok(objects)
 }
 
@@ -1293,13 +1266,7 @@ pub(crate) fn project_surface_sweep_profiles(
                 .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?,
             OPERATION,
         )?;
-        if !feature_ids_by_native.contains_key(native) {
-            ctx.charge_collection_items(1, OPERATION)?;
-            feature_ids_by_native
-                .try_reserve(1)
-                .map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
-        }
-        feature_ids_by_native.insert(native, &feature.id);
+        ctx.insert_hash_map(&mut feature_ids_by_native, native, &feature.id, OPERATION)?;
     }
     let mut projections = HashMap::new();
     for lane in lanes {
@@ -1347,18 +1314,12 @@ pub(crate) fn project_surface_sweep_profiles(
                 objects.push((name.offset, *feature));
             }
         }
-        let levels = if objects.len() > 1 {
-            objects.len().ilog2() + 1
-        } else {
-            1
-        };
-        ctx.charge_work(
-            u64_from_index(objects.len())
-                .checked_mul(u64::from(levels))
-                .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?,
+        ctx.sort_unstable_by(
+            &mut objects,
+            |(left, _), (right, _)| left.cmp(right),
+            |_| 0,
             OPERATION,
         )?;
-        objects.sort_unstable_by_key(|(offset, _)| *offset);
         for (index, &(start, feature)) in objects.iter().enumerate() {
             ctx.charge_work(
                 u64_from_index(feature.input_class.as_ref().map_or(0, String::len))
@@ -1514,16 +1475,8 @@ pub(crate) fn project_surface_sweep_profiles(
                 _ => {}
             }
             ctx.charge_work(u64_from_index(feature.id.len()), OPERATION)?;
-            if !projections.contains_key(feature.id.as_str()) {
-                ctx.charge_collection_items(1, OPERATION)?;
-                projections
-                    .try_reserve(1)
-                    .map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
-            }
-            projections.insert(
-                copy_termination_text(ctx, &feature.id, OPERATION)?,
-                (profile, dependencies),
-            );
+            let key = copy_termination_text(ctx, &feature.id, OPERATION)?;
+            ctx.insert_hash_map(&mut projections, key, (profile, dependencies), OPERATION)?;
         }
     }
     drop(feature_ids_by_native);
@@ -1693,13 +1646,7 @@ pub(crate) fn project_compact_combine_paths(
                 .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?,
             OPERATION,
         )?;
-        if !feature_ids_by_native.contains_key(native) {
-            ctx.charge_collection_items(1, OPERATION)?;
-            feature_ids_by_native
-                .try_reserve(1)
-                .map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
-        }
-        feature_ids_by_native.insert(native, &feature.id);
+        ctx.insert_hash_map(&mut feature_ids_by_native, native, &feature.id, OPERATION)?;
     }
     let mut history_features = Vec::new();
     for feature in histories.iter().flat_map(|history| &history.features) {
@@ -1830,7 +1777,14 @@ pub(crate) fn project_compact_combine_paths(
             ctx.reserve_vec(&mut ordered, 1, OPERATION)?;
             ordered.push((order, ordinal, dependency));
         }
-        ordered.sort_unstable_by_key(|(order, ordinal, _)| (*order, *ordinal));
+        ctx.sort_unstable_by(
+            &mut ordered,
+            |(left_order, left_ordinal, _), (right_order, right_ordinal, _)| {
+                (left_order, left_ordinal).cmp(&(right_order, right_ordinal))
+            },
+            |_| 0,
+            OPERATION,
+        )?;
         let mut dependencies = Vec::<cadmpeg_ir::features::FeatureId>::new();
         for (_, _, dependency) in ordered {
             if let Some(previous) = dependencies.last() {
@@ -1851,20 +1805,17 @@ pub(crate) fn project_compact_combine_paths(
             dependencies.push(dependency);
         }
         ctx.charge_work(u64_from_index(history_feature.id.len()), OPERATION)?;
-        if !projections.contains_key(history_feature.id.as_str()) {
-            ctx.charge_collection_items(1, OPERATION)?;
-            projections
-                .try_reserve(1)
-                .map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
-        }
-        projections.insert(
-            copy_termination_text(ctx, &history_feature.id, OPERATION)?,
+        let key = copy_termination_text(ctx, &history_feature.id, OPERATION)?;
+        ctx.insert_hash_map(
+            &mut projections,
+            key,
             Projection {
                 target,
                 tools,
                 dependencies,
             },
-        );
+            OPERATION,
+        )?;
     }
     drop(feature_ids_by_native);
     for feature in features {

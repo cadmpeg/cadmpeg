@@ -1039,7 +1039,12 @@ fn form_cage_serializers(
             ctx.push_vec(&mut offsets, *offset, "f3d form serializer offset")?;
         }
     }
-    offsets.sort_unstable();
+    ctx.sort_unstable_by(
+        &mut offsets,
+        Ord::cmp,
+        |_| 0,
+        "f3d form serializer offset sort",
+    )?;
     let mut ordered = Vec::new();
     let mut entries = HashMap::new();
     for offset in offsets {
@@ -1069,12 +1074,6 @@ fn form_cage_serializers(
         else {
             continue;
         };
-        let reservation_size = count.checked_mul(5).ok_or_else(|| {
-            ctx.refuse_codec_limit("f3d form serializer name materialization", 0, 1)
-        })?;
-        let _reservation =
-            ctx.reserve_scoped(reservation_size, "f3d form serializer name materialization")?;
-        ctx.charge_collection_items(count, "f3d form serializer name units")?;
         let name_units = usize::try_from(count).map_err(|_| {
             ctx.refuse_codec_limit("f3d form serializer name materialization", 0, 1)
         })?;
@@ -1088,27 +1087,20 @@ fn form_cage_serializers(
         let Some(raw_name) = bytes.get(name_at + 4..after_name) else {
             continue;
         };
-        let mut view = View::over_retained(raw_name);
-        let utf8_len = std::char::decode_utf16(std::iter::from_fn(|| view.u16_le()))
-            .try_fold(0usize, |length, decoded| {
-                length.checked_add(decoded.ok()?.len_utf8())
-            });
-        let Some(utf8_len) = utf8_len else {
-            continue;
-        };
-        let mut entry_name = String::new();
-        DecodeContext::reserve_admitted_string(
-            &mut entry_name,
-            utf8_len,
+        let (entry_name, name_reservation) = match ctx.utf16le_scoped_text(
+            raw_name,
+            name_units,
+            false,
             "f3d form serializer name materialization",
+        ) {
+            Ok(text) => text,
+            Err(CodecError::Malformed(_)) => continue,
+            Err(error) => return Err(error),
+        };
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(entry_name.len()),
+            "validate f3d form serializer entry name",
         )?;
-        let mut view = View::over_retained(raw_name);
-        for decoded in std::char::decode_utf16(std::iter::from_fn(|| view.u16_le())) {
-            let character = decoded.map_err(|_| {
-                CodecError::malformed("validated Form serializer name is not UTF-16")
-            })?;
-            entry_name.push(character);
-        }
         if !entry_name.starts_with("TSpline.")
             || !std::path::Path::new(&entry_name)
                 .extension()
@@ -1140,10 +1132,10 @@ fn form_cage_serializers(
             *entry = FormCageEntry::Duplicate;
         } else {
             ctx.charge_retained(
-                u64::try_from(entry_name.len())
-                    .map_err(|_| ctx.refuse_codec_limit("f3d form serializer entry name", 0, 1))?,
+                cadmpeg_core::decode::u64_from_index(entry_name.len()),
                 "f3d form serializer entry name",
             )?;
+            drop(name_reservation);
             ctx.insert_hash_map(
                 &mut entries,
                 surface,

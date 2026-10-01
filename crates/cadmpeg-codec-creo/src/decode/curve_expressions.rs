@@ -107,9 +107,9 @@ fn curve_expression_helix_definition(
             [0.0, helix.revolutions.get() * std::f64::consts::TAU],
             cadmpeg_ir::geometry::HelixFrame {
                 center: Point3::new(
-                    origin.x + axis.x * helix.z_start,
-                    origin.y + axis.y * helix.z_start,
-                    origin.z + axis.z * helix.z_start,
+                    origin.x + axis.x * helix.z_start.get(),
+                    origin.y + axis.y * helix.z_start.get(),
+                    origin.z + axis.z * helix.z_start.get(),
                 ),
                 major: Vector3::new(
                     major_direction.x * helix.radius.get(),
@@ -122,9 +122,9 @@ fn curve_expression_helix_definition(
                     minor_direction.z * helix.radius.get(),
                 ),
                 pitch: Vector3::new(
-                    axis.x * helix.height / helix.revolutions.get(),
-                    axis.y * helix.height / helix.revolutions.get(),
-                    axis.z * helix.height / helix.revolutions.get(),
+                    axis.x * helix.height.get() / helix.revolutions.get(),
+                    axis.y * helix.height.get() / helix.revolutions.get(),
+                    axis.z * helix.height.get() / helix.revolutions.get(),
                 ),
                 axis,
             },
@@ -269,9 +269,9 @@ fn curve_expression_parameter_names(
         if let Some((name, _)) = assignment.parameter_target() {
             let mut key = ctx.copy_retained_text(name, "creo curve-expression name key")?;
             key.make_ascii_lowercase();
+            ctx.admit_btree_entry(&counts, &key, "creo curve-expression unique names")?;
             match counts.entry(key) {
                 std::collections::btree_map::Entry::Vacant(entry) => {
-                    ctx.charge_collection_items(1, "creo curve-expression unique names")?;
                     entry.insert(1usize);
                 }
                 std::collections::btree_map::Entry::Occupied(mut entry) => {
@@ -289,11 +289,9 @@ fn curve_expression_parameter_names(
             if counts[&key] == 1 {
                 Some(ctx.copy_retained_text(name, "creo curve-expression parameter name")?)
             } else {
+                ctx.admit_btree_entry(&occurrences, &key, "creo curve-expression occurrences")?;
                 let occurrence = match occurrences.entry(key) {
-                    std::collections::btree_map::Entry::Vacant(entry) => {
-                        ctx.charge_collection_items(1, "creo curve-expression occurrences")?;
-                        entry.insert(0usize)
-                    }
+                    std::collections::btree_map::Entry::Vacant(entry) => entry.insert(0usize),
                     std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
                 };
                 *occurrence += 1;
@@ -354,9 +352,9 @@ fn curve_expression_assignment_indices(
         };
         let mut key = ctx.copy_retained_text(name, "creo curve-expression assignment key")?;
         key.make_ascii_lowercase();
+        ctx.admit_btree_entry(&by_name, &key, "creo curve-expression assignment indices")?;
         match by_name.entry(key) {
             std::collections::btree_map::Entry::Vacant(entry) => {
-                ctx.charge_collection_items(1, "creo curve-expression assignment indices")?;
                 entry.insert(Some(ordinal));
             }
             std::collections::btree_map::Entry::Occupied(mut entry) => {
@@ -368,8 +366,12 @@ fn curve_expression_assignment_indices(
     for (name, index) in &by_name {
         if let Some(index) = index {
             let key = ctx.copy_retained_text(name, "creo curve-expression unique key")?;
-            ctx.charge_collection_items(1, "creo curve-expression unique indices")?;
-            unique.insert(key, *index);
+            ctx.insert_btree_map(
+                &mut unique,
+                key,
+                *index,
+                "creo curve-expression unique indices",
+            )?;
         }
     }
     Ok(AssignmentIndices { by_name, unique })
@@ -392,18 +394,22 @@ fn curve_expression_emitted_ordinals(
             indices.push(index);
         }
     }
-    crate::sort::stable_sort_by_key(
-        ctx,
+    ctx.stable_sort_by(
         indices.as_mut_slice(),
-        |index| parameter_ordinals[*index],
+        |left, right| parameter_ordinals[*left].cmp(&parameter_ordinals[*right]),
+        |_| std::mem::size_of::<u32>(),
         "creo curve expression emitted ordinals indices ordering",
     )?;
     let mut emitted = BTreeMap::new();
     for (ordinal, index) in indices.into_iter().enumerate() {
         let ordinal = u32::try_from(ordinal)
             .map_err(|_| CodecError::malformed("curve expression parameter ordinal exceeds u32"))?;
-        ctx.charge_collection_items(1, "creo curve-expression emitted ordinals")?;
-        emitted.insert(index, ordinal);
+        ctx.insert_btree_map(
+            &mut emitted,
+            index,
+            ordinal,
+            "creo curve-expression emitted ordinals",
+        )?;
     }
     Ok(emitted)
 }
@@ -459,9 +465,13 @@ fn insert_curve_expression_property(
     name: &'static str,
     value: String,
 ) -> Result<(), CodecError> {
-    ctx.charge_collection_items(1, "creo curve-expression property nodes")?;
     let key = ctx.copy_retained_text(name, "creo curve-expression property key")?;
-    properties.insert(key, value);
+    ctx.insert_btree_map(
+        properties,
+        key,
+        value,
+        "creo curve-expression property nodes",
+    )?;
     Ok(())
 }
 
@@ -612,7 +622,7 @@ fn curve_expression_properties(
             &mut properties,
             "evaluated_canonical_value",
             ctx.format_retained(
-                format_args!("{}", quantity.value),
+                format_args!("{}", quantity.value()),
                 "creo curve-expression canonical value",
             )?,
         )?;
@@ -623,11 +633,11 @@ fn curve_expression_properties(
             ctx.format_retained(
                 format_args!(
                     "length:{},mass:{},time:{},angle:{},temperature:{}",
-                    quantity.length_power,
-                    quantity.mass_power,
-                    quantity.time_power,
-                    quantity.angle_power,
-                    quantity.temperature_power
+                    quantity.powers()[0],
+                    quantity.powers()[1],
+                    quantity.powers()[2],
+                    quantity.powers()[3],
+                    quantity.powers()[4]
                 ),
                 "creo curve-expression dimension value",
             )?,
@@ -660,7 +670,12 @@ fn curve_expression_properties(
             cyclic_dependencies.push(name.as_str());
         }
     }
-    cyclic_dependencies.sort_unstable();
+    ctx.sort_unstable_by(
+        &mut cyclic_dependencies,
+        Ord::cmp,
+        |item| item.len(),
+        "creo curve-expression cyclic dependency name sort",
+    )?;
     cyclic_dependencies.dedup();
     if !cyclic_dependencies.is_empty() {
         let value = join_cyclic_dependency_names(ctx, &cyclic_dependencies)?;
@@ -676,7 +691,6 @@ fn native_curve_expression_definition(
     assignment_count: usize,
 ) -> Result<IrFeatureDefinition, CodecError> {
     let mut parameters = BTreeMap::new();
-    ctx.charge_collection_items(1, "creo curve-expression native parameters")?;
     let kind = ctx
         .copy_retained_text("CurveFromEquation", "creo curve-expression native kind")?
         .into();
@@ -692,14 +706,23 @@ fn native_curve_expression_definition(
         ctx.copy_retained_text("entity_id", "creo curve-expression native entity key")?,
     )
     .ok_or_else(|| CodecError::malformed("native entity key is blank"))?;
-    parameters.insert(entity_key, entity_value);
-    ctx.charge_collection_items(1, "creo curve-expression native parameters")?;
+    ctx.insert_btree_map(
+        &mut parameters,
+        entity_key,
+        entity_value,
+        "creo curve-expression native parameters",
+    )?;
     let assignment_key = cadmpeg_core::text::NonBlankString::new(ctx.copy_retained_text(
         "assignment_count",
         "creo curve-expression native assignment key",
     )?)
     .ok_or_else(|| CodecError::malformed("native assignment key is blank"))?;
-    parameters.insert(assignment_key, assignment_value);
+    ctx.insert_btree_map(
+        &mut parameters,
+        assignment_key,
+        assignment_value,
+        "creo curve-expression native parameters",
+    )?;
     Ok(IrFeatureDefinition::Operation(IrFeatureOperation::Native {
         kind,
         parameters,
@@ -744,8 +767,11 @@ fn curve_expression_parameter_dependencies(
             {
                 continue;
             }
-            ctx.charge_collection_items(1, "creo curve-expression seen dependencies")?;
-            seen.insert(dependency);
+            ctx.insert_btree_set(
+                &mut seen,
+                dependency,
+                "creo curve-expression seen dependencies",
+            )?;
             ctx.reserve_vec(
                 &mut dependencies,
                 1,
@@ -904,15 +930,17 @@ pub(super) fn transfer_curve_expression_features(
                     )?))
                 }
                 other => other.and_then(|value| match value {
-                    crate::curve::CurveExpressionValue::Number(value) => Some(
-                        ParameterValue::Real(cadmpeg_ir::scalar::FiniteReal::new(*value)?),
-                    ),
+                    crate::curve::CurveExpressionValue::Number(value) => {
+                        Some(ParameterValue::Real(*value))
+                    }
                     crate::curve::CurveExpressionValue::Length(value) => Some(
-                        ParameterValue::Length(cadmpeg_ir::scalar::Length::new(*value)?),
+                        ParameterValue::Length(cadmpeg_ir::scalar::Length::new(value.get())?),
                     ),
-                    crate::curve::CurveExpressionValue::Angle(value) => Some(
-                        ParameterValue::Angle(cadmpeg_ir::scalar::Angle::new(value.to_radians())?),
-                    ),
+                    crate::curve::CurveExpressionValue::Angle(value) => {
+                        Some(ParameterValue::Angle(cadmpeg_ir::scalar::Angle::new(
+                            value.get().to_radians(),
+                        )?))
+                    }
                     crate::curve::CurveExpressionValue::Quantity(_)
                     | crate::curve::CurveExpressionValue::String(_) => None,
                 }),
@@ -1057,8 +1085,8 @@ pub(super) fn transfer_curve_expression_features(
                 Some(IrFeatureDefinition::Operation(
                     IrFeatureOperation::HelixNativeAxis {
                         axis_native_ref: cadmpeg_core::text::NonBlankString::new(axis_id)?,
-                        axial_rise: Length::new(helix.height)?,
-                        pitch: Length::new(helix.height / helix.revolutions.get())?,
+                        axial_rise: Length::new(helix.height.get())?,
+                        pitch: Length::new(helix.height.get() / helix.revolutions.get())?,
                         revolutions: helix.revolutions,
                         start_angle: helix.start_angle,
                         clockwise: helix.clockwise,

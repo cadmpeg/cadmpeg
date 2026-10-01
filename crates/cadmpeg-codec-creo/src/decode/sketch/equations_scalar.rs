@@ -654,9 +654,9 @@ pub(super) fn merge_scalar_value_candidate(
     if !value.is_finite() {
         return Ok(());
     }
+    ctx.admit_btree_entry(values, &variable, "creo section scalar value nodes")?;
     match values.entry(variable) {
         std::collections::btree_map::Entry::Vacant(entry) => {
-            ctx.charge_collection_items(1, "creo section scalar value nodes")?;
             entry.insert(Some(value));
         }
         std::collections::btree_map::Entry::Occupied(mut entry) => {
@@ -752,10 +752,12 @@ pub(super) fn section_equation_scalar_seed_values(
                 merge_scalar_value_candidate(ctx, &mut values, variable, value)?;
             }
             Some(_) => {
-                if !values.contains_key(&variable) {
-                    ctx.charge_collection_items(1, "creo section scalar seed nodes")?;
-                }
-                values.insert(variable, None);
+                ctx.insert_btree_map(
+                    &mut values,
+                    variable,
+                    None,
+                    "creo section scalar seed nodes",
+                )?;
             }
             None => {}
         }
@@ -851,20 +853,19 @@ pub(super) fn propagate_section_equation_scalar_equality_values(
         if conflicting {
             for variable in component {
                 if values.get(&variable) != Some(&None) {
-                    if !values.contains_key(&variable) {
-                        ctx.charge_collection_items(1, "creo propagated scalar nodes")?;
-                    }
-                    values.insert(variable, None);
+                    ctx.insert_btree_map(values, variable, None, "creo propagated scalar nodes")?;
                     changed = true;
                 }
             }
         } else if let Some(value) = component_value {
             for variable in component {
                 if values.get(&variable) != Some(&Some(value)) {
-                    if !values.contains_key(&variable) {
-                        ctx.charge_collection_items(1, "creo propagated scalar nodes")?;
-                    }
-                    values.insert(variable, Some(value));
+                    ctx.insert_btree_map(
+                        values,
+                        variable,
+                        Some(value),
+                        "creo propagated scalar nodes",
+                    )?;
                     changed = true;
                 }
             }
@@ -1059,8 +1060,12 @@ pub(super) fn section_equation_scalar_values_from_coordinates(
     let mut resolved = BTreeMap::new();
     for (variable, value) in derived {
         if let Some(value) = value {
-            ctx.charge_collection_items(1, "creo section resolved scalar nodes")?;
-            resolved.insert(variable, value);
+            ctx.insert_btree_map(
+                &mut resolved,
+                variable,
+                value,
+                "creo section resolved scalar nodes",
+            )?;
         }
     }
     Ok(resolved)
@@ -1208,14 +1213,9 @@ fn insert_scalar_adjacency(
     first: SectionScalarVariable,
     second: SectionScalarVariable,
 ) -> Result<(), CodecError> {
-    if !adjacency.contains_key(&first) {
-        ctx.charge_collection_items(1, "creo section scalar adjacency nodes")?;
-    }
+    ctx.admit_btree_entry(adjacency, &first, "creo section scalar adjacency nodes")?;
     let neighbors = adjacency.entry(first).or_default();
-    if !neighbors.contains(&second) {
-        ctx.charge_collection_items(1, "creo section scalar adjacency edges")?;
-        neighbors.insert(second);
-    }
+    ctx.insert_btree_set(neighbors, second, "creo section scalar adjacency edges")?;
     Ok(())
 }
 
@@ -1225,14 +1225,16 @@ fn scalar_equality_components(
 ) -> Result<Vec<BTreeSet<SectionScalarVariable>>, CodecError> {
     let mut remaining = BTreeSet::new();
     for variable in adjacency.keys().copied() {
-        ctx.charge_collection_items(1, "creo section scalar remaining nodes")?;
-        remaining.insert(variable);
+        ctx.insert_btree_set(
+            &mut remaining,
+            variable,
+            "creo section scalar remaining nodes",
+        )?;
     }
     let mut components = Vec::new();
     while let Some(seed) = remaining.pop_first() {
         let mut component = BTreeSet::new();
-        ctx.charge_collection_items(1, "creo section scalar component nodes")?;
-        component.insert(seed);
+        ctx.insert_btree_set(&mut component, seed, "creo section scalar component nodes")?;
         let mut pending = std::collections::VecDeque::new();
         ctx.push_back(&mut pending, seed, "creo section scalar pending nodes")?;
         while let Some(variable) = pending.pop_front() {
@@ -1242,9 +1244,11 @@ fn scalar_equality_components(
                 .flat_map(|neighbors| neighbors.iter())
                 .copied()
             {
-                if !component.contains(&neighbor) {
-                    ctx.charge_collection_items(1, "creo section scalar component nodes")?;
-                    component.insert(neighbor);
+                if ctx.insert_btree_set(
+                    &mut component,
+                    neighbor,
+                    "creo section scalar component nodes",
+                )? {
                     remaining.remove(&neighbor);
                     ctx.push_back(&mut pending, neighbor, "creo section scalar pending nodes")?;
                 }
@@ -1270,18 +1274,14 @@ fn scalar_equality_values_for_components(
         let variable = (row.variable_type, row.key);
         match row.value.value() {
             Some(value) if value.is_finite() => {
-                if !values.contains_key(&variable) {
-                    ctx.charge_collection_items(1, "creo section scalar sample nodes")?;
-                }
+                ctx.admit_btree_entry(&values, &variable, "creo section scalar sample nodes")?;
                 let samples = values.entry(variable).or_default();
                 ctx.reserve_vec(samples, 1, "creo section scalar samples")?;
                 samples.push(value);
             }
-            Some(_) if !invalid.contains(&variable) => {
-                ctx.charge_collection_items(1, "creo section invalid scalar nodes")?;
-                invalid.insert(variable);
+            Some(_) => {
+                ctx.insert_btree_set(&mut invalid, variable, "creo section invalid scalar nodes")?;
             }
-            Some(_) => {}
             None => {}
         }
     }
@@ -1308,10 +1308,12 @@ fn scalar_equality_values_for_components(
             }
         };
         for variable in component.iter().copied() {
-            if !resolved.contains_key(&variable) {
-                ctx.charge_collection_items(1, "creo section reconciled scalar nodes")?;
-            }
-            resolved.insert(variable, value);
+            ctx.insert_btree_map(
+                &mut resolved,
+                variable,
+                value,
+                "creo section reconciled scalar nodes",
+            )?;
         }
     }
     Ok(resolved)
@@ -1324,8 +1326,12 @@ fn section_equation_scalar_equalities(
     let mut equalities = BTreeMap::new();
     for (variable, value) in section_equation_scalar_equality_values(ctx, definition)? {
         if let Ok(Some(value)) = value {
-            ctx.charge_collection_items(1, "creo section scalar equality nodes")?;
-            equalities.insert(variable, value);
+            ctx.insert_btree_map(
+                &mut equalities,
+                variable,
+                value,
+                "creo section scalar equality nodes",
+            )?;
         }
     }
     Ok(equalities)
@@ -1582,8 +1588,12 @@ pub(in crate::decode) fn resolved_section_scalar_values(
         .unwrap_or_default();
     let mut values = BTreeMap::<SectionScalarVariable, Option<f64>>::new();
     for (variable, value) in section_equation_scalar_equalities(ctx, definition)? {
-        ctx.charge_collection_items(1, "creo resolved scalar candidate nodes")?;
-        values.insert(variable, Some(value));
+        ctx.insert_btree_map(
+            &mut values,
+            variable,
+            Some(value),
+            "creo resolved scalar candidate nodes",
+        )?;
     }
     for (variable, value) in
         section_equation_scalar_values_from_coordinates(ctx, definition, &coordinates)?
@@ -1651,8 +1661,12 @@ pub(in crate::decode) fn resolved_section_scalar_values(
     let mut resolved = BTreeMap::new();
     for (variable, value) in values {
         if let Some(value) = value {
-            ctx.charge_collection_items(1, "creo resolved scalar output nodes")?;
-            resolved.insert(variable, value);
+            ctx.insert_btree_map(
+                &mut resolved,
+                variable,
+                value,
+                "creo resolved scalar output nodes",
+            )?;
         }
     }
     Ok(resolved)

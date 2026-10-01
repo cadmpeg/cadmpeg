@@ -11,10 +11,12 @@ pub(crate) fn parasolid_payload(description: &str, schema: &str) -> Vec<u8> {
 pub(crate) fn parasolid_with_body(description: &str, schema: &str, body: &[u8]) -> Vec<u8> {
     let mut b = Vec::new();
     b.extend_from_slice(&[b'P', b'S', 0x00, 0x00]);
-    b.extend_from_slice(&(description.len() as u16).to_be_bytes());
+    b.extend_from_slice(
+        &(u16::try_from(description.len()).expect("length fits u16")).to_be_bytes(),
+    );
     b.extend_from_slice(description.as_bytes());
     b.extend_from_slice(&[0x00, 0x00]); // padding
-    b.push(schema.len() as u8);
+    b.push(u8::try_from(schema.len()).expect("length fits u8"));
     b.extend_from_slice(schema.as_bytes());
     b.extend_from_slice(body);
     b
@@ -355,7 +357,10 @@ pub(crate) fn sphere_existing_seam_body() -> Vec<u8> {
 
 pub(crate) fn f64_array(tag: u8, attr: u16, values: &[f64]) -> Vec<u8> {
     let mut b = vec![0x00, tag, 0x2b];
-    be32(&mut b, values.len() as u32);
+    be32(
+        &mut b,
+        u32::try_from(values.len()).expect("length fits u32"),
+    );
     be16(&mut b, attr);
     for value in values {
         bef64(&mut b, *value);
@@ -365,7 +370,10 @@ pub(crate) fn f64_array(tag: u8, attr: u16, values: &[f64]) -> Vec<u8> {
 
 pub(crate) fn u16_array(attr: u16, values: &[u16]) -> Vec<u8> {
     let mut b = vec![0x00, 0x7f, 0x2b];
-    be32(&mut b, values.len() as u32);
+    be32(
+        &mut b,
+        u32::try_from(values.len()).expect("length fits u32"),
+    );
     be16(&mut b, attr);
     for value in values {
         be16(&mut b, *value);
@@ -749,7 +757,10 @@ pub(crate) const FACE_COLOR_DEFINITION_ID: u16 = 16;
 pub(crate) fn face_color_definition() -> Vec<u8> {
     let family = b"SDL/TYSA_COLOUR";
     let mut b = vec![0x00, 0x4f];
-    be32(&mut b, family.len() as u32);
+    be32(
+        &mut b,
+        u32::try_from(family.len()).expect("length fits u32"),
+    );
     be16(&mut b, 15);
     b.extend_from_slice(family);
     b.extend_from_slice(&[0x00, 0x50]);
@@ -759,7 +770,7 @@ pub(crate) fn face_color_definition() -> Vec<u8> {
 }
 
 pub(crate) fn entity51(flags: u32, attr: u16, disc: u16, slots: &[u16]) -> Vec<u8> {
-    let slot_count = match flags as u8 {
+    let slot_count = match u8::try_from(flags).expect("flags fit u8") {
         1 | 3 => 6,
         2 => 7,
         4 => 9,
@@ -989,7 +1000,7 @@ pub(crate) fn suffix_prefixed_edge_triangle_body() -> Vec<u8> {
 
 fn typed_ref(bytes: &mut Vec<u8>, value: u32) {
     assert!(value <= 0x7ffe, "synthetic typed reference must fit u16");
-    be16(bytes, value as u16);
+    be16(bytes, u16::try_from(value).expect("value fits u16"));
 }
 
 fn typed_prefix(bytes: &mut Vec<u8>, tag: [u8; 2], attr: u16, node_id: u32) {

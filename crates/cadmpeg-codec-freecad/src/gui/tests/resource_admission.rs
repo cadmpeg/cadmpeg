@@ -1229,7 +1229,7 @@ fn y4_2_gui_xml_tree_is_admitted_before_allocation() {
         error,
         cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
-                && limit.operation == "FCStd GUI XML node tree"
+                && limit.operation == "FreeCAD XML tree"
     ));
 }
 

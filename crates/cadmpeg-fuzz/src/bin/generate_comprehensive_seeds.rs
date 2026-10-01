@@ -77,11 +77,11 @@ fn generate_sldprt_seeds() -> Result<(), SeedError> {
         ),
         (
             "with_nurbs_curve",
-            seeds::sldprt::sldprt_with_body(&sldprt::triangle_with_nurbs_curve())?,
+            seeds::sldprt::sldprt_with_body(&sldprt::triangle_with_nurbs_curve()?)?,
         ),
         (
             "with_nurbs_surface",
-            seeds::sldprt::sldprt_with_body(&sldprt::triangle_with_nurbs_surface())?,
+            seeds::sldprt::sldprt_with_body(&sldprt::triangle_with_nurbs_surface()?)?,
         ),
         (
             "face_on_untyped_surface",
@@ -171,12 +171,12 @@ mod sldprt {
         f.extend_from_slice(&make_block(
             0x20,
             "Contents/Config-0-Partition",
-            &parasolid_with_body("partition body", "SCH_SW_33103_11000", partition),
+            &parasolid_with_body("partition body", "SCH_SW_33103_11000", partition)?,
         )?);
         f.extend_from_slice(&make_block(
             0x21,
             "Contents/Config-0-Deltas",
-            &parasolid_with_body("deltas body", "SCH_SW_33103_11000", &[]),
+            &parasolid_with_body("deltas body", "SCH_SW_33103_11000", &[])?,
         )?);
         Ok(f)
     }
@@ -349,27 +349,35 @@ mod sldprt {
         body
     }
 
-    fn f64_array(tag: u8, attr: u16, values: &[f64]) -> Vec<u8> {
+    fn f64_array(tag: u8, attr: u16, values: &[f64]) -> std::io::Result<Vec<u8>> {
         let mut b = vec![0x00, tag, 0x2b];
-        be32(&mut b, values.len() as u32);
+        be32(
+            &mut b,
+            u32::try_from(values.len())
+                .map_err(|_| std::io::Error::other("array length fits u32"))?,
+        );
         be16(&mut b, attr);
         for value in values {
             bef64(&mut b, *value);
         }
-        b
+        Ok(b)
     }
 
-    fn u16_array(attr: u16, values: &[u16]) -> Vec<u8> {
+    fn u16_array(attr: u16, values: &[u16]) -> std::io::Result<Vec<u8>> {
         let mut b = vec![0x00, 0x7f, 0x2b];
-        be32(&mut b, values.len() as u32);
+        be32(
+            &mut b,
+            u32::try_from(values.len())
+                .map_err(|_| std::io::Error::other("array length fits u32"))?,
+        );
         be16(&mut b, attr);
         for value in values {
             be16(&mut b, *value);
         }
-        b
+        Ok(b)
     }
 
-    pub(super) fn triangle_with_nurbs_curve() -> Vec<u8> {
+    pub(super) fn triangle_with_nurbs_curve() -> std::io::Result<Vec<u8>> {
         let mut body = triangle_body();
 
         let wrapper_attr = 170u16;
@@ -397,9 +405,9 @@ mod sldprt {
             0x2d,
             control_attr,
             &[0.0, 0.0, 0.0, 0.5, 1.0, 0.0, 1.0, 0.0, 0.0],
-        ));
-        b.extend(u16_array(mult_attr, &[3, 3]));
-        b.extend(f64_array(0x80, knot_attr, &[0.0, 1.0]));
+        )?);
+        b.extend(u16_array(mult_attr, &[3, 3])?);
+        b.extend(f64_array(0x80, knot_attr, &[0.0, 1.0])?);
         body.extend(b);
 
         // The body this function just built carries the edge tag, so the
@@ -408,10 +416,10 @@ mod sldprt {
             body[edge + 24..edge + 26].copy_from_slice(&170u16.to_be_bytes());
         }
 
-        body
+        Ok(body)
     }
 
-    pub(super) fn triangle_with_nurbs_surface() -> Vec<u8> {
+    pub(super) fn triangle_with_nurbs_surface() -> std::io::Result<Vec<u8>> {
         let mut body = triangle_body();
 
         let wrapper_attr = 180u16;
@@ -448,11 +456,11 @@ mod sldprt {
             0x2d,
             control_attr,
             &[0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0, 1.0, 1.0, 0.5],
-        ));
-        b.extend(u16_array(u_mult_attr, &[2, 2]));
-        b.extend(u16_array(v_mult_attr, &[2, 2]));
-        b.extend(f64_array(0x80, u_knot_attr, &[0.0, 1.0]));
-        b.extend(f64_array(0x80, v_knot_attr, &[0.0, 1.0]));
+        )?);
+        b.extend(u16_array(u_mult_attr, &[2, 2])?);
+        b.extend(u16_array(v_mult_attr, &[2, 2])?);
+        b.extend(f64_array(0x80, u_knot_attr, &[0.0, 1.0])?);
+        b.extend(f64_array(0x80, v_knot_attr, &[0.0, 1.0])?);
         body.extend(b);
 
         // The body this function just built carries the bridge tag, so the
@@ -461,7 +469,7 @@ mod sldprt {
             body[bridge + 26..bridge + 28].copy_from_slice(&180u16.to_be_bytes());
         }
 
-        body
+        Ok(body)
     }
 
     pub(super) fn face_on_untyped_surface() -> Vec<u8> {
@@ -508,8 +516,11 @@ mod sldprt {
                 .expect("base SLDPRT seed")
                 .len();
             assert_eq!(&file[at..at + marker.len()], marker);
-            let name_len = cadmpeg_core::decode::View::u32_le_at(&file, at + 20)
-                .expect("material block name length") as usize;
+            let name_len = usize::try_from(
+                cadmpeg_core::decode::View::u32_le_at(&file, at + 20)
+                    .expect("material block name length"),
+            )
+            .expect("host name length");
             let payload_len = cadmpeg_core::decode::View::u32_le_at(&file, at + 16)
                 .expect("material block payload length");
             let payload_len = usize::try_from(payload_len).expect("host payload length");
@@ -539,7 +550,7 @@ fn generate_catia_seeds() -> Result<(), SeedError> {
             "zero_entity_cylinder",
             catia::zero_entity_cylinder_catpart(),
         ),
-        ("zero_entity_nurbs", catia::zero_entity_nurbs_catpart()),
+        ("zero_entity_nurbs", catia::zero_entity_nurbs_catpart()?),
         ("standard_nested", seeds::catia::standard_catpart()?),
         ("e5_circle", catia::e5_catpart()?),
     ];
@@ -580,7 +591,7 @@ mod catia {
         f
     }
 
-    pub(super) fn zero_entity_nurbs_catpart() -> Vec<u8> {
+    pub(super) fn zero_entity_nurbs_catpart() -> std::io::Result<Vec<u8>> {
         let mut f = vec![0u8; 16];
         f[..8].copy_from_slice(OUTER_MAGIC);
         let record = f.len();
@@ -603,11 +614,15 @@ mod catia {
         write_token(&mut f, 71, 3);
         for i in 0..9 {
             let at = 79 + i * 24;
-            write_f64(&mut f, at, i as f64);
-            write_f64(&mut f, at + 8, (i / 3) as f64);
-            write_f64(&mut f, at + 16, (i % 3) as f64);
+            let exact = |value: usize| {
+                cadmpeg_core::convert::f64_from_index(value)
+                    .ok_or_else(|| std::io::Error::other("small index is exact"))
+            };
+            write_f64(&mut f, at, exact(i)?);
+            write_f64(&mut f, at + 8, exact(i / 3)?);
+            write_f64(&mut f, at + 16, exact(i % 3)?);
         }
-        f
+        Ok(f)
     }
 
     fn e5_circle_stream() -> Vec<u8> {
@@ -635,23 +650,27 @@ mod catia {
         let main = e5_circle_stream();
         let surf = vec![0u8];
         let main_off = 16u32;
-        let surf_off = main_off + main.len() as u32;
-        let dir_rel = surf_off + surf.len() as u32;
+        let main_len = u32::try_from(main.len()).map_err(std::io::Error::other)?;
+        let surf_len = u32::try_from(surf.len()).map_err(std::io::Error::other)?;
+        let surf_off = main_off + main_len;
+        let dir_rel = surf_off + surf_len;
         let mut dir = Vec::new();
         dir.extend_from_slice(DIR_MAGIC);
-        dir.extend_from_slice(&descriptor("MainDataStream", main_off, main.len() as u32)?);
-        dir.extend_from_slice(&descriptor("SurfacicReps", surf_off, surf.len() as u32)?);
+        dir.extend_from_slice(&descriptor("MainDataStream", main_off, main_len)?);
+        dir.extend_from_slice(&descriptor("SurfacicReps", surf_off, surf_len)?);
         dir.extend_from_slice(b"CB__END");
         let mut inner = Vec::new();
         inner.extend_from_slice(OUTER_MAGIC);
         inner.extend_from_slice(&be32(dir_rel));
-        inner.extend_from_slice(&be32(dir.len() as u32));
+        let dir_len = u32::try_from(dir.len()).map_err(std::io::Error::other)?;
+        inner.extend_from_slice(&be32(dir_len));
         inner.extend_from_slice(&main);
         inner.extend_from_slice(&surf);
         inner.extend_from_slice(&dir);
         let mut file = Vec::new();
         file.extend_from_slice(OUTER_MAGIC);
-        file.extend_from_slice(&be32(16 + inner.len() as u32));
+        let inner_len = u32::try_from(inner.len()).map_err(std::io::Error::other)?;
+        file.extend_from_slice(&be32(16 + inner_len));
         file.extend_from_slice(&be32(0));
         file.extend_from_slice(&inner);
         Ok(file)
@@ -880,7 +899,9 @@ mod nx {
 
         for (tag, reference, values) in [(127, 30, vec![2u16, 2]), (127, 31, vec![2, 2])] {
             let mut array = record(tag, 8 + values.len() * 2)?;
-            array[4..6].copy_from_slice(&(values.len() as u16).to_be_bytes());
+            let count = u16::try_from(values.len())
+                .map_err(|error| CodecError::InvalidInput(error.to_string()))?;
+            array[4..6].copy_from_slice(&count.to_be_bytes());
             put_ref(&mut array, 6, reference);
             for (index, value) in values.into_iter().enumerate() {
                 put_ref(&mut array, 8 + index * 2, value);

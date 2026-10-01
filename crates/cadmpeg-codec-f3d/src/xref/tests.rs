@@ -69,7 +69,7 @@ fn docstruct_json_refuses_materialized_limit() {
         let error = super::docstruct(&ctx, scan).unwrap_err();
         assert!(
             matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.operation == "preflight F3D properties JSON")
+            if limit.operation == "parse F3D properties JSON")
         );
     });
 }
@@ -101,7 +101,7 @@ fn docstruct_json_refuses_recursion_limit() {
         let error = super::docstruct(&ctx, scan).unwrap_err();
         assert!(
             matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.operation == "scan F3D properties JSON")
+            if limit.operation == "parse F3D properties JSON")
         );
     });
 }
@@ -140,10 +140,13 @@ fn docstruct_subtype_refuses_retained_limit() {
 
 #[test]
 fn redirections_design_collection_refuses_limit() {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let ctx = redirections_limit_context(&arena, 0);
     let bytes = redirections_json("root.f3d", &[("part.f3d", "role")]);
-    let error = super::parse(&ctx, bytes.as_bytes()).unwrap_err();
+    let error = crate::test_support::resource_refusal_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "admit F3D xref designs",
+        0,
+        |ctx| super::parse(ctx, bytes.as_bytes()),
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "admit F3D xref designs")
@@ -168,10 +171,13 @@ fn redirections_json_refuses_materialized_limit() {
 
 #[test]
 fn redirections_reference_collection_refuses_limit() {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let ctx = redirections_limit_context(&arena, 2);
     let bytes = redirections_json("root.f3d", &[("part.f3d", "role")]);
-    let error = super::parse(&ctx, bytes.as_bytes()).unwrap_err();
+    let error = crate::test_support::resource_refusal_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "admit F3D xref references",
+        0,
+        |ctx| super::parse(ctx, bytes.as_bytes()),
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "admit F3D xref references")
@@ -180,14 +186,13 @@ fn redirections_reference_collection_refuses_limit() {
 
 #[test]
 fn redirections_design_id_refuses_retained_limit() {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_retained_bytes = 0;
-    let ctx = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .unwrap()
-        .0;
     let bytes = redirections_json("root.f3d", &[]);
-    let error = super::parse(&ctx, bytes.as_bytes()).unwrap_err();
+    let error = crate::test_support::resource_refusal_at(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        "retain F3D xref record ID",
+        0,
+        |ctx| super::parse(ctx, bytes.as_bytes()),
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "retain F3D xref record ID")
@@ -196,14 +201,13 @@ fn redirections_design_id_refuses_retained_limit() {
 
 #[test]
 fn redirections_reference_id_refuses_retained_limit() {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_retained_bytes = 2 * u64_from_index("f3d:xref:design#0".len());
-    let ctx = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .unwrap()
-        .0;
     let bytes = redirections_json("root.f3d", &[("part.f3d", "role")]);
-    let error = super::parse(&ctx, bytes.as_bytes()).unwrap_err();
+    let error = crate::test_support::resource_refusal_at(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        "retain F3D xref record ID",
+        2,
+        |ctx| super::parse(ctx, bytes.as_bytes()),
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "retain F3D xref record ID")
@@ -504,7 +508,19 @@ fn xref_stream_scope_refuses_retained_limit() {
     let mut table = super::parse(&scan_ctx, table_bytes.as_bytes()).unwrap();
     let limit_arena = cadmpeg_core::decode::DecodeArena::new();
     let mut limit_policy = cadmpeg_core::decode::DecodePolicy::service();
-    limit_policy.limits.max_retained_bytes = 498;
+    // MetaStream parsing and serializer lookup retain their header fields.
+    let meta_text = "Design".len()
+        + 36
+        + "FusionDesignSegmentType".len()
+        + "Fusion".len()
+        + 36
+        + "Component".len()
+        + "Design".len()
+        + 36;
+    // Both placement attempts retain one class tag and two copies of the role.
+    let path_text = 2 * ("256".len() + 2 * XREF_ROLE.len());
+    let cache_key = "FusionAssetName[Active]/Design1/MetaStream.dat".len();
+    limit_policy.limits.max_retained_bytes = u64_from_index(meta_text + path_text + cache_key);
     let limit_ctx =
         cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &limit_arena, &limit_policy)
             .unwrap()
@@ -613,7 +629,7 @@ fn redirections_keep_neutron_role_and_data_independent() {
     )
     .expect("redirections JSON");
     assert_eq!(table.references.len(), 1);
-    assert_eq!(table.references[0].neutron_role, "role-guid");
+    assert_eq!(table.references[0].neutron_role.as_str(), "role-guid");
     assert_eq!(table.references[0].neutron_data, "data-guid");
 }
 
@@ -702,7 +718,7 @@ fn redirections_property_keys_are_not_collapsed_before_admission() {
                 let native = f3d_native(decoded.ir());
                 assert_eq!(native.xref_references.len(), usize::from(valid), "{label}");
                 if valid {
-                    assert_eq!(native.xref_references[0].neutron_role, ROLE);
+                    assert_eq!(native.xref_references[0].neutron_role.as_str(), ROLE);
                     assert_eq!(native.xref_references[0].neutron_data,
                         if label == "empty independent data" { "" } else { "independent" });
                 }
@@ -731,9 +747,9 @@ fn external_reference_placements_project_as_root_occurrences_in_millimetres() {
             id: "f3d:xref:reference#0-occurrence-0".into(),
             ordinal: 0,
             occurrence_ordinal: 0,
-            from: "root.f3d".into(),
-            relative_path: "part.f3d".into(),
-            neutron_role: "role".into(),
+            from: "root.f3d".to_owned().try_into().unwrap(),
+            relative_path: "part.f3d".to_owned().try_into().unwrap(),
+            neutron_role: "role".to_owned().try_into().unwrap(),
             neutron_data: "data".into(),
             transform: Some(transform.try_into().unwrap()),
         }],
@@ -857,7 +873,7 @@ fn reflected_matrix_is_reported_by_complete_document_admission() {
 #[test]
 fn component_reference_data_is_an_open_json_object() {
     let ctx = cadmpeg_test_support::service_decode_context();
-    let value = super::parse_component_reference_data(
+    let (value, _reservation) = super::parse_component_reference_data(
         &ctx,
         br#"{"schema":7,"references":[{"id":"component"}],"extension":{"x":true}}"#,
     )
@@ -880,6 +896,23 @@ fn component_reference_data_json_refuses_collection_limit() {
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "parse F3D component reference JSON")
     );
+}
+
+#[test]
+fn invalid_json_utf8_refuses_work_before_validation() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let cadmpeg_core::CodecError::ResourceLimit(limit) =
+        super::parse_component_reference_data(&ctx, &[0xff]).unwrap_err()
+    else {
+        panic!("work admission must precede malformed UTF-8");
+    };
+    assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+    assert_eq!(limit.operation, "validate F3D JSON UTF-8");
+    assert!(ctx.charge_work(0, "fused context").is_err());
 }
 
 /// One occurrence-placement record: a target path whose last element
@@ -1108,9 +1141,16 @@ fn repeated_target_placements_decode_identity_and_matrix_forms() {
     assert_eq!(matrix_4.len(), 823);
     assert_eq!(matrix_5.len(), 823);
     assert_eq!(matrix_6.len(), 823);
-    let (matrix_role, _, matrix_offset) =
-        super::repeated_target_component_insert(&matrix_6, 0, matrix_6.len(), 15, matrix)
-            .expect("matrix carrier matching the scope transform");
+    let (matrix_role, _, matrix_offset) = super::repeated_target_component_insert(
+        &cadmpeg_test_support::service_decode_context(),
+        &matrix_6,
+        0,
+        matrix_6.len(),
+        15,
+        matrix,
+    )
+    .unwrap()
+    .expect("matrix carrier matching the scope transform");
     assert_eq!(matrix_role, role);
     assert!(matrix_offset.is_some());
     let mut bytes = identity_1;
@@ -1142,6 +1182,7 @@ fn repeated_target_placements_decode_identity_and_matrix_forms() {
     let local_carrier =
         repeated_target_occurrence_record_with_path_role(path_role, &retained_role, 16, 1, None);
     let (decoded_role, role_offset, transform_offset) = super::repeated_target_component_insert(
+        &cadmpeg_test_support::service_decode_context(),
         &local_carrier,
         0,
         local_carrier.len(),
@@ -1153,6 +1194,7 @@ fn repeated_target_placements_decode_identity_and_matrix_forms() {
             [0.0, 0.0, 0.0, 1.0],
         ],
     )
+    .unwrap()
     .expect("identity carrier with an independent retained role");
     assert_eq!(decoded_role, retained_role);
     assert_eq!(transform_offset, None);
@@ -1867,8 +1909,8 @@ fn assembly_root_without_brep_is_not_a_blocking_loss() {
         crate::native::F3dNative::load(decoded.ir().native.namespace("f3d").unwrap()).unwrap();
     assert_eq!(native.xref_designs.len(), 2);
     assert_eq!(native.xref_references.len(), 1);
-    assert_eq!(native.xref_references[0].relative_path, "comp.f3d");
-    assert_eq!(native.xref_references[0].neutron_role, XREF_ROLE);
+    assert_eq!(native.xref_references[0].relative_path.as_str(), "comp.f3d");
+    assert_eq!(native.xref_references[0].neutron_role.as_str(), XREF_ROLE);
     let source = decoded.ir().source.as_ref().unwrap();
     assert_eq!(
         source.attributes.get("docstruct_type").map(String::as_str),
@@ -1898,6 +1940,38 @@ fn redirections_leaf_form_parses_empty_object_references() {
     )
     .unwrap();
     assert_eq!(table.designs.len(), 1);
-    assert_eq!(table.designs[0].target_file_name, "part.f3d");
+    assert_eq!(table.designs[0].target_file_name.as_str(), "part.f3d");
     assert!(table.references.is_empty());
 }
+
+#[test]
+fn repeated_target_component_insert_preserves_caller_refusal() {
+    let role = "aaaabbbb-cccc-dddd-eeee-ffff00001111";
+    let bytes = repeated_target_occurrence_record(role, 10, 1, None);
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    crate::test_support::with_decode_policy(&policy, |ctx| {
+        let error = super::repeated_target_component_insert(
+            ctx,
+            &bytes,
+            0,
+            bytes.len(),
+            10,
+            [
+                [1.0, 0.0, 0.0, 0.0],
+                [0.0, 1.0, 0.0, 0.0],
+                [0.0, 0.0, 1.0, 0.0],
+                [0.0, 0.0, 0.0, 1.0],
+            ],
+        )
+        .unwrap_err();
+        let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
+            panic!("placement must preserve the resource refusal");
+        };
+        assert_eq!(Some(limit), ctx.resource_refusal());
+    });
+}
+
+mod retained_text;
+
+mod schema;

@@ -310,12 +310,10 @@ impl<'a, 'ctx> ParameterResolver<'a, 'ctx> {
         let target = target_sequence.and_then(|sequence| self.directory.get(&sequence).copied());
         let resolution = classify(target_sequence, target, accepts);
         let mut graph = self.edges.borrow_mut();
+        self.ctx
+            .admit_btree_entry(&graph, &source, "iges parameter resolver edge groups")?;
         let edges = match graph.entry(source) {
-            Entry::Vacant(slot) => {
-                self.ctx
-                    .charge_collection_items(1, "iges parameter resolver edge groups")?;
-                slot.insert(Vec::new())
-            }
+            Entry::Vacant(slot) => slot.insert(Vec::new()),
             Entry::Occupied(slot) => slot.into_mut(),
         };
         self.ctx
@@ -431,10 +429,10 @@ impl<'a, 'ctx> ParameterResolver<'a, 'ctx> {
         graph: &mut BTreeMap<u32, Vec<ReferenceEdge>>,
     ) -> Result<(), CodecError> {
         for (source, mut edges) in self.edges.into_inner() {
+            self.ctx
+                .admit_btree_entry(graph, &source, "iges parameter resolver graph groups")?;
             match graph.entry(source) {
                 Entry::Vacant(slot) => {
-                    self.ctx
-                        .charge_collection_items(1, "iges parameter resolver graph groups")?;
                     slot.insert(edges);
                 }
                 Entry::Occupied(mut slot) => {

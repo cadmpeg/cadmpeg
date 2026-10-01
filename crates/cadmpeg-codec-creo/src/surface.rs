@@ -2608,10 +2608,10 @@ fn outline_planes(
             offset: record.offset,
         });
     }
-    crate::sort::stable_sort_by_key(
-        ctx,
+    ctx.stable_sort_by(
         result.as_mut_slice(),
-        |plane| plane.offset,
+        |left, right| left.offset.cmp(&right.offset),
+        |_| 0,
         "creo outline planes result ordering",
     )?;
     Ok(result)
@@ -2796,10 +2796,10 @@ pub(crate) fn positional_frame_planes(
             result.push(candidate.clone());
         }
     }
-    crate::sort::stable_sort_by_key(
-        ctx,
+    ctx.stable_sort_by(
         result.as_mut_slice(),
-        |plane| plane.offset,
+        |left, right| left.offset.cmp(&right.offset),
+        |_| 0,
         "creo positional frame planes result ordering",
     )?;
     Ok(result)
@@ -2882,28 +2882,30 @@ pub(crate) fn placed_outline_planes(
             frame_bound.push(plane);
         }
     }
-    crate::sort::stable_sort_by_key(
-        ctx,
+    ctx.stable_sort_by(
         frame_bound.as_mut_slice(),
-        |plane| plane.offset,
+        |left, right| left.offset.cmp(&right.offset),
+        |_| 0,
         "creo placed outline planes frame bound ordering",
     )?;
     let mut frame_bound_ids = BTreeSet::new();
     for plane in &frame_bound {
-        if !frame_bound_ids.contains(&plane.surface_id) {
-            ctx.charge_collection_items(1, "creo frame-bound outline ID nodes")?;
-            frame_bound_ids.insert(plane.surface_id);
-        }
+        ctx.insert_btree_set(
+            &mut frame_bound_ids,
+            plane.surface_id,
+            "creo frame-bound outline ID nodes",
+        )?;
     }
     let mut matrix_frame_ids = BTreeSet::new();
     for frame in frames
         .iter()
         .filter(|frame| uses_matrix_column_frame(frame))
     {
-        if !matrix_frame_ids.contains(&frame.surface_id) {
-            ctx.charge_collection_items(1, "creo matrix frame ID nodes")?;
-            matrix_frame_ids.insert(frame.surface_id);
-        }
+        ctx.insert_btree_set(
+            &mut matrix_frame_ids,
+            frame.surface_id,
+            "creo matrix frame ID nodes",
+        )?;
     }
     let mut result = outline_planes(ctx, envelopes)?;
     result.retain(|plane| {
@@ -2914,10 +2916,10 @@ pub(crate) fn placed_outline_planes(
         ctx.reserve_vec(&mut result, 1, "creo placed outline planes")?;
         result.push(plane);
     }
-    crate::sort::stable_sort_by_key(
-        ctx,
+    ctx.stable_sort_by(
         result.as_mut_slice(),
-        |plane| plane.offset,
+        |left, right| left.offset.cmp(&right.offset),
+        |_| 0,
         "creo placed outline planes result ordering",
     )?;
     Ok(result)
@@ -3013,10 +3015,10 @@ pub(crate) fn counted_row_bounds(
             }
         }
     }
-    crate::sort::stable_sort_by_key(
-        ctx,
+    ctx.stable_sort_by(
         result.as_mut_slice(),
-        |(row, _)| row.offset,
+        |(left, _), (right, _)| left.offset.cmp(&right.offset),
+        |_| 0,
         "creo counted row bounds result ordering",
     )?;
     Ok(result)
@@ -3155,19 +3157,19 @@ fn rows_with_boundaries(
             offset: id_start,
         });
     }
-    crate::sort::stable_sort_by_key(
-        ctx,
+    ctx.stable_sort_by(
         result.as_mut_slice(),
-        |row| row.offset,
+        |left, right| left.offset.cmp(&right.offset),
+        |_| 0,
         "creo rows with boundaries result ordering",
     )?;
     result.dedup_by_key(|row| row.offset);
     let mut id_counts = std::collections::BTreeMap::<u32, usize>::new();
     for row in &result {
+        ctx.admit_btree_entry(&id_counts, &row.id, "creo surface row ID nodes")?;
         match id_counts.entry(row.id) {
             std::collections::btree_map::Entry::Occupied(mut entry) => *entry.get_mut() += 1,
             std::collections::btree_map::Entry::Vacant(entry) => {
-                ctx.charge_collection_items(1, "creo surface row ID nodes")?;
                 entry.insert(1);
             }
         }
@@ -3301,7 +3303,7 @@ fn named_surface_value(
             crate::scalar::admitted_scalar_body(body, dimensions_end, values_start, slot_count)
                 .is_some()
         }) {
-            grid = arrays::DimensionedScalars::admit_empty(ctx, dimensions, count)?;
+            grid = arrays::DimensionedScalars::extent(dimensions, count);
         }
     }
     if let Some(value) =
@@ -3326,7 +3328,7 @@ fn parsed_named_surface_value(
     body: &[u8],
     cache: &scalar::ScalarCache,
     refusal: &mut ScalarBodyRefusal,
-    grid: Option<arrays::DimensionedScalars>,
+    grid: Option<arrays::ScalarExtent<[u32; 2]>>,
 ) -> Option<Result<SurfaceNamedValue, CodecError>> {
     if body.is_empty() {
         return Some(Ok(SurfaceNamedValue::Empty));
@@ -3406,17 +3408,13 @@ fn parsed_named_surface_value(
                 // value bytes, so the count cannot exceed the remaining bytes.
                 let remaining = body.get(values_start..)?;
                 bounded_len(u64::from(count), 1, remaining.len())?;
-                let mut array = match arrays::CountedScalars::admit_empty(ctx, count) {
-                    Ok(Some(array)) => array,
-                    Ok(None) => return None,
-                    Err(error) => return Some(Err(error)),
-                };
+                let extent = arrays::CountedScalars::extent(count)?;
                 let slots = match named_spline_scalar_slots(
                     ctx,
                     family,
                     name,
                     remaining,
-                    array.values().len(),
+                    extent.len(),
                     cache,
                     refusal,
                 ) {
@@ -3424,8 +3422,9 @@ fn parsed_named_surface_value(
                     Ok(None) => return None,
                     Err(error) => return Some(Err(error)),
                 };
-                array.fill_tokens(slots)?;
-                return Some(Ok(SurfaceNamedValue::CountedScalarArray(array)));
+                return arrays::CountedScalars::from_tokens(ctx, extent, slots)
+                    .map(|array| array.map(SurfaceNamedValue::CountedScalarArray))
+                    .transpose();
             }
             let mut values = Vec::new();
             for _ in 0..count {
@@ -3448,23 +3447,16 @@ fn parsed_named_surface_value(
             }
             if name == "params" {
                 let remaining = admitted_counted_parameter_body(body, values_start, count)?;
-                let mut array = match arrays::CountedScalars::admit_empty(ctx, count) {
-                    Ok(Some(array)) => array,
-                    Ok(None) => return None,
-                    Err(error) => return Some(Err(error)),
-                };
-                let slots = match counted_parameter_scalar_slots(
-                    ctx,
-                    remaining,
-                    array.values().len(),
-                    cache,
-                ) {
-                    Ok(Some(slots)) => slots,
-                    Ok(None) => return None,
-                    Err(error) => return Some(Err(error)),
-                };
-                array.fill_tokens(slots)?;
-                return Some(Ok(SurfaceNamedValue::CountedScalarArray(array)));
+                let extent = arrays::CountedScalars::extent(count)?;
+                let slots =
+                    match counted_parameter_scalar_slots(ctx, remaining, extent.len(), cache) {
+                        Ok(Some(slots)) => slots,
+                        Ok(None) => return None,
+                        Err(error) => return Some(Err(error)),
+                    };
+                return arrays::CountedScalars::from_tokens(ctx, extent, slots)
+                    .map(|array| array.map(SurfaceNamedValue::CountedScalarArray))
+                    .transpose();
             }
         }
     }
@@ -3479,8 +3471,8 @@ fn parsed_named_surface_value(
         let remaining = slot_count.and_then(|slot_count| {
             crate::scalar::admitted_scalar_body(body, dimensions_end, values_start, slot_count)
         })?;
-        let mut array = grid?;
-        let slot_count = array.values().len();
+        let extent = grid?;
+        let slot_count = extent.len();
         let spline_field = matches!(
             name,
             "i_pnts"
@@ -3491,7 +3483,7 @@ fn parsed_named_surface_value(
                 | "tangts"
                 | "end_tangts"
         );
-        if spline_field {
+        let array = if spline_field {
             let slots = match named_spline_scalar_slots(
                 ctx, family, name, remaining, slot_count, cache, refusal,
             ) {
@@ -3499,7 +3491,11 @@ fn parsed_named_surface_value(
                 Ok(None) => return None,
                 Err(error) => return Some(Err(error)),
             };
-            array.fill_tokens(slots)?;
+            match arrays::DimensionedScalars::from_tokens(ctx, extent, slots) {
+                Ok(Some(array)) => array,
+                Ok(None) => return None,
+                Err(error) => return Some(Err(error)),
+            }
         } else if name == "local_sys" {
             let values = match sequential_named_local_system_slots(
                 ctx, remaining, slot_count, cache, refusal,
@@ -3508,15 +3504,23 @@ fn parsed_named_surface_value(
                 Ok(None) => return None,
                 Err(error) => return Some(Err(error)),
             };
-            array.fill_values(values)?;
+            match arrays::DimensionedScalars::from_values(ctx, extent, values) {
+                Ok(Some(array)) => array,
+                Ok(None) => return None,
+                Err(error) => return Some(Err(error)),
+            }
         } else {
             let values = match scalar_slots(ctx, remaining, slot_count, cache, refusal) {
                 Ok(Some(values)) => values,
                 Ok(None) => return None,
                 Err(error) => return Some(Err(error)),
             };
-            array.fill_values(values)?;
-        }
+            match arrays::DimensionedScalars::from_values(ctx, extent, values) {
+                Ok(Some(array)) => array,
+                Ok(None) => return None,
+                Err(error) => return Some(Err(error)),
+            }
+        };
         return Some(Ok(SurfaceNamedValue::ScalarArray(array)));
     }
     if compact_integer_field {
@@ -3665,7 +3669,12 @@ fn named_prototype_frames<'a>(
                 named.push((token_offset, length));
             }
         }
-        named.sort_unstable();
+        ctx.sort_unstable_by(
+            &mut named,
+            Ord::cmp,
+            |_| 0,
+            "creo named prototype field position sort",
+        )?;
         named.dedup();
         let mut owned_scalar_end = close + 2;
         named.retain(|(token_offset, token_length)| {
@@ -3731,10 +3740,10 @@ fn named_prototype_frames<'a>(
         });
         search = close + 2;
     }
-    crate::sort::stable_sort_by_key(
-        ctx,
+    ctx.stable_sort_by(
         frames.as_mut_slice(),
-        |frame| frame.offset,
+        |left, right| left.offset.cmp(&right.offset),
+        |_| 0,
         "creo named prototype frames frames ordering",
     )?;
     Ok(frames)
@@ -4398,7 +4407,12 @@ fn inline_surface_suffix_body(
                 }
             }
         }
-        terminal_closes[..close_count].sort_unstable();
+        ctx.sort_unstable_by(
+            &mut terminal_closes[..close_count],
+            Ord::cmp,
+            |_| 0,
+            "creo terminal close sort",
+        )?;
         let mut previous_close = None;
         for relative_close in terminal_closes[..close_count].iter().copied() {
             if previous_close == Some(relative_close) {
@@ -5458,10 +5472,10 @@ fn contour_records_for_rows(
         ctx.reserve_vec(&mut records, chain.len(), "creo contour record aggregation")?;
         records.extend(chain);
     }
-    crate::sort::stable_sort_by_key(
-        ctx,
+    ctx.stable_sort_by(
         records.as_mut_slice(),
-        |record| record.offset,
+        |left, right| left.offset.cmp(&right.offset),
+        |_| 0,
         "creo contour records for rows records ordering",
     )?;
     Ok(records)
@@ -6053,10 +6067,10 @@ pub(crate) fn tabulated_cylinder_curve_replays(
             surface_row_offset: owner.offset,
         });
     }
-    crate::sort::stable_sort_by_key(
-        ctx,
+    ctx.stable_sort_by(
         replays.as_mut_slice(),
-        |replay| replay.offset,
+        |left, right| left.offset.cmp(&right.offset),
+        |_| 0,
         "creo tabulated cylinder curve replays replays ordering",
     )?;
     Ok(replays)
@@ -6283,8 +6297,8 @@ const MAX_COUNTED_PARAMETER_SLOTS_PER_BYTE: u64 = 3;
 /// [`MAX_COUNTED_PARAMETER_SLOTS_PER_BYTE`] slots come from one byte, and that
 /// walk answers only a parse ending on the last byte with exactly `count`
 /// slots, so a denser count states more slots than the bytes carry. The bound
-/// runs before [`arrays::CountedScalars::empty`], which allocates one slot per
-/// declared count from a compact integer the record states.
+/// runs before the counted token walk and final scalar construction, so an
+/// impossible count cannot allocate slot storage.
 fn admitted_counted_parameter_body(body: &[u8], values_start: usize, count: u32) -> Option<&[u8]> {
     let remaining = body.get(values_start..)?;
     let value_bytes = u64::from(count).div_ceil(MAX_COUNTED_PARAMETER_SLOTS_PER_BYTE);
@@ -6301,8 +6315,12 @@ fn counted_parameter_scalar_slots(
     let mut states = Vec::new();
     ctx.reserve_vec(&mut states, state_count, "creo_counted_parameter_slots")?;
     states.resize_with(state_count, BTreeMap::new);
-    ctx.charge_collection_items(1, "creo counted parameter initial state")?;
-    states[0].insert(0, CountedParameterParse::Unique(Vec::new()));
+    ctx.insert_btree_map(
+        &mut states[0],
+        0,
+        CountedParameterParse::Unique(Vec::new()),
+        "creo counted parameter initial state",
+    )?;
     for cursor in 0..body.len() {
         let current = std::mem::take(&mut states[cursor]);
         for (slots_used, parse) in current {
@@ -6451,9 +6469,9 @@ fn add_counted_parameter_state(
     slots_used: usize,
     candidate: CountedParameterParse,
 ) -> Result<(), CodecError> {
+    ctx.admit_btree_entry(states, &slots_used, "creo counted parameter state entries")?;
     match states.entry(slots_used) {
         std::collections::btree_map::Entry::Vacant(entry) => {
-            ctx.charge_collection_items(1, "creo counted parameter state entries")?;
             entry.insert(candidate);
         }
         std::collections::btree_map::Entry::Occupied(mut entry) => {
@@ -7577,10 +7595,10 @@ fn plane_envelopes_for_rows(
             offset: scalar_start,
         });
     }
-    crate::sort::stable_sort_by_key(
-        ctx,
+    ctx.stable_sort_by(
         envelopes.as_mut_slice(),
-        |envelope| envelope.offset,
+        |left, right| left.offset.cmp(&right.offset),
+        |_| 0,
         "creo plane envelopes for rows envelopes ordering",
     )?;
     Ok(envelopes)

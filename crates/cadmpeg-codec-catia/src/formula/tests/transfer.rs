@@ -1565,7 +1565,7 @@ fn decode_rejects_a_formula_exceeding_the_expression_depth_limit() {
     assert_eq!(boundary.ir().model.parameters.len(), 2);
 
     let expression = format!("{}#1_ /2", "+".repeat(129));
-    let decoded = CatiaCodec
+    let error = CatiaCodec
         .decode(
             &mut Cursor::new(standard_catpart_with_typed_formula_relation(
                 4,
@@ -1578,13 +1578,11 @@ fn decode_rejects_a_formula_exceeding_the_expression_depth_limit() {
             )),
             &DecodeOptions::default(),
         )
-        .expect("decode depth-limited formula");
-
-    let [input] = decoded.ir().model.parameters.as_slice() else {
-        panic!("only the independently typed input")
-    };
-    assert_eq!(input.name, "Thickness");
-    assert!(input.dependencies.is_empty());
+        .expect_err("formula local depth must refuse decode");
+    assert!(matches!(error,
+        cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "catia_formula_expression_local_depth"
+            && limit.limit == 128 && limit.additional == 1));
 }
 
 #[test]

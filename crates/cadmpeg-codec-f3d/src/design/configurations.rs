@@ -384,7 +384,12 @@ pub(crate) fn project_configurations(
             "f3d configuration activation rule property",
         )?;
     }
-    super::sort::sort_by(ctx, &mut projected, |left, right| left.id.cmp(&right.id))?;
+    ctx.stable_sort_by(
+        &mut projected,
+        |left, right| left.id.cmp(&right.id),
+        |value| value.id.as_str().len(),
+        "sort f3d configuration variants",
+    )?;
     Ok(projected)
 }
 
@@ -1307,7 +1312,7 @@ mod tests {
         });
     }
     #[test]
-    fn configuration_ordering_refuses_sort_collection_limit() {
+    fn configuration_ordering_refuses_sort_scratch_limit() {
         use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
         use cadmpeg_core::CodecError;
         let names: Vec<_> = (0..21).map(|index| format!("v{index:02}")).collect();
@@ -1331,13 +1336,14 @@ mod tests {
         .unwrap();
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::default();
-        // The 21 projected variants precede the 21 sorting permutation entries.
-        policy.limits.max_collection_items = 41;
+        // The sort scratch holds two index vectors for the 21 projected variants.
+        policy.limits.max_materialized_bytes =
+            u64::try_from(21 * 2 * std::mem::size_of::<usize>() - 1).unwrap();
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         assert!(
             matches!(project_configurations(&ctx, std::slice::from_ref(&table)),
-            Err(CodecError::ResourceLimit(failure)) if failure.dimension == ResourceDimension::CollectionItems
-                && failure.operation == "f3d stable sort permutation")
+            Err(CodecError::ResourceLimit(failure)) if failure.dimension == ResourceDimension::MaterializedBytes
+                && failure.operation == "sort f3d configuration variants")
         );
     }
 }

@@ -20,9 +20,10 @@ pub(crate) fn value_index<'a, K: LegacyCode>(
 ) -> Result<(), CodecError> {
     for record in records {
         if let Some(parent) = record.parent {
-            match index.entry((parent, record.name.as_str())) {
+            let key = (parent, record.name.as_str());
+            ctx.admit_btree_entry(index, &key, "creo legacy value index nodes")?;
+            match index.entry(key) {
                 std::collections::btree_map::Entry::Vacant(entry) => {
-                    ctx.charge_collection_items(1, "creo legacy value index nodes")?;
                     let mut values = Vec::new();
                     ctx.reserve_vec(&mut values, 1, "creo legacy value index rows")?;
                     values.push(record);
@@ -594,10 +595,12 @@ impl Persistence {
     ) -> Result<Option<(String, usize)>, CodecError> {
         let mut objects = BTreeMap::new();
         for object in &self.objects {
-            if !objects.contains_key(&object.offset) {
-                ctx.charge_collection_items(1, "creo legacy model name object nodes")?;
-            }
-            objects.insert(object.offset, object);
+            ctx.insert_btree_map(
+                &mut objects,
+                object.offset,
+                object,
+                "creo legacy model name object nodes",
+            )?;
         }
         let mut all = None::<(&str, usize)>;
         let mut all_conflict = false;
@@ -789,8 +792,11 @@ impl Persistence {
             if element_ids.contains(element_id) {
                 return Ok(None);
             }
-            ctx.charge_collection_items(1, "creo legacy unit array element identities")?;
-            element_ids.insert(element_id);
+            ctx.insert_btree_set(
+                &mut element_ids,
+                element_id,
+                "creo legacy unit array element identities",
+            )?;
         }
         let mut first = None;
         for element_id in elements {
@@ -1085,10 +1091,12 @@ fn declaration_index<'a>(
 ) -> Result<BTreeMap<u32, &'a AttributeDeclaration>, CodecError> {
     let mut declarations = BTreeMap::new();
     for declaration in &scope.declarations {
-        if !declarations.contains_key(&declaration.id) {
-            ctx.charge_collection_items(1, "creo legacy declaration lookup nodes")?;
-        }
-        declarations.insert(declaration.id, declaration);
+        ctx.insert_btree_map(
+            &mut declarations,
+            declaration.id,
+            declaration,
+            "creo legacy declaration lookup nodes",
+        )?;
     }
     Ok(declarations)
 }
@@ -1108,19 +1116,23 @@ fn parent_object_offsets(
                 .checked_sub(1)
                 .and_then(|depth| active_objects.get(&depth))
             {
-                if !parents.contains_key(&value.offset) {
-                    ctx.charge_collection_items(1, "creo legacy parent offset nodes")?;
-                }
-                parents.insert(value.offset, *parent);
+                ctx.insert_btree_map(
+                    &mut parents,
+                    value.offset,
+                    *parent,
+                    "creo legacy parent offset nodes",
+                )?;
             }
             if declarations
                 .get(&value.attribute_id)
                 .is_some_and(|declaration| matches!(declaration.type_code, LegacyTypeCode::Object))
             {
-                if !active_objects.contains_key(&value.depth) {
-                    ctx.charge_collection_items(1, "creo legacy active object nodes")?;
-                }
-                active_objects.insert(value.depth, value.offset);
+                ctx.insert_btree_map(
+                    &mut active_objects,
+                    value.depth,
+                    value.offset,
+                    "creo legacy active object nodes",
+                )?;
             }
         }
     }
@@ -1140,10 +1152,12 @@ fn object_records(
         let declarations = declaration_index(ctx, scope)?;
         let mut value_attributes = BTreeMap::new();
         for value in &scope.values {
-            if !value_attributes.contains_key(&value.offset) {
-                ctx.charge_collection_items(1, "creo legacy object value attribute nodes")?;
-            }
-            value_attributes.insert(value.offset, value.attribute_id);
+            ctx.insert_btree_map(
+                &mut value_attributes,
+                value.offset,
+                value.attribute_id,
+                "creo legacy object value attribute nodes",
+            )?;
         }
         let mut direct_array_elements = BTreeMap::<usize, Vec<usize>>::new();
         for child in &scope.values {
@@ -1157,9 +1171,13 @@ fn object_records(
                         matches!(declaration.type_code, LegacyTypeCode::Object)
                     })
             {
+                ctx.admit_btree_entry(
+                    &direct_array_elements,
+                    &parent_offset,
+                    "creo legacy object array index nodes",
+                )?;
                 match direct_array_elements.entry(parent_offset) {
                     std::collections::btree_map::Entry::Vacant(entry) => {
-                        ctx.charge_collection_items(1, "creo legacy object array index nodes")?;
                         let mut elements = Vec::new();
                         ctx.reserve_vec(&mut elements, 1, "creo legacy object array index rows")?;
                         elements.push(child.offset);
@@ -1336,9 +1354,13 @@ fn string_records(
                     .map(|(offset, _)| *offset)
             });
             if let Some(parent_offset) = array_parent {
+                ctx.admit_btree_entry(
+                    &array_children,
+                    &parent_offset,
+                    "creo legacy string array child nodes",
+                )?;
                 match array_children.entry(parent_offset) {
                     std::collections::btree_map::Entry::Vacant(entry) => {
-                        ctx.charge_collection_items(1, "creo legacy string array child nodes")?;
                         let mut children = Vec::new();
                         ctx.reserve_vec(&mut children, 1, "creo legacy string array child rows")?;
                         children.push(value);
@@ -1350,10 +1372,11 @@ fn string_records(
                         children.push(value);
                     }
                 }
-                if !array_element_offsets.contains(&value.offset) {
-                    ctx.charge_collection_items(1, "creo legacy string array element offsets")?;
-                    array_element_offsets.insert(value.offset);
-                }
+                ctx.insert_btree_set(
+                    &mut array_element_offsets,
+                    value.offset,
+                    "creo legacy string array element offsets",
+                )?;
                 continue;
             }
             if declarations
@@ -1361,10 +1384,12 @@ fn string_records(
                 .is_some_and(|declaration| matches!(declaration.type_code, LegacyTypeCode::String))
                 && array_dimensions(ctx, &data[value.payload.clone()])?.is_some()
             {
-                if !active_arrays.contains_key(&value.depth) {
-                    ctx.charge_collection_items(1, "creo legacy active string arrays")?;
-                }
-                active_arrays.insert(value.depth, (value.offset, value.attribute_id));
+                ctx.insert_btree_map(
+                    &mut active_arrays,
+                    value.depth,
+                    (value.offset, value.attribute_id),
+                    "creo legacy active string arrays",
+                )?;
             }
         }
 
@@ -1631,12 +1656,19 @@ fn scan_scope(
                 if (previous.name != name || previous.type_code != type_code)
                     && !conflicting_ids.contains(&id)
                 {
-                    ctx.charge_collection_items(1, "creo legacy conflicting declaration IDs")?;
-                    conflicting_ids.insert(id);
+                    ctx.insert_btree_set(
+                        &mut conflicting_ids,
+                        id,
+                        "creo legacy conflicting declaration IDs",
+                    )?;
                 }
             } else {
                 let name = ctx.copy_retained_text(name, "creo legacy declaration names")?;
-                ctx.charge_collection_items(1, "creo legacy declaration index nodes")?;
+                ctx.admit_btree_entry(
+                    &declaration_indices,
+                    &id,
+                    "creo legacy declaration index nodes",
+                )?;
                 ctx.reserve_vec(&mut declarations, 1, "creo legacy declarations")?;
                 declaration_indices.insert(id, declarations.len());
                 declarations.push(AttributeDeclaration {

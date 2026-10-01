@@ -195,7 +195,7 @@ pub(crate) fn classify_layers(
     let declaration = crate::container::declared_sw_version(scan);
     let host = SldprtDialect::from_declaration(declaration);
     let mut layers = DialectLayers::of(host.matched(ctx, declaration)?);
-    let extra = cadmpeg_parasolid::extra_layers(kernels, &VERIFIED_KERNELS);
+    let extra = cadmpeg_parasolid::extra_layers(ctx, kernels, &VERIFIED_KERNELS)?;
     let mut losses = Vec::new();
     for message in cadmpeg_parasolid::push_extras(ctx, &mut layers, extra)? {
         ctx.reserve_vec(&mut losses, 1, "collect SLDPRT dialect collision losses")?;
@@ -282,8 +282,12 @@ impl SldprtDialect {
         if let Some(value) = sw_version {
             let value =
                 ctx.format_retained(format_args!("{value}"), "retain SLDPRT dialect declaration")?;
-            ctx.charge_collection_items(1, "index SLDPRT dialect declaration")?;
-            declared.insert(cadmpeg_core::nonblank_const!(DECLARED_SW_VERSION), value);
+            ctx.insert_btree_map(
+                &mut declared,
+                cadmpeg_core::nonblank_const!(DECLARED_SW_VERSION),
+                value,
+                "index SLDPRT dialect declaration",
+            )?;
         }
         Ok(match self {
             Self::SwVersionPre12000 | Self::SwVersion12000Plus => DialectMatch::admitted(self.id()),
@@ -315,11 +319,7 @@ fn dialect_loss(
     match matched.admission() {
         Admission::Admitted | Admission::Refused => Ok(None),
         Admission::Unverified { .. } | Admission::Residual => {
-            if let Some(message) = cadmpeg_parasolid::unverified_message(matched) {
-                let message = ctx.format_retained(
-                    format_args!("{message}"),
-                    "retain SLDPRT kernel dialect loss",
-                )?;
+            if let Some(message) = cadmpeg_parasolid::unverified_message(ctx, matched)? {
                 return Ok(Some(SldprtLossCode::KernelDialectUnverified.note(message)));
             }
             if matched.format() != FORMAT {

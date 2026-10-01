@@ -40,23 +40,31 @@ pub(crate) type SupportUv = [Option<SupportUvLane>; 2];
 pub(crate) struct SupportUvLane(Vec<FiniteVector<2>>);
 
 impl SupportUvLane {
-    pub(crate) fn from_present_values_charged(
-        ctx: &DecodeContext<'_>,
+    fn present_with_storage(
         values: Vec<[f64; 2]>,
-    ) -> Result<Option<Self>, CodecError> {
-        let count = values.len();
-        let operation = "NX chart support-UV lane";
-        let mut checked = ctx.retained_vec(count, operation)?;
+        mut checked: Vec<FiniteVector<2>>,
+    ) -> Option<Self> {
+        (checked.is_empty() && checked.capacity() >= values.len()).then_some(())?;
         for pair in values {
-            let Some(value) = FiniteVector::new(pair) else {
-                return Ok(None);
-            };
             if pair.contains(&MISSING_PARAMETER) {
-                return Ok(None);
+                return None;
             }
-            checked.push(value);
+            checked.push(FiniteVector::new(pair)?);
         }
-        Ok(Some(Self(checked)))
+        Some(Self(checked))
+    }
+
+    pub(crate) fn from_present_values_scoped<'ctx>(
+        ctx: &'ctx DecodeContext<'_>,
+        values: Vec<[f64; 2]>,
+    ) -> Result<Option<(Self, cadmpeg_core::decode::ScopedReservation<'ctx>)>, CodecError> {
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(values.len()),
+            "admit NX chart support-UV lane",
+        )?;
+        let (checked, reservation) = ctx.temporary_vec(values.len(), "NX chart support-UV lane")?;
+        let lane = Self::present_with_storage(values, checked);
+        Ok(lane.map(|lane| (lane, reservation)))
     }
     /// Construct one parameter pair per chart sample.
     #[cfg(test)]
@@ -76,17 +84,8 @@ impl SupportUvLane {
     }
 
     pub(crate) fn from_present_values(values: Vec<[f64; 2]>) -> Option<Self> {
-        Some(Self(
-            values
-                .into_iter()
-                .map(|pair| {
-                    let checked = FiniteVector::new(pair)?;
-                    pair.iter()
-                        .all(|value| *value != MISSING_PARAMETER)
-                        .then_some(checked)
-                })
-                .collect::<Option<Vec<_>>>()?,
-        ))
+        let checked = DecodeContext::admitted_vec(values.len(), "NX chart support-UV lane").ok()?;
+        Self::present_with_storage(values, checked)
     }
 
     /// Ordered support parameter pairs.
@@ -338,8 +337,8 @@ impl RejectionCounts {
 /// Complete chart-carrier scan result.
 #[derive(Debug, Clone, Default)]
 pub(crate) struct CurveScan {
-    /// Every structurally valid construction found in the source graph before
-    /// chart enrichment filters it. Native record extraction reuses this lane
+    /// Constructions remaining after cross-form collision selection and before
+    /// chart enrichment. Native record extraction reuses this lane
     /// so it does not parse the same graph a second time.
     pub(crate) source_constructions: Vec<CompositeCurve>,
     /// Structurally valid constructions with a solved chart or a typed inbound
@@ -579,10 +578,7 @@ fn extend_replacement_map<T>(
     operation: &'static str,
 ) -> Result<(), CodecError> {
     for (xmt, value) in replacement {
-        if !target.contains_key(&xmt) {
-            ctx.charge_collection_items(1, operation)?;
-        }
-        target.insert(xmt, value);
+        ctx.insert_btree_map(target, xmt, value, operation)?;
     }
     Ok(())
 }
@@ -618,20 +614,26 @@ fn scan_with_auxiliaries(
     let mut result = CurveScan::default();
     let mut forms_by_xmt = BTreeMap::<u32, BTreeSet<bool>>::new();
     for construction in &constructions {
-        if !forms_by_xmt.contains_key(&construction.xmt) {
-            ctx.charge_collection_items(1, "NX intersection form keys")?;
-        }
+        ctx.admit_btree_entry(
+            &forms_by_xmt,
+            &construction.xmt,
+            "NX intersection form keys",
+        )?;
         let forms = forms_by_xmt.entry(construction.xmt).or_default();
-        if !forms.contains(&construction.delta_twin) {
-            ctx.charge_collection_items(1, "NX intersection form values")?;
-        }
-        forms.insert(construction.delta_twin);
+        ctx.insert_btree_set(
+            forms,
+            construction.delta_twin,
+            "NX intersection form values",
+        )?;
     }
     let mut cross_form_xmts = BTreeSet::new();
     for (xmt, forms) in forms_by_xmt {
         if forms.len() > 1 {
-            ctx.charge_collection_items(1, "NX intersection cross-form identities")?;
-            cross_form_xmts.insert(xmt);
+            ctx.insert_btree_set(
+                &mut cross_form_xmts,
+                xmt,
+                "NX intersection cross-form identities",
+            )?;
         }
     }
     let mut constructions = constructions;
@@ -868,8 +870,12 @@ fn blend_bound_records(
 ) -> Result<BTreeMap<u32, u32>, CodecError> {
     let mut records = BTreeMap::new();
     for bound in blend_bounds(ctx, stream)? {
-        ctx.charge_collection_items(1, "NX blend-bound map keys")?;
-        records.insert(bound.state.xmt(), bound.state.blend_surface());
+        ctx.insert_btree_map(
+            &mut records,
+            bound.state.xmt(),
+            bound.state.blend_surface(),
+            "NX blend-bound map keys",
+        )?;
     }
     Ok(records)
 }
@@ -1046,9 +1052,9 @@ fn chart_records(
             fit_tolerance,
             ext_support_uv,
         };
+        ctx.admit_btree_entry(&out, &source.xmt, "NX chart identity index")?;
         match out.entry(source.xmt) {
             std::collections::btree_map::Entry::Vacant(entry) => {
-                ctx.charge_collection_items(1, "NX chart identity index")?;
                 ctx.charge_retained(
                     cadmpeg_core::decode::u64_from_index(std::mem::size_of::<(u32, Chart)>()),
                     "NX chart identity index",
@@ -1077,12 +1083,18 @@ fn chart_records(
                         .replace_parameters_from_charged(ctx, &candidate.samples)?;
                 if complements {
                     entry.get_mut().ext_support_uv = candidate.ext_support_uv;
-                    ctx.charge_collection_items(1, "NX complemented chart identities")?;
-                    complemented.insert(source.xmt);
+                    ctx.insert_btree_set(
+                        &mut complemented,
+                        source.xmt,
+                        "NX complemented chart identities",
+                    )?;
                 } else {
                     entry.remove();
-                    ctx.charge_collection_items(1, "NX duplicate chart identities")?;
-                    duplicates.insert(source.xmt);
+                    ctx.insert_btree_set(
+                        &mut duplicates,
+                        source.xmt,
+                        "NX duplicate chart identities",
+                    )?;
                 }
             }
         }
@@ -1146,7 +1158,6 @@ pub(crate) fn chart_source_record_at(
         let Some(mut head) = View::over_retained(stream).child(preamble, stream.len()) else {
             continue;
         };
-        // Keep the sequential preamble unpack dense; rustfmt would undo the net deletion.
         #[rustfmt::skip]
         let (
             Some(base_parameter), Some(base_scale), Some(chart_count), Some(chordal_error),
@@ -1297,8 +1308,12 @@ fn term_records(
 ) -> Result<BTreeMap<u32, Point3>, CodecError> {
     let mut records = BTreeMap::new();
     for term in term_use_records(ctx, stream)? {
-        ctx.charge_collection_items(1, "NX term-use map keys")?;
-        records.insert(term.xmt, Point3::from(term.point.get()));
+        ctx.insert_btree_map(
+            &mut records,
+            term.xmt,
+            Point3::from(term.point.get()),
+            "NX term-use map keys",
+        )?;
     }
     Ok(records)
 }
@@ -1400,8 +1415,12 @@ fn uv_records(
 ) -> Result<BTreeMap<u32, SupportUvValues>, CodecError> {
     let mut records = BTreeMap::new();
     for record in support_uv_records(ctx, stream)? {
-        ctx.charge_collection_items(1, "NX support-UV map keys")?;
-        records.insert(record.xmt, record.values);
+        ctx.insert_btree_map(
+            &mut records,
+            record.xmt,
+            record.values,
+            "NX support-UV map keys",
+        )?;
     }
     Ok(records)
 }

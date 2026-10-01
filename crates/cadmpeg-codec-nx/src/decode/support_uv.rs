@@ -155,27 +155,20 @@ fn new_support_uv_budget() -> SupportUvBudget<'static> {
 pub(super) fn linear_knots(
     parameters: &[f64],
     geometry_budget: &GeometryWorkBudget<'_>,
-) -> Result<Vec<f64>, cadmpeg_core::decode::ResourceLimit> {
+) -> Result<Vec<f64>, cadmpeg_core::CodecError> {
     if parameters.is_empty() {
         return Ok(Vec::new());
     }
-    let count =
-        parameters
-            .len()
-            .checked_add(2)
-            .ok_or_else(|| cadmpeg_core::decode::ResourceLimit {
-                dimension: cadmpeg_core::decode::ResourceDimension::Codec("nx linear knot count"),
-                reason: cadmpeg_core::decode::ResourceFailure::BudgetExceeded,
-                limit: 0,
-                used: 0,
-                additional: cadmpeg_core::decode::u64_from_index(parameters.len()),
-                operation: "nx linear knot count",
-            })?;
-    let mut knots = Vec::new();
-    let _reservation =
-        geometry_budget
-            .charges
-            .reserve_temporary_vec(&mut knots, count, "nx linear knots")?;
+    let ctx = geometry_budget.charges;
+    let count = parameters
+        .len()
+        .checked_add(2)
+        .ok_or_else(|| ctx.refuse_codec_limit("nx linear knot count", u64::MAX - 1, u64::MAX))?;
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(count),
+        "form nx linear knots",
+    )?;
+    let mut knots = ctx.retained_vec(count, "nx linear knots")?;
     knots.extend(parameters.first().copied());
     knots.extend_from_slice(parameters);
     knots.extend(parameters.last().copied());
@@ -523,8 +516,12 @@ pub(super) fn validated_support_uv_endpoint_witnesses(
 ) -> Result<EndpointWitnesses, cadmpeg_core::CodecError> {
     let mut procedural_by_id = BTreeMap::new();
     for procedural in &ir.model.procedural_curves {
-        ctx.charge_collection_items(1, "nx validated procedural index")?;
-        procedural_by_id.insert(&procedural.id, procedural);
+        ctx.insert_btree_map(
+            &mut procedural_by_id,
+            &procedural.id,
+            procedural,
+            "nx validated procedural index",
+        )?;
     }
     let mut witnesses: EndpointWitnesses = BTreeMap::new();
     for (procedural_id, samples, _, _) in pending {
@@ -561,12 +558,10 @@ pub(super) fn validated_support_uv_endpoint_witnesses(
                 owner.try_clone_for_decode(ctx, "nx validated witness owner")?,
                 surface.try_clone_for_decode(ctx, "nx validated witness surface")?,
             );
+            ctx.admit_btree_entry(&witnesses, &key, "nx validated witness index")?;
             let entries = match witnesses.entry(key) {
                 std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
-                std::collections::btree_map::Entry::Vacant(entry) => {
-                    ctx.charge_collection_items(1, "nx validated witness index")?;
-                    entry.insert(Vec::new())
-                }
+                std::collections::btree_map::Entry::Vacant(entry) => entry.insert(Vec::new()),
             };
             ctx.reserve_vec(entries, 1, "nx validated endpoint witnesses")?;
             entries.push((
@@ -1120,10 +1115,14 @@ pub(super) fn invalidate_inconsistent_support_uv_with_validated_lanes_and_status
                             owner.try_clone_for_decode(ctx, "nx validated endpoint owner")?,
                             surface.try_clone_for_decode(ctx, "nx validated endpoint support")?,
                         );
+                        ctx.admit_btree_entry(
+                            &endpoint_witnesses,
+                            &key,
+                            "nx validated endpoint index",
+                        )?;
                         let entries = match endpoint_witnesses.entry(key) {
                             std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
                             std::collections::btree_map::Entry::Vacant(entry) => {
-                                ctx.charge_collection_items(1, "nx validated endpoint index")?;
                                 entry.insert(Vec::new())
                             }
                         };
@@ -1512,17 +1511,15 @@ geometry_budget,
                                                     0,
                                                     geometry_budget,
                                                 )?;
-                                            ctx.charge_collection_items(
-                                                1,
-                                                "nx support UV blend grid index",
-                                            )?;
-                                            blend_parameter_grids.insert(
+                                            ctx.insert_btree_map(
+                                                &mut blend_parameter_grids,
                                                 surface_id.try_clone_for_decode(
                                                     ctx,
                                                     "nx support UV blend grid identity",
                                                 )?,
                                                 grid,
-                                            );
+                                                "nx support UV blend grid index",
+                                            )?;
                                         }
                                         if let Some(grid) = blend_parameter_grids
                                             .get(surface_id)
@@ -1567,8 +1564,8 @@ geometry_budget,
                     refuse_geometry_work(&lane_geometry_budget)?;
                     refuse_geometry_work(parent_geometry_budget)?;
                     lane_geometry_exhausted |= child_exhausted || parent_exhausted;
-                    ctx.charge_collection_items(1, "nx support UV failed retries")?;
-                    failed_attempts.insert(
+                    ctx.insert_btree_map(
+                        failed_attempts,
                         attempt_key,
                         source_pcurve
                             .map(|pcurve| {
@@ -1577,7 +1574,8 @@ geometry_budget,
                                     .try_clone_for_decode(ctx, "nx support UV retry pcurve")
                             })
                             .transpose()?,
-                    );
+                        "nx support UV failed retries",
+                    )?;
                     continue;
                 };
                 if matches!(
@@ -1670,10 +1668,14 @@ geometry_budget,
                             surface_id
                                 .try_clone_for_decode(ctx, "nx support UV witness surface")?,
                         );
+                        ctx.admit_btree_entry(
+                            endpoint_witnesses,
+                            &key,
+                            "nx support UV witness index",
+                        )?;
                         let entries = match endpoint_witnesses.entry(key) {
                             std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
                             std::collections::btree_map::Entry::Vacant(entry) => {
-                                ctx.charge_collection_items(1, "nx support UV witness index")?;
                                 entry.insert(Vec::new())
                             }
                         };
@@ -1693,8 +1695,8 @@ geometry_budget,
                         admitted_fit_tolerance,
                     ));
                 } else {
-                    ctx.charge_collection_items(1, "nx support UV failed retries")?;
-                    failed_attempts.insert(
+                    ctx.insert_btree_map(
+                        failed_attempts,
                         attempt_key,
                         source_pcurve
                             .map(|pcurve| {
@@ -1703,7 +1705,8 @@ geometry_budget,
                                     .try_clone_for_decode(ctx, "nx support UV retry pcurve")
                             })
                             .transpose()?,
-                    );
+                        "nx support UV failed retries",
+                    )?;
                 }
                 let parent_exhausted = parent_geometry_budget
                     .consume_child(&lane_geometry_budget)
@@ -1720,11 +1723,12 @@ geometry_budget,
                 continue;
             }
             if let Some(construction) = curve.geometry.procedural_construction() {
-                ctx.charge_collection_items(1, "nx support UV cache backed constructions")?;
-                cache_backed_constructions.insert(
+                ctx.insert_btree_set(
+                    &mut cache_backed_constructions,
                     construction
                         .try_clone_for_decode(ctx, "nx support UV cache backed identity")?,
-                );
+                    "nx support UV cache backed constructions",
+                )?;
             }
         }
         drop(model_index);
@@ -2034,11 +2038,12 @@ fn complete_coupled_support_uv(
             )?;
         }
         let Some(lanes) = lanes else {
-            ctx.charge_collection_items(1, "nx coupled support UV failed retries")?;
-            failed_attempts.insert(
+            ctx.insert_btree_map(
+                failed_attempts,
                 procedural_id.try_clone_for_decode(ctx, "nx coupled support UV retry identity")?,
                 lane_state,
-            );
+                "nx coupled support UV failed retries",
+            )?;
             let parent_exhausted = parent_geometry_budget
                 .consume_child(&lane_geometry_budget)
                 .is_err();
@@ -2091,10 +2096,14 @@ fn complete_coupled_support_uv(
                         surfaces[side]
                             .try_clone_for_decode(ctx, "nx coupled support UV witness surface")?,
                     );
+                    ctx.admit_btree_entry(
+                        endpoint_witnesses,
+                        &key,
+                        "nx coupled support UV witness index",
+                    )?;
                     let entries = match endpoint_witnesses.entry(key) {
                         std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
                         std::collections::btree_map::Entry::Vacant(entry) => {
-                            ctx.charge_collection_items(1, "nx coupled support UV witness index")?;
                             entry.insert(Vec::new())
                         }
                     };
@@ -2439,24 +2448,40 @@ fn attach_completed_intersection_pcurves_for_sources_with_budget(
     }
     let mut loop_faces = BTreeMap::new();
     for loop_ in &ir.model.loops {
-        ctx.charge_collection_items(1, "nx completion loop-face index")?;
-        loop_faces.insert(&loop_.id, &loop_.face);
+        ctx.insert_btree_map(
+            &mut loop_faces,
+            &loop_.id,
+            &loop_.face,
+            "nx completion loop-face index",
+        )?;
     }
     let mut face_surfaces = BTreeMap::new();
     for face in &ir.model.faces {
-        ctx.charge_collection_items(1, "nx completion face-surface index")?;
-        face_surfaces.insert(&face.id, &face.surface);
+        ctx.insert_btree_map(
+            &mut face_surfaces,
+            &face.id,
+            &face.surface,
+            "nx completion face-surface index",
+        )?;
     }
     let mut edge_curves = BTreeMap::new();
     let mut edge_tolerances = BTreeMap::new();
     for edge in &ir.model.edges {
         if let Some(curve) = edge.curve() {
-            ctx.charge_collection_items(1, "nx completion edge-curve index")?;
-            edge_curves.insert(&edge.id, curve);
+            ctx.insert_btree_map(
+                &mut edge_curves,
+                &edge.id,
+                curve,
+                "nx completion edge-curve index",
+            )?;
         }
         if let Some(tolerance) = edge.tolerance {
-            ctx.charge_collection_items(1, "nx completion edge-tolerance index")?;
-            edge_tolerances.insert(&edge.id, tolerance.get());
+            ctx.insert_btree_map(
+                &mut edge_tolerances,
+                &edge.id,
+                tolerance.get(),
+                "nx completion edge-tolerance index",
+            )?;
         }
     }
     let mut coedge_candidates = Vec::new();
@@ -2502,11 +2527,14 @@ fn attach_completed_intersection_pcurves_for_sources_with_budget(
     }
     let mut required_keys = BTreeSet::new();
     for (_, _, curve, surface, _, _) in &coedge_candidates {
-        ctx.charge_collection_items(1, "nx completion required chart keys")?;
-        required_keys.insert((
-            curve.try_clone_for_decode(ctx, "nx completion required curve")?,
-            surface.try_clone_for_decode(ctx, "nx completion required surface")?,
-        ));
+        ctx.insert_btree_set(
+            &mut required_keys,
+            (
+                curve.try_clone_for_decode(ctx, "nx completion required curve")?,
+                surface.try_clone_for_decode(ctx, "nx completion required surface")?,
+            ),
+            "nx completion required chart keys",
+        )?;
     }
     let mut candidates =
         BTreeMap::<(CurveId, SurfaceId), Vec<(PcurveGeometry, [f64; 2], Option<f64>)>>::new();
@@ -2552,12 +2580,10 @@ fn attach_completed_intersection_pcurves_for_sources_with_budget(
             if !required_keys.contains(&key) {
                 continue;
             }
+            ctx.admit_btree_entry(&candidates, &key, "nx completion candidate keys")?;
             let values = match candidates.entry(key) {
                 std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
-                std::collections::btree_map::Entry::Vacant(entry) => {
-                    ctx.charge_collection_items(1, "nx completion candidate keys")?;
-                    entry.insert(Vec::new())
-                }
+                std::collections::btree_map::Entry::Vacant(entry) => entry.insert(Vec::new()),
             };
             let candidate = (
                 pcurve
@@ -2584,11 +2610,12 @@ fn attach_completed_intersection_pcurves_for_sources_with_budget(
             }
             if let Some(contract) = pcurve_edge_endpoint_contract_with_index(&model_index, edge_id)
             {
-                ctx.charge_collection_items(1, "nx completion edge endpoint contracts")?;
-                edge_endpoint_contracts.insert(
+                ctx.insert_btree_map(
+                    &mut edge_endpoint_contracts,
                     edge_id.try_clone_for_decode(ctx, "nx completion contract edge")?,
                     contract,
-                );
+                    "nx completion edge endpoint contracts",
+                )?;
             }
         }
         // A chart carrier's serialized endpoint witnesses are a necessary
@@ -2625,8 +2652,11 @@ fn attach_completed_intersection_pcurves_for_sources_with_budget(
                 true
             };
             if admissible {
-                ctx.charge_collection_items(1, "nx completion admissible chart keys")?;
-                endpoint_admissible_keys.insert(key);
+                ctx.insert_btree_set(
+                    &mut endpoint_admissible_keys,
+                    key,
+                    "nx completion admissible chart keys",
+                )?;
             }
         }
         let mut witnessed_keys = BTreeSet::new();
@@ -2645,13 +2675,16 @@ fn attach_completed_intersection_pcurves_for_sources_with_budget(
                 candidate.1,
             );
             if witness.is_some() {
-                ctx.charge_collection_items(1, "nx completion witnessed chart keys")?;
-                witnessed_keys.insert((
-                    key.0
-                        .try_clone_for_decode(ctx, "nx completion witnessed curve")?,
-                    key.1
-                        .try_clone_for_decode(ctx, "nx completion witnessed surface")?,
-                ));
+                ctx.insert_btree_set(
+                    &mut witnessed_keys,
+                    (
+                        key.0
+                            .try_clone_for_decode(ctx, "nx completion witnessed curve")?,
+                        key.1
+                            .try_clone_for_decode(ctx, "nx completion witnessed surface")?,
+                    ),
+                    "nx completion witnessed chart keys",
+                )?;
             }
             let endpoints = if witness.is_some() {
                 witness
@@ -2664,8 +2697,8 @@ fn attach_completed_intersection_pcurves_for_sources_with_budget(
                     geometry_budget,
                 )?
             };
-            ctx.charge_collection_items(1, "nx completion candidate endpoints")?;
-            candidate_endpoints.insert(
+            ctx.insert_btree_map(
+                &mut candidate_endpoints,
                 (
                     key.0
                         .try_clone_for_decode(ctx, "nx completion endpoint curve")?,
@@ -2673,7 +2706,8 @@ fn attach_completed_intersection_pcurves_for_sources_with_budget(
                         .try_clone_for_decode(ctx, "nx completion endpoint surface")?,
                 ),
                 endpoints,
-            );
+                "nx completion candidate endpoints",
+            )?;
         }
         let mut replacements = Vec::new();
         for (coedge_id, edge_id, curve, surface, edge_tolerance, source_index) in coedge_candidates
@@ -2871,6 +2905,27 @@ mod tests {
                 &geometry_budget,
             )
         })
+    }
+
+    #[test]
+    fn linear_knots_refuse_retained_storage_before_construction() {
+        crate::test_support::with_decode_context_over(
+            &[],
+            |policy| policy.limits.max_retained_bytes = 0,
+            |ctx| {
+                let budget = GeometryWorkBudget::from_context(ctx, 100);
+                assert!(
+                    matches!(super::linear_knots(&[0.0, 1.0], &budget), Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.operation == "nx linear knots" && limit.dimension == ResourceDimension::RetainedBytes)
+                );
+            },
+        );
+        crate::test_support::with_decode_context(|ctx| {
+            let budget = GeometryWorkBudget::from_context(ctx, 100);
+            assert_eq!(
+                super::linear_knots(&[0.0, 1.0], &budget).unwrap(),
+                [0.0, 0.0, 1.0, 1.0]
+            );
+        });
     }
 
     #[test]

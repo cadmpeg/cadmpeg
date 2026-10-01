@@ -5,15 +5,17 @@ use cadmpeg_core::decode::u64_from_index;
 
 use crate::object_graph;
 
+use super::edge_definition::CatiaConsolidatedEdgeDefinition;
+
 use super::{
     catalog, container, design_object_id, entity_table, resolved_payload_references,
     resolved_storage_link, terminal_null_entity_id, value_block, AliasLead, CatiaAliasRow,
     CatiaAllocationReferenceEncoding, CatiaCatalog, CatiaCatalogEntry,
     CatiaConsolidatedAnalyticCircleBinding, CatiaConsolidatedCircle,
-    CatiaConsolidatedClass25Descriptor, CatiaConsolidatedEdgeDefinition, CatiaConsolidatedEdgeNode,
-    CatiaConsolidatedEdgeRun, CatiaConsolidatedEdgeUses, CatiaConsolidatedOwnerPacket,
-    CatiaConsolidatedPcurve, CatiaConsolidatedSupportBinding, CatiaDesignClass, CatiaEntityRecord,
-    CatiaEntityRecordBody, CatiaEntityReference, CatiaExternalReference, CatiaFaceNodeRelation,
+    CatiaConsolidatedClass25Descriptor, CatiaConsolidatedEdgeNode, CatiaConsolidatedEdgeRun,
+    CatiaConsolidatedEdgeUses, CatiaConsolidatedOwnerPacket, CatiaConsolidatedPcurve,
+    CatiaConsolidatedSupportBinding, CatiaDesignClass, CatiaEntityRecord, CatiaEntityRecordBody,
+    CatiaEntityReference, CatiaExternalReference, CatiaFaceNodeRelation,
     CatiaFaceNodeTargetEncoding, CatiaFinjplSegment, CatiaObjectClass, CatiaObjectEntity,
     CatiaObjectGraph, CatiaObjectOwner, CatiaObjectRecord, CatiaObjectStorage,
     CatiaOuterContainerBinding, CatiaOwnerBoundaryCycle, CatiaOwnerBoundaryEdge,
@@ -239,7 +241,14 @@ pub(crate) fn consolidated_owner_packets(
                     )
                 }),
         ), "catia_native_owner_packet_rows")?;
-    packets.sort_by_key(|(pos, source_index, _, _)| (*pos, *source_index));
+    ctx.stable_sort_by(
+        &mut packets,
+        |(left_pos, left_source, _, _), (right_pos, right_source, _, _)| {
+        (left_pos, left_source).cmp(&(right_pos, right_source))
+    },
+        |_| 0,
+        "catia_native_owner_packet_sort",
+    )?;
     let mut output = Vec::new();
     ctx.reserve_vec(
         &mut output,
@@ -461,7 +470,7 @@ pub(crate) fn consolidated_edge_nodes(
             (
                 uses,
                 run.definition
-                    .map(|definition| native_consolidated_edge_definition(ctx, definition))
+                    .map(|definition| CatiaConsolidatedEdgeDefinition::from_source(ctx, definition))
                     .transpose()?,
             ),
             "catia_native_edge_use_runs",
@@ -534,9 +543,9 @@ pub(crate) fn consolidated_edge_nodes(
             )?,
             byte_offset: u64_from_index(node.pos),
             source_index,
-            width,
+            token: crate::wire::records::WidthCodedToken::new(width, node.header_token)
+                .map_err(CodecError::malformed)?,
             flag,
-            header_token: node.header_token,
             allocation,
             curve_ref: node.curve_ref,
             vertex_refs: [node.start_vertex_ref, node.end_vertex_ref],
@@ -555,22 +564,6 @@ pub(crate) fn consolidated_edge_nodes(
         });
     }
     Ok(output)
-}
-
-pub(crate) fn native_consolidated_edge_definition(
-    ctx: &DecodeContext<'_>,
-    definition: crate::families::consolidated::records::ConsolidatedEdgeDefinition,
-) -> Result<CatiaConsolidatedEdgeDefinition, CodecError> {
-    let data = crate::families::consolidated::records::consolidated_edge_definition_data_charged(
-        ctx,
-        definition.class.into(),
-        &definition.frame.payload,
-    )?;
-    Ok(CatiaConsolidatedEdgeDefinition {
-        frame: definition.frame.into(),
-        class: definition.class,
-        data,
-    })
 }
 
 pub(super) fn native_allocation_reference_encoding(

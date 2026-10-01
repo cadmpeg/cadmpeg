@@ -23,8 +23,8 @@ fn qualified_operand_falls_back_to_marker_family_ordinal() {
             let mut constructed_marker = SketchInputEntity::new(
                 marker_id,
                 marker_parent,
-                ordinal as u32,
-                ordinal as u64,
+                u32::try_from(ordinal).expect("ordinal fits u32"),
+                cadmpeg_core::decode::u64_from_index(ordinal),
                 SketchInputKind::LineOrCircle,
             );
             constructed_marker.feature_ref = Some("feature".into());
@@ -203,11 +203,18 @@ fn object_indexed_bc_operands_precede_local_and_ordinal_fallbacks() {
     let marker = |id: &str, offset, object_index, kind, coordinates_m: Option<[f64; 2]>| {
         let marker_id: String = id.into();
         let marker_parent: String = "lane".into();
-        let mut constructed_marker =
-            SketchInputEntity::new(marker_id, marker_parent, offset as u32, offset, kind);
+        let mut constructed_marker = SketchInputEntity::new(
+            marker_id,
+            marker_parent,
+            u32::try_from(offset).expect("offset fits u32"),
+            offset,
+            kind,
+        );
         constructed_marker.feature_ref = Some("feature".into());
-        constructed_marker =
-            constructed_marker.with_test_identity(object_index, Some(100 + offset as u32));
+        constructed_marker = constructed_marker.with_test_identity(
+            object_index,
+            Some(100 + u32::try_from(offset).expect("offset fits u32")),
+        );
         constructed_marker.state_value = None;
         constructed_marker.coordinates_m =
             coordinates_m.and_then(cadmpeg_ir::units::FiniteVector::new);
@@ -660,15 +667,17 @@ fn curve_operand_excludes_an_already_resolved_sibling_from_a_reference_handle() 
         let mut constructed_marker = SketchInputEntity::new(
             marker_id,
             marker_parent,
-            offset as u32,
+            u32::try_from(offset).expect("offset fits u32"),
             offset,
             SketchInputKind::LineOrCircle,
         );
         constructed_marker.feature_ref = Some("feature".into());
         constructed_marker = constructed_marker.with_test_identity(None, Some(local_id));
         constructed_marker.state_value = None;
-        constructed_marker.coordinates_m =
-            cadmpeg_ir::units::FiniteVector::new([offset as f64, 0.0]);
+        constructed_marker.coordinates_m = cadmpeg_ir::units::FiniteVector::new([
+            cadmpeg_core::convert::f64_from_u64(offset).expect("offset is exact in f64"),
+            0.0,
+        ]);
         constructed_marker.links = None;
         constructed_marker
     };
@@ -729,15 +738,17 @@ fn exact_local_operand_excludes_an_already_resolved_sibling() {
         let mut constructed_marker = SketchInputEntity::new(
             marker_id,
             marker_parent,
-            offset as u32,
+            u32::try_from(offset).expect("offset fits u32"),
             offset,
             SketchInputKind::Point,
         );
         constructed_marker.feature_ref = Some("feature".into());
         constructed_marker = constructed_marker.with_test_identity(None, Some(3));
         constructed_marker.state_value = None;
-        constructed_marker.coordinates_m =
-            cadmpeg_ir::units::FiniteVector::new([offset as f64, 0.0]);
+        constructed_marker.coordinates_m = cadmpeg_ir::units::FiniteVector::new([
+            cadmpeg_core::convert::f64_from_u64(offset).expect("offset is exact in f64"),
+            0.0,
+        ]);
         constructed_marker.links = None;
         constructed_marker
     };

@@ -469,14 +469,12 @@ pub(super) fn draft_operand_candidates(
             objects.push((name.offset, feature));
         }
     }
-    let count = u64::try_from(objects.len())
-        .map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
-    let comparisons_per_item = u64::from(objects.len().checked_ilog2().unwrap_or(0)) + 1;
-    let sort_work = count
-        .checked_mul(comparisons_per_item)
-        .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
-    ctx.charge_work(sort_work, OPERATION)?;
-    objects.sort_unstable_by_key(|(offset, _)| *offset);
+    ctx.sort_unstable_by(
+        &mut objects,
+        |(left, _), (right, _)| left.cmp(right),
+        |_| 0,
+        OPERATION,
+    )?;
     let mut candidates = Vec::new();
     for (index, (start, feature)) in objects.iter().enumerate() {
         ctx.charge_work(1, OPERATION)?;
@@ -510,6 +508,7 @@ mod tests {
     use crate::records::FeatureSource;
     use crate::records::ObjectId;
     use crate::records::{Feature, FeatureHistory, FeatureInputClass, FeatureInputName};
+    use cadmpeg_core::decode::u64_from_index;
     use cadmpeg_ir::features::{FaceSelection, FeatureDefinition, FeatureId, FeatureOperation};
     use cadmpeg_ir::math::Vector3;
     use std::collections::BTreeMap;
@@ -667,14 +666,14 @@ mod tests {
                 id: "plane-ref".into(),
                 parent: "lane".into(),
                 ordinal: 0,
-                offset: class_offset as u64,
+                offset: u64_from_index(class_offset),
                 name: class_name.into(),
             }],
             names: vec![FeatureInputName {
                 id: "name".into(),
                 parent: "lane".into(),
                 ordinal: 0,
-                offset: object_start as u64,
+                offset: u64_from_index(object_start),
                 value: "Draft1".into(),
                 object_id: ObjectId::from_value(7),
             }],
@@ -794,7 +793,7 @@ mod tests {
                 id: "name".into(),
                 parent: "lane".into(),
                 ordinal: 0,
-                offset: object_start as u64,
+                offset: u64_from_index(object_start),
                 value: "Draft1".into(),
                 object_id: ObjectId::from_value(7),
             }],
@@ -910,7 +909,7 @@ mod tests {
                 id: "name".into(),
                 parent: "lane".into(),
                 ordinal: 0,
-                offset: object_start as u64,
+                offset: u64_from_index(object_start),
                 value: "Draft1".into(),
                 object_id: ObjectId::from_value(7),
             }],
@@ -1002,14 +1001,14 @@ mod tests {
                 id: "plane-ref".into(),
                 parent: "lane".into(),
                 ordinal: 0,
-                offset: class_offset as u64,
+                offset: u64_from_index(class_offset),
                 name: class_name.into(),
             }],
             names: vec![FeatureInputName {
                 id: "name".into(),
                 parent: "lane".into(),
                 ordinal: 0,
-                offset: object_start as u64,
+                offset: u64_from_index(object_start),
                 value: "Draft1".into(),
                 object_id: ObjectId::from_value(7),
             }],

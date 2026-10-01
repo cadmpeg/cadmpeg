@@ -254,8 +254,12 @@ fn solve_section_coordinates_with_derived_constraints(
         }
         let mut previous_scalar_values = BTreeMap::new();
         for (key, value) in auxiliary_scalar_values.iter() {
-            ctx.charge_collection_items(1, "creo previous scalar value nodes")?;
-            previous_scalar_values.insert(*key, *value);
+            ctx.insert_btree_map(
+                &mut previous_scalar_values,
+                *key,
+                *value,
+                "creo previous scalar value nodes",
+            )?;
         }
         for (variable, value) in
             section_equation_scalar_values_from_coordinates(ctx, definition, &solved_coordinates)?
@@ -307,9 +311,11 @@ pub(in crate::decode) fn resolved_section_coordinates(
         .iter()
         .flat_map(|table| table.rows.ordinary())
     {
-        if !segment_counts.contains_key(&segment.external_id) {
-            ctx.charge_collection_items(1, "creo section segment count nodes")?;
-        }
+        ctx.admit_btree_entry(
+            &segment_counts,
+            &segment.external_id,
+            "creo section segment count nodes",
+        )?;
         *segment_counts.entry(segment.external_id).or_insert(0usize) += 1;
     }
     let saved_segment_points =
@@ -594,9 +600,11 @@ pub(in crate::decode) fn resolved_section_coordinates(
         } else {
             ((second, first, coordinate), -delta)
         };
-        if !signed_dimensions.contains_key(&key) {
-            ctx.charge_collection_items(1, "creo section signed dimension nodes")?;
-        }
+        ctx.admit_btree_entry(
+            &signed_dimensions,
+            &key,
+            "creo section signed dimension nodes",
+        )?;
         signed_dimensions
             .entry(key)
             .and_modify(|stored| {
@@ -777,8 +785,12 @@ pub(in crate::decode) fn resolved_section_coordinates(
             .zip(coordinates.iter().copied())
         {
             if let Some(value) = value {
-                ctx.charge_collection_items(1, "creo section stored coordinate nodes")?;
-                stored_coordinates.insert((point, coordinate), value);
+                ctx.insert_btree_map(
+                    &mut stored_coordinates,
+                    (point, coordinate),
+                    value,
+                    "creo section stored coordinate nodes",
+                )?;
             }
         }
     }
@@ -1024,8 +1036,12 @@ pub(in crate::decode) fn resolved_section_points(
     let mut resolved = BTreeMap::new();
     for (point, [u, v]) in resolved_section_coordinates(ctx, definition)? {
         if let (Some(u), Some(v)) = (u, v) {
-            ctx.charge_collection_items(1, "creo resolved section point nodes")?;
-            resolved.insert(point, [u, v]);
+            ctx.insert_btree_map(
+                &mut resolved,
+                point,
+                [u, v],
+                "creo resolved section point nodes",
+            )?;
         }
     }
     Ok(resolved)

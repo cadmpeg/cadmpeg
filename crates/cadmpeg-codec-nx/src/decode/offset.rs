@@ -61,8 +61,7 @@ pub(super) fn saved_offset_carriers(
         .filter_map(Node::face_fields)
         .filter_map(|face| face.surface.map(u32::from))
     {
-        ctx.charge_collection_items(1, "nx offset face surfaces")?;
-        face_surfaces.insert(xmt);
+        ctx.insert_btree_set(&mut face_surfaces, xmt, "nx offset face surfaces")?;
     }
     let mut candidates = Vec::new();
     for xmt in &face_surfaces {
@@ -128,21 +127,20 @@ pub(super) fn saved_offset_carriers(
                     geometry_budget,
                 )?;
                 if fit_cache.len() < MAX_OFFSET_FIT_CACHE_ENTRIES {
-                    ctx.charge_collection_items(1, "nx offset fit cache")?;
-                    fit_cache.insert(key, fit);
+                    ctx.insert_btree_map(&mut fit_cache, key, fit, "nx offset fit cache")?;
                 }
                 fit
             };
             if let Some(fit) = fit {
-                if !matches.contains_key(&offset.xmt) {
-                    ctx.charge_collection_items(1, "nx offset match owners")?;
-                }
+                ctx.admit_btree_entry(&matches, &offset.xmt, "nx offset match owners")?;
                 let group = matches.entry(offset.xmt).or_default();
                 ctx.reserve_vec(group, 1, "nx offset matches")?;
                 group.push((*candidate_id, fit));
-                if !candidate_owners.contains_key(*candidate_id) {
-                    ctx.charge_collection_items(1, "nx offset candidate owners")?;
-                }
+                ctx.admit_btree_entry(
+                    &candidate_owners,
+                    candidate_id,
+                    "nx offset candidate owners",
+                )?;
                 let owners = candidate_owners.entry(*candidate_id).or_default();
                 ctx.reserve_vec(owners, 1, "nx offset candidate owner entries")?;
                 owners.push(offset.xmt);
@@ -156,14 +154,15 @@ pub(super) fn saved_offset_carriers(
             continue;
         };
         if candidate_owners.get(candidate).map(Vec::as_slice) == Some(&[offset][..]) {
-            ctx.charge_collection_items(1, "nx saved offset carriers")?;
-            result.insert(
+            ctx.insert_btree_map(
+                &mut result,
                 offset,
                 (
                     candidate.try_clone_for_decode(ctx, "nx saved offset surface identity")?,
                     *fit,
                 ),
-            );
+                "nx saved offset carriers",
+            )?;
         }
     }
     Ok(result)

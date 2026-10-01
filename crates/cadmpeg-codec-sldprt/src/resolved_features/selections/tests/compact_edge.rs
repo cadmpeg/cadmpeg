@@ -336,7 +336,8 @@ fn compact_edge_selection_is_count_delimited_and_signature_typed() {
         0x00, 0x81, 0x03, 0x01, 0x2c, 0, 0, 0, 0x63, 0x18, 0x58, 0x69,
     ];
     for (index, edge_id) in [4u32, 0, 5].into_iter().enumerate() {
-        payload.extend((0x818bu32 + index as u32).to_le_bytes());
+        payload
+            .extend((0x818bu32 + u32::try_from(index).expect("test index fits u32")).to_le_bytes());
         payload.extend(signature);
         payload.extend(edge_id.to_le_bytes());
         if index == 0 {
@@ -757,7 +758,7 @@ fn compact_edge_selection_preserves_an_idless_path_entry() {
         id: "selection".into(),
         parent: "lane".into(),
         ordinal: 0,
-        offset: marker as u64,
+        offset: cadmpeg_core::decode::u64_from_index(marker),
         object_name_ref: "name".into(),
         feature_ref: "consumer".into(),
         local_edge_ids: vec![4, 4, 0],
@@ -904,8 +905,11 @@ fn fillet_edge_roster_ends_at_direct_or_repeated_vertex_dimension() {
     let mut payload = vec![0; 144];
     payload[direct_record..direct_record + 4].copy_from_slice(&[0x20, 0x81, 0x08, 0x00]);
     payload[class_offset..class_offset + 4].copy_from_slice(CLASS_MARKER);
-    payload[class_offset + 4..class_offset + 6]
-        .copy_from_slice(&(class_name.len() as u16).to_le_bytes());
+    payload[class_offset + 4..class_offset + 6].copy_from_slice(
+        &u16::try_from(class_name.len())
+            .expect("length fits u16")
+            .to_le_bytes(),
+    );
     payload[class_offset + 6..class_body].copy_from_slice(class_name.as_bytes());
     payload[class_body..class_body + 2].copy_from_slice(&class_token.to_le_bytes());
     payload[repeated_record..repeated_record + 4].copy_from_slice(&[0x20, 0x81, 0x10, 0x00]);
@@ -919,7 +923,7 @@ fn fillet_edge_roster_ends_at_direct_or_repeated_vertex_dimension() {
             id: "vertex-dimension-class".into(),
             parent: "lane".into(),
             ordinal: 0,
-            offset: class_offset as u64,
+            offset: cadmpeg_core::decode::u64_from_index(class_offset),
             name: class_name.into(),
         }],
         names: Vec::new(),
@@ -1227,8 +1231,11 @@ fn varfillet_roster_accepts_unframed_reference_lists() {
     }
     payload[class_offset - 4..class_offset].copy_from_slice(&[0x20, 0x81, 0x08, 0]);
     payload[class_offset..class_offset + 4].copy_from_slice(CLASS_MARKER);
-    payload[class_offset + 4..class_offset + 6]
-        .copy_from_slice(&(class_name.len() as u16).to_le_bytes());
+    payload[class_offset + 4..class_offset + 6].copy_from_slice(
+        &u16::try_from(class_name.len())
+            .expect("length fits u16")
+            .to_le_bytes(),
+    );
     payload[class_offset + 6..class_offset + 6 + class_name.len()]
         .copy_from_slice(class_name.as_bytes());
     payload[class_offset + 6 + class_name.len()..class_offset + 8 + class_name.len()]
@@ -1267,7 +1274,7 @@ fn varfillet_roster_accepts_unframed_reference_lists() {
             id: "vertex-dimension-class".into(),
             parent: "lane".into(),
             ordinal: 0,
-            offset: class_offset as u64,
+            offset: cadmpeg_core::decode::u64_from_index(class_offset),
             name: class_name.into(),
         }],
         names: vec![FeatureInputName {

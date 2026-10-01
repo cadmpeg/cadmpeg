@@ -1450,10 +1450,9 @@ fn insert_source_attribute(
     key: &'static str,
     value: std::fmt::Arguments<'_>,
 ) -> Result<(), CodecError> {
-    ctx.charge_collection_items(1, "collect Inventor source attribute")?;
     let key = ctx.copy_retained_text(key, "retain Inventor source attribute key")?;
     let value = ctx.format_retained(value, "retain Inventor source attribute value")?;
-    attributes.insert(key, value);
+    ctx.insert_btree_map(attributes, key, value, "collect Inventor source attribute")?;
     Ok(())
 }
 
@@ -2163,11 +2162,12 @@ fn index_projected_colors<'b>(
 ) -> Result<HashMap<AppearanceId, Color>, CodecError> {
     let mut output = HashMap::new();
     for (id, color) in entries {
-        ctx.charge_collection_items(1, "index Inventor projected appearance colors")?;
-        output.insert(
+        ctx.insert_hash_map(
+            &mut output,
             id.try_clone_for_decode(ctx, "retain Inventor projected appearance color id")?,
             color,
-        );
+            "index Inventor projected appearance colors",
+        )?;
     }
     Ok(output)
 }
@@ -2178,11 +2178,12 @@ fn index_face_colors<'b>(
 ) -> Result<HashMap<FaceId, Color>, CodecError> {
     let mut output = HashMap::new();
     for (id, color) in entries {
-        ctx.charge_collection_items(1, "index Inventor face colors")?;
-        output.insert(
+        ctx.insert_hash_map(
+            &mut output,
             id.try_clone_for_decode(ctx, "retain Inventor face color id")?,
             color,
-        );
+            "index Inventor face colors",
+        )?;
     }
     Ok(output)
 }
@@ -2193,11 +2194,12 @@ fn index_asm_face_keys<'b>(
 ) -> Result<HashMap<FaceId, u64>, CodecError> {
     let mut output = HashMap::new();
     for (id, key) in entries {
-        ctx.charge_collection_items(1, "index Inventor ASM face keys")?;
-        output.insert(
+        ctx.insert_hash_map(
+            &mut output,
             id.try_clone_for_decode(ctx, "retain Inventor ASM face key id")?,
             key,
-        );
+            "index Inventor ASM face keys",
+        )?;
     }
     Ok(output)
 }
@@ -2409,7 +2411,8 @@ fn admit_assembly_placement(
             )?;
             issues.push(RecordIssue {
                 family: RecordIssueFamily::Assembly,
-                segment_token,
+                segment_token: cadmpeg_ir::ids::IdentityKey::try_new(segment_token)
+                    .map_err(CodecError::malformed)?,
                 record_ordinal,
                 detail,
             });
@@ -2497,10 +2500,6 @@ impl MetadataProjection {
                 )?;
                 *target = Some(value.into());
             } else if target.as_deref() != Some(value) {
-                ctx.charge_collection_items(
-                    cadmpeg_core::decode::u64_from_index(1),
-                    "collect Inventor BOM property",
-                )?;
                 ctx.charge_retained(
                     cadmpeg_core::decode::u64_from_index(native_id.len()),
                     "retain Inventor BOM property key",
@@ -2509,15 +2508,16 @@ impl MetadataProjection {
                     cadmpeg_core::decode::u64_from_index(value.len()),
                     "retain Inventor BOM property value",
                 )?;
-                self.bom_properties.insert(native_id.into(), value.into());
+                ctx.insert_btree_map(
+                    &mut self.bom_properties,
+                    native_id.into(),
+                    value.into(),
+                    "collect Inventor BOM property",
+                )?;
             }
             return Ok(());
         }
         if let Some(name) = name {
-            ctx.charge_collection_items(
-                cadmpeg_core::decode::u64_from_index(1),
-                "collect Inventor BOM property",
-            )?;
             ctx.charge_retained(
                 cadmpeg_core::decode::u64_from_index(name.len()),
                 "retain Inventor BOM property key",
@@ -2526,7 +2526,12 @@ impl MetadataProjection {
                 cadmpeg_core::decode::u64_from_index(value.len()),
                 "retain Inventor BOM property value",
             )?;
-            self.bom_properties.insert(name.into(), value.into());
+            ctx.insert_btree_map(
+                &mut self.bom_properties,
+                name.into(),
+                value.into(),
+                "collect Inventor BOM property",
+            )?;
         } else {
             self.unmapped += 1;
         }
@@ -2545,10 +2550,6 @@ impl MetadataProjection {
             ("part_number", &self.part_number),
         ] {
             if let Some(value) = value {
-                ctx.charge_collection_items(
-                    cadmpeg_core::decode::u64_from_index(1),
-                    "collect Inventor metadata attribute",
-                )?;
                 ctx.charge_retained(
                     cadmpeg_core::decode::u64_from_index(name.len()),
                     "retain Inventor metadata attribute key",
@@ -2557,7 +2558,12 @@ impl MetadataProjection {
                     cadmpeg_core::decode::u64_from_index(value.len()),
                     "retain Inventor metadata attribute value",
                 )?;
-                attributes.insert(name.into(), value.clone());
+                ctx.insert_btree_map(
+                    attributes,
+                    name.into(),
+                    value.clone(),
+                    "collect Inventor metadata attribute",
+                )?;
             }
         }
         Ok(())

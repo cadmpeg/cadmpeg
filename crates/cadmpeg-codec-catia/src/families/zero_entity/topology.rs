@@ -145,25 +145,36 @@ fn zero_entity_oriented_occurrences(
     Ok(occurrences)
 }
 
+/// Refuse a local search ceiling without replacing a session refusal.
+fn charge_endpoint_work(
+    ctx: &DecodeContext<'_>,
+    budget: &WorkBudget<'_>,
+) -> Result<(), CodecError> {
+    if budget.charge() {
+        return Ok(());
+    }
+    if let Some(limit) = ctx.resource_refusal() {
+        return Err(limit.into());
+    }
+    let limit = cadmpeg_core::decode::u64_from_index(budget.consumed());
+    let requested = limit.checked_add(1).ok_or_else(|| {
+        ctx.refuse_codec_limit("catia_zero_endpoint_work", u64::MAX - 1, u64::MAX)
+    })?;
+    Err(ctx.refuse_codec_limit("catia_zero_endpoint_work", limit, requested))
+}
+
 pub(crate) fn endpoint_pair_candidates(
     ctx: &DecodeContext<'_>,
     occurrences: &[ZeroEntityOrientedOccurrence],
 ) -> Result<Vec<ZeroEntityEndpointPairCandidate>, CodecError> {
-    Ok(endpoint_pair_candidates_inner(ctx, occurrences, None)?.unwrap_or_default())
+    let budget = ctx.work_budget(ctx.policy().limits.max_work_units);
+    Ok(endpoint_pair_candidates_with_budget(ctx, occurrences, &budget)?.unwrap_or_default())
 }
 
 fn endpoint_pair_candidates_with_budget(
     ctx: &DecodeContext<'_>,
     occurrences: &[ZeroEntityOrientedOccurrence],
     budget: &WorkBudget<'_>,
-) -> Result<Option<Vec<ZeroEntityEndpointPairCandidate>>, CodecError> {
-    endpoint_pair_candidates_inner(ctx, occurrences, Some(budget))
-}
-
-fn endpoint_pair_candidates_inner(
-    ctx: &DecodeContext<'_>,
-    occurrences: &[ZeroEntityOrientedOccurrence],
-    budget: Option<&WorkBudget<'_>>,
 ) -> Result<Option<Vec<ZeroEntityEndpointPairCandidate>>, CodecError> {
     let Some(endpoint_matches) = endpoint_match_graph(ctx, occurrences, budget)? else {
         return Ok(None);
@@ -264,7 +275,16 @@ fn endpoint_pair_candidates_inner(
             if radial_matches[pair[0]].len() == 1 && radial_matches[pair[1]].len() == 1 {
                 continue;
             }
-            pair.sort_by_key(|index| occurrences[*index].support_record_ordinal);
+            ctx.stable_sort_by(
+                &mut pair,
+                |left, right| {
+                    occurrences[*left]
+                        .support_record_ordinal
+                        .cmp(&occurrences[*right].support_record_ordinal)
+                },
+                |_| 0,
+                "catia_zero_pair_support_order",
+            )?;
             let [first, second] = [occurrences[pair[0]], occurrences[pair[1]]];
             ctx.push_vec(
                 &mut candidates,
@@ -281,7 +301,15 @@ fn endpoint_pair_candidates_inner(
             )?;
         }
     }
-    candidates.sort_by_key(|candidate| candidate.support_record_ordinals);
+    ctx.stable_sort_by(
+        &mut candidates,
+        |left, right| {
+            left.support_record_ordinals
+                .cmp(&right.support_record_ordinals)
+        },
+        |_| 0,
+        "catia_zero_endpoint_pairs_sort",
+    )?;
     Ok(Some(candidates))
 }
 
@@ -289,21 +317,14 @@ pub(crate) fn endpoint_locus_candidates(
     ctx: &DecodeContext<'_>,
     endpoint_pairs: &[ZeroEntityEndpointPairCandidate],
 ) -> Result<Vec<ZeroEntityEndpointLocusCandidate>, CodecError> {
-    Ok(endpoint_locus_candidates_inner(ctx, endpoint_pairs, None)?.unwrap_or_default())
+    let budget = ctx.work_budget(ctx.policy().limits.max_work_units);
+    Ok(endpoint_locus_candidates_with_budget(ctx, endpoint_pairs, &budget)?.unwrap_or_default())
 }
 
 pub(super) fn endpoint_locus_candidates_with_budget(
     ctx: &DecodeContext<'_>,
     endpoint_pairs: &[ZeroEntityEndpointPairCandidate],
     budget: &WorkBudget<'_>,
-) -> Result<Option<Vec<ZeroEntityEndpointLocusCandidate>>, CodecError> {
-    endpoint_locus_candidates_inner(ctx, endpoint_pairs, Some(budget))
-}
-
-fn endpoint_locus_candidates_inner(
-    ctx: &DecodeContext<'_>,
-    endpoint_pairs: &[ZeroEntityEndpointPairCandidate],
-    budget: Option<&WorkBudget<'_>>,
 ) -> Result<Option<Vec<ZeroEntityEndpointLocusCandidate>>, CodecError> {
     let mut endpoints = Vec::new();
     for (endpoint_pair, candidate) in endpoint_pairs.iter().enumerate() {
@@ -352,11 +373,7 @@ fn endpoint_locus_candidates_inner(
                         if *other <= index {
                             continue;
                         }
-                        if let Some(budget) = budget {
-                            if !budget.charge() {
-                                return Ok(None);
-                            }
-                        }
+                        charge_endpoint_work(ctx, budget)?;
                         if point.distance(endpoints[*other].2.get()) <= MODEL_POINT_TOLERANCE {
                             ctx.push_vec(
                                 &mut neighbors[index],
@@ -394,17 +411,13 @@ fn endpoint_locus_candidates_inner(
                 }
             }
         }
-        component.sort_unstable();
+        ctx.sort_unstable_by(&mut component, Ord::cmp, |_| 0, "catia_zero_locus_component_sort")?;
         let representative_point = endpoints[component[0]].2;
         let mut maximum_deviation = 0.0_f64;
         let mut complete = true;
         for (position, left) in component.iter().enumerate() {
             for right in &component[position + 1..] {
-                if let Some(budget) = budget {
-                    if !budget.charge() {
-                        return Ok(None);
-                    }
-                }
+                charge_endpoint_work(ctx, budget)?;
                 let deviation = endpoints[*left].2.distance(endpoints[*right].2.get());
                 maximum_deviation = maximum_deviation.max(deviation);
                 complete &= deviation <= MODEL_POINT_TOLERANCE;
@@ -437,7 +450,7 @@ fn endpoint_locus_candidates_inner(
 fn endpoint_match_graph(
     ctx: &DecodeContext<'_>,
     occurrences: &[ZeroEntityOrientedOccurrence],
-    budget: Option<&WorkBudget<'_>>,
+    budget: &WorkBudget<'_>,
 ) -> Result<Option<Vec<Vec<usize>>>, CodecError> {
     let mut cells = HashMap::<[i64; 3], Vec<usize>>::new();
     for (index, occurrence) in occurrences.iter().enumerate() {
@@ -479,11 +492,7 @@ fn endpoint_match_graph(
                                     other,
                                     "catia_zero_match_possible",
                                 )? {
-                                    if let Some(budget) = budget {
-                                        if !budget.charge() {
-                                            return Ok(None);
-                                        }
-                                    }
+                                    charge_endpoint_work(ctx, budget)?;
                                 }
                             }
                         }
@@ -502,7 +511,7 @@ fn endpoint_match_graph(
         }
     }
     for neighbors in &mut matches {
-        neighbors.sort_unstable();
+        ctx.sort_unstable_by(neighbors, Ord::cmp, |_| 0, "catia_zero_match_edges_sort")?;
     }
     Ok(Some(matches))
 }
@@ -581,7 +590,7 @@ mod tests {
         let endpoints = [Point3::new(f64::MAX, 0.0, 0.0); 2];
         let occurrences = [occurrence(1, 1, endpoints, endpoints[0])];
         let result = crate::test_support::with_service_context(|ctx| {
-            super::endpoint_match_graph(ctx, &occurrences, None)
+            super::endpoint_match_graph(ctx, &occurrences, &ctx.work_budget(100))
         })
         .expect("service budget");
         assert!(result.is_none());
@@ -592,7 +601,7 @@ mod tests {
         let endpoints = [Point3::new(-f64::MAX, 0.0, 0.0); 2];
         let occurrences = [occurrence(1, 1, endpoints, endpoints[0])];
         let result = crate::test_support::with_service_context(|ctx| {
-            super::endpoint_match_graph(ctx, &occurrences, None)
+            super::endpoint_match_graph(ctx, &occurrences, &ctx.work_budget(100))
         })
         .expect("service budget");
         assert!(result.is_none());
@@ -608,7 +617,7 @@ mod tests {
             model_midpoint: endpoints[0],
         }];
         let result = crate::test_support::with_service_context(|ctx| {
-            super::endpoint_locus_candidates_inner(ctx, &pairs, None)
+            super::endpoint_locus_candidates_with_budget(ctx, &pairs, &ctx.work_budget(100))
         })
         .expect("service budget");
         assert!(result.is_none());
@@ -624,7 +633,7 @@ mod tests {
             model_midpoint: endpoints[0],
         }];
         let result = crate::test_support::with_service_context(|ctx| {
-            super::endpoint_locus_candidates_inner(ctx, &pairs, None)
+            super::endpoint_locus_candidates_with_budget(ctx, &pairs, &ctx.work_budget(100))
         })
         .expect("service budget");
         assert!(result.is_none());
@@ -719,6 +728,36 @@ mod tests {
     }
 
     #[test]
+    fn native_endpoint_inventory_propagates_zero_work_refusal() {
+        let endpoints = [Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)];
+        let occurrences = [
+            occurrence(10, 1, endpoints, Point3::new(0.5, 0.0, 0.0)),
+            occurrence(11, 2, endpoints, Point3::new(0.5, 0.0, 0.0)),
+        ];
+        crate::test_support::with_work_limit(0, |ctx| {
+            let error =
+                endpoint_pair_candidates(ctx, &occurrences).expect_err("inventory work refused");
+            let CodecError::ResourceLimit(limit) = error else {
+                panic!("resource refusal required")
+            };
+            assert_eq!(ctx.resource_refusal(), Some(limit));
+        });
+        let pairs = [super::ZeroEntityEndpointPairCandidate {
+            face_record_ordinals: [10, 11],
+            support_record_ordinals: [1, 2],
+            model_endpoints: [finite(endpoints[0]); 2],
+            model_midpoint: finite(endpoints[0]),
+        }];
+        crate::test_support::with_work_limit(0, |ctx| {
+            let error = endpoint_locus_candidates(ctx, &pairs).expect_err("locus work refused");
+            let CodecError::ResourceLimit(limit) = error else {
+                panic!("resource refusal required")
+            };
+            assert_eq!(ctx.resource_refusal(), Some(limit));
+        });
+    }
+
+    #[test]
     fn bounded_endpoint_matching_refuses_exhausted_work() {
         let endpoints = [Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)];
         let occurrences = [
@@ -727,11 +766,11 @@ mod tests {
         ];
         let budget = WorkBudget::new(0);
 
-        assert!(crate::test_support::with_service_context(|ctx| {
+        let result = crate::test_support::with_service_context(|ctx| {
             endpoint_pair_candidates_with_budget(ctx, &occurrences, &budget)
-        })
-        .expect("test endpoint pairs fit the service profile")
-        .is_none());
+        });
+        assert!(matches!(result, Err(CodecError::ResourceLimit(limit))
+            if limit.operation == "catia_zero_endpoint_work" && limit.limit == 0 && limit.additional == 1));
         assert!(budget.exhausted());
     }
 

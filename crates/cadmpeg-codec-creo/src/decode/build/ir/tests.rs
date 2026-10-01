@@ -392,17 +392,22 @@ fn placed_plane_identity_and_overflow_text_refuse_below_retained_limits() {
 fn inch_strip(positions: Vec<[f64; 3]>) -> ContainerScan<'static> {
     let mut scan = scan_bytes_ok(crate::test_support::build_prt("strip", &[]));
     scan.framing.principal_unit = Some(PrincipalUnitSystem::InchPoundMassSecond);
-    scan.primitives
-        .triangle_strips
-        .push(PrimitiveTriangleStrip {
-            offset: 0,
-            positions: positions
-                .into_iter()
-                .map(|position| FiniteVector::new(position).expect("finite strip position"))
-                .collect(),
-            normals: None,
-            strip_lengths: vec![3],
-        });
+    scan.primitives.triangle_strips.push(
+        crate::decode::with_test_decode_ctx(|ctx| {
+            PrimitiveTriangleStrip::new(
+                ctx,
+                0,
+                positions
+                    .into_iter()
+                    .map(|position| FiniteVector::new(position).expect("finite strip position"))
+                    .collect(),
+                None,
+                vec![3],
+            )
+        })
+        .expect("service strip")
+        .expect("valid strip"),
+    );
     scan
 }
 
@@ -428,7 +433,11 @@ fn display_tessellation_vertices_are_in_millimeters_at_ir_admission() {
         Point3::new(0.0, 0.0, 101.6)
     );
     assert_eq!(
-        scan.primitives.triangle_strips[0].positions[0],
+        scan.primitives.triangle_strips[0]
+            .positions()
+            .next()
+            .expect("first vertex")
+            .get(),
         [1.0, 0.0, 0.0]
     );
     assert_eq!(
@@ -478,11 +487,24 @@ fn display_strip_allocations_refuse_at_each_collection_boundary() {
         },
     );
     let mut shaded = inch_strip(vec![[1.0, 0.0, 0.0], [0.0, 2.0, 0.0], [0.0, 0.0, 4.0]]);
-    shaded.primitives.triangle_strips[0].normals = Some(vec![
-        FiniteVector::new([0.0, 0.0, 1.0])
-            .expect("finite normal");
-        3
-    ]);
+    shaded.primitives.triangle_strips[0] = crate::decode::with_test_decode_ctx(|ctx| {
+        PrimitiveTriangleStrip::new(
+            ctx,
+            0,
+            shaded.primitives.triangle_strips[0]
+                .positions()
+                .copied()
+                .collect(),
+            Some(vec![
+                FiniteVector::new([0.0, 0.0, 1.0])
+                    .expect("finite normal");
+                3
+            ]),
+            vec![3],
+        )
+    })
+    .expect("service")
+    .expect("valid strip");
     collection_boundary_sweep(
         &[
             "creo display tessellation positions",
@@ -521,13 +543,20 @@ fn display_strip_allocations_refuse_at_each_collection_boundary() {
 fn display_strip_error_text_refuses_below_retained_limits() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 
-    let mut malformed = inch_strip(vec![[1.0, 0.0, 0.0], [0.0, 2.0, 0.0], [0.0, 0.0, 4.0]]);
-    malformed.primitives.triangle_strips[0].strip_lengths = vec![2];
+    crate::decode::with_test_decode_ctx(|ctx| {
+        assert!(PrimitiveTriangleStrip::new(
+            ctx,
+            0,
+            vec![FiniteVector::new([1.0, 0.0, 0.0]).expect("finite"); 3],
+            None,
+            vec![2]
+        )
+        .expect("service")
+        .is_none());
+    });
     let overflow = inch_strip(vec![[f64::MAX, 0.0, 0.0], [0.0, 2.0, 0.0], [0.0, 0.0, 4.0]]);
     let arena = DecodeArena::new();
     for (scan, operation, expected) in [
-        (&malformed, "creo display tessellation malformed text",
-            "SolidPrimdata display triangle strip at byte 0: 1 strip span(s) do not cut the vertex lane"),
         (&overflow, "creo display tessellation overflow text",
             "SolidPrimdata display triangle strip at byte 0 has a vertex that cannot be represented in millimeters"),
     ] {
@@ -765,17 +794,18 @@ fn placed_plane_scaled_origin_overflow_refuses_unrepresentable_ir() {
 fn inch_datum_plane(offset: f64) -> ContainerScan<'static> {
     let mut scan = scan_bytes_ok(crate::test_support::build_prt("datum", &[]));
     scan.framing.principal_unit = Some(PrincipalUnitSystem::InchPoundMassSecond);
-    scan.planes.datums.push(crate::datum::DatumPlaneRecord {
-        id: 5,
-        feature_id: 1,
-        plane: crate::datum::DatumPlane {
-            axis: crate::datum::Axis::X,
+    scan.planes.datums.push(
+        crate::datum::DatumPlaneRecord::new(
+            5,
+            1,
+            crate::datum::DatumPlane::new(crate::axis::Axis::X, offset)
+                .expect("valid datum fixture"),
             offset,
-        },
-        opposite_offset: offset,
-        in_plane_corners: [[Some(0.0); 2]; 2],
-        offset_in_payload: 0,
-    });
+            [[Some(0.0); 2]; 2],
+            0,
+        )
+        .expect("valid datum fixture"),
+    );
     scan
 }
 

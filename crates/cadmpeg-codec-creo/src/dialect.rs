@@ -159,23 +159,26 @@ pub(crate) fn classify(
     };
     let layout = &scan.framing.layout;
     let mut declared = BTreeMap::new();
-    ctx.charge_collection_items(1, "creo declared dialect nodes")?;
-    declared.insert(
+    ctx.insert_btree_map(
+        &mut declared,
         declared_key(DECLARED_VERSION_LINE)?,
         ctx.copy_retained_text(&scan.framing.version_line, "creo declared version line")?,
-    );
+        "creo declared dialect nodes",
+    )?;
     if let Some(legacy) = scan.framing.layout.legacy_ascii() {
-        ctx.charge_collection_items(1, "creo declared dialect nodes")?;
-        declared.insert(
+        ctx.insert_btree_map(
+            &mut declared,
             declared_key(DECLARED_LEGACY_ASCII_SCHEMA)?,
             ctx.copy_retained_text(&legacy.schema, "creo declared legacy schema")?,
-        );
+            "creo declared dialect nodes",
+        )?;
         if let Some(release) = &legacy.product_release {
-            ctx.charge_collection_items(1, "creo declared dialect nodes")?;
-            declared.insert(
+            ctx.insert_btree_map(
+                &mut declared,
                 declared_key(DECLARED_LEGACY_ASCII_PRODUCT_RELEASE)?,
                 ctx.copy_retained_text(release, "creo declared product release")?,
-            );
+                "creo declared dialect nodes",
+            )?;
         }
     }
     Ok(match layout {

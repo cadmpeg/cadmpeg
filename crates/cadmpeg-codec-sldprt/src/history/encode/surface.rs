@@ -19,13 +19,19 @@ use cadmpeg_ir::{
     scalar::{Angle, Length},
 };
 
-#[allow(
-    clippy::too_many_arguments,
-    clippy::trivially_copy_pass_by_ref,
-    clippy::ref_option,
-    clippy::ptr_arg,
-    reason = "Encoder arguments are borrowed from one FeatureDefinition match."
-)]
+/// The decoded fields of one `Shell` operation, borrowed from the feature definition.
+#[derive(Clone, Copy)]
+pub(super) struct ShellDefinition<'a> {
+    pub(super) bodies: Option<&'a BodySelection>,
+    pub(super) removed_faces: &'a FaceSelection,
+    pub(super) thickness: Option<&'a cadmpeg_ir::scalar::PositiveLength>,
+    pub(super) outward: Option<bool>,
+    pub(super) mode: Option<&'a ShellMode>,
+    pub(super) join: Option<&'a ShellJoin>,
+    pub(super) resolve_intersections: Option<bool>,
+    pub(super) allow_self_intersections: Option<bool>,
+}
+
 impl NeutralFeatureEncoder<'_, '_, '_> {
     pub(super) fn encode_boundary_surface_unresolved(
         &self,
@@ -84,8 +90,8 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
     pub(super) fn encode_extend_surface(
         &self,
         faces: &FaceSelection,
-        distance: &Option<cadmpeg_ir::scalar::PositiveLength>,
-        method: &SurfaceExtension,
+        distance: Option<&cadmpeg_ir::scalar::PositiveLength>,
+        method: SurfaceExtension,
     ) -> Result<NeutralFeatureEncoding, CodecError> {
         let feature = self.feature;
         let existing = self.existing;
@@ -108,12 +114,12 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 .unwrap_or_default();
             parameters.insert(
                 cadmpeg_core::nonblank_literal!("Distance"),
-                format_length_mm(distance.into()),
+                format_length_mm((*distance).into()),
             );
             let mut properties = feature.source_properties.clone();
             properties.insert(cadmpeg_core::nonblank_literal!("Faces"), faces);
             let method =
-                crate::feature_schema::surface_extension_token(*method).ok_or_else(|| {
+                crate::feature_schema::surface_extension_token(method).ok_or_else(|| {
                     CodecError::NotImplemented(format!(
                         "SLDPRT feature {} has an unsupported surface extension method",
                         feature.id
@@ -133,9 +139,9 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
         edges: &EdgeSelection,
         support_faces: &FaceSelection,
         mode: &RuledSurfaceMode,
-        angle: &Option<Angle>,
-        alternate_face: &Option<bool>,
-        corner: &Option<RuledSurfaceCorner>,
+        angle: Option<&Angle>,
+        alternate_face: Option<bool>,
+        corner: Option<&RuledSurfaceCorner>,
     ) -> Result<NeutralFeatureEncoding, CodecError> {
         let feature = self.feature;
         let existing = self.existing;
@@ -202,15 +208,18 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
 
     pub(super) fn encode_shell(
         &self,
-        bodies: &Option<BodySelection>,
-        removed_faces: &FaceSelection,
-        thickness: &Option<cadmpeg_ir::scalar::PositiveLength>,
-        outward: &Option<bool>,
-        mode: &Option<ShellMode>,
-        join: &Option<ShellJoin>,
-        resolve_intersections: &Option<bool>,
-        allow_self_intersections: &Option<bool>,
+        definition: ShellDefinition<'_>,
     ) -> Result<NeutralFeatureEncoding, CodecError> {
+        let ShellDefinition {
+            bodies,
+            removed_faces,
+            thickness,
+            outward,
+            mode,
+            join,
+            resolve_intersections,
+            allow_self_intersections,
+        } = definition;
         let feature = self.feature;
         let existing = self.existing;
         Ok({
@@ -292,8 +301,8 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
     pub(super) fn encode_thicken(
         &self,
         faces: &FaceSelection,
-        thickness: &Option<cadmpeg_ir::scalar::PositiveLength>,
-        side: &Option<ThickenSide>,
+        thickness: Option<&cadmpeg_ir::scalar::PositiveLength>,
+        side: Option<&ThickenSide>,
     ) -> Result<NeutralFeatureEncoding, CodecError> {
         let feature = self.feature;
         let existing = self.existing;
@@ -376,7 +385,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
     pub(super) fn encode_offset_surface(
         &self,
         faces: &FaceSelection,
-        distance: &Option<Length>,
+        distance: Option<&Length>,
     ) -> Result<NeutralFeatureEncoding, CodecError> {
         let feature = self.feature;
         let existing = self.existing;
@@ -399,7 +408,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 .unwrap_or_default();
             parameters.insert(
                 cadmpeg_core::nonblank_literal!("Distance"),
-                format_length_mm(distance),
+                format_length_mm(*distance),
             );
             let mut properties = feature.source_properties.clone();
             properties.insert(cadmpeg_core::nonblank_literal!("Faces"), selection);
@@ -414,9 +423,9 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
     pub(super) fn encode_knit_surface(
         &self,
         faces: &FaceSelection,
-        merge_entities: &Option<bool>,
-        create_solid: &Option<bool>,
-        gap_tolerance: &Option<cadmpeg_ir::scalar::NonNegativeLength>,
+        merge_entities: Option<bool>,
+        create_solid: Option<bool>,
+        gap_tolerance: Option<&cadmpeg_ir::scalar::NonNegativeLength>,
     ) -> Result<NeutralFeatureEncoding, CodecError> {
         let feature = self.feature;
         let existing = self.existing;
@@ -477,7 +486,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
         boundary: &SurfaceBoundary,
         support_faces: &FaceSelection,
         continuity: &cadmpeg_ir::features::FilledSurfaceContinuityState,
-        merge_result: &Option<bool>,
+        merge_result: Option<bool>,
     ) -> Result<NeutralFeatureEncoding, CodecError> {
         let feature = self.feature;
         let existing = self.existing;
@@ -547,8 +556,8 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
         &self,
         face_selection: &FaceSelection,
         anchor: &cadmpeg_ir::features::DraftAnchor,
-        angle: &Option<cadmpeg_ir::scalar::SlopeAngle>,
-        outward: &Option<bool>,
+        angle: Option<&cadmpeg_ir::scalar::SlopeAngle>,
+        outward: Option<bool>,
     ) -> Result<NeutralFeatureEncoding, CodecError> {
         let feature = self.feature;
         let existing = self.existing;

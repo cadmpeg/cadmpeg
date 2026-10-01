@@ -60,9 +60,7 @@ fn body_pattern_adds_one_copy_per_non_original_occurrence() {
 
     assert_eq!(
         evaluate_saved_body_census(&ir),
-        BodyCensusEvaluation::Verified {
-            bodies: vec![seed, first_copy, second_copy]
-        }
+        BodyCensusEvaluation::verified(vec![seed, first_copy, second_copy]).unwrap()
     );
 }
 
@@ -92,7 +90,7 @@ fn output_free_unresolved_pattern_is_body_census_neutral() {
     assert!(matches!(
         evaluate_saved_body_census(&ir),
         BodyCensusEvaluation::Verified { bodies }
-            if bodies == [BodyId::mint("test:model:entity#body".to_string()).expect("identity grammar")]
+            if bodies.as_slice() == [BodyId::mint("test:model:entity#body".to_string()).expect("identity grammar")]
     ));
 }
 

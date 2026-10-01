@@ -39,16 +39,9 @@ fn spreadsheet_cells_refuse_at_caller_limit() {
         )
         .expect("valid XML span"),
     };
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
-    policy.limits.max_collection_items = 0;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root is within policy");
-    assert!(
-        matches!(super::super::append_spreadsheet(&ctx, &mut Vec::new(), &object, &[&property]),
-        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.operation == "FreeCAD spreadsheet cells")
-    );
+    crate::test_support::assert_collection_refusal_at(&[], "FreeCAD spreadsheet cells", |ctx| {
+        super::super::append_spreadsheet(ctx, &mut Vec::new(), &object, &[&property])
+    });
 }
 
 #[test]

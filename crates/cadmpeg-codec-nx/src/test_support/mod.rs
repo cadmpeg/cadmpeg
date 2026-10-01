@@ -46,3 +46,36 @@ pub(crate) fn extract_streams(bytes: &[u8]) -> Vec<crate::parasolid::Stream> {
         },
     )
 }
+
+/// Admit parser requests before refusing the selected collection operation.
+pub(crate) fn collection_refusal_at<T>(
+    operation: &str,
+    decode: impl Fn(u64) -> Result<T, cadmpeg_core::CodecError>,
+) -> cadmpeg_core::CodecError {
+    use cadmpeg_core::decode::ResourceDimension;
+    use cadmpeg_core::CodecError;
+    let mut ceiling = 0;
+    for _ in 0..4096 {
+        let Err(CodecError::ResourceLimit(limit)) = decode(ceiling) else {
+            panic!("{operation} must refuse before decode completes");
+        };
+        assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
+        let threshold = limit
+            .used
+            .checked_add(limit.additional)
+            .expect("collection threshold");
+        assert!(threshold > ceiling);
+        if limit.operation == operation {
+            let error = decode(threshold - 1)
+                .err()
+                .expect("one item below admission");
+            assert!(matches!(&error, CodecError::ResourceLimit(refusal)
+                if refusal.dimension == ResourceDimension::CollectionItems
+                    && refusal.operation == operation
+                    && refusal.used + refusal.additional == threshold));
+            return error;
+        }
+        ceiling = threshold;
+    }
+    panic!("{operation} was not reached within 4096 admissions");
+}

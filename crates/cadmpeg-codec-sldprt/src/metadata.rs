@@ -2,7 +2,7 @@
 //! Typed SW Objects document metadata.
 
 use crate::container::{ContainerScan, Section};
-use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::decode::{u64_from_index, DecodeContext, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::annotations::Annotations;
 use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue, SourceAttribute};
@@ -21,22 +21,26 @@ pub(crate) fn attributes(
         scan_vectors(
             ctx,
             section,
-            b"moBBoxCenterData_c",
-            &cadmpeg_ir::identity_component!("bounding_envelope"),
-            4,
-            4,
-            true,
+            &VectorScan {
+                token: b"moBBoxCenterData_c",
+                name: &cadmpeg_ir::identity_component!("bounding_envelope"),
+                count: 4,
+                skip: 4,
+                all_lengths: true,
+            },
             &mut out,
             annotations,
         )?;
         scan_vectors(
             ctx,
             section,
-            b"moDefaultRefPlnData_c",
-            &cadmpeg_ir::identity_component!("default_reference_plane"),
-            9,
-            0,
-            false,
+            &VectorScan {
+                token: b"moDefaultRefPlnData_c",
+                name: &cadmpeg_ir::identity_component!("default_reference_plane"),
+                count: 9,
+                skip: 0,
+                all_lengths: false,
+            },
             &mut out,
             annotations,
         )?;
@@ -113,6 +117,10 @@ fn scan_length_user_units(
     const TOKEN: &[u8] = b"moLengthUserUnits_c";
     const STRING_MARKER: &[u8] = &[0xff, 0xfe, 0xff];
     let payload = section.payload();
+    ctx.charge_work(
+        u64_from_index(payload.len()),
+        "scan SLDPRT linear unit names",
+    )?;
     for offset in payload
         .windows(TOKEN.len())
         .enumerate()
@@ -130,12 +138,19 @@ fn scan_length_user_units(
             continue;
         };
         let start = marker + 4;
-        let Some(bytes) = payload.get(start..start.saturating_add(length)) else {
+        let Some(bytes) = start
+            .checked_add(length)
+            .and_then(|end| payload.get(start..end))
+        else {
             continue;
         };
         if bytes.is_empty() || bytes.len() % 2 != 0 {
             continue;
         }
+        ctx.charge_work(
+            u64_from_index(bytes.len() / 2),
+            "validate SLDPRT linear unit name",
+        )?;
         let scalars = || {
             char::decode_utf16(
                 (0..bytes.len() / 2).filter_map(|index| View::u16_le_at(bytes, index * 2)),
@@ -145,16 +160,12 @@ fn scan_length_user_units(
         if scalars().all(char::is_whitespace) {
             continue;
         }
-        let text_bytes = scalars().try_fold(0_usize, |size, scalar| {
-            size.checked_add(scalar.len_utf8()).ok_or_else(|| {
-                ctx.refuse_codec_limit("retain SLDPRT linear unit name", u64::MAX, u64::MAX)
-            })
-        })?;
-        let mut value = String::new();
-        ctx.try_reserve_retained_text(&mut value, text_bytes, "retain SLDPRT linear unit name")?;
-        for scalar in scalars() {
-            value.push(scalar);
-        }
+        let value = ctx.utf16le_lossy_text(
+            bytes,
+            bytes.len() / 2,
+            false,
+            "retain SLDPRT linear unit name",
+        )?;
         ctx.reserve_vec(out, 1, "collect SLDPRT document attributes")?;
         out.push(attribute(
             ctx,
@@ -183,9 +194,14 @@ fn scan_units_xml(
     else {
         return Ok(());
     };
-    let Ok(document) = roxmltree::Document::parse(text.as_str()) else {
-        return Ok(());
+    let admitted_document = match ctx.parse_xml(text.as_str(), "decode XML tree") {
+        Ok(tree) => tree,
+        Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
+        Err(_) => {
+            return Ok(());
+        }
     };
+    let document = admitted_document.document();
     for node in document.descendants().filter(roxmltree::Node::is_element) {
         let value = if node.tag_name().name() == "SW_UnitsLinear" {
             node.text()
@@ -211,18 +227,29 @@ fn scan_units_xml(
     Ok(())
 }
 
-#[allow(clippy::too_many_arguments)]
-fn scan_vectors(
-    ctx: &DecodeContext<'_>,
-    section: Section<'_>,
-    token: &[u8],
-    name: &cadmpeg_ir::ids::IdentityComponent,
+/// One fixed-width float vector located by its record token.
+struct VectorScan<'a> {
+    token: &'a [u8],
+    name: &'a cadmpeg_ir::ids::IdentityComponent,
     count: usize,
     skip: usize,
     all_lengths: bool,
+}
+
+fn scan_vectors(
+    ctx: &DecodeContext<'_>,
+    section: Section<'_>,
+    scan: &VectorScan<'_>,
     out: &mut Vec<SourceAttribute>,
     annotations: &mut Annotations,
 ) -> Result<(), CodecError> {
+    let VectorScan {
+        token,
+        name,
+        count,
+        skip,
+        all_lengths,
+    } = *scan;
     let payload = section.payload();
     for offset in payload
         .windows(token.len())
@@ -290,8 +317,8 @@ fn scan_part(
             &cadmpeg_ir::identity_component!("part_record"),
             TOKEN,
             vec![
-                AttributeValue::Integer(id as i64),
-                AttributeValue::Integer(version as i64),
+                AttributeValue::Integer(i64::from(id)),
+                AttributeValue::Integer(i64::from(version)),
             ],
             annotations,
         )?);
@@ -320,9 +347,9 @@ fn scan_configuration_manager(
         ) else {
             continue;
         };
-        if filetime > i64::MAX as u64 {
+        let Ok(filetime) = i64::try_from(filetime) else {
             continue;
-        }
+        };
         ctx.reserve_vec(out, 1, "collect SLDPRT document attributes")?;
         out.push(attribute(
             ctx,
@@ -331,9 +358,9 @@ fn scan_configuration_manager(
             &cadmpeg_ir::identity_component!("configuration_manager"),
             TOKEN,
             vec![
-                AttributeValue::Integer(minor as i64),
-                AttributeValue::Integer(*states as i64),
-                AttributeValue::Integer(filetime as i64),
+                AttributeValue::Integer(i64::from(minor)),
+                AttributeValue::Integer(i64::from(*states)),
+                AttributeValue::Integer(filetime),
             ],
             annotations,
         )?);
@@ -369,7 +396,7 @@ fn attribute(
         annotations,
         id.as_str(),
         section.source_stream(),
-        offset as u64,
+        u64_from_index(offset),
         std::str::from_utf8(token).unwrap_or(name.as_str()),
         Exactness::ByteExact,
     )?;

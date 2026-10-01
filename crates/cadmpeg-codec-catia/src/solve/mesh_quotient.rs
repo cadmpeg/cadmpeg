@@ -118,7 +118,7 @@ pub(crate) const MAX_MESH_CONSTRAINT_OPERATIONS: usize = 1_000_000;
 /// bounded phases and each uses the complete mesh-constraint allowance.
 pub(crate) const MAX_MESH_TOPOLOGY_OPERATIONS: usize =
     MAX_MESH_CONSTRAINT_OPERATIONS.saturating_mul(2);
-pub(super) type MeshQuotientGaugeState = (MeshQuotient, HashSet<usize>);
+pub(super) type MeshQuotientGaugeState<'storage> = (MeshQuotient<'storage>, HashSet<usize>);
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum MeshCandidateRejection {
@@ -421,7 +421,16 @@ fn enforce_sparse_endpoint_membership(
     for edge in 0..edges.len() {
         ctx.push_vec(&mut ordered, edge, "catia_sparse_ordered_edges")?;
     }
-    ordered.sort_unstable_by_key(|edge| edge_candidates[edge_ids[*edge]].len());
+    ctx.sort_unstable_by(
+        &mut ordered,
+        |left, right| {
+            edge_candidates[edge_ids[*left]]
+                .len()
+                .cmp(&edge_candidates[edge_ids[*right]].len())
+        },
+        |_| 0,
+        "catia_sparse_ordered_edges_sort",
+    )?;
     for edge in ordered {
         let candidates = &edge_candidates[edge_ids[edge]];
         if candidates.is_empty() {
@@ -565,9 +574,9 @@ fn sparse_membership_refuses_before_incompatible_domains() {
     }
 }
 
-#[derive(Clone)]
-pub(crate) struct MeshQuotient {
-    union: UnionFind,
+#[cfg_attr(test, derive(Clone))]
+pub(crate) struct MeshQuotient<'storage> {
+    union: UnionFind<'storage>,
     domains: Vec<Arc<HashSet<usize>>>,
     members: Vec<Vec<usize>>,
 }
@@ -787,7 +796,12 @@ impl MeshCoordinateRootDomains {
             for point in candidates.iter().flatten().copied() {
                 ctx.push_vec(&mut points, point, "catia_coordinate_edge_candidate_points")?;
             }
-            points.sort_unstable();
+            ctx.sort_unstable_by(
+                &mut points,
+                Ord::cmp,
+                |_| 0,
+                "catia_coordinate_edge_candidate_points_sort",
+            )?;
             points.dedup();
             return Ok(Some(points));
         }
@@ -803,7 +817,12 @@ impl MeshCoordinateRootDomains {
                 "catia_coordinate_edge_points_right",
             )?;
             points.extend_from_slice(&self.domains[right]);
-            points.sort_unstable();
+            ctx.sort_unstable_by(
+                &mut points,
+                Ord::cmp,
+                |_| 0,
+                "catia_coordinate_edge_points_sort",
+            )?;
             points.dedup();
         }
         Ok(Some(points))
@@ -1140,7 +1159,12 @@ impl MeshCoordinateRootDomains {
                     )?;
                 }
             }
-            affected_edges.sort_unstable();
+            ctx.sort_unstable_by(
+                &mut affected_edges,
+                Ord::cmp,
+                |_| 0,
+                "catia_quotient_refine_affected_edges_sort",
+            )?;
             affected_edges.dedup();
         }
     }
@@ -1254,12 +1278,12 @@ impl MeshCoordinateRootDomains {
     }
 }
 
-pub(super) fn initial_mesh_quotient(
-    ctx: &DecodeContext<'_>,
+pub(super) fn initial_mesh_quotient<'storage>(
+    ctx: &'storage DecodeContext<'_>,
     edge_candidates: &[Vec<[usize; 2]>],
     point_count: usize,
     port_identities: &[[u32; 2]],
-) -> Result<Option<MeshQuotient>, CodecError> {
+) -> Result<Option<MeshQuotient<'storage>>, CodecError> {
     if port_identities.len() != edge_candidates.len() {
         return Ok(None);
     }
@@ -1378,7 +1402,7 @@ fn initial_quotient_union_and_merge_refuse_each_collection_limit() {
             Ok(Some(_)) => {}
             Ok(None) => panic!("consistent identities must admit a quotient"),
             Err(error) => panic!("unexpected quotient refusal: {error}"),
-        }
+        };
     }
     for operation in [
         "catia_quotient_union",
@@ -1394,7 +1418,7 @@ fn initial_quotient_union_and_merge_refuse_each_collection_limit() {
 #[cfg(test)]
 fn complete_mesh_endpoint_candidates_from_quotient(
     edge_candidates: &[Vec<[usize; 2]>],
-    quotient: &mut MeshQuotient,
+    quotient: &mut MeshQuotient<'_>,
     max_pairs_per_edge: usize,
     max_pairs_total: usize,
 ) -> Option<Vec<Vec<[usize; 2]>>> {
@@ -1457,8 +1481,11 @@ fn complete_mesh_endpoint_candidates_from_quotient(
         .collect()
 }
 
-impl MeshQuotient {
-    pub(crate) fn clone_charged(&self, ctx: &DecodeContext<'_>) -> Result<Self, CodecError> {
+impl<'storage> MeshQuotient<'storage> {
+    pub(crate) fn clone_charged(
+        &self,
+        ctx: &'storage DecodeContext<'_>,
+    ) -> Result<Self, CodecError> {
         let union = self
             .union
             .clone_charged(ctx, "catia_quotient_clone_union")?;
@@ -1484,7 +1511,7 @@ impl MeshQuotient {
     }
 
     pub(crate) fn new_charged(
-        ctx: &DecodeContext<'_>,
+        ctx: &'storage DecodeContext<'_>,
         domains: Vec<Arc<HashSet<usize>>>,
     ) -> Result<Self, CodecError> {
         let union = UnionFind::charged(ctx, domains.len(), "catia_quotient_union")?;
@@ -1590,7 +1617,7 @@ impl MeshQuotient {
 
     pub(super) fn signature_charged(
         &mut self,
-        ctx: &DecodeContext<'_>,
+        ctx: &'storage DecodeContext<'_>,
     ) -> Result<MeshQuotientSignature, CodecError> {
         let mut components = Vec::new();
         for node in 0..self.union.len() {
@@ -1599,19 +1626,34 @@ impl MeshQuotient {
             }
             let mut members =
                 ctx.copy_slice(self.members(node), "catia_quotient_signature_members")?;
-            members.sort_unstable();
+            ctx.sort_unstable_by(
+                &mut members,
+                Ord::cmp,
+                |_| 0,
+                "catia_quotient_signature_members_sort",
+            )?;
             let mut domain = Vec::new();
             for &point in self.domains[node].iter() {
                 ctx.push_vec(&mut domain, point, "catia_quotient_signature_domain")?;
             }
-            domain.sort_unstable();
+            ctx.sort_unstable_by(
+                &mut domain,
+                Ord::cmp,
+                |_| 0,
+                "catia_quotient_signature_domain_sort",
+            )?;
             ctx.push_vec(
                 &mut components,
                 (members, domain),
                 "catia_quotient_signature_components",
             )?;
         }
-        components.sort_unstable();
+        ctx.sort_unstable_by(
+            &mut components,
+            Ord::cmp,
+            |(members, domain)| members.len() + domain.len(),
+            "catia_quotient_signature_components_sort",
+        )?;
         Ok(components)
     }
 
@@ -1646,7 +1688,7 @@ impl MeshQuotient {
 
     pub(crate) fn merge_charged(
         &mut self,
-        ctx: &DecodeContext<'_>,
+        ctx: &'storage DecodeContext<'_>,
         left: usize,
         right: usize,
     ) -> Result<Option<usize>, CodecError> {
@@ -1678,7 +1720,7 @@ impl MeshQuotient {
 
     pub(crate) fn edge_domains_viable(
         &mut self,
-        ctx: &DecodeContext<'_>,
+        ctx: &'storage DecodeContext<'_>,
         edge_candidates: &[Vec<[usize; 2]>],
     ) -> Result<bool, CodecError> {
         self.propagate_edge_domains(
@@ -1694,7 +1736,7 @@ impl MeshQuotient {
 
     pub(super) fn prepare_coordinate_root_domains(
         &mut self,
-        ctx: &DecodeContext<'_>,
+        ctx: &'storage DecodeContext<'_>,
         point_count: usize,
         edge_candidates: &[Vec<[usize; 2]>],
         budget: Option<&WorkBudget<'_>>,
@@ -1740,7 +1782,12 @@ impl MeshQuotient {
             {
                 ctx.push_vec(&mut domain, point, "catia_quotient_domain_points")?;
             }
-            domain.sort_unstable();
+            ctx.sort_unstable_by(
+                &mut domain,
+                Ord::cmp,
+                |_| 0,
+                "catia_quotient_domain_points_sort",
+            )?;
             ctx.push_vec(&mut domains, domain, "catia_quotient_domains")?;
         }
         if domains.iter().any(Vec::is_empty) {
@@ -1874,7 +1921,7 @@ impl MeshQuotient {
 
     fn propagate_component_edge_domains(
         &mut self,
-        ctx: &DecodeContext<'_>,
+        ctx: &'storage DecodeContext<'_>,
         root: usize,
         edge_candidates: &[Vec<[usize; 2]>],
         budget: Option<&WorkBudget<'_>>,
@@ -1891,7 +1938,7 @@ impl MeshQuotient {
 
     fn affected_edges_for_nodes(
         &mut self,
-        ctx: &DecodeContext<'_>,
+        ctx: &'storage DecodeContext<'_>,
         nodes: &[usize],
         edge_candidates: &[Vec<[usize; 2]>],
     ) -> Result<HashSet<usize>, CodecError> {
@@ -1909,7 +1956,7 @@ impl MeshQuotient {
 
     fn propagate_edge_domains(
         &mut self,
-        ctx: &DecodeContext<'_>,
+        ctx: &'storage DecodeContext<'_>,
         edges: impl IntoIterator<Item = usize>,
         edge_candidates: &[Vec<[usize; 2]>],
         budget: Option<&WorkBudget<'_>>,
@@ -2034,7 +2081,7 @@ impl MeshQuotient {
 
     pub(super) fn merge_singleton_coordinate_roots(
         &mut self,
-        ctx: &DecodeContext<'_>,
+        ctx: &'storage DecodeContext<'_>,
         edge_candidates: &[Vec<[usize; 2]>],
     ) -> Result<bool, CodecError> {
         loop {
@@ -2098,7 +2145,7 @@ impl MeshQuotient {
 
     pub(super) fn close_coordinate_roots(
         &mut self,
-        ctx: &DecodeContext<'_>,
+        ctx: &'storage DecodeContext<'_>,
         point_count: usize,
         edge_candidates: &[Vec<[usize; 2]>],
         budget: Option<&WorkBudget<'_>>,
@@ -2111,7 +2158,7 @@ impl MeshQuotient {
     #[cfg(test)]
     pub(super) fn close_coordinate_roots_for_incidence_with_budget(
         &mut self,
-        ctx: &DecodeContext<'_>,
+        ctx: &'storage DecodeContext<'_>,
         point_count: usize,
         edge_candidates: &[Vec<[usize; 2]>],
         incidence: MeshIncidenceBoundary<'_>,
@@ -2141,7 +2188,7 @@ impl MeshQuotient {
 
     pub(super) fn coordinate_root_closure_outcome_for_incidence(
         &mut self,
-        ctx: &DecodeContext<'_>,
+        ctx: &'storage DecodeContext<'_>,
         point_count: usize,
         edge_candidates: &[Vec<[usize; 2]>],
         incidence: MeshIncidenceBoundary<'_>,
@@ -2170,7 +2217,7 @@ impl MeshQuotient {
 
     fn coordinate_root_closure_outcome(
         &mut self,
-        ctx: &DecodeContext<'_>,
+        ctx: &'storage DecodeContext<'_>,
         point_count: usize,
         edge_candidates: &[Vec<[usize; 2]>],
         incidence: Option<(&[[usize; 2]], &[MeshFaceBoundaryDomain])>,
@@ -2188,7 +2235,7 @@ impl MeshQuotient {
 
     fn coordinate_root_closure_outcome_with_component_budget(
         &mut self,
-        ctx: &DecodeContext<'_>,
+        ctx: &'storage DecodeContext<'_>,
         point_count: usize,
         edge_candidates: &[Vec<[usize; 2]>],
         incidence: Option<(&[[usize; 2]], &[MeshFaceBoundaryDomain])>,
@@ -2210,21 +2257,21 @@ impl MeshQuotient {
 
     fn assignment_has_option(
         &self,
-        ctx: &DecodeContext<'_>,
+        ctx: &'storage DecodeContext<'_>,
         assignment: &MeshFaceBoundaryAssignment,
         edge_candidates: &[Vec<[usize; 2]>],
         budget: Option<&WorkBudget<'_>>,
     ) -> Result<bool, CodecError> {
-        struct State {
+        struct State<'storage> {
             boundary_index: usize,
             at: usize,
             directions: Vec<bool>,
-            quotient: MeshQuotient,
+            quotient: MeshQuotient<'storage>,
         }
 
-        fn advance(
-            ctx: &DecodeContext<'_>,
-            state: &mut State,
+        fn advance<'storage>(
+            ctx: &'storage DecodeContext<'_>,
+            state: &mut State<'storage>,
             boundary: &[MeshBoundaryEdgeCandidate],
             reversed: bool,
         ) -> Result<bool, CodecError> {
@@ -2334,26 +2381,26 @@ impl MeshQuotient {
     #[cfg(test)]
     fn assignment_options(
         &self,
-        ctx: &DecodeContext<'_>,
+        ctx: &'storage DecodeContext<'_>,
         assignment: &MeshFaceBoundaryAssignment,
         edge_candidates: &[Vec<[usize; 2]>],
     ) -> Vec<(Vec<Vec<bool>>, Self)> {
         const MAX_ORIENTED_OPTIONS: usize = 4_096;
 
-        fn boundary_options(
-            ctx: &DecodeContext<'_>,
-            quotient: MeshQuotient,
+        fn boundary_options<'storage>(
+            ctx: &'storage DecodeContext<'_>,
+            quotient: MeshQuotient<'storage>,
             boundary: &[MeshBoundaryEdgeCandidate],
             edge_candidates: &[Vec<[usize; 2]>],
-        ) -> Vec<(Vec<bool>, MeshQuotient)> {
-            fn advance(
-                resources: (&DecodeContext<'_>, &[Vec<[usize; 2]>]),
+        ) -> Vec<(Vec<bool>, MeshQuotient<'storage>)> {
+            fn advance<'storage>(
+                resources: (&'storage DecodeContext<'_>, &[Vec<[usize; 2]>]),
                 boundary: &[MeshBoundaryEdgeCandidate],
                 at: usize,
                 reversed: bool,
                 directions: &mut Vec<bool>,
-                mut quotient: MeshQuotient,
-                output: &mut Vec<(Vec<bool>, MeshQuotient)>,
+                mut quotient: MeshQuotient<'storage>,
+                output: &mut Vec<(Vec<bool>, MeshQuotient<'storage>)>,
             ) {
                 let (ctx, edge_candidates) = resources;
                 if at > 0 {
@@ -2386,14 +2433,14 @@ impl MeshQuotient {
                 directions.pop();
             }
 
-            fn walk(
-                ctx: &DecodeContext<'_>,
+            fn walk<'storage>(
+                ctx: &'storage DecodeContext<'_>,
                 boundary: &[MeshBoundaryEdgeCandidate],
                 at: usize,
                 directions: &mut Vec<bool>,
-                mut quotient: MeshQuotient,
+                mut quotient: MeshQuotient<'storage>,
                 edge_candidates: &[Vec<[usize; 2]>],
-                output: &mut Vec<(Vec<bool>, MeshQuotient)>,
+                output: &mut Vec<(Vec<bool>, MeshQuotient<'storage>)>,
             ) {
                 if output.len() >= MAX_ORIENTED_OPTIONS {
                     return;
@@ -2492,13 +2539,13 @@ impl MeshQuotient {
 
     pub(super) fn assignment_options_limited(
         &self,
-        ctx: &DecodeContext<'_>,
+        ctx: &'storage DecodeContext<'_>,
         assignment: &MeshFaceBoundaryAssignment,
         edge_candidates: &[Vec<[usize; 2]>],
         oriented_edges: &HashSet<usize>,
         limit: usize,
         budget: Option<&WorkBudget<'_>>,
-    ) -> Result<Vec<MeshOrientationOption>, CodecError> {
+    ) -> Result<Vec<MeshOrientationOption<'storage>>, CodecError> {
         fn copy_directions(
             ctx: &DecodeContext<'_>,
             directions: &[Vec<bool>],
@@ -2516,6 +2563,7 @@ impl MeshQuotient {
         }
 
         struct BoundaryOrientationSearch<
+            'storage,
             'input0,
             'input1,
             'input2,
@@ -2532,9 +2580,9 @@ impl MeshQuotient {
             at: usize,
             boundary_directions: &'input1 mut Vec<bool>,
             directions: &'input2 mut Vec<Vec<bool>>,
-            quotient: MeshQuotient,
+            quotient: MeshQuotient<'storage>,
             edge_candidates: &'input3 [Vec<[usize; 2]>],
-            output: &'input4 mut Vec<(Vec<Vec<bool>>, MeshQuotient)>,
+            output: &'input4 mut Vec<(Vec<Vec<bool>>, MeshQuotient<'storage>)>,
             seen: &'input5 mut HashMap<u64, Vec<usize>>,
             oriented: &'input6 mut HashSet<usize>,
             gaugeable_edges: &'input7 HashSet<usize>,
@@ -2542,9 +2590,9 @@ impl MeshQuotient {
             budget: Option<&'input9 WorkBudget<'input8>>,
         }
 
-        fn walk(
-            ctx: &DecodeContext<'_>,
-            inputs: BoundaryOrientationSearch<'_, '_, '_, '_, '_, '_, '_, '_, '_, '_>,
+        fn walk<'storage>(
+            ctx: &'storage DecodeContext<'_>,
+            inputs: BoundaryOrientationSearch<'storage, '_, '_, '_, '_, '_, '_, '_, '_, '_, '_>,
         ) -> Result<(), CodecError> {
             let BoundaryOrientationSearch {
                 boundaries,
@@ -2626,7 +2674,7 @@ impl MeshQuotient {
             let edge = boundary[at].edge;
             let first = ctx.insert_hash_set(oriented, edge, "catia_orientation_seen_edges")?;
             let mut advance = |reversed: bool,
-                               mut quotient: MeshQuotient|
+                               mut quotient: MeshQuotient<'storage>|
              -> Result<(), CodecError> {
                 if at > 0 {
                     let Some(previous_end) =
@@ -2894,12 +2942,12 @@ impl MeshQuotient {
 
     fn assignment_options_for_directions(
         &self,
-        ctx: &DecodeContext<'_>,
+        ctx: &'storage DecodeContext<'_>,
         assignment: &MeshFaceBoundaryAssignment,
         direction_options: &MeshFaceDirectionOptions,
         limit: usize,
         budget: Option<&WorkBudget<'_>>,
-    ) -> Result<Vec<MeshOrientationOption>, CodecError> {
+    ) -> Result<Vec<MeshOrientationOption<'storage>>, CodecError> {
         if limit == 0
             || assignment.boundaries.len() != direction_options.first().map_or(0, Vec::len)
         {
@@ -2973,7 +3021,7 @@ impl MeshQuotient {
 
     fn merge_label_directions_in_place(
         &mut self,
-        ctx: &DecodeContext<'_>,
+        ctx: &'storage DecodeContext<'_>,
         assignment: &MeshFaceBoundaryAssignment,
         label_directions: &[Vec<bool>],
         edge_orientations: &[Option<bool>],
@@ -3045,12 +3093,12 @@ impl MeshQuotient {
 
     fn assignment_option_for_label_directions(
         &self,
-        ctx: &DecodeContext<'_>,
+        ctx: &'storage DecodeContext<'_>,
         assignment: &MeshFaceBoundaryAssignment,
         label_directions: &[Vec<bool>],
         edge_orientations: &[Option<bool>],
         budget: Option<&WorkBudget<'_>>,
-    ) -> Result<Option<MeshOrientationOption>, CodecError> {
+    ) -> Result<Option<MeshOrientationOption<'storage>>, CodecError> {
         let mut quotient = self.clone_charged(ctx)?;
         let directions = quotient.merge_label_directions_in_place(
             ctx,
@@ -3064,7 +3112,7 @@ impl MeshQuotient {
 
     pub(crate) fn point_assignment(
         &mut self,
-        ctx: &DecodeContext<'_>,
+        ctx: &'storage DecodeContext<'_>,
         point_count: usize,
         edge_candidates: &[Vec<[usize; 2]>],
         budget: Option<&WorkBudget<'_>>,
@@ -3087,7 +3135,7 @@ impl MeshQuotient {
 
     pub(super) fn point_assignment_exists(
         &mut self,
-        ctx: &DecodeContext<'_>,
+        ctx: &'storage DecodeContext<'_>,
         point_count: usize,
         edge_candidates: &[Vec<[usize; 2]>],
         budget: Option<&WorkBudget<'_>>,
@@ -3100,7 +3148,7 @@ impl MeshQuotient {
 
     fn point_assignments_with_budget(
         &mut self,
-        ctx: &DecodeContext<'_>,
+        ctx: &'storage DecodeContext<'_>,
         point_count: usize,
         edge_candidates: &[Vec<[usize; 2]>],
         solution_limit: usize,
@@ -3516,14 +3564,9 @@ fn quotient_clone_refuses_retained_domains_and_member_nodes() {
         1
     );
     for (limit, operation) in [
+        (0, "catia_quotient_clone_domains"),
         (
-            u64_from_index(std::mem::size_of::<usize>()),
-            "catia_quotient_clone_domains",
-        ),
-        (
-            cadmpeg_core::decode::u64_from_index(
-                std::mem::size_of::<usize>() + std::mem::size_of::<Arc<HashSet<usize>>>(),
-            ),
+            cadmpeg_core::decode::u64_from_index(std::mem::size_of::<Arc<HashSet<usize>>>()),
             "catia_quotient_clone_member_nodes",
         ),
     ] {
@@ -3539,20 +3582,20 @@ fn quotient_clone_refuses_retained_domains_and_member_nodes() {
     }
 }
 
-struct DeferredFaceQuotientOptions {
-    alternatives: Vec<MeshQuotient>,
+struct DeferredFaceQuotientOptions<'storage> {
+    alternatives: Vec<MeshQuotient<'storage>>,
     base_nodes: Vec<usize>,
 }
 
-fn materialize_deferred_quotient_option(
-    ctx: &DecodeContext<'_>,
-    base: &MeshQuotient,
-    local: &MeshQuotient,
+fn materialize_deferred_quotient_option<'storage>(
+    ctx: &'storage DecodeContext<'_>,
+    base: &MeshQuotient<'storage>,
+    local: &MeshQuotient<'storage>,
     base_nodes: &[usize],
     affected_edges: impl IntoIterator<Item = usize>,
     edge_candidates: &[Vec<[usize; 2]>],
     budget: &WorkBudget<'_>,
-) -> Result<Option<MeshQuotient>, CodecError> {
+) -> Result<Option<MeshQuotient<'storage>>, CodecError> {
     let mut materialized = base.clone_charged(ctx)?;
     for local_node in 0..base_nodes.len() {
         let local_root = local.union.root(local_node);
@@ -3569,14 +3612,14 @@ fn materialize_deferred_quotient_option(
         .then_some(materialized))
 }
 
-fn deferred_face_quotient_options_limited(
-    ctx: &DecodeContext<'_>,
+fn deferred_face_quotient_options_limited<'storage>(
+    ctx: &'storage DecodeContext<'_>,
     domain: &MeshDeferredFaceBoundary,
     edge_candidates: &[Vec<[usize; 2]>],
-    quotient: &MeshQuotient,
+    quotient: &MeshQuotient<'storage>,
     limit: usize,
     budget: &WorkBudget<'_>,
-) -> Result<Option<DeferredFaceQuotientOptions>, CodecError> {
+) -> Result<Option<DeferredFaceQuotientOptions<'storage>>, CodecError> {
     #[derive(Clone, Copy)]
     struct Gap {
         left_end: usize,
@@ -3585,6 +3628,7 @@ fn deferred_face_quotient_options_limited(
     }
 
     struct DeferredGapFill<
+        'storage,
         'input0,
         'input1,
         'input2,
@@ -3604,17 +3648,17 @@ fn deferred_face_quotient_options_limited(
         missing_edges: &'input1 [usize],
         missing_nodes: &'input2 [[usize; 2]],
         edge_candidates: &'input3 [Vec<[usize; 2]>],
-        quotient: MeshQuotient,
-        base_quotient: &'input4 MeshQuotient,
+        quotient: MeshQuotient<'storage>,
+        base_quotient: &'input4 MeshQuotient<'storage>,
         base_nodes: &'input5 [usize],
-        output: &'input6 mut Vec<MeshQuotient>,
+        output: &'input6 mut Vec<MeshQuotient<'storage>>,
         limit: usize,
         budget: &'input8 WorkBudget<'input7>,
     }
 
-    fn fill_gap(
-        ctx: &DecodeContext<'_>,
-        inputs: DeferredGapFill<'_, '_, '_, '_, '_, '_, '_, '_, '_>,
+    fn fill_gap<'storage>(
+        ctx: &'storage DecodeContext<'_>,
+        inputs: DeferredGapFill<'storage, '_, '_, '_, '_, '_, '_, '_, '_, '_>,
     ) -> Result<(), CodecError> {
         let DeferredGapFill {
             gaps,
@@ -3723,6 +3767,7 @@ fn deferred_face_quotient_options_limited(
     }
 
     struct DeferredGapWalk<
+        'storage,
         'input0,
         'input1,
         'input2,
@@ -3740,17 +3785,17 @@ fn deferred_face_quotient_options_limited(
         missing_edges: &'input1 [usize],
         missing_nodes: &'input2 [[usize; 2]],
         edge_candidates: &'input3 [Vec<[usize; 2]>],
-        quotient: &'input4 MeshQuotient,
-        base_quotient: &'input5 MeshQuotient,
+        quotient: &'input4 MeshQuotient<'storage>,
+        base_quotient: &'input5 MeshQuotient<'storage>,
         base_nodes: &'input6 [usize],
-        output: &'input7 mut Vec<MeshQuotient>,
+        output: &'input7 mut Vec<MeshQuotient<'storage>>,
         limit: usize,
         budget: &'input9 WorkBudget<'input8>,
     }
 
-    fn walk_gaps(
-        ctx: &DecodeContext<'_>,
-        inputs: DeferredGapWalk<'_, '_, '_, '_, '_, '_, '_, '_, '_, '_>,
+    fn walk_gaps<'storage>(
+        ctx: &'storage DecodeContext<'_>,
+        inputs: DeferredGapWalk<'storage, '_, '_, '_, '_, '_, '_, '_, '_, '_, '_>,
     ) -> Result<(), CodecError> {
         let DeferredGapWalk {
             gaps,
@@ -3925,7 +3970,12 @@ fn deferred_face_quotient_options_limited(
             )?;
         }
     }
-    base_nodes.sort_unstable();
+    ctx.sort_unstable_by(
+        &mut base_nodes,
+        Ord::cmp,
+        |_| 0,
+        "catia_deferred_base_nodes_sort",
+    )?;
     base_nodes.dedup();
     let mut local_by_base = HashMap::new();
     for (local, &base) in base_nodes.iter().enumerate() {
@@ -3986,7 +4036,12 @@ fn deferred_face_quotient_options_limited(
             "catia_deferred_ranked_gaps",
         )?;
     }
-    ranked_gaps.sort_unstable_by_key(|(_, key)| *key);
+    ctx.sort_unstable_by(
+        &mut ranked_gaps,
+        |(_, left), (_, right)| left.cmp(right),
+        |_| 0,
+        "catia_deferred_ranked_gaps_sort",
+    )?;
     let mut gaps = Vec::new();
     for (gap, _) in ranked_gaps {
         ctx.push_vec(&mut gaps, gap, "catia_deferred_sorted_gaps")?;
@@ -4017,11 +4072,11 @@ fn deferred_face_quotient_options_limited(
     )
 }
 
-fn propagate_common_deferred_quotients(
-    ctx: &DecodeContext<'_>,
-    mut options: DeferredFaceQuotientOptions,
+fn propagate_common_deferred_quotients<'storage>(
+    ctx: &'storage DecodeContext<'_>,
+    mut options: DeferredFaceQuotientOptions<'storage>,
     edge_candidates: &[Vec<[usize; 2]>],
-    quotient: &mut MeshQuotient,
+    quotient: &mut MeshQuotient<'storage>,
     budget: &WorkBudget<'_>,
 ) -> Result<Option<()>, CodecError> {
     let node_count = options.base_nodes.len();
@@ -4097,13 +4152,13 @@ fn propagate_common_deferred_quotients(
         .then_some(()))
 }
 
-fn common_supported_corner_equations(
-    ctx: &DecodeContext<'_>,
-    quotient: &mut MeshQuotient,
+fn common_supported_corner_equations<'storage>(
+    ctx: &'storage DecodeContext<'_>,
+    quotient: &mut MeshQuotient<'storage>,
     assignments: &[MeshFaceBoundaryAssignment],
     budget: &WorkBudget<'_>,
 ) -> Result<Option<HashSet<[usize; 2]>>, CodecError> {
-    fn compatible(quotient: &MeshQuotient, left: usize, right: usize) -> bool {
+    fn compatible(quotient: &MeshQuotient<'_>, left: usize, right: usize) -> bool {
         let left = quotient.union.root(left);
         let right = quotient.union.root(right);
         left == right || !quotient.domains[left].is_disjoint(&quotient.domains[right])
@@ -4320,11 +4375,11 @@ fn common_supported_corner_equations(
     .transpose()
 }
 
-fn propagate_common_full_quotients(
-    ctx: &DecodeContext<'_>,
-    mut alternatives: Vec<MeshQuotient>,
+fn propagate_common_full_quotients<'storage>(
+    ctx: &'storage DecodeContext<'_>,
+    mut alternatives: Vec<MeshQuotient<'storage>>,
     edge_candidates: &[Vec<[usize; 2]>],
-    quotient: &mut MeshQuotient,
+    quotient: &mut MeshQuotient<'storage>,
 ) -> Result<Option<()>, CodecError> {
     let node_count = quotient.union.len();
     let mut equivalence_classes = HashMap::<Vec<usize>, Vec<usize>>::new();
@@ -4389,11 +4444,11 @@ fn propagate_common_full_quotients(
         .edge_domains_viable(ctx, edge_candidates)?
         .then_some(()))
 }
-pub(super) fn propagate_common_ordered_face_quotients(
-    ctx: &DecodeContext<'_>,
+pub(super) fn propagate_common_ordered_face_quotients<'storage>(
+    ctx: &'storage DecodeContext<'_>,
     domains: &[MeshFaceBoundaryDomain],
     edge_candidates: &[Vec<[usize; 2]>],
-    quotient: &mut MeshQuotient,
+    quotient: &mut MeshQuotient<'storage>,
     budget: &WorkBudget<'_>,
 ) -> Result<Option<()>, CodecError> {
     (|| -> Option<Result<(), CodecError>> {
@@ -4408,11 +4463,19 @@ pub(super) fn propagate_common_ordered_face_quotients(
         for (face, slot) in face_order.iter_mut().enumerate() {
             *slot = face;
         }
-        face_order.sort_unstable_by_key(|face| match &domains[*face] {
+        let order_key = |face: &usize| match &domains[*face] {
             MeshFaceBoundaryDomain::DeferredValidation(_) => (0, 0),
             MeshFaceBoundaryDomain::Ordered(assignments) => (1, assignments.len()),
             MeshFaceBoundaryDomain::UnorderedFullCycle(_) => (2, 0),
-        });
+        };
+        if let Err(error) = ctx.sort_unstable_by(
+            &mut face_order,
+            |left, right| order_key(left).cmp(&order_key(right)),
+            |_| 0,
+            "catia_ordered_face_order_sort",
+        ) {
+            return Some(Err(error));
+        }
         loop {
             let before = quotient.monotone_measure()?;
             for &face in &face_order {
@@ -4643,15 +4706,20 @@ fn mesh_boundary_domain_edges(
             }
         }
     }
-    edges.sort_unstable();
+    ctx.sort_unstable_by(
+        &mut edges,
+        Ord::cmp,
+        |_| 0,
+        "catia_boundary_domain_edges_sort",
+    )?;
     edges.dedup();
     Ok(edges)
 }
 
-pub(super) fn bounded_unordered_cycle_assignments(
-    ctx: &DecodeContext<'_>,
+pub(super) fn bounded_unordered_cycle_assignments<'storage>(
+    ctx: &'storage DecodeContext<'_>,
     edges: &[usize],
-    quotient: &MeshQuotient,
+    quotient: &MeshQuotient<'storage>,
     limit: usize,
     budget: &WorkBudget<'_>,
 ) -> Result<Option<Vec<MeshFaceBoundaryAssignment>>, CodecError> {
@@ -4736,7 +4804,12 @@ pub(super) fn bounded_unordered_cycle_assignments(
     }
     let edge_count = edges.len();
     let mut edges = ctx.copy_slice(edges, "catia_unordered_sorted_edges")?;
-    edges.sort_unstable();
+    ctx.sort_unstable_by(
+        &mut edges,
+        Ord::cmp,
+        |_| 0,
+        "catia_unordered_sorted_edges_sort",
+    )?;
     edges.dedup();
     if edges.len() != edge_count {
         return Ok(None);
@@ -4785,14 +4858,14 @@ pub(super) fn bounded_unordered_cycle_assignments(
         .then_some(search.assignments))
 }
 
-fn advance_boundary_component_states(
-    ctx: &DecodeContext<'_>,
+fn advance_boundary_component_states<'storage>(
+    ctx: &'storage DecodeContext<'_>,
     domain: &MeshFaceBoundaryDomain,
-    states: &[MeshQuotientGaugeState],
+    states: &[MeshQuotientGaugeState<'storage>],
     edge_candidates: &[Vec<[usize; 2]>],
     limit: usize,
     budget: &WorkBudget<'_>,
-) -> Result<Option<Vec<MeshQuotientGaugeState>>, CodecError> {
+) -> Result<Option<Vec<MeshQuotientGaugeState<'storage>>>, CodecError> {
     let mut next = Vec::new();
     let mut signatures = HashSet::new();
     let domain_edges = mesh_boundary_domain_edges(ctx, domain)?;
@@ -4916,7 +4989,12 @@ fn advance_boundary_component_states(
                     "catia_component_oriented_signature",
                 )?;
             }
-            oriented_signature.sort_unstable();
+            ctx.sort_unstable_by(
+                &mut oriented_signature,
+                Ord::cmp,
+                |_| 0,
+                "catia_component_oriented_signature_sort",
+            )?;
             if ctx.insert_hash_set(
                 &mut signatures,
                 (candidate.signature_charged(ctx)?, oriented_signature),
@@ -4939,11 +5017,11 @@ fn advance_boundary_component_states(
     Ok((!next.is_empty()).then_some(next))
 }
 
-pub(super) fn propagate_common_boundary_components(
-    ctx: &DecodeContext<'_>,
+pub(super) fn propagate_common_boundary_components<'storage>(
+    ctx: &'storage DecodeContext<'_>,
     domains: &[MeshFaceBoundaryDomain],
     edge_candidates: &[Vec<[usize; 2]>],
-    quotient: &mut MeshQuotient,
+    quotient: &mut MeshQuotient<'storage>,
 ) -> Result<Option<()>, CodecError> {
     const MAX_COMPONENT_STATES: usize = 128;
     const MAX_COMPONENT_OPERATIONS: usize = 8_192;
@@ -5001,7 +5079,12 @@ pub(super) fn propagate_common_boundary_components(
     for group in faces_by_component.into_values() {
         ctx.push_vec(&mut face_components, group, "catia_component_groups")?;
     }
-    face_components.sort_by_key(|(smallest_face, _)| *smallest_face);
+    ctx.stable_sort_by(
+        &mut face_components,
+        |(left, _), (right, _)| left.cmp(right),
+        |_| 0,
+        "catia_component_groups_sort",
+    )?;
 
     for (_, mut faces) in face_components {
         let face_key = |face: usize| match &domains[face] {
@@ -5160,14 +5243,14 @@ type MeshSelectionStateSignature = (
     MeshQuotientSignature,
     Vec<Option<bool>>,
 );
-type MeshOrientationOption = (Vec<Vec<bool>>, MeshQuotient);
+type MeshOrientationOption<'storage> = (Vec<Vec<bool>>, MeshQuotient<'storage>);
 type MeshFaceEquationCache = RefCell<HashMap<(usize, MeshQuotientSignature), Vec<[usize; 2]>>>;
 
 fn canonical_direction_bit(row: &[bool], index: usize) -> bool {
     row[index] ^ row.first().copied().unwrap_or(false)
 }
 
-fn orientation_fingerprint(quotient: &MeshQuotient, directions: &[Vec<bool>]) -> u64 {
+fn orientation_fingerprint(quotient: &MeshQuotient<'_>, directions: &[Vec<bool>]) -> u64 {
     let mut hasher = DefaultHasher::new();
     quotient.union.len().hash(&mut hasher);
     for node in 0..quotient.union.len() {
@@ -5197,10 +5280,10 @@ fn orientation_fingerprint(quotient: &MeshQuotient, directions: &[Vec<bool>]) ->
     hasher.finish()
 }
 
-fn orientation_options_equivalent(
-    left_quotient: &MeshQuotient,
+fn orientation_options_equivalent<'storage>(
+    left_quotient: &MeshQuotient<'storage>,
     left_directions: &[Vec<bool>],
-    right_quotient: &MeshQuotient,
+    right_quotient: &MeshQuotient<'storage>,
     right_directions: &[Vec<bool>],
 ) -> bool {
     if left_quotient.union.len() != right_quotient.union.len()
@@ -5229,12 +5312,12 @@ fn orientation_options_equivalent(
         })
 }
 
-fn admit_orientation_option(
-    ctx: &DecodeContext<'_>,
+fn admit_orientation_option<'storage>(
+    ctx: &'storage DecodeContext<'_>,
     seen: &mut HashMap<u64, Vec<usize>>,
-    output: &[MeshOrientationOption],
+    output: &[MeshOrientationOption<'storage>],
     directions: &[Vec<bool>],
-    quotient: &MeshQuotient,
+    quotient: &MeshQuotient<'storage>,
 ) -> Result<bool, CodecError> {
     let work = u64_from_index(quotient.union.len());
     ctx.charge_work(work, "catia_orientation_dedup_work")?;
@@ -5291,9 +5374,19 @@ fn edge_class_search_constraint(
         )?;
         for (normalized_pair, pair) in row.iter_mut().zip(pairs) {
             *normalized_pair = *pair;
-            normalized_pair.sort_unstable();
+            ctx.sort_unstable_by(
+                normalized_pair,
+                Ord::cmp,
+                |_| 0,
+                "catia_edge_class_normalized_pair_sort",
+            )?;
         }
-        row.sort_unstable();
+        ctx.sort_unstable_by(
+            row,
+            Ord::cmp,
+            |_| 0,
+            "catia_edge_class_normalized_pairs_sort",
+        )?;
         row.dedup();
     }
     let mut active = ctx.alloc_filled(choices.len(), false, "catia_edge_class_active")?;
@@ -5348,10 +5441,10 @@ fn edge_class_ordered_pairs_refuse_before_growth() {
     );
 }
 
-fn changed_quotient_edges(
-    ctx: &DecodeContext<'_>,
-    left: &MeshQuotient,
-    right: &MeshQuotient,
+fn changed_quotient_edges<'storage>(
+    ctx: &'storage DecodeContext<'_>,
+    left: &MeshQuotient<'storage>,
+    right: &MeshQuotient<'storage>,
 ) -> Result<HashSet<usize>, CodecError> {
     let mut left = left.clone_charged(ctx)?;
     let mut right = right.clone_charged(ctx)?;
@@ -5554,7 +5647,12 @@ fn possible_face_choices_with_limit(
                         )?;
                     }
                 }
-                equations.sort_unstable();
+                ctx.sort_unstable_by(
+                    &mut equations,
+                    Ord::cmp,
+                    |_| 0,
+                    "catia_possible_face_choice_equations_sort",
+                )?;
                 equations.dedup();
                 ctx.insert_hash_set(&mut choices, equations, "catia_possible_face_choice_keys")?;
             }
@@ -5567,7 +5665,12 @@ fn possible_face_choices_with_limit(
                 "catia_possible_face_choice_values",
             )?;
         }
-        face_choices.sort_unstable();
+        ctx.sort_unstable_by(
+            &mut face_choices,
+            Ord::cmp,
+            |item| std::mem::size_of_val(item.as_slice()),
+            "catia_possible_face_choice_values_sort",
+        )?;
         ctx.push_vec(
             faces_choices,
             face_choices,
@@ -5662,7 +5765,12 @@ fn deduplicate_mesh_quotient_assignments(
                         "catia_mesh_quotient_signature_boundaries",
                     )?;
                 }
-                signature.sort_unstable();
+                ctx.sort_unstable_by(
+                    &mut signature,
+                    Ord::cmp,
+                    |item| std::mem::size_of_val(item.as_slice()),
+                    "catia_mesh_quotient_signature_boundaries_sort",
+                )?;
                 ctx.insert_hash_set(&mut seen, signature, "catia_mesh_quotient_seen_assignments")
             })();
             match result {
@@ -5731,7 +5839,12 @@ pub(super) fn mesh_assignment_endpoint_cycles_viable_by<'a>(
             }
         }
         for neighbors in adjacency.values_mut() {
-            neighbors.sort_unstable();
+            ctx.sort_unstable_by(
+                neighbors,
+                Ord::cmp,
+                |_| 0,
+                "catia_endpoint_viability_neighbors_sort",
+            )?;
             neighbors.dedup();
         }
         Ok((!adjacency.is_empty()).then_some(adjacency))
@@ -5862,14 +5975,9 @@ pub(super) fn mesh_assignment_endpoint_cycle_support_by<'a>(
         end: usize,
         operation: &'static str,
     ) -> Result<bool, CodecError> {
-        if !relation.contains_key(&start) {
-            ctx.charge_collection_items(1, operation)?;
-        }
+        ctx.admit_btree_entry(relation, &start, operation)?;
         let ends = relation.entry(start).or_default();
-        if !ends.contains(&end) {
-            ctx.charge_collection_items(1, operation)?;
-        }
-        Ok(ends.insert(end))
+        ctx.insert_btree_set(ends, end, operation)
     }
 
     fn clone_relation(
@@ -5987,7 +6095,14 @@ pub(super) fn mesh_assignment_endpoint_cycle_support_by<'a>(
                 let mut retained = Vec::new();
                 let mut relation = EndpointRelation::new();
                 for mut pair in values {
-                    pair.sort_unstable();
+                    if let Err(error) = ctx.sort_unstable_by(
+                        &mut pair,
+                        Ord::cmp,
+                        |_| 0,
+                        "catia_endpoint_layer_pair_sort",
+                    ) {
+                        return Some(Err(error));
+                    }
                     if !allowed(use_.edge, pair) {
                         continue;
                     }
@@ -5997,13 +6112,10 @@ pub(super) fn mesh_assignment_endpoint_cycle_support_by<'a>(
                         return Some(Err(error));
                     }
                     for point in pair {
-                        if !points.contains(&point) {
-                            if let Err(error) =
-                                ctx.charge_collection_items(1, "catia_endpoint_layer_points")
-                            {
-                                return Some(Err(error));
-                            }
-                            points.insert(point);
+                        if let Err(error) =
+                            ctx.insert_btree_set(&mut points, point, "catia_endpoint_layer_points")
+                        {
+                            return Some(Err(error));
                         }
                     }
                     for (rank, (start, end)) in [(pair[0], pair[1]), (pair[1], pair[0])]
@@ -6027,7 +6139,14 @@ pub(super) fn mesh_assignment_endpoint_cycle_support_by<'a>(
                         }
                     }
                 }
-                retained.sort_unstable();
+                if let Err(error) = ctx.sort_unstable_by(
+                    &mut retained,
+                    Ord::cmp,
+                    |_| 0,
+                    "catia_endpoint_layer_retained_pairs_sort",
+                ) {
+                    return Some(Err(error));
+                }
                 retained.dedup();
                 if retained.is_empty() {
                     return Some(Ok(MeshEndpointPairSupport {
@@ -6220,7 +6339,12 @@ pub(super) fn mesh_face_endpoint_configurations(
         edge: usize,
         mut pair: [usize; 2],
     ) -> Result<bool, CodecError> {
-        pair.sort_unstable();
+        ctx.sort_unstable_by(
+            &mut pair,
+            Ord::cmp,
+            |_| 0,
+            "catia_face_configuration_pair_sort",
+        )?;
         match configuration.iter().find(|(stored, _)| *stored == edge) {
             Some((_, stored)) => Ok(*stored == pair),
             None => {
@@ -6325,7 +6449,12 @@ pub(super) fn mesh_face_endpoint_configurations(
             .into_iter()
             .filter(|(start, current, _)| start == current)
         {
-            configuration.sort_unstable();
+            ctx.sort_unstable_by(
+                &mut configuration,
+                Ord::cmp,
+                |_| 0,
+                "catia_face_configuration_sort",
+            )?;
             if seen.contains(&configuration) {
                 continue;
             }
@@ -6384,7 +6513,12 @@ pub(super) fn mesh_face_endpoint_configurations(
                         }
                     }
                     if compatible {
-                        merged.sort_unstable();
+                        ctx.sort_unstable_by(
+                            &mut merged,
+                            Ord::cmp,
+                            |_| 0,
+                            "catia_face_configuration_next_combined_sort",
+                        )?;
                         ctx.push_vec(&mut next, merged, "catia_face_configuration_next_combined")?;
                     }
                 }
@@ -6407,7 +6541,12 @@ pub(super) fn mesh_face_endpoint_configurations(
             "catia_face_configuration_result_rows",
         )?;
     }
-    results.sort_unstable();
+    ctx.sort_unstable_by(
+        &mut results,
+        Ord::cmp,
+        |item| std::mem::size_of_val(item.as_slice()),
+        "catia_face_configuration_result_rows_sort",
+    )?;
     Ok(Some(results))
 }
 
@@ -6507,7 +6646,12 @@ fn endpoint_configuration_for_assignment(
             return Ok(None);
         };
         let mut pair = pair;
-        pair.sort_unstable();
+        ctx.sort_unstable_by(
+            &mut pair,
+            Ord::cmp,
+            |_| 0,
+            "catia_endpoint_assignment_pair_sort",
+        )?;
         match pairs.get(&use_.edge) {
             Some(previous) if *previous != pair => return Ok(None),
             Some(_) => {}
@@ -6529,7 +6673,12 @@ fn endpoint_configuration_for_assignment(
             "catia_endpoint_assignment_configuration",
         )?;
     }
-    configuration.sort_unstable();
+    ctx.sort_unstable_by(
+        &mut configuration,
+        Ord::cmp,
+        |_| 0,
+        "catia_endpoint_assignment_configuration_sort",
+    )?;
     Ok(Some(configuration))
 }
 
@@ -6616,7 +6765,12 @@ fn endpoint_configuration_boundary_directions(
             )?;
         }
     }
-    solutions.sort_unstable();
+    ctx.sort_unstable_by(
+        &mut solutions,
+        Ord::cmp,
+        |item| std::mem::size_of_val(item.as_slice()),
+        "catia_endpoint_boundary_solutions_sort",
+    )?;
     solutions.dedup();
     if solutions.len() == 2 && boundary.iter().all(|use_| use_.reversed.is_none()) {
         // An unresolved closed boundary has two traversal orientations. They
@@ -6717,14 +6871,29 @@ impl MeshEndpointRelationSelection {
             } => {
                 let mut assignments =
                     ctx.copy_retained_slice(assignments, "catia_relation_normalized_assignments")?;
-                assignments.sort_unstable();
+                ctx.sort_unstable_by(
+                    &mut assignments,
+                    Ord::cmp,
+                    |_| 0,
+                    "catia_relation_normalized_assignments_sort",
+                )?;
                 assignments.dedup();
                 let mut edge_pairs =
                     ctx.copy_retained_slice(edge_pairs, "catia_relation_normalized_pairs")?;
                 for (_, pair) in &mut edge_pairs {
-                    pair.sort_unstable();
+                    ctx.sort_unstable_by(
+                        pair,
+                        Ord::cmp,
+                        |_| 0,
+                        "catia_relation_normalized_pair_sort",
+                    )?;
                 }
-                edge_pairs.sort_unstable();
+                ctx.sort_unstable_by(
+                    &mut edge_pairs,
+                    Ord::cmp,
+                    |_| 0,
+                    "catia_relation_normalized_pairs_sort",
+                )?;
                 Ok(Self::Enumerated {
                     assignments,
                     edge_pairs,
@@ -6741,7 +6910,8 @@ pub(super) type MeshEndpointRelationStateSignature = (
     Vec<Vec<MeshEndpointRelationSelection>>,
 );
 type MeshEndpointSolutionPredicate<'a> = dyn Fn(&[Option<[usize; 2]>]) -> bool + 'a;
-type MeshFixedDirectionOption = (Vec<Vec<bool>>, MeshQuotient, Vec<Option<bool>>);
+type MeshFixedDirectionOption<'storage> =
+    (Vec<Vec<bool>>, MeshQuotient<'storage>, Vec<Option<bool>>);
 
 pub(super) fn raw_endpoint_relation_state_signature(
     ctx: &DecodeContext<'_>,
@@ -6750,10 +6920,18 @@ pub(super) fn raw_endpoint_relation_state_signature(
 ) -> Result<MeshEndpointRelationStateSignature, CodecError> {
     let mut normalized_assigned = Vec::new();
     for pair in assigned {
-        let pair = pair.map(|mut pair| {
-            pair.sort_unstable();
-            pair
-        });
+        let pair = match *pair {
+            Some(mut pair) => {
+                ctx.sort_unstable_by(
+                    &mut pair,
+                    Ord::cmp,
+                    |_| 0,
+                    "catia_relation_signature_assigned_pair_sort",
+                )?;
+                Some(pair)
+            }
+            None => None,
+        };
         ctx.push_vec(
             &mut normalized_assigned,
             pair,
@@ -6767,7 +6945,18 @@ pub(super) fn raw_endpoint_relation_state_signature(
             let normalized = choice.selection.normalized(ctx)?;
             ctx.push_vec(&mut row, normalized, "catia_relation_signature_choices")?;
         }
-        row.sort_unstable();
+        ctx.sort_unstable_by(
+            &mut row,
+            Ord::cmp,
+            |choice| match choice {
+                MeshEndpointRelationSelection::Enumerated {
+                    assignments,
+                    edge_pairs,
+                } => assignments.len() + edge_pairs.len(),
+                MeshEndpointRelationSelection::Deferred => 0,
+            },
+            "catia_relation_signature_choices_sort",
+        )?;
         ctx.push_vec(
             &mut normalized_domains,
             row,
@@ -6970,7 +7159,12 @@ fn build_endpoint_relation_constraints(
                 "catia_endpoint_relation_sorted_faces",
             )?;
         }
-        sorted_faces.sort_unstable();
+        ctx.sort_unstable_by(
+            &mut sorted_faces,
+            Ord::cmp,
+            |_| 0,
+            "catia_endpoint_relation_sorted_faces_sort",
+        )?;
         for (left_index, &left) in sorted_faces.iter().enumerate() {
             for &right in &sorted_faces[left_index + 1..] {
                 for pair in [(left, right), (right, left)] {
@@ -6991,14 +7185,24 @@ fn build_endpoint_relation_constraints(
 
     let mut shared_rows = Vec::new();
     for (pair, mut edges) in shared_edges {
-        edges.sort_unstable();
+        ctx.sort_unstable_by(
+            &mut edges,
+            Ord::cmp,
+            |_| 0,
+            "catia_endpoint_relation_shared_edges_sort",
+        )?;
         ctx.push_vec(
             &mut shared_rows,
             (pair, edges),
             "catia_endpoint_relation_shared_rows",
         )?;
     }
-    shared_rows.sort_unstable_by_key(|(pair, _)| *pair);
+    ctx.sort_unstable_by(
+        &mut shared_rows,
+        |(left, _), (right, _)| left.cmp(right),
+        |_| 0,
+        "catia_endpoint_relation_shared_rows_sort",
+    )?;
     let mut arcs = ctx.alloc_filled(domains.len(), Vec::new(), "catia_endpoint_relation_arcs")?;
     let mut incoming = ctx.alloc_filled(
         domains.len(),
@@ -7740,9 +7944,19 @@ fn collect_endpoint_relation_face_choices(
             let mut relation_configuration =
                 ctx.copy_slice(configuration, "catia_endpoint_relation_config_pairs")?;
             for (_, pair) in &mut relation_configuration {
-                pair.sort_unstable();
+                ctx.sort_unstable_by(
+                    pair,
+                    Ord::cmp,
+                    |_| 0,
+                    "catia_endpoint_relation_config_pair_sort",
+                )?;
             }
-            relation_configuration.sort_unstable();
+            ctx.sort_unstable_by(
+                &mut relation_configuration,
+                Ord::cmp,
+                |_| 0,
+                "catia_endpoint_relation_config_pairs_sort",
+            )?;
             ctx.admit_hash_map_entry(
                 &mut choices_by_configuration,
                 &relation_configuration,
@@ -7759,7 +7973,12 @@ fn collect_endpoint_relation_face_choices(
     }
     let mut choices = Vec::new();
     for (edge_pairs, mut assignments) in choices_by_configuration {
-        assignments.sort_unstable();
+        ctx.sort_unstable_by(
+            &mut assignments,
+            Ord::cmp,
+            |_| 0,
+            "catia_endpoint_relation_configuration_assignments_sort",
+        )?;
         assignments.dedup();
         ctx.push_vec(
             &mut choices,
@@ -7773,10 +7992,21 @@ fn collect_endpoint_relation_face_choices(
             "catia_endpoint_relation_face_choices",
         )?;
     }
-    choices.sort_unstable_by(|left, right| {
-        (left.selection.edge_pairs(), &left.selection)
-            .cmp(&(right.selection.edge_pairs(), &right.selection))
-    });
+    ctx.sort_unstable_by(
+        &mut choices,
+        |left, right| {
+            (left.selection.edge_pairs(), &left.selection)
+                .cmp(&(right.selection.edge_pairs(), &right.selection))
+        },
+        |choice| match &choice.selection {
+            MeshEndpointRelationSelection::Enumerated {
+                assignments,
+                edge_pairs,
+            } => assignments.len() + edge_pairs.len(),
+            MeshEndpointRelationSelection::Deferred => 0,
+        },
+        "catia_endpoint_relation_face_choices_sort",
+    )?;
     if unknown {
         // A stopped enumeration is not evidence that the assignment has no
         // configuration. The wildcard lets the relation walker defer that
@@ -9459,6 +9689,7 @@ fn resolve_singleton_mesh_endpoint_candidates(
 // Endpoint materialization receives independent evidence, budgets, predicates,
 // and gauge state so each fallback remains separately bounded and auditable.
 struct ResolveStandardMeshEndpointCandidatesInputs<
+    'storage,
     'input0,
     'input1,
     'input2,
@@ -9479,7 +9710,7 @@ struct ResolveStandardMeshEndpointCandidatesInputs<
     edge_candidates: &'input2 [Vec<[usize; 2]>],
     assignments: Vec<Vec<MeshFaceBoundaryAssignment>>,
     port_identities: &'input3 [[u32; 2]],
-    prepared_quotient: Option<&'input4 MeshQuotient>,
+    prepared_quotient: Option<&'input4 MeshQuotient<'storage>>,
     edge_direction_evidence: Option<&'input5 [bool]>,
     budget: &'input7 WorkBudget<'input6>,
     partial_solution_valid: Option<&'input9 MeshEndpointSolutionPredicate<'input8>>,
@@ -9488,9 +9719,10 @@ struct ResolveStandardMeshEndpointCandidatesInputs<
     priority_edges: Option<&'input13 [bool]>,
 }
 
-fn resolve_standard_mesh_endpoint_candidates(
-    ctx: &DecodeContext<'_>,
+fn resolve_standard_mesh_endpoint_candidates<'storage>(
+    ctx: &'storage DecodeContext<'_>,
     inputs: ResolveStandardMeshEndpointCandidatesInputs<
+        'storage,
         '_,
         '_,
         '_,
@@ -12508,6 +12740,11 @@ fn coordinate_root_closure_refuses_recursive_walk_depth() {
         MeshFaceBoundaryDomain::Ordered(vec![boundary.clone()]),
         MeshFaceBoundaryDomain::Ordered(vec![boundary]),
     ];
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_recursion_depth = 0;
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[0], &arena, &policy).expect("fixture fits input limit");
     let mut quotient = MeshQuotient::new(
         (0..4)
             .map(|node| Arc::new(HashSet::from([usize::from(node % 2 != 0)])))
@@ -12515,11 +12752,6 @@ fn coordinate_root_closure_refuses_recursive_walk_depth() {
     );
     quotient.merge(0, 2).expect("shared left endpoint");
     quotient.merge(1, 3).expect("shared right endpoint");
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_recursion_depth = 0;
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(&[0], &arena, &policy).expect("fixture fits input limit");
     let result = quotient.coordinate_root_closure_outcome(
         &ctx,
         2,
@@ -12693,7 +12925,7 @@ fn coordinate_root_preparation_charges_root_edge_and_matching_arrays() {
             Ok(Some(_)) => break,
             Ok(None) => panic!("two endpoint roots must retain a coordinate matching"),
             Err(error) => panic!("unexpected coordinate preparation refusal: {error}"),
-        }
+        };
     }
     assert!(refused.contains("catia_quotient_root_edges"));
     assert!(refused.contains("catia_quotient_roots"));

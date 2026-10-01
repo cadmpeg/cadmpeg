@@ -1425,7 +1425,7 @@ fn source_less_lanes(
             &body,
             "SCH_SW_33103_11000",
             sketch.name.as_deref().unwrap_or(sketch.id.as_str()),
-        ));
+        )?);
         objects.push((configuration, owner.ordinal, payload));
     }
     for sketch in &ir.model.spatial_sketches {

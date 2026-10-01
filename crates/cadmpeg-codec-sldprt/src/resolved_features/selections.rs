@@ -77,18 +77,14 @@ fn selection_objects<'history, 'lane>(
         ctx.reserve_vec(&mut objects, 1, operation)?;
         objects.push((name, feature, input_index));
     }
-    let levels = if objects.len() > 1 {
-        objects.len().ilog2() + 1
-    } else {
-        1
-    };
-    ctx.charge_work(
-        u64_from_index(objects.len())
-            .checked_mul(u64::from(levels))
-            .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?,
+    ctx.sort_unstable_by(
+        &mut objects,
+        |(left_name, _, left_index), (right_name, _, right_index)| {
+            (left_name.offset, left_index).cmp(&(right_name.offset, right_index))
+        },
+        |_| 0,
         operation,
     )?;
-    objects.sort_unstable_by_key(|(name, _, input_index)| (name.offset, *input_index));
     Ok(objects)
 }
 
@@ -451,18 +447,12 @@ pub(super) fn compact_edge_selections(
         let interval = edge_selection_vectors_in_interval(ctx, &lane.native_payload, start, end)?;
         ctx.reserve_vec(&mut selections, interval.len(), OPERATION)?;
         selections.extend(interval);
-        let levels = if selections.len() > 1 {
-            selections.len().ilog2() + 1
-        } else {
-            1
-        };
-        ctx.charge_work(
-            u64_from_index(selections.len())
-                .checked_mul(u64::from(levels) + 1)
-                .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?,
-            OPERATION,
+        ctx.sort_unstable_by(
+            &mut selections,
+            |left, right| left.0.cmp(&right.0),
+            |_| 0,
+            "sort SLDPRT compact edge selections",
         )?;
-        selections.sort_unstable_by_key(|selection| selection.0);
         selections.dedup_by_key(|selection| selection.0);
         let mut feature_selections = Vec::new();
         for (offset, local_edge_ids) in selections {
@@ -667,13 +657,7 @@ pub(super) fn compact_surface_selections(
         else {
             continue;
         };
-        if !cylinder_reference_tokens.contains(&token) {
-            ctx.charge_collection_items(1, OPERATION)?;
-            cylinder_reference_tokens
-                .try_reserve(1)
-                .map_err(|_| ctx.refuse_codec_limit(OPERATION, 0, 1))?;
-            cylinder_reference_tokens.insert(token);
-        }
+        ctx.insert_hash_set(&mut cylinder_reference_tokens, token, OPERATION)?;
     }
     let mirror_surface_prefix = mirror_surface_type_prefix(lane);
     let objects = selection_objects(ctx, histories, lane, OPERATION)?;
@@ -1034,18 +1018,12 @@ fn fillet_face_selection_candidates(
         ctx.reserve_vec(&mut class_bodies, 1, OPERATION)?;
         class_bodies.push((body, token));
     }
-    let levels = if class_bodies.len() > 1 {
-        class_bodies.len().ilog2() + 1
-    } else {
-        1
-    };
-    ctx.charge_work(
-        u64_from_index(class_bodies.len())
-            .checked_mul(u64::from(levels) + 1)
-            .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?,
-        OPERATION,
+    ctx.sort_unstable_by(
+        &mut class_bodies,
+        Ord::cmp,
+        |_| 0,
+        "sort SLDPRT full round fillet class bodies",
     )?;
-    class_bodies.sort_unstable();
     class_bodies.dedup();
     let mut candidates = Vec::new();
     if let Some(scan_end) = end.checked_sub(6) {
@@ -1203,19 +1181,18 @@ fn order_surface_candidates(
 ) -> Result<(), CodecError> {
     let mut indexed = Vec::new();
     ctx.reserve_vec(&mut indexed, candidates.len(), operation)?;
-    let levels = if candidates.len() > 1 {
-        candidates.len().ilog2() + 1
-    } else {
-        1
-    };
-    let work = u64_from_index(candidates.len())
-        .checked_mul(u64::from(levels) + 2)
-        .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
-    ctx.charge_work(work, operation)?;
+    ctx.charge_work(u64_from_index(candidates.len()), operation)?;
     for (index, (offset, components)) in candidates.drain(..).enumerate() {
         indexed.push((offset, components, index));
     }
-    indexed.sort_unstable_by_key(|(offset, _, index)| (*offset, *index));
+    ctx.sort_unstable_by(
+        &mut indexed,
+        |(left_offset, _, left_index), (right_offset, _, right_index)| {
+            (left_offset, left_index).cmp(&(right_offset, right_index))
+        },
+        |_| 0,
+        operation,
+    )?;
     for pair in indexed.windows(2) {
         let work = u64_from_index(pair[0].1.len())
             .checked_add(u64_from_index(pair[1].1.len()))
@@ -1391,13 +1368,7 @@ fn operation_surface_selection_candidates(
         else {
             continue;
         };
-        if !component_face_tokens.contains(&token) {
-            ctx.charge_collection_items(1, OPERATION)?;
-            component_face_tokens
-                .try_reserve(1)
-                .map_err(|_| ctx.refuse_codec_limit(OPERATION, 0, 1))?;
-            component_face_tokens.insert(token);
-        }
+        ctx.insert_hash_set(&mut component_face_tokens, token, OPERATION)?;
     }
     for token in component_face_tokens {
         let repeated =
@@ -1548,18 +1519,12 @@ fn cosmetic_thread_cylinder_references(
             offsets.push(offset);
         }
     }
-    let levels = if offsets.len() > 1 {
-        offsets.len().ilog2() + 1
-    } else {
-        1
-    };
-    ctx.charge_work(
-        u64_from_index(offsets.len())
-            .checked_mul(u64::from(levels) + 1)
-            .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?,
-        OPERATION,
+    ctx.sort_unstable_by(
+        &mut offsets,
+        Ord::cmp,
+        |_| 0,
+        "sort SLDPRT cosmetic thread cylinder offsets",
     )?;
-    offsets.sort_unstable();
     offsets.dedup();
     let mut references = Vec::new();
     for offset in offsets {
@@ -1603,18 +1568,12 @@ fn cosmetic_thread_component_references(
         ctx.reserve_vec(&mut classes, 1, OPERATION)?;
         classes.push((offset, class));
     }
-    let levels = if classes.len() > 1 {
-        classes.len().ilog2() + 1
-    } else {
-        1
-    };
-    ctx.charge_work(
-        u64_from_index(classes.len())
-            .checked_mul(u64::from(levels))
-            .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?,
-        OPERATION,
+    ctx.sort_unstable_by(
+        &mut classes,
+        |(left, _), (right, _)| left.cmp(right),
+        |_| 0,
+        "sort SLDPRT cosmetic component classes",
     )?;
-    classes.sort_unstable_by_key(|(offset, _)| *offset);
 
     let mut class_ranges = Vec::<Range<usize>>::new();
     for (index, &(class_offset, class)) in classes.iter().enumerate() {
@@ -1807,20 +1766,12 @@ pub(super) fn cosmetic_thread_cylinder_marker_reference(
         ctx.reserve_vec(&mut markers, 1, OPERATION)?;
         markers.push(marker);
     }
-    let count = u64::try_from(markers.len())
-        .map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
-    let levels = if markers.len() > 1 {
-        markers.len().ilog2() + 1
-    } else {
-        1
-    };
-    ctx.charge_work(
-        count
-            .checked_mul(u64::from(levels))
-            .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?,
-        OPERATION,
+    ctx.sort_unstable_by(
+        &mut markers,
+        Ord::cmp,
+        |_| 0,
+        "sort SLDPRT cosmetic thread cylinder markers",
     )?;
-    markers.sort_unstable();
     markers.dedup();
     let mut references = Vec::new();
     ctx.reserve_vec(&mut references, markers.len(), OPERATION)?;
@@ -1991,6 +1942,7 @@ fn component_face_reference_at_impl(
         {
             return None;
         }
+        let nested_face_class_length = u16::try_from(NESTED_FACE_CLASS.len()).ok()?;
         let nested_face_class = payload
             .get(body_offset..body_offset + nested_face::COMPONENT_MARKER)
             .is_some_and(|body| {
@@ -1998,7 +1950,7 @@ fn component_face_reference_at_impl(
                     .any(|header| {
                         &header[..CLASS_MARKER.len()] == CLASS_MARKER
                             && header[CLASS_MARKER.len()..CLASS_MARKER.len() + 2]
-                                == (NESTED_FACE_CLASS.len() as u16).to_le_bytes()
+                                == nested_face_class_length.to_le_bytes()
                             && &header[CLASS_MARKER.len() + 2..] == NESTED_FACE_CLASS
                     })
             });
@@ -2083,13 +2035,15 @@ pub(super) fn component_face_reference_in_record(
     const CLASS: &[u8] = b"moCompFace_c";
     const OPERATION: &str = "decode SLDPRT component face record";
     let header_length = CLASS_MARKER.len() + 2 + CLASS.len();
+    let Ok(class_length) = u16::try_from(CLASS.len()) else {
+        return Ok(None);
+    };
     let mut candidate: Option<(usize, Vec<FeatureInputComponentPathEntry>)> = None;
     let mut ambiguous = false;
     for (offset, header) in payload.windows(header_length).enumerate() {
         ctx.charge_work(u64_from_index(header_length), OPERATION)?;
         if &header[..CLASS_MARKER.len()] != CLASS_MARKER
-            || header[CLASS_MARKER.len()..CLASS_MARKER.len() + 2]
-                != (CLASS.len() as u16).to_le_bytes()
+            || header[CLASS_MARKER.len()..CLASS_MARKER.len() + 2] != class_length.to_le_bytes()
             || &header[CLASS_MARKER.len() + 2..] != CLASS
         {
             continue;
@@ -2959,13 +2913,7 @@ pub(crate) fn generated_surface_identities(
         let Some(prefix) = prefix else {
             continue;
         };
-        if !prefixes.contains(&prefix) {
-            ctx.charge_collection_items(1, OPERATION)?;
-            prefixes
-                .try_reserve(1)
-                .map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
-            prefixes.insert(prefix);
-        }
+        ctx.insert_hash_set(&mut prefixes, prefix, OPERATION)?;
     }
 
     let mut result = Vec::<SurfaceIdentityFields>::new();
@@ -3065,18 +3013,12 @@ pub(crate) fn generated_surface_identities(
             components,
         });
     }
-    let levels = if result.len() > 1 {
-        result.len().ilog2() + 1
-    } else {
-        1
-    };
-    ctx.charge_work(
-        u64_from_index(result.len())
-            .checked_mul(u64::from(levels))
-            .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?,
-        OPERATION,
+    ctx.sort_unstable_by(
+        &mut result,
+        |left, right| (left.offset, left.input_index).cmp(&(right.offset, right.input_index)),
+        |_| 0,
+        "sort SLDPRT generated surface identities",
     )?;
-    result.sort_unstable_by_key(|identity| (identity.offset, identity.input_index));
     let lane_key = lane
         .id
         .rsplit_once('#')
@@ -3392,8 +3334,8 @@ pub(super) fn variable_fillet_control_references(
     if !feature.kind.eq_ignore_ascii_case("VarFillet") {
         return Ok(None);
     }
-    ctx.charge_work(lane.names.len() as u64, OPERATION)?;
-    ctx.charge_work(lane.names.len() as u64, OPERATION)?;
+    ctx.charge_work(u64_from_index(lane.names.len()), OPERATION)?;
+    ctx.charge_work(u64_from_index(lane.names.len()), OPERATION)?;
     let Some(object_start) =
         feature_object_name(feature, lane).and_then(|name| usize::try_from(name.offset).ok())
     else {
@@ -3428,18 +3370,12 @@ pub(super) fn variable_fillet_control_references(
             controls.push((marker, references));
         }
     }
-    let levels = if controls.len() > 1 {
-        controls.len().ilog2() + 1
-    } else {
-        1
-    };
-    let count = u64::try_from(controls.len())
-        .map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
-    let units = count
-        .checked_mul(u64::from(levels))
-        .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
-    ctx.charge_work(units, OPERATION)?;
-    controls.sort_unstable_by_key(|(marker, _)| *marker);
+    ctx.sort_unstable_by(
+        &mut controls,
+        |(left, _), (right, _)| left.cmp(right),
+        |_| 0,
+        "sort SLDPRT variable fillet controls",
+    )?;
     let mut result = Vec::new();
     let mut start = control_start;
     for (marker, references) in controls {
@@ -3452,7 +3388,7 @@ pub(super) fn variable_fillet_control_references(
             .filter(|name| {
                 variable_fillet_dimension_index_for_feature(feature, &name.value).is_some()
             });
-        ctx.charge_work(lane.names.len() as u64, OPERATION)?;
+        ctx.charge_work(u64_from_index(lane.names.len()), OPERATION)?;
         let Some(name) = names.next() else {
             return Ok(None);
         };
@@ -4030,11 +3966,7 @@ fn compact_sparse_component_path(
         if failed.contains(&(cursor, remaining)) {
             return Ok(None);
         }
-        ctx.charge_collection_items(1, OPERATION)?;
-        failed
-            .try_reserve(1)
-            .map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
-        failed.insert((cursor, remaining));
+        ctx.insert_hash_set(failed, (cursor, remaining), OPERATION)?;
         let Some((instance, type_signature)) = entry_prefix(payload, cursor) else {
             return Ok(None);
         };
@@ -4597,7 +4529,8 @@ fn counted_legacy_profile_line_layout(payload: &[u8], offset: usize) -> bool {
 
 #[cfg(test)]
 pub(super) fn selection_vector_tail(payload: &mut Vec<u8>, entries: &[u32]) -> usize {
-    payload.extend_from_slice(&(entries.len() as u32).to_le_bytes());
+    let count = u32::try_from(entries.len()).expect("selection vector entry count fits u32");
+    payload.extend_from_slice(&count.to_le_bytes());
     payload.extend_from_slice(&[0, 2, 0, 0]);
     payload.extend_from_slice(&[0, 0, 0, 0]);
     let marker = payload.len();

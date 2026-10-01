@@ -90,8 +90,11 @@ pub(in crate::decode) fn transfer_topology_bound_planes(
             row.id
         })?
     {
-        ctx.charge_collection_items(1, "creo topology-bound unique curve IDs")?;
-        unique_curve_ids.insert(row.id);
+        ctx.insert_btree_set(
+            &mut unique_curve_ids,
+            row.id,
+            "creo topology-bound unique curve IDs",
+        )?;
     }
     let mut transferred = 0;
     for row in unique_rows
@@ -110,8 +113,8 @@ pub(in crate::decode) fn transfer_topology_bound_planes(
             .topology
             .loops
             .iter()
-            .filter(|lp| lp.face_id == std::num::NonZeroU32::new(row.id))
-            .flat_map(|lp| lp.half_edges.iter())
+            .filter(|lp| lp.face_id() == std::num::NonZeroU32::new(row.id))
+            .flat_map(|lp| lp.half_edges().iter())
         {
             if unique_curve_ids.contains(&half_edge.curve_id) {
                 let (id, _id_reservation) = crate::identity::compose_scoped::<CurveId>(
@@ -240,13 +243,13 @@ pub(in crate::decode) fn transfer_topology_bound_planes(
 fn topology_bound_face_points(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     solved_vertices: &BTreeMap<u32, [f64; 3]>,
-    vertex_faces: &BTreeMap<u32, BTreeSet<u32>>,
+    vertex_faces: &BTreeMap<std::num::NonZeroU32, BTreeSet<u32>>,
     face_id: u32,
 ) -> Result<Vec<[f64; 3]>, cadmpeg_core::CodecError> {
     let mut points = Vec::new();
     for (vertex_id, point) in solved_vertices {
-        if vertex_faces
-            .get(vertex_id)
+        if std::num::NonZeroU32::new(*vertex_id)
+            .and_then(|id| vertex_faces.get(&id))
             .is_some_and(|faces| faces.contains(&face_id))
         {
             ctx.reserve_vec(&mut points, 1, "creo topology-bound face points")?;
@@ -390,7 +393,12 @@ pub(in crate::decode) fn placed_carriers(
 ) -> Result<BTreeMap<u32, CarrierEquation>, cadmpeg_core::CodecError> {
     let mut carriers = BTreeMap::new();
     for (id, plane) in placed_planes(ctx, scan)? {
-        insert_placed_carrier(ctx, &mut carriers, id, CarrierEquation::Plane(plane))?;
+        ctx.insert_btree_map(
+            &mut carriers,
+            id,
+            CarrierEquation::Plane(plane),
+            "creo placed carrier nodes",
+        )?;
     }
     let rows = scan
         .surfaces
@@ -400,14 +408,11 @@ pub(in crate::decode) fn placed_carriers(
     let mut row_ids = BTreeSet::new();
     let mut row_counts = BTreeMap::<u32, usize>::new();
     for row in rows {
-        if !row_ids.contains(&row.id) {
-            ctx.charge_collection_items(1, "creo placed carrier row IDs")?;
-            row_ids.insert(row.id);
-        }
+        ctx.insert_btree_set(&mut row_ids, row.id, "creo placed carrier row IDs")?;
+        ctx.admit_btree_entry(&row_counts, &row.id, "creo placed carrier row counts")?;
         match row_counts.entry(row.id) {
             std::collections::btree_map::Entry::Occupied(mut entry) => *entry.get_mut() += 1,
             std::collections::btree_map::Entry::Vacant(entry) => {
-                ctx.charge_collection_items(1, "creo placed carrier row counts")?;
                 entry.insert(1);
             }
         }
@@ -426,7 +431,7 @@ pub(in crate::decode) fn placed_carriers(
             if let Some(carrier) =
                 positional_cylinder_carrier(ctx, scan, row, parameters, ir, source_carriers)?
             {
-                insert_placed_carrier(ctx, &mut carriers, row.id, carrier)?;
+                ctx.insert_btree_map(&mut carriers, row.id, carrier, "creo placed carrier nodes")?;
                 continue;
             }
             let mut model_surfaces = ir
@@ -457,18 +462,18 @@ pub(in crate::decode) fn placed_carriers(
                     None => Some(plane),
                 };
                 if let Some(plane) = agreed {
-                    insert_placed_carrier(
-                        ctx,
+                    ctx.insert_btree_map(
                         &mut carriers,
                         row.id,
                         CarrierEquation::Plane(plane),
+                        "creo placed carrier nodes",
                     )?;
                 } else {
                     carriers.remove(&row.id);
                 }
             } else if let Some(carrier) = surface_carrier(source_carriers.surface_geometry(surface))
             {
-                insert_placed_carrier(ctx, &mut carriers, row.id, carrier)?;
+                ctx.insert_btree_map(&mut carriers, row.id, carrier, "creo placed carrier nodes")?;
             }
         }
     }
@@ -483,7 +488,12 @@ pub(in crate::decode) fn placed_carriers(
             continue;
         };
         if let Some(carrier) = surface_carrier(source_carriers.surface_geometry(surface)) {
-            insert_placed_carrier(ctx, &mut carriers, datum.id, carrier)?;
+            ctx.insert_btree_map(
+                &mut carriers,
+                datum.id,
+                carrier,
+                "creo placed carrier nodes",
+            )?;
         } else {
             carriers.remove(&datum.id);
         }
@@ -499,12 +509,10 @@ pub(in crate::decode) fn placed_carriers(
         else {
             continue;
         };
+        ctx.admit_btree_entry(&model_surfaces_by_id, &id, "creo rowless carrier groups")?;
         let surfaces = match model_surfaces_by_id.entry(id) {
             std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
-            std::collections::btree_map::Entry::Vacant(entry) => {
-                ctx.charge_collection_items(1, "creo rowless carrier groups")?;
-                entry.insert(Vec::new())
-            }
+            std::collections::btree_map::Entry::Vacant(entry) => entry.insert(Vec::new()),
         };
         ctx.reserve_vec(surfaces, 1, "creo rowless carrier members")?;
         surfaces.push(surface);
@@ -518,23 +526,10 @@ pub(in crate::decode) fn placed_carriers(
             continue;
         };
         if let Some(carrier) = surface_carrier(source_carriers.surface_geometry(surface)) {
-            insert_placed_carrier(ctx, &mut carriers, id, carrier)?;
+            ctx.insert_btree_map(&mut carriers, id, carrier, "creo placed carrier nodes")?;
         }
     }
     Ok(carriers)
-}
-
-fn insert_placed_carrier(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    carriers: &mut BTreeMap<u32, CarrierEquation>,
-    id: u32,
-    carrier: CarrierEquation,
-) -> Result<(), cadmpeg_core::CodecError> {
-    if !carriers.contains_key(&id) {
-        ctx.charge_collection_items(1, "creo placed carrier nodes")?;
-    }
-    carriers.insert(id, carrier);
-    Ok(())
 }
 
 fn positional_cylinder_carrier(
@@ -696,10 +691,10 @@ fn projected_loop_polygon(
         return Ok(None);
     };
     let mut polygon = Vec::new();
-    for half_edge in &lp.half_edges {
+    for half_edge in lp.half_edges() {
         let Some(point) = incidence
             .get(half_edge)
-            .and_then(|binding| solved_vertices.get(&binding.start_vertex_id))
+            .and_then(|binding| solved_vertices.get(&binding.start_vertex_id.get()))
         else {
             return Ok(None);
         };
@@ -895,10 +890,10 @@ fn face_boundary_plane(
     topology_bound_plane(
         ctx,
         loops.iter().flat_map(|lp| {
-            lp.half_edges
+            lp.half_edges()
                 .iter()
                 .filter_map(|half_edge| incidence.get(half_edge))
-                .filter_map(|binding| solved_vertices.get(&binding.start_vertex_id).copied())
+                .filter_map(|binding| solved_vertices.get(&binding.start_vertex_id.get()).copied())
         }),
     )
 }
@@ -947,10 +942,12 @@ pub(in crate::decode) fn rowless_round_face_orientations(
         else {
             continue;
         };
-        if !orientations.contains_key(&rowless_id) {
-            ctx.charge_collection_items(1, "creo rowless face orientation nodes")?;
-        }
-        orientations.insert(rowless_id, reversed);
+        ctx.insert_btree_map(
+            &mut orientations,
+            rowless_id,
+            reversed,
+            "creo rowless face orientation nodes",
+        )?;
     }
     Ok(orientations)
 }
@@ -967,23 +964,26 @@ pub(in crate::decode) fn native_face_orientations(
         .iter()
         .chain(&scan.surfaces.nonvisible_rows)
     {
-        if !source_ids.contains(&row.id) {
-            ctx.charge_collection_items(1, "creo native face source ID nodes")?;
-            source_ids.insert(row.id);
-        }
+        ctx.insert_btree_set(&mut source_ids, row.id, "creo native face source ID nodes")?;
     }
     let mut orientations = BTreeMap::new();
     for id in source_ids {
         if let Some(row) = crate::decode::surfaces::unique_native_surface_row(scan, id) {
-            ctx.charge_collection_items(1, "creo native face orientation nodes")?;
-            orientations.insert(id, row.reversed);
+            ctx.insert_btree_map(
+                &mut orientations,
+                id,
+                row.reversed,
+                "creo native face orientation nodes",
+            )?;
         }
     }
     for datum in &scan.planes.datum_cylinders {
-        if !orientations.contains_key(&datum.id) {
-            ctx.charge_collection_items(1, "creo native face orientation nodes")?;
-        }
-        orientations.insert(datum.id, datum.reversed);
+        ctx.insert_btree_map(
+            &mut orientations,
+            datum.id,
+            datum.reversed,
+            "creo native face orientation nodes",
+        )?;
     }
     let mut round_feature_ids = BTreeSet::new();
     for row in scan
@@ -992,10 +992,11 @@ pub(in crate::decode) fn native_face_orientations(
         .iter()
         .filter(|row| row.root_schema_class == Some(SchemaClass::Round))
     {
-        if !round_feature_ids.contains(&row.feature_id) {
-            ctx.charge_collection_items(1, "creo native round feature ID nodes")?;
-            round_feature_ids.insert(row.feature_id);
-        }
+        ctx.insert_btree_set(
+            &mut round_feature_ids,
+            row.feature_id,
+            "creo native round feature ID nodes",
+        )?;
     }
     let mut available_surfaces = BTreeSet::new();
     for surface in &ir.model.surfaces {
@@ -1005,10 +1006,11 @@ pub(in crate::decode) fn native_face_orientations(
             .strip_prefix("creo:visibgeom:surface#")
             .and_then(|suffix| suffix.parse::<u32>().ok())
         {
-            if !available_surfaces.contains(&id) {
-                ctx.charge_collection_items(1, "creo available surface ID nodes")?;
-                available_surfaces.insert(id);
-            }
+            ctx.insert_btree_set(
+                &mut available_surfaces,
+                id,
+                "creo available surface ID nodes",
+            )?;
         }
     }
     for (id, reversed) in rowless_round_face_orientations(
@@ -1018,10 +1020,12 @@ pub(in crate::decode) fn native_face_orientations(
         &scan.surfaces.rows,
         &available_surfaces,
     )? {
-        if !orientations.contains_key(&id) {
-            ctx.charge_collection_items(1, "creo native face orientation nodes")?;
-        }
-        orientations.insert(id, reversed);
+        ctx.insert_btree_map(
+            &mut orientations,
+            id,
+            reversed,
+            "creo native face orientation nodes",
+        )?;
     }
     Ok(orientations)
 }

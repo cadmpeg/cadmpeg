@@ -583,7 +583,7 @@ fn rm_face_colors_refuse_output_retained_limit() {
 #[test]
 fn rm_face_colors_refuse_definition_lookup_work_limit() {
     let error = face_color_projection_result(
-        |policy| policy.limits.max_work_units = 5,
+        |policy| policy.limits.max_work_units = 1317,
         FaceColorRoute::Colors,
     )
     .unwrap_err();

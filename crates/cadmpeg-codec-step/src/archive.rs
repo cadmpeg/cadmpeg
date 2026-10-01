@@ -7,7 +7,7 @@ use std::fmt::Write;
 use std::path::Path;
 
 use cadmpeg_container::{ArchiveSnapshot, ZipCompression};
-use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::decode::{u64_from_index, DecodeContext, View};
 use cadmpeg_core::CodecError;
 
 /// The required root member name from Part 21 Annex A.4.
@@ -188,7 +188,7 @@ pub(crate) fn root_reference_notes(
     let mut notes = Vec::new();
     for reference in exchange.references() {
         let name = reference.name;
-        let uri = forwarded_reference_uri(exchange, &reference.uri);
+        let uri = forwarded_reference_uri(exchange, &reference.uri, ctx)?;
         let mut member_bytes = ctx.reserve_scoped(0, "step_zip_uri_member_temp")?;
         match resolve_uri(ctx, &mut member_bytes, ROOT_NAME, uri)? {
             ReferenceTarget::Internal {
@@ -275,19 +275,28 @@ fn push_reference_note(
     Ok(())
 }
 
-fn forwarded_reference_uri<'a>(exchange: &'a crate::parse::Exchange, uri: &'a str) -> &'a str {
+fn forwarded_reference_uri<'a>(
+    exchange: &'a crate::parse::Exchange,
+    uri: &'a str,
+    ctx: &DecodeContext<'_>,
+) -> Result<&'a str, CodecError> {
     let Some(fragment) = uri.strip_prefix('#') else {
-        return uri;
+        return Ok(uri);
     };
-    exchange
-        .anchors()
-        .iter()
-        .find(|anchor| anchor.name == fragment)
-        .and_then(|anchor| match &anchor.value {
-            crate::parse::Value::Resource(uri) => Some(uri.as_str()),
-            _ => None,
-        })
-        .unwrap_or(uri)
+    for anchor in exchange.anchors() {
+        ctx.charge_work(1, "step_zip_anchor_lookup")?;
+        if anchor.name.len() != fragment.len() {
+            continue;
+        }
+        ctx.charge_work(u64_from_index(fragment.len()), "step_zip_anchor_lookup")?;
+        if anchor.name == fragment {
+            return Ok(match &anchor.value {
+                crate::parse::Value::Resource(target) => target.as_str(),
+                _ => uri,
+            });
+        }
+    }
+    Ok(uri)
 }
 
 fn has_uri_scheme(uri: &str) -> bool {

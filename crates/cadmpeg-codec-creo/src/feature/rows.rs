@@ -403,7 +403,7 @@ pub(super) fn row_spans(
             starts.push((offset, id));
         }
     }
-    starts.sort_unstable();
+    ctx.sort_unstable_by(&mut starts, Ord::cmp, |_| 0, "creo feature row starts sort")?;
     // One stream can expose the same feature identifier under conflicting
     // schema classes, but one identifier/class pair is one row.
     let mut seen_ids = BTreeSet::new();
@@ -413,22 +413,14 @@ pub(super) fn row_spans(
         let candidate_end = starts
             .get(index + 1)
             .map_or(payload.len(), |&(next, _)| next);
-        let first_for_id = if seen_ids.contains(&id) {
-            false
-        } else {
-            ctx.charge_collection_items(1, "creo feature row seen ids")?;
-            seen_ids.insert(id);
-            true
-        };
+        let first_for_id = ctx.insert_btree_set(&mut seen_ids, id, "creo feature row seen ids")?;
         let has_new_schema_class =
             if let Some(schema_class) = row_root_schema_class(payload, start, candidate_end) {
-                if seen_schema_classes.contains(&(id, schema_class)) {
-                    false
-                } else {
-                    ctx.charge_collection_items(1, "creo feature row schema classes")?;
-                    seen_schema_classes.insert((id, schema_class));
-                    true
-                }
+                ctx.insert_btree_set(
+                    &mut seen_schema_classes,
+                    (id, schema_class),
+                    "creo feature row schema classes",
+                )?
             } else {
                 false
             };
@@ -552,10 +544,10 @@ pub(crate) fn round_replay_scalars(
             });
         }
     }
-    crate::sort::stable_sort_by_key(
-        ctx,
+    ctx.stable_sort_by(
         result.as_mut_slice(),
-        |candidate| candidate.offset,
+        |left, right| left.offset.cmp(&right.offset),
+        |_| 0,
         "creo round replay scalars result ordering",
     )?;
     Ok(result)
@@ -621,10 +613,10 @@ pub(crate) fn choices(
                 from = label_end + 1;
             }
         }
-        crate::sort::stable_sort_by_key(
-            ctx,
+        ctx.stable_sort_by(
             hits.as_mut_slice(),
-            |hit| hit.0,
+            |left, right| left.0.cmp(&right.0),
+            |_| 0,
             "creo choices hits ordering",
         )?;
         for (index, &(header, label_at, label, type_byte)) in hits.iter().enumerate() {
@@ -657,10 +649,10 @@ pub(crate) fn choices(
             });
         }
     }
-    crate::sort::stable_sort_by_key(
-        ctx,
+    ctx.stable_sort_by(
         result.as_mut_slice(),
-        |choice| choice.offset,
+        |left, right| left.offset.cmp(&right.offset),
+        |_| 0,
         "creo choices result ordering",
     )?;
     Ok(result)
@@ -793,10 +785,10 @@ pub(crate) fn choice_fields(
             });
         }
     }
-    crate::sort::stable_sort_by_key(
-        ctx,
+    ctx.stable_sort_by(
         fields.as_mut_slice(),
-        |field| field.offset,
+        |left, right| left.offset.cmp(&right.offset),
+        |_| 0,
         "creo choice fields fields ordering",
     )?;
     Ok(fields)
@@ -840,15 +832,12 @@ pub(crate) fn geometry_tables(
                     offset: row.body_offset + offset,
                 });
                 if matches!(kind, FeatureGeometryTableKind::DatumIds(_)) {
-                    match datum_class_by_stream.entry(row.stream_offset) {
-                        std::collections::btree_map::Entry::Vacant(entry) => {
-                            ctx.charge_collection_items(1, "creo datum class by stream")?;
-                            entry.insert(entity_class);
-                        }
-                        std::collections::btree_map::Entry::Occupied(mut entry) => {
-                            *entry.get_mut() = entity_class;
-                        }
-                    }
+                    ctx.insert_btree_map(
+                        &mut datum_class_by_stream,
+                        row.stream_offset,
+                        entity_class,
+                        "creo datum class by stream",
+                    )?;
                 }
             }
         }
@@ -872,10 +861,10 @@ pub(crate) fn geometry_tables(
             });
         }
     }
-    crate::sort::stable_sort_by_key(
-        ctx,
+    ctx.stable_sort_by(
         tables.as_mut_slice(),
-        |table| table.offset,
+        |left, right| left.offset.cmp(&right.offset),
+        |_| 0,
         "creo geometry tables tables ordering",
     )?;
     Ok(tables)
@@ -1052,10 +1041,10 @@ pub(crate) fn affected_ids(
             }
         }
     }
-    crate::sort::stable_sort_by_key(
-        ctx,
+    ctx.stable_sort_by(
         result.as_mut_slice(),
-        |record| record.offset,
+        |left, right| left.offset.cmp(&right.offset),
+        |_| 0,
         "creo affected ids result ordering",
     )?;
     Ok(result)
@@ -1355,11 +1344,13 @@ pub(crate) fn replay_affected_ids(
                 && matches!(window[ANCHOR_PREFIX.len()], 0xc8 | 0xd8)
                 && window.ends_with(ANCHOR_SUFFIX)
         });
+        ctx.admit_btree_entry(
+            &extents,
+            &(row.stream_offset, schema_class),
+            "creo replay extent states",
+        )?;
         let state = match extents.entry((row.stream_offset, schema_class)) {
-            std::collections::btree_map::Entry::Vacant(entry) => {
-                ctx.charge_collection_items(1, "creo replay extent states")?;
-                entry.insert([None; 2])
-            }
+            std::collections::btree_map::Entry::Vacant(entry) => entry.insert([None; 2]),
             std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
         };
         let (pair, source_offset) = if let Some(anchor) = anchor {
@@ -1403,10 +1394,10 @@ pub(crate) fn replay_affected_ids(
             offset: row.body_offset + source_offset,
         });
     }
-    crate::sort::stable_sort_by_key(
-        ctx,
+    ctx.stable_sort_by(
         result.as_mut_slice(),
-        |record| record.offset,
+        |left, right| left.offset.cmp(&right.offset),
+        |_| 0,
         "creo replay affected ids result ordering",
     )?;
     Ok(result)
@@ -1520,11 +1511,13 @@ pub(crate) fn surface_merge_replay_affected_ids(
         if row.root_schema_class != Some(SchemaClass::SurfaceMerge) {
             continue;
         }
+        ctx.admit_btree_entry(
+            &extents,
+            &row.stream_offset,
+            "creo surface merge extent states",
+        )?;
         let state = match extents.entry(row.stream_offset) {
-            std::collections::btree_map::Entry::Vacant(entry) => {
-                ctx.charge_collection_items(1, "creo surface merge extent states")?;
-                entry.insert([None; 3])
-            }
+            std::collections::btree_map::Entry::Vacant(entry) => entry.insert([None; 3]),
             std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
         };
         let named_arrays = [
@@ -1558,10 +1551,10 @@ pub(crate) fn surface_merge_replay_affected_ids(
         ctx.reserve_vec(&mut result, 1, "creo surface merge affected-id records")?;
         result.push(record);
     }
-    crate::sort::stable_sort_by_key(
-        ctx,
+    ctx.stable_sort_by(
         result.as_mut_slice(),
-        |record| record.offset,
+        |left, right| left.offset.cmp(&right.offset),
+        |_| 0,
         "creo surface merge replay affected ids result ordering",
     )?;
     Ok(result)
@@ -1609,10 +1602,10 @@ pub(crate) fn loop_restore_directions(
             }
         }
     }
-    crate::sort::stable_sort_by_key(
-        ctx,
+    ctx.stable_sort_by(
         result.as_mut_slice(),
-        |record| record.offset,
+        |left, right| left.offset.cmp(&right.offset),
+        |_| 0,
         "creo loop restore directions result ordering",
     )?;
     Ok(result)
@@ -1682,10 +1675,10 @@ pub(crate) fn loop_history_entries(
             }
         }));
     }
-    crate::sort::stable_sort_by_key(
-        ctx,
+    ctx.stable_sort_by(
         result.as_mut_slice(),
-        |entry| entry.offset,
+        |left, right| left.offset.cmp(&right.offset),
+        |_| 0,
         "creo loop history entries result ordering",
     )?;
     Ok(result)
@@ -1838,10 +1831,10 @@ pub(crate) fn revolution_extents(
             offset: row.body_offset + choice_start + 2,
         });
     }
-    crate::sort::stable_sort_by_key(
-        ctx,
+    ctx.stable_sort_by(
         result.as_mut_slice(),
-        |record| record.offset,
+        |left, right| left.offset.cmp(&right.offset),
+        |_| 0,
         "creo revolution extents result ordering",
     )?;
     Ok(result)

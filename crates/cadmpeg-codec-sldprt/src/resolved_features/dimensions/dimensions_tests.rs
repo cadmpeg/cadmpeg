@@ -11,7 +11,7 @@ use crate::records::{
     FeatureInputReference, FeatureInputRelationFamily, FeatureInputRelationInstance,
     SketchInputEntity, SketchInputKind, SketchInputLink, SketchRelationKind,
 };
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+use cadmpeg_core::decode::{u64_from_index, DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::sketches::{
     Sketch, SketchEntity, SketchEntityId, SketchGeometry, SketchGeometryDefinition, SketchId,
@@ -811,7 +811,7 @@ fn declared_slot_handle_selects_indexed_dimension_center() {
             ),
             marker(
                 "slot",
-                slot_offset as u64,
+                u64_from_index(slot_offset),
                 SketchInputKind::from_handle_code(1),
                 Some(1),
                 Some(1),
@@ -917,9 +917,9 @@ fn explicitly_referenced_current_arc_handle_point_is_dimension_carrier() {
     };
     let marker_offset = 4u64;
     let record_len = arc_handle::LEN;
-    let mut native_payload = vec![0; marker_offset as usize + record_len + SKETCH_MARKER.len()];
-    native_payload[..marker_offset as usize].copy_from_slice(&11u32.to_le_bytes());
-    let offset = marker_offset as usize;
+    let offset = usize::try_from(marker_offset).unwrap();
+    let mut native_payload = vec![0; offset + record_len + SKETCH_MARKER.len()];
+    native_payload[..offset].copy_from_slice(&11u32.to_le_bytes());
     native_payload[offset..offset + SKETCH_MARKER.len()].copy_from_slice(SKETCH_MARKER);
     native_payload[offset + arc_handle::HEADER..offset + arc_handle::SHARED_SELECTOR].fill(0xff);
     native_payload[offset + arc_handle::SHARED_SELECTOR..offset + arc_handle::NATIVE_KIND]
@@ -1521,11 +1521,16 @@ fn native_radial_role_propagates_omitted_circle_construction_state() {
         payload[104..].copy_from_slice(LEGACY_SKETCH_MARKER);
         payload
     };
-    let marker = |id: &str, offset, kind, coordinates_m: Option<[f64; 2]>| {
+    let marker = |id: &str, offset: u64, kind, coordinates_m: Option<[f64; 2]>| {
         let marker_id: String = id.into();
         let marker_parent: String = "lane".into();
-        let mut constructed_marker =
-            SketchInputEntity::new(marker_id, marker_parent, offset as u32, offset, kind);
+        let mut constructed_marker = SketchInputEntity::new(
+            marker_id,
+            marker_parent,
+            u32::try_from(offset).unwrap(),
+            offset,
+            kind,
+        );
         constructed_marker.feature_ref = Some("feature".into());
         constructed_marker.state_value = None;
         constructed_marker.coordinates_m =

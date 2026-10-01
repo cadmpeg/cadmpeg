@@ -582,7 +582,12 @@ impl SourceFidelity {
             }
             native_records.push(crate::native::NativeRecord::new(id, fields)?);
         }
-        native_records.sort_by(|left, right| left.id().cmp(right.id()));
+        ctx.stable_sort_by(
+            &mut native_records,
+            |left, right| left.id().cmp(right.id()),
+            |record| record.id().len(),
+            "native unknown arena records sort",
+        )?;
         if let Some(pair) = native_records
             .windows(2)
             .find(|pair| pair[0].id() == pair[1].id())

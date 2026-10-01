@@ -986,15 +986,40 @@ fn nurbs_profile_point(
     Ok(Some([point.x, point.y]))
 }
 
+const MAX_NURBS_PROFILE_POINTS: usize = 262_145;
+
+fn append_nurbs_profile_point(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    storage: &mut cadmpeg_core::decode::ScopedReservation<'_>,
+    points: &mut Vec<[f64; 2]>,
+    point: [f64; 2],
+) -> Result<(), cadmpeg_core::CodecError> {
+    if points.len() >= MAX_NURBS_PROFILE_POINTS {
+        let requested = cadmpeg_core::decode::u64_from_index(points.len())
+            .checked_add(1)
+            .ok_or_else(|| {
+                ctx.refuse_codec_limit("creo NURBS profile point ceiling", u64::MAX, u64::MAX)
+            })?;
+        return Err(ctx.refuse_codec_limit(
+            "creo NURBS profile point ceiling",
+            cadmpeg_core::decode::u64_from_index(MAX_NURBS_PROFILE_POINTS),
+            requested,
+        ));
+    }
+    ctx.reserve_scoped_vec(storage, points, 1, "creo NURBS profile polyline points")?;
+    points.push(point);
+    Ok(())
+}
+
 fn append_nurbs_profile_span(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     evaluator: &mut cadmpeg_ir::eval::decode::NurbsPointEvaluator<'_, '_>,
     nurbs: &NurbsCurve,
     span: &NurbsProfileSpan,
     points: &mut Vec<[f64; 2]>,
+    storage: &mut cadmpeg_core::decode::ScopedReservation<'_>,
 ) -> Result<Option<()>, cadmpeg_core::CodecError> {
     const MAX_DEPTH: usize = 24;
-    const MAX_POINTS: usize = 262_145;
     let _depth = ctx.enter_nested("creo NURBS profile sampling depth")?;
     ctx.charge_work(1, "creo NURBS profile sampling spans")?;
     if !(span.start.is_finite() && span.end.is_finite() && span.start < span.end) {
@@ -1002,11 +1027,7 @@ fn append_nurbs_profile_span(
     }
     let middle = span.start + (span.end - span.start) * 0.5;
     if middle == span.start || middle == span.end {
-        if points.len() >= MAX_POINTS {
-            return Ok(None);
-        }
-        ctx.reserve_vec(points, 1, "creo NURBS profile polyline points")?;
-        points.push(span.end_point);
+        append_nurbs_profile_point(ctx, storage, points, span.end_point)?;
         return Ok(Some(()));
     }
     let first_quarter = span.start + (span.end - span.start) * 0.25;
@@ -1026,15 +1047,23 @@ fn append_nurbs_profile_span(
         return Ok(None);
     }
     if flatness <= span.tolerance {
-        if points.len() >= MAX_POINTS {
-            return Ok(None);
-        }
-        ctx.reserve_vec(points, 1, "creo NURBS profile polyline points")?;
-        points.push(span.end_point);
+        append_nurbs_profile_point(ctx, storage, points, span.end_point)?;
         return Ok(Some(()));
     }
     if span.depth >= MAX_DEPTH {
-        return Ok(None);
+        return Err(ctx.refuse_codec_limit(
+            "creo NURBS profile sampling ceiling",
+            cadmpeg_core::decode::u64_from_index(MAX_DEPTH),
+            cadmpeg_core::decode::u64_from_index(span.depth)
+                .checked_add(1)
+                .ok_or_else(|| {
+                    ctx.refuse_codec_limit(
+                        "creo NURBS profile sampling ceiling",
+                        u64::MAX,
+                        u64::MAX,
+                    )
+                })?,
+        ));
     }
     if append_nurbs_profile_span(
         ctx,
@@ -1049,6 +1078,7 @@ fn append_nurbs_profile_span(
             depth: span.depth + 1,
         },
         points,
+        storage,
     )?
     .is_none()
     {
@@ -1067,14 +1097,20 @@ fn append_nurbs_profile_span(
             depth: span.depth + 1,
         },
         points,
+        storage,
     )
 }
 
-fn nurbs_profile_polyline(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+struct ProfilePolyline<'a> {
+    points: Vec<[f64; 2]>,
+    _storage: cadmpeg_core::decode::ScopedReservation<'a>,
+}
+
+fn nurbs_profile_polyline<'ctx>(
+    ctx: &'ctx cadmpeg_core::decode::DecodeContext<'_>,
     nurbs: &NurbsCurve,
     tolerance: f64,
-) -> Result<Option<Vec<[f64; 2]>>, cadmpeg_core::CodecError> {
+) -> Result<Option<ProfilePolyline<'ctx>>, cadmpeg_core::CodecError> {
     let Some(range) = nurbs_intrinsic_parameter_range(nurbs) else {
         return Ok(None);
     };
@@ -1084,8 +1120,8 @@ fn nurbs_profile_polyline(
         return Ok(None);
     };
     let mut points = Vec::new();
-    ctx.reserve_vec(&mut points, 1, "creo NURBS profile polyline points")?;
-    points.push(first);
+    let mut storage = ctx.reserve_scoped(0, "creo NURBS profile polyline points")?;
+    append_nurbs_profile_point(ctx, &mut storage, &mut points, first)?;
     for pair in nurbs.knots().windows(2) {
         let start = pair[0].max(lower);
         let end = pair[1].min(upper);
@@ -1099,8 +1135,7 @@ fn nurbs_profile_polyline(
             return Ok(None);
         };
         if points.last().copied() != Some(start_point) {
-            ctx.reserve_vec(&mut points, 1, "creo NURBS profile polyline points")?;
-            points.push(start_point);
+            append_nurbs_profile_point(ctx, &mut storage, &mut points, start_point)?;
         }
         if append_nurbs_profile_span(
             ctx,
@@ -1115,20 +1150,24 @@ fn nurbs_profile_polyline(
                 depth: 0,
             },
             &mut points,
+            &mut storage,
         )?
         .is_none()
         {
             return Ok(None);
         }
     }
-    Ok((points.len() >= 2).then_some(points))
+    Ok((points.len() >= 2).then_some(ProfilePolyline {
+        points,
+        _storage: storage,
+    }))
 }
 
-fn profile_nurbs_polyline(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+fn profile_nurbs_polyline<'ctx>(
+    ctx: &'ctx cadmpeg_core::decode::DecodeContext<'_>,
     segment: &ProfileEntity,
     tolerance: f64,
-) -> Result<Option<Vec<[f64; 2]>>, cadmpeg_core::CodecError> {
+) -> Result<Option<ProfilePolyline<'ctx>>, cadmpeg_core::CodecError> {
     let Some(sketch) = segment.geometry.to_sketch(ctx)? else {
         return Ok(None);
     };
@@ -1230,7 +1269,7 @@ pub(in super::super) fn profile_segments_intersect(
                 let Some(polyline) = profile_nurbs_polyline(ctx, first, tolerance)? else {
                     return Ok(false);
                 };
-                for segment in polyline.windows(2) {
+                for segment in polyline.points.windows(2) {
                     ctx.charge_work(1, "creo profile NURBS arc intersection segments")?;
                     if line_arc_intersect([segment[0], segment[1]], arc, tolerance) {
                         return Ok(true);
@@ -1244,7 +1283,7 @@ pub(in super::super) fn profile_segments_intersect(
                 let Some(polyline) = profile_nurbs_polyline(ctx, second, tolerance)? else {
                     return Ok(false);
                 };
-                for segment in polyline.windows(2) {
+                for segment in polyline.points.windows(2) {
                     ctx.charge_work(1, "creo profile NURBS arc intersection segments")?;
                     if line_arc_intersect([segment[0], segment[1]], arc, tolerance) {
                         return Ok(true);
@@ -1273,8 +1312,12 @@ pub(in super::super) fn profile_segments_intersect(
         }
         return polylines_intersect(
             ctx,
-            first_polyline.as_deref().unwrap_or(&first_line),
-            second_polyline.as_deref().unwrap_or(&second_line),
+            first_polyline
+                .as_ref()
+                .map_or(first_line.as_slice(), |line| line.points.as_slice()),
+            second_polyline
+                .as_ref()
+                .map_or(second_line.as_slice(), |line| line.points.as_slice()),
             tolerance,
         );
     }
@@ -1314,7 +1357,7 @@ pub(in super::super) fn profile_strictly_contains(
             let Some(polyline) = profile_nurbs_polyline(ctx, segment, tolerance)? else {
                 return Ok(false);
             };
-            for pair in polyline.windows(2) {
+            for pair in polyline.points.windows(2) {
                 ctx.charge_work(1, "creo profile NURBS winding segments")?;
                 accumulate(pair[0], pair[1]);
             }

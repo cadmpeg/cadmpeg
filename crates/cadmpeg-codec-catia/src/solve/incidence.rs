@@ -282,12 +282,11 @@ fn prune_incidence_choices_with_explicit_support(
     for (edge, points) in edge_supports.iter().enumerate() {
         for face in unique_faces(edge_faces[edge]) {
             for &point in points {
-                if !supports[face].contains_key(&point) {
-                    ctx.charge_collection_items(
-                        u64_from_index(1),
-                        "catia incidence point support counts",
-                    )?;
-                }
+                ctx.admit_btree_entry(
+                    &supports[face],
+                    &point,
+                    "catia incidence point support counts",
+                )?;
                 let count = supports[face].entry(point).or_default();
                 let Some(next) = count.checked_add(1) else {
                     return Ok(None);
@@ -341,12 +340,11 @@ fn prune_incidence_choices_with_explicit_support(
             };
             for face in unique_faces(edge_faces[edge]) {
                 for point in pair {
-                    if !degrees[face].contains_key(point) {
-                        ctx.charge_collection_items(
-                            u64_from_index(1),
-                            "catia incidence endpoint degrees",
-                        )?;
-                    }
+                    ctx.admit_btree_entry(
+                        &degrees[face],
+                        point,
+                        "catia incidence endpoint degrees",
+                    )?;
                     let degree = degrees[face].entry(*point).or_default();
                     let Some(next) = degree.checked_add(1) else {
                         return Ok(None);
@@ -410,12 +408,12 @@ fn prune_incidence_choices_with_explicit_support(
     }
 }
 
-fn incidence_choice_components(
-    ctx: &DecodeContext<'_>,
+fn incidence_choice_components<'storage>(
+    ctx: &'storage DecodeContext<'_>,
     choices: &[Vec<[usize; 2]>],
     edge_faces: &[[usize; 2]],
     boundary_domains: Option<&[MeshFaceBoundaryDomain]>,
-    mesh_quotient: Option<&MeshQuotient>,
+    mesh_quotient: Option<&MeshQuotient<'storage>>,
 ) -> Result<Vec<Vec<usize>>, CodecError> {
     let mut union = UnionFind::charged(ctx, choices.len(), "catia_incidence_choice_union")?;
     let mut point_nodes = HashMap::<(usize, usize), usize>::new();
@@ -479,8 +477,13 @@ fn incidence_choice_components(
         }
     }
     if let Some(domains) = boundary_domains {
-        let mut connect = |mut edges: Vec<usize>| {
-            edges.sort_unstable();
+        let mut connect = |mut edges: Vec<usize>| -> Result<(), CodecError> {
+            ctx.sort_unstable_by(
+                &mut edges,
+                Ord::cmp,
+                |_| 0,
+                "catia_incidence_boundary_edges_sort",
+            )?;
             edges.dedup();
             let mut ambiguous = edges.into_iter().filter(|edge| {
                 choices[*edge].len() > 1 || (choices[*edge].is_empty() && mesh_quotient.is_some())
@@ -490,6 +493,7 @@ fn incidence_choice_components(
                     union.union(first, edge);
                 }
             }
+            Ok(())
         };
         for domain in domains {
             match domain {
@@ -499,7 +503,7 @@ fn incidence_choice_components(
                         for use_ in boundary {
                             ctx.push_vec(&mut edges, use_.edge, "catia_incidence_boundary_edges")?;
                         }
-                        connect(edges);
+                        connect(edges)?;
                     }
                 }
                 MeshFaceBoundaryDomain::Ordered(assignments) => {
@@ -510,10 +514,10 @@ fn incidence_choice_components(
                     {
                         ctx.push_vec(&mut edges, use_.edge, "catia_incidence_boundary_edges")?;
                     }
-                    connect(edges);
+                    connect(edges)?;
                 }
                 MeshFaceBoundaryDomain::UnorderedFullCycle(edges) => {
-                    connect(ctx.copy_slice(edges, "catia_incidence_boundary_edges")?);
+                    connect(ctx.copy_slice(edges, "catia_incidence_boundary_edges")?)?;
                 }
                 MeshFaceBoundaryDomain::DeferredValidation(domain) => {
                     let mut edges =
@@ -521,7 +525,7 @@ fn incidence_choice_components(
                     for (use_, _) in domain.cycles.iter().flat_map(|cycle| &cycle.exact_uses) {
                         ctx.push_vec(&mut edges, use_.edge, "catia_incidence_boundary_edges")?;
                     }
-                    connect(edges);
+                    connect(edges)?;
                 }
             }
         }
@@ -564,9 +568,19 @@ fn incidence_choice_components(
         ctx.push_vec(&mut components, group, "catia_incidence_components")?;
     }
     for component in &mut components {
-        component.sort_unstable();
+        ctx.sort_unstable_by(
+            &mut *component,
+            Ord::cmp,
+            |_| 0,
+            "catia_incidence_component_sort",
+        )?;
     }
-    components.sort_by_key(|component| component[0]);
+    ctx.stable_sort_by(
+        &mut components,
+        |left, right| left[0].cmp(&right[0]),
+        |_| 0,
+        "catia_incidence_components_sort",
+    )?;
     Ok(components)
 }
 
@@ -629,9 +643,19 @@ fn join_incidence_components_by_coupling(
         ctx.push_vec(&mut joined_values, value, "catia_incidence_joined_groups")?;
     }
     for (_, edges) in &mut joined_values {
-        edges.sort_unstable();
+        ctx.sort_unstable_by(
+            &mut *edges,
+            Ord::cmp,
+            |_| 0,
+            "catia_incidence_joined_edges_sort",
+        )?;
     }
-    joined_values.sort_unstable_by_key(|(first, _)| *first);
+    ctx.sort_unstable_by(
+        &mut joined_values,
+        |left, right| left.0.cmp(&right.0),
+        |_| 0,
+        "catia_incidence_joined_groups_sort",
+    )?;
     let mut output = Vec::new();
     for (_, edges) in joined_values {
         ctx.push_vec(&mut output, edges, "catia_incidence_joined_components")?;
@@ -1458,12 +1482,20 @@ fn prune_face_configuration_singleton_support(
             "catia face configuration singleton order",
         )?;
         order.extend(0..domains.len());
-        order.sort_unstable_by_key(|domain| {
-            active[*domain]
-                .iter()
-                .map(|word| index_from_u32(word.count_ones()))
-                .sum::<usize>()
-        });
+        ctx.sort_unstable_by(
+            &mut order,
+            |left, right| {
+                let count = |domain: &usize| {
+                    active[*domain]
+                        .iter()
+                        .map(|word| index_from_u32(word.count_ones()))
+                        .sum::<usize>()
+                };
+                count(left).cmp(&count(right))
+            },
+            |_| 0,
+            "catia face configuration singleton order sort",
+        )?;
         for domain in order {
             let mut domain_changed = false;
             let active_count = active[domain]
@@ -1555,7 +1587,7 @@ fn prune_ordered_face_endpoint_support(
                     .flat_map(|assignment| assignment.boundaries.iter().flatten())
                     .map(|use_| use_.edge),
             );
-            edges.sort_unstable();
+            ctx.sort_unstable_by(&mut edges, Ord::cmp, |_| 0, "catia ordered face edges sort")?;
             edges.dedup();
             if edges
                 .iter()
@@ -1600,7 +1632,12 @@ fn prune_ordered_face_endpoint_support(
                         return Ok(true);
                     }
                     let mut canonical = pair;
-                    canonical.sort_unstable();
+                    ctx.sort_unstable_by(
+                        &mut canonical,
+                        Ord::cmp,
+                        |_| 0,
+                        "catia ordered face canonical pair sort",
+                    )?;
                     if edge_supported.contains(&canonical) {
                         ctx.push_vec(&mut retained, pair, "catia ordered face retained pairs")?;
                     }
@@ -1697,12 +1734,22 @@ pub(super) fn prune_implicit_ordered_face_endpoint_support(
                     if !budget.charge() {
                         return Ok(true);
                     }
-                    pair.sort_unstable();
+                    ctx.sort_unstable_by(
+                        &mut pair,
+                        Ord::cmp,
+                        |_| 0,
+                        "catia implicit face pair sort",
+                    )?;
                     if supported.contains(&pair) {
                         ctx.push_vec(&mut retained, pair, "catia implicit face retained pairs")?;
                     }
                 }
-                retained.sort_unstable();
+                ctx.sort_unstable_by(
+                    &mut retained,
+                    Ord::cmp,
+                    |_| 0,
+                    "catia implicit face retained pairs sort",
+                )?;
                 retained.dedup();
                 if retained.is_empty() {
                     return Ok(false);
@@ -1748,7 +1795,7 @@ fn prepare_face_configuration_domains(
                 .map(|use_| use_.edge)
                 .filter(|edge| active.get(*edge) == Some(&true)),
         );
-        edges.sort_unstable();
+        ctx.sort_unstable_by(&mut edges, Ord::cmp, |_| 0, "catia face factor edges sort")?;
         edges.dedup();
         if edges.is_empty()
             || edges.iter().any(|edge| {
@@ -1834,7 +1881,12 @@ fn prepare_face_configuration_domains(
                 .flatten()
                 .map(|(edge, _)| *edge),
         );
-        edges.sort_unstable();
+        ctx.sort_unstable_by(
+            &mut edges,
+            Ord::cmp,
+            |_| 0,
+            "catia face factor indexed edges sort",
+        )?;
         edges.dedup();
         for edge in edges {
             if let Some(factors) = factors_by_edge.get_mut(edge) {
@@ -2046,16 +2098,16 @@ pub(super) fn compact_boundary_domain_viable(
     })
 }
 
-enum CompactBoundaryAdvanceOutcome {
-    Complete(Vec<MeshQuotientGaugeState>),
+enum CompactBoundaryAdvanceOutcome<'storage> {
+    Complete(Vec<MeshQuotientGaugeState<'storage>>),
     Rejected,
     Exhausted,
 }
 
-fn copy_quotient_states(
-    ctx: &DecodeContext<'_>,
-    states: &[MeshQuotientGaugeState],
-) -> Result<Vec<MeshQuotientGaugeState>, CodecError> {
+fn copy_quotient_states<'storage>(
+    ctx: &'storage DecodeContext<'_>,
+    states: &[MeshQuotientGaugeState<'storage>],
+) -> Result<Vec<MeshQuotientGaugeState<'storage>>, CodecError> {
     let mut copy = Vec::new();
     ctx.reserve_vec(
         &mut copy,
@@ -2075,15 +2127,15 @@ fn copy_quotient_states(
     Ok(copy)
 }
 
-fn advance_compact_boundary_domains<'a>(
-    ctx: &DecodeContext<'_>,
+fn advance_compact_boundary_domains<'storage, 'a>(
+    ctx: &'storage DecodeContext<'_>,
     domains: impl IntoIterator<Item = &'a MeshFaceBoundaryDomain>,
     choices: &[Vec<[usize; 2]>],
     assignment: &[Option<[usize; 2]>],
     selected: Option<(usize, [usize; 2])>,
-    mut states: Vec<MeshQuotientGaugeState>,
+    mut states: Vec<MeshQuotientGaugeState<'storage>>,
     budget: &WorkBudget<'_>,
-) -> Result<CompactBoundaryAdvanceOutcome, CodecError> {
+) -> Result<CompactBoundaryAdvanceOutcome<'storage>, CodecError> {
     const MAX_QUOTIENT_STATES: usize = 4_096;
 
     let mut ordered = Vec::<Vec<MeshFaceBoundaryAssignment>>::new();
@@ -2320,7 +2372,12 @@ fn advance_compact_boundary_domains<'a>(
                             "catia_compact_boundary_oriented_signature",
                         )?;
                     }
-                    oriented_signature.sort_unstable();
+                    ctx.sort_unstable_by(
+                        &mut oriented_signature,
+                        Ord::cmp,
+                        |_| 0,
+                        "catia_compact_boundary_oriented_signature_sort",
+                    )?;
                     if ctx.insert_hash_set(
                         &mut signatures,
                         (candidate.signature_charged(ctx)?, oriented_signature),
@@ -2356,13 +2413,13 @@ fn advance_compact_boundary_domains<'a>(
 }
 
 #[cfg(test)]
-pub(super) fn compact_boundary_domains_jointly_viable<'a>(
-    ctx: &DecodeContext<'_>,
+pub(super) fn compact_boundary_domains_jointly_viable<'storage, 'a>(
+    ctx: &'storage DecodeContext<'_>,
     domains: impl IntoIterator<Item = &'a MeshFaceBoundaryDomain>,
     choices: &[Vec<[usize; 2]>],
     assignment: &[Option<[usize; 2]>],
     selected: Option<(usize, [usize; 2])>,
-    quotient: &MeshQuotient,
+    quotient: &MeshQuotient<'storage>,
     budget: &WorkBudget<'_>,
 ) -> Result<bool, CodecError> {
     let mut initial = Vec::new();
@@ -2415,7 +2472,7 @@ fn restore_incidence_degrees(degrees: &mut [BTreeMap<usize, u8>], undo: Incidenc
     }
 }
 
-impl IncidenceComponentSearch<'_, '_> {
+impl<'storage> IncidenceComponentSearch<'storage, '_> {
     fn candidate_pairs(
         &self,
         edge: usize,
@@ -2778,7 +2835,12 @@ impl IncidenceComponentSearch<'_, '_> {
     ) -> Result<bool, CodecError> {
         if let Some(mesh_assignments) = self.mesh_assignments {
             let mut faces = self.edge_faces[edge];
-            faces.sort_unstable();
+            self.ctx.sort_unstable_by(
+                &mut faces,
+                Ord::cmp,
+                |_| 0,
+                "catia incidence candidate fit faces sort",
+            )?;
             let length = if faces[0] == faces[1] { 1 } else { 2 };
             for &face in &faces[..length] {
                 let Some(domain) = mesh_assignments.get(face) else {
@@ -2932,7 +2994,12 @@ impl IncidenceComponentSearch<'_, '_> {
             "catia incidence ordered constraint options",
         )?;
         ordered.extend(options);
-        ordered.sort_unstable();
+        self.ctx.sort_unstable_by(
+            &mut ordered,
+            Ord::cmp,
+            |_| 0,
+            "catia incidence ordered constraint options sort",
+        )?;
         Ok(IncidenceConstraintOptions::Exact(ordered))
     }
 
@@ -2963,7 +3030,12 @@ impl IncidenceComponentSearch<'_, '_> {
                 "catia_incidence_branch_edge_widths",
             )?;
         }
-        ordered_edges.sort_by_key(|(_, width)| *width);
+        self.ctx.stable_sort_by(
+            &mut ordered_edges,
+            |left, right| left.1.cmp(&right.1),
+            |_| 0,
+            "catia_incidence_branch_edge_widths_sort",
+        )?;
         'edges: for (edge, width) in ordered_edges {
             if coordinate_domains
                 .filter(|_| self.choices[edge].is_empty())
@@ -3097,8 +3169,8 @@ impl IncidenceComponentSearch<'_, '_> {
     fn advance_ordered_faces(
         &mut self,
         faces: impl IntoIterator<Item = usize>,
-        quotient_states: Vec<MeshQuotientGaugeState>,
-    ) -> Result<Option<Vec<MeshQuotientGaugeState>>, CodecError> {
+        quotient_states: Vec<MeshQuotientGaugeState<'storage>>,
+    ) -> Result<Option<Vec<MeshQuotientGaugeState<'storage>>>, CodecError> {
         let Some(mesh_assignments) = self.mesh_assignments else {
             return Ok(Some(quotient_states));
         };
@@ -3111,7 +3183,12 @@ impl IncidenceComponentSearch<'_, '_> {
             )?;
         }
         let mut faces = faces_collection;
-        faces.sort_unstable();
+        self.ctx.sort_unstable_by(
+            &mut faces,
+            Ord::cmp,
+            |_| 0,
+            "catia_incidence_advanced_faces_sort",
+        )?;
         faces.dedup();
         for &face in &faces {
             let Some(domain) = mesh_assignments.get(face) else {
@@ -3192,7 +3269,12 @@ impl IncidenceComponentSearch<'_, '_> {
         self.ctx
             .reserve_vec(&mut faces, count, "catia incidence component faces")?;
         faces.extend(self.edges.iter().flat_map(|edge| self.edge_faces[*edge]));
-        faces.sort_unstable();
+        self.ctx.sort_unstable_by(
+            &mut faces,
+            Ord::cmp,
+            |_| 0,
+            "catia incidence component faces sort",
+        )?;
         faces.dedup();
         Ok(faces)
     }
@@ -3247,7 +3329,12 @@ impl IncidenceComponentSearch<'_, '_> {
             }
             Some((width?, face, assignments))
         }));
-        faces.sort_by_key(|(width, face, _)| (*width, *face));
+        self.ctx.stable_sort_by(
+            &mut faces,
+            |left, right| (left.0, left.1).cmp(&(right.0, right.1)),
+            |_| 0,
+            "catia face option candidates sort",
+        )?;
         let mut domains = Vec::new();
         for (width, face, assignments) in faces {
             if !self.boundary_propagation_budget.charge() {
@@ -3326,7 +3413,12 @@ impl IncidenceComponentSearch<'_, '_> {
                 "catia face option ordered projections",
             )?;
             projected.extend(unique);
-            projected.sort_unstable();
+            self.ctx.sort_unstable_by(
+                &mut projected,
+                Ord::cmp,
+                |item| std::mem::size_of_val(item.as_slice()),
+                "catia face option ordered projections sort",
+            )?;
             if projected.is_empty() {
                 return Ok(Some(Vec::new()));
             }
@@ -3386,7 +3478,7 @@ impl IncidenceComponentSearch<'_, '_> {
     fn search_face_configurations(
         &mut self,
         mut options: MeshFaceEndpointConfigurations,
-        quotient_states: &[MeshQuotientGaugeState],
+        quotient_states: &[MeshQuotientGaugeState<'storage>],
         coordinate_domains: Option<&Arc<MeshCoordinateRootDomains>>,
         component_faces: &[usize],
     ) -> Result<(), CodecError> {
@@ -3476,7 +3568,12 @@ impl IncidenceComponentSearch<'_, '_> {
             self.rollback_face_configuration(assigned);
             return Ok(None);
         }
-        affected_faces.sort_unstable();
+        self.ctx.sort_unstable_by(
+            &mut affected_faces,
+            Ord::cmp,
+            |_| 0,
+            "catia face configuration affected faces sort",
+        )?;
         affected_faces.dedup();
         if !self.degree_frontiers_supported(
             &affected_faces,
@@ -3528,7 +3625,7 @@ impl IncidenceComponentSearch<'_, '_> {
     fn search_forced_face_configurations(
         &mut self,
         mut option: Vec<(usize, [usize; 2])>,
-        quotient_states: &[MeshQuotientGaugeState],
+        quotient_states: &[MeshQuotientGaugeState<'storage>],
         coordinate_domains: Option<&Arc<MeshCoordinateRootDomains>>,
         component_faces: &[usize],
     ) -> Result<(), CodecError> {
@@ -3615,7 +3712,7 @@ impl IncidenceComponentSearch<'_, '_> {
 
     fn search_with_quotient(
         &mut self,
-        quotient_states: &[MeshQuotientGaugeState],
+        quotient_states: &[MeshQuotientGaugeState<'storage>],
         coordinate_domains: Option<&Arc<MeshCoordinateRootDomains>>,
         component_faces: &[usize],
     ) -> Result<(), CodecError> {
@@ -3650,7 +3747,7 @@ impl IncidenceComponentSearch<'_, '_> {
 
     fn search_state(
         &mut self,
-        quotient_states: &[MeshQuotientGaugeState],
+        quotient_states: &[MeshQuotientGaugeState<'storage>],
         coordinate_domains: Option<&Arc<MeshCoordinateRootDomains>>,
         component_faces: &[usize],
     ) -> Result<(), CodecError> {
@@ -3683,7 +3780,7 @@ impl IncidenceComponentSearch<'_, '_> {
 
     fn search_edge_state(
         &mut self,
-        quotient_states: &[MeshQuotientGaugeState],
+        quotient_states: &[MeshQuotientGaugeState<'storage>],
         coordinate_domains: Option<&Arc<MeshCoordinateRootDomains>>,
         component_faces: &[usize],
     ) -> Result<(), CodecError> {
@@ -3982,7 +4079,12 @@ pub(super) fn deferred_boundary_assignment(
             .iter()
             .flat_map(|cycle| cycle.exact_uses.iter().map(|(use_, _)| use_.edge)),
     );
-    incident.sort_unstable();
+    ctx.sort_unstable_by(
+        &mut incident,
+        Ord::cmp,
+        |_| 0,
+        "catia deferred incident edges sort",
+    )?;
     incident.dedup();
     let Some(incidence) = incidence_cycles(ctx, &incident, edge_points)? else {
         return Ok(None);
@@ -4004,19 +4106,15 @@ pub(super) fn deferred_boundary_assignment(
         .ok_or_else(|| {
             ctx.refuse_codec_limit("catia deferred compatibility cells", u64::MAX, u64::MAX)
         })?;
-    ctx.charge_collection_items(
-        u64_from_index(domain.cycles.len()),
+    let mut compatible = Vec::new();
+    ctx.reserve_vec(
+        &mut compatible,
+        domain.cycles.len(),
         "catia deferred compatibility rows",
     )?;
     ctx.charge_collection_items(
         u64_from_index(compatibility_count),
         "catia deferred compatibility cells",
-    )?;
-    let mut compatible = Vec::new();
-    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
-        &mut compatible,
-        domain.cycles.len(),
-        "catia deferred compatibility rows",
     )?;
     for mesh in &domain.cycles {
         let mut row = Vec::new();
@@ -4032,19 +4130,15 @@ pub(super) fn deferred_boundary_assignment(
         }
         compatible.push(row);
     }
-    ctx.charge_collection_items(
-        u64_from_index(domain.cycles.len()),
+    let mut boolean_compatible = Vec::new();
+    ctx.reserve_vec(
+        &mut boolean_compatible,
+        domain.cycles.len(),
         "catia deferred matching rows",
     )?;
     ctx.charge_collection_items(
         u64_from_index(compatibility_count),
         "catia deferred matching cells",
-    )?;
-    let mut boolean_compatible = Vec::new();
-    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
-        &mut boolean_compatible,
-        compatible.len(),
-        "catia deferred matching rows",
     )?;
     for cycles in &compatible {
         let mut row = Vec::new();
@@ -4118,7 +4212,12 @@ fn deferred_boundary_closes(
             .iter()
             .flat_map(|cycle| cycle.exact_uses.iter().map(|(use_, _)| use_.edge)),
     );
-    incident.sort_unstable();
+    ctx.sort_unstable_by(
+        &mut incident,
+        Ord::cmp,
+        |_| 0,
+        "catia deferred close incident edges sort",
+    )?;
     incident.dedup();
     let Some(incidence) = incidence_cycles(ctx, &incident, edge_points)? else {
         return Ok(false);
@@ -4144,19 +4243,15 @@ fn deferred_boundary_closes(
                 u64::MAX,
             )
         })?;
-    ctx.charge_collection_items(
-        u64_from_index(domain.cycles.len()),
+    let mut compatible = Vec::new();
+    ctx.reserve_vec(
+        &mut compatible,
+        domain.cycles.len(),
         "catia deferred close compatibility rows",
     )?;
     ctx.charge_collection_items(
         u64_from_index(cells),
         "catia deferred close compatibility cells",
-    )?;
-    let mut compatible = Vec::new();
-    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
-        &mut compatible,
-        domain.cycles.len(),
-        "catia deferred close compatibility rows",
     )?;
     for mesh in &domain.cycles {
         let mut row = Vec::new();
@@ -4409,7 +4504,12 @@ pub(super) fn partial_face_orientability_viable(
                     stack.extend(edges_at_point[&point].iter().copied());
                 }
             }
-            component.sort_unstable();
+            ctx.sort_unstable_by(
+                &mut component,
+                Ord::cmp,
+                |_| 0,
+                "catia orientability component edges sort",
+            )?;
             let trail = if points.iter().all(|point| degrees[point] == 2) {
                 let Some(cycles) = incidence_cycles(ctx, &component, &edge_points)? else {
                     return Ok(false);
@@ -4426,7 +4526,12 @@ pub(super) fn partial_face_orientability_viable(
                     "catia orientability endpoints",
                 )?;
                 endpoints.extend(points.iter().copied().filter(|point| degrees[point] == 1));
-                endpoints.sort_unstable();
+                ctx.sort_unstable_by(
+                    &mut endpoints,
+                    Ord::cmp,
+                    |_| 0,
+                    "catia orientability endpoints sort",
+                )?;
                 let [start, end] = endpoints.as_slice() else {
                     return Ok(false);
                 };
@@ -4497,14 +4602,14 @@ pub(super) fn partial_face_orientability_viable(
 
 #[allow(clippy::too_many_arguments)]
 #[cfg(test)]
-fn component_incidence_pair_solutions<F>(
-    ctx: &DecodeContext<'_>,
+fn component_incidence_pair_solutions<'storage, F>(
+    ctx: &'storage DecodeContext<'_>,
     choices: &[Vec<[usize; 2]>],
     edge_faces: &[[usize; 2]],
     face_count: usize,
     point_count: usize,
     mesh_assignments: Option<&[MeshFaceBoundaryDomain]>,
-    mesh_quotient: Option<&MeshQuotient>,
+    mesh_quotient: Option<&MeshQuotient<'storage>>,
     partial_solution_valid: Option<MeshPartialEndpointConstraint<'_>>,
     solution_valid: &F,
 ) -> Result<Option<Vec<Vec<[usize; 2]>>>, CodecError>
@@ -4527,14 +4632,14 @@ where
 
 #[allow(clippy::too_many_arguments)]
 #[cfg(test)]
-pub(super) fn component_incidence_pair_solution_outcome<F>(
-    ctx: &DecodeContext<'_>,
+pub(super) fn component_incidence_pair_solution_outcome<'storage, F>(
+    ctx: &'storage DecodeContext<'_>,
     choices: &[Vec<[usize; 2]>],
     edge_faces: &[[usize; 2]],
     face_count: usize,
     point_count: usize,
     mesh_assignments: Option<&[MeshFaceBoundaryDomain]>,
-    mesh_quotient: Option<&MeshQuotient>,
+    mesh_quotient: Option<&MeshQuotient<'storage>>,
     partial_solution_valid: Option<MeshPartialEndpointConstraint<'_>>,
     solution_valid: &F,
 ) -> Result<IncidenceSolve<Vec<Vec<[usize; 2]>>>, CodecError>
@@ -4575,14 +4680,14 @@ where
 
 #[allow(clippy::too_many_arguments)]
 #[cfg(test)]
-fn visit_component_incidence_pair_solutions<F, V>(
-    ctx: &DecodeContext<'_>,
+fn visit_component_incidence_pair_solutions<'storage, F, V>(
+    ctx: &'storage DecodeContext<'_>,
     choices: &[Vec<[usize; 2]>],
     edge_faces: &[[usize; 2]],
     face_count: usize,
     point_count: usize,
     mesh_assignments: Option<&[MeshFaceBoundaryDomain]>,
-    mesh_quotient: Option<&MeshQuotient>,
+    mesh_quotient: Option<&MeshQuotient<'storage>>,
     partial_solution_valid: Option<MeshPartialEndpointConstraint<'_>>,
     solution_valid: &F,
     visitor: &mut V,
@@ -4596,6 +4701,7 @@ where
 }
 
 struct VisitComponentIncidencePairSolutionsWithCoordinateRootPolicyInputs<
+    'storage,
     'input0,
     'input1,
     'input2,
@@ -4616,7 +4722,7 @@ struct VisitComponentIncidencePairSolutionsWithCoordinateRootPolicyInputs<
     face_count: usize,
     point_count: usize,
     mesh_assignments: Option<&'input2 [MeshFaceBoundaryDomain]>,
-    mesh_quotient: Option<&'input3 MeshQuotient>,
+    mesh_quotient: Option<&'input3 MeshQuotient<'storage>>,
     coordinate_root_policy: CoordinateRootPolicy,
     partial_solution_valid: Option<MeshPartialEndpointConstraint<'input4>>,
     solution_valid: &'input5 F,
@@ -4624,9 +4730,10 @@ struct VisitComponentIncidencePairSolutionsWithCoordinateRootPolicyInputs<
     session_budget: &'input8 WorkBudget<'input7>,
 }
 
-fn visit_component_incidence_pair_solutions_with_coordinate_root_policy<F, V>(
-    ctx: &DecodeContext<'_>,
+fn visit_component_incidence_pair_solutions_with_coordinate_root_policy<'storage, F, V>(
+    ctx: &'storage DecodeContext<'_>,
     inputs: VisitComponentIncidencePairSolutionsWithCoordinateRootPolicyInputs<
+        'storage,
         '_,
         '_,
         '_,
@@ -4757,7 +4864,12 @@ where
                     }
                     points
                 };
-                points.sort_unstable();
+                ctx.sort_unstable_by(
+                    &mut points,
+                    Ord::cmp,
+                    |_| 0,
+                    "catia_incidence_candidate_points_sort",
+                )?;
                 points.dedup();
                 for point in points {
                     ctx.insert_hash_set(
@@ -4787,7 +4899,12 @@ where
         )?;
         sorted_constraints.extend(constraints);
         let mut constraints = sorted_constraints;
-        constraints.sort_unstable();
+        ctx.sort_unstable_by(
+            &mut constraints,
+            Ord::cmp,
+            |_| 0,
+            "catia_incidence_sorted_constraints_sort",
+        )?;
         let mut explicit_point_supports = Vec::new();
         ctx.reserve_vec(
             &mut explicit_point_supports,
@@ -4890,6 +5007,7 @@ where
         Ok(search.state == IncidenceSearchState::Exhausted)
     }
     struct VisitComponentsInputs<
+        'storage,
         'input0,
         'input1,
         'input2,
@@ -4928,7 +5046,7 @@ where
         edge_faces: &'input1 [[usize; 2]],
         face_edges: &'input2 [Vec<usize>],
         mesh_assignments: Option<&'input3 [MeshFaceBoundaryDomain]>,
-        mesh_quotient: Option<&'input4 MeshQuotient>,
+        mesh_quotient: Option<&'input4 MeshQuotient<'storage>>,
         coordinate_domains: Option<&'input5 MeshCoordinateRootDomains>,
         coordinate_root_policy: CoordinateRootPolicy,
         partial_solution_valid: Option<MeshPartialEndpointConstraint<'input6>>,
@@ -4947,9 +5065,10 @@ where
         boundary_propagation_budget: &'input23 WorkBudget<'input22>,
         session_budget: &'input25 WorkBudget<'input24>,
     }
-    fn visit_components<F, V>(
-        ctx: &DecodeContext<'_>,
+    fn visit_components<'storage, F, V>(
+        ctx: &'storage DecodeContext<'_>,
         inputs: VisitComponentsInputs<
+            'storage,
             '_,
             '_,
             '_,
@@ -5756,6 +5875,7 @@ pub(crate) fn reconstruct_incidence_candidates(
 }
 
 struct VisitIncidenceEndpointPairSolutionsInputs<
+    'storage,
     'input0,
     'input1,
     'input2,
@@ -5779,16 +5899,17 @@ struct VisitIncidenceEndpointPairSolutionsInputs<
     edge_candidates: &'input3 [Vec<[usize; 2]>],
     face_count: usize,
     mesh_assignments: Option<&'input4 [MeshFaceBoundaryDomain]>,
-    mesh_quotient: Option<&'input5 MeshQuotient>,
+    mesh_quotient: Option<&'input5 MeshQuotient<'storage>>,
     partial_solution_valid: Option<MeshPartialEndpointConstraint<'input6>>,
     complete_solution_budget: Option<&'input8 WorkBudget<'input7>>,
     solution_valid: &'input9 F,
     visitor: &'input10 mut V,
 }
 
-fn visit_incidence_endpoint_pair_solutions<F, V>(
-    ctx: &DecodeContext<'_>,
+fn visit_incidence_endpoint_pair_solutions<'storage, F, V>(
+    ctx: &'storage DecodeContext<'_>,
     inputs: VisitIncidenceEndpointPairSolutionsInputs<
+        'storage,
         '_,
         '_,
         '_,
@@ -5826,6 +5947,7 @@ where
 }
 
 pub(super) struct VisitIncidenceEndpointPairSolutionsWithCoordinateRootPolicyInputs<
+    'storage,
     'input0,
     'input1,
     'input2,
@@ -5849,7 +5971,7 @@ pub(super) struct VisitIncidenceEndpointPairSolutionsWithCoordinateRootPolicyInp
     pub(super) edge_candidates: &'input3 [Vec<[usize; 2]>],
     pub(super) face_count: usize,
     pub(super) mesh_assignments: Option<&'input4 [MeshFaceBoundaryDomain]>,
-    pub(super) mesh_quotient: Option<&'input5 MeshQuotient>,
+    pub(super) mesh_quotient: Option<&'input5 MeshQuotient<'storage>>,
     pub(super) coordinate_root_policy: CoordinateRootPolicy,
     pub(super) partial_solution_valid: Option<MeshPartialEndpointConstraint<'input6>>,
     pub(super) complete_solution_budget: Option<&'input8 WorkBudget<'input7>>,
@@ -5857,9 +5979,10 @@ pub(super) struct VisitIncidenceEndpointPairSolutionsWithCoordinateRootPolicyInp
     pub(super) visitor: &'input10 mut V,
 }
 
-pub(super) fn visit_incidence_endpoint_pair_solutions_with_coordinate_root_policy<F, V>(
-    ctx: &DecodeContext<'_>,
+pub(super) fn visit_incidence_endpoint_pair_solutions_with_coordinate_root_policy<'storage, F, V>(
+    ctx: &'storage DecodeContext<'_>,
     inputs: VisitIncidenceEndpointPairSolutionsWithCoordinateRootPolicyInputs<
+        'storage,
         '_,
         '_,
         '_,

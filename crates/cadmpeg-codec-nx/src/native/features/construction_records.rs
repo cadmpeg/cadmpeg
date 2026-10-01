@@ -161,20 +161,27 @@ pub(in crate::native) fn feature_projected_curve_construction_payloads(
     let mut kinds = BTreeMap::new();
     let mut kind_reservation = ctx.reserve_scoped(0, "NX projected curve kinds")?;
     for label in labels {
-        ctx.charge_collection_items(1, "NX projected curve kinds")?;
         kind_reservation.grow(cadmpeg_core::decode::u64_from_index(
             std::mem::size_of::<(&str, &str)>() * 4,
         ))?;
-        kinds.insert(label.id.as_str(), label.value.as_str());
+        ctx.insert_btree_map(
+            &mut kinds,
+            label.id.as_str(),
+            label.value.as_str(),
+            "NX projected curve kinds",
+        )?;
     }
     let mut operations = BTreeSet::new();
     let mut operation_reservation = ctx.reserve_scoped(0, "NX projected curve operations")?;
     for reference in references {
-        ctx.charge_collection_items(1, "NX projected curve operations")?;
         operation_reservation.grow(cadmpeg_core::decode::u64_from_index(
             std::mem::size_of::<&str>() * 4,
         ))?;
-        operations.insert(reference.operation_label.as_str());
+        ctx.insert_btree_set(
+            &mut operations,
+            reference.operation_label.as_str(),
+            "NX projected curve operations",
+        )?;
     }
     let mut payloads = Vec::new();
     for operation_label in operations {
@@ -204,15 +211,12 @@ pub(in crate::native) fn feature_projected_curve_construction_payloads(
             )?;
             field.push(reference);
         }
-        let sort_work = field
-            .len()
-            .checked_mul(field.len())
-            .ok_or_else(|| ctx.refuse_codec_limit("sort NX projected curve references", 0, 1))?;
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(sort_work),
+        ctx.stable_sort_by(
+            &mut field,
+            |first, second| first.ordinal.cmp(&second.ordinal),
+            |_| 0,
             "sort NX projected curve references",
         )?;
-        field.sort_by_key(|reference| reference.ordinal);
         if field.len() != expected_len
             || field
                 .iter()
@@ -758,10 +762,11 @@ pub(in crate::native) fn feature_surface_construction_payloads(
     let mut labels = BTreeSet::new();
     for reference in references {
         ctx.charge_work(1, "scan NX surface payload labels")?;
-        if !labels.contains(reference.operation_label.as_str()) {
-            ctx.charge_collection_items(1, "NX surface payload labels")?;
-            labels.insert(reference.operation_label.as_str());
-        }
+        ctx.insert_btree_set(
+            &mut labels,
+            reference.operation_label.as_str(),
+            "NX surface payload labels",
+        )?;
     }
     let mut output = Vec::new();
     for operation_label in labels {
@@ -785,14 +790,12 @@ pub(in crate::native) fn feature_surface_construction_payloads(
                 .iter()
                 .filter(|reference| reference.operation_label == operation_label),
         );
-        let sort_work = graph_count
-            .checked_mul(graph_count)
-            .ok_or_else(|| ctx.refuse_codec_limit("sort NX surface construction graph", 0, 1))?;
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(sort_work),
+        ctx.stable_sort_by(
+            &mut graph,
+            |first, second| first.ordinal.cmp(&second.ordinal),
+            |_| 0,
             "sort NX surface construction graph",
         )?;
-        graph.sort_by_key(|reference| reference.ordinal);
         if graph
             .iter()
             .enumerate()
@@ -1661,11 +1664,14 @@ pub(in crate::native) fn feature_extrude_construction_profiles(
     let mut operations = BTreeSet::new();
     let mut operation_reservation = ctx.reserve_scoped(0, "NX extrude profile operations")?;
     for reference in references {
-        ctx.charge_collection_items(1, "NX extrude profile operations")?;
         operation_reservation.grow(cadmpeg_core::decode::u64_from_index(
             std::mem::size_of::<&str>() * 4,
         ))?;
-        operations.insert(reference.operation_label.as_str());
+        ctx.insert_btree_set(
+            &mut operations,
+            reference.operation_label.as_str(),
+            "NX extrude profile operations",
+        )?;
     }
     let mut profiles = Vec::new();
     for operation_label in operations {
@@ -1688,15 +1694,12 @@ pub(in crate::native) fn feature_extrude_construction_profiles(
             )?;
             operation_references.push(reference);
         }
-        let sort_work = operation_references
-            .len()
-            .checked_mul(operation_references.len())
-            .ok_or_else(|| ctx.refuse_codec_limit("sort NX extrude profile references", 0, 1))?;
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(sort_work),
+        ctx.stable_sort_by(
+            &mut operation_references,
+            |first, second| first.ordinal.cmp(&second.ordinal),
+            |_| 0,
             "sort NX extrude profile references",
         )?;
-        operation_references.sort_by_key(|reference| reference.ordinal);
         if operation_references
             .iter()
             .enumerate()
@@ -1856,11 +1859,14 @@ pub(in crate::native) fn feature_extrude_32_constructions(
     let mut operations = BTreeSet::new();
     let mut operation_reservation = ctx.reserve_scoped(0, "NX extrude 32 operations")?;
     for branch in branches {
-        ctx.charge_collection_items(1, "NX extrude 32 operations")?;
         operation_reservation.grow(cadmpeg_core::decode::u64_from_index(
             std::mem::size_of::<&str>() * 4,
         ))?;
-        operations.insert(branch.operation_label.as_str());
+        ctx.insert_btree_set(
+            &mut operations,
+            branch.operation_label.as_str(),
+            "NX extrude 32 operations",
+        )?;
     }
     let mut constructions = Vec::new();
     for operation_label in operations {
@@ -1895,15 +1901,12 @@ pub(in crate::native) fn feature_extrude_32_constructions(
             )?;
             profile.push(reference);
         }
-        let sort_work = profile
-            .len()
-            .checked_mul(profile.len())
-            .ok_or_else(|| ctx.refuse_codec_limit("sort NX extrude 32 profiles", 0, 1))?;
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(sort_work),
+        ctx.stable_sort_by(
+            &mut profile,
+            |first, second| first.ordinal.cmp(&second.ordinal),
+            |_| 0,
             "sort NX extrude 32 profiles",
         )?;
-        profile.sort_by_key(|reference| reference.ordinal);
         let Ok(profile) = crate::om::branch_items::BranchItems::new(profile) else {
             continue;
         };
@@ -2062,11 +2065,14 @@ pub(in crate::native) fn feature_block_constructions(
     let mut operations = BTreeSet::new();
     let mut operation_reservation = ctx.reserve_scoped(0, "NX block construction operations")?;
     for reference in references {
-        ctx.charge_collection_items(1, "NX block construction operations")?;
         operation_reservation.grow(cadmpeg_core::decode::u64_from_index(
             std::mem::size_of::<&str>() * 4,
         ))?;
-        operations.insert(reference.operation_label.as_str());
+        ctx.insert_btree_set(
+            &mut operations,
+            reference.operation_label.as_str(),
+            "NX block construction operations",
+        )?;
     }
     let mut constructions = Vec::new();
     for operation_label in operations {
@@ -2088,15 +2094,12 @@ pub(in crate::native) fn feature_block_constructions(
             )?;
             field.push(reference);
         }
-        let sort_work = field
-            .len()
-            .checked_mul(field.len())
-            .ok_or_else(|| ctx.refuse_codec_limit("sort NX block construction field", 0, 1))?;
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(sort_work),
+        ctx.stable_sort_by(
+            &mut field,
+            |first, second| first.position.ordinal().cmp(&second.position.ordinal()),
+            |_| 0,
             "sort NX block construction field",
         )?;
-        field.sort_by_key(|reference| reference.position.ordinal());
         let Ok(field): Result<[_; 19], _> = field.try_into() else {
             continue;
         };
@@ -2336,15 +2339,12 @@ pub(in crate::native) fn feature_block_payload_named_records(
             )?;
             payload_names.push(name);
         }
-        let name_sort_work = payload_names
-            .len()
-            .checked_mul(payload_names.len())
-            .ok_or_else(|| ctx.refuse_codec_limit("sort NX block payload names", 0, 1))?;
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(name_sort_work),
+        ctx.stable_sort_by(
+            &mut payload_names,
+            |first, second| first.frame.offset().cmp(&second.frame.offset()),
+            |_| 0,
             "sort NX block payload names",
         )?;
-        payload_names.sort_by_key(|name| name.frame.offset());
         for (ordinal, name) in payload_names.iter().enumerate() {
             let end = payload_names
                 .get(ordinal + 1)
@@ -2365,15 +2365,12 @@ pub(in crate::native) fn feature_block_payload_named_records(
                 )?;
                 scalar_fields.push(scalar);
             }
-            let scalar_sort_work = scalar_fields
-                .len()
-                .checked_mul(scalar_fields.len())
-                .ok_or_else(|| ctx.refuse_codec_limit("sort NX block payload scalars", 0, 1))?;
-            ctx.charge_work(
-                cadmpeg_core::decode::u64_from_index(scalar_sort_work),
+            ctx.stable_sort_by(
+                &mut scalar_fields,
+                |first, second| first.payload_offset.cmp(&second.payload_offset),
+                |_| 0,
                 "sort NX block payload scalars",
             )?;
-            scalar_fields.sort_by_key(|scalar| scalar.payload_offset);
             let id = ctx.format_retained(
                 format_args!("{}-record-{ordinal}", payload.id),
                 "NX block payload named record identity",
@@ -2590,15 +2587,15 @@ pub(in crate::native) fn feature_block_dimensions(
         {
             continue;
         }
-        let sort_work = operation_bindings
-            .len()
-            .checked_mul(operation_bindings.len())
-            .ok_or_else(|| ctx.refuse_codec_limit("sort NX block dimension bindings", 0, 1))?;
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(sort_work),
+        ctx.stable_sort_by(
+            &mut operation_bindings,
+            |first, second| {
+                (first.input_slot, first.reference_ordinal)
+                    .cmp(&(second.input_slot, second.reference_ordinal))
+            },
+            |_| 0,
             "sort NX block dimension bindings",
         )?;
-        operation_bindings.sort_by_key(|binding| (binding.input_slot, binding.reference_ordinal));
         let Some(start) = declarations
             .iter()
             .position(|declaration| declaration.id == anchor)

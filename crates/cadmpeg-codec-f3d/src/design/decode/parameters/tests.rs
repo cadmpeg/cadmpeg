@@ -330,8 +330,17 @@ fn parameter_variants_have_exact_string_and_scalar_boundaries() {
     let mut sheet_metal =
         parameter_record(Some(301), "50.00 mm", "FlangeHeight", Some("mm"), "d2", 5.0);
     sheet_metal[22..30].copy_from_slice(&6u64.to_le_bytes());
-    let (_, expression_end) =
-        crate::bytes::lp_utf16_bounded(&sheet_metal, 46, 1..=256).expect("sheet-metal expression");
+    let (_, expression_end) = crate::test_support::with_decode_context(|ctx| {
+        crate::bytes::lp_utf16_bounded_charged(
+            ctx,
+            &sheet_metal,
+            46,
+            1..=256,
+            "retain F3D UTF-16 string",
+        )
+        .unwrap()
+    })
+    .expect("sheet-metal expression");
     sheet_metal.insert(expression_end + 9, 0);
     let tail = sheet_metal.len() - 12;
     sheet_metal[tail + 2] = 16;

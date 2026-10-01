@@ -1888,16 +1888,13 @@ fn axis_relation_point_loci(
         loci: Vec::new(),
         locus_bytes: 0,
     };
-    collect_axis_relation_point_loci(
-        ctx,
-        relation,
+    let scope = AxisRelationScope {
         sketch,
         sketch_entities,
         markers_by_id,
         loci_by_marker,
-        &mut collection,
-        false,
-    )?;
+    };
+    collect_axis_relation_point_loci(ctx, relation, &scope, &mut collection, false)?;
     sort_axis_relation_point_loci(ctx, &mut collection.loci)?;
     if collection.loci.len() == 2 {
         return Ok(collection.loci.try_into().ok());
@@ -1909,16 +1906,7 @@ fn axis_relation_point_loci(
     collection.locus_bytes = 0;
     collection.visited.clear();
     collection.visited_bytes = 0;
-    collect_axis_relation_point_loci(
-        ctx,
-        relation,
-        sketch,
-        sketch_entities,
-        markers_by_id,
-        loci_by_marker,
-        &mut collection,
-        true,
-    )?;
+    collect_axis_relation_point_loci(ctx, relation, &scope, &mut collection, true)?;
     sort_axis_relation_point_loci(ctx, &mut collection.loci)?;
     Ok(collection.loci.try_into().ok())
 }
@@ -1928,46 +1916,39 @@ fn sort_axis_relation_point_loci(
     loci: &mut Vec<SketchLocus>,
 ) -> Result<(), CodecError> {
     const OPERATION: &str = "sort SLDPRT axis relation point loci";
-    let count = u64_from_index(loci.len());
-    ctx.charge_work(count, OPERATION)?;
-    let max_bytes = loci
-        .iter()
-        .map(|locus| locus_entity(locus).as_str().len())
-        .max()
-        .unwrap_or(0);
-    let levels = u64::from(u64::BITS - count.leading_zeros()) + 1;
-    ctx.charge_work(
-        count
-            .checked_mul(levels)
-            .and_then(|work| work.checked_mul(64))
-            .and_then(|work| {
-                u64_from_index(max_bytes)
-                    .checked_mul(2)
-                    .and_then(|bytes| bytes.checked_add(1))
-                    .and_then(|bytes| work.checked_mul(bytes))
-            })
-            .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?,
+    ctx.sort_unstable_by(
+        loci.as_mut_slice(),
+        |left, right| locus_key(left).cmp(&locus_key(right)),
+        |locus| locus_key(locus).0.len(),
         OPERATION,
     )?;
-    loci.sort_unstable_by(|left, right| locus_key(left).cmp(&locus_key(right)));
     loci.dedup();
     Ok(())
 }
 
-// The collector keeps the sketch, marker indexes, and locus indexes separate
-// because each lookup has a distinct ownership boundary.
-#[allow(clippy::too_many_arguments)]
+/// The sketch, marker index and locus index that every step of one axis-relation
+/// traversal reads.
+struct AxisRelationScope<'s, 'a> {
+    sketch: &'s SketchId,
+    sketch_entities: &'s [SketchEntity],
+    markers_by_id: &'s HashMap<&'s str, &'a SketchInputEntity>,
+    loci_by_marker: &'s HashMap<String, Vec<SketchLocus>>,
+}
+
 fn collect_axis_relation_point_loci<'a>(
     ctx: &DecodeContext<'_>,
     relation: &'a SketchInputEntity,
-    sketch: &SketchId,
-    sketch_entities: &[SketchEntity],
-    markers_by_id: &HashMap<&str, &'a SketchInputEntity>,
-    loci_by_marker: &HashMap<String, Vec<SketchLocus>>,
+    scope: &AxisRelationScope<'_, 'a>,
     collection: &mut AxisRelationPointCollection<'a>,
     include_reverse_owners: bool,
 ) -> Result<(), CodecError> {
     const OPERATION: &str = "traverse SLDPRT axis relation point loci";
+    let AxisRelationScope {
+        sketch,
+        sketch_entities,
+        markers_by_id,
+        loci_by_marker,
+    } = *scope;
     let _nesting = ctx.enter_nested(OPERATION)?;
     let bytes = u64_from_index(relation.id().len());
     ctx.charge_work(
@@ -1992,12 +1973,7 @@ fn collect_axis_relation_point_loci<'a>(
         .visited_bytes
         .checked_add(bytes)
         .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
-    ctx.charge_collection_items(1, OPERATION)?;
-    collection
-        .visited
-        .try_reserve(1)
-        .map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
-    collection.visited.insert(relation.id());
+    ctx.insert_hash_set(&mut collection.visited, relation.id(), OPERATION)?;
     collection.visited_bytes = next_bytes;
     charge_relation_marker_links(ctx, relation, markers_by_id, OPERATION)?;
     for link in relation
@@ -2020,16 +1996,15 @@ fn collect_axis_relation_point_loci<'a>(
                     collection,
                 )?;
             }
-            SketchInputKind::Relation(_) => collect_axis_relation_point_loci(
-                ctx,
-                linked,
-                sketch,
-                sketch_entities,
-                markers_by_id,
-                loci_by_marker,
-                collection,
-                include_reverse_owners,
-            )?,
+            SketchInputKind::Relation(_) => {
+                collect_axis_relation_point_loci(
+                    ctx,
+                    linked,
+                    scope,
+                    collection,
+                    include_reverse_owners,
+                )?;
+            }
             _ => {}
         }
     }
@@ -2169,16 +2144,12 @@ pub(super) fn relation_owner_markers<'a>(
             break;
         }
     }
-    let count = u64_from_index(owners.len());
-    let levels = u64::from(u64::BITS - count.leading_zeros()) + 1;
-    ctx.charge_work(
-        count
-            .checked_mul(levels)
-            .and_then(|work| work.checked_mul(64))
-            .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?,
+    ctx.sort_unstable_by(
+        &mut owners,
+        |left, right| left.offset().cmp(&right.offset()),
+        |_| 0,
         OPERATION,
     )?;
-    owners.sort_unstable_by_key(|marker| marker.offset());
     Ok(owners)
 }
 
@@ -3460,7 +3431,9 @@ pub(super) fn legacy_terminal_indexed_profile_line(
         || payload.get(offset + 48..offset + 56) != Some(&1.0f64.to_le_bytes())
         || payload.get(offset + 60..offset + 64) != Some(&1u32.to_le_bytes())
         || payload.get(offset + 64..offset + 72) != Some(&(-1.0f64).to_le_bytes())
-        || sketch_marker_prefix_at(payload, offset.saturating_add(84))
+        || offset
+            .checked_add(84)
+            .is_some_and(|at| sketch_marker_prefix_at(payload, at))
     {
         return false;
     }

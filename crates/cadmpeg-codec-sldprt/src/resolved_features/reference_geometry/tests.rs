@@ -19,7 +19,11 @@ fn decode_projects_fixed_reference_plane_frame() {
 
     let mut resolved = resolved_feature_classes_with_ids(&[("moRefPlane_c", "Plano", 42)]);
     resolved.extend_from_slice(&[0xff, 0xff, 0x01, 0x00]);
-    resolved.extend_from_slice(&("moFixedRefPlnData_c".len() as u16).to_le_bytes());
+    resolved.extend_from_slice(
+        &u16::try_from("moFixedRefPlnData_c".len())
+            .unwrap()
+            .to_le_bytes(),
+    );
     resolved.extend_from_slice(b"moFixedRefPlnData_c");
     let mut frame = [0u8; 97];
     frame[0..8].copy_from_slice(&2.5f64.to_le_bytes());
@@ -75,7 +79,11 @@ fn decode_rejects_nonorthogonal_fixed_reference_plane_frame() {
 
     let mut resolved = resolved_feature_classes_with_ids(&[("moRefPlane_c", "Plane", 42)]);
     resolved.extend_from_slice(&[0xff, 0xff, 0x01, 0x00]);
-    resolved.extend_from_slice(&("moFixedRefPlnData_c".len() as u16).to_le_bytes());
+    resolved.extend_from_slice(
+        &u16::try_from("moFixedRefPlnData_c".len())
+            .unwrap()
+            .to_le_bytes(),
+    );
     resolved.extend_from_slice(b"moFixedRefPlnData_c");
     let mut frame = [0u8; 97];
     frame[24..32].copy_from_slice(&1.0f64.to_le_bytes());

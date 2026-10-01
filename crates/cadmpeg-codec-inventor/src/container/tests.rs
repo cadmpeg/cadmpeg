@@ -84,7 +84,7 @@ fn container_summary_attribute_refuses_before_insert() {
         let (limited, _) =
             DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("limited context");
         assert!(matches!(
-            insert_attribute(&limited, entry, "test", format_args!("value")),
+            insert_attribute(&limited, entry, "next", format_args!("value")),
             Err(CodecError::ResourceLimit(limit))
                 if limit.dimension == dimension && limit.operation == operation
         ));

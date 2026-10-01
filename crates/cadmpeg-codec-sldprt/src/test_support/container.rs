@@ -36,9 +36,9 @@ pub(crate) fn make_block(type_id: u32, section: &str, payload: &[u8]) -> Vec<u8>
     b.extend_from_slice(&MARKER);
     b.extend_from_slice(&type_id.to_le_bytes());
     b.extend_from_slice(&crc32fast::hash(payload).to_le_bytes());
-    b.extend_from_slice(&(comp.len() as u32).to_le_bytes());
-    b.extend_from_slice(&(payload.len() as u32).to_le_bytes());
-    b.extend_from_slice(&(preamble.len() as u32).to_le_bytes());
+    b.extend_from_slice(&(u32::try_from(comp.len()).expect("length fits u32")).to_le_bytes());
+    b.extend_from_slice(&(u32::try_from(payload.len()).expect("length fits u32")).to_le_bytes());
+    b.extend_from_slice(&(u32::try_from(preamble.len()).expect("length fits u32")).to_le_bytes());
     b.extend_from_slice(&preamble);
     b.extend_from_slice(&comp);
     b
@@ -54,7 +54,7 @@ pub(crate) fn make_cache_cell(logical_len: u32, name: &str) -> Vec<u8> {
     b.extend_from_slice(&(logical_len * 2).to_le_bytes()); // +10 2L
     b.extend_from_slice(&(logical_len / 2).to_le_bytes()); // +14 L/2
     b.extend_from_slice(&logical_len.to_le_bytes()); // +18 L
-    b.extend_from_slice(&(swapped.len() as u32).to_le_bytes()); // +22 name_len
+    b.extend_from_slice(&(u32::try_from(swapped.len()).expect("length fits u32")).to_le_bytes()); // +22 name_len
     b.extend_from_slice(&swapped);
     b
 }
@@ -68,7 +68,7 @@ pub(crate) fn make_directory_entry(type_id: u32, size: u32, name: &str) -> Vec<u
     b.extend_from_slice(&0u32.to_le_bytes()); // +10 zero
     b.extend_from_slice(&size.to_le_bytes()); // +14 size
     b.extend_from_slice(&0u32.to_le_bytes()); // +18 zero
-    b.extend_from_slice(&(swapped.len() as u32).to_le_bytes()); // +22 name_len
+    b.extend_from_slice(&(u32::try_from(swapped.len()).expect("length fits u32")).to_le_bytes()); // +22 name_len
     b.extend_from_slice(&[0u8; 14]); // +26 descriptor
     b.extend_from_slice(&swapped); // +40 name
     b.extend_from_slice(&[0xe5, 0x4b, 0x57, 0x5b, 0x00, 0x00]); // trailer
@@ -192,4 +192,13 @@ pub(crate) fn synthetic_sldprt() -> Vec<u8> {
     f.extend_from_slice(&make_cache_cell(90, "Contents/DisplayLists"));
     f.extend_from_slice(&make_directory_entry(0x30, 2, "[Content_Types].xml"));
     f
+}
+
+/// Scan a synthetic input with the service test context.
+pub(crate) fn scan(bytes: &[u8]) -> crate::container::ContainerScan<'_> {
+    crate::container::scan(
+        &cadmpeg_test_support::service_decode_context(),
+        cadmpeg_core::decode::View::over_retained(bytes),
+    )
+    .expect("synthetic container fits service policy")
 }

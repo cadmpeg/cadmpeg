@@ -179,10 +179,14 @@ impl DisplayJtGraph {
         let mut toc_entries = BTreeMap::new();
         for document in &wire.documents {
             for entry in &document.toc_entries {
-                ctx.charge_collection_items(1, "index DisplayJT TOC entries")?;
                 ctx.charge_work(1, "index DisplayJT TOC entries")?;
-                if toc_entries
-                    .insert((document.id.as_str(), entry.id.as_str()), entry)
+                if ctx
+                    .insert_btree_map(
+                        &mut toc_entries,
+                        (document.id.as_str(), entry.id.as_str()),
+                        entry,
+                        "index DisplayJT TOC entries",
+                    )?
                     .is_some()
                 {
                     return Err(invalid(
@@ -363,10 +367,12 @@ fn by_id<'a, T>(
 ) -> Result<BTreeMap<&'a str, &'a T>, NativeConvertError> {
     let mut index = BTreeMap::new();
     for record in records {
-        ctx.charge_collection_items(1, "index DisplayJT graph records")?;
         ctx.charge_work(1, "index DisplayJT graph records")?;
         let id = id(record);
-        if index.insert(id, record).is_some() {
+        if ctx
+            .insert_btree_map(&mut index, id, record, "index DisplayJT graph records")?
+            .is_some()
+        {
             return Err(invalid(ctx, id, &format!("duplicate identity in {arena}")));
         }
     }

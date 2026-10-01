@@ -73,7 +73,7 @@ pub fn pmi(data: &[u8]) -> Result<(), cadmpeg_core::CodecError> {
     let mut losses = Vec::new();
     let records = crate::pmi::parse_payload(&ctx, data, &mut losses)?;
     for record in records {
-        if record.item_count != 1 {
+        if record.item_count.get() != 1 {
             continue;
         }
         let Ok(start) = usize::try_from(record.value_offset) else {
@@ -89,8 +89,10 @@ pub fn pmi(data: &[u8]) -> Result<(), cadmpeg_core::CodecError> {
             cadmpeg_core::decode::u64_from_index(data.len()),
             "patch SLDPRT PMI fuzz payload",
         )?;
-        let _patched_reservation =
-            ctx.reserve_scoped(data.len() as u64, "patch SLDPRT PMI fuzz payload")?;
+        let _patched_reservation = ctx.reserve_scoped(
+            cadmpeg_core::decode::u64_from_index(data.len()),
+            "patch SLDPRT PMI fuzz payload",
+        )?;
         let mut patched = Vec::new();
         patched.try_reserve_exact(data.len()).map_err(|_| {
             ctx.refuse_codec_limit("patch SLDPRT PMI fuzz payload", u64::MAX - 1, u64::MAX)

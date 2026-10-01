@@ -330,7 +330,7 @@ fn generate_ir_seeds() -> Result<(), SeedError> {
     let mutated = seed_dir("seeds/ir_validate_mutated");
     replace_seed_directory(&mutated)?;
     for (index, (name, data)) in canonical.iter().enumerate() {
-        let mut input = vec![index as u8];
+        let mut input = vec![u8::try_from(index)?];
         input.extend_from_slice(data);
         fs::write(mutated.join(name), input)?;
     }
@@ -338,7 +338,7 @@ fn generate_ir_seeds() -> Result<(), SeedError> {
     let custom = seed_dir("seeds/step_writer_custom");
     replace_seed_directory(&custom)?;
     for (index, (name, data)) in canonical.iter().enumerate() {
-        let mut input = vec![index as u8; 8];
+        let mut input = vec![u8::try_from(index)?; 8];
         input.extend_from_slice(data);
         fs::write(custom.join(name), input)?;
     }

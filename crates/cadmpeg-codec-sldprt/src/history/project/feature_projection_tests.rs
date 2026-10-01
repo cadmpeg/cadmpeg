@@ -715,7 +715,11 @@ fn structurally_stable_feature_manager_nodes_use_source_identity() {
             ("9", "moSolidBodyFolder_c"),
             ("10", "moSurfaceBodyFolder_c"),
         ] {
-            let mut sentinel = feature("sentinel", Some(source), roster.len() as u32);
+            let mut sentinel = feature(
+                "sentinel",
+                Some(source),
+                u32::try_from(roster.len()).unwrap(),
+            );
             sentinel.input_class = Some(class.into());
             roster.push(sentinel);
         }
@@ -774,7 +778,11 @@ fn structurally_stable_feature_manager_nodes_use_source_identity() {
             ("12", "moDocsFolder_c"),
             ("13", "moCommentsFolder_c"),
         ] {
-            let mut sentinel = feature("sentinel", Some(source), roster.len() as u32);
+            let mut sentinel = feature(
+                "sentinel",
+                Some(source),
+                u32::try_from(roster.len()).unwrap(),
+            );
             sentinel.input_class = Some(class.into());
             roster.push(sentinel);
         }
@@ -802,7 +810,7 @@ fn structurally_stable_feature_manager_nodes_use_source_identity() {
         let mut sentinel = feature(
             "legacy frame",
             Some(source),
-            complete_legacy_roster.len() as u32,
+            u32::try_from(complete_legacy_roster.len()).unwrap(),
         );
         sentinel.input_class = Some(class.into());
         complete_legacy_roster.push(sentinel);
@@ -811,7 +819,7 @@ fn structurally_stable_feature_manager_nodes_use_source_identity() {
         complete_legacy_roster.push(feature(
             "legacy light",
             Some(source),
-            complete_legacy_roster.len() as u32,
+            u32::try_from(complete_legacy_roster.len()).unwrap(),
         ));
     }
     assert_eq!(
@@ -822,12 +830,20 @@ fn structurally_stable_feature_manager_nodes_use_source_identity() {
     let roster_from = |node: &Feature, classes: &[(&str, &str)], classless_sources: &[&str]| {
         let mut features = vec![node.clone()];
         for (source, class) in classes {
-            let mut sentinel = feature("sentinel", Some(source), features.len() as u32);
+            let mut sentinel = feature(
+                "sentinel",
+                Some(source),
+                u32::try_from(features.len()).unwrap(),
+            );
             sentinel.input_class = Some((*class).into());
             features.push(sentinel);
         }
         for source in classless_sources {
-            features.push(feature("reserved", Some(source), features.len() as u32));
+            features.push(feature(
+                "reserved",
+                Some(source),
+                u32::try_from(features.len()).unwrap(),
+            ));
         }
         features
     };

@@ -45,7 +45,8 @@ fn collect_pmi_references(
 ) -> Result<Vec<u64>, CodecError> {
     let mut ids = Vec::new();
     for value in values {
-        for id in references(value) {
+        for id in references(value, ctx) {
+            let id = id?;
             ctx.push_vec(&mut ids, id, operation)?;
         }
     }
@@ -121,7 +122,7 @@ pub(super) fn decode(
                     })
                     .transpose()?
                     .flatten(),
-                targets: targets([id], ctx)?,
+                targets: targets([Ok(id)], ctx)?,
                 visible: None,
                 definition: PmiDefinition::Datum { identification },
             },
@@ -182,7 +183,7 @@ pub(super) fn decode(
                     })
                     .transpose()?
                     .flatten(),
-                targets: targets([id], ctx)?,
+                targets: targets([Ok(id)], ctx)?,
                 visible: None,
                 definition: PmiDefinition::DatumTarget {
                     form: datum_target_form(&form, ctx)?,
@@ -260,8 +261,11 @@ pub(super) fn decode(
                     record
                         .parameters()
                         .iter()
-                        .flat_map(references)
-                        .filter(|id| base_aspects.contains(id)),
+                        .flat_map(|value| references(value, ctx))
+                        .filter(|id| match id {
+                            Ok(id) => base_aspects.contains(id),
+                            Err(_) => true,
+                        }),
                     ctx,
                 )?,
                 visible: None,
@@ -343,8 +347,11 @@ pub(super) fn decode(
             .partials
             .iter()
             .flat_map(|partial| &partial.parameters)
-            .flat_map(references)
-            .filter(|reference| shape_aspects.contains(reference));
+            .flat_map(|value| references(value, ctx))
+            .filter(|reference| match reference {
+                Ok(id) => shape_aspects.contains(id),
+                Err(_) => true,
+            });
         annotations.push(
             ctx,
             ir,
@@ -631,20 +638,30 @@ pub(super) fn decode(
         // A complex tolerance keeps its base targets in GEOMETRIC_TOLERANCE,
         // while GEOMETRIC_TOLERANCE_WITH_DATUM_REFERENCE carries the datum
         // system as a separate aggregate.
-        let datum_system = record
-            .partials
-            .iter()
-            .find(|partial| partial.name == "GEOMETRIC_TOLERANCE_WITH_DATUM_REFERENCE")
-            .into_iter()
-            .flat_map(|partial| partial.parameters.iter())
-            .flat_map(references)
-            .find_map(|id| {
-                let annotation = &ir.model.pmi[annotations.get(id)?.get()];
-                matches!(annotation.definition, PmiDefinition::DatumSystem { .. })
-                    .then_some(&annotation.id)
-            })
-            .map(|id| id.try_clone_for_decode(ctx, "step_pmi_datum_system_identity_copy"))
-            .transpose()?;
+        let datum_system = first_matching(
+            record
+                .partials
+                .iter()
+                .find(|partial| partial.name == "GEOMETRIC_TOLERANCE_WITH_DATUM_REFERENCE")
+                .into_iter()
+                .flat_map(|partial| partial.parameters.iter()),
+            ctx,
+            |id| {
+                annotations.get(id).is_some_and(|index| {
+                    matches!(
+                        ir.model.pmi[index.get()].definition,
+                        PmiDefinition::DatumSystem { .. }
+                    )
+                })
+            },
+        )?
+        .and_then(|id| {
+            annotations
+                .get(id)
+                .map(|index| &ir.model.pmi[index.get()].id)
+        })
+        .map(|id| id.try_clone_for_decode(ctx, "step_pmi_datum_system_identity_copy"))
+        .transpose()?;
         annotations.push(
             ctx,
             ir,
@@ -666,7 +683,10 @@ pub(super) fn decode(
                     .transpose()?
                     .flatten(),
                 targets: targets(
-                    refs.iter().copied().filter(|id| base_aspects.contains(id)),
+                    refs.iter()
+                        .copied()
+                        .filter(|id| base_aspects.contains(id))
+                        .map(Ok),
                     ctx,
                 )?,
                 visible: None,
@@ -692,21 +712,22 @@ pub(super) fn decode(
             }),
             "step_pmi_typed_claims",
         )?;
-        ctx.extend_hash_set(
-            &mut typed,
-            record
-                .partials
-                .iter()
-                .flat_map(|partial| partial.parameters.iter())
-                .flat_map(references)
-                .filter(|reference| {
-                    exchange
-                        .records()
-                        .get(reference)
-                        .is_some_and(is_measure_record)
-                }),
-            "step_pmi_typed_claims",
-        )?;
+        for value in record
+            .partials
+            .iter()
+            .flat_map(|partial| partial.parameters.iter())
+        {
+            for reference in references(value, ctx) {
+                let reference = reference?;
+                if exchange
+                    .records()
+                    .get(&reference)
+                    .is_some_and(is_measure_record)
+                {
+                    ctx.insert_hash_set(&mut typed, reference, "step_pmi_typed_claims")?;
+                }
+            }
+        }
     }
 
     for (id, record) in exchange.entities("DRAUGHTING_MODEL_ITEM_ASSOCIATION") {
@@ -717,7 +738,8 @@ pub(super) fn decode(
         };
         if annotations.get(definition).is_some() {
             if let Some(items) = named_parameter(record, "DRAUGHTING_MODEL_ITEM_ASSOCIATION", 4) {
-                for item in references(items) {
+                for item in references(items, ctx) {
+                    let item = item?;
                     ctx.push_btree_group(
                         &mut presentation_semantics,
                         item,
@@ -753,7 +775,8 @@ pub(super) fn decode(
         let mut placement_candidates = BTreeMap::new();
         let mut placement_visited = BTreeMap::new();
         for parameter in record_values(record) {
-            for reference in references(parameter) {
+            for reference in references(parameter, ctx) {
+                let reference = reference?;
                 collect_placement_candidates(
                     reference,
                     exchange,
@@ -779,7 +802,8 @@ pub(super) fn decode(
         };
         let mut semantics = Vec::new();
         for parameter in record_values(record) {
-            for reference in references(parameter) {
+            for reference in references(parameter, ctx) {
+                let reference = reference?;
                 if annotations.get(reference).is_some() {
                     ctx.push_vec(
                         &mut semantics,
@@ -898,14 +922,16 @@ fn mark_characteristic_representations(
     ctx: &DecodeContext<'_>,
 ) -> Result<(), CodecError> {
     for (id, record) in exchange.entities("DIMENSIONAL_CHARACTERISTIC_REPRESENTATION") {
-        let Some(_) = first_matching(record_values(record), |reference| {
+        let Some(_) = first_matching(record_values(record), ctx, |reference| {
             annotations.get(reference).is_some()
-        }) else {
+        })?
+        else {
             continue;
         };
         ctx.insert_hash_set(typed, id, "step_pmi_typed_claims")?;
         for parameter in record_values(record) {
-            for representation_id in references(parameter) {
+            for representation_id in references(parameter, ctx) {
+                let representation_id = representation_id?;
                 let Some(representation) = exchange.records().get(&representation_id) else {
                     continue;
                 };
@@ -918,7 +944,8 @@ fn mark_characteristic_representations(
                 }
                 ctx.insert_hash_set(typed, representation_id, "step_pmi_typed_claims")?;
                 for parameter in record_values(representation) {
-                    for reference in references(parameter) {
+                    for reference in references(parameter, ctx) {
+                        let reference = reference?;
                         if exchange
                             .records()
                             .get(&reference)
@@ -942,7 +969,7 @@ fn resolve_feature_for_datum_target_relationships(
     ctx: &DecodeContext<'_>,
 ) -> Result<(), CodecError> {
     for (id, record) in exchange.entities("FEATURE_FOR_DATUM_TARGET_RELATIONSHIP") {
-        let Some((relating, related)) = relationship_endpoints(record) else {
+        let Some((relating, related)) = relationship_endpoints(record, ctx)? else {
             continue;
         };
         let Some(annotation_index) = annotations.get(related) else {
@@ -989,7 +1016,8 @@ fn resolve_geometric_item_usages(
             )?;
         }
         for parameter in record_values(record) {
-            for reference in references(parameter) {
+            for reference in references(parameter, ctx) {
+                let reference = reference?;
                 if shape_aspects.contains(&reference) {
                     ctx.insert_btree_group_set(
                         &mut aspect_annotations,
@@ -1005,7 +1033,7 @@ fn resolve_geometric_item_usages(
 
     let mut relationship_aspects = BTreeMap::<u64, BTreeSet<u64>>::new();
     for record in exchange.records().values() {
-        let Some((relating, related)) = relationship_endpoints(record) else {
+        let Some((relating, related)) = relationship_endpoints(record, ctx)? else {
             continue;
         };
         ctx.insert_btree_group_set(
@@ -1032,10 +1060,11 @@ fn resolve_geometric_item_usages(
         else {
             continue;
         };
-        let Some(definition) = partial.parameters.get(2).and_then(first_reference) else {
+        let Some(definition) = first_matching(partial.parameters.get(2), ctx, |_| true)? else {
             continue;
         };
-        let Some(identified_item) = partial.parameters.get(4).and_then(first_reference) else {
+        let Some(identified_item) = first_matching(partial.parameters.get(4), ctx, |_| true)?
+        else {
             continue;
         };
         let mut annotation_indices = BTreeSet::new();
@@ -1162,22 +1191,26 @@ fn push_target(
     Ok(())
 }
 
-fn first_reference(value: &Value) -> Option<u64> {
-    first_matching(std::iter::once(value), |_| true)
-}
-
-fn relationship_endpoints(record: &RawRecord) -> Option<(u64, u64)> {
-    let parameters = record.partials.iter().find_map(|partial| {
+fn relationship_endpoints(
+    record: &RawRecord,
+    ctx: &DecodeContext<'_>,
+) -> Result<Option<(u64, u64)>, CodecError> {
+    let Some(parameters) = record.partials.iter().find_map(|partial| {
         matches!(
             partial.name.as_str(),
             "SHAPE_ASPECT_RELATIONSHIP" | "FEATURE_FOR_DATUM_TARGET_RELATIONSHIP"
         )
         .then_some(partial.parameters.as_slice())
-    })?;
-    Some((
-        parameters.get(2).and_then(first_reference)?,
-        parameters.get(3).and_then(first_reference)?,
-    ))
+    }) else {
+        return Ok(None);
+    };
+    let Some(relating) = first_matching(parameters.get(2), ctx, |_| true)? else {
+        return Ok(None);
+    };
+    let Some(related) = first_matching(parameters.get(3), ctx, |_| true)? else {
+        return Ok(None);
+    };
+    Ok(Some((relating, related)))
 }
 
 fn point_sources(
@@ -1490,7 +1523,8 @@ fn hidden_presentation_annotation_ids(
         else {
             continue;
         };
-        for target in references(items) {
+        for target in references(items, ctx) {
+            let target = target?;
             if exchange
                 .records()
                 .get(&target)
@@ -1528,7 +1562,12 @@ fn collect_typed_placement_candidates(
         if !is_carrier {
             continue;
         }
-        for reference in partial.parameters.iter().flat_map(references) {
+        for reference in partial
+            .parameters
+            .iter()
+            .flat_map(|value| references(value, ctx))
+        {
+            let reference = reference?;
             if let Some(&(origin, z_axis, x_axis)) = geometry.placements.get(&reference) {
                 if let Some(transform) =
                     super::geometry::placement_transform((origin, z_axis, x_axis))
@@ -1561,10 +1600,7 @@ fn find_annotation_text(
         return Ok(None);
     };
     if candidates.is_empty() {
-        if !used.contains(&text_id) {
-            ctx.charge_collection_items(1, "step_pmi_annotation_text_used")?;
-        }
-        used.insert(text_id);
+        ctx.insert_btree_set(used, text_id, "step_pmi_annotation_text_used")?;
         Ok(Some(text))
     } else {
         let count = candidates.len() + 1;
@@ -1588,8 +1624,7 @@ fn collect_annotation_text(
         return Ok(());
     }
     let _depth_guard = ctx.enter_nested("step_pmi_annotation_text_walk")?;
-    ctx.charge_collection_items(1, "step_pmi_annotation_text_visited")?;
-    visited.insert(id);
+    ctx.insert_btree_set(visited, id, "step_pmi_annotation_text_visited")?;
     let Some(record) = exchange.records().get(&id) else {
         return Ok(());
     };
@@ -1605,11 +1640,11 @@ fn collect_annotation_text(
             StepLossCode::MetadataStringInvalid,
             ctx,
         )? {
-            ctx.charge_collection_items(1, "step_pmi_annotation_text_candidates")?;
-            candidates.insert(id, text);
+            ctx.insert_btree_map(candidates, id, text, "step_pmi_annotation_text_candidates")?;
         }
     }
-    for reference in record_values(record).flat_map(references) {
+    for reference in record_values(record).flat_map(|value| references(value, ctx)) {
+        let reference = reference?;
         collect_annotation_text(
             reference,
             exchange,
@@ -1649,7 +1684,8 @@ fn collect_placement_candidates(
     let Some(record) = exchange.records().get(&id) else {
         return Ok(());
     };
-    for reference in record_values(record).flat_map(references) {
+    for reference in record_values(record).flat_map(|value| references(value, ctx)) {
+        let reference = reference?;
         collect_placement_candidates(
             reference,
             exchange,
@@ -1664,18 +1700,17 @@ fn collect_placement_candidates(
 }
 
 fn targets(
-    ids: impl IntoIterator<Item = u64>,
+    ids: impl IntoIterator<Item = Result<u64, CodecError>>,
     ctx: &DecodeContext<'_>,
 ) -> Result<Vec<PmiTarget>, CodecError> {
     let mut seen = BTreeSet::new();
     let mut targets = Vec::new();
     for id in ids {
+        let id = id?;
         if seen.contains(&id) {
             continue;
         }
-        ctx.charge_collection_items(1, "step_pmi_target_ids")?;
-
-        seen.insert(id);
+        ctx.insert_btree_set(&mut seen, id, "step_pmi_target_ids")?;
 
         ctx.reserve_vec(&mut targets, 1, "step_pmi_target_items")?;
         targets.push(PmiTarget::ShapeAspect {
@@ -2041,24 +2076,25 @@ fn characteristic_values(
     let mut result = BTreeMap::<u64, PmiValue>::new();
     for (id, record) in exchange.entities("DIMENSIONAL_CHARACTERISTIC_REPRESENTATION") {
         let mut measurements = measure_context(geometry, id, losses, graph_limit);
-        let Some(characteristic) = first_matching(record_values(record), |id| {
+        let Some(characteristic) = first_matching(record_values(record), ctx, |id| {
             exchange.records().get(&id).is_some_and(|record| {
                 record
                     .partials
                     .iter()
                     .any(|partial| is_dimension_name(&partial.name))
             })
-        }) else {
+        })?
+        else {
             continue;
         };
-        let representation = first_matching(record_values(record), |id| {
+        let representation = first_matching(record_values(record), ctx, |id| {
             exchange.records().get(&id).is_some_and(|record| {
                 record
                     .partials
                     .iter()
                     .any(|partial| partial.name == "SHAPE_DIMENSION_REPRESENTATION")
             })
-        });
+        })?;
         let representation_items = representation
             .and_then(|id| exchange.records().get(&id))
             .and_then(|record| {
@@ -2104,10 +2140,12 @@ fn characteristic_values(
             None
         };
         if let Some(selected) = selected {
-            if !result.contains_key(&characteristic) {
-                ctx.charge_collection_items(1, "step_pmi_characteristic_values")?;
-            }
-            result.insert(characteristic, selected);
+            ctx.insert_btree_map(
+                &mut result,
+                characteristic,
+                selected,
+                "step_pmi_characteristic_values",
+            )?;
         }
     }
     Ok(result)
@@ -2338,7 +2376,7 @@ fn measure_inner(
     Ok(match value {
         Value::Integer(value) => cadmpeg_core::convert::f64_from_i64(*value)
             .and_then(|value| PmiValue::new(value, PmiQuantity::Ratio)),
-        Value::Real(value) => PmiValue::new(*value, PmiQuantity::Ratio),
+        Value::Real(value) => PmiValue::new(value.get(), PmiQuantity::Ratio),
         Value::Typed(name, value) => value.number().and_then(|number| {
             PmiValue::new(
                 if name.contains("LENGTH") {

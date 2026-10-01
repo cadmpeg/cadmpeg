@@ -23,7 +23,7 @@ const EPS_CURVE_DEGENERATE: f64 = 1.0e-10;
 
 /// Maximum embedded curve nesting depth.
 const MAX_CURVE_DEPTH: usize = 32;
-/// Maximum points or polycurve segments in one payload.
+/// Acceptance tolerance for circle plane axes and evaluated radius points.
 const CIRCLE_TOLERANCE: f64 = EPS_CURVE_DEGENERATE;
 
 const POINT: Uuid = Uuid::from_canonical([
@@ -450,10 +450,13 @@ pub(crate) fn decode_inner(
 ) -> Result<DecodedGeometry, GeometryError> {
     let _depth_guard = ctx.enter_nested("Rhino curve tree")?;
     if depth > MAX_CURVE_DEPTH {
-        return Err(GeometryError::malformed(
-            range.start,
-            "curve recursion limit exceeded",
-        ));
+        return Err(ctx
+            .refuse_codec_limit(
+                "Rhino curve depth limit",
+                cadmpeg_core::decode::u64_from_index(MAX_CURVE_DEPTH),
+                cadmpeg_core::decode::u64_from_index(depth),
+            )
+            .into());
     }
     if class_uuid == CURVE_ON_SURFACE {
         let construction =
@@ -553,10 +556,13 @@ pub(crate) fn decode_embedded_curve(
     depth: usize,
 ) -> Result<DecodedCurve, GeometryError> {
     if depth > MAX_CURVE_DEPTH {
-        return Err(GeometryError::malformed(
-            reader.position(),
-            "curve recursion limit exceeded",
-        ));
+        return Err(ctx
+            .refuse_codec_limit(
+                "Rhino embedded curve depth limit",
+                cadmpeg_core::decode::u64_from_index(MAX_CURVE_DEPTH),
+                cadmpeg_core::decode::u64_from_index(depth),
+            )
+            .into());
     }
     let start = reader.position();
     let wrapper = crate::chunks::chunk_at(data, start, reader.end(), archive, false)?;
@@ -613,10 +619,13 @@ pub(crate) fn decode_embedded_curve_2d(
     depth: usize,
 ) -> Result<DecodedCurve, GeometryError> {
     if depth > MAX_CURVE_DEPTH {
-        return Err(GeometryError::malformed(
-            reader.position(),
-            "plane-space curve recursion limit exceeded",
-        ));
+        return Err(ctx
+            .refuse_codec_limit(
+                "Rhino embedded C2 curve depth limit",
+                cadmpeg_core::decode::u64_from_index(MAX_CURVE_DEPTH),
+                cadmpeg_core::decode::u64_from_index(depth),
+            )
+            .into());
     }
     let start = reader.position();
     let wrapper = crate::chunks::chunk_at(data, start, reader.end(), archive, false)?;
@@ -1307,10 +1316,13 @@ pub(crate) fn decode_inner_2d(
 ) -> Result<DecodedGeometry, GeometryError> {
     let _depth_guard = ctx.enter_nested("Rhino C2 curve tree")?;
     if depth > MAX_CURVE_DEPTH {
-        return Err(GeometryError::malformed(
-            range.start,
-            "C2 curve recursion limit exceeded",
-        ));
+        return Err(ctx
+            .refuse_codec_limit(
+                "Rhino C2 curve depth limit",
+                cadmpeg_core::decode::u64_from_index(MAX_CURVE_DEPTH),
+                cadmpeg_core::decode::u64_from_index(depth),
+            )
+            .into());
     }
     let mut reader = BoundedReader::new(data, range.start, range.end)?;
     let result = match class_uuid {
@@ -2182,11 +2194,12 @@ mod tests {
     use super::{
         arc_nurbs, canonical_circle, checked_polycurve_parameter, circle_point, exact_nurbs,
         join_nurbs_segments, read_line, read_polyline, scale_decoded_curve, Circle, DecodedCurve,
-        GeometryError, CURVE_ON_SURFACE, MAX_CURVE_DEPTH,
+        GeometryError, CURVE_ON_SURFACE, LINE, MAX_CURVE_DEPTH,
     };
     use crate::chunks::{ArchiveVersion, BoundedReader, FramingError};
     use crate::loss::Diagnostics;
     use crate::settings::MillimeterScale;
+    use cadmpeg_core::CodecError;
     use cadmpeg_ir::features::FinitePoint3;
     use cadmpeg_ir::geometry::analytic::{CircleCurve, DegenerateCurve, LineCurve};
     use cadmpeg_ir::geometry::{nurbs::NurbsCurve, CurveGeometry, SolvedCurveGeometry};
@@ -2762,7 +2775,57 @@ mod tests {
             MAX_CURVE_DEPTH + 1,
         )
         .expect_err("excessive cross-family recursion must stop before payload parsing");
-        assert!(error.to_string().contains("curve recursion limit exceeded"));
+        assert!(
+            matches!(error, GeometryError::Codec(CodecError::ResourceLimit(refusal))
+            if refusal.operation == "Rhino curve depth limit" && refusal.limit == 32 && refusal.additional == 1)
+        );
+    }
+    #[test]
+    fn curve_depth_gates_preserve_context_refusal() {
+        for gate in 0..4 {
+            with_test_context(|ctx| {
+                let mut reader = BoundedReader::new(&[], 0, 0).expect("empty reader");
+                let depth = MAX_CURVE_DEPTH + 1;
+                let error = match gate {
+                    0 => super::decode_inner(
+                        ctx,
+                        &[],
+                        LINE,
+                        0..0,
+                        MillimeterScale::IDENTITY,
+                        ArchiveVersion::V8,
+                        depth,
+                    )
+                    .expect_err("depth"),
+                    1 => super::decode_inner_2d(ctx, &[], LINE, 0..0, ArchiveVersion::V8, depth)
+                        .expect_err("depth"),
+                    2 => super::decode_embedded_curve(
+                        ctx,
+                        &[],
+                        &mut reader,
+                        MillimeterScale::IDENTITY,
+                        ArchiveVersion::V8,
+                        depth,
+                    )
+                    .expect_err("depth"),
+                    _ => super::decode_embedded_curve_2d(
+                        ctx,
+                        &[],
+                        &mut reader,
+                        MillimeterScale::IDENTITY,
+                        ArchiveVersion::V8,
+                        depth,
+                    )
+                    .expect_err("depth"),
+                };
+                let GeometryError::Codec(CodecError::ResourceLimit(refusal)) = error else {
+                    panic!("depth must be a resource refusal");
+                };
+                assert_eq!(refusal.limit, 32);
+                assert_eq!(refusal.additional, 1);
+                assert_eq!(ctx.resource_refusal(), Some(refusal));
+            });
+        }
     }
     use std::f64::consts::{PI, TAU};
 
