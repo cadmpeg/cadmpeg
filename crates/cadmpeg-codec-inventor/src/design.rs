@@ -800,17 +800,11 @@ fn render_expression<'a>(
         let mut text = String::new();
 
         if ordinal == reference - 1 {
-            ctx.try_reserve_retained_text(
-            &mut text,
-            length,
-            "retain Inventor expression text",
-        )?;
+            ctx.try_reserve_retained_text(&mut text, length, "retain Inventor expression text")?;
         } else {
-            reserved.with_storage(|| ctx.try_reserve_retained_text(
-            &mut text,
-            length,
-            "render Inventor expression bytes",
-        ))?;
+            reserved.with_storage(|| {
+                ctx.try_reserve_retained_text(&mut text, length, "render Inventor expression bytes")
+            })?;
         }
         let expression = expressions[&(token, ordinal)];
         match &expression.kind {
@@ -867,7 +861,9 @@ fn render_expression<'a>(
                 text.push(')');
             }
         }
-        reserved.with_storage(|| ctx.reserve_map(&mut rendered, 1, "memoize Inventor expression text"))?;
+        reserved.with_storage(|| {
+            ctx.reserve_map(&mut rendered, 1, "memoize Inventor expression text")
+        })?;
         rendered.insert(ordinal, text);
     }
     let root = reference - 1;
@@ -877,7 +873,11 @@ fn render_expression<'a>(
     drop(rendered);
     drop(reserved);
     for ordinal in plan.dependency_ordinals {
-        ctx.reserve_vec(dependencies, 1, "collect Inventor expression dependency ids")?;
+        ctx.reserve_vec(
+            dependencies,
+            1,
+            "collect Inventor expression dependency ids",
+        )?;
         let target = parameters[&(token, ordinal)];
         dependencies.push(parameter_id(ctx, target)?);
     }
@@ -924,11 +924,13 @@ impl ExpressionRenderPlan<'_, '_> {
         let Some(expression) = self.expressions.get(&(self.token, ordinal)) else {
             return Ok(None);
         };
-        self.storage.with_storage(|| self.ctx.insert_hash_set(
-            &mut self.visiting,
-            ordinal,
-            "track Inventor expression ancestors",
-        ))?;
+        self.storage.with_storage(|| {
+            self.ctx.insert_hash_set(
+                &mut self.visiting,
+                ordinal,
+                "track Inventor expression ancestors",
+            )
+        })?;
         let measured = match &expression.kind {
             PmDcExpressionKind::Value { value, .. } => {
                 let Some(unit) = resolve_unit(self.token, expression.unit.index(), self.units)
@@ -963,9 +965,17 @@ impl ExpressionRenderPlan<'_, '_> {
                 };
                 if !self.seen_dependencies.contains(&target_ordinal) {
                     self.storage.with_storage(|| {
-                        self.ctx.reserve_set(&mut self.seen_dependencies, 1, "track Inventor expression dependencies")?;
+                        self.ctx.reserve_set(
+                            &mut self.seen_dependencies,
+                            1,
+                            "track Inventor expression dependencies",
+                        )?;
                         self.seen_dependencies.insert(target_ordinal);
-                        self.ctx.push_vec(&mut self.dependency_ordinals, target_ordinal, "track Inventor expression dependencies")
+                        self.ctx.push_vec(
+                            &mut self.dependency_ordinals,
+                            target_ordinal,
+                            "track Inventor expression dependencies",
+                        )
                     })?;
                 }
                 MeasuredExpression {
@@ -1004,9 +1014,14 @@ impl ExpressionRenderPlan<'_, '_> {
         };
         self.visiting.remove(&ordinal);
         self.storage.with_storage(|| {
-            self.ctx.reserve_map(&mut self.lengths, 1, "memoize Inventor expression shape")?;
+            self.ctx
+                .reserve_map(&mut self.lengths, 1, "memoize Inventor expression shape")?;
             self.lengths.insert(ordinal, measured);
-            self.ctx.push_vec(&mut self.order, ordinal, "memoize Inventor expression shape")
+            self.ctx.push_vec(
+                &mut self.order,
+                ordinal,
+                "memoize Inventor expression shape",
+            )
         })?;
         Ok(Some((measured.length, measured.height)))
     }
@@ -1316,8 +1331,7 @@ impl Cursor<'_> {
                 self.u16("reference-array metadata 1")?,
             ])
         };
-        let mut references =
-            ctx.vector_storage(count, "admit Inventor PmDc unit references")?;
+        let mut references = ctx.vector_storage(count, "admit Inventor PmDc unit references")?;
         for _ in 0..count {
             references.push(self.reference("reference-array entry")?);
         }
@@ -2576,9 +2590,15 @@ mod tests {
         // Eight active/memoized nodes require sixteen hash buckets. The one
         // dependency uses four set buckets and four vector slots; node order
         // uses eight vector slots. Controls and padding add buckets + 31.
-        let plan_bytes = 16 * std::mem::size_of::<u32>() + 16 + 31
-            + 4 * std::mem::size_of::<u32>() + 4 + 31
-            + 16 * std::mem::size_of::<(u32, super::MeasuredExpression)>() + 16 + 31
+        let plan_bytes = 16 * std::mem::size_of::<u32>()
+            + 16
+            + 31
+            + 4 * std::mem::size_of::<u32>()
+            + 4
+            + 31
+            + 16 * std::mem::size_of::<(u32, super::MeasuredExpression)>()
+            + 16
+            + 31
             + 12 * std::mem::size_of::<u32>();
         // The first rendered leaf is one byte, with four memo-map buckets.
         let live = plan_bytes + 1 + 4 * std::mem::size_of::<(u32, String)>() + 4 + 31;
@@ -2695,8 +2715,10 @@ mod tests {
         assert_eq!(admitted.1.len(), 1);
         let mut policy = DecodePolicy::service();
         policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(
-            admitted.0.len() + 4 * std::mem::size_of::<ParameterId>()
-                + admitted.1[0].as_str().len() - 1,
+            admitted.0.len()
+                + 4 * std::mem::size_of::<ParameterId>()
+                + admitted.1[0].as_str().len()
+                - 1,
         );
         assert!(matches!(
             render_graph(&policy, vec![reference_leaf()], 1),

@@ -205,8 +205,7 @@ pub(crate) fn parse_registry(
         cadmpeg_core::decode::u64_from_index(count),
         "admit Inventor segment registry entries",
     )?;
-    let mut entries =
-        ctx.vector_storage(count, "admit Inventor segment registry entries")?;
+    let mut entries = ctx.vector_storage(count, "admit Inventor segment registry entries")?;
     for _ in 0..count {
         let display_name = cursor.utf16(ctx, "segment display name", 4_096)?;
         let segment_id = cursor.array("segment id")?;
@@ -252,8 +251,7 @@ pub(crate) fn parse_registry(
             cadmpeg_core::decode::u64_from_index(node_count),
             "admit Inventor segment registry nodes",
         )?;
-        let mut nodes =
-            ctx.vector_storage(node_count, "admit Inventor segment registry nodes")?;
+        let mut nodes = ctx.vector_storage(node_count, "admit Inventor segment registry nodes")?;
         for _ in 0..node_count {
             nodes.push(SegmentNode {
                 index: cursor.u32("node index")?,
@@ -554,8 +552,9 @@ mod tests {
         let bytes = registry_fixture(&[2]);
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes =
-            cadmpeg_core::decode::u64_from_index("PmBRepSegment".len()) - 1;
+        policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(
+            "PmBRepSegment".len() + std::mem::size_of::<super::SegmentRegistryEntry>(),
+        ) - 1;
         let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)
             .expect("registry fits input cap");
         assert!(matches!(
@@ -565,8 +564,9 @@ mod tests {
                     && limit.operation == "retain RSe table UTF-16 field"
         ));
 
-        policy.limits.max_retained_bytes =
-            cadmpeg_core::decode::u64_from_index("PmBRepSegment".len());
+        policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(
+            "PmBRepSegment".len() + std::mem::size_of::<super::SegmentRegistryEntry>(),
+        );
         let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)
             .expect("registry fits input cap");
         assert!(matches!(
@@ -574,7 +574,7 @@ mod tests {
             Err(CodecError::ResourceLimit(limit))
                 if limit.dimension == ResourceDimension::RetainedBytes
                     && limit.operation == "retain RSe table UTF-16 field"
-                    && limit.used == cadmpeg_core::decode::u64_from_index("PmBRepSegment".len())
+                    && limit.used == cadmpeg_core::decode::u64_from_index("PmBRepSegment".len() + std::mem::size_of::<super::SegmentRegistryEntry>())
         ));
 
         let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())

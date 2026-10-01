@@ -197,8 +197,7 @@ pub(crate) fn parse_meta_tables<'a>(
         cadmpeg_core::decode::u64_from_index(block_count),
         "admit Inventor RSe block descriptors",
     )?;
-    let mut blocks =
-        ctx.vector_storage(block_count, "admit Inventor RSe block descriptors")?;
+    let mut blocks = ctx.vector_storage(block_count, "admit Inventor RSe block descriptors")?;
     let mut sizes = section_1_payload;
     for ordinal in 0..block_count {
         let encoded = crate::reader::u32(&mut sizes, "block-size entry")?;
@@ -329,8 +328,7 @@ pub(crate) fn frame_bulk_records<'a>(
         "admit Inventor RSe record frames",
     )?;
     let mut cursor = Cursor::new(bulk);
-    let mut records =
-        ctx.vector_storage(stored_count, "admit Inventor RSe record frames")?;
+    let mut records = ctx.vector_storage(stored_count, "admit Inventor RSe record frames")?;
     for block in tables.blocks.iter().filter(|block| block.stored) {
         let selector = cursor.u32("record type selector")?;
         let type_index = u8::try_from(selector & 0xff).map_err(|_| {

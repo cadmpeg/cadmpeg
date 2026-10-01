@@ -436,6 +436,7 @@ impl<'a> RseInventory<'a> {
         ctx: &DecodeContext<'a>,
         snapshot: &CompoundSnapshot<'a>,
     ) -> Result<Self, CodecError> {
+        let mut stream_storage = ctx.reserve_scoped(0, "Inventor RSe stream indices")?;
         let mut databases = Vec::new();
         let mut metadata = BTreeMap::new();
         let mut bulk = BTreeMap::new();
@@ -445,30 +446,38 @@ impl<'a> RseInventory<'a> {
             };
             let path = stream.path();
             if let Some(band) = database_band(path) {
-                ctx.push_vec(
-                    &mut databases,
-                    (band, stream.id()),
-                    "index RSe database stream",
-                )?;
+                stream_storage.with_storage(|| {
+                    ctx.push_vec(
+                        &mut databases,
+                        (band, stream.id()),
+                        "index RSe database stream",
+                    )
+                })?;
                 continue;
             }
             let Some(name) = direct_rse_child(path) else {
                 continue;
             };
-            let Some((prefix, token)) = SegmentToken::parse(ctx, name)? else {
+            let Some((prefix, token)) =
+                stream_storage.with_storage(|| SegmentToken::parse(ctx, name))?
+            else {
                 continue;
             };
             match prefix {
                 SegmentPrefix::Metadata => {
-                    ctx.insert_btree_map(
-                        &mut metadata,
-                        token,
-                        stream.id(),
-                        "index RSe metadata stream",
-                    )?;
+                    stream_storage.with_storage(|| {
+                        ctx.insert_btree_map(
+                            &mut metadata,
+                            token,
+                            stream.id(),
+                            "index RSe metadata stream",
+                        )
+                    })?;
                 }
                 SegmentPrefix::Bulk => {
-                    ctx.insert_btree_map(&mut bulk, token, stream.id(), "index RSe bulk stream")?;
+                    stream_storage.with_storage(|| {
+                        ctx.insert_btree_map(&mut bulk, token, stream.id(), "index RSe bulk stream")
+                    })?;
                 }
             }
         }
@@ -1125,7 +1134,8 @@ mod tests {
         let snapshot = CompoundSnapshot::new(&setup_ctx, root)
             .expect("primary envelope compound directory parses");
         let mut operations = BTreeSet::new();
-        for limit in 0..=maximum_limit {
+        let mut limit = 0;
+        for _ in 0..=maximum_limit {
             let mut policy = DecodePolicy::service();
             match dimension {
                 ResourceDimension::CollectionItems => policy.limits.max_collection_items = limit,
@@ -1137,7 +1147,15 @@ mod tests {
             if let Err(CodecError::ResourceLimit(refusal)) = RseInventory::build(&ctx, &snapshot) {
                 if refusal.dimension == dimension {
                     operations.insert(refusal.operation);
+                    let threshold = refusal
+                        .used
+                        .checked_add(refusal.additional)
+                        .expect("bounded refusal total");
+                    assert!(threshold > limit);
+                    limit = threshold;
                 }
+            } else {
+                break;
             }
         }
         let (ctx, _) = DecodeContext::from_root_bytes(bytes, &arena, &DecodePolicy::service())
@@ -1247,7 +1265,8 @@ mod tests {
         assert!(issues.is_empty());
 
         policy.limits.max_collection_items = DecodePolicy::service().limits.max_collection_items;
-        policy.limits.max_retained_bytes = 4;
+        policy.limits.max_retained_bytes =
+            4 + 4 * cadmpeg_core::decode::u64_from_index(std::mem::size_of::<String>());
         let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy)
             .expect("empty root fits input cap");
         assert!(matches!(
