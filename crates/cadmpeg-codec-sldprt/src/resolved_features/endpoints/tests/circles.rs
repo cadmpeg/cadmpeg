@@ -5,12 +5,12 @@ use super::super::super::{
     CLASS_MARKER, LEGACY_EXTENDED_SKETCH_MARKER, LEGACY_SKETCH_MARKER, SKETCH_MARKER,
 };
 use crate::records::{SketchInputEntity, SketchInputKind, SketchRelationKind};
-use cadmpeg_core::decode::u64_from_index;
 use crate::resolved_features::endpoints::coordinate_circle_radius;
 use crate::resolved_features::endpoints::coordinate_roster_full_circle;
 use crate::resolved_features::endpoints::equal_index_coordinate_roster_full_circle;
 use crate::resolved_features::endpoints::extended_geometry_full_circle;
 use crate::resolved_features::endpoints::legacy_coordinate_circle_radius;
+use cadmpeg_core::decode::u64_from_index;
 
 #[test]
 fn current_coordinate_circle_uses_its_complete_square_handle_grid() {

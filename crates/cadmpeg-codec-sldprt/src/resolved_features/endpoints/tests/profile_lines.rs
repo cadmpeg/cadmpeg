@@ -6,7 +6,6 @@ use super::super::super::typed_relations::marker_curve_endpoint_markers;
 use super::super::super::{LEGACY_EXTENDED_SKETCH_MARKER, LEGACY_SKETCH_MARKER};
 use crate::layout::compact_legacy_140_relation_display_curve as legacy_140;
 use crate::records::{SketchInputEntity, SketchInputKind, SketchRelationKind};
-use cadmpeg_core::decode::u64_from_index;
 use crate::resolved_features::endpoints::compact_indexed_curve_endpoint_indices;
 use crate::resolved_features::endpoints::compact_indexed_curve_record_end;
 use crate::resolved_features::endpoints::coordinate_roster_endpoint_offset;
@@ -30,6 +29,7 @@ use crate::resolved_features::endpoints::relation_reference_curve_record;
 use crate::resolved_features::endpoints::roster_curve_endpoint_markers;
 use crate::resolved_features::endpoints::wide_indexed_curve_endpoint_indices;
 use crate::resolved_features::endpoints::CompactIndexedCurveRecordEnd;
+use cadmpeg_core::decode::u64_from_index;
 use std::collections::HashMap;
 
 fn legacy_140_relation_payload(endpoints: [u16; 2]) -> Vec<u8> {

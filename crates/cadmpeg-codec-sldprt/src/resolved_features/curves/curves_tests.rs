@@ -607,7 +607,8 @@ fn indexed_line_cycle_carries_rectangle_from_known_vertices() {
     }
     let mut current_corners = three_corners.clone();
     for (index, marker) in current_corners.iter_mut().take(4).enumerate() {
-        *marker = marker.with_test_identity(Some(u32::try_from(index).unwrap() + 1), marker.local_id());
+        *marker =
+            marker.with_test_identity(Some(u32::try_from(index).unwrap() + 1), marker.local_id());
     }
     for marker in current_corners.iter_mut().skip(4) {
         marker.reclassify(SketchInputKind::Arc);
@@ -692,7 +693,8 @@ fn indexed_line_cycle_carries_rectangle_from_known_vertices() {
         marker.reclassify(SketchInputKind::Point);
     }
     for (index, marker) in wide_markers[5..].iter_mut().enumerate() {
-        *marker = marker.with_test_position(marker.ordinal(), u64_from_index(CURVE_START + index * 92));
+        *marker =
+            marker.with_test_position(marker.ordinal(), u64_from_index(CURVE_START + index * 92));
         marker.reclassify(if index == 3 {
             SketchInputKind::Arc
         } else {
