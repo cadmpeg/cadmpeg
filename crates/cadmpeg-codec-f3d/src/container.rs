@@ -439,10 +439,13 @@ pub(crate) fn scan<'a>(
         let buf = view.window();
         if is_brep {
             let kernel = if asm_header::has_asm_magic(buf) {
-                asm_header::parse(ctx, buf)?.map(|header| KernelFraming::Asm {
-                    solved_record_limit: asm_header::solved_record_limit_with_header(buf, &header),
-                    header,
-                })
+                match asm_header::parse(ctx, buf)? {
+                    Some(header) => Some(KernelFraming::Asm {
+                        solved_record_limit: asm_header::solved_record_limit_with_header(ctx, buf, &header)?,
+                        header,
+                    }),
+                    None => None,
+                }
             } else {
                 acis_header::parse(ctx, buf)?.map(KernelFraming::Acis)
             };

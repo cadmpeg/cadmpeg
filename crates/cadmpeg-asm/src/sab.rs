@@ -49,13 +49,27 @@ pub(crate) fn exact_identifier_at(bytes: &[u8], at: usize, expected: &str) -> bo
 }
 
 /// Scan record boundaries and exact names without constructing a record table.
-/// The history-partition classifiers use this before the admitted SAB parse.
+/// The caller admits the complete token walk before scanning.
 pub(crate) fn scan_history_boundary(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     start: usize,
     ref_width: RefWidth,
     preamble: Option<&[&str]>,
-) -> Option<usize> {
+) -> Result<Option<usize>, cadmpeg_core::CodecError> {
+    let Some(remaining) = bytes.get(start..) else {
+        return Ok(None);
+    };
+    // Token decoding validates UTF-8 and compares names against fixed markers.
+    // Three walks cover decoding and both marker comparisons for every byte.
+    for _ in 0..3 {
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(remaining.len()),
+            "SAB history boundary scan",
+        )?;
+    }
+    let _errors = ctx.reserve_scoped(128, "SAB history scanner error text")?;
+    Ok((|| {
     let mut pos = start;
     while pos < bytes.len() {
         let rec_start = pos;
@@ -102,6 +116,7 @@ pub(crate) fn scan_history_boundary(
         }
     }
     None
+    })())
 }
 
 /// A decoded SAB token. The codec assigns typed values to the payload it
@@ -726,6 +741,56 @@ mod tests {
     use crate::stream_error::{StreamError, StreamFailure};
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
+
+    #[test]
+    fn sab_history_boundary_refuses_caller_work_before_lexing() {
+        for acis in [false, true] {
+            let mut bytes = if acis {
+                b"ACIS BinaryFile".to_vec()
+            } else {
+                b"ASM BinaryFile4".to_vec()
+            };
+            bytes.resize(31, 0);
+            cadmpeg_test_support::bytes::put_u32(&mut bytes, 27, 1);
+            bytes.extend_from_slice(&[7, 0, 7, 0, 7, 0]);
+            for value in [1.0_f64, 0.0, 0.0] {
+                bytes.push(6);
+                bytes.extend_from_slice(&value.to_le_bytes());
+            }
+            bytes.extend_from_slice(b"\x0d\x01x\x0b\x11\x0d\x0bdelta_state");
+            crate::test_support::with_service_context(&bytes, |service| {
+                let header = if acis {
+                    crate::acis_header::parse(service, &bytes)
+                } else {
+                    crate::asm_header::parse(service, &bytes)
+                }.expect("header admitted").expect("binary header");
+                let boundary = bytes.len() - 13;
+                for with_header in [false, true] {
+                    let mut policy = *service.policy();
+                    policy.limits.max_work_units = 0;
+                    let arena = DecodeArena::new();
+                    let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+                        .expect("source fits policy");
+                    let result = match (acis, with_header) {
+                        (false, false) => crate::asm_header::solved_record_limit(&ctx, &bytes),
+                        (false, true) => crate::asm_header::solved_record_limit_with_header(&ctx, &bytes, &header),
+                        (true, false) => crate::acis_header::solved_record_limit(&ctx, &bytes),
+                        (true, true) => crate::acis_header::solved_record_limit_with_header(&ctx, &bytes, &header),
+                    };
+                    assert!(matches!(result, Err(CodecError::ResourceLimit(limit))
+                        if limit.dimension == ResourceDimension::WorkUnits
+                            && limit.operation == "SAB history boundary scan"
+                            && limit.used == 0));
+                }
+                let result = if acis {
+                    crate::acis_header::solved_record_limit_with_header(service, &bytes, &header)
+                } else {
+                    crate::asm_header::solved_record_limit_with_header(service, &bytes, &header)
+                };
+                assert_eq!(result.expect("service scan"), Some(boundary));
+            }).expect("fixture fits service profile");
+        }
+    }
 
     fn assert_framed_collection_limit(max_items: u64, operation: &str) {
         let bytes = b"\x0d\x01x\x0f\x07\x01s\x10\x11";
