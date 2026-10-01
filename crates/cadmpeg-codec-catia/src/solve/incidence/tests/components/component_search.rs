@@ -427,8 +427,8 @@ fn incidence_components_discard_quotient_impossible_complete_solutions() {
     let choices = vec![vec![[0, 0], [1, 1]], vec![[1, 1]]];
     let edge_faces = [[0, 0], [1, 1]];
     let mut quotient = MeshQuotient::new((0..4).map(|_| Arc::new(HashSet::from([0, 1]))).collect());
-    quotient.merge(0, 1).expect("first closed edge");
-    quotient.merge(2, 3).expect("second closed edge");
+    crate::test_support::with_service_context(|ctx| quotient.merge_charged(ctx, 0, 1)).expect("service merge").expect("first closed edge");
+    crate::test_support::with_service_context(|ctx| quotient.merge_charged(ctx, 2, 3)).expect("service merge").expect("second closed edge");
 
     let solutions = crate::solve::incidence::component_incidence_pair_solutions(
         &ctx,
@@ -475,7 +475,7 @@ fn incidence_components_preflight_quotient_impossible_domains() {
     }
     let mut quotient = MeshQuotient::new(domains);
     for edge in 0..choices.len() {
-        quotient.merge(edge * 2, edge * 2 + 1).expect("closed edge");
+        crate::test_support::with_service_context(|ctx| quotient.merge_charged(ctx, edge * 2, edge * 2 + 1)).expect("service merge").expect("closed edge");
     }
     let mut visited = false;
 

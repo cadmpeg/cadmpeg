@@ -529,7 +529,7 @@ fn mesh_edge_ports(
         for (side, identity) in ports.iter().copied().enumerate() {
             let node = edge * 2 + side;
             if let Some(&previous) = node_by_identity.get(&identity) {
-                union.union(previous, node);
+                union.union(ctx, previous, node)?;
             } else {
                 ctx.insert_hash_map(
                     &mut node_by_identity,
@@ -576,11 +576,11 @@ fn mesh_edge_ports(
                 node
             };
             if run.reversed {
-                union.union(edge * 2 + 1, before_node);
-                union.union(edge * 2, after_node);
+                union.union(ctx, edge * 2 + 1, before_node)?;
+                union.union(ctx, edge * 2, after_node)?;
             } else {
-                union.union(edge * 2, before_node);
-                union.union(edge * 2 + 1, after_node);
+                union.union(ctx, edge * 2, before_node)?;
+                union.union(ctx, edge * 2 + 1, after_node)?;
             }
         }
     }
@@ -589,7 +589,7 @@ fn mesh_edge_ports(
     for edge in 0..edge_rows.len() {
         let mut pair = [0u32; 2];
         for (side, node) in [edge * 2, edge * 2 + 1].into_iter().enumerate() {
-            let root = union.find(node);
+            let root = union.find(ctx, node)?;
             let next = roots.len();
             let ordinal = if let Some(&existing) = roots.get(&root) {
                 existing
@@ -5270,7 +5270,7 @@ fn edge_port_candidate_assignment(
             if let Some(previous) =
                 ctx.insert_hash_map(&mut edge_by_port, port, edge, "catia_port_dependency_ports")?
             {
-                dependencies.union(previous, edge);
+                dependencies.union(ctx, previous, edge)?;
             }
         }
         if enforce_point_bijection {
@@ -5281,14 +5281,14 @@ fn edge_port_candidate_assignment(
                     edge,
                     "catia_port_dependency_points",
                 )? {
-                    dependencies.union(previous, edge);
+                    dependencies.union(ctx, previous, edge)?;
                 }
             }
         }
     }
     let mut groups = HashMap::<usize, Vec<usize>>::new();
     for edge in 0..ports.len() {
-        let root = dependencies.find(edge);
+        let root = dependencies.find(ctx, edge)?;
         if let Some(group) = groups.get_mut(&root) {
             ctx.push_vec(group, edge, "catia_port_component_edges")?;
         } else {

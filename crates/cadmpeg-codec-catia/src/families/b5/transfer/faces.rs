@@ -82,7 +82,7 @@ pub(super) fn ownership_plan(
                 face,
                 "catia b5 ownership first faces",
             )? {
-                parents.union(face, other_face);
+                parents.union(ctx, face, other_face)?;
             }
         }
     }
@@ -100,7 +100,7 @@ pub(super) fn ownership_plan(
         "catia b5 face components",
     )?;
     for face in 0..graph.faces.len() {
-        let root = parents.find(face);
+        let root = parents.find(ctx, face)?;
         let next = labels.len();
         face_components.push(*labels.entry(root).or_insert(next));
     }
