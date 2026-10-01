@@ -153,32 +153,19 @@ impl MeshBudget {
         self.used
     }
 
-    /// Returns whether `bytes` more fit within the cap.
-    fn has_room(&self, bytes: usize) -> bool {
-        self.used
-            .checked_add(bytes)
-            .is_some_and(|total| total <= self.limit)
-    }
-
-    /// Records retained bytes after admission.
-    fn commit(&mut self, bytes: usize) -> Result<(), CodecError> {
+    /// Proves the document-local retained-byte ceiling before allocation.
+    fn admit(&self, ctx: &DecodeContext<'_>, bytes: usize) -> Result<usize, CodecError> {
         let total = self.used.checked_add(bytes).ok_or_else(|| {
-            cadmpeg_core::decode::refuse_local_limit(
-                "Rhino document mesh buffer bytes",
-                u64::MAX,
-                u64::MAX,
-            )
+            ctx.refuse_codec_limit("Rhino document mesh buffer bytes", u64::MAX, u64::MAX)
         })?;
         if total > self.limit {
-            return Err(cadmpeg_core::decode::refuse_local_limit(
-                "Rhino document mesh buffer bytes",
-                u64_from_index(self.limit),
-                u64_from_index(total),
+            return Err(ctx.refuse_codec_limit(
+                "Rhino document mesh buffer bytes", u64_from_index(self.limit), u64_from_index(total),
             ));
         }
-        self.used = total;
-        Ok(())
+        Ok(total)
     }
+
 }
 
 fn buffer_output_limit(expand: MeshExpand<'_>) -> usize {
@@ -344,7 +331,6 @@ pub(crate) fn decode(
         }
     }
     let faces = read_faces(expand.ctx(), &mut reader, vertex_count, face_count)?;
-    let mut decompressed_bytes = 0;
     let mut ngon_count = 0;
     if major == 1 {
         read_raw_channels(
@@ -362,7 +348,6 @@ pub(crate) fn decode(
             &mut reader,
             vertex_count,
             &mut decoded,
-            &mut decompressed_bytes,
             document_budget,
             archive,
         )?;
@@ -380,7 +365,6 @@ pub(crate) fn decode(
                 name: "surface parameters",
             },
             &mut decoded.warnings,
-            &mut decompressed_bytes,
             document_budget,
             archive,
         )?;
@@ -424,7 +408,6 @@ pub(crate) fn decode(
                 archive,
                 &mut decoded.warnings,
                 vertex_count,
-                &mut decompressed_bytes,
                 document_budget,
             )?;
             if count == vertex_count {
@@ -975,7 +958,6 @@ fn read_compressed_channels(
     reader: &mut BoundedReader<'_>,
     vertices: usize,
     decoded: &mut MeshChannels,
-    decompressed_bytes: &mut usize,
     document_budget: &mut MeshBudget,
     archive: ArchiveVersion,
 ) -> Result<(), GeometryError> {
@@ -991,7 +973,6 @@ fn read_compressed_channels(
                 name: spec.name,
             },
             &mut decoded.warnings,
-            decompressed_bytes,
             document_budget,
             archive,
         )?;
@@ -1070,7 +1051,6 @@ fn read_buffer<'a>(
     reader: &mut BoundedReader<'_>,
     spec: MeshBufferSpec<'_>,
     warnings: &mut Diagnostics,
-    decompressed_bytes: &mut usize,
     document_budget: &mut MeshBudget,
     archive: ArchiveVersion,
 ) -> Result<Option<Cow<'a, [u8]>>, GeometryError> {
@@ -1082,24 +1062,11 @@ fn read_buffer<'a>(
     }
     let buffer_limit = buffer_output_limit(expand);
     if declared > buffer_limit {
-        return Err(error(reader.position() - 4, format!("invalid {name} size")));
+        return Err(expand.ctx().refuse_codec_limit(
+            "Rhino mesh buffer output bytes", u64_from_index(buffer_limit), u64_from_index(declared),
+        ).into());
     }
-    *decompressed_bytes = decompressed_bytes
-        .checked_add(declared)
-        .filter(|total| *total <= buffer_limit)
-        .ok_or_else(|| {
-            error(
-                reader.position() - 4,
-                "mesh cumulative buffer budget exceeded",
-            )
-        })?;
-    // Admit before allocation; commit only after the bytes become resident.
-    if !document_budget.has_room(declared) {
-        return Err(error(
-            reader.position() - 4,
-            "document mesh buffer budget exceeded",
-        ));
-    }
+    let admitted_document_bytes = document_budget.admit(expand.ctx(), declared)?;
     let crc = reader.u32()?;
     let method = reader.u8()?;
     let (bytes, consumed): (Cow<'a, [u8]>, usize) = match method {
@@ -1108,7 +1075,7 @@ fn read_buffer<'a>(
             let stored = expand
                 .ctx()
                 .copy_retained(input.take(declared)?, "rhino_mesh_buffer")?;
-            document_budget.commit(declared)?;
+            document_budget.used = admitted_document_bytes;
             (Cow::Owned(stored), declared)
         }
         1 => {
@@ -1158,7 +1125,7 @@ fn read_buffer<'a>(
                 .ctx()
                 .charge_retained(u64_from_index(declared), "rhino_mesh_buffer")?;
             let (view, compressed) = inflate(expand, source, declared)?;
-            document_budget.commit(declared)?;
+            document_budget.used = admitted_document_bytes;
             if compressed != chunk.body().len() {
                 return Err(error(
                     chunk.body().start + compressed,
@@ -1222,7 +1189,6 @@ pub(crate) fn fuzz_buffer(data: &[u8]) {
     };
     let expand = MeshExpand::new(&ctx, root);
     let mut warnings = Diagnostics::new();
-    let mut decompressed_bytes = 0;
     let mut document_budget = MeshBudget::new();
     let _probe = read_buffer(
         expand,
@@ -1232,7 +1198,6 @@ pub(crate) fn fuzz_buffer(data: &[u8]) {
             name: "fuzz",
         },
         &mut warnings,
-        &mut decompressed_bytes,
         &mut document_budget,
         ArchiveVersion::V8,
     );
@@ -1363,7 +1328,6 @@ fn read_double_chunk<'a>(
     archive: ArchiveVersion,
     warnings: &mut Diagnostics,
     vertex_count: usize,
-    decompressed_bytes: &mut usize,
     document_budget: &mut MeshBudget,
 ) -> Result<DoubleVertexChunk<'a>, GeometryError> {
     let chunk = chunk_at(
@@ -1408,7 +1372,6 @@ fn read_double_chunk<'a>(
             name: "double vertices",
         },
         warnings,
-        decompressed_bytes,
         document_budget,
         archive,
     )?;
@@ -1474,6 +1437,13 @@ fn read_v5_double_vertices(
     let _float_crc = reader.u32()?;
     let _double_crc = reader.u32()?;
     let array_count = checked_u32(&mut reader, MAX_MESH_VERTICES)?;
+    let coordinate_bytes = array_count.checked_mul(24)
+        .ok_or_else(|| error(reader.position(), "V5 double-vertex byte count overflow"))?;
+    if coordinate_bytes > reader.remaining() {
+        return Err(FramingError::Truncated {
+            offset: reader.position(), needed: coordinate_bytes,
+        }.into());
+    }
     let mut values = ctx
         .collection_vec(array_count, "Rhino V5 mesh double vertex values")
         .map_err(crate::curves::GeometryError::from)?;
@@ -1764,13 +1734,14 @@ fn checked_u32(reader: &mut BoundedReader<'_>, cap: usize) -> Result<usize, Geom
 #[cfg(test)]
 mod tests {
     mod work_admission;
+    mod resource_limits;
     #[test]
-    fn document_mesh_budget_commit_refuses_overflow() {
-        let mut budget = super::MeshBudget {
+    fn document_mesh_budget_admission_refuses_overflow() {
+        let budget = super::MeshBudget {
             used: usize::MAX,
             limit: usize::MAX,
         };
-        assert!(format!("{:?}", budget.commit(1)).contains("ResourceLimit"));
+        assert!(format!("{:?}", budget.admit(&cadmpeg_test_support::service_decode_context(), 1)).contains("ResourceLimit"));
     }
 
     #[test]
@@ -2621,7 +2592,6 @@ mod tests {
         with_expand(&bytes, |expand| {
             let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("reader");
             let mut warnings = Diagnostics::new();
-            let mut budget = 0;
             let mut document_budget = MeshBudget::new();
             assert_eq!(
                 read_buffer(
@@ -2632,10 +2602,8 @@ mod tests {
                         name: "test"
                     },
                     &mut warnings,
-                    &mut budget,
                     &mut document_budget,
-                    ArchiveVersion::V8,
-                )
+                    ArchiveVersion::V8,)
                 .expect("buffer")
                 .as_deref(),
                 Some(&[1, 2, 3][..])
@@ -2652,7 +2620,6 @@ mod tests {
         with_expand(&bytes, |expand| {
             let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("reader");
             let mut warnings = Diagnostics::new();
-            let mut budget = 0;
             let mut document_budget = MeshBudget::new();
             assert_eq!(
                 read_buffer(
@@ -2663,10 +2630,8 @@ mod tests {
                         name: "test"
                     },
                     &mut warnings,
-                    &mut budget,
                     &mut document_budget,
-                    ArchiveVersion::V8,
-                )
+                    ArchiveVersion::V8,)
                 .expect("buffer")
                 .as_deref(),
                 Some(&[4, 5, 6, 7][..])
@@ -2680,10 +2645,8 @@ mod tests {
                         name: "test"
                     },
                     &mut warnings,
-                    &mut budget,
                     &mut document_budget,
-                    ArchiveVersion::V8,
-                )
+                    ArchiveVersion::V8,)
                 .expect("next")
                 .as_deref(),
                 Some(&[8][..])
@@ -2698,7 +2661,6 @@ mod tests {
         with_expand(&bytes, |expand| {
             let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("reader");
             let mut warnings = Diagnostics::new();
-            let mut budget = 0;
             let mut document_budget = MeshBudget::new();
             assert_eq!(
                 read_buffer(
@@ -2709,10 +2671,8 @@ mod tests {
                         name: "test"
                     },
                     &mut warnings,
-                    &mut budget,
                     &mut document_budget,
-                    ArchiveVersion::V8,
-                )
+                    ArchiveVersion::V8,)
                 .expect("buffer"),
                 None
             );
@@ -2741,10 +2701,8 @@ mod tests {
                         name: "first"
                     },
                     &mut warnings,
-                    &mut 0,
                     &mut document_budget,
-                    ArchiveVersion::V8,
-                )
+                    ArchiveVersion::V8,)
                 .expect("first buffer inflates then drops"),
                 None
             );
@@ -2759,10 +2717,8 @@ mod tests {
                     name: "second",
                 },
                 &mut warnings,
-                &mut 0,
                 &mut document_budget,
-                ArchiveVersion::V8,
-            );
+                ArchiveVersion::V8,);
             assert!(
                 refused.is_err(),
                 "a dropped-but-retained buffer must still occupy the document cap"
@@ -2785,10 +2741,8 @@ mod tests {
                     name: "bad"
                 },
                 &mut Diagnostics::new(),
-                &mut 0,
                 &mut MeshBudget::new(),
-                ArchiveVersion::V8,
-            )
+                ArchiveVersion::V8,)
             .is_err());
         });
         let mut truncated = buffer(&[1, 2, 3], 1);
@@ -2803,10 +2757,8 @@ mod tests {
                     name: "short"
                 },
                 &mut Diagnostics::new(),
-                &mut 0,
                 &mut MeshBudget::new(),
-                ArchiveVersion::V8,
-            )
+                ArchiveVersion::V8,)
             .is_err());
         });
     }
@@ -2827,33 +2779,23 @@ mod tests {
                     name: "bomb"
                 },
                 &mut Diagnostics::new(),
-                &mut 0,
                 &mut MeshBudget::new(),
-                ArchiveVersion::V8,
-            )
+                ArchiveVersion::V8,)
             .is_err());
         });
     }
 
     #[test]
-    fn cumulative_buffer_budget_rejects_another_channel() {
+    fn document_buffer_ceiling_refuses_before_another_channel() {
         let bytes = buffer(&[1], 0);
         with_expand(&bytes, |expand| {
             let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("reader");
-            let mut budget = MAX_BUFFER_OUTPUT;
-            assert!(read_buffer(
-                expand,
-                &mut reader,
-                MeshBufferSpec {
-                    expected: 1,
-                    name: "budget"
-                },
-                &mut Diagnostics::new(),
-                &mut budget,
-                &mut MeshBudget::new(),
-                ArchiveVersion::V8,
-            )
-            .is_err());
+            let mut document_budget = MeshBudget { used: MAX_BUFFER_OUTPUT, limit: MAX_BUFFER_OUTPUT };
+            assert!(matches!(read_buffer(expand, &mut reader,
+                MeshBufferSpec { expected: 1, name: "budget" }, &mut Diagnostics::new(),
+                &mut document_budget, ArchiveVersion::V8),
+                Err(GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(limit)))
+                    if limit.operation == "Rhino document mesh buffer bytes"));
         });
     }
 
@@ -2872,10 +2814,8 @@ mod tests {
                         name: "aggregate",
                     },
                     &mut Diagnostics::new(),
-                    &mut 0,
                     &mut document_budget,
-                    ArchiveVersion::V8,
-                );
+                    ArchiveVersion::V8,);
                 assert_eq!(result.is_ok(), expected_success);
             }
         });
@@ -2926,9 +2866,9 @@ mod tests {
                 &mut budget,
             )
             .expect_err("second mesh exceeds aggregate budget");
-            assert!(error
-                .to_string()
-                .contains("document mesh buffer budget exceeded"));
+            assert!(matches!(error,
+                GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
+                    if limit.operation == "Rhino document mesh buffer bytes"));
         });
     }
 
@@ -3141,10 +3081,8 @@ mod tests {
                     name: "nested",
                 },
                 &mut Diagnostics::new(),
-                &mut 0,
                 &mut MeshBudget::new(),
-                ArchiveVersion::V8,
-            )
+                ArchiveVersion::V8,)
             .expect("nested buffer");
             assert_eq!(decoded.as_deref(), Some(&[9, 8, 7, 6][..]));
         });
@@ -3169,10 +3107,8 @@ mod tests {
                     name: "first",
                 },
                 &mut Diagnostics::new(),
-                &mut 0,
                 &mut MeshBudget::new(),
-                ArchiveVersion::V8,
-            )
+                ArchiveVersion::V8,)
             .expect("first expansion");
             assert_eq!(decoded.as_deref(), Some(&[1, 2, 3][..]));
             let refused = read_buffer(
@@ -3183,10 +3119,8 @@ mod tests {
                     name: "second",
                 },
                 &mut Diagnostics::new(),
-                &mut 0,
                 &mut MeshBudget::new(),
-                ArchiveVersion::V8,
-            );
+                ArchiveVersion::V8,);
             assert!(refused.is_err(), "cumulative expansion must be refused");
         });
     }
@@ -3206,10 +3140,8 @@ mod tests {
                     name: "vertices",
                 },
                 &mut Diagnostics::new(),
-                &mut 0,
                 &mut MeshBudget::new(),
-                ArchiveVersion::V8,
-            )
+                ArchiveVersion::V8,)
             .expect_err("three expanded bytes exceed the two-byte limit")
         });
         assert!(matches!(
@@ -3233,10 +3165,8 @@ mod tests {
                     name: "vertices",
                 },
                 &mut Diagnostics::new(),
-                &mut 0,
                 &mut MeshBudget::new(),
-                ArchiveVersion::V8,
-            )
+                ArchiveVersion::V8,)
             .expect_err("three stored bytes exceed the two-byte limit")
         });
         assert!(matches!(
