@@ -3073,6 +3073,9 @@ fn parse_material_texture_catalog(
     entry_offset: u64,
     assets: &[MaterialTextureAsset],
 ) -> Result<Option<Vec<MaterialTextureCatalogEntry>>, CodecError> {
+    let work = cadmpeg_core::decode::u64_from_index(payload.len()).checked_mul(2)
+        .ok_or_else(|| ctx.refuse_codec_limit("validate NX XML text", u64::MAX, u64::MAX))?;
+    ctx.charge_work(work, "validate NX XML text")?;
     let Some(xml) = xml_stream_text(payload) else {
         return Ok(None);
     };
@@ -3764,6 +3767,9 @@ pub(super) fn configurations(
     let Some(payload) = container.data.get(start..end) else {
         return Ok(Vec::new());
     };
+    let work = cadmpeg_core::decode::u64_from_index(payload.len()).checked_mul(2)
+        .ok_or_else(|| ctx.refuse_codec_limit("validate NX XML text", u64::MAX, u64::MAX))?;
+    ctx.charge_work(work, "validate NX XML text")?;
     let Some(xml) = xml_stream_text(payload) else {
         return Ok(Vec::new());
     };
@@ -3921,6 +3927,9 @@ fn parse_part_attributes(
     source_entry: &str,
     entry_offset: u64,
 ) -> Result<Option<Vec<PartAttribute>>, CodecError> {
+    let work = cadmpeg_core::decode::u64_from_index(payload.len()).checked_mul(2)
+        .ok_or_else(|| ctx.refuse_codec_limit("validate NX XML text", u64::MAX, u64::MAX))?;
+    ctx.charge_work(work, "validate NX XML text")?;
     let Some(xml) = xml_stream_text(payload) else {
         return Ok(None);
     };

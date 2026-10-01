@@ -890,6 +890,20 @@ fn component_reference_data_json_refuses_collection_limit() {
     );
 }
 
+#[test]
+fn invalid_json_utf8_refuses_work_before_validation() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let cadmpeg_core::CodecError::ResourceLimit(limit) = super::parse_component_reference_data(&ctx, &[0xff]).unwrap_err()
+        else { panic!("work admission must precede malformed UTF-8"); };
+    assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+    assert_eq!(limit.operation, "validate F3D JSON UTF-8");
+    assert!(ctx.charge_work(0, "fused context").is_err());
+}
+
 /// One occurrence-placement record: a target path whose last element
 /// carries `role` as its cross-document link name, the identity marker,
 /// and the three closing reference runs.

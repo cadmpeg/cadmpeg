@@ -451,6 +451,7 @@ fn parse_schema_document(
     bytes: &[u8],
     schemas: &mut HashMap<String, Schema>,
 ) -> Result<(), CodecError> {
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(bytes.len()), "validate Protein XML UTF-8")?;
     let xml = std::str::from_utf8(bytes).map_err(|error| {
         CodecError::malformed(format_args!("Protein schema {name} is not UTF-8: {error}"))
     })?;

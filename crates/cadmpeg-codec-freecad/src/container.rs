@@ -523,6 +523,7 @@ pub(crate) fn parse_document(
     ctx: &DecodeContext<'_>,
     bytes: &[u8],
 ) -> Result<(DocumentFacts, String), CodecError> {
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(bytes.len()), "validate FreeCAD XML UTF-8")?;
     let text = std::str::from_utf8(bytes)
         .map_err(|_| CodecError::Malformed("Document.xml is not UTF-8".into()))?;
     let admitted_xml = match ctx.parse_xml(text, "FreeCAD document XML tree") {

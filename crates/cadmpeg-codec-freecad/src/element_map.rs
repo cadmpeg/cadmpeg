@@ -48,6 +48,7 @@ pub(crate) fn parse(
     properties: &[PropertyRecord],
     entries: &[EntryRecord],
 ) -> Result<(StringTables, Vec<ElementMapRecord>), CodecError> {
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(document.len()), "validate FreeCAD XML UTF-8")?;
     let text = std::str::from_utf8(document)
         .map_err(|_| CodecError::Malformed("Document.xml is not UTF-8".into()))?;
     let admitted_xml = ctx.parse_xml(text, "FreeCAD XML tree").map_err(|error| {

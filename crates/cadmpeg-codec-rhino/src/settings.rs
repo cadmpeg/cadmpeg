@@ -976,7 +976,7 @@ fn utf8(reader: &mut BoundedReader<'_>) -> Result<String, FramingError> {
         .map_err(|_| FramingError::structural(reader.position(), "invalid UTF-8 string"))
 }
 
-fn utf16_payload<'a>(reader: &mut BoundedReader<'a>) -> Result<&'a [u8], FramingError> {
+pub(crate) fn utf16_payload<'a>(reader: &mut BoundedReader<'a>) -> Result<&'a [u8], FramingError> {
     let count_offset = reader.position();
     let count = usize::try_from(reader.u32()?)
         .map_err(|_| FramingError::structural(reader.position(), "UTF-16 count overflow"))?;

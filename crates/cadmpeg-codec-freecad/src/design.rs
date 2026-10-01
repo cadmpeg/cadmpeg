@@ -2674,8 +2674,8 @@ fn parse_constraints(
                     let Some(metadata) = node.attribute("MetaData") else {
                         return Ok(None);
                     };
-                    let (metadata, _reservation) = match ctx.parse_json_value(metadata, "fcstd constraint text metadata parse") {
-                    Ok(tree) => tree,
+                    let (_reservation, metadata) = match ctx.parse_json_value(metadata, "fcstd constraint text metadata parse") {
+                    Ok((metadata, reservation)) => (reservation, metadata),
                     Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
                     Err(_) => return Ok(None),
                 };

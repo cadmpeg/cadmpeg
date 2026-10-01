@@ -1737,6 +1737,7 @@ fn classify_rdk_material_payload(ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     if xml.last() == Some(&0) {
         return Ok(RdkMaterialPayload::CallbackOwned);
     }
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(xml.len()), "validate Rhino RDK XML UTF-8")?;
     let xml = std::str::from_utf8(xml).map_err(|_| {
         FramingError::structural(payload_range.start, "legacy RDK XML is not UTF-8")
     })?;

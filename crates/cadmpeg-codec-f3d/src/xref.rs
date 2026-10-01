@@ -248,13 +248,17 @@ fn parse_component_reference_data<'ctx>(
     ctx: &'ctx DecodeContext<'_>,
     bytes: &[u8],
 ) -> Result<(serde_json::Value, cadmpeg_core::decode::ScopedReservation<'ctx>), CodecError> {
+    ctx.charge_work(u64_from_index(bytes.len()), "validate F3D JSON UTF-8")?;
     let text = std::str::from_utf8(bytes).map_err(|error| {
         CodecError::malformed(format_args!("{COMPONENT_REFERENCE_ENTRY} is not valid JSON: {error}"))
     })?;
-    let (value, reservation) = ctx.parse_json_value(text, "parse F3D component reference JSON").map_err(|error| {
-        let CodecError::Malformed(error) = error else { return error; };
-        CodecError::malformed(format_args!("{COMPONENT_REFERENCE_ENTRY} is not valid JSON: {error}"))
-    })?;
+    let (reservation, value) = {
+        let (value, reservation) = ctx.parse_json_value(text, "parse F3D component reference JSON").map_err(|error| {
+            let CodecError::Malformed(error) = error else { return error; };
+            CodecError::malformed(format_args!("{COMPONENT_REFERENCE_ENTRY} is not valid JSON: {error}"))
+        })?;
+        (reservation, value)
+    };
     if !value.is_object() {
         return Err(CodecError::malformed(format_args!(
             "{COMPONENT_REFERENCE_ENTRY} must contain a top-level JSON object"
@@ -303,6 +307,7 @@ fn ordinal_at(position: usize) -> Result<u32, CodecError> {
 
 /// Parse `RedirectionsStream.dat` bytes into an [`XrefTable`].
 fn parse(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<XrefTable, CodecError> {
+    ctx.charge_work(u64_from_index(bytes.len()), "validate F3D JSON UTF-8")?;
     let text = std::str::from_utf8(bytes).map_err(|error| {
         CodecError::malformed(format_args!("{REDIRECTIONS_ENTRY} is not valid JSON: {error}"))
     })?;
@@ -404,9 +409,10 @@ pub(crate) fn docstruct(
     let Some(payload) = view.take(count) else {
         return Ok(None);
     };
+    ctx.charge_work(u64_from_index(payload.len()), "validate F3D JSON UTF-8")?;
     let Ok(text) = std::str::from_utf8(payload) else { return Ok(None); };
-    let (value, _reservation) = match ctx.parse_json_value(text, "parse F3D properties JSON") {
-        Ok(tree) => tree,
+    let (_reservation, value) = match ctx.parse_json_value(text, "parse F3D properties JSON") {
+        Ok((value, reservation)) => (reservation, value),
         Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
         Err(_) => return Ok(None),
     };
