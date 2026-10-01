@@ -180,30 +180,38 @@ fn generate_sldprt_submodule_seeds() -> Result<(), SeedError> {
     write_seed(
         "seeds/sldprt_pmi",
         "minimal",
-        &sldprt_pmi_seed(&[("Linear", 0.025)], false, false),
+        &sldprt_pmi_seed(&[("Linear", 0.025)], false, false)?,
     )?;
     write_seed(
         "seeds/sldprt_pmi",
         "array16",
-        &sldprt_pmi_seed(&[("Linear", 0.025); 16], false, false),
+        &sldprt_pmi_seed(&[("Linear", 0.025); 16], false, false)?,
     )?;
     write_seed(
         "seeds/sldprt_pmi",
         "reordered",
-        &sldprt_pmi_seed(&[("Linear", 0.025)], true, false),
+        &sldprt_pmi_seed(&[("Linear", 0.025)], true, false)?,
     )?;
     write_seed(
         "seeds/sldprt_pmi",
         "malformed",
-        &sldprt_pmi_seed(&[("Linear", 0.025)], false, true),
+        &sldprt_pmi_seed(&[("Linear", 0.025)], false, true)?,
     )?;
     Ok(())
 }
 
-fn sldprt_pmi_seed(items: &[(&str, f64)], reorder: bool, truncate: bool) -> Vec<u8> {
-    fn fixstr(bytes: &mut Vec<u8>, value: &str) {
-        bytes.push(0xa0 | u8::try_from(value.len()).expect("fixstr length fits u8"));
+fn sldprt_pmi_seed(
+    items: &[(&str, f64)],
+    reorder: bool,
+    truncate: bool,
+) -> std::io::Result<Vec<u8>> {
+    fn fixstr(bytes: &mut Vec<u8>, value: &str) -> std::io::Result<()> {
+        bytes.push(
+            0xa0 | u8::try_from(value.len())
+                .map_err(|_| std::io::Error::other("fixstr length fits u8"))?,
+        );
         bytes.extend_from_slice(value.as_bytes());
+        Ok(())
     }
     let mut payload = b"unqlite".to_vec();
     payload.extend_from_slice(&[0; 57]);
@@ -211,57 +219,61 @@ fn sldprt_pmi_seed(items: &[(&str, f64)], reorder: bool, truncate: bool) -> Vec<
     let outer = if reorder { 8 } else { 7 };
     payload.push(0x80 | outer);
     if reorder {
-        fixstr(&mut payload, "cadText");
-        fixstr(&mut payload, "D1@Sketch1");
-        fixstr(&mut payload, "extraKey");
-        fixstr(&mut payload, "ignored");
-        fixstr(&mut payload, "annoType");
+        fixstr(&mut payload, "cadText")?;
+        fixstr(&mut payload, "D1@Sketch1")?;
+        fixstr(&mut payload, "extraKey")?;
+        fixstr(&mut payload, "ignored")?;
+        fixstr(&mut payload, "annoType")?;
         payload.push(1);
     } else {
-        fixstr(&mut payload, "annoType");
+        fixstr(&mut payload, "annoType")?;
         payload.push(1);
-        fixstr(&mut payload, "cadText");
-        fixstr(&mut payload, "D1@Sketch1");
+        fixstr(&mut payload, "cadText")?;
+        fixstr(&mut payload, "D1@Sketch1")?;
     }
-    fixstr(&mut payload, "dimItems");
+    fixstr(&mut payload, "dimItems")?;
     if truncate {
         payload.push(0x91);
-        return payload;
+        return Ok(payload);
     }
     if items.len() < 16 {
-        payload.push(0x90 | u8::try_from(items.len()).expect("fixarray length fits u8"));
+        payload.push(
+            0x90 | u8::try_from(items.len())
+                .map_err(|_| std::io::Error::other("fixarray length fits u8"))?,
+        );
     } else {
         payload.push(0xdc);
-        let count = u16::try_from(items.len()).expect("array16 length fits u16");
+        let count = u16::try_from(items.len())
+            .map_err(|_| std::io::Error::other("array16 length fits u16"))?;
         payload.extend_from_slice(&count.to_be_bytes());
     }
     for (subtype, value) in items {
         payload.push(0x87);
-        fixstr(&mut payload, "class");
-        fixstr(&mut payload, "DimSemData");
-        fixstr(&mut payload, "dimSubType");
-        fixstr(&mut payload, subtype);
-        fixstr(&mut payload, "isBasic");
+        fixstr(&mut payload, "class")?;
+        fixstr(&mut payload, "DimSemData")?;
+        fixstr(&mut payload, "dimSubType")?;
+        fixstr(&mut payload, subtype)?;
+        fixstr(&mut payload, "isBasic")?;
         payload.push(0xc3);
-        fixstr(&mut payload, "isInspection");
+        fixstr(&mut payload, "isInspection")?;
         payload.push(0xc2);
-        fixstr(&mut payload, "isReferenceOnly");
+        fixstr(&mut payload, "isReferenceOnly")?;
         payload.push(0xc3);
-        fixstr(&mut payload, "valPrecision");
+        fixstr(&mut payload, "valPrecision")?;
         payload.push(3);
-        fixstr(&mut payload, "value");
+        fixstr(&mut payload, "value")?;
         payload.push(0xcb);
         payload.extend_from_slice(&value.to_be_bytes());
     }
-    fixstr(&mut payload, "dimText");
-    fixstr(&mut payload, "25.000 mm");
-    fixstr(&mut payload, "dimType");
+    fixstr(&mut payload, "dimText")?;
+    fixstr(&mut payload, "25.000 mm")?;
+    fixstr(&mut payload, "dimType")?;
     payload.push(0);
-    fixstr(&mut payload, "iDString");
-    fixstr(&mut payload, "native-id");
-    fixstr(&mut payload, "reserved");
+    fixstr(&mut payload, "iDString")?;
+    fixstr(&mut payload, "native-id")?;
+    fixstr(&mut payload, "reserved")?;
     payload.push(0xc0);
-    payload
+    Ok(payload)
 }
 
 // ============================================================================
@@ -495,10 +507,10 @@ fn generate_inventor_submodule_seeds() -> Result<(), SeedError> {
     write_seed(
         "seeds/inventor_database",
         "minimal",
-        &synthetic_database_seed(),
+        &synthetic_database_seed()?,
     )?;
 
-    let metadata_body = synthetic_meta_table_body();
+    let metadata_body = synthetic_meta_table_body()?;
     let mut metadata = Vec::new();
     push_u32(&mut metadata, 24);
     metadata.extend_from_slice(b"RSe Meta Stream Version 8");
@@ -506,13 +518,13 @@ fn generate_inventor_submodule_seeds() -> Result<(), SeedError> {
     for value in [1_u16, 0, 2, 0, 3, 0, 4, 0] {
         push_u16(&mut metadata, value);
     }
-    push_utf16(&mut metadata, "Synthetic PmBRep");
+    push_utf16(&mut metadata, "Synthetic PmBRep")?;
     metadata.extend_from_slice(&[0x5a; 16]);
     for value in [1_u32, 0, 0] {
         push_u32(&mut metadata, value);
     }
-    push_utf8(&mut metadata, "2000-01-01");
-    push_utf8(&mut metadata, "2000-01-02");
+    push_utf8(&mut metadata, "2000-01-01")?;
+    push_utf8(&mut metadata, "2000-01-02")?;
     metadata.push(0);
     let mut encoder = flate2::write::ZlibEncoder::new(Vec::new(), flate2::Compression::default());
     encoder.write_all(&metadata_body)?;
@@ -640,7 +652,7 @@ fn synthetic_cfb_seed() -> Result<Vec<u8>, CodecError> {
             start_sector: 1,
             size: 64,
         },
-    );
+    )?;
     directory_entry(
         directory,
         1,
@@ -653,7 +665,7 @@ fn synthetic_cfb_seed() -> Result<Vec<u8>, CodecError> {
             start_sector: END,
             size: 0,
         },
-    );
+    )?;
     directory_entry(
         directory,
         2,
@@ -666,7 +678,7 @@ fn synthetic_cfb_seed() -> Result<Vec<u8>, CodecError> {
             start_sector: 0,
             size: 16,
         },
-    );
+    )?;
 
     let root_mini = sector_mut(&mut file, SECTOR, 1);
     root_mini[..16].copy_from_slice(&synthetic_registry_seed());
@@ -693,25 +705,25 @@ fn synthetic_registry_seed() -> Vec<u8> {
     bytes
 }
 
-fn synthetic_database_seed() -> Vec<u8> {
+fn synthetic_database_seed() -> std::io::Result<Vec<u8>> {
     let mut bytes = vec![0x42; 16];
     push_u32(&mut bytes, 31);
     push_version(&mut bytes, 24);
     bytes.extend_from_slice(&17_u64.to_le_bytes());
     push_version(&mut bytes, 25);
     bytes.extend_from_slice(&18_u64.to_le_bytes());
-    push_utf16(&mut bytes, "synthetic database");
-    bytes
+    push_utf16(&mut bytes, "synthetic database")?;
+    Ok(bytes)
 }
 
-fn synthetic_meta_table_body() -> Vec<u8> {
+fn synthetic_meta_table_body() -> std::io::Result<Vec<u8>> {
     let mut body = Vec::new();
     for value in [3_u16, 0, 2, 1, 0, 4, 0] {
         push_u16(&mut body, value);
     }
-    push_counted(&mut body, &[0x8000_0000], 4);
-    push_counted(&mut body, &[], 10);
-    push_counted(&mut body, &[], 28);
+    push_counted(&mut body, &[0x8000_0000], 4)?;
+    push_counted(&mut body, &[], 10)?;
+    push_counted(&mut body, &[], 28)?;
     push_u32(&mut body, 1);
     body.extend_from_slice(&[
         0x5c, 0x59, 0x45, 0xf6, 0xd5, 0x11, 0x33, 0x13, 0x10, 0x00, 0x60, 0xa6, 0xbb, 0xa6, 0x47,
@@ -729,13 +741,14 @@ fn synthetic_meta_table_body() -> Vec<u8> {
     for index in 1..payloads.len() {
         push_u32(
             &mut body,
-            u32::try_from(payloads[index - 1] + 4).expect("payload offset fits u32"),
+            u32::try_from(payloads[index - 1] + 4)
+                .map_err(|_| std::io::Error::other("payload offset fits u32"))?,
         );
         push_u32(&mut body, counts[index]);
         pad_zeros(&mut body, payloads[index]);
     }
     body.extend_from_slice(&[0x77; 16]);
-    body
+    Ok(body)
 }
 
 fn synthetic_property_set_seed() -> Vec<u8> {
@@ -752,10 +765,11 @@ fn synthetic_property_set_seed() -> Vec<u8> {
     bytes
 }
 
-fn push_counted(bytes: &mut Vec<u8>, values: &[u32], item_size: usize) {
+fn push_counted(bytes: &mut Vec<u8>, values: &[u32], item_size: usize) -> std::io::Result<()> {
     push_u32(
         bytes,
-        u32::try_from(values.len()).expect("counted length fits u32"),
+        u32::try_from(values.len())
+            .map_err(|_| std::io::Error::other("counted length fits u32"))?,
     );
     for value in values {
         push_u32(bytes, *value);
@@ -763,8 +777,10 @@ fn push_counted(bytes: &mut Vec<u8>, values: &[u32], item_size: usize) {
     pad_zeros(bytes, values.len() * (item_size - SLOT_BYTES));
     push_u32(
         bytes,
-        u32::try_from(4 + values.len() * item_size).expect("counted size fits u32"),
+        u32::try_from(4 + values.len() * item_size)
+            .map_err(|_| std::io::Error::other("counted size fits u32"))?,
     );
+    Ok(())
 }
 
 fn push_u16(bytes: &mut Vec<u8>, value: u16) {
@@ -783,23 +799,25 @@ fn put_u32(bytes: &mut [u8], offset: usize, value: u32) {
     bytes[offset..offset + 4].copy_from_slice(&value.to_le_bytes());
 }
 
-fn push_utf8(bytes: &mut Vec<u8>, value: &str) {
+fn push_utf8(bytes: &mut Vec<u8>, value: &str) -> std::io::Result<()> {
     push_u32(
         bytes,
-        u32::try_from(value.len()).expect("UTF-8 length fits u32"),
+        u32::try_from(value.len()).map_err(|_| std::io::Error::other("UTF-8 length fits u32"))?,
     );
     bytes.extend_from_slice(value.as_bytes());
+    Ok(())
 }
 
-fn push_utf16(bytes: &mut Vec<u8>, value: &str) {
+fn push_utf16(bytes: &mut Vec<u8>, value: &str) -> std::io::Result<()> {
     let units = value.encode_utf16().collect::<Vec<_>>();
     push_u32(
         bytes,
-        u32::try_from(units.len()).expect("UTF-16 length fits u32"),
+        u32::try_from(units.len()).map_err(|_| std::io::Error::other("UTF-16 length fits u32"))?,
     );
     for unit in units {
         push_u16(bytes, unit);
     }
+    Ok(())
 }
 
 fn push_version(bytes: &mut Vec<u8>, major: u8) {
@@ -822,7 +840,11 @@ struct DirectoryEntry<'a> {
     size: u64,
 }
 
-fn directory_entry(directory: &mut [u8], index: usize, fields: DirectoryEntry<'_>) {
+fn directory_entry(
+    directory: &mut [u8],
+    index: usize,
+    fields: DirectoryEntry<'_>,
+) -> std::io::Result<()> {
     let DirectoryEntry {
         name,
         object_type,
@@ -845,7 +867,7 @@ fn directory_entry(directory: &mut [u8], index: usize, fields: DirectoryEntry<'_
     // so its length is a `u16` by the time it is stored.
     entry[64..66].copy_from_slice(
         &u16::try_from(name_offset + 2)
-            .expect("directory entry name length fits u16")
+            .map_err(|_| std::io::Error::other("directory entry name length fits u16"))?
             .to_le_bytes(),
     );
     entry[66] = object_type;
@@ -855,6 +877,7 @@ fn directory_entry(directory: &mut [u8], index: usize, fields: DirectoryEntry<'_
     entry[76..80].copy_from_slice(&child.to_le_bytes());
     entry[116..120].copy_from_slice(&start_sector.to_le_bytes());
     entry[120..128].copy_from_slice(&size.to_le_bytes());
+    Ok(())
 }
 
 #[cfg(test)]
