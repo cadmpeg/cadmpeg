@@ -29,7 +29,7 @@ fn ordered_members_reject_empty_sets_and_duplicates() {
                 )
             })
             .collect::<Vec<_>>();
-        assert!(BodyMembers::try_from_rows(rows).is_err());
+        assert!(BodyMembers::try_from_rows(rows, &cadmpeg_test_support::service_decode_context()).expect("selection storage is admitted").is_err());
         assert!(
             serde_json::from_value::<BodyMembers<BodyId>>(serde_json::json!(json_rows)).is_err()
         );
@@ -56,7 +56,7 @@ fn historical_body_members_refuse_the_deleted_parallel_arrays() {
                 )
             })
             .collect::<Vec<_>>();
-        assert!(BodyMembers::try_from_rows(rows).is_err());
+        assert!(BodyMembers::try_from_rows(rows, &cadmpeg_test_support::service_decode_context()).expect("selection storage is admitted").is_err());
     }
     assert!(cadmpeg_core::text::NonBlankString::new(" ").is_none());
 
@@ -69,7 +69,7 @@ fn historical_body_members_refuse_the_deleted_parallel_arrays() {
             a.clone(),
             cadmpeg_core::text::NonBlankString::new("native-second").expect("non-blank fixture"),
         ),
-    ])
+    ], &cadmpeg_test_support::service_decode_context()).expect("selection storage is admitted")
     .unwrap();
     assert_eq!(members.bodies().collect::<Vec<_>>(), [&b, &a]);
     assert_eq!(
@@ -104,4 +104,18 @@ fn historical_body_members_refuse_the_deleted_parallel_arrays() {
         .unwrap_err()
         .to_string();
     assert!(error.contains("unknown field `bodies`"), "{error}");
+}
+
+#[test]
+fn body_member_constructor_charges_each_uniqueness_slot_once() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 2;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let body = crate::ids::BodyId::mint("test:model:body#member").unwrap();
+    let native = cadmpeg_core::text::NonBlankString::new("native").unwrap();
+    let rows = BodyMembers::try_from_rows(vec![crate::features::BodyMember::new(body, native)], &ctx).unwrap().unwrap();
+    assert_eq!(rows.count(), 1);
+    assert!(ctx.charge_collection_items(1, "test after body member indexes").is_err());
 }

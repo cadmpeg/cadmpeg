@@ -21,10 +21,9 @@ fn model() -> cadmpeg_ir::CadIr {
         )]),
     });
     let outputs: DistinctMembers<cadmpeg_ir::ids::BodyId> =
-        vec![cadmpeg_ir::ids::BodyId::mint("synthetic:test:id#copied-body").unwrap()]
-            .try_into()
+        cadmpeg_ir::features::DistinctMembers::try_from(vec![cadmpeg_ir::ids::BodyId::mint("synthetic:test:id#copied-body").unwrap()], &cadmpeg_test_support::service_decode_context())
             .unwrap();
-    let dependencies: DistinctMembers<FeatureId> = vec![dependency.clone()].try_into().unwrap();
+    let dependencies: DistinctMembers<FeatureId> = cadmpeg_ir::features::DistinctMembers::try_from(vec![dependency.clone()], &cadmpeg_test_support::service_decode_context()).unwrap();
     let state = ConfigurationFeatureState {
         definition: definition.clone(),
         dependencies: dependencies.clone(),

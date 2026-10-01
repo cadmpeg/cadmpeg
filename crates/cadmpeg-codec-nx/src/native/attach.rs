@@ -586,7 +586,7 @@ fn attach_configurations<'a>(
                 );
             }
             Some(
-                cadmpeg_ir::features::DistinctMembers::try_from_for_decode(selected, ctx)
+                cadmpeg_ir::features::DistinctMembers::try_from(selected, ctx)
                     .map_err(cadmpeg_core::CodecError::from)?,
             )
         } else {
@@ -1845,12 +1845,12 @@ fn attach_active_configuration_feature_states(
             state_id,
             ConfigurationFeatureState {
                 evaluation: cadmpeg_ir::features::ConfigurationEvaluation::Active {
-                    outputs: cadmpeg_ir::features::DistinctMembers::try_from_for_decode(
+                    outputs: cadmpeg_ir::features::DistinctMembers::try_from(
                         outputs, ctx,
                     )
                     .map_err(cadmpeg_core::CodecError::from)?,
                 },
-                dependencies: cadmpeg_ir::features::DistinctMembers::try_from_for_decode(
+                dependencies: cadmpeg_ir::features::DistinctMembers::try_from(
                     dependencies,
                     ctx,
                 )
@@ -2065,7 +2065,7 @@ fn attach_initial_segment_bodies(
         evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
             FeatureDefinition::Operation(FeatureOperation::BaseFeature {
                 bodies: BodySelection::Resolved {
-                    bodies: cadmpeg_ir::features::DistinctMembers::try_from_for_decode(
+                    bodies: cadmpeg_ir::features::DistinctMembers::try_from(
                         selection_bodies,
                         ctx,
                     )
@@ -2073,7 +2073,7 @@ fn attach_initial_segment_bodies(
                     native: "nx:segment-body-bindings".to_string(),
                 },
             }),
-            cadmpeg_ir::features::DistinctMembers::try_from_for_decode(feature_outputs, ctx)
+            cadmpeg_ir::features::DistinctMembers::try_from(feature_outputs, ctx)
                 .map_err(cadmpeg_core::CodecError::from)?,
         ),
         native_ref: None,
@@ -5669,7 +5669,7 @@ fn attach_feature_operations(
             ordinal: base_ordinal + cadmpeg_core::decode::u64_from_index(ordinal),
             name: Some(label.value.clone()),
             suppressed: None,
-            dependencies: cadmpeg_ir::features::DistinctMembers::try_from_for_decode(
+            dependencies: cadmpeg_ir::features::DistinctMembers::try_from(
                 dependencies,
                 ctx,
             )
@@ -5685,7 +5685,7 @@ fn attach_feature_operations(
 
             evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
                 definition,
-                DistinctMembers::try_from_for_decode(outputs, ctx).map_err(CodecError::from)?,
+                DistinctMembers::try_from(outputs, ctx).map_err(CodecError::from)?,
             ),
             native_ref: Some(label.id.clone()),
         });

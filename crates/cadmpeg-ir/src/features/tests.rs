@@ -453,7 +453,7 @@ fn body_selection_admission_rejects_invalid_members() {
     }
     assert!(BodySelection::local(vec!["body".into()], " ".into()).is_err());
     let state = FeatureInputTopologyId::mint("test:model:feature-input#1").unwrap();
-    assert!(BodySelection::historical(state, vec![], "native".into()).is_err());
+    assert!(BodySelection::historical(state, vec![], "native".into(), &cadmpeg_test_support::service_decode_context()).expect("selection storage is admitted").is_err());
     assert!(GeneratedBodyRef::new(
         super::FeatureId::mint("test:test:feature#1").unwrap(),
         " ".into()
@@ -503,7 +503,7 @@ fn topology_membership_admission() {
         serde_json::json!({"kind": "body", "id": ""})
     )
     .is_err());
-    assert!(DistinctMembers::<String>::try_from(vec!["a".into(), "a".into()]).is_err());
+    assert!(DistinctMembers::<String>::try_from(vec!["a".into(), "a".into()], &cadmpeg_test_support::service_decode_context()).is_err());
     assert!(
         serde_json::from_value::<DistinctMembers<crate::ids::BodyId>>(serde_json::json!([
             "test:model:body#1",

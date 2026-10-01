@@ -640,8 +640,7 @@ fn circular_pattern_axis_binds_from_unique_temporary_axis() {
         ordinal: 0,
         name: Some("CirPattern1".into()),
         suppressed: Some(false),
-        dependencies: (vec![FeatureId::mint("synthetic:test:id#seed").expect("identity grammar")])
-            .try_into()
+        dependencies: cadmpeg_ir::features::DistinctMembers::try_from(vec![FeatureId::mint("synthetic:test:id#seed").expect("identity grammar")], &cadmpeg_test_support::service_decode_context())
             .unwrap(),
         source_properties: BTreeMap::new(),
         source_tag: None,

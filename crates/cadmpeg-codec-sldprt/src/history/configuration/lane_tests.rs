@@ -313,7 +313,7 @@ fn configuration_sketch_state_reuses_projected_neutral_sketch() {
 
         evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
             unresolved.clone(),
-            (Vec::new()).try_into().unwrap(),
+            cadmpeg_ir::features::DistinctMembers::try_from(Vec::new(), &cadmpeg_test_support::service_decode_context()).unwrap(),
         ),
         native_ref: Some("sketch-native".into()),
     });
@@ -335,7 +335,7 @@ fn configuration_sketch_state_reuses_projected_neutral_sketch() {
             FeatureDefinition::Operation(FeatureOperation::SpatialSketch {
                 sketch: Some(spatial_sketch_id.clone()),
             }),
-            (Vec::new()).try_into().unwrap(),
+            cadmpeg_ir::features::DistinctMembers::try_from(Vec::new(), &cadmpeg_test_support::service_decode_context()).unwrap(),
         ),
         native_ref: Some("spatial-native".into()),
     });
@@ -533,7 +533,7 @@ fn dissected_sketch_alias_inherits_an_omitted_class_without_solved_geometry() {
             FeatureDefinition::Operation(FeatureOperation::Sketch {
                 sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(None),
             }),
-            (Vec::new()).try_into().unwrap(),
+            cadmpeg_ir::features::DistinctMembers::try_from(Vec::new(), &cadmpeg_test_support::service_decode_context()).unwrap(),
         ),
         native_ref: Some(native_ref.into()),
     };
@@ -604,7 +604,7 @@ fn configuration_sketch_states_reuse_shared_geometry_across_lanes() {
             FeatureDefinition::Operation(FeatureOperation::SpatialSketch {
                 sketch: Some(sketch_id.clone()),
             }),
-            (Vec::new()).try_into().unwrap(),
+            cadmpeg_ir::features::DistinctMembers::try_from(Vec::new(), &cadmpeg_test_support::service_decode_context()).unwrap(),
         ),
         native_ref: Some("spatial-native".into()),
     });
@@ -623,7 +623,7 @@ fn configuration_sketch_states_reuse_shared_geometry_across_lanes() {
             FeatureDefinition::Operation(FeatureOperation::SpatialSketch {
                 sketch: Some(planar_sketch_id.clone()),
             }),
-            (Vec::new()).try_into().unwrap(),
+            cadmpeg_ir::features::DistinctMembers::try_from(Vec::new(), &cadmpeg_test_support::service_decode_context()).unwrap(),
         ),
         native_ref: Some("planar-state-native".into()),
     });
@@ -738,7 +738,7 @@ fn configuration_sketch_state_reuses_scoped_spatial_sketch() {
             FeatureDefinition::Operation(FeatureOperation::SpatialSketch {
                 sketch: Some(sketch_id.clone()),
             }),
-            (Vec::new()).try_into().unwrap(),
+            cadmpeg_ir::features::DistinctMembers::try_from(Vec::new(), &cadmpeg_test_support::service_decode_context()).unwrap(),
         ),
         native_ref: Some("scoped-spatial-native".into()),
     });
@@ -812,7 +812,7 @@ fn supplemental_edge_paths_project_into_matching_configuration_state() {
 
         evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
             definition,
-            (Vec::new()).try_into().unwrap(),
+            cadmpeg_ir::features::DistinctMembers::try_from(Vec::new(), &cadmpeg_test_support::service_decode_context()).unwrap(),
         ),
         native_ref: Some(native_ref.into()),
     };
@@ -1012,7 +1012,7 @@ fn scoped_offset_plane_inherits_only_a_frame_matching_reference() {
 
         evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
             definition,
-            (Vec::new()).try_into().unwrap(),
+            cadmpeg_ir::features::DistinctMembers::try_from(Vec::new(), &cadmpeg_test_support::service_decode_context()).unwrap(),
         ),
         native_ref: None,
     };
@@ -1127,7 +1127,7 @@ fn scoped_offset_plane_inherits_an_omitted_resolved_reference() {
 
         evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
             definition,
-            (Vec::new()).try_into().unwrap(),
+            cadmpeg_ir::features::DistinctMembers::try_from(Vec::new(), &cadmpeg_test_support::service_decode_context()).unwrap(),
         ),
         native_ref: None,
     };
@@ -1233,7 +1233,7 @@ fn scoped_offset_plane_does_not_merge_a_resolved_plane_with_a_face() {
 
         evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
             definition,
-            (Vec::new()).try_into().unwrap(),
+            cadmpeg_ir::features::DistinctMembers::try_from(Vec::new(), &cadmpeg_test_support::service_decode_context()).unwrap(),
         ),
         native_ref: None,
     };
@@ -1524,7 +1524,7 @@ fn configuration_topology_binding_updates_snapshot_face_selection() {
 
         evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
             definition(),
-            (Vec::new()).try_into().unwrap(),
+            cadmpeg_ir::features::DistinctMembers::try_from(Vec::new(), &cadmpeg_test_support::service_decode_context()).unwrap(),
         ),
         native_ref: Some(feature_ref.into()),
     };
@@ -1628,7 +1628,7 @@ fn configuration_frame_alias_binds_without_body_membership() {
 
         evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
             definition(),
-            (Vec::new()).try_into().unwrap(),
+            cadmpeg_ir::features::DistinctMembers::try_from(Vec::new(), &cadmpeg_test_support::service_decode_context()).unwrap(),
         ),
         native_ref: None,
     };

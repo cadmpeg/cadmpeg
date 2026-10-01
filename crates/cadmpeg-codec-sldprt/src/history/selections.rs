@@ -209,7 +209,7 @@ pub(crate) fn bind_topology_selections(
                 resolve_ids(ctx, scope, &body_ids, cadmpeg_ir::ids::BodyId::as_str)?
             {
                 feature.evaluation.set_outputs(
-                    cadmpeg_ir::features::DistinctMembers::try_from_for_decode(outputs, ctx)?,
+                    cadmpeg_ir::features::DistinctMembers::try_from(outputs, ctx)?,
                 );
             }
         }
@@ -898,7 +898,7 @@ fn resolve_body_selection(
     if let BodySelection::Native(native) = selection {
         let bodies = match resolve_ids(ctx, native, ids, cadmpeg_ir::ids::BodyId::as_str)? {
             Some(bodies) => {
-                match cadmpeg_ir::features::DistinctMembers::try_from_for_decode(bodies, ctx) {
+                match cadmpeg_ir::features::DistinctMembers::try_from(bodies, ctx) {
                     Ok(bodies) => Some(bodies),
                     Err(error @ cadmpeg_ir::features::FeatureCollectionError::Resource(_)) => {
                         return Err(error.into())

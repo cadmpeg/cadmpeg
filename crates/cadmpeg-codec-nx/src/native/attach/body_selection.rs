@@ -65,7 +65,7 @@ impl FeatureBodySelection<'_> {
                     |body| body.try_clone_for_decode(ctx, "NX resolved body selection identity"),
                 )?;
                 let bodies =
-                    match cadmpeg_ir::features::DistinctMembers::try_from_for_decode(bodies, ctx) {
+                    match cadmpeg_ir::features::DistinctMembers::try_from(bodies, ctx) {
                         Ok(bodies) => bodies,
                         Err(cadmpeg_ir::features::FeatureCollectionError::Resource(limit)) => {
                             return Err(limit.into())

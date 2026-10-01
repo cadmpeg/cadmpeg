@@ -107,12 +107,11 @@ fn charged_selection_members_refuse_uniqueness_index_limit() {
 
 #[test]
 fn selection_owners_enforce_local_arity_and_atomic_nonoverlap() {
-    let first = BodySelection::Bodies(vec![body_id("first")].try_into().expect("distinct bodies"));
+    let first = BodySelection::Bodies(crate::features::DistinctMembers::try_from(vec![body_id("first")], &cadmpeg_test_support::service_decode_context()).expect("distinct bodies"));
     let second =
-        BodySelection::Bodies(vec![body_id("second")].try_into().expect("distinct bodies"));
+        BodySelection::Bodies(crate::features::DistinctMembers::try_from(vec![body_id("second")], &cadmpeg_test_support::service_decode_context()).expect("distinct bodies"));
     let pair = BodySelection::Bodies(
-        vec![body_id("first"), body_id("second")]
-            .try_into()
+        crate::features::DistinctMembers::try_from(vec![body_id("first"), body_id("second")], &cadmpeg_test_support::service_decode_context())
             .expect("distinct bodies"),
     );
     assert!(SewBodySelection::try_from(first.clone()).is_err());
@@ -155,22 +154,22 @@ fn resolved_body_selection_wire_rejects_repeated_bodies_before_sew_arity() {
 fn feature_evaluation_rejects_duplicate_outputs_at_admission() {
     let body = body_id("output");
     let duplicate = vec![body.clone(), body.clone()];
-    assert!(crate::features::DistinctMembers::try_from(duplicate.clone()).is_err());
+    assert!(crate::features::DistinctMembers::try_from(duplicate.clone(), &cadmpeg_test_support::service_decode_context()).is_err());
 
     let definition = FeatureDefinition::Operation(FeatureOperation::BaseFeature {
         bodies: BodySelection::Unresolved,
     });
     let mut evaluation = crate::features::FeatureEvaluation::new(
         definition.clone(),
-        vec![body.clone()].try_into().unwrap(),
+        crate::features::DistinctMembers::try_from(vec![body.clone()], &cadmpeg_test_support::service_decode_context()).unwrap(),
     );
     evaluation.edit(|_, outputs| {
         assert!(!outputs.insert(body.clone()));
     });
     assert_eq!(evaluation.outputs(), &vec![body.clone()]);
-    evaluation.set_outputs(vec![body.clone()].try_into().unwrap());
+    evaluation.set_outputs(crate::features::DistinctMembers::try_from(vec![body.clone()], &cadmpeg_test_support::service_decode_context()).unwrap());
     let prior = evaluation.clone();
-    assert!(crate::features::DistinctMembers::try_from(duplicate).is_err());
+    assert!(crate::features::DistinctMembers::try_from(duplicate, &cadmpeg_test_support::service_decode_context()).is_err());
     assert_eq!(evaluation, prior);
 }
 
@@ -217,8 +216,7 @@ fn historical_body_overlap_spans_direct_and_paired_member_selections() {
     let target = BodySelection::historical(
         state.clone(),
         vec![HistoricalBodyId::mint("test:body:4").expect("valid identity")],
-        "target".into(),
-    )
+        "target".into(), &cadmpeg_test_support::service_decode_context()).expect("selection storage is admitted")
     .unwrap();
     let overlapping = BodySelection::HistoricalSet {
         state: state.clone(),
@@ -233,7 +231,7 @@ fn historical_body_overlap_spans_direct_and_paired_member_selections() {
                 cadmpeg_core::text::NonBlankString::new("tool-b")
                     .expect("valid historical body selection row"),
             ),
-        ])
+        ], &cadmpeg_test_support::service_decode_context()).expect("selection storage is admitted")
         .expect("valid historical body selection rows"),
     };
     let disjoint = BodySelection::HistoricalSet {
@@ -242,7 +240,7 @@ fn historical_body_overlap_spans_direct_and_paired_member_selections() {
             HistoricalBodyId::mint("test:body:5").expect("valid identity"),
             cadmpeg_core::text::NonBlankString::new("tool")
                 .expect("valid historical body selection row"),
-        )])
+        )], &cadmpeg_test_support::service_decode_context()).expect("selection storage is admitted")
         .expect("valid historical body selection rows"),
     };
 
@@ -311,7 +309,7 @@ fn an_inserted_body_selection_does_not_restate_the_feature_outputs() {
     assert!(feature.evaluation.outputs().is_empty());
     feature
         .evaluation
-        .set_outputs((vec![body.clone()]).try_into().unwrap());
+        .set_outputs(crate::features::DistinctMembers::try_from(vec![body.clone()], &cadmpeg_test_support::service_decode_context()).unwrap());
     let wire = serde_json::to_value(&feature).unwrap();
     assert!(wire.get("evaluation").is_none());
     assert_eq!(wire["outputs"], serde_json::json!([body.as_str()]));

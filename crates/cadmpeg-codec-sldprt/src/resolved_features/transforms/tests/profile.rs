@@ -1135,7 +1135,7 @@ fn dissected_child_classification_does_not_imply_profile_alias() {
         ordinal: 0,
         name: None,
         suppressed: Some(false),
-        dependencies: (dependencies).try_into().unwrap(),
+        dependencies: cadmpeg_ir::features::DistinctMembers::try_from(dependencies, &cadmpeg_test_support::service_decode_context()).unwrap(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
@@ -1180,10 +1180,9 @@ fn dissected_child_classification_does_not_imply_profile_alias() {
             ordinal: 3,
             name: None,
             suppressed: Some(false),
-            dependencies: (vec![
+            dependencies: cadmpeg_ir::features::DistinctMembers::try_from(vec![
                 FeatureId::mint("synthetic:test:id#child").expect("identity grammar")
-            ])
-            .try_into()
+            ], &cadmpeg_test_support::service_decode_context())
             .unwrap(),
             source_properties: BTreeMap::new(),
             source_tag: None,
@@ -1221,8 +1220,7 @@ fn dissected_child_classification_does_not_imply_profile_alias() {
         FeatureId::mint("synthetic:test:id#multi-consumer").expect("identity grammar");
     multi_consumer.ordinal = 4;
     multi_consumer.dependencies =
-        (vec![FeatureId::mint("synthetic:test:id#multi-child").expect("identity grammar")])
-            .try_into()
+        cadmpeg_ir::features::DistinctMembers::try_from(vec![FeatureId::mint("synthetic:test:id#multi-child").expect("identity grammar")], &cadmpeg_test_support::service_decode_context())
             .unwrap();
     multi_consumer.evaluation.edit(|definition, _| {
         let FeatureDefinition::Operation(FeatureOperation::Extrude { profile, .. }) = definition

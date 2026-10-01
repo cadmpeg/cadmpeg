@@ -1333,9 +1333,8 @@ face_operands,
 
                 evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
                     definition,
-                    outputs
-                        .try_into()
-                        .map_err(cadmpeg_core::CodecError::malformed)?,
+                    cadmpeg_ir::features::DistinctMembers::try_from(outputs, ctx)
+                        .map_err(cadmpeg_core::CodecError::from)?,
                 ),
                 native_ref: Some(ctx.copy_retained_text(&scope.id, "f3d projected feature native reference")?),
             })
@@ -2022,7 +2021,7 @@ fn project_work_point_construction(
         let feature_key = crate::design::identity::identity_key(feature_id.as_str())?;
         let prefix = crate::design::identity::history_input_prefix(ctx, feature_key, state_id)?;
         Ok(Some(
-            match cadmpeg_ir::features::EdgeSelection::historical_for_decode(
+            match cadmpeg_ir::features::EdgeSelection::historical(
                 crate::design::identity::feature_input_topology_id(ctx, &feature_id, state_id)?,
                 vec![crate::design::identity::history_input_edge_id(
                     ctx,
@@ -2731,7 +2730,7 @@ fn project_thread_face_selection(
     };
 
     let historical_native = ctx.copy_retained_text(&native, "f3d Thread historical native id")?;
-    Ok(cadmpeg_ir::features::FaceSelection::historical_for_decode(
+    Ok(cadmpeg_ir::features::FaceSelection::historical(
         state,
         faces,
         historical_native,
@@ -2850,7 +2849,7 @@ fn design_body_selection(
         ctx.push_vec(&mut bodies, body, "f3d body selection body")?;
     }
     if bodies.len() == expected_count {
-        match cadmpeg_ir::features::DistinctMembers::try_from_for_decode(bodies, ctx) {
+        match cadmpeg_ir::features::DistinctMembers::try_from(bodies, ctx) {
             Ok(bodies) => {
                 return Ok(BodySelection::Resolved {
                     bodies,
@@ -3595,7 +3594,7 @@ fn selected_historical_face_selection(
     let prefix =
         crate::design::identity::history_input_prefix(ctx, feature_key, previous_state_id)?;
     Ok(Some(
-        match cadmpeg_ir::features::FaceSelection::historical_for_decode(
+        match cadmpeg_ir::features::FaceSelection::historical(
             crate::design::identity::feature_input_topology_id(ctx, &feature, previous_state_id)?,
             vec![crate::design::identity::history_input_face_id(
                 ctx,
@@ -3839,7 +3838,7 @@ fn resolved_split_face_path(
         )?;
         ctx.push_vec(&mut edges, edge, "f3d SplitFace historical edge")?;
     }
-    Ok(PathRef::historical_edges_for_decode(
+    Ok(PathRef::historical_edges(
         crate::design::identity::feature_input_topology_id(ctx, &feature, previous_state_id)?,
         edges,
         ctx.copy_retained_text(&group.id, "f3d SplitFace path group id")?,
@@ -4860,7 +4859,7 @@ fn merge_edge_selections(
             }
             let selected_native =
                 ctx.copy_retained_text(&scope.id, "f3d merged historical native id")?;
-            return match cadmpeg_ir::features::EdgeSelection::historical_for_decode(
+            return match cadmpeg_ir::features::EdgeSelection::historical(
                 state,
                 resolved,
                 selected_native,
@@ -5005,7 +5004,7 @@ pub(crate) fn direct_face_selection(
                     ctx.push_vec(&mut resolved, face, "f3d direct historical face")?;
                 }
             }
-            match cadmpeg_ir::features::FaceSelection::historical_for_decode(
+            match cadmpeg_ir::features::FaceSelection::historical(
                 crate::design::identity::feature_input_topology_id(
                     ctx,
                     &feature_id,
@@ -5038,7 +5037,7 @@ pub(crate) fn direct_face_selection(
                     }
                 }
             }
-            match cadmpeg_ir::features::FaceSelection::historical_partial_for_decode(
+            match cadmpeg_ir::features::FaceSelection::historical_partial(
                 crate::design::identity::feature_input_topology_id(
                     ctx,
                     &feature_id,
@@ -8603,7 +8602,7 @@ fn project_extrude(
                 }
                 ProfileRef::Planar(match (complete, state) {
                     (true, Some(state)) if !faces.is_empty() => {
-                        match PlanarProfileRef::historical_faces_for_decode(
+                        match PlanarProfileRef::historical_faces(
                             state, faces, native, ctx,
                         )? {
                             Ok(profile) => profile,

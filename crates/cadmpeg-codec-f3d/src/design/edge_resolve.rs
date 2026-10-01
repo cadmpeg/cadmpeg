@@ -68,7 +68,7 @@ fn historical_identity_slots(
         ctx.push_vec(&mut edges, edge, slot_operation)?;
     }
     let native = ctx.copy_retained_text(&group.id, native_operation)?;
-    match cadmpeg_ir::features::EdgeSelection::historical_for_decode(state, edges, native, ctx)? {
+    match cadmpeg_ir::features::EdgeSelection::historical(state, edges, native, ctx)? {
         Ok(selection) => Ok(selection),
         Err(_) => native_edge_selection(group, ctx),
     }
@@ -200,7 +200,7 @@ pub(super) fn resolved_surface_patch_edge_group(
         )?;
     }
     let native = ctx.copy_retained_text(&group.id, "f3d surface patch historical group id")?;
-    let resolved = cadmpeg_ir::features::EdgeSelection::historical_for_decode(
+    let resolved = cadmpeg_ir::features::EdgeSelection::historical(
         crate::design::identity::feature_input_topology_id(ctx, feature_id, state_id)?,
         historical_edges,
         native,
@@ -355,7 +355,7 @@ pub(super) fn resolved_edge_flange_group(
         ctx.push_vec(&mut historical_edges, id, "f3d edge flange historical edge")?;
     }
     let native = ctx.copy_retained_text(&group.id, "f3d edge flange historical group id")?;
-    let historical = cadmpeg_ir::features::EdgeSelection::historical_for_decode(
+    let historical = cadmpeg_ir::features::EdgeSelection::historical(
         state,
         historical_edges,
         native,
@@ -747,7 +747,7 @@ fn resolved_edge_group_with_transition_chain(
         }
         let native =
             ctx.copy_retained_text(&group.id, "f3d generic surface patch historical group id")?;
-        return match cadmpeg_ir::features::EdgeSelection::historical_for_decode(
+        return match cadmpeg_ir::features::EdgeSelection::historical(
             crate::design::identity::feature_input_topology_id(ctx, feature_id, state_id)?,
             historical_edges,
             native,
@@ -965,7 +965,7 @@ fn resolved_edge_group_with_transition_chain(
                 }
             }
             let native = ctx.copy_retained_text(&group.id, "f3d identity historical group id")?;
-            return match cadmpeg_ir::features::EdgeSelection::historical_for_decode(
+            return match cadmpeg_ir::features::EdgeSelection::historical(
                 state, edges, native, ctx,
             )? {
                 Ok(selection) => Ok(selection),
@@ -1204,7 +1204,7 @@ fn resolved_edge_group_with_transition_chain(
                 }
             }
             let native = ctx.copy_retained_text(&group.id, "f3d combined historical group id")?;
-            return match cadmpeg_ir::features::EdgeSelection::historical_for_decode(
+            return match cadmpeg_ir::features::EdgeSelection::historical(
                 state, edges, native, ctx,
             )? {
                 Ok(selection) => Ok(selection),
@@ -1253,7 +1253,7 @@ fn resolved_edge_group_with_transition_chain(
     } else {
         let native =
             ctx.copy_retained_text(&group.id, "f3d resolved edge group historical group id")?;
-        match cadmpeg_ir::features::EdgeSelection::historical_for_decode(state, edges, native, ctx)?
+        match cadmpeg_ir::features::EdgeSelection::historical(state, edges, native, ctx)?
         {
             Ok(selection) => Ok(selection),
             Err(_) => native_edge_selection(group, ctx),
@@ -1305,7 +1305,7 @@ pub(super) fn resolved_hem_edge_group(
         return Ok(selection);
     };
     let feature_key = crate::design::identity::identity_key(feature_id.as_str())?;
-    Ok(cadmpeg_ir::features::EdgeSelection::historical_for_decode(
+    Ok(cadmpeg_ir::features::EdgeSelection::historical(
         crate::design::identity::feature_input_topology_id(ctx, feature_id, previous_state_id)?,
         vec![crate::design::identity::history_input_edge_id(
             ctx,
@@ -1529,7 +1529,7 @@ fn partial_historical_edge_selection<'a>(
     }
     let native_id = ctx.copy_retained_text(native, "f3d partial native id")?;
     Ok(Some(
-        match cadmpeg_ir::features::EdgeSelection::historical_partial_for_decode(
+        match cadmpeg_ir::features::EdgeSelection::historical_partial(
             state,
             historical_edges,
             unresolved,

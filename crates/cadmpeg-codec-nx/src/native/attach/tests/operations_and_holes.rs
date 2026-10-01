@@ -322,14 +322,13 @@ fn nx_sew_projects_ordered_body_operands_without_inventing_tolerance() {
         sew_body_feature_definition(Some(10), &[], &references, &roots, &resolved,),
         Some(FeatureDefinition::Operation(FeatureOperation::SewBodies {
             bodies: (BodySelection::Resolved {
-                bodies: vec![
+                bodies: cadmpeg_ir::features::DistinctMembers::try_from(vec![
                     BodyId::mint("test:model:entity#target".to_string()).expect("identity grammar"),
                     BodyId::mint("test:model:entity#first-tool".to_string())
                         .expect("identity grammar"),
                     BodyId::mint("test:model:entity#second-tool".to_string())
                         .expect("identity grammar"),
-                ]
-                .try_into()
+                ], &cadmpeg_test_support::service_decode_context())
                 .expect("distinct bodies"),
                 native: "nx:om-object-indices#10,20,30".to_string(),
             })
@@ -595,16 +594,14 @@ fn nx_trim_body_projects_distinct_target_and_ordered_tools() {
         FeatureDefinition::Operation(FeatureOperation::TrimBodies {
             operands: cadmpeg_ir::features::TrimBodyOperands::new(
                 BodySelection::Resolved {
-                    bodies: vec![BodyId::mint("test:model:entity#target".to_string())
-                        .expect("identity grammar")]
-                    .try_into()
+                    bodies: cadmpeg_ir::features::DistinctMembers::try_from(vec![BodyId::mint("test:model:entity#target".to_string())
+                        .expect("identity grammar")], &cadmpeg_test_support::service_decode_context())
                     .expect("distinct bodies"),
                     native: "nx:om-object-index#10".to_string(),
                 },
                 BodySelection::Resolved {
-                    bodies: vec![BodyId::mint("test:model:entity#tool".to_string())
-                        .expect("identity grammar")]
-                    .try_into()
+                    bodies: cadmpeg_ir::features::DistinctMembers::try_from(vec![BodyId::mint("test:model:entity#tool".to_string())
+                        .expect("identity grammar")], &cadmpeg_test_support::service_decode_context())
                     .expect("distinct bodies"),
                     native: "nx:om-object-indices#20".to_string(),
                 }
@@ -1042,10 +1039,9 @@ fn nx_extract_body_projects_its_primary_source_namespace() {
         extract_body_feature_definition(Some(20), &[], &roots, &bodies),
         FeatureDefinition::Operation(FeatureOperation::ExtractBody {
             source: BodySelection::Resolved {
-                bodies: vec![
+                bodies: cadmpeg_ir::features::DistinctMembers::try_from(vec![
                     BodyId::mint("test:model:entity#body".to_string()).expect("identity grammar")
-                ]
-                .try_into()
+                ], &cadmpeg_test_support::service_decode_context())
                 .expect("distinct bodies"),
                 native: "nx:om-object-index#20".to_string(),
             },

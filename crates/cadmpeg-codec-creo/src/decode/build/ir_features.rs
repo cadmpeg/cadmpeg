@@ -101,7 +101,7 @@ fn refresh_feature_outputs(
         else {
             continue;
         };
-        let outputs = cadmpeg_ir::features::DistinctMembers::try_from_for_decode(
+        let outputs = cadmpeg_ir::features::DistinctMembers::try_from(
             feature_output_bodies(ctx, scan, ir, feature_id)?,
             ctx,
         )
@@ -262,7 +262,7 @@ pub(super) fn emit_model_features(
                 } else {
                     IrFeatureDefinition::Operation(IrFeatureOperation::StoredGeometry {})
                 },
-                cadmpeg_ir::features::DistinctMembers::try_from_for_decode(
+                cadmpeg_ir::features::DistinctMembers::try_from(
                     feature_output_bodies(ctx, scan, ir, feature_id)?,
                     ctx,
                 )
@@ -478,7 +478,7 @@ pub(super) fn emit_model_features(
                 }
             }
             existing.evaluation.set_outputs(
-                cadmpeg_ir::features::DistinctMembers::try_from_for_decode(combined_outputs, ctx)
+                cadmpeg_ir::features::DistinctMembers::try_from(combined_outputs, ctx)
                     .map_err(cadmpeg_core::CodecError::from)?,
             );
             refresh_feature_outputs(ctx, scan, ir)?;
@@ -506,7 +506,7 @@ pub(super) fn emit_model_features(
             ordinal: cadmpeg_core::decode::u64_from_index(operation_ordinal_base + operation_index),
             name,
             suppressed: Some(false),
-            dependencies: cadmpeg_ir::features::DistinctMembers::try_from_for_decode(
+            dependencies: cadmpeg_ir::features::DistinctMembers::try_from(
                 dependencies,
                 ctx,
             )
@@ -522,7 +522,7 @@ pub(super) fn emit_model_features(
 
             evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
                 definition,
-                cadmpeg_ir::features::DistinctMembers::try_from_for_decode(outputs, ctx)
+                cadmpeg_ir::features::DistinctMembers::try_from(outputs, ctx)
                     .map_err(cadmpeg_core::CodecError::from)?,
             ),
             native_ref,
@@ -639,7 +639,7 @@ pub(super) fn emit_model_features(
                 )?,
             }),
             suppressed: Some(false),
-            dependencies: cadmpeg_ir::features::DistinctMembers::try_from_for_decode(
+            dependencies: cadmpeg_ir::features::DistinctMembers::try_from(
                 feature_dependencies(ctx, scan, ir, feature_id, &prototype_feature_dependencies)?,
                 ctx,
             )
@@ -655,7 +655,7 @@ pub(super) fn emit_model_features(
 
             evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
                 definition,
-                cadmpeg_ir::features::DistinctMembers::try_from_for_decode(
+                cadmpeg_ir::features::DistinctMembers::try_from(
                     feature_output_bodies(ctx, scan, ir, feature_id)?,
                     ctx,
                 )

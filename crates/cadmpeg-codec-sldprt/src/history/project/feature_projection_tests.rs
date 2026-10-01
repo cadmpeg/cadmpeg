@@ -109,7 +109,7 @@ fn configuration_dependencies_participate_in_the_shared_regeneration_order() {
                     evaluation: cadmpeg_ir::features::ConfigurationEvaluation::Active {
                         outputs: cadmpeg_ir::features::DistinctMembers::default(),
                     },
-                    dependencies: (vec![predecessor.clone()]).try_into().unwrap(),
+                    dependencies: cadmpeg_ir::features::DistinctMembers::try_from(vec![predecessor.clone()], &cadmpeg_test_support::service_decode_context()).unwrap(),
                     definition: ir.model.features[0].evaluation.definition().clone(),
                 },
             )]),

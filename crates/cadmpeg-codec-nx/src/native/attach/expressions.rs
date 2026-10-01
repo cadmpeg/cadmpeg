@@ -480,7 +480,7 @@ pub(in crate::native) fn attach_expression_parameters(
                 )?,
                 display: None,
                 value,
-                dependencies: cadmpeg_ir::features::DistinctMembers::try_from_for_decode(
+                dependencies: cadmpeg_ir::features::DistinctMembers::try_from(
                     dependencies,
                     ctx,
                 )

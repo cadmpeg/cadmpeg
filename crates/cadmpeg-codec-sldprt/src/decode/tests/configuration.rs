@@ -428,8 +428,7 @@ fn incoherent_configuration_bodies_are_reported() {
             "synthetic:test:id#duplicate",
             0,
             Some(
-                (vec![BodyId::mint("test:model:entity#another-missing-body").unwrap()])
-                    .try_into()
+                cadmpeg_ir::features::DistinctMembers::try_from(vec![BodyId::mint("test:model:entity#another-missing-body").unwrap()], &cadmpeg_test_support::service_decode_context())
                     .unwrap(),
             ),
         ),
@@ -437,8 +436,7 @@ fn incoherent_configuration_bodies_are_reported() {
             "synthetic:test:id#missing",
             1,
             Some(
-                (vec![BodyId::mint("test:model:entity#missing-body").expect("identity grammar")])
-                    .try_into()
+                cadmpeg_ir::features::DistinctMembers::try_from(vec![BodyId::mint("test:model:entity#missing-body").expect("identity grammar")], &cadmpeg_test_support::service_decode_context())
                     .unwrap(),
             ),
         ),

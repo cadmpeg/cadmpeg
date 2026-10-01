@@ -970,7 +970,7 @@ pub(super) fn transfer_curve_expression_features(
                     )?,
                     display: None,
                     value,
-                    dependencies: cadmpeg_ir::features::DistinctMembers::try_from_for_decode(
+                    dependencies: cadmpeg_ir::features::DistinctMembers::try_from(
                         dependencies,
                         ctx,
                     )
