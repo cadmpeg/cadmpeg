@@ -238,7 +238,7 @@ fn polygon_sheet(points: &[Point3]) -> CadIr {
             use_curve: None,
         });
     }
-    ir.finalize();
+    ir.finalize(&cadmpeg_test_support::service_decode_context()).expect("fixture ordering is admitted");
     ir
 }
 
@@ -349,7 +349,7 @@ fn add_polygon_hole(ir: &mut CadIr, points: &[Point3]) {
             use_curve: None,
         });
     }
-    ir.finalize();
+    ir.finalize(&cadmpeg_test_support::service_decode_context()).expect("fixture ordering is admitted");
 }
 
 fn adjacent_quad_sheet() -> CadIr {
@@ -561,7 +561,7 @@ fn adjacent_quad_sheet() -> CadIr {
             use_curve: None,
         });
     }
-    ir.finalize();
+    ir.finalize(&cadmpeg_test_support::service_decode_context()).expect("fixture ordering is admitted");
     ir
 }
 
@@ -805,7 +805,7 @@ fn planar_tetrahedron() -> CadIr {
         ir.model.coedges[uses[0]].radial_next = coedge_ids[uses[1]].clone();
         ir.model.coedges[uses[1]].radial_next = coedge_ids[uses[0]].clone();
     }
-    ir.finalize();
+    ir.finalize(&cadmpeg_test_support::service_decode_context()).expect("fixture ordering is admitted");
     ir
 }
 
@@ -911,7 +911,7 @@ fn rectangular_nurbs_patch() -> CadIr {
             parameter_range: None,
         }];
     }
-    ir.finalize();
+    ir.finalize(&cadmpeg_test_support::service_decode_context()).expect("fixture ordering is admitted");
     ir
 }
 
@@ -1017,7 +1017,7 @@ fn mixed_plane_nurbs_sheet() -> CadIr {
             parameter_range: None,
         }];
     }
-    ir.finalize();
+    ir.finalize(&cadmpeg_test_support::service_decode_context()).expect("fixture ordering is admitted");
     ir
 }
 
@@ -1097,7 +1097,7 @@ fn make_planar_nurbs_trimmed_face(ir: &mut CadIr) {
             parameter_range: None,
         }];
     }
-    ir.finalize();
+    ir.finalize(&cadmpeg_test_support::service_decode_context()).expect("fixture ordering is admitted");
 }
 
 mod trim_domain;

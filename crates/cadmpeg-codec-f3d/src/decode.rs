@@ -4456,7 +4456,7 @@ fn decode_result(
     )?;
     // Stamped on the finalized, classified document, so the write path
     // compares against the exact document the sealed wrapper returns.
-    ir.finalize();
+    ir.finalize(ctx)?;
     let hash = document_local_sha256_with_source(&ir, &source)?;
     ctx.insert_btree_map(
         &mut source.attributes,

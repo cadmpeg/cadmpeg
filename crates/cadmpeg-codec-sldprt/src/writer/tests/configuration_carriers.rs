@@ -256,7 +256,7 @@ fn encoder_writes_source_less_neutral_configurations() {
         feature_states: BTreeMap::new(),
         native_ref: None,
     });
-    ir.finalize();
+    ir.finalize(&cadmpeg_test_support::service_decode_context()).expect("fixture ordering is admitted");
 
     let mut encoded = Vec::new();
     SldprtCodec

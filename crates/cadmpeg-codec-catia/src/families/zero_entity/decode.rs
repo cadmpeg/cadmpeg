@@ -1355,7 +1355,7 @@ pub(in crate::families) fn try_decode_zero_entity(
             refusal,
         );
         let admissible = match &counts {
-            Ok(Some(_)) => match neutral_model_is_admissible(&mut candidate_ir, &unknowns) {
+            Ok(Some(_)) => match neutral_model_is_admissible(ctx, &mut candidate_ir, &unknowns) {
                 Ok(admissible) => admissible,
                 Err(limit) => return Some(Err(limit.into())),
             },
@@ -1932,7 +1932,7 @@ mod tests {
                     .expect("identity grammar")
             )
         );
-        assert!(crate::assemble::neutral_model_is_admissible(&mut ir, &[])
+        assert!(crate::assemble::neutral_model_is_admissible(&cadmpeg_test_support::service_decode_context(), &mut ir, &[])
             .expect("resource allocation did not fail"));
     }
 
@@ -2054,7 +2054,7 @@ mod tests {
                 .map(cadmpeg_ir::units::FiniteVector::get),
             Some([0.0, chord])
         );
-        assert!(crate::assemble::neutral_model_is_admissible(&mut ir, &[])
+        assert!(crate::assemble::neutral_model_is_admissible(&cadmpeg_test_support::service_decode_context(), &mut ir, &[])
             .expect("resource allocation did not fail"));
     }
 
@@ -2209,7 +2209,7 @@ mod tests {
                 .definition(),
             &definition
         );
-        assert!(crate::assemble::neutral_model_is_admissible(&mut ir, &[])
+        assert!(crate::assemble::neutral_model_is_admissible(&cadmpeg_test_support::service_decode_context(), &mut ir, &[])
             .expect("resource allocation did not fail"));
     }
 

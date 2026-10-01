@@ -1777,7 +1777,7 @@ mod tests {
         assert_eq!(no_root_counts.faces, 2);
         assert_eq!(no_root_ir.model.bodies[0].kind, BodyKind::Solid);
         assert!(
-            crate::assemble::neutral_model_is_admissible(&mut no_root_ir, &[])
+            crate::assemble::neutral_model_is_admissible(&cadmpeg_test_support::service_decode_context(), &mut no_root_ir, &[])
                 .expect("resource allocation did not fail")
         );
         let mut annotations = AnnotationBuilder::new();
@@ -1821,7 +1821,7 @@ mod tests {
                 .iter()
                 .any(|candidate| candidate.id == coedge.radial_next)
         }));
-        assert!(crate::assemble::neutral_model_is_admissible(&mut ir, &[])
+        assert!(crate::assemble::neutral_model_is_admissible(&cadmpeg_test_support::service_decode_context(), &mut ir, &[])
             .expect("resource allocation did not fail"));
     }
 
@@ -1930,7 +1930,7 @@ mod tests {
                 .geometry,
             CurveGeometry::Solved(SolvedCurveGeometry::Unknown { .. })
         ));
-        assert!(crate::assemble::neutral_model_is_admissible(&mut ir, &[])
+        assert!(crate::assemble::neutral_model_is_admissible(&cadmpeg_test_support::service_decode_context(), &mut ir, &[])
             .expect("resource allocation did not fail"));
     }
 }

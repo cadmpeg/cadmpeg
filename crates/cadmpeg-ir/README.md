@@ -36,7 +36,11 @@ use cadmpeg_ir::{validate_neutral, CadIr};
 
 let mut ir = CadIr::empty(Units::default());
 // Populate ir.model arenas and use typed IDs to connect entities.
-ir.finalize();
+let arena = cadmpeg_core::decode::DecodeArena::new();
+let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+    &[], &arena, &cadmpeg_core::decode::DecodePolicy::default(),
+)?;
+ir.finalize(&ctx)?;
 let report = validate_neutral(&ir, Vec::new());
 
 assert!(report.is_ok());

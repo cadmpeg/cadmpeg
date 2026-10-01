@@ -630,7 +630,7 @@ fn decode_with_occurrence_limits(
     )?;
     // The transfer ledger is verified before DecodeResult construction, so its
     // identity checks require the same canonical arena order as the result.
-    ir.finalize();
+    ir.finalize(ctx)?;
     let geometry_transferred = !projection.decoded.is_empty();
     let mut losses = parse.admission_losses(ctx)?;
     if invalid_resolution

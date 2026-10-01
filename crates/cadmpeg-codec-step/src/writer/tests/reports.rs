@@ -1920,7 +1920,7 @@ fn source_native_record_reduction_is_reported() {
         )
         .expect("valid native identity")],
     );
-    ir.finalize();
+    ir.finalize(&cadmpeg_test_support::service_decode_context()).expect("fixture ordering is admitted");
 
     let mut buf = Vec::new();
     let report = write_step(

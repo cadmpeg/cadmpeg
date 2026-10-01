@@ -29,6 +29,15 @@ const EPS_EXAMPLES_DIRECTED_SUBD_SUM_E9: f64 = 1.0e-9;
 /// Failure while assembling a hand-built example document.
 #[derive(Debug, thiserror::Error)]
 pub enum ExampleError {
+    /// A cache constructor rejected its payload.
+    #[error(transparent)]
+    Cache(#[from] crate::geometry::CacheContractError),
+    /// A resource policy refused example ordering.
+    #[error(transparent)]
+    Resource(#[from] cadmpeg_core::CodecError),
+    /// A procedural constructor rejected its payload.
+    #[error(transparent)]
+    Procedural(#[from] crate::geometry::ProceduralGeometryError),
     /// An analytic or topological geometry constructor rejected its payload.
     #[error("example geometry is invalid: {0}")]
     Geometry(&'static str),
@@ -288,13 +297,15 @@ pub fn unit_cube() -> Result<CadIr, ExampleError> {
         visible: None,
     });
 
-    ir.finalize();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &cadmpeg_core::decode::DecodePolicy::default())?;
+    ir.finalize(&ctx)?;
 
     Ok(ir)
 }
 
 /// A canonical fixture covering directed `SubD` and a Sum procedural surface.
-pub fn directed_subd_sum() -> Result<CadIr, crate::geometry::ProceduralGeometryError> {
+pub fn directed_subd_sum() -> Result<CadIr, ExampleError> {
     let mut ir = CadIr::empty();
     ir.model.curves = vec![
         Curve {
@@ -424,7 +435,9 @@ pub fn directed_subd_sum() -> Result<CadIr, crate::geometry::ProceduralGeometryE
             crate::geometry::ProceduralGeometryError::Payload("invalid directed SubD example cage")
         })?,
     });
-    ir.finalize();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &cadmpeg_core::decode::DecodePolicy::default())?;
+    ir.finalize(&ctx)?;
     Ok(ir)
 }
 

@@ -22,6 +22,9 @@ use serde::ser::{
 /// Canonical JSON could not be written.
 #[derive(Debug, thiserror::Error)]
 pub enum CanonicalJsonError {
+    /// The caller's resource policy refused canonical ordering.
+    #[error(transparent)]
+    Resource(#[from] cadmpeg_core::CodecError),
     /// A float on the value is not finite, so canonical JSON cannot state it.
     #[error("canonical JSON holds no non-finite float: {value}")]
     NonFinite {

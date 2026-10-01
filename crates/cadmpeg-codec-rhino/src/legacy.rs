@@ -3593,7 +3593,7 @@ pub(crate) fn decode_v1(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<Decoded,
             .set_arena(ctx, "legacy_v1_records", &direct_records)
             .map_err(CodecError::malformed)?;
     }
-    ir.model.finalize();
+    ir.model.finalize(ctx)?;
     let opaque_count = opaque_records.len();
     let opaque_bytes = opaque_records
         .iter()

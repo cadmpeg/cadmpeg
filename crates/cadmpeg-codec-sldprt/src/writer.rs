@@ -941,7 +941,9 @@ fn body_subset(ir: &CadIr, selected: &[cadmpeg_ir::ids::BodyId]) -> Result<CadIr
         .model
         .pcurves
         .retain(|pcurve| pcurves.contains(&pcurve.id));
-    subset.model.finalize();
+    let ordering_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ordering_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &ordering_arena, &cadmpeg_core::decode::DecodePolicy::default())?;
+    subset.model.finalize(&ordering_ctx)?;
     Ok(subset)
 }
 

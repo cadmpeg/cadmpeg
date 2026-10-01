@@ -153,7 +153,7 @@ fn polygon_constraints_round_trip_and_require_distinct_members() {
         metadata: None,
         native_ref: None,
     });
-    ir.finalize();
+    ir.finalize(&cadmpeg_test_support::service_decode_context()).expect("fixture ordering is admitted");
     assert!(validate_neutral(&ir, Vec::new())
         .expect("resource allocation did not fail")
         .is_ok());
@@ -375,7 +375,7 @@ fn locus_aware_sketch_constraints_round_trip_and_validate_geometry() {
         metadata: None,
         native_ref: None,
     });
-    ir.finalize();
+    ir.finalize(&cadmpeg_test_support::service_decode_context()).expect("fixture ordering is admitted");
     let report = validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail");
     assert!(report.findings.iter().any(|finding| {
         finding.entity.as_deref() == Some(constraint_id.0.as_str())
@@ -481,7 +481,7 @@ fn coordinate_equation_constraints_round_trip_and_validate_geometry() {
             metadata: None,
             native_ref: None,
         }));
-    ir.finalize();
+    ir.finalize(&cadmpeg_test_support::service_decode_context()).expect("fixture ordering is admitted");
     let report = validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail");
     assert!(!report.findings.iter().any(|finding| {
         finding

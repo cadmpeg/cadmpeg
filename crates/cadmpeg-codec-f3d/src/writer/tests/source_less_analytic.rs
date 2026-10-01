@@ -1708,7 +1708,7 @@ fn generated_source_less_closed_cylinder_band_keeps_compact_periodic_topology() 
             None,
         ));
     }
-    source_less.finalize();
+    source_less.finalize(&cadmpeg_test_support::service_decode_context()).expect("fixture ordering is admitted");
 
     let mut encoded = Vec::new();
     F3dCodec

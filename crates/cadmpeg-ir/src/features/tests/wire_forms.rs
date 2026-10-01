@@ -322,7 +322,7 @@ fn generated_sweep_sections_round_trip_and_validate() {
             evaluation: crate::features::FeatureEvaluation::from_definition(definition),
             native_ref: None,
         });
-        ir.finalize();
+        ir.finalize(&cadmpeg_test_support::service_decode_context()).expect("fixture ordering is admitted");
         validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail")
     };
     let report = validate_definition(definition.clone());

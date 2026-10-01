@@ -340,7 +340,7 @@ refusal,
                 Err(error) => return Some(Err(error)),
             };
             if transferred {
-                match neutral_model_is_admissible(&mut topology_ir, &unknowns) {
+                match neutral_model_is_admissible(ctx, &mut topology_ir, &unknowns) {
                     Ok(admissible) => admissible,
                     Err(limit) => return Some(Err(limit.into())),
                 }

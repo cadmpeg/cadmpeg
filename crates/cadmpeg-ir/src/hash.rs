@@ -565,7 +565,7 @@ mod tests {
                 ),
             ],
         );
-        ir.finalize();
+        ir.finalize(&cadmpeg_test_support::service_decode_context()).expect("fixture ordering is admitted");
         ir
     }
 
@@ -580,7 +580,7 @@ mod tests {
             )
             .expect("valid native identity")],
         );
-        ir.finalize();
+        ir.finalize(&cadmpeg_test_support::service_decode_context()).expect("fixture ordering is admitted");
         ir
     }
 
@@ -775,7 +775,7 @@ mod tests {
         let ir = pinned_document();
         let json = ir.to_canonical_json().unwrap();
         let mut reparsed = CadIr::from_json(&json).unwrap();
-        reparsed.finalize();
+        reparsed.finalize(&cadmpeg_test_support::service_decode_context()).expect("fixture ordering is admitted");
         assert_eq!(
             canonical_json_sha256(&ir).unwrap(),
             canonical_json_sha256(&reparsed).unwrap()
@@ -787,7 +787,7 @@ mod tests {
     /// source image, and hash the serialized string.
     fn cloned_local_digest(ir: &CadIr, format: &str, source_image_id: &str) -> String {
         let mut normalized = ir.clone();
-        normalized.finalize();
+        normalized.finalize(&cadmpeg_test_support::service_decode_context()).expect("fixture ordering is admitted");
         normalized.source = ir.source.as_ref().map(|source| {
             let mut source = source.clone();
             source.attributes.remove(DOCUMENT_LOCAL_DIGEST_ATTRIBUTE);

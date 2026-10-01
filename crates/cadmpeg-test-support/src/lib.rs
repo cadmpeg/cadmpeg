@@ -67,7 +67,7 @@ impl EditableDecodeResult {
 
     /// Edit the IR and restore canonical order when the guard is dropped.
     pub fn ir_mut(&mut self) -> impl DerefMut<Target = CadIr> + '_ {
-        FinalizingEdit::new(&mut self.ir, CadIr::finalize)
+        FinalizingEdit::new(&mut self.ir, |ir| { ir.finalize(&service_decode_context()).expect("fixture ordering is admitted"); })
     }
 
     /// Borrow the decode report.

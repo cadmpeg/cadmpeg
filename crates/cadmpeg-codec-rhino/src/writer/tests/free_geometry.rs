@@ -287,7 +287,7 @@ fn free_plane_and_rational_nurbs_surface_round_trip() {
         )),
         source_object: None,
     });
-    ir.finalize();
+    ir.finalize(&cadmpeg_test_support::service_decode_context()).expect("fixture ordering is admitted");
     let expected = ir
         .model
         .surfaces

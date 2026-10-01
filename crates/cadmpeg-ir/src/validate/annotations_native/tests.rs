@@ -60,7 +60,7 @@ fn native_topology_link_must_resolve() {
         )
         .expect("valid native identity")],
     );
-    ir.native.finalize();
+    ir.native.finalize(&cadmpeg_test_support::service_decode_context()).expect("fixture ordering is admitted");
     assert!(validate_neutral(&ir, Vec::new())
         .expect("resource allocation did not fail")
         .findings

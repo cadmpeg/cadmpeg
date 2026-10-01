@@ -3706,7 +3706,7 @@ fn build_geometry_ir(
     // Sort arenas for the order-sensitive loss scans that follow; the local
     // digests are stamped once, in `decode_result`, after native unknown
     // records are attached.
-    ir.finalize();
+    ir.finalize(ctx)?;
     Ok((ir, annotations, unknowns, pmi_losses))
 }
 
@@ -4504,7 +4504,7 @@ fn build_metadata_ir(
     // Sort arenas for the order-sensitive loss scans that follow; the local
     // digests are stamped once, in `decode_result`, after native unknown
     // records are attached.
-    ir.finalize();
+    ir.finalize(ctx)?;
     Ok((ir, annotations, unknowns, pmi_losses))
 }
 
@@ -5373,7 +5373,7 @@ fn stamp_sketch_baseline(
 /// Both are machine-local content digests and carry the `_local_sha256` suffix
 /// that says so; see [`document_local_sha256`] and [`brep_local_sha256`].
 fn stamp_local_digests(ctx: &DecodeContext<'_>, ir: &mut CadIr) -> Result<(), CodecError> {
-    ir.finalize();
+    ir.finalize(ctx)?;
     let brep_hash = brep_local_sha256_in_place(ctx, ir)?;
     if let Some(source) = &mut ir.source {
         source.attributes.insert(

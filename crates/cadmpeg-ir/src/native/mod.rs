@@ -780,12 +780,13 @@ impl Native {
     }
 
     /// Sort every arena into canonical identity order.
-    pub(crate) fn finalize(&mut self) {
+    pub(crate) fn finalize(&mut self, ctx: &DecodeContext<'_>) -> Result<(), cadmpeg_core::CodecError> {
         for namespace in self.0.values_mut() {
             for records in namespace.arenas.values_mut() {
-                records.sort_by(|left, right| left.id().cmp(right.id()));
+                ctx.stable_sort_by(records, |left, right| left.id().cmp(right.id()), |record| record.id().len(), "finalize native arena")?;
             }
         }
+        Ok(())
     }
 
     /// Return one count for each non-empty native arena.

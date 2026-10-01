@@ -143,7 +143,7 @@ fn finalize_result(
     body: DecodeBody,
     source_fidelity: cadmpeg_ir::SourceFidelity,
 ) -> Result<Decoded, CodecError> {
-    ir.finalize();
+    ir.finalize(ctx)?;
     let hash = crate::decode::document_local_sha256_with_source(&ir, &source)?;
     ctx.insert_btree_map(
         &mut source.attributes,

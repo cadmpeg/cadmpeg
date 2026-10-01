@@ -474,7 +474,7 @@ fn spatial_sketch_geometry_round_trips_and_validates() {
             .unwrap(),
             native_ref: None,
         });
-    ir.finalize();
+    ir.finalize(&cadmpeg_test_support::service_decode_context()).expect("fixture ordering is admitted");
     assert!(validate_neutral(&ir, Vec::new())
         .expect("resource allocation did not fail")
         .findings
