@@ -6876,10 +6876,10 @@ fn saved_section(
     let spline = saved_spline_entities(ctx, payload, start, end, cache)?;
     ctx.reserve_vec(&mut entities, spline.len(), "creo saved section entities")?;
     entities.extend(spline);
-    crate::sort::stable_sort_by_key(
-        ctx,
+    ctx.stable_sort_by(
         entities.as_mut_slice(),
-        saved_entity_offset,
+        |left, right| saved_entity_offset(left).cmp(&saved_entity_offset(right)),
+        |_| 0,
         "creo saved section entities ordering",
     )?;
     Ok(Some(FeatureSavedSection {
@@ -6913,10 +6913,10 @@ fn positional_saved_section(
         "creo positional saved section entities",
     )?;
     entities.extend(conic);
-    crate::sort::stable_sort_by_key(
-        ctx,
+    ctx.stable_sort_by(
         entities.as_mut_slice(),
-        saved_entity_offset,
+        |left, right| saved_entity_offset(left).cmp(&saved_entity_offset(right)),
+        |_| 0,
         "creo positional saved section entities ordering",
     )?;
     let Some(offset) = entities.first().map(saved_entity_offset) else {
@@ -6962,10 +6962,10 @@ pub(crate) fn definition_revolution_extents(
             }
         }
     }
-    crate::sort::stable_sort_by_key(
-        ctx,
+    ctx.stable_sort_by(
         result.as_mut_slice(),
-        |record| record.offset,
+        |left, right| left.offset.cmp(&right.offset),
+        |_| 0,
         "creo definition revolution extents result ordering",
     )?;
     Ok(result)
@@ -7037,10 +7037,10 @@ fn definitions_in_ranges(
                 from = body_start;
             }
         }
-        crate::sort::stable_sort_by_key(
-            ctx,
+        ctx.stable_sort_by(
             parameter_frames.as_mut_slice(),
-            |frame| frame.offset,
+            |left, right| left.offset.cmp(&right.offset),
+            |_| 0,
             "creo definitions in ranges parameter frames ordering",
         )?;
         let mut outlines = Vec::new();
@@ -7086,10 +7086,10 @@ fn definitions_in_ranges(
                 });
             }
         }
-        crate::sort::stable_sort_by_key(
-            ctx,
+        ctx.stable_sort_by(
             outlines.as_mut_slice(),
-            |outline| outline.offset,
+            |left, right| left.offset.cmp(&right.offset),
+            |_| 0,
             "creo definitions in ranges outlines ordering",
         )?;
         let variables = match variable_table(ctx, payload, start, end, &cache)? {
@@ -7898,10 +7898,10 @@ pub(crate) fn bind_section_owners(
     }
     let mut ordered_operations =
         crate::decode::collect_items(ctx, operations.iter(), "creo section ordered operations")?;
-    crate::sort::stable_sort_by_key(
-        ctx,
+    ctx.stable_sort_by(
         ordered_operations.as_mut_slice(),
-        |operation| operation.offset,
+        |left, right| left.offset.cmp(&right.offset),
+        |_| std::mem::size_of::<usize>(),
         "creo bind section owners ordered operations ordering",
     )?;
     for definition in &mut definitions {

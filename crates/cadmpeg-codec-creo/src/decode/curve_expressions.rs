@@ -392,10 +392,10 @@ fn curve_expression_emitted_ordinals(
             indices.push(index);
         }
     }
-    crate::sort::stable_sort_by_key(
-        ctx,
+    ctx.stable_sort_by(
         indices.as_mut_slice(),
-        |index| parameter_ordinals[*index],
+        |left, right| parameter_ordinals[*left].cmp(&parameter_ordinals[*right]),
+        |_| std::mem::size_of::<u32>(),
         "creo curve expression emitted ordinals indices ordering",
     )?;
     let mut emitted = BTreeMap::new();

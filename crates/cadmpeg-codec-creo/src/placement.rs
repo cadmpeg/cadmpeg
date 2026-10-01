@@ -1379,10 +1379,10 @@ pub(crate) fn resolve(
             result.push(transform);
         }
     }
-    crate::sort::stable_sort_by_key(
-        ctx,
+    ctx.stable_sort_by(
         result.as_mut_slice(),
-        |transform| transform.offset,
+        |left, right| left.offset.cmp(&right.offset),
+        |_| 0,
         "creo resolve result ordering",
     )?;
     Ok(result)

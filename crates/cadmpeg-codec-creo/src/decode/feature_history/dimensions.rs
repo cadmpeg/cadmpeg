@@ -404,12 +404,10 @@ pub(in super::super) fn transfer_feature_dimensions(
             ));
         }
     }
-    crate::sort::stable_sort_by_key(
-        ctx,
+    ctx.stable_sort_by(
         candidates.as_mut_slice(),
-        |(_, definition, source_ordinal, _)| {
-            (definition.offset, definition.identity.id(), *source_ordinal)
-        },
+        |(_, left, left_ordinal, _), (_, right, right_ordinal, _)| (left.offset, left.identity.id(), *left_ordinal).cmp(&(right.offset, right.identity.id(), *right_ordinal)),
+        |_| std::mem::size_of::<usize>() + std::mem::size_of::<u32>(),
         "creo transfer feature dimensions candidates ordering",
     )?;
     let mut keys = Vec::new();

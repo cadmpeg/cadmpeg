@@ -619,7 +619,12 @@ pub(crate) fn looks_like_creo(prefix: &[u8]) -> bool {
 fn line_at(ctx: &DecodeContext<'_>, data: &[u8], start: usize) -> Result<String, CodecError> {
     ctx.charge_work(cadmpeg_core::decode::u64_from_index(data.len() - start), "creo version line scan")?;
     let end = find(data, b"\n", start).unwrap_or(data.len());
-    let mut line = crate::text::copy_lossy_text(ctx, &data[start..end], "creo version line")?;
+    let bytes = &data[start..end];
+    let text_work = cadmpeg_core::decode::u64_from_index(bytes.len())
+        .checked_mul(6)
+        .ok_or_else(|| ctx.refuse_codec_limit("creo version text work", u64::MAX, u64::MAX))?;
+    ctx.charge_work(text_work, "creo version text work")?;
+    let mut line = ctx.copy_retained_lossy_utf8(bytes, "creo version line")?;
     let leading = line.len() - line.trim_start().len();
     let trimmed_len = line.trim().len();
     line.drain(..leading);
@@ -850,10 +855,10 @@ fn toc_sections<'a>(
             ));
         }
     }
-    crate::sort::stable_sort_by_key(
-        ctx,
+    ctx.stable_sort_by(
         sections.as_mut_slice(),
-        |section| section.section.offset(),
+        |left, right| left.section.offset().cmp(&right.section.offset()),
+        |_| 0,
         "creo toc sections sections ordering",
     )?;
     sections.dedup_by_key(|section| section.section.offset());
@@ -1005,10 +1010,10 @@ fn legacy_toc_sections<'a>(
         ctx.reserve_vec(&mut sections, 1, "creo legacy TOC sections")?;
         sections.extend(Section::scan(raw_name, offset, end, None, data));
     }
-    crate::sort::stable_sort_by_key(
-        ctx,
+    ctx.stable_sort_by(
         sections.as_mut_slice(),
-        |section| section.section.offset(),
+        |left, right| left.section.offset().cmp(&right.section.offset()),
+        |_| 0,
         "creo legacy toc sections sections ordering",
     )?;
     sections.dedup_by_key(|section| section.section.offset());
@@ -1515,10 +1520,10 @@ fn loop_array_sections<'a>(
             selected.push(section.copy_retained(ctx)?);
         }
     }
-    crate::sort::stable_sort_by_key(
-        ctx,
+    ctx.stable_sort_by(
         selected.as_mut_slice(),
-        |section| section.section.offset(),
+        |left, right| left.section.offset().cmp(&right.section.offset()),
+        |_| 0,
         "creo loop array sections selected ordering",
     )?;
     selected.dedup_by_key(|section| section.section.offset());
@@ -1678,16 +1683,16 @@ fn loop_array_scan(
             record
         }));
     }
-    crate::sort::stable_sort_by_key(
-        ctx,
+    ctx.stable_sort_by(
         frames.as_mut_slice(),
-        |frame: &LoopArrayFrame| frame.offset,
+        |left: &LoopArrayFrame, right: &LoopArrayFrame| left.offset.cmp(&right.offset),
+        |_| 0,
         "creo loop array scan frames ordering",
     )?;
-    crate::sort::stable_sort_by_key(
-        ctx,
+    ctx.stable_sort_by(
         records.as_mut_slice(),
-        |record: &LoopArrayRecord| record.offset,
+        |left: &LoopArrayRecord, right: &LoopArrayRecord| left.offset.cmp(&right.offset),
+        |_| 0,
         "creo loop array scan records ordering",
     )?;
     Ok(LoopArrayScan { frames, records })
@@ -2200,10 +2205,10 @@ fn feature_rows(
         ctx.reserve_vec(&mut rows, decoded.len(), "creo feature row aggregation")?;
         rows.extend(decoded);
     }
-    crate::sort::stable_sort_by_key(
-        ctx,
+    ctx.stable_sort_by(
         rows.as_mut_slice(),
-        |row| row.offset,
+        |left, right| left.offset.cmp(&right.offset),
+        |_| 0,
         "creo feature rows rows ordering",
     )?;
     Ok(rows)
@@ -2369,10 +2374,10 @@ fn feature_definitions(
             }
         }
     }
-    crate::sort::stable_sort_by_key(
-        ctx,
+    ctx.stable_sort_by(
         definitions.as_mut_slice(),
-        |definition| definition.offset,
+        |left, right| left.offset.cmp(&right.offset),
+        |_| 0,
         "creo feature definitions definitions ordering",
     )?;
     Ok(definitions)
@@ -2393,10 +2398,10 @@ fn feature_row_definitions(
         ctx.reserve_vec(&mut definitions, 1, "creo feature row definitions")?;
         definitions.push(definition);
     }
-    crate::sort::stable_sort_by_key(
-        ctx,
+    ctx.stable_sort_by(
         definitions.as_mut_slice(),
-        |definition| definition.offset,
+        |left, right| left.offset.cmp(&right.offset),
+        |_| 0,
         "creo feature row definitions definitions ordering",
     )?;
     Ok(definitions)
@@ -2443,10 +2448,10 @@ fn feature_geometry_tables(
         "creo feature geometry table aggregation",
     )?;
     tables.extend(depdb_tables);
-    crate::sort::stable_sort_by_key(
-        ctx,
+    ctx.stable_sort_by(
         tables.as_mut_slice(),
-        |table| table.offset,
+        |left, right| left.offset.cmp(&right.offset),
+        |_| 0,
         "creo feature geometry tables tables ordering",
     )?;
     Ok(tables)
@@ -2465,10 +2470,10 @@ fn feature_affected_ids(
         "creo affected-id aggregation",
     )?;
     records.extend(depdb_records);
-    crate::sort::stable_sort_by_key(
-        ctx,
+    ctx.stable_sort_by(
         records.as_mut_slice(),
-        |record| record.offset,
+        |left, right| left.offset.cmp(&right.offset),
+        |_| 0,
         "creo feature affected ids records ordering",
     )?;
     Ok(records)
@@ -2489,10 +2494,10 @@ fn feature_revolution_extents(
         "creo revolution extent aggregation",
     )?;
     extents.extend(definition_extents);
-    crate::sort::stable_sort_by_key(
-        ctx,
+    ctx.stable_sort_by(
         extents.as_mut_slice(),
-        |record| record.offset,
+        |left, right| left.offset.cmp(&right.offset),
+        |_| 0,
         "creo feature revolution extents extents ordering",
     )?;
     Ok(extents)
@@ -2577,10 +2582,10 @@ fn feature_operations(
         "creo current feature operation order",
     )?;
     current.extend(by_feature.into_values());
-    crate::sort::stable_sort_by_key(
-        ctx,
+    ctx.stable_sort_by(
         current.as_mut_slice(),
-        |record| record.offset,
+        |left, right| left.offset.cmp(&right.offset),
+        |_| 0,
         "creo feature operations current ordering",
     )?;
     Ok(current)
@@ -2679,10 +2684,10 @@ fn depdb_recipe_rows(
             body_start = body_end;
         }
     }
-    crate::sort::stable_sort_by_key(
-        ctx,
+    ctx.stable_sort_by(
         rows.as_mut_slice(),
-        |row| row.offset,
+        |left, right| left.offset.cmp(&right.offset),
+        |_| 0,
         "creo depdb recipe rows rows ordering",
     )?;
     Ok(rows)
@@ -2801,10 +2806,10 @@ fn append_topology_rows(
 ) -> Result<(), CodecError> {
     ctx.reserve_vec(rows, additional.len(), operation)?;
     rows.extend(additional);
-    crate::sort::stable_sort_by_key(
-        ctx,
+    ctx.stable_sort_by(
         rows.as_mut_slice(),
-        |row| row.offset,
+        |left, right| left.offset.cmp(&right.offset),
+        |_| 0,
         "creo append topology rows rows ordering",
     )?;
     rows.dedup_by_key(|row| row.offset);
@@ -2830,10 +2835,10 @@ fn append_legacy_curve_witnesses(
         "creo legacy pcurve aggregation",
     )?;
     pcurves.extend(legacy_pcurves.iter().cloned());
-    crate::sort::stable_sort_by_key(
-        ctx,
+    ctx.stable_sort_by(
         pcurves.as_mut_slice(),
-        |pcurve| pcurve.offset,
+        |left, right| left.offset.cmp(&right.offset),
+        |_| 0,
         "creo append legacy curve witnesses pcurves ordering",
     )?;
     pcurves.dedup_by_key(|pcurve| pcurve.offset);
@@ -2951,10 +2956,10 @@ pub(crate) fn scan_bytes<'a>(
         "creo legacy nonvisible surface row aggregation",
     )?;
     nonvisible_surface_rows.extend(legacy_geometry.nonvisible_rows);
-    crate::sort::stable_sort_by_key(
-        ctx,
+    ctx.stable_sort_by(
         nonvisible_surface_rows.as_mut_slice(),
-        |row| row.offset,
+        |left, right| left.offset.cmp(&right.offset),
+        |_| 0,
         "creo scan bytes nonvisible surface rows ordering",
     )?;
     let mut surface_rows = surface_rows(ctx, &model_geometry_sections)?;
@@ -2964,10 +2969,10 @@ pub(crate) fn scan_bytes<'a>(
         "creo legacy surface row aggregation",
     )?;
     surface_rows.extend(legacy_geometry.rows);
-    crate::sort::stable_sort_by_key(
-        ctx,
+    ctx.stable_sort_by(
         surface_rows.as_mut_slice(),
-        |row| row.offset,
+        |left, right| left.offset.cmp(&right.offset),
+        |_| 0,
         "creo scan bytes surface rows ordering",
     )?;
     let cross_section_surface_rows = cross_section_surface_rows(ctx, &sections)?;
@@ -3128,10 +3133,10 @@ pub(crate) fn scan_bytes<'a>(
         feature_row_definitions(ctx, &feature_rows)?,
         "creo feature row definition aggregation",
     )?;
-    crate::sort::stable_sort_by_key(
-        ctx,
+    ctx.stable_sort_by(
         feature_definitions.as_mut_slice(),
-        |definition| definition.offset,
+        |left, right| left.offset.cmp(&right.offset),
+        |_| 0,
         "creo scan bytes feature definitions ordering",
     )?;
     let claimed_definition_owners = claimed_definition_owners(ctx, &feature_definitions)?;
@@ -3147,10 +3152,10 @@ pub(crate) fn scan_bytes<'a>(
         replay_definitions,
         "creo replay definition aggregation",
     )?;
-    crate::sort::stable_sort_by_key(
-        ctx,
+    ctx.stable_sort_by(
         feature_definitions.as_mut_slice(),
-        |definition| definition.offset,
+        |left, right| left.offset.cmp(&right.offset),
+        |_| 0,
         "creo scan bytes feature definitions ordering",
     )?;
     let section_owner_ranges = section_owner_ranges(ctx, &sections, &feature_rows)?;
@@ -3415,10 +3420,10 @@ fn collect_section_records_result<'a, 'data: 'a, T>(
             record
         }));
     }
-    crate::sort::stable_sort_by_key(
-        ctx,
+    ctx.stable_sort_by(
         records.as_mut_slice(),
-        offset,
+        |left, right| offset(left).cmp(&offset(right)),
+        |_| 0,
         "creo collect section records result records ordering",
     )?;
     Ok(records)

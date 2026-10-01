@@ -407,10 +407,15 @@ pub(crate) fn entity_graph(
         let entity_id = u32::try_from(entities.len())
             .map_err(|_| CodecError::malformed("creo feature entity id exceeds u32"))?;
         ctx.reserve_vec(&mut entities, 1, "creo feature entity graph nodes")?;
+        let name_bytes = &payload[name_start..name_end];
+        let text_work = cadmpeg_core::decode::u64_from_index(name_bytes.len())
+            .checked_mul(6)
+            .ok_or_else(|| ctx.refuse_codec_limit("creo feature entity text work", u64::MAX, u64::MAX))?;
+        ctx.charge_work(text_work, "creo feature entity text work")?;
         entities.push(FeatureEntity {
             entity_id,
             type_byte: payload[token.offset + 1],
-            name: copy_lossy_entity_name(ctx, &payload[name_start..name_end])?,
+            name: ctx.copy_retained_lossy_utf8(name_bytes, "creo feature entity name")?,
             offset: token.offset,
         });
     }
@@ -438,9 +443,6 @@ pub(crate) fn entity_graph(
     Ok((entities, references))
 }
 
-fn copy_lossy_entity_name(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<String, CodecError> {
-    crate::text::copy_lossy_text(ctx, bytes, "creo feature entity name")
-}
 
 pub(super) fn read_entries(
     ctx: &DecodeContext<'_>,
