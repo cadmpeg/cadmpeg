@@ -1401,7 +1401,8 @@ def evaluation_signatures(tokens, pairs, parents):
         stop = pairs[opening] + 1
         end = stop
         while end < len(tokens) and tokens[end][0] not in {"{", ";"}:
-            end += 1
+            # Array types such as `[u8; 4]` carry a semicolon inside the signature.
+            end = pairs[end] + 1 if tokens[end][0] in "([" and end in pairs else end + 1
         output = [t[0] for t in tokens[stop:end]]
         owner = None
         parent = parents.get(index)
@@ -1806,6 +1807,19 @@ DECODE_SORT_EXEMPT_FILES = {
     "crates/cadmpeg-core/src/decode/context.rs",
     "crates/cadmpeg-core/src/decode/sort.rs",
 }
+# Decode crates sort input-derived values in helpers that receive no context;
+# their encoders sort values of an already admitted document.
+DECODE_SORT_CRATE = re.compile(r"cadmpeg-(?:codec-[a-z0-9]+|container|asm|parasolid|protein)")
+ENCODE_SORT_PATH = re.compile(
+    r"crates/[^/]+/src/(?:"
+    r"(?:.+/)?writer(?:/.*|\.rs|_[a-z_]+\.rs)"
+    r"|bin/.*"
+    r"|history/(?:encode|write)/.*"
+    r"|resolved_features/(?:sketch_write|write_generate|write_prepare)\.rs"
+    r"|zip_write\.rs"
+    r"|export\.rs"
+    r")"
+)
 DECODE_CONTEXT_BINDING = re.compile(
     r"\b([A-Za-z_]\w*)\s*:\s*&\s*(?:'[A-Za-z_]\w*\s*)?(?:mut\s+)?"
     r"(?:::\s*)?(?:[A-Za-z_]\w*\s*::\s*)*DecodeContext\b"
@@ -1813,7 +1827,7 @@ DECODE_CONTEXT_BINDING = re.compile(
 
 
 def scan_decode_sorts(sources: dict[Path, str]) -> list[Finding]:
-    """Reject slice sorts in functions borrowing a decode context.
+    """Reject slice sorts in functions borrowing a decode context and in decode crate code.
 
     Function scopes exclude nested function items. Closures keep their enclosing
     context. Struct fields identify context access through a method's self value.
@@ -1844,6 +1858,7 @@ def scan_decode_sorts(sources: dict[Path, str]) -> list[Finding]:
     for path, (code, tokens, pairs, parents, words, crate) in parsed.items():
         if relative_path(path) in DECODE_SORT_EXEMPT_FILES:
             continue
+        decode_scope = bool(DECODE_SORT_CRATE.fullmatch(crate)) and not ENCODE_SORT_PATH.fullmatch(relative_path(path))
         functions = []
         for index, _, _, owner in evaluation_signatures(tokens, pairs, parents):
             opening = index + 2
@@ -1855,7 +1870,7 @@ def scan_decode_sorts(sources: dict[Path, str]) -> list[Finding]:
                     opening += 1
             body = pairs[opening] + 1
             while body < len(words) and words[body] not in {"{", ";"}:
-                body += 1
+                body = pairs[body] + 1 if words[body] in "([" and body in pairs else body + 1
             if body not in pairs or words[body] != "{":
                 continue
             functions.append((index, body, pairs[body], owner))
@@ -1886,7 +1901,7 @@ def scan_decode_sorts(sources: dict[Path, str]) -> list[Finding]:
             if not enclosing:
                 continue
             bindings, fields, has_context = contexts[max(enclosing, key=lambda scope: scope[0])[0]]
-            if not has_context:
+            if not has_context and not decode_scope:
                 continue
             # The context operation shares the slice method's unstable name.
             receiver = words[index - 2] if index >= 2 else ""
@@ -1895,7 +1910,8 @@ def scan_decode_sorts(sources: dict[Path, str]) -> list[Finding]:
             findings.append(Finding(
                 "uncharged_decode_sort", relative_path(path),
                 code.count("\n", 0, tokens[index].start()) + 1,
-                f"Slice .{word} in decode code must use ctx.stable_sort_by or ctx.sort_unstable_by to admit comparison work and scratch.",
+                f"Slice .{word} in decode code must use ctx.stable_sort_by or ctx.sort_unstable_by to admit comparison work and scratch"
+                + ("." if has_context else "; pass the decode context to this function."),
             ))
     return findings
 
