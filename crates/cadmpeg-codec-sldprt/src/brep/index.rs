@@ -206,10 +206,26 @@ pub(super) fn scan_carriers(
     ctx: &DecodeContext<'_>,
     body: &[u8],
 ) -> Result<CarrierIndex, cadmpeg_core::CodecError> {
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(body.len()),
+        "scan SLDPRT analytic carriers",
+    )?;
     let mut out = CarrierIndex::default();
     let mut i = 0usize;
     while i + 2 <= body.len() {
         if body[i] == 0x00 {
+            if let Some(count) = body
+                .get(i + 1)
+                .copied()
+                .and_then(super::analytic_value_count)
+            {
+                ctx.charge_work(
+                    cadmpeg_core::decode::u64_from_index(
+                        (count * 8 + super::DELTAS_MARKER_OFFSET + 3) * 3,
+                    ),
+                    "probe SLDPRT analytic carrier",
+                )?;
+            }
             if let Some(c) = parse_carrier(body, i) {
                 out.insert(ctx, c)?;
             }
@@ -242,6 +258,29 @@ pub(super) fn scan_carriers(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn analytic_carrier_scan_admits_work_before_empty_pass() {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        let body = [0xff; 4096];
+        let (ctx, _) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(&body, &arena, &policy).unwrap();
+        let (result, allocations) = crate::test_support::allocation::count_allocations(|| {
+            super::scan_carriers(&ctx, &body)
+        });
+        let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) = result else {
+            panic!("work refusal");
+        };
+        assert_eq!(limit.operation, "scan SLDPRT analytic carriers");
+        assert_eq!(
+            limit.dimension,
+            cadmpeg_core::decode::ResourceDimension::WorkUnits
+        );
+        assert_eq!(ctx.resource_refusal(), Some(limit));
+        assert_eq!(allocations, 0);
+    }
+
     use super::{blend, CarrierIndex};
 
     fn blend_body() -> Vec<u8> {
