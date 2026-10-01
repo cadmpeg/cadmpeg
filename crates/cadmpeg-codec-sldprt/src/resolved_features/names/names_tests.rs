@@ -68,3 +68,48 @@ fn marker_literals_keep_their_wire_spelling() {
         "sldprt:marker-geometry:2"
     );
 }
+
+#[test]
+fn object_names_utf16_refuses_exact_retained_budget() {
+    let mut payload = super::super::NAME_MARKER.to_vec();
+    payload.extend_from_slice(&[1, 0, 8]);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_retained_bytes = 2;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root");
+    assert!(
+        matches!(object_names(&ctx, &payload, "lane"), Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes && limit.additional == 3 && limit.operation == "retain SLDPRT feature input name")
+    );
+}
+
+#[test]
+fn object_names_scan_refuses_work_budget() {
+    let mut payload = super::super::NAME_MARKER.to_vec();
+    payload.extend_from_slice(&[1, 0, 8]);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root");
+    assert!(
+        matches!(object_names(&ctx, &payload, "lane"), Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits && limit.operation == "scan SLDPRT feature input names")
+    );
+}
+
+#[test]
+fn object_names_class_search_refuses_work_budget() {
+    let mut payload = super::super::NAME_MARKER.to_vec();
+    payload.extend_from_slice(&[1, 0, 8]);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_work_units = cadmpeg_core::decode::u64_from_index(payload.len());
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root");
+    assert!(
+        matches!(object_names(&ctx, &payload, "lane"), Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits && limit.operation == "find SLDPRT feature input name class")
+    );
+}

@@ -95,7 +95,12 @@ pub(super) fn project_fillet(
             ctx.reserve_collection_vec(&mut points, 1, "collect SLDPRT variable fillet radii")?;
             points.push((index, point));
         }
-        points.sort_unstable_by_key(|(index, _)| *index);
+        ctx.sort_unstable_by(
+            &mut points,
+            |(left, _), (right, _)| left.cmp(right),
+            |_| 0,
+            "sort SLDPRT variable fillet radii",
+        )?;
         let points = if valid
             && points.len() >= 2
             && points

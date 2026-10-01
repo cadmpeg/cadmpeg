@@ -177,7 +177,12 @@ pub(super) fn decode(
             parameters,
         });
     }
-    candidates.sort_by_key(|candidate| candidate.offset);
+    ctx.stable_sort_by(
+        &mut candidates,
+        |left, right| left.offset.cmp(&right.offset),
+        |_| 0,
+        "step_drawing_candidates_sort",
+    )?;
 
     if candidates.is_empty() {
         return Ok(StageOutcome {

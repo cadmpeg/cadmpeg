@@ -1879,3 +1879,5 @@ fn legacy_rdk_material_optional_readers_propagate_tree_refusal() {
         assert_eq!(ctx.resource_refusal(), Some(limit));
     }
 }
+
+mod utf16;

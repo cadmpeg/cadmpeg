@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Admission of parser-owned XML and JSON trees.
 
-use super::{u64_from_index, DecodeContext, ScopedReservation, View};
+use super::{u64_from_index, DecodeContext, ScopedReservation};
 use crate::CodecError;
 
 /// Bounds roxmltree 0.21.1 `NodeData`, including `NodeKind`, four node IDs,
@@ -176,46 +176,7 @@ fn at_depth<T>(
     result
 }
 
-struct XmlUtf16Text<'input>(&'input [u8]);
-
-impl std::fmt::Display for XmlUtf16Text<'_> {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        if !self.0.len().is_multiple_of(2) {
-            return Err(std::fmt::Error);
-        }
-        let mut units = View::over_retained(self.0);
-        for character in char::decode_utf16(std::iter::from_fn(|| units.u16_le())) {
-            let character = character.map_err(|_| std::fmt::Error)?;
-            std::fmt::Display::fmt(&character, formatter)?;
-        }
-        Ok(())
-    }
-}
-
 impl DecodeContext<'_> {
-    /// Strictly materializes UTF-16LE XML text as UTF-8 without a code-unit
-    /// vector. Charge validation and both formatting passes before scanning;
-    /// keep the returned scoped reservation through parsing the returned text.
-    pub fn copy_scoped_xml_utf16le(
-        &self,
-        bytes: &[u8],
-        operation: &'static str,
-    ) -> Result<(String, ScopedReservation<'_>), CodecError> {
-        let work = u64_from_index(bytes.len())
-            .checked_mul(6)
-            .ok_or_else(|| self.tree_overflow(operation))?;
-        self.charge_work(work, operation)?;
-        if !bytes.len().is_multiple_of(2) {
-            return Err(self.tree_malformed("odd UTF-16 XML byte count", operation));
-        }
-        let mut units = View::over_retained(bytes);
-        for character in char::decode_utf16(std::iter::from_fn(|| units.u16_le())) {
-            character
-                .map_err(|_| self.tree_malformed("invalid UTF-16 surrogate sequence", operation))?;
-        }
-        self.format_scoped(format_args!("{}", XmlUtf16Text(bytes)), operation)
-    }
-
     fn tree_malformed(&self, error: impl std::fmt::Display, operation: &'static str) -> CodecError {
         match self.format_retained(format_args!("{error}"), operation) {
             Ok(message) => CodecError::Malformed(message),
@@ -643,55 +604,6 @@ mod tests {
         u64_from_index, DecodeArena, DecodeContext, DecodePolicy, ResourceDimension,
     };
     use crate::CodecError;
-
-    #[test]
-    fn tree_xml_utf16_text_success_and_strict_errors() {
-        let arena = DecodeArena::new();
-        let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &DecodePolicy::default())
-            .expect("valid fixture");
-        let bytes: Vec<u8> = "<r>α😀</r>"
-            .encode_utf16()
-            .flat_map(u16::to_le_bytes)
-            .collect();
-        let (text, _scope) = ctx
-            .copy_scoped_xml_utf16le(&bytes, "XML text")
-            .expect("valid fixture");
-        assert_eq!(text, "<r>α😀</r>");
-        ctx.parse_xml(&text, "XML tree").expect("valid fixture");
-        for bytes in [&[0][..], &[0, 0xd8][..]] {
-            assert!(matches!(
-                ctx.copy_scoped_xml_utf16le(bytes, "XML text"),
-                Err(CodecError::Malformed(_))
-            ));
-        }
-    }
-
-    #[test]
-    fn tree_xml_utf16_text_resource_dimensions() {
-        for dimension in [
-            ResourceDimension::MaterializedBytes,
-            ResourceDimension::WorkUnits,
-        ] {
-            let arena = DecodeArena::new();
-            let mut policy = DecodePolicy::default();
-            match dimension {
-                ResourceDimension::MaterializedBytes => policy.limits.max_materialized_bytes = 0,
-                ResourceDimension::WorkUnits => policy.limits.max_work_units = 0,
-                _ => panic!("test dimension"),
-            }
-            let (ctx, _) =
-                DecodeContext::from_root_bytes(b"", &arena, &policy).expect("valid fixture");
-            let bytes: Vec<u8> = "<r/>".encode_utf16().flat_map(u16::to_le_bytes).collect();
-            let CodecError::ResourceLimit(limit) = ctx
-                .copy_scoped_xml_utf16le(&bytes, "XML text")
-                .expect_err("fixture must refuse")
-            else {
-                panic!("text admission must refuse");
-            };
-            assert_eq!(limit.dimension, dimension);
-            assert_eq!(ctx.resource_refusal(), Some(limit));
-        }
-    }
 
     #[test]
     fn tree_xml_success_and_capacity_rounding() {

@@ -4449,7 +4449,12 @@ fn linear_uncertainty(
             }
         }
     }
-    candidates.sort_by(|left, right| left.get().total_cmp(&right.get()));
+    ctx.stable_sort_by(
+        &mut candidates,
+        |left, right| left.get().total_cmp(&right.get()),
+        |_| 0,
+        "step_uncertainty_candidate_sort",
+    )?;
 
     Ok(match candidates.len() {
         0 => LinearUncertainty::Empty { unresolved },

@@ -403,7 +403,7 @@ pub(super) fn row_spans(
             starts.push((offset, id));
         }
     }
-    starts.sort_unstable();
+    ctx.sort_unstable_by(&mut starts, Ord::cmp, |_| 0, "creo feature row starts sort")?;
     // One stream can expose the same feature identifier under conflicting
     // schema classes, but one identifier/class pair is one row.
     let mut seen_ids = BTreeSet::new();

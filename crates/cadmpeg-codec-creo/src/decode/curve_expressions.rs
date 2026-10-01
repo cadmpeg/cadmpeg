@@ -670,7 +670,12 @@ fn curve_expression_properties(
             cyclic_dependencies.push(name.as_str());
         }
     }
-    cyclic_dependencies.sort_unstable();
+    ctx.sort_unstable_by(
+        &mut cyclic_dependencies,
+        Ord::cmp,
+        |item| item.len(),
+        "creo curve-expression cyclic dependency name sort",
+    )?;
     cyclic_dependencies.dedup();
     if !cyclic_dependencies.is_empty() {
         let value = join_cyclic_dependency_names(ctx, &cyclic_dependencies)?;

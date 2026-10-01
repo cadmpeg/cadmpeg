@@ -488,23 +488,13 @@ impl<'a> Cursor<'a> {
                 "Inventor PmDc {field} exceeds 1048576 code units"
             )));
         }
-        let len = units.checked_mul(2).ok_or_else(|| {
-            CodecError::malformed(format_args!("Inventor PmDc {field} length overflows"))
-        })?;
-        let utf8_bytes = crate::reader::utf16_utf8_len(self.source, units).ok_or_else(|| {
-            CodecError::malformed(format_args!("Inventor PmDc {field} is not UTF-16"))
-        })?;
-        let _units = ctx.reserve_scoped(
-            cadmpeg_core::decode::u64_from_index(len),
-            "decode Inventor PmDc UTF-16 units",
-        )?;
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(utf8_bytes),
+        crate::reader::utf16_text(
+            ctx,
+            &mut self.source,
+            units,
+            "PmDc text",
             "retain Inventor PmDc string",
-        )?;
-        self.source.utf16_le(units).ok_or_else(|| {
-            CodecError::malformed(format_args!("Inventor PmDc {field} is not UTF-16"))
-        })
+        )
     }
 
     pub(crate) fn reference(&mut self, field: &'static str) -> Result<PmDcReference, CodecError> {
@@ -886,19 +876,19 @@ mod tests {
     }
 
     #[test]
-    fn pmdc_utf16_refuses_materialized_limit_before_code_units() {
+    fn pmdc_utf16_needs_no_materialized_code_units() {
         let bytes = [1_u8, 0, 0, 0, b'A', 0];
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        policy.limits.max_materialized_bytes = 1;
+        policy.limits.max_materialized_bytes = 0;
         let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)
             .expect("PmDc string fits input cap");
-        assert!(matches!(
-            Cursor::new(root).utf16(&ctx, "name"),
-            Err(CodecError::ResourceLimit(limit))
-                if limit.dimension == ResourceDimension::MaterializedBytes
-                    && limit.operation == "decode Inventor PmDc UTF-16 units"
-        ));
+        assert_eq!(
+            Cursor::new(root)
+                .utf16(&ctx, "name")
+                .expect("direct UTF-16 decode needs no temporary storage"),
+            "A"
+        );
     }
 
     #[test]

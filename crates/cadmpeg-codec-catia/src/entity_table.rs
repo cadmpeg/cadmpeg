@@ -1361,13 +1361,12 @@ fn unique_monotone_run(
             "collect CATIA 7C05 ordered predecessors",
         )?;
         ordered_predecessors.extend(previous.iter().enumerate());
-        let sort_units = previous_count
-            .checked_mul(u64::from(previous_count.ilog2()) + 1)
-            .ok_or_else(|| {
-                ctx.refuse_codec_limit("sort CATIA 7C05 predecessor states", u64::MAX, u64::MAX)
-            })?;
-        ctx.charge_work(sort_units, "sort CATIA 7C05 predecessor states")?;
-        ordered_predecessors.sort_by_key(|(_, state)| state.identity.entity_id);
+        ctx.stable_sort_by(
+            &mut ordered_predecessors,
+            |(_, left), (_, right)| left.identity.entity_id.cmp(&right.identity.entity_id),
+            |_| 0,
+            "sort CATIA 7C05 predecessor states",
+        )?;
         let mut cumulative = Vec::new();
         ctx.reserve_vec(
             &mut cumulative,

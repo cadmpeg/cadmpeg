@@ -325,14 +325,23 @@ fn exact_assembly_operand_path(
                 }
                 let mut position = after_tag + 18;
                 let (occurrence, after_occurrence) =
-                    fixed_relaxed_guid_text(bytes.get(..end)?, position)?;
+                    match fixed_relaxed_guid_text(ctx, bytes.get(..end)?, position) {
+                        Ok(Some(value)) => value,
+                        Ok(None) => return None,
+                        Err(error) => return Some(Err(error)),
+                    };
                 occurrence_guids.push(crate::records::identity::Located {
                     value: occurrence,
                     offset: u64::try_from(position + 4).ok()?,
                 });
                 position = after_occurrence;
                 for _ in 0..2 {
-                    let (guid, after_guid) = fixed_relaxed_guid_text(bytes.get(..end)?, position)?;
+                    let (guid, after_guid) =
+                        match fixed_relaxed_guid_text(ctx, bytes.get(..end)?, position) {
+                            Ok(Some(value)) => value,
+                            Ok(None) => return None,
+                            Err(error) => return Some(Err(error)),
+                        };
                     identity_guids.push(crate::records::identity::Located {
                         value: guid,
                         offset: u64::try_from(position + 4).ok()?,
@@ -344,7 +353,12 @@ fn exact_assembly_operand_path(
                 }
                 position += 8;
                 for _ in 0..2 {
-                    let (guid, after_guid) = fixed_relaxed_guid_text(bytes.get(..end)?, position)?;
+                    let (guid, after_guid) =
+                        match fixed_relaxed_guid_text(ctx, bytes.get(..end)?, position) {
+                            Ok(Some(value)) => value,
+                            Ok(None) => return None,
+                            Err(error) => return Some(Err(error)),
+                        };
                     identity_guids.push(crate::records::identity::Located {
                         value: guid,
                         offset: u64::try_from(position + 4).ok()?,
@@ -376,7 +390,11 @@ fn exact_assembly_operand_path(
                 let mut position = after_tag + 18;
                 for _ in 0..count {
                     let (guid, after_guid) =
-                        fixed_relaxed_guid_text(bytes.get(..limit)?, position)?;
+                        match fixed_relaxed_guid_text(ctx, bytes.get(..limit)?, position) {
+                            Ok(Some(value)) => value,
+                            Ok(None) => return None,
+                            Err(error) => return Some(Err(error)),
+                        };
                     occurrence_guids.push(crate::records::identity::Located {
                         value: guid,
                         offset: u64::try_from(position + 4).ok()?,
@@ -390,7 +408,11 @@ fn exact_assembly_operand_path(
                 } else {
                     for _ in 0..2 {
                         let (guid, after_guid) =
-                            fixed_relaxed_guid_text(bytes.get(..limit)?, position)?;
+                            match fixed_relaxed_guid_text(ctx, bytes.get(..limit)?, position) {
+                                Ok(Some(value)) => value,
+                                Ok(None) => return None,
+                                Err(error) => return Some(Err(error)),
+                            };
                         identity_guids.push(crate::records::identity::Located {
                             value: guid,
                             offset: u64::try_from(position + 4).ok()?,
@@ -403,7 +425,11 @@ fn exact_assembly_operand_path(
                     position += 8;
                     for _ in 0..2 {
                         let (guid, after_guid) =
-                            fixed_relaxed_guid_text(bytes.get(..limit)?, position)?;
+                            match fixed_relaxed_guid_text(ctx, bytes.get(..limit)?, position) {
+                                Ok(Some(value)) => value,
+                                Ok(None) => return None,
+                                Err(error) => return Some(Err(error)),
+                            };
                         identity_guids.push(crate::records::identity::Located {
                             value: guid,
                             offset: u64::try_from(position + 4).ok()?,

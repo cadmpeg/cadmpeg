@@ -2403,16 +2403,29 @@ fn build_profiles(
             profiles.push(loop_uses);
         }
     }
-    profiles.sort_unstable_by_key(|profile| {
-        let first = profile
-            .iter()
-            .filter_map(|entity| source_positions.get(entity.entity.as_str()))
-            .copied()
-            .min();
-        // A profile whose entities state no source position sorts after every
-        // profile that states one.
-        (first.is_none(), first)
-    });
+    ctx.sort_unstable_by(
+        &mut profiles,
+        |left, right| {
+            let key = |profile: &Vec<SketchEntityUse>| {
+                let first = profile
+                    .iter()
+                    .filter_map(|entity| source_positions.get(entity.entity.as_str()))
+                    .copied()
+                    .min();
+                // A profile whose entities state no source position sorts after every
+                // profile that states one.
+                (first.is_none(), first)
+            };
+            key(left).cmp(&key(right))
+        },
+        |profile| {
+            profile
+                .iter()
+                .map(|entity| entity.entity.as_str().len())
+                .sum::<usize>()
+        },
+        "Inventor line profiles sort",
+    )?;
     Ok(profiles)
 }
 

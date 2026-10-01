@@ -698,7 +698,12 @@ fn feature_ordinals<'a>(
         object_by_feature.insert(feature_id(ctx, object)?, object.id.as_str());
         source_ordinals.push(cadmpeg_core::decode::u64_from_index(object.order));
     }
-    source_ordinals.sort_unstable();
+    ctx.sort_unstable_by(
+        &mut source_ordinals,
+        Ord::cmp,
+        |_| 0,
+        "fcstd design source ordinals sort",
+    )?;
     let mut emitted = BTreeSet::new();
     let mut ordinals = HashMap::new();
     let mut cycle_affected = BTreeSet::new();
@@ -3151,7 +3156,7 @@ fn bind_parameter_dependencies(
         ordinals.push(parameter.ordinal);
     }
     for ordinals in owner_ordinals.values_mut() {
-        ordinals.sort_unstable();
+        ctx.sort_unstable_by(ordinals, Ord::cmp, |_| 0, "fcstd owner ordinals sort")?;
     }
     let parameter_cycle_features = order_parameters_by_dependencies(ctx, parameters)?;
     for parameter in parameters.iter_mut() {
@@ -4271,10 +4276,12 @@ impl EndpointIndex {
             }
         }
         for bucket in by_scale.values_mut() {
-            let sorting_work = cadmpeg_core::decode::u64_from_index(bucket.len())
-                * (u64::from(bucket.len().max(2).ilog2()) + 1);
-            ctx.charge_work(sorting_work, "FCStd profile index sort")?;
-            bucket.sort_by(|left, right| left.point.u.total_cmp(&right.point.u));
+            ctx.stable_sort_by(
+                bucket,
+                |left, right| left.point.u.total_cmp(&right.point.u),
+                |_| 0,
+                "FCStd profile index sort",
+            )?;
         }
         Ok(Self { by_scale })
     }
@@ -4342,12 +4349,7 @@ fn endpoint_candidates(
             }
         }
     }
-    ctx.charge_work(
-        u64::from(matches.len().max(2).ilog2())
-            * cadmpeg_core::decode::u64_from_index(matches.len()),
-        "FCStd profile candidate order",
-    )?;
-    matches.sort_unstable();
+    ctx.sort_unstable_by(&mut matches, Ord::cmp, |_| 0, "FCStd profile candidate order")?;
     Ok(matches)
 }
 
@@ -8927,7 +8929,12 @@ pub(crate) fn census(
             post_processed,
         });
     }
-    census.sort_by(|left, right| left.id.cmp(&right.id));
+    ctx.stable_sort_by(
+        &mut census,
+        |left, right| left.id.cmp(&right.id),
+        |item| item.id.len(),
+        "FreeCAD design census sort",
+    )?;
     Ok(census)
 }
 

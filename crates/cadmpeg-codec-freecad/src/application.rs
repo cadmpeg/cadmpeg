@@ -30,7 +30,12 @@ pub(crate) fn matches_native(
     entries: &[EntryRecord],
 ) -> Result<bool, NativeConvertError> {
     let mut expected = wire_records(ctx, objects, properties, entries)?;
-    expected.sort_by(|left, right| left.id.cmp(&right.id));
+    ctx.stable_sort_by(
+        &mut expected,
+        |left, right| left.id.cmp(&right.id),
+        |record| record.id.len(),
+        "FreeCAD application records sort",
+    )?;
     let mut actual = namespace.arena_iter_as::<serde_json::Value>("applications");
     for record in expected {
         let Some(actual) = actual.next() else {
@@ -118,7 +123,14 @@ fn wire_records<'a>(
     let mut records = ctx.collection_vec(objects.len(), "FreeCAD application records")?;
     for object in objects {
         let mut owned = by_owner.remove(object.id.as_str()).unwrap_or_default();
-        owned.sort_by_key(|property| (property.xml.start(), property.xml.end()));
+        ctx.stable_sort_by(
+            &mut owned,
+            |left, right| {
+                (left.xml.start(), left.xml.end()).cmp(&(right.xml.start(), right.xml.end()))
+            },
+            |_| 0,
+            "FreeCAD application owner properties sort",
+        )?;
         let data = object
             .data
             .as_ref()

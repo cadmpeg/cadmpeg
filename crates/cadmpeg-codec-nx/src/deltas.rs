@@ -533,13 +533,12 @@ fn term_use_numeric_tails(
             .chain(census.tombstones.iter().map(|tombstone| tombstone.offset))
             .chain(census.body_revisions.iter().map(|revision| revision.offset)),
     );
-    let sort_work = u64_from_index(count)
-        .checked_mul(u64::from(usize::BITS - count.leading_zeros()))
-        .ok_or_else(|| {
-            ctx.refuse_codec_limit("NX deltas event start sort", 0, u64_from_index(count))
-        })?;
-    ctx.charge_work(sort_work, "sort NX deltas event starts")?;
-    event_starts.sort_unstable();
+    ctx.sort_unstable_by(
+        &mut event_starts,
+        Ord::cmp,
+        |_| 0,
+        "sort NX deltas event starts",
+    )?;
     event_starts.dedup();
 
     let mut tails = Vec::new();
@@ -1692,13 +1691,6 @@ fn merged_event_spans(
     let _covered_reservation =
         ctx.reserve_scoped(u64_from_index(scratch_bytes), "NX deltas event spans")?;
     ctx.charge_collection_items(u64_from_index(count), "NX deltas event spans")?;
-    let sort_width = usize::BITS - count.leading_zeros();
-    let sort_work = u64_from_index(count)
-        .checked_mul(u64::from(sort_width))
-        .ok_or_else(|| {
-            ctx.refuse_codec_limit("NX deltas event span sort", 0, u64_from_index(count))
-        })?;
-    ctx.charge_work(sort_work, "sort NX deltas event spans")?;
     let mut covered = Vec::new();
     cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
         &mut covered,
@@ -1791,7 +1783,12 @@ fn merged_event_spans(
                 .map(|state| (state.offset, state.end)),
         );
     }
-    covered.sort_unstable();
+    ctx.sort_unstable_by(
+        &mut covered,
+        Ord::cmp,
+        |_| 0,
+        "sort NX deltas covered spans",
+    )?;
     let mut merged = Vec::<(usize, usize)>::new();
     for (start, end) in covered {
         if let Some((_, merged_end)) = merged.last_mut().filter(|(_, end)| start <= *end) {
@@ -2270,14 +2267,17 @@ fn count_unmatched_events(
 ) -> Result<BTreeMap<&'static str, usize>, CodecError> {
     let mut unmatched = BTreeMap::new();
     for ((kind, xmt), mut events) in events {
-        let count = u64_from_index(events.len());
-        let work = count
-            .checked_mul(u64::from(usize::BITS - events.len().leading_zeros()))
-            .ok_or_else(|| ctx.refuse_codec_limit("sort NX unmatched deltas events", 0, count))?;
-        ctx.charge_work(work, "sort NX unmatched deltas events")?;
-        events.sort_by_key(|event| match event {
-            MergeEvent::Full { offset } | MergeEvent::Tombstone { offset, .. } => *offset,
-        });
+        ctx.stable_sort_by(
+            &mut events,
+            |first, second| {
+                let offset = |event: &MergeEvent| match event {
+                    MergeEvent::Full { offset } | MergeEvent::Tombstone { offset, .. } => *offset,
+                };
+                offset(first).cmp(&offset(second))
+            },
+            |_| 0,
+            "sort NX unmatched deltas events",
+        )?;
         let Some(MergeEvent::Tombstone {
             offset,
             kind: tombstone_kind,

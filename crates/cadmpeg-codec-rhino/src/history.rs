@@ -10,7 +10,9 @@ use crate::chunks::{checked_count_bytes, chunk_at, ArchiveVersion, BoundedReader
 use crate::container::{OpaqueRecord, Record};
 use crate::objects::{parse_class_wrapper, parse_class_wrapper_with_userdata, UserdataDescriptor};
 use crate::polyedge::{EdgeDomains, HistoryPolyEdge, HistoryReference, PolyEdge, Segment};
-use crate::settings::{point, utf16, vector, xform, MillimeterScale, Point3, Vector3, Xform};
+use crate::settings::{
+    point, utf16_retained, vector, xform, MillimeterScale, Point3, Vector3, Xform,
+};
 use crate::wire::{uuid, Uuid};
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
@@ -631,7 +633,9 @@ fn parse_value_with_warnings(
         5 => Value::Points(array(ctx, &mut reader, 24, point)?),
         6 => Value::Vectors(array(ctx, &mut reader, 24, vector)?),
         7 => Value::Transforms(array(ctx, &mut reader, 128, xform)?),
-        8 => Value::Strings(array(ctx, &mut reader, 4, utf16)?),
+        8 => Value::Strings(array(ctx, &mut reader, 4, |reader| {
+            utf16_retained(ctx, reader, "Rhino history string")
+        })?),
         9 => Value::ObjectReferences(object_references(ctx, &mut reader, archive)?),
         10 => Value::Geometries(geometries(ctx, &mut reader, archive)?),
         11 => Value::Uuids(array(ctx, &mut reader, 16, uuid)?),

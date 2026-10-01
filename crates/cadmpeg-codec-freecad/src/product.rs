@@ -300,7 +300,12 @@ pub(crate) fn transfer_neutral(
             }
         }
     }
-    component_objects.sort_unstable();
+    ctx.sort_unstable_by(
+        &mut component_objects,
+        Ord::cmp,
+        |item| item.len(),
+        "fcstd product component name sort",
+    )?;
     component_objects.dedup();
 
     let mut properties_by_owner = HashMap::<&str, Vec<&PropertyRecord>>::new();

@@ -77,18 +77,14 @@ fn selection_objects<'history, 'lane>(
         ctx.reserve_collection_vec(&mut objects, 1, operation)?;
         objects.push((name, feature, input_index));
     }
-    let levels = if objects.len() > 1 {
-        objects.len().ilog2() + 1
-    } else {
-        1
-    };
-    ctx.charge_work(
-        u64_from_index(objects.len())
-            .checked_mul(u64::from(levels))
-            .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?,
+    ctx.sort_unstable_by(
+        &mut objects,
+        |(left_name, _, left_index), (right_name, _, right_index)| {
+            (left_name.offset, left_index).cmp(&(right_name.offset, right_index))
+        },
+        |_| 0,
         operation,
     )?;
-    objects.sort_unstable_by_key(|(name, _, input_index)| (name.offset, *input_index));
     Ok(objects)
 }
 
@@ -452,18 +448,12 @@ pub(super) fn compact_edge_selections(
         let interval = edge_selection_vectors_in_interval(ctx, &lane.native_payload, start, end)?;
         ctx.reserve_collection_vec(&mut selections, interval.len(), OPERATION)?;
         selections.extend(interval);
-        let levels = if selections.len() > 1 {
-            selections.len().ilog2() + 1
-        } else {
-            1
-        };
-        ctx.charge_work(
-            u64_from_index(selections.len())
-                .checked_mul(u64::from(levels) + 1)
-                .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?,
-            OPERATION,
+        ctx.sort_unstable_by(
+            &mut selections,
+            |left, right| left.0.cmp(&right.0),
+            |_| 0,
+            "sort SLDPRT compact edge selections",
         )?;
-        selections.sort_unstable_by_key(|selection| selection.0);
         selections.dedup_by_key(|selection| selection.0);
         let mut feature_selections = Vec::new();
         for (offset, local_edge_ids) in selections {
@@ -1031,18 +1021,12 @@ fn fillet_face_selection_candidates(
         ctx.reserve_collection_vec(&mut class_bodies, 1, OPERATION)?;
         class_bodies.push((body, token));
     }
-    let levels = if class_bodies.len() > 1 {
-        class_bodies.len().ilog2() + 1
-    } else {
-        1
-    };
-    ctx.charge_work(
-        u64_from_index(class_bodies.len())
-            .checked_mul(u64::from(levels) + 1)
-            .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?,
-        OPERATION,
+    ctx.sort_unstable_by(
+        &mut class_bodies,
+        Ord::cmp,
+        |_| 0,
+        "sort SLDPRT full round fillet class bodies",
     )?;
-    class_bodies.sort_unstable();
     class_bodies.dedup();
     let mut candidates = Vec::new();
     if let Some(scan_end) = end.checked_sub(6) {
@@ -1200,19 +1184,18 @@ fn order_surface_candidates(
 ) -> Result<(), CodecError> {
     let mut indexed = Vec::new();
     ctx.reserve_collection_vec(&mut indexed, candidates.len(), operation)?;
-    let levels = if candidates.len() > 1 {
-        candidates.len().ilog2() + 1
-    } else {
-        1
-    };
-    let work = u64_from_index(candidates.len())
-        .checked_mul(u64::from(levels) + 2)
-        .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
-    ctx.charge_work(work, operation)?;
+    ctx.charge_work(u64_from_index(candidates.len()), operation)?;
     for (index, (offset, components)) in candidates.drain(..).enumerate() {
         indexed.push((offset, components, index));
     }
-    indexed.sort_unstable_by_key(|(offset, _, index)| (*offset, *index));
+    ctx.sort_unstable_by(
+        &mut indexed,
+        |(left_offset, _, left_index), (right_offset, _, right_index)| {
+            (left_offset, left_index).cmp(&(right_offset, right_index))
+        },
+        |_| 0,
+        operation,
+    )?;
     for pair in indexed.windows(2) {
         let work = u64_from_index(pair[0].1.len())
             .checked_add(u64_from_index(pair[1].1.len()))
@@ -1535,18 +1518,12 @@ fn cosmetic_thread_cylinder_references(
             offsets.push(offset);
         }
     }
-    let levels = if offsets.len() > 1 {
-        offsets.len().ilog2() + 1
-    } else {
-        1
-    };
-    ctx.charge_work(
-        u64_from_index(offsets.len())
-            .checked_mul(u64::from(levels) + 1)
-            .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?,
-        OPERATION,
+    ctx.sort_unstable_by(
+        &mut offsets,
+        Ord::cmp,
+        |_| 0,
+        "sort SLDPRT cosmetic thread cylinder offsets",
     )?;
-    offsets.sort_unstable();
     offsets.dedup();
     let mut references = Vec::new();
     for offset in offsets {
@@ -1590,18 +1567,12 @@ fn cosmetic_thread_component_references(
         ctx.reserve_collection_vec(&mut classes, 1, OPERATION)?;
         classes.push((offset, class));
     }
-    let levels = if classes.len() > 1 {
-        classes.len().ilog2() + 1
-    } else {
-        1
-    };
-    ctx.charge_work(
-        u64_from_index(classes.len())
-            .checked_mul(u64::from(levels))
-            .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?,
-        OPERATION,
+    ctx.sort_unstable_by(
+        &mut classes,
+        |(left, _), (right, _)| left.cmp(right),
+        |_| 0,
+        "sort SLDPRT cosmetic component classes",
     )?;
-    classes.sort_unstable_by_key(|(offset, _)| *offset);
 
     let mut class_ranges = Vec::<Range<usize>>::new();
     for (index, &(class_offset, class)) in classes.iter().enumerate() {
@@ -1794,20 +1765,12 @@ pub(super) fn cosmetic_thread_cylinder_marker_reference(
         ctx.reserve_collection_vec(&mut markers, 1, OPERATION)?;
         markers.push(marker);
     }
-    let count = u64::try_from(markers.len())
-        .map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
-    let levels = if markers.len() > 1 {
-        markers.len().ilog2() + 1
-    } else {
-        1
-    };
-    ctx.charge_work(
-        count
-            .checked_mul(u64::from(levels))
-            .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?,
-        OPERATION,
+    ctx.sort_unstable_by(
+        &mut markers,
+        Ord::cmp,
+        |_| 0,
+        "sort SLDPRT cosmetic thread cylinder markers",
     )?;
-    markers.sort_unstable();
     markers.dedup();
     let mut references = Vec::new();
     ctx.reserve_collection_vec(&mut references, markers.len(), OPERATION)?;
@@ -3049,18 +3012,12 @@ pub(crate) fn generated_surface_identities(
             components,
         });
     }
-    let levels = if result.len() > 1 {
-        result.len().ilog2() + 1
-    } else {
-        1
-    };
-    ctx.charge_work(
-        u64_from_index(result.len())
-            .checked_mul(u64::from(levels))
-            .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?,
-        OPERATION,
+    ctx.sort_unstable_by(
+        &mut result,
+        |left, right| (left.offset, left.input_index).cmp(&(right.offset, right.input_index)),
+        |_| 0,
+        "sort SLDPRT generated surface identities",
     )?;
-    result.sort_unstable_by_key(|identity| (identity.offset, identity.input_index));
     let lane_key = lane
         .id
         .rsplit_once('#')
@@ -3414,18 +3371,12 @@ pub(super) fn variable_fillet_control_references(
             controls.push((marker, references));
         }
     }
-    let levels = if controls.len() > 1 {
-        controls.len().ilog2() + 1
-    } else {
-        1
-    };
-    let count = u64::try_from(controls.len())
-        .map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
-    let units = count
-        .checked_mul(u64::from(levels))
-        .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
-    ctx.charge_work(units, OPERATION)?;
-    controls.sort_unstable_by_key(|(marker, _)| *marker);
+    ctx.sort_unstable_by(
+        &mut controls,
+        |(left, _), (right, _)| left.cmp(right),
+        |_| 0,
+        "sort SLDPRT variable fillet controls",
+    )?;
     let mut result = Vec::new();
     let mut start = control_start;
     for (marker, references) in controls {

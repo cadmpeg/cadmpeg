@@ -400,13 +400,6 @@ pub(super) fn dimensioned_circle_transform(
         .map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
     let signature =
         |transform: MarkerTransform| -> Result<Option<Vec<_>>, cadmpeg_core::CodecError> {
-            let sort_depth = u64::from(circles.len().checked_ilog2().unwrap_or(0)) + 1;
-            let work = count
-                .checked_add(1)
-                .and_then(|count| count.checked_mul(sort_depth))
-                .and_then(|work| work.checked_mul(32))
-                .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
-            ctx.charge_work(work, OPERATION)?;
             let mut transformed = Vec::new();
             ctx.reserve_collection_vec(&mut transformed, circles.len(), OPERATION)?;
             for (center, radius) in circles {
@@ -415,7 +408,7 @@ pub(super) fn dimensioned_circle_transform(
                 };
                 transformed.push((center.0, center.1, *radius));
             }
-            transformed.sort_unstable();
+            ctx.sort_unstable_by(&mut transformed, Ord::cmp, |_| 0, OPERATION)?;
             Ok(
                 (transformed.len() == circles.len() && !transformed.is_empty())
                     .then_some(transformed),
@@ -1284,28 +1277,12 @@ pub(super) fn sort_marker_entity_ids(
     entities: &mut Vec<SketchEntityId>,
     operation: &'static str,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    let count = cadmpeg_core::decode::u64_from_index(entities.len());
-    ctx.charge_work(count, operation)?;
-    let max_bytes = entities
-        .iter()
-        .map(|entity| entity.as_str().len())
-        .max()
-        .unwrap_or(0);
-    let levels = u64::from(u64::BITS - count.leading_zeros()) + 1;
-    ctx.charge_work(
-        count
-            .checked_mul(levels)
-            .and_then(|work| work.checked_mul(64))
-            .and_then(|work| {
-                cadmpeg_core::decode::u64_from_index(max_bytes)
-                    .checked_mul(2)
-                    .and_then(|bytes| bytes.checked_add(1))
-                    .and_then(|bytes| work.checked_mul(bytes))
-            })
-            .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?,
+    ctx.sort_unstable_by(
+        entities,
+        Ord::cmp,
+        |entity| entity.as_str().len(),
         operation,
     )?;
-    entities.sort_unstable();
     entities.dedup();
     Ok(())
 }

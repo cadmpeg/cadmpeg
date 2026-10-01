@@ -462,7 +462,7 @@ fn parse_xml_userdata<'ctx>(
     let (xml, reservation) = match xml_version {
         1 => {
             let bytes = settings::utf16_payload(&mut reader)?;
-            ctx.copy_scoped_xml_utf16le(bytes, "Rhino mesh modifier XML text")
+            ctx.utf16le_scoped_text(bytes, bytes.len() / 2, false, "Rhino mesh modifier XML text")
                 .map_err(|error| {
                     if matches!(error, cadmpeg_core::CodecError::ResourceLimit(_)) {
                         error.into()

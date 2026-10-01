@@ -706,7 +706,9 @@ fn sketch_arrangement_faces_declines_when_session_work_budget_is_exhausted() {
     let (sketch, entities, _, _) = coincident_circle_arc_arrangement();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
-    policy.limits.max_work_units = 1;
+    // The arrangement's charged sorts draw from the session allowance, so it must cover
+    // them for the walk, not a sort, to exhaust it.
+    policy.limits.max_work_units = 1930;
     let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
         .expect("root context for session work budget");
     let budget = ctx.work_budget(u64_from_index(MAX_ARRANGEMENT_WALK_WORK));

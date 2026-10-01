@@ -111,7 +111,12 @@ fn agreed_dimension_records<'a>(
 
     let mut representatives = Vec::new();
     for mut group in groups.into_values() {
-        group.sort_unstable_by(|left, right| left.id.cmp(&right.id));
+        ctx.sort_unstable_by(
+            &mut group,
+            |left, right| left.id.cmp(&right.id),
+            |record| record.id.len(),
+            "sort SLDPRT PMI dimension group",
+        )?;
         let Some(&canonical) = group.first() else {
             continue;
         };
@@ -128,7 +133,12 @@ fn agreed_dimension_records<'a>(
             representatives.push(canonical);
         }
     }
-    representatives.sort_unstable_by(|left, right| left.id.cmp(&right.id));
+    ctx.sort_unstable_by(
+        &mut representatives,
+        |left, right| left.id.cmp(&right.id),
+        |record| record.id.len(),
+        "sort SLDPRT PMI agreed dimensions",
+    )?;
     Ok(representatives)
 }
 

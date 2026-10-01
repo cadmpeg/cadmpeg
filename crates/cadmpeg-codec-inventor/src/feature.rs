@@ -1276,7 +1276,12 @@ pub(crate) fn project(
         .filter_map(|(ordinal, count)| (count > 1).then_some(ordinal))
         .collect::<HashSet<_>>();
     projected.retain(|(feature, _)| !duplicate_ordinals.contains(&feature.ordinal));
-    projected.sort_unstable_by_key(|(feature, _)| feature.ordinal);
+    ctx.sort_unstable_by(
+        &mut projected,
+        |(left, _), (right, _)| left.ordinal.cmp(&right.ordinal),
+        |_| 0,
+        "Inventor projected features sort",
+    )?;
     ctx.charge_collection_items(
         cadmpeg_core::decode::u64_from_index(projected.len()),
         "collect Inventor projected features",

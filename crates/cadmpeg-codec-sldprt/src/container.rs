@@ -1418,25 +1418,8 @@ pub(crate) fn xml_text_charged<'ctx>(
     let bytes = bytes.strip_prefix(&[0x86]).unwrap_or(bytes);
     if bytes.starts_with(&[0xff, 0xfe]) {
         let utf16 = &bytes[2..];
-        let chars = || {
-            char::decode_utf16(
-                (0..utf16.len() / 2).filter_map(|index| View::u16_le_at(utf16, index * 2)),
-            )
-            .map(|result| match result {
-                Ok(value) => value,
-                Err(_) => char::REPLACEMENT_CHARACTER,
-            })
-        };
-        let length = chars().try_fold(0usize, |length, value| {
-            length
-                .checked_add(value.len_utf8())
-                .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))
-        })?;
-        let (mut text, scope) =
-            crate::text_admission::reserve_scoped_string(ctx, length, operation)?;
-        for value in chars() {
-            text.push(value);
-        }
+        let (text, scope) =
+            ctx.utf16le_lossy_scoped_text(utf16, utf16.len() / 2, false, operation)?;
         Ok(Some(EnvelopeText {
             text,
             _scope: Some(scope),

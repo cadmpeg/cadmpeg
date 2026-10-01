@@ -2320,27 +2320,6 @@ fn parse_jt_element_sequence<'a>(
     }
 }
 
-fn utf16_utf8_len(bytes: &[u8]) -> Option<usize> {
-    let mut view = View::over_retained(bytes);
-    let mut byte_len = 0usize;
-    while !view.is_empty() {
-        let first = view.u16_le()?;
-        let scalar = if (0xd800..=0xdbff).contains(&first) {
-            let second = view.u16_le()?;
-            if !(0xdc00..=0xdfff).contains(&second) {
-                return None;
-            }
-            0x10000 + ((u32::from(first) - 0xd800) << 10) + (u32::from(second) - 0xdc00)
-        } else if (0xdc00..=0xdfff).contains(&first) {
-            return None;
-        } else {
-            u32::from(first)
-        };
-        byte_len = byte_len.checked_add(char::from_u32(scalar)?.len_utf8())?;
-    }
-    Some(byte_len)
-}
-
 fn parse_jt_string_property_atom_body(
     ctx: &DecodeContext<'_>,
     body: &[u8],
@@ -2362,33 +2341,14 @@ fn parse_jt_string_property_atom_body(
     if view.remaining() != unit_bytes {
         return Ok(None);
     }
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(count),
-        "decode DisplayJT string code units",
-    )?;
     let Some(raw) = body.get(view.position()..) else {
         return Ok(None);
     };
-    let Some(utf8_len) = utf16_utf8_len(raw) else {
-        return Ok(None);
-    };
-    ctx.charge_collection_items(
-        cadmpeg_core::decode::u64_from_index(count),
-        "decode DisplayJT string code units",
-    )?;
-    ctx.charge_retained(
-        cadmpeg_core::decode::u64_from_index(utf8_len),
-        "retain DisplayJT string property",
-    )?;
-    let _units_reservation = ctx.reserve_scoped(
-        cadmpeg_core::decode::u64_from_index(unit_bytes),
-        "decode DisplayJT string code units",
-    )?;
-    let value = view.utf16_le(count);
-    let Some(value) = value else {
-        return Ok(None);
-    };
-    Ok(Some(value))
+    match ctx.utf16le_text(raw, count, false, "retain DisplayJT string property") {
+        Ok(value) => Ok(Some(value)),
+        Err(CodecError::Malformed(_)) => Ok(None),
+        Err(error) => Err(error),
+    }
 }
 
 fn parse_jt9_tri_strip_lod_header(body: &[u8]) -> Option<(u64, u16, u32, u16, &[u8])> {
@@ -2611,40 +2571,6 @@ fn admit_jt_group_body<'a, 'ctx>(
     Ok(Some((family, base_reservation)))
 }
 
-fn admit_jt_partition_name<'a>(
-    ctx: &'a DecodeContext<'_>,
-    family: &[u8],
-) -> Result<JtOptionalReservation<'a>, CodecError> {
-    let Some(count) = View::u32_le_at(family, 4) else {
-        return Ok(JtOptionalReservation::Invalid);
-    };
-    let Some(byte_len) = usize::try_from(count)
-        .ok()
-        .and_then(|count| count.checked_mul(2))
-    else {
-        return Ok(JtOptionalReservation::Invalid);
-    };
-    let Some(end) = 8usize.checked_add(byte_len) else {
-        return Ok(JtOptionalReservation::Invalid);
-    };
-    let Some(raw) = family.get(8..end) else {
-        return Ok(JtOptionalReservation::Invalid);
-    };
-    let Some(utf8_len) = utf16_utf8_len(raw) else {
-        return Ok(JtOptionalReservation::Invalid);
-    };
-    ctx.charge_work(u64::from(count), "decode DisplayJT partition name")?;
-    ctx.charge_collection_items(u64::from(count), "decode DisplayJT partition name")?;
-    ctx.charge_retained(
-        u64::try_from(utf8_len)
-            .map_err(|_| ctx.refuse_codec_limit("retain DisplayJT partition name", 0, u64::MAX))?,
-        "retain DisplayJT partition name",
-    )?;
-    let reservation =
-        ctx.reserve_scoped(u64::from(count) * 2, "decode DisplayJT partition name")?;
-    Ok(JtOptionalReservation::Admitted(reservation))
-}
-
 fn jt_f32_vector_tail(bytes: &[u8]) -> Option<(&[u8], u64)> {
     let count = View::u32_le_at(bytes, 0)?;
     let byte_len = usize::try_from(count).ok()?.checked_mul(4)?;
@@ -2816,70 +2742,92 @@ fn parse_jt9_group_node_body(body: &[u8]) -> Option<(u16, Vec<u32>, &[u8])> {
     parse_jt9_group_data(family)
 }
 
-fn parse_jt9_partition_node_body(body: &[u8]) -> Option<ParsedJtPartitionNode> {
-    let (_, _, _, family) = parse_jt_base_node_body(body, 9)?;
-    let (group_version, child_object_ids, family) = parse_jt9_group_data(family)?;
-    let mut view = View::over_retained(family);
-    let partition_flags = view.u32_le()?;
-    if partition_flags & !1 != 0 {
-        return None;
-    }
-    let name_count = usize::try_from(view.u32_le()?).ok()?;
-    let file_name = view.utf16_le(name_count)?;
-    if file_name.is_empty() || file_name.chars().any(char::is_control) {
-        return None;
-    }
-    let name_end = view.position();
-    let f32_at = |offset: usize| FiniteBinary32::new(View::f32_le_at(family, offset)?);
-    let bounds_at = |offset: usize| {
-        let bounds = [
-            [f32_at(offset)?, f32_at(offset + 4)?, f32_at(offset + 8)?],
-            [
-                f32_at(offset + 12)?,
-                f32_at(offset + 16)?,
-                f32_at(offset + 20)?,
-            ],
-        ];
-        JtBounds::from_finite(bounds)
-    };
-    let first_bounds = bounds_at(name_end)?;
-    let mut cursor = name_end.checked_add(24)?;
-    let transformed_bounds = if partition_flags & 1 == 0 {
-        let transformed = bounds_at(cursor)?;
+fn parse_jt9_partition_node_body(
+    ctx: &DecodeContext<'_>,
+    body: &[u8],
+) -> Result<Option<ParsedJtPartitionNode>, CodecError> {
+    let parsed = (|| {
+        let (_, _, _, family) = parse_jt_base_node_body(body, 9)?;
+        let (group_version, child_object_ids, family) = parse_jt9_group_data(family)?;
+        let mut view = View::over_retained(family);
+        let partition_flags = view.u32_le()?;
+        if partition_flags & !1 != 0 {
+            return None;
+        }
+        let name_count = usize::try_from(view.u32_le()?).ok()?;
+        let name_bytes = view.take(name_count.checked_mul(2)?)?;
+        let file_name = match ctx.utf16le_text(
+            name_bytes,
+            name_count,
+            false,
+            "retain DisplayJT partition name",
+        ) {
+            Ok(value) => value,
+            Err(CodecError::Malformed(_)) => return None,
+            Err(error) => return Some(Err(error)),
+        };
+        if let Err(error) = ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(file_name.len()),
+            "validate DisplayJT partition name",
+        ) {
+            return Some(Err(error));
+        }
+        if file_name.is_empty() || file_name.chars().any(char::is_control) {
+            return None;
+        }
+        let name_end = view.position();
+        let f32_at = |offset: usize| FiniteBinary32::new(View::f32_le_at(family, offset)?);
+        let bounds_at = |offset: usize| {
+            let bounds = [
+                [f32_at(offset)?, f32_at(offset + 4)?, f32_at(offset + 8)?],
+                [
+                    f32_at(offset + 12)?,
+                    f32_at(offset + 16)?,
+                    f32_at(offset + 20)?,
+                ],
+            ];
+            JtBounds::from_finite(bounds)
+        };
+        let first_bounds = bounds_at(name_end)?;
+        let mut cursor = name_end.checked_add(24)?;
+        let transformed_bounds = if partition_flags & 1 == 0 {
+            let transformed = bounds_at(cursor)?;
+            cursor = cursor.checked_add(24)?;
+            transformed
+        } else {
+            first_bounds
+        };
+        let area = JtArea::new(View::f32_le_at(family, cursor)?)?;
+        cursor = cursor.checked_add(4)?;
+        let count_range = |offset: usize| {
+            let minimum = View::i32_le_at(family, offset)?;
+            let maximum = View::i32_le_at(family, offset.checked_add(4)?)?;
+            (minimum >= 0 && (maximum == -1 || maximum >= minimum)).then_some([minimum, maximum])
+        };
+        let vertex_count_range = count_range(cursor)?;
+        let node_count_range = count_range(cursor + 8)?;
+        let polygon_count_range = count_range(cursor + 16)?;
         cursor = cursor.checked_add(24)?;
-        transformed
-    } else {
-        first_bounds
-    };
-    let area = JtArea::new(View::f32_le_at(family, cursor)?)?;
-    cursor = cursor.checked_add(4)?;
-    let count_range = |offset: usize| {
-        let minimum = View::i32_le_at(family, offset)?;
-        let maximum = View::i32_le_at(family, offset.checked_add(4)?)?;
-        (minimum >= 0 && (maximum == -1 || maximum >= minimum)).then_some([minimum, maximum])
-    };
-    let vertex_count_range = count_range(cursor)?;
-    let node_count_range = count_range(cursor + 8)?;
-    let polygon_count_range = count_range(cursor + 16)?;
-    cursor = cursor.checked_add(24)?;
-    let bounds = if partition_flags & 1 != 0 {
-        let bounds = bounds_at(cursor)?;
-        cursor = cursor.checked_add(24)?;
-        DisplayJtPartitionBounds::Untransformed(bounds)
-    } else {
-        DisplayJtPartitionBounds::Reserved(first_bounds)
-    };
-    (cursor == family.len()).then_some(ParsedJtPartitionNode {
-        group_version,
-        child_object_ids,
-        file_name,
-        transformed_bounds,
-        area,
-        vertex_count_range,
-        node_count_range,
-        polygon_count_range,
-        bounds,
-    })
+        let bounds = if partition_flags & 1 != 0 {
+            let bounds = bounds_at(cursor)?;
+            cursor = cursor.checked_add(24)?;
+            DisplayJtPartitionBounds::Untransformed(bounds)
+        } else {
+            DisplayJtPartitionBounds::Reserved(first_bounds)
+        };
+        (cursor == family.len()).then_some(Ok(ParsedJtPartitionNode {
+            group_version,
+            child_object_ids,
+            file_name,
+            transformed_bounds,
+            area,
+            vertex_count_range,
+            node_count_range,
+            polygon_count_range,
+            bounds,
+        }))
+    })();
+    parsed.transpose()
 }
 
 struct ParsedJtRangeLodNode {
@@ -5589,15 +5537,10 @@ pub(super) fn display_jt_partition_nodes(
                 continue;
             }
             let ctx = budget.0;
-            let Some((family, _base_reservation)) = admit_jt_group_body(ctx, element.body)? else {
+            let Some((_family, _base_reservation)) = admit_jt_group_body(ctx, element.body)? else {
                 return Ok(Vec::new());
             };
-            let JtOptionalReservation::Admitted(_name_reservation) =
-                admit_jt_partition_name(ctx, family)?
-            else {
-                return Ok(Vec::new());
-            };
-            let Some(node) = parse_jt9_partition_node_body(element.body) else {
+            let Some(node) = parse_jt9_partition_node_body(ctx, element.body)? else {
                 return Ok(Vec::new());
             };
             budget.0.reserve_record_vec(
