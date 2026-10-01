@@ -107,7 +107,7 @@ fn entity_header_native_retained_limit_refuses_before_record_clone() {
 
 fn segment(base_fields: &str) -> SegmentType {
     let wire = format!(
-        r#"{{"id":"f3d:native:design-type#0","byte_offset":0,"type_guid":"11111111-2222-3333-4444-555555555555","type_guid_offset":4{base_fields},"version":1,"version_offset":80,"module":"Fusion","entity_ids":[10,11],"entity_id_offsets":[90,98]}}"#
+        r#"{{"id":"f3d:native/MetaStream.dat:design-type#0","byte_offset":0,"type_guid":"11111111-2222-3333-4444-555555555555","type_guid_offset":4{base_fields},"version":1,"version_offset":80,"module":"Fusion","entity_ids":[10,11],"entity_id_offsets":[90,98]}}"#
     );
     serde_json::from_str(&wire).unwrap()
 }
@@ -163,4 +163,17 @@ fn segment_type_native_retained_limit_refuses_before_record_clone() {
         serde_json::to_value(&namespace.arenas()[arena_name][0]).unwrap(),
         serde_json::to_value(&entry).unwrap()
     );
+}
+
+#[test]
+fn segment_type_rejects_unbound_native_identity() {
+    let valid = segment("");
+    for id in ["", "f3d:native/MetaStream.dat:design-type#1", "f3d:native/MetaStream.dat:other#0", "f3d:native/BulkStream.dat:design-type#0"] {
+        let mut wire = SegmentTypeWire::from(valid.clone());
+        wire.id = id.into();
+        assert!(SegmentType::try_from(wire).is_err());
+        let mut wire = serde_json::to_value(&valid).unwrap();
+        wire["id"] = serde_json::json!(id);
+        assert!(serde_json::from_value::<SegmentType>(wire).is_err());
+    }
 }

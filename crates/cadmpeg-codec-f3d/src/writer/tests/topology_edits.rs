@@ -77,8 +77,8 @@ fn body_key_edit_does_not_rewrite_ordinal_design_selector() {
         });
     baseline
         .body_visibilities
-        .push(crate::records::bodies::BodyVisibility {
-            id: "f3d:design:body-visibility#1".into(),
+        .push(crate::records::bodies::BodyVisibility::try_from(crate::records::bodies::BodyVisibilityWire {
+            id: "f3d:design:body-visibility#0".into(),
             body,
             stream: "Design1/BulkStream.dat".into(),
             byte_offset: 20,
@@ -86,7 +86,7 @@ fn body_key_edit_does_not_rewrite_ordinal_design_selector() {
             asm_body_key: 0,
             entity_suffix: 1,
             visible: true,
-        });
+        }).unwrap());
     let mut target = baseline.clone();
     target.body_native_keys[0].asm_body_key = Some(500);
 

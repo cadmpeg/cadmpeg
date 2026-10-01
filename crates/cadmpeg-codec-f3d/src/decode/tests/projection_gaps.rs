@@ -95,7 +95,7 @@ fn design_projection_gaps_count_unresolved_body_map_pairs() {
     let mut native = F3dNative::default();
     native.design_body_bindings.push(
         DesignBodyBinding::try_from(crate::records::bodies::DesignBodyBindingWire {
-            id: "f3d:design:body-binding#0".into(),
+            id: "f3d:Design/BulkStream.dat:design-body-binding#0".into(),
             stream: "Design/BulkStream.dat".into(),
             pair_count: 1,
             pair_ordinal: 0,

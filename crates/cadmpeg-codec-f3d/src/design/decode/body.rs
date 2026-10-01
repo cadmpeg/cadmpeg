@@ -92,12 +92,15 @@ pub(crate) fn decode_body_members(
                 u64_from_index(cursor),
                 "f3d body member identifier",
             )?;
-            decoded.push(DesignBodyMember {
+            ctx.charge_work(u64_from_index(id.len()).checked_mul(8)
+                .ok_or_else(|| ctx.refuse_codec_limit("admit F3D body member identity", 0, u64::MAX))?,
+                "admit F3D body member identity")?;
+            decoded.push(DesignBodyMember::try_from(crate::records::bodies::DesignBodyMemberWire {
                 id,
                 byte_offset: u64_from_index(cursor),
                 entity_suffix,
                 flags,
-            });
+            }).map_err(CodecError::Malformed)?);
         }
         if decoded.len() == count && bytes.get(view.position()) == Some(&0) {
             ctx.reserve_vec(&mut out, decoded.len(), "f3d decoded body members")?;
@@ -217,14 +220,15 @@ pub(crate) fn decode_body_bounds(
                 CodecError::Malformed("scene bounds maximum and minimum must be finite".into())
             })
         };
+        let id = design_record_id_charged(
+            ctx, &entry.name, ":design-body-bounds#", entity.byte_offset,
+            "f3d body record identifier",
+        )?;
+        ctx.charge_work(u64_from_index(id.len()).checked_mul(8)
+            .ok_or_else(|| ctx.refuse_codec_limit("admit F3D body bounds identity", 0, u64::MAX))?,
+            "admit F3D body bounds identity")?;
         let record = DesignBodyBounds::from_parts(crate::records::bodies::DesignBodyBoundsWire {
-            id: design_record_id_charged(
-                ctx,
-                &entry.name,
-                ":design-body-bounds#",
-                entity.byte_offset,
-                "f3d body record identifier",
-            )?,
+            id,
             entity_suffix: entity.entity_id.suffix(),
             entity_byte_offset: entity.byte_offset,
             record_indices,
@@ -245,8 +249,8 @@ pub(crate) fn decode_body_bounds(
     }
     ctx.stable_sort_by(
         &mut out[..],
-        |a, b| a.id.cmp(&b.id),
-        |value| value.id.as_str().len(),
+        |a, b| a.id().cmp(b.id()),
+        |value| value.id().len(),
         "sort f3d design body 1",
     )?;
     Ok(out)
@@ -1236,15 +1240,17 @@ pub(crate) fn decode_design_body_bindings(
                     source_bodies.iter().copied(),
                     binding.asm_key,
                 )?;
+                let id = design_record_id_charged(
+                    ctx, &entry.name, ":design-body-binding#", u64_from_index(binding.asm_key_offset),
+                    "f3d body record identifier",
+                )?;
+                ctx.charge_work(u64_from_index(id.len()).checked_add(u64_from_index(entry.name.len()))
+                    .and_then(|length| length.checked_mul(8))
+                    .ok_or_else(|| ctx.refuse_codec_limit("admit F3D body binding identity", 0, u64::MAX))?,
+                    "admit F3D body binding identity")?;
                 let record =
                     DesignBodyBinding::try_from(crate::records::bodies::DesignBodyBindingWire {
-                        id: design_record_id_charged(
-                            ctx,
-                            &entry.name,
-                            ":design-body-binding#",
-                            u64_from_index(binding.asm_key_offset),
-                            "f3d body record identifier",
-                        )?,
+                        id,
                         stream: ctx.copy_retained_text(&entry.name, "f3d body-binding stream")?,
                         pair_count,
                         pair_ordinal: ordinal,
@@ -1268,8 +1274,8 @@ pub(crate) fn decode_design_body_bindings(
     }
     ctx.stable_sort_by(
         &mut out[..],
-        |a, b| a.id.cmp(&b.id),
-        |value| value.id.as_str().len(),
+        |a, b| a.id().cmp(b.id()),
+        |value| value.id().len(),
         "sort f3d design body 5",
     )?;
     Ok(out)
@@ -1283,13 +1289,13 @@ pub(crate) fn bind_body_bounds(
     bindings: &[DesignBodyBinding],
 ) -> Result<(), CodecError> {
     for bounds in bounds {
-        let Some(stream) = native_stream(&bounds.id) else {
+        let Some(stream) = native_stream(bounds.id()) else {
             continue;
         };
         let mut matches = Vec::new();
         for binding in bindings {
             if binding.entity_suffix != bounds.entity_suffix()
-                || stream != native_scope_charged(ctx, &binding.stream)?
+                || stream != native_scope_charged(ctx, binding.stream())?
             {
                 continue;
             }
@@ -1319,12 +1325,15 @@ pub(crate) fn bind_body_bounds(
         )?;
         let mut ids = Vec::new();
         for binding in matches {
-            let id = ctx.copy_retained_text(&binding.id, "f3d body bounds binding identifier")?;
+            ctx.charge_work(u64_from_index(binding.id().len()).checked_mul(8)
+                .ok_or_else(|| ctx.refuse_codec_limit("admit F3D body binding reference", 0, u64::MAX))?,
+                "admit F3D body binding reference")?;
+            let id = ctx.copy_retained_text(binding.id(), "f3d body bounds binding identifier")?;
 
             ctx.reserve_vec(&mut ids, 1, "f3d body bounds binding identifiers")?;
-            ids.push(id);
+            ids.push(crate::records::bodies::DesignBodyBindingId::try_from(id).map_err(CodecError::Malformed)?);
         }
-        bounds.body_binding_ids = ids;
+        bounds.set_body_binding_ids(ids);
     }
     Ok(())
 }
@@ -1627,8 +1636,8 @@ mod tests {
                 let members = super::decode_body_members(ctx, scan).unwrap();
                 assert_eq!(members.len(), 1);
                 assert_eq!(
-                    members[0].id,
-                    crate::ids::native_design_body_member_id(ENTRY, member_offset)
+                    members[0].id(),
+                    &crate::ids::native_design_body_member_id(ENTRY, member_offset)
                 );
             });
         });
@@ -1694,8 +1703,7 @@ mod tests {
     fn body_map_metadata() -> crate::metastream::MetaStream {
         crate::metastream::MetaStream {
             types: vec![
-                crate::records::entity_header::SegmentType {
-                    id: String::new(),
+                crate::records::entity_header::SegmentTypeData {
                     byte_offset: 0,
                     type_guid: crate::design::body::BODY_MAP_CARRIER_TYPE_GUID
                         .to_owned()
@@ -2636,7 +2644,7 @@ mod tests {
         };
         const STREAM: &str = "Design/BulkStream.dat";
         let binding = DesignBodyBinding::try_from(DesignBodyBindingWire {
-            id: "f3d:binding#1".into(),
+            id: "f3d:Design/BulkStream.dat:design-body-binding#20".into(),
             stream: STREAM.into(),
             pair_count: 1,
             pair_ordinal: 0,
@@ -2709,7 +2717,7 @@ mod tests {
             &[binding],
         )
         .unwrap();
-        assert_eq!(bounds[0].body_binding_ids, ["f3d:binding#1"]);
+        assert_eq!(bounds[0].body_binding_ids().collect::<Vec<_>>(), ["f3d:Design/BulkStream.dat:design-body-binding#20"]);
     }
 
     #[test]

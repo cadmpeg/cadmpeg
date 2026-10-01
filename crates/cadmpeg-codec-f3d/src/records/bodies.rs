@@ -2,23 +2,104 @@
 //! Design body members, bounds, bindings and visibility.
 
 use super::mesh::DesignMeshSceneBounds;
+use super::identity::NativeRecordId;
+use cadmpeg_core::text::NonBlankString;
 use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::ids::BodyId;
 use cadmpeg_ir::math::Point3;
 use serde::{Deserialize, Serialize};
 
 cadmpeg_core::named_optional_field!(deserialize_body, BodyId, "body");
+/// A nonblank containing Design BulkStream archive path.
+#[derive(Debug, Clone, PartialEq)]
+struct DesignBulkStreamPath(NonBlankString);
+
+impl TryFrom<String> for DesignBulkStreamPath {
+    type Error = String;
+    fn try_from(text: String) -> Result<Self, Self::Error> {
+        let prefix = text.strip_suffix("/BulkStream.dat")
+            .ok_or("stream must name a containing Design BulkStream")?;
+        if prefix.is_empty() || text.chars().any(char::is_control)
+            || prefix.split('/').any(|part| matches!(part, "" | "." | "..")) {
+            return Err("stream must name a containing Design BulkStream".into());
+        }
+        Ok(Self(NonBlankString::new(text).ok_or("stream must not be blank")?))
+    }
+}
+
+impl DesignBulkStreamPath {
+    fn as_str(&self) -> &str { self.0.as_str() }
+}
+
+/// A native reference to one admitted Design body-map pair.
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(try_from = "String")]
+pub(crate) struct DesignBodyBindingId(NativeRecordId);
+
+impl TryFrom<String> for DesignBodyBindingId {
+    type Error = String;
+    fn try_from(text: String) -> Result<Self, Self::Error> {
+        let key = text.rsplit_once('#').ok_or("binding id requires a numeric key")?.1
+            .parse::<u64>().map_err(|_| "binding id requires a numeric key")?;
+        Ok(Self(NativeRecordId::try_f3d_new(text, "design-body-binding", key)?))
+    }
+}
+
+impl Serialize for DesignBodyBindingId {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        self.0.text().serialize(serializer)
+    }
+}
+
+impl DesignBodyBindingId {
+    fn as_str(&self) -> &str { self.0.text() }
+}
+
 /// One member of the Design `BulkStream` `BodiesRoot` list.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(try_from = "DesignBodyMemberWire")]
 pub(crate) struct DesignBodyMember {
-    /// Globally unique deterministic identifier for this native record.
-    pub(crate) id: String,
-    /// Byte offset of this member's leading presence byte in its Design `BulkStream`.
-    pub(crate) byte_offset: u64,
-    /// Numeric suffix of this body's design-entity id.
+    id: NativeRecordId,
+    byte_offset: u64,
     pub(crate) entity_suffix: u64,
-    /// Source per-member flag word from the `BodiesRoot` list entry.
     pub(crate) flags: u16,
+}
+
+#[derive(Deserialize, Serialize)]
+pub(crate) struct DesignBodyMemberWire {
+    pub(crate) id: String,
+    pub(crate) byte_offset: u64,
+    pub(crate) entity_suffix: u64,
+    pub(crate) flags: u16,
+}
+
+impl TryFrom<DesignBodyMemberWire> for DesignBodyMember {
+    type Error = String;
+    fn try_from(wire: DesignBodyMemberWire) -> Result<Self, Self::Error> {
+        Ok(Self {
+            id: NativeRecordId::try_f3d_new(wire.id, "design-body-member", wire.byte_offset)?,
+            byte_offset: wire.byte_offset,
+            entity_suffix: wire.entity_suffix,
+            flags: wire.flags,
+        })
+    }
+}
+
+impl DesignBodyMember {
+    pub(crate) fn id(&self) -> &String { self.id.text() }
+    pub(crate) fn byte_offset(&self) -> u64 { self.byte_offset }
+}
+
+impl Serialize for DesignBodyMember {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeStruct;
+        let mut record = serializer.serialize_struct("DesignBodyMember", 4)?;
+        record.serialize_field("id", self.id.text())?;
+        record.serialize_field("byte_offset", &self.byte_offset)?;
+        record.serialize_field("entity_suffix", &self.entity_suffix)?;
+        record.serialize_field("flags", &self.flags)?;
+        record.end()
+    }
 }
 
 /// Triplicated axis-aligned body bounds cached in the Design stream.
@@ -27,18 +108,18 @@ pub(crate) struct DesignBodyMember {
 #[serde(try_from = "DesignBodyBoundsWire")]
 pub(crate) struct DesignBodyBounds {
     /// Globally unique deterministic identifier for this native record set.
-    pub(crate) id: String,
+    id: NativeRecordId,
     /// Numeric suffix of the owning Design body entity.
     entity_suffix: u32,
     /// Byte offset of the owning Design entity header.
-    pub(crate) entity_byte_offset: u64,
+    entity_byte_offset: u64,
     /// Indexed-header byte offsets parallel to `record_indices`.
     record_byte_offsets: [u64; 3],
     /// First f64 byte of each repeated sextuple.
     value_byte_offsets: [u64; 3],
     /// Design BREP body-map pairs carrying this entity suffix, in stream order.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub(crate) body_binding_ids: Vec<String>,
+    body_binding_ids: Vec<DesignBodyBindingId>,
     corners: DesignMeshSceneBounds,
 }
 
@@ -71,8 +152,8 @@ struct DesignBodyBoundsWireRef<'a> {
     record_indices: [u32; 3],
     record_byte_offsets: [u64; 3],
     value_byte_offsets: [u64; 3],
-    #[serde(skip_serializing_if = "<[String]>::is_empty")]
-    body_binding_ids: &'a [String],
+    #[serde(skip_serializing_if = "<[DesignBodyBindingId]>::is_empty")]
+    body_binding_ids: &'a [DesignBodyBindingId],
     maximum: Point3,
     minimum: Point3,
 }
@@ -83,7 +164,7 @@ impl Serialize for DesignBodyBounds {
         let maximum = Point3::new(x, y, z);
         let [x, y, z] = self.corners.minimum();
         DesignBodyBoundsWireRef {
-            id: &self.id,
+            id: self.id.text(),
             entity_suffix: self.entity_suffix(),
             entity_byte_offset: self.entity_byte_offset,
             record_indices: self.record_indices(),
@@ -114,7 +195,7 @@ pub(crate) struct DesignBodyBoundsWire<P = Point3> {
     pub(crate) value_byte_offsets: [u64; 3],
     /// Design BREP body-map pairs carrying this entity suffix, in stream order.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub(crate) body_binding_ids: Vec<String>,
+    pub(crate) body_binding_ids: Vec<DesignBodyBindingId>,
     /// Maximum model-space corner in millimetres.
     pub(crate) maximum: P,
     /// Minimum model-space corner in millimetres.
@@ -178,7 +259,7 @@ impl DesignBodyBounds {
             return Err("maximum and minimum must not define a degenerate box".into());
         }
         Ok(Self {
-            id: wire.id,
+            id: NativeRecordId::try_f3d_new(wire.id, "design-body-bounds", wire.entity_byte_offset)?,
             entity_suffix,
             entity_byte_offset: wire.entity_byte_offset,
             record_byte_offsets: wire.record_byte_offsets,
@@ -190,6 +271,14 @@ impl DesignBodyBounds {
 }
 
 impl DesignBodyBounds {
+    pub(crate) fn id(&self) -> &String { self.id.text() }
+    pub(crate) fn entity_byte_offset(&self) -> u64 { self.entity_byte_offset }
+    pub(crate) fn body_binding_ids(&self) -> impl ExactSizeIterator<Item = &str> {
+        self.body_binding_ids.iter().map(DesignBodyBindingId::as_str)
+    }
+    pub(crate) fn set_body_binding_ids(&mut self, ids: Vec<DesignBodyBindingId>) {
+        self.body_binding_ids = ids;
+    }
     pub(crate) fn entity_suffix(&self) -> u64 {
         u64::from(self.entity_suffix)
     }
@@ -211,7 +300,7 @@ impl From<DesignBodyBounds> for DesignBodyBoundsWire {
         Self {
             entity_suffix: value.entity_suffix(),
             record_indices: value.record_indices(),
-            id: value.id,
+            id: value.id.into_string(),
             entity_byte_offset: value.entity_byte_offset,
             record_byte_offsets: value.record_byte_offsets,
             value_byte_offsets: value.value_byte_offsets,
@@ -228,9 +317,9 @@ impl From<DesignBodyBounds> for DesignBodyBoundsWire {
 #[serde(try_from = "DesignBodyBindingWire")]
 pub(crate) struct DesignBodyBinding {
     /// Globally unique deterministic identifier for this native map entry.
-    pub(crate) id: String,
+    id: NativeRecordId,
     /// Design `BulkStream` ZIP entry containing the map.
-    pub(crate) stream: String,
+    stream: DesignBulkStreamPath,
     /// Number of pairs in the enclosing body map.
     pair_count: std::num::NonZeroU32,
     /// Zero-based position in the enclosing body map.
@@ -293,8 +382,8 @@ struct DesignBodyBindingWireRef<'a> {
 impl Serialize for DesignBodyBinding {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         DesignBodyBindingWireRef {
-            id: &self.id,
-            stream: &self.stream,
+            id: self.id.text(),
+            stream: self.stream.as_str(),
             pair_count: self.pair_count(),
             pair_ordinal: self.pair_ordinal,
             asm_body_key: self.asm_body_key,
@@ -364,10 +453,15 @@ impl TryFrom<DesignBodyBindingWire> for DesignBodyBinding {
         if wire.blob_name_offset <= entity_suffix_offset {
             return Err("blob_name_offset must follow entity_suffix_offset".into());
         }
+        let id = NativeRecordId::try_f3d_new(wire.id, "design-body-binding", wire.asm_body_key_offset)?;
+        let stream = DesignBulkStreamPath::try_from(wire.stream)?;
+        if !crate::ids::native_scope_matches(id.stream(), stream.as_str()) {
+            return Err("id must identify its containing stream".into());
+        }
         Ok(Self {
             pair_count,
-            id: wire.id,
-            stream: wire.stream,
+            id,
+            stream,
             pair_ordinal: wire.pair_ordinal,
             asm_body_key: wire.asm_body_key,
             asm_body_key_offset: wire.asm_body_key_offset,
@@ -380,6 +474,8 @@ impl TryFrom<DesignBodyBindingWire> for DesignBodyBinding {
 }
 
 impl DesignBodyBinding {
+    pub(crate) fn id(&self) -> &String { self.id.text() }
+    pub(crate) fn stream(&self) -> &str { self.stream.as_str() }
     pub(crate) fn pair_count(&self) -> u32 {
         self.pair_count.get()
     }
@@ -406,8 +502,8 @@ impl From<DesignBodyBinding> for DesignBodyBindingWire {
         Self {
             pair_count: value.pair_count(),
             entity_suffix_offset: value.entity_suffix_offset(),
-            id: value.id,
-            stream: value.stream,
+            id: value.id.into_string(),
+            stream: value.stream.0.into_string(),
             pair_ordinal: value.pair_ordinal,
             asm_body_key: value.asm_body_key,
             asm_body_key_offset: value.asm_body_key_offset,
@@ -420,24 +516,78 @@ impl From<DesignBodyBinding> for DesignBodyBindingWire {
 }
 
 /// Design browser-node visibility joined to one solved ASM body.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(try_from = "BodyVisibilityWire")]
 pub(crate) struct BodyVisibility {
-    /// Globally unique deterministic identifier for this native record.
-    pub(crate) id: String,
-    /// Solved B-rep body controlled by the browser node.
+    id: NativeRecordId,
     pub(crate) body: BodyId,
-    /// Design `BulkStream` ZIP entry containing the browser node.
-    pub(crate) stream: String,
-    /// Byte offset of the browser node's hidden flag within `stream`.
+    stream: DesignBulkStreamPath,
     pub(crate) byte_offset: u64,
-    /// Byte offset of the joined body-map ASM key within `stream`.
     pub(crate) asm_body_key_offset: u64,
-    /// ASM body key used by the BREP body-map join.
-    pub(crate) asm_body_key: u64,
-    /// Numeric Design entity suffix stored by both joined records.
+    asm_body_key: u64,
     pub(crate) entity_suffix: u64,
-    /// Display visibility after inverting the native hidden flag.
     pub(crate) visible: bool,
+}
+
+#[derive(Deserialize, Serialize)]
+pub(crate) struct BodyVisibilityWire {
+    pub(crate) id: String,
+    pub(crate) body: BodyId,
+    pub(crate) stream: String,
+    pub(crate) byte_offset: u64,
+    pub(crate) asm_body_key_offset: u64,
+    pub(crate) asm_body_key: u64,
+    pub(crate) entity_suffix: u64,
+    pub(crate) visible: bool,
+}
+
+impl TryFrom<BodyVisibilityWire> for BodyVisibility {
+    type Error = String;
+    fn try_from(wire: BodyVisibilityWire) -> Result<Self, Self::Error> {
+        Ok(Self {
+            id: NativeRecordId::try_f3d_new(wire.id, "body-visibility", wire.asm_body_key)?,
+            body: wire.body,
+            stream: DesignBulkStreamPath::try_from(wire.stream)?,
+            byte_offset: wire.byte_offset,
+            asm_body_key_offset: wire.asm_body_key_offset,
+            asm_body_key: wire.asm_body_key,
+            entity_suffix: wire.entity_suffix,
+            visible: wire.visible,
+        })
+    }
+}
+
+impl BodyVisibility {
+    pub(crate) fn id(&self) -> &String { self.id.text() }
+    pub(crate) fn stream(&self) -> &str { self.stream.as_str() }
+    pub(crate) fn asm_body_key(&self) -> u64 { self.asm_body_key }
+}
+
+impl Serialize for BodyVisibility {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeStruct;
+        let mut record = serializer.serialize_struct("BodyVisibility", 8)?;
+        record.serialize_field("id", self.id.text())?;
+        record.serialize_field("body", &self.body)?;
+        record.serialize_field("stream", self.stream.as_str())?;
+        record.serialize_field("byte_offset", &self.byte_offset)?;
+        record.serialize_field("asm_body_key_offset", &self.asm_body_key_offset)?;
+        record.serialize_field("asm_body_key", &self.asm_body_key)?;
+        record.serialize_field("entity_suffix", &self.entity_suffix)?;
+        record.serialize_field("visible", &self.visible)?;
+        record.end()
+    }
+}
+
+#[cfg(test)]
+impl From<BodyVisibility> for BodyVisibilityWire {
+    fn from(value: BodyVisibility) -> Self {
+        Self {
+            id: value.id.into_string(), body: value.body, stream: value.stream.0.into_string(),
+            byte_offset: value.byte_offset, asm_body_key_offset: value.asm_body_key_offset,
+            asm_body_key: value.asm_body_key, entity_suffix: value.entity_suffix, visible: value.visible,
+        }
+    }
 }
 
 #[cfg(test)]
@@ -448,13 +598,13 @@ mod tests {
 
     fn bounds_fixture() -> DesignBodyBounds {
         serde_json::from_value(serde_json::json!({
-            "id": "f3d:native:body_bounds#1",
+            "id": "f3d:native:design-body-bounds#0",
             "entity_suffix": 10,
             "entity_byte_offset": 0,
             "record_indices": [11, 12, 13],
             "record_byte_offsets": [20, 40, 60],
             "value_byte_offsets": [21, 41, 61],
-            "body_binding_ids": ["f3d:native:body_binding#1"],
+            "body_binding_ids": ["f3d:Design/BulkStream.dat:design-body-binding#10"],
             "maximum": {"x": 1.0, "y": 0.0, "z": 0.0},
             "minimum": {"x": 0.0, "y": 0.0, "z": 0.0}
         }))
@@ -463,7 +613,7 @@ mod tests {
 
     fn binding_fixture() -> DesignBodyBinding {
         serde_json::from_value(serde_json::json!({
-            "id": "f3d:native:body_binding#1",
+            "id": "f3d:Design/BulkStream.dat:design-body-binding#10",
             "stream": "Design/BulkStream.dat",
             "pair_count": 1,
             "pair_ordinal": 0,
@@ -576,4 +726,64 @@ mod tests {
             serde_json::to_value(&binding).unwrap()
         );
     }
+    #[test]
+    fn body_member_rejects_unbound_native_identity() {
+        let wire = serde_json::json!({"id":"f3d:Design/BulkStream.dat:design-body-member#10", "byte_offset":10, "entity_suffix":7, "flags":0});
+        let member: super::DesignBodyMember = serde_json::from_value(wire.clone()).unwrap();
+        assert_eq!(serde_json::to_value(&member).unwrap(), wire);
+        for id in ["", "f3d:Design/BulkStream.dat:other#10", "f3d:Design/BulkStream.dat:design-body-member#11", "stream:design-body-member#10"] {
+            let mut value = wire.clone(); value["id"] = serde_json::json!(id);
+            assert!(serde_json::from_value::<super::DesignBodyMember>(value.clone()).is_err());
+            let raw: super::DesignBodyMemberWire = serde_json::from_value(value).unwrap();
+            assert!(super::DesignBodyMember::try_from(raw).is_err());
+        }
+    }
+
+    #[test]
+    fn body_bounds_reject_unbound_record_and_binding_identities() {
+        let valid = bounds_fixture();
+        for (field, value) in [
+            ("id", serde_json::json!("")),
+            ("id", serde_json::json!("f3d:native:design-body-bounds#1")),
+            ("id", serde_json::json!("f3d:native:other#0")),
+            ("body_binding_ids", serde_json::json!([""])),
+            ("body_binding_ids", serde_json::json!(["f3d:native:other#1"])),
+            ("body_binding_ids", serde_json::json!(["f3d:native:design-body-binding#bad"])),
+        ] {
+            let mut wire = serde_json::to_value(&valid).unwrap(); wire[field] = value;
+            assert!(serde_json::from_value::<DesignBodyBounds>(wire).is_err(), "{field}");
+        }
+        let mut wire = DesignBodyBoundsWire::from(valid); wire.id.clear();
+        assert!(DesignBodyBounds::try_from(wire).is_err());
+        assert!(super::DesignBodyBindingId::try_from(String::new()).is_err());
+    }
+
+    #[test]
+    fn body_binding_rejects_unbound_record_and_stream_identities() {
+        let valid = binding_fixture();
+        for (field, value) in [
+            ("id", ""), ("id", "f3d:Design/BulkStream.dat:design-body-binding#11"),
+            ("id", "f3d:Design/BulkStream.dat:other#10"),
+            ("stream", ""), ("stream", "Other/BulkStream.dat"), ("stream", "Design/MetaStream.dat"),
+        ] {
+            let mut wire = serde_json::to_value(&valid).unwrap(); wire[field] = serde_json::json!(value);
+            assert!(serde_json::from_value::<DesignBodyBinding>(wire.clone()).is_err());
+            let raw: DesignBodyBindingWire = serde_json::from_value(wire).unwrap();
+            assert!(DesignBodyBinding::try_from(raw).is_err());
+        }
+    }
+
+    #[test]
+    fn body_visibility_rejects_unbound_record_and_stream_identities() {
+        let wire = serde_json::json!({"id":"f3d:Breps/BREP.synthetic.smbh:body-visibility#3", "body":"f3d:brep:entity#1", "stream":"Design/BulkStream.dat", "byte_offset":10, "asm_body_key_offset":20, "asm_body_key":3, "entity_suffix":7, "visible":true});
+        let visibility: super::BodyVisibility = serde_json::from_value(wire.clone()).unwrap();
+        assert_eq!(serde_json::to_value(&visibility).unwrap(), wire);
+        for (field, value) in [("id", ""), ("id", "f3d:Breps/BREP.synthetic.smbh:body-visibility#4"), ("id", "f3d:Breps/BREP.synthetic.smbh:other#3"), ("stream", ""), ("stream", "Design/MetaStream.dat")] {
+            let mut value_wire = wire.clone(); value_wire[field] = serde_json::json!(value);
+            assert!(serde_json::from_value::<super::BodyVisibility>(value_wire.clone()).is_err());
+            let raw: super::BodyVisibilityWire = serde_json::from_value(value_wire).unwrap();
+            assert!(super::BodyVisibility::try_from(raw).is_err());
+        }
+    }
+
 }

@@ -1385,7 +1385,7 @@ pub(crate) fn decode_entity_headers(
     let types = decode_types(ctx, scan)?;
     let mut legacy_sketch_candidates = HashMap::<&str, std::collections::HashSet<u32>>::new();
     for design_type in &types {
-        if let Some(stream) = native_stream(&design_type.id) {
+        if let Some(stream) = native_stream(design_type.id()) {
             for &entity_id in design_type.entities.values() {
                 insert_entity_module(
                     ctx,
@@ -1397,7 +1397,7 @@ pub(crate) fn decode_entity_headers(
             }
         }
         if design_type.module == DESIGN_MODULE_SKETCH {
-            let Some(stream) = native_stream(&design_type.id) else {
+            let Some(stream) = native_stream(design_type.id()) else {
                 continue;
             };
             let Some(prefix) = stream

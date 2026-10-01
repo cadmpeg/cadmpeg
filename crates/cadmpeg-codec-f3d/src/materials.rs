@@ -1759,7 +1759,7 @@ fn resolved_body_for_map_pair(
         ))
     })?;
     let mut matches = body_bindings.iter().filter(|binding| {
-        crate::ids::native_stream(&binding.id) == Some(owner_stream)
+        crate::ids::native_stream(binding.id()) == Some(owner_stream)
             && binding.asm_body_key == asm_body_key
             && binding.asm_body_key_offset() == asm_body_key_offset
             && binding.entity_suffix == entity_suffix

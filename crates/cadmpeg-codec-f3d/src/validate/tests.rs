@@ -348,9 +348,8 @@ fn validation_requires_timeline_items_to_resolve_through_the_type_table() {
     let meta_stream = "f3d:FusionAssetName[Active]/Design1/MetaStream.dat";
     let bulk_entry = "FusionAssetName[Active]/Design1/BulkStream.dat";
     let design_type = |id: &str, type_guid: &str, entities: Vec<u64>| {
-        crate::records::entity_header::SegmentType {
-            id: id.into(),
-            byte_offset: 0,
+        crate::records::entity_header::SegmentType::try_new(id.into(), crate::records::entity_header::SegmentTypeData {
+            byte_offset: id.rsplit_once('#').unwrap().1.parse().unwrap(),
             type_guid: type_guid.to_owned().try_into().expect("type GUID"),
             type_guid_offset: 4,
             base_type_guid: if type_guid == crate::design::decode::meta::FEATURE_TIMELINE_TYPE_GUID
@@ -378,7 +377,7 @@ fn validation_requires_timeline_items_to_resolve_through_the_type_table() {
                     .map(|value| crate::records::identity::Located { value, offset: 100 })
                     .collect(),
             ),
-        }
+        }).unwrap()
     };
     let mut native = crate::native::F3dNative {
         design_types: vec![
@@ -445,8 +444,7 @@ fn validation_requires_timeline_items_to_resolve_through_the_type_table() {
         value: 35,
         offset: 108,
     });
-    duplicate_type_owner.design_types[1].entities =
-        crate::records::identity::ReferenceRun::located(entities);
+    duplicate_type_owner.design_types[1].set_entities(crate::records::identity::ReferenceRun::located(entities));
     duplicate_type_owner
         .store(
             &cadmpeg_test_support::service_decode_context(),
