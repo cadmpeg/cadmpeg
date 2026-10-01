@@ -999,33 +999,6 @@ fn utf16_payload<'a>(reader: &mut BoundedReader<'a>) -> Result<&'a [u8], Framing
     Ok(&bytes[..bytes.len() - 2])
 }
 
-fn visit_utf16(
-    bytes: &[u8],
-    error_offset: usize,
-    mut visit: impl FnMut(char) -> Result<(), FramingError>,
-) -> Result<(), FramingError> {
-    let invalid = || FramingError::structural(error_offset, "invalid UTF-16 surrogate sequence");
-    let mut offset = 0;
-    while offset < bytes.len() {
-        let unit = View::u16_le_at(bytes, offset).ok_or_else(invalid)?;
-        offset += 2;
-        let scalar = if (0xd800..=0xdbff).contains(&unit) {
-            let low = View::u16_le_at(bytes, offset).ok_or_else(invalid)?;
-            if !(0xdc00..=0xdfff).contains(&low) {
-                return Err(invalid());
-            }
-            offset += 2;
-            0x10000 + ((u32::from(unit - 0xd800) << 10) | u32::from(low - 0xdc00))
-        } else if (0xdc00..=0xdfff).contains(&unit) {
-            return Err(invalid());
-        } else {
-            u32::from(unit)
-        };
-        visit(char::from_u32(scalar).ok_or_else(invalid)?)?;
-    }
-    Ok(())
-}
-
 /// Decodes a retained UTF-16 string after charging its exact UTF-8 byte count.
 pub(crate) fn utf16_retained(
     ctx: &DecodeContext<'_>,
@@ -1063,7 +1036,10 @@ pub(crate) fn utf16_deferred<'a>(
     let bytes = utf16_payload(reader)?;
     let error_offset = reader.position();
     ctx.charge_work(cadmpeg_core::decode::u64_from_index(bytes.len() / 2), "validate Rhino deferred UTF-16")?;
-    visit_utf16(bytes, error_offset, |_| Ok(()))?;
+    let mut view = View::over_retained(bytes);
+    for character in char::decode_utf16(std::iter::from_fn(|| view.u16_le())) {
+        character.map_err(|_| FramingError::structural(error_offset, "invalid UTF-16 surrogate sequence"))?;
+    }
     Ok(DeferredUtf16 { bytes, error_offset })
 }
 
