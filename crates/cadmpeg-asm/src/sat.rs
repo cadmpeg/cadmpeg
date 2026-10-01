@@ -1600,6 +1600,9 @@ fn type_subtype(cur: &mut Cur<'_, '_, '_>, out: &mut Vec<Token>) -> Option<()> {
     if type_subtype_tabled(cur, out).is_some() {
         return Some(());
     }
+    if cur.resource.is_some() {
+        return None;
+    }
     cur.pos = scope_start;
     out.truncate(out_mark);
     fallback_scope(cur, out)
@@ -1611,9 +1614,20 @@ fn type_subtype(cur: &mut Cur<'_, '_, '_>, out: &mut Vec<Token>) -> Option<()> {
 /// record with an untypable interior falls back as a whole instead of
 /// decoding around a degraded nested construction.
 fn type_subtype_tabled(cur: &mut Cur<'_, '_, '_>, out: &mut Vec<Token>) -> Option<()> {
+    if cur.resource.is_some() {
+        return None;
+    }
     if !matches!(cur.peek(), Some(Prim::Open)) {
         return None;
     }
+    let ctx = cur.ctx;
+    let _depth = match ctx.enter_nested("SAT subtype typing") {
+        Ok(depth) => depth,
+        Err(error) => {
+            cur.resource = Some(error);
+            return None;
+        }
+    };
     let scope_start = cur.pos;
     let out_mark = out.len();
     cur.bump();
@@ -1821,6 +1835,34 @@ fn type_record(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn sat_subtype_typing_refuses_depth_before_recursive_descent() {
+        let prefix = "{ cyl_spl_sur 0 intcurve forward { int_int_cur 0 full nubs 1 open 2 0 2 1 2 0 0 0 1 0 0 2 0 0 3 0 0 0 spline forward ";
+        for (repetitions, limit) in [(1, 0), (4096, 2)] {
+            let source = asm_stream(&format!(
+                "spline $-1 -1 $-1 forward {}{} #\n",
+                prefix.repeat(repetitions),
+                "} } ".repeat(repetitions),
+            ));
+            crate::test_support::with_service_context(&source, |service| {
+                let mut policy = *service.policy();
+                policy.limits.max_recursion_depth = limit;
+                let arena = DecodeArena::new();
+                let (ctx, _) = DecodeContext::from_root_bytes(&source, &arena, &policy)
+                    .expect("source fits input limit");
+                let error = super::parse(&ctx, &source).expect_err("depth must refuse");
+                let StreamFailure::Resource(CodecError::ResourceLimit(refusal)) = error else {
+                    panic!("expected resource refusal, got {error:?}");
+                };
+                assert_eq!(refusal.dimension, ResourceDimension::RecursionDepth);
+                assert_eq!(refusal.operation, "SAT subtype typing");
+                assert_eq!(refusal.limit, limit);
+                assert_eq!(refusal.used, limit);
+                assert_eq!(refusal.additional, 1);
+            }).expect("fixture fits service profile");
+        }
+    }
+
     #[test]
     fn sat_float_array_values_refuse_collection_limit() {
         use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
