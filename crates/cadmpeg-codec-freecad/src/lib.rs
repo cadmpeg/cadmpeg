@@ -331,16 +331,17 @@ fn validate_native(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<Vec<Finding>, 
             ));
         }
     }
+    let mut product_storage = ctx.reserve_scoped(0, "fcstd product validation index")?;
     let mut product_by_object = HashMap::new();
-    ctx.reserve_map(
+    product_storage.with_storage(|| ctx.reserve_map(
         &mut product_by_object,
         product_nodes.len(),
         "fcstd product validation index",
-    )?;
+    ))?;
     for node in &product_nodes {
         product_by_object.insert(node.object.as_str(), node);
     }
-    let cyclic_products = product::product_cycle_nodes(ctx, &product_by_object)?;
+    let (cyclic_products, _cycle_storage) = ctx.with_scoped_storage("fcstd product cycle lookup", || product::product_cycle_nodes(ctx, &product_by_object))?;
     for node in &product_nodes {
         if !object_ids.contains(node.object.as_str())
             || node
