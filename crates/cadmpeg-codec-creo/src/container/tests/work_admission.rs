@@ -26,3 +26,21 @@ fn geometry_census_charges_each_namespace_pass() {
     assert_eq!(refusal.operation, "creo geometry census search");
     assert_eq!(ctx.resource_refusal(), Some(refusal));
 }
+
+#[test]
+fn geometry_census_rejects_truncated_structural_counts() {
+    for bytes in [b"srf_array\0\xf8".as_slice(), b"srf_array\0\xf8\x81".as_slice()] {
+        let error = crate::decode::with_test_decode_ctx(|ctx| read_array_count(ctx, bytes, b"srf_array")).expect_err("count is incomplete");
+        assert!(matches!(error, CodecError::Malformed(_)));
+    }
+    assert_eq!(crate::decode::with_test_decode_ctx(|ctx| read_array_count(ctx, b"srf_array\0\xf8\0", b"srf_array")).expect("complete zero count"), Some(0));
+}
+
+#[test]
+fn parent_feature_arrays_reject_truncated_counts_and_entries() {
+    for bytes in [b"parent_feats\0\xf8".as_slice(), b"parent_feats\0\xf8\x81".as_slice(), b"parent_feats\0\xf8\x01\x81".as_slice()] {
+        let sections = [Section::scan("VisibGeom".into(), 0, bytes.len(), None, bytes).expect("section")];
+        let error = crate::decode::with_test_decode_ctx(|ctx| structural_feature_ids(ctx, &sections, &[], &[])).expect_err("array is incomplete");
+        assert!(matches!(error, CodecError::Malformed(_)));
+    }
+}
