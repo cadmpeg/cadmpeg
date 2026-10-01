@@ -7776,7 +7776,7 @@ fn pattern_definition(
                 cadmpeg_core::decode::u64_from_index(transformations.links().len()),
                 "freecad pattern stages",
             )?;
-            let mut stages = cadmpeg_core::decode::DecodeContext::admitted_vec(
+            let mut stages = ctx.vector_storage(
                 transformations.links().len(),
                 "freecad pattern stages",
             )?;
@@ -8247,7 +8247,7 @@ fn pattern_locations(
         _ => return Ok(None),
     };
     ctx.charge_collection_items(u64::from(count), "freecad pattern locations")?;
-    let mut locations = cadmpeg_core::decode::DecodeContext::admitted_vec(
+    let mut locations = ctx.vector_storage(
         usize::try_from(count).map_err(|_| {
             ctx.refuse_codec_limit(
                 "FreeCAD count",

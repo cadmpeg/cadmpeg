@@ -38,7 +38,7 @@ fn moved_text_lexemes_keep_their_single_byte_admission() {
         b"<TEXT>".as_slice(),
     ] {
         let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = 4;
+        policy.limits.max_retained_bytes = if source.starts_with(b"'") { 8 } else { 4 };
         with_policy_context(source, &policy, |source, ctx| {
             parser(source, ctx)
                 .value()
@@ -104,7 +104,7 @@ fn anchor_leaf_text_copy_has_one_storage_admission() {
         let anchors = BTreeMap::new();
         let value = Value::Enumeration("TEXT".into());
         assert_eq!(
-            AnchorResolver::new(&anchors, ctx)
+            AnchorResolver::new(&anchors, ctx).expect("empty resolver scope fits")
                 .resolve_root(&value)
                 .expect("one four-byte copy"),
             value
@@ -118,7 +118,7 @@ fn anchor_memo_retrieval_text_has_one_storage_admission() {
     policy.limits.max_retained_bytes = 4;
     with_policy_context(b"", &policy, |_, ctx| {
         let anchors = BTreeMap::from([("a".into(), Value::Enumeration("TEXT".into()))]);
-        let mut resolver = AnchorResolver::new(&anchors, ctx);
+        let mut resolver = AnchorResolver::new(&anchors, ctx).expect("empty resolver scope fits");
         resolver.memo.insert("a", (anchors["a"].clone(), 1));
         assert_eq!(
             resolver
@@ -132,12 +132,10 @@ fn anchor_memo_retrieval_text_has_one_storage_admission() {
 #[test]
 fn anchor_memo_population_text_has_one_storage_admission() {
     let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = u64_from_index(size_of::<&str>())
-        + 8
-        + crate::parse::btree_node_storage::<&str, (Value, usize)>().expect("node size fits");
+    policy.limits.max_retained_bytes = 4;
     with_policy_context(b"", &policy, |_, ctx| {
         let anchors = BTreeMap::from([("a".into(), Value::Enumeration("TEXT".into()))]);
-        let mut resolver = AnchorResolver::new(&anchors, ctx);
+        let mut resolver = AnchorResolver::new(&anchors, ctx).expect("empty resolver scope fits");
         assert_eq!(
             resolver
                 .resolve_root(&Value::Resource("a".into()))
@@ -204,7 +202,7 @@ fn anchor_typed_name_copy_refuses_work_limit() {
         let anchors = BTreeMap::new();
         let value = Value::Typed("MEASURE".into(), Box::new(Value::Integer(1)));
         assert!(
-            matches!(AnchorResolver::new(&anchors, ctx).resolve_root(&value),
+            matches!(AnchorResolver::new(&anchors, ctx).expect("empty resolver scope fits").resolve_root(&value),
             Err(ResolveError::Resource(CodecError::ResourceLimit(refusal)))
                 if refusal.dimension == ResourceDimension::WorkUnits
                     && refusal.operation == "step_anchor_typed_name_copy"

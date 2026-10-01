@@ -511,16 +511,10 @@ fn attach_part_attributes<'a>(
             .derived_for_decode(ctx, id.as_str(), "values")
             .map_err(cadmpeg_core::CodecError::from)?;
         ctx.charge_collection_items(1, "NX attached part attributes")?;
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(std::mem::size_of::<SourceAttribute>()),
-            "NX attached part attributes",
-        )?;
         ctx.charge_collection_items(1, "NX part attribute values")?;
         ctx.charge_retained(
             cadmpeg_core::decode::u64_from_index(
-                std::mem::size_of::<AttributeValue>()
-                    .checked_add(attribute_title.len())
-                    .and_then(|bytes| bytes.checked_add(attribute_value.len()))
+                attribute_title.len().checked_add(attribute_value.len())
                     .ok_or_else(|| {
                         ctx.refuse_codec_limit(
                             "NX part attribute value",
@@ -532,13 +526,13 @@ fn attach_part_attributes<'a>(
             "NX part attribute values",
         )?;
         let mut values = Vec::new();
-        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+        ctx.reserve_capacity(
             &mut values,
             1,
             "NX part attribute values",
         )?;
         values.push(AttributeValue::String(attribute_value.to_string()));
-        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+        ctx.reserve_capacity(
             &mut ir.model.attributes,
             1,
             "NX attached part attributes",
@@ -660,7 +654,7 @@ fn attach_configurations<'a>(
                 "NX active configuration property",
             )?;
         }
-        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+        ctx.reserve_capacity(
             &mut ir.model.configurations,
             1,
             "NX attached configurations",
@@ -857,9 +851,7 @@ fn attach_rm_appearances(
         annotations
             .derived_for_decode(ctx, binding_id.as_str(), "appearance")
             .map_err(cadmpeg_core::CodecError::from)?;
-        let binding_bytes = std::mem::size_of::<AppearanceBinding>()
-            .checked_add(binding_id.as_str().len())
-            .and_then(|bytes| bytes.checked_add(binding.source_id.len()))
+        let binding_bytes = binding_id.as_str().len().checked_add(binding.source_id.len())
             .and_then(|bytes| bytes.checked_add(appearance_id.as_str().len()))
             .ok_or_else(|| {
                 ctx.refuse_codec_limit(
@@ -873,7 +865,7 @@ fn attach_rm_appearances(
             cadmpeg_core::decode::u64_from_index(binding_bytes),
             "NX RM source appearance binding",
         )?;
-        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+        ctx.reserve_capacity(
             &mut ir.model.appearance_bindings,
             1,
             "NX RM source appearance bindings",
@@ -974,9 +966,7 @@ fn attach_rm_appearances(
         annotations
             .derived_for_decode(ctx, binding_id.as_str(), "appearance")
             .map_err(cadmpeg_core::CodecError::from)?;
-        let binding_bytes = std::mem::size_of::<AppearanceBinding>()
-            .checked_add(binding_id.as_str().len())
-            .and_then(|bytes| bytes.checked_add(face_id.as_str().len()))
+        let binding_bytes = binding_id.as_str().len().checked_add(face_id.as_str().len())
             .and_then(|bytes| bytes.checked_add(appearance_id.as_str().len()))
             .ok_or_else(|| {
                 ctx.refuse_codec_limit(
@@ -990,7 +980,7 @@ fn attach_rm_appearances(
             cadmpeg_core::decode::u64_from_index(binding_bytes),
             "NX RM face appearance binding",
         )?;
-        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+        ctx.reserve_capacity(
             &mut ir.model.appearance_bindings,
             1,
             "NX RM face appearance bindings",
@@ -1068,21 +1058,13 @@ fn ensure_rm_color_appearance(
     annotations
         .derived_for_decode(ctx, id.as_str(), "base_color")
         .map_err(cadmpeg_core::CodecError::from)?;
-    let appearance_bytes = std::mem::size_of::<Appearance>()
-        .checked_add(definition.name.len())
-        .ok_or_else(|| {
-            ctx.refuse_codec_limit(
-                "NX RM color appearance",
-                0,
-                cadmpeg_core::decode::u64_from_index(definition.name.len()),
-            )
-        })?;
+    let appearance_bytes = definition.name.len();
     ctx.charge_collection_items(1, "NX RM color appearances")?;
     ctx.charge_retained(
         cadmpeg_core::decode::u64_from_index(appearance_bytes),
         "NX RM color appearance",
     )?;
-    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+    ctx.reserve_capacity(
         &mut ir.model.appearances,
         1,
         "NX RM color appearances",
@@ -1187,9 +1169,7 @@ fn resolve_rm_source_color_bindings(
         else {
             continue;
         };
-        let bytes = std::mem::size_of::<RmSourceColorBinding>()
-            .checked_add(source_id.len())
-            .and_then(|bytes| bytes.checked_add(definition.len()))
+        let bytes = source_id.len().checked_add(definition.len())
             .ok_or_else(|| {
                 ctx.refuse_codec_limit(
                     "NX RM source color binding",
@@ -1202,7 +1182,7 @@ fn resolve_rm_source_color_bindings(
             cadmpeg_core::decode::u64_from_index(bytes),
             "NX RM source color bindings",
         )?;
-        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+        ctx.reserve_capacity(
             &mut bindings,
             1,
             "NX RM source color bindings",
@@ -1385,9 +1365,7 @@ fn resolve_rm_face_color_bindings(
         let Some(face_id) = candidate else {
             continue;
         };
-        let bytes = std::mem::size_of::<RmFaceColorBinding>()
-            .checked_add(face_id.len())
-            .and_then(|bytes| bytes.checked_add(definition.len()))
+        let bytes = face_id.len().checked_add(definition.len())
             .ok_or_else(|| {
                 ctx.refuse_codec_limit(
                     "NX RM face color binding",
@@ -1400,7 +1378,7 @@ fn resolve_rm_face_color_bindings(
             cadmpeg_core::decode::u64_from_index(bytes),
             "NX RM face color bindings",
         )?;
-        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+        ctx.reserve_capacity(
             &mut bindings,
             1,
             "NX RM face color bindings",
@@ -1998,21 +1976,12 @@ fn attach_initial_segment_bodies(
         }
         if matched {
             ctx.charge_collection_items(2, "NX retained-history output bodies")?;
-            let body_bytes = std::mem::size_of::<BodyId>();
-            ctx.charge_retained(
-                cadmpeg_core::decode::u64_from_index(body_bytes),
-                "NX retained-history output bodies",
-            )?;
-            ctx.charge_retained(
-                cadmpeg_core::decode::u64_from_index(body_bytes),
-                "NX retained-history output bodies",
-            )?;
-            cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+            ctx.reserve_capacity(
                 &mut selection_bodies,
                 1,
                 "NX retained-history output bodies",
             )?;
-            cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+            ctx.reserve_capacity(
                 &mut feature_outputs,
                 1,
                 "NX retained-history output bodies",
@@ -3459,7 +3428,7 @@ fn attach_feature_operations(
             Some("TEXT_SEMANTIC_ANNOTATION"),
         )?;
         annotations.exactness_for_decode(ctx, annotation.id.as_str(), Exactness::Derived)?;
-        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+        ctx.reserve_capacity(
             &mut ir.model.semantic_annotations,
             1,
             "allocate NX semantic annotations",
@@ -5646,7 +5615,6 @@ fn attach_feature_operations(
             .len()
             .checked_add(label.value.len())
             .and_then(|bytes| bytes.checked_add(label.id.len()))
-            .and_then(|bytes| bytes.checked_add(std::mem::size_of::<Feature>()))
             .ok_or_else(|| {
                 ctx.refuse_codec_limit(
                     "NX feature record",
@@ -5659,7 +5627,7 @@ fn attach_feature_operations(
             cadmpeg_core::decode::u64_from_index(feature_text_bytes),
             "NX feature record",
         )?;
-        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+        ctx.reserve_capacity(
             &mut ir.model.features,
             1,
             "allocate NX feature records",
@@ -5707,7 +5675,7 @@ fn attach_feature_operations(
                 ctx.charge_collection_items(1, "NX feature result bodies")?;
                 ctx.charge_retained(
                     cadmpeg_core::decode::u64_from_index(
-                        std::mem::size_of::<cadmpeg_core::text::NonBlankString>() + body_len,
+                        body_len,
                     ),
                     "NX feature result body",
                 )?;
@@ -5728,7 +5696,7 @@ fn attach_feature_operations(
                     CodecError::malformed("NX feature result body identity is blank")
                 })?;
                 let mut bodies = Vec::new();
-                cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+                ctx.reserve_capacity(
                     &mut bodies,
                     1,
                     "allocate NX feature result bodies",
@@ -5954,15 +5922,7 @@ fn append_feature_result_topology(
                 cadmpeg_core::decode::u64_from_index(member_count),
             )
         })?;
-    let retained_bytes = std::mem::size_of::<FeatureResultTopology>()
-        .checked_add(member_storage)
-        .ok_or_else(|| {
-            ctx.refuse_codec_limit(
-                "NX result topology record",
-                0,
-                cadmpeg_core::decode::u64_from_index(member_storage),
-            )
-        })?;
+    let retained_bytes = member_storage;
     ctx.charge_collection_items(
         cadmpeg_core::decode::u64_from_index(
             member_count
@@ -5990,7 +5950,7 @@ fn append_feature_result_topology(
         cadmpeg_core::decode::u64_from_index(member_count),
         "NX result topology member validation",
     )?;
-    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+    ctx.reserve_capacity(
         &mut ir.model.feature_result_topologies,
         1,
         "allocate NX result topology records",
@@ -6100,7 +6060,7 @@ fn feature_result_group_members(
         ctx.charge_collection_items(1, "NX feature result group members")?;
         ctx.charge_retained(
             cadmpeg_core::decode::u64_from_index(
-                std::mem::size_of::<cadmpeg_core::text::NonBlankString>() + identity_len,
+                identity_len,
             ),
             "NX feature result group member identity",
         )?;
@@ -6108,7 +6068,7 @@ fn feature_result_group_members(
             cadmpeg_core::decode::u64_from_index(identity_len),
             "NX feature result group member identity formatting",
         )?;
-        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+        ctx.reserve_capacity(
             output,
             1,
             "allocate NX feature result group members",
@@ -6953,14 +6913,9 @@ fn segment_binding_body_indexes<'a, 'ctx>(
             if stream_bodies.contains(&body.id) {
                 continue;
             }
-            let bytes = std::mem::size_of::<BodyId>();
             ctx.charge_collection_items(1, "NX segment body identity")?;
-            reservation.grow(cadmpeg_core::decode::u64_from_index(bytes))?;
-            cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
-                &mut stream_bodies,
-                1,
-                "NX segment body identity",
-            )?;
+            reservation.with_storage(|| ctx.reserve_capacity(
+                &mut stream_bodies, 1, "NX segment body identity"))?;
             stream_bodies.push(reservation.with_storage(|| {
                 body.id
                     .try_clone_for_decode(ctx, "NX segment body identity")
@@ -7923,11 +7878,11 @@ fn parasolid_topology_attribute_contexts<'a>(
             &crate::native::parasolid::ParasolidTopologyAttributeListReference,
         >()))?;
         let references = references_by_target.entry(key).or_default();
-        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+        reservation.with_storage(|| ctx.reserve_capacity(
             references,
             1,
             "NX Parasolid topology reference",
-        )?;
+        ))?;
         references.push(reference);
     }
     let emitted_targets = parasolid_topology_attribute_targets(ctx, reservation, ir)?;
@@ -7974,14 +7929,12 @@ fn parasolid_topology_attribute_contexts<'a>(
             } else {
                 None
             };
-            let entry_bytes = std::mem::size_of::<ParasolidTopologyAttributeContext<'_>>();
             ctx.charge_collection_items(1, "NX Parasolid attribute contexts")?;
-            reservation.grow(cadmpeg_core::decode::u64_from_index(entry_bytes))?;
-            cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+            reservation.with_storage(|| ctx.reserve_capacity(
                 &mut contexts,
                 1,
                 "NX Parasolid attribute contexts",
-            )?;
+            ))?;
             contexts.push(ParasolidTopologyAttributeContext {
                 reference,
                 entity,
@@ -8043,15 +7996,7 @@ fn single_string_attribute_values(
     ctx: &DecodeContext<'_>,
     text: &str,
 ) -> Result<Vec<AttributeValue>, CodecError> {
-    let bytes = std::mem::size_of::<AttributeValue>()
-        .checked_add(text.len())
-        .ok_or_else(|| {
-            ctx.refuse_codec_limit(
-                "NX Parasolid string attribute value",
-                0,
-                cadmpeg_core::decode::u64_from_index(text.len()),
-            )
-        })?;
+    let bytes = text.len();
     ctx.charge_collection_items(1, "NX Parasolid string attribute values")?;
     ctx.charge_retained(
         cadmpeg_core::decode::u64_from_index(bytes),
@@ -8065,7 +8010,7 @@ fn single_string_attribute_values(
     )?;
     owned.push_str(text);
     let mut values = Vec::new();
-    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+    ctx.reserve_capacity(
         &mut values,
         1,
         "NX Parasolid string attribute values",
@@ -8089,32 +8034,6 @@ fn mapped_vector_attribute_values<T, const N: usize>(
     input: &[T],
     map: impl Fn(&T) -> [FiniteReal; N],
 ) -> Result<Vec<AttributeValue>, CodecError> {
-    let per_value = std::mem::size_of::<AttributeValue>()
-        .checked_add(
-            std::mem::size_of::<FiniteReal>()
-                .checked_mul(N)
-                .ok_or_else(|| {
-                    ctx.refuse_codec_limit(
-                        "NX Parasolid vector value",
-                        0,
-                        cadmpeg_core::decode::u64_from_index(N),
-                    )
-                })?,
-        )
-        .ok_or_else(|| {
-            ctx.refuse_codec_limit(
-                "NX Parasolid vector value",
-                0,
-                cadmpeg_core::decode::u64_from_index(N),
-            )
-        })?;
-    let bytes = input.len().checked_mul(per_value).ok_or_else(|| {
-        ctx.refuse_codec_limit(
-            "NX Parasolid vector values",
-            0,
-            cadmpeg_core::decode::u64_from_index(input.len()),
-        )
-    })?;
     let items = input
         .len()
         .checked_mul(N.checked_add(1).ok_or_else(|| {
@@ -8135,19 +8054,15 @@ fn mapped_vector_attribute_values<T, const N: usize>(
         cadmpeg_core::decode::u64_from_index(items),
         "NX Parasolid vector value items",
     )?;
-    ctx.charge_retained(
-        cadmpeg_core::decode::u64_from_index(bytes),
-        "NX Parasolid vector values",
-    )?;
     let mut values = Vec::new();
-    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+    ctx.reserve_capacity(
         &mut values,
         input.len(),
         "NX Parasolid vector values",
     )?;
     for item in input {
         let mut components = Vec::new();
-        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+        ctx.reserve_capacity(
             &mut components,
             N,
             "NX Parasolid vector components",
@@ -8166,13 +8081,8 @@ fn push_topology_attribute(
     name: String,
     values: Vec<AttributeValue>,
 ) -> Result<(), CodecError> {
-    let bytes = std::mem::size_of::<SourceAttribute>();
     ctx.charge_collection_items(1, "NX Parasolid attribute output")?;
-    ctx.charge_retained(
-        cadmpeg_core::decode::u64_from_index(bytes),
-        "NX Parasolid attribute output",
-    )?;
-    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+    ctx.reserve_capacity(
         &mut ir.model.attributes,
         1,
         "NX Parasolid attribute output",
@@ -8521,25 +8431,17 @@ fn push_referenced_parameter(
         cadmpeg_core::decode::u64_from_index(expression.len()),
         "NX referenced parameter identity",
     )?;
-    let bytes = std::mem::size_of::<ParameterId>()
-        .checked_add(expression.len())
-        .ok_or_else(|| {
-            ctx.refuse_codec_limit(
-                "NX referenced parameter",
-                0,
-                cadmpeg_core::decode::u64_from_index(expression.len()),
-            )
-        })?;
+    let bytes = expression.len();
     ctx.charge_collection_items(1, "NX referenced parameters")?;
     reservation.grow(cadmpeg_core::decode::u64_from_index(bytes))?;
     let Some(id) = expressions::expression_parameter_id(expression) else {
         return Ok(());
     };
-    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+    reservation.with_storage(|| ctx.reserve_capacity(
         referenced,
         1,
         "NX referenced parameters",
-    )?;
+    ))?;
     referenced.push(id);
     Ok(())
 }
@@ -8556,16 +8458,11 @@ fn push_unique_feature_dependency(
     if dependencies.contains(candidate) {
         return Ok(());
     }
-    let bytes = std::mem::size_of::<FeatureId>();
     ctx.charge_collection_items(1, "NX feature dependencies")?;
-    ctx.charge_retained(
-        cadmpeg_core::decode::u64_from_index(bytes),
-        "NX feature dependency",
-    )?;
-    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+    ctx.reserve_capacity(
         dependencies,
         1,
-        "NX feature dependencies",
+        "NX feature dependency",
     )?;
     dependencies.push(candidate.try_clone_for_decode(ctx, "NX feature dependency")?);
     Ok(())
@@ -8657,7 +8554,7 @@ fn text_semantic_annotation(
         Ok(owned)
     };
     let mut text_values = Vec::new();
-    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+    ctx.reserve_capacity(
         &mut text_values,
         1,
         "allocate NX TEXT annotation text list",
@@ -8710,16 +8607,11 @@ pub(super) fn parameter_owner_dependencies(
             continue;
         };
         if !dependencies.contains(owner) {
-            let bytes = std::mem::size_of::<FeatureId>();
             ctx.charge_collection_items(1, "NX parameter owner dependencies")?;
-            ctx.charge_retained(
-                cadmpeg_core::decode::u64_from_index(bytes),
-                "NX parameter owner dependency",
-            )?;
-            cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+            ctx.reserve_capacity(
                 &mut dependencies,
                 1,
-                "NX parameter owner dependencies",
+                "NX parameter owner dependency",
             )?;
             dependencies.push(owner.try_clone_for_decode(ctx, "NX parameter owner dependency")?);
         }
@@ -9324,14 +9216,9 @@ fn feature_body_outputs(
     let Some([body]) = bodies_by_object_index.get(&object_index).map(Vec::as_slice) else {
         return Ok(Vec::new());
     };
-    let bytes = std::mem::size_of::<BodyId>();
     ctx.charge_collection_items(1, "NX feature body output")?;
-    ctx.charge_retained(
-        cadmpeg_core::decode::u64_from_index(bytes),
-        "NX feature body output",
-    )?;
     let mut outputs = Vec::new();
-    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+    ctx.reserve_capacity(
         &mut outputs,
         1,
         "NX feature body output",
@@ -9588,13 +9475,8 @@ fn complete_operation_body_image_outputs(
         if outputs.contains(body) {
             return Ok(Vec::new());
         }
-        let bytes = std::mem::size_of::<BodyId>();
         ctx.charge_collection_items(1, "NX complete body image output")?;
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(bytes),
-            "NX complete body image output",
-        )?;
-        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+        ctx.reserve_capacity(
             &mut outputs,
             1,
             "NX complete body image output",

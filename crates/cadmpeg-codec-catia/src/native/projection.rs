@@ -413,49 +413,50 @@ pub(crate) fn consolidated_edge_nodes(
     records: &[ConsolidatedRecord],
     circles: &[CatiaConsolidatedCircle],
 ) -> Result<Vec<CatiaConsolidatedEdgeNode>, CodecError> {
+    let mut temporary = ctx.reserve_scoped(0, "catia native edge node workspace")?;
     let mut circle_ids = HashMap::new();
     for circle in circles {
-        ctx.insert_hash_map(
+        temporary.with_storage(|| ctx.insert_hash_map(
             &mut circle_ids,
             circle.byte_offset,
             circle.id.as_str(),
             "catia_native_edge_circle_ids",
-        )?;
+        ))?;
     }
     let mut frames = HashMap::new();
     for record in records.iter().filter(|record| {
         record.family == crate::wire::records::ConsolidatedFamily::B && record.class == 0x5e
     }) {
-        ctx.insert_hash_map(
+        temporary.with_storage(|| ctx.insert_hash_map(
             &mut frames,
             record.byte_offset(),
             (record.width, record.flag, record.source_index),
             "catia_native_edge_frames",
-        )?;
+        ))?;
     }
     let mut owned_nodes = HashMap::new();
-    for owned in crate::families::consolidated::records::consolidated_owned_edge_nodes_from_records(
+    for owned in temporary.with_storage(|| crate::families::consolidated::records::consolidated_owned_edge_nodes_from_records(
         ctx, bytes, records,
-    )? {
-        ctx.insert_hash_map(
+    ))? {
+        temporary.with_storage(|| ctx.insert_hash_map(
             &mut owned_nodes,
             owned.node.pos,
             (owned.owner_pos, owned.allocation_ordinal),
             "catia_native_owned_edge_nodes",
-        )?;
+        ))?;
     }
     let mut compact_endpoints = HashMap::new();
     for binding in
-        crate::families::consolidated::records::consolidated_compact_edge_endpoints_from_records(
+        temporary.with_storage(|| crate::families::consolidated::records::consolidated_compact_edge_endpoints_from_records(
             ctx, bytes, records,
-        )?
+        ))?
     {
-        ctx.insert_hash_map(
+        temporary.with_storage(|| ctx.insert_hash_map(
             &mut compact_endpoints,
             binding.node.pos,
             binding.endpoint_records.map(u64_from_index),
             "catia_native_edge_compact_endpoints",
-        )?;
+        ))?;
     }
     let mut use_runs = HashMap::new();
     for run in crate::families::consolidated::records::consolidated_edge_use_runs_from_records(
@@ -464,17 +465,13 @@ pub(crate) fn consolidated_edge_nodes(
         let Some(uses) = native_consolidated_edge_uses(&run.uses) else {
             continue;
         };
-        ctx.insert_hash_map(
+        let definition = run.definition.map(|definition| CatiaConsolidatedEdgeDefinition::from_source(ctx, definition)).transpose()?;
+        temporary.with_storage(|| ctx.insert_hash_map(
             &mut use_runs,
             run.node.pos,
-            (
-                uses,
-                run.definition
-                    .map(|definition| CatiaConsolidatedEdgeDefinition::from_source(ctx, definition))
-                    .transpose()?,
-            ),
+            (uses, definition),
             "catia_native_edge_use_runs",
-        )?;
+        ))?;
     }
     let mut analytic_circles = HashMap::new();
     for run in
@@ -486,7 +483,7 @@ pub(crate) fn consolidated_edge_nodes(
             continue;
         };
         let circle = ctx.copy_retained_text(circle, "catia_native_analytic_edge_circle_id")?;
-        ctx.insert_hash_map(
+        temporary.with_storage(|| ctx.insert_hash_map(
             &mut analytic_circles,
             run.node.pos,
             CatiaConsolidatedAnalyticCircleBinding {
@@ -494,13 +491,13 @@ pub(crate) fn consolidated_edge_nodes(
                 circle,
             },
             "catia_native_analytic_edge_bindings",
-        )?;
+        ))?;
     }
     let mut class25_descriptors = HashMap::new();
     for run in crate::families::consolidated::records::consolidated_class25_edge_runs_from_records(
         ctx, bytes, records,
     )? {
-        ctx.insert_hash_map(
+        temporary.with_storage(|| ctx.insert_hash_map(
             &mut class25_descriptors,
             run.node.pos,
             CatiaConsolidatedClass25Descriptor {
@@ -510,7 +507,7 @@ pub(crate) fn consolidated_edge_nodes(
                 values: run.descriptor.values,
             },
             "catia_native_class25_edge_descriptors",
-        )?;
+        ))?;
     }
     let mut output = Vec::new();
     for (index, node) in

@@ -1794,15 +1794,12 @@ fn stable_object_record_graph_identity(
     };
     next_node_id = next;
     ctx.charge_collection_items(1, "NX object record graph stack")?;
-    stack_reservation.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
-        Frame,
-    >()))?;
     stack_charged_len += 1;
-    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+    stack_reservation.with_storage(|| ctx.reserve_capacity(
         &mut stack,
         1,
         "allocate NX object record graph stack",
-    )?;
+    ))?;
     stack.push(Frame {
         record: root,
         next_reference: 0,
@@ -1883,16 +1880,13 @@ fn stable_object_record_graph_identity(
                 next_node_id = next;
                 if stack.len() >= stack_charged_len {
                     ctx.charge_collection_items(1, "NX object record graph stack")?;
-                    stack_reservation.grow(cadmpeg_core::decode::u64_from_index(
-                        std::mem::size_of::<Frame>(),
-                    ))?;
                     stack_charged_len += 1;
                 }
-                cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+                stack_reservation.with_storage(|| ctx.reserve_capacity(
                     &mut stack,
                     1,
                     "allocate NX object record graph stack",
-                )?;
+                ))?;
                 stack.push(Frame {
                     record: target,
                     next_reference: 0,
@@ -3217,16 +3211,9 @@ pub(super) fn external_references(
         "nx external reference ordinals",
     )?;
     ctx.charge_collection_items(count_u64, "nx external references")?;
-    let record_bytes = count
-        .checked_mul(std::mem::size_of::<ExternalReference>())
-        .ok_or_else(|| ctx.refuse_codec_limit("nx external references", 0, count_u64))?;
-    ctx.charge_retained(
-        cadmpeg_core::decode::u64_from_index(record_bytes),
-        "nx external references",
-    )?;
     let mut ordinals = BTreeMap::<String, u32>::new();
     let mut references = Vec::new();
-    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+    ctx.reserve_capacity(
         &mut references,
         count,
         "nx external references",
@@ -4496,9 +4483,7 @@ pub(super) fn rmfastload_object_id_table(
     let retained_bytes = count_u64
         .checked_mul(
             u64::try_from(
-                std::mem::size_of::<RmFastLoadObjectId>()
-                    + std::mem::size_of::<String>()
-                    + 2 * member_id_len
+                2 * member_id_len
                     + table_id_text.len(),
             )
             .map_err(|_| CodecError::NotImplemented("FastLoad native item exceeds u64".into()))?,
@@ -4519,7 +4504,7 @@ pub(super) fn rmfastload_object_id_table(
 
     let table_id = table_id_text.to_string();
     let mut object_ids = Vec::new();
-    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+    ctx.reserve_capacity(
         &mut object_ids,
         count,
         "allocate NX FastLoad native records",
@@ -4546,7 +4531,7 @@ pub(super) fn rmfastload_object_id_table(
     }
     assign_rmfastload_object_id_identities(&mut object_ids, &counts);
     let mut member_ids = Vec::new();
-    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+    ctx.reserve_capacity(
         &mut member_ids,
         count,
         "allocate NX FastLoad member links",
@@ -5570,35 +5555,11 @@ pub(super) fn part_color_tables(
         )?;
         let definition_count = cadmpeg_core::decode::u64_from_index(PALETTE_SIZE);
         ctx.charge_collection_items(definition_count, "NX part color definitions")?;
-        let definition_bytes = PALETTE_SIZE
-            .checked_mul(std::mem::size_of::<PartColorDefinition>())
-            .ok_or_else(|| ctx.refuse_codec_limit("NX part color definitions", 0, 1))?;
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(definition_bytes),
-            "retain NX part color definitions",
+        let (mut parsed_definitions, _definitions_guard) = ctx.scoped_vector_storage(
+            PALETTE_SIZE, "build NX part color definitions",
         )?;
-        let _definitions_guard = ctx.reserve_scoped(
-            cadmpeg_core::decode::u64_from_index(definition_bytes),
-            "build NX part color definitions",
-        )?;
-        let mut parsed_definitions = Vec::new();
-        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
-            &mut parsed_definitions,
-            PALETTE_SIZE,
-            "allocate NX part color definitions",
-        )?;
-        let id_slots = PALETTE_SIZE
-            .checked_mul(std::mem::size_of::<String>())
-            .ok_or_else(|| ctx.refuse_codec_limit("NX part color definition ids", 0, 1))?;
-        let _ids_guard = ctx.reserve_scoped(
-            cadmpeg_core::decode::u64_from_index(id_slots),
-            "build NX part color definition ids",
-        )?;
-        let mut definition_ids = Vec::new();
-        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
-            &mut definition_ids,
-            PALETTE_SIZE,
-            "allocate NX part color definition ids",
+        let (mut definition_ids, _ids_guard) = ctx.scoped_vector_storage(
+            PALETTE_SIZE, "build NX part color definition ids",
         )?;
         for color_index in PaletteIndex::all() {
             let definition = &table.definitions[usize::from(color_index.value()) - 1];
@@ -5646,7 +5607,7 @@ pub(super) fn part_color_tables(
             .checked_add(cadmpeg_core::decode::u64_from_index(table.offset))
             .ok_or_else(|| ctx.refuse_codec_limit("NX part color table offset", 0, 1))?;
         ctx.reserve_vec(&mut tables, 1, "NX part color tables")?;
-        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+        ctx.reserve_capacity(
             &mut definitions,
             PALETTE_SIZE,
             "allocate NX part color definitions",

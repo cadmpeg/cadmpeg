@@ -2501,7 +2501,7 @@ fn try_decode_brep(
         // Keep only the selected source's bridge sequence namespace. Alternate
         // configuration sites are qualified into the model but do not own the
         // active SWIFT CadIdentifier lane.
-        merge_brep(&mut decoded, alternate)?;
+        merge_brep(ctx, &mut decoded, alternate)?;
     }
     let report = build_geometry_report(
         ctx,
@@ -2576,8 +2576,8 @@ fn bind_opaque_geometry(
     Ok(())
 }
 
-fn append_brep_arena<T>(target: &mut Vec<T>, source: &mut Vec<T>) -> Result<(), CodecError> {
-    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+fn append_brep_arena<T>(ctx: &DecodeContext<'_>, target: &mut Vec<T>, source: &mut Vec<T>) -> Result<(), CodecError> {
+    ctx.reserve_vec(
         target,
         source.len(),
         "merge SLDPRT B-rep arena",
@@ -2586,31 +2586,32 @@ fn append_brep_arena<T>(target: &mut Vec<T>, source: &mut Vec<T>) -> Result<(), 
     Ok(())
 }
 
-fn merge_brep(target: &mut Brep, mut source: Brep) -> Result<(), CodecError> {
+fn merge_brep(ctx: &DecodeContext<'_>, target: &mut Brep, mut source: Brep) -> Result<(), CodecError> {
     // Sequence links are source-local and belong only to the selected SWIFT
     // source. Alternate configuration sequences must not enter its namespace.
     target.annotations.append(source.annotations)?;
-    append_brep_arena(&mut target.bodies, &mut source.bodies)?;
-    append_brep_arena(&mut target.regions, &mut source.regions)?;
-    append_brep_arena(&mut target.shells, &mut source.shells)?;
-    append_brep_arena(&mut target.faces, &mut source.faces)?;
-    append_brep_arena(&mut target.loops, &mut source.loops)?;
-    append_brep_arena(&mut target.coedges, &mut source.coedges)?;
-    append_brep_arena(&mut target.edges, &mut source.edges)?;
-    append_brep_arena(&mut target.vertices, &mut source.vertices)?;
-    append_brep_arena(&mut target.points, &mut source.points)?;
-    append_brep_arena(&mut target.surfaces, &mut source.surfaces)?;
+    append_brep_arena(ctx, &mut target.bodies, &mut source.bodies)?;
+    append_brep_arena(ctx, &mut target.regions, &mut source.regions)?;
+    append_brep_arena(ctx, &mut target.shells, &mut source.shells)?;
+    append_brep_arena(ctx, &mut target.faces, &mut source.faces)?;
+    append_brep_arena(ctx, &mut target.loops, &mut source.loops)?;
+    append_brep_arena(ctx, &mut target.coedges, &mut source.coedges)?;
+    append_brep_arena(ctx, &mut target.edges, &mut source.edges)?;
+    append_brep_arena(ctx, &mut target.vertices, &mut source.vertices)?;
+    append_brep_arena(ctx, &mut target.points, &mut source.points)?;
+    append_brep_arena(ctx, &mut target.surfaces, &mut source.surfaces)?;
     append_brep_arena(
+        ctx,
         &mut target.procedural_surfaces,
         &mut source.procedural_surfaces,
     )?;
-    append_brep_arena(&mut target.curves, &mut source.curves)?;
-    append_brep_arena(&mut target.pcurves, &mut source.pcurves)?;
-    append_brep_arena(&mut target.unknowns, &mut source.unknowns)?;
-    append_brep_arena(&mut target.face_colors, &mut source.face_colors)?;
-    append_brep_arena(&mut target.face_atoms, &mut source.face_atoms)?;
-    append_brep_arena(&mut target.body_modifiers, &mut source.body_modifiers)?;
-    append_brep_arena(&mut target.losses, &mut source.losses)?;
+    append_brep_arena(ctx, &mut target.curves, &mut source.curves)?;
+    append_brep_arena(ctx, &mut target.pcurves, &mut source.pcurves)?;
+    append_brep_arena(ctx, &mut target.unknowns, &mut source.unknowns)?;
+    append_brep_arena(ctx, &mut target.face_colors, &mut source.face_colors)?;
+    append_brep_arena(ctx, &mut target.face_atoms, &mut source.face_atoms)?;
+    append_brep_arena(ctx, &mut target.body_modifiers, &mut source.body_modifiers)?;
+    append_brep_arena(ctx, &mut target.losses, &mut source.losses)?;
     target.stats.unknown_surface_faces += source.stats.unknown_surface_faces;
     target.stats.unknown_procedural_supports += source.stats.unknown_procedural_supports;
     target.stats.unknown_curve_edges += source.stats.unknown_curve_edges;
@@ -2846,7 +2847,7 @@ fn build_geometry_ir(
     // Marker-backed sketches can originate in either lane family. Their
     // geometry and constraints must use the same complete lane set.
     let base_lane_count = lanes.len();
-    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+    ctx.reserve_capacity(
         &mut lanes,
         supplemental_config_lanes.len(),
         "merge SLDPRT feature input lanes",
@@ -2980,7 +2981,7 @@ fn build_geometry_ir(
     stamp_feature_baseline(ctx, &mut ir)?;
     let mut attributes = crate::metadata::attributes(ctx, scan, &mut annotations)?;
     let custom_properties = crate::history::project::custom_property_attributes(ctx, &histories)?;
-    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+    ctx.reserve_capacity(
         &mut attributes,
         custom_properties.len(),
         "append SLDPRT custom properties",
@@ -3602,7 +3603,7 @@ fn build_geometry_ir(
     )?;
     let remaining_assignments =
         crate::tessellation::assign_unique_surface_owners(ctx, &mut ir.model)?;
-    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+    ctx.reserve_capacity(
         &mut assigned_tessellations,
         remaining_assignments.len(),
         "merge SLDPRT assigned tessellations",
@@ -3695,7 +3696,7 @@ fn build_geometry_ir(
                 "opaque geometry record {record_id} was not retained"
             )));
         };
-        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+        ctx.reserve_capacity(
             source.links_mut(),
             links.len(),
             "append SLDPRT opaque geometry links",
@@ -3979,7 +3980,7 @@ fn build_geometry_report(
         ctx.reserve_vec(&mut losses, 1, "append SLDPRT geometry loss")?;
         losses.push(SldprtLossCode::GeometryFaceSupportSurfaceUntyped.note(message.join(" ")));
     }
-    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+    ctx.reserve_capacity(
         &mut losses,
         decoded.losses.len(),
         "move SLDPRT B-rep losses to report",
@@ -4089,7 +4090,7 @@ fn build_metadata_ir(
     } = crate::resolved_features::sketch_projection::sketches(ctx, scan, &mut annotations)?;
     let mut model_attributes = crate::metadata::attributes(ctx, scan, &mut annotations)?;
     let custom_properties = crate::history::project::custom_property_attributes(ctx, &histories)?;
-    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+    ctx.reserve_capacity(
         &mut model_attributes,
         custom_properties.len(),
         "append SLDPRT custom properties",
@@ -4245,7 +4246,7 @@ fn build_metadata_ir(
     // Marker-backed sketches can originate in either lane family. Their
     // geometry and constraints must use the same complete lane set.
     let base_lane_count = lanes.len();
-    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+    ctx.reserve_capacity(
         &mut lanes,
         supplemental_config_lanes.len(),
         "merge SLDPRT feature input lanes",
@@ -5164,7 +5165,7 @@ fn assign_configuration_bodies(
                 "merge SLDPRT configuration bodies",
             )?;
             if !merged.contains(&body) {
-                cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+                ctx.reserve_capacity(
                     merged,
                     1,
                     "merge SLDPRT configuration bodies",

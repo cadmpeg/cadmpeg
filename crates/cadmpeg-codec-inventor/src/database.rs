@@ -206,7 +206,7 @@ pub(crate) fn parse_registry(
         "admit Inventor segment registry entries",
     )?;
     let mut entries =
-        DecodeContext::admitted_vec(count, "admit Inventor segment registry entries")?;
+        ctx.vector_storage(count, "admit Inventor segment registry entries")?;
     for _ in 0..count {
         let display_name = cursor.utf16(ctx, "segment display name", 4_096)?;
         let segment_id = cursor.array("segment id")?;
@@ -224,7 +224,7 @@ pub(crate) fn parse_registry(
             "admit Inventor segment registry objects",
         )?;
         let mut objects =
-            DecodeContext::admitted_vec(object_count, "admit Inventor segment registry objects")?;
+            ctx.vector_storage(object_count, "admit Inventor segment registry objects")?;
         let mut node_count = None;
         for _ in 0..object_count {
             let object = SegmentObject {
@@ -253,7 +253,7 @@ pub(crate) fn parse_registry(
             "admit Inventor segment registry nodes",
         )?;
         let mut nodes =
-            DecodeContext::admitted_vec(node_count, "admit Inventor segment registry nodes")?;
+            ctx.vector_storage(node_count, "admit Inventor segment registry nodes")?;
         for _ in 0..node_count {
             nodes.push(SegmentNode {
                 index: cursor.u32("node index")?,
@@ -306,7 +306,7 @@ pub(crate) fn parse_revisions(
         cadmpeg_core::decode::u64_from_index(count),
         "admit Inventor revision entries",
     )?;
-    let mut entries = DecodeContext::admitted_vec(count, "admit Inventor revision entries")?;
+    let mut entries = ctx.vector_storage(count, "admit Inventor revision entries")?;
     for _ in 0..count {
         let id = cursor.array("revision id")?;
         let flags = cursor.u32("revision flags")?;

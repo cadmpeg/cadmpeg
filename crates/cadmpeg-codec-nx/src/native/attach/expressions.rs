@@ -128,9 +128,7 @@ pub(in crate::native) fn attach_expression_parameters(
     let base_ordinal = cadmpeg_core::decode::u64_from_index(ir.model.features.len());
     for (table_ordinal, (table, mut expressions)) in ordered_tables.into_iter().enumerate() {
         let ordered_count = order_expression_dependencies(ctx, &mut reservation, &mut expressions)?;
-        let feature_id_bytes = std::mem::size_of::<FeatureId>()
-            .checked_add(table.len())
-            .and_then(|bytes| bytes.checked_add(32))
+        let feature_id_bytes = table.len().checked_add(32)
             .ok_or_else(|| {
                 ctx.refuse_codec_limit(
                     "NX expression feature identity",
@@ -187,15 +185,7 @@ pub(in crate::native) fn attach_expression_parameters(
         annotations.exactness_for_decode(ctx, &feature_id, Exactness::Derived)?;
         let mut source_content = Vec::new();
         for expression in &expressions {
-            let bytes = std::mem::size_of::<FeatureSourceContent>()
-                .checked_add(expression.id.len())
-                .ok_or_else(|| {
-                    ctx.refuse_codec_limit(
-                        "NX expression feature content",
-                        0,
-                        cadmpeg_core::decode::u64_from_index(expression.id.len()),
-                    )
-                })?;
+            let bytes = expression.id.len();
             reservation.grow(cadmpeg_core::decode::u64_from_index(bytes))?;
             let Some(parameter) = expression_parameter_id(&expression.id) else {
                 continue;
@@ -205,7 +195,7 @@ pub(in crate::native) fn attach_expression_parameters(
                 cadmpeg_core::decode::u64_from_index(bytes),
                 "NX expression feature content",
             )?;
-            cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+            ctx.reserve_capacity(
                 &mut source_content,
                 1,
                 "NX expression feature content",
@@ -228,7 +218,7 @@ pub(in crate::native) fn attach_expression_parameters(
             cadmpeg_core::decode::u64_from_index(feature_bytes),
             "NX expression feature",
         )?;
-        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+        ctx.reserve_capacity(
             &mut ir.model.features,
             1,
             "NX expression feature",
@@ -258,15 +248,7 @@ pub(in crate::native) fn attach_expression_parameters(
         let mut parameter_ids =
             BTreeMap::<(&str, &crate::native::om::ExpressionUnit), Vec<ParameterId>>::new();
         for expression in &expressions {
-            let id_bytes = std::mem::size_of::<ParameterId>()
-                .checked_add(expression.id.len())
-                .ok_or_else(|| {
-                    ctx.refuse_codec_limit(
-                        "NX parameter lookup identity",
-                        0,
-                        cadmpeg_core::decode::u64_from_index(expression.id.len()),
-                    )
-                })?;
+            let id_bytes = expression.id.len();
             reservation.grow(cadmpeg_core::decode::u64_from_index(id_bytes))?;
             let Some(id) = expression_parameter_id(&expression.id) else {
                 continue;
@@ -290,15 +272,7 @@ pub(in crate::native) fn attach_expression_parameters(
             ids.push(id);
         }
         for (ordinal, expression) in expressions.into_iter().enumerate() {
-            let id_bytes = std::mem::size_of::<ParameterId>()
-                .checked_add(expression.id.len())
-                .ok_or_else(|| {
-                    ctx.refuse_codec_limit(
-                        "NX expression parameter identity",
-                        0,
-                        cadmpeg_core::decode::u64_from_index(expression.id.len()),
-                    )
-                })?;
+            let id_bytes = expression.id.len();
             reservation.grow(cadmpeg_core::decode::u64_from_index(id_bytes))?;
             let Some(id) = expression_parameter_id(&expression.id) else {
                 continue;
@@ -352,7 +326,7 @@ pub(in crate::native) fn attach_expression_parameters(
                         cadmpeg_core::decode::u64_from_index(bytes),
                         "NX parameter dependency",
                     )?;
-                    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+                    ctx.reserve_capacity(
                         &mut dependencies,
                         1,
                         "NX parameter dependencies",
@@ -452,7 +426,7 @@ pub(in crate::native) fn attach_expression_parameters(
                 cadmpeg_core::decode::u64_from_index(bytes),
                 "NX expression parameter",
             )?;
-            cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+            ctx.reserve_capacity(
                 &mut ir.model.parameters,
                 1,
                 "NX expression parameters",

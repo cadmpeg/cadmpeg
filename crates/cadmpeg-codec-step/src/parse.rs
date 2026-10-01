@@ -13,7 +13,7 @@ use std::num::NonZeroUsize;
 use std::ops::Range;
 use std::sync::Arc;
 
-use cadmpeg_core::decode::{u64_from_index, DecodeContext};
+use cadmpeg_core::decode::{u64_from_index, DecodeContext, ScopedReservation};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::scalar::FiniteReal;
 
@@ -1001,33 +1001,21 @@ impl Parser<'_, '_, '_> {
             return self.err("external value instance collides with a DATA instance");
         }
         if !anchors.is_empty() {
-            self.budget.charge_collection_items(
-                u64_from_index(anchors.len()),
-                "step_anchor_binding_items",
-            )?;
-            self.budget.charge_retained(
-                btree_node_storage::<String, Value>()?
-                    .checked_mul(u64_from_index(anchors.len()))
-                    .ok_or_else(storage_overflow)?,
-                "step_anchor_binding_storage",
-            )?;
+            let mut binding_storage = self.budget.reserve_scoped(0, "step_anchor_binding_storage")?;
             let mut anchor_bindings = BTreeMap::new();
             for anchor in &anchors {
-                self.budget.charge_work(
-                    u64_from_index(anchor.name.len()),
-                    "step_anchor_binding_name_copy",
-                )?;
-                anchor_bindings.insert(
-                    self.budget
-                        .copy_retained_text(&anchor.name, "step_anchor_binding_name_copy")?,
-                    try_clone_value(&anchor.value, self.budget, "step_anchor_binding_value_copy")
-                        .map_err(ParseError::Resource)?,
-                );
+                binding_storage.with_storage(|| {
+                    let name = self.budget.copy_retained_text(&anchor.name, "step_anchor_binding_name_copy")?;
+                    let value = try_clone_value(&anchor.value, self.budget, "step_anchor_binding_value_copy")?;
+                    self.budget.insert_btree_map(&mut anchor_bindings, name, value, "step_anchor_binding_items")?;
+                    Ok::<(), CodecError>(())
+                })?;
             }
             if anchor_bindings.len() != anchors.len() {
                 return self.err("duplicate anchor name");
             }
-            let mut resolver = AnchorResolver::new(&anchor_bindings, self.budget);
+            let mut resolver = AnchorResolver::new(&anchor_bindings, self.budget)
+                .map_err(|error| error.into_parse_error(0))?;
             for anchor in &mut anchors {
                 anchor.value = resolver
                     .resolve_root(&anchor.value)
@@ -2358,24 +2346,28 @@ struct AnchorResolver<'a, 'ctx, 'arena> {
     memo: BTreeMap<&'a str, (Value, usize)>,
     remaining_nodes: usize,
     budget: &'ctx DecodeContext<'arena>,
+    storage: ScopedReservation<'ctx>,
 }
 
 impl<'a, 'ctx, 'arena> AnchorResolver<'a, 'ctx, 'arena> {
     const MAX_EXPANDED_NODES: usize = 1_000_000;
     const MAX_REFERENCE_DEPTH: usize = 256;
 
-    fn new(anchors: &'a BTreeMap<String, Value>, budget: &'ctx DecodeContext<'arena>) -> Self {
-        Self {
+    fn new(anchors: &'a BTreeMap<String, Value>, budget: &'ctx DecodeContext<'arena>) -> Result<Self, ResolveError> {
+        Ok(Self {
+            storage: budget.reserve_scoped(0, "step_anchor_resolver_storage")?,
             anchors,
             memo: BTreeMap::new(),
             remaining_nodes: collection_cap(budget, Self::MAX_EXPANDED_NODES),
             budget,
-        }
+        })
     }
 
     fn resolve_root(&mut self, value: &Value) -> Result<Value, ResolveError> {
+        let mut stack_storage = self.budget.reserve_scoped(0, "step_anchor_reference_stack_storage")?;
+        let mut stack = Vec::new();
         let (value, _, expanded_nodes) =
-            self.resolve(value, &mut Vec::new(), self.remaining_nodes, 0)?;
+            self.resolve(value, &mut stack, &mut stack_storage, self.remaining_nodes, 0)?;
         self.remaining_nodes = self
             .remaining_nodes
             .checked_sub(expanded_nodes)
@@ -2405,6 +2397,7 @@ impl<'a, 'ctx, 'arena> AnchorResolver<'a, 'ctx, 'arena> {
         &mut self,
         value: &Value,
         stack: &mut Vec<&'a str>,
+        stack_storage: &mut ScopedReservation<'ctx>,
         budget: usize,
         depth: usize,
     ) -> Result<(Value, usize, usize), ResolveError> {
@@ -2450,43 +2443,25 @@ impl<'a, 'ctx, 'arena> AnchorResolver<'a, 'ctx, 'arena> {
                 }
                 value_node_count(source, Self::MAX_EXPANDED_NODES, self.budget)?;
 
-                if stack.len() == stack.capacity() {
-                    self.budget
-                        .charge_retained(
-                            u64_from_index(size_of::<&str>()),
-                            "step_anchor_reference_stack_storage",
-                        )
-                        .map_err(ResolveError::Resource)?;
-                }
-
-                self.budget
-                    .reserve_vec(stack, 1, "step_anchor_reference_stack")
-                    .map_err(ResolveError::Resource)?;
+                stack_storage.with_storage(|| {
+                    self.budget.charge_collection_items(1, "step_anchor_reference_stack")?;
+                    self.budget.reserve_capacity(stack, 1, "step_anchor_reference_stack_storage")
+                }).map_err(ResolveError::Resource)?;
                 stack.push(name);
-                let resolved = self.resolve(source, stack, budget, depth + 1);
+                let resolved = self.resolve(source, stack, stack_storage, budget, depth + 1);
                 stack.pop();
                 let (value, nodes, _) = resolved?;
                 if nodes > budget {
                     return Err(self.node_limit_error());
                 }
                 self.charge_nodes(nodes)?;
-                self.budget
-                    .admit_btree_entry(&self.memo, &name, "step_anchor_memo_entry")
-                    .map_err(ResolveError::Resource)?;
-                self.budget
-                    .charge_retained(
-                        btree_node_storage::<&str, (Value, usize)>()?,
-                        "step_anchor_memo_storage",
-                    )
-                    .map_err(ResolveError::Resource)?;
-                self.memo.insert(
-                    name,
-                    (
-                        try_clone_value(&value, self.budget, "step_anchor_memo_value_copy")
-                            .map_err(ResolveError::Resource)?,
-                        nodes,
-                    ),
-                );
+                self.storage.with_storage(|| {
+                    self.budget.admit_btree_entry(&self.memo, &name, "step_anchor_memo_entry")?;
+                    self.memo.insert(name, (
+                        try_clone_value(&value, self.budget, "step_anchor_memo_value_copy")?, nodes,
+                    ));
+                    Ok::<(), CodecError>(())
+                }).map_err(ResolveError::Resource)?;
                 return Ok((value, nodes, nodes));
             }
         }
@@ -2504,7 +2479,7 @@ impl<'a, 'ctx, 'arena> AnchorResolver<'a, 'ctx, 'arena> {
                         .checked_sub(expanded_nodes)
                         .ok_or_else(|| self.node_limit_error())?;
                     let (value, child_nodes, child_expanded_nodes) =
-                        self.resolve(value, stack, remaining, depth + 1)?;
+                        self.resolve(value, stack, stack_storage, remaining, depth + 1)?;
                     nodes = nodes
                         .checked_add(child_nodes)
                         .ok_or_else(|| self.node_limit_error())?;
@@ -2518,7 +2493,7 @@ impl<'a, 'ctx, 'arena> AnchorResolver<'a, 'ctx, 'arena> {
             Value::Typed(name, value) => {
                 self.charge_nodes(1)?;
                 let (value, nodes, expanded_nodes) =
-                    self.resolve(value, stack, budget, depth + 1)?;
+                    self.resolve(value, stack, stack_storage, budget, depth + 1)?;
                 self.budget
                     .charge_work(u64_from_index(name.len()), "step_anchor_typed_name_copy")?;
                 self.budget
@@ -2560,6 +2535,7 @@ struct ReferenceResolver<'a, 'ctx, 'arena> {
     stack: Vec<ReferenceName>,
     remaining_nodes: usize,
     budget: &'ctx DecodeContext<'arena>,
+    storage: ScopedReservation<'ctx>,
 }
 
 impl<'a, 'ctx, 'arena> ReferenceResolver<'a, 'ctx, 'arena> {
@@ -2571,23 +2547,16 @@ impl<'a, 'ctx, 'arena> ReferenceResolver<'a, 'ctx, 'arena> {
         anchors: &'a BTreeMap<String, Value>,
         budget: &'ctx DecodeContext<'arena>,
     ) -> Result<Self, ResolveError> {
-        budget
-            .charge_collection_items(
-                u64_from_index(references.len()),
-                "step_reference_binding_items",
-            )
-            .map_err(ResolveError::Resource)?;
-        let bytes = btree_node_storage::<ReferenceName, &str>()?
-            .checked_mul(u64_from_index(references.len()))
-            .ok_or("reference binding storage exceeds u64")?;
-        budget
-            .charge_retained(bytes, "step_reference_binding_storage")
-            .map_err(ResolveError::Resource)?;
+        let mut storage = budget.reserve_scoped(0, "step_reference_binding_storage")?;
+        let mut bindings = BTreeMap::new();
+        for reference in references {
+            storage.with_storage(|| budget.insert_btree_map(
+                &mut bindings, reference.name, reference.uri.as_str(), "step_reference_binding_items",
+            ))?;
+        }
         Ok(Self {
-            bindings: references
-                .iter()
-                .map(|reference| (reference.name, reference.uri.as_str()))
-                .collect(),
+            storage,
+            bindings,
             anchors,
             stack: Vec::new(),
             remaining_nodes: collection_cap(budget, Self::MAX_MATERIALIZED_NODES),
@@ -2702,18 +2671,10 @@ impl<'a, 'ctx, 'arena> ReferenceResolver<'a, 'ctx, 'arena> {
             };
         };
 
-        if self.stack.len() == self.stack.capacity() {
-            self.budget
-                .charge_retained(
-                    u64_from_index(size_of::<ReferenceName>()),
-                    "step_reference_stack_storage",
-                )
-                .map_err(ResolveError::Resource)?;
-        }
-
-        self.budget
-            .reserve_vec(&mut self.stack, 1, "step_reference_stack")
-            .map_err(ResolveError::Resource)?;
+        self.storage.with_storage(|| {
+            self.budget.charge_collection_items(1, "step_reference_stack")?;
+            self.budget.reserve_capacity(&mut self.stack, 1, "step_reference_stack_storage")
+        }).map_err(ResolveError::Resource)?;
         self.stack.push(key);
         let resolved = self.resolve_value(anchor, depth + 1);
         self.stack.pop();
@@ -2754,31 +2715,15 @@ fn resolve_local_references(
     if references.is_empty() {
         return Ok(());
     }
-    budget
-        .charge_collection_items(
-            u64_from_index(anchors.len()),
-            "step_reference_anchor_copies",
-        )
-        .map_err(ResolveError::Resource)?;
-    let bytes = btree_node_storage::<String, Value>()?
-        .checked_mul(u64_from_index(anchors.len()))
-        .ok_or_else(storage_overflow)?;
-    budget
-        .charge_retained(bytes, "step_reference_anchor_copy_storage")
-        .map_err(ResolveError::Resource)?;
+    let mut snapshot_storage = budget.reserve_scoped(0, "step_reference_anchor_copy_storage")?;
     let mut anchor_bindings = BTreeMap::new();
     for anchor in anchors.iter() {
-        budget.charge_work(
-            u64_from_index(anchor.name.len()),
-            "step_reference_anchor_name_copy",
-        )?;
-        anchor_bindings.insert(
-            budget
-                .copy_retained_text(&anchor.name, "step_reference_anchor_name_copy")
-                .map_err(ResolveError::Resource)?,
-            try_clone_value(&anchor.value, budget, "step_reference_anchor_value_copy")
-                .map_err(ResolveError::Resource)?,
-        );
+        snapshot_storage.with_storage(|| {
+            let name = budget.copy_retained_text(&anchor.name, "step_reference_anchor_name_copy")?;
+            let value = try_clone_value(&anchor.value, budget, "step_reference_anchor_value_copy")?;
+            budget.insert_btree_map(&mut anchor_bindings, name, value, "step_reference_anchor_copies")?;
+            Ok::<(), CodecError>(())
+        })?;
     }
     let mut resolver = ReferenceResolver::new(references, &anchor_bindings, budget)?;
     for anchor in anchors {

@@ -139,7 +139,7 @@ fn split_lines<'a>(source: &'a [u8], ctx: &DecodeContext<'_>) -> Result<Vec<&'a 
         };
         ctx.charge_collection_items(1, "iges_compressed_ascii_lines")?;
 
-        ctx.reserve_retained_admitted_vec(&mut lines, 1, "iges_compressed_ascii_line_index")?;
+        ctx.reserve_capacity(&mut lines, 1, "iges_compressed_ascii_line_index")?;
         lines.push(&source[start..end]);
         start = next;
     }
@@ -156,9 +156,9 @@ fn logical_global_stream(cards: &[&[u8]], ctx: &DecodeContext<'_>) -> Result<Vec
         })
     })?;
     let (mut stream, _stream_storage) =
-        ctx.scoped_admitted_vec(length, "iges_compressed_global_stream")?;
+        ctx.scoped_vector_storage(length, "iges_compressed_global_stream")?;
     let (mut pending_digits, _digits_storage) =
-        ctx.scoped_admitted_vec(length, "iges_compressed_global_digits")?;
+        ctx.scoped_vector_storage(length, "iges_compressed_global_digits")?;
     let mut hollerith_remaining = 0_usize;
     for card in cards {
         for byte in card[..CARD_DATA_WIDTH].iter().copied() {
@@ -402,7 +402,7 @@ fn parse_directory_record(
         }
     };
     let (mut spec_bytes, _spec_storage) =
-        ctx.scoped_admitted_vec(length, "iges_compressed_directory_spec_bytes")?;
+        ctx.scoped_vector_storage(length, "iges_compressed_directory_spec_bytes")?;
     if line_index == start {
         spec_bytes.extend_from_slice(&first[cursor..cursor + delimiter_offset]);
     } else {
@@ -859,7 +859,7 @@ pub(crate) fn normalize(source: &[u8], ctx: &DecodeContext<'_>) -> Result<Vec<u8
     while data_cursor < terminate_index {
         ctx.charge_collection_items(1, "iges_compressed_entities")?;
 
-        ctx.reserve_retained_admitted_vec(&mut entities, 1, "iges_compressed_entity_record")?;
+        ctx.reserve_capacity(&mut entities, 1, "iges_compressed_entity_record")?;
         let (entity, next) = parse_data_entity(
             &lines,
             data_cursor,
@@ -909,7 +909,7 @@ pub(crate) fn normalize(source: &[u8], ctx: &DecodeContext<'_>) -> Result<Vec<u8
         })?;
     charge_normalization(ctx, output_estimate)?;
     let mut output =
-        ctx.retained_admitted_vec(output_estimate, "iges_compressed_normalized_output")?;
+        ctx.vector_storage(output_estimate, "iges_compressed_normalized_output")?;
 
     for line in &lines[start_begin..global_begin] {
         append_source_card(&mut output, line, b'S')?;

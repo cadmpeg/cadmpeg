@@ -66,7 +66,7 @@ impl DecodeContext<'_> {
 
 
     /// Reserve backing storage without admitting values not yet inserted.
-    pub fn reserve_retained_capacity_limit<T>(
+    pub fn reserve_capacity_limit<T>(
         &self,
         values: &mut Vec<T>,
         count: usize,
@@ -131,7 +131,7 @@ impl DecodeContext<'_> {
 
 
     /// Retains vector storage whose slots were admitted in aggregate.
-    pub fn reserve_retained_admitted_vec<T>(
+    pub fn reserve_capacity<T>(
         &self,
         values: &mut Vec<T>,
         count: usize,
@@ -142,7 +142,7 @@ impl DecodeContext<'_> {
     }
 
     /// Creates retained storage whose collection slots are admitted separately.
-    pub fn retained_admitted_vec<T>(
+    pub fn vector_storage<T>(
         &self,
         count: usize,
         operation: &'static str,
@@ -166,13 +166,13 @@ impl DecodeContext<'_> {
     }
 
     /// Creates scoped storage whose collection slots are admitted separately.
-    pub fn scoped_admitted_vec<T>(
+    pub fn scoped_vector_storage<T>(
         &self,
         count: usize,
         operation: &'static str,
     ) -> Result<(Vec<T>, ScopedReservation<'_>), CodecError> {
         let mut reservation = self.reserve_scoped(0, operation)?;
-        let values = reservation.with_storage(|| self.retained_admitted_vec(count, operation))?;
+        let values = reservation.with_storage(|| self.vector_storage(count, operation))?;
         Ok((values, reservation))
     }
 
@@ -690,7 +690,7 @@ impl DecodeContext<'_> {
         }
         self.charge_collection_items(1, index_operation)?;
         self.charge_collection_items(1, value_operation)?;
-        let mut group = self.retained_admitted_vec(1, value_operation)?;
+        let mut group = self.vector_storage(1, value_operation)?;
         let bytes = self.charge_hash_growth::<(K, Vec<V>)>(
             values.len(), values.capacity(), 1, index_operation)?;
         values.try_reserve(1).map_err(|_| {
@@ -794,26 +794,17 @@ impl DecodeContext<'_> {
             .map_err(|_| self.budget.retained_allocation_failed(u64_from_index(bytes), operation))
     }
 
-    /// Reserves a vector whose items were charged by aggregate admission.
-    pub fn reserve_admitted_vec<T>(
-        values: &mut Vec<T>,
-        additional: usize,
-        operation: &'static str,
-    ) -> Result<(), CodecError> {
-        values.try_reserve(additional).map_err(|_| {
+    /// Allocates the fixed vector used by the context's aggregate fill operation.
+    pub(crate) fn admitted_vec<T>(count: usize, operation: &'static str) -> Result<Vec<T>, CodecError> {
+        let mut values = Vec::new();
+        values.try_reserve_exact(count).map_err(|_| {
             CodecError::ResourceLimit(ResourceLimit::allocation_failed(
                 ResourceDimension::CollectionItems,
                 u64::MAX,
-                u64_from_index(additional),
+                u64_from_index(count),
                 operation,
             ))
-        })
-    }
-
-    /// Creates a vector whose items were charged by aggregate admission.
-    pub fn admitted_vec<T>(count: usize, operation: &'static str) -> Result<Vec<T>, CodecError> {
-        let mut values = Vec::new();
-        Self::reserve_admitted_vec(&mut values, count, operation)?;
+        })?;
         Ok(values)
     }
 
@@ -1156,7 +1147,7 @@ impl DecodeContext<'_> {
         operation: &'static str,
     ) -> Result<(), CodecError> {
         if let Some(additional) = length.checked_sub(values.len()) {
-            self.reserve_retained_admitted_vec(values, additional, operation)?;
+            self.reserve_capacity(values, additional, operation)?;
             for _ in 0..additional {
                 values.push(fill);
             }
@@ -1589,7 +1580,7 @@ mod tests {
         let (ctx, _) =
             DecodeContext::from_root_bytes(&[], &arena, &policy).expect("admitted test operation");
         let mut values = Vec::new();
-        ctx.reserve_retained_capacity_limit(&mut values, 1, "reserve retained capacity")
+        ctx.reserve_capacity_limit(&mut values, 1, "reserve retained capacity")
             .expect("admitted test operation");
         assert_eq!(values.capacity(), 4);
         ctx.push_vec(&mut values, 7u64, "admit retained item")
@@ -2066,7 +2057,7 @@ mod tests {
     }
     admitted_case!(
         reserve_admitted_vec_follows_prior_admission,
-        |_ctx: &DecodeContext<'_>| DecodeContext::reserve_admitted_vec(
+        |ctx: &DecodeContext<'_>| ctx.reserve_capacity(
             &mut Vec::<u8>::new(),
             2,
             "test admitted"
@@ -2105,7 +2096,7 @@ mod tests {
     );
     admitted_case!(
         admitted_vec_follows_prior_admission,
-        |_ctx: &DecodeContext<'_>| DecodeContext::admitted_vec::<u8>(2, "test admitted")
+        |ctx: &DecodeContext<'_>| ctx.vector_storage::<u8>(2, "test admitted")
             .map(|_| ())
     );
 
@@ -2388,14 +2379,14 @@ mod tests {
         |ctx: &DecodeContext<'_>| ctx.collection_vec::<u8>(2, "test retained vec").map(|_| ())
     );
     operation_case!(
-        reserve_retained_admitted_vec_refuses_before_growth,
-        reserve_retained_admitted_vec_succeeds_under_service_profile,
+        reserve_capacity_refuses_before_growth,
+        reserve_capacity_succeeds_under_service_profile,
         ResourceDimension::RetainedBytes,
         2,
         |ctx: &DecodeContext<'_>| {
             let mut values = Vec::<u8>::new();
             let result =
-                ctx.reserve_retained_admitted_vec(&mut values, 2, "test retained admitted vec");
+                ctx.reserve_capacity(&mut values, 2, "test retained admitted vec");
             if result.is_err() {
                 assert_eq!(values.capacity(), 0);
             }
@@ -3280,44 +3271,44 @@ mod tests {
     }
 
     #[test]
-    fn retained_admitted_vec_refuses_one_below_need_before_allocation() {
+    fn vector_storage_refuses_one_below_need_before_allocation() {
         let arena = DecodeArena::new();
         let ctx = operation_context(&arena, ResourceDimension::RetainedBytes, 3);
         assert!(
-            matches!(ctx.retained_admitted_vec::<u16>(2, "test retained admitted storage"),
+            matches!(ctx.vector_storage::<u16>(2, "test retained admitted storage"),
             Err(CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::RetainedBytes)
         );
     }
 
     #[test]
-    fn retained_admitted_vec_succeeds_under_service_profile() {
+    fn vector_storage_succeeds_under_service_profile() {
         let arena = DecodeArena::new();
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
             .expect("test context");
         let mut values = ctx
-            .retained_admitted_vec(2, "test retained admitted storage")
+            .vector_storage(2, "test retained admitted storage")
             .expect("service admission");
         values.extend([7u16, 9]);
         assert_eq!(values, [7, 9]);
     }
 
     #[test]
-    fn scoped_admitted_vec_refuses_one_below_need_before_allocation() {
+    fn scoped_vector_storage_refuses_one_below_need_before_allocation() {
         let arena = DecodeArena::new();
         let ctx = operation_context(&arena, ResourceDimension::MaterializedBytes, 3);
         assert!(
-            matches!(ctx.scoped_admitted_vec::<u16>(2, "test scoped admitted storage"),
+            matches!(ctx.scoped_vector_storage::<u16>(2, "test scoped admitted storage"),
             Err(CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::MaterializedBytes)
         );
     }
 
     #[test]
-    fn scoped_admitted_vec_succeeds_under_service_profile() {
+    fn scoped_vector_storage_succeeds_under_service_profile() {
         let arena = DecodeArena::new();
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
             .expect("test context");
         let (mut values, _reservation) = ctx
-            .scoped_admitted_vec(2, "test scoped admitted storage")
+            .scoped_vector_storage(2, "test scoped admitted storage")
             .expect("service admission");
         values.extend([7u16, 9]);
         assert_eq!(values, [7, 9]);

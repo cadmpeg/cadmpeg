@@ -3025,12 +3025,6 @@ fn evaluate_nurbs(
         CodecError::NotImplemented("Rhino V1 curve degree exceeds address space".to_string())
     })?;
     let count_u64 = cadmpeg_core::decode::u64_from_index(count);
-    let bytes = count
-        .checked_mul(std::mem::size_of::<[f64; 4]>())
-        .map(cadmpeg_core::decode::u64_from_index)
-        .ok_or_else(|| {
-            CodecError::NotImplemented("Rhino V1 curve workspace exceeds address space".to_string())
-        })?;
     ctx.charge_collection_items(count_u64, "Rhino V1 curve evaluation")?;
     ctx.charge_work(
         count_u64.checked_mul(count_u64).ok_or_else(|| {
@@ -3038,13 +3032,7 @@ fn evaluate_nurbs(
         })?,
         "Rhino V1 curve evaluation",
     )?;
-    let _workspace = ctx.reserve_scoped(bytes, "Rhino V1 curve evaluation")?;
-    let mut values = Vec::new();
-    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
-        &mut values,
-        count,
-        "Rhino V1 curve evaluation",
-    )?;
+    let (mut values, _workspace) = ctx.scoped_vector_storage(count, "Rhino V1 curve evaluation")?;
     let poles = curve.pole_rows();
     for j in 0..count {
         let index = span - degree + j;

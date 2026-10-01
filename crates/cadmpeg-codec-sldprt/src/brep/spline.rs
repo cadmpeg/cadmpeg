@@ -994,7 +994,7 @@ pub(crate) fn scan_curve_carriers(
                     ctx,
                     format_args!("curve carrier attribute {attr}: {error}"),
                 )?;
-                cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+                ctx.reserve_capacity(
                     refusals,
                     1,
                     "collect Parasolid spline refusals",
@@ -1292,14 +1292,14 @@ pub(crate) fn scan_surface_carriers(
             charge_items(ctx, expected_poles, "partition Parasolid surface weights")?;
         }
         let mut pole_rows = Vec::new();
-        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+        ctx.reserve_capacity(
             &mut pole_rows,
             descriptor.u_count,
             "partition Parasolid surface pole rows",
         )?;
         for row in points.chunks(descriptor.v_count) {
             let mut copy = Vec::new();
-            cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+            ctx.reserve_capacity(
                 &mut copy,
                 row.len(),
                 "partition Parasolid surface poles",
@@ -1309,14 +1309,14 @@ pub(crate) fn scan_surface_carriers(
         }
         let weight_rows = if let Some(values) = weights {
             let mut rows = Vec::new();
-            cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+            ctx.reserve_capacity(
                 &mut rows,
                 descriptor.u_count,
                 "partition Parasolid surface weight rows",
             )?;
             for row in values.chunks(descriptor.v_count) {
                 let mut copy = Vec::new();
-                cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+                ctx.reserve_capacity(
                     &mut copy,
                     row.len(),
                     "partition Parasolid surface weights",
@@ -1353,7 +1353,7 @@ pub(crate) fn scan_surface_carriers(
                     ctx,
                     format_args!("surface carrier attribute {attr}: {error}"),
                 )?;
-                cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+                ctx.reserve_capacity(
                     refusals,
                     1,
                     "collect Parasolid spline refusals",

@@ -882,7 +882,7 @@ fn reference_scalar_map(
     cursor: &mut Cursor<'_>,
 ) -> Result<PmDcReferenceScalarMap, CodecError> {
     let (count, metadata) = map_header(ctx, cursor, "constraint scalar map")?;
-    let mut entries = DecodeContext::admitted_vec(count, "admit Inventor sketch constraint map")?;
+    let mut entries = ctx.vector_storage(count, "admit Inventor sketch constraint map")?;
     for index in 0..count {
         entries.push((
             cursor.reference("constraint scalar-map key")?,
@@ -899,7 +899,7 @@ fn reference_pair_map(
     cursor: &mut Cursor<'_>,
 ) -> Result<PmDcReferencePairMap, CodecError> {
     let (count, metadata) = map_header(ctx, cursor, "constraint reference map")?;
-    let mut entries = DecodeContext::admitted_vec(count, "admit Inventor sketch constraint map")?;
+    let mut entries = ctx.vector_storage(count, "admit Inventor sketch constraint map")?;
     for _ in 0..count {
         entries.push((
             cursor.reference("constraint reference-map key")?,

@@ -407,7 +407,7 @@ fn transfer_schema_one(
         cadmpeg_core::decode::u64_from_index(provider_count),
         "FCStd GUI provider nodes",
     )?;
-    let mut providers = cadmpeg_core::decode::DecodeContext::admitted_vec(
+    let (mut providers, _provider_storage) = ctx.scoped_vector_storage(
         provider_count,
         "FCStd GUI provider nodes",
     )?;

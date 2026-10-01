@@ -195,7 +195,7 @@ fn parse_stream_grammar<'a>(
         "admit UFRxDoc section-version entries",
     )?;
     let mut section_versions =
-        DecodeContext::admitted_vec(section_count, "admit UFRxDoc section-version entries")?;
+        ctx.vector_storage(section_count, "admit UFRxDoc section-version entries")?;
     for _ in 0..section_count {
         section_versions.push(cursor.u16("section version")?);
     }
@@ -330,7 +330,7 @@ fn parse_stream_grammar<'a>(
         "admit Inventor external references",
     )?;
     let mut references =
-        DecodeContext::admitted_vec(reference_count, "admit Inventor external references")?;
+        ctx.vector_storage(reference_count, "admit Inventor external references")?;
     for _ in 0..reference_count {
         let path = cursor.utf16(ctx, "external path", 65_536)?;
         let library_id = cursor.i32("reference library id")?;
@@ -348,7 +348,7 @@ fn parse_stream_grammar<'a>(
             cadmpeg_core::decode::u64_from_index(state_count),
             "admit Inventor external-reference state groups",
         )?;
-        let mut state_groups = DecodeContext::admitted_vec(
+        let mut state_groups = ctx.vector_storage(
             state_count,
             "admit Inventor external-reference state groups",
         )?;
@@ -435,7 +435,7 @@ fn parse_embedded_references<'a>(
         cadmpeg_core::decode::u64_from_index(count),
         "admit UFRxDoc embedded references",
     )?;
-    let mut references = DecodeContext::admitted_vec(count, "admit UFRxDoc embedded references")?;
+    let mut references = ctx.vector_storage(count, "admit UFRxDoc embedded references")?;
     for _ in 0..count {
         let start = cursor.position();
         let value_0 = cursor.u32("embedded-reference value 0")?;
@@ -493,7 +493,7 @@ fn parse_occurrences<'a>(
         cadmpeg_core::decode::u64_from_index(count),
         "admit UFRxDoc occurrences",
     )?;
-    let mut occurrences = DecodeContext::admitted_vec(count, "admit UFRxDoc occurrences")?;
+    let mut occurrences = ctx.vector_storage(count, "admit UFRxDoc occurrences")?;
     for _ in 0..count {
         let start = cursor.position();
         let end_string_flag = cursor.u32("occurrence end-string flag")?;
@@ -777,7 +777,7 @@ fn parse_model_states<'a>(
         cadmpeg_core::decode::u64_from_index(count),
         "admit UFRxDoc model states",
     )?;
-    let mut states = DecodeContext::admitted_vec(count, "admit UFRxDoc model states")?;
+    let mut states = ctx.vector_storage(count, "admit UFRxDoc model states")?;
     for _ in 0..count {
         let prefix = cursor.u8("model-state prefix")?;
         let name = cursor.utf16(ctx, "model-state name", 65_536)?;
@@ -792,7 +792,7 @@ fn parse_model_states<'a>(
             "admit UFRxDoc model-state parameters",
         )?;
         let mut parameters =
-            DecodeContext::admitted_vec(parameter_count, "admit UFRxDoc model-state parameters")?;
+            ctx.vector_storage(parameter_count, "admit UFRxDoc model-state parameters")?;
         for _ in 0..parameter_count {
             parameters.push(UfrxModelStateParameter {
                 name: cursor.utf16(ctx, "model-state parameter name", 65_536)?,
@@ -837,7 +837,7 @@ fn parse_schema_table(
         "admit UFRxDoc section-version entries",
     )?;
     let mut section_versions =
-        DecodeContext::admitted_vec(section_count, "admit UFRxDoc section-version entries")?;
+        ctx.vector_storage(section_count, "admit UFRxDoc section-version entries")?;
     for _ in 0..section_count {
         section_versions.push(cursor.u16("section version")?);
     }

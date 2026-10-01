@@ -663,7 +663,7 @@ impl<'storage> MeshSelectionSearch<'storage, '_> {
                     break;
                 }
                 let mut row = Vec::new();
-                cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+                self.ctx.reserve_capacity(
                     &mut row,
                     boundary.len(),
                     "catia_selection_completion_directions",

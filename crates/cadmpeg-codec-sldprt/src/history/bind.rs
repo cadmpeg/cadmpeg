@@ -267,7 +267,7 @@ pub(crate) fn bind_unique_sketch_feature(
             has_profile: binding.has_profile,
         });
     }
-    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+    ctx.reserve_capacity(
         &mut bindings,
         aliases.len(),
         "merge SLDPRT sketch aliases",

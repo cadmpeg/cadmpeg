@@ -3003,10 +3003,10 @@ pub(crate) fn b2_resolved_revolutions_from_records(
     data: &[u8],
     records: &[ConsolidatedRecord],
 ) -> Result<Vec<B2ResolvedRevolution>, CodecError> {
-    let circles = ctx.collect_vec(
+    let (circles, _circle_storage) = ctx.with_scoped_storage("catia_b2_revolution_profiles", || ctx.collect_vec(
         b2_circles_from_records(data, records),
         "catia_b2_revolution_profiles",
-    )?;
+    ))?;
     ctx.collect_vec(
         b2_revolutions_from_records(data, records)
             .enumerate()

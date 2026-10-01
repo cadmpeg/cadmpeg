@@ -5,7 +5,7 @@
 //! against typed analytic and NURBS charts.
 
 use crate::math::distance;
-use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::decode::{DecodeContext, ScopedReservation, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::eval::nurbs_surface_partials;
 use cadmpeg_ir::features::FinitePoint3;
@@ -830,23 +830,24 @@ pub(crate) fn consolidated_analytic_circle_edge_runs_from_records(
     data: &[u8],
     records: &[ConsolidatedRecord],
 ) -> Result<Vec<ConsolidatedAnalyticCircleEdgeRun>, CodecError> {
+    let mut temporary = ctx.reserve_scoped(0, "catia edge resolution workspace")?;
     let mut circles = BTreeMap::new();
     for value in b2_circles_from_records(data, records) {
-        ctx.insert_btree_map(
+        temporary.with_storage(|| ctx.insert_btree_map(
             &mut circles,
             value.pos,
             value,
             "catia_analytic_circle_carriers",
-        )?;
+        ))?;
     }
     let mut use_runs = BTreeMap::new();
-    for value in consolidated_edge_use_runs_from_records(ctx, data, records)? {
-        ctx.insert_btree_map(
+    for value in temporary.with_storage(|| consolidated_edge_use_runs_from_records(ctx, data, records))? {
+        temporary.with_storage(|| ctx.insert_btree_map(
             &mut use_runs,
             value.uses[0].pos,
             value,
             "catia_analytic_circle_use_runs",
-        )?;
+        ))?;
     }
     let mut runs = Vec::new();
     for window in records.windows(6) {
@@ -940,23 +941,24 @@ pub(crate) fn consolidated_class25_edge_runs_from_records(
     data: &[u8],
     records: &[ConsolidatedRecord],
 ) -> Result<Vec<ConsolidatedClass25EdgeRun>, CodecError> {
+    let mut temporary = ctx.reserve_scoped(0, "catia edge resolution workspace")?;
     let mut descriptors = BTreeMap::new();
-    for value in b2_class25_descriptors_from_records(ctx, data, records)? {
-        ctx.insert_btree_map(
+    for value in temporary.with_storage(|| b2_class25_descriptors_from_records(ctx, data, records))? {
+        temporary.with_storage(|| ctx.insert_btree_map(
             &mut descriptors,
             value.pos,
             value,
             "catia_class25_edge_descriptors",
-        )?;
+        ))?;
     }
     let mut use_runs = BTreeMap::new();
-    for value in consolidated_edge_use_runs_from_records(ctx, data, records)? {
-        ctx.insert_btree_map(
+    for value in temporary.with_storage(|| consolidated_edge_use_runs_from_records(ctx, data, records))? {
+        temporary.with_storage(|| ctx.insert_btree_map(
             &mut use_runs,
             value.uses[0].pos,
             value,
             "catia_class25_edge_use_runs",
-        )?;
+        ))?;
     }
     let mut runs = Vec::new();
     for window in records.windows(5) {
@@ -1026,13 +1028,14 @@ pub(crate) fn consolidated_edge_use_runs_from_records(
     data: &[u8],
     records: &[ConsolidatedRecord],
 ) -> Result<Vec<ConsolidatedEdgeUseRun>, CodecError> {
+    let mut temporary = ctx.reserve_scoped(0, "catia edge resolution workspace")?;
     let mut uses = BTreeMap::new();
-    for value in b2_use_metadata_from_records(ctx, data, records)? {
-        ctx.insert_btree_map(&mut uses, value.pos, value, "catia_edge_use_metadata_index")?;
+    for value in temporary.with_storage(|| b2_use_metadata_from_records(ctx, data, records))? {
+        temporary.with_storage(|| ctx.insert_btree_map(&mut uses, value.pos, value, "catia_edge_use_metadata_index"))?;
     }
     let mut nodes = BTreeMap::new();
     for value in b2_edge_nodes_from_records(data, records) {
-        ctx.insert_btree_map(&mut nodes, value.pos, value, "catia_edge_use_node_index")?;
+        temporary.with_storage(|| ctx.insert_btree_map(&mut nodes, value.pos, value, "catia_edge_use_node_index"))?;
     }
     let mut runs = Vec::new();
     for (index, window) in records.windows(3).enumerate() {
@@ -1193,21 +1196,22 @@ pub(crate) fn consolidated_owned_edge_nodes_from_records(
     data: &[u8],
     records: &[ConsolidatedRecord],
 ) -> Result<Vec<ConsolidatedOwnedEdgeNode>, CodecError> {
+    let mut temporary = ctx.reserve_scoped(0, "catia edge resolution workspace")?;
     let mut indices = BTreeMap::new();
     for (index, record) in records.iter().enumerate() {
-        ctx.insert_btree_map(
+        temporary.with_storage(|| ctx.insert_btree_map(
             &mut indices,
             record.byte_offset(),
             index,
             "catia_owned_edge_record_indices",
-        )?;
+        ))?;
     }
     let mut nodes = BTreeMap::new();
     for node in b2_edge_nodes_from_records(data, records) {
-        ctx.insert_btree_map(&mut nodes, node.pos, node, "catia_owned_edge_nodes")?;
+        temporary.with_storage(|| ctx.insert_btree_map(&mut nodes, node.pos, node, "catia_owned_edge_nodes"))?;
     }
     let mut owned = Vec::new();
-    for relation in b2_adjacent_face_counted_owners_from_records(ctx, data, records)? {
+    for relation in temporary.with_storage(|| b2_adjacent_face_counted_owners_from_records(ctx, data, records))? {
         let Some(&owner_index) = indices.get(&relation.owner.pos) else {
             continue;
         };
@@ -1273,6 +1277,7 @@ pub(crate) fn consolidated_compact_edge_endpoints_from_records(
         allocation_scopes: &'a [Vec<usize>],
         active: HashSet<(usize, usize)>,
         memo: HashMap<(usize, usize), Option<usize>>,
+        storage: ScopedReservation<'a>,
     }
 
     impl EndpointResolver<'_, '_> {
@@ -1290,9 +1295,7 @@ pub(crate) fn consolidated_compact_edge_endpoints_from_records(
                 .enter_nested("catia_compact_endpoint_resolution_depth")?;
             self.ctx
                 .charge_work(1, "catia_compact_endpoint_resolution_work")?;
-            if !self
-                .ctx
-                .insert_hash_set(&mut self.active, key, "catia_compact_endpoint_active")?
+            if !self.storage.with_storage(|| self.ctx.insert_hash_set(&mut self.active, key, "catia_compact_endpoint_active"))?
             {
                 return Ok(None);
             }
@@ -1340,68 +1343,69 @@ pub(crate) fn consolidated_compact_edge_endpoints_from_records(
             })();
             self.active.remove(&key);
             let result = result.transpose()?;
-            self.ctx
-                .insert_hash_map(&mut self.memo, key, result, "catia_compact_endpoint_memo")?;
+            self.storage.with_storage(|| self.ctx.insert_hash_map(&mut self.memo, key, result, "catia_compact_endpoint_memo"))?;
             Ok(result)
         }
     }
 
+    let mut temporary = ctx.reserve_scoped(0, "catia compact endpoint workspace")?;
     let mut by_pos = HashMap::new();
     for node in b2_edge_nodes_from_records(data, records) {
-        ctx.insert_hash_map(
+        temporary.with_storage(|| ctx.insert_hash_map(
             &mut by_pos,
             node.pos,
             node,
             "catia_compact_endpoint_nodes_by_pos",
-        )?;
+        ))?;
     }
     let mut nodes = HashMap::new();
     for (index, record) in records.iter().enumerate() {
         if let Some(node) = by_pos.get(&record.byte_offset()).copied() {
-            ctx.insert_hash_map(
+            temporary.with_storage(|| ctx.insert_hash_map(
                 &mut nodes,
                 index,
                 node,
                 "catia_compact_endpoint_nodes_by_index",
-            )?;
+            ))?;
         }
     }
     let mut allocation_scopes = Vec::new();
-    ctx.push_vec(
+    temporary.with_storage(|| ctx.push_vec(
         &mut allocation_scopes,
         Vec::new(),
         "catia_compact_endpoint_scopes",
-    )?;
+    ))?;
     let mut allocation_locations = HashMap::new();
     for (index, record) in records.iter().enumerate() {
         if index > 0
             && (records[index - 1].source_index != record.source_index
                 || records[index - 1].source_range.end != record.source_range.start)
         {
-            ctx.push_vec(
+            temporary.with_storage(|| ctx.push_vec(
                 &mut allocation_scopes,
                 Vec::new(),
                 "catia_compact_endpoint_scopes",
-            )?;
+            ))?;
         }
         if record.family == ConsolidatedFamily::B && matches!(record.class, 0x5d | 0x5e) {
             let scope = allocation_scopes.len() - 1;
             let ordinal = allocation_scopes[scope].len();
-            ctx.push_vec(
+            temporary.with_storage(|| ctx.push_vec(
                 &mut allocation_scopes[scope],
                 index,
                 "catia_compact_endpoint_scope_entries",
-            )?;
-            ctx.insert_hash_map(
+            ))?;
+            temporary.with_storage(|| ctx.insert_hash_map(
                 &mut allocation_locations,
                 index,
                 (scope, ordinal),
                 "catia_compact_endpoint_locations",
-            )?;
+            ))?;
         }
     }
     let mut resolver = EndpointResolver {
         ctx,
+        storage: ctx.reserve_scoped(0, "catia compact endpoint memo workspace")?,
         records,
         nodes: &nodes,
         allocation_locations: &allocation_locations,

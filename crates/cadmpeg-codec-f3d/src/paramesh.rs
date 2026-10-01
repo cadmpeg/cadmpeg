@@ -1055,7 +1055,7 @@ fn inflate_stream(ctx: &DecodeContext<'_>, body: &[u8]) -> Result<MeshStream, Co
         .checked_add(5)
         .ok_or_else(|| ctx.refuse_codec_limit("frame paramesh compressed stream", 0, u64::MAX))?;
     let (mut framed, _framed_reservation) =
-        ctx.scoped_admitted_vec(framed_len, "frame paramesh compressed stream")?;
+        ctx.scoped_vector_storage(framed_len, "frame paramesh compressed stream")?;
     framed.push(LZMA_PROPERTIES);
     framed.extend_from_slice(&(1u32 << LZMA_DICTIONARY_LOG).to_le_bytes());
     framed.extend_from_slice(payload);

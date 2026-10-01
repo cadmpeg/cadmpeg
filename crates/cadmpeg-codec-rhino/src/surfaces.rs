@@ -586,27 +586,12 @@ fn revolution_nurbs(
         cadmpeg_core::decode::u64_from_index(temp_items),
         "Rhino revolution temporary lanes",
     )?;
-    let temporary_bytes = angular_count
-        .checked_mul(std::mem::size_of::<(f64, f64)>())
-        .and_then(|bytes| bytes.checked_add(knot_count.checked_mul(std::mem::size_of::<f64>())?))
-        .and_then(|bytes| {
-            bytes.checked_add(
-                profile_count.checked_mul(
-                    std::mem::size_of::<FinitePoint3>() + std::mem::size_of::<f64>(),
-                )?,
-            )
-        })
-        .and_then(|bytes| {
-            bytes.checked_add(
-                output_count
-                    .checked_mul(std::mem::size_of::<Point3>() + std::mem::size_of::<f64>())?,
-            )
-        })
-        .ok_or_else(|| {
-            GeometryError::not_implemented("revolution temporary bytes exceed address space")
-        })?;
-    let temporary_bytes = cadmpeg_core::decode::u64_from_index(temporary_bytes);
-    let _temporary = ctx.reserve_scoped(temporary_bytes, "Rhino revolution temporary lanes")?;
+    let profile_bytes = profile_count.checked_mul(
+        std::mem::size_of::<FinitePoint3>() + std::mem::size_of::<f64>(),
+    ).ok_or_else(|| GeometryError::not_implemented("revolution profile bytes exceed address space"))?;
+    let mut temporary = ctx.reserve_scoped(
+        cadmpeg_core::decode::u64_from_index(profile_bytes), "Rhino revolution temporary lanes",
+    )?;
     let angle_step = (angle[1] - angle[0])
         / cadmpeg_core::convert::f64_from_index(span_count)
             .ok_or_else(|| error(offset, "geometry index exceeds exact float range"))?;
@@ -633,13 +618,13 @@ fn revolution_nurbs(
         .ok_or_else(|| error(offset, "revolution parameter interval is invalid"))
     };
     let mut angular = Vec::new();
-    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+    temporary.with_storage(|| ctx.reserve_capacity(
         &mut angular,
         angular_count,
-        "Rhino revolution angular controls",
-    )?;
+        "Rhino revolution temporary lanes",
+    ))?;
     let mut knots = Vec::new();
-    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+    ctx.reserve_capacity(
         &mut knots,
         knot_count,
         "Rhino revolution angular knots",
@@ -677,17 +662,17 @@ fn revolution_nurbs(
         None => ctx.alloc_filled(profile_count, 1.0, "Rhino revolution profile weights")?,
     };
     let mut control_points = Vec::new();
-    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+    temporary.with_storage(|| ctx.reserve_capacity(
         &mut control_points,
         output_count,
-        "Rhino revolution control points",
-    )?;
+        "Rhino revolution temporary lanes",
+    ))?;
     let mut weights = Vec::new();
-    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+    temporary.with_storage(|| ctx.reserve_capacity(
         &mut weights,
         output_count,
-        "Rhino revolution weights",
-    )?;
+        "Rhino revolution temporary lanes",
+    ))?;
     for (theta, angular_weight) in angular {
         let radial_scale = 1.0 / angular_weight;
         for (profile_point, profile_weight) in
@@ -715,12 +700,6 @@ fn revolution_nurbs(
     let row_len = profile_count;
     let point_rows = copy_rows(ctx, &control_points, row_len, "Rhino revolution pole grid")?;
     let weight_rows = copy_rows(ctx, &weights, row_len, "Rhino revolution weight grid")?;
-    ctx.charge_retained(
-        cadmpeg_core::decode::u64_from_index(knots.len().checked_mul(8).ok_or_else(|| {
-            GeometryError::not_implemented("revolution knot bytes exceed address space")
-        })?),
-        "Rhino revolution angular knots",
-    )?;
     let profile_knots = ctx
         .copy_slice(profile.knots(), "Rhino revolution profile knots")
         .map_err(crate::curves::GeometryError::from)?;
@@ -776,28 +755,9 @@ fn sum_nurbs(
         .ok_or_else(|| {
             GeometryError::not_implemented("sum surface input bytes exceed address space")
         })?;
-    let point_bytes = product_count
-        .checked_mul(std::mem::size_of::<Point3>())
-        .ok_or_else(|| {
-            GeometryError::not_implemented("sum surface point bytes exceed address space")
-        })?;
-    let weight_bytes = if rational {
-        product_count
-            .checked_mul(std::mem::size_of::<NonZeroReal>())
-            .ok_or_else(|| {
-                GeometryError::not_implemented("sum surface weight bytes exceed address space")
-            })?
-    } else {
-        0
-    };
-    let temporary_bytes = input_bytes
-        .checked_add(point_bytes)
-        .and_then(|bytes| bytes.checked_add(weight_bytes))
-        .ok_or_else(|| {
-            GeometryError::not_implemented("sum surface temporary bytes exceed address space")
-        })?;
-    let temporary_bytes = cadmpeg_core::decode::u64_from_index(temporary_bytes);
-    let _temporary = ctx.reserve_scoped(temporary_bytes, "Rhino sum surface temporary lanes")?;
+    let mut temporary = ctx.reserve_scoped(
+        cadmpeg_core::decode::u64_from_index(input_bytes), "Rhino sum surface temporary lanes",
+    )?;
     let first_points = first.control_points();
     let second_points = second.control_points();
     let first_weights = match first.pole_rows().weights() {
@@ -809,18 +769,18 @@ fn sum_nurbs(
         None => ctx.alloc_filled(v_count, 1.0, "Rhino sum-surface second weights")?,
     };
     let mut control_points = Vec::new();
-    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+    temporary.with_storage(|| ctx.reserve_capacity(
         &mut control_points,
         product_count,
-        "Rhino sum surface control points",
-    )?;
+        "Rhino sum surface temporary lanes",
+    ))?;
     let mut weights = if rational {
         let mut values = Vec::new();
-        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+        temporary.with_storage(|| ctx.reserve_capacity(
             &mut values,
             product_count,
-            "Rhino sum surface weights",
-        )?;
+            "Rhino sum surface temporary lanes",
+        ))?;
         Some(values)
     } else {
         None
@@ -878,7 +838,7 @@ fn admit_sum_product(
     })?;
     ctx.charge_collection_items(
         cadmpeg_core::decode::u64_from_index(count),
-        "Rhino sum surface control points",
+        "Rhino sum surface temporary lanes",
     )?;
     Ok(count)
 }
@@ -1016,25 +976,12 @@ fn extrusion_rows<T: Copy>(
     let items = row_count.checked_mul(3).ok_or_else(|| {
         GeometryError::not_implemented("Rhino extrusion surface row count exceeds address space")
     })?;
-    let row_bytes = row_count
-        .checked_mul(std::mem::size_of::<Vec<T>>())
-        .and_then(|size| {
-            row_count
-                .checked_mul(2)?
-                .checked_mul(std::mem::size_of::<T>())?
-                .checked_add(size)
-        })
-        .ok_or_else(|| {
-            GeometryError::not_implemented("Rhino extrusion surface row bytes exceed address space")
-        })?;
     ctx.charge_collection_items(cadmpeg_core::decode::u64_from_index(items), operation)?;
-    let row_bytes = cadmpeg_core::decode::u64_from_index(row_bytes);
-    ctx.charge_retained(row_bytes, operation)?;
     let mut rows = Vec::new();
-    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut rows, row_count, operation)?;
+    ctx.reserve_capacity(&mut rows, row_count, operation)?;
     for (first, second) in start.iter().copied().zip(end.iter().copied()) {
         let mut row = Vec::new();
-        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut row, 2, operation)?;
+        ctx.reserve_capacity(&mut row, 2, operation)?;
         row.push(first);
         row.push(second);
         rows.push(row);

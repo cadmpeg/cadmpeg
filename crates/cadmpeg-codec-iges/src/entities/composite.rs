@@ -529,12 +529,12 @@ fn euclidean_control_points(
             "iges composite Euclidean weights",
         )?;
     }
-    let mut control_points = cadmpeg_core::decode::DecodeContext::admitted_vec(
+    let mut control_points = ctx.vector_storage(
         homogeneous.len(),
         "iges composite Euclidean control points",
     )?;
     let mut weights = if rational {
-        Some(cadmpeg_core::decode::DecodeContext::admitted_vec(
+        Some(ctx.vector_storage(
             homogeneous.len(),
             "iges composite Euclidean weights",
         )?)
@@ -582,7 +582,7 @@ fn elevate_bezier_homogeneous(
         cadmpeg_core::decode::u64_from_index(control_points.len()),
         "iges composite Bezier source copy",
     )?;
-    let mut elevated = cadmpeg_core::decode::DecodeContext::admitted_vec(
+    let mut elevated = ctx.vector_storage(
         control_points.len(),
         "iges composite Bezier source copy",
     )?;
@@ -599,7 +599,7 @@ fn elevate_bezier_homogeneous(
             cadmpeg_core::decode::u64_from_index(next_count),
             "iges composite Bezier elevated net",
         )?;
-        let mut next = cadmpeg_core::decode::DecodeContext::admitted_vec(
+        let mut next = ctx.vector_storage(
             next_count,
             "iges composite Bezier elevated net",
         )?;
@@ -1766,7 +1766,7 @@ fn bounded_nurbs_for_id(
             u64_from_index(segments.len()),
             "iges composite nested children",
         )?;
-        let mut children = cadmpeg_core::decode::DecodeContext::admitted_vec(
+        let mut children = ctx.vector_storage(
             segments.len(),
             "iges composite nested children",
         )?;
@@ -2587,7 +2587,7 @@ fn project_with_type_130_policy(
             u64_from_index(curve_ids.len()),
             "iges composite projected children",
         )?;
-        let mut children = cadmpeg_core::decode::DecodeContext::admitted_vec(
+        let mut children = ctx.vector_storage(
             curve_ids.len(),
             "iges composite projected children",
         )?;

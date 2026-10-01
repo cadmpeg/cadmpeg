@@ -309,7 +309,7 @@ pub(crate) fn decode_identity_key_component(
     value: &str,
 ) -> Result<Option<String>, cadmpeg_core::CodecError> {
     let bytes = value.as_bytes();
-    let mut decoded = ctx.retained_admitted_vec(bytes.len(), "decode F3D identity key bytes")?;
+    let mut decoded = ctx.vector_storage(bytes.len(), "decode F3D identity key bytes")?;
     Ok((|| {
         let mut at = 0;
         while at < bytes.len() {

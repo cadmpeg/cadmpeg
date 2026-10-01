@@ -508,7 +508,7 @@ pub(crate) fn bind_pattern_inputs(
                         class.offset,
                         end,
                     )?;
-                    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+                    ctx.reserve_capacity(
                         &mut directions,
                         declared.len(),
                         "merge SLDPRT declared line directions",
@@ -534,7 +534,7 @@ pub(crate) fn bind_pattern_inputs(
                         end,
                         &excluded_handles,
                     )?;
-                    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+                    ctx.reserve_capacity(
                         &mut directions,
                         compact.len(),
                         "merge SLDPRT compact line directions",
@@ -661,7 +661,7 @@ pub(crate) fn bind_pattern_inputs(
             )?;
         }
     }
-    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+    ctx.reserve_capacity(
         &mut pattern_seed_assignments,
         curve_seed_assignments.len(),
         "merge SLDPRT pattern seed assignments",

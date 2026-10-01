@@ -1312,7 +1312,7 @@ impl Cursor<'_> {
             ])
         };
         let mut references =
-            DecodeContext::admitted_vec(count, "admit Inventor PmDc unit references")?;
+            ctx.vector_storage(count, "admit Inventor PmDc unit references")?;
         for _ in 0..count {
             references.push(self.reference("reference-array entry")?);
         }

@@ -656,21 +656,10 @@ impl CompoundState {
             cadmpeg_core::decode::u64_from_index(fat_count + difat_count),
             "parse CFB allocation tables",
         )?;
-        let allocation_id_bytes = fat_count
-            .checked_add(difat_count)
-            .and_then(|count| count.checked_mul(std::mem::size_of::<u32>()))
-            .ok_or_else(|| CodecError::Malformed("CFB allocation id size overflow".into()))?;
-        let allocation_id_scratch = ctx.reserve_scoped(
-            cadmpeg_core::decode::u64_from_index(allocation_id_bytes),
-            "collect CFB allocation sector ids",
-        )?;
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(allocation_id_bytes),
-            "retain CFB allocation sector ids",
-        )?;
+        let mut allocation_id_scratch = ctx.reserve_scoped(0, "collect CFB allocation sector ids")?;
         let sector = |id| sector_slice(bytes, sector_size, sector_count, id);
         let mut fat_sectors =
-            cadmpeg_core::decode::DecodeContext::admitted_vec(fat_count, "CFB FAT sectors")?;
+            allocation_id_scratch.with_storage(|| ctx.vector_storage(fat_count, "CFB FAT sectors"))?;
         let mut header_free_seen = false;
         for index in 0..109 {
             let id = field(76 + index * 4, "header DIFAT entry")?;
@@ -690,11 +679,15 @@ impl CompoundState {
         let difat_entries = sector_size / 4 - 1;
         let mut seen_difat = BTreeSet::new();
         for _ in 0..difat_count {
-            if cadmpeg_core::decode::index_from_u32(next_difat) >= sector_count
-                || !seen_difat.insert(next_difat)
-            {
+            if cadmpeg_core::decode::index_from_u32(next_difat) >= sector_count {
                 return malformed("CFB DIFAT chain is cyclic or out of range");
             }
+            ctx.charge_work(cadmpeg_core::decode::u64_from_index(seen_difat.len()), "compare CFB DIFAT sectors")?;
+            if seen_difat.contains(&next_difat) {
+                return malformed("CFB DIFAT chain is cyclic or out of range");
+            }
+            ctx.admit_btree_node_storage::<u32, ()>(seen_difat.len(), "collect CFB allocation sector ids")?;
+            seen_difat.insert(next_difat);
             let data = sector(next_difat)
                 .ok_or_else(|| CodecError::Malformed("CFB DIFAT sector is absent".into()))?;
             let mut free_seen = false;
@@ -725,7 +718,7 @@ impl CompoundState {
         {
             return malformed("CFB DIFAT does not match its declared FAT count");
         }
-        let fat_sector_set = fat_sectors.iter().copied().collect::<BTreeSet<_>>();
+        let fat_sector_set = ctx.collect_btree_set(fat_sectors.iter().copied(), "collect CFB FAT sector set")?;
         if fat_sector_set.len() != fat_sectors.len() {
             return malformed("duplicate CFB FAT sector");
         }
@@ -739,17 +732,9 @@ impl CompoundState {
             cadmpeg_core::decode::u64_from_index(fat_word_count),
             "parse CFB FAT words",
         )?;
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(
-                fat_word_count
-                    .checked_mul(std::mem::size_of::<u32>())
-                    .ok_or_else(|| CodecError::Malformed("CFB FAT byte size overflow".into()))?,
-            ),
-            "retain CFB FAT",
-        )?;
-        let mut fat = cadmpeg_core::decode::DecodeContext::admitted_vec(
+        let mut fat = ctx.vector_storage(
             fat_word_count,
-            "parse CFB FAT words",
+            "retain CFB FAT",
         )?;
         for &id in &fat_sectors {
             let data = sector(id)
@@ -803,21 +788,14 @@ impl CompoundState {
             directory_expected,
             ChainRole::Directory,
         )?;
-        let directory_byte_count = directory_chain
-            .as_ref()
-            .map_or(0, SectorChain::len)
-            .checked_mul(sector_size)
-            .ok_or_else(|| CodecError::Malformed("CFB directory byte size overflow".into()))?;
-        let directory_scratch = ctx.reserve_scoped(
-            cadmpeg_core::decode::u64_from_index(directory_byte_count),
-            "assemble CFB directory sectors",
-        )?;
-        let directory_bytes = join_sectors(
+        let mut directory_scratch = ctx.reserve_scoped(0, "assemble CFB directory sectors")?;
+        let directory_bytes = directory_scratch.with_storage(|| join_sectors(
+            ctx,
             bytes,
             sector_size,
             sector_count,
             directory_chain.iter().flat_map(SectorChain::iter),
-        )?;
+        ))?;
         let directory = parse_directory(ctx, &directory_bytes, version)?;
         drop(directory_bytes);
         drop(directory_scratch);
@@ -835,8 +813,8 @@ impl CompoundState {
             .map_or(0, SectorChain::len)
             .checked_mul(sector_size)
             .ok_or_else(|| CodecError::Malformed("CFB mini FAT byte size overflow".into()))?;
-        let mini_fat_scratch = ctx.reserve_scoped(
-            cadmpeg_core::decode::u64_from_index(mini_fat_byte_count),
+        let mut mini_fat_scratch = ctx.reserve_scoped(
+            0,
             "assemble CFB mini FAT sectors",
         )?;
         let mini_fat_word_count = mini_fat_byte_count / 4;
@@ -844,25 +822,22 @@ impl CompoundState {
             cadmpeg_core::decode::u64_from_index(mini_fat_word_count),
             "parse CFB mini FAT words",
         )?;
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(mini_fat_byte_count),
-            "retain CFB mini FAT",
-        )?;
-        let mini_fat_bytes = join_sectors(
+        let mini_fat_bytes = mini_fat_scratch.with_storage(|| join_sectors(
+            ctx,
             bytes,
             sector_size,
             sector_count,
             mini_fat_chain.iter().flat_map(SectorChain::iter),
-        )?;
+        ))?;
         // Every joined sector passed the same exact-width proof above, so the
         // joined mini FAT is an exact sequence of four-byte words.
-        let mini_fat = mini_fat_bytes
+        let mut mini_fat = ctx.vector_storage(mini_fat_word_count, "retain CFB mini FAT")?;
+        mini_fat.extend(mini_fat_bytes
             .as_chunks::<4>()
             .0
             .iter()
             .copied()
-            .map(le_u32_array)
-            .collect::<Vec<_>>();
+            .map(le_u32_array));
         drop(mini_fat_bytes);
         drop(mini_fat_scratch);
         let root = directory_root(&directory)?;
@@ -983,10 +958,6 @@ impl CompoundState {
                     "traverse CFB pending siblings",
                 )?;
             }
-            ctx.charge_retained(
-                cadmpeg_core::decode::u64_from_index(std::mem::size_of::<CompoundEntry>()),
-                "retain CFB entry",
-            )?;
             let path = match parent {
                 None => ctx.format_retained(
                     format_args!("{}", entry.name.as_str()),
@@ -1443,7 +1414,7 @@ impl CompoundPrefixProbe {
             return Self::Malformed("CFB directory chain length does not match the header".into());
         }
         let Ok(directory_bytes) =
-            join_sectors(prefix, sector_size, available, directory_chain.iter())
+            join_sectors(ctx, prefix, sector_size, available, directory_chain.iter())
         else {
             return Self::Incomplete;
         };
@@ -1530,7 +1501,7 @@ pub fn read_detection_prefix(
         // is already an index, so `prefix_len` is the smaller of the two.
         Err(_) => prefix_len,
     };
-    let mut bytes = cadmpeg_core::decode::DecodeContext::admitted_vec(
+    let mut bytes = ctx.vector_storage(
         phase_one_len,
         "compound detection prefix bytes",
     )
@@ -1609,14 +1580,7 @@ fn parse_directory(
         cadmpeg_core::decode::u64_from_index(entry_count),
         "parse CFB directory entries",
     )?;
-    let retained = entry_count
-        .checked_mul(std::mem::size_of::<DirectorySlot>())
-        .ok_or_else(|| CodecError::Malformed("CFB directory storage size overflow".into()))?;
-    ctx.charge_retained(
-        cadmpeg_core::decode::u64_from_index(retained),
-        "retain CFB directory",
-    )?;
-    let mut entries = cadmpeg_core::decode::DecodeContext::admitted_vec(
+    let mut entries = ctx.vector_storage(
         entry_count,
         "parse CFB directory entries",
     )?;
@@ -1895,17 +1859,6 @@ fn chain(
             cadmpeg_core::decode::u64_from_index(count.get()),
             "retain CFB sector chain",
         )?;
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(
-                count
-                    .get()
-                    .checked_mul(std::mem::size_of::<u32>())
-                    .ok_or_else(|| {
-                        CodecError::Malformed("CFB sector chain size overflow".into())
-                    })?,
-            ),
-            "retain CFB sector chain",
-        )?;
     }
     let mut traversal_scratch = ctx.reserve_scoped(0, "walk CFB sector chain")?;
     if start == END_OF_CHAIN {
@@ -1919,8 +1872,8 @@ fn chain(
     }
     let mut output = SectorChain {
         first: start,
-        rest: cadmpeg_core::decode::DecodeContext::admitted_vec(
-            expected.map_or(0, NonZeroUsize::get),
+        rest: ctx.vector_storage(
+            expected.map_or(0, |count| count.get() - 1),
             "retain CFB sector chain",
         )?,
     };
@@ -1947,10 +1900,6 @@ fn chain(
         if expected.is_none() {
             if current == start {
                 ctx.charge_collection_items(1, "retain CFB sector chain")?;
-                ctx.charge_retained(
-                    cadmpeg_core::decode::u64_from_index(std::mem::size_of::<u32>()),
-                    "retain CFB sector chain",
-                )?;
             } else {
                 ctx.push_vec(&mut output.rest, current, "retain CFB sector chain")?;
             }
@@ -1973,6 +1922,7 @@ fn chain(
 }
 
 fn join_sectors<'a>(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     sector_size: usize,
     sector_count: usize,
@@ -1983,7 +1933,7 @@ fn join_sectors<'a>(
         .count()
         .checked_mul(sector_size)
         .ok_or_else(|| CodecError::Malformed("CFB chain byte length overflow".into()))?;
-    let mut output = cadmpeg_core::decode::DecodeContext::admitted_vec(length, "join CFB sectors")?;
+    let mut output = ctx.vector_storage(length, "join CFB sectors")?;
     for &sector in sectors {
         let data = sector_slice(bytes, sector_size, sector_count, sector)
             .ok_or_else(|| CodecError::Malformed("CFB sector is absent".into()))?;
@@ -2325,7 +2275,11 @@ mod tests {
         });
         assert_eq!(entries[1].path(), format!("{name}/B"));
         let mut policy = DecodePolicy::service();
-        policy.limits.max_materialized_bytes = 50;
+        // One reached-node bound and one pending u32 precede the parent copy.
+        let node = 11 * std::mem::size_of::<u32>() + 18 * std::mem::size_of::<usize>();
+        policy.limits.max_materialized_bytes = cadmpeg_core::decode::u64_from_index(
+            node + std::mem::size_of::<u32>() + name.len() - 1,
+        );
         let error = with_context(&[], &policy, |ctx| state.build_entries(ctx, 1))
             .expect_err("parent copy must stay admitted through child traversal");
         assert!(

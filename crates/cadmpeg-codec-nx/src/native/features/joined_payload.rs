@@ -35,29 +35,22 @@ impl<'ctx> JoinedPayload<'ctx> {
                 .checked_add(fragment.len())
                 .ok_or_else(|| ctx.refuse_codec_limit("join NX feature payload bytes", 0, 1))?;
         }
-        let span_bytes = count
-            .checked_mul(std::mem::size_of::<SourceSpan>())
-            .ok_or_else(|| ctx.refuse_codec_limit("reserve NX feature payload spans", 0, 1))?;
-        let reserved = byte_len
-            .checked_add(span_bytes)
-            .ok_or_else(|| ctx.refuse_codec_limit("reserve NX joined feature payload", 0, 1))?;
         ctx.charge_work(u64_from_index(count), "scan NX feature payload blocks")?;
         ctx.charge_work(u64_from_index(byte_len), "copy NX feature payload bytes")?;
         ctx.charge_collection_items(u64_from_index(count), "NX feature payload spans")?;
-        let reservation =
-            ctx.reserve_scoped(u64_from_index(reserved), "join NX feature payload")?;
+        let mut reservation = ctx.reserve_scoped(0, "join NX feature payload")?;
         let mut bytes = Vec::new();
-        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+        reservation.with_storage(|| ctx.reserve_capacity(
             &mut bytes,
             byte_len,
             "allocate NX feature payload bytes",
-        )?;
+        ))?;
         let mut sources = Vec::new();
-        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+        reservation.with_storage(|| ctx.reserve_capacity(
             &mut sources,
             count,
             "allocate NX feature payload spans",
-        )?;
+        ))?;
         for id in ids {
             let Some((fragment, source_offset)) = blocks.get(id).copied() else {
                 return Ok(None);

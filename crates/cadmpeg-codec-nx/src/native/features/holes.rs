@@ -761,15 +761,7 @@ pub(in crate::native) fn feature_symbolic_threads(
             if let Err(error) = ctx
                 .charge_collection_items(1, "NX symbolic threads")
                 .and_then(|()| {
-                    ctx.charge_retained(
-                        cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
-                            FeatureSymbolicThread,
-                        >()),
-                        "NX symbolic threads",
-                    )
-                })
-                .and_then(|()| {
-                    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+                    ctx.reserve_capacity(
                         &mut threads,
                         1,
                         "allocate NX symbolic threads",
@@ -1044,15 +1036,7 @@ pub(in crate::native) fn feature_simple_hole_repeated_scalar_lanes(
             if let Err(error) = ctx
                 .charge_collection_items(1, "NX simple hole repeated scalar lanes")
                 .and_then(|()| {
-                    ctx.charge_retained(
-                        cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
-                            FeatureSimpleHoleRepeatedScalarLane,
-                        >()),
-                        "NX simple hole repeated scalar lanes",
-                    )
-                })
-                .and_then(|()| {
-                    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+                    ctx.reserve_capacity(
                         &mut pairs,
                         1,
                         "allocate NX simple hole repeated scalar lanes",
@@ -1223,15 +1207,7 @@ pub(in crate::native) fn feature_simple_hole_repeated_scalar_lane_block_referenc
             if let Err(error) = ctx
                 .charge_collection_items(1, "NX simple hole block reference lanes")
                 .and_then(|()| {
-                    ctx.charge_retained(
-                        cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
-                            FeatureSimpleHoleRepeatedScalarLaneBlockReferences,
-                        >()),
-                        "NX simple hole block reference lanes",
-                    )
-                })
-                .and_then(|()| {
-                    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+                    ctx.reserve_capacity(
                         &mut references,
                         1,
                         "allocate NX simple hole block reference lanes",
@@ -1564,15 +1540,7 @@ pub(in crate::native) fn feature_hole_package_construction_group_lanes(
             if let Err(error) = ctx
                 .charge_collection_items(1, "NX hole package lanes")
                 .and_then(|()| {
-                    ctx.charge_retained(
-                        cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
-                            FeatureHolePackageConstructionGroupLane,
-                        >()),
-                        "NX hole package lanes",
-                    )
-                })
-                .and_then(|()| {
-                    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+                    ctx.reserve_capacity(
                         &mut lanes,
                         1,
                         "allocate NX hole package lanes",

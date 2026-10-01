@@ -631,7 +631,7 @@ impl<'a> ser::Serializer for CanonValue<'a> {
         Ok(CanonSeq {
             ctx: self.ctx,
             _nested: nested,
-            out: self.ctx.retained_admitted_vec(len.unwrap_or(0), STORAGE)?,
+            out: self.ctx.vector_storage(len.unwrap_or(0), STORAGE)?,
             depth,
             sink: self.sink,
         })

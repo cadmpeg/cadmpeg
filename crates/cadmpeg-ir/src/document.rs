@@ -523,7 +523,7 @@ macro_rules! declare_model {
                 &mut self, ctx: &DecodeContext<'_>, other: Self, rewrite: &mut R, operation: &'static str,
             ) -> Result<(), ModelRewriteError<R::Error>> {
                 $(
-                    ctx.reserve_retained_capacity_limit(&mut self.$field, other.$field.len(), operation).map_err(ModelRewriteError::Resource)?;
+                    ctx.reserve_capacity_limit(&mut self.$field, other.$field.len(), operation).map_err(ModelRewriteError::Resource)?;
                     for entity in other.$field {
                         ctx.charge_work_limit(1, operation).map_err(ModelRewriteError::Resource)?;
                         ctx.charge_collection_items_limit(1, operation).map_err(ModelRewriteError::Resource)?;

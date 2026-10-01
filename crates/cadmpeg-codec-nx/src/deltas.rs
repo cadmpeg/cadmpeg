@@ -1683,20 +1683,9 @@ fn merged_event_spans(
                 u64_from_index(census.records.len()),
             )
         })?;
-    let scratch_bytes = count
-        .checked_mul(std::mem::size_of::<(usize, usize)>())
-        .ok_or_else(|| {
-            ctx.refuse_codec_limit("NX deltas event span bytes", 0, u64_from_index(count))
-        })?;
-    let _covered_reservation =
-        ctx.reserve_scoped(u64_from_index(scratch_bytes), "NX deltas event spans")?;
     ctx.charge_collection_items(u64_from_index(count), "NX deltas event spans")?;
-    let mut covered = Vec::new();
-    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
-        &mut covered,
-        count,
-        "NX deltas event span allocation",
-    )?;
+    let (mut covered, _covered_reservation) = ctx.scoped_vector_storage(
+        count, "NX deltas event span allocation")?;
     covered.extend(
         census
             .transmit_header
@@ -2123,14 +2112,7 @@ fn merge_records(
                     u64_from_index(partition.len()),
                 )
             })?;
-        let reservation =
-            ctx.reserve_scoped(u64_from_index(total_len), "NX merged partition bytes")?;
-        let mut merged = Vec::new();
-        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
-            &mut merged,
-            total_len,
-            "NX merged partition bytes",
-        )?;
+        let (mut merged, reservation) = ctx.scoped_vector_storage(total_len, "NX merged partition bytes")?;
         merged.extend_from_slice(partition);
         for &(kind, xmt) in replacements.keys().chain(deletions.keys()) {
             if included(kind) {
@@ -2509,9 +2491,8 @@ pub(crate) fn semantic_residual_with_census(
                 )
             })?;
     }
-    ctx.charge_retained(u64_from_index(total_len), "NX semantic residual bytes")?;
     let mut residual = Vec::new();
-    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+    ctx.reserve_capacity(
         &mut residual,
         total_len,
         "NX semantic residual bytes",
@@ -2583,10 +2564,8 @@ impl FixedCandidate {
         stream: &[u8],
         signature: &[Token],
     ) -> Result<Record, CodecError> {
-        let canonical_len = cadmpeg_core::decode::u64_from_index(self.canonical_len);
-        ctx.charge_retained(canonical_len, "NX deltas fixed record bytes")?;
         let mut canonical_bytes = Vec::new();
-        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+        ctx.reserve_capacity(
             &mut canonical_bytes,
             self.canonical_len,
             "NX deltas fixed record bytes",

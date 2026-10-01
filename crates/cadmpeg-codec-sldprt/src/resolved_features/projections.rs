@@ -1444,7 +1444,7 @@ fn variable_fillet_radius_groups<'a>(
         }
     }
     if groups.len() == 1 {
-        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+        ctx.reserve_capacity(
             &mut groups[0].1,
             unassigned.len(),
             OPERATION,

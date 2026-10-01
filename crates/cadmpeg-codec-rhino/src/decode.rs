@@ -326,10 +326,10 @@ fn snapshot_instance_links<'a>(
     const BYTES: &str = "Rhino instance link snapshot bytes";
     let (links, reservation) = ctx.with_scoped_storage(BYTES, || {
         ctx.charge_collection_items(u64_from_index(records.len()), "Rhino instance link snapshot rows")?;
-        let mut links = ctx.retained_admitted_vec(records.len(), BYTES)?;
+        let mut links = ctx.vector_storage(records.len(), BYTES)?;
         for record in records {
             ctx.charge_collection_items(u64_from_index(record.links().len()), "Rhino instance link snapshot entries")?;
-            let mut row = ctx.retained_admitted_vec(record.links().len(), BYTES)?;
+            let mut row = ctx.vector_storage(record.links().len(), BYTES)?;
             for link in record.links() {
                 row.push(ctx.copy_retained_text(link, BYTES)?);
             }
@@ -356,7 +356,7 @@ fn snapshot_instance_statuses<'a>(
     const BYTES: &str = "Rhino instance status snapshot bytes";
     let (copy, reservation) = ctx.with_scoped_storage(BYTES, || {
         ctx.charge_collection_items(u64_from_index(statuses.len()), "Rhino instance status snapshot")?;
-        let mut copy = ctx.retained_admitted_vec(statuses.len(), BYTES)?;
+        let mut copy = ctx.vector_storage(statuses.len(), BYTES)?;
         ctx.charge_work(u64_from_index(statuses.len()), BYTES)?;
         copy.extend_from_slice(statuses);
         Ok::<_, cadmpeg_core::CodecError>(copy)
@@ -3510,7 +3510,7 @@ impl<'a> DecodeContext<'a> {
                     "Rhino point-cloud vertices",
                 )?;
                 let mut vertices = Vec::new();
-                cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+                ctx.reserve_capacity(
                     &mut vertices,
                     points.len(),
                     "Rhino point-cloud vertices",

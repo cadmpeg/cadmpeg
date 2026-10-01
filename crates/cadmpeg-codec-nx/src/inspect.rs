@@ -75,6 +75,7 @@ pub(super) fn summarize(
         });
     }
 
+    let mut storage_notes_storage = ctx.reserve_scoped(0, "nx temporary storage notes")?;
     let mut storage_notes: Vec<String> = Vec::new();
     for (si, stream) in scan.streams.iter().enumerate() {
         let mut attributes = BTreeMap::new();
@@ -284,7 +285,7 @@ pub(super) fn summarize(
                 match EntryStorage::framed(VerbatimLabel::Stored, inflated_len, stream.consumed) {
                     Ok(storage) => storage,
                     Err(message) => {
-                        ctx.reserve_vec(&mut storage_notes, 1, "nx summary storage notes")?;
+                        storage_notes_storage.with_storage(|| ctx.reserve_vec(&mut storage_notes, 1, "nx summary storage notes"))?;
                         storage_notes.push(ctx.format_retained(
                             format_args!(
                                 "parasolid#{si}: {message}: {}/{inflated_len}",
