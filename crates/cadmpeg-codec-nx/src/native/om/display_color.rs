@@ -127,7 +127,12 @@ fn finalize_assignments(
         u64_from_index(sort_work),
         "sort NX display color assignments",
     )?;
-    assignments.sort_by_key(|assignment| assignment.frame.offset());
+    ctx.stable_sort_by(
+        &mut assignments,
+        |first, second| first.frame.offset().cmp(&second.frame.offset()),
+        |_| 0,
+        "sort NX display color assignments",
+    )?;
     drop(sort_reservation);
     for (ordinal, assignment) in assignments.iter_mut().enumerate() {
         assignment.ordinal = u32::try_from(ordinal)

@@ -293,7 +293,7 @@ impl<'storage> MeshSelectionSearch<'storage, '_> {
             "catia_face_projection_root_order",
         )?;
         roots.extend(root_set);
-        roots.sort_unstable();
+        self.ctx.sort_unstable_by(&mut roots, Ord::cmp, |_| 0, "catia_face_projection_root_order_sort")?;
         let mut signature = Vec::new();
         self.ctx.reserve_vec(
             &mut signature,
@@ -308,14 +308,19 @@ impl<'storage> MeshSelectionSearch<'storage, '_> {
                 "catia_face_projection_domain_points",
             )?;
             domain.extend(quotient.domains[root].iter().copied());
-            domain.sort_unstable();
+            self.ctx.sort_unstable_by(&mut domain, Ord::cmp, |_| 0, "catia_face_projection_domain_points_sort")?;
             signature.push((
                 self.ctx
                     .copy_slice(quotient.members(root), "catia_face_projection_member_nodes")?,
                 domain,
             ));
         }
-        signature.sort_unstable();
+        self.ctx.sort_unstable_by(
+            &mut signature,
+            Ord::cmp,
+            |item| item.0.len() + item.1.len(),
+            "catia_face_projection_signature_rows_sort",
+        )?;
         Ok(signature)
     }
 
@@ -1465,7 +1470,8 @@ impl<'storage> MeshSelectionSearch<'storage, '_> {
             self.selected[face] = None;
             return Ok(());
         }
-        options.sort_unstable_by(
+        self.ctx.sort_unstable_by(
+            &mut options,
             |(left_assignment, left_directions, left_quotient),
              (right_assignment, right_directions, right_quotient)| {
                 let measure = |quotient: &MeshQuotient<'storage>| {
@@ -1483,7 +1489,9 @@ impl<'storage> MeshSelectionSearch<'storage, '_> {
                     .then_with(|| left_assignment.cmp(right_assignment))
                     .then_with(|| left_directions.cmp(right_directions))
             },
-        );
+            |(_, directions, _)| directions.iter().map(Vec::len).sum::<usize>(),
+            "catia_search_assignment_options_sort",
+        )?;
         for (assignment_index, directions, next_quotient) in options {
             let changed_edges = changed_quotient_edges(self.ctx, &measured, &next_quotient)?;
             self.selected[face] = Some((assignment_index, directions));
@@ -1710,7 +1718,7 @@ pub(super) fn singleton_mesh_boundary_directions(
             )?;
         }
     }
-    solutions.sort_unstable();
+    ctx.sort_unstable_by(&mut solutions, Ord::cmp, |item| item.len(), "catia_singleton_direction_solutions_sort")?;
     solutions.dedup();
     if solutions.len() == 2
         && boundary.iter().all(|use_| {
@@ -1799,7 +1807,7 @@ pub(super) fn canonical_singleton_coordinate_cycles(
         }
         cycles.push(canonical_cycle(ctx, &points)?);
     }
-    cycles.sort_unstable();
+    ctx.sort_unstable_by(&mut cycles, Ord::cmp, |item| item.len(), "catia_singleton_cycle_rows_sort")?;
     Ok(Some(cycles))
 }
 
@@ -2213,7 +2221,7 @@ pub(super) fn resolve_singleton_mesh_selection(
         let mut values = Vec::new();
         ctx.reserve_vec(&mut values, domain.len(), "catia_singleton_domain_values")?;
         values.extend(domain.iter().copied());
-        values.sort_unstable();
+        ctx.sort_unstable_by(&mut values, Ord::cmp, |_| 0, "catia_singleton_domain_values_sort")?;
         domain_values.push(values);
     }
     let first_assignment =

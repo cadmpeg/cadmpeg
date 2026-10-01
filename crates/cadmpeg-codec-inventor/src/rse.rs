@@ -464,7 +464,12 @@ impl<'a> RseInventory<'a> {
                 }
             }
         }
-        databases.sort_by_key(|(band, _)| *band);
+        ctx.stable_sort_by(
+            &mut databases,
+            |(left, _), (right, _)| left.cmp(right),
+            |_| 0,
+            "RSe database descriptor sort",
+        )?;
         ctx.charge_collection_items(
             cadmpeg_core::decode::u64_from_index(databases.len()),
             "admit RSe database descriptors",

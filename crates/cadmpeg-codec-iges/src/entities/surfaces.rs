@@ -682,7 +682,7 @@ fn normalized_span_boundaries(
             boundaries.push(normalized);
         }
     }
-    boundaries.sort_by(f64::total_cmp);
+    ctx.stable_sort_by(&mut boundaries, f64::total_cmp, |_| 0, "iges span boundary sort")?;
     boundaries.dedup();
     Ok((boundaries.first() == Some(&0.0) && boundaries.last() == Some(&1.0)).then_some(boundaries))
 }
@@ -772,7 +772,7 @@ fn aligned_homogeneous_spans(
         "iges span combined boundaries",
     )?;
     boundaries.extend(second_boundaries);
-    boundaries.sort_by(f64::total_cmp);
+    ctx.stable_sort_by(&mut boundaries, f64::total_cmp, |_| 0, "iges span boundary sort")?;
     boundaries.dedup();
     let Some(first_spans) =
         partition_homogeneous_spans(&first_spans, first_domain, &boundaries, ctx)?

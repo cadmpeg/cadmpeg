@@ -137,7 +137,12 @@ pub(crate) fn bind_pattern_inputs(
                     Some((offset, *feature))
                 }),
         )?;
-        starts.sort_unstable_by_key(|(offset, _)| *offset);
+        ctx.sort_unstable_by(
+            &mut starts,
+            |(left, _), (right, _)| left.cmp(right),
+            |_| 0,
+            "sort SLDPRT pattern input candidates",
+        )?;
         for (start_index, (_, feature)) in starts.iter().enumerate() {
             let has_derived_cosmetic_thread_output =
                 starts.get(start_index + 1).is_some_and(|(_, candidate)| {
@@ -362,7 +367,12 @@ pub(crate) fn bind_pattern_inputs(
                             "scan SLDPRT pattern input candidates",
                             seed_candidates,
                         )?;
-                        seeds.sort_unstable();
+                        ctx.sort_unstable_by(
+                            &mut seeds,
+                            Ord::cmp,
+                            |seed| seed.as_str().len(),
+                            "sort SLDPRT pattern input seeds",
+                        )?;
                         seeds.dedup();
                         if let [seed] = seeds.as_slice() {
                             let seed = copy_feature_binding_id(ctx, seed)?;
@@ -1185,7 +1195,12 @@ pub(crate) fn bind_sweep_adjacent_profiles(
                 .filter(|feature| !metadata_ids.contains(feature.id.as_str()))
                 .filter_map(|feature| Some((feature_object_name(feature, lane)?.offset, *feature))),
         )?;
-        starts.sort_unstable_by_key(|(offset, _)| *offset);
+        ctx.sort_unstable_by(
+            &mut starts,
+            |(left, _), (right, _)| left.cmp(right),
+            |_| 0,
+            "sort SLDPRT sweep adjacent features",
+        )?;
         for (index, (_, feature)) in starts.iter().enumerate() {
             if feature.input_class.as_deref() != Some("moSweep_c") {
                 continue;
@@ -1389,7 +1404,12 @@ pub(crate) fn bind_scalar_operands(
                     ))
                 }),
         )?;
-        starts.sort_unstable_by_key(|start| start.0);
+        ctx.sort_unstable_by(
+            &mut starts,
+            |left, right| left.0.cmp(&right.0),
+            |_| 0,
+            "sort SLDPRT scalar operand features",
+        )?;
         for (index, &(start, feature_id)) in starts.iter().enumerate() {
             let end = starts.get(index + 1).map_or(u64::MAX, |next| next.0);
             for entity in lane
@@ -1597,7 +1617,12 @@ fn represented_sketch_features(
                 .filter(|feature| !metadata_ids.contains(feature.id.as_str()))
                 .filter_map(|feature| Some((feature_object_name(feature, lane)?.offset, *feature))),
         )?;
-        objects.sort_unstable_by_key(|(offset, _)| *offset);
+        ctx.sort_unstable_by(
+            &mut objects,
+            |(left, _), (right, _)| left.cmp(right),
+            |_| 0,
+            "sort SLDPRT represented sketch objects",
+        )?;
         for (index, &(start, feature)) in objects.iter().enumerate() {
             if feature.xml_tag != "Sketch" {
                 continue;
@@ -1717,7 +1742,12 @@ pub(super) fn bind_detached_legacy_sketch_objects(
             })
             .filter_map(|feature| Some((feature.source_value()?, feature))),
     )?;
-    owners.sort_unstable_by_key(|(source, _)| *source);
+    ctx.sort_unstable_by(
+        &mut owners,
+        |(left, _), (right, _)| left.cmp(right),
+        |_| 0,
+        "sort SLDPRT detached sketch owners",
+    )?;
     if starts.len() != owners.len() {
         return Ok(());
     }
@@ -1779,7 +1809,12 @@ pub(super) fn spatial_relation_manager_ranges_charged(
         ctx.reserve_collection_vec(&mut ranges, 1, "collect SLDPRT spatial relation ranges")?;
         ranges.push(range);
     }
-    ranges.sort_unstable();
+    ctx.sort_unstable_by(
+        &mut ranges,
+        Ord::cmp,
+        |_| 0,
+        "sort SLDPRT spatial relation ranges",
+    )?;
     ranges.dedup();
     Ok(ranges)
 }

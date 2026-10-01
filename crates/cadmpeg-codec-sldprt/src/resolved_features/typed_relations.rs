@@ -1947,7 +1947,12 @@ fn sort_axis_relation_point_loci(
             .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?,
         OPERATION,
     )?;
-    loci.sort_unstable_by(|left, right| locus_key(left).cmp(&locus_key(right)));
+    ctx.sort_unstable_by(
+        loci.as_mut_slice(),
+        |left, right| locus_key(left).cmp(&locus_key(right)),
+        |locus| locus_key(locus).0.len(),
+        OPERATION,
+    )?;
     loci.dedup();
     Ok(())
 }
@@ -2179,7 +2184,12 @@ pub(super) fn relation_owner_markers<'a>(
             .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?,
         OPERATION,
     )?;
-    owners.sort_unstable_by_key(|marker| marker.offset());
+    ctx.sort_unstable_by(
+        &mut owners,
+        |left, right| left.offset().cmp(&right.offset()),
+        |_| 0,
+        OPERATION,
+    )?;
     Ok(owners)
 }
 

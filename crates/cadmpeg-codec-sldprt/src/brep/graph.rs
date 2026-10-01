@@ -1786,7 +1786,12 @@ fn typed_body_records(
             )?;
             body_refs.push(attr);
         }
-        body_refs.sort_unstable();
+        ctx.sort_unstable_by(
+            &mut body_refs,
+            Ord::cmp,
+            |_| 0,
+            "sort typed Parasolid body references",
+        )?;
         body_refs.dedup();
         let mut regions = Vec::new();
         for region in &hierarchy.regions {
@@ -1810,7 +1815,12 @@ fn typed_body_records(
                     )?;
                     refs.push(face_attr);
                 }
-                refs.sort_unstable();
+                ctx.sort_unstable_by(
+                    &mut refs,
+                    Ord::cmp,
+                    |_| 0,
+                    "sort typed Parasolid shell faces",
+                )?;
                 refs.dedup();
                 ctx.reserve_collection_vec(
                     &mut shells,
@@ -1872,7 +1882,7 @@ fn sorted_topology_sequences(
     let mut sequences = Vec::new();
     ctx.reserve_collection_vec(&mut sequences, count, operation)?;
     sequences.extend(pairs);
-    sequences.sort_unstable();
+    ctx.sort_unstable_by(&mut sequences, Ord::cmp, |_| 0, operation)?;
     sequences.dedup();
     Ok(sequences)
 }
@@ -1889,7 +1899,7 @@ fn sorted_graph_attrs(
     let mut sorted = Vec::new();
     ctx.reserve_collection_vec(&mut sorted, count, operation)?;
     sorted.extend(attrs);
-    sorted.sort_unstable();
+    ctx.sort_unstable_by(&mut sorted, Ord::cmp, |_| 0, operation)?;
     Ok(sorted)
 }
 

@@ -1601,7 +1601,12 @@ fn brep_entities(
     let mut entities = Vec::new();
     let mut surface_indices = BTreeMap::new();
     let mut surfaces = ir.model.surfaces.iter().collect::<Vec<_>>();
-    surfaces.sort_by(|left, right| left.id.as_str().cmp(right.id.as_str()));
+    ctx.stable_sort_by(
+        &mut surfaces,
+        |left, right| left.id.as_str().cmp(right.id.as_str()),
+        |item| item.id.as_str().len(),
+        "iges surfaces sort",
+    )?;
     for surface in surfaces {
         let index = append_surface_entities(ctx, &mut entities, ir, &surface.geometry, version)?;
         surface_indices.insert(surface.id.as_str().to_owned(), index);
@@ -1620,7 +1625,7 @@ fn brep_entities(
     }
     let mut edge_curve_indices = BTreeMap::new();
     let mut edges = topology_edge_ids.iter().collect::<Vec<_>>();
-    edges.sort();
+    ctx.stable_sort_by(&mut edges, Ord::cmp, |item| item.len(), "iges edges sort")?;
     for edge_id in edges {
         let edge = ir
             .model
@@ -1672,7 +1677,12 @@ fn brep_entities(
     }
 
     let mut curves = ir.model.curves.iter().collect::<Vec<_>>();
-    curves.sort_by(|left, right| left.id.as_str().cmp(right.id.as_str()));
+    ctx.stable_sort_by(
+        &mut curves,
+        |left, right| left.id.as_str().cmp(right.id.as_str()),
+        |item| item.id.as_str().len(),
+        "iges curves sort",
+    )?;
     for curve in curves {
         if consumed_curve_ids.contains(curve.id.as_str())
             || ignored_carriers.curves.contains(curve.id.as_str())
@@ -1710,7 +1720,7 @@ fn brep_entities(
         .iter()
         .map(|body| body.id.as_str().to_owned())
         .collect::<Vec<_>>();
-    body_ids.sort();
+    ctx.stable_sort_by(&mut body_ids, Ord::cmp, |item| item.len(), "iges body_ids sort")?;
     for body_id in body_ids {
         let body = bodies
             .iter()
@@ -1805,7 +1815,7 @@ fn brep_entities(
         }
 
         let mut vertex_ids = body_vertex_ids.into_iter().collect::<Vec<_>>();
-        vertex_ids.sort();
+        ctx.stable_sort_by(&mut vertex_ids, Ord::cmp, |item| item.len(), "iges vertex_ids sort")?;
         let mut vertex_indices = BTreeMap::new();
         for (index, vertex_id) in vertex_ids.iter().enumerate() {
             vertex_indices.insert(vertex_id.clone(), index);
@@ -1839,7 +1849,7 @@ fn brep_entities(
         });
 
         let mut edge_ids = body_edge_ids.into_iter().collect::<Vec<_>>();
-        edge_ids.sort();
+        ctx.stable_sort_by(&mut edge_ids, Ord::cmp, |item| item.len(), "iges edge_ids sort")?;
         let mut edge_indices = BTreeMap::new();
         for (index, edge_id) in edge_ids.iter().enumerate() {
             edge_indices.insert(edge_id.clone(), index);
@@ -2177,7 +2187,12 @@ fn brep_entities(
         }
     }
     let mut points = ir.model.points.iter().collect::<Vec<_>>();
-    points.sort_by(|left, right| left.id.as_str().cmp(right.id.as_str()));
+    ctx.stable_sort_by(
+        &mut points,
+        |left, right| left.id.as_str().cmp(right.id.as_str()),
+        |item| item.id.as_str().len(),
+        "iges points sort",
+    )?;
     for point in points {
         if topology_point_ids.contains(point.id.as_str())
             || ignored_carriers.points.contains(point.id.as_str())
@@ -2430,7 +2445,12 @@ fn topology_entities(
     let mut entities = Vec::new();
     let mut surface_indices = BTreeMap::new();
     let mut surfaces = ir.model.surfaces.iter().collect::<Vec<_>>();
-    surfaces.sort_by(|left, right| left.id.as_str().cmp(right.id.as_str()));
+    ctx.stable_sort_by(
+        &mut surfaces,
+        |left, right| left.id.as_str().cmp(right.id.as_str()),
+        |item| item.id.as_str().len(),
+        "iges surfaces sort",
+    )?;
     for surface in surfaces {
         let index = append_surface_entities(ctx, &mut entities, ir, &surface.geometry, version)?;
         surface_indices.insert(surface.id.as_str().to_owned(), index);
@@ -2440,7 +2460,12 @@ fn topology_entities(
     let mut consumed_curves = std::collections::BTreeSet::new();
     let mut consumed_points = std::collections::BTreeSet::new();
     let mut edges = ir.model.edges.iter().collect::<Vec<_>>();
-    edges.sort_by(|left, right| left.id.as_str().cmp(right.id.as_str()));
+    ctx.stable_sort_by(
+        &mut edges,
+        |left, right| left.id.as_str().cmp(right.id.as_str()),
+        |item| item.id.as_str().len(),
+        "iges edges sort",
+    )?;
     for edge in edges {
         if !topology_edge_ids.contains(edge.id.as_str()) {
             continue;
@@ -2487,7 +2512,12 @@ fn topology_entities(
     }
 
     let mut curves = ir.model.curves.iter().collect::<Vec<_>>();
-    curves.sort_by(|left, right| left.id.as_str().cmp(right.id.as_str()));
+    ctx.stable_sort_by(
+        &mut curves,
+        |left, right| left.id.as_str().cmp(right.id.as_str()),
+        |item| item.id.as_str().len(),
+        "iges curves sort",
+    )?;
     for curve in curves {
         if consumed_curves.contains(curve.id.as_str())
             || ignored_carriers.curves.contains(curve.id.as_str())
@@ -2524,7 +2554,12 @@ fn topology_entities(
     let mut boundary_indices = BTreeMap::new();
     let mut curve_on_surface_indices = BTreeMap::new();
     let mut faces = ir.model.faces.iter().collect::<Vec<_>>();
-    faces.sort_by(|left, right| left.id.as_str().cmp(right.id.as_str()));
+    ctx.stable_sort_by(
+        &mut faces,
+        |left, right| left.id.as_str().cmp(right.id.as_str()),
+        |item| item.id.as_str().len(),
+        "iges faces sort",
+    )?;
     for face in &faces {
         let surface_index = surface_indices[face.surface.as_str()];
         let surface = topology
@@ -2668,7 +2703,12 @@ fn topology_entities(
     }
 
     let mut points = ir.model.points.iter().collect::<Vec<_>>();
-    points.sort_by(|left, right| left.id.as_str().cmp(right.id.as_str()));
+    ctx.stable_sort_by(
+        &mut points,
+        |left, right| left.id.as_str().cmp(right.id.as_str()),
+        |item| item.id.as_str().len(),
+        "iges points sort",
+    )?;
     for point in points {
         if consumed_points.contains(point.id.as_str())
             || ignored_carriers.points.contains(point.id.as_str())

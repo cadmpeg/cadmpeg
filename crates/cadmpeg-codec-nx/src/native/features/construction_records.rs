@@ -219,7 +219,12 @@ pub(in crate::native) fn feature_projected_curve_construction_payloads(
             cadmpeg_core::decode::u64_from_index(sort_work),
             "sort NX projected curve references",
         )?;
-        field.sort_by_key(|reference| reference.ordinal);
+        ctx.stable_sort_by(
+            &mut field,
+            |first, second| first.ordinal.cmp(&second.ordinal),
+            |_| 0,
+            "sort NX projected curve references",
+        )?;
         if field.len() != expected_len
             || field
                 .iter()
@@ -800,7 +805,12 @@ pub(in crate::native) fn feature_surface_construction_payloads(
             cadmpeg_core::decode::u64_from_index(sort_work),
             "sort NX surface construction graph",
         )?;
-        graph.sort_by_key(|reference| reference.ordinal);
+        ctx.stable_sort_by(
+            &mut graph,
+            |first, second| first.ordinal.cmp(&second.ordinal),
+            |_| 0,
+            "sort NX surface construction graph",
+        )?;
         if graph
             .iter()
             .enumerate()
@@ -1707,7 +1717,12 @@ pub(in crate::native) fn feature_extrude_construction_profiles(
             cadmpeg_core::decode::u64_from_index(sort_work),
             "sort NX extrude profile references",
         )?;
-        operation_references.sort_by_key(|reference| reference.ordinal);
+        ctx.stable_sort_by(
+            &mut operation_references,
+            |first, second| first.ordinal.cmp(&second.ordinal),
+            |_| 0,
+            "sort NX extrude profile references",
+        )?;
         if operation_references
             .iter()
             .enumerate()
@@ -1917,7 +1932,12 @@ pub(in crate::native) fn feature_extrude_32_constructions(
             cadmpeg_core::decode::u64_from_index(sort_work),
             "sort NX extrude 32 profiles",
         )?;
-        profile.sort_by_key(|reference| reference.ordinal);
+        ctx.stable_sort_by(
+            &mut profile,
+            |first, second| first.ordinal.cmp(&second.ordinal),
+            |_| 0,
+            "sort NX extrude 32 profiles",
+        )?;
         let Ok(profile) = crate::om::branch_items::BranchItems::new(profile) else {
             continue;
         };
@@ -2113,7 +2133,12 @@ pub(in crate::native) fn feature_block_constructions(
             cadmpeg_core::decode::u64_from_index(sort_work),
             "sort NX block construction field",
         )?;
-        field.sort_by_key(|reference| reference.position.ordinal());
+        ctx.stable_sort_by(
+            &mut field,
+            |first, second| first.position.ordinal().cmp(&second.position.ordinal()),
+            |_| 0,
+            "sort NX block construction field",
+        )?;
         let Ok(field): Result<[_; 19], _> = field.try_into() else {
             continue;
         };
@@ -2361,7 +2386,12 @@ pub(in crate::native) fn feature_block_payload_named_records(
             cadmpeg_core::decode::u64_from_index(name_sort_work),
             "sort NX block payload names",
         )?;
-        payload_names.sort_by_key(|name| name.frame.offset());
+        ctx.stable_sort_by(
+            &mut payload_names,
+            |first, second| first.frame.offset().cmp(&second.frame.offset()),
+            |_| 0,
+            "sort NX block payload names",
+        )?;
         for (ordinal, name) in payload_names.iter().enumerate() {
             let end = payload_names
                 .get(ordinal + 1)
@@ -2390,7 +2420,12 @@ pub(in crate::native) fn feature_block_payload_named_records(
                 cadmpeg_core::decode::u64_from_index(scalar_sort_work),
                 "sort NX block payload scalars",
             )?;
-            scalar_fields.sort_by_key(|scalar| scalar.payload_offset);
+            ctx.stable_sort_by(
+                &mut scalar_fields,
+                |first, second| first.payload_offset.cmp(&second.payload_offset),
+                |_| 0,
+                "sort NX block payload scalars",
+            )?;
             let id = ctx.format_retained_with_work(
                 format_args!("{}-record-{ordinal}", payload.id),
                 "NX block payload named record identity",
@@ -2615,7 +2650,15 @@ pub(in crate::native) fn feature_block_dimensions(
             cadmpeg_core::decode::u64_from_index(sort_work),
             "sort NX block dimension bindings",
         )?;
-        operation_bindings.sort_by_key(|binding| (binding.input_slot, binding.reference_ordinal));
+        ctx.stable_sort_by(
+            &mut operation_bindings,
+            |first, second| {
+                (first.input_slot, first.reference_ordinal)
+                    .cmp(&(second.input_slot, second.reference_ordinal))
+            },
+            |_| 0,
+            "sort NX block dimension bindings",
+        )?;
         let Some(start) = declarations
             .iter()
             .position(|declaration| declaration.id == anchor)

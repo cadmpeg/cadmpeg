@@ -623,7 +623,12 @@ pub(crate) fn transfer_parameters(
     let transferred = candidates.len();
     let mut parameters =
         ctx.collect_vec(candidates.into_values(), "catia_formula_ordered_parameters")?;
-    parameters.sort_by_key(|candidate| candidate.source_order);
+    ctx.stable_sort_by(
+        &mut parameters,
+        |left, right| left.source_order.cmp(&right.source_order),
+        |_| 0,
+        "catia_formula_ordered_parameters_sort",
+    )?;
     for (ordinal, candidate) in parameters.iter_mut().enumerate() {
         let Some(ordinal) = u32::try_from(ordinal).ok() else {
             return Ok(FormulaTransfer::default());

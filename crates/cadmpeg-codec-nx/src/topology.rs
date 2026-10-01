@@ -1240,11 +1240,16 @@ impl Graph {
             .checked_mul(u64::from(usize::BITS - nodes.len().leading_zeros()))
             .ok_or_else(|| ctx.refuse_codec_limit("sort NX topology candidates", 0, count))?;
         ctx.charge_work(sort_work, "sort NX topology candidates")?;
-        nodes.sort_by(|left, right| {
-            left.pos
-                .cmp(&right.pos)
-                .then_with(|| left.end().cmp(&right.end()))
-        });
+        ctx.stable_sort_by(
+            &mut nodes,
+            |left, right| {
+                left.pos
+                    .cmp(&right.pos)
+                    .then_with(|| left.end().cmp(&right.end()))
+            },
+            |_| 0,
+            "sort NX topology candidates",
+        )?;
         let mut selected = Vec::new();
         let mut reservation = ctx.reserve_scoped(0, "NX topology nonoverlapping candidates")?;
         let mut start = 0;
@@ -1797,7 +1802,7 @@ impl Graph {
                 .checked_mul(u64::from(usize::BITS - count.leading_zeros()))
                 .ok_or_else(|| ctx.refuse_codec_limit("sort NX shell faces", 0, count_u64))?;
             ctx.charge_work(sort_work, "sort NX shell faces")?;
-            faces.sort_unstable();
+            ctx.sort_unstable_by(&mut faces, Ord::cmp, |_| 0, "sort NX shell faces")?;
         }
         Ok(Some(faces))
     }

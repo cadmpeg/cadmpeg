@@ -344,7 +344,12 @@ fn model_root_member(
             }
         }
     }
-    candidates.sort();
+    ctx.stable_sort_by(
+        &mut candidates,
+        Ord::cmp,
+        |candidate| candidate.len(),
+        "sort F3Z model candidates",
+    )?;
     candidates.dedup();
     match candidates.as_slice() {
         [model_root] => Ok((

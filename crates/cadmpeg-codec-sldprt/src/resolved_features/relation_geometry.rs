@@ -212,7 +212,12 @@ fn spatial_relation_point_line_entities(
         )?;
         point_markers.push(candidate);
     }
-    point_markers.sort_unstable_by_key(|(marker, _)| marker.offset());
+    ctx.sort_unstable_by(
+        &mut point_markers,
+        |(left, _), (right, _)| left.offset().cmp(&right.offset()),
+        |_| 0,
+        "sort SLDPRT spatial point markers",
+    )?;
     let Some(point_operand) = relation.operands.first() else {
         return Ok(None);
     };
@@ -250,7 +255,12 @@ fn spatial_relation_point_line_entities(
         ctx.reserve_collection_vec(&mut line_markers, 1, "collect SLDPRT spatial line markers")?;
         line_markers.push(candidate);
     }
-    line_markers.sort_unstable_by_key(|(marker, _)| marker.offset());
+    ctx.sort_unstable_by(
+        &mut line_markers,
+        |(left, _), (right, _)| left.offset().cmp(&right.offset()),
+        |_| 0,
+        "sort SLDPRT spatial line markers",
+    )?;
     let mut line_matches = line_markers.chunks_exact(2).filter_map(|pair| {
         let ((first_marker, first), (second_marker, second)) = (pair[0], pair[1]);
         (first != second
@@ -906,7 +916,12 @@ pub(crate) fn project_relation_point_geometry(
                     )?;
                     endpoints.push(endpoint);
                 }
-                endpoints.sort_unstable_by_key(|endpoint| endpoint.offset());
+                ctx.sort_unstable_by(
+                    &mut endpoints,
+                    |left, right| left.offset().cmp(&right.offset()),
+                    |_| 0,
+                    "sort SLDPRT relation-line fallback endpoints",
+                )?;
                 endpoints.dedup_by_key(|endpoint| endpoint.id());
             }
             let [first_marker, second_marker] = endpoints.as_slice() else {
@@ -2208,7 +2223,12 @@ fn sort_handle_markers(
     markers: &mut [&SketchInputEntity],
 ) -> Result<(), cadmpeg_core::CodecError> {
     charge_handle_sort_work(ctx, markers.len())?;
-    markers.sort_unstable_by_key(|marker| marker.offset());
+    ctx.sort_unstable_by(
+        markers,
+        |left, right| left.offset().cmp(&right.offset()),
+        |_| 0,
+        DIMENSIONED_HANDLE_OPERATION,
+    )?;
     Ok(())
 }
 
@@ -3346,7 +3366,12 @@ pub(crate) fn project_relation_bindings(
                     .ok_or_else(|| ctx.refuse_codec_limit(ENTITY_SORT, u64::MAX - 1, u64::MAX))?,
                 ENTITY_SORT,
             )?;
-            entities.sort_unstable_by(|left, right| left.as_str().cmp(right.as_str()));
+            ctx.sort_unstable_by(
+                &mut entities,
+                |left, right| left.as_str().cmp(right.as_str()),
+                |entity| entity.as_str().len(),
+                ENTITY_SORT,
+            )?;
             entities.dedup();
             let typed_definition = match relation.family {
                 FeatureInputRelationFamily::PointPointHorizontalDistance

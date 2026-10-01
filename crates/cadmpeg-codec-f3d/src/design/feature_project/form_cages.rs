@@ -1039,7 +1039,7 @@ fn form_cage_serializers(
             ctx.push_vec(&mut offsets, *offset, "f3d form serializer offset")?;
         }
     }
-    offsets.sort_unstable();
+    ctx.sort_unstable_by(&mut offsets, Ord::cmp, |_| 0, "f3d form serializer offset sort")?;
     let mut ordered = Vec::new();
     let mut entries = HashMap::new();
     for offset in offsets {

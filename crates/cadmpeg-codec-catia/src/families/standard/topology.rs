@@ -1061,8 +1061,18 @@ fn duplicate_face_assignments_equivalent(
                             .eq(edge_rows[edge].handles.iter().rev()));
             let mut first_points = edge_points[first_edge];
             let mut points = edge_points[edge];
-            first_points.sort_unstable();
-            points.sort_unstable();
+            ctx.sort_unstable_by(
+                &mut first_points,
+                Ord::cmp,
+                |_| 0,
+                "catia_standard_duplicate_first_points_sort",
+            )?;
+            ctx.sort_unstable_by(
+                &mut points,
+                Ord::cmp,
+                |_| 0,
+                "catia_standard_duplicate_points_sort",
+            )?;
             if same_row
                 && first_points == points
                 && edge_faces[first_edge][0] == edge_faces[edge][0]
@@ -1080,8 +1090,18 @@ fn duplicate_face_assignments_equivalent(
                 )?;
             }
         }
-        left_faces.sort_unstable();
-        right_faces.sort_unstable();
+        ctx.sort_unstable_by(
+            &mut left_faces,
+            Ord::cmp,
+            |_| 0,
+            "catia_standard_duplicate_left_faces_sort",
+        )?;
+        ctx.sort_unstable_by(
+            &mut right_faces,
+            Ord::cmp,
+            |_| 0,
+            "catia_standard_duplicate_right_faces_sort",
+        )?;
         if left_faces != right_faces {
             return Ok(false);
         }
@@ -1288,7 +1308,12 @@ pub(crate) fn incidence_cycles(
     if at_vertex.iter().any(|edges| edges.len() != 2) {
         return Ok(None);
     }
-    unseen.sort_unstable_by_key(|entry| std::cmp::Reverse(entry.0));
+    ctx.sort_unstable_by(
+        &mut unseen,
+        |left, right| std::cmp::Reverse(left.0).cmp(&std::cmp::Reverse(right.0)),
+        |_| 0,
+        "catia_incidence_unseen_edges_sort",
+    )?;
     while let Some((first, [start_vertex, mut vertex])) = unseen.pop() {
         let mut members = Vec::new();
         ctx.push_vec(

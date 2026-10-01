@@ -415,7 +415,7 @@ pub(super) fn dimensioned_circle_transform(
                 };
                 transformed.push((center.0, center.1, *radius));
             }
-            transformed.sort_unstable();
+            ctx.sort_unstable_by(&mut transformed, Ord::cmp, |_| 0, OPERATION)?;
             Ok(
                 (transformed.len() == circles.len() && !transformed.is_empty())
                     .then_some(transformed),
@@ -1305,7 +1305,12 @@ pub(super) fn sort_marker_entity_ids(
             .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?,
         operation,
     )?;
-    entities.sort_unstable();
+    ctx.sort_unstable_by(
+        entities,
+        Ord::cmp,
+        |entity| entity.as_str().len(),
+        operation,
+    )?;
     entities.dedup();
     Ok(())
 }

@@ -211,7 +211,12 @@ pub(in crate::native) fn material_texture_assets(
         u64_from_index(sort_work),
         "sort NX material texture entries",
     )?;
-    entries.sort_by(|first, second| first.name.cmp(&second.name));
+    ctx.stable_sort_by(
+        &mut entries,
+        |first, second| first.name.cmp(&second.name),
+        |entry| entry.name.len(),
+        "sort NX material texture entries",
+    )?;
     let mut assets = Vec::new();
     for entry in entries {
         let parsed = (|| {

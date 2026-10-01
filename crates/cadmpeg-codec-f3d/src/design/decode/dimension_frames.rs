@@ -1664,8 +1664,22 @@ fn parse_dimension_annotation_frame(
         for (slot, member) in returned.iter_mut().zip(&return_members) {
             *slot = member.value.get();
         }
-        operand_members[..operand_count].sort_unstable();
-        returned[..return_members.len()].sort_unstable();
+        if let Err(error) = ctx.sort_unstable_by(
+            &mut operand_members[..operand_count],
+            Ord::cmp,
+            |_| 0,
+            "sort F3D dimension frame operand members",
+        ) {
+            return Some(Err(error));
+        }
+        if let Err(error) = ctx.sort_unstable_by(
+            &mut returned[..return_members.len()],
+            Ord::cmp,
+            |_| 0,
+            "sort F3D dimension frame returned members",
+        ) {
+            return Some(Err(error));
+        }
         if operand_members[..operand_count] != returned[..return_members.len()] {
             continue;
         }

@@ -6371,7 +6371,12 @@ fn ordered_group_faces<K: Ord>(
         .collection_vec(groups.len(), "Rhino Brep ordered shell groups")
         .map_err(crate::curves::GeometryError::from)?;
     ordered.extend(groups);
-    ordered.sort_unstable_by(|left, right| left.0.cmp(&right.0));
+    ctx.sort_unstable_by(
+        &mut ordered,
+        |left, right| left.0.cmp(&right.0),
+        |_| 0,
+        "Rhino Brep ordered shell group sort",
+    )?;
     Ok(ordered)
 }
 

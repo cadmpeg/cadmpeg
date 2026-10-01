@@ -1837,7 +1837,12 @@ fn transition_spatial_profile_selection(
                 }
             }
         }
-        indices.sort_unstable();
+        ctx.sort_unstable_by(
+            &mut indices,
+            Ord::cmp,
+            |_| 0,
+            "sort f3d spatial transition profile indices",
+        )?;
         indices.dedup();
         Ok((indices.len() == 1).then(|| indices[0]))
     };
@@ -1971,7 +1976,7 @@ fn unique_multi_face_deleted_carrier_family(
     if candidates.next().is_some() {
         return Ok(None);
     }
-    faces.sort_unstable();
+    ctx.sort_unstable_by(&mut faces, Ord::cmp, |_| 0, "sort f3d deleted carrier family faces")?;
     Ok(Some(faces))
 }
 
@@ -2203,7 +2208,7 @@ fn historical_selection_regions(
                 .is_some_and(|binding| binding.state_ids.contains(state_id))
         });
     }
-    state_ids.sort_unstable();
+    ctx.sort_unstable_by(&mut state_ids, Ord::cmp, |_| 0, "sort f3d historical selection states")?;
     let mut previous_member_points: Option<Vec<Vec<Point3>>> = None;
     let mut state_selection = None;
     let mut conflicting_state_selections = false;

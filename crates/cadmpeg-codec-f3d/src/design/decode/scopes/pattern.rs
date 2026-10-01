@@ -536,7 +536,14 @@ pub(super) fn exact_circular_pattern_construction_with_owners(
                 }
             }
         }
-        count_candidates.sort_unstable();
+        if let Err(error) = ctx.sort_unstable_by(
+            &mut count_candidates,
+            Ord::cmp,
+            |_| 0,
+            "sort f3d circular pattern count candidates",
+        ) {
+            return Some(Err(error));
+        }
         count_candidates.dedup();
         let [(count, count_record_index, count_offset)] = count_candidates.as_slice() else {
             return None;

@@ -398,13 +398,18 @@ pub(crate) fn transfer_native_sketch_constraints(
         candidates.into_values(),
         "catia_sketch_constraint_candidate_order",
     )?;
-    candidates.sort_by(|left, right| {
-        left.target_record
-            .byte_offset
-            .cmp(&right.target_record.byte_offset)
-            .then(left.target_record.id.cmp(&right.target_record.id))
-            .then(left.sketch.cmp(&right.sketch))
-    });
+    ctx.stable_sort_by(
+        &mut candidates,
+        |left, right| {
+            left.target_record
+                .byte_offset
+                .cmp(&right.target_record.byte_offset)
+                .then(left.target_record.id.cmp(&right.target_record.id))
+                .then(left.sketch.cmp(&right.sketch))
+        },
+        |item| item.target_record.id.len() + item.sketch.as_str().len(),
+        "catia_sketch_constraint_candidates_sort",
+    )?;
 
     let mut transferred = HashSet::new();
     for candidate in candidates {

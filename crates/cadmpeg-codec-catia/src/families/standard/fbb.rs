@@ -2173,7 +2173,12 @@ pub(crate) fn boundary_cycles(
         cycle.rotate_left(minimum);
         ctx.push_vec(&mut cycles, cycle, "catia_boundary_cycles")?;
     }
-    cycles.sort();
+    ctx.stable_sort_by(
+        &mut cycles,
+        Ord::cmp,
+        |item| std::mem::size_of_val(item.as_slice()),
+        "catia_boundary_cycles_sort",
+    )?;
     Ok((!cycles.is_empty()).then_some(cycles))
 }
 
@@ -2244,7 +2249,12 @@ fn cover_cycle_by_rows(
     if coverage.iter().any(|count| *count != 1) {
         return Ok(None);
     }
-    matches.sort_by_key(|entry| entry.0 % length);
+    ctx.stable_sort_by(
+        &mut matches,
+        |left, right| (left.0 % length).cmp(&(right.0 % length)),
+        |_| 0,
+        "catia_cover_cycle_rows_sort",
+    )?;
     let mut corner_nodes = HashMap::new();
     for &(start, edge_count, _, _) in &matches {
         let end = (start + edge_count) % length;

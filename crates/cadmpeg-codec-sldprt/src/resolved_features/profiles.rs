@@ -146,7 +146,12 @@ pub(crate) fn bind_sketch_profiles(
                 .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?,
             OPERATION,
         )?;
-        starts.sort_unstable_by_key(|start| (start.0, start.1));
+        ctx.sort_unstable_by(
+            &mut starts,
+            |left, right| (left.0, left.1).cmp(&(right.0, right.1)),
+            |_| 0,
+            OPERATION,
+        )?;
         for (index, &(start, _, native_feature)) in starts.iter().enumerate() {
             for feature in features.iter() {
                 let work = u64_from_index(feature.native_ref.as_ref().map_or(0, String::len))
@@ -474,7 +479,14 @@ pub(crate) fn project_compact_sketch_profiles(
                 .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?,
             OPERATION,
         )?;
-        objects.sort_unstable_by_key(|(offset, ordinal, _)| (*offset, *ordinal));
+        ctx.sort_unstable_by(
+            &mut objects,
+            |(left_offset, left_ordinal, _), (right_offset, right_ordinal, _)| {
+                (left_offset, left_ordinal).cmp(&(right_offset, right_ordinal))
+            },
+            |_| 0,
+            OPERATION,
+        )?;
         for (object_index, &(start, _, native_feature)) in objects.iter().enumerate() {
             charge_profile_comparisons(
                 ctx,
@@ -2735,7 +2747,14 @@ pub(crate) fn project_sketch_block_profiles(
                     )
                 })?;
             ctx.charge_work(work, "sort SLDPRT sketch block objects")?;
-            objects.sort_unstable_by_key(|(offset, _, ordinal)| (*offset, *ordinal));
+            ctx.sort_unstable_by(
+                &mut objects,
+                |(left_offset, _, left_ordinal), (right_offset, _, right_ordinal)| {
+                    (left_offset, left_ordinal).cmp(&(right_offset, right_ordinal))
+                },
+                |_| 0,
+                "sort SLDPRT sketch block objects",
+            )?;
 
             for (profile_position, (_, native_profile, _)) in objects.iter().enumerate() {
                 if !super::component_paths::is_profile_feature_object(native_profile) {
@@ -3571,7 +3590,12 @@ fn project_detached_legacy_config_sketches(
                     .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?,
                 OPERATION,
             )?;
-            frames.sort_unstable_by_key(reference_plane_frame_key);
+            ctx.sort_unstable_by(
+                &mut frames,
+                |left, right| reference_plane_frame_key(left).cmp(&reference_plane_frame_key(right)),
+                |_| 0,
+                "sort SLDPRT legacy config sketch frames",
+            )?;
             frames.dedup();
             let [frame] = frames.as_slice() else {
                 continue;
@@ -3738,7 +3762,12 @@ fn legacy_config_hex_sketch(
             .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?,
         OPERATION,
     )?;
-    curves.sort_unstable_by_key(|marker| marker.offset());
+    ctx.sort_unstable_by(
+        &mut curves,
+        |left, right| left.offset().cmp(&right.offset()),
+        |_| 0,
+        "sort SLDPRT legacy hex sketch curves",
+    )?;
     let prepared = (|| {
         let unique_object = |object_index: u32| {
             let mut candidates = markers.iter().copied().filter(|marker| {
@@ -4028,7 +4057,12 @@ fn legacy_config_collinear_sketch(
             .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?,
         OPERATION,
     )?;
-    curves.sort_unstable_by_key(|marker| marker.offset());
+    ctx.sort_unstable_by(
+        &mut curves,
+        |left, right| left.offset().cmp(&right.offset()),
+        |_| 0,
+        "sort SLDPRT legacy collinear sketch curves",
+    )?;
     let prepared = (|| {
         let [negative_curve, first_curve, second_curve, third_curve] = curves.as_slice() else {
             return None;
@@ -4091,11 +4125,16 @@ fn legacy_config_collinear_sketch(
             .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?,
         OPERATION,
     )?;
-    chain.sort_unstable_by(|left, right| {
-        left.1[0]
-            .total_cmp(&right.1[0])
-            .then_with(|| left.2.cmp(&right.2))
-    });
+    ctx.sort_unstable_by(
+        &mut chain,
+        |left, right| {
+            left.1[0]
+                .total_cmp(&right.1[0])
+                .then_with(|| left.2.cmp(&right.2))
+        },
+        |_| 0,
+        "sort SLDPRT legacy collinear sketch chain",
+    )?;
     chain.dedup_by(|left, right| {
         same_dimension_length(left.1[0], right.1[0]) && same_dimension_length(left.1[1], right.1[1])
     });
@@ -4178,12 +4217,17 @@ fn legacy_config_collinear_sketch(
             .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?,
         OPERATION,
     )?;
-    points.sort_unstable_by(|left, right| {
-        left.1[0]
-            .total_cmp(&right.1[0])
-            .then_with(|| left.1[1].total_cmp(&right.1[1]))
-            .then_with(|| left.2.cmp(&right.2))
-    });
+    ctx.sort_unstable_by(
+        &mut points,
+        |left, right| {
+            left.1[0]
+                .total_cmp(&right.1[0])
+                .then_with(|| left.1[1].total_cmp(&right.1[1]))
+                .then_with(|| left.2.cmp(&right.2))
+        },
+        |_| 0,
+        "sort SLDPRT legacy collinear sketch points",
+    )?;
     points.dedup_by(|left, right| {
         same_dimension_length(left.1[0], right.1[0]) && same_dimension_length(left.1[1], right.1[1])
     });

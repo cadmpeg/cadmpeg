@@ -199,11 +199,14 @@ pub(super) fn derive_schema_configuration_row_chains(
         )?;
     }
     let mut groups = ctx.collect_vec(groups, "catia_configuration_sorted_groups")?;
-    groups.sort_by(
+    ctx.stable_sort_by(
+        &mut groups,
         |((left_graph, left_root), _), ((right_graph, right_root), _)| {
             left_graph.cmp(right_graph).then(left_root.cmp(right_root))
         },
-    );
+        |((graph, _), _)| graph.len(),
+        "catia_configuration_sorted_groups_sort",
+    )?;
 
     let mut chains = Vec::new();
     for ((graph, root), links) in groups {

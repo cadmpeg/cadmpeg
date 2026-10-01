@@ -2911,7 +2911,7 @@ fn historical_owned_faces(
         }
         _ => return Ok(None),
     }
-    faces.sort_unstable();
+    ctx.sort_unstable_by(&mut faces, Ord::cmp, |_| 0, "sort F3D historical owned faces")?;
     faces.dedup();
     Ok((!faces.is_empty()).then_some(faces))
 }
