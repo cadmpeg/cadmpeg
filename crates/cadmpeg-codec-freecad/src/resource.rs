@@ -3,7 +3,6 @@
 
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
-use std::collections::BTreeMap;
 use std::fmt;
 
 pub(crate) fn malformed_charged(
@@ -15,28 +14,6 @@ pub(crate) fn malformed_charged(
         Ok(message) => CodecError::Malformed(message),
         Err(refusal) => refusal,
     }
-}
-
-pub(crate) fn named_entries_charged<V>(
-    ctx: &DecodeContext<'_>,
-    record: &str,
-    entries: BTreeMap<String, V>,
-    operation: &'static str,
-) -> Result<BTreeMap<cadmpeg_core::text::NonBlankString, V>, CodecError> {
-    use cadmpeg_core::text::NonBlankString;
-    let mut keyed = BTreeMap::new();
-    for (name, value) in entries {
-        let Some(key) = NonBlankString::new(name) else {
-            return Err(CodecError::Malformed(ctx.join_retained(
-                &[record, " states a property with a blank key"],
-                "",
-                operation,
-            )?));
-        };
-        ctx.charge_collection_items(1, operation)?;
-        keyed.insert(key, value);
-    }
-    Ok(keyed)
 }
 
 #[cfg(test)]
@@ -77,9 +54,9 @@ mod tests {
             .expect("empty root is within policy");
         let entries = std::collections::BTreeMap::from([("role".to_owned(), 1_u8)]);
         assert!(
-            matches!(super::named_entries_charged(&ctx, "owner", entries, "test keyed entries"),
+            matches!(cadmpeg_core::text::named_entries_for_decode(&ctx, "owner", entries).map_err(cadmpeg_core::CodecError::from),
             Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-                if limit.operation == "test keyed entries")
+                if limit.operation == "named entry map nodes")
         );
     }
 

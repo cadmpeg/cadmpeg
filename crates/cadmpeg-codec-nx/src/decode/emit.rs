@@ -2149,13 +2149,9 @@ pub(super) fn source_meta(
             )?;
         }
     }
-    ctx.charge_collection_items(
-        cadmpeg_core::decode::u64_from_index(attributes.len()),
-        "nx source attribute names",
-    )?;
     Ok(SourceMeta::classified(
         dialects.try_clone_for_decode(ctx)?,
-        cadmpeg_core::text::named_entries("the nx part", attributes)?,
+        cadmpeg_core::text::named_entries_for_decode(ctx, "the nx part", attributes)?,
     ))
 }
 

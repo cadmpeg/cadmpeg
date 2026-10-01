@@ -78,7 +78,7 @@ pub(crate) fn classify_document(
     };
     Ok(SourceMeta::classified(
         dialects,
-        cadmpeg_core::text::named_entries("the f3d document", attributes)?,
+        cadmpeg_core::text::named_entries_for_decode(ctx, "the f3d document", attributes)?,
     ))
 }
 

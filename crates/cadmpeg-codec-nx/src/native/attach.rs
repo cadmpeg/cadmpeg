@@ -5522,7 +5522,7 @@ fn attach_feature_operations(
                             .outputs
                             .contains_key(label.id.as_str()),
                     },
-                    cadmpeg_core::text::named_entries(&label.id, native_parameters)?,
+                    cadmpeg_core::text::named_entries_for_decode(ctx, &label.id, native_parameters)?,
                 )?
             };
             if let FeatureDefinition::Operation(FeatureOperation::Block { op, .. }) =
@@ -5656,7 +5656,7 @@ fn attach_feature_operations(
             suppressed: None,
             dependencies: DistinctMembers::try_from_unique_vec(dependencies)
                 .map_err(CodecError::malformed)?,
-            source_properties: cadmpeg_core::text::named_entries(&label.id, source_properties)?,
+            source_properties: cadmpeg_core::text::named_entries_for_decode(ctx, &label.id, source_properties)?,
             source_tag: Some(label.value.clone()),
             source_text: None,
             source_content,

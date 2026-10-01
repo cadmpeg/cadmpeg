@@ -238,7 +238,7 @@ fn build_result(
             .map_err(|rejected| {
                 CodecError::malformed(format!("SAT repeated dialect layer key: {rejected:?}"))
             })?,
-        cadmpeg_core::text::named_entries("the acis header", attributes)?,
+        cadmpeg_core::text::named_entries_for_decode(ctx, "the acis header", attributes)?,
     ));
     let mut losses = Vec::new();
     let mut unresolved_tolerance = |name: &str, value: f64| {
