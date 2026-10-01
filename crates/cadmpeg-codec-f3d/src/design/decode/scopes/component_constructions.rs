@@ -983,8 +983,10 @@ pub(super) fn exact_copy_paste_component_operation(
     if scope.reference_members().len() != 1 {
         return None;
     }
-    let source_transform = rigid_transform_at(bytes, start + source_at)?;
-    let copied_transform = rigid_transform_at(bytes, start + source_at + 156)?;
+    let source_transform_offset = start.checked_add(source_at)?;
+    let copied_transform_offset = source_transform_offset.checked_add(156)?;
+    let source_transform = rigid_transform_at(bytes, source_transform_offset)?;
+    let copied_transform = rigid_transform_at(bytes, copied_transform_offset)?;
     let relation_at = records.first_at_or_after(0, relation_record_index)?;
     if relation_at >= start
         || next_indexed_record_offset(bytes, relation_at + 1)? != relation_at + 57
@@ -1031,9 +1033,9 @@ pub(super) fn exact_copy_paste_component_operation(
         source_occurrence_guid: source.occurrence_guid.clone(),
         copied_occurrence_guid: copied.occurrence_guid.clone(),
         source_transform,
-        source_transform_offset: u64::try_from(start + 38).ok()?,
+        source_transform_offset: u64_from_index(source_transform_offset),
         copied_transform,
-        copied_transform_offset: u64::try_from(start + 194).ok()?,
+        copied_transform_offset: u64_from_index(copied_transform_offset),
     })
 }
 

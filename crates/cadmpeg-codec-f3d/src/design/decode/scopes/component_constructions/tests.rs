@@ -1293,3 +1293,5 @@ fn component_insert_scanned_role_refuses_retained_limit() {
     };
     run_component_insert_scope_fixture(Some(probe));
 }
+
+mod copy_paste;
