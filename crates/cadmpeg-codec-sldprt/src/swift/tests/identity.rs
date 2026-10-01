@@ -224,7 +224,7 @@ fn cad_identifier_binds_unique_primary_topology_and_preserves_fallback() {
         }),
     );
     let projected = project_with_topology(&ctx, &root, Some(&index), &[], None)
-        .expect("test projection fits policy");
+        .expect("test projection fits policy").annotations;
     let first = projected.first().expect("projected datum");
     assert_eq!(
         first.targets,
@@ -248,7 +248,7 @@ fn cad_identifier_binds_unique_primary_topology_and_preserves_fallback() {
         .strings
         .insert("CadIdentifier".into(), "125:99".into());
     let projected = project_with_topology(&ctx, &root, Some(&index), &[], None)
-        .expect("test projection fits policy");
+        .expect("test projection fits policy").annotations;
     let first = projected.first().expect("projected datum");
     assert_eq!(
         first.targets,
