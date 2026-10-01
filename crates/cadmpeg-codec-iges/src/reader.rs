@@ -672,18 +672,6 @@ fn decode_with_occurrence_limits(
         "iges combined record losses",
     )?;
     losses.extend(record_losses);
-    if let Some(source_sequence) = product_occurrence_expansion.depth_truncated_at {
-        push_occurrence_loss(
-            ctx,
-            &mut losses,
-            IgesLossCode::OccurrenceExpansionDepthTruncated,
-            format_args!(
-                "IGES product occurrence expansion reached its configured nesting-depth limit"
-            ),
-            source_sequence,
-            &parse.directory,
-        )?;
-    }
     for source_sequence in product_occurrence_expansion.malformed_definition_sequences {
         push_occurrence_loss(ctx, &mut losses,
             IgesLossCode::OccurrenceRootInferenceBlocked,

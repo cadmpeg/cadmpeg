@@ -1415,7 +1415,7 @@ pub(crate) fn transformed_procedural_instance_keeps_solved_carriers_without_dang
 }
 
 #[test]
-fn branching_instance_budget_retains_current_reference_and_later_reference_recovers() {
+fn branching_instance_member_limit_propagates_resource_refusal() {
     let archive = ArchiveVersion::V5;
     let first_member_id = [0x31; 16];
     let second_member_id = [0x32; 16];
@@ -1467,20 +1467,10 @@ fn branching_instance_budget_retains_current_reference_and_later_reference_recov
         let mut context =
             crate::decode::DecodeContext::new(&scan, expand).expect("test transaction");
         context.set_expansion_limits([16, 1, 128]);
-        context.decode_geometry().expect("geometry decode");
-        let result =
-            crate::decode::seal_for_test(context.commit().expect("test decode commit"), false);
-        assert_eq!(result.ir().model.points.len(), 1);
-        assert!(result.ir().model.bodies[0].transform.is_none());
-        assert_eq!(
-            result.ir().model.points[0].position().get(),
-            Point3::new(12.0, 0.0, 0.0)
-        );
-        assert!(result
-            .report()
-            .losses
-            .iter()
-            .any(|loss| loss.message.contains("instance member budget exceeded")));
+        let error = context.decode_geometry().expect_err("wide reference exceeds one member");
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal)
+            if refusal.operation == "Rhino instance member limit" && refusal.limit == 1 && refusal.additional == 1));
+
     });
 }
 
@@ -1695,4 +1685,46 @@ fn file_reference_fixtures_have_valid_nested_checksums() {
         assert_eq!(reader.remaining(), 0);
         assert!(warnings.is_empty(), "archive={archive:?}: {warnings:?}");
     }
+}
+
+#[test]
+fn instance_reference_limit_propagates_resource_refusal() {
+    let archive = ArchiveVersion::V5;
+    let reference = object_record_with_payload(
+        archive, 0x1000, INSTANCE_REFERENCE_CLASS,
+        &instance_reference_payload([0x41; 16], transform(1.0, [0.0; 3])),
+    );
+    let scan = scan_with_objects(&[reference]);
+    crate::decode::with_expand(&scan, |expand| {
+        let mut context = crate::decode::DecodeContext::new(&scan, expand).expect("transaction");
+        context.set_expansion_limits([0, 16, 128]);
+        let error = context.decode_geometry().expect_err("zero reference limit");
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal)
+            if refusal.operation == "Rhino instance reference limit" && refusal.limit == 0 && refusal.additional == 1));
+    });
+}
+
+#[test]
+fn instance_local_depth_limit_propagates_resource_refusal() {
+    let archive = ArchiveVersion::V5;
+    let definitions: Vec<_> = (1u8..=65).map(|index| {
+        let members = if index == 65 { Vec::new() } else { vec![[index + 1; 16]] };
+        static_definition([index; 16], &members)
+    }).collect();
+    let objects: Vec<_> = (1u8..=65).map(|index| {
+        object_record_with_payload(archive, 0x1000, INSTANCE_REFERENCE_CLASS,
+            &instance_reference_payload([index; 16], transform(1.0, [0.0; 3])))
+    }).collect();
+    let mut scan = scan_with_objects(&objects);
+    set_test_units(&mut scan, 1.0);
+    for index in 1u8..=65 {
+        set_identity(&mut scan, usize::from(index - 1), [index; 16], "reference", None, true);
+    }
+    install_definitions(&mut scan, definitions);
+    crate::decode::with_expand(&scan, |expand| {
+        let mut context = crate::decode::DecodeContext::new(&scan, expand).expect("transaction");
+        let error = context.decode_geometry().expect_err("65 reference levels exceed the local slice");
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal)
+            if refusal.operation == "Rhino instance depth limit" && refusal.limit == 64 && refusal.additional == 1));
+    });
 }

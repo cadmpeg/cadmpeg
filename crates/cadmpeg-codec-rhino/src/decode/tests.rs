@@ -34,6 +34,7 @@ use cadmpeg_ir::unknown::{NativeUnknownRecord, UnknownRecord};
 use cadmpeg_ir::{Exactness, SourceObjectAssociation};
 
 mod carrier_copy;
+mod local_limits;
 
 fn line_nurbs(start: f64, end: f64, rational: bool) -> NurbsCurve {
     NurbsCurve::from_lanes(
