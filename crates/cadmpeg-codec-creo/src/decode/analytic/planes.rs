@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Carrier point tests, plane reconciliation, and placed planes.
 
-use crate::decode::axis::{Axis, Sign};
+use crate::axis::{Axis, Sign};
 use crate::feature::schema::SchemaClass;
 use crate::vecmath::normalize;
 use crate::vecmath::unit_length;

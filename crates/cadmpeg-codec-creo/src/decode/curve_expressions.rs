@@ -107,9 +107,9 @@ fn curve_expression_helix_definition(
             [0.0, helix.revolutions.get() * std::f64::consts::TAU],
             cadmpeg_ir::geometry::HelixFrame {
                 center: Point3::new(
-                    origin.x + axis.x * helix.z_start,
-                    origin.y + axis.y * helix.z_start,
-                    origin.z + axis.z * helix.z_start,
+                    origin.x + axis.x * helix.z_start.get(),
+                    origin.y + axis.y * helix.z_start.get(),
+                    origin.z + axis.z * helix.z_start.get(),
                 ),
                 major: Vector3::new(
                     major_direction.x * helix.radius.get(),
@@ -122,9 +122,9 @@ fn curve_expression_helix_definition(
                     minor_direction.z * helix.radius.get(),
                 ),
                 pitch: Vector3::new(
-                    axis.x * helix.height / helix.revolutions.get(),
-                    axis.y * helix.height / helix.revolutions.get(),
-                    axis.z * helix.height / helix.revolutions.get(),
+                    axis.x * helix.height.get() / helix.revolutions.get(),
+                    axis.y * helix.height.get() / helix.revolutions.get(),
+                    axis.z * helix.height.get() / helix.revolutions.get(),
                 ),
                 axis,
             },
@@ -1055,8 +1055,8 @@ pub(super) fn transfer_curve_expression_features(
                 Some(IrFeatureDefinition::Operation(
                     IrFeatureOperation::HelixNativeAxis {
                         axis_native_ref: cadmpeg_core::text::NonBlankString::new(axis_id)?,
-                        axial_rise: Length::new(helix.height)?,
-                        pitch: Length::new(helix.height / helix.revolutions.get())?,
+                        axial_rise: Length::new(helix.height.get())?,
+                        pitch: Length::new(helix.height.get() / helix.revolutions.get())?,
                         revolutions: helix.revolutions,
                         start_angle: helix.start_angle,
                         clockwise: helix.clockwise,

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Counterbore dimensions, axis placement, and source cylinder geometry.
 
-use crate::decode::axis::Axis;
+use crate::axis::Axis;
 use crate::vecmath::normalize;
 use crate::vecmath::unit_length;
 use cadmpeg_core::decode::DecodeContext;

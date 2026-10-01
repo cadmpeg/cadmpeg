@@ -756,17 +756,7 @@ fn placed_plane_scaled_origin_overflow_refuses_unrepresentable_ir() {
 fn inch_datum_plane(offset: f64) -> ContainerScan<'static> {
     let mut scan = scan_bytes_ok(crate::test_support::build_prt("datum", &[]));
     scan.framing.principal_unit = Some(PrincipalUnitSystem::InchPoundMassSecond);
-    scan.planes.datums.push(crate::datum::DatumPlaneRecord {
-        id: 5,
-        feature_id: 1,
-        plane: crate::datum::DatumPlane {
-            axis: crate::datum::Axis::X,
-            offset,
-        },
-        opposite_offset: offset,
-        in_plane_corners: [[Some(0.0); 2]; 2],
-        offset_in_payload: 0,
-    });
+    scan.planes.datums.push(crate::datum::DatumPlaneRecord::new(5, 1, crate::datum::DatumPlane::new(crate::axis::Axis::X, offset).expect("valid datum fixture"), offset, [[Some(0.0); 2]; 2], 0).expect("valid datum fixture"));
     scan
 }
 

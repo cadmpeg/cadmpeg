@@ -129,15 +129,8 @@ fn normalization_rejects_overflowed_feature_frame_vectors() {
     assert!((normalized[2] - 0.8).abs() < 1.0e-12);
 }
 
-fn datum(id: u32, axis: crate::datum::Axis, offset: f64) -> DatumPlaneRecord {
-    DatumPlaneRecord {
-        id,
-        feature_id: id.saturating_sub(1),
-        plane: crate::datum::DatumPlane { axis, offset },
-        opposite_offset: offset,
-        in_plane_corners: [[Some(0.0); 2]; 2],
-        offset_in_payload: usize::try_from(id).expect("fixture id fits usize"),
-    }
+fn datum(id: u32, axis: crate::axis::Axis, offset: f64) -> DatumPlaneRecord {
+    DatumPlaneRecord::new(id, id.saturating_sub(1), crate::datum::DatumPlane::new(axis, offset).expect("valid datum fixture"), offset, [[Some(0.0); 2]; 2], usize::try_from(id).expect("fixture id fits usize")).expect("valid datum fixture")
 }
 
 fn blank_definition() -> FeatureDefinition {
@@ -303,7 +296,7 @@ fn plane_namespace_collision_withholds_equation() {
         offset: 11,
     };
     assert_eq!(
-        plane_equation(7, &[datum(7, crate::datum::Axis::Y, 2.0)], &[model], &[]),
+        plane_equation(7, &[datum(7, crate::axis::Axis::Y, 2.0)], &[model], &[]),
         None
     );
 
@@ -315,7 +308,7 @@ fn plane_namespace_collision_withholds_equation() {
         offset: 12,
     };
     assert_eq!(
-        plane_equation(7, &[datum(7, crate::datum::Axis::Y, 2.0)], &[], &[outline]),
+        plane_equation(7, &[datum(7, crate::axis::Axis::Y, 2.0)], &[], &[outline]),
         None
     );
 }
@@ -354,9 +347,9 @@ fn resolves_perpendicular_datum_frame() {
             &[definition],
             &PlacementSources {
                 datums: &[
-                    datum(2, crate::datum::Axis::X, 2.0),
-                    datum(3, crate::datum::Axis::X, 1.0),
-                    datum(4, crate::datum::Axis::Z, 3.0),
+                    datum(2, crate::axis::Axis::X, 2.0),
+                    datum(3, crate::axis::Axis::X, 1.0),
+                    datum(4, crate::axis::Axis::Z, 3.0),
                 ],
                 surface_rows: &[],
                 model_planes: &[],
@@ -414,9 +407,9 @@ fn resolves_reference_flip_from_selected_positional_row() {
         &[definition],
         &PlacementSources {
             datums: &[
-                datum(2, crate::datum::Axis::X, 2.0),
-                datum(3, crate::datum::Axis::X, 1.0),
-                datum(4, crate::datum::Axis::Z, 3.0),
+                datum(2, crate::axis::Axis::X, 2.0),
+                datum(3, crate::axis::Axis::X, 1.0),
+                datum(4, crate::axis::Axis::Z, 3.0),
             ],
             surface_rows: &[],
             model_planes: &[],
@@ -470,9 +463,9 @@ fn rejects_duplicate_selected_positional_reference_rows() {
         &[definition],
         &PlacementSources {
             datums: &[
-                datum(2, crate::datum::Axis::X, 2.0),
-                datum(3, crate::datum::Axis::X, 1.0),
-                datum(4, crate::datum::Axis::Z, 3.0),
+                datum(2, crate::axis::Axis::X, 2.0),
+                datum(3, crate::axis::Axis::X, 1.0),
+                datum(4, crate::axis::Axis::Z, 3.0),
             ],
             surface_rows: &[],
             model_planes: &[],
@@ -636,8 +629,8 @@ fn resolves_generated_section_from_declared_cap_pair() {
             &[definition],
             &PlacementSources {
                 datums: &[
-                    datum(2, crate::datum::Axis::X, 0.0),
-                    datum(191, crate::datum::Axis::X, 8.0),
+                    datum(2, crate::axis::Axis::X, 0.0),
+                    datum(191, crate::axis::Axis::X, 8.0),
                 ],
                 surface_rows: &rows,
                 model_planes: &[],
@@ -770,9 +763,9 @@ fn resolves_oblique_reference_from_an_earlier_extruded_line() {
         &[source.clone(), dependent.clone()],
         &PlacementSources {
             datums: &[
-                datum(2, crate::datum::Axis::X, 0.0),
-                datum(4, crate::datum::Axis::Z, 0.0),
-                datum(799, crate::datum::Axis::Y, 1.0),
+                datum(2, crate::axis::Axis::X, 0.0),
+                datum(4, crate::axis::Axis::Z, 0.0),
+                datum(799, crate::axis::Axis::Y, 1.0),
             ],
             surface_rows: std::slice::from_ref(&generated_plane),
             model_planes: &[],
@@ -801,9 +794,9 @@ fn resolves_oblique_reference_from_an_earlier_extruded_line() {
         &[source, dependent],
         &PlacementSources {
             datums: &[
-                datum(2, crate::datum::Axis::X, 0.0),
-                datum(4, crate::datum::Axis::Z, 0.0),
-                datum(799, crate::datum::Axis::Y, 1.0),
+                datum(2, crate::axis::Axis::X, 0.0),
+                datum(4, crate::axis::Axis::Z, 0.0),
+                datum(799, crate::axis::Axis::Y, 1.0),
             ],
             surface_rows: &[generated_plane, duplicate_plane],
             model_planes: &[],
@@ -859,7 +852,7 @@ fn resolves_orientation_from_an_outline_plane_carrier() {
     let transforms = resolve(
         &[definition],
         &PlacementSources {
-            datums: &[datum(2, crate::datum::Axis::X, 2.0)],
+            datums: &[datum(2, crate::axis::Axis::X, 2.0)],
             surface_rows: &[],
             model_planes: &[],
             outline_planes: &[reference],
@@ -927,8 +920,8 @@ fn resolves_generated_sketch_datum_from_unique_parent_relation() {
         &[definition],
         &PlacementSources {
             datums: &[
-                datum(2, crate::datum::Axis::X, 0.0),
-                datum(4, crate::datum::Axis::Y, 0.0),
+                datum(2, crate::axis::Axis::X, 0.0),
+                datum(4, crate::axis::Axis::Y, 0.0),
             ],
             surface_rows: &[],
             model_planes: &[],
@@ -1016,7 +1009,7 @@ fn resolves_generated_plane_from_contextually_unambiguous_envelope_axis() {
     let transforms = resolve(
         &[definition],
         &PlacementSources {
-            datums: &[datum(2, crate::datum::Axis::X, 0.0)],
+            datums: &[datum(2, crate::axis::Axis::X, 0.0)],
             surface_rows: &[row],
             model_planes: &[],
             outline_planes: &[],

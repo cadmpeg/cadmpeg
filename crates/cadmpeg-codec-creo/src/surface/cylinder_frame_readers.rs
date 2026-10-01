@@ -1071,7 +1071,7 @@ fn decode_signed_axis_aligned_cylinder_frame(
     (auxiliary.abs() < signed_length.abs()).then_some(())?;
     // The lane states the axial extent, so this lane's axis is the one span that witnesses it and
     // a second witness leaves the axis unstated.
-    let mut witnesses = crate::decode::axis::Axis::ALL
+    let mut witnesses = crate::axis::Axis::ALL
         .into_iter()
         .filter(|axis| corners.close(corners.spans[axis.index()], signed_length.abs()));
     let model_axis = witnesses.next()?;
@@ -1597,8 +1597,8 @@ impl AxisAlignedCorners {
     }
     /// Splits the two axes perpendicular to `axis` into the diameter axis and the radius axis,
     /// which the corners state as one span twice the other.
-    fn axes(&self, axis: crate::decode::axis::Axis) -> Option<AxisAlignedCylinderAxes> {
-        let [left, right] = axis.complement().map(crate::decode::axis::Axis::index);
+    fn axes(&self, axis: crate::axis::Axis) -> Option<AxisAlignedCylinderAxes> {
+        let [left, right] = axis.complement().map(crate::axis::Axis::index);
         let (diameter, radius) = match (
             self.close(self.spans[left], 2.0 * self.spans[right]),
             self.close(self.spans[right], 2.0 * self.spans[left]),
@@ -1657,7 +1657,7 @@ fn axis_aligned_cylinder_from_corners(
     orientation: AxisAlignedCornerOrientation,
 ) -> Option<PositionalCylinderFrame> {
     let corners = AxisAlignedCorners::new(first, second, stored_length.map(PositiveLength::get));
-    let mut candidates = crate::decode::axis::Axis::ALL
+    let mut candidates = crate::axis::Axis::ALL
         .into_iter()
         .filter_map(|axis| {
             let axes = corners.axes(axis)?;
