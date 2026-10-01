@@ -9656,23 +9656,7 @@ impl CatiaNative {
         let mut parsed_object_graphs =
             object_graph::parse_all_with_paired_roots(ctx, bytes, &paired_object_graph_roots)?;
         let mut parsed_value_blocks = value_block::parse(ctx, bytes)?;
-        parsed_value_blocks.retain(|block| {
-            !parsed_object_graphs.iter().any(|graph| {
-                extent_contains(graph.pos, graph.total_len, block.pos, block.total_len())
-            })
-        });
-        parsed_object_graphs.retain(|graph| {
-            !parsed_value_blocks.iter().any(|block| {
-                extent_contains(block.pos, block.total_len(), graph.pos, graph.total_len)
-            })
-        });
-        parsed_catalogs.retain(|catalog| {
-            !parsed_object_graphs.iter().any(|graph| {
-                extent_contains(graph.pos, graph.total_len, catalog.pos, catalog.total_len)
-            }) && !parsed_value_blocks.iter().any(|block| {
-                extent_contains(block.pos, block.total_len(), catalog.pos, catalog.total_len)
-            })
-        });
+        filter_nested_inventory(ctx, &mut parsed_object_graphs, &mut parsed_value_blocks, &mut parsed_catalogs)?;
         let mut catalogs = Vec::new();
         for catalog in parsed_catalogs {
             let catalog = CatiaCatalog::from_source(ctx, catalog)?;
@@ -10076,5 +10060,37 @@ impl CatiaNative {
 
 #[cfg(test)]
 mod test_only;
+/// Admit all extent comparisons before removing inventories nested inside another frame.
+fn filter_nested_inventory(
+    ctx: &DecodeContext<'_>, graphs: &mut Vec<object_graph::ObjectGraph>,
+    blocks: &mut Vec<value_block::ValueBlock>, catalogs: &mut Vec<catalog::Catalog>,
+) -> Result<(), CodecError> {
+    let g = u64_from_index(graphs.len());
+    let b = u64_from_index(blocks.len());
+    let c = u64_from_index(catalogs.len());
+    let work = g.checked_mul(b).and_then(|pairs| pairs.checked_mul(2))
+        .and_then(|pairs| c.checked_mul(g.checked_add(b)? )?.checked_add(pairs))
+        .ok_or_else(|| ctx.refuse_codec_limit("catia_native_inventory_overlap", u64::MAX, u64::MAX))?;
+    ctx.charge_work(work, "catia_native_inventory_overlap")?;
+        blocks.retain(|block| {
+            !graphs.iter().any(|graph| {
+                extent_contains(graph.pos, graph.total_len, block.pos, block.total_len())
+            })
+        });
+        graphs.retain(|graph| {
+            !blocks.iter().any(|block| {
+                extent_contains(block.pos, block.total_len(), graph.pos, graph.total_len)
+            })
+        });
+        catalogs.retain(|catalog| {
+            !graphs.iter().any(|graph| {
+                extent_contains(graph.pos, graph.total_len, catalog.pos, catalog.total_len)
+            }) && !blocks.iter().any(|block| {
+                extent_contains(block.pos, block.total_len(), catalog.pos, catalog.total_len)
+            })
+        });
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests;

@@ -3196,6 +3196,7 @@ impl FormulaExpressionParser<'_, '_, '_, '_> {
             let arguments = self.descend(depth, Self::function_arguments)?;
             value = match (method, value, arguments.as_slice()) {
                 ("Length", EvaluatedFormulaValue::String(value), []) => {
+                    self.admit(self.ctx.charge_work(u64_from_index(value.value().len()), "catia_formula_string_length"))?;
                     let length = u32::try_from(value.value().chars().count()).ok()?;
                     EvaluatedFormulaValue::Scalar(
                         if self.evaluate || (self.static_check && value.is_known()) {
@@ -3212,7 +3213,7 @@ impl FormulaExpressionParser<'_, '_, '_, '_> {
                 ) => EvaluatedFormulaValue::Scalar(
                     if self.evaluate || (self.static_check && value.is_known() && needle.is_known())
                     {
-                        let index = Self::search_string(value.value(), needle.value(), 0, true)?;
+                        let index = self.search_string(value.value(), needle.value(), 0, true)?;
                         finite_scalar(f64_from_i64(index)?)?
                     } else {
                         static_integral_result(0.0, FormulaDimension::SCALAR)
@@ -3231,7 +3232,7 @@ impl FormulaExpressionParser<'_, '_, '_, '_> {
                     EvaluatedFormulaValue::Scalar(
                         if self.evaluate || (self.static_check && known) {
                             let index =
-                                Self::search_string(value.value(), needle.value(), start, true)?;
+                                self.search_string(value.value(), needle.value(), start, true)?;
                             finite_scalar(f64_from_i64(index)?)?
                         } else {
                             static_integral_result(0.0, FormulaDimension::SCALAR)
@@ -3245,7 +3246,7 @@ impl FormulaExpressionParser<'_, '_, '_, '_> {
                 ) => {
                     let start = self.string_index(*start)?;
                     EvaluatedFormulaValue::Scalar(if self.evaluate {
-                        let index = Self::search_string(
+                        let index = self.search_string(
                             value.value(),
                             needle.value(),
                             start,
@@ -3270,8 +3271,8 @@ impl FormulaExpressionParser<'_, '_, '_, '_> {
                         && length_value.known_value().is_some();
                     let string_value = if self.evaluate || (self.static_check && known) {
                         let end = start.checked_add(length)?;
-                        let start = Self::string_boundary(value.value(), start)?;
-                        let end = Self::string_boundary(value.value(), end)?;
+                        let start = self.string_boundary(value.value(), start)?;
+                        let end = self.string_boundary(value.value(), end)?;
                         let copied = self.ctx.copy_retained_text(
                             &value.value()[start..end],
                             "catia_formula_string_extract",
@@ -3288,6 +3289,7 @@ impl FormulaExpressionParser<'_, '_, '_, '_> {
                 ("ToReal", EvaluatedFormulaValue::String(value), []) => {
                     EvaluatedFormulaValue::Scalar(
                         if self.evaluate || (self.static_check && value.is_known()) {
+                            self.admit(self.ctx.charge_work(u64_from_index(value.value().len()), "catia_formula_string_real"))?;
                             finite_scalar(value.value().parse::<f64>().ok()?)?
                         } else {
                             static_unknown_result(0.0, FormulaDimension::SCALAR)
@@ -3319,7 +3321,10 @@ impl FormulaExpressionParser<'_, '_, '_, '_> {
         usize::try_from(truncate_f64_to_i64(value.value())?).ok()
     }
 
-    fn string_boundary(value: &str, index: usize) -> Option<usize> {
+    fn string_boundary(&mut self, value: &str, index: usize) -> Option<usize> {
+        let work = self.admit(u64_from_index(value.len()).checked_mul(2)
+            .ok_or_else(|| self.ctx.refuse_codec_limit("catia_formula_string_boundary", u64::MAX, u64::MAX)))?;
+        self.admit(self.ctx.charge_work(work, "catia_formula_string_boundary"))?;
         if index == value.chars().count() {
             Some(value.len())
         } else {
@@ -3327,19 +3332,23 @@ impl FormulaExpressionParser<'_, '_, '_, '_> {
         }
     }
 
-    fn search_string(value: &str, needle: &str, start: usize, forward: bool) -> Option<i64> {
+    fn search_string(&mut self, value: &str, needle: &str, start: usize, forward: bool) -> Option<i64> {
+        let work = self.admit(u64_from_index(value.len()).checked_mul(3)
+            .and_then(|work| work.checked_add(u64_from_index(needle.len())))
+            .ok_or_else(|| self.ctx.refuse_codec_limit("catia_formula_string_search", u64::MAX, u64::MAX)))?;
+        self.admit(self.ctx.charge_work(work, "catia_formula_string_search"))?;
         let character_count = value.chars().count();
         if start > character_count {
             return Some(-1);
         }
         let byte_offset = if forward {
-            let start_byte = Self::string_boundary(value, start)?;
+            let start_byte = self.string_boundary(value, start)?;
             value[start_byte..]
                 .find(needle)
                 .map(|offset| start_byte + offset)
         } else {
             let end_character = character_count.checked_sub(start)?;
-            let end_byte = Self::string_boundary(value, end_character)?;
+            let end_byte = self.string_boundary(value, end_character)?;
             value[..end_byte].rfind(needle)
         };
         byte_offset.map_or(Some(-1), |offset| {
@@ -3389,6 +3398,13 @@ impl FormulaExpressionParser<'_, '_, '_, '_> {
             let known =
                 source.is_known() && from.is_known() && to.is_known() && !from.value().is_empty();
             let value = if self.evaluate || (self.static_check && known) {
+                // Two formatting passes scan the source and emit each replacement.
+                let work = self.admit(u64_from_index(from.value().len())
+                    .checked_add(u64_from_index(to.value().len())).and_then(|width| width.checked_add(1))
+                    .and_then(|width| u64_from_index(source.value().len()).checked_mul(width))
+                    .and_then(|work| work.checked_mul(2))
+                    .ok_or_else(|| self.ctx.refuse_codec_limit("catia_formula_replace_work", u64::MAX, u64::MAX)))?;
+                self.admit(self.ctx.charge_work(work, "catia_formula_replace_work"))?;
                 let formatted = self.ctx.format_retained(
                     format_args!(
                         "{}",
@@ -3445,6 +3461,10 @@ impl FormulaExpressionParser<'_, '_, '_, '_> {
             };
             let known = value.is_known();
             let string_value = if self.evaluate || (self.static_check && known) {
+                // A Unicode character maps to at most three characters; formatting runs twice.
+                let work = self.admit(u64_from_index(value.value().len()).checked_mul(12)
+                    .ok_or_else(|| self.ctx.refuse_codec_limit("catia_formula_case_work", u64::MAX, u64::MAX)))?;
+                self.admit(self.ctx.charge_work(work, "catia_formula_case_work"))?;
                 let formatted = self.ctx.format_retained(
                     format_args!(
                         "{}",
