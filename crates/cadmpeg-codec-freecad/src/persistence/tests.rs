@@ -244,77 +244,26 @@ fn persistence_link_diagnostics_refuse_at_retained_limit() {
     }
 }
 
-fn parse_with_item_limit(document: &str, limit: u64) -> cadmpeg_core::CodecError {
-    let service_arena = cadmpeg_core::decode::DecodeArena::new();
-    let service_policy = cadmpeg_core::decode::DecodePolicy::service();
-    let (service_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        document.as_bytes(),
-        &service_arena,
-        &service_policy,
-    )
-    .expect("service persistence context");
-    super::parse_with_context(document.as_bytes(), "4", &service_ctx)
-        .expect("service profile admits the persistence fixture");
-
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_collection_items = limit;
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(document.as_bytes(), &arena, &policy)
-            .expect("persistence item context");
-    super::parse_with_context(document.as_bytes(), "4", &ctx)
-        .err()
-        .expect("collection must be refused")
-}
-
-fn assert_item_operation(error: &cadmpeg_core::CodecError, operation: &str) {
-    assert!(matches!(
-        error,
-        cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
-                && limit.operation == operation
-    ));
-}
-
 #[test]
 fn x62_persistence_object_collection_is_admitted_before_allocation() {
     let document = r#"<Document SchemaVersion="4"><Objects Count="1"><Object name="A" type="Part::Feature"/></Objects><ObjectData Count="1"><Object name="A"><Properties Count="0"/></Object></ObjectData></Document>"#;
-    let nodes = crate::container::xml_envelope_counts(document.as_bytes())
-        .expect("XML node count")
-        .0;
-    assert_item_operation(
-        &parse_with_item_limit(document, nodes),
-        "FCStd object declarations",
-    );
+    assert_persistence_collection_at_operation(document, "FCStd object declarations");
 }
 
 #[test]
 fn dependency_lookup_refuses_on_collection_limit() {
     let document = r#"<Document SchemaVersion="4"><Objects Count="1" Dependencies="1"><ObjectDeps Name="A" Count="0"/><Object type="App::Feature" name="A"/></Objects><ObjectData Count="1"><Object name="A"/></ObjectData></Document>"#;
-    let nodes = crate::container::xml_envelope_counts(document.as_bytes())
-        .expect("XML node count")
-        .0;
-    assert_item_operation(
-        &parse_with_item_limit(document, nodes + 2),
-        "FCStd dependency lookup",
-    );
+    assert_persistence_collection_at_operation(document, "FCStd dependency lookup");
 }
 
 fn assert_persistence_collection_at_operation(document: &str, operation: &str) {
-    let nodes = crate::container::xml_envelope_counts(document.as_bytes())
-        .expect("XML node count")
-        .0;
-    for limit in nodes..nodes + 24 {
-        let error = parse_with_item_limit(document, limit);
-        if matches!(&error,
-            cadmpeg_core::CodecError::ResourceLimit(ref refusal)
-                if refusal.operation == operation
-                    && refusal.used + refusal.additional == limit + 1)
-        {
-            return;
-        }
-    }
-    panic!("{operation} was not reached under a matching collection limit");
+    crate::test_support::with_service_context(document.as_bytes(), |ctx| {
+        super::parse_with_context(document.as_bytes(), "4", ctx)
+            .expect("service profile admits the persistence fixture");
+    });
+    crate::test_support::assert_collection_refusal_at(document.as_bytes(), operation, |ctx| {
+        super::parse_with_context(document.as_bytes(), "4", ctx)
+    });
 }
 
 #[test]
@@ -417,49 +366,25 @@ fn cross_document_link_list_refuses_at_matching_collection_limit() {
 #[test]
 fn extension_name_set_refuses_on_collection_limit() {
     let document = r#"<Document SchemaVersion="4"><Objects Count="1"><Object type="App::Feature" name="A"/></Objects><ObjectData Count="1"><Object name="A"><Extensions Count="1"><Extension name="E" type="T"/></Extensions></Object></ObjectData></Document>"#;
-    let nodes = crate::container::xml_envelope_counts(document.as_bytes())
-        .expect("XML node count")
-        .0;
-    assert_item_operation(
-        &parse_with_item_limit(document, nodes + 5),
-        "FCStd extension name set",
-    );
+    assert_persistence_collection_at_operation(document, "FCStd extension name set");
 }
 
 #[test]
 fn x62_persistence_extension_collection_is_admitted_before_allocation() {
     let document = r#"<Document SchemaVersion="4"><Objects Count="1"><Object name="A" type="Part::Feature"/></Objects><ObjectData Count="1"><Object name="A"><Extensions Count="1"><Extension name="E" type="T"/></Extensions><Properties Count="0"/></Object></ObjectData></Document>"#;
-    let nodes = crate::container::xml_envelope_counts(document.as_bytes())
-        .expect("XML node count")
-        .0;
-    assert_item_operation(
-        &parse_with_item_limit(document, nodes + 1 + 1 + 1 + 2),
-        "FCStd extension nodes",
-    );
+    assert_persistence_collection_at_operation(document, "FCStd extension nodes");
 }
 
 #[test]
 fn x62_persistence_property_collection_is_admitted_before_allocation() {
     let document = r#"<Document SchemaVersion="4"><Objects Count="1"><Object name="A" type="Part::Feature"/></Objects><ObjectData Count="1"><Object name="A"><Properties Count="1"><Property name="P" type="T"/></Properties></Object></ObjectData></Document>"#;
-    let nodes = crate::container::xml_envelope_counts(document.as_bytes())
-        .expect("XML node count")
-        .0;
-    assert_item_operation(
-        &parse_with_item_limit(document, nodes + 1 + 1 + 1 + 1),
-        "FCStd property nodes",
-    );
+    assert_persistence_collection_at_operation(document, "FCStd property nodes");
 }
 
 #[test]
 fn x62_persistence_value_collection_is_admitted_before_allocation() {
     let document = r#"<Document SchemaVersion="4"><Properties Count="1"><Property name="P" type="App::PropertyString"><String value="x"/></Property></Properties><Objects Count="0"/><ObjectData Count="0"/></Document>"#;
-    let nodes = crate::container::xml_envelope_counts(document.as_bytes())
-        .expect("XML node count")
-        .0;
-    assert_item_operation(
-        &parse_with_item_limit(document, nodes + 1 + 1),
-        "FCStd property value records",
-    );
+    assert_persistence_collection_at_operation(document, "FCStd property value records");
 }
 
 #[test]

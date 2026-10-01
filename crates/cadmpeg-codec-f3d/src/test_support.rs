@@ -46,8 +46,6 @@ pub(crate) fn resource_refusal_at<T>(
     decode: impl Fn(&cadmpeg_core::decode::DecodeContext<'_>) -> Result<T, CodecError>,
 ) -> CodecError {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
     fn ceiling(policy: &mut DecodePolicy, dimension: ResourceDimension) -> &mut u64 {
         match dimension {
             ResourceDimension::CollectionItems => &mut policy.limits.max_collection_items,
@@ -56,6 +54,8 @@ pub(crate) fn resource_refusal_at<T>(
             _ => panic!("unsupported refusal dimension"),
         }
     }
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
     *ceiling(&mut policy, dimension) = 0;
     for _ in 0..4096 {
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
@@ -78,7 +78,9 @@ pub(crate) fn resource_refusal_at<T>(
             assert_eq!(ctx.resource_refusal(), Some(refusal));
             return CodecError::ResourceLimit(refusal);
         }
-        if limit.operation == operation { skip -= 1; }
+        if limit.operation == operation {
+            skip -= 1;
+        }
         *ceiling(&mut policy, dimension) = threshold;
     }
     panic!("{operation} was not reached within 4096 admissions");

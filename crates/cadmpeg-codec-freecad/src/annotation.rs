@@ -574,16 +574,20 @@ fn direct_value_attributes(
     expected_tag: &str,
     allowed_attributes: &[&str],
 ) -> Result<BTreeMap<String, String>, CodecError> {
-    let admitted_document = ctx.parse_xml(property.xml.text(), "FreeCAD XML tree").map_err(|error| {
-        let CodecError::Malformed(error) = error else { return error; };
-        annotation_malformed(
-            ctx,
-            format_args!(
-                "annotation property {} has invalid XML: {error}",
-                property.id
-            ),
-        )
-    })?;
+    let admitted_document = ctx
+        .parse_xml(property.xml.text(), "FreeCAD XML tree")
+        .map_err(|error| {
+            let CodecError::Malformed(error) = error else {
+                return error;
+            };
+            annotation_malformed(
+                ctx,
+                format_args!(
+                    "annotation property {} has invalid XML: {error}",
+                    property.id
+                ),
+            )
+        })?;
     let document = admitted_document.document();
     let root = document.root_element();
     if has_non_whitespace_text(root) {
@@ -669,16 +673,20 @@ fn strict_text_values(
         }
         return Ok(values);
     }
-    let admitted_document = ctx.parse_xml(property.xml.text(), "FreeCAD XML tree").map_err(|error| {
-        let CodecError::Malformed(error) = error else { return error; };
-        annotation_malformed(
-            ctx,
-            format_args!(
-                "annotation property {} has invalid XML: {error}",
-                property.id
-            ),
-        )
-    })?;
+    let admitted_document = ctx
+        .parse_xml(property.xml.text(), "FreeCAD XML tree")
+        .map_err(|error| {
+            let CodecError::Malformed(error) = error else {
+                return error;
+            };
+            annotation_malformed(
+                ctx,
+                format_args!(
+                    "annotation property {} has invalid XML: {error}",
+                    property.id
+                ),
+            )
+        })?;
     let document = admitted_document.document();
     let root = document.root_element();
     if has_non_whitespace_text(root) {

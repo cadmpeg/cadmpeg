@@ -717,13 +717,17 @@ fn root_value<'a>(
         "LockPosition" | "Perspective" => ("Bool", &[]),
         _ => return Ok(None),
     };
-    let admitted_xml = ctx.parse_xml(property.xml.text(), "FreeCAD XML tree").map_err(|error| {
-        let CodecError::Malformed(error) = error else { return error; };
-        drawing_malformed(
-            ctx,
-            format_args!("drawing property {} has invalid XML: {error}", property.id),
-        )
-    })?;
+    let admitted_xml = ctx
+        .parse_xml(property.xml.text(), "FreeCAD XML tree")
+        .map_err(|error| {
+            let CodecError::Malformed(error) = error else {
+                return error;
+            };
+            drawing_malformed(
+                ctx,
+                format_args!("drawing property {} has invalid XML: {error}", property.id),
+            )
+        })?;
     let xml = admitted_xml.document();
     let property_node = xml.root_element();
     let mut selected_order = None;

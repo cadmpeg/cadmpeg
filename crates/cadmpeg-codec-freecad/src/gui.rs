@@ -236,11 +236,16 @@ pub(crate) fn transfer(
     bytes: &[u8],
     sources: &GuiSources<'_, '_>,
 ) -> Result<Graph, CodecError> {
-    ctx.charge_work(cadmpeg_core::decode::u64_from_index(bytes.len()), "validate FreeCAD XML UTF-8")?;
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(bytes.len()),
+        "validate FreeCAD XML UTF-8",
+    )?;
     let text = std::str::from_utf8(bytes)
         .map_err(|_| CodecError::Malformed("GuiDocument.xml is not UTF-8".into()))?;
     let admitted_xml = ctx.parse_xml(text, "FreeCAD XML tree").map_err(|error| {
-        let CodecError::Malformed(error) = error else { return error; };
+        let CodecError::Malformed(error) = error else {
+            return error;
+        };
         gui_malformed(ctx, format_args!("invalid GuiDocument.xml: {error}"))
     })?;
     let xml = admitted_xml.document();
@@ -256,7 +261,7 @@ pub(crate) fn transfer(
         ctx,
         ir,
         text,
-        &xml,
+        xml,
         schema_declaration.as_deref(),
         neutral_schema_version,
         sources,

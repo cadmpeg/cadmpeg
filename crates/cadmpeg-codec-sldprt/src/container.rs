@@ -1549,7 +1549,7 @@ fn scan_solidworks_envelopes<'a>(
         let root = document.root_element();
         if is_features_manifest_name(section) && root.tag_name().name() == "swSolidWorks" {
             scan.manifest_active_configuration
-                .merge(manifest_active_configuration_in(admission, &document)?);
+                .merge(manifest_active_configuration_in(admission, document)?);
         }
         if root.tag_name().name().contains("Keywords") {
             for configuration in document

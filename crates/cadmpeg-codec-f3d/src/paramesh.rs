@@ -1169,26 +1169,32 @@ fn attribute_names(
         return Ok(std::collections::BTreeMap::new());
     };
     require_layout(stream, StreamLayout::Byte)?;
-    ctx.charge_work(cadmpeg_core::decode::u64_from_index(stream.bytes.len()), "validate paramesh XML UTF-8")?;
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(stream.bytes.len()),
+        "validate paramesh XML UTF-8",
+    )?;
     let xml = std::str::from_utf8(&stream.bytes)
         .map_err(|_| malformed("paramesh attribute-name stream is not UTF-8"))?;
     let body = xml
         .strip_prefix("<?xml version=\"1.0\"?>")
         .ok_or_else(|| malformed("paramesh attribute-name stream has no XML declaration"))?;
-    let work = cadmpeg_core::decode::u64_from_index(body.len()).checked_mul(2)
+    let work = cadmpeg_core::decode::u64_from_index(body.len())
+        .checked_mul(2)
         .ok_or_else(|| ctx.refuse_codec_limit("wrap paramesh attribute XML", u64::MAX, u64::MAX))?;
     ctx.charge_work(work, "wrap paramesh attribute XML")?;
     let (_wrapped_reservation, wrapped) = {
         let (text, reservation) = ctx.format_scoped(
-            format_args!("<Root>{body}</Root>"), "wrap paramesh attribute XML",
+            format_args!("<Root>{body}</Root>"),
+            "wrap paramesh attribute XML",
         )?;
         (reservation, text)
     };
-    let admitted_document = ctx.parse_xml(&wrapped, "parse paramesh XML tree")
-        .map_err(|error| match error {
-            CodecError::ResourceLimit(_) => error,
-            _ => malformed("paramesh attribute-name stream is not XML"),
-        })?;
+    let admitted_document =
+        ctx.parse_xml(&wrapped, "parse paramesh XML tree")
+            .map_err(|error| match error {
+                CodecError::ResourceLimit(_) => error,
+                _ => malformed("paramesh attribute-name stream is not XML"),
+            })?;
     let document = admitted_document.document();
     let root = document.root_element();
     if root.tag_name().name() != "Root"

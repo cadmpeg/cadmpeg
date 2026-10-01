@@ -326,11 +326,9 @@ fn gui_entry_reference_identity_refuses_at_retained_limit() {
 #[test]
 fn document_domain_set_refuses_on_collection_limit() {
     let document = b"<Document SchemaVersion=\"4\"><Objects><Object type=\"Part::Feature\"/></Objects></Document>";
-    let result = collection_context(0, |ctx| super::parse_document(ctx, document));
-    assert!(
-        matches!(result, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-        if limit.operation == "FCStd document domains")
-    );
+    crate::test_support::assert_collection_refusal_at(&[], "FCStd document domains", |ctx| {
+        super::parse_document(ctx, document)
+    });
 }
 
 #[test]

@@ -451,16 +451,23 @@ fn parse_schema_document(
     bytes: &[u8],
     schemas: &mut HashMap<String, Schema>,
 ) -> Result<(), CodecError> {
-    ctx.charge_work(cadmpeg_core::decode::u64_from_index(bytes.len()), "validate Protein XML UTF-8")?;
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(bytes.len()),
+        "validate Protein XML UTF-8",
+    )?;
     let xml = std::str::from_utf8(bytes).map_err(|error| {
         CodecError::malformed(format_args!("Protein schema {name} is not UTF-8: {error}"))
     })?;
-    let admitted_document = ctx.parse_xml(xml, "Protein schema XML tree").map_err(|error| {
-        let CodecError::Malformed(error) = error else { return error; };
-        CodecError::malformed(format_args!(
-            "Protein schema {name} is malformed XML: {error}"
-        ))
-    })?;
+    let admitted_document = ctx
+        .parse_xml(xml, "Protein schema XML tree")
+        .map_err(|error| {
+            let CodecError::Malformed(error) = error else {
+                return error;
+            };
+            CodecError::malformed(format_args!(
+                "Protein schema {name} is malformed XML: {error}"
+            ))
+        })?;
     let document = admitted_document.document();
     let root = document.root_element();
     let uid = root
@@ -1225,20 +1232,34 @@ mod tests {
         let xml = br#"<Schema><UID val="Simple"/><String id="comment"/></Schema>"#;
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = 5;
-        let (ctx, _) =
-            DecodeContext::from_root_bytes(xml, &arena, &policy).expect("XML fits input limit");
-        assert!(matches!(
-            super::parse_schema_document(
+        policy.limits.max_collection_items = 0;
+        for _ in 0..4096 {
+            let (ctx, _) =
+                DecodeContext::from_root_bytes(xml, &arena, &policy).expect("XML fits input limit");
+            let error = super::parse_schema_document(
                 &ctx,
                 "Schemas/SimpleSchema.xml",
                 xml,
                 &mut std::collections::HashMap::new(),
-            ),
-            Err(CodecError::ResourceLimit(limit))
-                if limit.dimension == ResourceDimension::CollectionItems
-                    && limit.operation == "Protein parsed schema"
-        ));
+            )
+            .expect_err("schema must refuse at its collection boundary");
+            let CodecError::ResourceLimit(limit) = error else {
+                panic!("collection refusal expected");
+            };
+            assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
+            assert_eq!(ctx.resource_refusal(), Some(limit));
+            let threshold = limit
+                .used
+                .checked_add(limit.additional)
+                .expect("collection threshold");
+            assert!(threshold > policy.limits.max_collection_items);
+            if limit.operation == "Protein parsed schema" {
+                assert_eq!(threshold, policy.limits.max_collection_items + 1);
+                return;
+            }
+            policy.limits.max_collection_items = threshold;
+        }
+        panic!("Protein parsed schema must refuse after XML tree admission");
     }
 
     #[test]

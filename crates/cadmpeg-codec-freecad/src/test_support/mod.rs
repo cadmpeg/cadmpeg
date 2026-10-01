@@ -100,11 +100,15 @@ pub(crate) fn materialized_refusal_at<T>(
         };
         assert_eq!(limit.dimension, ResourceDimension::MaterializedBytes);
         assert_eq!(ctx.resource_refusal(), Some(limit));
-        let threshold = limit.used.checked_add(limit.additional).expect("materialized admission fits u64");
+        let threshold = limit
+            .used
+            .checked_add(limit.additional)
+            .expect("materialized admission fits u64");
         assert!(threshold > policy.limits.max_materialized_bytes);
         if limit.operation == operation {
             policy.limits.max_materialized_bytes = threshold - 1;
-            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+            let (ctx, _) =
+                DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
             let Err(cadmpeg_core::CodecError::ResourceLimit(refusal)) = decode(&ctx) else {
                 panic!("{operation} must refuse one byte below its boundary");
             };
