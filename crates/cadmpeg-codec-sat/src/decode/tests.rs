@@ -372,3 +372,30 @@ fn zero_header_resabs_preserves_default_and_records_loss() {
         .iter()
         .any(|loss| { loss.code.to_string() == "sat/header.tolerance-unresolved" }));
 }
+
+#[test]
+fn unknown_record_retention_preserves_its_resource_refusal() {
+    use cadmpeg_core::decode::{DecodePolicy, ResourceDimension};
+    use crate::test_support::with_context;
+
+    let source = text_sphere_stream(1.0);
+    let header = with_context(&source, &DecodePolicy::service(), |ctx| {
+        cadmpeg_asm::sat::parse(ctx, &source).expect("text stream parses")
+            .header.as_kernel_header(ctx).expect("kernel header")
+    });
+    let mut brep = cadmpeg_asm::brep::AsmBrep::default();
+    brep.unknowns.push(cadmpeg_ir::UnknownRecord::retained(
+        cadmpeg_ir::ids::UnknownId::mint("sat:test:unknown#1").expect("unknown identity"),
+        0, vec![1], vec!["sat:test:unknown#2".into()],
+    ));
+    let (matched, kernel) = crate::dialect::layers(&crate::dialect::StreamEvidence::Text(None));
+    let mut policy = DecodePolicy::service();
+    // The empty transfer stores twelve native arenas before retaining unknown links.
+    policy.limits.max_collection_items = 12;
+    let error = with_context(&[], &policy, |ctx| {
+        super::build_result(ctx, brep, Default::default(), &header, None, matched, &kernel)
+    }).expect_err("unknown link exceeds the remaining collection allowance");
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "native unknown product links"));
+}
