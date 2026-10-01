@@ -11,8 +11,8 @@ use cadmpeg_ir::scalar::FiniteReal;
 use cadmpeg_ir::units::FiniteVector;
 
 use crate::families::standard::topology::{
-    reconstruct, reconstruct_incidence, reconstruct_incidence_with_edge_classes_and_mesh, Boundary,
-    CoedgeUse, EdgeBoundaryLayout, EdgeRow, StandardIncidenceEvidence, StandardTopology,
+    reconstruct, reconstruct_incidence, reconstruct_incidence_with_edge_classes_and_mesh, BoundaryDraft,
+    CoedgeUse, EdgeBoundaryLayout, EdgeRow, StandardIncidenceEvidence, StandardTopologyDraft,
     TrimRecord,
 };
 use crate::families::standard::trim_packet::TrimPacket;
@@ -228,7 +228,7 @@ pub(super) fn fbb_only_vertex_points(
 pub(crate) fn parse_standard(
     ctx: &DecodeContext<'_>,
     bytes: &[u8],
-) -> Result<Option<StandardTopology>, CodecError> {
+) -> Result<Option<StandardTopologyDraft>, CodecError> {
     let Some(face_run) = selected_standard_run(ctx, bytes)? else {
         return Ok(None);
     };
@@ -258,7 +258,7 @@ pub(super) fn parse_standard_motif(
     bytes: &[u8],
     edge_faces: &[[usize; 2]],
     circle_anchors: &[Option<[usize; 2]>],
-) -> Result<Option<StandardTopology>, CodecError> {
+) -> Result<Option<StandardTopologyDraft>, CodecError> {
     let Some(face_run) = selected_standard_run(ctx, bytes)? else {
         return Ok(None);
     };
@@ -284,15 +284,13 @@ pub(super) fn parse_standard_motif(
     };
     let mut edge_points = Vec::new();
     for row in &edge_rows {
-        let Some(first) = row
-            .handles
+        let Some(first) = row.handles()
             .first()
             .and_then(|handle| port_points.get(handle))
         else {
             return Ok(None);
         };
-        let Some(last) = row
-            .handles
+        let Some(last) = row.handles()
             .last()
             .and_then(|handle| port_points.get(handle))
         else {
@@ -329,7 +327,7 @@ pub(super) fn parse_standard_endpoints_with_edge_classes(
     edge_faces: &[[usize; 2]],
     edge_points: &[[usize; 2]],
     edge_classes: Option<&[usize]>,
-) -> Result<Option<StandardTopology>, CodecError> {
+) -> Result<Option<StandardTopologyDraft>, CodecError> {
     let Some(face_run) = selected_standard_run(ctx, bytes)? else {
         return Ok(None);
     };
@@ -506,7 +504,7 @@ pub(super) fn parse_standard_endpoint_candidates(
     edge_faces: &[[usize; 2]],
     edge_candidates: &[Vec<[usize; 2]>],
     budget: &WorkBudget<'_>,
-) -> Result<Option<StandardTopology>, cadmpeg_core::CodecError> {
+) -> Result<Option<StandardTopologyDraft>, cadmpeg_core::CodecError> {
     let Some(face_run) = selected_standard_run(ctx, bytes)? else {
         return Ok(None);
     };
@@ -555,7 +553,7 @@ pub(super) fn parse_standard_port_endpoint_candidates(
     edge_candidates: &[Vec<[usize; 2]>],
     edge_ports: &[[u32; 2]],
     budget: &WorkBudget<'_>,
-) -> Result<Option<StandardTopology>, cadmpeg_core::CodecError> {
+) -> Result<Option<StandardTopologyDraft>, cadmpeg_core::CodecError> {
     let Some(face_run) = selected_standard_run(ctx, bytes)? else {
         return Ok(None);
     };
@@ -608,7 +606,7 @@ pub(super) fn parse_fbb_endpoints_with_edge_classes(
     edge_faces: &[[usize; 2]],
     edge_points: &[[usize; 2]],
     edge_classes: Option<&[usize]>,
-) -> Result<Option<StandardTopology>, CodecError> {
+) -> Result<Option<StandardTopologyDraft>, CodecError> {
     let Some(face_run) = largest_fbb_run(bytes) else {
         return Ok(None);
     };
@@ -719,11 +717,7 @@ pub(super) fn parse_fbb_edge_tables_width(
                 }
                 if let Err(error) = ctx.push_vec(
                     &mut rows,
-                    EdgeRow {
-                        kind,
-                        handles,
-                        boundary_layout: EdgeBoundaryLayout::CompleteBoundaryRun,
-                    },
+                    EdgeRow::new(kind, handles, EdgeBoundaryLayout::CompleteBoundaryRun)?,
                     "catia_fbb_edge_rows",
                 ) {
                     return Some(Err(error));
@@ -787,15 +781,15 @@ pub(super) fn classify_fbb_edge_layouts(
         let complete_matches = cycles
             .iter()
             .flat_map(|face| face.iter())
-            .map(|cycle| pattern_match_count(cycle, &row.handles))
+            .map(|cycle| pattern_match_count(cycle, &row.handles()))
             .sum::<usize>();
         if complete_matches != 0 {
             continue;
         }
-        let Some(end) = row.handles.len().checked_sub(1) else {
+        let Some(end) = row.handles().len().checked_sub(1) else {
             return Ok(None);
         };
-        let Some(interior) = row.handles.get(1..end) else {
+        let Some(interior) = row.handles().get(1..end) else {
             continue;
         };
         if interior.is_empty() {
@@ -809,7 +803,7 @@ pub(super) fn classify_fbb_edge_layouts(
             unique_per_cycle &= count <= 1;
         }
         if matched && unique_per_cycle {
-            row.boundary_layout = EdgeBoundaryLayout::InteriorWithFlankingCorners;
+            if !row.select_flanking_corners() { return Ok(None); }
         }
     }
     Ok(Some(()))
@@ -1201,11 +1195,7 @@ mod allocation_tests {
         use crate::families::standard::topology::{EdgeBoundaryLayout, EdgeRow};
         use crate::solve::union_find::UnionFind;
 
-        let rows = [[0, 1], [1, 2], [2, 0]].map(|handles| EdgeRow {
-            kind: 1,
-            handles: handles.to_vec(),
-            boundary_layout: EdgeBoundaryLayout::CompleteBoundaryRun,
-        });
+        let rows = [[0, 1], [1, 2], [2, 0]].map(|handles| EdgeRow::new(1, handles.to_vec(), EdgeBoundaryLayout::CompleteBoundaryRun).expect("admitted edge row"));
         let run = |ctx: &DecodeContext<'_>| {
             let mut union = UnionFind::new(6);
             super::cover_cycle(ctx, &[0, 1, 2], &rows, &mut union)
@@ -1494,7 +1484,7 @@ pub(crate) fn parse_standard_edge_tables_scoped(
         && scopes.iter().all(|scope| *scope == 0)
         && rows
             .iter()
-            .all(|row| row.boundary_layout == EdgeBoundaryLayout::CompleteBoundaryRun))
+            .all(|row| row.boundary_layout() == EdgeBoundaryLayout::CompleteBoundaryRun))
     .then_some((rows, scopes, vertex_header, handle_width)))
 }
 
@@ -1588,15 +1578,11 @@ fn parse_edge_tables_scoped_width(
                 }
                 if let Err(error) = ctx.push_vec(
                     &mut rows,
-                    EdgeRow {
-                        kind,
-                        handles,
-                        boundary_layout: if arity == 2 {
+                    EdgeRow::new(kind, handles, if arity == 2 {
                             EdgeBoundaryLayout::CompleteBoundaryRun
                         } else {
                             EdgeBoundaryLayout::InteriorWithFlankingCorners
-                        },
-                    },
+                        })?,
                     "catia_standard_edge_rows",
                 ) {
                     return Some(Err(error));
@@ -2189,7 +2175,7 @@ pub(super) fn cover_cycle(
     cycle: &[u32],
     rows: &[EdgeRow],
     union: &mut UnionFind,
-) -> Result<Option<Boundary>, CodecError> {
+) -> Result<Option<BoundaryDraft>, CodecError> {
     cover_cycle_by_rows(ctx, cycle, rows, union)
 }
 
@@ -2198,7 +2184,7 @@ fn cover_cycle_by_rows(
     cycle: &[u32],
     rows: &[EdgeRow],
     union: &mut UnionFind,
-) -> Result<Option<Boundary>, CodecError> {
+) -> Result<Option<BoundaryDraft>, CodecError> {
     let length = cycle.len();
     let mut matches = Vec::new();
     for (edge_row, row) in rows.iter().enumerate() {
@@ -2288,7 +2274,7 @@ fn cover_cycle_by_rows(
             end_vertex: end_node,
         });
     }
-    Ok(Boundary::new(coedges))
+    Ok(BoundaryDraft::new(coedges))
 }
 
 #[cfg(test)]

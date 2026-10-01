@@ -9,7 +9,7 @@ use cadmpeg_core::CodecError;
 
 use crate::families::standard::topology::{
     incidence_cycles, reconstruct_incidence, solve_boundary_orientation_constraints, EdgeRow,
-    StandardTopology,
+    StandardTopologyDraft,
 };
 use crate::solve::mesh_quotient::{
     initial_mesh_quotient, mesh_assignment_endpoint_cycle_support_by,
@@ -5779,7 +5779,7 @@ pub(crate) fn reconstruct_incidence_candidates(
     endpoints: IncidenceEndpointDomains<'_>,
     face_count: usize,
     budget: &WorkBudget<'_>,
-) -> Result<Option<StandardTopology>, CodecError> {
+) -> Result<Option<StandardTopologyDraft>, CodecError> {
     const MAX_TOPOLOGY_ASSIGNMENTS: usize = 256;
 
     let IncidenceEndpointDomains {

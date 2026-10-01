@@ -13,7 +13,7 @@ use crate::families::standard::fbb::{
     parse_vertex_table, selected_standard_run,
 };
 #[cfg(test)]
-use crate::families::standard::topology::{reconstruct_mesh_selection, StandardTopology};
+use crate::families::standard::topology::{reconstruct_mesh_selection, StandardTopologyDraft};
 use crate::families::standard::topology::{EdgeBoundaryLayout, EdgeRow, TrimRecord};
 use crate::solve::mesh_quotient::{SearchOutcome, MAX_MESH_CONSTRAINT_OPERATIONS};
 use crate::solve::union_find::UnionFind;
@@ -56,10 +56,10 @@ fn standard_edge_port_identities_with_namespace(
     let mut next_identity = 0u32;
     let mut pairs = Vec::new();
     for (row, scope) in edge_rows.iter().zip(scopes) {
-        let (Some(&first), Some(&last)) = (row.handles.first(), row.handles.last()) else {
+        let (Some(&first), Some(&last)) = (row.handles().first(), row.handles().last()) else {
             return Ok(None);
         };
-        let pair = if !global && row.boundary_layout != EdgeBoundaryLayout::CompleteBoundaryRun {
+        let pair = if !global && row.boundary_layout() != EdgeBoundaryLayout::CompleteBoundaryRun {
             let start = next_identity;
             let Some(next) = next_identity.checked_add(2) else {
                 return Ok(None);
@@ -113,7 +113,7 @@ fn fbb_edge_port_identities_with_namespace(
     let mut identity_by_handle = HashMap::new();
     let mut pairs = Vec::new();
     for (row, scope) in edge_rows.iter().zip(scopes) {
-        let (Some(&first), Some(&last)) = (row.handles.first(), row.handles.last()) else {
+        let (Some(&first), Some(&last)) = (row.handles().first(), row.handles().last()) else {
             return Ok(None);
         };
         let mut pair = [0; 2];
@@ -200,7 +200,7 @@ pub(crate) fn visualization_endpoint_pairs(
     }
     let mut terminal_handles = HashSet::new();
     for row in edge_rows {
-        for handle in [row.handles.first(), row.handles.last()]
+        for handle in [row.handles().first(), row.handles().last()]
             .into_iter()
             .flatten()
         {
@@ -260,8 +260,8 @@ pub(crate) fn visualization_endpoint_pairs(
     for row in edge_rows {
         let Some(pair) = (|| {
             Some([
-                *point_by_handle.get(row.handles.first()?)?,
-                *point_by_handle.get(row.handles.last()?)?,
+                *point_by_handle.get(row.handles().first()?)?,
+                *point_by_handle.get(row.handles().last()?)?,
             ])
         })() else {
             return Ok(None);
@@ -613,12 +613,7 @@ fn mesh_edge_ports_refuse_each_graph_collection_limit() {
     use cadmpeg_core::decode::{DecodeArena, DecodePolicy, ResourceDimension};
 
     let analysis = StandardMeshAnalysis {
-        edge_rows: vec![EdgeRow {
-            kind: 0,
-            handles: vec![0],
-            boundary_layout:
-                crate::families::standard::topology::EdgeBoundaryLayout::CompleteBoundaryRun,
-        }],
+        edge_rows: vec![{ assert!(EdgeRow::new(0, vec![0], crate::families::standard::topology::EdgeBoundaryLayout::CompleteBoundaryRun).is_none()); EdgeRow::new(1, vec![0, 0], crate::families::standard::topology::EdgeBoundaryLayout::CompleteBoundaryRun).expect("admitted edge row") }],
         cycles: vec![vec![vec![0, 1]]],
         occurrences: vec![vec![MeshEdgeRun {
             edge: 0,
@@ -675,7 +670,7 @@ pub(crate) struct MeshEdgeRun {
     pub(crate) edge: usize,
     /// Positional face ordinal.
     pub(crate) face: usize,
-    /// Boundary-cycle ordinal within the face.
+    /// BoundaryDraft-cycle ordinal within the face.
     pub(crate) cycle: usize,
     /// First covered boundary-segment index in cycle traversal order.
     pub(crate) start: usize,
@@ -821,12 +816,7 @@ fn mesh_edge_occurrences(
 fn mesh_edge_occurrences_refuse_nested_collection_limits() {
     use cadmpeg_core::decode::{DecodeArena, DecodePolicy, ResourceDimension};
 
-    let rows = [EdgeRow {
-        kind: 0,
-        handles: vec![0],
-        boundary_layout:
-            crate::families::standard::topology::EdgeBoundaryLayout::CompleteBoundaryRun,
-    }];
+    let rows = [{ assert!(EdgeRow::new(0, vec![0], crate::families::standard::topology::EdgeBoundaryLayout::CompleteBoundaryRun).is_none()); EdgeRow::new(1, vec![0, 0], crate::families::standard::topology::EdgeBoundaryLayout::CompleteBoundaryRun).expect("admitted edge row") }];
     let cycles = [vec![vec![0, 1]]];
     let arena = DecodeArena::new();
     let policy = DecodePolicy::service();
@@ -985,8 +975,7 @@ fn repeated_edge_face_handle_candidates_from_sets(
         return Ok(None);
     }
     for (row, faces) in edge_rows.iter().zip(serialized) {
-        if !row
-            .handles
+        if !row.handles()
             .iter()
             .all(|handle| face_handles[faces[0]].contains(handle))
         {
@@ -999,16 +988,16 @@ fn repeated_edge_face_handle_candidates_from_sets(
         "catia_repeated_edge_handle_face_candidates",
     )?;
     for (edge, (row, faces)) in edge_rows.iter().zip(serialized).enumerate() {
-        if faces[0] != faces[1] || row.handles.len() < 2 {
+        if faces[0] != faces[1] || row.handles().len() < 2 {
             continue;
         }
         let mut unique_handles = HashSet::new();
         ctx.reserve_set(
             &mut unique_handles,
-            row.handles.len(),
+            row.handles().len(),
             "catia repeated edge unique handles",
         )?;
-        unique_handles.extend(row.handles.iter().copied());
+        unique_handles.extend(row.handles().iter().copied());
         let mut matching = Vec::new();
         for (face, handles) in face_handles.iter().enumerate() {
             if face == faces[0] {
@@ -1816,7 +1805,7 @@ pub(super) fn resolve_edge_faces_from_runs(
 /// One uncovered run in a trim-mesh boundary cycle.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct MeshBoundaryGap {
-    /// Boundary-cycle ordinal within the face.
+    /// BoundaryDraft-cycle ordinal within the face.
     cycle: usize,
     /// First uncovered boundary-segment index.
     start: usize,
@@ -1936,7 +1925,7 @@ struct MeshEdgePlacementCandidate {
     pub(super) edge: usize,
     /// Positional face ordinal.
     face: usize,
-    /// Boundary-cycle ordinal within the face.
+    /// BoundaryDraft-cycle ordinal within the face.
     cycle: usize,
     /// First covered boundary-segment index.
     start: usize,
@@ -1966,9 +1955,9 @@ struct MeshEdgePlacementEndpointCandidate {
 pub(crate) struct MeshBoundaryEdgeCandidate {
     /// Physical edge-row ordinal.
     pub(crate) edge: usize,
-    /// Boundary-segment index at which the use begins.
+    /// BoundaryDraft-segment index at which the use begins.
     pub(crate) start: usize,
-    /// Boundary-segment index immediately after the use.
+    /// BoundaryDraft-segment index immediately after the use.
     pub(crate) end: usize,
     /// Stored-row direction when an interior handle sequence fixes it.
     pub(crate) reversed: Option<bool>,
@@ -2669,9 +2658,9 @@ fn standard_mesh_missing_edge_assignment_domains(
                     let edge = self.missing[rank];
                     let remaining = target - offset;
                     let row_span = (self.fixed_complete_row_spans
-                        && self.rows[edge].boundary_layout
+                        && self.rows[edge].boundary_layout()
                             == EdgeBoundaryLayout::CompleteBoundaryRun)
-                        .then(|| self.rows[edge].handles.len().checked_sub(1))
+                        .then(|| self.rows[edge].handles().len().checked_sub(1))
                         .flatten();
                     let canonical_span = row_span.or_else(|| {
                         self.canonical_spans
@@ -3092,7 +3081,7 @@ fn standard_mesh_missing_edge_assignment_domains(
                 || gap.cycle != 0
                 || gap.length != cycle_lengths[0]
                 || gap.length != missing.len()
-                || missing.iter().any(|&edge| rows[edge].handles.len() != 2)
+                || missing.iter().any(|&edge| rows[edge].handles().len() != 2)
             {
                 return None;
             }
@@ -3172,7 +3161,7 @@ fn standard_mesh_missing_edge_assignment_domains(
                 || gap.cycle != 0
                 || gap.length != cycle_lengths[0]
                 || gap.length != missing.len()
-                || missing.iter().any(|&edge| rows[edge].handles.len() != 2)
+                || missing.iter().any(|&edge| rows[edge].handles().len() != 2)
             {
                 return None;
             }
@@ -3291,7 +3280,7 @@ fn standard_mesh_missing_edge_assignment_domains(
     let edge_ports = &context.edge_ports;
     let complete_boundary_ports = edge_rows
         .iter()
-        .all(|row| row.boundary_layout == EdgeBoundaryLayout::CompleteBoundaryRun);
+        .all(|row| row.boundary_layout() == EdgeBoundaryLayout::CompleteBoundaryRun);
     let placement_ports = complete_boundary_ports.then_some(edge_ports.as_slice());
     let singleton_edge_points = if let Some(candidates) = edge_candidates {
         let mut singleton = Vec::new();
@@ -3316,7 +3305,7 @@ fn standard_mesh_missing_edge_assignment_domains(
     for run in edge_runs {
         let length = context.cycle_lengths[run.face][run.cycle];
         let end = (run.start + run.segment_count) % length;
-        if edge_rows[run.edge].boundary_layout == EdgeBoundaryLayout::CompleteBoundaryRun {
+        if edge_rows[run.edge].boundary_layout() == EdgeBoundaryLayout::CompleteBoundaryRun {
             let ports = edge_ports[run.edge];
             let oriented = if run.reversed {
                 [ports[1], ports[0]]
@@ -3379,7 +3368,7 @@ fn standard_mesh_missing_edge_assignment_domains(
                 && face
                     .missing_edges
                     .iter()
-                    .all(|&edge| edge_rows[edge].handles.len() == 2)
+                    .all(|&edge| edge_rows[edge].handles().len() == 2)
                 && defer_validation
                 && face
                     .missing_edges
@@ -3650,7 +3639,7 @@ pub(super) fn standard_mesh_boundary_domains_from_context(
                     for run in runs.iter().filter(|run| run.face == face) {
                         let length = cycles[run.cycle].length;
                         let fixed_direction = edge_candidates.is_none()
-                            || context.analysis.edge_rows[run.edge].boundary_layout
+                            || context.analysis.edge_rows[run.edge].boundary_layout()
                                 == EdgeBoundaryLayout::CompleteBoundaryRun;
                         ctx.push_vec(
                             &mut cycles[run.cycle].exact_uses,
@@ -3691,7 +3680,7 @@ pub(super) fn standard_mesh_boundary_domains_from_context(
                         )?;
                         for run in runs.iter().filter(|run| run.face == face) {
                             let fixed_direction = edge_candidates.is_none()
-                                || context.analysis.edge_rows[run.edge].boundary_layout
+                                || context.analysis.edge_rows[run.edge].boundary_layout()
                                     == EdgeBoundaryLayout::CompleteBoundaryRun;
                             ctx.push_vec(
                                 &mut boundaries[run.cycle],
@@ -3788,7 +3777,7 @@ fn parse_standard_mesh_selection(
     edge_faces: &[[usize; 2]],
     selected_assignments: &[usize],
     edge_directions: &[Vec<Vec<bool>>],
-) -> Result<Option<StandardTopology>, CodecError> {
+) -> Result<Option<StandardTopologyDraft>, CodecError> {
     let Some(face_run) = selected_standard_run(ctx, bytes)? else {
         return Ok(None);
     };
