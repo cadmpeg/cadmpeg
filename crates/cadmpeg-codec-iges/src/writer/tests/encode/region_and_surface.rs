@@ -502,7 +502,8 @@ fn encode_type_186_uses_ordered_region_shell_roles() {
     assert_eq!(voids, std::slice::from_ref(&source_outer));
 
     let entities = crate::writer::brep_entities(
-        crate::writer::validate_brep_topology(&ir, crate::IgesVersion::V5_3).unwrap(),
+            &cadmpeg_test_support::service_decode_context(),
+        crate::writer::validate_brep_topology(&cadmpeg_test_support::service_decode_context(), &ir, crate::IgesVersion::V5_3).unwrap(),
         &mut std::collections::BTreeMap::new(),
         &mut Vec::new(),
     )

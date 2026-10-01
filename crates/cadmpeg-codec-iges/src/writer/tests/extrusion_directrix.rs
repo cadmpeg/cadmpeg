@@ -47,7 +47,7 @@ fn a_type_122_directrix_start_that_overflows_is_refused_as_non_finite() {
         None,
     ));
     assert_eq!(
-        extrusion_surface_entities(&ir, &construction, 0, crate::IgesVersion::V5_3)
+        extrusion_surface_entities(&cadmpeg_test_support::service_decode_context(), &ir, &construction, 0, crate::IgesVersion::V5_3)
             .err()
             .map(|error| error.to_string()),
         Some(
@@ -97,7 +97,7 @@ fn a_type_122_hyperbola_directrix_whose_minor_cosh_alone_overflows_has_finite_en
         ),
         None,
     ));
-    let entities = extrusion_surface_entities(&ir, &construction, 0, crate::IgesVersion::V5_3)
+    let entities = extrusion_surface_entities(&cadmpeg_test_support::service_decode_context(), &ir, &construction, 0, crate::IgesVersion::V5_3)
         .expect("the finite hyperbola end is written");
     assert_eq!(entities[0].type_code, 104);
     assert_eq!(entities[1].type_code, 122);
