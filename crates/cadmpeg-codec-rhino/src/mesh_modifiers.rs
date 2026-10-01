@@ -542,11 +542,11 @@ fn parse_xml(
     })?;
     let sweep_resolution_formula = field_i32_optional(displacement, "sweep-res-formula")?
         .unwrap_or_else(|| i32::from(archive.value() < 60));
-    let sub_items = displacement
-        .children()
-        .filter(|node| node.is_element() && same_name(*node, DISPLACEMENT_SUB))
-        .map(parse_sub_item)
-        .collect::<Result<Vec<_>, _>>()?;
+    let sub_items = ctx.try_collect_retained_with(
+        displacement.children().filter(|node| node.is_element() && same_name(*node, DISPLACEMENT_SUB)),
+        "Rhino displacement sub-items",
+        parse_sub_item,
+    )?;
     Ok(DisplacementModifier {
         xml_version,
         on: field_bool(displacement, "on", false)?,
@@ -1840,4 +1840,14 @@ mod tests {
             warning.contains("shut-lining userdata") && warning.contains("dropped")
         }));
     }
+    #[test]
+    fn displacement_sub_items_refuse_retained_limit_before_projection() {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_retained_bytes = 0;
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+        let error = parse_xml(&ctx, XML, 2, ArchiveVersion::V6).expect_err("sub-items need retained storage");
+        assert!(matches!(error, FramingError::Resource(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes && limit.operation == "Rhino displacement sub-items" && ctx.resource_refusal() == Some(limit)));
+    }
+
 }
