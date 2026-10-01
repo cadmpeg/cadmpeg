@@ -4,6 +4,8 @@
 use crate::geometry::nurbs::{NurbsSurfaceAxis, NurbsSurfaceLanes};
 use cadmpeg_test_support::edit;
 
+const EPS_CURVE_INVERSE_WITNESS: f64 = 1.0e-12;
+
 use crate::eval::curve_point;
 use crate::eval::curve_second_derivative;
 use crate::eval::curve_tangent;
@@ -586,7 +588,7 @@ fn direct_analytic_curve_inverses_preserve_native_parameters() {
             geometry: CurveGeometry::Solved(geometry.clone()),
             source_object: None,
         });
-        let inverse = crate::eval::model_curve_parameter_near_point_in_index(
+        let inverse = crate::eval::model_curve_parameter_near_point_in_index(&cadmpeg_test_support::service_decode_context(),
             &crate::index::ModelIndex::new(&ir),
             &id,
             point.get(),
@@ -680,7 +682,7 @@ fn polyline_inverse_searches_every_segment_in_native_parameter_space() {
             geometry: CurveGeometry::Solved(geometry),
             source_object: None,
         });
-        let inverse = crate::eval::model_curve_parameter_near_point_in_index(
+        let inverse = crate::eval::model_curve_parameter_near_point_in_index(&cadmpeg_test_support::service_decode_context(),
             &crate::index::ModelIndex::new(&ir),
             &id,
             point,
@@ -711,11 +713,11 @@ fn indexed_curve_inverse_uses_the_caller_tolerance() {
     let index = crate::index::ModelIndex::new(&ir);
     let point = Point3::new(0.5, 0.005, 0.0);
     assert!(
-        super::model_curve_parameter_near_point_in_index(&index, &id, point, 0.5)
+        super::model_curve_parameter_near_point_in_index(&cadmpeg_test_support::service_decode_context(), &index, &id, point, 0.5)
             .expect("resource allocation did not fail")
             .is_none()
     );
-    let inverse = super::model_curve_parameter_near_point_in_index_with_tolerance(
+    let inverse = super::model_curve_parameter_near_point_in_index_with_tolerance(&cadmpeg_test_support::service_decode_context(),
         &index, &id, point, 0.5, 0.01,
     )
     .expect("resource allocation did not fail")
@@ -755,7 +757,7 @@ fn transformed_curve_inverse_uses_the_basis_parameterization() {
         geometry: CurveGeometry::Solved(geometry.clone()),
         source_object: None,
     });
-    let inverse = crate::eval::model_curve_parameter_near_point_in_index(
+    let inverse = crate::eval::model_curve_parameter_near_point_in_index(&cadmpeg_test_support::service_decode_context(),
         &crate::index::ModelIndex::new(&ir),
         &id,
         point.get(),
@@ -778,7 +780,7 @@ fn transformed_curve_inverse_uses_the_basis_parameterization() {
         )
         .expect("placed curve"),
     ));
-    assert!(crate::eval::model_curve_parameter_near_point_in_index(
+    assert!(crate::eval::model_curve_parameter_near_point_in_index(&cadmpeg_test_support::service_decode_context(),
         &crate::index::ModelIndex::new(&ir),
         &id,
         Point3::new(0.0, 0.0, 0.0),
@@ -802,7 +804,7 @@ fn degenerate_curve_inverse_preserves_the_selected_parameter() {
     });
     let seed = 123.5;
     assert_eq!(
-        crate::eval::model_curve_parameter_near_point_in_index(
+        crate::eval::model_curve_parameter_near_point_in_index(&cadmpeg_test_support::service_decode_context(),
             &crate::index::ModelIndex::new(&ir),
             &id,
             point,
@@ -812,7 +814,7 @@ fn degenerate_curve_inverse_preserves_the_selected_parameter() {
         .map(crate::scalar::FiniteReal::get),
         Some(seed)
     );
-    assert!(crate::eval::model_curve_parameter_near_point_in_index(
+    assert!(crate::eval::model_curve_parameter_near_point_in_index(&cadmpeg_test_support::service_decode_context(),
         &crate::index::ModelIndex::new(&ir),
         &id,
         Point3::new(2.0, 3.0, 5.0),
@@ -1924,19 +1926,19 @@ fn nurbs_curve_inverse_uses_the_seed_to_select_an_ambiguous_witness() {
     .unwrap();
     let point = Point3::new(0.5, 0.0, 0.0);
     assert_eq!(
-        nurbs_curve_parameter_near_point(&curve, point, 1.0e-12, 0.1)
+        nurbs_curve_parameter_near_point(&cadmpeg_test_support::service_decode_context(), &curve, point, EPS_CURVE_INVERSE_WITNESS, 0.1)
             .expect("resource allocation did not fail")
             .map(crate::scalar::FiniteReal::get),
         Some(0.25)
     );
     assert_eq!(
-        nurbs_curve_parameter_near_point(&curve, point, 1.0e-12, 0.9)
+        nurbs_curve_parameter_near_point(&cadmpeg_test_support::service_decode_context(), &curve, point, EPS_CURVE_INVERSE_WITNESS, 0.9)
             .expect("resource allocation did not fail")
             .map(crate::scalar::FiniteReal::get),
         Some(0.75)
     );
     assert_eq!(
-        nurbs_curve_parameter_near_point(&curve, Point3::new(0.5, 1.0, 0.0), 1.0e-12, 0.5,)
+        nurbs_curve_parameter_near_point(&cadmpeg_test_support::service_decode_context(), &curve, Point3::new(0.5, 1.0, 0.0), EPS_CURVE_INVERSE_WITNESS, 0.5,)
             .expect("resource allocation did not fail"),
         None
     );

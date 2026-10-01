@@ -157,7 +157,7 @@ fn validate_model_with_index(
     check_native_links(ir, ids, &mut findings);
     check_parameter_domains(ir, &mut findings);
     check_edge_endpoint_consistency(ir, &mut findings)?;
-    check_pcurve_surface_consistency(ir, &mut findings)?;
+    check_pcurve_surface_consistency(&ctx, ir, &mut findings)?;
     check_procedural_support_consistency(ir, &mut findings)?;
     check_topology_tolerances(ir, &mut findings);
     check_tessellations(ir, &mut findings);

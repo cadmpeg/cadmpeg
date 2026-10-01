@@ -4710,12 +4710,12 @@ fn pcurve_locus_witness(
         },
     );
     let Some(curve_start_parameter) =
-        curve_parameter_near_point(index, &curve_id, curve_start, &curve_seeds, bound)?
+        curve_parameter_near_point(ctx, index, &curve_id, curve_start, &curve_seeds, bound)?
     else {
         return Ok(false);
     };
     let Some(curve_end_parameter) =
-        curve_parameter_near_point(index, &curve_id, curve_end, &curve_seeds, bound)?
+        curve_parameter_near_point(ctx, index, &curve_id, curve_end, &curve_seeds, bound)?
     else {
         return Ok(false);
     };
@@ -4771,7 +4771,7 @@ fn pcurve_locus_witness(
             curve_seed,
         ];
         let Some(curve_parameter) =
-            curve_parameter_near_point(index, &curve_id, mapped, &seeds, bound)?
+            curve_parameter_near_point(ctx, index, &curve_id, mapped, &seeds, bound)?
         else {
             return Ok(false);
         };
@@ -4793,15 +4793,16 @@ fn pcurve_locus_witness(
 }
 
 fn curve_parameter_near_point(
+    ctx: &DecodeContext<'_>,
     index: &ModelIndex<'_>,
     curve_id: &CurveId,
     point: Point3,
     seeds: &[f64],
     tolerance: f64,
-) -> Result<Option<f64>, ResourceLimit> {
+) -> Result<Option<f64>, CodecError> {
     let mut best: Option<(f64, f64)> = None;
     for &seed in seeds.iter().filter(|seed| seed.is_finite()) {
-        let Some(parameter) = model_curve_parameter_near_point_in_index_with_tolerance(
+        let Some(parameter) = model_curve_parameter_near_point_in_index_with_tolerance(ctx,
             index, curve_id, point, seed, tolerance,
         )?
         else {

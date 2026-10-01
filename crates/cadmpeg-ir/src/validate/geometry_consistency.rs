@@ -23,7 +23,8 @@ use crate::scalar::{ExtendedReal, FiniteReal};
 use crate::topology::{ParameterInterval, Sense};
 
 use crate::units::COINCIDENCE_TOLERANCE;
-use cadmpeg_core::decode::ResourceLimit;
+use cadmpeg_core::decode::{DecodeContext, ResourceLimit};
+use cadmpeg_core::CodecError;
 
 use super::pcurve_parameter_domain;
 
@@ -510,9 +511,10 @@ pub(super) fn check_edge_endpoint_consistency(
 /// Pcurve parameter sign and direction are independent of edge sense, so
 /// either sign and either endpoint assignment satisfy the check.
 pub(super) fn check_pcurve_surface_consistency(
+    ctx: &DecodeContext<'_>,
     ir: &CadIr,
     findings: &mut Vec<Finding>,
-) -> Result<(), ResourceLimit> {
+) -> Result<(), CodecError> {
     let index = crate::index::ModelIndex::new(ir);
     let curves = ir
         .model
@@ -646,7 +648,7 @@ pub(super) fn check_pcurve_surface_consistency(
             surface_id: &face.surface,
             geometry,
         };
-        let recovered = edge_pcurve_parameter_ranges(
+        let recovered = edge_pcurve_parameter_ranges(ctx,
             &surface_context,
             curve_geometry,
             *start,
@@ -786,6 +788,7 @@ struct SurfacePcurveContext<'index, 'model> {
 /// solve remains as a fallback for surfaces without a usable mapped inverse.
 /// Several seeds preserve the correct branch for periodic carriers.
 fn edge_pcurve_parameter_ranges(
+    ctx: &DecodeContext<'_>,
     context: &SurfacePcurveContext<'_, '_>,
     curve_geometry: Option<&crate::geometry::CurveGeometry>,
     start: Point3,
@@ -793,7 +796,7 @@ fn edge_pcurve_parameter_ranges(
     first: &crate::geometry::pcurve::Pcurve,
     last: &crate::geometry::pcurve::Pcurve,
     tolerance: f64,
-) -> Result<Option<Vec<[f64; 2]>>, ResourceLimit> {
+) -> Result<Option<Vec<[f64; 2]>>, CodecError> {
     let mut start_parameters = Vec::new();
     for seed in pcurve_parameter_seeds_on_surface(context, first) {
         if let Some(parameter) =
@@ -846,12 +849,12 @@ fn edge_pcurve_parameter_ranges(
         .collect::<Vec<_>>();
     let start_parameters = seeds
         .iter()
-        .map(|seed| curve_parameter_near_point(curve_geometry, start, seed.get(), tolerance))
+        .map(|seed| curve_parameter_near_point(ctx, curve_geometry, start, seed.get(), tolerance))
         .collect::<Result<Vec<_>, _>>()?;
     let start_parameters = unique(start_parameters.into_iter().flatten());
     let end_parameters = seeds
         .iter()
-        .map(|seed| curve_parameter_near_point(curve_geometry, end, seed.get(), tolerance))
+        .map(|seed| curve_parameter_near_point(ctx, curve_geometry, end, seed.get(), tolerance))
         .collect::<Result<Vec<_>, _>>()?;
     let end_parameters = unique(end_parameters.into_iter().flatten());
     let ranges = start_parameters

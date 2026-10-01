@@ -158,7 +158,7 @@ pub(super) fn infer_edge_parameter_ranges(
             };
             let start_seed = curve_endpoint_seed(solved, false, 0.0);
             let Some(start_parameter) =
-                cadmpeg_ir::eval::model_curve_parameter_near_point_in_index(
+                cadmpeg_ir::eval::model_curve_parameter_near_point_in_index(ctx,
                     &model_index,
                     curve,
                     start,
@@ -168,7 +168,7 @@ pub(super) fn infer_edge_parameter_ranges(
                 return Ok(inferred);
             };
             let end_seed = curve_endpoint_seed(solved, true, start_parameter.get());
-            let Some(end_parameter) = cadmpeg_ir::eval::model_curve_parameter_near_point_in_index(
+            let Some(end_parameter) = cadmpeg_ir::eval::model_curve_parameter_near_point_in_index(ctx,
                 &model_index,
                 curve,
                 end,
@@ -4598,8 +4598,7 @@ fn trim_cartesian_parameter(
     let Some(geometry) = context.geometry.solved() else {
         return Ok(None);
     };
-    curve_parameter_at_point(geometry, point.get(), context.tolerance)
-        .map_err(CodecError::ResourceLimit)
+    curve_parameter_at_point(context.ctx, geometry, point.get(), context.tolerance)
 }
 
 fn select_trim_parameter(
@@ -4773,10 +4772,11 @@ fn first_projected_axis(axis: UnitVector3) -> Option<UnitVector3> {
 }
 
 fn curve_parameter_at_point(
+    ctx: &DecodeContext<'_>,
     geometry: &SolvedCurveGeometry,
     point: Point3,
     tolerance: f64,
-) -> Result<Option<f64>, cadmpeg_core::decode::ResourceLimit> {
+) -> Result<Option<f64>, CodecError> {
     let offset =
         |origin: Point3| Vector3::new(point.x - origin.x, point.y - origin.y, point.z - origin.z);
     match geometry {
@@ -4812,7 +4812,7 @@ fn curve_parameter_at_point(
             else {
                 return Ok(None);
             };
-            nurbs_curve_parameter_near_point(curve, point, tolerance, (domain[0] + domain[1]) * 0.5)
+            nurbs_curve_parameter_near_point(ctx, curve, point, tolerance, (domain[0] + domain[1]) * 0.5)
                 .map(|parameter| parameter.map(FiniteReal::get))
         }
         SolvedCurveGeometry::Transformed(placed) => {
@@ -4822,7 +4822,7 @@ fn curve_parameter_at_point(
             let Some(mapped) = inverse.apply_point(point) else {
                 return Ok(None);
             };
-            curve_parameter_at_point(placed.basis(), mapped.get(), tolerance)
+            curve_parameter_at_point(ctx, placed.basis(), mapped.get(), tolerance)
         }
         _ => Ok(None),
     }
