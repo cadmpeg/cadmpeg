@@ -143,14 +143,7 @@ fn archive_span_identity_refuses_at_retained_limit() {
 fn source_domain_list_refuses_at_retained_limit() {
     with_scanned_document(|scan| {
         scan.document.domains.push("Part".into());
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::default();
-        policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index("Part".len()) - 1;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-            .expect("empty root is within policy");
-        assert!(matches!(super::source_attributes(&ctx, scan),
-            Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-                if limit.operation == "FCStd source domain list"));
+        crate::test_support::assert_retained_refusal_at(&[], "FCStd source domain list", |ctx| super::source_attributes(ctx, scan));
     });
 }
 
@@ -158,14 +151,7 @@ fn source_domain_list_refuses_at_retained_limit() {
 fn source_program_version_refuses_at_retained_limit() {
     with_scanned_document(|scan| {
         scan.document.program_version = Some("1.2.3".into());
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::default();
-        policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index("1.2.3".len()) - 1;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-            .expect("empty root is within policy");
-        assert!(matches!(super::source_attributes(&ctx, scan),
-            Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-                if limit.operation == "FCStd source program version"));
+        crate::test_support::assert_retained_refusal_at(&[], "FCStd source program version", |ctx| super::source_attributes(ctx, scan));
     });
 }
 
@@ -794,5 +780,15 @@ fn summary_notes_admit_slots_and_retained_storage_before_text() {
         crate::test_support::assert_retained_refusal_at(&[], "FCStd summary notes", |ctx| super::summary_notes(ctx, scan));
         crate::test_support::assert_retained_refusal_at(&[], "FCStd object count note", |ctx| super::summary_notes(ctx, scan));
         crate::test_support::assert_retained_refusal_at(&[], "FCStd physical ledger note", |ctx| super::summary_notes(ctx, scan));
+    });
+}
+
+#[test]
+fn source_attributes_admit_keys_values_and_map_records() {
+    with_scanned_document(|scan| {
+        crate::test_support::assert_collection_refusal_at(&[], "FCStd source attribute records", |ctx| super::source_attributes(ctx, scan));
+        for operation in ["FCStd source root", "FCStd source object count", "FCStd source kind", "FCStd source entry count", "FCStd source ledger spans", "FCStd source archive bytes", "FCStd source attribute records"] {
+            crate::test_support::assert_retained_refusal_at(&[], operation, |ctx| super::source_attributes(ctx, scan));
+        }
     });
 }
