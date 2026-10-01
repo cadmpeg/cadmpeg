@@ -6943,7 +6943,7 @@ fn synthesize_cylinder_seams(
             &seam_a,
             "index generated Parasolid seam coedges",
         )?;
-        coedge_indices.insert(seam_a.try_clone_for_decode(ctx, "SLDPRT decoded identity copy")?, out.coedges.len());
+        coedge_indices.insert(index_copy_storage.with_storage(|| seam_a.try_clone_for_decode(ctx, "SLDPRT decoded identity copy"))?, out.coedges.len());
         admit_brep_entity(ctx)?;
         ctx.reserve_vec(
             &mut out.coedges,
@@ -6965,7 +6965,7 @@ fn synthesize_cylinder_seams(
             &seam_b,
             "index generated Parasolid seam coedges",
         )?;
-        coedge_indices.insert(seam_b.try_clone_for_decode(ctx, "SLDPRT decoded identity copy")?, out.coedges.len());
+        coedge_indices.insert(index_copy_storage.with_storage(|| seam_b.try_clone_for_decode(ctx, "SLDPRT decoded identity copy"))?, out.coedges.len());
         admit_brep_entity(ctx)?;
         ctx.reserve_vec(
             &mut out.coedges,
@@ -7121,14 +7121,14 @@ fn synthesize_sphere_seams(
         };
 
         let seam_vertices = [
-            out.edges[edge_index].start.try_clone_for_decode(ctx, "SLDPRT decoded identity copy")?,
-            out.edges[edge_index].end.try_clone_for_decode(ctx, "SLDPRT decoded identity copy")?,
+            &out.edges[edge_index].start,
+            &out.edges[edge_index].end,
         ];
         for vertex_id in seam_vertices {
             let Some(point_id) = out
                 .vertices
                 .iter()
-                .find(|vertex| vertex.id == vertex_id)
+                .find(|vertex| &vertex.id == vertex_id)
                 .map(|vertex| &vertex.point)
             else {
                 continue;
@@ -7228,7 +7228,7 @@ fn synthesize_sphere_seams(
                     1,
                     "collect Parasolid sphere pole vertices",
                 )?;
-                pole_vertices.push(vertex.try_clone_for_decode(ctx, "SLDPRT decoded identity copy")?);
+                pole_vertices.push(vertex);
             }
             ctx.stable_sort_by(
                 &mut pole_vertices,
@@ -7375,7 +7375,7 @@ fn synthesize_sphere_seams(
             &coedge_id,
             "index generated Parasolid sphere coedges",
         )?;
-        coedge_indices.insert(coedge_id.try_clone_for_decode(ctx, "SLDPRT decoded identity copy")?, out.coedges.len());
+        coedge_indices.insert(index_copy_storage.with_storage(|| coedge_id.try_clone_for_decode(ctx, "SLDPRT decoded identity copy"))?, out.coedges.len());
         let mut pcurve_uses = Vec::new();
         ctx.reserve_vec(&mut pcurve_uses, 1, "bind Parasolid sphere seam pcurve")?;
         pcurve_uses.push(cadmpeg_ir::topology::PcurveUse {

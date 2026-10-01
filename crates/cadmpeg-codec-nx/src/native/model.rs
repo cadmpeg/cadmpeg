@@ -682,7 +682,7 @@ pub(crate) fn terminal_feature_body_ids(
         {
             if !mapped.contains(body) {
                 ctx.charge_collection_items(1, "nx mapped terminal body")?;
-                mapped.insert(body.try_clone_for_decode(ctx, "nx mapped terminal body identity")?);
+                mapped.insert(body);
             }
             if status.terminal && !selected.contains(body) {
                 ctx.charge_collection_items(1, "nx selected terminal body")?;
@@ -691,7 +691,7 @@ pub(crate) fn terminal_feature_body_ids(
         }
     }
     Ok(
-        (statuses_by_binding.is_empty() && mapped == *emitted && !selected.is_empty())
+        (statuses_by_binding.is_empty() && mapped.len() == emitted.len() && !selected.is_empty())
             .then_some(selected),
     )
 }

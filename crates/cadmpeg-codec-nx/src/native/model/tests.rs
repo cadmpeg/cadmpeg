@@ -227,12 +227,12 @@ fn terminal_body_selection_refuses_identity_retention_limit() {
         },
         |ctx| {
             let error = terminal_feature_body_ids(ctx, &emitted, &bindings, &statuses)
-                .expect_err("mapped identity cannot be retained");
+                .expect_err("selected identity cannot be retained");
             assert!(matches!(
                 error,
                 cadmpeg_core::CodecError::ResourceLimit(limit)
                     if limit.dimension == ResourceDimension::RetainedBytes
-                        && limit.operation == "nx mapped terminal body identity"
+                        && limit.operation == "nx selected terminal body identity"
             ));
         },
     );

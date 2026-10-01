@@ -5659,6 +5659,7 @@ fn decode_pcurves(
                 });
             }
         };
+    let mut cached_curve_storage = ctx.reserve_scoped(0, "Rhino temporary C2 cache")?;
     let mut decoded_slots = HashMap::<usize, Option<NurbsCurve>>::new();
     for (index, trim) in raw.trims.iter().enumerate() {
         if trim.trim_type == crate::brep::RawTrimKind::PointOnSurface {
@@ -5703,9 +5704,7 @@ fn decode_pcurves(
                         joined.warnings,
                         format_args!("trim {index}"),
                     )?;
-                    let cached = joined
-                        .curve
-                        .try_clone_for_decode(ctx, "Rhino Brep cached C2 curve")?;
+                    let cached = cached_curve_storage.with_storage(|| joined.curve.try_clone_for_decode(ctx, "Rhino Brep cached C2 curve"))?;
                     ctx.reserve_map(&mut decoded_slots, 1, "Rhino Brep decoded C2 slots")?;
                     decoded_slots.insert(trim_curve, Some(cached));
                     joined.curve
