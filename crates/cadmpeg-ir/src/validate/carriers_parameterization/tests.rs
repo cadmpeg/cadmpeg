@@ -29,7 +29,7 @@ fn face_on_unknown_surface_validates_clean() {
     let mut ir = unit_cube().expect("valid unit cube fixture");
     // Preserve a raw record and point the unknown surface at it.
     let rec = UnknownId::mint("synthetic:cube:unknown#0").expect("valid identity");
-    ir.set_native_unknowns(
+    ir.set_native_unknowns(&cadmpeg_test_support::service_decode_context(),
         "synthetic",
         &[NativeUnknownRecord {
             id: rec.clone(),

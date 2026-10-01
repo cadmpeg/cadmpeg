@@ -2055,8 +2055,17 @@ ENCODE_SORT_PATH = re.compile(
     r")"
 )
 DECODE_CONTEXT_BINDING = re.compile(
-    r"\b([A-Za-z_]\w*)\s*:\s*&\s*(?:'[A-Za-z_]\w*\s*)?(?:mut\s+)?"
+    r"\b([A-Za-z_]\w*)\s*:\s*(?:&\s*(?:'[A-Za-z_]\w*\s*)?(?:mut\s+)?)?"
     r"(?:::\s*)?(?:[A-Za-z_]\w*\s*::\s*)*DecodeContext\b"
+)
+
+IR_DECODE_SORT_PATH = re.compile(
+    r"crates/cadmpeg-ir/src/(?:native/.*|math/.*|validate/.*|"
+    r"document\.rs|hash\.rs|eval\.rs|codec\.rs)"
+)
+DECODE_RECEIVER_BINDING = re.compile(
+    r"\b([A-Za-z_]\w*)\s*:\s*(?:&\s*(?:'[A-Za-z_]\w*\s*)?(?:mut\s+)?)?"
+    r"(?:::\s*)?(?:[A-Za-z_]\w*\s*::\s*)*([A-Za-z_]\w*)\b"
 )
 
 
@@ -2064,7 +2073,7 @@ def scan_decode_sorts(sources: dict[Path, str]) -> list[Finding]:
     """Reject slice sorts in functions borrowing a decode context and in decode crate code.
 
     Function scopes exclude nested function items. Closures keep their enclosing
-    context. Struct fields identify context access through a method's self value.
+    context. Annotated receiver types identify owned and borrowed context fields.
     """
     parsed = {}
     context_fields: dict[tuple[str, str], set[str]] = {}
@@ -2092,7 +2101,7 @@ def scan_decode_sorts(sources: dict[Path, str]) -> list[Finding]:
     for path, (code, tokens, pairs, parents, words, crate) in parsed.items():
         if relative_path(path) in DECODE_SORT_EXEMPT_FILES:
             continue
-        decode_scope = bool(DECODE_SORT_CRATE.fullmatch(crate)) and not ENCODE_SORT_PATH.fullmatch(relative_path(path))
+        decode_scope = (bool(DECODE_SORT_CRATE.fullmatch(crate)) or bool(IR_DECODE_SORT_PATH.fullmatch(relative_path(path)))) and not ENCODE_SORT_PATH.fullmatch(relative_path(path))
         functions = []
         for index, _, _, owner in evaluation_signatures(tokens, pairs, parents):
             opening = index + 2
@@ -2120,12 +2129,17 @@ def scan_decode_sorts(sources: dict[Path, str]) -> list[Finding]:
                         cursor = tokens[child_end].end()
             pieces.append(code[cursor:tokens[end].end()])
             scope = "".join(pieces)
-            fields = context_fields.get((crate, owner), set())
+            receivers = {
+                name: context_fields.get((crate, type_name), set())
+                for name, type_name in DECODE_RECEIVER_BINDING.findall(scope)
+            }
+            receivers["self"] = context_fields.get((crate, owner), set())
             bindings = set(DECODE_CONTEXT_BINDING.findall(scope))
-            contexts[index] = bindings, fields, bool(bindings) or any(
-                re.search(r"\bself\s*\.\s*" + re.escape(field) + r"\b", scope)
-                for field in fields
+            has_context = bool(bindings) or any(
+                re.search(r"\b" + re.escape(receiver) + r"\s*\.\s*" + re.escape(field) + r"\b", scope)
+                for receiver, fields in receivers.items() for field in fields
             )
+            contexts[index] = bindings, receivers, has_context
         for index, word in enumerate(words):
             if word not in SLICE_SORT_METHODS or index == 0 or words[index - 1] != ".":
                 continue
@@ -2134,12 +2148,13 @@ def scan_decode_sorts(sources: dict[Path, str]) -> list[Finding]:
             enclosing = [scope for scope in functions if scope[1] < index < scope[2]]
             if not enclosing:
                 continue
-            bindings, fields, has_context = contexts[max(enclosing, key=lambda scope: scope[0])[0]]
+            bindings, receivers, has_context = contexts[max(enclosing, key=lambda scope: scope[0])[0]]
             if not has_context and not decode_scope:
                 continue
             # The context operation shares the slice method's unstable name.
             receiver = words[index - 2] if index >= 2 else ""
-            if receiver in bindings or (receiver in fields and words[index - 4:index - 2] == ["self", "."]):
+            field_owner = words[index - 4] if index >= 4 and words[index - 3] == "." else ""
+            if receiver in bindings or receiver in receivers.get(field_owner, set()):
                 continue
             findings.append(Finding(
                 "uncharged_decode_sort", relative_path(path),

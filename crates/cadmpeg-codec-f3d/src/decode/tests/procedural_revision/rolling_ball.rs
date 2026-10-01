@@ -76,7 +76,7 @@ fn generated_solved_plane_plane_blend_decodes_as_analytic_cylinder() {
         .expect("generated rolling-ball decode");
     let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
-    source_less.set_native_unknowns("f3d", &[]).unwrap();
+    source_less.set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[]).unwrap();
     let (support_ids, spine_id) =
         source_less.model.procedural_surfaces[0].edit_definition(|definition| {
             let ProceduralSurfaceDefinition::Blend(definition_payload) = definition else {
@@ -221,7 +221,7 @@ fn generated_rolling_ball_surface_aliases_decode_and_write_canonically() {
         ));
         let (mut source_less, _, _) = result.into_parts();
         source_less.source = None;
-        source_less.set_native_unknowns("f3d", &[]).unwrap();
+        source_less.set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[]).unwrap();
         let mut encoded = Vec::new();
         F3dCodec
             .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)

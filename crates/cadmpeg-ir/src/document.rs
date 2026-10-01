@@ -47,6 +47,14 @@ use crate::units::{CanonicalUnitsWire, Tolerances};
 use crate::unknown::NativeUnknownRecord;
 use cadmpeg_core::text::NonBlankString;
 
+struct UnknownProjection<T>(T);
+
+impl<T: Borrow<NativeUnknownRecord>> Serialize for UnknownProjection<T> {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        self.0.borrow().serialize(serializer)
+    }
+}
+
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub(crate) struct FeatureRegenerationParents(
     BTreeMap<crate::features::FeatureId, crate::features::FeatureId>,
@@ -1793,10 +1801,11 @@ impl CadIr {
     /// Replace the reserved `unknowns` arena for `format`.
     pub fn set_native_unknowns(
         &mut self,
+        ctx: &DecodeContext<'_>,
         format: &str,
         records: &[NativeUnknownRecord],
     ) -> Result<(), crate::native::NativeConvertError> {
-        self.set_native_unknowns_from(format, records.iter())
+        self.set_native_unknowns_from(ctx, format, records.iter())
     }
 
     /// Replace the reserved `unknowns` arena for `format` one record at a time.
@@ -1811,31 +1820,41 @@ impl CadIr {
     ///
     /// ```compile_fail
     /// use cadmpeg_ir::CadIr;
+    /// let ctx = cadmpeg_test_support::service_decode_context();
     /// let raw = serde_json::json!({"id": "test:native:unknown#0", "extra": true});
-    /// CadIr::empty().set_native_unknowns_from("test", [raw]).unwrap();
+    /// CadIr::empty().set_native_unknowns_from(&ctx, "test", [raw]).unwrap();
     /// ```
     pub fn set_native_unknowns_from<T: Borrow<NativeUnknownRecord>, I: IntoIterator<Item = T>>(
         &mut self,
+        ctx: &DecodeContext<'_>,
         format: &str,
         records: I,
     ) -> Result<(), crate::native::NativeConvertError> {
-        let mut records: Vec<_> = records
-            .into_iter()
-            .map(|record| {
-                let record: &NativeUnknownRecord = record.borrow();
-                crate::native::NativeRecord::from(record)
-            })
-            .collect();
-        records.sort_by(|left, right| left.id().cmp(right.id()));
-        if let Some(pair) = records.windows(2).find(|pair| pair[0].id() == pair[1].id()) {
-            return Err(crate::native::NativeConvertError::InvalidCollection(
-                format!("duplicate native unknown record {}", pair[0].id()),
-            ));
+        let records = ctx.with_scoped_storage("native unknown replacement", || {
+            crate::native::arena_from(ctx, records.into_iter().map(|record| {
+                Ok::<_, crate::native::NativeConvertError>(UnknownProjection(record))
+            }))
+        })?;
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(records.0.len()), "scan native unknown identities")?;
+        for pair in records.0.windows(2) {
+            ctx.charge_work(cadmpeg_core::decode::u64_from_index(pair[0].id().len().min(pair[1].id().len())), "compare native unknown identities")?;
+            if pair[0].id() == pair[1].id() {
+                return Err(crate::native::NativeConvertError::InvalidCollection(
+                    ctx.format_retained(format_args!("duplicate native unknown record {}", pair[0].id()), "native unknown identity collision")?,
+                ));
+            }
         }
-        self.native
-            .namespace_mut(format)
-            .arenas_mut()
-            .insert("unknowns".into(), records);
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(format.len()).checked_mul(cadmpeg_core::decode::u64_from_index(self.native.0.len()).checked_add(1).ok_or_else(|| ctx.refuse_codec_limit("native unknown namespace lookup", u64::MAX - 1, u64::MAX))?).ok_or_else(|| ctx.refuse_codec_limit("native unknown namespace lookup", u64::MAX - 1, u64::MAX))?, "native unknown namespace lookup")?;
+        let key = ctx.copy_retained_text("unknowns", "native unknown arena key")?;
+        records.1.commit()?;
+        if let Some(namespace) = self.native.0.get_mut(format) {
+            ctx.insert_btree_map(namespace.arenas_mut(), key, records.0, "native unknown arena")?;
+        } else {
+            let format = ctx.copy_retained_text(format, "native unknown namespace key")?;
+            let mut namespace = crate::native::NativeNamespace::default();
+            ctx.insert_btree_map(namespace.arenas_mut(), key, records.0, "native unknown arena")?;
+            ctx.insert_btree_map(&mut self.native.0, format, namespace, "native unknown namespace")?;
+        }
         Ok(())
     }
 

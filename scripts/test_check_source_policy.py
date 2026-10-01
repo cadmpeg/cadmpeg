@@ -1137,8 +1137,35 @@ fn local() {
                      "src/resolved_features/write_generate.rs", "src/zip_write.rs", "src/export.rs",
                      "src/bin/profile.rs"):
             self.write(f"crates/cadmpeg-codec-demo/{path}", "fn order() { values.sort(); }")
-        self.write("crates/cadmpeg-ir/src/document.rs", "fn order() { values.sort(); }")
         self.assertEqual(self.findings("uncharged_decode_sort"), [])
+
+    def test_ir_decode_paths_without_context_are_rejected(self) -> None:
+        for path in ("document.rs", "hash.rs", "eval.rs", "codec.rs", "native/mod.rs",
+                     "math/planar.rs", "validate/topology.rs"):
+            with self.subTest(path=path):
+                self.write(f"crates/cadmpeg-ir/src/{path}", "fn order() { values.sort(); }")
+                findings = [item for item in self.findings("uncharged_decode_sort")
+                            if item.path == f"crates/cadmpeg-ir/src/{path}"]
+                self.assertEqual(len(findings), 1)
+        self.write("crates/cadmpeg-ir/src/report.rs", "fn order() { values.sort(); }")
+        self.assertFalse(any(item.path.endswith("/report.rs")
+                             for item in self.findings("uncharged_decode_sort")))
+
+    def test_known_context_field_on_any_receiver_is_accepted(self) -> None:
+        self.write("crates/demo/src/types.rs", """
+struct Borrowed<'a> { decode: &'a DecodeContext<'a> }
+struct Owned<'a> { decode: cadmpeg_core::decode::DecodeContext<'a> }
+struct Other { decode: Vec<u32> }
+""")
+        self.write("crates/demo/src/read.rs", """
+fn read(ctx: &Borrowed<'_>, owned: Owned<'_>, other: &Other) {
+    ctx.decode.sort_unstable_by(values, compare, key_bytes, "sort")?;
+    owned.decode.sort_unstable_by(values, compare, key_bytes, "sort")?;
+    other.decode.sort_unstable_by(compare);
+    values.sort();
+}
+""")
+        self.assertEqual([item.line for item in self.findings("uncharged_decode_sort")], [5, 6])
 
     def test_decode_crate_encoder_with_context_is_rejected(self) -> None:
         self.write("crates/cadmpeg-codec-demo/src/writer.rs",

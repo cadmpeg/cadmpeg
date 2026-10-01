@@ -153,6 +153,7 @@ pub(crate) const RETAINED_DOCUMENT_CAP: usize = 256 * 1024 * 1024;
 /// The projection is removed or restored before returning, so final source
 /// attachment remains the sole owner of committed unknown product records.
 fn with_native_unknowns<T>(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ir: &mut CadIr,
     unknowns: &[UnknownRecord],
     apply: impl FnOnce(&mut CadIr) -> T,
@@ -167,7 +168,7 @@ fn with_native_unknowns<T>(
         .namespace("rhino")
         .and_then(|namespace| namespace.arenas().get("unknowns"))
         .cloned();
-    ir.set_native_unknowns_from("rhino", products)?;
+    ir.set_native_unknowns_from(ctx, "rhino", products)?;
     let value = apply(ir);
     match previous {
         Some(records) => {
@@ -765,7 +766,7 @@ impl<'a> DecodeContext<'a> {
         let entity_count = candidate.model.entity_count();
         let mut budget = self.expansion_budget;
         let session = self.expand.ctx();
-        let value = with_native_unknowns(&mut self.ir, &self.unknowns, |ir| {
+        let value = with_native_unknowns(self.expand.ctx(), &mut self.ir, &self.unknowns, |ir| {
             ir.try_append(candidate.model, candidate.native, |combined| {
                 let validation = cadmpeg_ir::admit_with_annotations(
                     combined,
@@ -2267,7 +2268,7 @@ impl<'a> DecodeContext<'a> {
         // Mesh buffers stay charged in the session arena even on rollback.
         let rejection_warning = match outcome {
             Ok(links) => {
-                let validation = with_native_unknowns(&mut self.ir, &self.unknowns, |ir| {
+                let validation = with_native_unknowns(self.expand.ctx(), &mut self.ir, &self.unknowns, |ir| {
                     cadmpeg_ir::admit(ir, cadmpeg_ir::RHINO_INSTANCE_CHECKS, Vec::new())
                 });
                 if validation.as_ref().is_ok_and(|result| {
@@ -4247,7 +4248,7 @@ impl<'a> DecodeContext<'a> {
                 let entity_count = draft.entity_count();
                 let mut budget = self.expansion_budget;
                 budget.entities(self.expand.ctx(), entity_count)?;
-                let result = with_native_unknowns(&mut self.ir, &self.unknowns, |ir| {
+                let result = with_native_unknowns(self.expand.ctx(), &mut self.ir, &self.unknowns, |ir| {
                     draft.commit(ir, &mut self.annotations, self.expand.ctx())
                 });
                 let committed = match result {
@@ -4413,7 +4414,7 @@ fn append_record_links(ir: &mut CadIr, unknown: &UnknownId, links: &[String]) {
     );
     record.links.sort();
     record.links.dedup();
-    ir.set_native_unknowns("rhino", &unknowns)
+    ir.set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "rhino", &unknowns)
         .expect("fixture unknown records");
 }
 

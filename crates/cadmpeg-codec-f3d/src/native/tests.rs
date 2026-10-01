@@ -968,7 +968,7 @@ fn generated_cache_first_spring_decodes_and_writes_source_less() {
 
     let (mut source_less, _, _) = result.into_parts();
     source_less.source = None;
-    source_less.set_native_unknowns("f3d", &[]).unwrap();
+    source_less.set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[]).unwrap();
     let mut encoded = Vec::new();
     F3dCodec
         .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
@@ -1027,7 +1027,7 @@ fn generated_cache_first_parametric_curve_decodes_and_writes_source_less() {
 
     let (mut source_less, _, _) = result.into_parts();
     source_less.source = None;
-    source_less.set_native_unknowns("f3d", &[]).unwrap();
+    source_less.set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[]).unwrap();
     let mut encoded = Vec::new();
     F3dCodec
         .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
@@ -1101,7 +1101,7 @@ fn generated_cache_first_surface_offset_decodes_and_writes_source_less() {
 
     let (mut source_less, _, _) = result.into_parts();
     source_less.source = None;
-    source_less.set_native_unknowns("f3d", &[]).unwrap();
+    source_less.set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[]).unwrap();
     let mut encoded = Vec::new();
     F3dCodec
         .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
