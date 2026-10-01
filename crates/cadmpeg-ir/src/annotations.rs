@@ -10,7 +10,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use cadmpeg_core::decode::{
-    u64_from_index, DecodeArena, DecodeContext, DecodePolicy, ResourceLimit,
+    u64_from_index, DecodeArena, DecodeContext, DecodePolicy, ResourceLimit, ScopedReservation,
 };
 use cadmpeg_core::CodecError;
 
@@ -32,6 +32,35 @@ pub struct Annotations {
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     #[serde(deserialize_with = "cadmpeg_core::distinct_keys::btree_map")]
     exactness: BTreeMap<String, ExactnessNote>,
+}
+
+/// Annotation storage held until a transaction commits or is discarded.
+#[derive(Debug)]
+pub struct AnnotationTransaction<'ctx> {
+    annotations: Annotations,
+    storage: ScopedReservation<'ctx>,
+}
+
+impl AnnotationTransaction<'_> {
+    /// Read the candidate annotation tables.
+    pub fn annotations(&self) -> &Annotations {
+        &self.annotations
+    }
+
+    /// Admit mutations into the transaction's temporary storage.
+    pub fn update<T, E: From<CodecError>>(
+        mut self,
+        apply: impl FnOnce(&mut Annotations) -> Result<T, E>,
+    ) -> Result<(T, Self), E> {
+        let result = self.storage.with_storage(|| apply(&mut self.annotations))?;
+        Ok((result, self))
+    }
+
+    /// Admit the final owned tables before transferring them to the document.
+    pub fn into_retained(self) -> Result<Annotations, CodecError> {
+        self.storage.commit()?;
+        Ok(self.annotations)
+    }
 }
 
 /// Two source annotation identities would become one identity.
@@ -793,22 +822,35 @@ impl Annotations {
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         operation: &'static str,
     ) -> Result<Self, cadmpeg_core::CodecError> {
-        let mut annotations = Annotations::default();
+        self.copy_transaction(ctx, operation)?.into_retained()
+    }
+
+    /// Copy annotation tables while holding their temporary storage reservation.
+    pub fn copy_transaction<'ctx>(
+        &self,
+        ctx: &'ctx DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<AnnotationTransaction<'ctx>, CodecError> {
+        let mut storage = ctx.reserve_scoped(0, operation)?;
+        let mut annotations = Self::default();
         for (id, source) in &self.provenance {
-            admit_annotation_record::<String, AnnotationProvenance>(ctx, operation)?;
-            let id = ctx.copy_retained_text(id, operation)?;
-            annotations
-                .provenance
-                .insert(id, source.try_clone_for_decode(ctx, operation)?);
+            admit_identity_work(ctx, annotations.provenance.len(), id.len(), operation)?;
+            let id = storage.with_storage(|| ctx.copy_retained_text(id, operation))?;
+            let source = storage.with_storage(|| source.try_clone_for_decode(ctx, operation))?;
+            ctx.insert_scoped_btree_map_if_vacant(
+                &mut storage, &mut annotations.provenance, id, source, operation, operation,
+            )?;
         }
         for (id, note) in &self.exactness {
-            admit_annotation_record::<String, ExactnessNote>(ctx, operation)?;
-            let id = ctx.copy_retained_text(id, operation)?;
+            admit_identity_work(ctx, annotations.exactness.len(), id.len(), operation)?;
+            let id = storage.with_storage(|| ctx.copy_retained_text(id, operation))?;
             let mut fields = BTreeMap::new();
             for (field, exactness) in note.fields() {
-                admit_annotation_record::<FieldName, Exactness>(ctx, operation)?;
-                let field = FieldName(ctx.copy_retained_text(field.as_str(), operation)?);
-                fields.insert(field, *exactness);
+                admit_identity_work(ctx, fields.len(), field.as_str().len(), operation)?;
+                let field = FieldName(storage.with_storage(|| ctx.copy_retained_text(field.as_str(), operation))?);
+                ctx.insert_scoped_btree_map_if_vacant(
+                    &mut storage, &mut fields, field, *exactness, operation, operation,
+                )?;
             }
             let note = match note {
                 ExactnessNote::Entity { entity, .. } => ExactnessNote::Entity {
@@ -819,9 +861,11 @@ impl Annotations {
                     fields: NonEmptyMap(fields),
                 },
             };
-            annotations.exactness.insert(id, note);
+            ctx.insert_scoped_btree_map_if_vacant(
+                &mut storage, &mut annotations.exactness, id, note, operation, operation,
+            )?;
         }
-        Ok(annotations)
+        Ok(AnnotationTransaction { annotations, storage })
     }
 
     /// Remap both tables together. A collision leaves both tables unchanged.
@@ -980,6 +1024,7 @@ impl ProvenanceNote<'_> {
 
 #[cfg(test)]
 mod tests {
+    use cadmpeg_core::CodecError;
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 
     #[test]
@@ -1196,6 +1241,63 @@ mod tests {
             run(u64::MAX, u64::MAX).expect("service copy").build(),
             builder.clone().build()
         );
+    }
+
+    #[test]
+    fn annotation_transaction_copy_uses_scoped_storage_until_commit() {
+        let mut builder = super::AnnotationBuilder::new();
+        let stream = super::StreamHandle::new(crate::stream_name!("test"));
+        builder.note("test:point#0", &stream, 7).tag("point");
+        builder.derived("test:point#0", "position").unwrap();
+        let original = builder.build();
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let first = original.copy_transaction(&ctx, "annotation transaction copy").unwrap();
+        assert_eq!(first.annotations(), &original);
+        drop(first);
+        let second = original.copy_transaction(&ctx, "annotation transaction copy").unwrap();
+        let error = second.into_retained().unwrap_err();
+        assert!(matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes && limit.operation == "annotation transaction copy"));
+    }
+
+    #[test]
+    fn annotation_transaction_refuses_copy_dimensions_and_releases_on_abort() {
+        use cadmpeg_core::decode::ResourceDimension;
+        let mut builder = super::AnnotationBuilder::new();
+        let stream = super::StreamHandle::new(crate::stream_name!("test"));
+        builder.note("test:point#0", &stream, 7).tag("point");
+        builder.derived("test:point#0", "position").unwrap();
+        let original = builder.build();
+        for dimension in [ResourceDimension::MaterializedBytes, ResourceDimension::CollectionItems, ResourceDimension::WorkUnits] {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            match dimension {
+                ResourceDimension::MaterializedBytes => policy.limits.max_materialized_bytes = 0,
+                ResourceDimension::CollectionItems => policy.limits.max_collection_items = 0,
+                ResourceDimension::WorkUnits => policy.limits.max_work_units = 0,
+                _ => panic!("annotation copy dimensions"),
+            }
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            let error = original.copy_transaction(&ctx, "annotation transaction copy").unwrap_err();
+            assert!(matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == dimension && limit.operation == "annotation transaction copy"));
+        }
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = 0;
+        policy.limits.max_materialized_bytes = 4096;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let transaction = original.copy_transaction(&ctx, "annotation transaction copy").unwrap();
+        let aborted: Result<((), _), CodecError> = transaction.update(|annotations| {
+            assert_eq!(annotations, &original);
+            Err(CodecError::malformed("reject candidate"))
+        });
+        assert!(matches!(aborted, Err(CodecError::Malformed(_))));
+        drop(aborted);
+        let storage = ctx.reserve_scoped(4096, "all temporary storage released").unwrap();
+        drop(storage);
+        ctx.finish_session().unwrap();
     }
 
     mod identity_merges;
