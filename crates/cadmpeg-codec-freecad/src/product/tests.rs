@@ -87,7 +87,7 @@ fn product_native_identity_refuses_at_retained_limit() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
     policy.limits.max_retained_bytes =
-        cadmpeg_core::decode::u64_from_index(native::native_id("product", &object.name).len()) - 1;
+        cadmpeg_core::decode::u64_from_index(4 * std::mem::size_of::<native::ProductNodeRecord>() + native::native_id("product", &object.name).len()) - 1;
     let (ctx, _) =
         DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is within policy");
     assert!(
@@ -115,7 +115,7 @@ fn product_definition_identity_refuses_at_retained_limit() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
     policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(
-        native::model_id("product_definition", &record.object, "definition").len(),
+        std::mem::size_of::<cadmpeg_ir::products::ProductDefinition>() + native::model_id("product_definition", &record.object, "definition").len(),
     ) - 1;
     let (ctx, _) =
         DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is within policy");
@@ -134,7 +134,7 @@ fn product_container_identity_refuses_at_retained_limit() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
     policy.limits.max_retained_bytes =
-        cadmpeg_core::decode::u64_from_index(definition_len + record.object.len() + container_len)
+        cadmpeg_core::decode::u64_from_index(std::mem::size_of::<cadmpeg_ir::products::ProductDefinition>() + 4 * std::mem::size_of::<cadmpeg_ir::products::Occurrence>() + definition_len + record.object.len() + container_len)
             - 1;
     let (ctx, _) =
         DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is within policy");
@@ -201,8 +201,15 @@ fn product_body_prefix_refuses_at_retained_limit() {
     };
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
-    policy.limits.max_retained_bytes =
-        cadmpeg_core::decode::u64_from_index(native::model_id("body", &payload.id, "").len()) - 1;
+    policy.limits.max_materialized_bytes = cadmpeg_core::decode::u64_from_index(
+        // Owner lookup (four buckets), its property vector, the property-owner lookup,
+        // and four body-owner slots are live before the scoped body prefix.
+        4 * std::mem::size_of::<(&str, Vec<&native::PropertyRecord>)>() + 35
+        + 4 * std::mem::size_of::<&native::PropertyRecord>()
+        + 4 * std::mem::size_of::<(&str, &str)>() + 35
+        + 4 * std::mem::size_of::<(String, &str)>()
+        + native::model_id("body", &payload.id, "").len(),
+    ) - 1;
     let (ctx, _) =
         DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is within policy");
     assert!(
