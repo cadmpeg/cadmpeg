@@ -19,7 +19,7 @@ fuzz_target!(|data: &[u8]| {
     let split_point = payload
         .iter()
         .position(|byte| *byte == 0)
-        .unwrap_or_else(|| (data[0] as usize) % payload.len());
+        .unwrap_or_else(|| usize::from(data[0]) % payload.len());
     let (left_bytes, right_with_separator) = payload.split_at(split_point);
     let right_bytes = right_with_separator
         .strip_prefix(&[0])

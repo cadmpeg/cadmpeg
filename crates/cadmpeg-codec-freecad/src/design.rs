@@ -4220,8 +4220,7 @@ fn endpoint_candidates(
                 && !explicit_relations.contains_key(&candidate.locus)
                 && endpoints_match_by_roundoff(point, candidate.point)
             {
-                ctx.charge_collection_items(1, "FCStd profile candidates")?;
-                matches.push(candidate.locus);
+                ctx.push_vec(&mut matches, candidate.locus, "FCStd profile candidates")?;
             }
         }
     }

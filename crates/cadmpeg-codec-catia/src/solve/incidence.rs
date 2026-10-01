@@ -282,12 +282,11 @@ fn prune_incidence_choices_with_explicit_support(
     for (edge, points) in edge_supports.iter().enumerate() {
         for face in unique_faces(edge_faces[edge]) {
             for &point in points {
-                if !supports[face].contains_key(&point) {
-                    ctx.charge_collection_items(
-                        u64_from_index(1),
-                        "catia incidence point support counts",
-                    )?;
-                }
+                ctx.admit_btree_entry(
+                    &supports[face],
+                    &point,
+                    "catia incidence point support counts",
+                )?;
                 let count = supports[face].entry(point).or_default();
                 let Some(next) = count.checked_add(1) else {
                     return Ok(None);
@@ -341,12 +340,11 @@ fn prune_incidence_choices_with_explicit_support(
             };
             for face in unique_faces(edge_faces[edge]) {
                 for point in pair {
-                    if !degrees[face].contains_key(point) {
-                        ctx.charge_collection_items(
-                            u64_from_index(1),
-                            "catia incidence endpoint degrees",
-                        )?;
-                    }
+                    ctx.admit_btree_entry(
+                        &degrees[face],
+                        point,
+                        "catia incidence endpoint degrees",
+                    )?;
                     let degree = degrees[face].entry(*point).or_default();
                     let Some(next) = degree.checked_add(1) else {
                         return Ok(None);
@@ -4004,19 +4002,15 @@ pub(super) fn deferred_boundary_assignment(
         .ok_or_else(|| {
             ctx.refuse_codec_limit("catia deferred compatibility cells", u64::MAX, u64::MAX)
         })?;
-    ctx.charge_collection_items(
-        u64_from_index(domain.cycles.len()),
+    let mut compatible = Vec::new();
+    ctx.reserve_vec(
+        &mut compatible,
+        domain.cycles.len(),
         "catia deferred compatibility rows",
     )?;
     ctx.charge_collection_items(
         u64_from_index(compatibility_count),
         "catia deferred compatibility cells",
-    )?;
-    let mut compatible = Vec::new();
-    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
-        &mut compatible,
-        domain.cycles.len(),
-        "catia deferred compatibility rows",
     )?;
     for mesh in &domain.cycles {
         let mut row = Vec::new();
@@ -4032,19 +4026,15 @@ pub(super) fn deferred_boundary_assignment(
         }
         compatible.push(row);
     }
-    ctx.charge_collection_items(
-        u64_from_index(domain.cycles.len()),
+    let mut boolean_compatible = Vec::new();
+    ctx.reserve_vec(
+        &mut boolean_compatible,
+        domain.cycles.len(),
         "catia deferred matching rows",
     )?;
     ctx.charge_collection_items(
         u64_from_index(compatibility_count),
         "catia deferred matching cells",
-    )?;
-    let mut boolean_compatible = Vec::new();
-    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
-        &mut boolean_compatible,
-        compatible.len(),
-        "catia deferred matching rows",
     )?;
     for cycles in &compatible {
         let mut row = Vec::new();
@@ -4144,19 +4134,15 @@ fn deferred_boundary_closes(
                 u64::MAX,
             )
         })?;
-    ctx.charge_collection_items(
-        u64_from_index(domain.cycles.len()),
+    let mut compatible = Vec::new();
+    ctx.reserve_vec(
+        &mut compatible,
+        domain.cycles.len(),
         "catia deferred close compatibility rows",
     )?;
     ctx.charge_collection_items(
         u64_from_index(cells),
         "catia deferred close compatibility cells",
-    )?;
-    let mut compatible = Vec::new();
-    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
-        &mut compatible,
-        domain.cycles.len(),
-        "catia deferred close compatibility rows",
     )?;
     for mesh in &domain.cycles {
         let mut row = Vec::new();

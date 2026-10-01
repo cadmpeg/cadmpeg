@@ -63,9 +63,17 @@ fn value_width(version: u64) -> usize {
 fn long_chunk(version: u64, typecode: u32, body: &[u8]) -> Vec<u8> {
     let mut bytes = typecode.to_le_bytes().to_vec();
     if value_width(version) == 8 {
-        bytes.extend((body.len() as i64).to_le_bytes());
+        bytes.extend(
+            i64::try_from(body.len())
+                .expect("chunk body length fits a 64-bit chunk value")
+                .to_le_bytes(),
+        );
     } else {
-        bytes.extend((body.len() as i32).to_le_bytes());
+        bytes.extend(
+            i32::try_from(body.len())
+                .expect("chunk body length fits a 32-bit chunk value")
+                .to_le_bytes(),
+        );
     }
     bytes.extend(body);
     bytes
@@ -76,7 +84,11 @@ fn short_chunk(version: u64, typecode: u32, value: i64) -> Vec<u8> {
     if value_width(version) == 8 {
         bytes.extend(value.to_le_bytes());
     } else {
-        bytes.extend((value as i32).to_le_bytes());
+        bytes.extend(
+            i32::try_from(value)
+                .expect("short chunk value fits a 32-bit chunk value")
+                .to_le_bytes(),
+        );
     }
     bytes
 }
@@ -95,9 +107,14 @@ fn minimal_document(version: u64) -> Vec<u8> {
     let eof_len = 4 + value_width(version) + eof_body_width;
     let final_size = eof_offset + eof_len;
     let body = if eof_body_width == 8 {
-        (final_size as u64).to_le_bytes().to_vec()
+        cadmpeg_core::decode::u64_from_index(final_size)
+            .to_le_bytes()
+            .to_vec()
     } else {
-        (final_size as u32).to_le_bytes().to_vec()
+        u32::try_from(final_size)
+            .expect("seed size fits a 32-bit chunk value")
+            .to_le_bytes()
+            .to_vec()
     };
     bytes.extend(long_chunk(version, 0x7fff, &body));
     bytes
@@ -289,8 +306,15 @@ fn mesh_buffer(raw: &[u8], method: u8) -> io::Result<Vec<u8>> {
         encoder.write_all(raw)?;
         encoder.finish()?
     };
-    let mut bytes = (raw.len() as u16).to_le_bytes().to_vec();
-    bytes.extend((raw.len() as u32).to_le_bytes());
+    let mut bytes = u16::try_from(raw.len())
+        .map_err(io::Error::other)?
+        .to_le_bytes()
+        .to_vec();
+    bytes.extend(
+        u32::try_from(raw.len())
+            .map_err(io::Error::other)?
+            .to_le_bytes(),
+    );
     bytes.extend(crc32fast::hash(raw).to_le_bytes());
     bytes.push(method);
     bytes.extend(body);

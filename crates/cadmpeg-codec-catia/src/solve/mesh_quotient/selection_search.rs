@@ -629,8 +629,10 @@ impl MeshSelectionSearch<'_, '_> {
             let [assignment] = self.assignments[face].as_slice() else {
                 continue;
             };
-            self.ctx.charge_collection_items(
-                u64_from_index(assignment.boundaries.len()),
+            let mut directions = Vec::new();
+            self.ctx.reserve_vec(
+                &mut directions,
+                assignment.boundaries.len(),
                 "catia_selection_completion_boundaries",
             )?;
             for boundary in &assignment.boundaries {
@@ -639,12 +641,6 @@ impl MeshSelectionSearch<'_, '_> {
                     "catia_selection_completion_directions",
                 )?;
             }
-            let mut directions = Vec::new();
-            cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
-                &mut directions,
-                assignment.boundaries.len(),
-                "catia_selection_completion_boundaries",
-            )?;
             let mut complete = true;
             for boundary in &assignment.boundaries {
                 if boundary.iter().any(|use_| use_.reversed.is_none()) {

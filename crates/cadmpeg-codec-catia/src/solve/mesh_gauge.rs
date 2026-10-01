@@ -278,9 +278,8 @@ fn intern_gauge_signatures<T: Ord>(
         let id = if let Some(id) = ids.get(&signature) {
             *id
         } else {
-            ctx.charge_collection_items(1, "catia_gauge_signature_keys")?;
             let id = ids.len();
-            ids.insert(signature, id);
+            ctx.insert_btree_map(&mut ids, signature, id, "catia_gauge_signature_keys")?;
             id
         };
         ctx.push_vec(&mut colors, id, "catia_gauge_signature_colors")?;
@@ -318,12 +317,11 @@ pub(super) fn build_mesh_coordinate_gauge(
             return identity();
         };
         ctx.push_vec(&mut edge_bases, key, "catia_gauge_edge_bases")?;
-        if !groups.contains_key(&key) {
-            ctx.charge_collection_items(1, "catia_gauge_edge_groups")?;
-        }
-        ctx.push_vec(
-            groups.entry(key).or_default(),
+        ctx.push_btree_group(
+            &mut groups,
+            key,
             edge,
+            "catia_gauge_edge_groups",
             "catia_gauge_group_edges",
         )?;
     }
@@ -364,12 +362,11 @@ pub(super) fn build_mesh_coordinate_gauge(
         for point in 0..point_count {
             if active.get(point).copied().unwrap_or(false) {
                 let root = coordinate_find(ctx, &mut parent, point)?;
-                if !components.contains_key(&root) {
-                    ctx.charge_collection_items(1, "catia_gauge_component_keys")?;
-                }
-                ctx.push_vec(
-                    components.entry(root).or_default(),
+                ctx.push_btree_group(
+                    &mut components,
+                    root,
                     point,
+                    "catia_gauge_component_keys",
                     "catia_gauge_component_points",
                 )?;
             }
@@ -570,12 +567,11 @@ pub(super) fn build_mesh_coordinate_gauge(
         let mut color_classes = BTreeMap::<usize, Vec<usize>>::new();
         for &point in &points {
             let color = point_colors[point];
-            if !color_classes.contains_key(&color) {
-                ctx.charge_collection_items(1, "catia_gauge_color_classes")?;
-            }
-            ctx.push_vec(
-                color_classes.entry(color).or_default(),
+            ctx.push_btree_group(
+                &mut color_classes,
+                color,
                 point,
+                "catia_gauge_color_classes",
                 "catia_gauge_color_points",
             )?;
         }
@@ -726,21 +722,19 @@ fn canonicalize_partial_endpoint_pair_gauge_with_permutation(
             None => ctx.copy_retained_slice(&source_options, "catia_gauge_target_options")?,
         };
         let source_key = (base, target_options);
-        if !source_groups.contains_key(&source_key) {
-            ctx.charge_collection_items(1, "catia_gauge_source_group_keys")?;
-        }
-        ctx.push_vec(
-            source_groups.entry(source_key).or_default(),
+        ctx.push_btree_group(
+            &mut source_groups,
+            source_key,
             edge,
+            "catia_gauge_source_group_keys",
             "catia_gauge_source_group_edges",
         )?;
         let target_key = (base, source_options);
-        if !target_groups.contains_key(&target_key) {
-            ctx.charge_collection_items(1, "catia_gauge_target_group_keys")?;
-        }
-        ctx.push_vec(
-            target_groups.entry(target_key).or_default(),
+        ctx.push_btree_group(
+            &mut target_groups,
+            target_key,
             edge,
+            "catia_gauge_target_group_keys",
             "catia_gauge_target_group_edges",
         )?;
     }
@@ -974,14 +968,11 @@ fn canonicalize_mesh_edge_row_gauges(
                     Err(error) => return Some(Err(error)),
                 };
             let source_key = (base_copy, target_options);
-            if !source_groups.contains_key(&source_key) {
-                if let Err(error) = ctx.charge_collection_items(1, "catia_mesh_gauge_source_keys") {
-                    return Some(Err(error));
-                }
-            }
-            if let Err(error) = ctx.push_vec(
-                source_groups.entry(source_key).or_default(),
+            if let Err(error) = ctx.push_btree_group(
+                &mut source_groups,
+                source_key,
                 edge,
+                "catia_mesh_gauge_source_keys",
                 "catia_mesh_gauge_source_edges",
             ) {
                 return Some(Err(error));
@@ -993,14 +984,11 @@ fn canonicalize_mesh_edge_row_gauges(
                 Err(error) => return Some(Err(error)),
             };
             let target_key = (base, source_options);
-            if !target_groups.contains_key(&target_key) {
-                if let Err(error) = ctx.charge_collection_items(1, "catia_mesh_gauge_target_keys") {
-                    return Some(Err(error));
-                }
-            }
-            if let Err(error) = ctx.push_vec(
-                target_groups.entry(target_key).or_default(),
+            if let Err(error) = ctx.push_btree_group(
+                &mut target_groups,
+                target_key,
                 edge,
+                "catia_mesh_gauge_target_keys",
                 "catia_mesh_gauge_target_edges",
             ) {
                 return Some(Err(error));
@@ -2065,21 +2053,19 @@ fn relation_row_gauge_mapping(
             return Ok(None);
         };
         let source_key = (base, target_options);
-        if !source_groups.contains_key(&source_key) {
-            ctx.charge_collection_items(1, "catia_relation_source_keys")?;
-        }
-        ctx.push_vec(
-            source_groups.entry(source_key).or_default(),
+        ctx.push_btree_group(
+            &mut source_groups,
+            source_key,
             edge,
+            "catia_relation_source_keys",
             "catia_relation_source_edges",
         )?;
         let target_key = (base, source_options);
-        if !target_groups.contains_key(&target_key) {
-            ctx.charge_collection_items(1, "catia_relation_target_keys")?;
-        }
-        ctx.push_vec(
-            target_groups.entry(target_key).or_default(),
+        ctx.push_btree_group(
+            &mut target_groups,
+            target_key,
             edge,
+            "catia_relation_target_keys",
             "catia_relation_target_edges",
         )?;
     }

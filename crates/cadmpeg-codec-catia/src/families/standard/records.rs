@@ -250,13 +250,12 @@ fn standard_surface_record_table(
     let mut records = BTreeMap::<usize, StandardSurfaceRecord>::new();
     for prefix in surface_prefixes(ctx, brep)? {
         if face_sense(brep, &prefix).is_some() {
-            if !records.contains_key(&(prefix.pos - analytic_plane::MARKER)) {
-                ctx.charge_collection_items(1, "catia_surface_record_tree")?;
-            }
-            records.insert(
+            ctx.insert_btree_map(
+                &mut records,
                 prefix.pos - analytic_plane::MARKER,
                 StandardSurfaceRecord::Analytic(prefix),
-            );
+                "catia_surface_record_tree",
+            )?;
         }
     }
     let mut analytic_ranges = Vec::new();
@@ -303,10 +302,8 @@ fn standard_surface_record_table(
         if tag == 0 {
             continue;
         }
-        if !records.contains_key(&pos) {
-            ctx.charge_collection_items(1, "catia_surface_record_tree")?;
-        }
-        records.insert(
+        ctx.insert_btree_map(
+            &mut records,
             pos,
             StandardSurfaceRecord::Freeform {
                 pos,
@@ -314,7 +311,8 @@ fn standard_surface_record_table(
                 bounds,
                 forward,
             },
-        );
+            "catia_surface_record_tree",
+        )?;
     }
 
     let mut ordered_records = Vec::new();

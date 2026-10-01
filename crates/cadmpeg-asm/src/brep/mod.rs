@@ -433,10 +433,7 @@ pub fn remap_owned_ids(
             for (mut key, mut item) in entries {
                 remap_owned_ids(ctx, &mut key, replacements)?;
                 remap_owned_ids(ctx, &mut item, replacements)?;
-                if !fields.contains_key(&key) {
-                    ctx.charge_collection_items(1, "ASM remapped fields")?;
-                }
-                fields.insert(key, item);
+                ctx.insert_btree_map(fields, key, item, "ASM remapped fields")?;
             }
         }
         Value::Option(Some(value)) | Value::Newtype(value) => {

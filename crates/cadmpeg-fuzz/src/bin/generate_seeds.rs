@@ -280,7 +280,7 @@ fn frame_records(bytes: &[u8], start: usize, limit: usize) -> Vec<(usize, usize)
     while pos < limit {
         let rec_start = pos;
         if bytes.get(pos) == Some(&0x0d) || bytes.get(pos) == Some(&0x0e) {
-            let len = bytes.get(pos + 1).copied().unwrap_or(0) as usize;
+            let len = usize::from(bytes.get(pos + 1).copied().unwrap_or(0));
             pos += 2 + len;
         }
         while pos < limit {
@@ -295,16 +295,16 @@ fn frame_records(bytes: &[u8], start: usize, limit: usize) -> Vec<(usize, usize)
                 Some(0x13) => pos += 25,
                 Some(0x14) => pos += 25,
                 Some(0x07) => {
-                    let len = bytes.get(pos + 1).copied().unwrap_or(0) as usize;
+                    let len = usize::from(bytes.get(pos + 1).copied().unwrap_or(0));
                     pos += 2 + len;
                 }
                 Some(0x0b) | Some(0x0a) => pos += 1,
                 Some(0x0d) => {
-                    let len = bytes.get(pos + 1).copied().unwrap_or(0) as usize;
+                    let len = usize::from(bytes.get(pos + 1).copied().unwrap_or(0));
                     pos += 2 + len;
                 }
                 Some(0x0e) => {
-                    let len = bytes.get(pos + 1).copied().unwrap_or(0) as usize;
+                    let len = usize::from(bytes.get(pos + 1).copied().unwrap_or(0));
                     pos += 2 + len;
                 }
                 _ => pos += 1,

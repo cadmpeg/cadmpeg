@@ -372,9 +372,11 @@ fn project_face_bindings(
 ) -> Result<(), CodecError> {
     let mut key_counts = std::collections::HashMap::new();
     for key in face_keys.values() {
-        if !key_counts.contains_key(key) {
-            ctx.charge_collection_items(1, "count Inventor presentation face keys")?;
-        }
+        ctx.admit_hash_map_entry(
+            &mut key_counts,
+            key,
+            "count Inventor presentation face keys",
+        )?;
         *key_counts.entry(*key).or_insert(0_usize) += 1;
     }
     let mut appearance_ids = std::collections::HashMap::<(&str, u32), AppearanceId>::new();

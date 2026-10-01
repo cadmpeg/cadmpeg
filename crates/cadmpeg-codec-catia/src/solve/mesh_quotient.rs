@@ -5993,13 +5993,10 @@ pub(super) fn mesh_assignment_endpoint_cycle_support_by<'a>(
                         return Some(Err(error));
                     }
                     for point in pair {
-                        if !points.contains(&point) {
-                            if let Err(error) =
-                                ctx.charge_collection_items(1, "catia_endpoint_layer_points")
-                            {
-                                return Some(Err(error));
-                            }
-                            points.insert(point);
+                        if let Err(error) =
+                            ctx.insert_btree_set(&mut points, point, "catia_endpoint_layer_points")
+                        {
+                            return Some(Err(error));
                         }
                     }
                     for (rank, (start, end)) in [(pair[0], pair[1]), (pair[1], pair[0])]

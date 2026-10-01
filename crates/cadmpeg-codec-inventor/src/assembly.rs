@@ -89,8 +89,12 @@ pub(crate) fn count_unresolved<C: Ord>(
         })?;
         return Ok(());
     }
-    ctx.charge_collection_items(1, "count unresolved Inventor projection cause")?;
-    counts.insert(cause, NonZeroUsize::MIN);
+    ctx.insert_btree_map(
+        counts,
+        cause,
+        NonZeroUsize::MIN,
+        "count unresolved Inventor projection cause",
+    )?;
     Ok(())
 }
 
@@ -181,8 +185,11 @@ pub(crate) fn project_occurrences(
             )?;
             continue;
         }
-        ctx.charge_collection_items(1, "track Inventor emitted occurrence id")?;
-        emitted_ids.insert(source.occurrence_id);
+        ctx.insert_hash_set(
+            &mut emitted_ids,
+            source.occurrence_id,
+            "track Inventor emitted occurrence id",
+        )?;
 
         let suppressed = reference.state[0] & SUPPRESSED_REFERENCE_STATE != 0;
         let (transform, visible) = match placements.get(&source.occurrence_id) {
