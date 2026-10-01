@@ -12,8 +12,7 @@ use std::io::Cursor;
 #[test]
 fn spreadsheet_cells_refuse_at_caller_limit() {
     let object = crate::native::ObjectRecord {
-        id: "fcstd:native:object#Sheet".into(),
-        name: "Sheet".into(),
+        identity: crate::native::object_identity::ObjectIdentity::try_new("fcstd:native:object#Sheet".into(), "Sheet".into()).expect("object identity"),
         type_name: "Spreadsheet::Sheet".into(),
         persistent_id: None,
         view_type: None,
@@ -25,7 +24,7 @@ fn spreadsheet_cells_refuse_at_caller_limit() {
     };
     let property = crate::native::PropertyRecord {
         id: "property".into(),
-        owner: object.id.clone(),
+        owner: object.id().clone(),
         name: "cells".into(),
         type_name: "Spreadsheet::PropertySheet".into(),
         family: crate::native::PropertyFamily::Unknown,
@@ -875,8 +874,8 @@ fn retains_native_dependency_cycles_without_neutral_cycle_edges() {
         .expect("namespace")
         .arena_as::<crate::native::ObjectRecord>("objects")
         .expect("objects");
-    assert_eq!(objects[0].dependencies.as_slice(), [objects[1].id.clone()]);
-    assert_eq!(objects[1].dependencies.as_slice(), [objects[0].id.clone()]);
+    assert_eq!(objects[0].dependencies.as_slice(), [objects[1].id().clone()]);
+    assert_eq!(objects[1].dependencies.as_slice(), [objects[0].id().clone()]);
     assert_valid_document(result.ir());
     assert!(crate::test_support::validate_native(result.ir()).is_empty());
 }

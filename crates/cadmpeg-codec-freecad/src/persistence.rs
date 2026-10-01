@@ -268,10 +268,10 @@ fn parse_document(
     {
         let name = retained_attr(ctx, node, "name", "FCStd object name")?;
         for prior in &objects {
-            ctx.charge_work(cadmpeg_core::decode::u64_from_index(prior.name.len()), "FCStd duplicate object names")?;
+            ctx.charge_work(cadmpeg_core::decode::u64_from_index(prior.name().len()), "FCStd duplicate object names")?;
             ctx.charge_work(cadmpeg_core::decode::u64_from_index(name.len()), "FCStd duplicate object names")?;
             ctx.charge_work(1, "FCStd duplicate object names")?;
-            if prior.name == name {
+            if prior.name().as_str() == name {
                 return Err(crate::resource::malformed_charged(
                     ctx,
                     format_args!("duplicate object declaration name {name}"),
@@ -280,8 +280,8 @@ fn parse_document(
             }
         }
         let type_name = retained_attr(ctx, node, "type", "FCStd object type")?;
-        let id = crate::native::native_id_charged(ctx, "object", &name)?;
-        let data_node = data_by_name.get(&name);
+        let identity = crate::native::object_identity::ObjectIdentity::from_name(ctx, name)?;
+        let data_node = data_by_name.get(identity.name());
         let attributes = node
             .attributes()
             .filter(|attribute| !matches!(attribute.name(), "name" | "type" | "id" | "ViewType"))
@@ -296,7 +296,7 @@ fn parse_document(
                 ))
             })
             .collect::<Result<_, CodecError>>()?;
-        let dependency = dependency_map.remove(&name);
+        let dependency = dependency_map.remove(identity.name());
         if dependencies_enabled
             && dependency
                 .as_ref()
@@ -304,7 +304,7 @@ fn parse_document(
         {
             return Err(crate::resource::malformed_charged(
                 ctx,
-                format_args!("ObjectDeps order does not match object {name}"),
+                format_args!("ObjectDeps order does not match object {}", identity.name()),
                 "FCStd persistence diagnostic",
             ));
         }
@@ -313,8 +313,7 @@ fn parse_document(
             None => (Vec::new(), None),
         };
         objects.push(ObjectRecord {
-            id,
-            name,
+            identity,
             type_name,
             persistent_id: node.attribute("id").and_then(|value| value.parse().ok()),
             view_type: node
@@ -351,13 +350,14 @@ fn parse_document(
         ));
     }
     for object in &mut objects {
+        let object_name = object.identity.name();
         for dependency in &mut object.dependencies {
             if !data_by_name.contains_key(dependency) {
                 return Err(crate::resource::malformed_charged(
                     ctx,
                     format_args!(
                         "object {} depends on missing object {dependency}",
-                        object.name
+                        object_name
                     ),
                     "FCStd persistence diagnostic",
                 ));
@@ -402,10 +402,10 @@ fn parse_document(
         }
     }
     for object in &objects {
-        let data = data_by_name.get(&object.name).ok_or_else(|| {
+        let data = data_by_name.get(object.name()).ok_or_else(|| {
             crate::resource::malformed_charged(
                 ctx,
-                format_args!("missing ObjectData for {}", object.name),
+                format_args!("missing ObjectData for {}", object.name()),
                 "FCStd persistence diagnostic",
             )
         })?;
@@ -430,7 +430,7 @@ fn parse_document(
                 ctx,
                 format_args!(
                     "object {} has multiple direct Extensions containers",
-                    object.id
+                    object.id()
                 ),
                 "FCStd persistence diagnostic",
             ));
@@ -445,7 +445,7 @@ fn parse_document(
                 ctx,
                 format_args!(
                     "object {} has multiple direct Properties containers",
-                    object.id
+                    object.id()
                 ),
                 "FCStd persistence diagnostic",
             ));
@@ -454,7 +454,7 @@ fn parse_document(
             if extensions.range().start > properties.range().start {
                 return Err(crate::resource::malformed_charged(
                     ctx,
-                    format_args!("object {} writes Properties before Extensions", object.id),
+                    format_args!("object {} writes Properties before Extensions", object.id()),
                     "FCStd persistence diagnostic",
                 ));
             }
@@ -489,7 +489,7 @@ fn parse_document(
                     format_args!(
                         "Extensions Count={declared} but {} records were found for {}",
                         extension_nodes.len(),
-                        object.id
+                        object.id()
                     ),
                     "FCStd persistence diagnostic",
                 ));
@@ -502,7 +502,7 @@ fn parse_document(
                 if extension_names.contains(&name) {
                     return Err(crate::resource::malformed_charged(
                         ctx,
-                        format_args!("duplicate extension name {name} for {}", object.id),
+                        format_args!("duplicate extension name {name} for {}", object.id()),
                         "FCStd persistence diagnostic",
                     ));
                 }
@@ -511,14 +511,14 @@ fn parse_document(
                 if extension_types.contains(&type_name) {
                     return Err(crate::resource::malformed_charged(
                         ctx,
-                        format_args!("duplicate extension type {type_name} for {}", object.id),
+                        format_args!("duplicate extension type {type_name} for {}", object.id()),
                         "FCStd persistence diagnostic",
                     ));
                 }
                 ctx.reserve_set(&mut extension_types, 1, "FCStd extension type set")?;
                 extension_types
                     .insert(ctx.copy_retained_text(&type_name, "FCStd extension type copy")?);
-                let id = extension_id(ctx, &object.id, &name, order)?;
+                let id = extension_id(ctx, object.id(), &name, order)?;
                 ctx.reserve_map(
                     &mut extension_ids_by_start,
                     1,
@@ -539,7 +539,7 @@ fn parse_document(
                 )?;
                 extensions.push(ExtensionRecord {
                     id,
-                    owner: ctx.copy_retained_text(&object.id, "FCStd extension owner")?,
+                    owner: ctx.copy_retained_text(object.id(), "FCStd extension owner")?,
                     name,
                     type_name,
                     order,
@@ -550,7 +550,7 @@ fn parse_document(
             }
         }
         if let Some(container) = property_container {
-            parse_properties(text, container, &object.id, &mut properties, ctx)?;
+            parse_properties(text, container, object.id(), &mut properties, ctx)?;
         }
         if let Some(extensions_node) = extension_container {
             for extension in extensions_node
@@ -562,7 +562,7 @@ fn parse_document(
                     .ok_or_else(|| {
                         crate::resource::malformed_charged(
                             ctx,
-                            format_args!("extension under {} has no native identity", object.id),
+                            format_args!("extension under {} has no native identity", object.id()),
                             "FCStd persistence diagnostic",
                         )
                     })?;

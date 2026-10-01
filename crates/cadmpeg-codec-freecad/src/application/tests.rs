@@ -10,8 +10,7 @@ use std::io::Cursor;
 #[test]
 fn application_records_refuse_on_collection_limit() {
     let objects = [crate::native::ObjectRecord {
-        id: "fcstd:native:object#Owner".into(),
-        name: "Owner".into(),
+        identity: crate::native::object_identity::ObjectIdentity::try_new("fcstd:native:object#Owner".into(), "Owner".into()).expect("object identity"),
         type_name: "Vendor::Feature".into(),
         persistent_id: None,
         view_type: None,
@@ -34,8 +33,7 @@ fn application_records_refuse_on_collection_limit() {
 #[test]
 fn application_identity_refuses_at_retained_limit() {
     let object = crate::native::ObjectRecord {
-        id: "fcstd:native:object#Owner".into(),
-        name: "Owner".into(),
+        identity: crate::native::object_identity::ObjectIdentity::try_new("fcstd:native:object#Owner".into(), "Owner".into()).expect("object identity"),
         type_name: "Vendor::Feature".into(),
         persistent_id: None,
         view_type: None,
@@ -53,8 +51,7 @@ fn application_identity_refuses_at_retained_limit() {
 #[test]
 fn application_property_identity_refuses_at_retained_limit() {
     let object = crate::native::ObjectRecord {
-        id: "fcstd:native:object#Owner".into(),
-        name: "Owner".into(),
+        identity: crate::native::object_identity::ObjectIdentity::try_new("fcstd:native:object#Owner".into(), "Owner".into()).expect("object identity"),
         type_name: "Vendor::Feature".into(),
         persistent_id: None,
         view_type: None,
@@ -66,7 +63,7 @@ fn application_property_identity_refuses_at_retained_limit() {
     };
     let property = crate::native::PropertyRecord {
         id: "fcstd:native:property#Owner:Value".into(),
-        owner: object.id.clone(),
+        owner: object.id().clone(),
         name: "Value".into(),
         type_name: "App::PropertyString".into(),
         family: crate::native::PropertyFamily::Unknown,
@@ -200,8 +197,7 @@ fn censuses_application_domains_and_keeps_python_payloads_inert() {
 #[test]
 fn absent_object_data_keeps_the_legacy_empty_wire_without_a_domain_sentinel() {
     let objects = [crate::native::ObjectRecord {
-        id: "fcstd:native:object#Absent".into(),
-        name: "Absent".into(),
+        identity: crate::native::object_identity::ObjectIdentity::try_new("fcstd:native:object#Absent".into(), "Absent".into()).expect("object identity"),
         type_name: "Vendor::Feature".into(),
         persistent_id: None,
         view_type: None,
@@ -427,8 +423,7 @@ fn producer_specific_side_entries_remain_whole_until_their_grammar_is_registered
 #[test]
 fn application_hashes_refuse_work_before_digest_allocation() {
     let object = crate::native::ObjectRecord {
-        id: "fcstd:native:object#Owner".into(),
-        name: "Owner".into(),
+        identity: crate::native::object_identity::ObjectIdentity::try_new("fcstd:native:object#Owner".into(), "Owner".into()).expect("object identity"),
         type_name: "Vendor::Feature".into(),
         persistent_id: None,
         view_type: None,
@@ -451,8 +446,7 @@ fn application_hashes_refuse_work_before_digest_allocation() {
 #[test]
 fn application_property_hash_refuses_work_and_digest_storage() {
     let object = crate::native::ObjectRecord {
-        id: "fcstd:native:object#Owner".into(),
-        name: "Owner".into(),
+        identity: crate::native::object_identity::ObjectIdentity::try_new("fcstd:native:object#Owner".into(), "Owner".into()).expect("object identity"),
         type_name: "Vendor::Feature".into(),
         persistent_id: None,
         view_type: None,
@@ -464,7 +458,7 @@ fn application_property_hash_refuses_work_and_digest_storage() {
     };
     let property = crate::native::PropertyRecord {
         id: "fcstd:native:property#Owner:Value".into(),
-        owner: object.id.clone(),
+        owner: object.id().clone(),
         name: "Value".into(),
         type_name: "App::PropertyString".into(),
         family: crate::native::PropertyFamily::Unknown,
@@ -506,8 +500,7 @@ fn application_property_hash_refuses_work_and_digest_storage() {
 #[test]
 fn application_repeated_payloads_borrow_the_cached_digest() {
     let object = crate::native::ObjectRecord {
-        id: "fcstd:native:object#Owner".into(),
-        name: "Owner".into(),
+        identity: crate::native::object_identity::ObjectIdentity::try_new("fcstd:native:object#Owner".into(), "Owner".into()).expect("object identity"),
         type_name: "Vendor::Feature".into(),
         persistent_id: None,
         view_type: None,
@@ -519,7 +512,7 @@ fn application_repeated_payloads_borrow_the_cached_digest() {
     };
     let properties = ["First", "Second"].map(|name| crate::native::PropertyRecord {
         id: format!("fcstd:native:property#Owner:{name}"),
-        owner: object.id.clone(),
+        owner: object.id().clone(),
         name: name.into(),
         type_name: "App::PropertyFileIncluded".into(),
         family: crate::native::PropertyFamily::File,

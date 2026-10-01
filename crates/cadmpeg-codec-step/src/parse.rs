@@ -1678,11 +1678,9 @@ fn schema_object_identifier_diagnostics<'a>(
 ) -> impl Iterator<Item = Result<ParseDiagnostic, CodecError>> + 'a {
     admitted
         .iter()
-        .filter_map(move |identifier| match identifier {
-            AdmittedSchemaIdentifier::Valid { .. } => None,
-            AdmittedSchemaIdentifier::ObjectIdentifierOutOfRange {
-                name, component, ..
-            } => Some(budget.format_retained(format_args!(
+        .filter_map(move |identifier| match identifier.out_of_range() {
+            None => None,
+            Some((name, component)) => Some(budget.format_retained(format_args!(
                     "FILE_SCHEMA identifier {name} has an out-of-range object identifier component {component}; the object identifier is not admitted"
                 ), "step_schema_oid_diagnostic_text")
             .map(|message| ParseDiagnostic {
