@@ -1097,3 +1097,23 @@ pub(crate) fn codec_inspects_edition3_sections_and_external_references() {
         vec![crate::parse::Value::Reference(1)]
     );
 }
+
+#[test]
+fn forwarded_anchor_lookup_refuses_caller_work_limit() {
+    const SOURCE: &[u8] = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'4;2');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;ANCHOR;<aa>=<https://example.invalid/a>;<ab>=<https://example.invalid/b>;<ac>=<https://example.invalid/c>;ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;";
+    let (exchange, _) = crate::test_support::with_service_context(SOURCE, crate::parse::parse_inner)
+        .expect("valid anchor exchange");
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_work_units = 5;
+    crate::test_support::with_policy_context(SOURCE, &policy, |_, ctx| {
+        let error = super::forwarded_reference_uri(&exchange, "#ac", ctx)
+            .expect_err("late anchor comparison exceeds work allowance");
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal)
+            if refusal.operation == "step_zip_anchor_lookup"
+                && refusal.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits));
+    });
+    crate::test_support::with_service_context(SOURCE, |_, ctx| {
+        assert_eq!(super::forwarded_reference_uri(&exchange, "#ac", ctx).unwrap(), "https://example.invalid/c");
+        assert_eq!(super::forwarded_reference_uri(&exchange, "#missing", ctx).unwrap(), "#missing");
+    });
+}
