@@ -1397,7 +1397,7 @@ fn pcurve_parameter_range(pcurve: &PcurveGeometry) -> Option<[f64; 2]> {
     let degree = usize::try_from(nurbs.degree()).ok()?;
     let range = [
         *nurbs.knots().get(degree)?,
-        *nurbs.knots().get(nurbs.control_points().len())?,
+        *nurbs.knots().get(nurbs.pole_rows().count())?,
     ];
     (range[0] < range[1]).then_some(range)
 }
