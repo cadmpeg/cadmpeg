@@ -1095,3 +1095,17 @@ fn a_refused_curve_carrier_is_stated_not_dropped() {
         "the refusal carries the carrier's own text"
     );
 }
+
+#[test]
+fn nurbs_surface_reads_sense_after_extended_common_header_reference() {
+    let mut stream = bspline_partition_stream();
+    let at = stream.windows(4).position(|bytes| bytes == [0, 124, 0, 10]).unwrap();
+    stream[at + 18] = b'-';
+    stream.splice(at + 8..at + 10, [0xff, 0xfe, 0, 2]);
+    let decoded = crate::test_support::with_decode_context(|ctx| crate::nurbs::surfaces(ctx, &stream)).unwrap().0;
+    assert_eq!(decoded.len(), 1);
+    let Some(SolvedSurfaceGeometry::Nurbs(surface)) = decoded[0].geometry.solved() else {
+        panic!("expected NURBS surface");
+    };
+    assert!(surface.normal_reversed());
+}
