@@ -1950,19 +1950,45 @@ pub(super) fn resolve_mesh_selection_from_quotient(
     Ok(Some(MeshSolve::Solved((topology, completed))))
 }
 
-pub(super) fn reduced_distinct_matching(
+/// A complete assignment of distinct, in-range point indices.
+struct DistinctAssignment {
+    points: Vec<usize>,
+}
+
+impl DistinctAssignment {
+    fn new(
+        ctx: &DecodeContext<'_>,
+        points: Vec<usize>,
+        point_count: usize,
+    ) -> Result<Option<Self>, CodecError> {
+        let (mut seen, _storage) = ctx.temporary_vec(point_count, "catia_distinct_assignment")?;
+        seen.resize(point_count, false);
+        for &point in &points {
+            ctx.charge_work(1, "catia_distinct_assignment")?;
+            let Some(used) = seen.get_mut(point) else { return Ok(None) };
+            if *used { return Ok(None); }
+            *used = true;
+        }
+        Ok(Some(Self { points }))
+    }
+}
+
+fn reduced_distinct_matching(
     ctx: &DecodeContext<'_>,
     domains: &[Vec<usize>],
     point_count: usize,
     budget: &WorkBudget<'_>,
     excluded: Option<(usize, usize)>,
-) -> Result<Option<Vec<usize>>, CodecError> {
+) -> Result<Option<DistinctAssignment>, CodecError> {
     let mut assignment = ctx.alloc_filled(domains.len(), None, "catia_reduced_matching")?;
     let mut used = ctx.alloc_filled(point_count, false, "catia_reduced_matching_used")?;
     let mut remaining = Vec::new();
     for (root, domain) in domains.iter().enumerate() {
         if domain.len() == 1 {
             let point = domain[0];
+            if point >= point_count {
+                return Ok(None);
+            }
             if excluded.is_some_and(|(excluded_root, excluded_point)| {
                 excluded_root == root && excluded_point == point
             }) || used[point]
@@ -1971,7 +1997,14 @@ pub(super) fn reduced_distinct_matching(
             }
             used[point] = true;
             assignment[root] = Some(point);
+        }
+    }
+    for (root, domain) in domains.iter().enumerate() {
+        if domain.len() == 1 {
             continue;
+        }
+        if domain.iter().any(|point| *point >= point_count) {
+            return Ok(None);
         }
         let mut values = Vec::new();
         ctx.reserve_vec(
@@ -2026,7 +2059,7 @@ pub(super) fn reduced_distinct_matching(
         };
         completed.push(point);
     }
-    Ok(Some(completed))
+    DistinctAssignment::new(ctx, completed, point_count)
 }
 
 // The selection owns the complete quotient inputs and the optional gauge. The
@@ -2256,7 +2289,7 @@ pub(super) fn resolve_singleton_mesh_selection(
             }
             Ok(Some((topology.clone_charged(ctx)?, points)))
         };
-    let Some(first) = materialize(&first_assignment)? else {
+    let Some(first) = materialize(&first_assignment.points)? else {
         return Ok(None);
     };
     let mut ambiguous_roots = Vec::new();
@@ -2275,7 +2308,7 @@ pub(super) fn resolve_singleton_mesh_selection(
             &domain_values,
             vertex_points.len(),
             budget,
-            Some((root, first_assignment[root])),
+            Some((root, first_assignment.points[root])),
         )?
         else {
             if budget.exhausted() {
@@ -2283,7 +2316,7 @@ pub(super) fn resolve_singleton_mesh_selection(
             }
             continue;
         };
-        let Some(alternate) = materialize(&alternate)? else {
+        let Some(alternate) = materialize(&alternate.points)? else {
             continue;
         };
         if !mesh_candidates_equivalent_with_context(ctx, &first, &alternate, candidate_gauge)? {
@@ -2291,4 +2324,33 @@ pub(super) fn resolve_singleton_mesh_selection(
         }
     }
     Ok(Some(MeshSolve::Solved((first.0, first.1))))
+}
+
+#[cfg(test)]
+mod reduced_matching_tests {
+    use super::{reduced_distinct_matching, DistinctAssignment};
+
+    #[test]
+    fn reduced_matching_reserves_later_singletons_before_domains() {
+        crate::test_support::with_service_context(|ctx| {
+            let budget = ctx.work_budget(100);
+            let domains = [vec![0, 1], vec![0]];
+            let assignment = reduced_distinct_matching(ctx, &domains, 2, &budget, None)
+                .expect("admitted matching").expect("distinct solution");
+            assert_eq!(assignment.points, [1, 0]);
+            assert!(reduced_distinct_matching(ctx, &domains, 2, &budget, Some((0, 1)))
+                .expect("admitted exclusion").is_none());
+        });
+    }
+
+    #[test]
+    fn reduced_matching_rejects_duplicate_and_out_of_range_assignments() {
+        crate::test_support::with_service_context(|ctx| {
+            assert!(DistinctAssignment::new(ctx, vec![0, 0], 2).expect("admitted").is_none());
+            assert!(DistinctAssignment::new(ctx, vec![2], 2).expect("admitted").is_none());
+            let budget = ctx.work_budget(100);
+            assert!(reduced_distinct_matching(ctx, &[vec![2]], 2, &budget, None)
+                .expect("admitted").is_none());
+        });
+    }
 }
