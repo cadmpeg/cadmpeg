@@ -416,3 +416,45 @@ fn a_reference_plane_origin_that_overflows_in_millimetres_is_not_admitted() {
         "{attributes:?}"
     );
 }
+
+fn replacement_unit_source() -> (Vec<u8>, usize) {
+    let mut payload = b"moLengthUserUnits_c".to_vec();
+    payload.extend_from_slice(&[0xff, 0xfe, 0xff, 2, 0, 0xd8]);
+    let length = payload.len();
+    let mut source = outer_header();
+    source.extend(make_block(0x43, "SWObjects", &payload));
+    (source, length)
+}
+
+#[test]
+fn unit_name_replacement_refuses_exact_retained_limit() {
+    let (source, _) = replacement_unit_source();
+    let scan = crate::test_support::container::scan(&source);
+    let section = scan.sections().next().expect("unit-name section");
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 2;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+    assert!(matches!(super::scan_length_user_units(&ctx, section, &mut Vec::new(), &mut cadmpeg_ir::annotations::Annotations::default()), Err(CodecError::ResourceLimit(limit))
+        if limit.dimension == ResourceDimension::RetainedBytes && limit.used == 0 && limit.additional == 3 && limit.operation == "retain SLDPRT linear unit name"));
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_materialized_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+    let mut attributes = Vec::new();
+    super::scan_length_user_units(&ctx, section, &mut attributes, &mut cadmpeg_ir::annotations::Annotations::default()).expect("replacement unit name");
+    assert_eq!(attributes[0].values, vec![cadmpeg_ir::attributes::AttributeValue::String("�".into())]);
+}
+
+#[test]
+fn unit_name_replacement_refuses_work_before_validation() {
+    let (source, length) = replacement_unit_source();
+    let scan = crate::test_support::container::scan(&source);
+    let section = scan.sections().next().expect("unit-name section");
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = u64::try_from(length).expect("payload length");
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+    assert!(matches!(super::scan_length_user_units(&ctx, section, &mut Vec::new(), &mut cadmpeg_ir::annotations::Annotations::default()), Err(CodecError::ResourceLimit(limit))
+        if limit.dimension == ResourceDimension::WorkUnits && limit.operation == "validate SLDPRT linear unit name"));
+}
