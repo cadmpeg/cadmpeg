@@ -200,7 +200,7 @@ impl Harness {
     /// # Panics
     ///
     /// Panics listing every drifted, unreadable, and input-less golden at once
-    /// rather than stopping at the first.
+    /// rather than stopping at the first. Panics when `branches` is empty.
     pub fn check(&self, branches: &[Branch]) {
         self.finish_check(&self.fixture_inputs(), branches, true);
     }
@@ -222,7 +222,7 @@ impl Harness {
     /// # Panics
     ///
     /// Panics listing every drifted, unreadable, and input-less golden at once
-    /// rather than stopping at the first. Panics when `inputs` is empty.
+    /// rather than stopping at the first. Panics when `inputs` or `branches` is empty.
     pub fn check_inputs(&self, inputs: &[(String, Vec<u8>)], branches: &[Branch]) {
         assert!(
             !inputs.is_empty(),
@@ -240,7 +240,7 @@ impl Harness {
     ///
     /// # Panics
     ///
-    /// Panics on the first branch whose two runs disagree.
+    /// Panics when `branches` is empty, or on the first branch whose two runs disagree.
     pub fn check_determinism(&self, branches: &[Branch]) {
         Self::finish_determinism(&self.fixture_inputs(), branches);
     }
@@ -249,7 +249,7 @@ impl Harness {
     ///
     /// # Panics
     ///
-    /// Panics when `inputs` is empty, or on the first branch whose two runs
+    /// Panics when `inputs` or `branches` is empty, or on the first branch whose two runs
     /// disagree.
     pub fn check_determinism_inputs(&self, inputs: &[(String, Vec<u8>)], branches: &[Branch]) {
         assert!(
@@ -260,6 +260,7 @@ impl Harness {
     }
 
     fn finish_check(&self, inputs: &[(String, Vec<u8>)], branches: &[Branch], from_files: bool) {
+        assert!(!branches.is_empty(), "no golden branches; the harness would pass vacuously");
         let update = std::env::var_os("UPDATE_GOLDEN").is_some();
         let names: Vec<String> = inputs.iter().map(|(name, _)| name.clone()).collect();
         let mut failures: Vec<String> = Vec::new();
@@ -276,6 +277,7 @@ impl Harness {
     }
 
     fn finish_determinism(inputs: &[(String, Vec<u8>)], branches: &[Branch]) {
+        assert!(!branches.is_empty(), "no golden branches; the harness would pass vacuously");
         for (name, bytes) in inputs {
             for branch in branches {
                 let first = (branch.snapshot)(bytes);
@@ -686,6 +688,38 @@ mod tests {
     /// One nameless input, since these branches ignore the input bytes.
     fn one_input() -> Vec<(String, Vec<u8>)> {
         vec![("fixture".to_owned(), Vec::new())]
+    }
+
+    #[test]
+    #[should_panic(expected = "no golden branches")]
+    fn golden_input_check_refuses_zero_branches() {
+        Harness::new(".", "bin", "regenerate").check_inputs(&one_input(), &[]);
+    }
+
+    #[test]
+    #[should_panic(expected = "no golden branches")]
+    fn golden_input_determinism_refuses_zero_branches() {
+        Harness::new(".", "bin", "regenerate").check_determinism_inputs(&one_input(), &[]);
+    }
+
+    #[test]
+    #[should_panic(expected = "no golden branches")]
+    fn golden_file_check_refuses_zero_branches() {
+        let tree = TempTree::named("zero-check-branches");
+        let fixtures = tree.0.join("tests/golden/fixtures");
+        std::fs::create_dir_all(&fixtures).expect("fixture directory");
+        std::fs::write(fixtures.join("fixture.bin"), [1]).expect("nonempty fixture");
+        Harness::new(tree.manifest_dir(), "bin", "regenerate").check(&[]);
+    }
+
+    #[test]
+    #[should_panic(expected = "no golden branches")]
+    fn golden_file_determinism_refuses_zero_branches() {
+        let tree = TempTree::named("zero-determinism-branches");
+        let fixtures = tree.0.join("tests/golden/fixtures");
+        std::fs::create_dir_all(&fixtures).expect("fixture directory");
+        std::fs::write(fixtures.join("fixture.bin"), [1]).expect("nonempty fixture");
+        Harness::new(tree.manifest_dir(), "bin", "regenerate").check_determinism(&[]);
     }
 
     #[test]
