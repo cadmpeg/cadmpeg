@@ -45,3 +45,15 @@ fn display_class_discovery_refuses_both_source_scans() {
         assert!(matches!(super::super::class_intervals(&ctx, &payload), Err(CodecError::ResourceLimit(limit)) if limit.operation == operation));
     }
 }
+
+#[test]
+fn sole_surface_owner_respects_its_planar_trim() {
+    let mut model = super::model_with_body();
+    let face = super::add_square_face(&mut model, "bounded", 0.);
+    super::set_shell_faces(&mut model, vec![face]);
+    model.tessellations.push(cadmpeg_ir::tessellation::Tessellation::new(cadmpeg_ir::tessellation::TessellationId::mint("synthetic:test:tessellation#outside").unwrap(), cadmpeg_ir::tessellation::TessellationMesh::List { vertices: vec![Point3::new(10.,10.,0.),Point3::new(11.,10.,0.),Point3::new(10.,11.,0.)], triangles: vec![[0,1,2]] }, Vec::new()).unwrap());
+    let ctx = cadmpeg_test_support::service_decode_context();
+    assert!(super::super::assign_unique_surface_owners(&ctx, &mut model).unwrap().is_empty());
+    assert!(model.tessellations[0].faces.is_empty());
+    assert!(model.tessellations[0].body.is_none());
+}

@@ -1101,7 +1101,7 @@ pub(crate) fn assign_unique_surface_owners(
                 owners.push(candidate);
             }
         }
-        if owners.len() > 1 {
+        {
             let mut trimmed = Vec::new();
             for candidate in owners {
                 let keep = match candidate.trim.as_ref() {
