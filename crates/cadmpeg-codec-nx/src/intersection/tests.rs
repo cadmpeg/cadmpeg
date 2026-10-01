@@ -682,7 +682,7 @@ fn intersection_chart_scan_does_not_admit_nested_counted_candidates() {
     })
     .unwrap();
     assert_eq!(records.len(), 1);
-    assert_eq!(records[0].xmt, 21);
+    assert_eq!(u32::from(records[0].xmt), 21);
     assert_eq!(records[0].data.points().len(), count);
 }
 
@@ -706,7 +706,7 @@ fn intersection_support_uv_scan_does_not_admit_nested_counted_candidates() {
     })
     .unwrap();
     assert_eq!(records.len(), 1);
-    assert_eq!(records[0].xmt, 23);
+    assert_eq!(u32::from(records[0].xmt), 23);
     assert_eq!(records[0].values.values().len(), 4);
 }
 
@@ -892,6 +892,36 @@ fn physical_support_uv_parser_retains_single_complete_tuples() {
             assert_eq!(records.len(), 1);
             assert_eq!(records[0].values.count(), u32::try_from(count).unwrap());
             assert_eq!(records[0].values.marker(), marker);
+        });
+    }
+}
+
+#[test]
+fn auxiliary_source_parsers_reject_reserved_record_identities() {
+    for identity in [0_u16, 1, 2] {
+        let mut chart = record(40, 108);
+        chart[2..6].copy_from_slice(&2_u32.to_be_bytes());
+        put_ref(&mut chart, 6, identity);
+        put_f64(&mut chart, 16, 1.0);
+        chart[24..28].copy_from_slice(&2_u32.to_be_bytes());
+        put_f64(&mut chart, 28, 0.01);
+        put_f64(&mut chart, 44, super::MISSING_PARAMETER);
+        put_f64(&mut chart, 52, super::MISSING_PARAMETER);
+        put_vec3(&mut chart, 84, [1.0, 0.0, 0.0]);
+        let mut term = record(41, 34);
+        term[2..6].copy_from_slice(&2_u32.to_be_bytes());
+        put_ref(&mut term, 6, identity);
+        term[8..10].copy_from_slice(b"TF");
+        let mut uv = record(204, 41);
+        uv[2..6].copy_from_slice(&4_u32.to_be_bytes());
+        put_ref(&mut uv, 6, identity);
+        uv[8] = 2;
+        crate::test_support::with_decode_context(|ctx| {
+            assert_eq!(super::chart_source_records(ctx, &chart, super::ChartPointLayout::Xyz3).unwrap().len(), usize::from(identity > 1));
+            assert_eq!(super::term_use_records(ctx, &term).unwrap().len(), usize::from(identity > 1));
+            assert_eq!(super::support_uv_records(ctx, &uv).unwrap().len(), usize::from(identity > 1));
+            assert_eq!(super::term_at(&term, 2, super::TermUseFraming::DescriptorInline, 0).is_some(), identity > 1);
+            assert_eq!(super::uv_at(ctx, &uv, 2, super::SupportUvFraming::DescriptorInline, 0).unwrap().is_some(), identity > 1);
         });
     }
 }

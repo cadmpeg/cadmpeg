@@ -79,7 +79,7 @@ impl GroupMemberTarget {
                 let current_xmt = graph
                     .get(family.kind(), member_xmt)
                     .filter(|node| node.node_id() == Some(node_id))
-                    .map(|node| node.xmt)
+                    .map(|node| node.xmt())
                     .or_else(|| graph.unique_xmt_by_node_id(family.kind(), node_id));
                 Self::Node {
                     family,

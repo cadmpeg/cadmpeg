@@ -238,7 +238,7 @@ fn decode_surfaces(
                     propagate_resource!(ctx.push_retained_vec(
                         refusals,
                         CarrierRefusal {
-                            pos: node.pos,
+                            pos: node.pos(),
                             family: "B_SURFACE",
                             error,
                         },
@@ -248,7 +248,7 @@ fn decode_surfaces(
                 }
             };
             Some(Ok(Surface {
-                pos: node.pos,
+                pos: node.pos(),
                 geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)),
             }))
         })();
@@ -390,7 +390,7 @@ fn decode_pcurves(
                     propagate_resource!(ctx.push_retained_vec(
                         refusals,
                         CarrierRefusal {
-                            pos: node.pos,
+                            pos: node.pos(),
                             family: "B_CURVE pcurve",
                             error,
                         },
@@ -400,7 +400,7 @@ fn decode_pcurves(
                 }
             };
             Some(Ok(Pcurve {
-                pos: node.pos,
+                pos: node.pos(),
                 geometry: PcurveGeometry::Nurbs { nurbs },
             }))
         })();
@@ -547,7 +547,7 @@ fn decode_curves(
                     propagate_resource!(ctx.push_retained_vec(
                         refusals,
                         CarrierRefusal {
-                            pos: node.pos,
+                            pos: node.pos(),
                             family: "B_CURVE",
                             error,
                         },
@@ -557,7 +557,7 @@ fn decode_curves(
                 }
             };
             Some(Ok(Curve {
-                pos: node.pos,
+                pos: node.pos(),
                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)),
             }))
         })();

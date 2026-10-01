@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 pub(super) struct SupportUvWire {
     id: String,
     stream_ordinal: u32,
-    xmt: u32,
+    xmt: crate::framing::xmt_reference::NonNullXmt,
     count: u32,
     marker: u8,
     values: Vec<f64>,
@@ -23,7 +23,7 @@ pub(super) struct SupportUvWire {
 struct SupportUvRef<'a> {
     id: &'a str,
     stream_ordinal: u32,
-    xmt: u32,
+    xmt: crate::framing::xmt_reference::NonNullXmt,
     count: u32,
     marker: u8,
     values: &'a [cadmpeg_ir::scalar::FiniteReal],
@@ -93,8 +93,13 @@ mod tests {
         ] {
             let count = if marker == 4 { 8 } else { 4 };
             let json = format!(
-                r#"{{"id":"uv","stream_ordinal":0,"xmt":1,"count":{count},"marker":{marker},"values":{values},"framing":"direct","inflated_offset":10}}"#
+                r#"{{"id":"uv","stream_ordinal":0,"xmt":2,"count":{count},"marker":{marker},"values":{values},"framing":"direct","inflated_offset":10}}"#
             );
+            for identity in [0, 1] {
+                let mut wire: serde_json::Value = serde_json::from_str(&json).unwrap();
+                wire["xmt"] = serde_json::json!(identity);
+                assert!(serde_json::from_value::<ParasolidSupportUvRecord>(wire).unwrap_err().to_string().contains("xmt"));
+            }
             let record: ParasolidSupportUvRecord = serde_json::from_str(&json).unwrap();
             assert_eq!(serde_json::to_string(&record).unwrap(), json);
             assert_eq!(
@@ -118,7 +123,7 @@ mod tests {
 
     #[test]
     fn support_uv_native_limit_refuses_before_values_copy() {
-        let json = r#"{"id":"nx:parasolid:support-uv#0","stream_ordinal":0,"xmt":1,"count":4,"marker":2,"values":[0.0,1.0,2.0,3.0],"framing":"direct","inflated_offset":10}"#;
+        let json = r#"{"id":"nx:parasolid:support-uv#0","stream_ordinal":0,"xmt":2,"count":4,"marker":2,"values":[0.0,1.0,2.0,3.0],"framing":"direct","inflated_offset":10}"#;
         let record: ParasolidSupportUvRecord = serde_json::from_str(json).unwrap();
         cadmpeg_test_support::native_serialization::assert_native_limit(
             &record,

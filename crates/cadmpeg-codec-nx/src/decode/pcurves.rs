@@ -4607,14 +4607,14 @@ pub(super) fn attach_tolerant_edge_intersections_with_budget(
                 ctx,
                 &curve_id,
                 source_stream,
-                cadmpeg_core::decode::u64_from_index(node.pos),
+                cadmpeg_core::decode::u64_from_index(node.pos()),
                 Some("TOLERANT_EDGE_INTERSECTION"),
             )?;
             annotations.note_for_decode(
                 ctx,
                 &procedural_id,
                 source_stream,
-                cadmpeg_core::decode::u64_from_index(node.pos),
+                cadmpeg_core::decode::u64_from_index(node.pos()),
                 Some("TOLERANT_EDGE_INTERSECTION"),
             )?;
         }
