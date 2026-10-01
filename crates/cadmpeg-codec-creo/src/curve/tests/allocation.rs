@@ -516,7 +516,9 @@ evaluation_collection_test!(
 evaluation_retained_test!(
     external_value_names_refuse,
     &[],
-    external_symbol(Some(super::super::CurveExpressionValue::Number(cadmpeg_ir::scalar::FiniteReal::new(1.0).expect("finite relation fixture")))),
+    external_symbol(Some(super::super::CurveExpressionValue::Number(
+        cadmpeg_ir::scalar::FiniteReal::new(1.0).expect("finite relation fixture")
+    ))),
     "creo external value names"
 );
 evaluation_retained_test!(
@@ -1478,14 +1480,20 @@ fn affine_equation_merge_propagates_coefficient_node_refusal() {
     policy.limits.max_collection_items = 0;
     let error = resource_error(with_expression_policy(policy, |ctx| {
         let result = left.combine_admitted(right, true, ctx);
-        assert_eq!(ctx.resource_refusal(), match &result {
-            Err(CodecError::ResourceLimit(limit)) => Some(limit.clone()),
-            _ => None,
-        });
+        assert_eq!(
+            ctx.resource_refusal(),
+            match &result {
+                Err(CodecError::ResourceLimit(limit)) => Some(*limit),
+                _ => None,
+            }
+        );
         result
     }));
-    assert_target_limit(&error, ResourceDimension::CollectionItems,
-        "creo affine combined coefficient nodes");
+    assert_target_limit(
+        &error,
+        ResourceDimension::CollectionItems,
+        "creo affine combined coefficient nodes",
+    );
     crate::decode::with_test_decode_ctx(|ctx| {
         let left = SimultaneousAffineValue::constant(2.0, RelationDimension::default());
         let right = SimultaneousAffineValue {
@@ -1493,9 +1501,14 @@ fn affine_equation_merge_propagates_coefficient_node_refusal() {
             constant: 1.0,
             coefficients: BTreeMap::from([("y".to_owned(), 1.0)]),
         };
-        let difference = left.combine_admitted(right, true, ctx)
-            .expect("service merge").expect("equal dimensions");
+        let difference = left
+            .combine_admitted(right, true, ctx)
+            .expect("service merge")
+            .expect("equal dimensions");
         assert_eq!(difference.constant, 1.0);
-        assert_eq!(difference.coefficients, BTreeMap::from([("y".to_owned(), -1.0)]));
+        assert_eq!(
+            difference.coefficients,
+            BTreeMap::from([("y".to_owned(), -1.0)])
+        );
     });
 }

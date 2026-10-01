@@ -904,13 +904,16 @@ fn scan_decodes_featdefs_dimension_prototype_and_replay() {
     assert_eq!(scan.curves.expressions.len(), 1);
     assert_eq!(
         scan.curves.expressions[0].assignments[0].value,
-        Some(crate::curve::CurveExpressionValue::Angle(cadmpeg_ir::scalar::FiniteReal::new(
-            1.0f64.to_degrees()
-        ).expect("finite relation fixture")))
+        Some(crate::curve::CurveExpressionValue::Angle(
+            cadmpeg_ir::scalar::FiniteReal::new(1.0f64.to_degrees())
+                .expect("finite relation fixture")
+        ))
     );
     assert_eq!(
         scan.curves.expressions[0].assignments[1].value,
-        Some(crate::curve::CurveExpressionValue::Length(cadmpeg_ir::scalar::FiniteReal::new(5.0).expect("finite relation fixture")))
+        Some(crate::curve::CurveExpressionValue::Length(
+            cadmpeg_ir::scalar::FiniteReal::new(5.0).expect("finite relation fixture")
+        ))
     );
 }
 

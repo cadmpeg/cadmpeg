@@ -168,7 +168,10 @@ fn visit_feature_surface_replays(
 ) -> Result<(), CodecError> {
     for table in &scan.features.entity_tables {
         let owner_feature_id = table.feature_id;
-        ctx.charge_work(cadmpeg_core::decode::u64_from_index(table.entries.len()), "creo surface replay entry scan")?;
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(table.entries.len()),
+            "creo surface replay entry scan",
+        )?;
         let visible_count = table
             .entries
             .iter()
@@ -178,7 +181,13 @@ fn visit_feature_surface_replays(
             continue;
         }
         let visible_entries = &table.entries[..visible_count];
-        let validation_work = cadmpeg_core::decode::u64_from_index(visible_count).checked_mul(cadmpeg_core::decode::u64_from_index(scan.surfaces.rows.len())).ok_or_else(|| ctx.refuse_codec_limit("creo surface replay validation", u64::MAX, u64::MAX))?;
+        let validation_work = cadmpeg_core::decode::u64_from_index(visible_count)
+            .checked_mul(cadmpeg_core::decode::u64_from_index(
+                scan.surfaces.rows.len(),
+            ))
+            .ok_or_else(|| {
+                ctx.refuse_codec_limit("creo surface replay validation", u64::MAX, u64::MAX)
+            })?;
         ctx.charge_work(validation_work, "creo surface replay validation")?;
         if visible_entries.iter().any(|entry| {
             crate::surface::unique_surface_row(&scan.surfaces.rows, entry.entity_id).is_none()
@@ -192,7 +201,17 @@ fn visit_feature_surface_replays(
             .checked_add(visible_count)
             .filter(|end| *end <= replay_entries.len())
         {
-            let query_work = cadmpeg_core::decode::u64_from_index(scan.surfaces.rows.len()).checked_add(cadmpeg_core::decode::u64_from_index(scan.surfaces.nonvisible_rows.len())).and_then(|rows| rows.checked_add(1)).and_then(|rows| rows.checked_mul(cadmpeg_core::decode::u64_from_index(visible_count))).ok_or_else(|| ctx.refuse_codec_limit("creo surface replay candidate work", u64::MAX, u64::MAX))?;
+            let query_work = cadmpeg_core::decode::u64_from_index(scan.surfaces.rows.len())
+                .checked_add(cadmpeg_core::decode::u64_from_index(
+                    scan.surfaces.nonvisible_rows.len(),
+                ))
+                .and_then(|rows| rows.checked_add(1))
+                .and_then(|rows| {
+                    rows.checked_mul(cadmpeg_core::decode::u64_from_index(visible_count))
+                })
+                .ok_or_else(|| {
+                    ctx.refuse_codec_limit("creo surface replay candidate work", u64::MAX, u64::MAX)
+                })?;
             ctx.charge_work(query_work, "creo surface replay candidate work")?;
             let candidate_entries = &replay_entries[cursor..end];
             if candidate_entries

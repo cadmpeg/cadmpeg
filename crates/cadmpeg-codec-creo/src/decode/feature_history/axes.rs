@@ -422,7 +422,8 @@ pub(super) fn feature_revolution_axis_for_transfer(
     feature_id: u32,
     extent: Option<&RevolveExtent>,
 ) -> Result<Option<RevolutionAxis>, cadmpeg_core::CodecError> {
-    let definition = unique_feature_profile_definition(ctx,
+    let definition = unique_feature_profile_definition(
+        ctx,
         &scan.features.definitions,
         &scan.features.section_transforms,
         feature_id,

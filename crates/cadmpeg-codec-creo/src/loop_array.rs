@@ -247,9 +247,25 @@ fn parse_frame(
         return Ok(None);
     }
     let header_end = after_class + 2;
-    ctx.charge_work(cadmpeg_core::decode::u64_from_index(data.len() - header_end).checked_mul(cadmpeg_core::decode::u64_from_index(ARRAY_BOUNDARY_LABELS.len())).ok_or_else(|| ctx.refuse_codec_limit("creo loop frame boundaries", u64::MAX, u64::MAX))?, "creo loop frame boundaries")?;
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(data.len() - header_end)
+            .checked_mul(cadmpeg_core::decode::u64_from_index(
+                ARRAY_BOUNDARY_LABELS.len(),
+            ))
+            .ok_or_else(|| {
+                ctx.refuse_codec_limit("creo loop frame boundaries", u64::MAX, u64::MAX)
+            })?,
+        "creo loop frame boundaries",
+    )?;
     let end = frame_end(data, header_end, section_end);
-    ctx.charge_work(cadmpeg_core::decode::u64_from_index(end - header_end).checked_mul(1 + cadmpeg_core::decode::u64_from_index(PROTOTYPE_FIELDS.len())).ok_or_else(|| ctx.refuse_codec_limit("creo loop prototype scan", u64::MAX, u64::MAX))?, "creo loop prototype scan")?;
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(end - header_end)
+            .checked_mul(1 + cadmpeg_core::decode::u64_from_index(PROTOTYPE_FIELDS.len()))
+            .ok_or_else(|| {
+                ctx.refuse_codec_limit("creo loop prototype scan", u64::MAX, u64::MAX)
+            })?,
+        "creo loop prototype scan",
+    )?;
     let Some(prototype_end) = named_prototype_end(data, header_end, end, class_id) else {
         return Ok(None);
     };
@@ -258,7 +274,18 @@ fn parse_frame(
         return Ok(None);
     };
     let Some(max_records) = bounded_len(u64::from(declared_count), 1, remaining) else {
-        return Ok(Some((LoopArrayFrame { offset, variant, declared_count, class_id, prototype_end, end, overfull: false }, Vec::new())));
+        return Ok(Some((
+            LoopArrayFrame {
+                offset,
+                variant,
+                declared_count,
+                class_id,
+                prototype_end,
+                end,
+                overfull: false,
+            },
+            Vec::new(),
+        )));
     };
     let mut cursor = prototype_end;
     let mut records = Vec::new();
@@ -266,7 +293,10 @@ fn parse_frame(
         let Some(prefix) = row_prefix(data, cursor, end) else {
             break;
         };
-        ctx.charge_work(cadmpeg_core::decode::u64_from_index(end - prefix.body_offset), "creo loop row token walk")?;
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(end - prefix.body_offset),
+            "creo loop row token walk",
+        )?;
         let Some(close) = row_end(data, prefix.body_offset, end) else {
             break;
         };
@@ -313,8 +343,13 @@ pub(crate) fn scan(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<LoopArrayScan
     let mut result = LoopArrayScan::default();
     let mut search = 0;
     loop {
-        ctx.charge_work(cadmpeg_core::decode::u64_from_index(data.len() - search), "creo loop array discovery")?;
-        let Some(offset) = find(data, LO_ARRAY_LABEL, search) else { break; };
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(data.len() - search),
+            "creo loop array discovery",
+        )?;
+        let Some(offset) = find(data, LO_ARRAY_LABEL, search) else {
+            break;
+        };
         let Some(next_search) = offset.checked_add(LO_ARRAY_LABEL.len()) else {
             break;
         };

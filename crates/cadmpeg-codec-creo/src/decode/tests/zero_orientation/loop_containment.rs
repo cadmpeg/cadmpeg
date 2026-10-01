@@ -7,23 +7,32 @@ use std::collections::BTreeMap;
 
 #[test]
 fn planar_loop_containment_selects_one_outer_boundary() {
-    let make_loop = |face_id: u32, first_curve: u32| crate::test_support::closed_loop(std::num::NonZeroU32::new(face_id), (0_u32..4)
-            .map(|index| HalfEdgeId {
-                curve_id: first_curve + index,
-                side: crate::topology::Side::Zero,
-            })
-            .collect());
+    let make_loop = |face_id: u32, first_curve: u32| {
+        crate::test_support::closed_loop(
+            std::num::NonZeroU32::new(face_id),
+            (0_u32..4)
+                .map(|index| HalfEdgeId {
+                    curve_id: first_curve + index,
+                    side: crate::topology::Side::Zero,
+                })
+                .collect(),
+        )
+    };
     let outer = make_loop(9, 1);
     let inner = make_loop(9, 5);
     let incidences = (1..=8)
-        .map(|vertex| crate::topology::HalfEdgeVertexIncidence { half_edge: HalfEdgeId {
+        .map(|vertex| crate::topology::HalfEdgeVertexIncidence {
+            half_edge: HalfEdgeId {
                 curve_id: vertex,
                 side: crate::topology::Side::Zero,
-            }, start_vertex_id: std::num::NonZeroU32::new(vertex).expect("one-based vertex fixture"), end_vertex_id: std::num::NonZeroU32::new(if vertex % 4 == 0 {
+            },
+            start_vertex_id: std::num::NonZeroU32::new(vertex).expect("one-based vertex fixture"),
+            end_vertex_id: std::num::NonZeroU32::new(if vertex % 4 == 0 {
                 vertex - 3
             } else {
                 vertex + 1
-            }) })
+            }),
+        })
         .collect::<Vec<_>>();
     let incidence = incidences
         .iter()
@@ -77,23 +86,32 @@ fn planar_loop_containment_selects_one_outer_boundary() {
 
 #[test]
 fn planar_loop_containment_derives_plane_from_solved_boundary_vertices() {
-    let make_loop = |first_curve: u32| crate::test_support::closed_loop(std::num::NonZeroU32::new(9), (0_u32..4)
-            .map(|index| HalfEdgeId {
-                curve_id: first_curve + index,
-                side: crate::topology::Side::Zero,
-            })
-            .collect());
+    let make_loop = |first_curve: u32| {
+        crate::test_support::closed_loop(
+            std::num::NonZeroU32::new(9),
+            (0_u32..4)
+                .map(|index| HalfEdgeId {
+                    curve_id: first_curve + index,
+                    side: crate::topology::Side::Zero,
+                })
+                .collect(),
+        )
+    };
     let outer = make_loop(1);
     let inner = make_loop(5);
     let incidences = (1..=8)
-        .map(|vertex| crate::topology::HalfEdgeVertexIncidence { half_edge: HalfEdgeId {
+        .map(|vertex| crate::topology::HalfEdgeVertexIncidence {
+            half_edge: HalfEdgeId {
                 curve_id: vertex,
                 side: crate::topology::Side::Zero,
-            }, start_vertex_id: std::num::NonZeroU32::new(vertex).expect("one-based vertex fixture"), end_vertex_id: std::num::NonZeroU32::new(if vertex % 4 == 0 {
+            },
+            start_vertex_id: std::num::NonZeroU32::new(vertex).expect("one-based vertex fixture"),
+            end_vertex_id: std::num::NonZeroU32::new(if vertex % 4 == 0 {
                 vertex - 3
             } else {
                 vertex + 1
-            }) })
+            }),
+        })
         .collect::<Vec<_>>();
     let incidence = incidences
         .iter()

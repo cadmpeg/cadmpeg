@@ -130,7 +130,15 @@ fn normalization_rejects_overflowed_feature_frame_vectors() {
 }
 
 fn datum(id: u32, axis: crate::axis::Axis, offset: f64) -> DatumPlaneRecord {
-    DatumPlaneRecord::new(id, id.saturating_sub(1), crate::datum::DatumPlane::new(axis, offset).expect("valid datum fixture"), offset, [[Some(0.0); 2]; 2], usize::try_from(id).expect("fixture id fits usize")).expect("valid datum fixture")
+    DatumPlaneRecord::new(
+        id,
+        id.saturating_sub(1),
+        crate::datum::DatumPlane::new(axis, offset).expect("valid datum fixture"),
+        offset,
+        [[Some(0.0); 2]; 2],
+        usize::try_from(id).expect("fixture id fits usize"),
+    )
+    .expect("valid datum fixture")
 }
 
 fn blank_definition() -> FeatureDefinition {

@@ -1460,10 +1460,11 @@ fn numerical_ranges_fc05_cap_agreement_separates_lengths_and_directions() {
 #[test]
 fn exact_helix_constructor_rejects_nonfinite_axial_coordinates() {
     for value in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
-        assert!(CurveExpressionHelix::new(1.0,value,0.0,1.0,0.0,false).is_none());
-        assert!(CurveExpressionHelix::new(1.0,0.0,value,1.0,0.0,false).is_none());
+        assert!(CurveExpressionHelix::new(1.0, value, 0.0, 1.0, 0.0, false).is_none());
+        assert!(CurveExpressionHelix::new(1.0, 0.0, value, 1.0, 0.0, false).is_none());
     }
-    let helix = CurveExpressionHelix::new(1.0,-2.0,3.0,1.0,0.0,false).expect("finite signed coordinates");
-    assert_eq!(helix.height.get(),-2.0);
-    assert_eq!(helix.z_start.get(),3.0);
+    let helix = CurveExpressionHelix::new(1.0, -2.0, 3.0, 1.0, 0.0, false)
+        .expect("finite signed coordinates");
+    assert_eq!(helix.height.get(), -2.0);
+    assert_eq!(helix.z_start.get(), 3.0);
 }

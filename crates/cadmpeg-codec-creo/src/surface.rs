@@ -3420,7 +3420,9 @@ fn parsed_named_surface_value(
                     Ok(None) => return None,
                     Err(error) => return Some(Err(error)),
                 };
-                return arrays::CountedScalars::from_tokens(ctx, extent, slots).map(|array| array.map(SurfaceNamedValue::CountedScalarArray)).transpose();
+                return arrays::CountedScalars::from_tokens(ctx, extent, slots)
+                    .map(|array| array.map(SurfaceNamedValue::CountedScalarArray))
+                    .transpose();
             }
             let mut values = Vec::new();
             for _ in 0..count {
@@ -3444,17 +3446,15 @@ fn parsed_named_surface_value(
             if name == "params" {
                 let remaining = admitted_counted_parameter_body(body, values_start, count)?;
                 let extent = arrays::CountedScalars::extent(count)?;
-                let slots = match counted_parameter_scalar_slots(
-                    ctx,
-                    remaining,
-                    extent.len(),
-                    cache,
-                ) {
-                    Ok(Some(slots)) => slots,
-                    Ok(None) => return None,
-                    Err(error) => return Some(Err(error)),
-                };
-                return arrays::CountedScalars::from_tokens(ctx, extent, slots).map(|array| array.map(SurfaceNamedValue::CountedScalarArray)).transpose();
+                let slots =
+                    match counted_parameter_scalar_slots(ctx, remaining, extent.len(), cache) {
+                        Ok(Some(slots)) => slots,
+                        Ok(None) => return None,
+                        Err(error) => return Some(Err(error)),
+                    };
+                return arrays::CountedScalars::from_tokens(ctx, extent, slots)
+                    .map(|array| array.map(SurfaceNamedValue::CountedScalarArray))
+                    .transpose();
             }
         }
     }
@@ -6285,8 +6285,8 @@ const MAX_COUNTED_PARAMETER_SLOTS_PER_BYTE: u64 = 3;
 /// [`MAX_COUNTED_PARAMETER_SLOTS_PER_BYTE`] slots come from one byte, and that
 /// walk answers only a parse ending on the last byte with exactly `count`
 /// slots, so a denser count states more slots than the bytes carry. The bound
-/// runs before [`arrays::CountedScalars::empty`], which allocates one slot per
-/// declared count from a compact integer the record states.
+/// runs before the counted token walk and final scalar construction, so an
+/// impossible count cannot allocate slot storage.
 fn admitted_counted_parameter_body(body: &[u8], values_start: usize, count: u32) -> Option<&[u8]> {
     let remaining = body.get(values_start..)?;
     let value_bytes = u64::from(count).div_ceil(MAX_COUNTED_PARAMETER_SLOTS_PER_BYTE);

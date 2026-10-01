@@ -20,7 +20,8 @@ pub(in super::super) fn link_feature_sketch_history(
     ir: &mut CadIr,
 ) -> Result<(), CodecError> {
     for transform in &scan.features.section_transforms {
-        if unique_feature_section_transform(ctx,
+        if unique_feature_section_transform(
+            ctx,
             &scan.features.section_transforms,
             transform.definition_id,
             transform.offset,

@@ -619,7 +619,11 @@ pub(in crate::decode) fn solve_topological_vertices(
         let Some((points, complete, authoritative)) = edge_endpoints.get(&row.id).copied() else {
             continue;
         };
-        let Some(vertices) = edge_start_vertices.get(&row.id).copied().map(|pair| pair.map(std::num::NonZeroU32::get)) else {
+        let Some(vertices) = edge_start_vertices
+            .get(&row.id)
+            .copied()
+            .map(|pair| pair.map(std::num::NonZeroU32::get))
+        else {
             continue;
         };
         if !pcurve_candidate_agrees_with_fixed_points(
@@ -696,7 +700,11 @@ pub(in crate::decode) fn solve_topological_vertices(
         }
     }
     for row in &topology_rows {
-        let Some(vertices) = edge_start_vertices.get(&row.id).copied().map(|pair| pair.map(std::num::NonZeroU32::get)) else {
+        let Some(vertices) = edge_start_vertices
+            .get(&row.id)
+            .copied()
+            .map(|pair| pair.map(std::num::NonZeroU32::get))
+        else {
             continue;
         };
         let (id, _id_reservation) = crate::identity::compose_scoped::<CurveId>(

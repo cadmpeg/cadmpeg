@@ -74,7 +74,7 @@ impl From<crate::curve::ParameterSense> for Sign {
 mod tests {
     #[test]
     fn model_axis_complements_follow_coordinate_order() {
-        for (axis, expected) in super::Axis::ALL.into_iter().zip([[1,2],[0,2],[0,1]]) {
+        for (axis, expected) in super::Axis::ALL.into_iter().zip([[1, 2], [0, 2], [0, 1]]) {
             assert_eq!(axis.complement().map(super::Axis::index), expected);
         }
     }

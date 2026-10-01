@@ -3,8 +3,8 @@
 
 use crate::container::SectionRole;
 
-use cadmpeg_core::decode::DecodeContext;
 use crate::decode::native::CreoArena;
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::ids::UnknownId;

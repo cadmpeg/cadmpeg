@@ -1896,9 +1896,7 @@ mod topology_projection_limit_tests {
     };
     use crate::curve::CurveTopologyRow;
     use crate::loop_array::{LoopArrayFrame, LoopArrayRecord};
-    use crate::topology::{
-        HalfEdge, HalfEdgeId, HalfEdgeVertexIncidence, Side,
-    };
+    use crate::topology::{HalfEdge, HalfEdgeId, HalfEdgeVertexIncidence, Side};
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use std::num::NonZeroU32;
 
@@ -1922,12 +1920,31 @@ mod topology_projection_limit_tests {
             face_id: NonZeroU32::new(1),
             next: Some(half_edge),
         });
-        scan.topology.loops.push(crate::test_support::closed_loop(NonZeroU32::new(1), vec![half_edge]));
-        scan.topology.vertices.push(crate::decode::with_test_decode_ctx(|ctx| crate::topology::TopologicalVertex::new(ctx, 1, vec![half_edge])).expect("vertex admission").expect("valid vertex fixture"));
+        scan.topology.loops.push(crate::test_support::closed_loop(
+            NonZeroU32::new(1),
+            vec![half_edge],
+        ));
+        scan.topology.vertices.push(
+            crate::decode::with_test_decode_ctx(|ctx| {
+                crate::topology::TopologicalVertex::new(ctx, 1, vec![half_edge])
+            })
+            .expect("vertex admission")
+            .expect("valid vertex fixture"),
+        );
         scan.topology
             .half_edge_vertex_incidence
-            .push(HalfEdgeVertexIncidence { half_edge: half_edge, start_vertex_id: std::num::NonZeroU32::new(1).expect("one-based vertex fixture"), end_vertex_id: std::num::NonZeroU32::new(1) });
-        scan.topology.face_components.push(crate::decode::with_test_decode_ctx(|ctx| crate::topology::FaceComponent::new(ctx, vec![1], vec![8])).expect("component admission").expect("valid component fixture"));
+            .push(HalfEdgeVertexIncidence {
+                half_edge,
+                start_vertex_id: std::num::NonZeroU32::new(1).expect("one-based vertex fixture"),
+                end_vertex_id: std::num::NonZeroU32::new(1),
+            });
+        scan.topology.face_components.push(
+            crate::decode::with_test_decode_ctx(|ctx| {
+                crate::topology::FaceComponent::new(ctx, vec![1], vec![8])
+            })
+            .expect("component admission")
+            .expect("valid component fixture"),
+        );
         scan.loop_arrays.frames.push(LoopArrayFrame {
             offset: 17,
             variant: None,
@@ -2391,11 +2408,11 @@ mod curve_plane_projection_limit_tests {
         feature_section_transform_records, outline_plane_records, plane_envelope_records,
         plane_local_system_records, prototype_pcurve_records,
     };
+    use crate::axis::Axis;
     use crate::curve::{
         dummy_curve_prototype, CurvePrototypeTopology, FcCurveCoordinates, PrototypePcurveEndpoints,
     };
-    use crate::axis::Axis;
-use crate::datum::{DatumCylinder, DatumPlane, DatumPlaneRecord};
+    use crate::datum::{DatumCylinder, DatumPlane, DatumPlaneRecord};
     use crate::feature::definitions::{DefinitionIdentity, FeatureDefinition};
     use crate::placement::FeatureSectionTransform;
     use crate::surface::{
@@ -2459,7 +2476,17 @@ use crate::datum::{DatumCylinder, DatumPlane, DatumPlaneRecord};
             u_axis: UnitVector3::X_AXIS,
             offset: 18,
         });
-        scan.planes.datums.push(DatumPlaneRecord::new(3, 2, DatumPlane::new(Axis::X, 1.0).expect("valid datum fixture"), 1.0, [[None; 2]; 2], 19).expect("valid datum fixture"));
+        scan.planes.datums.push(
+            DatumPlaneRecord::new(
+                3,
+                2,
+                DatumPlane::new(Axis::X, 1.0).expect("valid datum fixture"),
+                1.0,
+                [[None; 2]; 2],
+                19,
+            )
+            .expect("valid datum fixture"),
+        );
         scan.planes.datum_cylinders.push(DatumCylinder {
             id: 4,
             feature_id: 2,
@@ -4294,7 +4321,9 @@ mod curve_expression_projection_limit_tests {
             },
             expression: "2".into(),
             dependencies: vec!["q".into()],
-            value: Some(CurveExpressionValue::Number(cadmpeg_ir::scalar::FiniteReal::new(2.0).expect("finite relation fixture"))),
+            value: Some(CurveExpressionValue::Number(
+                cadmpeg_ir::scalar::FiniteReal::new(2.0).expect("finite relation fixture"),
+            )),
             activation: CurveExpressionActivation::Active,
             offset: 6,
         };
@@ -4323,7 +4352,9 @@ mod curve_expression_projection_limit_tests {
                 assignments: vec![assignment],
                 unknowns: vec![SolveUnknown {
                     name: "q".into(),
-                    solution: Some(CurveExpressionValue::Number(cadmpeg_ir::scalar::FiniteReal::new(2.0).expect("finite relation fixture"))),
+                    solution: Some(CurveExpressionValue::Number(
+                        cadmpeg_ir::scalar::FiniteReal::new(2.0).expect("finite relation fixture"),
+                    )),
                 }],
                 offset: 8,
                 for_offset: 9,

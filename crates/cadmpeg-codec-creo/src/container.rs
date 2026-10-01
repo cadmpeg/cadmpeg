@@ -617,7 +617,10 @@ pub(crate) fn looks_like_creo(prefix: &[u8]) -> bool {
 }
 
 fn line_at(ctx: &DecodeContext<'_>, data: &[u8], start: usize) -> Result<String, CodecError> {
-    ctx.charge_work(cadmpeg_core::decode::u64_from_index(data.len() - start), "creo version line scan")?;
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(data.len() - start),
+        "creo version line scan",
+    )?;
     let end = find(data, b"\n", start).unwrap_or(data.len());
     let bytes = &data[start..end];
     let text_work = cadmpeg_core::decode::u64_from_index(bytes.len())
@@ -672,7 +675,10 @@ fn scan_sections<'a>(
     if let Some(preceding_byte) = body_start.checked_sub(1) {
         i = preceding_byte;
     }
-    ctx.charge_work(cadmpeg_core::decode::u64_from_index(data.len() - i), "creo section framing scan")?;
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(data.len() - i),
+        "creo section framing scan",
+    )?;
     while i + 1 < data.len() {
         let toc_delimited = data[i] == 0xf1 && data[i + 1] == b'#';
         if !toc_delimited && (data[i] != b'\n' || data[i + 1] != b'#') {
@@ -681,12 +687,22 @@ fn scan_sections<'a>(
         }
         let hash_off = i + 1; // offset of the section-header '#'
         let name_start = i + 2;
-        ctx.charge_work(cadmpeg_core::decode::u64_from_index(data.len() - name_start), "creo section name boundary scan")?;
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(data.len() - name_start),
+            "creo section name boundary scan",
+        )?;
         let Some(nl) = find(data, b"\n", name_start) else {
             break;
         };
         let name_bytes = &data[name_start..nl];
-        ctx.charge_work(cadmpeg_core::decode::u64_from_index(name_bytes.len()).checked_mul(3).ok_or_else(|| ctx.refuse_codec_limit("creo section name validation", u64::MAX, u64::MAX))?, "creo section name validation")?;
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(name_bytes.len())
+                .checked_mul(3)
+                .ok_or_else(|| {
+                    ctx.refuse_codec_limit("creo section name validation", u64::MAX, u64::MAX)
+                })?,
+            "creo section name validation",
+        )?;
         i = nl; // continue scanning after this line regardless of acceptance
                 // A real section name is a printable run with at least one alphanumeric
                 // character; this rejects TOC/EOF padding lines made only of `#`.
@@ -713,7 +729,10 @@ fn scan_sections<'a>(
                     "creo section directory bounds error",
                 )?));
             };
-            ctx.charge_work(cadmpeg_core::decode::u64_from_index(directory.len()), "creo TOC name lookup")?;
+            ctx.charge_work(
+                cadmpeg_core::decode::u64_from_index(directory.len()),
+                "creo TOC name lookup",
+            )?;
             if !toc_lists_section(directory, name_bytes) {
                 continue;
             }
@@ -741,10 +760,18 @@ fn toc_sections<'a>(
     let mut sections = Vec::new();
     let mut toc_from = 0;
     loop {
-        ctx.charge_work(cadmpeg_core::decode::u64_from_index(data.len() - toc_from), "creo TOC discovery scan")?;
-        let Some(toc_offset) = find(data, TOC_START, toc_from) else { break; };
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(data.len() - toc_from),
+            "creo TOC discovery scan",
+        )?;
+        let Some(toc_offset) = find(data, TOC_START, toc_from) else {
+            break;
+        };
         toc_from = toc_offset + TOC_START.len();
-        ctx.charge_work(cadmpeg_core::decode::u64_from_index(data.len() - toc_offset), "creo TOC header scan")?;
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(data.len() - toc_offset),
+            "creo TOC header scan",
+        )?;
         let Some(line_end) = find(data, b"\n", toc_offset) else {
             continue;
         };
@@ -776,7 +803,14 @@ fn toc_sections<'a>(
             let Some(row) = data.get(start..end) else {
                 break;
             };
-            ctx.charge_work(cadmpeg_core::decode::u64_from_index(row.len()).checked_mul(8).ok_or_else(|| ctx.refuse_codec_limit("creo TOC row parsing", u64::MAX, u64::MAX))?, "creo TOC row parsing")?;
+            ctx.charge_work(
+                cadmpeg_core::decode::u64_from_index(row.len())
+                    .checked_mul(8)
+                    .ok_or_else(|| {
+                        ctx.refuse_codec_limit("creo TOC row parsing", u64::MAX, u64::MAX)
+                    })?,
+                "creo TOC row parsing",
+            )?;
             let Ok(row) = std::str::from_utf8(row) else {
                 continue;
             };
@@ -870,7 +904,12 @@ fn legacy_toc_sections<'a>(
     data: &'a [u8],
     banner_offset: usize,
 ) -> Result<Vec<ScannedSection<'a>>, CodecError> {
-    ctx.charge_work(cadmpeg_core::decode::u64_from_index(data.len() - banner_offset).checked_mul(8).ok_or_else(|| ctx.refuse_codec_limit("creo legacy TOC framing", u64::MAX, u64::MAX))?, "creo legacy TOC framing")?;
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(data.len() - banner_offset)
+            .checked_mul(8)
+            .ok_or_else(|| ctx.refuse_codec_limit("creo legacy TOC framing", u64::MAX, u64::MAX))?,
+        "creo legacy TOC framing",
+    )?;
     let Some(toc_offset) = find(data, b"\n@Toc ", banner_offset).map(|offset| offset + 1) else {
         return Ok(Vec::new());
     };
@@ -927,7 +966,6 @@ fn legacy_toc_sections<'a>(
         .and_then(|count| count.strip_prefix('['))
         .and_then(|count| count.strip_suffix(']'))
         .and_then(|count| count.parse::<usize>().ok())
-
     else {
         return Ok(Vec::new());
     };
@@ -935,26 +973,45 @@ fn legacy_toc_sections<'a>(
         return Ok(Vec::new());
     }
 
-    let Some(remaining) = data.len().checked_sub(next) else { return Ok(Vec::new()); };
-    if cadmpeg_core::decode::bounded_len(cadmpeg_core::decode::u64_from_index(count), 1, remaining).is_none() {
+    let Some(remaining) = data.len().checked_sub(next) else {
+        return Ok(Vec::new());
+    };
+    if cadmpeg_core::decode::bounded_len(cadmpeg_core::decode::u64_from_index(count), 1, remaining)
+        .is_none()
+    {
         return Ok(Vec::new());
     }
-    ctx.charge_work(cadmpeg_core::decode::u64_from_index(count), "creo legacy TOC entries")?;
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(count),
+        "creo legacy TOC entries",
+    )?;
     let mut sections = Vec::new();
     for _ in 0..count {
         let mut window_start = next;
         while window_start < data.len() {
             let remaining = data.len() - window_start;
             let step = if remaining < 64 { remaining } else { 64 };
-            ctx.charge_work(2 * cadmpeg_core::decode::u64_from_index(step), "creo legacy TOC entry scan")?;
-            if data[window_start..window_start + step].contains(&b'\n') { break; }
+            ctx.charge_work(
+                2 * cadmpeg_core::decode::u64_from_index(step),
+                "creo legacy TOC entry scan",
+            )?;
+            if data[window_start..window_start + step].contains(&b'\n') {
+                break;
+            }
             window_start += step;
         }
         let Some((entry, after_entry)) = legacy::line(data, next) else {
             break;
         };
         next = after_entry;
-        ctx.charge_work(cadmpeg_core::decode::u64_from_index(entry.len()).checked_mul(8).ok_or_else(|| ctx.refuse_codec_limit("creo legacy TOC entry parsing", u64::MAX, u64::MAX))?, "creo legacy TOC entry parsing")?;
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(entry.len())
+                .checked_mul(8)
+                .ok_or_else(|| {
+                    ctx.refuse_codec_limit("creo legacy TOC entry parsing", u64::MAX, u64::MAX)
+                })?,
+            "creo legacy TOC entry parsing",
+        )?;
         let Ok(entry) = std::str::from_utf8(entry) else {
             continue;
         };
@@ -1032,7 +1089,11 @@ fn expanded_sections(
             continue;
         };
         if expected_length > MAX_EXPANDED_SECTION {
-            return Err(ctx.refuse_codec_limit("creo expanded section ceiling", cadmpeg_core::decode::u64_from_index(MAX_EXPANDED_SECTION), cadmpeg_core::decode::u64_from_index(expected_length)));
+            return Err(ctx.refuse_codec_limit(
+                "creo expanded section ceiling",
+                cadmpeg_core::decode::u64_from_index(MAX_EXPANDED_SECTION),
+                cadmpeg_core::decode::u64_from_index(expected_length),
+            ));
         }
         let Some(header_length) = section.section.raw_name.len().checked_add(2) else {
             continue;
@@ -2851,7 +2912,10 @@ pub(crate) fn scan_bytes<'a>(
     data: impl Into<Cow<'a, [u8]>>,
 ) -> Result<ContainerScan<'a>, CodecError> {
     let data = data.into();
-    ctx.charge_work(cadmpeg_core::decode::u64_from_index(data.len()), "creo container model-name scan")?;
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(data.len()),
+        "creo container model-name scan",
+    )?;
     let version_line = line_at(ctx, &data, 0)?;
     let mut model_name = cmnm_model_name(ctx, &data)
         .transpose()?
@@ -2860,11 +2924,21 @@ pub(crate) fn scan_bytes<'a>(
     // The binary body begins after the ASCII header and TOC. Prefer the TOC end
     // marker; fall back to the header end; fall back to the magic line.
     let framing_work = cadmpeg_core::decode::u64_from_index(data.len());
-    ctx.charge_work(framing_work.checked_mul(2).ok_or_else(|| ctx.refuse_codec_limit("creo container header scans", u64::MAX, u64::MAX))?, "creo container header scans")?;
+    ctx.charge_work(
+        framing_work.checked_mul(2).ok_or_else(|| {
+            ctx.refuse_codec_limit("creo container header scans", u64::MAX, u64::MAX)
+        })?,
+        "creo container header scans",
+    )?;
     let header_end = find(&data, UGC_HEADER_END, 0)
         .and_then(|p| find(&data, b"\n", p))
         .map(|nl| nl + 1);
-    ctx.charge_work(framing_work.checked_mul(3).ok_or_else(|| ctx.refuse_codec_limit("creo container TOC scans", u64::MAX, u64::MAX))?, "creo container TOC scans")?;
+    ctx.charge_work(
+        framing_work.checked_mul(3).ok_or_else(|| {
+            ctx.refuse_codec_limit("creo container TOC scans", u64::MAX, u64::MAX)
+        })?,
+        "creo container TOC scans",
+    )?;
     let toc_end = find(&data, TOC_START, 0)
         .and_then(|toc| find(&data, TOC_END, toc))
         .and_then(|p| find(&data, b"\n", p))
@@ -3176,7 +3250,8 @@ pub(crate) fn scan_bytes<'a>(
             .resolved()
             .and_then(|value| match dimension.unit() {
                 feature::definitions::DimensionUnit::Radians => {
-                    cadmpeg_ir::scalar::FiniteReal::new(value.to_degrees()).map(CurveExpressionValue::Angle)
+                    cadmpeg_ir::scalar::FiniteReal::new(value.to_degrees())
+                        .map(CurveExpressionValue::Angle)
                 }
                 feature::definitions::DimensionUnit::Millimeters => {
                     cadmpeg_ir::scalar::FiniteReal::new(value).map(CurveExpressionValue::Length)
@@ -3363,7 +3438,11 @@ fn scan_primitives(
             });
         }
         if section.name == "SolidPrimdata" {
-            if primitive_namespace_seen { return Err(CodecError::malformed("duplicate SolidPrimdata identity namespace")); }
+            if primitive_namespace_seen {
+                return Err(CodecError::malformed(
+                    "duplicate SolidPrimdata identity namespace",
+                ));
+            }
             primitive_namespace_seen = true;
             let arrays = primdata::scalar_arrays(ctx, &section.data)?;
             ctx.reserve_vec(

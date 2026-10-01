@@ -1657,14 +1657,12 @@ fn axis_aligned_cylinder_from_corners(
     orientation: AxisAlignedCornerOrientation,
 ) -> Option<PositionalCylinderFrame> {
     let corners = AxisAlignedCorners::new(first, second, stored_length.map(PositiveLength::get));
-    let mut candidates = crate::axis::Axis::ALL
-        .into_iter()
-        .filter_map(|axis| {
-            let axes = corners.axes(axis)?;
-            stored_length
-                .is_none_or(|length| corners.close(corners.spans[axes.axis], length.get()))
-                .then_some(axes)
-        });
+    let mut candidates = crate::axis::Axis::ALL.into_iter().filter_map(|axis| {
+        let axes = corners.axes(axis)?;
+        stored_length
+            .is_none_or(|length| corners.close(corners.spans[axes.axis], length.get()))
+            .then_some(axes)
+    });
     let axes = candidates.next()?;
     candidates.next().is_none().then_some(())?;
     corners.frame(axes, orientation, corners.spans[axes.axis])

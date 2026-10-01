@@ -15,8 +15,7 @@ use crate::container::{self};
 use crate::CreoCodec;
 
 use super::{
-    cylinders, named_plane, planes, DatumPlane, DatumPlaneRecord,
-    EPS_DATUM_COORDINATE_AGREEMENT,
+    cylinders, named_plane, planes, DatumPlane, DatumPlaneRecord, EPS_DATUM_COORDINATE_AGREEMENT,
 };
 
 fn planes_ok(data: &[u8]) -> Vec<DatumPlaneRecord> {
@@ -179,7 +178,15 @@ fn decodes_constant_outline_coordinate_as_a_model_plane() {
     data.extend(ieee8(-3.0));
     assert_eq!(
         planes_ok(&data),
-        vec![DatumPlaneRecord::new(4, 1, DatumPlane::new(Axis::Y, 0.0).expect("valid datum fixture"), 0.0, [[Some(2.0), Some(3.0)], [Some(-2.0), Some(-3.0)]], 12).expect("valid datum fixture")]
+        vec![DatumPlaneRecord::new(
+            4,
+            1,
+            DatumPlane::new(Axis::Y, 0.0).expect("valid datum fixture"),
+            0.0,
+            [[Some(2.0), Some(3.0)], [Some(-2.0), Some(-3.0)]],
+            12
+        )
+        .expect("valid datum fixture")]
     );
 }
 
@@ -856,7 +863,10 @@ fn preserves_distinct_held_coordinates_within_plane_tolerance() {
             .expect("positional datum plane");
         let named = named_plane_ok(&named).expect("named datum plane");
         for plane in [positional, named] {
-            assert_eq!(plane.plane(), DatumPlane::new(axis, 2.0).expect("valid datum fixture"));
+            assert_eq!(
+                plane.plane(),
+                DatumPlane::new(axis, 2.0).expect("valid datum fixture")
+            );
             assert_eq!(plane.corners(), expected);
         }
     }
@@ -867,15 +877,31 @@ fn datum_plane_constructor_rejects_nonfinite_coordinates() {
     for value in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
         assert!(DatumPlane::new(Axis::X, value).is_none());
         let plane = DatumPlane::new(Axis::X, 0.0).expect("finite plane");
-        assert!(DatumPlaneRecord::new(1,1,plane,value,[[None;2];2],0).is_none());
-        assert!(DatumPlaneRecord::new(1,1,plane,0.0,[[Some(value),None],[None;2]],0).is_none());
+        assert!(DatumPlaneRecord::new(1, 1, plane, value, [[None; 2]; 2], 0).is_none());
+        assert!(
+            DatumPlaneRecord::new(1, 1, plane, 0.0, [[Some(value), None], [None; 2]], 0).is_none()
+        );
     }
 }
 
 #[test]
 fn datum_outline_constructor_requires_one_plane() {
     let plane = DatumPlane::new(Axis::X, 0.0).expect("finite plane");
-    assert!(DatumPlaneRecord::new(1,1,plane,1.0,[[None;2];2],0).is_none());
-    let outline = DatumPlaneRecord::new(1,1,plane,0.0,[[Some(1.0),Some(2.0)],[Some(3.0),None]],0).expect("same plane");
-    assert_eq!(outline.corners(), [[Some(0.0),Some(1.0),Some(2.0)],[Some(0.0),Some(3.0),None]]);
+    assert!(DatumPlaneRecord::new(1, 1, plane, 1.0, [[None; 2]; 2], 0).is_none());
+    let outline = DatumPlaneRecord::new(
+        1,
+        1,
+        plane,
+        0.0,
+        [[Some(1.0), Some(2.0)], [Some(3.0), None]],
+        0,
+    )
+    .expect("same plane");
+    assert_eq!(
+        outline.corners(),
+        [
+            [Some(0.0), Some(1.0), Some(2.0)],
+            [Some(0.0), Some(3.0), None]
+        ]
+    );
 }

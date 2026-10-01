@@ -32,9 +32,18 @@ fn assert_work(error: &CodecError, operation: &str) {
 #[test]
 fn relation_search_refuses_scan_work() {
     assert_work(
-        &refuse::<CurveExpressionValue>("search('abc','b')", |policy| {
-            policy.limits.max_work_units = 1;
-        }),
+        &crate::test_support::last_refusal_at(
+            ResourceDimension::WorkUnits,
+            "creo relation text search work",
+            |ctx| {
+                crate::curve::parse_relation_expression::<CurveExpressionValue>(
+                    ctx,
+                    "search('abc','b')",
+                    &BTreeMap::new(),
+                    RelationEvaluationContext::default(),
+                )
+            },
+        ),
         "creo relation text search work",
     );
 }
@@ -42,9 +51,18 @@ fn relation_search_refuses_scan_work() {
 #[test]
 fn relation_length_refuses_scan_work() {
     assert_work(
-        &refuse::<CurveExpressionValue>("string_length('abc')", |policy| {
-            policy.limits.max_work_units = 1;
-        }),
+        &crate::test_support::last_refusal_at(
+            ResourceDimension::WorkUnits,
+            "creo relation text length work",
+            |ctx| {
+                crate::curve::parse_relation_expression::<CurveExpressionValue>(
+                    ctx,
+                    "string_length('abc')",
+                    &BTreeMap::new(),
+                    RelationEvaluationContext::default(),
+                )
+            },
+        ),
         "creo relation text length work",
     );
 }
@@ -52,9 +70,18 @@ fn relation_length_refuses_scan_work() {
 #[test]
 fn relation_prefix_refuses_comparison_work() {
     assert_work(
-        &refuse::<CurveExpressionValue>("string_starts('abc','a')", |policy| {
-            policy.limits.max_work_units = 1;
-        }),
+        &crate::test_support::last_refusal_at(
+            ResourceDimension::WorkUnits,
+            "creo relation text prefix work",
+            |ctx| {
+                crate::curve::parse_relation_expression::<CurveExpressionValue>(
+                    ctx,
+                    "string_starts('abc','a')",
+                    &BTreeMap::new(),
+                    RelationEvaluationContext::default(),
+                )
+            },
+        ),
         "creo relation text prefix work",
     );
 }
@@ -62,9 +89,18 @@ fn relation_prefix_refuses_comparison_work() {
 #[test]
 fn relation_suffix_refuses_comparison_work() {
     assert_work(
-        &refuse::<CurveExpressionValue>("string_ends('abc','c')", |policy| {
-            policy.limits.max_work_units = 1;
-        }),
+        &crate::test_support::last_refusal_at(
+            ResourceDimension::WorkUnits,
+            "creo relation text suffix work",
+            |ctx| {
+                crate::curve::parse_relation_expression::<CurveExpressionValue>(
+                    ctx,
+                    "string_ends('abc','c')",
+                    &BTreeMap::new(),
+                    RelationEvaluationContext::default(),
+                )
+            },
+        ),
         "creo relation text suffix work",
     );
 }
@@ -72,9 +108,18 @@ fn relation_suffix_refuses_comparison_work() {
 #[test]
 fn relation_match_refuses_comparison_work() {
     assert_work(
-        &refuse::<CurveExpressionValue>("string_match('abc','abc')", |policy| {
-            policy.limits.max_work_units = 1;
-        }),
+        &crate::test_support::last_refusal_at(
+            ResourceDimension::WorkUnits,
+            "creo relation text match work",
+            |ctx| {
+                crate::curve::parse_relation_expression::<CurveExpressionValue>(
+                    ctx,
+                    "string_match('abc','abc')",
+                    &BTreeMap::new(),
+                    RelationEvaluationContext::default(),
+                )
+            },
+        ),
         "creo relation text match work",
     );
 }
@@ -82,9 +127,18 @@ fn relation_match_refuses_comparison_work() {
 #[test]
 fn relation_regex_refuses_compile_work() {
     assert_work(
-        &refuse::<CurveExpressionValue>("string_pattern('abc','a')", |policy| {
-            policy.limits.max_work_units = 1;
-        }),
+        &crate::test_support::last_refusal_at(
+            ResourceDimension::WorkUnits,
+            "creo relation regex compile work",
+            |ctx| {
+                crate::curve::parse_relation_expression::<CurveExpressionValue>(
+                    ctx,
+                    "string_pattern('abc','a')",
+                    &BTreeMap::new(),
+                    RelationEvaluationContext::default(),
+                )
+            },
+        ),
         "creo relation regex compile work",
     );
 }
@@ -112,9 +166,18 @@ fn relation_regex_refuses_compiler_scratch() {
 #[test]
 fn relation_regex_refuses_match_work() {
     assert_work(
-        &refuse::<CurveExpressionValue>("string_pattern('abc','a')", |policy| {
-            policy.limits.max_work_units = 2;
-        }),
+        &crate::test_support::last_refusal_at(
+            ResourceDimension::WorkUnits,
+            "creo relation regex match work",
+            |ctx| {
+                crate::curve::parse_relation_expression::<CurveExpressionValue>(
+                    ctx,
+                    "string_pattern('abc','a')",
+                    &BTreeMap::new(),
+                    RelationEvaluationContext::default(),
+                )
+            },
+        ),
         "creo relation regex match work",
     );
 }
@@ -141,7 +204,12 @@ fn relation_regex_preserves_service_match_and_invalid_pattern() {
         )
     })
     .expect("service pattern");
-    assert_eq!(matched, Some(CurveExpressionValue::Number(cadmpeg_ir::scalar::FiniteReal::new(1.0).expect("finite relation fixture"))));
+    assert_eq!(
+        matched,
+        Some(CurveExpressionValue::Number(
+            cadmpeg_ir::scalar::FiniteReal::new(1.0).expect("finite relation fixture")
+        ))
+    );
     let invalid = crate::decode::with_test_decode_ctx(|ctx| {
         crate::curve::parse_relation_expression::<CurveExpressionValue>(
             ctx,
@@ -159,7 +227,9 @@ fn relation_power_rejects_text_without_copying_the_invalid_operand() {
     use crate::curve::CreoMathFunction;
     let arguments = [
         CurveExpressionValue::String("abc".to_owned()),
-        CurveExpressionValue::Number(cadmpeg_ir::scalar::FiniteReal::new(2.0).expect("finite relation fixture")),
+        CurveExpressionValue::Number(
+            cadmpeg_ir::scalar::FiniteReal::new(2.0).expect("finite relation fixture"),
+        ),
     ];
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
@@ -193,14 +263,20 @@ fn relation_power_rejects_text_without_copying_the_invalid_operand() {
             CreoMathFunction::Pow,
             None,
             &[
-                CurveExpressionValue::Number(cadmpeg_ir::scalar::FiniteReal::new(2.0).expect("finite relation fixture")),
-                CurveExpressionValue::Number(cadmpeg_ir::scalar::FiniteReal::new(3.0).expect("finite relation fixture"))
+                CurveExpressionValue::Number(
+                    cadmpeg_ir::scalar::FiniteReal::new(2.0).expect("finite relation fixture")
+                ),
+                CurveExpressionValue::Number(
+                    cadmpeg_ir::scalar::FiniteReal::new(3.0).expect("finite relation fixture")
+                )
             ],
             RelationEvaluationContext::default(),
             &ctx,
         )
         .expect("numeric power needs no retained copy"),
-        Some(CurveExpressionValue::Number(cadmpeg_ir::scalar::FiniteReal::new(8.0).expect("finite relation fixture")))
+        Some(CurveExpressionValue::Number(
+            cadmpeg_ir::scalar::FiniteReal::new(8.0).expect("finite relation fixture")
+        ))
     );
 }
 

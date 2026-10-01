@@ -171,7 +171,11 @@ impl RelatedPayload {
         if state == RelatedState::One && class != RelatedClass::Class2017 {
             return None;
         }
-        Some(Self { class, entity, state })
+        Some(Self {
+            class,
+            entity,
+            state,
+        })
     }
 }
 
@@ -275,7 +279,7 @@ pub(crate) fn entry_payload(
             related_entity_state.and_then(RelatedState::from_byte),
         ) {
             (Some(entity), Some(state)) => RelatedPayload::new(class, entity, state)
-                .map(EntryPayload::Related).unwrap_or_else(|| plain_payload(class_id)),
+                .map_or_else(|| plain_payload(class_id), EntryPayload::Related),
             _ => plain_payload(class_id),
         },
         _ => plain_payload(class_id),
@@ -410,7 +414,9 @@ pub(crate) fn entity_graph(
         let name_bytes = &payload[name_start..name_end];
         let text_work = cadmpeg_core::decode::u64_from_index(name_bytes.len())
             .checked_mul(6)
-            .ok_or_else(|| ctx.refuse_codec_limit("creo feature entity text work", u64::MAX, u64::MAX))?;
+            .ok_or_else(|| {
+                ctx.refuse_codec_limit("creo feature entity text work", u64::MAX, u64::MAX)
+            })?;
         ctx.charge_work(text_work, "creo feature entity text work")?;
         entities.push(FeatureEntity {
             entity_id,
@@ -442,7 +448,6 @@ pub(crate) fn entity_graph(
     }
     Ok((entities, references))
 }
-
 
 pub(super) fn read_entries(
     ctx: &DecodeContext<'_>,
@@ -614,8 +619,8 @@ pub(crate) fn entity_tables(
 
 #[cfg(test)]
 mod tests {
-    use super::{RelatedClass, RelatedPayload, RelatedState};
     use super::{dummy_table_entry, entity_graph, entity_tables, read_entries, FeatureEntityTable};
+    use super::{RelatedClass, RelatedPayload, RelatedState};
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
 
@@ -623,9 +628,17 @@ mod tests {
 
     #[test]
     fn related_payload_enforces_class_state_domain() {
-        for class in [RelatedClass::Class210, RelatedClass::Class214, RelatedClass::Class219, RelatedClass::Class2017] {
+        for class in [
+            RelatedClass::Class210,
+            RelatedClass::Class214,
+            RelatedClass::Class219,
+            RelatedClass::Class2017,
+        ] {
             assert!(RelatedPayload::new(class, 1, RelatedState::Zero).is_some());
-            assert_eq!(RelatedPayload::new(class, 1, RelatedState::One).is_some(), class == RelatedClass::Class2017);
+            assert_eq!(
+                RelatedPayload::new(class, 1, RelatedState::One).is_some(),
+                class == RelatedClass::Class2017
+            );
         }
     }
 
@@ -758,9 +771,11 @@ mod tests {
     }
     #[test]
     fn entity_graph_lossy_name_refuses_copy_work() {
-        let (entities, references) = crate::test_support::assert_work_boundaries(&["creo feature entity text work"], |ctx| entity_graph(ctx, GRAPH));
+        let (entities, references) = crate::test_support::assert_work_boundaries(
+            &["creo feature entity text work"],
+            |ctx| entity_graph(ctx, GRAPH),
+        );
         assert_eq!((entities.len(), references.len()), (2, 1));
         assert_eq!(entities[1].name, "N\u{fffd}");
     }
-
 }
