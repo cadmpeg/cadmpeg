@@ -851,7 +851,7 @@ fn e5_nurbs_surface(
     };
     crate::nurbs::note_refusal(
         ctx,
-        NurbsSurface::from_admitted_grid(
+        NurbsSurface::new(ctx, 
             cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
                 u_degree,
                 cadmpeg_ir::geometry::nurbs::KnotVector::new(ctx, u_knots)?
@@ -866,7 +866,7 @@ fn e5_nurbs_surface(
             ),
             poles,
             false,
-        ),
+        )?,
         refusal,
         format_args!("e5 NURBS surface record at byte {}", record.pos),
     )

@@ -123,7 +123,7 @@ fn offset_support_binds_by_native_domain_knot_limits() {
                 *knot += 10.0;
             }
         };
-        cadmpeg_ir::geometry::nurbs::NurbsSurface::new(
+        cadmpeg_ir::geometry::nurbs::NurbsSurface::new(&cadmpeg_test_support::service_decode_context(), 
             cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
                 previous.u_degree(),
                 previous.u_knots().to_vec(),
@@ -136,7 +136,7 @@ fn offset_support_binds_by_native_domain_knot_limits() {
             ),
             previous.pole_grid().clone(),
             previous.normal_reversed(),
-        )
+        ).expect("fixture final NURBS admission")
     })
     .unwrap();
     carriers.push(decoy);
@@ -189,7 +189,7 @@ fn offset_support_binding_scales_each_nurbs_parameter_domain() {
                 *knot = (*knot - lower) / span * tiny;
             }
         };
-        cadmpeg_ir::geometry::nurbs::NurbsSurface::new(
+        cadmpeg_ir::geometry::nurbs::NurbsSurface::new(&cadmpeg_test_support::service_decode_context(), 
             cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
                 previous.u_degree(),
                 knots,
@@ -202,7 +202,7 @@ fn offset_support_binding_scales_each_nurbs_parameter_domain() {
             ),
             previous.pole_grid().clone(),
             previous.normal_reversed(),
-        )
+        ).expect("fixture final NURBS admission")
     })
     .unwrap();
     edit::replace(surface, |previous| {
@@ -216,7 +216,7 @@ fn offset_support_binding_scales_each_nurbs_parameter_domain() {
                 *knot = (*knot - lower) / span * tiny;
             }
         };
-        cadmpeg_ir::geometry::nurbs::NurbsSurface::new(
+        cadmpeg_ir::geometry::nurbs::NurbsSurface::new(&cadmpeg_test_support::service_decode_context(), 
             cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
                 previous.u_degree(),
                 previous.u_knots().to_vec(),
@@ -229,7 +229,7 @@ fn offset_support_binding_scales_each_nurbs_parameter_domain() {
             ),
             previous.pole_grid().clone(),
             previous.normal_reversed(),
-        )
+        ).expect("fixture final NURBS admission")
     })
     .unwrap();
     let interval = |range: [f64; 2]| {

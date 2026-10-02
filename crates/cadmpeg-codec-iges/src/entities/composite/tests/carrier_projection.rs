@@ -439,7 +439,7 @@ fn reversing_a_subrange_reflects_the_active_nurbs_domain() {
         None,
     );
     let (reversed, range) =
-        reverse_nurbs(curve, [2.0, 5.0]).expect("a bounded subrange reverses exactly");
+        reverse_nurbs(&cadmpeg_test_support::service_decode_context(), curve, [2.0, 5.0]).expect("a bounded subrange reverses exactly");
     assert_eq!(range, [5.0, 8.0]);
     assert_eq!(
         cadmpeg_ir::eval::nurbs_curve_point_at(&reversed, range[0])
@@ -463,7 +463,7 @@ fn reversing_a_range_outside_the_active_nurbs_domain_is_rejected() {
         vec![Point3::new(0.0, 0.0, 0.0), Point3::new(10.0, 0.0, 0.0)],
         None,
     );
-    let error = reverse_nurbs(curve, [-1.0, 5.0])
+    let error = reverse_nurbs(&cadmpeg_test_support::service_decode_context(), curve, [-1.0, 5.0])
         .expect_err("an interval outside the child's own domain is refused")
         .to_string();
     assert!(

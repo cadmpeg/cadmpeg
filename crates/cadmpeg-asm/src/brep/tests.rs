@@ -288,12 +288,12 @@ fn exact_circle_recognition_is_projective_and_degree_invariant() {
         ).expect("fixture pole pairing admission")
         .expect("scaled weights are finite and non-zero");
         edit::replace(&mut scaled, |previous| {
-            cadmpeg_ir::geometry::nurbs::NurbsCurve::new(
+            cadmpeg_ir::geometry::nurbs::NurbsCurve::new(&cadmpeg_test_support::service_decode_context(), 
                 previous.degree(),
                 previous.knots().to_vec(),
                 replacement,
                 previous.periodic(),
-            )
+            ).expect("fixture final NURBS admission")
         })
     }
     .unwrap();

@@ -12,7 +12,7 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::eval::finite_or_refusal;
 use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::geometry::{
-    nurbs::{KnotVector, NurbsCurve, NurbsPoleGrid, NurbsPoles3, NurbsSurface, NurbsSurfaceAxis},
+    nurbs::{KnotVector, NurbsCurve, NurbsSurface, NurbsSurfaceAxis},
     Curve, CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface, SurfaceGeometry,
 };
 use cadmpeg_ir::ids::EdgeId;
@@ -684,8 +684,7 @@ pub(super) fn project(
         raw_knots.extend(knots.into_iter().map(FiniteReal::get));
         let construction = match KnotVector::new(ctx, raw_knots)? {
             Err(error) => Err(error),
-            Ok(knots) => NurbsPoles3::from_checked_lanes(ctx, control_points, None)?
-                .and_then(|poles| NurbsCurve::new(3, knots, poles, false)),
+            Ok(knots) => NurbsCurve::from_checked_lanes(ctx, 3, knots, control_points, None, false)?,
         };
         let nurbs = match construction {
             Ok(nurbs) => nurbs,
@@ -1083,14 +1082,7 @@ pub(super) fn project(
             Err(error) => Err(error),
             Ok(u_knots) => match KnotVector::new(ctx, raw_v_knots)? {
                 Err(error) => Err(error),
-                Ok(v_knots) => NurbsPoleGrid::from_checked_lanes(ctx, rows, None)?.and_then(|poles| {
-                    NurbsSurface::new(
-                        NurbsSurfaceAxis::new(3, u_knots, false),
-                        NurbsSurfaceAxis::new(3, v_knots, false),
-                        poles,
-                        false,
-                    )
-                }),
+                Ok(v_knots) => NurbsSurface::from_checked_lanes(ctx, NurbsSurfaceAxis::new(3, u_knots, false), NurbsSurfaceAxis::new(3, v_knots, false), cadmpeg_ir::geometry::nurbs::NurbsSurfaceLanes::new(rows, None), false)?,
             },
         };
         let nurbs = match construction {

@@ -670,6 +670,7 @@ impl<T> ConcatenatedSegments<T> {
 /// read are the child's own stated degree, knots and interval, so a reader that
 /// cannot reflect them states which of them it refused.
 fn reverse_nurbs(
+    ctx: &DecodeContext<'_>,
     curve: NurbsCurve,
     interval: [f64; 2],
 ) -> Result<(NurbsCurve, [f64; 2]), CompositeCurveError> {
@@ -720,6 +721,13 @@ fn reverse_nurbs(
     let reversed_range = [reflect(finite_end)?, reflect(finite_start)?];
     let (source_degree, admitted_knots, mut poles, periodic) = curve.into_parts();
     let mut knots = admitted_knots.into_values();
+    for (count, operation) in [
+        (knots.len(), "iges reversed NURBS knot reversal"),
+        (knots.len(), "iges reversed NURBS knot reflection"),
+        (poles.count(), "iges reversed NURBS pole reversal"),
+    ] {
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(count), operation)?;
+    }
     knots.reverse();
     for knot in &mut knots {
         let finite = FiniteReal::new(*knot).ok_or(
@@ -731,7 +739,7 @@ fn reverse_nurbs(
         *knot = reflect(finite)?;
     }
     poles.reverse();
-    let reversed = NurbsCurve::new(source_degree, knots, poles, periodic)?;
+    let reversed = NurbsCurve::new(ctx, source_degree, knots, poles, periodic)??;
     Ok((reversed, reversed_range))
 }
 
@@ -1443,7 +1451,7 @@ fn elevate_nurbs_to_degree(
     elevated_knots[..=target_degree].fill(interval[0]);
     let end_start = elevated_knots.len() - target_degree - 1;
     elevated_knots[end_start..].fill(interval[1]);
-    let elevated = NurbsCurve::new(elevated_degree, elevated_knots, poles, false)?;
+    let elevated = NurbsCurve::new(ctx, elevated_degree, elevated_knots, poles, false).map_err(DegreeElevationError::Allocation)??;
     *curve = elevated;
     Ok(())
 }
@@ -1658,7 +1666,7 @@ fn concatenate_nurbs<T>(
             points: control_points,
         }
     };
-    let nurbs = NurbsCurve::new(degree, knots, poles, false)?;
+    let nurbs = NurbsCurve::new(ctx, degree, knots, poles, false)??;
     // The joined carrier evaluates at both of its own endpoints: reading the
     // two points is the statement, and each names its own parameter when the
     // carrier does not answer.
@@ -1779,7 +1787,7 @@ fn bounded_nurbs_for_id(
             let (curve, range) = if segment.same_sense {
                 child
             } else {
-                reverse_nurbs(child.0, child.1)?
+                reverse_nurbs(ctx, child.0, child.1)?
             };
             children.push((curve, range, ()));
         }
@@ -1816,7 +1824,7 @@ fn bounded_nurbs_for_id(
             let mut points = ctx.collection_vec(2, "iges composite line points")?;
             points.extend([start, end]);
             Some((
-                NurbsCurve::new(1, knots, NurbsPoles3::Polynomial { points }, false)?,
+                NurbsCurve::new(ctx, 1, knots, NurbsPoles3::Polynomial { points }, false)??,
                 [0.0, 1.0],
             ))
         }

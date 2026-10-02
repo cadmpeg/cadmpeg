@@ -11,7 +11,7 @@ use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::eval::{nurbs_curve_parameter_domain, nurbs_curve_parameter_near_point};
 use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::geometry::{
-    nurbs::{KnotVector, NurbsCurve, NurbsPoleGrid, NurbsPoles3, NurbsSurface, NurbsSurfaceAxis},
+    nurbs::{KnotVector, NurbsCurve, NurbsSurface, NurbsSurfaceAxis},
     pcurve::{Pcurve, PcurveGeometry, PcurveNurbs, PcurveNurbsPoles},
     sampled::{PolylineCurve, PolylineSamples},
     CompositeCurveSegment, CompositeCurveTransition, Curve, CurveGeometry, DirectedParameterRange,
@@ -5347,14 +5347,7 @@ fn nurbs_curve(
             "step_nurbs_curve_control_points",
         )?;
     }
-    let curve = NurbsPoles3::from_lanes(ctx, control_points, definition.weights)?.and_then(|poles| {
-        NurbsCurve::new(
-            definition.degree,
-            definition.knots,
-            poles,
-            definition.periodic,
-        )
-    });
+    let curve = NurbsCurve::from_lanes(ctx, definition.degree, definition.knots, control_points, definition.weights, definition.periodic)?;
     match curve {
         Ok(curve) => Ok(Some(curve)),
         Err(error) => {
@@ -6370,14 +6363,7 @@ fn nurbs_surface(
     } else {
         None
     };
-    let surface = NurbsPoleGrid::from_lanes(ctx, control_points, weights)?.and_then(|poles| {
-        NurbsSurface::new(
-            NurbsSurfaceAxis::new(u_degree, u_knots, u_periodic),
-            NurbsSurfaceAxis::new(v_degree, v_knots, v_periodic),
-            poles,
-            false,
-        )
-    });
+    let surface = NurbsSurface::from_lanes(ctx, NurbsSurfaceAxis::new(u_degree, u_knots, u_periodic), NurbsSurfaceAxis::new(v_degree, v_knots, v_periodic), cadmpeg_ir::geometry::nurbs::NurbsSurfaceLanes::new(control_points, weights), false)?;
     match surface {
         Ok(surface) => Ok(Some(surface)),
         Err(error) => {

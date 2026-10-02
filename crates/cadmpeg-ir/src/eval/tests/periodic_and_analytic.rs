@@ -73,12 +73,12 @@ fn periodic_nurbs_parameters_preserve_phase_and_wrap_for_evaluation() {
     {
         let replacement = false;
         edit::replace(nurbs, |previous| {
-            crate::geometry::nurbs::NurbsCurve::new(
+            crate::geometry::nurbs::NurbsCurve::new(&cadmpeg_test_support::service_decode_context(), 
                 previous.degree(),
                 previous.knots().to_vec(),
                 previous.pole_rows().clone(),
                 replacement,
-            )
+            ).expect("fixture final NURBS admission")
         })
         .unwrap();
     };

@@ -167,7 +167,7 @@ fn nurbs_surface_boundaries(
                 points: control_points,
             }
         };
-        let curve = match NurbsCurve::new_admitted_poles(degree, knots, poles, periodic) {
+        let curve = match NurbsCurve::new(ctx, degree, knots, poles, periodic)? {
             Ok(curve) => curve,
             Err(error) => {
                 refusal.note_checked(

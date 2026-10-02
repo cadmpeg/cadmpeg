@@ -1089,7 +1089,7 @@ fn periodic_offset_cache_fit_covers_the_complete_active_domain() {
         {
             let replacement = true;
             edit::replace(support_surface, |previous| {
-                NurbsSurface::new(
+                NurbsSurface::new(&cadmpeg_test_support::service_decode_context(), 
                     NurbsSurfaceAxis::new(
                         previous.u_degree(),
                         previous.u_knots().to_vec(),
@@ -1102,14 +1102,14 @@ fn periodic_offset_cache_fit_covers_the_complete_active_domain() {
                     ),
                     previous.pole_grid().clone(),
                     previous.normal_reversed(),
-                )
+                ).expect("fixture final NURBS admission")
             })
             .unwrap();
         };
         {
             let replacement = true;
             edit::replace(candidate_surface, |previous| {
-                NurbsSurface::new(
+                NurbsSurface::new(&cadmpeg_test_support::service_decode_context(), 
                     NurbsSurfaceAxis::new(
                         previous.u_degree(),
                         previous.u_knots().to_vec(),
@@ -1122,7 +1122,7 @@ fn periodic_offset_cache_fit_covers_the_complete_active_domain() {
                     ),
                     previous.pole_grid().clone(),
                     previous.normal_reversed(),
-                )
+                ).expect("fixture final NURBS admission")
             })
             .unwrap();
         };
@@ -1397,7 +1397,7 @@ fn curved_offset_cache_fit_certifies_varying_positive_weights() {
         {
             let replacement = poles.unwrap();
             edit::replace(surface, |previous| {
-                NurbsSurface::new(
+                NurbsSurface::new(&cadmpeg_test_support::service_decode_context(), 
                     NurbsSurfaceAxis::new(
                         previous.u_degree(),
                         previous.u_knots().to_vec(),
@@ -1410,7 +1410,7 @@ fn curved_offset_cache_fit_certifies_varying_positive_weights() {
                     ),
                     replacement,
                     previous.normal_reversed(),
-                )
+                ).expect("fixture final NURBS admission")
             })
         }
         .unwrap();
@@ -1464,7 +1464,7 @@ fn rational_offset_cache_bounds_are_translation_invariant() {
         {
             let replacement = poles.unwrap();
             edit::replace(surface, |previous| {
-                NurbsSurface::new(
+                NurbsSurface::new(&cadmpeg_test_support::service_decode_context(), 
                     NurbsSurfaceAxis::new(
                         previous.u_degree(),
                         previous.u_knots().to_vec(),
@@ -1477,7 +1477,7 @@ fn rational_offset_cache_bounds_are_translation_invariant() {
                     ),
                     replacement,
                     previous.normal_reversed(),
-                )
+                ).expect("fixture final NURBS admission")
             })
         }
         .unwrap();

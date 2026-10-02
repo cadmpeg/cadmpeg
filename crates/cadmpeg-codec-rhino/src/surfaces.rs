@@ -856,7 +856,6 @@ fn sum_nurbs(
         .knots()
         .try_clone_for_decode(ctx, "Rhino sum surface V knots")
         .map_err(crate::curves::GeometryError::from)?;
-    admit_nurbs_pole_conversion(ctx, product_count, rational)?;
     NurbsSurface::from_checked_lanes(ctx, 
         NurbsSurfaceAxis::new(first.degree(), u_knots, first.periodic()),
         NurbsSurfaceAxis::new(second.degree(), v_knots, second.periodic()),
@@ -919,31 +918,6 @@ fn copy_rows<T: Copy>(
     Ok(rows)
 }
 
-fn admit_nurbs_pole_conversion(
-    ctx: &DecodeContext<'_>,
-    pole_count: usize,
-    rational: bool,
-) -> Result<(), GeometryError> {
-    let count = cadmpeg_core::decode::u64_from_index(pole_count);
-    let bytes_per_pole = std::mem::size_of::<FinitePoint3>()
-        .checked_add(if rational {
-            std::mem::size_of::<NonZeroReal>()
-        } else {
-            0
-        })
-        .ok_or_else(|| {
-            GeometryError::not_implemented("Rhino surface pole bytes exceed address space")
-        })?;
-    let bytes = count
-        .checked_mul(cadmpeg_core::decode::u64_from_index(bytes_per_pole))
-        .ok_or_else(|| {
-            GeometryError::not_implemented("Rhino surface pole bytes exceed address space")
-        })?;
-    ctx.charge_collection_items(count, "Rhino surface admitted poles")?;
-    ctx.charge_retained(bytes, "Rhino surface admitted poles")?;
-    Ok(())
-}
-
 /// Constructs the exact degree-one tensor interpolation between two profile curves.
 pub(crate) fn extrusion_nurbs(
     ctx: &DecodeContext<'_>,
@@ -992,12 +966,12 @@ pub(crate) fn extrusion_nurbs(
     let path_knots =
         KnotVector::from_finite_lanes(ctx, vec![path_start, path_start, path_end, path_end])?
             .map_err(|error| GeometryError::malformed(offset, error.to_string()))?;
-    let mut surface = NurbsSurface::from_admitted_grid(
+    let mut surface = NurbsSurface::new(ctx, 
         NurbsSurfaceAxis::new(start.degree(), u_knots, start.periodic()),
         NurbsSurfaceAxis::new(1, path_knots, false),
         poles,
         false,
-    )
+    )?
     .map_err(|error| GeometryError::malformed(offset, error.to_string()))?;
     if transposed {
         surface.transpose_parameter_axes();
@@ -1143,12 +1117,12 @@ fn read_nurbs_curve_inner(
     reader.skip_remaining()?;
     let poles = NurbsPoles3::from_checked_lanes(ctx, control_points, weights)?
         .map_err(|error| GeometryError::malformed(reader.position(), error.to_string()))?;
-    NurbsCurve::new(
+    NurbsCurve::new(ctx, 
         u32::try_from(order - 1).map_err(|_| error(reader.position(), "NURBS order overflow"))?,
         full_knots,
         poles,
         periodic,
-    )
+    )?
     .map_err(|error| GeometryError::malformed(reader.position(), error.to_string()))
 }
 
@@ -1249,7 +1223,7 @@ pub(crate) fn read_nurbs_surface_prefix(
         .transpose()?;
     let poles = NurbsPoleGrid::from_checked_lanes(ctx, point_rows, weight_rows)?
         .map_err(|error| GeometryError::malformed(reader.position(), error.to_string()))?;
-    NurbsSurface::new(
+    NurbsSurface::new(ctx, 
         NurbsSurfaceAxis::new(
             u32::try_from(u_order - 1)
                 .map_err(|_| error(reader.position(), "surface U order overflow"))?,
@@ -1264,7 +1238,7 @@ pub(crate) fn read_nurbs_surface_prefix(
         ),
         poles,
         false,
-    )
+    )?
     .map_err(|error| GeometryError::malformed(reader.position(), error.to_string()))
 }
 

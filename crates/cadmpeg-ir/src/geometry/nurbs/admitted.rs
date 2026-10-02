@@ -2,7 +2,7 @@
 //! Caller-admitted raw NURBS construction.
 
 use super::{
-    KnotVector, NurbsCurve, NurbsError, NurbsPoleGrid, NurbsPoles3, NurbsSurface, NurbsSurfaceAxis,
+    NurbsCurve, NurbsError, NurbsPoleGrid, NurbsPoles3, NurbsSurface, NurbsSurfaceAxis,
     NurbsSurfaceLanes, PoleValue,
 };
 use crate::features::FinitePoint3;
@@ -78,10 +78,10 @@ impl super::NurbsAdmission for DecodeContext<'_> {
 impl NurbsCurve {
     /// Construct raw lanes with caller admission before pole pairing and conversion.
     /// Resource refusal is separate from the geometry refusal, whose order is unchanged.
-    pub fn from_lanes<P: PoleValue<FinitePoint3>>(
+    pub fn from_lanes<P: PoleValue<FinitePoint3>, K: super::KnotValue>(
         ctx: &DecodeContext<'_>,
         degree: u32,
-        knots: Vec<f64>,
+        knots: K,
         control_points: Vec<P>,
         weights: Option<Vec<f64>>,
         periodic: bool,
@@ -94,16 +94,7 @@ impl NurbsCurve {
             };
             let poles = super::pair_curve_lanes(ctx, control_points, weights, &mut pair_storage,
                 |index, weight| super::admit_weight(ctx, "poles", index, weight))?;
-            super::require_curve_cardinality(ctx, degree, knots.len(), poles.count(), "control_points")?;
-            let poles = P::admit_curve_poles(poles, |poles| super::map_curve_poles(ctx, poles))?;
-            super::require_nondecreasing_knots(ctx, &knots, "")?;
-            let knots = KnotVector(knots);
-            Ok(Self {
-                degree,
-                knots,
-                poles,
-                periodic,
-            })
+            super::build_curve(ctx, degree, knots, poles, periodic)
         })())
     }
 }
@@ -121,10 +112,10 @@ impl super::BsplineSurface {
 impl NurbsSurface {
     /// Construct raw grids with caller admission before every outer and inner allocation.
     /// Resource refusal is separate from the geometry refusal, whose order is unchanged.
-    pub fn from_lanes<P: PoleValue<FinitePoint3>>(
+    pub fn from_lanes<P: PoleValue<FinitePoint3>, U: super::KnotValue, V: super::KnotValue>(
         ctx: &DecodeContext<'_>,
-        u: NurbsSurfaceAxis,
-        v: NurbsSurfaceAxis,
+        u: NurbsSurfaceAxis<U>,
+        v: NurbsSurfaceAxis<V>,
         lanes: NurbsSurfaceLanes<P>,
         normal_reversed: bool,
     ) -> Result<Result<Self, NurbsError>, CodecError> {
@@ -140,23 +131,7 @@ impl NurbsSurface {
             };
             let poles = super::pair_grid_lanes(ctx, control_points, weights, &mut pair_storage,
                 |index, weight| super::admit_weight(ctx, "pole grid row", index, weight))?;
-            super::require_surface_shape(ctx, u.degree, u.knots.len(), v.degree, v.knots.len(), &poles)?;
-            let poles = P::admit_surface_poles(poles, |grid| super::map_surface_poles(ctx, grid))?;
-
-            super::require_nondecreasing_knots(ctx, &u.knots, "u_")?;
-            let u_knots = KnotVector(u.knots);
-            super::require_nondecreasing_knots(ctx, &v.knots, "v_")?;
-            let v_knots = KnotVector(v.knots);
-            Ok(Self {
-                u_degree: u.degree,
-                v_degree: v.degree,
-                u_knots,
-                v_knots,
-                poles,
-                normal_reversed,
-                u_periodic: u.periodic,
-                v_periodic: v.periodic,
-            })
+            super::build_surface(ctx, u, v, poles, normal_reversed)
         })())
     }
 }

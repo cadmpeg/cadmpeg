@@ -829,15 +829,6 @@ fn legacy_spline(
             ));
         }
     }
-    if rational != 0 {
-        admit_v1_values::<cadmpeg_ir::geometry::nurbs::WeightedPole3<FinitePoint3>>(
-            ctx,
-            cv_count,
-            "Rhino V1 spline admitted poles",
-        )?;
-    } else {
-        admit_v1_values::<FinitePoint3>(ctx, cv_count, "Rhino V1 spline admitted poles")?;
-    }
     NurbsCurve::from_checked_lanes(ctx, 
         u32::try_from(order - 1)
             .map_err(|_| CodecError::Malformed("V1 spline degree overflow".to_string()))?,
@@ -3912,7 +3903,7 @@ mod tests {
         assert!(
             matches!(refusal, cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
-                && limit.operation == "Rhino V1 spline admitted poles"
+                && limit.operation == "IR NURBS admitted poles"
                 && limit.used == 8)
         );
         let service_arena = cadmpeg_core::decode::DecodeArena::new();
@@ -3987,7 +3978,9 @@ mod tests {
         let surface =
             chunk_at(&data, 0, data.len(), ArchiveVersion::V1, false).expect("V1 surface wrapper");
         let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-        policy.limits.max_collection_items = 22;
+        // Stored knots use four slots, reconstructed knots eight, and flat poles four.
+        // The next allocation is the two-row grid that the constructor takes by move.
+        policy.limits.max_collection_items = 16;
         let limited_arena = cadmpeg_core::decode::DecodeArena::new();
         let (limited_ctx, _) =
             cadmpeg_core::decode::DecodeContext::from_root_bytes(&data, &limited_arena, &policy)
@@ -3998,13 +3991,23 @@ mod tests {
             surface.body(),
             super::MillimeterScale::IDENTITY,
         )
-        .expect_err("the constructor needs admitted surface rows");
+        .expect_err("the source grid needs two admitted row slots before construction");
         assert!(
             matches!(refusal, cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
-                && limit.operation == "Rhino V1 surface admitted rows"
-                && limit.used == 22)
+                && limit.operation == "Rhino V1 surface pole rows"
+                && limit.used == 16)
         );
+        policy.limits.max_collection_items = 22;
+        let exact_arena = cadmpeg_core::decode::DecodeArena::new();
+        let (exact_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            &data, &exact_arena, &policy,
+        ).expect("V1 surface input admitted");
+        let exact = super::legacy_surface(
+            &exact_ctx, &data, surface.body(), super::MillimeterScale::IDENTITY,
+        ).expect("four stored knots, eight expanded knots, four flat poles, two rows and four grid poles");
+        assert_eq!(exact.pole_grid().u_count(), 2);
+        exact_ctx.finish_session().expect("construction does not allocate admitted rows again");
         let service_arena = cadmpeg_core::decode::DecodeArena::new();
         let (service_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
             &data,
