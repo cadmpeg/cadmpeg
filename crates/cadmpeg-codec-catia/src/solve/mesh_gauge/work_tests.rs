@@ -141,3 +141,99 @@ fn mapped_pair_scan_refuses_before_duplicate_becomes_none() {
         map_endpoint_relation_state(ctx, &state, gauge, &[0, 1])
     }).expect("service work").is_none());
 }
+
+#[test]
+fn coordinate_refinement_and_automorphism_comparisons_refuse_key_bytes() {
+    let rows = [EdgeRow::new(1, vec![0, 1], EdgeBoundaryLayout::CompleteBoundaryRun)
+        .expect("nonempty handles")];
+    for evidence in [false, true] {
+        let operations = observed_work_refusals(|ctx| {
+            super::build_mesh_coordinate_gauge(ctx, 2, &rows, &[[0, 1]], &[MeshEdgeGeometry::Line],
+                &[vec![[0, 1]]], &[evidence])
+        });
+        for operation in ["catia_gauge_refinement_compare", "catia_gauge_automorphism_rows_compare",
+            "catia_gauge_permutation_dedup_compare"] {
+            assert!(operations.contains(operation), "missing work refusal for {operation}");
+        }
+        if evidence {
+            assert!(operations.contains("catia_gauge_identity_row_compare"));
+        }
+    }
+}
+
+#[test]
+fn partial_endpoint_candidate_comparison_refuses_long_equal_keys() {
+    let coordinate = super::MeshCoordinateGauge { components: vec![vec![vec![0, 1], vec![1, 0]]] };
+    let gauge = MeshCandidateGauge {
+        edge_rows: &[], edge_faces: &[], edge_geometry: &[], edge_candidates: &[],
+        edge_identity_evidence: &[], coordinate_gauge: Some(&coordinate),
+    };
+    let pairs = vec![None; 128];
+    let result = crate::test_support::with_work_limit(1_000, |ctx| {
+        super::canonicalize_partial_endpoint_pair_gauge(ctx, &pairs, gauge)
+    });
+    assert!(matches!(result, Err(CodecError::ResourceLimit(limit))
+        if limit.operation == "catia_gauge_partial_pair_compare"));
+    assert_eq!(crate::test_support::with_service_context(|ctx| {
+        super::canonicalize_partial_endpoint_pair_gauge(ctx, &pairs, gauge)
+    }).expect("service comparison work"), Some(pairs));
+}
+
+fn comparison_topology() -> crate::families::standard::topology::StandardTopologyDraft {
+    use crate::families::standard::topology::{BoundaryDraft, CoedgeUse, FaceTopologyDraft, StandardTopologyDraft};
+    StandardTopologyDraft {
+        faces: vec![FaceTopologyDraft { boundaries: vec![BoundaryDraft::new(vec![
+            CoedgeUse { edge_row: 0, reversed: false, start_vertex: 0, end_vertex: 1 },
+            CoedgeUse { edge_row: 0, reversed: true, start_vertex: 1, end_vertex: 0 },
+        ]).expect("nonempty cycle")] }],
+        edge_rows: vec![EdgeRow::new(1, vec![0, 1], EdgeBoundaryLayout::CompleteBoundaryRun)
+            .expect("nonempty handles")],
+        vertex_points: vec![[0.0, 0.0, 0.0]; 2], logical_vertex_count: 2,
+    }
+}
+
+#[test]
+fn coordinate_topology_candidate_comparison_refuses_before_selection() {
+    let topology = comparison_topology();
+    let coordinate = super::MeshCoordinateGauge { components: vec![vec![vec![0, 1], vec![1, 0]]] };
+    let candidates = [vec![[0, 1]]];
+    let gauge = MeshCandidateGauge {
+        edge_rows: &topology.edge_rows, edge_faces: &[], edge_geometry: &[MeshEdgeGeometry::Line],
+        edge_candidates: &candidates, edge_identity_evidence: &[false], coordinate_gauge: Some(&coordinate),
+    };
+    let operations = observed_work_refusals(|ctx| {
+        super::canonicalize_mesh_coordinate_gauges(ctx, topology.clone(), gauge)
+    });
+    assert!(operations.contains("catia_gauge_coordinate_topology_compare"));
+}
+
+#[test]
+fn endpoint_relation_candidate_comparison_refuses_before_selection() {
+    let coordinate = super::MeshCoordinateGauge { components: vec![vec![vec![0, 1], vec![1, 0]]] };
+    let gauge = MeshCandidateGauge {
+        edge_rows: &[], edge_faces: &[], edge_geometry: &[], edge_candidates: &[],
+        edge_identity_evidence: &[], coordinate_gauge: Some(&coordinate),
+    };
+    let domains = vec![vec![super::MeshEndpointRelationChoice {
+        id: 0, selection: MeshEndpointRelationSelection::Deferred,
+    }]];
+    let operations = observed_work_refusals(|ctx| {
+        super::canonicalize_endpoint_relation_state(ctx, &domains, &[None], gauge)
+    });
+    assert!(operations.contains("catia_relation_candidate_compare"));
+}
+
+#[test]
+fn candidate_equivalence_refuses_each_variable_length_comparison() {
+    let candidate = (comparison_topology(), vec![0, 1]);
+    let operations = observed_work_refusals(|ctx| {
+        super::mesh_candidates_equivalent_with_context(ctx, &candidate, &candidate, None)
+    });
+    for operation in ["catia_gauge_candidate_point_compare", "catia_gauge_candidate_topology_compare",
+        "catia_gauge_candidate_assignment_compare"] {
+        assert!(operations.contains(operation), "missing work refusal for {operation}");
+    }
+    assert!(crate::test_support::with_service_context(|ctx| {
+        super::mesh_candidates_equivalent_with_context(ctx, &candidate, &candidate, None)
+    }).expect("service comparison work"));
+}
