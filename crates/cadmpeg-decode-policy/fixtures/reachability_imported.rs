@@ -44,3 +44,26 @@ impl cadmpeg_core::Work for EncoderWorker {
 fn encode_generic(bytes: &[u8]) {
     cadmpeg_core::nested(&EncoderWorker, bytes);
 }
+
+pub struct DecodeContext;
+pub fn decode_symbolic<T: cadmpeg_core::SymbolicWork + cadmpeg_core::SymbolicObject + 'static>(
+    _context: &mut DecodeContext, worker: T, bytes: &[u8],
+) {
+    cadmpeg_core::symbolic_nested(&worker, bytes);
+    cadmpeg_core::symbolic_object(worker);
+}
+struct SymbolicWorker;
+impl cadmpeg_core::SymbolicWork for SymbolicWorker {
+    fn work(&self, bytes: &[u8]) {
+        for byte in bytes { // reached-loop
+            std::hint::black_box(byte);
+        }
+    }
+}
+impl cadmpeg_core::SymbolicObject for SymbolicWorker {
+    fn work(&self, bytes: &[u8]) {
+        for byte in bytes { // reached-loop
+            std::hint::black_box(byte);
+        }
+    }
+}

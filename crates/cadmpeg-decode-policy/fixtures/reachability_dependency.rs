@@ -81,3 +81,19 @@ impl Work for DeferredWorker {
 fn uncalled_object() {
     let _object: Box<dyn Work> = Box::new(DeferredWorker);
 }
+
+pub trait SymbolicWork {
+    fn work(&self, bytes: &[u8]);
+}
+pub fn symbolic_dispatch<T: SymbolicWork>(worker: &T, bytes: &[u8]) {
+    worker.work(bytes);
+}
+pub fn symbolic_nested<T: SymbolicWork>(worker: &T, bytes: &[u8]) {
+    symbolic_dispatch(worker, bytes);
+}
+pub trait SymbolicObject {
+    fn work(&self, bytes: &[u8]);
+}
+pub fn symbolic_object<T: SymbolicObject + 'static>(worker: T) {
+    let _object: Box<dyn SymbolicObject> = Box::new(worker);
+}
