@@ -331,7 +331,7 @@ fn historical_point_inside_unique_closed_line_profile_selects_region() {
             decode_ctx
         ))
         .unwrap(),
-        Some(SketchProfileRegion::loops(0, Vec::new()).unwrap())
+        Some(SketchProfileRegion::loops(0, Vec::new(), &cadmpeg_test_support::service_decode_context()).expect("fixture loop-region admission").unwrap())
     );
     assert_eq!(
         crate::test_support::with_decode_context(|decode_ctx| region_containing_points(
@@ -449,7 +449,7 @@ fn nested_line_profiles_resolve_atomic_regions_and_immediate_holes() {
             decode_ctx
         ))
         .unwrap(),
-        Some(SketchProfileRegion::loops(0, vec![1]).unwrap())
+        Some(SketchProfileRegion::loops(0, vec![1], &cadmpeg_test_support::service_decode_context()).expect("fixture loop-region admission").unwrap())
     );
     assert_eq!(
         crate::test_support::with_decode_context(|decode_ctx| region_containing_points(
@@ -460,7 +460,7 @@ fn nested_line_profiles_resolve_atomic_regions_and_immediate_holes() {
             decode_ctx
         ))
         .unwrap(),
-        Some(SketchProfileRegion::loops(1, vec![2]).unwrap())
+        Some(SketchProfileRegion::loops(1, vec![2], &cadmpeg_test_support::service_decode_context()).expect("fixture loop-region admission").unwrap())
     );
     assert_eq!(
         crate::test_support::with_decode_context(|decode_ctx| region_containing_points(
@@ -471,7 +471,7 @@ fn nested_line_profiles_resolve_atomic_regions_and_immediate_holes() {
             decode_ctx
         ))
         .unwrap(),
-        Some(SketchProfileRegion::loops(2, Vec::new()).unwrap())
+        Some(SketchProfileRegion::loops(2, Vec::new(), &cadmpeg_test_support::service_decode_context()).expect("fixture loop-region admission").unwrap())
     );
     assert_eq!(
         crate::test_support::with_decode_context(|decode_ctx| region_containing_points(
@@ -482,7 +482,7 @@ fn nested_line_profiles_resolve_atomic_regions_and_immediate_holes() {
             decode_ctx
         ))
         .unwrap(),
-        Some(SketchProfileRegion::loops(0, vec![1]).unwrap())
+        Some(SketchProfileRegion::loops(0, vec![1], &cadmpeg_test_support::service_decode_context()).expect("fixture loop-region admission").unwrap())
     );
     assert_eq!(
         crate::test_support::with_decode_context(|decode_ctx| region_containing_points(
@@ -592,7 +592,7 @@ fn nonperiodic_nurbs_boundary_resolves_atomic_region() {
             decode_ctx
         ))
         .unwrap(),
-        Some(SketchProfileRegion::loops(0, vec![1]).unwrap())
+        Some(SketchProfileRegion::loops(0, vec![1], &cadmpeg_test_support::service_decode_context()).expect("fixture loop-region admission").unwrap())
     );
 }
 
@@ -895,7 +895,7 @@ fn polygon_and_circle_boundaries_resolve_one_atomic_region() {
         .unwrap(),
         native_ref: None,
     };
-    let expected = SketchProfileRegion::loops(0, vec![1]).unwrap();
+    let expected = SketchProfileRegion::loops(0, vec![1], &cadmpeg_test_support::service_decode_context()).expect("fixture loop-region admission").unwrap();
 
     assert_eq!(
         crate::test_support::with_decode_context(|decode_ctx| region_containing_points(
@@ -917,7 +917,7 @@ fn polygon_and_circle_boundaries_resolve_one_atomic_region() {
             decode_ctx
         ))
         .unwrap(),
-        Some(SketchProfileRegion::loops(1, Vec::new()).unwrap())
+        Some(SketchProfileRegion::loops(1, Vec::new(), &cadmpeg_test_support::service_decode_context()).expect("fixture loop-region admission").unwrap())
     );
 }
 

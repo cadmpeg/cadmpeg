@@ -111,8 +111,7 @@ fn parent_admission_checks_tree_ownership_across_the_destination_and_draft() {
             role: FeatureTreeNodeRole::History,
             children: TreeChildren::new(
                 vec!["test:parents:feature#1-child".try_into().unwrap()],
-                None,
-            )
+                None, &cadmpeg_test_support::service_decode_context())
             .unwrap(),
         }));
     base.model.features.push(parent);

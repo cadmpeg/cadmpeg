@@ -521,8 +521,8 @@ fn sketch_regions_round_trip_with_explicit_boundary_roles() {
     let profile = PlanarProfileRef::sketch_regions(
         SketchId::mint("synthetic:test:sketch#region").unwrap(),
         vec![
-            SketchProfileRegion::loops(2, vec![3, 5]).unwrap(),
-            SketchProfileRegion::loops(8, Vec::new()).unwrap(),
+            SketchProfileRegion::loops(2, vec![3, 5], &cadmpeg_test_support::service_decode_context()).expect("fixture loop-region admission").unwrap(),
+            SketchProfileRegion::loops(8, Vec::new(), &cadmpeg_test_support::service_decode_context()).expect("fixture loop-region admission").unwrap(),
             SketchProfileRegion::trimmed(
                 vec![SketchProfileBoundaryUse {
                     entity: SketchEntityId::mint("synthetic:test:sketch-entity#curve").unwrap(),

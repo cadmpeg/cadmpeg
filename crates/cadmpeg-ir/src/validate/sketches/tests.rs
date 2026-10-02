@@ -893,7 +893,7 @@ fn sketch_profile_subselections_are_bounds_checked() {
         ProfileRef::Planar(
             PlanarProfileRef::sketch_regions(
                 sketch_id.clone(),
-                vec![SketchProfileRegion::loops(0, Vec::new()).unwrap()],
+                vec![SketchProfileRegion::loops(0, Vec::new(), &cadmpeg_test_support::service_decode_context()).expect("fixture loop-region admission").unwrap()],
             )
             .unwrap(),
         ),

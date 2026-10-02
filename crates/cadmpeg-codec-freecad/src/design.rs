@@ -612,7 +612,7 @@ fn body_definition(
         BodyTipResolution::Invalid => return Ok(None),
     };
     Ok(
-        match cadmpeg_ir::features::TreeChildren::new_for_decode(children, active_child, ctx) {
+        match cadmpeg_ir::features::TreeChildren::new(children, active_child, ctx) {
             Ok(children) => Some(children),
             Err(cadmpeg_ir::features::FeatureCollectionError::Resource(limit)) => {
                 return Err(limit.into())
