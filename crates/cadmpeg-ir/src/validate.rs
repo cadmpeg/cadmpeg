@@ -164,14 +164,14 @@ fn validate_model_with_index(
     check_sketches(ctx, ir, &mut findings)?;
     check_spreadsheets(ctx, ir, &mut findings)?;
     check_products(ctx, ir, &mut findings)?;
-    let presentation_ids = identities::BorrowedIdentities::build(ctx, |add| {
+    let reference_ids = identities::BorrowedIdentities::build(ctx, |add| {
         for id in ids.identities() { add(id, ())?; }
         Ok(())
     })?;
-    check_presentation(ctx, ir, &presentation_ids, &mut findings)?;
-    check_drawings(ctx, ir, &presentation_ids, &mut findings)?;
-    check_semantic_annotations(ctx, ir, &presentation_ids, &mut findings)?;
-    check_typed_references(ir, ids, &mut findings);
+    check_presentation(ctx, ir, &reference_ids, &mut findings)?;
+    check_drawings(ctx, ir, &reference_ids, &mut findings)?;
+    check_semantic_annotations(ctx, ir, &reference_ids, &mut findings)?;
+    check_typed_references(ctx, ir, &reference_ids, &mut findings)?;
 
     Ok(ValidationReport {
         entity_counts: crate::document::census::count(ctx, ids.native_view())?,

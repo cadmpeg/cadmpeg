@@ -1,38 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Compile-time schema contract shared by every neutral model arena.
 
-use std::cell::Cell;
-use std::fmt;
-
-use serde::ser::{
-    SerializeMap, SerializeSeq, SerializeStruct, SerializeStructVariant, SerializeTuple,
-    SerializeTupleStruct, SerializeTupleVariant,
-};
-use serde::{Serialize, Serializer};
-
-const REFERENCE_ID_MARKER: &str = "cadmpeg::reference_id";
-
-thread_local! {
-    static REFERENCE_WALK_ACTIVE: Cell<bool> = const { Cell::new(false) };
-}
+use serde::Serialize;
 
 pub mod rewrite;
 /// Caller-accounted structural value projection and reconstruction.
 pub mod structural;
-
-struct ReferenceWalkScope(bool);
-
-impl ReferenceWalkScope {
-    fn enter() -> Self {
-        Self(REFERENCE_WALK_ACTIVE.replace(true))
-    }
-}
-
-impl Drop for ReferenceWalkScope {
-    fn drop(&mut self) {
-        REFERENCE_WALK_ACTIVE.set(self.0);
-    }
-}
 
 /// Canonical neutral arena kind.
 #[repr(usize)]
@@ -216,362 +189,30 @@ impl EntityKind {
     ];
 }
 
-/// One typed identity reference emitted by an entity schema walk.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Reference {
-    /// Referenced globally unique identity.
-    pub target: String,
-}
-
 /// Schema behavior required for every entity admitted to a model arena.
-pub trait EntitySchema: Serialize {
+pub trait EntitySchema: Serialize + rewrite::typed::RewriteIdentities {
     /// Entity's canonical arena kind.
     const KIND: EntityKind;
 
     /// Globally unique entity identity.
     fn identity(&self) -> &str;
 
-    /// Visits every typed identity reference held by this entity.
-    ///
-    /// Returns [`ReferenceWalkError`] when the walk cannot read a typed
-    /// reference out of the entity. The walk is a serialization of the entity,
-    /// so the failure is a defect in the entity's own schema and the caller
-    /// reports it as one.
+    /// Visit borrowed typed references through fields under the caller's context.
     fn visit_references(
-        &self,
-        visitor: &mut dyn FnMut(Reference),
-    ) -> Result<(), ReferenceWalkError>;
-
-    /// Visit typed reference IDs through their fields under the caller's context.
-    fn visit_reference_ids(
         &self,
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         visitor: &mut dyn FnMut(&str) -> Result<(), cadmpeg_core::CodecError>,
-    ) -> Result<(), cadmpeg_core::CodecError>
-    where
-        Self: Sized + rewrite::typed::RewriteIdentities,
-    {
+    ) -> Result<(), cadmpeg_core::CodecError> {
         rewrite::typed::RewriteIdentities::visit_identity_references(self, ctx, &mut |target| {
             let identity = self.identity();
             ctx.charge_work(1, "typed reference owner comparison")?;
             if identity.len() == target.len() {
                 ctx.charge_work(cadmpeg_core::decode::u64_from_index(identity.len()), "typed reference owner comparison")?;
-                if identity == target {
-                    return Ok(());
-                }
+                if identity == target { return Ok(()); }
             }
             visitor(target)
         })
     }
-}
-
-/// Serializes a typed reference ID while preserving its ordinary string wire shape.
-pub(crate) fn serialize_reference_id<S>(value: &str, serializer: S) -> Result<S::Ok, S::Error>
-where
-    S: Serializer,
-{
-    if REFERENCE_WALK_ACTIVE.get() {
-        serializer.serialize_newtype_struct(REFERENCE_ID_MARKER, value)
-    } else {
-        serializer.serialize_str(value)
-    }
-}
-
-/// Failure raised while walking one entity's typed identity references.
-///
-/// The walk serializes the entity through a serializer that emits nothing and
-/// only observes typed-ID newtypes, so this error states that the entity could
-/// not describe its own references, not that any output was rejected.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ReferenceWalkError(String);
-
-impl fmt::Display for ReferenceWalkError {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.write_str(&self.0)
-    }
-}
-
-impl std::error::Error for ReferenceWalkError {}
-
-impl serde::ser::Error for ReferenceWalkError {
-    fn custom<T: fmt::Display>(message: T) -> Self {
-        Self(message.to_string())
-    }
-}
-
-struct ReferenceSerializer<'a> {
-    identity: &'a str,
-    visitor: &'a mut dyn FnMut(&str),
-    in_reference: bool,
-    saw_reference_string: bool,
-}
-
-macro_rules! ignore_scalar {
-    ($($method:ident($type:ty)),* $(,)?) => {
-        $(fn $method(self, _value: $type) -> Result<Self::Ok, Self::Error> { Ok(()) })*
-    };
-}
-
-impl Serializer for &mut ReferenceSerializer<'_> {
-    type Ok = ();
-    type Error = ReferenceWalkError;
-    type SerializeSeq = Self;
-    type SerializeTuple = Self;
-    type SerializeTupleStruct = Self;
-    type SerializeTupleVariant = Self;
-    type SerializeMap = Self;
-    type SerializeStruct = Self;
-    type SerializeStructVariant = Self;
-
-    ignore_scalar!(
-        serialize_bool(bool),
-        serialize_i8(i8),
-        serialize_i16(i16),
-        serialize_i32(i32),
-        serialize_i64(i64),
-        serialize_i128(i128),
-        serialize_u8(u8),
-        serialize_u16(u16),
-        serialize_u32(u32),
-        serialize_u64(u64),
-        serialize_u128(u128),
-        serialize_f32(f32),
-        serialize_f64(f64),
-        serialize_char(char),
-        serialize_bytes(&[u8]),
-    );
-
-    fn serialize_str(self, value: &str) -> Result<Self::Ok, Self::Error> {
-        if self.in_reference {
-            self.saw_reference_string = true;
-            if value != self.identity {
-                (self.visitor)(value);
-            }
-        }
-        Ok(())
-    }
-
-    fn serialize_none(self) -> Result<Self::Ok, Self::Error> {
-        Ok(())
-    }
-
-    fn serialize_some<T: ?Sized + Serialize>(self, value: &T) -> Result<Self::Ok, Self::Error> {
-        value.serialize(self)
-    }
-
-    fn serialize_unit(self) -> Result<Self::Ok, Self::Error> {
-        Ok(())
-    }
-
-    fn serialize_unit_struct(self, _name: &'static str) -> Result<Self::Ok, Self::Error> {
-        Ok(())
-    }
-
-    fn serialize_unit_variant(
-        self,
-        _name: &'static str,
-        _variant_index: u32,
-        _variant: &'static str,
-    ) -> Result<Self::Ok, Self::Error> {
-        Ok(())
-    }
-
-    fn serialize_newtype_struct<T: ?Sized + Serialize>(
-        self,
-        name: &'static str,
-        value: &T,
-    ) -> Result<Self::Ok, Self::Error> {
-        if name == REFERENCE_ID_MARKER {
-            let prior = self.in_reference;
-            let prior_saw = self.saw_reference_string;
-            self.in_reference = true;
-            self.saw_reference_string = false;
-            let result = value.serialize(&mut *self);
-            let saw_string = self.saw_reference_string;
-            self.in_reference = prior;
-            self.saw_reference_string = prior_saw;
-            result?;
-            if !saw_string {
-                return Err(serde::ser::Error::custom(
-                    "typed reference ID did not serialize as a string",
-                ));
-            }
-            Ok(())
-        } else {
-            value.serialize(self)
-        }
-    }
-
-    fn serialize_newtype_variant<T: ?Sized + Serialize>(
-        self,
-        _name: &'static str,
-        _variant_index: u32,
-        _variant: &'static str,
-        value: &T,
-    ) -> Result<Self::Ok, Self::Error> {
-        value.serialize(self)
-    }
-
-    fn serialize_seq(self, _len: Option<usize>) -> Result<Self::SerializeSeq, Self::Error> {
-        Ok(self)
-    }
-
-    fn serialize_tuple(self, _len: usize) -> Result<Self::SerializeTuple, Self::Error> {
-        Ok(self)
-    }
-
-    fn serialize_tuple_struct(
-        self,
-        _name: &'static str,
-        _len: usize,
-    ) -> Result<Self::SerializeTupleStruct, Self::Error> {
-        Ok(self)
-    }
-
-    fn serialize_tuple_variant(
-        self,
-        _name: &'static str,
-        _variant_index: u32,
-        _variant: &'static str,
-        _len: usize,
-    ) -> Result<Self::SerializeTupleVariant, Self::Error> {
-        Ok(self)
-    }
-
-    fn serialize_map(self, _len: Option<usize>) -> Result<Self::SerializeMap, Self::Error> {
-        Ok(self)
-    }
-
-    fn serialize_struct(
-        self,
-        _name: &'static str,
-        _len: usize,
-    ) -> Result<Self::SerializeStruct, Self::Error> {
-        Ok(self)
-    }
-
-    fn serialize_struct_variant(
-        self,
-        _name: &'static str,
-        _variant_index: u32,
-        _variant: &'static str,
-        _len: usize,
-    ) -> Result<Self::SerializeStructVariant, Self::Error> {
-        Ok(self)
-    }
-}
-
-macro_rules! serialize_element {
-    ($trait:ident, $method:ident) => {
-        impl $trait for &mut ReferenceSerializer<'_> {
-            type Ok = ();
-            type Error = ReferenceWalkError;
-
-            fn $method<T: ?Sized + Serialize>(&mut self, value: &T) -> Result<(), Self::Error> {
-                value.serialize(&mut **self)
-            }
-
-            fn end(self) -> Result<Self::Ok, Self::Error> {
-                Ok(())
-            }
-        }
-    };
-}
-
-serialize_element!(SerializeSeq, serialize_element);
-serialize_element!(SerializeTuple, serialize_element);
-serialize_element!(SerializeTupleStruct, serialize_field);
-
-impl SerializeTupleVariant for &mut ReferenceSerializer<'_> {
-    type Ok = ();
-    type Error = ReferenceWalkError;
-
-    fn serialize_field<T: ?Sized + Serialize>(&mut self, value: &T) -> Result<(), Self::Error> {
-        value.serialize(&mut **self)
-    }
-
-    fn end(self) -> Result<Self::Ok, Self::Error> {
-        Ok(())
-    }
-}
-
-impl SerializeMap for &mut ReferenceSerializer<'_> {
-    type Ok = ();
-    type Error = ReferenceWalkError;
-
-    fn serialize_key<T: ?Sized + Serialize>(&mut self, key: &T) -> Result<(), Self::Error> {
-        key.serialize(&mut **self)
-    }
-
-    fn serialize_value<T: ?Sized + Serialize>(&mut self, value: &T) -> Result<(), Self::Error> {
-        value.serialize(&mut **self)
-    }
-
-    fn end(self) -> Result<Self::Ok, Self::Error> {
-        Ok(())
-    }
-}
-
-impl SerializeStruct for &mut ReferenceSerializer<'_> {
-    type Ok = ();
-    type Error = ReferenceWalkError;
-
-    fn serialize_field<T: ?Sized + Serialize>(
-        &mut self,
-        _key: &'static str,
-        value: &T,
-    ) -> Result<(), Self::Error> {
-        value.serialize(&mut **self)
-    }
-
-    fn end(self) -> Result<Self::Ok, Self::Error> {
-        Ok(())
-    }
-}
-
-impl SerializeStructVariant for &mut ReferenceSerializer<'_> {
-    type Ok = ();
-    type Error = ReferenceWalkError;
-
-    fn serialize_field<T: ?Sized + Serialize>(
-        &mut self,
-        _key: &'static str,
-        value: &T,
-    ) -> Result<(), Self::Error> {
-        value.serialize(&mut **self)
-    }
-
-    fn end(self) -> Result<Self::Ok, Self::Error> {
-        Ok(())
-    }
-}
-
-/// Visits typed-ID newtypes without interpreting arbitrary strings as references.
-fn visit_typed_references<T: EntitySchema>(
-    entity: &T,
-    visitor: &mut dyn FnMut(Reference),
-) -> Result<(), ReferenceWalkError> {
-    visit_typed_reference_ids(entity, &mut |target| {
-        visitor(Reference {
-            target: target.to_owned(),
-        });
-    })
-}
-
-fn visit_typed_reference_ids<T: EntitySchema>(
-    entity: &T,
-    visitor: &mut dyn FnMut(&str),
-) -> Result<(), ReferenceWalkError> {
-    let scope = ReferenceWalkScope::enter();
-    let mut serializer = ReferenceSerializer {
-        identity: entity.identity(),
-        visitor,
-        in_reference: false,
-        saw_reference_string: false,
-    };
-    let outcome = entity.serialize(&mut serializer);
-    drop(scope);
-    outcome
 }
 
 macro_rules! impl_entity_schema {
@@ -580,15 +221,8 @@ macro_rules! impl_entity_schema {
             const KIND: EntityKind = EntityKind::$kind;
 
             fn identity(&self) -> &str {
-                self.$identity $(.$inner)?.as_str()
-            }
-
-            fn visit_references(
-                &self,
-                visitor: &mut dyn FnMut(Reference),
-            ) -> Result<(), ReferenceWalkError> {
                 let Self { $($field: _),+ } = self;
-                visit_typed_references(self, visitor)
+                self.$identity $(.$inner)?.as_str()
             }
         }
     };
@@ -601,12 +235,6 @@ impl EntitySchema for crate::topology::Shell {
     fn identity(&self) -> &str {
         self.id.as_str()
     }
-    fn visit_references(
-        &self,
-        visitor: &mut dyn FnMut(Reference),
-    ) -> Result<(), ReferenceWalkError> {
-        visit_typed_references(self, visitor)
-    }
 }
 impl_entity_schema!(crate::topology::Face, Face, id; id, shell, surface, sense, loops, name, color, tolerance);
 impl_entity_schema!(crate::topology::Loop, Loop, id; id, face, boundary);
@@ -617,12 +245,6 @@ impl EntitySchema for crate::topology::Point {
     const KIND: EntityKind = EntityKind::Point;
     fn identity(&self) -> &str {
         self.id.as_str()
-    }
-    fn visit_references(
-        &self,
-        visitor: &mut dyn FnMut(Reference),
-    ) -> Result<(), ReferenceWalkError> {
-        visit_typed_references(self, visitor)
     }
 }
 impl_entity_schema!(crate::geometry::Surface, Surface, id; id, geometry, source_object);
@@ -635,13 +257,6 @@ impl EntitySchema for crate::geometry::ProceduralSurface {
     fn identity(&self) -> &str {
         self.id.as_str()
     }
-
-    fn visit_references(
-        &self,
-        visitor: &mut dyn FnMut(Reference),
-    ) -> Result<(), ReferenceWalkError> {
-        visit_typed_references(self, visitor)
-    }
 }
 
 impl EntitySchema for crate::geometry::ProceduralCurve {
@@ -649,13 +264,6 @@ impl EntitySchema for crate::geometry::ProceduralCurve {
 
     fn identity(&self) -> &str {
         self.id.as_str()
-    }
-
-    fn visit_references(
-        &self,
-        visitor: &mut dyn FnMut(Reference),
-    ) -> Result<(), ReferenceWalkError> {
-        visit_typed_references(self, visitor)
     }
 }
 impl_entity_schema!(crate::assets::Asset, Asset, id; id, name, media_type, content, native_ref);
@@ -671,13 +279,6 @@ impl EntitySchema for crate::features::FeatureResultTopology {
 
     fn identity(&self) -> &str {
         self.id.as_str()
-    }
-
-    fn visit_references(
-        &self,
-        visitor: &mut dyn FnMut(Reference),
-    ) -> Result<(), ReferenceWalkError> {
-        visit_typed_references(self, visitor)
     }
 }
 impl_entity_schema!(
@@ -695,13 +296,6 @@ impl EntitySchema for crate::sketches::SketchEntity {
     fn identity(&self) -> &str {
         self.id().as_str()
     }
-
-    fn visit_references(
-        &self,
-        visitor: &mut dyn FnMut(Reference),
-    ) -> Result<(), ReferenceWalkError> {
-        visit_typed_references(self, visitor)
-    }
 }
 impl_entity_schema!(crate::sketches::SketchConstraint, SketchConstraint, id; id, sketch, definition, name, driving, active, virtual_space, visible, orientation, label_distance, label_position, metadata, native_ref);
 impl_entity_schema!(crate::sketches::SpatialSketch, SpatialSketch, id; id, name, configuration, visible, profiles, native_ref);
@@ -710,13 +304,6 @@ impl EntitySchema for crate::sketches::SpatialSketchEntity {
 
     fn identity(&self) -> &str {
         self.id().as_str()
-    }
-
-    fn visit_references(
-        &self,
-        visitor: &mut dyn FnMut(Reference),
-    ) -> Result<(), ReferenceWalkError> {
-        visit_typed_references(self, visitor)
     }
 }
 impl_entity_schema!(
@@ -731,13 +318,6 @@ impl EntitySchema for crate::spreadsheets::Spreadsheet {
     fn identity(&self) -> &str {
         self.id.as_str()
     }
-
-    fn visit_references(
-        &self,
-        visitor: &mut dyn FnMut(Reference),
-    ) -> Result<(), ReferenceWalkError> {
-        visit_typed_references(self, visitor)
-    }
 }
 impl_entity_schema!(crate::products::ProductDefinition, ProductDefinition, id; id, kind, source_name, label, description, part_number, bom_properties, bodies, native_ref);
 impl_entity_schema!(crate::products::Occurrence, Occurrence, id; id, prototype, parent, ordinal, transform, linked_prototype, scale, name, visible, link, native_ref);
@@ -746,13 +326,6 @@ impl EntitySchema for crate::products::AssemblyJoint {
 
     fn identity(&self) -> &str {
         self.id.as_str()
-    }
-
-    fn visit_references(
-        &self,
-        visitor: &mut dyn FnMut(Reference),
-    ) -> Result<(), ReferenceWalkError> {
-        visit_typed_references(self, visitor)
     }
 }
 impl_entity_schema!(crate::drawings::Drawing, Drawing, id; id, object, kind, runtime_type, order, visible, relationships, template, position, scale, direction, rotation_degrees, parameters, assets, native_ref);
@@ -769,13 +342,6 @@ impl EntitySchema for crate::presentation::PresentationDocument {
     fn identity(&self) -> &str {
         self.id.as_str()
     }
-
-    fn visit_references(
-        &self,
-        visitor: &mut dyn FnMut(Reference),
-    ) -> Result<(), ReferenceWalkError> {
-        visit_typed_references(self, visitor)
-    }
 }
 impl_entity_schema!(
     crate::presentation::ViewPresentation,
@@ -789,13 +355,6 @@ impl EntitySchema for crate::tessellation::Tessellation {
 
     fn identity(&self) -> &str {
         self.id.as_str()
-    }
-
-    fn visit_references(
-        &self,
-        visitor: &mut dyn FnMut(Reference),
-    ) -> Result<(), ReferenceWalkError> {
-        visit_typed_references(self, visitor)
     }
 }
 impl_entity_schema!(crate::appearance::Appearance, Appearance, id; id, name, asset_guid, library_id, visual_guid, physical_token, schema, category, base_color, properties, textures);

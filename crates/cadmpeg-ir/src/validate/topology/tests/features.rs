@@ -68,7 +68,7 @@ fn historical_vertex_selection_requires_input_state_membership() {
 
     let mut references = Vec::new();
     ir.model.features[0]
-        .visit_references(&mut |reference| references.push(reference.target))
+        .visit_references(&cadmpeg_test_support::service_decode_context(), &mut |reference| { references.push(reference.to_owned()); Ok(()) })
         .expect("feature states its typed references");
     assert_eq!(references, vec![state_id.as_str()]);
 

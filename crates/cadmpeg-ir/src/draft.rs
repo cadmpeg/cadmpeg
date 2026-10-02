@@ -417,7 +417,7 @@ impl<A> ModelDraft<A> {
                 $(for entity in &self.model.$field {
                     let owner = entity.identity();
                     let mut missing = None;
-                    entity.visit_reference_ids(ctx, &mut |target| {
+                    entity.visit_references(ctx, &mut |target| {
                         if missing.is_some() {
                             return Ok(());
                         }
