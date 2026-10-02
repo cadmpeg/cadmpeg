@@ -5255,7 +5255,7 @@ fn pcurve_selection_seeds(
             ctx.push_vec(&mut seeds, seed, "step_pcurve_selection_seeds")?;
         }
     }
-    if let Some((origin, direction)) = geometry.line_parameters() {
+    if let Some((origin, direction)) = geometry.line_parameters(ctx)? {
         if let Some(domain) = surface
             .solved()
             .and_then(|surface| surface_periodic_domains(surface)[0])

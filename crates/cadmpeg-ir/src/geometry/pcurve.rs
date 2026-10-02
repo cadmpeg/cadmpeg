@@ -2508,15 +2508,19 @@ impl PcurveGeometry {
     /// Trimming and affine replicas preserve a line's parameterization. An
     /// offset does not preserve it because the offset is evaluated from the
     /// basis tangent, so it is deliberately excluded.
-    pub fn line_parameters(&self) -> Option<(Point2, Point2)> {
-        match self {
+    pub fn line_parameters(&self, ctx: &DecodeContext<'_>) -> Result<Option<(Point2, Point2)>, ResourceLimit> {
+        let _depth = ctx.enter_nested_limit("pcurve line parameter nesting")?;
+        ctx.charge_work_limit(1, "pcurve line parameter visit")?;
+        Ok(match self {
             Self::Line(line_pcurve) => {
                 let origin = line_pcurve.origin().as_raw();
                 let direction = line_pcurve.direction().as_raw();
                 Some((*origin, *direction))
             }
             Self::Transformed(placed) => {
-                let (origin, direction) = placed.basis().line_parameters()?;
+                let Some((origin, direction)) = placed.basis().line_parameters(ctx)? else {
+                    return Ok(None);
+                };
                 let transform = placed.transform();
                 Some((
                     transform.apply_point(origin),
@@ -2525,7 +2529,7 @@ impl PcurveGeometry {
             }
             Self::Trimmed(trimmed_pcurve) => {
                 let basis = trimmed_pcurve.basis();
-                basis.line_parameters()
+                basis.line_parameters(ctx)?
             }
             Self::PolarHarmonic(_) => None,
             Self::PolarNurbs { .. } => None,
@@ -2538,7 +2542,7 @@ impl PcurveGeometry {
             Self::Hyperbolic(_) => None,
             Self::Nurbs { .. } => None,
             Self::Offset(_) => None,
-        }
+        })
     }
 }
 

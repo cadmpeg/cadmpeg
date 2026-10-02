@@ -981,7 +981,7 @@ fn pcurve_parameter_seeds_on_surface<'ctx>(
     pcurve: &crate::geometry::pcurve::Pcurve,
 ) -> Result<Scratch<'ctx, FiniteReal>, CodecError> {
     let mut seeds = pcurve_parameter_seeds(ctx, pcurve)?;
-    let Some((origin, direction)) = pcurve.geometry.line_parameters() else {
+    let Some((origin, direction)) = pcurve.geometry.line_parameters(ctx)? else {
         return unique(ctx, seeds, FiniteReal::new);
     };
     let domains = match context.geometry.solved() {

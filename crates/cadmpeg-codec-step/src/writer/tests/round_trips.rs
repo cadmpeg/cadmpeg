@@ -171,7 +171,7 @@ fn curve_geometry_for_sheet_pcurve(
         PcurveGeometry::Offset(offset_pcurve) => {
             let distance = offset_pcurve.distance();
             let basis = offset_pcurve.basis();
-            let Some((origin, direction)) = basis.line_parameters() else {
+            let Some((origin, direction)) = basis.line_parameters(&cadmpeg_test_support::service_decode_context()).expect("fixture line parameter walk is admitted") else {
                 return Ok(None);
             };
             let length = direction.u.hypot(direction.v);

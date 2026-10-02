@@ -815,3 +815,5 @@ fn a_conic_pcurve_reversed_about_zero_negates_only_its_second_axis() {
         [0.0_f64, -5.0e-324].map(f64::to_bits)
     );
 }
+
+mod line_parameters;
