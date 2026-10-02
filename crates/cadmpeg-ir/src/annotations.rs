@@ -906,31 +906,65 @@ impl Annotations {
             let source = scratch.with_storage(|| ctx.copy_retained_text(id, operation))?;
             remapping.push((source, target));
         }
-        let mut remapped = Self::default();
+        enum Destination {
+            Provenance(String),
+            Exactness(String),
+            Both { provenance: String, exactness: String },
+        }
+        let mut destinations = Vec::new();
+        ctx.reserve_scoped_vec(&mut scratch, &mut destinations, remapping.len(), operation)?;
+        let mut provenance_count = 0;
+        let mut exactness_count = 0;
         for (id, target) in remapping {
             admit_identity_work(ctx, self.provenance.len(), id.len(), operation)?;
             admit_identity_work(ctx, self.exactness.len(), id.len(), operation)?;
-            admit_identity_work(ctx, remapped.provenance.len(), target.len(), operation)?;
-            admit_identity_work(ctx, remapped.exactness.len(), target.len(), operation)?;
-            let provenance = self.provenance.remove(&id);
-            let exactness = self.exactness.remove(&id);
-            match (provenance, exactness) {
-                (Some(provenance), Some(exactness)) => {
+            admit_identity_work(ctx, provenance_count, target.len(), operation)?;
+            admit_identity_work(ctx, exactness_count, target.len(), operation)?;
+            let destination = match (self.provenance.contains_key(&id), self.exactness.contains_key(&id)) {
+                (true, true) => {
                     let provenance_key = ctx.copy_retained_text(&target, operation)?;
                     ctx.admit_retained_btree_record::<String, AnnotationProvenance>(0, operation)?;
-                    remapped.provenance.insert(provenance_key, provenance);
                     ctx.admit_retained_btree_record::<String, ExactnessNote>(0, operation)?;
-                    remapped.exactness.insert(target, exactness);
+                    provenance_count += 1;
+                    exactness_count += 1;
+                    Destination::Both { provenance: provenance_key, exactness: target }
                 }
-                (Some(provenance), None) => {
+                (true, false) => {
                     ctx.admit_retained_btree_record::<String, AnnotationProvenance>(0, operation)?;
-                    remapped.provenance.insert(target, provenance);
+                    provenance_count += 1;
+                    Destination::Provenance(target)
                 }
-                (None, Some(exactness)) => {
+                (false, true) => {
                     ctx.admit_retained_btree_record::<String, ExactnessNote>(0, operation)?;
-                    remapped.exactness.insert(target, exactness);
+                    exactness_count += 1;
+                    Destination::Exactness(target)
                 }
-                (None, None) => {}
+                (false, false) => continue,
+            };
+            ctx.charge_work(u64_from_index(std::mem::size_of::<(String, Destination)>()), operation)?;
+            destinations.push((id, destination));
+        }
+        let mut remapped = Self::default();
+        for (id, destination) in destinations {
+            match destination {
+                Destination::Provenance(target) => {
+                    if let Some(provenance) = self.provenance.remove(&id) {
+                        remapped.provenance.insert(target, provenance);
+                    }
+                }
+                Destination::Exactness(target) => {
+                    if let Some(exactness) = self.exactness.remove(&id) {
+                        remapped.exactness.insert(target, exactness);
+                    }
+                }
+                Destination::Both { provenance, exactness } => {
+                    if let Some(value) = self.provenance.remove(&id) {
+                        remapped.provenance.insert(provenance, value);
+                    }
+                    if let Some(value) = self.exactness.remove(&id) {
+                        remapped.exactness.insert(exactness, value);
+                    }
+                }
             }
         }
         *self = remapped;
