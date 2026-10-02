@@ -172,6 +172,7 @@ fn check_fixture(name: &str) {
                     | "indirect"
                     | "addresses"
                     | "objects"
+                    | "generic_scope"
                     | "fixed_ranges"
                     | "raw_steps"
                     | "conversions"
@@ -460,4 +461,9 @@ fn address_taken_reachability() {
 #[test]
 fn object_coercion_reachability() {
     check_fixture("objects");
+}
+
+#[test]
+fn concrete_generic_reachability() {
+    check_fixture("generic_scope");
 }

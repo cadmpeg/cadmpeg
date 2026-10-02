@@ -1,11 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Decode roots and resolved production call reachability.
 mod objects;
+mod instances;
 
 use crate::{flow, types, Analysis, Findings};
 use rustc_hir::intravisit::{walk_expr, Visitor};
 use rustc_hir::{def::Res, Expr, ExprKind};
-use rustc_middle::ty::{self, TyCtxt};
+use rustc_middle::ty::{self, TyCtxt, TypeVisitableExt};
 use rustc_span::def_id::{DefId, LocalDefId};
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 
@@ -109,8 +110,12 @@ fn root(tcx: TyCtxt<'_>, owner: LocalDefId) -> bool {
 
 pub(crate) fn collect<'tcx>(tcx: TyCtxt<'tcx>, owners: &[LocalDefId]) -> Graph {
     let mut graph = Graph::default();
+    let mut pending = Vec::new();
     for owner in owners {
         if root(tcx, *owner) {
+            if ty::GenericArgs::identity_for_item(tcx, *owner).has_non_region_param() {
+                graph.uncertain.insert(key(tcx, owner.to_def_id()));
+            }
             graph
                 .roots
                 .insert(key(tcx, owner.to_def_id()), tcx.def_path_str(*owner));
@@ -142,9 +147,11 @@ pub(crate) fn collect<'tcx>(tcx: TyCtxt<'tcx>, owners: &[LocalDefId]) -> Graph {
             caller: key(tcx, owner.to_def_id()),
             graph: &mut graph,
             direct_callee: false,
+            pending: &mut pending,
         }
         .visit_body(tcx.hir_body_owned_by(*owner));
     }
+    instances::expand(tcx, &mut graph, pending);
     graph
 }
 
@@ -153,6 +160,7 @@ struct Calls<'a, 'b, 'tcx> {
     caller: String,
     graph: &'b mut Graph,
     direct_callee: bool,
+    pending: &'b mut Vec<instances::Concrete<'tcx>>,
 }
 
 impl<'tcx> Calls<'_, '_, 'tcx> {
@@ -170,7 +178,8 @@ impl<'tcx> Calls<'_, '_, 'tcx> {
             self.graph.uncertain.insert(self.caller.clone());
         }
         for instance in instances {
-            self.edge(instance.def_id());
+            instances::enqueue(self.analysis.tcx, self.graph, self.pending, &self.caller,
+                instance, self.analysis.typing_env(), 0);
             if types::checked(self.analysis.tcx, instance.def_id()) {
                 self.graph.addresses.insert(key(self.analysis.tcx, instance.def_id()));
             }
@@ -187,6 +196,10 @@ impl<'tcx> Calls<'_, '_, 'tcx> {
             return;
         };
         self.edge(definition);
+        if self.analysis.tcx.generics_of(self.analysis.typing_owner).count() != 0 {
+            return;
+        }
+        self.graph.uncertain.insert(self.caller.clone());
         for implementation in self.analysis.tcx.all_impls(trait_id) {
             let item = self
                 .analysis
@@ -222,7 +235,24 @@ impl<'tcx> Visitor<'tcx> for Calls<'_, '_, 'tcx> {
         if let ExprKind::Cast(operand, _) = expression.kind {
             self.coercion(self.analysis.expr_ty_adjusted(operand), self.analysis.expr_ty(expression));
         }
+        if let Some((id, _)) = self.analysis.call(expression) {
+            if let Some(instance) = self.analysis.resolved_instance(expression, id) {
+                instances::enqueue(self.analysis.tcx, self.graph, self.pending, &self.caller,
+                    instance, self.analysis.typing_env(), 0);
+            }
+        }
         let value = self.analysis.expr_ty(expression);
+        let reference = match value.peel_refs().kind() {
+            ty::FnDef(id, args) => args.no_bound_vars().map(|args| ty::Instance::new_raw(*id, args)),
+            ty::Closure(id, args) => Some(ty::Instance::new_raw(*id, args)),
+            _ => None,
+        };
+        if !self.direct_callee {
+            if let Some(instance) = reference {
+                instances::enqueue(self.analysis.tcx, self.graph, self.pending, &self.caller,
+                    instance, self.analysis.typing_env(), 0);
+            }
+        }
         if !self.direct_callee {
             let address = match value.peel_refs().kind() {
                 ty::FnDef(id, _) => Some(*id),
