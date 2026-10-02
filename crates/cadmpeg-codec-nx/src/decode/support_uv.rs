@@ -2896,9 +2896,8 @@ mod tests {
                     scope: &crate::decode::ids::IdScope::stream(0),
                     coedge_start: 0,
                     procedural_start: 0,
-                    source_stream: cadmpeg_ir::annotations::StreamHandle::new(
-                        cadmpeg_ir::stream_name!("nx:test"),
-                    ),
+                    source_stream: cadmpeg_ir::annotations::StreamHandle::new(&cadmpeg_test_support::service_decode_context(), 
+                        cadmpeg_ir::stream_name!("nx:test"), "fixture stream handle").unwrap(),
                     validated_endpoint_witnesses: &BTreeMap::new(),
                 },
                 &mut annotations,

@@ -1466,7 +1466,7 @@ fn admit_kernel_annotation(
         "retain Inventor annotation stream name",
     )?;
     let name = cadmpeg_ir::StreamName::try_from(name).map_err(CodecError::malformed)?;
-    let stream = StreamHandle::new_for_decode(ctx, name, "collect Inventor kernel provenance")?;
+    let stream = StreamHandle::new(ctx, name, "collect Inventor kernel provenance")?;
     annotations.note(
         ctx,
         &record.id,

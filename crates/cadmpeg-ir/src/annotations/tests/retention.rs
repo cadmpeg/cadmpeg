@@ -9,7 +9,7 @@ const SECOND: &str = "test:model:point#second";
 
 fn fixture() -> AnnotationBuilder {
     let mut builder = AnnotationBuilder::new();
-    let stream = StreamHandle::new(crate::stream_name!("source"));
+    let stream = StreamHandle::new(&cadmpeg_test_support::service_decode_context(), crate::stream_name!("source"), "fixture stream handle").unwrap();
     builder.note(&cadmpeg_test_support::service_decode_context(), FIRST, &stream, 7, Some("first")).unwrap();
     builder.note(&cadmpeg_test_support::service_decode_context(), SECOND, &stream, 9, Some("second")).unwrap();
     builder.exactness(&cadmpeg_test_support::service_decode_context(), FIRST, Exactness::Derived).unwrap();

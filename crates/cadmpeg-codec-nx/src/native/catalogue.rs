@@ -126,7 +126,7 @@ fn note_container<T: ContainerNoted>(
     tag: Option<&'static str>,
     a: &mut AnnotationBuilder,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    let stream = StreamHandle::new_for_decode(
+    let stream = StreamHandle::new(
         ctx,
         cadmpeg_ir::stream_name!("nx:container"),
         "allocate annotation stream handle",
@@ -151,7 +151,7 @@ fn note_per_stream<T: StreamNoted>(
 ) -> Result<(), cadmpeg_core::CodecError> {
     for record in records {
         let (id, stream_ordinal, offset) = record.stream_note();
-        let stream = StreamHandle::new_for_decode(
+        let stream = StreamHandle::new(
             ctx,
             cadmpeg_ir::stream_name!("nx:s").with_suffix(stream_ordinal),
             "allocate annotation stream handle",
@@ -759,7 +759,7 @@ fn note_display_jt_display_jt_indices(
     _tag: Option<&'static str>,
     a: &mut AnnotationBuilder,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    let annotation_stream = StreamHandle::new_for_decode(
+    let annotation_stream = StreamHandle::new(
         ctx,
         cadmpeg_ir::stream_name!("nx:container"),
         "allocate annotation stream handle",
@@ -794,7 +794,7 @@ fn note_display_jt_display_jt_documents(
     _tag: Option<&'static str>,
     a: &mut AnnotationBuilder,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    let annotation_stream = StreamHandle::new_for_decode(
+    let annotation_stream = StreamHandle::new(
         ctx,
         cadmpeg_ir::stream_name!("nx:container"),
         "allocate annotation stream handle",
@@ -830,7 +830,7 @@ fn note_parasolid_parasolid_intersection_records(
     a: &mut AnnotationBuilder,
 ) -> Result<(), cadmpeg_core::CodecError> {
     for record in &m.parasolid.intersection_records {
-        let source_stream = StreamHandle::new_for_decode(
+        let source_stream = StreamHandle::new(
             ctx,
             cadmpeg_ir::stream_name!("nx:s").with_suffix(record.stream_ordinal),
             "allocate annotation stream handle",
@@ -859,7 +859,7 @@ fn note_parasolid_parasolid_attribute_class_uses(
     a: &mut AnnotationBuilder,
 ) -> Result<(), cadmpeg_core::CodecError> {
     for class_use in &m.parasolid.attribute_class_uses {
-        let source_stream = StreamHandle::new_for_decode(
+        let source_stream = StreamHandle::new(
             ctx,
             cadmpeg_ir::stream_name!("nx:s").with_suffix(class_use.stream_ordinal),
             "allocate annotation stream handle",
@@ -884,7 +884,7 @@ fn note_parasolid_parasolid_topology_attribute_class_uses(
     a: &mut AnnotationBuilder,
 ) -> Result<(), cadmpeg_core::CodecError> {
     for class_use in &m.parasolid.topology_attribute_class_uses {
-        let source_stream = StreamHandle::new_for_decode(
+        let source_stream = StreamHandle::new(
             ctx,
             cadmpeg_ir::stream_name!("nx:s").with_suffix(class_use.stream_ordinal),
             "allocate annotation stream handle",
@@ -908,7 +908,7 @@ fn note_features_feature_sketch_point_uses(
     _tag: Option<&'static str>,
     a: &mut AnnotationBuilder,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    let annotation_stream = StreamHandle::new_for_decode(
+    let annotation_stream = StreamHandle::new(
         ctx,
         cadmpeg_ir::stream_name!("nx:container"),
         "allocate annotation stream handle",
@@ -933,7 +933,7 @@ fn note_features_feature_input_block_identity_groups(
     _tag: Option<&'static str>,
     a: &mut AnnotationBuilder,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    let annotation_stream = StreamHandle::new_for_decode(
+    let annotation_stream = StreamHandle::new(
         ctx,
         cadmpeg_ir::stream_name!("nx:container"),
         "allocate annotation stream handle",
@@ -958,7 +958,7 @@ fn note_features_feature_parameter_uses(
     _tag: Option<&'static str>,
     a: &mut AnnotationBuilder,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    let annotation_stream = StreamHandle::new_for_decode(
+    let annotation_stream = StreamHandle::new(
         ctx,
         cadmpeg_ir::stream_name!("nx:container"),
         "allocate annotation stream handle",

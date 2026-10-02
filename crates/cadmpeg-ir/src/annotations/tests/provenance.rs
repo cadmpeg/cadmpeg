@@ -8,7 +8,7 @@ const ID: &str = "test:model:point#provenance";
 
 #[test]
 fn provenance_construction_preserves_refusals_before_insertion() {
-    let stream = StreamHandle::new(crate::stream_name!("source"));
+    let stream = StreamHandle::new(&cadmpeg_test_support::service_decode_context(), crate::stream_name!("source"), "fixture stream handle").unwrap();
     for owned in [false, true] {
         for dimension in [ResourceDimension::CollectionItems, ResourceDimension::RetainedBytes,
             ResourceDimension::MaterializedBytes, ResourceDimension::WorkUnits] {
@@ -39,7 +39,7 @@ fn provenance_construction_preserves_refusals_before_insertion() {
 #[test]
 fn provenance_replacement_keeps_the_old_location_on_tag_refusal() {
     let setup = cadmpeg_test_support::service_decode_context();
-    let stream = StreamHandle::new(crate::stream_name!("source"));
+    let stream = StreamHandle::new(&cadmpeg_test_support::service_decode_context(), crate::stream_name!("source"), "fixture stream handle").unwrap();
     for owned in [false, true] {
         let mut builder = AnnotationBuilder::new();
         builder.note(&setup, ID, &stream, 7, Some("original")).unwrap();
@@ -61,7 +61,7 @@ fn provenance_replacement_keeps_the_old_location_on_tag_refusal() {
 
 #[test]
 fn provenance_owned_identity_moves_without_temporary_storage() {
-    let stream = StreamHandle::new(crate::stream_name!("source"));
+    let stream = StreamHandle::new(&cadmpeg_test_support::service_decode_context(), crate::stream_name!("source"), "fixture stream handle").unwrap();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_materialized_bytes = 0;

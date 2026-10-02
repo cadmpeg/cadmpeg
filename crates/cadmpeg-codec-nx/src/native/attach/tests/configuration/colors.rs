@@ -47,9 +47,9 @@ fn rm_appearance_result(
             let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
             let mut appearances = BTreeMap::new();
             let mut reservation = ctx.reserve_scoped(0, "NX RM appearance identity lookup")?;
-            let stream = cadmpeg_ir::annotations::StreamHandle::new(cadmpeg_ir::stream_name!(
+            let stream = cadmpeg_ir::annotations::StreamHandle::new(&cadmpeg_test_support::service_decode_context(), cadmpeg_ir::stream_name!(
                 "nx:container"
-            ));
+            ), "fixture stream handle").unwrap();
             ensure_rm_color_appearance(
                 ctx,
                 &mut ir,

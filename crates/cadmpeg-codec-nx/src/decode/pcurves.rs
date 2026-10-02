@@ -4962,9 +4962,9 @@ mod tests {
                 &std::collections::BTreeMap::new(),
                 (
                     &crate::decode::ids::IdScope::stream(0),
-                    &cadmpeg_ir::annotations::StreamHandle::new(cadmpeg_ir::stream_name!(
+                    &cadmpeg_ir::annotations::StreamHandle::new(&cadmpeg_test_support::service_decode_context(), cadmpeg_ir::stream_name!(
                         "nx:test"
-                    )),
+                    ), "fixture stream handle").unwrap(),
                 ),
                 &mut cadmpeg_ir::AnnotationBuilder::new(),
                 &geometry_budget,

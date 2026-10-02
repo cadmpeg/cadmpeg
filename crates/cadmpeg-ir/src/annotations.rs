@@ -329,18 +329,14 @@ impl ExactnessNote {
 pub struct StreamHandle(Arc<StreamName>);
 
 impl StreamHandle {
-    /// Own a stream name that can be reused across annotation builders.
+    /// Allocate one shared stream name under the caller's decode budget.
     ///
     /// ```compile_fail
-    /// let _ = cadmpeg_ir::annotations::StreamHandle::new("");
+    /// fn invalid(ctx: &cadmpeg_core::decode::DecodeContext<'_>) {
+    ///     let _ = cadmpeg_ir::annotations::StreamHandle::new(ctx, "", "stream handle");
+    /// }
     /// ```
-    #[must_use]
-    pub fn new(stream: StreamName) -> Self {
-        Self(Arc::new(stream))
-    }
-
-    /// Allocate one shared stream name under the caller's decode budget.
-    pub fn new_for_decode(
+    pub fn new(
         ctx: &DecodeContext<'_>,
         stream: StreamName,
         operation: &'static str,
@@ -348,7 +344,8 @@ impl StreamHandle {
         let bytes = std::mem::size_of::<StreamName>() + 2 * std::mem::size_of::<usize>();
         ctx.charge_retained(u64_from_index(bytes), operation)?;
         ctx.charge_collection_items(1, operation)?;
-        Ok(Self::new(stream))
+        ctx.charge_work(1, operation)?;
+        Ok(Self(Arc::new(stream)))
     }
 }
 
@@ -519,7 +516,7 @@ impl AnnotationState {
         let stream = ctx.format_retained(format_args!("{stream}"), "annotation stream name")?;
         let stream = StreamName::try_from(stream)
             .map_err(|_| CodecError::malformed("annotation stream name is empty"))?;
-        let stream = StreamHandle::new_for_decode(ctx, stream, "annotation stream handles")?;
+        let stream = StreamHandle::new(ctx, stream, "annotation stream handles")?;
         self.note(ctx, &id, &stream, offset, Some(tag))?;
         self.exactness(ctx, &id, exactness)?;
         Ok(())
@@ -1060,9 +1057,8 @@ mod tests {
             .annotate(&ctx, id, stream, 42, tag, super::Exactness::Derived)
             .expect("exact caps admit annotation");
         let mut original = super::AnnotationBuilder::new();
-        let handle = super::StreamHandle::new(
-            super::StreamName::try_from(stream.to_string()).expect("nonempty stream"),
-        );
+        let handle = super::StreamHandle::new(&cadmpeg_test_support::service_decode_context(), 
+            super::StreamName::try_from(stream.to_string()).expect("nonempty stream"), "fixture stream handle").unwrap();
         original.note(&cadmpeg_test_support::service_decode_context(), id, &handle, 42, Some(tag)).unwrap();
         original.exactness(&cadmpeg_test_support::service_decode_context(), id, super::Exactness::Derived).unwrap();
         assert_eq!(admitted.build(), original.build());
@@ -1073,7 +1069,7 @@ mod tests {
         const MAPPED: &str = "test:point#mapped";
         let run = |collection_limit, retained_limit| {
             let mut builder = super::AnnotationBuilder::new();
-            let stream = super::StreamHandle::new(crate::stream_name!("test"));
+            let stream = super::StreamHandle::new(&cadmpeg_test_support::service_decode_context(), crate::stream_name!("test"), "fixture stream handle").unwrap();
             builder.note(&cadmpeg_test_support::service_decode_context(), "test:point#0", &stream, 0, None).unwrap();
             builder.exactness(&cadmpeg_test_support::service_decode_context(), "test:point#0", super::Exactness::Inferred).unwrap();
             let mut annotations = builder.build();
@@ -1109,7 +1105,7 @@ mod tests {
     fn annotation_append_refuses_destination_node_limit() {
         let run = |limit| {
             let mut builder = super::AnnotationBuilder::new();
-            let stream = super::StreamHandle::new(crate::stream_name!("test"));
+            let stream = super::StreamHandle::new(&cadmpeg_test_support::service_decode_context(), crate::stream_name!("test"), "fixture stream handle").unwrap();
             builder.note(&cadmpeg_test_support::service_decode_context(), "test:point#0", &stream, 0, None).unwrap();
             let mut target = super::Annotations::default();
             let arena = DecodeArena::new();
@@ -1130,7 +1126,7 @@ mod tests {
 
     #[test]
     fn annotation_append_rebuilds_only_nonempty_destination_maps() {
-        let stream = super::StreamHandle::new(crate::stream_name!("test"));
+        let stream = super::StreamHandle::new(&cadmpeg_test_support::service_decode_context(), crate::stream_name!("test"), "fixture stream handle").unwrap();
         let mut target = super::AnnotationBuilder::new();
         target.note(&cadmpeg_test_support::service_decode_context(), "test:point#0", &stream, 0, None).unwrap();
         let mut source = super::AnnotationBuilder::new();
@@ -1178,7 +1174,7 @@ mod tests {
     #[test]
     fn annotation_copy_charges_nested_entries_and_retained_text() {
         let mut builder = super::AnnotationBuilder::new();
-        let stream = super::StreamHandle::new(crate::stream_name!("test"));
+        let stream = super::StreamHandle::new(&cadmpeg_test_support::service_decode_context(), crate::stream_name!("test"), "fixture stream handle").unwrap();
         builder.note(&cadmpeg_test_support::service_decode_context(), "test:point#0", &stream, 7, Some("point")).unwrap();
         builder
             .derived(&cadmpeg_test_support::service_decode_context(), "test:point#0", "position")
@@ -1211,7 +1207,7 @@ mod tests {
     #[test]
     fn annotation_transaction_copy_uses_scoped_storage_until_commit() {
         let mut builder = super::AnnotationBuilder::new();
-        let stream = super::StreamHandle::new(crate::stream_name!("test"));
+        let stream = super::StreamHandle::new(&cadmpeg_test_support::service_decode_context(), crate::stream_name!("test"), "fixture stream handle").unwrap();
         builder.note(&cadmpeg_test_support::service_decode_context(), "test:point#0", &stream, 7, Some("point")).unwrap();
         builder.derived(&cadmpeg_test_support::service_decode_context(), "test:point#0", "position").unwrap();
         let original = builder.build();
@@ -1231,7 +1227,7 @@ mod tests {
     fn annotation_transaction_refuses_copy_dimensions_and_releases_on_abort() {
         use cadmpeg_core::decode::ResourceDimension;
         let mut builder = super::AnnotationBuilder::new();
-        let stream = super::StreamHandle::new(crate::stream_name!("test"));
+        let stream = super::StreamHandle::new(&cadmpeg_test_support::service_decode_context(), crate::stream_name!("test"), "fixture stream handle").unwrap();
         builder.note(&cadmpeg_test_support::service_decode_context(), "test:point#0", &stream, 7, Some("point")).unwrap();
         builder.derived(&cadmpeg_test_support::service_decode_context(), "test:point#0", "position").unwrap();
         let original = builder.build();
@@ -1268,6 +1264,7 @@ mod tests {
     mod identity_merges;
     mod entity_exactness;
     mod provenance;
+    mod stream_handles;
     mod retention;
 
     use std::collections::BTreeMap;
@@ -1304,8 +1301,8 @@ mod tests {
     #[test]
     fn builder_names_streams_and_records_provenance() {
         let mut builder = AnnotationBuilder::new();
-        let first = StreamHandle::new(crate::stream_name!("f3d:Breps.BlobParts/body.smbh"));
-        let second = StreamHandle::new(crate::stream_name!("f3d:Breps.BlobParts/body.smbh"));
+        let first = StreamHandle::new(&cadmpeg_test_support::service_decode_context(), crate::stream_name!("f3d:Breps.BlobParts/body.smbh"), "fixture stream handle").unwrap();
+        let second = StreamHandle::new(&cadmpeg_test_support::service_decode_context(), crate::stream_name!("f3d:Breps.BlobParts/body.smbh"), "fixture stream handle").unwrap();
 
         assert_eq!(first, second);
         builder.note(&cadmpeg_test_support::service_decode_context(), "f3d:body#0", &first, 42, Some("body")).unwrap();
@@ -1320,7 +1317,7 @@ mod tests {
 
     #[test]
     fn owned_annotation_keys_preserve_note_and_exactness_semantics() {
-        let stream = StreamHandle::new(crate::stream_name!("native-stream"));
+        let stream = StreamHandle::new(&cadmpeg_test_support::service_decode_context(), crate::stream_name!("native-stream"), "fixture stream handle").unwrap();
         let mut formatted = AnnotationBuilder::new();
         let mut owned = AnnotationBuilder::new();
         for (offset, exactness) in [(7, Exactness::Derived), (11, Exactness::ByteExact)] {
@@ -1340,8 +1337,8 @@ mod tests {
     #[test]
     fn repeated_note_replaces_location_and_clears_the_previous_tag() {
         let mut builder = AnnotationBuilder::new();
-        let first = StreamHandle::new(crate::stream_name!("first"));
-        let second = StreamHandle::new(crate::stream_name!("second"));
+        let first = StreamHandle::new(&cadmpeg_test_support::service_decode_context(), crate::stream_name!("first"), "fixture stream handle").unwrap();
+        let second = StreamHandle::new(&cadmpeg_test_support::service_decode_context(), crate::stream_name!("second"), "fixture stream handle").unwrap();
 
         builder.note(&cadmpeg_test_support::service_decode_context(), "entity", &first, 7, Some("stale")).unwrap();
         builder.note(&cadmpeg_test_support::service_decode_context(), "entity", &second, 11, None).unwrap();
@@ -1361,7 +1358,7 @@ mod tests {
     #[test]
     fn a_nonempty_whitespace_stream_name_is_preserved_on_the_annotation_wire() {
         let mut builder = AnnotationBuilder::new();
-        let stream = StreamHandle::new(crate::stream_name!(" \t"));
+        let stream = StreamHandle::new(&cadmpeg_test_support::service_decode_context(), crate::stream_name!(" \t"), "fixture stream handle").unwrap();
         builder.note(&cadmpeg_test_support::service_decode_context(), "whitespace", &stream, 3, None).unwrap();
 
         let annotations = builder.build();
@@ -1377,7 +1374,7 @@ mod tests {
     #[test]
     fn annotation_provenance_names_its_stream_and_refuses_the_deleted_index_table() {
         let mut builder = AnnotationBuilder::new();
-        let stream = StreamHandle::new(crate::stream_name!("f3d:Breps.BlobParts/body.smbh"));
+        let stream = StreamHandle::new(&cadmpeg_test_support::service_decode_context(), crate::stream_name!("f3d:Breps.BlobParts/body.smbh"), "fixture stream handle").unwrap();
         builder.note(&cadmpeg_test_support::service_decode_context(), "f3d:body#0", &stream, 42, Some("body")).unwrap();
         let annotations = builder.build();
 
@@ -1418,7 +1415,7 @@ mod tests {
     #[test]
     fn a_stream_name_survives_foreign_builder_clone_and_resume() {
         let first = AnnotationBuilder::new();
-        let handle = StreamHandle::new(crate::stream_name!("first"));
+        let handle = StreamHandle::new(&cadmpeg_test_support::service_decode_context(), crate::stream_name!("first"), "fixture stream handle").unwrap();
         let mut second = AnnotationBuilder::new();
         second.note(&cadmpeg_test_support::service_decode_context(), "foreign", &handle, 1, None).unwrap();
         let mut cloned = first.clone();
@@ -1567,7 +1564,7 @@ mod tests {
     #[test]
     fn removing_an_entity_removes_provenance_and_exactness() {
         let mut builder = AnnotationBuilder::new();
-        let stream = StreamHandle::new(crate::stream_name!("catia:e5_0d_03"));
+        let stream = StreamHandle::new(&cadmpeg_test_support::service_decode_context(), crate::stream_name!("catia:e5_0d_03"), "fixture stream handle").unwrap();
         builder.note(&cadmpeg_test_support::service_decode_context(), "catia:e5:curve#0", &stream, 42, Some("circle")).unwrap();
         builder
             .derived(&cadmpeg_test_support::service_decode_context(), "catia:e5:curve#0", "geometry")
@@ -1687,7 +1684,7 @@ mod builder_storage_tests {
 
     #[test]
     fn annotation_builder_transaction_scopes_only_annotation_allocations() {
-        let stream = StreamHandle::new(crate::stream_name!("test"));
+        let stream = StreamHandle::new(&cadmpeg_test_support::service_decode_context(), crate::stream_name!("test"), "fixture stream handle").unwrap();
         let mut original = AnnotationBuilder::new();
         original.note(&cadmpeg_test_support::service_decode_context(), "test:model:point#prior", &stream, 0, Some("prior")).unwrap();
         let arena = DecodeArena::new();
@@ -1710,7 +1707,7 @@ mod builder_storage_tests {
     #[test]
     fn annotation_builder_transaction_commits_the_same_tables() {
         let ctx = cadmpeg_test_support::service_decode_context();
-        let stream = StreamHandle::new(crate::stream_name!("test"));
+        let stream = StreamHandle::new(&cadmpeg_test_support::service_decode_context(), crate::stream_name!("test"), "fixture stream handle").unwrap();
         let mut original = AnnotationBuilder::new();
         original.note(&cadmpeg_test_support::service_decode_context(), "test:model:point#prior", &stream, 0, Some("prior")).unwrap();
         let mut candidate = original.copy_transaction(&ctx, "annotation candidate storage").unwrap();

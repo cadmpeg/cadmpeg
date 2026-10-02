@@ -51,7 +51,7 @@ pub(in crate::native) fn attach_expression_parameters(
         )?;
         table_expressions.push(expression);
     }
-    let stream = StreamHandle::new_for_decode(
+    let stream = StreamHandle::new(
         ctx,
         cadmpeg_ir::stream_name!("nx:container"),
         "allocate annotation stream handle",

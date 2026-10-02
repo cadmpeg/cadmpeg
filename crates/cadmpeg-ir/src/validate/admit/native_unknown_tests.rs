@@ -24,7 +24,7 @@ fn native_unknown_admission_matches_product_projection_without_mutation() {
     let raw = vec![UnknownRecord::retained(new_id.try_into().unwrap(), 72, vec![23; 65536], vec![ir.model.points[0].id.as_str().to_owned()])];
     let pointer = raw[0].data().unwrap().as_ptr();
     let mut builder = crate::AnnotationBuilder::new();
-    let stream = crate::annotations::StreamHandle::new(crate::stream_name!("test:source"));
+    let stream = crate::annotations::StreamHandle::new(&cadmpeg_test_support::service_decode_context(), crate::stream_name!("test:source"), "fixture stream handle").unwrap();
     builder.note(&cadmpeg_test_support::service_decode_context(), new_id, &stream, 72, None).unwrap();
     for path in ["id", "links", "links.0", "links.1", "offset", "retention"] {
         builder.derived(&cadmpeg_test_support::service_decode_context(), new_id, path).unwrap();

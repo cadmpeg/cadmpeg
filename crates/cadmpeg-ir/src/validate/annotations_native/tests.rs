@@ -39,7 +39,7 @@ fn annotation_keys_and_field_paths_are_checked() {
     let ir = unit_cube().expect("valid unit cube fixture");
     let mut source_fidelity = crate::SourceFidelity::default();
     let mut annotations = crate::AnnotationBuilder::new();
-    let stream = crate::annotations::StreamHandle::new(crate::stream_name!("test:source"));
+    let stream = crate::annotations::StreamHandle::new(&cadmpeg_test_support::service_decode_context(), crate::stream_name!("test:source"), "fixture stream handle").unwrap();
     annotations.note(&cadmpeg_test_support::service_decode_context(), "missing", &stream, 0, None).unwrap();
     annotations
         .derived(&cadmpeg_test_support::service_decode_context(), ir.model.edges[0].id.as_str(), "not_a_serialized_field")

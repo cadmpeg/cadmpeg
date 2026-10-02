@@ -330,7 +330,7 @@ fn build_result(
     let annotation_count = cadmpeg_core::decode::u64_from_index(annotation_records.len());
     ctx.charge_work(annotation_count, "scan SAT annotation records")?;
     for record in annotation_records {
-        let stream = StreamHandle::new_for_decode(
+        let stream = StreamHandle::new(
             ctx,
             cadmpeg_ir::stream_name!("sat:").with_suffix(&record.stream),
             "allocate annotation stream handle",

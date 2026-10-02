@@ -856,7 +856,7 @@ mod tests {
         assert_eq!(CadIr::from_json(&ir_json).expect("parse CADIR"), ir);
 
         let mut builder = crate::AnnotationBuilder::new();
-        let stream = crate::annotations::StreamHandle::new(crate::stream_name!(" \t"));
+        let stream = crate::annotations::StreamHandle::new(&cadmpeg_test_support::service_decode_context(), crate::stream_name!(" \t"), "fixture stream handle").unwrap();
         builder.note(&cadmpeg_test_support::service_decode_context(), "synthetic:point#0", &stream, 17, Some("point")).unwrap();
         let sidecar = DecodeSidecar::bind_sha256(
             crate::hash::digest::Sha256Digest::digest(ir_json.as_bytes()),

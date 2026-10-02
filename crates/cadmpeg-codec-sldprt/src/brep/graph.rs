@@ -1881,7 +1881,7 @@ fn decode_graph(
         ..Brep::default()
     };
     let mut annotations = AnnotationBuilder::new();
-    let source_stream = StreamHandle::new_for_decode(
+    let source_stream = StreamHandle::new(
         ctx,
         copy_graph_stream_name(ctx, stream)?,
         "allocate annotation stream handle",
@@ -9698,7 +9698,7 @@ mod tests {
         };
         let mut annotations = AnnotationBuilder::new();
         let source_stream =
-            cadmpeg_ir::annotations::StreamHandle::new(cadmpeg_ir::stream_name!("test"));
+            cadmpeg_ir::annotations::StreamHandle::new(&cadmpeg_test_support::service_decode_context(), cadmpeg_ir::stream_name!("test"), "fixture stream handle").unwrap();
         super::derive_cylindrical_pcurves(&ctx, &mut brep, &mut annotations, &source_stream)
             .expect("cylindrical pcurve derivation");
 
