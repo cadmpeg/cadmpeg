@@ -633,8 +633,7 @@ pub(super) fn check_pcurve_surface_consistency(
             first,
             last,
             recovery_bound,
-        )?
-        .unwrap_or_default();
+        )?;
         let declared = if coedge.pcurves.len() == 1 {
             pcurve_parameter_ranges(
                 ctx,
@@ -660,18 +659,18 @@ pub(super) fn check_pcurve_surface_consistency(
                 None => pcurve_parameter_extremes(ctx, last)?,
             };
             match (first_range, last_range) {
-                (Some([t0, _]), Some([_, t1])) => Some(vec![[t0, t1]]),
+                (Some([t0, _]), Some([_, t1])) => {
+                    let mut range = Scratch::new(ctx)?;
+                    range.push([t0, t1])?;
+                    Some(range)
+                },
                 _ => None,
             }
-        }
-        .unwrap_or_default();
-        let intervals = declared.into_iter().chain(recovered).collect::<Vec<_>>();
-        let intervals = (!intervals.is_empty()).then_some(intervals);
-        let Some(intervals) = intervals else {
-            continue;
         };
         let mut minimum_mismatch: Option<f64> = None;
-        for [t0, t1] in intervals {
+        for [t0, t1] in declared.iter().flat_map(|ranges| ranges.iter())
+            .chain(recovered.iter().flat_map(|ranges| ranges.iter())).copied() {
+            ctx.charge_work(1, "pcurve interval candidate")?;
             // A non-finite pcurve or surface point is measured as a finite
             // one is: the distance it produces is the finding's measure.
             let pcurve_point = |geometry, parameter| match pcurve_uv(geometry, parameter) {
@@ -723,26 +722,26 @@ pub(super) fn check_pcurve_surface_consistency(
 /// STEP edge may select any sub-interval of that carrier through its vertices.
 /// Such an interval is recovered independently from the shared 3D curve by
 /// `edge_pcurve_parameter_ranges`.
-fn pcurve_parameter_ranges(
-    ctx: &DecodeContext<'_>,
+fn pcurve_parameter_ranges<'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
     pcurve: &crate::geometry::pcurve::Pcurve,
     pcurve_range: Option<[f64; 2]>,
     edge_range: Option<[f64; 2]>,
-) -> Result<Option<Vec<[f64; 2]>>, ResourceLimit> {
-    let mut ranges = Vec::new();
+) -> Result<Option<Scratch<'ctx, [f64; 2]>>, CodecError> {
+    let mut ranges = Scratch::new(ctx)?;
     if let Some(range) = pcurve_range.or(pcurve
         .parameter_range()
         .map(crate::units::FiniteVector::get))
     {
-        ranges.push(range);
+        ranges.push(range)?;
     }
     if let Some([start, end]) = edge_range {
-        ranges.extend([[start, end], [-start, -end]]);
+        ranges.extend([[start, end], [-start, -end]])?;
     }
-    ranges.extend(pcurve_parameter_extremes(ctx, pcurve)?);
+    ranges.extend(pcurve_parameter_extremes(ctx, pcurve)?)?;
     if !ranges.is_empty() {
         if let Some(domain) = pcurve_parameter_domain(ctx, &pcurve.geometry)? {
-            ranges.push(domain.endpoints());
+            ranges.push(domain.endpoints())?;
         }
     }
     Ok((!ranges.is_empty()).then_some(ranges))
@@ -764,8 +763,8 @@ struct SurfacePcurveContext<'index, 'model> {
 /// carrier fit tolerances are applied only after recovery. A direct conic
 /// solve remains as a fallback for surfaces without a usable mapped inverse.
 /// Several seeds preserve the correct branch for periodic carriers.
-fn edge_pcurve_parameter_ranges(
-    ctx: &DecodeContext<'_>,
+fn edge_pcurve_parameter_ranges<'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
     context: &SurfacePcurveContext<'_, '_>,
     curve_geometry: Option<&crate::geometry::CurveGeometry>,
     start: Point3,
@@ -773,77 +772,66 @@ fn edge_pcurve_parameter_ranges(
     first: &crate::geometry::pcurve::Pcurve,
     last: &crate::geometry::pcurve::Pcurve,
     tolerance: f64,
-) -> Result<Option<Vec<[f64; 2]>>, CodecError> {
-    let mut start_parameters = Vec::new();
+) -> Result<Option<Scratch<'ctx, [f64; 2]>>, CodecError> {
+    let mut start_parameters = Scratch::new(ctx)?;
     for seed in pcurve_parameter_seeds_on_surface(ctx, context, first)? {
-        if let Some(parameter) =
-            mapped_pcurve_parameter_near_point(ctx, context, &first.geometry, start, seed, tolerance)?
-        {
-            start_parameters.push(parameter);
+        ctx.charge_work(1, "mapped pcurve start seed")?;
+        if let Some(parameter) = mapped_pcurve_parameter_near_point(ctx, context, &first.geometry, start, seed, tolerance)? {
+            start_parameters.push(parameter)?;
         }
     }
-    let start_parameters = unique(start_parameters);
-    let mut end_parameters = Vec::new();
+    let start_parameters = unique(ctx, start_parameters, Some)?;
+    let mut end_parameters = Scratch::new(ctx)?;
     for seed in pcurve_parameter_seeds_on_surface(ctx, context, last)? {
-        if let Some(parameter) =
-            mapped_pcurve_parameter_near_point(ctx, context, &last.geometry, end, seed, tolerance)?
-        {
-            end_parameters.push(parameter);
+        ctx.charge_work(1, "mapped pcurve end seed")?;
+        if let Some(parameter) = mapped_pcurve_parameter_near_point(ctx, context, &last.geometry, end, seed, tolerance)? {
+            end_parameters.push(parameter)?;
         }
     }
-    let end_parameters = unique(end_parameters);
-    let ranges = start_parameters
-        .iter()
-        .copied()
-        .flat_map(|start| {
-            end_parameters
-                .iter()
-                .copied()
-                .map(move |end| [start.get(), end.get()])
-        })
-        .collect::<Vec<_>>();
-    if !ranges.is_empty() {
-        return Ok(Some(ranges));
-    }
-
-    let Some(curve_geometry) = curve_geometry else {
-        return Ok(None);
-    };
-    if !matches!(
-        curve_geometry,
-        crate::geometry::CurveGeometry::Solved(
-            SolvedCurveGeometry::Circle(_)
-                | SolvedCurveGeometry::Ellipse(_)
-                | SolvedCurveGeometry::Parabola(_)
-                | SolvedCurveGeometry::Hyperbola(_)
-        )
-    ) {
+    let end_parameters = unique(ctx, end_parameters, Some)?;
+    let ranges = parameter_pairs(ctx, &start_parameters, &end_parameters)?;
+    if !ranges.is_empty() { return Ok(Some(ranges)); }
+    drop(ranges);
+    drop(start_parameters);
+    drop(end_parameters);
+    let Some(curve_geometry) = curve_geometry else { return Ok(None); };
+    if !matches!(curve_geometry, crate::geometry::CurveGeometry::Solved(
+        SolvedCurveGeometry::Circle(_) | SolvedCurveGeometry::Ellipse(_)
+        | SolvedCurveGeometry::Parabola(_) | SolvedCurveGeometry::Hyperbola(_))) {
         return Ok(None);
     }
-    let seeds = pcurve_parameter_seeds_on_surface(ctx, context, first)?
-        .into_iter()
-        .chain(pcurve_parameter_seeds_on_surface(ctx, context, last)?)
-        .collect::<Vec<_>>();
-    let start_parameters = seeds
-        .iter()
-        .map(|seed| curve_parameter_near_point(ctx, curve_geometry, start, seed.get(), tolerance))
-        .collect::<Result<Vec<_>, _>>()?;
-    let start_parameters = unique(start_parameters.into_iter().flatten());
-    let end_parameters = seeds
-        .iter()
-        .map(|seed| curve_parameter_near_point(ctx, curve_geometry, end, seed.get(), tolerance))
-        .collect::<Result<Vec<_>, _>>()?;
-    let end_parameters = unique(end_parameters.into_iter().flatten());
-    let ranges = start_parameters
-        .into_iter()
-        .flat_map(|start| {
-            end_parameters
-                .iter()
-                .copied()
-                .map(move |end| [start.get(), end.get()])
-        })
-        .collect::<Vec<_>>();
+    let mut seeds = pcurve_parameter_seeds_on_surface(ctx, context, first)?;
+    seeds.extend(pcurve_parameter_seeds_on_surface(ctx, context, last)?)?;
+    let mut start_parameters = Scratch::new(ctx)?;
+    for seed in seeds.iter() {
+        ctx.charge_work(1, "conic pcurve start seed")?;
+        if let Some(parameter) = curve_parameter_near_point(ctx, curve_geometry, start, seed.get(), tolerance)? {
+            start_parameters.push(parameter)?;
+        }
+    }
+    let start_parameters = unique(ctx, start_parameters, Some)?;
+    let mut end_parameters = Scratch::new(ctx)?;
+    for seed in seeds.iter() {
+        ctx.charge_work(1, "conic pcurve end seed")?;
+        if let Some(parameter) = curve_parameter_near_point(ctx, curve_geometry, end, seed.get(), tolerance)? {
+            end_parameters.push(parameter)?;
+        }
+    }
+    let end_parameters = unique(ctx, end_parameters, Some)?;
+    let ranges = parameter_pairs(ctx, &start_parameters, &end_parameters)?;
     Ok((!ranges.is_empty()).then_some(ranges))
+}
+
+fn parameter_pairs<'ctx>(ctx: &'ctx DecodeContext<'_>, starts: &[FiniteReal], ends: &[FiniteReal]) -> Result<Scratch<'ctx, [f64; 2]>, CodecError> {
+    let mut pairs = Scratch::new(ctx)?;
+    for start in starts {
+        ctx.charge_work(1, "pcurve parameter pair row")?;
+        for end in ends {
+            ctx.charge_work(1, "pcurve parameter pair visit")?;
+            pairs.push([start.get(), end.get()])?;
+        }
+    }
+    Ok(pairs)
 }
 
 /// Find a pcurve parameter whose mapped surface point is near a topology
@@ -955,18 +943,23 @@ fn mapped_pcurve_parameter_near_point(
     Ok(None)
 }
 
-fn unique_finite(values: impl IntoIterator<Item = f64>) -> Vec<FiniteReal> {
-    unique(values.into_iter().filter_map(FiniteReal::new))
-}
-
-fn unique(values: impl IntoIterator<Item = FiniteReal>) -> Vec<FiniteReal> {
-    let mut unique = Vec::new();
+fn unique<'ctx, T>(
+    ctx: &'ctx DecodeContext<'_>,
+    values: impl IntoIterator<Item = T>,
+    mut project: impl FnMut(T) -> Option<FiniteReal>,
+) -> Result<Scratch<'ctx, FiniteReal>, CodecError> {
+    let mut unique = Scratch::new(ctx)?;
     for value in values {
-        if !unique.contains(&value) {
-            unique.push(value);
+        ctx.charge_work(1, "parameter uniqueness source scan")?;
+        let Some(value) = project(value) else { continue; };
+        let mut present = false;
+        for candidate in unique.iter() {
+            ctx.charge_work(1, "parameter uniqueness comparison")?;
+            if *candidate == value { present = true; break; }
         }
+        if !present { unique.push(value)?; }
     }
-    unique
+    Ok(unique)
 }
 
 fn pcurve_parameter_seeds<'ctx>(ctx: &'ctx DecodeContext<'_>, pcurve: &crate::geometry::pcurve::Pcurve) -> Result<Scratch<'ctx, f64>, CodecError> {
@@ -982,21 +975,21 @@ fn pcurve_parameter_seeds<'ctx>(ctx: &'ctx DecodeContext<'_>, pcurve: &crate::ge
     Ok(seeds)
 }
 
-fn pcurve_parameter_seeds_on_surface(
-    ctx: &DecodeContext<'_>,
+fn pcurve_parameter_seeds_on_surface<'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
     context: &SurfacePcurveContext<'_, '_>,
     pcurve: &crate::geometry::pcurve::Pcurve,
-) -> Result<Vec<FiniteReal>, CodecError> {
+) -> Result<Scratch<'ctx, FiniteReal>, CodecError> {
     let mut seeds = pcurve_parameter_seeds(ctx, pcurve)?;
     let Some((origin, direction)) = pcurve.geometry.line_parameters() else {
-        return Ok(unique_finite(seeds));
+        return unique(ctx, seeds, FiniteReal::new);
     };
     let domains = match context.geometry.solved() {
         Some(geometry) => solved_surface_parameter_domains(ctx, geometry)?,
         None => None,
     };
     let Some([[u_lower, u_upper], [v_lower, v_upper]]) = domains else {
-        return Ok(unique_finite(seeds));
+        return unique(ctx, seeds, FiniteReal::new);
     };
     for boundary in [u_lower, u_lower.midpoint(u_upper), u_upper] {
         if direction.u != 0.0 {
@@ -1008,7 +1001,7 @@ fn pcurve_parameter_seeds_on_surface(
             seeds.push((boundary - origin.v) / direction.v)?;
         }
     }
-    Ok(unique_finite(seeds))
+    unique(ctx, seeds, FiniteReal::new)
 }
 
 fn solved_surface_parameter_domains(ctx: &DecodeContext<'_>, geometry: &SolvedSurfaceGeometry) -> Result<Option<[[f64; 2]; 2]>, ResourceLimit> {
