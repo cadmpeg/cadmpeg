@@ -149,7 +149,7 @@ impl From<AnnotationFieldError> for CodecError {
 }
 
 /// Non-empty serde field path keying an exactness override.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Deserialize)]
 #[serde(try_from = "String", into = "String")]
 pub struct FieldName(String);
 
@@ -250,8 +250,7 @@ impl TryFrom<Exactness> for Inexactness {
 }
 
 /// Field exactness overrides, at least one.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-#[serde(into = "BTreeMap<FieldName, Exactness>")]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NonEmptyMap(BTreeMap<FieldName, Exactness>);
 
 #[cfg(feature = "schema")]
@@ -1901,3 +1900,5 @@ mod builder_storage_tests {
         ctx.finish_session().unwrap();
     }
 }
+
+mod serialization;

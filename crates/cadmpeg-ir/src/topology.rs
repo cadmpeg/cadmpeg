@@ -233,7 +233,7 @@ pub enum ShellMember {
 ///
 /// The wire carries one non-empty member list, so "all three lists are empty"
 /// has no spelling and no arm refuses it.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(from = "NonEmptyMembers<ShellMember>", into = "Vec<ShellMember>")]
 struct ShellMembers {
     faces: Vec<FaceId>,
@@ -256,28 +256,6 @@ impl From<NonEmptyMembers<ShellMember>> for ShellMembers {
             }
         }
         sorted
-    }
-}
-
-impl From<ShellMembers> for Vec<ShellMember> {
-    fn from(members: ShellMembers) -> Self {
-        members
-            .faces
-            .into_iter()
-            .map(|id| ShellMember::Face { id })
-            .chain(
-                members
-                    .wire_edges
-                    .into_iter()
-                    .map(|id| ShellMember::WireEdge { id }),
-            )
-            .chain(
-                members
-                    .free_vertices
-                    .into_iter()
-                    .map(|id| ShellMember::FreeVertex { id }),
-            )
-            .collect()
     }
 }
 
@@ -1248,7 +1226,7 @@ impl From<IncreasingParameterInterval> for [f64; 2] {
 }
 
 /// An edge carrier and its admitted parameter endpoints.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[cfg_attr(feature = "schema", schemars(with = "EdgeCarrierWire"))]
 #[serde(try_from = "EdgeCarrierWire", into = "EdgeCarrierWire")]
@@ -1361,15 +1339,6 @@ impl TryFrom<EdgeCarrierWire> for EdgeCarrier {
     type Error = &'static str;
     fn try_from(wire: EdgeCarrierWire) -> Result<Self, Self::Error> {
         Self::new(wire.curve, wire.param_range)
-    }
-}
-
-impl From<EdgeCarrier> for EdgeCarrierWire {
-    fn from(value: EdgeCarrier) -> Self {
-        Self {
-            curve: value.curve().cloned(),
-            param_range: value.param_range().map(crate::units::FiniteVector::get),
-        }
     }
 }
 
@@ -2594,3 +2563,5 @@ cadmpeg_core::named_optional_field!(
 );
 
 mod identity_rewrite;
+
+mod serialization;

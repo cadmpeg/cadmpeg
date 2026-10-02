@@ -448,7 +448,7 @@ pub struct SubdRadialSymmetryMap {
 }
 
 /// Typed editor symmetry state for one subdivision cage.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(try_from = "SubdSymmetryWire", into = "SubdSymmetryWire")]
 pub struct SubdSymmetry {
@@ -516,18 +516,6 @@ impl SubdSymmetry {
             edge_pairs,
             vertex_pairs,
         })
-    }
-}
-
-impl From<SubdSymmetry> for SubdSymmetryWire {
-    fn from(symmetry: SubdSymmetry) -> Self {
-        Self {
-            kind: symmetry.kind,
-            plane: symmetry.plane,
-            face_pairs: symmetry.face_pairs,
-            edge_pairs: symmetry.edge_pairs,
-            vertex_pairs: symmetry.vertex_pairs,
-        }
     }
 }
 
@@ -1087,3 +1075,5 @@ cadmpeg_core::named_optional_field!(
 cadmpeg_core::named_optional_field!(deserialize_knot_interval, f64, "knot_interval");
 
 mod identity_rewrite;
+
+mod serialization;

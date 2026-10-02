@@ -818,7 +818,7 @@ impl TryFrom<FeaturePolylineWire> for FeaturePolyline {
 }
 
 /// Coordinate expressions over a finite increasing feature-curve domain.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(
     try_from = "FeatureEquationCurveWire",
@@ -899,20 +899,6 @@ impl FeatureEquationCurve {
     /// Return the admitted parameter domain.
     pub fn domain(&self) -> crate::topology::IncreasingParameterInterval {
         self.domain
-    }
-}
-
-impl From<FeatureEquationCurve> for FeatureEquationCurveWire {
-    fn from(value: FeatureEquationCurve) -> Self {
-        let [start, end] = value.domain.endpoints();
-        Self {
-            parameter: value.parameter,
-            x_expression: value.x_expression,
-            y_expression: value.y_expression,
-            z_expression: value.z_expression,
-            start,
-            end,
-        }
     }
 }
 
@@ -1922,7 +1908,7 @@ pub enum SelectionMember {
 ///
 /// The wire carries one non-empty member list, so "all four lists are empty"
 /// has no spelling and no arm refuses it.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(
     try_from = "NonEmptyMembers<SelectionMember>",
     into = "Vec<SelectionMember>"
@@ -1983,34 +1969,6 @@ impl TryFrom<NonEmptyMembers<SelectionMember>> for FeatureResultMembers {
             }
         }
         Ok(sorted)
-    }
-}
-
-impl From<FeatureResultMembers> for Vec<SelectionMember> {
-    fn from(members: FeatureResultMembers) -> Self {
-        members
-            .bodies
-            .into_iter()
-            .map(|id| SelectionMember::Body { id })
-            .chain(
-                members
-                    .faces
-                    .into_iter()
-                    .map(|id| SelectionMember::Face { id }),
-            )
-            .chain(
-                members
-                    .edges
-                    .into_iter()
-                    .map(|id| SelectionMember::Edge { id }),
-            )
-            .chain(
-                members
-                    .vertices
-                    .into_iter()
-                    .map(|id| SelectionMember::Vertex { id }),
-            )
-            .collect()
     }
 }
 
@@ -5544,7 +5502,7 @@ pub enum PrincipalPlane {
 }
 
 /// Known sketch space and its optional resolved planar geometry.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(from = "SketchFeatureBindingWire", into = "SketchFeatureBindingWire")]
 #[serde(deny_unknown_fields)]
@@ -5581,15 +5539,6 @@ enum SketchFeatureBindingWire {
         )]
         sketch: Option<crate::sketches::SketchId>,
     },
-}
-
-impl From<SketchFeatureBinding> for SketchFeatureBindingWire {
-    fn from(value: SketchFeatureBinding) -> Self {
-        match value {
-            SketchFeatureBinding::Unresolved => Self::Unresolved {},
-            SketchFeatureBinding::Planar(sketch) => Self::Planar { sketch },
-        }
-    }
 }
 
 impl From<SketchFeatureBindingWire> for SketchFeatureBinding {
@@ -7895,7 +7844,7 @@ pub struct CoilConstruction {
 }
 
 /// Geometric placement of a Coil trajectory.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(try_from = "CoilPlacementWire", into = "CoilPlacementWire")]
 pub enum CoilPlacement {
@@ -7948,19 +7897,6 @@ impl TryFrom<CoilPlacementWire> for CoilPlacement {
         })
     }
 }
-impl From<CoilPlacement> for CoilPlacementWire {
-    fn from(placement: CoilPlacement) -> Self {
-        match placement {
-            CoilPlacement::Explicit { frame } => Self::Explicit {
-                origin: frame.origin().get(),
-                axis: frame.u_axis().into(),
-                radial: frame.v_axis().into(),
-            },
-            CoilPlacement::Native { native_ref } => Self::Native { native_ref },
-        }
-    }
-}
-
 /// Independent driving dimensions of a Coil trajectory.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -9986,3 +9922,5 @@ impl Feature {
 }
 
 mod identity_rewrite;
+
+mod serialization;

@@ -291,7 +291,7 @@ pub struct Provenance<Location> {
 ///
 /// The empty string is not a stream name; the root stream is the absence of
 /// one. Build a compile-time name with [`crate::stream_name!`].
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Deserialize)]
 #[serde(try_from = "String", into = "String")]
 pub struct StreamName(std::borrow::Cow<'static, str>);
 
@@ -582,20 +582,6 @@ struct AnnotationProvenanceWire {
     tag: Option<String>,
 }
 
-impl Serialize for Provenance<AnnotationLocation> {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        AnnotationProvenanceWire {
-            stream: (*self.location.stream).clone(),
-            offset: self.offset,
-            tag: self.tag.clone(),
-        }
-        .serialize(serializer)
-    }
-}
-
 impl<'de> Deserialize<'de> for Provenance<AnnotationLocation> {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
@@ -643,17 +629,6 @@ struct SourceProvenanceWire {
     tag: Option<String>,
 }
 
-impl From<Provenance<SourceLocation>> for SourceProvenanceWire {
-    fn from(provenance: Provenance<SourceLocation>) -> Self {
-        Self {
-            format: provenance.location.format,
-            stream: provenance.location.stream,
-            offset: provenance.offset,
-            tag: provenance.tag,
-        }
-    }
-}
-
 impl From<SourceProvenanceWire> for Provenance<SourceLocation> {
     fn from(wire: SourceProvenanceWire) -> Self {
         Self {
@@ -664,15 +639,6 @@ impl From<SourceProvenanceWire> for Provenance<SourceLocation> {
             offset: wire.offset,
             tag: wire.tag,
         }
-    }
-}
-
-impl Serialize for Provenance<SourceLocation> {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        SourceProvenanceWire::from(self.clone()).serialize(serializer)
     }
 }
 
@@ -820,3 +786,5 @@ cadmpeg_core::named_optional_field!(deserialize_tag, String, "tag");
 cadmpeg_core::named_optional_field!(deserialize_stream, StreamName, "stream");
 
 mod identity_rewrite;
+
+mod serialization;
