@@ -2766,11 +2766,119 @@ def decode_binding_value(code, name, position):
     return ":" in declaration[0], value, declaration.start()
 
 
-def decode_expression_shape(expression, code, position, constants, copy_types, seen=frozenset()):
+def decode_type_catalog(sources):
+    """Keep field and method types attached to their declared record owner."""
+    catalogs = {}
+    owners = {}
+    for path, source in sources.items():
+        if not is_production_rs(path):
+            continue
+        crate = Path(relative_path(path)).parts[1]
+        fields, methods = catalogs.setdefault(crate, ({}, {}))
+        code, _ = production_source(source)
+        tokens, pairs, parents = evaluation_tokens(code)
+        words = [token[0] for token in tokens]
+        for index, word in enumerate(words):
+            if word != "struct":
+                continue
+            opening = index + 2
+            while opening < len(words) and words[opening] not in {"{", ";", "("}:
+                opening += 1
+            if opening not in pairs or words[opening] != "{":
+                continue
+            contents = code[tokens[opening].end():tokens[pairs[opening]].start()]
+            for part in decode_split(contents, ","):
+                match = re.search(r"\b([A-Za-z_]\w*)\s*:\s*([^:]+)$", part)
+                if match:
+                    fields.setdefault((words[index + 1], match[1]), set()).add(match[2].strip())
+        for index, name, output, owner in evaluation_signatures(tokens, pairs, parents):
+            owners[path, index] = owner
+            if owner and output[:1] == ["->"] and "where" not in output:
+                methods.setdefault((owner, name), set()).add("".join(output[1:]))
+    return catalogs, owners
+
+
+def decode_expression_type(expression, code, position, types, seen=frozenset()):
+    """Resolve declared projections and primitive result expressions only."""
+    expression = expression.strip().lstrip("&*").strip()
+    propagated = expression.endswith("?")
+    expression = expression.rstrip("?")
+    if not expression or expression in seen:
+        return None
+    seen = seen | {expression}
+    fields, methods, owner = types
+    if expression == "self":
+        return owner
+    if len(list(decode_split(expression, ".."))) == 2:
+        return None
+    if decode_constant_expression(expression, set()):
+        return "usize"
+    if re.fullmatch(r"(?:std|core)::mem::(?:size_of|align_of)::<.+>\(\)", expression):
+        return "usize"
+    tokens, pairs, _ = evaluation_tokens(expression)
+    words = [token[0] for token in tokens]
+    if words[-1:] == [")"] and len(words) - 1 in pairs:
+        opening = pairs[len(words) - 1]
+        if opening == 0:
+            return decode_expression_type(expression[1:-1], code, position, types, seen)
+        if opening >= 2 and words[opening - 2] == ".":
+            method = words[opening - 1]
+            if method in {"len", "capacity", "position"}:
+                return "usize"
+            base = decode_expression_type(expression[:tokens[opening - 2].start()], code, position, types, seen)
+            if base in DECODE_PRIMITIVES - {"bool", "char"} and method in {
+                    "checked_add", "checked_sub", "checked_mul", "checked_div", "checked_rem"}:
+                return f"Option<{base}>"
+            option = re.fullmatch(r"Option<([A-Za-z_]\w*)>", base or "")
+            if option and option[1] in DECODE_PRIMITIVES and method in {"ok_or", "ok_or_else"} and propagated:
+                return option[1]
+            if base in DECODE_PRIMITIVES and method in {"min", "max"}:
+                return base
+            base = re.sub(r"^&\s*(?:'[A-Za-z_]\w*\s*)?(?:mut\s+)?", "", base or "")
+            output = methods.get((base.split("<", 1)[0], method), set())
+            if len(output) == 1:
+                return next(iter(output))
+    projection = re.fullmatch(r"(.+)\.\s*([A-Za-z_]\w*)", expression, re.DOTALL)
+    if projection:
+        base = decode_expression_type(projection[1], code, position, types, seen)
+        base = re.sub(r"^&\s*(?:'[A-Za-z_]\w*\s*)?(?:mut\s+)?", "", base or "")
+        output = fields.get((base.split("<", 1)[0], projection[2]), set())
+        if len(output) == 1:
+            return next(iter(output))
+    if words[:1] == ["match"] and words[-1:] == ["}"]:
+        opening = pairs.get(len(words) - 1)
+        if opening is not None:
+            arms = list(decode_split(expression[tokens[opening].end():-1], ","))
+            outputs = [decode_expression_type(arm.split("=>", 1)[1], code, position, types, seen)
+                       for arm in arms if arm.strip() and "=>" in arm]
+            if outputs and all(output in DECODE_PRIMITIVES for output in outputs):
+                return outputs[0]
+    binding = decode_binding_value(code, expression, position)
+    if binding:
+        annotated, value, declared = binding
+        return value.strip() if annotated else decode_expression_type(value, code, declared, types, seen)
+    if re.fullmatch(r"[A-Za-z_]\w*", expression):
+        for declaration in reversed(list(re.finditer(
+                r"\bfor\s+" + re.escape(expression) + r"\s+in\s+([^{};]+)\{", code[:position]))):
+            if not decode_binding_visible(code, declaration, position, expression):
+                continue
+            bounds = list(decode_split(declaration[1], ".."))
+            if len(bounds) == 2 and all(decode_expression_type(
+                    bound.lstrip("="), code, declaration.start(), types, seen) in DECODE_PRIMITIVES for bound in bounds):
+                return "usize"
+    return None
+
+
+def decode_expression_shape(expression, code, position, constants, copy_types, types, seen=frozenset()):
     """Prove fixed extents without treating an input-sized range as constant."""
     expression = expression.strip().lstrip("&*").strip()
     if not expression or expression in seen:
         return False, False
+    inferred = decode_expression_type(expression, code, position, types)
+    if inferred:
+        shape = decode_type_shape(inferred, constants, copy_types)
+        if shape[0]:
+            return shape
     seen = seen | {expression}
     tokens, pairs, _ = evaluation_tokens(expression)
     words = [token[0] for token in tokens]
@@ -2786,14 +2894,14 @@ def decode_expression_shape(expression, code, position, constants, copy_types, s
                 return True, True
             if method in {"iter", "iter_mut", "into_iter", "enumerate", "rev", "copied", "cloned", "map", "filter", "filter_map", "take", "skip", "step_by", "inspect", "scan", "as_slice", "as_bytes"}:
                 shape = decode_expression_shape(expression[:tokens[opening - 2].start()], code,
-                                                position, constants, copy_types, seen)
+                                                position, constants, copy_types, types, seen)
                 return shape[0], shape[1] and method not in {"map", "enumerate", "filter_map", "scan"}
         if opening == 0:
             inner = expression[1:-1]
             parts = [part for part in decode_split(inner, ",") if part]
             if len(parts) == 1:
-                return decode_expression_shape(inner, code, position, constants, copy_types, seen)
-            return True, all(decode_expression_shape(part, code, position, constants, copy_types, seen)[1] for part in parts)
+                return decode_expression_shape(inner, code, position, constants, copy_types, types, seen)
+            return True, all(decode_expression_shape(part, code, position, constants, copy_types, types, seen)[1] for part in parts)
     if words[-1:] == ["]"] and pairs.get(len(words) - 1, 0) > 0:
         opening = pairs[len(words) - 1]
         base = expression[:tokens[opening].start()]
@@ -2805,13 +2913,13 @@ def decode_expression_shape(expression, code, position, constants, copy_types, s
                 item = next(decode_split(value[1:-1], ";"))
                 if ".." not in words[opening:]:
                     return decode_type_shape(item, constants, copy_types)
-            shape = decode_expression_shape(base, code, position, constants, copy_types, seen)
+            shape = decode_expression_shape(base, code, position, constants, copy_types, types, seen)
             if ".." in words[opening:]:
                 return shape
             if shape[1]:
                 return True, True
     if re.fullmatch(r"[A-Za-z_]\w*(?:\.[A-Za-z_]\w*|\.[0-9]+)+", expression):
-        if decode_expression_shape(expression.split(".", 1)[0], code, position, constants, copy_types, seen)[1]:
+        if decode_expression_shape(expression.split(".", 1)[0], code, position, constants, copy_types, types, seen)[1]:
             return True, True
     if ".." in words:
         index = words.index("..")
@@ -2823,8 +2931,8 @@ def decode_expression_shape(expression, code, position, constants, copy_types, s
         if len(parts) == 2:
             return (decode_constant_expression(parts[1], constants),
                     decode_constant_expression(parts[1], constants)
-                    and decode_expression_shape(parts[0], code, position, constants, copy_types, seen)[1])
-        return True, all(decode_expression_shape(part, code, position, constants, copy_types, seen)[1]
+                    and decode_expression_shape(parts[0], code, position, constants, copy_types, types, seen)[1])
+        return True, all(decode_expression_shape(part, code, position, constants, copy_types, types, seen)[1]
                          for part in decode_split(inner, ",") if part)
     if decode_constant_expression(expression, constants) or expression in {"true", "false"}:
         return True, True
@@ -2834,7 +2942,7 @@ def decode_expression_shape(expression, code, position, constants, copy_types, s
     annotated, value, declared = binding
     if annotated:
         return decode_type_shape(value, constants, copy_types)
-    return decode_expression_shape(value, code, declared, constants, copy_types, seen)
+    return decode_expression_shape(value, code, declared, constants, copy_types, types, seen)
 
 
 def scan_decode_work(sources: dict[Path, str]) -> list[Finding]:
@@ -2842,9 +2950,12 @@ def scan_decode_work(sources: dict[Path, str]) -> list[Finding]:
     findings = []
     methods = decode_charged_methods(sources)
     fixed_catalog = decode_fixed_catalog(sources)
+    type_catalog, owners = decode_type_catalog(sources)
     for (path, source, code, tokens, pairs, parents, words, body, end,
          active, receivers) in decode_context_functions(sources):
         constants, copy_types = fixed_catalog.get(Path(relative_path(path)).parts[1], (set(), set()))
+        fields, outputs = type_catalog.get(Path(relative_path(path)).parts[1], ({}, {}))
+        types = fields, outputs, owners.get((path, min(active)))
         scope_start = tokens[min(active)].start()
         scope_code = code[scope_start:tokens[end].end()]
         # Const generic bounds are fixed for each instantiated function.
@@ -2887,7 +2998,7 @@ def scan_decode_work(sources: dict[Path, str]) -> list[Finding]:
                     in_index = i + 1 + header.index("in")
                     expression = "".join(words[in_index + 1:opening])
                     if decode_expression_shape(expression, scope_code, tokens[i].start() - scope_start,
-                                               constants, copy_types)[0]:
+                                               constants, copy_types, types)[0]:
                         continue
                 else:
                     extent = "".join(header)
@@ -2918,10 +3029,10 @@ def scan_decode_work(sources: dict[Path, str]) -> list[Finding]:
                     raw_argument = source[tokens[opening].end():tokens[pairs[opening]].start()].strip()
                     literal = re.fullmatch(r'(?:b|br\#*|r\#*)?"(?:[^"\\]|\\.)*"\#*|(?:b)?\'(?:[^\'\\]|\\.)*\'', raw_argument)
                     if literal or any(decode_expression_shape(operand, scope_code, tokens[i].start() - scope_start,
-                                                              constants, copy_types)[1] for operand in operands):
+                                                              constants, copy_types, types)[1] for operand in operands):
                         continue
                 shape = decode_expression_shape(receiver, scope_code, tokens[i].start() - scope_start,
-                                                constants, copy_types)
+                                                constants, copy_types, types)
                 if shape[1] or (shape[0] and word not in {"contains", "starts_with", "ends_with", "eq", "cmp", "partial_cmp", "min", "max", "min_by", "max_by", "min_by_key", "max_by_key"}):
                     continue
             elif word in {"=", "!"} and words[i + 1:i + 2] == ["="]:
@@ -2932,7 +3043,7 @@ def scan_decode_work(sources: dict[Path, str]) -> list[Finding]:
                 raw_left = decode_receiver(words, pairs, i + 1)
                 raw_right = "".join(words[right:decode_operand_end(words, pairs, right, end)])
                 if any(decode_expression_shape(name, scope_code, tokens[i].start() - scope_start,
-                                               constants, copy_types)[1] for name in (raw_left, raw_right)):
+                                               constants, copy_types, types)[1] for name in (raw_left, raw_right)):
                     continue
                 count_queries = [[".", method, "(", ")"] for method in {"len", "capacity", "position"}]
                 right_query = right
