@@ -1887,3 +1887,5 @@ fn a8_pcurve_bspline_refuses_nested_jet_allocations() {
 mod decode_transfer;
 
 mod curve_and_guide_records;
+
+mod work_admission;
