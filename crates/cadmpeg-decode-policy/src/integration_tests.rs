@@ -167,6 +167,7 @@ fn check_fixture(name: &str) {
                     | "reachability"
                     | "fixed_ranges"
                     | "raw_steps"
+                    | "conversions"
                     | "modular"
                     | "external"
                     | "generic"
@@ -333,3 +334,6 @@ fn constant_width_subslices() { check_fixture("fixed_ranges"); }
 
 #[test]
 fn charged_raw_steps() { check_fixture("raw_steps"); }
+
+#[test]
+fn charged_owned_conversions() { check_fixture("conversions"); }

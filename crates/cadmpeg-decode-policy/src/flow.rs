@@ -19,6 +19,7 @@ pub(crate) struct Flow {
     pub(crate) work: Vec<Credit>,
     pub(crate) iterations: u64,
     pub(crate) storage: bool,
+    pub(crate) storage_parameters: std::collections::HashSet<String>,
     pub(crate) storage_extents: Vec<ExtentTerm>,
     pub(crate) storage_slots: Vec<crate::storage::Slots>,
     pub(crate) loop_bounds: Vec<Vec<ExtentTerm>>,
@@ -30,6 +31,7 @@ impl Default for Flow {
         Self {
             work: Vec::new(),
             storage: false,
+            storage_parameters: std::collections::HashSet::new(),
             storage_extents: Vec::new(),
             storage_slots: Vec::new(),
             loop_bounds: Vec::new(),
@@ -540,6 +542,15 @@ impl<'tcx> Analysis<'_, 'tcx> {
                 }
             }
             if reserved { self.flow.storage_slots = slots; }
+        }
+    }
+}
+
+impl Flow {
+    pub(crate) fn with_parameters(parameters: &std::collections::HashSet<HirId>) -> Self {
+        Self {
+            storage_parameters: parameters.iter().map(|id| format!("local:{id:?}")).collect(),
+            ..Self::default()
         }
     }
 }

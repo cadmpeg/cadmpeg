@@ -18,6 +18,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
     }
 
     pub(crate) fn work(&mut self, expression: &'tcx Expr<'tcx>) {
+        if self.findings.admitted_operations.contains(&expression.hir_id) { return; }
         if let ExprKind::Binary(operator, left, right) = expression.kind {
             if matches!(
                 operator.node,

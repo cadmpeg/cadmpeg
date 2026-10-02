@@ -230,7 +230,12 @@ Literal text, numeric formatting, fixed-size Copy enums, fixed arrays and
 constant-bounded collection construction have an input-independent size.
 `Rc::clone` and `Arc::clone` allocate no child storage. A runtime format width
 or precision requires the charged format operation. A separate storage
-charge does not admit an infallible raw allocation in a caller.
+charge admits an owned text conversion only when it matches the operand byte
+length and precedes the conversion on every path. The receipt admits that
+conversion once, including its copy. Resolved generic forwarding preserves
+the receipt when the operand reaches exactly one conversion without mutation.
+Unrelated, discarded, conditional and reused receipts do not admit a conversion.
+Other infallible raw allocations require their core charged operation.
 
 ### Work
 
