@@ -164,4 +164,4 @@ pub fn run(arguments: &[String]) -> bool {
 }
 
 #[cfg(test)]
-mod tests;
+mod integration_tests;
