@@ -47,6 +47,8 @@ use crate::units::{CanonicalUnitsWire, Tolerances};
 use crate::unknown::NativeUnknownRecord;
 use cadmpeg_core::text::NonBlankString;
 
+pub(crate) mod feature_parents;
+
 struct UnknownProjection<T>(T);
 
 impl<T: Borrow<NativeUnknownRecord>> Serialize for UnknownProjection<T> {
@@ -415,7 +417,7 @@ macro_rules! declare_model {
             where
                 S: Serializer,
             {
-                validate_feature_parents(&[self]).map_err(serde::ser::Error::custom)?;
+                feature_parents::validate(None, &[self]).map_err(serde::ser::Error::custom)?.map_err(serde::ser::Error::custom)?;
                 ModelWriteWire {
                     $($field: model_write_value!(self, $field),)*
                 }
@@ -443,7 +445,7 @@ macro_rules! declare_model {
                     }
                     model.features.push(feature);
                 }
-                validate_feature_parents(&[&model]).map_err(serde::de::Error::custom)?;
+                feature_parents::validate(None, &[&model]).map_err(serde::de::Error::custom)?.map_err(serde::de::Error::custom)?;
                 for wire in procedural_surfaces {
                     let (owner, procedural) = wire.into_parts();
                     model
@@ -579,7 +581,7 @@ macro_rules! declare_model_view {
         impl Model {
             /// Borrow every arena after admitting its order and temporary storage.
             pub(crate) fn sorted<'a>(&'a self, ctx: &'a DecodeContext<'_>) -> Result<SortedModel<'a>, CodecError> {
-                if let Err(error) = validate_feature_parents_for_decode(&[self], ctx)? {
+                if let Err(error) = feature_parents::validate(Some(ctx), &[self])? {
                     return Err(CodecError::Malformed(ctx.format_retained(format_args!("{error}"), "digest feature parent diagnostic")?));
                 }
                 let mut storage = ctx.reserve_scoped(0, "sorted digest model")?;
@@ -777,7 +779,7 @@ impl Serialize for ProceduralCurveRows<'_> {
 impl Serialize for GeometrySnapshot<'_> {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         let model = self.model;
-        validate_feature_parents(&[model]).map_err(serde::ser::Error::custom)?;
+        feature_parents::validate(None, &[model]).map_err(serde::ser::Error::custom)?.map_err(serde::ser::Error::custom)?;
         let mut map = serializer.serialize_map(Some(16))?;
         map.serialize_entry("bodies", &model.bodies)?;
         map.serialize_entry("coedges", &model.coedges)?;
@@ -946,157 +948,6 @@ impl JsonSchema for CensusKey {
     fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
         String::json_schema(generator)
     }
-}
-
-/// A model-owned feature relation that cannot survive document admission.
-#[derive(Debug, thiserror::Error)]
-#[error("{message}")]
-pub(crate) struct FeatureParentError {
-    pub(crate) owner: crate::features::FeatureId,
-    pub(crate) message: String,
-}
-
-/// Checks structural ownership and predecessor ordering across the supplied
-/// models as one graph. Draft references may resolve in the destination model.
-#[derive(Debug, thiserror::Error)]
-pub(crate) enum FeatureParentValidationError {
-    #[error("{0}")]
-    Invalid(FeatureParentError),
-    #[error("resource refusal: {0:?}")]
-    Resource(cadmpeg_core::decode::ResourceLimit),
-    #[error("{0}")]
-    Admission(String),
-}
-
-impl From<cadmpeg_core::CodecError> for FeatureParentValidationError {
-    fn from(error: cadmpeg_core::CodecError) -> Self {
-        match error {
-            cadmpeg_core::CodecError::ResourceLimit(limit) => Self::Resource(limit),
-            error => Self::Admission(error.to_string()),
-        }
-    }
-}
-
-pub(crate) fn validate_feature_parents(
-    models: &[&Model],
-) -> Result<(), FeatureParentValidationError> {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[],
-        &arena,
-        &cadmpeg_core::decode::DecodePolicy::default(),
-    )?;
-    validate_feature_parents_for_decode(models, &ctx)?
-        .map_err(FeatureParentValidationError::Invalid)
-}
-
-pub(crate) fn validate_feature_parents_for_decode(
-    models: &[&Model],
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-) -> Result<Result<(), FeatureParentError>, cadmpeg_core::CodecError> {
-    use crate::features::{FeatureDefinition, FeatureOperation};
-    use crate::index::{DecodeStorage, IndexStorage};
-    let storage = DecodeStorage(ctx);
-    let mut reservation = ctx.reserve_scoped(0, "feature parent validation storage")?;
-
-    let mut features = std::collections::HashMap::new();
-    for feature in models.iter().flat_map(|model| &model.features) {
-        ctx.charge_work(1, "feature parent validation scan")?;
-        reservation.with_storage_limit(|| {
-            storage.entry(&mut features, &(&feature.id), "feature parent identities")
-        })?;
-        if features.insert(&feature.id, feature).is_some() {
-            return Ok(Err(FeatureParentError {
-                owner: feature
-                    .id
-                    .try_clone_for_decode(ctx, "feature parent diagnostic owner")?,
-                message: ctx.format_retained(
-                    format_args!("feature identity `{}` is repeated", feature.id),
-                    "feature parent diagnostic",
-                )?,
-            }));
-        }
-    }
-    let mut tree_parents = std::collections::HashMap::new();
-    for parent in models.iter().flat_map(|model| &model.features) {
-        let FeatureDefinition::Operation(FeatureOperation::TreeNode { children, .. }) =
-            parent.evaluation.definition()
-        else {
-            continue;
-        };
-        for child in children {
-            ctx.charge_work(1, "feature tree parent scan")?;
-            reservation.with_storage_limit(|| {
-                storage.entry(&mut tree_parents, &child, "feature tree parent entries")
-            })?;
-            if let Some(previous) = tree_parents.insert(child, &parent.id) {
-                return Ok(Err(FeatureParentError {
-                    owner: child.try_clone_for_decode(ctx, "feature parent diagnostic owner")?,
-                    message: ctx.format_retained(
-                        format_args!(
-                            "feature `{child}` has two tree parents `{previous}` and `{}`",
-                            parent.id
-                        ),
-                        "feature parent diagnostic",
-                    )?,
-                }));
-            }
-        }
-    }
-    let mut regeneration_parents = std::collections::HashMap::new();
-    for (child, parent) in models
-        .iter()
-        .flat_map(|model| &model.feature_regeneration_parents.0)
-    {
-        ctx.charge_work(1, "feature regeneration parent scan")?;
-        reservation.with_storage_limit(|| {
-            storage.entry(
-                &mut regeneration_parents,
-                &child,
-                "feature regeneration parent entries",
-            )
-        })?;
-        if let Some(previous) = regeneration_parents.insert(child, parent) {
-            return Ok(Err(FeatureParentError {
-                owner: child.try_clone_for_decode(ctx, "feature parent diagnostic owner")?,
-                message: ctx.format_retained(format_args!("feature `{child}` has two regeneration parent entries `{previous}` and `{parent}`"), "feature parent diagnostic")?,
-            }));
-        }
-        let Some(child_feature) = features.get(child) else {
-            return Ok(Err(FeatureParentError {
-                owner: child.try_clone_for_decode(ctx, "feature parent diagnostic owner")?,
-                message: ctx.format_retained(
-                    format_args!("regeneration relation names missing child feature `{child}`"),
-                    "feature parent diagnostic",
-                )?,
-            }));
-        };
-        if let Some(existing) = tree_parents.get(child) {
-            return Ok(Err(FeatureParentError {
-                owner: child.try_clone_for_decode(ctx, "feature parent diagnostic owner")?,
-                message: ctx.format_retained(format_args!("tree child `{child}` is owned by `{existing}` and states no regeneration parent"), "feature parent diagnostic")?,
-            }));
-        }
-        let Some(parent_feature) = features.get(parent) else {
-            return Ok(Err(FeatureParentError {
-                owner: child.try_clone_for_decode(ctx, "feature parent diagnostic owner")?,
-                message: ctx.format_retained(
-                    format_args!("feature `{child}` names missing regeneration parent `{parent}`"),
-                    "feature parent diagnostic",
-                )?,
-            }));
-        };
-        if parent_feature.ordinal >= child_feature.ordinal {
-            return Ok(Err(FeatureParentError {
-                owner: child.try_clone_for_decode(ctx, "feature parent diagnostic owner")?,
-                message: ctx.format_retained(
-                    format_args!("regeneration parent `{parent}` does not precede child `{child}`"),
-                    "feature parent diagnostic",
-                )?,
-            }));
-        }
-    }
-    Ok(Ok(()))
 }
 
 #[derive(Debug, thiserror::Error)]

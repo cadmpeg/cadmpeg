@@ -436,11 +436,11 @@ impl<A> ModelDraft<A> {
         crate::document::arena_registry!(validate_arenas);
         if !self.model.features.is_empty() || self.model.has_feature_regeneration_parents() {
             if let Err(error) =
-                crate::document::validate_feature_parents_for_decode(&[base, &self.model], ctx)?
+                crate::document::feature_parents::validate(Some(ctx), &[base, &self.model])?
             {
                 return Ok(Err(DraftError::FeatureParents {
-                    owner: error.owner,
-                    message: error.message,
+                    owner: error.owner().try_clone_for_decode(ctx, "feature parent diagnostic owner")?,
+                    message: ctx.format_retained(format_args!("{error}"), "feature parent diagnostic")?,
                 }));
             }
         }
