@@ -103,3 +103,22 @@ pub fn branch_charges(ctx: &DecodeContext, bytes: &[u8]) -> Result<(), ()> {
     for _byte in bytes {} // finding: uncharged_decode_work
     Ok(())
 }
+
+pub fn empty_repeat(ctx: &DecodeContext, bytes: &[u8]) -> Result<(), ()> {
+    for _branch in [0u8; 0] {
+        ctx.charge_work(bytes.len() as u64, "empty")?;
+    }
+    for _byte in bytes {} // finding: uncharged_decode_work
+    ctx.charge_work(bytes.len() as u64, "outside")?;
+    for _branch in [0u8; 0] {}
+    for _byte in bytes {}
+    Ok(())
+}
+
+pub fn optional_repeat(ctx: &DecodeContext, bytes: &[u8], branch: Option<u8>) -> Result<(), ()> {
+    for _branch in branch {
+        ctx.charge_work(bytes.len() as u64, "optional")?;
+    }
+    for _byte in bytes {} // finding: uncharged_decode_work
+    Ok(())
+}

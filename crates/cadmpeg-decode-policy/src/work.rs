@@ -112,7 +112,12 @@ impl<'tcx> Analysis<'_, 'tcx> {
             match self.clone_shape(self.expr_ty(expression)) {
                 Shape::Fixed => return,
                 Shape::Unknown => {
-                    self.work_report(expression.span, Shape::Unknown, Some(false), "Clone element layout unresolved");
+                    self.work_report(
+                        expression.span,
+                        Shape::Unknown,
+                        Some(false),
+                        "Clone element layout unresolved",
+                    );
                     return;
                 }
                 Shape::Dynamic => (),
@@ -670,23 +675,21 @@ impl<'tcx> Analysis<'_, 'tcx> {
                         self.work_report(header, shape, effective, "for loop");
                         let mut saved = self.flow.clone();
                         let repetitions = self.constant_count(input, &mut Vec::new());
-                        if shape == Shape::Fixed {
-                            if let Some(count) = repetitions.filter(|count| *count > 0) {
-                                if let Some(iterations) = self.flow.iterations.checked_mul(count) {
-                                    self.flow.iterations = iterations;
-                                } else {
-                                    self.flow.work.clear();
-                                }
-                            } else {
-                                self.flow.work.clear();
-                            }
+                        let iterations = if shape == Shape::Fixed {
+                            repetitions.filter(|count| *count > 0)
+                                .and_then(|count| self.flow.iterations.checked_mul(count))
+                        } else {
+                            None
+                        };
+                        if let Some(iterations) = iterations {
+                            self.flow.iterations = iterations;
                         } else {
                             self.flow.work.clear();
                         }
                         if let Some(body) = user_body {
                             self.visit_expr(body);
                         }
-                        if shape == Shape::Fixed {
+                        if iterations.is_some() {
                             saved.work = self.flow.work.clone();
                         }
                         self.restore_loop(saved);
