@@ -221,3 +221,25 @@ impl<'tcx> Analysis<'_, 'tcx> {
         }
     }
 }
+
+impl<'tcx> Analysis<'_, 'tcx> {
+    pub(crate) fn trait_method(&self, value: ty::Ty<'tcx>, trait_name: &str, method: &str) -> Option<DefId> {
+        let trait_id = self.tcx.get_diagnostic_item(rustc_span::Symbol::intern(trait_name))?;
+        let item = self.tcx.associated_items(trait_id).in_definition_order().find(|item| item.name().as_str() == method)?;
+        Instance::try_resolve(self.tcx, self.typing_env(), item.def_id, self.tcx.mk_args(&[value.into()])).ok().flatten().map(|instance| instance.def_id())
+    }
+
+    pub(crate) fn default_shape(&self, value: ty::Ty<'tcx>, seen: &mut Vec<ty::Ty<'tcx>>) -> types::Shape {
+        if seen.contains(&value) { return types::Shape::Unknown; }
+        let Some(method) = self.trait_method(value, "Default", "default") else { return types::Shape::Unknown; };
+        if types::standard(self.tcx, method) || self.checked_body(method) { return types::Shape::Fixed; }
+        if !self.tcx.is_automatically_derived(self.tcx.parent(method)) { return types::Shape::Unknown; }
+        seen.push(value);
+        let shape = match value.kind() {
+            ty::Adt(owner, arguments) => owner.all_fields().fold(types::Shape::Fixed, |shape, field| shape.join(self.default_shape(field.ty(self.tcx, arguments).skip_norm_wip(), seen))),
+            _ => types::Shape::Unknown,
+        };
+        seen.pop();
+        shape
+    }
+}

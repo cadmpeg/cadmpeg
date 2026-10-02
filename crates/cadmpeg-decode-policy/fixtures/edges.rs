@@ -31,7 +31,7 @@ pub fn decode(
     let _index = values.get(0);
     values.clear();
     let _custom = Custom::from("input");
-    let _text = format!("{borrowed:?}"); // finding: unproven_decode_charge
+    let _text = format!("{borrowed:?}"); // finding: uncharged_decode_allocation, uncharged_decode_work
     ctx.charge_work(bytes.len() as u8 as u64, "narrow")?;
     let _narrow = bytes.iter().fold(0usize, |count, _| count + 1); // finding: unproven_decode_charge
     ctx.charge_work(strings.len() as u64, "children")?;

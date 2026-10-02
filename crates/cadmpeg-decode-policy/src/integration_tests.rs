@@ -137,6 +137,7 @@ fn check_fixture(name: &str) {
                     | "dominance"
                     | "thirdparty"
                     | "symbolic"
+                    | "derived"
             ) {
                 true
             } else if name.starts_with("work") {
@@ -267,3 +268,6 @@ fn third_party_operation_summaries() {
 fn symbolic_generic_and_derived_costs() {
     check_fixture("symbolic");
 }
+
+#[test]
+fn derived_call_costs() { check_fixture("derived"); }

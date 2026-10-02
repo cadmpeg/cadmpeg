@@ -235,6 +235,11 @@ impl<'tcx> Analysis<'_, 'tcx> {
                 _ => (),
             }
         }
+        if name == "default" && self.implementation(expression, definition).is_some_and(|id| self.tcx.is_automatically_derived(self.tcx.parent(id))) {
+            let shape = self.default_shape(self.expr_ty(expression), &mut Vec::new());
+            self.shape_report(expression, shape, "derived Default");
+            return;
+        }
         let result = types::heap(self.tcx, self.expr_ty(expression), &mut Vec::new());
         if result == Shape::Fixed {
             return;
@@ -394,18 +399,16 @@ impl<'tcx> Visitor<'tcx> for FormatShape<'_, '_, 'tcx> {
                         let value = self.analysis.expr_ty(operand).peel_refs();
                         let shape = match value.kind() {
                             ty::Str | ty::Slice(_) => Shape::Dynamic,
-                            ty::Adt(owner, _)
-                                if !types::standard(self.analysis.tcx, owner.did()) =>
-                            {
-                                Shape::Unknown
+                            ty::Adt(owner, _) if !types::standard(self.analysis.tcx, owner.did()) => {
+                                if name.as_str() == "new_debug" && self.analysis.trait_method(value, "Debug", "fmt").is_some_and(|id| self.analysis.tcx.is_automatically_derived(self.analysis.tcx.parent(id))) {
+                                    types::work(self.analysis.tcx, value, &mut Vec::new())
+                                } else { Shape::Unknown }
                             }
                             _ => types::heap(self.analysis.tcx, value, &mut Vec::new()),
                         };
-                        self.shape = self.shape.join(if shape == Shape::Fixed {
+                        self.shape = self.shape.join(if shape == Shape::Fixed && !self.analysis.trait_method(value, "Debug", "fmt").is_some_and(|id| self.analysis.tcx.is_automatically_derived(self.analysis.tcx.parent(id))) {
                             Shape::Unknown
-                        } else {
-                            shape
-                        });
+                        } else { shape });
                     } else if name.as_str() == "from_usize"
                         && !self.analysis.constant(operand, &mut Vec::new())
                     {
