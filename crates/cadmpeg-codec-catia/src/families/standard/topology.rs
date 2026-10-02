@@ -158,7 +158,8 @@ impl StandardTopologyDraft {
                     boundary.coedges.as_slice(),
                     "catia_standard_topology_copy_coedges",
                 )?;
-                let coedges = NonEmptyMembers::<CoedgeUse>::try_from(coedges).map_err(CodecError::malformed)?;
+                let coedges = NonEmptyMembers::<CoedgeUse>::try_from(coedges)
+                    .map_err(CodecError::malformed)?;
                 ctx.push_vec(
                     &mut boundaries,
                     BoundaryDraft { coedges },
@@ -195,13 +196,6 @@ impl StandardTopologyDraft {
     #[must_use]
     pub(super) fn face_count(&self) -> usize {
         self.faces.len()
-    }
-
-    /// Per-face reconstructed boundaries, in FBB row order ([spec §5.1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/catia.md#51-positional-binding): face
-    /// ordinal `i` binds to FBB row `i`).
-    #[must_use]
-    pub(crate) fn faces(&self) -> &[FaceTopologyDraft] {
-        &self.faces
     }
 
     /// Face-index components connected through shared physical edge rows, in
@@ -385,10 +379,12 @@ impl StandardTopologyDraft {
                     } else {
                         [coedge.start_vertex, coedge.end_vertex]
                     };
-                    let Some(slot) = edge_vertices.get_mut(coedge.edge_row) else { return Ok(None); };
+                    let Some(slot) = edge_vertices.get_mut(coedge.edge_row) else {
+                        return Ok(None);
+                    };
                     match *slot {
                         Some(previous) if previous != endpoints => return Ok(None),
-                        Some(_) => {},
+                        Some(_) => {}
                         None => *slot = Some(endpoints),
                     }
                 }
@@ -483,10 +479,18 @@ impl From<EdgeBoundaryLayout> for u64 {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum EdgeTableKind { First, Second }
+enum EdgeTableKind {
+    First,
+    Second,
+}
 
 impl EdgeTableKind {
-    fn byte(self) -> u8 { match self { Self::First => 1, Self::Second => 2 } }
+    fn byte(self) -> u8 {
+        match self {
+            Self::First => 1,
+            Self::Second => 2,
+        }
+    }
 }
 
 /// One row of a counted standard/FBB edge table, with handles read big-endian.
@@ -502,25 +506,53 @@ pub(crate) struct EdgeRow {
 }
 
 impl EdgeRow {
-    pub(crate) fn new(kind: u8, handles: Vec<u32>, boundary_layout: EdgeBoundaryLayout) -> Option<Self> {
-        let kind = match kind { 1 => EdgeTableKind::First, 2 => EdgeTableKind::Second, _ => return None };
-        let minimum = match boundary_layout { EdgeBoundaryLayout::CompleteBoundaryRun => 2, EdgeBoundaryLayout::InteriorWithFlankingCorners => 3 };
-        if handles.len() < minimum { return None; }
-        Some(Self { kind, handles, boundary_layout })
+    pub(crate) fn new(
+        kind: u8,
+        handles: Vec<u32>,
+        boundary_layout: EdgeBoundaryLayout,
+    ) -> Option<Self> {
+        let kind = match kind {
+            1 => EdgeTableKind::First,
+            2 => EdgeTableKind::Second,
+            _ => return None,
+        };
+        let minimum = match boundary_layout {
+            EdgeBoundaryLayout::CompleteBoundaryRun => 2,
+            EdgeBoundaryLayout::InteriorWithFlankingCorners => 3,
+        };
+        if handles.len() < minimum {
+            return None;
+        }
+        Some(Self {
+            kind,
+            handles,
+            boundary_layout,
+        })
     }
 
-    pub(crate) fn kind(&self) -> u8 { self.kind.byte() }
-    pub(crate) fn handles(&self) -> &[u32] { &self.handles }
-    pub(crate) fn boundary_layout(&self) -> EdgeBoundaryLayout { self.boundary_layout }
+    pub(crate) fn kind(&self) -> u8 {
+        self.kind.byte()
+    }
+    pub(crate) fn handles(&self) -> &[u32] {
+        &self.handles
+    }
+    pub(crate) fn boundary_layout(&self) -> EdgeBoundaryLayout {
+        self.boundary_layout
+    }
 
     pub(crate) fn select_flanking_corners(&mut self) -> bool {
-        if self.handles.len() < 3 { return false; }
+        if self.handles.len() < 3 {
+            return false;
+        }
         self.boundary_layout = EdgeBoundaryLayout::InteriorWithFlankingCorners;
         true
     }
 
     pub(crate) fn normalize_handles(&mut self, ctx: &DecodeContext<'_>) -> Result<(), CodecError> {
-        ctx.charge_work(u64_from_index(self.handles.len()), "catia_mesh_gauge_normalize_handles")?;
+        ctx.charge_work(
+            u64_from_index(self.handles.len()),
+            "catia_mesh_gauge_normalize_handles",
+        )?;
         self.handles.fill(0);
         Ok(())
     }
@@ -725,7 +757,8 @@ pub(super) fn reconstruct_incidence_with_edge_classes_and_mesh(
                     "catia_standard_incidence_coedges",
                 )?;
             }
-            let coedges = NonEmptyMembers::<CoedgeUse>::try_from(coedges).map_err(CodecError::malformed)?;
+            let coedges =
+                NonEmptyMembers::<CoedgeUse>::try_from(coedges).map_err(CodecError::malformed)?;
             ctx.push_vec(
                 &mut boundaries,
                 BoundaryDraft { coedges },
@@ -1538,7 +1571,13 @@ pub(crate) fn reconstruct_mesh_selection(
                 }
                 let start_vertex = corners[use_index];
                 let end_vertex = corners[(use_index + 1) % corners.len()];
-                let Some(edge_end) = use_.edge.checked_mul(2).and_then(|start| start.checked_add(1)) else { return Ok(None); };
+                let Some(edge_end) = use_
+                    .edge
+                    .checked_mul(2)
+                    .and_then(|start| start.checked_add(1))
+                else {
+                    return Ok(None);
+                };
                 let edge_start = edge_end - 1;
                 if edge_end >= node_count {
                     return Ok(None);

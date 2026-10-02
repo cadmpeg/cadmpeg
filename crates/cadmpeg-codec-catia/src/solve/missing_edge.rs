@@ -613,7 +613,20 @@ fn mesh_edge_ports_refuse_each_graph_collection_limit() {
     use cadmpeg_core::decode::{DecodeArena, DecodePolicy, ResourceDimension};
 
     let analysis = StandardMeshAnalysis {
-        edge_rows: vec![{ assert!(EdgeRow::new(0, vec![0], crate::families::standard::topology::EdgeBoundaryLayout::CompleteBoundaryRun).is_none()); EdgeRow::new(1, vec![0, 0], crate::families::standard::topology::EdgeBoundaryLayout::CompleteBoundaryRun).expect("admitted edge row") }],
+        edge_rows: vec![{
+            assert!(EdgeRow::new(
+                0,
+                vec![0],
+                crate::families::standard::topology::EdgeBoundaryLayout::CompleteBoundaryRun
+            )
+            .is_none());
+            EdgeRow::new(
+                1,
+                vec![0, 0],
+                crate::families::standard::topology::EdgeBoundaryLayout::CompleteBoundaryRun,
+            )
+            .expect("admitted edge row")
+        }],
         cycles: vec![vec![vec![0, 1]]],
         occurrences: vec![vec![MeshEdgeRun {
             edge: 0,
@@ -816,7 +829,20 @@ fn mesh_edge_occurrences(
 fn mesh_edge_occurrences_refuse_nested_collection_limits() {
     use cadmpeg_core::decode::{DecodeArena, DecodePolicy, ResourceDimension};
 
-    let rows = [{ assert!(EdgeRow::new(0, vec![0], crate::families::standard::topology::EdgeBoundaryLayout::CompleteBoundaryRun).is_none()); EdgeRow::new(1, vec![0, 0], crate::families::standard::topology::EdgeBoundaryLayout::CompleteBoundaryRun).expect("admitted edge row") }];
+    let rows = [{
+        assert!(EdgeRow::new(
+            0,
+            vec![0],
+            crate::families::standard::topology::EdgeBoundaryLayout::CompleteBoundaryRun
+        )
+        .is_none());
+        EdgeRow::new(
+            1,
+            vec![0, 1, 0],
+            crate::families::standard::topology::EdgeBoundaryLayout::CompleteBoundaryRun,
+        )
+        .expect("admitted edge row")
+    }];
     let cycles = [vec![vec![0, 1]]];
     let arena = DecodeArena::new();
     let policy = DecodePolicy::service();
@@ -975,7 +1001,8 @@ fn repeated_edge_face_handle_candidates_from_sets(
         return Ok(None);
     }
     for (row, faces) in edge_rows.iter().zip(serialized) {
-        if !row.handles()
+        if !row
+            .handles()
             .iter()
             .all(|handle| face_handles[faces[0]].contains(handle))
         {

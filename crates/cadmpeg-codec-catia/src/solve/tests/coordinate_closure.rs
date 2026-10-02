@@ -224,8 +224,17 @@ fn quotient_merges_roots_forced_to_one_coordinate_identity() {
     assert!(quotient
         .merge_singleton_coordinate_roots(&ctx, &[Vec::new(), Vec::new()])
         .expect("service resource budget"));
-    assert_eq!(crate::test_support::with_service_context(|ctx| quotient.root_count(ctx)).expect("service quotient traversal"), 3);
-    assert_eq!(crate::test_support::with_service_context(|ctx| quotient.find(ctx, 0)).expect("service forest traversal"), crate::test_support::with_service_context(|ctx| quotient.find(ctx, 2)).expect("service forest traversal"));
+    assert_eq!(
+        crate::test_support::with_service_context(|ctx| quotient.root_count(ctx))
+            .expect("service quotient traversal"),
+        3
+    );
+    assert_eq!(
+        crate::test_support::with_service_context(|ctx| quotient.find(ctx, 0))
+            .expect("service forest traversal"),
+        crate::test_support::with_service_context(|ctx| quotient.find(ctx, 2))
+            .expect("service forest traversal")
+    );
 }
 
 #[test]
@@ -238,7 +247,11 @@ fn singleton_coordinate_root_merges_are_batched() {
     assert!(quotient
         .merge_singleton_coordinate_roots(&ctx, &candidates)
         .expect("service resource budget"));
-    assert_eq!(crate::test_support::with_service_context(|ctx| quotient.root_count(ctx)).expect("service quotient traversal"), 1);
+    assert_eq!(
+        crate::test_support::with_service_context(|ctx| quotient.root_count(ctx))
+            .expect("service quotient traversal"),
+        1
+    );
 }
 
 #[test]
@@ -246,8 +259,12 @@ fn quotient_closes_coordinate_roots_forced_by_joint_edge_pairs() {
     catia_test_context!(ctx);
     let all = Arc::new(HashSet::from([0, 1, 2]));
     let mut quotient = MeshQuotient::new(vec![all.clone(); 6]);
-    crate::test_support::with_service_context(|ctx| quotient.merge_charged(ctx, 1, 2)).expect("service merge").expect("shared first corner");
-    crate::test_support::with_service_context(|ctx| quotient.merge_charged(ctx, 3, 4)).expect("service merge").expect("shared second corner");
+    crate::test_support::with_service_context(|ctx| quotient.merge_charged(ctx, 1, 2))
+        .expect("service merge")
+        .expect("shared first corner");
+    crate::test_support::with_service_context(|ctx| quotient.merge_charged(ctx, 3, 4))
+        .expect("service merge")
+        .expect("shared second corner");
     let candidates = vec![vec![[0, 1]], vec![[1, 2]], vec![[0, 2]]];
 
     let assignment = quotient
@@ -255,13 +272,35 @@ fn quotient_closes_coordinate_roots_forced_by_joint_edge_pairs() {
         .expect("service resource budget")
         .expect("unique joint coordinate closure");
 
-    assert_eq!(crate::test_support::with_service_context(|ctx| quotient.root_count(ctx)).expect("service quotient traversal"), 3);
-    assert_eq!(crate::test_support::with_service_context(|ctx| quotient.find(ctx, 0)).expect("service forest traversal"), crate::test_support::with_service_context(|ctx| quotient.find(ctx, 5)).expect("service forest traversal"));
-    assert_eq!(assignment[&crate::test_support::with_service_context(|ctx| quotient.find(ctx, 0)).expect("service forest traversal")], 0);
-    assert_eq!(assignment[&crate::test_support::with_service_context(|ctx| quotient.find(ctx, 1)).expect("service forest traversal")], 1);
-    assert_eq!(assignment[&crate::test_support::with_service_context(|ctx| quotient.find(ctx, 3)).expect("service forest traversal")], 2);
+    assert_eq!(
+        crate::test_support::with_service_context(|ctx| quotient.root_count(ctx))
+            .expect("service quotient traversal"),
+        3
+    );
+    assert_eq!(
+        crate::test_support::with_service_context(|ctx| quotient.find(ctx, 0))
+            .expect("service forest traversal"),
+        crate::test_support::with_service_context(|ctx| quotient.find(ctx, 5))
+            .expect("service forest traversal")
+    );
+    assert_eq!(
+        assignment[&crate::test_support::with_service_context(|ctx| quotient.find(ctx, 0))
+            .expect("service forest traversal")],
+        0
+    );
+    assert_eq!(
+        assignment[&crate::test_support::with_service_context(|ctx| quotient.find(ctx, 1))
+            .expect("service forest traversal")],
+        1
+    );
+    assert_eq!(
+        assignment[&crate::test_support::with_service_context(|ctx| quotient.find(ctx, 3))
+            .expect("service forest traversal")],
+        2
+    );
     for node in 0..6 {
-        let root = crate::test_support::with_service_context(|ctx| quotient.find(ctx, node)).expect("service forest traversal");
+        let root = crate::test_support::with_service_context(|ctx| quotient.find(ctx, node))
+            .expect("service forest traversal");
         assert_eq!(quotient.domains()[root].len(), 1);
         assert_eq!(
             quotient.domains()[root].iter().next(),
@@ -295,7 +334,11 @@ fn quotient_coordinate_closure_does_not_rescan_assigned_roots() {
         .expect("service resource budget")
         .expect("forced coordinate closure");
 
-    assert_eq!(crate::test_support::with_service_context(|ctx| quotient.root_count(ctx)).expect("service quotient traversal"), 1);
+    assert_eq!(
+        crate::test_support::with_service_context(|ctx| quotient.root_count(ctx))
+            .expect("service quotient traversal"),
+        1
+    );
     assert_eq!(assignment.values().copied().collect::<Vec<_>>(), [0]);
     assert!(!budget.exhausted());
 }
@@ -311,8 +354,11 @@ fn quotient_incidence_closure_updates_face_degrees_incrementally() {
             .collect(),
     );
     for edge in 0..EDGE_COUNT {
-        crate::test_support::with_service_context(|ctx| quotient.merge_charged(ctx, edge * 2 + 1, ((edge + 1) % EDGE_COUNT) * 2)).expect("service merge")
-            .expect("adjacent boundary ports share one coordinate root");
+        crate::test_support::with_service_context(|ctx| {
+            quotient.merge_charged(ctx, edge * 2 + 1, ((edge + 1) % EDGE_COUNT) * 2)
+        })
+        .expect("service merge")
+        .expect("adjacent boundary ports share one coordinate root");
     }
     let edge_candidates = vec![Vec::new(); EDGE_COUNT];
     let edge_faces = vec![[0, 0]; EDGE_COUNT];
@@ -353,7 +399,11 @@ fn quotient_coordinate_closure_enforces_sparse_endpoint_membership_before_search
         .expect("service resource budget")
         .expect("arc-consistent coordinate closure");
 
-    assert_eq!(crate::test_support::with_service_context(|ctx| quotient.root_count(ctx)).expect("service quotient traversal"), 2);
+    assert_eq!(
+        crate::test_support::with_service_context(|ctx| quotient.root_count(ctx))
+            .expect("service quotient traversal"),
+        2
+    );
     assert_eq!(
         assignment.values().copied().collect::<HashSet<_>>(),
         HashSet::from([0, 1])
@@ -365,7 +415,9 @@ fn quotient_coordinate_closure_enforces_sparse_endpoint_membership_before_search
 fn quotient_coordinate_closure_propagates_edge_arc_consistency_to_a_fixpoint() {
     catia_test_context!(ctx);
     let mut quotient = MeshQuotient::new(repeated_domain(HashSet::from([0, 1]), 6));
-    crate::test_support::with_service_context(|ctx| quotient.merge_charged(ctx, 1, 2)).expect("service merge").expect("shared relation root");
+    crate::test_support::with_service_context(|ctx| quotient.merge_charged(ctx, 1, 2))
+        .expect("service merge")
+        .expect("shared relation root");
     let candidates = vec![vec![[0, 0], [1, 1]], vec![[0, 0]], vec![[1, 1]]];
     let budget = WorkBudget::new(1_000);
 
@@ -374,9 +426,21 @@ fn quotient_coordinate_closure_propagates_edge_arc_consistency_to_a_fixpoint() {
         .expect("service resource budget")
         .expect("arc-consistent coordinate closure");
 
-    assert_eq!(crate::test_support::with_service_context(|ctx| quotient.root_count(ctx)).expect("service quotient traversal"), 2);
-    assert_eq!(assignment[&crate::test_support::with_service_context(|ctx| quotient.find(ctx, 0)).expect("service forest traversal")], 0);
-    assert_eq!(assignment[&crate::test_support::with_service_context(|ctx| quotient.find(ctx, 4)).expect("service forest traversal")], 1);
+    assert_eq!(
+        crate::test_support::with_service_context(|ctx| quotient.root_count(ctx))
+            .expect("service quotient traversal"),
+        2
+    );
+    assert_eq!(
+        assignment[&crate::test_support::with_service_context(|ctx| quotient.find(ctx, 0))
+            .expect("service forest traversal")],
+        0
+    );
+    assert_eq!(
+        assignment[&crate::test_support::with_service_context(|ctx| quotient.find(ctx, 4))
+            .expect("service forest traversal")],
+        1
+    );
     assert!(!budget.exhausted());
 }
 
@@ -396,10 +460,26 @@ fn quotient_coordinate_closure_forces_the_only_root_supporting_a_point() {
         .expect("service resource budget")
         .expect("point-support-forced coordinate closure");
 
-    assert_eq!(crate::test_support::with_service_context(|ctx| quotient.root_count(ctx)).expect("service quotient traversal"), 3);
-    assert_eq!(assignment[&crate::test_support::with_service_context(|ctx| quotient.find(ctx, 0)).expect("service forest traversal")], 1);
-    assert_eq!(assignment[&crate::test_support::with_service_context(|ctx| quotient.find(ctx, 1)).expect("service forest traversal")], 0);
-    assert_eq!(assignment[&crate::test_support::with_service_context(|ctx| quotient.find(ctx, 2)).expect("service forest traversal")], 2);
+    assert_eq!(
+        crate::test_support::with_service_context(|ctx| quotient.root_count(ctx))
+            .expect("service quotient traversal"),
+        3
+    );
+    assert_eq!(
+        assignment[&crate::test_support::with_service_context(|ctx| quotient.find(ctx, 0))
+            .expect("service forest traversal")],
+        1
+    );
+    assert_eq!(
+        assignment[&crate::test_support::with_service_context(|ctx| quotient.find(ctx, 1))
+            .expect("service forest traversal")],
+        0
+    );
+    assert_eq!(
+        assignment[&crate::test_support::with_service_context(|ctx| quotient.find(ctx, 2))
+            .expect("service forest traversal")],
+        2
+    );
     assert!(!budget.exhausted());
 }
 
@@ -496,7 +576,9 @@ fn quotient_coordinate_closure_enforces_complete_face_degrees() {
     let edge_faces = [[0, 0]; 2];
     let domains = [MeshFaceBoundaryDomain::UnorderedFullCycle(vec![0, 1])];
     let budget = WorkBudget::new(1_000);
-    crate::test_support::with_service_context(|ctx| open.merge_charged(ctx, 0, 2)).expect("service merge").expect("shared endpoint");
+    crate::test_support::with_service_context(|ctx| open.merge_charged(ctx, 0, 2))
+        .expect("service merge")
+        .expect("shared endpoint");
 
     assert!(open
         .close_coordinate_roots_for_incidence_with_budget(
@@ -695,10 +777,16 @@ fn quotient_closes_independent_coordinate_components_with_local_budgets() {
     for component in 0..COMPONENT_COUNT {
         let node = component * 6;
         let point = component * 3;
-        crate::test_support::with_service_context(|ctx| quotient.merge_charged(ctx, node + 1, node + 2)).expect("service merge")
-            .expect("shared first corner");
-        crate::test_support::with_service_context(|ctx| quotient.merge_charged(ctx, node + 3, node + 4)).expect("service merge")
-            .expect("shared second corner");
+        crate::test_support::with_service_context(|ctx| {
+            quotient.merge_charged(ctx, node + 1, node + 2)
+        })
+        .expect("service merge")
+        .expect("shared first corner");
+        crate::test_support::with_service_context(|ctx| {
+            quotient.merge_charged(ctx, node + 3, node + 4)
+        })
+        .expect("service merge")
+        .expect("shared second corner");
         candidates.extend([
             vec![[point, point + 1]],
             vec![[point + 1, point + 2]],
@@ -711,11 +799,20 @@ fn quotient_closes_independent_coordinate_components_with_local_budgets() {
         .expect("service resource budget")
         .expect("independent coordinate closures");
 
-    assert_eq!(crate::test_support::with_service_context(|ctx| quotient.root_count(ctx)).expect("service quotient traversal"), point_count);
+    assert_eq!(
+        crate::test_support::with_service_context(|ctx| quotient.root_count(ctx))
+            .expect("service quotient traversal"),
+        point_count
+    );
     assert_eq!(assignment.len(), point_count);
     for component in 0..COMPONENT_COUNT {
         let node = component * 6;
-        assert_eq!(crate::test_support::with_service_context(|ctx| quotient.find(ctx, node)).expect("service forest traversal"), crate::test_support::with_service_context(|ctx| quotient.find(ctx, node + 5)).expect("service forest traversal"));
+        assert_eq!(
+            crate::test_support::with_service_context(|ctx| quotient.find(ctx, node))
+                .expect("service forest traversal"),
+            crate::test_support::with_service_context(|ctx| quotient.find(ctx, node + 5))
+                .expect("service forest traversal")
+        );
     }
 }
 
@@ -739,10 +836,16 @@ fn quotient_counts_global_face_incidence_once_across_coordinate_components() {
         let node = component * 6;
         let point = component * 3;
         let first_edge = candidates.len();
-        crate::test_support::with_service_context(|ctx| quotient.merge_charged(ctx, node + 1, node + 2)).expect("service merge")
-            .expect("shared first corner");
-        crate::test_support::with_service_context(|ctx| quotient.merge_charged(ctx, node + 3, node + 4)).expect("service merge")
-            .expect("shared second corner");
+        crate::test_support::with_service_context(|ctx| {
+            quotient.merge_charged(ctx, node + 1, node + 2)
+        })
+        .expect("service merge")
+        .expect("shared first corner");
+        crate::test_support::with_service_context(|ctx| {
+            quotient.merge_charged(ctx, node + 3, node + 4)
+        })
+        .expect("service merge")
+        .expect("shared second corner");
         candidates.extend([
             vec![[point, point + 1]],
             vec![[point + 1, point + 2]],
@@ -793,7 +896,11 @@ fn quotient_closure_does_not_budget_forced_component_depth() {
         .expect("service resource budget")
         .expect("forced coordinate component");
 
-    assert_eq!(crate::test_support::with_service_context(|ctx| quotient.root_count(ctx)).expect("service quotient traversal"), 1);
+    assert_eq!(
+        crate::test_support::with_service_context(|ctx| quotient.root_count(ctx))
+            .expect("service quotient traversal"),
+        1
+    );
     assert_eq!(assignment.values().copied().collect::<Vec<_>>(), [0]);
 }
 
@@ -802,26 +909,38 @@ fn quotient_does_not_guess_an_ambiguous_coordinate_closure() {
     catia_test_context!(ctx);
     let all = Arc::new(HashSet::from([0, 1]));
     let mut quotient = MeshQuotient::new(vec![all.clone(); 4]);
-    crate::test_support::with_service_context(|ctx| quotient.merge_charged(ctx, 1, 2)).expect("service merge").expect("shared middle corner");
+    crate::test_support::with_service_context(|ctx| quotient.merge_charged(ctx, 1, 2))
+        .expect("service merge")
+        .expect("shared middle corner");
 
     assert!(quotient
         .close_coordinate_roots(&ctx, 2, &[vec![[0, 1]], vec![[0, 1]]], None)
         .expect("service resource budget")
         .is_none());
-    assert_eq!(crate::test_support::with_service_context(|ctx| quotient.root_count(ctx)).expect("service quotient traversal"), 3);
+    assert_eq!(
+        crate::test_support::with_service_context(|ctx| quotient.root_count(ctx))
+            .expect("service quotient traversal"),
+        3
+    );
 }
 
 #[test]
 fn quotient_closure_requires_every_coordinate_row_in_a_domain() {
     catia_test_context!(ctx);
     let mut quotient = MeshQuotient::new(repeated_domain(HashSet::from([0]), 4));
-    crate::test_support::with_service_context(|ctx| quotient.merge_charged(ctx, 1, 2)).expect("service merge").expect("shared endpoint");
+    crate::test_support::with_service_context(|ctx| quotient.merge_charged(ctx, 1, 2))
+        .expect("service merge")
+        .expect("shared endpoint");
 
     assert!(quotient
         .close_coordinate_roots(&ctx, 2, &[vec![[0, 0]], vec![[0, 0]]], None)
         .expect("service resource budget")
         .is_none());
-    assert_eq!(crate::test_support::with_service_context(|ctx| quotient.root_count(ctx)).expect("service quotient traversal"), 3);
+    assert_eq!(
+        crate::test_support::with_service_context(|ctx| quotient.root_count(ctx))
+            .expect("service quotient traversal"),
+        3
+    );
 }
 
 #[test]
@@ -831,7 +950,9 @@ fn quotient_accepts_diagonal_domain_for_closed_edge() {
         Arc::new(HashSet::from([2])),
         Arc::new(HashSet::from([2])),
     ]);
-    crate::test_support::with_service_context(|ctx| quotient.merge_charged(ctx, 0, 1)).expect("service merge").expect("closed endpoint merge");
+    crate::test_support::with_service_context(|ctx| quotient.merge_charged(ctx, 0, 1))
+        .expect("service merge")
+        .expect("closed endpoint merge");
     assert!(quotient
         .edge_domains_viable(&ctx, &[vec![[2, 2]]])
         .expect("service resource budget"));
@@ -844,7 +965,9 @@ fn quotient_accepts_diagonal_domain_for_closed_edge() {
 fn quotient_point_assignment_accepts_a_closed_diagonal_edge() {
     catia_test_context!(ctx);
     let mut quotient = MeshQuotient::new(repeated_domain(HashSet::from([0]), 2));
-    let root = crate::test_support::with_service_context(|ctx| quotient.merge_charged(ctx, 0, 1)).expect("service merge").expect("closed endpoint merge");
+    let root = crate::test_support::with_service_context(|ctx| quotient.merge_charged(ctx, 0, 1))
+        .expect("service merge")
+        .expect("closed endpoint merge");
 
     assert_eq!(
         quotient
@@ -869,7 +992,9 @@ fn quotient_retains_diagonal_pairs_until_ports_are_merged() {
         quotient.domains(),
         vec![Arc::new(HashSet::from([2])), Arc::new(HashSet::from([2]))]
     );
-    crate::test_support::with_service_context(|ctx| quotient.merge_charged(ctx, 0, 1)).expect("service merge").expect("closed endpoint merge");
+    crate::test_support::with_service_context(|ctx| quotient.merge_charged(ctx, 0, 1))
+        .expect("service merge")
+        .expect("closed endpoint merge");
     assert!(quotient
         .edge_domains_viable(&ctx, &[vec![[2, 2]]])
         .expect("service resource budget"));
@@ -880,7 +1005,11 @@ fn closed_edge_is_a_single_coedge_boundary_on_each_incident_face() {
     catia_test_context!(ctx);
     let topology = reconstruct_incidence(
         &ctx,
-        vec![{ assert!(EdgeRow::new(0, vec![7, 7], EdgeBoundaryLayout::CompleteBoundaryRun).is_none()); EdgeRow::new(1, vec![7, 7], EdgeBoundaryLayout::CompleteBoundaryRun).expect("admitted edge row") }],
+        vec![{
+            assert!(EdgeRow::new(0, vec![7, 7], EdgeBoundaryLayout::CompleteBoundaryRun).is_none());
+            EdgeRow::new(1, vec![7, 7], EdgeBoundaryLayout::CompleteBoundaryRun)
+                .expect("admitted edge row")
+        }],
         vec![[1.0, 0.0, 0.0]],
         &[[0, 1]],
         &[[0, 0]],
@@ -889,12 +1018,12 @@ fn closed_edge_is_a_single_coedge_boundary_on_each_incident_face() {
     .expect("service resource budget")
     .expect("closed radial edge");
     assert!(topology
-        .faces()
+        .faces
         .iter()
         .all(|face| face.boundaries.len() == 1 && face.boundaries[0].coedges.len() == 1));
     assert_ne!(
-        topology.faces()[0].boundaries[0].coedges[0].reversed,
-        topology.faces()[1].boundaries[0].coedges[0].reversed
+        topology.faces[0].boundaries[0].coedges[0].reversed,
+        topology.faces[1].boundaries[0].coedges[0].reversed
     );
 }
 
@@ -958,9 +1087,15 @@ fn quotient_ordered_cycles_use_physical_ports_for_sorted_pairs() {
         ]
         .into(),
     );
-    crate::test_support::with_service_context(|ctx| quotient.merge_charged(ctx, 4, 3)).expect("service merge").expect("first fixed-direction corner");
-    crate::test_support::with_service_context(|ctx| quotient.merge_charged(ctx, 2, 0)).expect("service merge").expect("second fixed-direction corner");
-    crate::test_support::with_service_context(|ctx| quotient.merge_charged(ctx, 1, 5)).expect("service merge").expect("third boundary corner");
+    crate::test_support::with_service_context(|ctx| quotient.merge_charged(ctx, 4, 3))
+        .expect("service merge")
+        .expect("first fixed-direction corner");
+    crate::test_support::with_service_context(|ctx| quotient.merge_charged(ctx, 2, 0))
+        .expect("service merge")
+        .expect("second fixed-direction corner");
+    crate::test_support::with_service_context(|ctx| quotient.merge_charged(ctx, 1, 5))
+        .expect("service merge")
+        .expect("third boundary corner");
     let candidates = vec![vec![[1, 2]], vec![[0, 1]], vec![[0, 2]]];
     let domain = [MeshFaceBoundaryDomain::Ordered(vec![
         MeshFaceBoundaryAssignment {

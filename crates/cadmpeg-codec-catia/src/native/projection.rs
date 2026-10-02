@@ -244,8 +244,8 @@ pub(crate) fn consolidated_owner_packets(
     ctx.stable_sort_by(
         &mut packets,
         |(left_pos, left_source, _, _), (right_pos, right_source, _, _)| {
-        (left_pos, left_source).cmp(&(right_pos, right_source))
-    },
+            (left_pos, left_source).cmp(&(right_pos, right_source))
+        },
         |_| 0,
         "catia_native_owner_packet_sort",
     )?;

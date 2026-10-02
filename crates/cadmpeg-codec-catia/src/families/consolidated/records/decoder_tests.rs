@@ -240,7 +240,9 @@ fn consolidated_edge_definition_decodes_general_scalar_layout() {
                 crate::test_support::test_b5::finite(1.0),
                 crate::test_support::test_b5::finite(-0.5),
                 crate::test_support::test_b5::finite(1.0e-6)
-            ].try_into().expect("admitted scalar arity"),
+            ]
+            .try_into()
+            .expect("admitted scalar arity"),
         })
     );
     let mut class24_nine_scalars = payload.clone();
@@ -281,7 +283,9 @@ fn class23_nine_scalar_definition_requires_three_equal_triples() {
                 crate::test_support::test_b5::finite(0.0),
                 crate::test_support::test_b5::finite(2.0),
                 crate::test_support::test_b5::finite(1.0)
-            ].try_into().expect("admitted scalar arity"),
+            ]
+            .try_into()
+            .expect("admitted scalar arity"),
         })
     );
 
@@ -929,7 +933,7 @@ fn width_coded_endpoint_distances_resolve_forward_class18_records() {
     assert_eq!(
         records
             .iter()
-            .map(|record| record.class())
+            .map(crate::wire::records::ConsolidatedRecord::class)
             .collect::<Vec<_>>(),
         [0x5e, 0x05, 0x18, 0x18]
     );
@@ -1108,7 +1112,9 @@ fn consolidated_edge_definition_decodes_class25_scalar_layouts() {
                 crate::test_support::test_b5::finite(1.0),
                 crate::test_support::test_b5::finite(5.0),
                 crate::test_support::test_b5::finite(1.0e-6)
-            ].try_into().expect("admitted scalar arity"),
+            ]
+            .try_into()
+            .expect("admitted scalar arity"),
         })
     );
 
@@ -1620,7 +1626,11 @@ fn unsegmented_scalar_deserialization_rejects_arity_outside_its_grammar() {
         for count in 0..=11 {
             let wire = serde_json::json!({"kind": kind, "operands": [1, 2, 3], "persistent_lead": 10, "values": vec![0.0; count]});
             let result = serde_json::from_value::<ConsolidatedEdgeDefinitionData>(wire);
-            assert_eq!(result.is_ok(), (lower..=upper).contains(&count), "{kind} {count}");
+            assert_eq!(
+                result.is_ok(),
+                (lower..=upper).contains(&count),
+                "{kind} {count}"
+            );
         }
     }
 }

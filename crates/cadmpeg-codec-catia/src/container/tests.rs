@@ -573,7 +573,14 @@ fn e5_stream_requires_declared_stride_or_coordinate_rows_between_records() {
         append_e5_test_record(&mut body, id);
         body.push(0x7f);
     }
-    assert!(crate::test_support::with_service_context(|ctx| super::e5_record_stream(ctx, &outer_with_preamble(&body))).expect("service work").is_none());
+    assert!(
+        crate::test_support::with_service_context(|ctx| super::e5_record_stream(
+            ctx,
+            &outer_with_preamble(&body)
+        ))
+        .expect("service work")
+        .is_none()
+    );
 
     let mut body = Vec::new();
     for id in 0..10 {
@@ -583,7 +590,14 @@ fn e5_stream_requires_declared_stride_or_coordinate_rows_between_records() {
             body.extend_from_slice(&[0; 12]);
         }
     }
-    assert!(crate::test_support::with_service_context(|ctx| super::e5_record_stream(ctx, &outer_with_preamble(&body))).expect("service work").is_some());
+    assert!(
+        crate::test_support::with_service_context(|ctx| super::e5_record_stream(
+            ctx,
+            &outer_with_preamble(&body)
+        ))
+        .expect("service work")
+        .is_some()
+    );
 }
 
 #[test]
@@ -595,7 +609,14 @@ fn e5_stream_ignores_markers_inside_framed_payloads() {
     for id in 1..9 {
         append_e5_test_record(&mut body, id);
     }
-    assert!(crate::test_support::with_service_context(|ctx| super::e5_record_stream(ctx, &outer_with_preamble(&body))).expect("service work").is_none());
+    assert!(
+        crate::test_support::with_service_context(|ctx| super::e5_record_stream(
+            ctx,
+            &outer_with_preamble(&body)
+        ))
+        .expect("service work")
+        .is_none()
+    );
 }
 
 #[test]
@@ -622,7 +643,11 @@ fn e5_stream_and_finjpl_inventory_exclude_the_trailing_directory() {
     directory.resize(directory_length, 0);
     bytes.extend_from_slice(&directory);
 
-    assert!(crate::test_support::with_service_context(|ctx| super::e5_record_stream(ctx, &bytes)).expect("service work").is_none());
+    assert!(
+        crate::test_support::with_service_context(|ctx| super::e5_record_stream(ctx, &bytes))
+            .expect("service work")
+            .is_none()
+    );
     let scan = crate::test_support::with_service_context(|ctx| super::scan_bytes(ctx, bytes))
         .expect("service resource budget");
     assert!(scan.finjpl_segments.is_empty());
@@ -648,7 +673,14 @@ fn equal_unpreferred_e5_segment_walks_are_ambiguous() {
             append_e5_test_record(&mut body, segment * 10 + id);
         }
     }
-    assert!(crate::test_support::with_service_context(|ctx| super::e5_record_stream(ctx, &outer_with_preamble(&body))).expect("service work").is_none());
+    assert!(
+        crate::test_support::with_service_context(|ctx| super::e5_record_stream(
+            ctx,
+            &outer_with_preamble(&body)
+        ))
+        .expect("service work")
+        .is_none()
+    );
 }
 
 #[test]
@@ -1373,7 +1405,11 @@ fn e5_stream_selection_prefers_coherent_storage_segment_over_stray_preamble_mark
     }
     bytes.resize(544, 0);
 
-    let range = crate::test_support::with_service_context(|ctx| crate::container::e5_record_stream(ctx, &bytes)).expect("service work").expect("coherent E5 stream");
+    let range = crate::test_support::with_service_context(|ctx| {
+        crate::container::e5_record_stream(ctx, &bytes)
+    })
+    .expect("service work")
+    .expect("coherent E5 stream");
     assert_eq!(range.start, expected_start);
     assert_eq!(&bytes[range.start..range.start + 8], b"FINJPL  ");
 }
@@ -1564,15 +1600,21 @@ fn brep_surface_source_is_scoped_and_destination_is_retained_once() {
 #[test]
 fn jpeg_candidate_suffix_walks_refuse_caller_work_limit() {
     let mut bytes = summary_preview_segment();
-    let image_start = bytes.windows(3).position(|value| value == [0xff, 0xd8, 0xff]).expect("SOI");
+    let image_start = bytes
+        .windows(3)
+        .position(|value| value == [0xff, 0xd8, 0xff])
+        .expect("SOI");
     bytes.truncate(image_start);
     for _ in 0..32 {
         bytes.extend([0xff, 0xd8, 0xff, 0xda, 0, 2]);
     }
     let segments = finjpl_service(&super::BodyExtent::whole(&bytes));
     crate::test_support::with_work_limit(u64::try_from(bytes.len() * 2).expect("work"), |ctx| {
-        let error = super::preview_images_in_segments(ctx, &bytes, &segments).expect_err("repeated suffix walks exceed work");
-        let cadmpeg_core::CodecError::ResourceLimit(limit) = error else { panic!("resource refusal") };
+        let error = super::preview_images_in_segments(ctx, &bytes, &segments)
+            .expect_err("repeated suffix walks exceed work");
+        let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
+            panic!("resource refusal")
+        };
         assert_eq!(limit.operation, "catia_jpeg_marker_walk");
         assert_eq!(ctx.resource_refusal(), Some(limit));
     });
@@ -1588,7 +1630,12 @@ fn declaration_candidates_refuse_repeated_suffix_searches() {
         data[start + 32..start + 36].copy_from_slice(&[2, 0, 0x81, 0x20]);
     }
     crate::test_support::with_work_limit(2048, |ctx| {
-        let cadmpeg_core::CodecError::ResourceLimit(limit) = super::parse_outer_container_declarations(ctx, &data, &[]).expect_err("suffix searches require caller work") else { panic!("resource refusal") };
+        let cadmpeg_core::CodecError::ResourceLimit(limit) =
+            super::parse_outer_container_declarations(ctx, &data, &[])
+                .expect_err("suffix searches require caller work")
+        else {
+            panic!("resource refusal")
+        };
         assert_eq!(limit.operation, "catia_container_terminal_scan");
         assert_eq!(ctx.resource_refusal(), Some(limit));
     });
@@ -1597,7 +1644,11 @@ fn declaration_candidates_refuse_repeated_suffix_searches() {
 #[test]
 fn nested_magic_absence_refuses_unadmitted_search() {
     crate::test_support::with_work_limit(0, |ctx| {
-        let cadmpeg_core::CodecError::ResourceLimit(limit) = super::parse_stream_directory(ctx, &[0; 256]).expect_err("magic search needs work") else { panic!("resource refusal") };
+        let cadmpeg_core::CodecError::ResourceLimit(limit) =
+            super::parse_stream_directory(ctx, &[0; 256]).expect_err("magic search needs work")
+        else {
+            panic!("resource refusal")
+        };
         assert_eq!(limit.operation, "catia_nested_magic_scan");
         assert_eq!(ctx.resource_refusal(), Some(limit));
     });
@@ -1606,10 +1657,16 @@ fn nested_magic_absence_refuses_unadmitted_search() {
 #[test]
 fn e5_stride_selection_refuses_caller_work() {
     let mut body = Vec::new();
-    for id in 0..10 { append_e5_test_record(&mut body, id); }
+    for id in 0..10 {
+        append_e5_test_record(&mut body, id);
+    }
     let bytes = outer_with_preamble(&body);
     crate::test_support::with_work_limit(0, |ctx| {
-        let cadmpeg_core::CodecError::ResourceLimit(limit) = super::e5_record_stream(ctx, &bytes).expect_err("selection needs work") else { panic!("resource refusal") };
+        let cadmpeg_core::CodecError::ResourceLimit(limit) =
+            super::e5_record_stream(ctx, &bytes).expect_err("selection needs work")
+        else {
+            panic!("resource refusal")
+        };
         assert_eq!(limit.operation, "catia_e5_segment_scan");
         assert_eq!(ctx.resource_refusal(), Some(limit));
     });
@@ -1619,12 +1676,18 @@ fn e5_stride_selection_refuses_caller_work() {
 fn container_scan_rejects_wrong_magic_and_truncated_header() {
     for bytes in [&[][..], &b"garbage!"[..]] {
         let result = crate::test_support::with_service_context(|ctx| scan_bytes(ctx, bytes));
-        assert!(matches!(result, Err(cadmpeg_core::CodecError::WrongFormat(_))));
+        assert!(matches!(
+            result,
+            Err(cadmpeg_core::CodecError::WrongFormat(_))
+        ));
     }
     for length in 8..16 {
         let mut bytes = super::OUTER_MAGIC.to_vec();
         bytes.resize(length, 0);
         let result = crate::test_support::with_service_context(|ctx| scan_bytes(ctx, bytes));
-        assert!(matches!(result, Err(cadmpeg_core::CodecError::Malformed(_))));
+        assert!(matches!(
+            result,
+            Err(cadmpeg_core::CodecError::Malformed(_))
+        ));
     }
 }

@@ -12,8 +12,8 @@ use super::{
     FaceTopologyDraft, HashMap, HashSet, MeshBoundaryEdgeCandidate, MeshCandidateFailure,
     MeshCandidateGauge, MeshEndpointResolve, MeshFaceBoundaryAssignment, MeshFaceSelection,
     MeshFixedDirectionOption, MeshQuotient, MeshQuotientSignature, MeshSelectionSearch,
-    MeshSelectionStateSignature, MeshSolve, SearchOutcome, StandardTopologyDraft, VecDeque, WorkBudget,
-    MAX_FACE_EQUATION_CACHE_ENTRIES, MAX_SELECTION_STATE_MEMO_ENTRIES,
+    MeshSelectionStateSignature, MeshSolve, SearchOutcome, StandardTopologyDraft, VecDeque,
+    WorkBudget, MAX_FACE_EQUATION_CACHE_ENTRIES, MAX_SELECTION_STATE_MEMO_ENTRIES,
 };
 
 #[cfg(test)]
@@ -81,13 +81,20 @@ impl<'storage> MeshSelectionSearch<'storage, '_> {
                 let mut roots = HashMap::new();
                 for [left, right] in &equations {
                     for root in [left, right] {
-                        let next = roots.len(); roots.entry(*root).or_insert(next);
+                        let next = roots.len();
+                        roots.entry(*root).or_insert(next);
                     }
                 }
                 let mut local = UnionFind::new(roots.len());
-                for [left, right] in equations { local.union(ctx, roots[&left], roots[&right])?; }
+                for [left, right] in equations {
+                    local.union(ctx, roots[&left], roots[&right])?;
+                }
                 let mut remaining = 0;
-                for node in 0..local.len() { if local.find(ctx, node)? == node { remaining += 1; } }
+                for node in 0..local.len() {
+                    if local.find(ctx, node)? == node {
+                        remaining += 1;
+                    }
+                }
                 reductions.insert(component, roots.len() - remaining);
             }
             Ok(reductions)
@@ -100,7 +107,11 @@ impl<'storage> MeshSelectionSearch<'storage, '_> {
             possible.union(self.ctx, node, root)?;
         }
         let mut before = 0usize;
-        for node in 0..node_count { if possible.find(self.ctx, node)? == node { before += 1; } }
+        for node in 0..node_count {
+            if possible.find(self.ctx, node)? == node {
+                before += 1;
+            }
+        }
         for (face, selected) in self.selected.iter().enumerate() {
             if selected.is_some() {
                 continue;
@@ -110,7 +121,11 @@ impl<'storage> MeshSelectionSearch<'storage, '_> {
             }
         }
         let mut after = 0usize;
-        for node in 0..node_count { if possible.find(self.ctx, node)? == node { after += 1; } }
+        for node in 0..node_count {
+            if possible.find(self.ctx, node)? == node {
+                after += 1;
+            }
+        }
         let point_count = if self.vertex_points.is_empty() {
             quotient
                 .domains
@@ -160,7 +175,8 @@ impl<'storage> MeshSelectionSearch<'storage, '_> {
             let mut face_capacity = HashMap::<usize, usize>::new();
             let mut independent_face_capacity = 0usize;
             for choice in &self.possible_face_choices[face] {
-                let reductions = choice_component_reductions(self.ctx, choice, quotient, &mut possible)?;
+                let reductions =
+                    choice_component_reductions(self.ctx, choice, quotient, &mut possible)?;
                 independent_face_capacity = independent_face_capacity.max(
                     reductions
                         .values()
@@ -1137,33 +1153,76 @@ impl<'storage> MeshSelectionSearch<'storage, '_> {
         let adjacent_faces = (!adjacent_faces.is_empty()).then_some(adjacent_faces);
         let mut next = None;
         for (face, selected) in self.selected.iter().enumerate() {
-            if selected.is_some() || adjacent_faces.as_ref().is_some_and(|adjacent| !adjacent.contains(&face)) { continue; }
-            if !budget.charge() { break; }
-            if self.face_work[face].is_none() { continue; }
+            if selected.is_some()
+                || adjacent_faces
+                    .as_ref()
+                    .is_some_and(|adjacent| !adjacent.contains(&face))
+            {
+                continue;
+            }
+            if !budget.charge() {
+                break;
+            }
+            if self.face_work[face].is_none() {
+                continue;
+            }
             let assignments = &self.assignments[face];
-            let key = if assignments.is_empty() { (0, 0, 0, 0, 0, face) } else {
-                let Some(direction_work) = direction_work_estimate(assignments.iter().map(|assignment| assignment.boundaries.iter().flatten().filter(|use_| use_.reversed.is_none()).count())) else {
-                    budget.exhaust(); break;
+            let key = if assignments.is_empty() {
+                (0, 0, 0, 0, 0, face)
+            } else {
+                let Some(direction_work) =
+                    direction_work_estimate(assignments.iter().map(|assignment| {
+                        assignment
+                            .boundaries
+                            .iter()
+                            .flatten()
+                            .filter(|use_| use_.reversed.is_none())
+                            .count()
+                    }))
+                else {
+                    budget.exhaust();
+                    break;
                 };
                 let mut can_merge = false;
                 let mut selected_incidence = 0;
                 let mut constrained = 0;
                 for assignment in assignments {
-                    if !can_merge { can_merge = mesh_assignment_can_merge(self.ctx, assignment, &mut measured)?; }
+                    if !can_merge {
+                        can_merge = mesh_assignment_can_merge(self.ctx, assignment, &mut measured)?;
+                    }
                     let mut used = 0;
                     let mut constrained_uses = 0;
                     for use_ in assignment.boundaries.iter().flatten() {
-                        if selected_edges.contains(&use_.edge) { used += 1; }
+                        if selected_edges.contains(&use_.edge) {
+                            used += 1;
+                        }
                         let left = measured.union.find(self.ctx, use_.edge * 2)?;
                         let right = measured.union.find(self.ctx, use_.edge * 2 + 1)?;
-                        if measured.domains[left].len() < self.vertex_points.len() || measured.domains[right].len() < self.vertex_points.len() { constrained_uses += 1; }
+                        if measured.domains[left].len() < self.vertex_points.len()
+                            || measured.domains[right].len() < self.vertex_points.len()
+                        {
+                            constrained_uses += 1;
+                        }
                     }
-                    if used > selected_incidence { selected_incidence = used; }
-                    if constrained_uses > constrained { constrained = constrained_uses; }
+                    if used > selected_incidence {
+                        selected_incidence = used;
+                    }
+                    if constrained_uses > constrained {
+                        constrained = constrained_uses;
+                    }
                 }
-                (if can_merge { 1 } else { 2 }, direction_work, assignments.len(), usize::MAX - selected_incidence, usize::MAX - constrained, face)
+                (
+                    if can_merge { 1 } else { 2 },
+                    direction_work,
+                    assignments.len(),
+                    usize::MAX - selected_incidence,
+                    usize::MAX - constrained,
+                    face,
+                )
             };
-            if next.is_none_or(|previous| key < previous) { next = Some(key); }
+            if next.is_none_or(|previous| key < previous) {
+                next = Some(key);
+            }
         }
 
         if budget.exhausted() {
@@ -1303,8 +1362,8 @@ impl<'storage> MeshSelectionSearch<'storage, '_> {
                         break 'candidate None;
                     };
                     let points = [start, end];
-                    let closed_ports =
-                        quotient.union.find(self.ctx, edge * 2)? == quotient.union.find(self.ctx, edge * 2 + 1)?;
+                    let closed_ports = quotient.union.find(self.ctx, edge * 2)?
+                        == quotient.union.find(self.ctx, edge * 2 + 1)?;
                     if !mesh_edge_points_compatible(
                         closed_ports,
                         &self.edge_candidates[edge],
@@ -1407,8 +1466,11 @@ impl<'storage> MeshSelectionSearch<'storage, '_> {
         }
         let mut index = 0;
         while index < options.len() {
-            if options[index].2.root_count(self.ctx)? < self.vertex_points.len() { options.remove(index); }
-            else { index += 1; }
+            if options[index].2.root_count(self.ctx)? < self.vertex_points.len() {
+                options.remove(index);
+            } else {
+                index += 1;
+            }
         }
         if options.is_empty() {
             return Ok(());
@@ -1443,11 +1505,20 @@ impl<'storage> MeshSelectionSearch<'storage, '_> {
                     freedom += u128::from(u64_from_index(quotient.domains[node].len()));
                 }
             }
-            self.ctx.push_vec(&mut ranked_options, ((count, freedom), assignment, directions, quotient), "catia_search_ranked_options")?;
+            self.ctx.push_vec(
+                &mut ranked_options,
+                ((count, freedom), assignment, directions, quotient),
+                "catia_search_ranked_options",
+            )?;
         }
         self.ctx.sort_unstable_by(
             &mut ranked_options,
-            |left, right| left.0.cmp(&right.0).then_with(|| left.1.cmp(&right.1)).then_with(|| left.2.cmp(&right.2)),
+            |left, right| {
+                left.0
+                    .cmp(&right.0)
+                    .then_with(|| left.1.cmp(&right.1))
+                    .then_with(|| left.2.cmp(&right.2))
+            },
             |(_, _, directions, _)| directions.iter().map(Vec::len).sum::<usize>(),
             "catia_search_assignment_options_sort",
         )?;
@@ -1516,7 +1587,9 @@ pub(super) fn mesh_assignment_can_merge(
             let right = possible_ports(boundary[(index + 1) % boundary.len()], false);
             for left in left.into_iter().flatten() {
                 for right in right.into_iter().flatten() {
-                    if quotient.union.find(ctx, left)? != quotient.union.find(ctx, right)? { return Ok(true); }
+                    if quotient.union.find(ctx, left)? != quotient.union.find(ctx, right)? {
+                        return Ok(true);
+                    }
                 }
             }
         }
@@ -1898,7 +1971,8 @@ pub(super) fn resolve_mesh_selection_from_quotient<'storage>(
             }
             points[port] = point;
         }
-        let closed_ports = quotient.union.find(ctx, edge * 2)? == quotient.union.find(ctx, edge * 2 + 1)?;
+        let closed_ports =
+            quotient.union.find(ctx, edge * 2)? == quotient.union.find(ctx, edge * 2 + 1)?;
         if !mesh_edge_points_compatible(closed_ports, &edge_candidates[edge], points) {
             return Ok(None);
         }
@@ -2250,8 +2324,8 @@ pub(super) fn resolve_singleton_mesh_selection(
                     }
                     points[port] = point;
                 }
-                let closed_ports =
-                    quotient.union.find(ctx, edge * 2)? == quotient.union.find(ctx, edge * 2 + 1)?;
+                let closed_ports = quotient.union.find(ctx, edge * 2)?
+                    == quotient.union.find(ctx, edge * 2 + 1)?;
                 if !mesh_edge_points_compatible(closed_ports, &edge_candidates[edge], points) {
                     return Ok(None);
                 }

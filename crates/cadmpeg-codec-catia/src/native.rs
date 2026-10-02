@@ -350,19 +350,22 @@ impl TryFrom<CatiaConsolidatedOwnerPacketWire> for CatiaConsolidatedOwnerPacket 
                 owner_chart,
                 boundary_cycle,
             } => {
-                if !identity_targets.is_empty() || owner_chart.is_some() || boundary_cycle.is_some() {
-                    return Err("fixed-nine metadata must occur only at the packet level".to_owned());
+                if !identity_targets.is_empty() || owner_chart.is_some() || boundary_cycle.is_some()
+                {
+                    return Err(
+                        "fixed-nine metadata must occur only at the packet level".to_owned()
+                    );
                 }
                 CatiaOwnerPacketPayload::FixedNine {
-                reference_encoding,
-                references,
-                identity_encodings,
-                numeric_tail,
-                identity_targets: wire.identity_targets,
-                owner_chart: wire.owner_chart.map(Box::new),
-                boundary_cycle: wire.boundary_cycle.map(Box::new),
+                    reference_encoding,
+                    references,
+                    identity_encodings,
+                    numeric_tail,
+                    identity_targets: wire.identity_targets,
+                    owner_chart: wire.owner_chart.map(Box::new),
+                    boundary_cycle: wire.boundary_cycle.map(Box::new),
+                }
             }
-            },
             counted @ CatiaOwnerPacketPayload::Counted { .. } => {
                 if !wire.identity_targets.is_empty()
                     || wire.owner_chart.is_some()
@@ -437,10 +440,13 @@ impl TryFrom<CatiaConsolidatedConeWire> for CatiaConsolidatedCone {
     type Error = &'static str;
 
     fn try_from(wire: CatiaConsolidatedConeWire) -> Result<Self, Self::Error> {
-        if crate::checked::UnitFrame3::right_handed(wire.axis, wire.direction_x, wire.direction_y).is_none()
+        if crate::checked::UnitFrame3::right_handed(wire.axis, wire.direction_x, wire.direction_y)
+            .is_none()
             || !(0.0 < wire.half_angle.get() && wire.half_angle.get() < std::f64::consts::FRAC_PI_2)
             || !crate::analytic::periodic_angular_range_is_valid(
-                wire.angular_range.endpoints(), wire.angular_domain.endpoints())
+                wire.angular_range.endpoints(),
+                wire.angular_domain.endpoints(),
+            )
             || wire.slant_range.lower() < 0.0
         {
             return Err("invalid consolidated cone frame or chart");
@@ -636,13 +642,19 @@ impl CatiaConsolidatedCylinderPayload {
         if !matches!(frame_token, 0x19 | 0x1c)
             || direction[2] != 0.0
             || reference_direction.get() != [-direction[1], direction[0], 0.0]
-            || !crate::families::b2::records::circle_range_is_full_turn(radius.get(), u_range.endpoints())
+            || !crate::families::b2::records::circle_range_is_full_turn(
+                radius.get(),
+                u_range.endpoints(),
+            )
         {
             return Err("invalid layout-0x5a cylinder chart".to_owned());
         }
-        Ok(Self::Layout5a { frame_token, axis, reference_direction })
+        Ok(Self::Layout5a {
+            frame_token,
+            axis,
+            reference_direction,
+        })
     }
-
 }
 
 /// One structurally complete consolidated `B:28` cylinder chart.
@@ -750,14 +762,22 @@ impl TryFrom<CatiaConsolidatedCylinderWire> for CatiaConsolidatedCylinder {
                     reference_direction,
                 },
             ) => {
-                if frame_token != 0x1d || axis.get() != [1.0, 0.0, 0.0]
+                if frame_token != 0x1d
+                    || axis.get() != [1.0, 0.0, 0.0]
                     || reference_direction.get() != [0.0, 1.0, 0.0]
-                    || !crate::families::b2::records::circle_range_is_full_turn(wire.radius.get(), wire.u_range.endpoints())
+                    || !crate::families::b2::records::circle_range_is_full_turn(
+                        wire.radius.get(),
+                        wire.u_range.endpoints(),
+                    )
                 {
                     return Err("invalid layout-0x52 cylinder chart".to_owned());
                 }
-                CatiaConsolidatedCylinderPayload::Layout52 { frame_token, axis, reference_direction }
-            },
+                CatiaConsolidatedCylinderPayload::Layout52 {
+                    frame_token,
+                    axis,
+                    reference_direction,
+                }
+            }
             (
                 0x5a,
                 CatiaConsolidatedCylinderPayloadWire::Resolved {
@@ -766,7 +786,12 @@ impl TryFrom<CatiaConsolidatedCylinderWire> for CatiaConsolidatedCylinder {
                     reference_direction,
                 },
             ) => CatiaConsolidatedCylinderPayload::resolved_5a(
-                wire.radius, wire.u_range, frame_token, axis, reference_direction)?,
+                wire.radius,
+                wire.u_range,
+                frame_token,
+                axis,
+                reference_direction,
+            )?,
             (
                 0x62,
                 CatiaConsolidatedCylinderPayloadWire::RangeOrigin {
@@ -779,14 +804,27 @@ impl TryFrom<CatiaConsolidatedCylinderWire> for CatiaConsolidatedCylinder {
                 let vector = stored_vector.get();
                 if axis.get() != [0.0, 1.0, 0.0]
                     || reference_direction.get() != [vector[0], 0.0, vector[1]]
-                    || !crate::families::b2::records::circle_range_is_within_full_turn(wire.radius.get(), wire.u_range.endpoints())
+                    || !crate::families::b2::records::circle_range_is_within_full_turn(
+                        wire.radius.get(),
+                        wire.u_range.endpoints(),
+                    )
                     || !range_origin.is_finite()
-                    || range_origin.to_bits() != crate::families::b2::records::cylinder_range_origin(wire.radius.get(), wire.u_range.endpoints()).to_bits()
+                    || range_origin.to_bits()
+                        != crate::families::b2::records::cylinder_range_origin(
+                            wire.radius.get(),
+                            wire.u_range.endpoints(),
+                        )
+                        .to_bits()
                 {
                     return Err("invalid layout-0x62 cylinder chart".to_owned());
                 }
-                CatiaConsolidatedCylinderPayload::RangeOrigin { stored_vector, axis, reference_direction, range_origin }
-            },
+                CatiaConsolidatedCylinderPayload::RangeOrigin {
+                    stored_vector,
+                    axis,
+                    reference_direction,
+                    range_origin,
+                }
+            }
             (layout, _) => {
                 return Err(format!(
                     "cylinder layout {layout:#04x} does not match payload"
@@ -852,7 +890,12 @@ impl TryFrom<CatiaConsolidatedEmbeddedCylinderWire> for CatiaConsolidatedEmbedde
     type Error = String;
     fn try_from(wire: CatiaConsolidatedEmbeddedCylinderWire) -> Result<Self, Self::Error> {
         CatiaConsolidatedCylinderPayload::resolved_5a(
-            wire.radius, wire.u_range, wire.frame_token, wire.axis, wire.reference_direction)?;
+            wire.radius,
+            wire.u_range,
+            wire.frame_token,
+            wire.axis,
+            wire.reference_direction,
+        )?;
         Ok(Self {
             id: wire.id,
             byte_offset: wire.byte_offset,
@@ -8452,8 +8495,8 @@ fn consolidated_class5b5c_records(
     ctx.stable_sort_by(
         &mut control_records,
         |left, right| {
-        (left.source_index, left.source_offset).cmp(&(right.source_index, right.source_offset))
-    },
+            (left.source_index, left.source_offset).cmp(&(right.source_index, right.source_offset))
+        },
         |_| 0,
         "catia_native_class5b5c_sort",
     )?;

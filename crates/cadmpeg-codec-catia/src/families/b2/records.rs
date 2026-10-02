@@ -948,7 +948,8 @@ pub(crate) fn b2_counted_owners_from_records(
             continue;
         }
         let Some(tail) = super::counted_owner_tail::CountedOwnerTail::new(
-            ctx.copy_retained_slice(&data[at..frame.end], "catia_b2_counted_owner_tail")?) else {
+            ctx.copy_retained_slice(&data[at..frame.end], "catia_b2_counted_owner_tail")?,
+        ) else {
             continue;
         };
         ctx.push_vec(
@@ -1214,7 +1215,12 @@ pub(crate) fn b2_owner_charts_from_records(
                     .iter()
                     .any(|record| record.family() != ConsolidatedFamily::B)
                 || references.class() != 0x37
-                || [side_05.class(), side_09.class(), side_0d.class(), side_11.class()] != [0x18; 4]
+                || [
+                    side_05.class(),
+                    side_09.class(),
+                    side_0d.class(),
+                    side_11.class(),
+                ] != [0x18; 4]
                 || owner_record.class() != 0x62
             {
                 return None;

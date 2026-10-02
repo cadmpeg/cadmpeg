@@ -200,7 +200,8 @@ fn endpoint_pair_candidates_with_budget(
         if radial_matches[*neighbor].as_slice() != [index] {
             continue;
         }
-        face_components.union(ctx,
+        face_components.union(
+            ctx,
             face_indices[&occurrences[index].face_record_ordinal],
             face_indices[&occurrences[*neighbor].face_record_ordinal],
         )?;
@@ -411,7 +412,12 @@ pub(super) fn endpoint_locus_candidates_with_budget(
                 }
             }
         }
-        ctx.sort_unstable_by(&mut component, Ord::cmp, |_| 0, "catia_zero_locus_component_sort")?;
+        ctx.sort_unstable_by(
+            &mut component,
+            Ord::cmp,
+            |_| 0,
+            "catia_zero_locus_component_sort",
+        )?;
         let representative_point = endpoints[component[0]].2;
         let mut maximum_deviation = 0.0_f64;
         let mut complete = true;

@@ -175,8 +175,9 @@ fn parse_consolidated_pcurve(
     else {
         return Ok(None);
     };
-    let scalar_work = u64_from_index(count).checked_mul(7 * 8)
-        .ok_or_else(|| ctx.refuse_codec_limit("catia_pcurve_scalar_scan", u64::MAX - 1, u64::MAX))?;
+    let scalar_work = u64_from_index(count).checked_mul(7 * 8).ok_or_else(|| {
+        ctx.refuse_codec_limit("catia_pcurve_scalar_scan", u64::MAX - 1, u64::MAX)
+    })?;
     ctx.charge_work(scalar_work, "catia_pcurve_scalar_scan")?;
     let mut sites = Vec::new();
     ctx.reserve_vec(&mut sites, count, "catia_consolidated_pcurve_sites")?;
@@ -195,7 +196,9 @@ fn parse_consolidated_pcurve(
         });
     }
     ctx.charge_work(u64_from_index(sites.len()), "catia_pcurve_site_order")?;
-    let Ok(sites) = OrderedPcurveSites::try_from(sites) else { return Ok(None) };
+    let Ok(sites) = OrderedPcurveSites::try_from(sites) else {
+        return Ok(None);
+    };
     Ok(Some(ConsolidatedPcurve {
         pos,
         support_id,
@@ -544,13 +547,27 @@ enum ConsolidatedPlacement {
 }
 
 impl ConsolidatedRecord {
-    pub(crate) fn width(&self) -> ConsolidatedFrameWidth { self.token.width() }
-    pub(crate) fn header_token(&self) -> u32 { self.token.value() }
-    pub(crate) fn source_index(&self) -> usize { self.source_index }
-    pub(crate) fn source_range(&self) -> &Range<usize> { &self.source_range }
-    pub(crate) fn family(&self) -> ConsolidatedFamily { self.family }
-    pub(crate) fn flag(&self) -> ConsolidatedFrameFlag { self.flag }
-    pub(crate) fn class(&self) -> u8 { self.class }
+    pub(crate) fn width(&self) -> ConsolidatedFrameWidth {
+        self.token.width()
+    }
+    pub(crate) fn header_token(&self) -> u32 {
+        self.token.value()
+    }
+    pub(crate) fn source_index(&self) -> usize {
+        self.source_index
+    }
+    pub(crate) fn source_range(&self) -> &Range<usize> {
+        &self.source_range
+    }
+    pub(crate) fn family(&self) -> ConsolidatedFamily {
+        self.family
+    }
+    pub(crate) fn flag(&self) -> ConsolidatedFrameFlag {
+        self.flag
+    }
+    pub(crate) fn class(&self) -> u8 {
+        self.class
+    }
 
     pub(crate) fn byte_offset(&self) -> usize {
         match &self.placement {
@@ -719,7 +736,9 @@ where
             ctx.charge_work(1, "catia_record_source_extent_admission")?;
             let range = extent.borrow().range();
             if range.end > data.len() || range.start > range.end {
-                return Err(CodecError::malformed("record source extent is outside the supplied image"));
+                return Err(CodecError::malformed(
+                    "record source extent is outside the supplied image",
+                ));
             }
             if range.start < range.end {
                 ctx.push_vec(&mut source_ranges, range, "catia_record_source_ranges")?;
@@ -1295,15 +1314,25 @@ mod tests {
         let records = consolidated_records(&bytes);
         let record = &records[0];
         let payload = record.payload().expect("payload");
-        let (_, count, _, lanes, _, _) = super::pcurve_layout(&bytes, payload.start, payload.end).expect("layout");
+        let (_, count, _, lanes, _, _) =
+            super::pcurve_layout(&bytes, payload.start, payload.end).expect("layout");
         let late = lanes[6] + (count - 1) * 8;
         bytes[late..late + 8].copy_from_slice(&f64::NAN.to_le_bytes());
         crate::test_support::with_work_limit(0, |ctx| {
-            let cadmpeg_core::CodecError::ResourceLimit(limit) = super::family_pcurves_from_records(ctx, &bytes, &records, ConsolidatedFamily::A).expect_err("scalar scan needs work") else { panic!("resource refusal") };
+            let cadmpeg_core::CodecError::ResourceLimit(limit) =
+                super::family_pcurves_from_records(ctx, &bytes, &records, ConsolidatedFamily::A)
+                    .expect_err("scalar scan needs work")
+            else {
+                panic!("resource refusal")
+            };
             assert_eq!(limit.operation, "catia_pcurve_scalar_scan");
             assert_eq!(ctx.resource_refusal(), Some(limit));
         });
-        assert!(crate::test_support::with_service_context(|ctx| super::family_pcurves_from_records(ctx, &bytes, &records, ConsolidatedFamily::A)).expect("service work").is_empty());
+        assert!(crate::test_support::with_service_context(|ctx| {
+            super::family_pcurves_from_records(ctx, &bytes, &records, ConsolidatedFamily::A)
+        })
+        .expect("service work")
+        .is_empty());
     }
 
     #[test]
@@ -1464,7 +1493,8 @@ mod tests {
             source_index: 0,
             source_range: 0..4,
             family: ConsolidatedFamily::A,
-            token: super::WidthCodedToken::new(ConsolidatedFrameWidth::One, 0).expect("width-coded token"),
+            token: super::WidthCodedToken::new(ConsolidatedFrameWidth::One, 0)
+                .expect("width-coded token"),
             flag: ConsolidatedFrameFlag::Flag03,
             class: 0x20,
             placement: ConsolidatedPlacement::Contiguous {
@@ -1533,10 +1563,16 @@ mod source_image_admission_tests {
         let larger = [0_u8; 260];
         let short = [0xb2, 0x03, 0x24, 0xff, 0x01];
         let result = crate::test_support::with_service_context(|ctx| {
-            super::consolidated_records_in_sources(ctx, &short,
-                [[super::SourceExtent::whole(&larger)]])
+            super::consolidated_records_in_sources(
+                ctx,
+                &short,
+                [[super::SourceExtent::whole(&larger)]],
+            )
         });
-        assert!(matches!(result, Err(cadmpeg_core::CodecError::Malformed(_))));
+        assert!(matches!(
+            result,
+            Err(cadmpeg_core::CodecError::Malformed(_))
+        ));
         assert!(super::parse_consolidated_record(&short, 0, larger.len()).is_none());
     }
 }
@@ -1545,10 +1581,15 @@ mod source_image_admission_tests {
 mod width_token_admission_tests {
     #[test]
     fn consolidated_record_retains_an_immutable_width_coded_token() {
-        for (marker, width, maximum) in [(0xb2, super::ConsolidatedFrameWidth::One, 0xff), (0xb3, super::ConsolidatedFrameWidth::Two, 0xffff), (0xb4, super::ConsolidatedFrameWidth::Three, 0xff_ffff)] {
+        for (marker, width, maximum) in [
+            (0xb2, super::ConsolidatedFrameWidth::One, 0xff),
+            (0xb3, super::ConsolidatedFrameWidth::Two, 0xffff),
+            (0xb4, super::ConsolidatedFrameWidth::Three, 0xff_ffff),
+        ] {
             let mut bytes = vec![marker, 3, 0x24, 0];
             bytes.resize(4 + usize::from(u8::from(width)), 0xff);
-            let record = super::parse_consolidated_record(&bytes, 0, bytes.len()).expect("complete frame");
+            let record =
+                super::parse_consolidated_record(&bytes, 0, bytes.len()).expect("complete frame");
             assert_eq!(record.width(), width);
             assert_eq!(record.header_token(), maximum);
             assert!(super::WidthCodedToken::new(width, maximum + 1).is_err());

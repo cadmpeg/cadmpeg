@@ -445,7 +445,11 @@ fn incidence_choice_components<'storage>(
             if rank > 0 && face == edge_faces[edge][0] {
                 continue;
             }
-            fixed_incidence.union(ctx, point_nodes[&(face, pair[0])], point_nodes[&(face, pair[1])])?;
+            fixed_incidence.union(
+                ctx,
+                point_nodes[&(face, pair[0])],
+                point_nodes[&(face, pair[1])],
+            )?;
         }
     }
     let mut owner = HashMap::<(usize, usize), usize>::new();
@@ -2073,7 +2077,9 @@ pub(super) fn compact_boundary_domain_viable(
             }
         }
         for node in 0..components.len() {
-            if !open_components.contains(&components.find(ctx, node)?) { return Ok(false); }
+            if !open_components.contains(&components.find(ctx, node)?) {
+                return Ok(false);
+            }
         }
         return Ok(true);
     }
@@ -2361,7 +2367,8 @@ fn advance_compact_boundary_domains<'storage, 'a>(
                             "catia_compact_boundary_oriented_edges",
                         )?;
                     }
-                    let Some(work) = candidate.signature_work(ctx)?
+                    let Some(work) = candidate
+                        .signature_work(ctx)?
                         .and_then(|work| work.checked_add(work_units(next_oriented.len())))
                     else {
                         return Ok(CompactBoundaryAdvanceOutcome::Exhausted);

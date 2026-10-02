@@ -14,7 +14,20 @@ fn radial_orientation_solves_each_face_boundary_independently() {
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
         .expect("service decode context");
     let rows = (0..18)
-        .map(|edge| EdgeRow::new(1, vec![edge * 2, edge * 2 + 1], EdgeBoundaryLayout::InteriorWithFlankingCorners).expect("admitted edge row"))
+        .map(|edge| {
+            assert!(EdgeRow::new(
+                1,
+                vec![edge * 2, edge * 2 + 1],
+                EdgeBoundaryLayout::InteriorWithFlankingCorners
+            )
+            .is_none());
+            EdgeRow::new(
+                1,
+                vec![edge * 2, edge * 2, edge * 2 + 1],
+                EdgeBoundaryLayout::InteriorWithFlankingCorners,
+            )
+            .expect("admitted edge row")
+        })
         .collect();
     let points = (0..12).map(|point| [f64::from(point), 0.0, 0.0]).collect();
     let edge_faces = [
@@ -72,9 +85,9 @@ fn radial_orientation_solves_each_face_boundary_independently() {
             .expect("service resource budget"),
         None
     );
-    assert_eq!(topology.faces()[4].boundaries.len(), 2);
+    assert_eq!(topology.faces[4].boundaries.len(), 2);
     let mut uses = vec![Vec::new(); 18];
-    for face in topology.faces() {
+    for face in topology.faces {
         for boundary in &face.boundaries {
             for coedge in &boundary.coedges {
                 uses[coedge.edge_row].push(coedge.reversed);
@@ -103,8 +116,10 @@ fn open_standard_edge_incidence_classifies_a_sheet_body() {
             .expect("nonempty topology boundary")],
         }],
         edge_rows: vec![
-            EdgeRow::new(1, vec![0, 1], EdgeBoundaryLayout::CompleteBoundaryRun).expect("admitted edge row"),
-            EdgeRow::new(1, vec![2, 3], EdgeBoundaryLayout::CompleteBoundaryRun).expect("admitted edge row"),
+            EdgeRow::new(1, vec![0, 1], EdgeBoundaryLayout::CompleteBoundaryRun)
+                .expect("admitted edge row"),
+            EdgeRow::new(1, vec![2, 3], EdgeBoundaryLayout::CompleteBoundaryRun)
+                .expect("admitted edge row"),
         ],
         vertex_points: vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]],
         logical_vertex_count: 2,
@@ -137,34 +152,40 @@ fn solid_body_cycles_orient_independently_from_an_open_sheet_body() {
         start_vertex: edge_row,
         end_vertex: 1 - edge_row,
     };
-    let mut topology = StandardTopologyDraft {
-        faces: vec![
-            FaceTopologyDraft {
-                boundaries: vec![
-                    BoundaryDraft::new(vec![use_(0), use_(1)]).expect("nonempty topology boundary")
-                ],
-            },
-            FaceTopologyDraft {
-                boundaries: vec![
-                    BoundaryDraft::new(vec![use_(0), use_(1)]).expect("nonempty topology boundary")
-                ],
-            },
-            FaceTopologyDraft {
-                boundaries: vec![BoundaryDraft::new(vec![CoedgeUse {
-                    edge_row: 2,
-                    reversed: false,
-                    start_vertex: 0,
-                    end_vertex: 1,
-                }])
-                .expect("nonempty topology boundary")],
-            },
-        ],
-        edge_rows: (0..3)
-            .map(|edge| EdgeRow::new(1, vec![edge * 2, edge * 2 + 1], EdgeBoundaryLayout::CompleteBoundaryRun).expect("admitted edge row"))
-            .collect(),
-        vertex_points: vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]],
-        logical_vertex_count: 2,
-    };
+    let mut topology =
+        StandardTopologyDraft {
+            faces: vec![
+                FaceTopologyDraft {
+                    boundaries: vec![BoundaryDraft::new(vec![use_(0), use_(1)])
+                        .expect("nonempty topology boundary")],
+                },
+                FaceTopologyDraft {
+                    boundaries: vec![BoundaryDraft::new(vec![use_(0), use_(1)])
+                        .expect("nonempty topology boundary")],
+                },
+                FaceTopologyDraft {
+                    boundaries: vec![BoundaryDraft::new(vec![CoedgeUse {
+                        edge_row: 2,
+                        reversed: false,
+                        start_vertex: 0,
+                        end_vertex: 1,
+                    }])
+                    .expect("nonempty topology boundary")],
+                },
+            ],
+            edge_rows: (0..3)
+                .map(|edge| {
+                    EdgeRow::new(
+                        1,
+                        vec![edge * 2, edge * 2 + 1],
+                        EdgeBoundaryLayout::CompleteBoundaryRun,
+                    )
+                    .expect("admitted edge row")
+                })
+                .collect(),
+            vertex_points: vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]],
+            logical_vertex_count: 2,
+        };
 
     assert_eq!(
         topology
