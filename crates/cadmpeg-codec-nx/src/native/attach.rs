@@ -7350,7 +7350,7 @@ fn attach_parasolid_topology_string_attributes(
             )?;
             let source_stream = StreamHandle::new(
                 ctx,
-                cadmpeg_ir::stream_name!("nx:s").with_suffix(reference.stream_ordinal),
+                cadmpeg_ir::stream_name!("nx:s").with_suffix(ctx, reference.stream_ordinal, "compose annotation stream name")?,
                 "allocate annotation stream handle",
             )?;
             annotations.note(
@@ -8332,7 +8332,7 @@ fn attach_parasolid_topology_numeric_attributes(
             )?;
             let source_stream = StreamHandle::new(
                 ctx,
-                cadmpeg_ir::stream_name!("nx:s").with_suffix(reference.stream_ordinal),
+                cadmpeg_ir::stream_name!("nx:s").with_suffix(ctx, reference.stream_ordinal, "compose annotation stream name")?,
                 "allocate annotation stream handle",
             )?;
             annotations.note(
@@ -8513,7 +8513,7 @@ fn attach_parasolid_topology_structured_attributes(
             )?;
             let source_stream = StreamHandle::new(
                 ctx,
-                cadmpeg_ir::stream_name!("nx:s").with_suffix(reference.stream_ordinal),
+                cadmpeg_ir::stream_name!("nx:s").with_suffix(ctx, reference.stream_ordinal, "compose annotation stream name")?,
                 "allocate annotation stream handle",
             )?;
             annotations.note(

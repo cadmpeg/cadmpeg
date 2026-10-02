@@ -153,7 +153,7 @@ fn note_per_stream<T: StreamNoted>(
         let (id, stream_ordinal, offset) = record.stream_note();
         let stream = StreamHandle::new(
             ctx,
-            cadmpeg_ir::stream_name!("nx:s").with_suffix(stream_ordinal),
+            cadmpeg_ir::stream_name!("nx:s").with_suffix(ctx, stream_ordinal, "compose annotation stream name")?,
             "allocate annotation stream handle",
         )?;
         a.note(ctx, id, &stream, offset, tag)?;
@@ -832,7 +832,7 @@ fn note_parasolid_parasolid_intersection_records(
     for record in &m.parasolid.intersection_records {
         let source_stream = StreamHandle::new(
             ctx,
-            cadmpeg_ir::stream_name!("nx:s").with_suffix(record.stream_ordinal),
+            cadmpeg_ir::stream_name!("nx:s").with_suffix(ctx, record.stream_ordinal, "compose annotation stream name")?,
             "allocate annotation stream handle",
         )?;
         a.note(
@@ -861,7 +861,7 @@ fn note_parasolid_parasolid_attribute_class_uses(
     for class_use in &m.parasolid.attribute_class_uses {
         let source_stream = StreamHandle::new(
             ctx,
-            cadmpeg_ir::stream_name!("nx:s").with_suffix(class_use.stream_ordinal),
+            cadmpeg_ir::stream_name!("nx:s").with_suffix(ctx, class_use.stream_ordinal, "compose annotation stream name")?,
             "allocate annotation stream handle",
         )?;
         a.note(
@@ -886,7 +886,7 @@ fn note_parasolid_parasolid_topology_attribute_class_uses(
     for class_use in &m.parasolid.topology_attribute_class_uses {
         let source_stream = StreamHandle::new(
             ctx,
-            cadmpeg_ir::stream_name!("nx:s").with_suffix(class_use.stream_ordinal),
+            cadmpeg_ir::stream_name!("nx:s").with_suffix(ctx, class_use.stream_ordinal, "compose annotation stream name")?,
             "allocate annotation stream handle",
         )?;
         a.note(
