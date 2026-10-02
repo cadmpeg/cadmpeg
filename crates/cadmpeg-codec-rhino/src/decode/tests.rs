@@ -33,6 +33,7 @@ use cadmpeg_ir::topology::{Body, BodyKind, Point, Sense};
 use cadmpeg_ir::unknown::{NativeUnknownRecord, UnknownRecord};
 use cadmpeg_ir::{Exactness, SourceObjectAssociation};
 
+mod candidate_annotations;
 mod carrier_copy;
 mod local_limits;
 

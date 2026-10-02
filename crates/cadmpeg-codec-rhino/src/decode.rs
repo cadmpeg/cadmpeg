@@ -758,19 +758,22 @@ impl<'a> DecodeContext<'a> {
         &mut self,
         apply: impl FnOnce(&mut CadIr, &mut cadmpeg_ir::Annotations) -> Result<T, E>,
     ) -> Result<T, CandidateError> {
-        let mut candidate = CadIr::empty();
-        let mut annotations = self
-            .annotations
-            .try_clone_for_decode(self.expand.ctx(), "Rhino speculative annotations")?;
-        let value = apply(&mut candidate, &mut annotations).map_err(Into::into)?;
+        let annotations = self.annotations.copy_transaction(
+            self.expand.ctx(), "Rhino speculative annotations",
+        )?;
+        let ((candidate, value), annotations) = annotations.update(|annotations| {
+            let mut candidate = CadIr::empty();
+            let value = apply(&mut candidate, annotations).map_err(Into::into)?;
+            Ok::<_, CandidateError>((candidate, value))
+        })?;
         let entity_count = candidate.model.entity_count();
         let mut budget = self.expansion_budget;
         let session = self.expand.ctx();
-        let value = with_native_unknowns(self.expand.ctx(), &mut self.ir, &self.unknowns, |ir| {
+        let (value, annotations) = with_native_unknowns(self.expand.ctx(), &mut self.ir, &self.unknowns, |ir| {
             ir.try_append(candidate.model, candidate.native, |combined| {
                 let validation = cadmpeg_ir::admit_with_annotations(
                     combined,
-                    &annotations,
+                    annotations.annotations(),
                     cadmpeg_ir::RHINO_DRAFT_CHECKS,
                     Vec::new(),
                 )
@@ -782,7 +785,7 @@ impl<'a> DecodeContext<'a> {
                 session
                     .charge_entities(u64_from_index(entity_count), "rhino_instance_entities")
                     .map_err(CandidateError::Codec)?;
-                Ok(value)
+                Ok((value, annotations.into_retained()?))
             })
         })
         .map_err(|error| CandidateError::Admission(error.to_string()))??;
@@ -2233,7 +2236,7 @@ impl<'a> DecodeContext<'a> {
             ModelCheckpoint::capture_for_decode(&self.ir.model, self.expand.ctx())?;
         let annotation_checkpoint = self
             .annotations
-            .try_clone_for_decode(self.expand.ctx(), "Rhino annotation checkpoint")?;
+            .copy_transaction(self.expand.ctx(), "Rhino annotation checkpoint")?;
         let session = self.expand.ctx();
         let original_links = snapshot_instance_links(session, &self.unknowns)?;
         let (original_statuses, _status_bytes) =
@@ -2293,7 +2296,7 @@ impl<'a> DecodeContext<'a> {
         };
 
         original_model.discard_appended_for_decode(&mut self.ir.model, self.expand.ctx())?;
-        self.annotations = annotation_checkpoint;
+        self.annotations = annotation_checkpoint.into_retained()?;
         for (record, links) in self.unknowns.iter_mut().zip(original_links.links) {
             *record.links_mut() = links;
         }

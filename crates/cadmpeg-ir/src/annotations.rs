@@ -52,7 +52,13 @@ impl AnnotationTransaction<'_> {
         mut self,
         apply: impl FnOnce(&mut Annotations) -> Result<T, E>,
     ) -> Result<(T, Self), E> {
-        let result = self.storage.with_storage(|| apply(&mut self.annotations))?;
+        let result = self.storage.with_storage(|| {
+            let result = apply(&mut self.annotations);
+            if result.is_err() {
+                self.annotations = Annotations::default();
+            }
+            result
+        })?;
         Ok((result, self))
     }
 
