@@ -3,7 +3,7 @@
 use super::{instances, key, Graph};
 use crate::types;
 use rustc_span::def_id::DefId;
-use rustc_middle::ty::{self, Instance, Ty, TyCtxt, TypeVisitableExt};
+use rustc_middle::ty::{self, Instance, Ty, TyCtxt};
 
 pub(super) fn targets<'tcx>(
     tcx: TyCtxt<'tcx>,
@@ -11,18 +11,17 @@ pub(super) fn targets<'tcx>(
     source: Ty<'tcx>,
     target: Ty<'tcx>,
     instances: &mut Vec<(DefId, Instance<'tcx>)>,
-) -> bool {
+) {
     let source = source.peel_refs();
     let target = target.peel_refs();
     if source == target {
-        return true;
+        return;
     }
     match (source.kind(), target.kind()) {
         (_, ty::Dynamic(predicates, _)) if !matches!(source.kind(), ty::Dynamic(..)) => {
             let Some(principal) = predicates.principal() else {
-                return true;
+                return;
             };
-            let mut resolved = true;
             for bound in
                 rustc_type_ir::elaborate::supertraits(tcx, principal.with_self_ty(tcx, source))
             {
@@ -43,7 +42,6 @@ pub(super) fn targets<'tcx>(
                     {
                         Ok(args) => args,
                         Err(_) => {
-                            resolved = false;
                             continue;
                         }
                     };
@@ -54,7 +52,6 @@ pub(super) fn targets<'tcx>(
                             instances.push((item.def_id, instance))
                         }
                         _ => {
-                            resolved = false;
                             for implementation in tcx.all_impls(trait_ref.def_id) {
                                 if let Some(method) = tcx
                                     .associated_items(implementation)
@@ -72,25 +69,21 @@ pub(super) fn targets<'tcx>(
                     }
                 }
             }
-            resolved && !source.has_non_region_param()
         }
-        (ty::Adt(left, left_args), ty::Adt(right, right_args)) if left == right => left_args
-            .types()
-            .zip(right_args.types())
-            .fold(true, |resolved, (left, right)| {
-                targets(tcx, environment, left, right, instances) && resolved
-            }),
+        (ty::Adt(left, left_args), ty::Adt(right, right_args)) if left == right => {
+            for (left, right) in left_args.types().zip(right_args.types()) {
+                targets(tcx, environment, left, right, instances);
+            }
+        }
         (ty::RawPtr(left, _), ty::RawPtr(right, _)) => {
-            targets(tcx, environment, *left, *right, instances)
+            targets(tcx, environment, *left, *right, instances);
         }
-        (ty::Tuple(left), ty::Tuple(right)) => left
-            .iter()
-            .zip(right.iter())
-            .fold(true, |resolved, (left, right)| {
-                targets(tcx, environment, left, right, instances) && resolved
-            }),
-        (_, ty::Dynamic(..)) => true,
-        _ => true,
+        (ty::Tuple(left), ty::Tuple(right)) => {
+            for (left, right) in left.iter().zip(right.iter()) {
+                targets(tcx, environment, left, right, instances);
+            }
+        }
+        _ => (),
     }
 }
 

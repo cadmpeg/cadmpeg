@@ -176,6 +176,7 @@ fn check_fixture(name: &str) {
                     | "fallback"
                     | "object_fallback"
                     | "method_scope"
+                    | "pointer_scope"
                     | "symbolic_scope"
                     | "fixed_ranges"
                     | "raw_steps"
@@ -585,4 +586,9 @@ fn unconstrained_generic_root_reachability() {
 #[test]
 fn called_object_methods_only() {
     check_fixture("method_scope");
+}
+
+#[test]
+fn type_compatible_indirect_candidates() {
+    check_fixture("pointer_scope");
 }

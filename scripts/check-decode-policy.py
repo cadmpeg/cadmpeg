@@ -16,8 +16,10 @@ def resolve_graph(source):
     reached = set()
     roots = {}
     edges = {}
-    uncertain = set()
-    addresses = set()
+    addresses = {}
+    pointer_calls = []
+    trait_calls = []
+    method_impls = {}
     symbolic = set()
     symbolic_edges = {}
     objects = []
@@ -33,10 +35,14 @@ def resolve_graph(source):
             symbolic.add(fields[1])
         elif len(fields) == 3 and fields[0] == "decode_symbolic_edge":
             symbolic_edges.setdefault(fields[1], set()).add(fields[2])
-        elif len(fields) == 2 and fields[0] == "decode_uncertain":
-            uncertain.add(fields[1])
-        elif len(fields) == 2 and fields[0] == "decode_address":
-            addresses.add(fields[1])
+        elif len(fields) == 3 and fields[0] == "decode_address":
+            addresses.setdefault(fields[1], set()).add(fields[2])
+        elif len(fields) == 3 and fields[0] == "decode_pointer_call":
+            pointer_calls.append(fields[1:])
+        elif len(fields) == 3 and fields[0] == "decode_trait_call":
+            trait_calls.append(fields[1:])
+        elif len(fields) == 3 and fields[0] == "decode_method_impl":
+            method_impls.setdefault(fields[1], set()).add(fields[2])
         elif len(fields) == 4 and fields[0] == "decode_object":
             objects.append(fields[1:])
         elif len(fields) == 3 and fields[0] == "decode_object_call":
@@ -56,8 +62,12 @@ def resolve_graph(source):
                 reached.add(target)
                 if caller in symbolic:
                     symbolic.add(target)
-        if reached & uncertain:
-            reached.update(addresses)
+        for caller, signature in pointer_calls:
+            if caller in reached:
+                reached.update(addresses.get(signature, ()))
+        for caller, method in trait_calls:
+            if caller in reached:
+                reached.update(method_impls.get(method, ()))
         if before == (len(reached), len(symbolic)):
             return reached, roots
 

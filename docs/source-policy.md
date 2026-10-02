@@ -160,9 +160,12 @@ attached to the originating caller. Unconstrained generic decode roots carry
 symbolic type arguments through helper chains and reach each possible checked
 trait implementation. Concrete encoder instances do not activate those symbolic
 edges. An unresolved indirect call retains
-`unproven_decode_charge` and reaches all function addresses and object-coerced
-implementations in the checked crates. This fallback can reach a target whose
-address was created by an encoder. Definition hashes join
+`unproven_decode_charge`. A function-pointer call reaches address-taken
+functions and closures with the same signature after lifetime erasure, including
+argument types, result type, safety and ABI. A trait-object call reaches only
+implementations of its called trait method. Unrelated uncertainty does not
+activate function addresses or object methods. A compatible fallback can reach
+a target whose address was created by an encoder. Definition hashes join
 local and dependency nodes. The driver collects the complete graph before
 it selects any bodies, including when `--crate` limits findings. Bodies reached only
 from encoding, writing, serialization or tests are outside the scope.

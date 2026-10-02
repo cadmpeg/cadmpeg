@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Decode roots and resolved production call reachability.
+mod indirect;
 mod instances;
 mod listing;
 mod objects;
@@ -15,8 +16,10 @@ use std::collections::{BTreeMap, BTreeSet, HashSet};
 pub(crate) struct Graph {
     roots: BTreeMap<String, String>,
     edges: BTreeSet<(String, String)>,
-    uncertain: BTreeSet<String>,
-    addresses: BTreeSet<String>,
+    addresses: BTreeSet<(String, String)>,
+    pointer_calls: BTreeSet<(String, String)>,
+    trait_calls: BTreeSet<(String, String)>,
+    method_impls: BTreeSet<(String, String)>,
     objects: BTreeSet<(String, String, String)>,
     object_calls: BTreeSet<(String, String)>,
     symbolic_roots: BTreeSet<String>,
@@ -44,11 +47,17 @@ impl Graph {
         for (caller, callee) in &self.symbolic_edges {
             println!("decode_symbolic_edge\t{caller}\t{callee}");
         }
-        for caller in &self.uncertain {
-            println!("decode_uncertain\t{caller}");
+        for (signature, callee) in &self.addresses {
+            println!("decode_address\t{signature}\t{callee}");
         }
-        for callee in &self.addresses {
-            println!("decode_address\t{callee}");
+        for (caller, signature) in &self.pointer_calls {
+            println!("decode_pointer_call\t{caller}\t{signature}");
+        }
+        for (caller, method) in &self.trait_calls {
+            println!("decode_trait_call\t{caller}\t{method}");
+        }
+        for (method, target) in &self.method_impls {
+            println!("decode_method_impl\t{method}\t{target}");
         }
         for (caller, method, target) in &self.objects {
             println!("decode_object\t{caller}\t{method}\t{target}");
@@ -102,9 +111,22 @@ impl Graph {
                     }
                 }
             }
-            if self.uncertain.iter().any(|caller| reached.contains(caller)) {
-                for callee in &self.addresses {
-                    added |= reached.insert(callee.clone());
+            for (caller, signature) in &self.pointer_calls {
+                if reached.contains(caller) {
+                    for (candidate, target) in &self.addresses {
+                        if candidate == signature {
+                            added |= reached.insert(target.clone());
+                        }
+                    }
+                }
+            }
+            for (caller, method) in &self.trait_calls {
+                if reached.contains(caller) {
+                    for (candidate, target) in &self.method_impls {
+                        if candidate == method {
+                            added |= reached.insert(target.clone());
+                        }
+                    }
                 }
             }
             if !added {
@@ -167,7 +189,6 @@ pub(crate) fn collect<'tcx>(tcx: TyCtxt<'tcx>, owners: &[LocalDefId]) -> Graph {
         }
         if root(tcx, *owner) {
             if ty::GenericArgs::identity_for_item(tcx, *owner).has_non_region_param() {
-                graph.uncertain.insert(key(tcx, owner.to_def_id()));
                 graph.symbolic_roots.insert(key(tcx, owner.to_def_id()));
             }
             graph
@@ -198,6 +219,7 @@ pub(crate) fn collect<'tcx>(tcx: TyCtxt<'tcx>, owners: &[LocalDefId]) -> Graph {
             graph
                 .symbolic_edges
                 .insert((key(tcx, method), key(tcx, owner.to_def_id())));
+            graph.method_impls.insert((key(tcx, method), key(tcx, owner.to_def_id())));
         }
         let mut findings = Findings::default();
         Calls {
@@ -239,19 +261,8 @@ impl<'tcx> Calls<'_, '_, 'tcx> {
     }
 
     fn coercion(&mut self, source: ty::Ty<'tcx>, target: ty::Ty<'tcx>) {
-        let deferred =
-            source.has_non_region_param() && !root(self.analysis.tcx, self.analysis.typing_owner);
         let mut instances = Vec::new();
-        if !objects::targets(
-            self.analysis.tcx,
-            self.analysis.typing_env(),
-            source,
-            target,
-            &mut instances,
-        ) && !deferred
-        {
-            self.graph.uncertain.insert(self.caller.clone());
-        }
+        objects::targets(self.analysis.tcx, self.analysis.typing_env(), source, target, &mut instances);
         for (method, instance) in instances {
             objects::register(
                 self.analysis.tcx, self.graph, self.pending, method,
@@ -268,10 +279,10 @@ impl<'tcx> Calls<'_, '_, 'tcx> {
             self.edge(id);
             return;
         }
-        let Some(trait_id) = self.analysis.tcx.trait_of_assoc(definition) else {
+        if self.analysis.tcx.trait_of_assoc(definition).is_none() {
             self.edge(definition);
             return;
-        };
+        }
         let object = self.analysis.call_arguments(expression).is_some_and(|args| args.types().next().is_some_and(|value| matches!(value.peel_refs().kind(), ty::Dynamic(..))));
         if object {
             self.graph.object_calls.insert((self.caller.clone(), key(self.analysis.tcx, definition)));
@@ -287,18 +298,8 @@ impl<'tcx> Calls<'_, '_, 'tcx> {
         if deferred && !object {
             return;
         }
-        self.graph.uncertain.insert(self.caller.clone());
-        for implementation in self.analysis.tcx.all_impls(trait_id) {
-            let item = self
-                .analysis
-                .tcx
-                .associated_items(implementation)
-                .in_definition_order()
-                .find(|item| item.name() == self.analysis.tcx.item_name(definition));
-            if let Some(item) = item {
-                self.edge(item.def_id);
-            }
-        }
+        self.graph.trait_calls.insert((self.caller.clone(), key(self.analysis.tcx, definition)));
+
     }
 }
 
@@ -377,21 +378,15 @@ impl<'tcx> Visitor<'tcx> for Calls<'_, '_, 'tcx> {
                 );
             }
         }
-        if !self.direct_callee {
-            if let Some(instance) = reference {
-                if types::checked(self.analysis.tcx, instance.def_id()) {
-                    self.graph
-                        .addresses
-                        .insert(key(self.analysis.tcx, instance.def_id()));
-                }
-            }
+        if !self.direct_callee && reference.is_some() {
+            indirect::address(self.analysis.tcx, self.graph, self.analysis.typing_env(), value);
         }
         if let ExprKind::Call(callee, _) = expression.kind {
-            if matches!(
-                self.analysis.expr_ty(callee).peel_refs().kind(),
-                ty::FnPtr(..)
-            ) {
-                self.graph.uncertain.insert(self.caller.clone());
+            let value = self.analysis.expr_ty(callee);
+            if matches!(value.peel_refs().kind(), ty::FnPtr(..)) {
+                if let Some(signature) = indirect::signature(self.analysis.tcx, self.analysis.typing_env(), value) {
+                    self.graph.pointer_calls.insert((self.caller.clone(), signature));
+                }
             }
         }
         if let ty::Closure(id, _) = self.analysis.expr_ty(expression).peel_refs().kind() {
