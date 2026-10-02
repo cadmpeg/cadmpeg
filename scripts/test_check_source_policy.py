@@ -1164,6 +1164,52 @@ fn read(ctx: &DecodeContext<'_>) { Rc::clone(&value); }
 class DecodeWork(TempSourceCase):
     PATH = "crates/cadmpeg-codec-demo/src/read.rs"
 
+    def charged_operations(self):
+        self.write("crates/cadmpeg-core/src/decode/collect.rs", """impl DecodeContext<'_> {
+    fn reserve_vec(&self) { self.charge_collection_items(1, "slot")?; }
+    fn push_vec(&self) { self.reserve_vec()?; }
+    fn insert_btree_map(&self) { self.charge_collection_items(1, "node")?; }
+    fn copy_retained_text(&self) { self.charge_retained(1, "text")?; }
+}""")
+
+    def test_loop_charged_context_operations_pay_iterations(self):
+        self.charged_operations()
+        self.write(self.PATH, """fn read(ctx: &DecodeContext<'_>) {
+    for value in values { ctx.push_vec(&mut out, value, "slot")?; }
+    for (key, value) in entries { ctx.insert_btree_map(&mut out, key, value, "node")?; }
+    for value in texts { let text = ctx.copy_retained_text(value, "text")?; use_value(text); }
+    for value in values { parse_item(value, ctx)?; }
+    for value in values {
+        if flag { ctx.push_vec(&mut out, value, "slot")?; }
+        else { ctx.copy_retained_text(value, "text")?; }
+    }
+}""")
+        self.assertEqual(self.findings("uncharged_decode_work"), [])
+
+    def test_loop_conditional_charged_operation_is_reported(self):
+        self.charged_operations()
+        self.write(self.PATH, """fn read(ctx: &DecodeContext<'_>) {
+    for value in values { if flag { ctx.push_vec(&mut out, value, "slot")?; } }
+    for value in values { if flag { ctx.push_vec(&mut out, value, "slot")?; } else { continue; } }
+    for value in values { use_value(value); ctx.push_vec(&mut out, value, "slot")?; }
+    for value in values { ctx.push_vec(&mut out, value, "slot").ok(); }
+    for value in values { ctx.policy(); }
+    for value in values { ctx.reserve_scoped(0, "empty")?; }
+    for value in values { other.push_vec(&mut out, value, "slot")?; }
+}""")
+        self.assertEqual([f.line for f in self.findings("uncharged_decode_work")], list(range(2, 9)))
+
+    def test_loop_charged_operation_does_not_pay_nested_scan(self):
+        self.charged_operations()
+        self.write(self.PATH, """fn read(ctx: &DecodeContext<'_>) {
+    for value in values {
+        ctx.push_vec(&mut out, value, "slot")?;
+        others.iter().any(predicate);
+        for child in children { use_value(child); }
+    }
+}""")
+        self.assertEqual([f.line for f in self.findings("uncharged_decode_work")], [4, 5])
+
     def test_unadmitted_loops_and_iterator_searches(self):
         self.write(self.PATH, """fn read(ctx: &DecodeContext<'_>) {
     for value in values { use_value(value); }

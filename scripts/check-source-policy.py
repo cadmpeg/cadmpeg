@@ -2187,19 +2187,7 @@ def decode_work_charge(words, pairs, index, receivers):
     if decode_receiver(words, pairs, index) not in receivers:
         return None
     opening = evaluation_call_open(words, index)
-    if opening not in pairs:
-        return None
-    following = pairs[opening] + 1
-    if words[following:following + 2] == [".", "map_err"]:
-        conversion = following + 2
-        if conversion not in pairs:
-            return None
-        constructor = words[conversion + 1:pairs[conversion]]
-        if (not constructor or constructor[-1] != "ResourceLimit"
-                or not re.fullmatch(r"(?:[A-Za-z_]\w*::)*ResourceLimit", "".join(constructor))):
-            return None
-        following = pairs[conversion] + 1
-    if words[following:following + 1] != ["?"]:
+    if not decode_propagated_call(words, pairs, opening):
         return None
     stop = opening + 1
     while stop < pairs[opening]:
@@ -2207,6 +2195,157 @@ def decode_work_charge(words, pairs, index, receivers):
             break
         stop = pairs[stop] + 1 if stop in pairs and words[stop] in "([{" else stop + 1
     return "".join(words[opening + 1:stop])
+
+
+def decode_propagated_call(words, pairs, opening):
+    """A direct refusal or resource-payload conversion reaches the caller."""
+    if opening not in pairs:
+        return False
+    following = pairs[opening] + 1
+    if words[following:following + 2] == [".", "map_err"]:
+        conversion = following + 2
+        if conversion not in pairs:
+            return False
+        constructor = words[conversion + 1:pairs[conversion]]
+        if (not constructor or constructor[-1] != "ResourceLimit"
+                or not re.fullmatch(r"(?:[A-Za-z_]\w*::)*ResourceLimit", "".join(constructor))):
+            return False
+        following = pairs[conversion] + 1
+    return words[following:following + 1] == ["?"]
+
+
+DECODE_BUDGET_OPERATIONS = {
+    "charge_input", "charge_decompressed", "charge_retained", "charge_retained_limit",
+    "charge_entities", "charge_collection_items", "charge_collection_items_limit",
+    "charge_work", "charge_work_limit", "reserve_scoped", "reserve_scoped_limit",
+    "enter_nested",
+}
+
+
+def decode_charged_methods(sources):
+    """Resolve context operations through their core method call graph."""
+    dependencies = {}
+    charged = set(DECODE_BUDGET_OPERATIONS)
+    for path, source in sources.items():
+        if not relative_path(path).startswith("crates/cadmpeg-core/src/decode/"):
+            continue
+        code, _ = production_source(source)
+        tokens, pairs, parents = evaluation_tokens(code)
+        words = [token[0] for token in tokens]
+        for index, name, _, owner in evaluation_signatures(tokens, pairs, parents):
+            if owner != "DecodeContext":
+                continue
+            opening = evaluation_call_open(words, index + 1)
+            if opening not in pairs:
+                continue
+            body = pairs[opening] + 1
+            while body < len(words) and words[body] not in {"{", ";"}:
+                body = pairs[body] + 1 if body in pairs and words[body] in "([" else body + 1
+            if body not in pairs:
+                continue
+            calls = dependencies.setdefault(name, set())
+            for i in range(body + 1, pairs[body]):
+                if evaluation_call_open(words, i) is None:
+                    continue
+                receiver = decode_receiver(words, pairs, i) if words[i - 1:i] == ["."] else ""
+                if receiver == "self":
+                    calls.add(words[i])
+                elif receiver == "self.budget" and words[i] in DECODE_BUDGET_OPERATIONS:
+                    charged.add(name)
+    while True:
+        additions = {name for name, calls in dependencies.items() if calls & charged} - charged
+        if not additions:
+            return charged
+        charged.update(additions)
+
+
+def decode_call_arguments(words, pairs, opening):
+    """Keep each direct argument separate from nested calls and closures."""
+    start = opening + 1
+    stop = start
+    while stop < pairs[opening]:
+        if words[stop] == ",":
+            yield start, stop
+            start = stop + 1
+        stop = pairs[stop] + 1 if stop in pairs and words[stop] in "([{" else stop + 1
+    if start < stop:
+        yield start, stop
+
+
+def decode_charged_call(words, pairs, index, receivers, methods):
+    """A context operation or a context-taking call owns its admitted work."""
+    opening = evaluation_call_open(words, index)
+    if not decode_propagated_call(words, pairs, opening):
+        return False
+    if words[index - 1:index] == ["."] and decode_receiver(words, pairs, index) in receivers:
+        if words[index] not in methods:
+            return False
+        arguments = list(decode_call_arguments(words, pairs, opening))
+        if words[index] in DECODE_BUDGET_OPERATIONS and arguments:
+            first = "".join(words[slice(*arguments[0])])
+            return decode_positive_step(first)
+        return True
+    return any("".join(words[start:stop]).lstrip("&") in receivers
+               for start, stop in decode_call_arguments(words, pairs, opening))
+
+
+def decode_paid_prefix(words, pairs, start, stop, receivers, methods):
+    """Every branch must reach admission before its first effect.
+
+    Binding a value and reading its fixed metadata have no input-sized effect.
+    A call's arguments run before the call. A closure's body runs separately.
+    """
+    pure_calls = {"len", "capacity", "position", "u64_from_index"}
+    cursor = start
+    while cursor < stop:
+        word = words[cursor]
+        if word in {"return", "break", "continue", "for", "while", "loop"}:
+            return False
+        if word == "if":
+            branch = cursor + 1
+            while branch < stop and words[branch] != "{":
+                branch = pairs[branch] + 1 if branch in pairs and words[branch] in "([" else branch + 1
+            if branch not in pairs:
+                return False
+            condition = decode_paid_prefix(words, pairs, cursor + 1, branch, receivers, methods)
+            if condition is True:
+                return True
+            if condition is False:
+                return False
+            following = pairs[branch] + 1
+            if words[following:following + 1] != ["else"]:
+                return False
+            alternative = following + 1
+            alternative_stop = pairs.get(alternative, stop) if words[alternative] == "{" else stop
+            alternative_start = alternative + 1 if words[alternative] == "{" else alternative
+            return (decode_paid_prefix(words, pairs, branch + 1, pairs[branch], receivers, methods)
+                    and decode_paid_prefix(words, pairs, alternative_start, alternative_stop, receivers, methods))
+        if word == "{":
+            return decode_paid_prefix(words, pairs, cursor + 1, pairs[cursor], receivers, methods)
+        opening = evaluation_call_open(words, cursor) if re.fullmatch(r"[A-Za-z_]\w*", word) else None
+        if opening in pairs:
+            if decode_charged_call(words, pairs, cursor, receivers, methods):
+                if word in DECODE_BUDGET_OPERATIONS:
+                    return True
+                # An eager uncharged argument must not be hidden by its parent.
+                for child in range(opening + 1, pairs[opening]):
+                    if words[child] in {"|", "{"}:
+                        return False
+                    child_open = evaluation_call_open(words, child)
+                    if child_open in pairs and words[child] not in pure_calls:
+                        if not decode_charged_call(words, pairs, child, receivers, methods):
+                            return False
+                return True
+            if word not in pure_calls:
+                return False
+            cursor = pairs[opening] + 1
+            continue
+        # Assignment to existing state is an effect; a local binding is not.
+        if (word == "=" and words[cursor - 1:cursor] not in [["="], ["!"], ["<"], [">"]]
+                and words[cursor + 1:cursor + 2] != ["="] and "let" not in words[start:cursor]):
+            return False
+        cursor += 1
+    return None
 
 
 def decode_extent(expression):
@@ -2310,6 +2449,7 @@ def decode_positive_step(amount):
 def scan_decode_work(sources: dict[Path, str]) -> list[Finding]:
     """Reject unadmitted scans; unresolved linear-work forms require an explicit charge."""
     findings = []
+    methods = decode_charged_methods(sources)
     for (path, source, code, tokens, pairs, parents, words, body, end,
          active, receivers) in decode_context_functions(sources):
         charges = {}
@@ -2421,14 +2561,8 @@ def scan_decode_work(sources: dict[Path, str]) -> list[Finding]:
                 continue
             admitted = False
             if loop_body is not None:
-                # Charge in the first statement, before input-dependent body work.
-                first_stop = loop_body + 1
-                while first_stop < pairs[loop_body] and words[first_stop] != ";":
-                    first_stop = pairs[first_stop] + 1 if first_stop in pairs and words[first_stop] in "([{" else first_stop + 1
-                admitted = any(loop_body < charge < first_stop
-                               and decode_block(parents, words, charge) == loop_body
-                               and decode_positive_step(charges[charge])
-                               for charge in charges)
+                admitted = decode_paid_prefix(words, pairs, loop_body + 1,
+                                              pairs[loop_body], receivers, methods)
             if not admitted:
                 parent = decode_block(parents, words, i)
                 for charge, amount in charges.items():
