@@ -498,7 +498,7 @@ impl ModelDraft<DraftAccounting> {
 #[derive(Debug)]
 enum CommittedIdentity {
     Neutral(IdentitySlot),
-    Native(String),
+    Native { namespace: usize, arena: usize, record: usize },
 }
 
 type CommittedIdentityIndex = HashMap<u64, Vec<CommittedIdentity>>;
@@ -611,20 +611,19 @@ fn index_committed_identities(
         };
     }
     crate::document::arena_registry!(collect_model_identities);
-    for record in base
-        .native
-        .0
-        .values()
-        .flat_map(|namespace| namespace.arenas().values().flatten())
-    {
-        storage.work(record.id().len(), "committed native identity scan")?;
-        insert_identity(
-            &mut identities,
-            identity_hash(record.id()),
-            CommittedIdentity::Native(ctx.copy_retained_text(record.id(), "committed native identity")?),
-            &storage,
-            "committed identity slots",
-        )?;
+    for (namespace, records) in base.native.0.values().enumerate() {
+        storage.work(1, "committed native namespace scan")?;
+        for (arena, records) in records.arenas().values().enumerate() {
+            storage.work(1, "committed native arena scan")?;
+            for (record, value) in records.iter().enumerate() {
+                storage.work(value.id().len(), "committed native identity scan")?;
+                insert_identity(
+                    &mut identities, identity_hash(value.id()),
+                    CommittedIdentity::Native { namespace, arena, record },
+                    &storage, "committed identity slots",
+                )?;
+            }
+        }
     }
     Ok(identities)
 }
@@ -642,7 +641,16 @@ fn committed_identity_contains(
         ctx.charge_work(1, "committed identity collision scan")?;
         let candidate = match owner {
             CommittedIdentity::Neutral(slot) => base.model.identity_at(slot.kind, slot.index),
-            CommittedIdentity::Native(candidate) => Some(candidate.as_str()),
+            CommittedIdentity::Native { namespace, arena, record } => {
+                let work = u64_from_index(*namespace).checked_add(u64_from_index(*arena))
+                    .and_then(|work| work.checked_add(3))
+                    .ok_or_else(|| ctx.refuse_codec_limit("borrow committed native identity", u64::MAX - 1, u64::MAX))?;
+                ctx.charge_work(work, "borrow committed native identity")?;
+                base.native.0.values().nth(*namespace)
+                    .and_then(|namespace| namespace.arenas().values().nth(*arena))
+                    .and_then(|records| records.get(*record))
+                    .map(crate::native::NativeRecord::id)
+            },
         };
         if let Some(candidate) = candidate {
             if identities_equal(ctx, candidate, identity, "compare committed identities")? {
@@ -742,6 +750,7 @@ impl CommitState<'_> {
 mod tests {
     mod accounting;
     mod feature_parents;
+    mod native_identity_slots;
 
     use super::{CommitSession, DraftError, ModelCheckpoint, ModelDraft};
     use crate::annotations::Annotations;
