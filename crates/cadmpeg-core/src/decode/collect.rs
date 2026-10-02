@@ -403,6 +403,7 @@ impl DecodeContext<'_> {
         let mut groups = BTreeMap::new();
         let mut reservation = self.reserve_scoped(0, operation)?;
         for (key, value) in values {
+            self.charge_work(1, operation)?;
             self.push_scoped_btree_group(
                 &mut reservation,
                 &mut groups,
@@ -528,6 +529,7 @@ impl DecodeContext<'_> {
     ) -> Result<Vec<T>, CodecError> {
         let mut values = self.collection_vec(count, operation)?;
         for index in 0..count {
+            self.charge_work(1, operation)?;
             values.push(value_at(index)?);
         }
         Ok(values)
@@ -588,6 +590,7 @@ impl DecodeContext<'_> {
     ) -> Result<Vec<T>, CodecError> {
         let mut out = Vec::new();
         for value in values {
+            self.charge_work(1, operation)?;
             self.push_vec(&mut out, value, operation)?;
         }
         Ok(out)
@@ -601,6 +604,7 @@ impl DecodeContext<'_> {
     ) -> Result<Vec<T>, E> {
         let mut out = Vec::new();
         for value in values {
+            self.charge_work(1, operation)?;
             self.push_vec(&mut out, value?, operation)
                 .map_err(E::from)?;
         }
@@ -625,6 +629,7 @@ impl DecodeContext<'_> {
         value: T,
         operation: &'static str,
     ) -> Result<bool, CodecError> {
+        self.charge_work(u64_from_index(values.len()), operation)?;
         if values.contains(&value) {
             return Ok(false);
         }
@@ -639,6 +644,8 @@ impl DecodeContext<'_> {
         value: &str,
         operation: &'static str,
     ) -> Result<bool, CodecError> {
+        self.charge_work(u64_from_index(values.len()), operation)?;
+        self.charge_work(u64_from_index(value.len()), operation)?;
         if values.contains(value) {
             return Ok(false);
         }
@@ -655,6 +662,7 @@ impl DecodeContext<'_> {
         operation: &'static str,
     ) -> Result<(), CodecError> {
         for value in additions {
+            self.charge_work(1, operation)?;
             self.insert_hash_set(values, value, operation)?;
         }
         Ok(())
@@ -668,6 +676,7 @@ impl DecodeContext<'_> {
     ) -> Result<HashSet<T>, CodecError> {
         let mut out = HashSet::new();
         for value in values {
+            self.charge_work(1, operation)?;
             self.insert_hash_set(&mut out, value, operation)?;
         }
         Ok(out)
@@ -736,6 +745,7 @@ impl DecodeContext<'_> {
     ) -> Result<HashMap<K, V>, CodecError> {
         let mut out = HashMap::new();
         for (key, value) in values {
+            self.charge_work(1, operation)?;
             self.insert_hash_map(&mut out, key, value, operation)?;
         }
         Ok(out)
@@ -936,6 +946,7 @@ impl DecodeContext<'_> {
     ) -> Result<Option<Vec<T>>, CodecError> {
         let mut collected = Vec::new();
         for value in values {
+            self.charge_work(1, operation)?;
             let Some(value) = value else { return Ok(None) };
             self.push_vec(&mut collected, value, operation)?;
         }
@@ -950,6 +961,7 @@ impl DecodeContext<'_> {
     ) -> Result<Option<Vec<T>>, CodecError> {
         let mut collected = Vec::new();
         for value in values {
+            self.charge_work(1, operation)?;
             let Some(value) = value.map_err(Into::into)? else {
                 return Ok(None);
             };
@@ -966,6 +978,7 @@ impl DecodeContext<'_> {
     ) -> Result<HashSet<String>, CodecError> {
         let mut collected = HashSet::new();
         for value in values {
+            self.charge_work(1, operation)?;
             self.insert_string_set(&mut collected, value, operation)?;
         }
         Ok(collected)
@@ -1154,6 +1167,7 @@ impl DecodeContext<'_> {
         value: T,
         operation: &'static str,
     ) -> Result<bool, CodecError> {
+        self.charge_work(u64_from_index(values.len()), operation)?;
         if values.contains(&value) {
             return Ok(false);
         }
@@ -1173,6 +1187,7 @@ impl DecodeContext<'_> {
     ) -> Result<BTreeSet<T>, CodecError> {
         let mut out = BTreeSet::new();
         for value in values {
+            self.charge_work(1, operation)?;
             self.insert_btree_set(&mut out, value, operation)?;
         }
         Ok(out)
@@ -1228,6 +1243,7 @@ impl DecodeContext<'_> {
         if let Some(additional) = length.checked_sub(values.len()) {
             self.reserve_capacity(values, additional, operation)?;
             for _ in 0..additional {
+                self.charge_work(1, operation)?;
                 values.push(fill);
             }
         } else {
@@ -1306,6 +1322,7 @@ impl DecodeContext<'_> {
                         .ok_or_else(|| self.refuse_codec_limit(operation, u64::MAX, u64::MAX))?,
                     operation,
                 )?;
+                self.charge_work(u64_from_index(output.len()), operation)?;
                 if !output.contains(value) {
                     if remaining == 0 {
                         self.reserve_set(&mut output, 1, operation)?;
@@ -1497,6 +1514,7 @@ impl DecodeContext<'_> {
     ) -> Result<Vec<String>, CodecError> {
         let mut copies = self.collection_vec(values.len(), operation)?;
         for value in values {
+            self.charge_work(1, operation)?;
             copies.push(self.copy_retained_text(value, operation)?);
         }
         Ok(copies)
@@ -1511,6 +1529,7 @@ impl DecodeContext<'_> {
     ) -> Result<String, CodecError> {
         let mut count = 0_usize;
         for part in parts {
+            self.charge_work(1, operation)?;
             count = count
                 .checked_add(part.as_ref().len())
                 .ok_or_else(|| self.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
@@ -1527,6 +1546,7 @@ impl DecodeContext<'_> {
             self.allocation_failed(ResourceDimension::RetainedBytes, count, operation)
         })?;
         for (index, part) in parts.iter().enumerate() {
+            self.charge_work(u64_from_index(part.as_ref().len()), operation)?;
             if index != 0 {
                 output.push_str(separator);
             }
@@ -1567,6 +1587,7 @@ impl DecodeContext<'_> {
             refusal: None,
         };
         for (index, value) in values.into_iter().enumerate() {
+            self.charge_work(1, operation)?;
             let written = if index == 0 {
                 output.write_fmt(format_args!("{value}"))
             } else {

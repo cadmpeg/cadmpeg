@@ -157,7 +157,6 @@ fn at_depth<T>(
     if depth == 0 {
         return parse();
     }
-    ctx.charge_work(depth, operation)?;
     ctx.charge_collection_items(depth, operation)?;
     let count =
         usize::try_from(depth).map_err(|_| ctx.refuse_codec_limit(operation, u64::MAX, depth))?;
@@ -168,6 +167,7 @@ fn at_depth<T>(
         let (guards, reservation) = ctx.scoped_vector_storage(capacity, operation)?;
         (reservation, guards)
     };
+    ctx.charge_work(u64_from_index(count), operation)?;
     for _ in 0..count {
         guards.push(ctx.enter_nested(operation)?);
     }
