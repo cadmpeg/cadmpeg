@@ -184,3 +184,77 @@ fn owned_source_session_clears_cached_source_positions() {
     assert_eq!(session.unknown_links_mut(0).unwrap().0, second);
     assert_eq!(session.unknowns()[0].data().unwrap(), &[2]);
 }
+
+#[test]
+fn speculative_session_append_reuses_source_cache_across_candidates() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    // The source record and its cache use three slots. Each point adds a
+    // staging key and position, a committed key and position, and an arena slot.
+    policy.limits.max_collection_items = 13;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut session = CommitSession::new(CadIr::empty(), &ctx, Some("test")).unwrap();
+    let source = "test:source:unknown#owner";
+    session.push_unknown(crate::UnknownRecord::retained(source.try_into().unwrap(), 0, vec![7; 65536], Vec::new())).unwrap();
+    let source_pointer = session.unknowns()[0].data().unwrap().as_ptr();
+    assert!(session.contains(source).unwrap());
+    for identity in ["test:model:point#first", "test:model:point#second"] {
+        let model = crate::document::Model { points: vec![super::point(identity)], ..Default::default() };
+        session.try_append(model, Default::default(), |combined, unknowns| {
+            assert_eq!(unknowns[0].data().unwrap().as_ptr(), source_pointer);
+            assert_eq!(combined.model.points.last().unwrap().id.as_str(), identity);
+            Ok(Ok::<_, ()>(()))
+        }).unwrap().unwrap();
+        assert!(session.contains(source).unwrap());
+        assert!(session.contains(identity).unwrap());
+    }
+    assert!(session.contains("test:model:point#first").unwrap());
+    assert_eq!(session.document().model.points.len(), 2);
+    let (_, unknowns) = session.into_parts();
+    assert_eq!(unknowns[0].data().unwrap().as_ptr(), source_pointer);
+    ctx.finish_session().unwrap();
+}
+
+#[test]
+fn speculative_session_append_extends_native_cache_and_preserves_rejected_positions() {
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let mut session = CommitSession::new(CadIr::empty(), &ctx, None).unwrap();
+    for (format, arena, identity) in [
+        ("middle", "middle", "test:native:record#first"),
+        ("middle", "middle", "test:native:record#second"),
+        ("alpha", "alpha", "test:native:record#third"),
+    ] {
+        let mut native = crate::native::Native::default();
+        native.namespace_mut(format).arenas_mut().insert(arena.into(), vec![crate::NativeRecord::new(identity.try_into().unwrap(), serde_json::Map::new()).unwrap()]);
+        session.try_append(Default::default(), native, |_, _| Ok(Ok::<_, ()>(()))).unwrap().unwrap();
+        assert!(session.contains(identity).unwrap());
+        assert!(session.contains("test:native:record#first").unwrap());
+    }
+    let rejected = "test:model:point#rejected";
+    let before = session.document().clone();
+    let model = crate::document::Model { points: vec![super::point(rejected)], ..Default::default() };
+    assert_eq!(session.try_append(model, Default::default(), |_, _| Ok(Err::<(), _>("candidate rejection"))).unwrap(), Err("candidate rejection"));
+    assert_eq!(session.document(), &before);
+    assert!(!session.contains(rejected).unwrap());
+    assert!(session.contains("test:native:record#first").unwrap());
+    assert!(session.contains("test:native:record#second").unwrap());
+}
+
+#[test]
+fn speculative_session_append_keeps_original_resource_refusal_and_model() {
+    use cadmpeg_core::CodecError;
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let mut session = CommitSession::new(CadIr::empty(), &ctx, None).unwrap();
+    session.commit_model(super::point_draft("test:model:point#first")).unwrap().unwrap();
+    let before = session.document().clone();
+    let model = crate::document::Model { points: vec![super::point("test:model:point#refused")], ..Default::default() };
+    let Err(CodecError::ResourceLimit(limit)) = session.try_append(model, Default::default(), |_, _| {
+        ctx.charge_work(u64::MAX / 2, "test session callback refusal")?;
+        Ok(Ok::<_, ()>(()))
+    }) else { panic!("session callback refusal stays outer"); };
+    assert_eq!(limit.operation, "test session callback refusal");
+    assert_eq!(session.document(), &before);
+    assert!(matches!(session.contains("test:model:point#first"), Err(CodecError::ResourceLimit(sticky)) if sticky == limit));
+    assert_eq!(session.into_parts().0, before);
+    assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit));
+}
