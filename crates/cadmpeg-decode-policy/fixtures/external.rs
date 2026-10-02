@@ -11,3 +11,13 @@ pub fn linear(bytes: &[u8]) {
 pub fn missing() {
     let _thread = std::thread::current(); // finding: unproven_decode_charge
 }
+
+pub struct DecodeContext;
+impl DecodeContext {
+    pub fn charge_work(&self, _n: u64, _operation: &str) -> Result<(), ()> { Ok(()) }
+}
+pub fn named_operand(ctx: &DecodeContext, destination: &mut String, text: &str) -> Result<(), ()> {
+    ctx.charge_work(destination.len() as u64, "wrong operand")?;
+    destination.push_str(text); // finding: uncharged_decode_allocation, uncharged_decode_work
+    Ok(())
+}

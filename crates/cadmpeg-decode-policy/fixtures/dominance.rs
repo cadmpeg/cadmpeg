@@ -62,3 +62,12 @@ pub fn child_extent(ctx: &DecodeContext, values: &std::collections::HashMap<usiz
     }
     Ok(())
 }
+
+pub fn reassigned(ctx: &DecodeContext, bytes: &[u8], other: &[u8]) -> Result<(), ()> {
+    let mut alias = bytes;
+    std::hint::black_box(alias);
+    alias = other;
+    ctx.charge_work(bytes.len() as u64, "old binding")?;
+    for _byte in alias {} // finding: uncharged_decode_work
+    Ok(())
+}

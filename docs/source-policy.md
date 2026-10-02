@@ -137,13 +137,28 @@ production libraries. Its target directory is
 so Cargo cannot omit findings for unchanged source.
 
 The compiler resolves expressions, receiver types, associated trait calls,
-record fields and closure owners. Both rules inspect production functions
-that hold the caller's `DecodeContext` in `cadmpeg-core`, `cadmpeg-ir`,
-`cadmpeg-codec-*`, `cadmpeg-container`, `cadmpeg-asm`, `cadmpeg-parasolid`
-and `cadmpeg-protein`. Writer, encoder, binary and test paths are excluded.
-Nested functions have independent scopes. Closures retain their enclosing
-function's scope. An owned or borrowed parameter, a local context, a context
-field or a context method establishes the scope.
+record fields and closure owners. The allocation and work rules inspect every
+production function, method, trait implementation and closure in
+`cadmpeg-core`, `cadmpeg-ir`, `cadmpeg-codec-*`, `cadmpeg-container`,
+`cadmpeg-asm`, `cadmpeg-parasolid` and `cadmpeg-protein`. A body without a
+`DecodeContext` cannot admit input-sized storage or work. Writer, encoder,
+binary and test exclusions apply to body selection.
+
+A resolved call to a checked body is proved at the caller. Its body owns the
+admission obligation. Resolution uses the caller's compiler typing environment.
+Closures have separate checked bodies. A private trait call is proved when
+all reachable implementations have checked bodies. Generic helper calls use
+concrete instantiations collected from the checked bodies. Type-dependent
+allocation and work defects are reported at the instantiating call, with the
+concrete type. Checked dependency generics use compiler MIR to resolve their
+trait calls. The driver encodes MIR in check metadata for this resolution. Trait-object and function-pointer calls require proof.
+
+`src/external.rs` in the checker defines the external operation summaries.
+Each summary states allocation behavior and fixed work, receiver work,
+argument or key work, iterator work, or comparison work. The allocation and
+work rules evaluate these extents against operand types and prior admission.
+An external operation missing from this table uses the third rule, including
+calls with scalar operands or no operands.
 
 ### Allocation
 
@@ -157,8 +172,9 @@ and `Into`, derived or standard heap `Clone`, and collection growth.
 `Vec::new`, `String::new` and empty collection constructors allocate no
 storage. Moving an owned value does not allocate. A fresh owned vector iterator
 collected into the same vector type reuses its buffer without a scan.
-Consumed or adapted owning iterators require proof of storage reuse. A custom `Clone` is checked
-in its body, including temporary storage when its result borrows data.
+Consumed or adapted owning iterators require proof of storage reuse. A custom
+`Clone` is checked in its body, including temporary storage when its result
+borrows data.
 Owning a heap field alone does not prove that it allocates. Derived clones
 follow each field's concrete clone implementation. Zero-sized vector
 elements require no backing allocation. A borrowed `Cow` conversion does
@@ -195,26 +211,33 @@ apply.
 
 Use `ctx.charge_work(extent, operation)?` or `charge_work_limit` before the
 operation. The charge must resolve to the core operation; a same-named
-wrapper does not establish admission. A simple extent alias can carry a length. Additive lengths and
-propagated checked sums can carry comparison bounds. A credit admits one
-operation. A conditional, later, dropped, reused or unrelated charge does
+wrapper does not establish admission. A simple extent alias can carry a length.
+Checked addition carries summed extents across sequential loops. Checked multiplication carries a fixed count
+across nested loops. Exact checked conversions preserve the extent.
+`windows`, `chunks`, `chunks_exact`, `skip`, `take`, `step_by`, `filter`,
+`map`, `enumerate`, range sub-slices, `split_at` halves and range `get` preserve
+an operand bound. Either charged side can bound a `zip`. A parent bound does
+not bound a variable-size child. Each portion of a charge is consumed once.
+A conditional, later, dropped, reused or unrelated charge does
 not admit it. Mutation or mutable access invalidates extent evidence.
-Charges outside a loop or deferred closure do not admit its child scans.
+Charges outside an input-sized loop or deferred closure do not admit child
+scans. A checked product admits the corresponding fixed-count loop.
 A loop can instead admit every iteration path with a propagated context
 operation before work. Filtering and skipping can inspect input before a
 yielded iteration; a charge in that iteration does not admit those visits.
 
 Use `ctx.position_by` for fallible search and `ctx.equal_bytes` for byte
-comparison. A core context operation owns its work admission. Other context-taking
-callees need a body that proves admission; an unavailable or unresolved
-body uses the third rule. Arguments and callbacks remain checked. Custom comparison implementations
-are inspected separately from their owning types.
+comparison. A checked context operation owns its work admission. Its call
+site carries no duplicate body finding. An unavailable or unresolved implementation uses
+the third rule. Arguments and callbacks remain checked. Custom comparison implementations are inspected separately from their owning
+types.
 
 ### Undecided operations
 
 `unproven_decode_charge` reports operations for which type resolution does
-not establish allocator reachability, extent or charge coverage. Generic
-values, trait objects, opaque callees, unresolved callbacks and unsupported
+not establish allocator reachability, extent or charge coverage.
+Unenumerated generic instantiations, trait objects, function pointers,
+external operations missing a summary, unresolved callbacks and unsupported
 charge arithmetic use this rule. A nonstandard formatter whose output
 extent is not proved also uses this rule; an owned field does not prove
 that its formatter reads that field. These findings fail the gate.

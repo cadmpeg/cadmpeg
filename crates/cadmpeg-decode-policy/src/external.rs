@@ -41,7 +41,7 @@ pub(crate) struct Summary {
 
 pub(crate) fn summary(tcx: TyCtxt<'_>, definition: DefId, receiver: Option<Ty<'_>>) -> Option<Summary> {
     let crate_name = tcx.crate_name(definition.krate);
-    let name = tcx.item_name(definition);
+    let name = tcx.opt_item_name(definition)?;
     let path = tcx.def_path_str(definition);
     let value = receiver.map(|value| value.peel_refs());
     let owner = value.and_then(|value| match value.kind() {
@@ -52,7 +52,10 @@ pub(crate) fn summary(tcx: TyCtxt<'_>, definition: DefId, receiver: Option<Ty<'_
     if !types::standard(tcx, definition) {
         let (allocation, work) = match (crate_name.as_str(), name.as_str()) {
             ("roxmltree", "parse" | "parse_with_options") => (Allocation::Result, Work::Argument(0)),
-            ("roxmltree", "text" | "attribute" | "has_tag_name" | "is_element" | "is_text" | "tag_name" | "name" | "namespace" | "root" | "root_element" | "children" | "descendants" | "attributes" | "range" | "parent") => (Allocation::None, Work::Fixed),
+            ("roxmltree", "attribute" | "attribute_node" | "has_attribute") => (Allocation::None, Work::Receiver),
+            ("roxmltree", "root_element") => (Allocation::None, Work::Receiver),
+            ("roxmltree", "has_tag_name") => (Allocation::None, Work::Argument(1)),
+            ("roxmltree", "text" | "is_element" | "is_text" | "tag_name" | "name" | "namespace" | "root" | "children" | "descendants" | "attributes" | "range" | "parent") => (Allocation::None, Work::Fixed),
             ("serde_json", "from_str" | "from_slice") => (Allocation::Result, Work::Argument(0)),
             ("serde_json", "as_str" | "as_array" | "as_object" | "as_bool" | "as_i64" | "as_u64" | "as_f64" | "is_null") => (Allocation::None, Work::Fixed),
             ("serde_json", "get" | "get_mut") => (Allocation::None, Work::Argument(1)),
@@ -65,6 +68,7 @@ pub(crate) fn summary(tcx: TyCtxt<'_>, definition: DefId, receiver: Option<Ty<'_
         "finish" if path.contains("hash::") => (Allocation::None, Work::Fixed),
         "write_str" if path.contains("fmt::") => (Allocation::None, Work::Argument(1)),
         "debug_struct_field1_finish" if path.contains("fmt::") => (Allocation::None, Work::Argument(3)),
+        "replace" | "take" | "swap" if path.contains("mem::") => (Allocation::None, Work::Fixed),
         "format" => (Allocation::Format, Work::Format),
         "clone" => (Allocation::Clone, Work::Receiver),
         "cloned" => (Allocation::Cloned, Work::Fixed),

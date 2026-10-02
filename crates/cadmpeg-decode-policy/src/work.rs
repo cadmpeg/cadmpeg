@@ -82,7 +82,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
                 return;
             }
         }
-        let Some(summary) = external::summary(self.tcx, definition,
+        let Some(summary) = external::summary(self.tcx, self.implementation(expression, definition).unwrap_or(definition),
             operands.first().map(|operand| self.expr_ty(operand))) else {
             self.report(expression.span, "unproven_decode_charge",
                 &format!("external operation missing summary: {}", self.tcx.def_path_str(definition)));
@@ -236,7 +236,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
                 }
                 if shape == Shape::Fixed
                     && self.tcx.type_is_copy_modulo_regions(
-                        rustc_middle::ty::TypingEnv::post_analysis(self.tcx, self.owner),
+                        self.typing_env(),
                         element,
                     )
                 {
@@ -264,7 +264,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
             if let rustc_middle::ty::Adt(_, arguments) = value.kind() {
                 if arguments.types().next().is_some_and(|element| {
                     self.tcx.type_is_copy_modulo_regions(
-                        rustc_middle::ty::TypingEnv::post_analysis(self.tcx, self.owner),
+                        self.typing_env(),
                         element,
                     )
                 }) {
@@ -323,7 +323,13 @@ impl<'tcx> Analysis<'_, 'tcx> {
         {
             return;
         }
-        let mut paid = self.take_credit(&operands);
+        let mut paid = match summary.work {
+            external::Work::Argument(_) => self.take_credit(&[extent]),
+            _ => self.take_credit(&operands),
+        };
+        let checked_value = if matches!(summary.work, external::Work::Argument(_)) {
+            self.expr_ty(extent).peel_refs()
+        } else { value };
         if paid == Some(true)
             && (matches!(
                 name,
@@ -338,8 +344,8 @@ impl<'tcx> Analysis<'_, 'tcx> {
                     | "resize"
                     | "append"
                     | "extend"
-            ) || self.deep_work(value)
-                || self.capacity_iteration(receiver))
+            ) || self.deep_work(checked_value)
+                || consumers && self.capacity_iteration(receiver))
         {
             paid = None;
         }

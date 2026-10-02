@@ -386,6 +386,16 @@ impl<'tcx> Analysis<'_, 'tcx> {
                 credit.opaque = true;
             }
         }
+        let mut binding = expression;
+        while let ExprKind::AddrOf(_, _, inner) | ExprKind::DropTemps(inner)
+            | ExprKind::Field(inner, _) | ExprKind::Index(inner, _, _) = binding.kind {
+            binding = inner;
+        }
+        if let ExprKind::Path(ref path) = binding.kind {
+            if let Res::Local(id) = self.typeck.qpath_res(path, binding.hir_id) {
+                self.flow.mutated.insert(format!("local:{id:?}"));
+            }
+        }
     }
 
     pub(crate) fn mutation(&mut self, expression: &'tcx Expr<'tcx>) {
