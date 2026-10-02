@@ -257,11 +257,7 @@ impl InputCatalog {
                 };
                 let confidence = codec.detect(ctx, prefix)?;
                 if confidence > Confidence::No {
-                    ctx.push_retained_vec(
-                        &mut matches,
-                        (codec, confidence),
-                        "detection candidates",
-                    )?;
+                    ctx.push_vec(&mut matches, (codec, confidence), "detection candidates")?;
                 }
             }
             ctx.stable_sort_by(
