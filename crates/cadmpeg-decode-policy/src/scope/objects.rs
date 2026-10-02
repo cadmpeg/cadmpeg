@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Concrete implementations erased by unsizing coercions.
-use super::{instances, key, Graph};
+use super::{instances, key, EdgeKind, Graph};
 use crate::types;
 use rustc_span::def_id::DefId;
 use rustc_middle::ty::{self, Instance, Ty, TyCtxt};
@@ -99,6 +99,7 @@ pub(super) fn register<'tcx>(
         return;
     }
     let target = format!("object:{}:{}:{}:{:?}", concrete.caller, key(tcx, method), key(tcx, concrete.instance.def_id()), concrete.instance.args);
+    graph.nodes.insert(target.clone(), format!("trait-object instance {} {:?}", tcx.def_path_str(concrete.instance.def_id()), concrete.instance.args));
     graph.objects.insert((concrete.caller, key(tcx, method), target.clone()));
-    instances::enqueue(tcx, graph, pending, &target, concrete.instance, concrete.environment, concrete.depth);
+    instances::enqueue(tcx, graph, pending, &target, concrete.instance, concrete.environment, (concrete.depth, EdgeKind::TraitObjectCall));
 }

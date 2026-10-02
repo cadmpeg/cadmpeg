@@ -178,6 +178,13 @@ writer-only, serialization-only, test-only or no path from a decode entry point.
 The first two classify excluded body names or source modules; a source-module
 name cannot exclude a reachable production body.
 A writer file name does not exclude a body reached during decoding.
+`--explain-body NAME` prints one shortest path from a decode root to a named
+body. `--explain-body PATH:LINE` selects the innermost body at that source line.
+Each edge states direct call, function address, trait-object call, generic
+instantiation or unresolved-indirect candidate. An excluded target prints
+unreachable. `--graph-output FILE` saves the graph. `--graph-input FILE` uses
+that saved graph for path queries without compiling; the graph describes the
+source and compiler configuration of the run that created it.
 Binary and test bodies are excluded. Automatically derived
 bodies, including serde derives and their generated helpers, are excluded.
 A decode call into a derived implementation is judged at the call using the
