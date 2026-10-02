@@ -706,7 +706,7 @@ fn spatial_nurbs_preserves_wire_fields_and_checked_point_edits() {
                 mapped.x = f64::NAN;
             }
             crate::features::FinitePoint3::new(mapped).ok_or(())
-        })
+        }, &cadmpeg_test_support::service_decode_context()).expect("pole edit admission")
         .is_err());
     assert_eq!(curve, before);
     let geometry =
@@ -735,7 +735,7 @@ fn a_refused_spatial_sketch_pole_edit_keeps_the_prior_poles() {
     let before = curve.clone();
     let refusal = curve.try_map_control_points(|_, _| {
         Err(NurbsError::EditRefused("caller refused this pole".into()))
-    });
+    }, &cadmpeg_test_support::service_decode_context()).expect("pole edit admission");
     assert_eq!(
         refusal,
         Err(NurbsError::EditRefused("caller refused this pole".into()))

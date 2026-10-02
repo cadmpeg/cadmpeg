@@ -2900,7 +2900,7 @@ fn e5_pcurve_on_surface(
                         let point = point.get();
                         FinitePoint2::new(Point2::new(point.u * scale[0], point.v * scale[1]))
                             .ok_or(())
-                    })
+                    }, ctx)?
                     .is_err()
                 {
                     return Ok(None);

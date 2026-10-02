@@ -3960,6 +3960,10 @@ fn pcurve_support_surfaces(ir: &CadIr, pcurve_id: &cadmpeg_ir::ids::PcurveId) ->
 }
 
 fn source_pcurve(ir: &CadIr, pcurve: &Pcurve) -> Result<Pcurve, CodecError> {
+    let writer_arena = cadmpeg_core::decode::DecodeArena::new();
+    let writer_policy = cadmpeg_core::decode::DecodePolicy::desktop();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &writer_arena, &writer_policy)?;
+
     let mut parameter_map = None;
     for surface_id in pcurve_support_surfaces(ir, &pcurve.id) {
         let candidate =
@@ -3989,7 +3993,7 @@ fn source_pcurve(ir: &CadIr, pcurve: &Pcurve) -> Result<Pcurve, CodecError> {
             .ok_or_else(|| {
                 NurbsError::Structure("control_points contains a non-finite point".into())
             })
-        })
+        }, &ctx)?
         .map_err(|error| {
             CodecError::malformed(format_args!(
                 "pcurve {} parameter mapping: {error}",
@@ -6835,6 +6839,10 @@ fn apply_rigid_transform(
     geometry: CurveGeometry,
     transform: cadmpeg_ir::transform::Transform,
 ) -> Result<CurveGeometry, CodecError> {
+    let writer_arena = cadmpeg_core::decode::DecodeArena::new();
+    let writer_policy = cadmpeg_core::decode::DecodePolicy::desktop();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &writer_arena, &writer_policy)?;
+
     let point = |value: FinitePoint3| -> Result<FinitePoint3, CodecError> {
         transform.apply_point(value.get()).ok_or_else(|| {
             CodecError::malformed("transformed curve point has a non-finite coordinate")
@@ -6976,7 +6984,7 @@ fn apply_rigid_transform(
                                 .to_string(),
                         )
                     })
-                })
+                }, &ctx)?
                 .map_err(|error| match error {
                     NurbsError::EditRefused(message) => CodecError::malformed(message),
                     error => {

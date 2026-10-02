@@ -223,7 +223,7 @@ fn decode_retains_generated_helix_construction() {
                     "control_points contains a non-finite point".into(),
                 )
             })
-        })
+        }, &cadmpeg_test_support::service_decode_context()).expect("pole edit admission")
         .unwrap();
     *solved_cache = SolvedCurveGeometry::Nurbs(edited_cache);
     let edited_definition = edited.model.procedural_curves[0].definition().clone();

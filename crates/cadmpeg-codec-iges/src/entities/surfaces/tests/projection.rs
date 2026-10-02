@@ -439,7 +439,7 @@ fn rational_boundary_comparison_accepts_projectively_scaled_curves() {
                         "control_points contains a non-finite point".into(),
                     )
                 })
-            })
+            }, &cadmpeg_test_support::service_decode_context()).expect("pole edit admission")
             .unwrap();
         assert_eq!(
             homogeneous_curve_boundary_matches(decode_ctx, &first, &scaled, [0.0, 1.0], 0.0)

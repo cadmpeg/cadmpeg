@@ -1194,7 +1194,7 @@ fn generated_f3d_scopes_inline_pcurve_edits() {
                 point.u = -0.75;
             }
             cadmpeg_ir::units::FinitePoint2::new(point).ok_or(())
-        })
+        }, &cadmpeg_test_support::service_decode_context()).expect("pole edit admission")
         .unwrap();
     let cadmpeg_ir::geometry::pcurve::PcurveMetadata::AsmInline { form: inline } =
         &mut pcurve.metadata
@@ -1232,7 +1232,7 @@ fn generated_f3d_rewrites_rational_pcurve_weights() {
                 point.u = -0.25;
             }
             cadmpeg_ir::units::FinitePoint2::new(point).ok_or(())
-        })
+        }, &cadmpeg_test_support::service_decode_context()).expect("pole edit admission")
         .unwrap();
     let mut weights = nurbs.pole_rows().weights();
     if let Some(weights) = &mut weights {
@@ -1294,7 +1294,7 @@ fn generated_f3d_rewrites_ref_form_pcurve_geometry_and_range() {
                 point.v = 3.5;
             }
             cadmpeg_ir::units::FinitePoint2::new(point).ok_or(())
-        })
+        }, &cadmpeg_test_support::service_decode_context()).expect("pole edit admission")
         .unwrap();
     edit::replace(nurbs, |previous| {
         let mut knots = previous.knots().to_vec();

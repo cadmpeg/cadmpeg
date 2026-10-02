@@ -2106,8 +2106,9 @@ impl SpatialSketchNurbsCurve {
     pub fn try_map_control_points<E>(
         &mut self,
         map: impl Fn(usize, FinitePoint3) -> Result<FinitePoint3, E>,
-    ) -> Result<(), E> {
-        self.0.try_map_control_points(map)
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<Result<(), E>, cadmpeg_core::CodecError> {
+        self.0.try_map_control_points(map, ctx)
     }
 }
 

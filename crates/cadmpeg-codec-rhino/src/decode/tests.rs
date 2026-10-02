@@ -536,7 +536,7 @@ fn instance_plane_transform_keeps_component_division() {
         [0.0, 0.0, 4.0, 6.0],
     ])
     .expect("finite affine transform");
-    transform_surface(&mut surface, transform).expect("transformed plane");
+    transform_surface(&cadmpeg_test_support::service_decode_context(), &mut surface, transform).expect("transformed plane");
     let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane)) = surface.geometry else {
         panic!("plane remains solved");
     };

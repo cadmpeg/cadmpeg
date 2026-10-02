@@ -1446,7 +1446,7 @@ fn semantic_writer_regenerates_modified_nurbs_carriers() {
                         "control_points contains a non-finite point".into(),
                     )
                 })
-            })
+            }, &cadmpeg_test_support::service_decode_context()).expect("pole edit admission")
             .unwrap();
         let expected_curve = curve.clone();
         let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)) =
@@ -1466,7 +1466,7 @@ fn semantic_writer_regenerates_modified_nurbs_carriers() {
                         "control_points contains a non-finite point".into(),
                     )
                 })
-            })
+            }, &cadmpeg_test_support::service_decode_context()).expect("pole edit admission")
             .unwrap();
         let expected_surface = surface.clone();
         (expected_curve, expected_surface)

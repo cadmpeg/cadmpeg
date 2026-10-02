@@ -657,7 +657,7 @@ fn transform_nurbs(
         FinitePoint3::new(transformed).ok_or_else(|| {
             GeometryError::malformed(offset, "control_points contains a non-finite point")
         })
-    })?;
+    }, ctx)??;
     Ok(curve)
 }
 
@@ -1662,7 +1662,7 @@ pub(crate) mod tests {
                         "control_points contains a non-finite point".into(),
                     )
                 })
-            })
+            }, &cadmpeg_test_support::service_decode_context()).expect("pole edit admission")
             .expect("valid test curve edit");
         assert!(exact_orientation(&ctx, &off_plane, 0).is_err());
     }

@@ -62,7 +62,7 @@ fn native_patch_edits_compact_counted_nurbs_surface_arrays() {
                 "control_points contains a non-finite point".into(),
             )
         })
-    })
+    }, &cadmpeg_test_support::service_decode_context()).expect("pole edit admission")
     .unwrap();
     edit::replace(&mut new, |previous| {
         let mut knots = previous.u_knots().to_vec();
@@ -192,7 +192,7 @@ fn native_patch_edits_nurbs_carriers_beside_untyped_surfaces() {
                         "control_points contains a non-finite point".into(),
                     )
                 })
-            })
+            }, &cadmpeg_test_support::service_decode_context()).expect("pole edit admission")
             .unwrap();
         curve.edit_knots(&cadmpeg_test_support::service_decode_context(), |knots| knots[3..].fill(2.0)).expect("knot edit admission").unwrap();
         let expected_curve = curve.clone();
@@ -217,7 +217,7 @@ fn native_patch_edits_nurbs_carriers_beside_untyped_surfaces() {
                         "control_points contains a non-finite point".into(),
                     )
                 })
-            })
+            }, &cadmpeg_test_support::service_decode_context()).expect("pole edit admission")
             .unwrap();
         edit::replace(surface, |previous| {
             let mut knots = previous.u_knots().to_vec();

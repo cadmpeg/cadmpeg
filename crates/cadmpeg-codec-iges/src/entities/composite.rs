@@ -2075,7 +2075,7 @@ fn anchor_analytic_nurbs_endpoint_poles(
                 point
             };
             Ok::<_, ()>(mapped)
-        })
+        }, ctx)?
         .ok()
         .map(|()| nurbs))
 }

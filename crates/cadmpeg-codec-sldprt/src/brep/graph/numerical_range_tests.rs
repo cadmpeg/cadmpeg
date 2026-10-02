@@ -58,7 +58,7 @@ fn numerical_0922_small_domain_keeps_fit_samples() {
                 "control_points contains a non-finite point".into(),
             )
         })
-    })
+    }, &cadmpeg_test_support::service_decode_context()).expect("pole edit admission")
     .unwrap();
     for d in [1., SMALL_PARAMETER_DOMAIN] {
         let c = NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 

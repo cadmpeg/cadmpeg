@@ -88,7 +88,7 @@ fn invalidation_preserves_lanes_with_a_prior_validation_proof() {
                                         cadmpeg_ir::math::Point2::new(point.u + 100.0, point.v),
                                     )
                                     .ok_or(())
-                                })
+                                }, &cadmpeg_test_support::service_decode_context()).expect("pole edit admission")
                                 .unwrap();
                         };
                         cadmpeg_ir::geometry::IntcurveSupportContext::try_new(

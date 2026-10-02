@@ -895,7 +895,7 @@ fn planar_offset_cache_fit_is_certified_over_the_control_net() {
                         "control_points contains a non-finite point".into(),
                     )
                 })
-            })
+            }, &cadmpeg_test_support::service_decode_context()).expect("pole edit admission")
             .unwrap();
 
         let fit = certified_offset_cache_fit(
@@ -1272,7 +1272,7 @@ fn curved_offset_cache_fit_rejects_an_uncertified_fold() {
                         "control_points contains a non-finite point".into(),
                     )
                 })
-            })
+            }, &cadmpeg_test_support::service_decode_context()).expect("pole edit admission")
             .unwrap();
         assert!(certified_offset_cache_fit(
             geometry_ctx,
@@ -1303,7 +1303,7 @@ fn curved_offset_cache_fit_accepts_a_regular_turning_control_net() {
                         "control_points contains a non-finite point".into(),
                     )
                 })
-            })
+            }, &cadmpeg_test_support::service_decode_context()).expect("pole edit admission")
             .unwrap();
         assert_eq!(
             certified_offset_cache_fit(
@@ -1454,7 +1454,7 @@ fn rational_offset_cache_bounds_are_translation_invariant() {
                         "control_points contains a non-finite point".into(),
                     )
                 })
-            })
+            }, &cadmpeg_test_support::service_decode_context()).expect("pole edit admission")
             .unwrap();
         let axis_weights = [1.0, 1.01, 1.02];
         let weight_grid = (0..3)
@@ -1827,7 +1827,7 @@ fn boundary_coincidence_is_certified_between_uniform_samples() {
                         "control_points contains a non-finite point".into(),
                     )
                 })
-            })
+            }, &cadmpeg_test_support::service_decode_context()).expect("pole edit admission")
             .unwrap();
         assert!(!coincident_pcurve_pair(
             geometry_ctx,

@@ -37,7 +37,7 @@ fn nurbs_surface_parameter_segment_bound_contains_curved_diagonal() {
                 mapped.z = 1.0;
             }
             crate::features::FinitePoint3::new(mapped).ok_or(())
-        })
+        }, &cadmpeg_test_support::service_decode_context()).expect("pole edit admission")
         .unwrap();
     let parameters = [Point2::new(0.0, 0.0), Point2::new(1.0, 1.0)];
     let chord = [Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 1.0, 1.0)];
