@@ -109,7 +109,6 @@ mod body_selection;
 mod decode_clone;
 mod selection_overlap;
 mod membership;
-pub(crate) mod member_work;
 
 pub mod edge_treatments;
 use edge_treatments::{ChamferGroup, FilletGroup, FullRoundFilletGroup, RadiusSpec};
@@ -1972,7 +1971,7 @@ impl FeatureResultMembers {
         Self { bodies, faces, edges, vertices }.validate(&membership::DecodeAdmission { ctx, operation })
     }
 
-    fn validate<'ctx, S: membership::Admission<'ctx>>(self, admission: &S)
+    fn validate<S: membership::Admission>(self, admission: &S)
         -> Result<Result<Self, FeatureResultMemberError>, S::Error> {
         admission.work(0)?;
         if self.bodies.is_empty() && self.faces.is_empty() && self.edges.is_empty() && self.vertices.is_empty() {
@@ -2066,7 +2065,7 @@ impl FeatureContent {
             .map_err(FeatureCollectionError::Invalid)
     }
 
-    fn build<'ctx, S: membership::Admission<'ctx>>(
+    fn build<S: membership::Admission>(
         admission: &S,
         value: Vec<FeatureSourceContent>,
     ) -> Result<Result<Self, &'static str>, S::Error> {
@@ -2648,7 +2647,7 @@ impl TreeChildren {
         )?.map_err(FeatureCollectionError::Invalid)
     }
 
-    fn build<'ctx, S: membership::Admission<'ctx>>(
+    fn build<S: membership::Admission>(
         active_admission: &S,
         member_admission: &S,
         children: Vec<FeatureId>,
@@ -6739,7 +6738,7 @@ impl<T: Eq + std::hash::Hash> SelectionMembers<T> {
         Self::build(&membership::DecodeAdmission { ctx, operation }, value)
     }
 
-    fn build<'ctx, S: membership::Admission<'ctx>>(
+    fn build<S: membership::Admission>(
         admission: &S,
         value: Vec<T>,
     ) -> Result<Result<Self, BodySelectionError>, S::Error> {
@@ -6814,7 +6813,7 @@ impl NativeSelections {
         Self::build(&membership::DecodeAdmission { ctx, operation }, value)
     }
 
-    fn build<'ctx, S: membership::Admission<'ctx>>(
+    fn build<S: membership::Admission>(
         admission: &S,
         value: Vec<String>,
     ) -> Result<Result<Self, BodySelectionError>, S::Error> {
@@ -6977,7 +6976,7 @@ impl<B> BodyMembers<B> {
         Self::build(&membership::DecodeAdmission { ctx, operation: "validate body selection members" }, rows)
     }
 
-    fn build<'ctx, S: membership::Admission<'ctx>>(
+    fn build<S: membership::Admission>(
         admission: &S,
         rows: Vec<BodyMember<B>>,
     ) -> Result<Result<Self, BodySelectionError>, S::Error>
@@ -6989,8 +6988,8 @@ impl<B> BodyMembers<B> {
         let mut native = admission.index(rows.len())?;
         for row in &rows {
             admission.work(1)?;
-            if !bodies.insert(admission, &row.body)? { return Ok(Err(BodySelectionError::RepeatedBody)); }
-            if !native.insert(admission, &row.native)? { return Ok(Err(BodySelectionError::RepeatedNativeMember)); }
+            if !bodies.insert(&row.body)? { return Ok(Err(BodySelectionError::RepeatedBody)); }
+            if !native.insert(&row.native)? { return Ok(Err(BodySelectionError::RepeatedNativeMember)); }
         }
         drop(bodies);
         drop(native);

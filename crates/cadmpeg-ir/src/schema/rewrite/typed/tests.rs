@@ -79,3 +79,25 @@ fn typed_text_rewrite_preserves_its_first_refusal() {
     drop(map);
     assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(limit)) if limit == first));
 }
+
+
+#[test]
+fn typed_ordered_map_rewrite_accepts_keys_without_hashing() {
+    #[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
+    struct OrderedKey(u8);
+    impl RewriteIdentities for OrderedKey {
+        fn visit_identity_references(&self, ctx: &DecodeContext<'_>, visitor: &mut dyn FnMut(&str) -> Result<(), CodecError>) -> Result<(), CodecError> {
+            self.0.visit_identity_references(ctx, visitor)
+        }
+        fn rewrite_identities<F: FnMut(&str) -> Result<String, CodecError>>(self, ctx: &DecodeContext<'_>, map: &mut IdentityMap<'_, F>) -> Result<Self, CodecError> {
+            self.0.rewrite_identities(ctx, map).map(Self)
+        }
+    }
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let source = std::collections::BTreeMap::from([(OrderedKey(2), 4_u8), (OrderedKey(1), 3)]);
+    let mut map = IdentityMap::new(&ctx, "ordered map rewrite", |source: &str| ctx.copy_retained_text(source, "map identity")).unwrap();
+    let rewritten = source.rewrite_identities(&ctx, &mut map).unwrap();
+    assert_eq!(rewritten.into_iter().map(|(key, value)| (key.0, value)).collect::<Vec<_>>(), [(1, 3), (2, 4)]);
+    drop(map);
+    ctx.finish_session().unwrap();
+}
