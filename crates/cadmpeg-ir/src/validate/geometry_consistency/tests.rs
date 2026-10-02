@@ -746,10 +746,11 @@ fn line_pcurve_recovers_vertices_from_nurbs_surface_domain_seeds() {
         surface_id: &surface_id,
         geometry: &surface,
     };
-    let seeds = pcurve_parameter_seeds_on_surface(&cadmpeg_test_support::service_decode_context(), &context, &pcurve).unwrap();
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let seeds = pcurve_parameter_seeds_on_surface(&ctx, &context, &pcurve).unwrap();
     assert!(seeds.iter().any(|seed| seed.get() == 0.5));
 
-    let ranges = edge_pcurve_parameter_ranges(&cadmpeg_test_support::service_decode_context(),
+    let ranges = edge_pcurve_parameter_ranges(&ctx,
         &context,
         None,
         Point3::new(1.0, 0.0, 0.5625),
@@ -1304,6 +1305,7 @@ fn pcurve_trim_range_stops_at_the_admitted_nesting_depth() {
 mod finding_admission;
 mod overflowing_arms;
 mod parameter_scaling;
+mod parameter_storage;
 
 /// A plane whose points at `u` beyond `2^970` overflow: its origin is the
 /// largest finite x coordinate.
