@@ -41,6 +41,31 @@ impl<'ctx, 'arena, T: Ord> PriorityQueue<'ctx, 'arena, T> {
         if self.values.is_empty() { return Ok(Some(last)); }
         self.context.charge_work_limit(2, "IR priority queue root replacement")?;
         let result = std::mem::replace(&mut self.values[0], last);
+        self.restore_root()?;
+        Ok(Some(result))
+    }
+
+    pub(super) fn len(&self) -> usize {
+        self.values.len()
+    }
+
+    pub(super) fn peek(&self) -> Result<Option<&T>, ResourceLimit> {
+        self.context.charge_work_limit(u64::from(!self.values.is_empty()), "IR priority queue peek")?;
+        Ok(self.values.first())
+    }
+
+    pub(super) fn replace_max(&mut self, value: T) -> Result<Option<T>, ResourceLimit> {
+        if self.values.is_empty() {
+            self.push(value)?;
+            return Ok(None);
+        }
+        self.context.charge_work_limit(2, "IR priority queue root replacement")?;
+        let result = std::mem::replace(&mut self.values[0], value);
+        self.restore_root()?;
+        Ok(Some(result))
+    }
+
+    fn restore_root(&mut self) -> Result<(), ResourceLimit> {
         let mut index = 0usize;
         while let Some(left) = index.checked_mul(2).and_then(|index| index.checked_add(1)) {
             if left >= self.values.len() { break; }
@@ -55,8 +80,9 @@ impl<'ctx, 'arena, T: Ord> PriorityQueue<'ctx, 'arena, T> {
             self.values.swap(index, child);
             index = child;
         }
-        Ok(Some(result))
+        Ok(())
     }
+
 }
 
 #[cfg(test)]
@@ -124,4 +150,55 @@ mod tests {
             assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit));
         }
     }
+
+    #[test]
+    fn priority_queue_replacement_reuses_slots_and_preserves_order() {
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = 2;
+        policy.limits.max_materialized_bytes = 64;
+        policy.limits.max_retained_bytes = 0;
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+        let mut queue = PriorityQueue::new(&ctx).expect("empty queue");
+        assert_eq!(queue.replace_max(1_u32).expect("empty replacement inserts once"), None);
+        queue.push(4).expect("second and final slot");
+        assert_eq!(queue.len(), 2);
+        assert_eq!(queue.peek().expect("root read"), Some(&4));
+        assert_eq!(queue.replace_max(7).expect("reuse root"), Some(4));
+        assert_eq!(queue.replace_max(3).expect("reuse root again"), Some(7));
+        assert_eq!(queue.replace_max(0).expect("promote the remaining child"), Some(3));
+        assert_eq!(queue.pop().expect("remove first"), Some(1));
+        assert_eq!(queue.pop().expect("remove second"), Some(0));
+        assert_eq!(queue.peek().expect("empty root"), None);
+        drop(queue);
+        ctx.finish_session().expect("replacements allocate no additional slots");
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 2;
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+        let mut queue = PriorityQueue::new(&ctx).expect("empty queue");
+        queue.push(1_u32).expect("one append unit");
+        let limit = queue.replace_max(2).expect_err("two moved rows need admission");
+        assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+        assert_eq!(limit.operation, "IR priority queue root replacement");
+        drop(queue);
+        assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit));
+    }
+
+
+    #[test]
+    fn priority_queue_peek_preserves_work_refusal() {
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 1;
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+        let mut queue = PriorityQueue::new(&ctx).expect("empty queue");
+        queue.push(1_u32).expect("one append unit");
+        let limit = queue.peek().expect_err("root read needs work");
+        assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+        assert_eq!(limit.operation, "IR priority queue peek");
+        drop(queue);
+        assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit));
+    }
+
 }

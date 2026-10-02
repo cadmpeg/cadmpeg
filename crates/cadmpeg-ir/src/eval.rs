@@ -15,7 +15,6 @@
 use cadmpeg_core::convert::f64_from_index;
 use std::borrow::Cow;
 use std::cmp::Ordering;
-use std::collections::BinaryHeap;
 
 use crate::features::{FinitePoint3, FiniteVector3};
 use crate::geometry::nurbs::bezier::{homogeneous_spans, positive_controls};
@@ -256,7 +255,7 @@ impl PartialOrd for SurfacePatchQueueEntry<'_> {
 
 impl Ord for SurfacePatchQueueEntry<'_> {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        // BinaryHeap is a max-heap. Reverse the lower-bound order so the patch
+        // The queue is a max-heap. Reverse the lower-bound order so the patch
         // with the strongest minimum-distance promise is examined first.
         other
             .lower_bound
@@ -1948,38 +1947,32 @@ fn bounded_nearest_intervals<'ctx>(
     boundaries: &[FiniteReal],
     seed: FiniteReal,
 ) -> Result<(Vec<[FiniteReal; 2]>, cadmpeg_core::decode::ScopedReservation<'ctx>), CodecError> {
-    let mut heap_storage = ctx.reserve_scoped(0, "IR curve inversion interval heap")?;
-    let mut heap_values = Vec::new();
-    let capacity = boundaries.len().min(NURBS_SEARCH_MAX_INTERVALS + 1);
-    ctx.reserve_scoped_vec(&mut heap_storage, &mut heap_values, capacity, "IR curve inversion interval heap")?;
-    let mut nearest = BinaryHeap::from(heap_values);
-    let levels = u64::from(usize::BITS - capacity.leading_zeros()) + 1;
-    // One insertion and removal use at most four heap paths. Each interval
-    // comparison tests at most three scalar keys.
-    let work = u64_from_index(boundaries.len()).checked_mul(levels)
-        .and_then(|work| work.checked_mul(12))
-        .ok_or_else(|| ctx.refuse_codec_limit("IR curve inversion heap scan", u64::MAX - 1, u64::MAX))?;
-    ctx.charge_work(work, "IR curve inversion heap scan")?;
+    let mut nearest = PriorityQueue::new(ctx)?;
     for pair in boundaries.windows(2) {
+        ctx.charge_work(1, "IR curve inversion interval visit")?;
         if pair[0] >= pair[1] { continue; }
         let candidate = SearchInterval {
             bounds: [pair[0], pair[1]],
             distance: interval_distance_to_parameter([pair[0], pair[1]], seed),
         };
         if nearest.len() < NURBS_SEARCH_MAX_INTERVALS {
-            nearest.push(candidate);
-        } else if nearest.peek().is_some_and(|farthest| candidate < *farthest) {
-            nearest.pop();
-            nearest.push(candidate);
+            nearest.push(candidate)?;
+        } else if let Some(farthest) = nearest.peek()? {
+            ctx.charge_work(1, "IR curve inversion candidate comparison")?;
+            if candidate < *farthest {
+                let _farthest = nearest.replace_max(candidate)?;
+            }
         }
     }
-    let mut intervals = nearest.into_vec();
-    ctx.sort_unstable_by(&mut intervals, |first, second| second.cmp(first), |_| 0, "IR curve inversion interval sort")?;
     let mut storage = ctx.reserve_scoped(0, "IR curve inversion intervals")?;
     let mut result = Vec::new();
-    ctx.reserve_scoped_vec(&mut storage, &mut result, intervals.len(), "IR curve inversion intervals")?;
-    ctx.charge_work(u64_from_index(intervals.len()), "IR curve inversion interval copy")?;
-    result.extend(intervals.into_iter().map(|interval| interval.bounds));
+    ctx.reserve_scoped_vec(&mut storage, &mut result, nearest.len(), "IR curve inversion intervals")?;
+    // Popping the max-heap emits the same descending total order used by the
+    // interval stack, which visits its final entry first.
+    while let Some(interval) = nearest.pop()? {
+        ctx.charge_work(1, "IR curve inversion interval copy")?;
+        result.push(interval.bounds);
+    }
     Ok((result, storage))
 }
 
