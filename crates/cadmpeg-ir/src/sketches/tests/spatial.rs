@@ -59,8 +59,7 @@ fn spatial_sketch_geometry_round_trips_and_validates() {
             vec![SpatialSketchEntityUse {
                 entity: circle.clone(),
                 reversed: false,
-            }],
-        )
+            }], &cadmpeg_test_support::service_decode_context(), "spatial profile uniqueness").expect("fixture collection admission")
         .unwrap()],
         native_ref: None,
     });
@@ -893,7 +892,7 @@ fn spatial_profile_admission_preserves_frame_boundary_and_wire() {
         reversed: true,
     }];
     let mut profile =
-        SpatialSketchProfile::try_new(origin, normal, u_axis, boundary.clone()).unwrap();
+        SpatialSketchProfile::try_new(origin, normal, u_axis, boundary.clone(), &cadmpeg_test_support::service_decode_context(), "spatial profile uniqueness").expect("fixture collection admission").unwrap();
     assert_eq!(profile.origin(), origin);
     assert_eq!(
         [profile.normal(), profile.u_axis()],
@@ -913,27 +912,25 @@ fn spatial_profile_admission_preserves_frame_boundary_and_wire() {
         serde_json::from_value::<SpatialSketchProfile>(wire.clone()).unwrap(),
         profile
     );
-    assert!(SpatialSketchProfile::try_new(origin, normal, u_axis, vec![]).is_err());
+    assert!(SpatialSketchProfile::try_new(origin, normal, u_axis, vec![], &cadmpeg_test_support::service_decode_context(), "spatial profile uniqueness").expect("fixture collection admission").is_err());
     assert!(SpatialSketchProfile::try_new(
         origin,
         normal,
         u_axis,
-        vec![boundary[0].clone(), boundary[0].clone()]
-    )
+        vec![boundary[0].clone(), boundary[0].clone()], &cadmpeg_test_support::service_decode_context(), "spatial profile uniqueness").expect("fixture collection admission")
     .is_err());
     for axis in [
         Vector3::new(0.0, 0.0, 0.0),
         normal,
         Vector3::new(f64::NAN, 0.0, 0.0),
     ] {
-        assert!(SpatialSketchProfile::try_new(origin, normal, axis, boundary.clone()).is_err());
+        assert!(SpatialSketchProfile::try_new(origin, normal, axis, boundary.clone(), &cadmpeg_test_support::service_decode_context(), "spatial profile uniqueness").expect("fixture collection admission").is_err());
     }
     assert!(SpatialSketchProfile::try_new(
         origin,
         normal,
         Vector3::new(1.0 + EPS_SPATIAL_FRAME_BOUNDARY * 0.5, 0.0, 0.0),
-        boundary
-    )
+        boundary, &cadmpeg_test_support::service_decode_context(), "spatial profile uniqueness").expect("fixture collection admission")
     .is_ok());
     for (field, invalid) in [
         ("origin", serde_json::json!({"x": null, "y": 0.0, "z": 0.0})),

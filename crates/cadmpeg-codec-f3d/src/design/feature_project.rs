@@ -9148,7 +9148,7 @@ pub(super) fn closed_spatial_sketch_profiles(
                     },
                     "f3d spatial profile boundary use",
                 )?;
-                let profile = SpatialSketchProfile::try_new_for_decode(
+                let profile = SpatialSketchProfile::try_new(
                     center.get(),
                     *normal.as_raw(),
                     *reference_direction.as_raw(),
@@ -9261,7 +9261,7 @@ pub(super) fn closed_spatial_sketch_profiles(
                 "f3d spatial profile boundary use",
             )?;
         }
-        let profile = SpatialSketchProfile::try_new_for_decode(
+        let profile = SpatialSketchProfile::try_new(
             origin,
             normal,
             u_axis,

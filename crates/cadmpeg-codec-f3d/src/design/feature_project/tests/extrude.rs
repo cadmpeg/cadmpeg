@@ -725,8 +725,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
                     )
                     .unwrap(),
                     reversed: false,
-                }],
-            )
+                }], &cadmpeg_test_support::service_decode_context(), "spatial profile uniqueness").expect("fixture collection admission")
             .unwrap()],
             native_ref: Some(placement.id.clone()),
         };

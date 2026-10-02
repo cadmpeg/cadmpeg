@@ -122,8 +122,7 @@ fn selected_spatial_sketch_region_refuses_collection_limit() {
             vec![SpatialSketchEntityUse {
                 entity: entity_id,
                 reversed: false,
-            }],
-        )
+            }], &cadmpeg_test_support::service_decode_context(), "spatial profile uniqueness").expect("fixture collection admission")
         .unwrap()],
         native_ref: None,
     };
@@ -173,8 +172,7 @@ fn all_spatial_sketch_regions_refuse_collection_limit() {
             vec![SpatialSketchEntityUse {
                 entity: entity_id,
                 reversed: false,
-            }],
-        )
+            }], &cadmpeg_test_support::service_decode_context(), "spatial profile uniqueness").expect("fixture collection admission")
         .unwrap()],
         native_ref: None,
     };

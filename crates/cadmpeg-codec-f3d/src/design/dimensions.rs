@@ -5601,7 +5601,7 @@ pub(super) fn exact_atomic_constraint(
             if entities.len() >= 3 && dimension_entity_ids_distinct(ctx, entities)? =>
         {
             let members = copy_dimension_entity_members(ctx, entities)?;
-            let polygon = cadmpeg_ir::sketches::SketchPolygon::try_new_for_decode(
+            let polygon = cadmpeg_ir::sketches::SketchPolygon::try_new(
                 members,
                 ctx,
                 "f3d atomic polygon uniqueness",

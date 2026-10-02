@@ -90,8 +90,7 @@ fn fixture(operation: &'static str, dimension: ResourceDimension) {
                 entity: entity.id().clone(),
                 reversed: false,
             })
-            .collect(),
-    )
+            .collect(), &cadmpeg_test_support::service_decode_context(), "spatial profile uniqueness").expect("fixture collection admission")
     .unwrap();
     let sketch = SpatialSketch {
         id: sketch_id.clone(),
