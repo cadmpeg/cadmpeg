@@ -87,17 +87,21 @@ pub(crate) fn bind_history_classes(
     }
     let mut classes_by_object = HashMap::<u32, Vec<&str>>::new();
     for lane in lanes {
-        let names_by_offset =
-            temporary.with_storage(|| collect_class_map(ctx, lane.names.iter().map(|name| (name.offset, name))))?;
+        let names_by_offset = temporary.with_storage(|| {
+            collect_class_map(ctx, lane.names.iter().map(|name| (name.offset, name)))
+        })?;
         for class in &lane.classes {
             let name_offset = class.offset + 6 + u64_from_index(class.name.len());
             let Some(name) = names_by_offset.get(&name_offset) else {
                 continue;
             };
             if let Some(object_id) = name.object_id.and_then(ObjectId::value) {
-                temporary.with_storage(|| ctx.reserve_map(&mut classes_by_object, 1, "bind SLDPRT history classes"))?;
+                temporary.with_storage(|| {
+                    ctx.reserve_map(&mut classes_by_object, 1, "bind SLDPRT history classes")
+                })?;
                 let classes = classes_by_object.entry(object_id).or_default();
-                temporary.with_storage(|| ctx.reserve_vec(classes, 1, "bind SLDPRT history classes"))?;
+                temporary
+                    .with_storage(|| ctx.reserve_vec(classes, 1, "bind SLDPRT history classes"))?;
                 classes.push(&class.name);
             }
         }
@@ -123,25 +127,30 @@ pub(crate) fn bind_history_classes(
 
     let mut direct_classes_by_name = HashMap::<&str, Vec<&str>>::new();
     for lane in lanes {
-        let names_by_offset = temporary.with_storage(|| collect_class_map(
-            ctx,
-            lane.names
-                .iter()
-                .map(|name| (name.offset, name.value.as_str())),
-        ))?;
+        let names_by_offset = temporary.with_storage(|| {
+            collect_class_map(
+                ctx,
+                lane.names
+                    .iter()
+                    .map(|name| (name.offset, name.value.as_str())),
+            )
+        })?;
         for class in &lane.classes {
             let name_offset = class.offset + 6 + u64_from_index(class.name.len());
             let Some(name) = names_by_offset.get(&name_offset) else {
                 continue;
             };
             if class.role() != FeatureInputClassRole::Native {
-                temporary.with_storage(|| ctx.reserve_map(
-                    &mut direct_classes_by_name,
-                    1,
-                    "bind SLDPRT history classes",
-                ))?;
+                temporary.with_storage(|| {
+                    ctx.reserve_map(
+                        &mut direct_classes_by_name,
+                        1,
+                        "bind SLDPRT history classes",
+                    )
+                })?;
                 let classes = direct_classes_by_name.entry(name).or_default();
-                temporary.with_storage(|| ctx.reserve_vec(classes, 1, "bind SLDPRT history classes"))?;
+                temporary
+                    .with_storage(|| ctx.reserve_vec(classes, 1, "bind SLDPRT history classes"))?;
                 classes.push(&class.name);
             }
         }
@@ -158,7 +167,9 @@ pub(crate) fn bind_history_classes(
     let mut history_name_counts = HashMap::<String, usize>::new();
     for feature in histories.iter().flat_map(|history| &history.features) {
         if !feature.name.is_empty() {
-            temporary.with_storage(|| ctx.reserve_map(&mut history_name_counts, 1, "bind SLDPRT history classes"))?;
+            temporary.with_storage(|| {
+                ctx.reserve_map(&mut history_name_counts, 1, "bind SLDPRT history classes")
+            })?;
             *history_name_counts
                 .entry(temporary.with_storage(|| copy_class_text(ctx, &feature.name))?)
                 .or_default() += 1;
@@ -182,13 +193,17 @@ pub(crate) fn bind_history_classes(
 
     let mut cosmetic_thread_classes = HashMap::<String, Vec<String>>::new();
     for lane in lanes {
-        let mut declared = temporary.with_storage(|| collect_class_vec(
-            ctx,
-            lane.classes
-                .iter()
-                .filter(|class| native_object_class(&class.name) == NativeClassKind::CosmeticThread)
-                .map(|class| class.name.as_str()),
-        ))?;
+        let mut declared = temporary.with_storage(|| {
+            collect_class_vec(
+                ctx,
+                lane.classes
+                    .iter()
+                    .filter(|class| {
+                        native_object_class(&class.name) == NativeClassKind::CosmeticThread
+                    })
+                    .map(|class| class.name.as_str()),
+            )
+        })?;
         ctx.stable_sort_by(
             &mut declared,
             Ord::cmp,
@@ -199,12 +214,14 @@ pub(crate) fn bind_history_classes(
         let [class] = declared.as_slice() else {
             continue;
         };
-        let direct_name_offsets = temporary.with_storage(|| collect_class_set(
-            ctx,
-            lane.classes
-                .iter()
-                .map(|class| class.offset + 6 + u64_from_index(class.name.len())),
-        ))?;
+        let direct_name_offsets = temporary.with_storage(|| {
+            collect_class_set(
+                ctx,
+                lane.classes
+                    .iter()
+                    .map(|class| class.offset + 6 + u64_from_index(class.name.len())),
+            )
+        })?;
         let mut groups = HashMap::<u16, Vec<&crate::records::Feature>>::new();
         for feature in histories
             .iter()
@@ -225,7 +242,8 @@ pub(crate) fn bind_history_classes(
             else {
                 continue;
             };
-            temporary.with_storage(|| ctx.reserve_map(&mut groups, 1, "bind SLDPRT history classes"))?;
+            temporary
+                .with_storage(|| ctx.reserve_map(&mut groups, 1, "bind SLDPRT history classes"))?;
             let group = groups.entry(token).or_default();
             temporary.with_storage(|| ctx.reserve_vec(group, 1, "bind SLDPRT history classes"))?;
             group.push(feature);
@@ -236,15 +254,19 @@ pub(crate) fn bind_history_classes(
                 .all(|feature| cosmetic_thread_parameter_shape(feature))
             {
                 for feature in features {
-                    temporary.with_storage(|| ctx.reserve_map(
-                        &mut cosmetic_thread_classes,
-                        1,
-                        "bind SLDPRT history classes",
-                    ))?;
+                    temporary.with_storage(|| {
+                        ctx.reserve_map(
+                            &mut cosmetic_thread_classes,
+                            1,
+                            "bind SLDPRT history classes",
+                        )
+                    })?;
                     let classes = cosmetic_thread_classes
                         .entry(temporary.with_storage(|| copy_class_text(ctx, &feature.id))?)
                         .or_default();
-                    temporary.with_storage(|| ctx.reserve_vec(classes, 1, "bind SLDPRT history classes"))?;
+                    temporary.with_storage(|| {
+                        ctx.reserve_vec(classes, 1, "bind SLDPRT history classes")
+                    })?;
                     classes.push(temporary.with_storage(|| copy_class_text(ctx, class))?);
                 }
             }
@@ -271,19 +293,21 @@ pub(crate) fn bind_history_classes(
 
     let mut native_startups = Vec::<[&str; 6]>::new();
     for lane in lanes {
-        let resolved = temporary.with_storage(|| collect_class_vec(
-            ctx,
-            lane.classes.iter().filter_map(|class| {
-                matches!(
-                    native_object_class(&class.name),
-                    NativeClassKind::ReferencePlane
-                        | NativeClassKind::OriginProfileFeature
-                        | NativeClassKind::ProfileFeature
-                        | NativeClassKind::Extrusion
-                )
-                .then_some(class.name.as_str())
-            }),
-        ))?;
+        let resolved = temporary.with_storage(|| {
+            collect_class_vec(
+                ctx,
+                lane.classes.iter().filter_map(|class| {
+                    matches!(
+                        native_object_class(&class.name),
+                        NativeClassKind::ReferencePlane
+                            | NativeClassKind::OriginProfileFeature
+                            | NativeClassKind::ProfileFeature
+                            | NativeClassKind::Extrusion
+                    )
+                    .then_some(class.name.as_str())
+                }),
+            )
+        })?;
         for classes in resolved.windows(4) {
             let [plane, origin, sketch, extrusion] = classes else {
                 continue;
@@ -293,7 +317,9 @@ pub(crate) fn bind_history_classes(
                 && native_object_class(sketch) == NativeClassKind::ProfileFeature
                 && native_object_class(extrusion) == NativeClassKind::Extrusion
             {
-                temporary.with_storage(|| ctx.reserve_vec(&mut native_startups, 1, "bind SLDPRT history classes"))?;
+                temporary.with_storage(|| {
+                    ctx.reserve_vec(&mut native_startups, 1, "bind SLDPRT history classes")
+                })?;
                 native_startups.push([plane, plane, plane, origin, sketch, extrusion]);
             }
         }
@@ -330,11 +356,14 @@ pub(crate) fn bind_history_classes(
     let mut classes_by_type = HashMap::<String, Vec<String>>::new();
     for feature in histories.iter().flat_map(|history| &history.features) {
         if let Some(class) = &feature.input_class {
-            temporary.with_storage(|| ctx.reserve_map(&mut classes_by_type, 1, "bind SLDPRT history classes"))?;
+            temporary.with_storage(|| {
+                ctx.reserve_map(&mut classes_by_type, 1, "bind SLDPRT history classes")
+            })?;
             let classes = classes_by_type
                 .entry(temporary.with_storage(|| copy_class_text(ctx, &feature.kind))?)
                 .or_default();
-            temporary.with_storage(|| ctx.reserve_vec(classes, 1, "bind SLDPRT history classes"))?;
+            temporary
+                .with_storage(|| ctx.reserve_vec(classes, 1, "bind SLDPRT history classes"))?;
             classes.push(temporary.with_storage(|| copy_class_text(ctx, class))?);
         }
     }
@@ -357,17 +386,19 @@ pub(crate) fn bind_history_classes(
         }
     }
 
-    let direct_name_offsets = temporary.with_storage(|| collect_class_set(
-        ctx,
-        lanes.iter().flat_map(|lane| {
-            lane.classes.iter().map(|class| {
-                (
-                    lane.id.as_str(),
-                    class.offset + 6 + u64_from_index(class.name.len()),
-                )
-            })
-        }),
-    ))?;
+    let direct_name_offsets = temporary.with_storage(|| {
+        collect_class_set(
+            ctx,
+            lanes.iter().flat_map(|lane| {
+                lane.classes.iter().map(|class| {
+                    (
+                        lane.id.as_str(),
+                        class.offset + 6 + u64_from_index(class.name.len()),
+                    )
+                })
+            }),
+        )
+    })?;
     let mut classes_by_token = HashMap::<(&str, u16), Vec<String>>::new();
     for feature in histories.iter().flat_map(|history| &history.features) {
         let Some(class) = &feature.input_class else {
@@ -397,11 +428,15 @@ pub(crate) fn bind_history_classes(
                     continue;
                 };
                 if let Some(token) = repeated_class_token(&lane.native_payload, offset) {
-                    temporary.with_storage(|| ctx.reserve_map(&mut classes_by_token, 1, "bind SLDPRT history classes"))?;
+                    temporary.with_storage(|| {
+                        ctx.reserve_map(&mut classes_by_token, 1, "bind SLDPRT history classes")
+                    })?;
                     let classes = classes_by_token
                         .entry((lane.id.as_str(), token))
                         .or_default();
-                    temporary.with_storage(|| ctx.reserve_vec(classes, 1, "bind SLDPRT history classes"))?;
+                    temporary.with_storage(|| {
+                        ctx.reserve_vec(classes, 1, "bind SLDPRT history classes")
+                    })?;
                     classes.push(temporary.with_storage(|| copy_class_text(ctx, class))?);
                 }
             }
@@ -452,7 +487,9 @@ pub(crate) fn bind_history_classes(
                     .get(&(lane.id.as_str(), token))
                     .map(Vec::as_slice)
                 {
-                    temporary.with_storage(|| ctx.reserve_vec(&mut candidates, 1, "bind SLDPRT history classes"))?;
+                    temporary.with_storage(|| {
+                        ctx.reserve_vec(&mut candidates, 1, "bind SLDPRT history classes")
+                    })?;
                     candidates.push(temporary.with_storage(|| copy_class_text(ctx, class))?);
                 }
             }
@@ -469,7 +506,8 @@ pub(crate) fn bind_history_classes(
         }
     }
 
-    let legacy_hole_bindings = temporary.with_storage(|| legacy_repeated_hole_wizard_classes(ctx, histories, lanes))?;
+    let legacy_hole_bindings =
+        temporary.with_storage(|| legacy_repeated_hole_wizard_classes(ctx, histories, lanes))?;
     for feature in histories
         .iter_mut()
         .flat_map(|history| &mut history.features)

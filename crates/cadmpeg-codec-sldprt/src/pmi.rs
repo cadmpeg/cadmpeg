@@ -848,7 +848,10 @@ fn extract_dimension(
     parent: &str,
 ) -> Result<Option<PmiDimension>, PmiParseError> {
     let mut cursor = offset;
-    let Some(outer_value) = parse_value(ctx, payload, &mut cursor, 0)? else {
+    let mut payload_storage = ctx.reserve_scoped(0, "SLDPRT PMI parsed payload storage")?;
+    let Some(outer_value) =
+        payload_storage.with_storage(|| parse_value(ctx, payload, &mut cursor, 0))?
+    else {
         // Only attribute a loss when the window still names the PMI keys; a
         // bare GUID before an unrelated fixmap is common in UnQLite payloads.
         return if looks_like_pmi_map(payload, offset) {

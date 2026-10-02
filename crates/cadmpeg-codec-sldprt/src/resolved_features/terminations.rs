@@ -1797,11 +1797,7 @@ pub(crate) fn project_compact_combine_paths(
                     continue;
                 }
             }
-            ctx.reserve_capacity(
-                &mut dependencies,
-                1,
-                OPERATION,
-            )?;
+            ctx.reserve_capacity(&mut dependencies, 1, OPERATION)?;
             dependencies.push(dependency);
         }
         ctx.charge_work(u64_from_index(history_feature.id.len()), OPERATION)?;

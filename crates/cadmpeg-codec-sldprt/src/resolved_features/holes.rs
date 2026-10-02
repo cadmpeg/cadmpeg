@@ -4382,15 +4382,21 @@ pub(crate) fn project_bore_backed_position_sketches(
         ctx.charge_work(u64_from_index(text.len()), OPERATION)?;
         ctx.format_retained(format_args!("{text}"), OPERATION)
     };
+    let mut lookup_storage = ctx.reserve_scoped(
+        0,
+        "SLDPRT project_bore_backed_position_sketches lookup storage",
+    )?;
     let mut native_features = HashMap::new();
     for feature in histories.iter().flat_map(|history| &history.features) {
         ctx.charge_work(1, OPERATION)?;
-        ctx.insert_hash_map(
-            &mut native_features,
-            feature.id.as_str(),
-            feature,
-            OPERATION,
-        )?;
+        lookup_storage.with_storage(|| {
+            ctx.insert_hash_map(
+                &mut native_features,
+                feature.id.as_str(),
+                feature,
+                OPERATION,
+            )
+        })?;
     }
     let mut model_features = HashMap::new();
     for feature in features.iter() {
@@ -4398,7 +4404,9 @@ pub(crate) fn project_bore_backed_position_sketches(
         let Some(native) = feature.native_ref.as_deref() else {
             continue;
         };
-        ctx.insert_hash_map(&mut model_features, native, &feature.id, OPERATION)?;
+        lookup_storage.with_storage(|| {
+            ctx.insert_hash_map(&mut model_features, native, &feature.id, OPERATION)
+        })?;
     }
     let mut projections = Vec::new();
     for hole in features.iter() {
@@ -4558,7 +4566,8 @@ pub(crate) fn project_bore_backed_position_sketches(
             };
             let sketch_ref = SketchId::mint(copy_text(sketch_id.as_str())?)
                 .map_err(|_| CodecError::malformed("invalid admitted SLDPRT sketch identity"))?;
-            ctx.reserve_vec(&mut projected_entities, 1, OPERATION)?;
+            lookup_storage
+                .with_storage(|| ctx.reserve_vec(&mut projected_entities, 1, OPERATION))?;
             projected_entities.push(SketchEntity::new(entity_id, sketch_ref, geometry));
         }
         if !admitted_geometry {
@@ -4572,7 +4581,7 @@ pub(crate) fn project_bore_backed_position_sketches(
         let name = model_position.name.as_deref().map(copy_text).transpose()?;
         let configuration = lane.configuration.as_deref().map(copy_text).transpose()?;
         let native_ref = Some(copy_text(&lane.id)?);
-        ctx.reserve_vec(&mut projections, 1, OPERATION)?;
+        lookup_storage.with_storage(|| ctx.reserve_vec(&mut projections, 1, OPERATION))?;
         projections.push(Projection {
             feature: feature_index,
             sketch: Sketch {
