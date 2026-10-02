@@ -46,20 +46,10 @@ impl<'tcx> Analysis<'_, 'tcx> {
     }
 
     pub(crate) fn checked_body(&self, definition: DefId) -> bool {
-        types::checked(self.tcx, definition)
+        crate::production(self.tcx, definition)
             && match definition.as_local() {
-                Some(local) => {
-                    crate::production(self.tcx, local)
-                        && self.tcx.hir_maybe_body_owned_by(local).is_some()
-                }
-                None => {
-                    matches!(
-                        self.tcx.def_kind(definition),
-                        rustc_hir::def::DefKind::Fn
-                            | rustc_hir::def::DefKind::AssocFn
-                            | rustc_hir::def::DefKind::Closure
-                    ) && self.tcx.trait_of_assoc(definition).is_none()
-                }
+                Some(local) => self.tcx.hir_maybe_body_owned_by(local).is_some(),
+                None => self.tcx.is_mir_available(definition),
             }
     }
 

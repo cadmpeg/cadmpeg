@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-use crate::{flow, Analysis, Findings};
+use crate::{external, flow, types, Analysis, Findings};
 use rustc_hir::intravisit::{walk_expr, Visitor};
 use rustc_hir::{Expr, ExprKind};
 use rustc_middle::ty::{Instance, TyCtxt, TypeVisitableExt};
@@ -17,7 +17,7 @@ pub(crate) struct Instantiation<'tcx> {
 pub(crate) fn collect<'tcx>(tcx: TyCtxt<'tcx>, owners: &[LocalDefId]) -> Vec<Instantiation<'tcx>> {
     let mut result = Vec::new();
     for owner in owners {
-        if !crate::production(tcx, *owner) {
+        if !crate::production(tcx, owner.to_def_id()) {
             continue;
         }
         let mut findings = Findings::default();
@@ -140,6 +140,8 @@ pub(crate) fn check_imported<'tcx>(
             continue;
         }
         let body = tcx.instance_mir(instance.def);
+        let has_context = body.local_decls.iter().any(|local|
+            types::has_context(tcx, local.ty, &mut Vec::new()));
         for block in body.basic_blocks.iter() {
             let rustc_middle::mir::TerminatorKind::Call {
                 func,
@@ -207,9 +209,6 @@ pub(crate) fn check_imported<'tcx>(
                 pending.push(resolved);
                 continue;
             }
-            if tcx.trait_of_assoc(*definition).is_none() {
-                continue;
-            }
             let receiver = args.first().map(|operand| {
                 instance.instantiate_mir(
                     tcx,
@@ -227,30 +226,63 @@ pub(crate) fn check_imported<'tcx>(
             let Some(receiver) = receiver else {
                 continue;
             };
-            let allocation = if summary.allocation == crate::external::Allocation::Clone {
-                let output = instance.instantiate_mir(
-                    tcx,
-                    rustc_middle::ty::EarlyBinder::bind(tcx, destination.ty(body, tcx).ty),
-                );
-                reporter.clone_shape(output)
-            } else if summary.allocation == crate::external::Allocation::None {
-                crate::types::Shape::Fixed
-            } else {
-                crate::types::heap(tcx, receiver.peel_refs(), &mut Vec::new())
+            let raw_output = destination.ty(body, tcx).ty;
+            let output = instance.instantiate_mir(tcx, rustc_middle::ty::EarlyBinder::bind(tcx, raw_output));
+            let raw_receiver = args.first().map(|operand| operand.node.ty(body, tcx));
+            let count_index = match summary.allocation {
+                external::Allocation::Capacity => Some(0),
+                external::Allocation::Repeat => Some(1),
+                _ => None,
             };
-            let work = if summary.work == crate::external::Work::Fixed
-                || summary.allocation == crate::external::Allocation::Clone
-                    && allocation == crate::types::Shape::Fixed
-            {
-                crate::types::Shape::Fixed
-            } else {
-                crate::types::work(tcx, receiver, &mut Vec::new())
+            let count = count_index.and_then(|index| args.get(index)).and_then(|operand|
+                match &operand.node {
+                    rustc_middle::mir::Operand::Constant(value) =>
+                        value.const_.try_eval_bits(tcx, reporter.typing_env()),
+                    _ => None,
+                });
+            let allocation_shape = |output: rustc_middle::ty::Ty<'tcx>, receiver: rustc_middle::ty::Ty<'tcx>, concrete: bool| {
+                match summary.allocation {
+                    external::Allocation::None => types::Shape::Fixed,
+                    external::Allocation::Clone if concrete => reporter.clone_shape(output),
+                    external::Allocation::Growth => types::heap(tcx, receiver.peel_refs(), &mut Vec::new()),
+                    external::Allocation::Capacity if count.is_some() => types::Shape::Fixed,
+                    external::Allocation::Repeat if count == Some(0) => types::Shape::Fixed,
+                    external::Allocation::Repeat if count.is_some() => {
+                        if concrete { reporter.clone_shape(receiver.peel_refs()) }
+                        else { types::heap(tcx, receiver.peel_refs(), &mut Vec::new()) }
+                    }
+                    external::Allocation::Conversion if output == receiver
+                        || matches!(receiver.peel_refs().kind(), rustc_middle::ty::Array(..)) => types::Shape::Fixed,
+                    _ => types::heap(tcx, output, &mut Vec::new()),
+                }
             };
-            for (shape, rule) in [
-                (allocation, "uncharged_decode_allocation"),
-                (work, "uncharged_decode_work"),
+            let allocation = allocation_shape(output, receiver, true);
+            let symbolic_allocation = raw_receiver.map_or(types::Shape::Unknown,
+                |receiver| allocation_shape(raw_output, receiver, false));
+            let index = match summary.work { external::Work::Argument(index) => index, _ => 0 };
+            let raw_extent = args.get(index).map(|operand| operand.node.ty(body, tcx));
+            let work_shape = |extent, allocation| {
+                if summary.work == external::Work::Fixed
+                    || summary.allocation == external::Allocation::Clone && allocation == types::Shape::Fixed
+                    || summary.work == external::Work::Repeat && count == Some(0) {
+                    types::Shape::Fixed
+                } else {
+                    let child = types::work(tcx, extent, &mut Vec::new());
+                    if summary.work == external::Work::Repeat && child != types::Shape::Unknown && count.is_none() {
+                        child.join(types::Shape::Dynamic)
+                    } else { child }
+                }
+            };
+            let symbolic_work = raw_extent.map_or(types::Shape::Unknown,
+                |extent| work_shape(extent, symbolic_allocation));
+            let work = raw_extent.map_or(types::Shape::Unknown, |extent|
+                work_shape(instance.instantiate_mir(tcx, rustc_middle::ty::EarlyBinder::bind(tcx, extent)), allocation));
+            for (shape, symbolic, rule) in [
+                (allocation, symbolic_allocation, "uncharged_decode_allocation"),
+                (work, symbolic_work, "uncharged_decode_work"),
             ] {
-                if shape != crate::types::Shape::Fixed {
+                if shape != types::Shape::Fixed && symbolic != types::Shape::Dynamic {
+                    let shape = if has_context { types::Shape::Unknown } else { shape };
                     reporter.report(
                         root.span,
                         if shape == crate::types::Shape::Unknown {

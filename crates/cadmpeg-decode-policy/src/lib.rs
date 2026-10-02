@@ -43,7 +43,7 @@ impl Callbacks for DecodeCallbacks {
         let instantiations = instantiation::collect(tcx, &owners);
         let mut bodies = HashMap::new();
         for owner in owners {
-            if production(tcx, owner) {
+            if production(tcx, owner.to_def_id()) {
                 let mut findings = Findings::default();
                 Analysis {
                     tcx,
@@ -163,8 +163,8 @@ impl Callbacks for DecodeCallbacks {
     }
 }
 
-fn production(tcx: TyCtxt<'_>, owner: LocalDefId) -> bool {
-    if !matches!(
+fn production(tcx: TyCtxt<'_>, owner: DefId) -> bool {
+    if !types::checked(tcx, owner) || !matches!(
         tcx.def_kind(owner),
         rustc_hir::def::DefKind::Fn
             | rustc_hir::def::DefKind::AssocFn
@@ -217,19 +217,7 @@ fn production(tcx: TyCtxt<'_>, owner: LocalDefId) -> bool {
     }) {
         return false;
     }
-    let symbol = tcx.crate_name(rustc_span::def_id::LOCAL_CRATE);
-    let crate_name = symbol.as_str();
-    std::env::var_os("CADMPEG_POLICY_FIXTURE").is_some()
-        || crate_name.starts_with("cadmpeg_codec_")
-        || matches!(
-            crate_name,
-            "cadmpeg_core"
-                | "cadmpeg_ir"
-                | "cadmpeg_container"
-                | "cadmpeg_asm"
-                | "cadmpeg_parasolid"
-                | "cadmpeg_protein"
-        )
+    true
 }
 
 struct Analysis<'a, 'tcx> {
