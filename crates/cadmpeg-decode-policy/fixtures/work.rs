@@ -11,6 +11,8 @@ pub fn decode(ctx: &DecodeContext, bytes: &[u8], other: &[u8], n: usize, flag: b
     let _equal = bytes == other; // finding: uncharged_decode_work
     let _fixed_equal = bytes == b"fixed";
     let _scalar_equal = n == 5;
+    let _scalar_min = n.min(4);
+    let _scalar_max = n.max(4);
     let _count = bytes.iter().count(); // finding: uncharged_decode_work
     let _search = bytes.iter().any(|b| *b == 0); // finding: uncharged_decode_work
     let _prefix = bytes.starts_with(other); // finding: uncharged_decode_work

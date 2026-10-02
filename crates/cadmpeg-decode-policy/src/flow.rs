@@ -131,7 +131,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
         let Some((definition, operands)) = self.call(expression) else { return; };
         let name = self.tcx.item_name(definition);
         if !self.context_operation(expression) || !self.propagated(expression) { return; }
-        if matches!(name.as_str(), "charge_retained" | "charge_retained_limit" | "reserve_scoped" | "reserve_scoped_limit" | "reserve_vec" | "reserve_vec_limit" | "collection_vec" | "vector_storage" | "reserve_capacity" | "try_reserve_retained_text" | "reserve_set" | "reserve_map" | "reserve_scoped_vec" | "reserve_scoped_vec_limit" | "reserve_temporary_vec" | "charge_hash_growth" | "admit_btree_entry" | "admit_btree_node_storage" | "admit_retained_btree_record" | "charge_input") { self.flow.storage = true; }
+        if matches!(name.as_str(), "charge_retained" | "charge_retained_limit" | "reserve_scoped" | "reserve_scoped_limit" | "reserve_vec" | "reserve_vec_limit" | "collection_vec" | "vector_storage" | "reserve_capacity" | "try_reserve_retained_text" | "reserve_set" | "reserve_map" | "reserve_scoped_vec" | "reserve_scoped_vec_limit" | "reserve_temporary_vec" | "charge_hash_growth" | "admit_btree_entry" | "admit_btree_node_storage" | "admit_retained_btree_record" | "charge_input" | "linear_growth" | "admit_hash_map_entry" | "scoped_vector_storage" | "reserve_retained_vec_storage") { self.flow.storage = true; }
         if !matches!(name.as_str(), "charge_work" | "charge_work_limit") { return; }
         if let Some(amount) = operands.get(1) {
             if matches!(amount.kind, ExprKind::Lit(literal) if matches!(literal.node, rustc_ast::LitKind::Int(value, _) if value.get() == 0)) { return; }

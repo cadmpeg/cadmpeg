@@ -39,17 +39,16 @@ impl<'tcx> Analysis<'_, 'tcx> {
         let name = self.tcx.item_name(definition);
         if self.context_operation(expression) { return; }
         if !types::standard(self.tcx, definition) {
-            if operands.iter().any(|operand| types::work(self.tcx, self.typeck.expr_ty(operand), &mut Vec::new()) != Shape::Fixed) {
-                // Calls into opaque code can hide scans even when they return a scalar.
-                if self.local_has_effects(definition) != Some(false) {
-                    let paid = self.take_credit(&operands);
-                    self.work_report(expression.span, Shape::Unknown, paid, "opaque callee work");
-                }
+            // An unavailable body can scale work with a scalar count too.
+            let known_index_conversion = self.tcx.crate_name(definition.krate).as_str() == "cadmpeg_core" && name.as_str() == "u64_from_index";
+            if !known_index_conversion && self.local_has_effects(definition) != Some(false) {
+                let paid = self.take_credit(&operands);
+                self.work_report(expression.span, Shape::Unknown, paid, &format!("opaque callee work {}", self.tcx.def_path_str(definition)));
             }
             return;
         }
         let name = name.as_str();
-        if matches!(name, "clone" | "eq" | "cmp" | "partial_cmp" | "hash") {
+        if matches!(name, "clone" | "eq" | "cmp" | "partial_cmp" | "hash" | "from" | "into" | "into_owned" | "to_owned") {
             if let Some(custom) = self.custom_trait(expression, definition) {
                 if self.local_has_effects(custom) != Some(false) {
                     self.work_report(expression.span, Shape::Unknown, Some(false), "custom trait work");
@@ -70,11 +69,14 @@ impl<'tcx> Analysis<'_, 'tcx> {
             return;
         }
         if matches!(name, "from" | "into" | "into_owned") {
-            if self.typeck.expr_ty(expression) == operands.first().map_or(self.typeck.expr_ty(expression), |operand| self.typeck.expr_ty(operand)) { return; }
+            let result = self.typeck.expr_ty(expression);
+            if match result.kind() { rustc_middle::ty::RawPtr(_, _) => true, rustc_middle::ty::Adt(definition, _) => types::standard(self.tcx, definition.did()) && self.tcx.item_name(definition.did()).as_str() == "NonNull", _ => false } { return; }
+            if result == operands.first().map_or(self.typeck.expr_ty(expression), |operand| self.typeck.expr_ty(operand)) { return; }
             if let Some(receiver) = operands.first() {
                 if matches!(self.typeck.expr_ty(receiver).peel_refs().kind(), rustc_middle::ty::Str | rustc_middle::ty::Slice(_)) {
+                    let known_copy = matches!(result.kind(), rustc_middle::ty::Adt(definition, _) if types::standard(self.tcx, definition.did()) && matches!(self.tcx.item_name(definition.did()).as_str(), "String" | "Vec" | "Box" | "Rc" | "Arc" | "PathBuf" | "OsString"));
                     let paid = self.take_credit(&operands);
-                    self.work_report(expression.span, if self.constant(receiver, &mut Vec::new()) { Shape::Fixed } else { Shape::Dynamic }, paid, name);
+                    self.work_report(expression.span, if self.constant(receiver, &mut Vec::new()) { Shape::Fixed } else if known_copy { Shape::Dynamic } else { Shape::Unknown }, paid, name);
                     return;
                 }
             }
@@ -91,6 +93,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
         }
         let Some(receiver) = operands.first() else { return; };
         let value = self.typeck.expr_ty(receiver).peel_refs();
+        if matches!(value.kind(), rustc_middle::ty::Bool | rustc_middle::ty::Char | rustc_middle::ty::Int(_) | rustc_middle::ty::Uint(_) | rustc_middle::ty::Float(_)) { return; }
         let vector = matches!(value.kind(), rustc_middle::ty::Adt(definition, _) if types::standard(self.tcx, definition.did()) && self.tcx.item_name(definition.did()).as_str() == "Vec");
         if matches!(name, "get" | "get_mut" | "split_at") && (vector || matches!(value.kind(), rustc_middle::ty::Slice(_) | rustc_middle::ty::Array(_, _))) { return; }
         if matches!(name, "clear" | "truncate") && vector {
@@ -150,7 +153,6 @@ impl<'tcx> Analysis<'_, 'tcx> {
                     return None;
                 }
                 if matches!(name.as_str(), "charge_collection_items" | "charge_collection_items_limit" | "charge_retained" | "charge_retained_limit" | "reserve_scoped" | "reserve_scoped_limit") { return Some(false); }
-                if matches!(name.as_str(), "push_vec" | "insert_btree_map" | "insert_btree_set" | "copy_retained_text" | "copy_retained_text_limit" | "push_back" | "push_front" | "push_hash_group") && (self.tcx.crate_name(definition.krate).as_str() == "cadmpeg_core" || std::env::var_os("CADMPEG_POLICY_FIXTURE").is_some()) { return Some(true); }
                 None
             }
             ExprKind::If(condition, yes, Some(no)) if self.fixed_value(condition) => {
@@ -205,6 +207,11 @@ impl<'tcx> Analysis<'_, 'tcx> {
             guard.visit_expr(expression);
             if !guard.valid { return false; }
         }
+        if let Some(tail) = body.expr {
+            let mut guard = ShrinkGuard { analysis: self, variable: &variable_key, valid: true };
+            guard.visit_expr(tail);
+            if !guard.valid { return false; }
+        }
         shrinking
     }
 
@@ -232,7 +239,11 @@ impl<'tcx> Analysis<'_, 'tcx> {
                                 _ => None,
                             });
                             let prefix = user_body.and_then(|body| self.prefix_paid(body));
-                            let effective = if paid == Some(true) { paid } else if self.skipped_source(input) { Some(false) } else { prefix };
+                            let effective = if paid == Some(true) {
+                                if self.capacity_iteration(input) { None } else { paid }
+                            } else if paid.is_none() {
+                                if prefix == Some(true) && !self.skipped_source(input) { prefix } else { None }
+                            } else if self.skipped_source(input) { Some(false) } else { prefix };
                             self.work_report(header, shape, effective, "for loop");
                             let saved = self.flow.clone();
                             self.flow.work.clear();
@@ -320,6 +331,9 @@ impl<'tcx> Visitor<'tcx> for ShrinkGuard<'_, '_, 'tcx> {
             }
             ExprKind::Continue(_) | ExprKind::Loop(_, _, _, _) => self.valid = false,
             _ => (),
+        }
+        if let Some((_, operands)) = self.analysis.call(expression) {
+            if operands.iter().any(|operand| matches!(self.analysis.typeck.expr_ty_adjusted(operand).kind(), rustc_middle::ty::Ref(_, _, rustc_hir::Mutability::Mut)) && self.analysis.key(operand, &mut Vec::new()).as_deref() == Some(self.variable)) { self.valid = false; }
         }
         walk_expr(self, expression);
     }

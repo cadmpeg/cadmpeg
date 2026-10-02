@@ -72,6 +72,15 @@ impl<'tcx> Analysis<'_, 'tcx> {
             }
             return;
         }
+        if matches!(name, "from" | "into") && types::standard(self.tcx, definition) {
+            if let ty::Adt(result, _) = self.typeck.expr_ty(expression).kind() {
+                if types::standard(self.tcx, result.did()) && matches!(self.tcx.item_name(result.did()).as_str(), "Rc" | "Arc") && operands.first().is_some_and(|operand| matches!(self.typeck.expr_ty(operand).peel_refs().kind(), ty::Slice(_) | ty::Str)) {
+                    let shape = if operands.first().is_some_and(|operand| self.constant(operand, &mut Vec::new())) { Shape::Fixed } else { Shape::Dynamic };
+                    self.shape_report(expression, shape, "shared owned copy");
+                    return;
+                }
+            }
+        }
         let result = types::heap(self.tcx, self.typeck.expr_ty(expression), &mut Vec::new());
         if result == Shape::Fixed { return; }
         if name == "format" && types::standard(self.tcx, definition) {
