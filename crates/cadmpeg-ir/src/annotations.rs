@@ -10,7 +10,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use cadmpeg_core::decode::{
-    u64_from_index, DecodeArena, DecodeContext, DecodePolicy, ResourceLimit, ScopedReservation,
+    u64_from_index, DecodeContext, ResourceLimit, ScopedReservation,
 };
 use cadmpeg_core::CodecError;
 
@@ -416,24 +416,6 @@ impl AnnotationBuilder {
         self
     }
 
-    /// Mark a field as derived through context-free construction.
-    pub fn derived(&mut self, id: impl Display, field: impl Into<String>) -> Result<&mut Self, AnnotationFieldError> {
-        self.state.derived(id, field)?;
-        Ok(self)
-    }
-
-    /// Set field exactness through context-free construction.
-    pub fn field_exactness(&mut self, id: impl Display, field: impl Into<String>, exactness: Exactness) -> Result<&mut Self, AnnotationFieldError> {
-        self.state.field_exactness(id, field, exactness)?;
-        Ok(self)
-    }
-
-    /// Set field exactness with already owned keys.
-    pub fn field_exactness_owned(&mut self, id: String, field: String, exactness: Exactness) -> Result<&mut Self, AnnotationFieldError> {
-        self.state.field_exactness_owned(id, field, exactness)?;
-        Ok(self)
-    }
-
     /// Finish a builder whose storage is retained.
     pub fn build(self) -> Annotations { self.state.build() }
 }
@@ -482,26 +464,20 @@ impl<Storage: AnnotationStorage> AnnotationBuilder<Storage> {
     }
 
     /// Mark a field as derived under the caller's context.
-    pub fn derived_for_decode(&mut self, ctx: &DecodeContext<'_>, id: impl Display, field: &str) -> Result<&mut Self, AnnotationFieldError> {
-        self.update(|state| state.derived_for_decode(ctx, id, field).map(|_| ()))?;
-        Ok(self)
+    pub fn derived(&mut self, ctx: &DecodeContext<'_>, id: impl Display, field: &str) -> Result<&mut Self, AnnotationFieldError> {
+        self.field_exactness(ctx, id, field, Exactness::Derived)
     }
 
     /// Set field exactness under the caller's context.
-    pub fn field_exactness_for_decode<'f>(&mut self, ctx: &DecodeContext<'_>, id: impl Display, field: impl Into<std::borrow::Cow<'f, str>>, exactness: Exactness) -> Result<&mut Self, AnnotationFieldError> {
-        self.update(|state| state.field_exactness_for_decode(ctx, id, field, exactness).map(|_| ()))?;
+    pub fn field_exactness<'f>(&mut self, ctx: &DecodeContext<'_>, id: impl Display, field: impl Into<std::borrow::Cow<'f, str>>, exactness: Exactness) -> Result<&mut Self, AnnotationFieldError> {
+        self.update(|state| state.field_exactness(ctx, id, field, exactness).map(|_| ()))?;
         Ok(self)
     }
 
     /// Set field exactness with already admitted owned keys.
-    pub fn field_exactness_owned_for_decode(&mut self, ctx: &DecodeContext<'_>, id: String, field: String, exactness: Exactness) -> Result<&mut Self, AnnotationFieldError> {
-        self.update(|state| state.field_exactness_owned_for_decode(ctx, id, field, exactness).map(|_| ()))?;
+    pub fn field_exactness_owned(&mut self, ctx: &DecodeContext<'_>, id: String, field: String, exactness: Exactness) -> Result<&mut Self, AnnotationFieldError> {
+        self.update(|state| state.field_exactness_owned(ctx, id, field, exactness).map(|_| ()))?;
         Ok(self)
-    }
-
-    /// Report the entries a derived field would add.
-    pub fn derived_field_admission(&self, id: &str, field: &str) -> (bool, bool) {
-        self.state.derived_field_admission(id, field)
     }
 
     /// Retain exactness selected by identity.
@@ -726,40 +702,8 @@ impl AnnotationState {
         Ok(self.exactness_owned(id, exactness))
     }
 
-    /// Mark one serialized field as deterministically derived.
-    fn derived(
-        &mut self,
-        id: impl Display,
-        field: impl Into<String>,
-    ) -> Result<&mut Self, AnnotationFieldError> {
-        self.field_exactness(id, field, Exactness::Derived)
-    }
-
-    /// Mark a derived field under the caller's decode budget.
-    fn derived_for_decode(
-        &mut self,
-        ctx: &DecodeContext<'_>,
-        id: impl Display,
-        field: &str,
-    ) -> Result<&mut Self, AnnotationFieldError> {
-        self.field_exactness_for_decode(ctx, id, field, Exactness::Derived)
-    }
-
-    /// Set field exactness through the default decode policy.
-    fn field_exactness(
-        &mut self,
-        id: impl Display,
-        field: impl Into<String>,
-        exactness: Exactness,
-    ) -> Result<&mut Self, AnnotationFieldError> {
-        let arena = DecodeArena::new();
-        let policy = DecodePolicy::default();
-        let (ctx, _) = DecodeContext::from_root_bytes_limit(&[], &arena, &policy)?;
-        self.field_exactness_for_decode(&ctx, id, field.into(), exactness)
-    }
-
     /// Set field exactness after admitting retained keys and records.
-    fn field_exactness_for_decode<'f>(
+    fn field_exactness<'f>(
         &mut self,
         ctx: &DecodeContext<'_>,
         id: impl Display,
@@ -775,21 +719,8 @@ impl AnnotationState {
         self.insert_field_exactness(ctx, id, true, field.into(), exactness)
     }
 
-    /// Set field exactness with owned input strings under the default policy.
-    fn field_exactness_owned(
-        &mut self,
-        id: String,
-        field: String,
-        exactness: Exactness,
-    ) -> Result<&mut Self, AnnotationFieldError> {
-        let arena = DecodeArena::new();
-        let policy = DecodePolicy::default();
-        let (ctx, _) = DecodeContext::from_root_bytes_limit(&[], &arena, &policy)?;
-        self.field_exactness_owned_for_decode(&ctx, id, field, exactness)
-    }
-
     /// Admit map records for already owned identity and field strings.
-    fn field_exactness_owned_for_decode(
+    fn field_exactness_owned(
         &mut self,
         ctx: &DecodeContext<'_>,
         id: String,
@@ -878,15 +809,6 @@ impl AnnotationState {
                     entry.get_mut().fields_mut().insert(field, exactness);
                 }
             }
-        }
-    }
-
-    /// Report which exactness map entries a derived field would add.
-    #[must_use]
-    fn derived_field_admission(&self, id: &str, field: &str) -> (bool, bool) {
-        match self.annotations.exactness.get(id) {
-            Some(note) => (false, !note.fields().contains_key(field)),
-            None => (true, true),
         }
     }
 
@@ -1311,7 +1233,7 @@ mod tests {
         let stream = super::StreamHandle::new(crate::stream_name!("test"));
         builder.note("test:point#0", &stream, 7).tag("point");
         builder
-            .derived("test:point#0", "position")
+            .derived(&cadmpeg_test_support::service_decode_context(), "test:point#0", "position")
             .expect("field path");
 
         let run = |collection_limit: u64, retained_limit: u64| {
@@ -1343,7 +1265,7 @@ mod tests {
         let mut builder = super::AnnotationBuilder::new();
         let stream = super::StreamHandle::new(crate::stream_name!("test"));
         builder.note("test:point#0", &stream, 7).tag("point");
-        builder.derived("test:point#0", "position").unwrap();
+        builder.derived(&cadmpeg_test_support::service_decode_context(), "test:point#0", "position").unwrap();
         let original = builder.build();
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
@@ -1363,7 +1285,7 @@ mod tests {
         let mut builder = super::AnnotationBuilder::new();
         let stream = super::StreamHandle::new(crate::stream_name!("test"));
         builder.note("test:point#0", &stream, 7).tag("point");
-        builder.derived("test:point#0", "position").unwrap();
+        builder.derived(&cadmpeg_test_support::service_decode_context(), "test:point#0", "position").unwrap();
         let original = builder.build();
         for dimension in [ResourceDimension::MaterializedBytes, ResourceDimension::CollectionItems, ResourceDimension::WorkUnits] {
             let arena = DecodeArena::new();
@@ -1589,10 +1511,10 @@ mod tests {
                     owned.exactness_owned("test:point#1".to_string(), exactness);
                 }
                 borrowed
-                    .field_exactness("test:point#1", "position.x", exactness)
+                    .field_exactness(&cadmpeg_test_support::service_decode_context(), "test:point#1", "position.x", exactness)
                     .unwrap();
                 owned
-                    .field_exactness_owned(
+                    .field_exactness_owned(&cadmpeg_test_support::service_decode_context(),
                         "test:point#1".to_string(),
                         "position.x".to_string(),
                         exactness,
@@ -1602,7 +1524,7 @@ mod tests {
             }
             let before = owned.annotations().clone();
             assert!(owned
-                .field_exactness_owned(
+                .field_exactness_owned(&cadmpeg_test_support::service_decode_context(),
                     "test:point#1".to_string(),
                     String::new(),
                     Exactness::Derived
@@ -1617,11 +1539,11 @@ mod tests {
         let mut builder = AnnotationBuilder::new();
 
         builder
-            .derived("f3d:edge#0", "param_range")
+            .derived(&cadmpeg_test_support::service_decode_context(), "f3d:edge#0", "param_range")
             .expect("nonempty exactness field")
             .exactness("f3d:edge#0", Exactness::Inferred);
         builder
-            .field_exactness("f3d:edge#0", "param_range", Exactness::ByteExact)
+            .field_exactness(&cadmpeg_test_support::service_decode_context(), "f3d:edge#0", "param_range", Exactness::ByteExact)
             .expect("nonempty exactness field");
 
         let expected_fields = BTreeMap::from([(
@@ -1676,7 +1598,7 @@ mod tests {
                 builder.exactness("nx:model:surface#1", Exactness::Derived);
             }
             builder
-                .derived("nx:model:surface#1", "geometry")
+                .derived(&cadmpeg_test_support::service_decode_context(), "nx:model:surface#1", "geometry")
                 .expect("nonempty exactness field");
             if !entity_first {
                 builder.exactness("nx:model:surface#1", Exactness::Derived);
@@ -1698,7 +1620,7 @@ mod tests {
         let stream = StreamHandle::new(crate::stream_name!("catia:e5_0d_03"));
         builder.note("catia:e5:curve#0", &stream, 42).tag("circle");
         builder
-            .derived("catia:e5:curve#0", "geometry")
+            .derived(&cadmpeg_test_support::service_decode_context(), "catia:e5:curve#0", "geometry")
             .expect("nonempty exactness field");
 
         builder.remove_entity("catia:e5:curve#0");
@@ -1718,7 +1640,7 @@ mod tests {
         let id = "test:model:point#0";
         let mut builder = AnnotationBuilder::new();
         builder.exactness(id, Exactness::Inferred);
-        builder.derived(id, "position.x").expect("nonempty path");
+        builder.derived(&cadmpeg_test_support::service_decode_context(), id, "position.x").expect("nonempty path");
         let before = serde_json::to_value(&builder.state.annotations).expect("serialize annotations");
         for exactness in [
             Exactness::ByteExact,
@@ -1726,7 +1648,7 @@ mod tests {
             Exactness::Inferred,
         ] {
             let error = builder
-                .field_exactness(id, "", exactness)
+                .field_exactness(&cadmpeg_test_support::service_decode_context(), id, "", exactness)
                 .expect_err("empty path");
             assert!(
                 error.to_string().contains("field name cannot be empty"),
@@ -1737,7 +1659,7 @@ mod tests {
                 before
             );
         }
-        assert!(builder.derived(id, "").is_err());
+        assert!(builder.derived(&cadmpeg_test_support::service_decode_context(), id, "").is_err());
         assert_eq!(
             serde_json::to_value(&builder.state.annotations).expect("serialize annotations"),
             before
@@ -1773,7 +1695,7 @@ mod tests {
             if scope == "entity" {
                 builder.exactness(id, Exactness::Inferred);
             }
-            builder.derived(id, "position").expect("nonempty field");
+            builder.derived(&cadmpeg_test_support::service_decode_context(), id, "position").expect("nonempty field");
             let report = crate::report::decode::DecodeReport::unclassified(
                 "test",
                 crate::report::decode::DecodeTransfer::full(true),
@@ -1826,7 +1748,7 @@ mod builder_storage_tests {
         let mut candidate = original.copy_transaction(&ctx, "annotation candidate storage").unwrap();
         let model = ctx.copy_retained_text(MODEL_TEXT, "model storage").unwrap();
         candidate.annotate(&ctx, "test:model:point#candidate", "candidate stream", 7, "candidate tag", Exactness::Derived).unwrap();
-        candidate.derived_for_decode(&ctx, "test:model:point#candidate", "position").unwrap();
+        candidate.derived(&ctx, "test:model:point#candidate", "position").unwrap();
         assert!(candidate.annotations().provenance.contains_key("test:model:point#candidate"));
         assert_eq!(model, MODEL_TEXT);
         let error = candidate.into_retained().unwrap_err();

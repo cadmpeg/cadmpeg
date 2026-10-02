@@ -9,7 +9,7 @@ fn source(stream: &str) -> SourceFidelity {
     let mut annotations = AnnotationBuilder::new();
     let handle = StreamHandle::new(cadmpeg_ir::StreamName::try_from(stream.to_owned()).unwrap());
     annotations.note(ID, &handle, 7).tag("retained");
-    annotations.derived(ID, "geometry").unwrap();
+    annotations.derived(&cadmpeg_test_support::service_decode_context(), ID, "geometry").unwrap();
     let mut fidelity = SourceFidelity::with_annotations(annotations.build());
     fidelity
         .insert_retained_record(

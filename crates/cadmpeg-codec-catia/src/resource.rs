@@ -169,7 +169,7 @@ pub(crate) fn derived_annotation(
 ) -> Result<(), CodecError> {
     ctx.charge_work(cadmpeg_core::decode::u64_from_index(field.len()), operation)?;
     annotations
-        .derived_for_decode(ctx, id, field)
+        .derived(ctx, id, field)
         .map_err(CodecError::from)?;
     Ok(())
 }

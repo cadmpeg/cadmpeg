@@ -2823,14 +2823,14 @@ fn attach_completed_intersection_pcurves_for_sources_with_budget(
             Some("INTERSECTION_PCURVE"),
         )?;
         annotations
-            .derived_for_decode(ctx, &pcurve_id, "geometry")
+            .derived(ctx, &pcurve_id, "geometry")
             .map_err(cadmpeg_core::CodecError::from)?;
         annotations
-            .derived_for_decode(ctx, &pcurve_id, "parameter_range")
+            .derived(ctx, &pcurve_id, "parameter_range")
             .map_err(cadmpeg_core::CodecError::from)?;
         if metadata.fit_tolerance().is_some() {
             annotations
-                .derived_for_decode(ctx, &pcurve_id, "fit_tolerance")
+                .derived(ctx, &pcurve_id, "fit_tolerance")
                 .map_err(cadmpeg_core::CodecError::from)?;
         }
         ctx.reserve_vec(&mut ir.model.pcurves, 1, "nx completed pcurve records")?;

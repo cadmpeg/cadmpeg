@@ -29,7 +29,7 @@ fn remapping_calls_once_per_identity_and_preserves_each_annotation() {
     let stream = StreamHandle::new(crate::stream_name!("source"));
     builder.note("test:model:point#a", &stream, 7).tag("point");
     builder.exactness("test:model:point#a", Exactness::Inferred);
-    builder.derived("test:model:point#b", "position").unwrap();
+    builder.derived(&cadmpeg_test_support::service_decode_context(), "test:model:point#b", "position").unwrap();
     let mut annotations = builder.build();
     let before = annotations.clone();
     let mut calls = Vec::new();
