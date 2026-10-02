@@ -20,3 +20,27 @@ pub fn strings(ctx: &DecodeContext, values: &[String]) {
     let _ctx = ctx;
     let _copies: Vec<String> = values.iter().cloned().collect(); // finding: uncharged_decode_allocation, uncharged_decode_allocation
 }
+
+mod collections {
+    pub struct Empty(pub u8);
+    impl Iterator for Empty {
+        type Item = u8;
+        fn next(&mut self) -> Option<u8> {
+            None
+        }
+    }
+}
+pub fn named_iterator(ctx: &DecodeContext, iter: collections::Empty) {
+    let _ctx = ctx;
+    let _values: Vec<_> = iter.collect(); // finding: unproven_decode_charge
+}
+pub fn fixed_array_iterator(ctx: &DecodeContext, iter: std::array::IntoIter<u8, 3>) {
+    let _ctx = ctx;
+    let _values: Vec<_> = iter.collect();
+}
+
+pub fn constructed_iterator(ctx: &DecodeContext) {
+    let _ctx = ctx;
+    let iter = collections::Empty(0);
+    let _values: Vec<_> = iter.collect(); // finding: unproven_decode_charge
+}

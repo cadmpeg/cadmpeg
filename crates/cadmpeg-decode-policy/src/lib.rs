@@ -10,14 +10,12 @@ extern crate rustc_middle;
 extern crate rustc_span;
 
 mod allocation;
-mod types;
+mod callee;
 mod extent;
 mod flow;
+mod types;
 mod work;
-mod callee;
 
-use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
-use std::cell::RefCell;
 use rustc_driver::{Callbacks, Compilation};
 use rustc_hir::intravisit::{walk_expr, Visitor};
 use rustc_hir::{Body, Expr, ExprKind};
@@ -25,6 +23,8 @@ use rustc_interface::interface::Compiler;
 use rustc_middle::ty::{TyCtxt, TypeckResults};
 use rustc_span::def_id::{DefId, LocalDefId};
 use rustc_span::Span;
+use std::cell::RefCell;
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 #[derive(Default)]
 struct Findings {
@@ -41,7 +41,11 @@ impl Callbacks for DecodeCallbacks {
         let summaries = RefCell::new(HashMap::new());
         for owner in tcx.hir_body_owners() {
             let body = tcx.hir_body_owned_by(owner);
-            let mut scope = ContextScope { tcx, typeck: tcx.typeck(owner), present: false };
+            let mut scope = ContextScope {
+                tcx,
+                typeck: tcx.typeck(owner),
+                present: false,
+            };
             scope.visit_body(body);
             if scope.present {
                 active.insert(owner);
@@ -50,14 +54,18 @@ impl Callbacks for DecodeCallbacks {
         // Closures retain the enclosing function's context, including closures
         // whose uncharged expressions do not name that context.
         for owner in tcx.hir_body_owners() {
-            if tcx.def_kind(owner) != rustc_hir::def::DefKind::Closure { continue; }
+            if tcx.def_kind(owner) != rustc_hir::def::DefKind::Closure {
+                continue;
+            }
             let mut parent = tcx.parent(owner.to_def_id());
             while parent.is_local() {
                 if parent.as_local().is_some_and(|id| active.contains(&id)) {
                     active.insert(owner);
                     break;
                 }
-                if parent.index == rustc_span::def_id::CRATE_DEF_INDEX { break; }
+                if parent.index == rustc_span::def_id::CRATE_DEF_INDEX {
+                    break;
+                }
                 parent = tcx.parent(parent);
             }
         }
@@ -65,28 +73,95 @@ impl Callbacks for DecodeCallbacks {
         owners.sort_by_key(|owner| owner.local_def_index.as_u32());
         for owner in owners {
             if production(tcx, owner) {
-                Analysis { tcx, typeck: tcx.typeck(owner), owner, summaries: &summaries, flow: flow::Flow::default(), stack: vec![owner], findings: &mut self.findings }
-                    .visit_body(tcx.hir_body_owned_by(owner));
+                Analysis {
+                    tcx,
+                    typeck: tcx.typeck(owner),
+                    owner,
+                    summaries: &summaries,
+                    flow: flow::Flow::default(),
+                    stack: vec![owner],
+                    findings: &mut self.findings,
+                }
+                .visit_body(tcx.hir_body_owned_by(owner));
             }
         }
         for ((path, line, _, _, rule), messages) in &self.findings.entries {
-            println!("{rule}\t{path}\t{line}\t{}", messages.iter().cloned().collect::<Vec<_>>().join("; "));
+            println!(
+                "{rule}\t{path}\t{line}\t{}",
+                messages.iter().cloned().collect::<Vec<_>>().join("; ")
+            );
         }
         Compilation::Continue
     }
 }
 
 fn production(tcx: TyCtxt<'_>, owner: LocalDefId) -> bool {
-    if !matches!(tcx.def_kind(owner), rustc_hir::def::DefKind::Fn | rustc_hir::def::DefKind::AssocFn | rustc_hir::def::DefKind::Closure) { return false; }
-    let path = tcx.sess.source_map().lookup_char_pos(tcx.def_span(owner).source_callsite().lo()).file.name.prefer_local_unconditionally().to_string();
+    if !matches!(
+        tcx.def_kind(owner),
+        rustc_hir::def::DefKind::Fn
+            | rustc_hir::def::DefKind::AssocFn
+            | rustc_hir::def::DefKind::Closure
+    ) {
+        return false;
+    }
+    let path = tcx
+        .sess
+        .source_map()
+        .lookup_char_pos(tcx.def_span(owner).source_callsite().lo())
+        .file
+        .name
+        .prefer_local_unconditionally()
+        .to_string();
     let parts: Vec<&str> = path.split('/').collect();
-    if parts.iter().any(|part| matches!(*part, "tests" | "test_support" | "golden_tests" | "integration_tests" | "benches" | "bin" | "writer")) { return false; }
-    if parts.windows(2).any(|pair| pair[0] == "history" && matches!(pair[1], "encode" | "write")) { return false; }
-    if parts.last().is_some_and(|name| name.contains("test") || name.starts_with("writer") || matches!(*name, "zip_write.rs" | "export.rs")) { return false; }
-    if parts.windows(2).any(|pair| pair[0] == "resolved_features" && matches!(pair[1], "sketch_write.rs" | "write_generate.rs" | "write_prepare.rs")) { return false; }
+    if parts.iter().any(|part| {
+        matches!(
+            *part,
+            "tests"
+                | "test_support"
+                | "golden_tests"
+                | "integration_tests"
+                | "benches"
+                | "bin"
+                | "writer"
+        )
+    }) {
+        return false;
+    }
+    if parts
+        .windows(2)
+        .any(|pair| pair[0] == "history" && matches!(pair[1], "encode" | "write"))
+    {
+        return false;
+    }
+    if parts.last().is_some_and(|name| {
+        name.contains("test")
+            || name.starts_with("writer")
+            || matches!(*name, "zip_write.rs" | "export.rs")
+    }) {
+        return false;
+    }
+    if parts.windows(2).any(|pair| {
+        pair[0] == "resolved_features"
+            && matches!(
+                pair[1],
+                "sketch_write.rs" | "write_generate.rs" | "write_prepare.rs"
+            )
+    }) {
+        return false;
+    }
     let symbol = tcx.crate_name(rustc_span::def_id::LOCAL_CRATE);
     let crate_name = symbol.as_str();
-    std::env::var_os("CADMPEG_POLICY_FIXTURE").is_some() || crate_name.starts_with("cadmpeg_codec_") || matches!(crate_name, "cadmpeg_core" | "cadmpeg_ir" | "cadmpeg_container" | "cadmpeg_asm" | "cadmpeg_parasolid" | "cadmpeg_protein")
+    std::env::var_os("CADMPEG_POLICY_FIXTURE").is_some()
+        || crate_name.starts_with("cadmpeg_codec_")
+        || matches!(
+            crate_name,
+            "cadmpeg_core"
+                | "cadmpeg_ir"
+                | "cadmpeg_container"
+                | "cadmpeg_asm"
+                | "cadmpeg_parasolid"
+                | "cadmpeg_protein"
+        )
 }
 
 struct ContextScope<'tcx> {
@@ -98,12 +173,14 @@ struct ContextScope<'tcx> {
 impl<'tcx> Visitor<'tcx> for ContextScope<'tcx> {
     fn visit_body(&mut self, body: &Body<'tcx>) {
         for parameter in body.params {
-            self.present |= types::has_context(self.tcx, self.typeck.pat_ty(parameter.pat), &mut Vec::new());
+            self.present |=
+                types::has_context(self.tcx, self.typeck.pat_ty(parameter.pat), &mut Vec::new());
         }
         self.visit_expr(body.value);
     }
     fn visit_expr(&mut self, expression: &'tcx Expr<'tcx>) {
-        self.present |= types::has_context(self.tcx, self.typeck.expr_ty(expression), &mut Vec::new());
+        self.present |=
+            types::has_context(self.tcx, self.typeck.expr_ty(expression), &mut Vec::new());
         walk_expr(self, expression);
     }
 }
@@ -128,7 +205,9 @@ impl<'tcx> Analysis<'_, 'tcx> {
                 Some((definition, operands))
             }
             ExprKind::Call(callee, arguments) => match self.typeck.expr_ty(callee).kind() {
-                rustc_middle::ty::FnDef(definition, _) => Some((*definition, arguments.iter().collect())),
+                rustc_middle::ty::FnDef(definition, _) => {
+                    Some((*definition, arguments.iter().collect()))
+                }
                 _ => None,
             },
             _ => None,
@@ -136,11 +215,37 @@ impl<'tcx> Analysis<'_, 'tcx> {
     }
 
     fn report(&mut self, span: Span, rule: &str, message: &str) {
-        let location = self.tcx.sess.source_map().lookup_char_pos(span.source_callsite().lo());
-        let path = location.file.name.prefer_local_unconditionally().to_string();
-        let relative = std::env::current_dir().ok().and_then(|root| std::path::Path::new(&path).strip_prefix(root).ok().map(|path| path.display().to_string())).unwrap_or(path);
+        let location = self
+            .tcx
+            .sess
+            .source_map()
+            .lookup_char_pos(span.source_callsite().lo());
+        let path = location
+            .file
+            .name
+            .prefer_local_unconditionally()
+            .to_string();
+        let relative = std::env::current_dir()
+            .ok()
+            .and_then(|root| {
+                std::path::Path::new(&path)
+                    .strip_prefix(root)
+                    .ok()
+                    .map(|path| path.display().to_string())
+            })
+            .unwrap_or(path);
         let source = span.source_callsite();
-        self.findings.entries.entry((relative, location.line, source.lo().0, source.hi().0, rule.to_owned())).or_default().insert(format!("[column {}] {message}", location.col.0 + 1));
+        self.findings
+            .entries
+            .entry((
+                relative,
+                location.line,
+                source.lo().0,
+                source.hi().0,
+                rule.to_owned(),
+            ))
+            .or_default()
+            .insert(format!("[column {}] {message}", location.col.0 + 1));
     }
 
     fn shape_report(&mut self, expression: &Expr<'tcx>, shape: types::Shape, operation: &str) {
@@ -162,7 +267,9 @@ impl<'tcx> Visitor<'tcx> for Analysis<'_, 'tcx> {
 
 /// Runs rustc and returns whether decode-contract findings were emitted.
 pub fn run(arguments: &[String]) -> bool {
-    let mut callbacks = DecodeCallbacks { findings: Findings::default() };
+    let mut callbacks = DecodeCallbacks {
+        findings: Findings::default(),
+    };
     rustc_driver::run_compiler(arguments, &mut callbacks);
     !callbacks.findings.entries.is_empty()
 }
