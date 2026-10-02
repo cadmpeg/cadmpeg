@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Focused validation checks for identity order.
 
-use std::collections::{BTreeMap, HashSet};
+use std::collections::{btree_map::Entry, BTreeMap, HashSet};
+use cadmpeg_core::decode::{u64_from_index, DecodeContext, ScopedReservation};
+use cadmpeg_core::CodecError;
 
 use crate::document::CadIr;
 use crate::report::{
@@ -9,85 +11,116 @@ use crate::report::{
     Severity,
 };
 
-fn push_identity(seen: &mut HashSet<String>, findings: &mut Vec<Finding>, id: &str) {
+fn push_identity<'a>(
+    ctx: &DecodeContext<'_>,
+    seen: &mut (HashSet<&'a str>, ScopedReservation<'_>),
+    findings: &mut Vec<Finding>,
+    id: &'a str,
+) -> Result<(), CodecError> {
+    let grammar_work = id.len().checked_mul(4).and_then(|value| value.checked_add(1))
+        .ok_or_else(|| ctx.refuse_codec_limit("validate identity grammar", u64::MAX - 1, u64::MAX))?;
+    ctx.charge_work(u64_from_index(grammar_work), "validate identity grammar")?;
     if !crate::ids::is_valid_identity(id) {
-        findings.push(Finding {
-            check: Check::Identity,
-            severity: Severity::Error,
-            message: "entity id does not match `<format>:<scope>:<kind>#<key>`".into(),
-            entity: Some(id.to_owned()),
-        });
+        super::record_finding(ctx, findings, Check::Identity, Severity::Error, id,
+            format_args!("entity id does not match `<format>:<scope>:<kind>#<key>`"))?;
     }
-    if !seen.insert(id.to_owned()) {
-        findings.push(Finding {
-            check: Check::Identity,
-            severity: Severity::Error,
-            message: "entity id is not globally unique".into(),
-            entity: Some(id.to_owned()),
-        });
+    let work = id.len().checked_add(1)
+        .and_then(|bytes| seen.0.len().checked_add(1).and_then(|count| bytes.checked_mul(count)))
+        .and_then(|value| value.checked_mul(2))
+        .ok_or_else(|| ctx.refuse_codec_limit("index validation identities", u64::MAX - 1, u64::MAX))?;
+    ctx.charge_work(u64_from_index(work), "index validation identities")?;
+    let inserted = seen.1.with_storage(|| ctx.insert_hash_set(&mut seen.0, id, "validation identity slots"))?;
+    if !inserted {
+        super::record_finding(ctx, findings, Check::Identity, Severity::Error, id,
+            format_args!("entity id is not globally unique"))?;
     }
+    Ok(())
 }
 
 fn check_order<'a>(
+    ctx: &DecodeContext<'_>,
     arena: &str,
     ids: impl IntoIterator<Item = &'a str>,
     findings: &mut Vec<Finding>,
-) {
+) -> Result<(), CodecError> {
     let mut previous: Option<&str> = None;
     for id in ids {
+        ctx.charge_work(u64_from_index(id.len()).checked_add(1)
+            .ok_or_else(|| ctx.refuse_codec_limit("compare validation arena order", u64::MAX - 1, u64::MAX))?,
+            "compare validation arena order")?;
         if previous.is_some_and(|value| value >= id) {
-            findings.push(Finding {
-                check: Check::ArenaOrder,
-                severity: Severity::Error,
-                message: format!("arena `{arena}` is not strictly sorted by id"),
-                entity: Some(id.to_owned()),
-            });
-            return;
+            super::record_finding(ctx, findings, Check::ArenaOrder, Severity::Error, id,
+                format_args!("arena `{arena}` is not strictly sorted by id"))?;
+            return Ok(());
         }
         previous = Some(id);
     }
+    Ok(())
 }
 
 macro_rules! define_model_identity_checks {
     ($( $field:ident: $element:ty, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?; )*) => {
-        fn check_model_identity_and_order(
-            ir: &CadIr,
-            seen: &mut HashSet<String>,
+        fn check_model_identity_and_order<'a>(
+            ctx: &DecodeContext<'_>,
+            ir: &'a CadIr,
+            seen: &mut (HashSet<&'a str>, ScopedReservation<'_>),
             findings: &mut Vec<Finding>,
-        ) {
+        ) -> Result<(), CodecError> {
             $(
                 check_order(
+                    ctx,
                     stringify!($field),
                     ir.model.$field.iter().map(crate::schema::EntitySchema::identity),
                     findings,
-                );
+                )?;
                 for entity in &ir.model.$field {
-                    push_identity(seen, findings, crate::schema::EntitySchema::identity(entity));
+                    push_identity(ctx, seen, findings, crate::schema::EntitySchema::identity(entity))?;
                 }
             )*
+            Ok(())
         }
     };
 }
 crate::document::arena_registry!(define_model_identity_checks);
 
-/// Run the identity and arena-order checks, returning the set of every entity
-/// id in the document (model arenas, unknowns, and native records). Downstream
-/// checks resolve annotation and link targets against this set instead of
-/// re-enumerating the id universe.
-pub(super) fn check_identity_and_order(ir: &CadIr, findings: &mut Vec<Finding>) {
-    let mut seen = HashSet::new();
-    check_model_identity_and_order(ir, &mut seen, findings);
-    let native_ids = collect_native_ids(ir);
-    for (_, id) in &native_ids {
-        push_identity(&mut seen, findings, id);
+/// Check model and native identities and preserve arena-ordered findings.
+pub(super) fn check_identity_and_order(ctx: &DecodeContext<'_>, ir: &CadIr, findings: &mut Vec<Finding>) -> Result<(), CodecError> {
+    let mut seen = (HashSet::new(), ctx.reserve_scoped(0, "validation identity storage")?);
+    check_model_identity_and_order(ctx, ir, &mut seen, findings)?;
+    let mut by_arena: (BTreeMap<String, Vec<&str>>, _) = (BTreeMap::new(), ctx.reserve_scoped(0, "validation native order storage")?);
+    for (format, namespace) in &ir.native.0 {
+        ctx.charge_work(1, "validation native namespace scan")?;
+        for (arena, records) in namespace.arenas() {
+            ctx.charge_work(1, "validation native arena scan")?;
+            for record in records {
+                push_identity(ctx, &mut seen, findings, record.id())?;
+            }
+            if records.is_empty() { continue; }
+            by_arena.1.with_storage(|| {
+                let label = ctx.format_retained(format_args!("native.{format}.{arena}"), "validation native arena name")?;
+                let work = label.len().checked_add(1)
+                    .and_then(|bytes| by_arena.0.len().checked_add(1).and_then(|count| bytes.checked_mul(count)))
+                    .ok_or_else(|| ctx.refuse_codec_limit("group validation native arenas", u64::MAX - 1, u64::MAX))?;
+                ctx.charge_work(u64_from_index(work), "group validation native arenas")?;
+                let ids = match by_arena.0.entry(label) {
+                    Entry::Occupied(entry) => entry.into_mut(),
+                    Entry::Vacant(entry) => {
+                        ctx.admit_retained_btree_record::<String, Vec<&str>>(0, "validation native arena slots")?;
+                        entry.insert(Vec::new())
+                    }
+                };
+                for record in records {
+                    ctx.charge_work(1, "validation native order scan")?;
+                    ctx.push_retained_vec(ids, record.id(), "validation native order slots")?;
+                }
+                Ok::<_, CodecError>(())
+            })?;
+        }
     }
-    let mut by_arena: BTreeMap<&str, Vec<&str>> = BTreeMap::new();
-    for (arena, id) in &native_ids {
-        by_arena.entry(arena).or_default().push(id);
+    for (arena, ids) in &by_arena.0 {
+        check_order(ctx, arena, ids.iter().copied(), findings)?;
     }
-    for (arena, ids) in by_arena {
-        check_order(arena, ids, findings);
-    }
+    Ok(())
 }
 
 pub(super) fn collect_native_ids(ir: &CadIr) -> Vec<(String, &str)> {
