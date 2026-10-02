@@ -18,7 +18,7 @@ fn committed_native_identity_cache_borrows_text_from_document() {
     policy.limits.max_retained_bytes = 0;
     policy.limits.max_materialized_bytes = 512;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let mut session = CommitSession::new(&mut ir, &ctx).unwrap();
+    let mut session = CommitSession::new(&mut ir, &ctx, None).unwrap();
     assert!(session.contains(&id).unwrap());
     assert!(session.contains(&id).unwrap());
     assert!(!session.contains("test:native:record#missing").unwrap());
@@ -42,7 +42,7 @@ fn committed_native_identity_positions_cover_namespaces_arenas_and_rows() {
     }
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
-    let mut session = CommitSession::new(&mut ir, &ctx).unwrap();
+    let mut session = CommitSession::new(&mut ir, &ctx, None).unwrap();
     for namespace in ["alpha", "beta"] {
         for arena in ["first", "second"] {
             for row in 0..3 {
@@ -60,7 +60,7 @@ fn committed_native_cache_keeps_paths_when_earlier_map_keys_are_inserted() {
     let mut ir = CadIr::empty();
     ir.native.namespace_mut("zeta").arenas_mut().insert("last".into(), vec![record()]);
     let ctx = cadmpeg_test_support::service_decode_context();
-    let mut session = CommitSession::new(ir, &ctx).unwrap();
+    let mut session = CommitSession::new(ir, &ctx, None).unwrap();
     assert!(session.contains(target).unwrap());
     // Exercise the cache owner directly: map-key insertion does not reorder rows.
     session.state.base.native.namespace_mut("alpha");

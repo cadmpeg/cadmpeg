@@ -3144,7 +3144,7 @@ pub(super) fn project(
         staged.push((entry, candidate, candidate_boundary_vertex_derivations));
     }
     drop(carrier_index);
-    let mut commit_session = CommitSession::new(ir, ctx)?;
+    let mut commit_session = CommitSession::new(ir, ctx, None)?;
     for (entry, candidate, derivations) in staged {
         if commit_session
             .commit_model(candidate)?

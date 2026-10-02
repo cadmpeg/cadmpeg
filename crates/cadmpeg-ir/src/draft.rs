@@ -323,7 +323,7 @@ impl ModelDraft {
     /// let mut document = cadmpeg_ir::CadIr::empty();
     /// let arena = cadmpeg_core::decode::DecodeArena::new();
     /// let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &cadmpeg_core::decode::DecodePolicy::default()).unwrap();
-    /// cadmpeg_ir::draft::CommitSession::new(&mut document, &ctx).unwrap().commit_model(draft).unwrap();
+    /// cadmpeg_ir::draft::CommitSession::new(&mut document, &ctx, None).unwrap().commit_model(draft).unwrap();
     /// ```
     pub fn with_accounting(self) -> ModelDraft<DraftAccounting> {
         ModelDraft {
@@ -338,7 +338,7 @@ impl ModelDraft {
         base: &mut CadIr,
         ctx: &DecodeContext<'_>,
     ) -> Result<Result<(), DraftError>, CodecError> {
-        CommitSession::new(base, ctx)?.commit_model(self)
+        CommitSession::new(base, ctx, None)?.commit_model(self)
     }
 }
 
@@ -497,7 +497,7 @@ impl ModelDraft<DraftAccounting> {
         annotations: &mut Annotations,
         ctx: &DecodeContext<'_>,
     ) -> Result<Result<(), DraftError>, CodecError> {
-        CommitSession::new(base, ctx)?.commit(self, annotations)
+        CommitSession::new(base, ctx, None)?.commit(self, annotations)
     }
 }
 
@@ -521,7 +521,7 @@ type CommittedIdentityIndex = HashMap<u64, Vec<CommittedIdentity>>;
 /// let arena = DecodeArena::new();
 /// let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::default()).unwrap();
 /// let mut ir = CadIr::empty();
-/// let mut session = CommitSession::new(&mut ir, &ctx).unwrap();
+/// let mut session = CommitSession::new(&mut ir, &ctx, None).unwrap();
 /// ir.model.points.clear();
 /// session.contains("test:model:point#1").unwrap();
 /// ```
@@ -532,28 +532,29 @@ type CommittedIdentityIndex = HashMap<u64, Vec<CommittedIdentity>>;
 /// let arena = DecodeArena::new();
 /// let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::default()).unwrap();
 /// let mut ir = CadIr::empty();
-/// let session = CommitSession::new(&mut ir, &ctx).unwrap();
+/// let session = CommitSession::new(&mut ir, &ctx, None).unwrap();
 /// session.document().model.points.clear();
 /// ```
 #[derive(Debug)]
 pub struct CommitSession<'ctx, D: BorrowMut<CadIr>> {
-    state: CommitState<D>,
+    state: CommitState<'ctx, D>,
     ctx: &'ctx DecodeContext<'ctx>,
     storage: ScopedReservation<'ctx>,
 }
 
 #[derive(Debug)]
-struct CommitState<D: BorrowMut<CadIr>> {
+struct CommitState<'ctx, D: BorrowMut<CadIr>> {
     base: D,
     unknowns: Vec<crate::unknown::UnknownRecord>,
+    unknown_namespace: Option<&'ctx str>,
     identities: Option<CommittedIdentityIndex>,
 }
 
 impl<'ctx, D: BorrowMut<CadIr>> CommitSession<'ctx, D> {
     /// Hold the document and caller's context without scanning identity arenas.
-    pub fn new(base: D, ctx: &'ctx DecodeContext<'ctx>) -> Result<Self, CodecError> {
+    pub fn new(base: D, ctx: &'ctx DecodeContext<'ctx>, unknown_namespace: Option<&'ctx str>) -> Result<Self, CodecError> {
         Ok(Self {
-            state: CommitState { base, unknowns: Vec::new(), identities: None },
+            state: CommitState { base, unknowns: Vec::new(), unknown_namespace, identities: None },
             ctx,
             storage: ctx.reserve_scoped(0, "committed identity storage")?,
         })
@@ -575,7 +576,7 @@ impl<'ctx, D: BorrowMut<CadIr>> CommitSession<'ctx, D> {
     /// Release the cache and transfer the document and staged source records.
     pub fn into_parts(self) -> (D, Vec<crate::unknown::UnknownRecord>) {
         let Self { state, ctx: _, storage } = self;
-        let CommitState { base, unknowns, identities } = state;
+        let CommitState { base, unknowns, unknown_namespace: _, identities } = state;
         drop(identities);
         drop(storage);
         (base, unknowns)
@@ -587,8 +588,17 @@ impl<'ctx, D: BorrowMut<CadIr>> CommitSession<'ctx, D> {
     }
 
     /// Mutate outgoing links while keeping cached identity positions stable.
-    pub fn unknown_links_mut(&mut self, index: usize) -> Option<&mut Vec<String>> {
-        self.state.unknowns.get_mut(index).map(crate::unknown::UnknownRecord::links_mut)
+    pub fn unknown_links_mut(&mut self, index: usize) -> Option<(&str, &mut Vec<String>)> {
+        self.state.unknowns.get_mut(index).map(crate::unknown::UnknownRecord::id_and_links_mut)
+    }
+
+    /// Remove source records and invalidate their cached positions.
+    pub fn clear_unknowns(&mut self) -> Result<(), CodecError> {
+        let storage = self.ctx.reserve_scoped(0, "committed identity storage")?;
+        self.state.identities = None;
+        self.storage = storage;
+        self.state.unknowns.clear();
+        Ok(())
     }
 
     /// Admit a moved source record and extend a previously built identity cache.
@@ -649,6 +659,7 @@ impl<'ctx, D: BorrowMut<CadIr>> CommitSession<'ctx, D> {
 fn index_committed_identities(
     base: &CadIr,
     unknowns: &[crate::unknown::UnknownRecord],
+    unknown_namespace: Option<&str>,
     ctx: &DecodeContext<'_>,
 ) -> Result<CommittedIdentityIndex, CodecError> {
     let storage = DecodeStorage(ctx);
@@ -662,11 +673,24 @@ fn index_committed_identities(
         };
     }
     crate::document::arena_registry!(collect_model_identities);
-    for (namespace, records) in &base.native.0 {
-        ctx.charge_work(u64_from_index(namespace.len()).checked_add(1)
+    for (format, records) in &base.native.0 {
+        let replaces_unknowns = match unknown_namespace {
+            Some(replacement) => {
+                ctx.charge_work(u64_from_index(format.len()), "compare committed unknown namespace")?;
+                ctx.charge_work(u64_from_index(replacement.len()), "compare committed unknown namespace")?;
+                format == replacement
+            },
+            None => false,
+        };
+        ctx.charge_work(u64_from_index(format.len()).checked_add(1)
             .ok_or_else(|| ctx.refuse_codec_limit("hash committed native namespace", u64::MAX - 1, u64::MAX))?, "hash committed native namespace")?;
-        let namespace = identity_hash(namespace);
+        let namespace = identity_hash(format);
         for (arena, records) in records.arenas() {
+            if replaces_unknowns {
+                ctx.charge_work(u64_from_index(arena.len()), "compare committed unknown arena")?;
+                ctx.charge_work(7, "compare committed unknown arena")?;
+                if arena == "unknowns" { continue; }
+            }
             ctx.charge_work(u64_from_index(arena.len()).checked_add(1)
                 .ok_or_else(|| ctx.refuse_codec_limit("hash committed native arena", u64::MAX - 1, u64::MAX))?, "hash committed native arena")?;
             let arena = identity_hash(arena);
@@ -732,7 +756,7 @@ fn committed_identity_contains(
     Ok(false)
 }
 
-impl<D: BorrowMut<CadIr>> CommitState<D> {
+impl<D: BorrowMut<CadIr>> CommitState<'_, D> {
     fn lookup_with_storage(
         &mut self,
         identity: &str,
@@ -748,7 +772,7 @@ impl<D: BorrowMut<CadIr>> CommitState<D> {
 
     fn ensure_identities(&mut self, ctx: &DecodeContext<'_>) -> Result<(), CodecError> {
         if self.identities.is_none() {
-            self.identities = Some(index_committed_identities(self.base.borrow(), &self.unknowns, ctx)?);
+            self.identities = Some(index_committed_identities(self.base.borrow(), &self.unknowns, self.unknown_namespace, ctx)?);
         }
         Ok(())
     }
@@ -906,7 +930,7 @@ mod tests {
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let mut ir = CadIr::empty();
         let result =
-            CommitSession::new(&mut ir, &ctx).unwrap().commit_model(directly_staged_point());
+            CommitSession::new(&mut ir, &ctx, None).unwrap().commit_model(directly_staged_point());
         assert!(matches!(result,
             Err(CodecError::ResourceLimit(limit))
                 if limit.dimension == ResourceDimension::CollectionItems
@@ -919,7 +943,7 @@ mod tests {
         let arena = DecodeArena::new();
         let (ctx, _) =
             DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
-        CommitSession::new(&mut ir, &ctx).unwrap()
+        CommitSession::new(&mut ir, &ctx, None).unwrap()
             .commit_model(directly_staged_point())
             .unwrap()
             .unwrap();
@@ -934,7 +958,7 @@ mod tests {
         policy.limits.max_retained_bytes = u64::try_from(missing.len() - 1).unwrap();
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let mut ir = CadIr::empty();
-        let result = CommitSession::new(&mut ir, &ctx).unwrap()
+        let result = CommitSession::new(&mut ir, &ctx, None).unwrap()
             .commit_model(vertex_draft("test:model:vertex#new", missing));
         assert!(matches!(result,
             Err(CodecError::ResourceLimit(limit))
@@ -947,7 +971,7 @@ mod tests {
         let arena = DecodeArena::new();
         let (ctx, _) =
             DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
-        let result = CommitSession::new(&mut ir, &ctx).unwrap()
+        let result = CommitSession::new(&mut ir, &ctx, None).unwrap()
             .commit_model(vertex_draft("test:model:vertex#new", missing))
             .unwrap();
         assert!(matches!(
@@ -1009,7 +1033,7 @@ mod tests {
             let draft = feature_parents::parent_draft();
             let expected = draft.model().clone();
             let mut ir = CadIr::empty();
-            let mut session = CommitSession::new(&mut ir, ctx).unwrap();
+            let mut session = CommitSession::new(&mut ir, ctx, None).unwrap();
             session
                 .commit_model(draft)
                 .unwrap()
@@ -1030,7 +1054,7 @@ mod tests {
         let mut policy = DecodePolicy::service();
         policy.limits.max_work_units = 0;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let result = CommitSession::new(&mut ir, &ctx)
+        let result = CommitSession::new(&mut ir, &ctx, None)
             .unwrap()
             .commit_model(draft);
         assert!(
@@ -1141,7 +1165,7 @@ mod tests {
     fn commit_session_matches_sequential_model_commits() {
         let mut session_ir = CadIr::empty();
         let ctx = cadmpeg_test_support::service_decode_context();
-        let mut session = CommitSession::new(&mut session_ir, &ctx).unwrap();
+        let mut session = CommitSession::new(&mut session_ir, &ctx, None).unwrap();
         session
             .commit_model(point_draft("test:model:point#1")).unwrap()
             .expect("first session commit");
@@ -1165,7 +1189,7 @@ mod tests {
     fn commit_session_rejects_cross_draft_identity_collision() {
         let mut ir = CadIr::empty();
         let ctx = cadmpeg_test_support::service_decode_context();
-        let mut session = CommitSession::new(&mut ir, &ctx).unwrap();
+        let mut session = CommitSession::new(&mut ir, &ctx, None).unwrap();
         let identity = "test:model:point#cross-draft";
         session
             .commit_model(point_draft(identity)).unwrap()
@@ -1185,7 +1209,7 @@ mod tests {
         let mut ir = CadIr::empty();
         ir.model.points.push(point(identity));
         let ctx = cadmpeg_test_support::service_decode_context();
-        let mut session = CommitSession::new(&mut ir, &ctx).unwrap();
+        let mut session = CommitSession::new(&mut ir, &ctx, None).unwrap();
 
         assert_eq!(
             session.commit_model(point_draft(identity)).unwrap(),
@@ -1208,7 +1232,7 @@ mod tests {
             .expect("valid native identity")],
         );
         let ctx = cadmpeg_test_support::service_decode_context();
-        let mut session = CommitSession::new(&mut ir, &ctx).unwrap();
+        let mut session = CommitSession::new(&mut ir, &ctx, None).unwrap();
 
         assert_eq!(
             session.commit_model(point_draft(identity)).unwrap(),
@@ -1224,7 +1248,7 @@ mod tests {
         let target = "test:model:point#missing";
         let mut ir = CadIr::empty();
         let ctx = cadmpeg_test_support::service_decode_context();
-        let mut session = CommitSession::new(&mut ir, &ctx).unwrap();
+        let mut session = CommitSession::new(&mut ir, &ctx, None).unwrap();
 
         assert_eq!(
             session.commit_model(vertex_draft(owner, target)).unwrap(),
@@ -1242,7 +1266,7 @@ mod tests {
         let point_id = "test:model:point#earlier";
         let mut ir = CadIr::empty();
         let ctx = cadmpeg_test_support::service_decode_context();
-        let mut session = CommitSession::new(&mut ir, &ctx).unwrap();
+        let mut session = CommitSession::new(&mut ir, &ctx, None).unwrap();
         session
             .commit_model(point_draft(point_id)).unwrap()
             .expect("point commit");
@@ -1261,7 +1285,7 @@ mod tests {
         let mut ir = CadIr::empty();
         let before = ir.clone();
         let ctx = cadmpeg_test_support::service_decode_context();
-        let mut session = CommitSession::new(&mut ir, &ctx).unwrap();
+        let mut session = CommitSession::new(&mut ir, &ctx, None).unwrap();
 
         assert!(session
             .commit_model(vertex_draft(
@@ -1284,7 +1308,7 @@ mod tests {
         let rejected_identity = "test:model:point#rejected";
         let mut ir = CadIr::empty();
         let ctx = cadmpeg_test_support::service_decode_context();
-        let mut session = CommitSession::new(&mut ir, &ctx).unwrap();
+        let mut session = CommitSession::new(&mut ir, &ctx, None).unwrap();
 
         assert!(!session.contains(committed_identity).unwrap());
         session

@@ -49,7 +49,7 @@ fn cross_root_surface_filter_tracks_successful_commits_only() {
     let rejected_id = "step:data:surface#implicit-face-2";
     let mut ir = CadIr::empty();
     let ctx = cadmpeg_test_support::service_decode_context();
-    let mut session = CommitSession::new(&mut ir, &ctx).unwrap();
+    let mut session = CommitSession::new(&mut ir, &ctx, None).unwrap();
 
     session
         .commit_model(surface_draft(committed_id))
