@@ -903,20 +903,131 @@ fn two_refused_circular_pcurves_state_two_records_each_naming_its_instance() {
 
 #[test]
 fn circular_pcurve_refuses_unbounded_span_before_allocation() {
-    let mut refusal = crate::lane_refusal::LaneRefusals::new();
-    assert!(
-        crate::decode::with_test_decode_ctx(|ctx| super::circular_pcurve(
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    for (start, end, requested) in [
+        (0.0, 100_001.0 * std::f64::consts::FRAC_PI_2, 100_001),
+        (0.0, 1.0e20, u64::MAX),
+        (0.0, f64::INFINITY, u64::MAX),
+        (-f64::MAX, f64::MAX, u64::MAX),
+    ] {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+        let mut refusal = crate::lane_refusal::LaneRefusals::new();
+        let error = super::circular_pcurve(
+            &ctx,
+            [0.0, 0.0],
+            1.0,
+            start,
+            end,
+            &"oversized arc",
+            &mut refusal,
+        )
+        .expect_err("segment ceiling refuses before allocation");
+        let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
+            panic!("segment resource refusal expected");
+        };
+        assert_eq!(
+            limit.dimension,
+            ResourceDimension::Codec("creo circular pcurve segments")
+        );
+        assert_eq!(limit.operation, "creo circular pcurve segments");
+        assert_eq!(limit.limit, 100_000);
+        assert_eq!(limit.used + limit.additional, requested);
+        assert_eq!(ctx.resource_refusal(), Some(limit));
+        assert!(refusal.take_records().is_empty());
+    }
+}
+
+#[test]
+fn circular_pcurve_refuses_projection_work_before_each_pass() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    // A quarter circle has three poles and six knots. Knot admission scans twice.
+    for (budget, used, additional, operation) in [
+        (2, 0, 3, "creo circular pcurve pole projection"),
+        (8, 3, 6, "creo circular pcurve knot projection"),
+        (11, 9, 3, "creo circular pcurve weight scan"),
+        (14, 12, 3, "creo circular pcurve weighted pole projection"),
+        (26, 15, 12, "creo circular pcurve knot admission"),
+    ] {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = budget;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+        let mut refusal = crate::lane_refusal::LaneRefusals::new();
+        let error = super::circular_pcurve(
+            &ctx,
+            [0.0, 0.0],
+            1.0,
+            0.0,
+            std::f64::consts::FRAC_PI_2,
+            &"quarter circle",
+            &mut refusal,
+        )
+        .expect_err("work refuses before the projection pass");
+        let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
+            panic!("work resource refusal expected");
+        };
+        assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+        assert_eq!(limit.operation, operation);
+        assert_eq!(limit.used, used);
+        assert_eq!(limit.additional, additional);
+        assert_eq!(limit.limit, budget);
+        assert_eq!(ctx.resource_refusal(), Some(limit));
+        assert!(refusal.take_records().is_empty());
+    }
+    let expected = crate::decode::with_test_decode_ctx(|ctx| {
+        super::circular_pcurve(
             ctx,
             [0.0, 0.0],
             1.0,
             0.0,
-            1.0e20,
-            &"oversized arc",
-            &mut refusal,
-        ))
-        .expect("resource admission")
-        .is_none()
-    );
+            std::f64::consts::FRAC_PI_2,
+            &"quarter circle",
+            &mut crate::lane_refusal::LaneRefusals::new(),
+        )
+    })
+    .expect("service resources")
+    .expect("quarter circle");
+    for prior_work in [0, 1] {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 27;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+        ctx.charge_work(prior_work, "caller work")
+            .expect("caller work admitted");
+        let result = super::circular_pcurve(
+            &ctx,
+            [0.0, 0.0],
+            1.0,
+            0.0,
+            std::f64::consts::FRAC_PI_2,
+            &"quarter circle",
+            &mut crate::lane_refusal::LaneRefusals::new(),
+        );
+        if prior_work == 0 {
+            assert_eq!(
+                result
+                    .expect("exact projection allowance")
+                    .expect("quarter circle"),
+                expected
+            );
+            ctx.charge_work(0, "projection complete")
+                .expect("allowance admitted");
+            assert!(matches!(
+                ctx.charge_work(1, "after projection"),
+                Err(cadmpeg_core::CodecError::ResourceLimit(_))
+            ));
+        } else {
+            assert!(
+                matches!(result, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+                if limit.operation == "creo circular pcurve knot admission" && limit.used == 16)
+            );
+        }
+    }
 }
 
 #[test]

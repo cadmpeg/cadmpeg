@@ -292,27 +292,42 @@ pub(in super::super) fn circular_pcurve(
     record: &dyn std::fmt::Display,
     refusal: &mut crate::lane_refusal::LaneRefusals,
 ) -> Result<Option<PcurveGeometry>, cadmpeg_core::CodecError> {
-    const MAX_CIRCULAR_PCURVE_SEGMENTS: f64 = 100_000.0;
+    const MAX_CIRCULAR_PCURVE_SEGMENTS: u32 = 100_000;
     let span = end_angle - start_angle;
     let count = (span.abs() / std::f64::consts::FRAC_PI_2).ceil().max(1.0);
-    if !count.is_finite() || count > MAX_CIRCULAR_PCURVE_SEGMENTS {
-        return Ok(None);
+    if !count.is_finite() || count > f64::from(MAX_CIRCULAR_PCURVE_SEGMENTS) {
+        let requested = cadmpeg_core::convert::truncate_f64_to_u64(count).ok_or_else(|| {
+            ctx.refuse_codec_limit(
+                "creo circular pcurve segments",
+                u64::from(MAX_CIRCULAR_PCURVE_SEGMENTS),
+                u64::MAX,
+            )
+        })?;
+        return Err(ctx.refuse_codec_limit(
+            "creo circular pcurve segments",
+            u64::from(MAX_CIRCULAR_PCURVE_SEGMENTS),
+            requested,
+        ));
     }
-    let Some(segment_count) = cadmpeg_core::convert::truncate_f64_to_usize(count) else {
-        return Ok(None);
-    };
+    let segment_count = cadmpeg_core::convert::truncate_f64_to_usize(count).ok_or_else(|| {
+        ctx.refuse_codec_limit("creo circular pcurve segments", u64::MAX, u64::MAX)
+    })?;
     let step = span
         / cadmpeg_core::convert::f64_from_index(segment_count).ok_or_else(|| {
             cadmpeg_core::CodecError::malformed(
                 "Creo pcurve segment index cannot be represented exactly",
             )
         })?;
-    let Some(pole_count) = segment_count.checked_mul(2).and_then(|n| n.checked_add(1)) else {
-        return Ok(None);
-    };
-    let Some(knot_count) = segment_count.checked_mul(2).and_then(|n| n.checked_add(4)) else {
-        return Ok(None);
-    };
+    let pole_count = segment_count
+        .checked_mul(2)
+        .and_then(|n| n.checked_add(1))
+        .ok_or_else(|| {
+            ctx.refuse_codec_limit("creo circular pcurve controls", u64::MAX, u64::MAX)
+        })?;
+    let knot_count = segment_count
+        .checked_mul(2)
+        .and_then(|n| n.checked_add(4))
+        .ok_or_else(|| ctx.refuse_codec_limit("creo circular pcurve knots", u64::MAX, u64::MAX))?;
     let mut control_points = Vec::new();
     ctx.reserve_vec(
         &mut control_points,
@@ -321,6 +336,10 @@ pub(in super::super) fn circular_pcurve(
     )?;
     let mut weights = Vec::new();
     ctx.reserve_vec(&mut weights, pole_count, "creo circular pcurve weights")?;
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(pole_count),
+        "creo circular pcurve pole projection",
+    )?;
     for segment in 0..segment_count {
         let first = start_angle
             + cadmpeg_core::convert::f64_from_index(segment).ok_or_else(|| {
@@ -351,6 +370,10 @@ pub(in super::super) fn circular_pcurve(
     }
     let mut knots = Vec::new();
     ctx.reserve_vec(&mut knots, knot_count, "creo circular pcurve knots")?;
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(knot_count),
+        "creo circular pcurve knot projection",
+    )?;
     knots.extend([0.0; 3]);
     for boundary in 1..segment_count {
         knots.extend(
@@ -378,6 +401,7 @@ pub(in super::super) fn circular_pcurve(
         use cadmpeg_ir::scalar::NonZeroReal;
         use cadmpeg_ir::units::FinitePoint2;
 
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(pole_count), "creo circular pcurve weight scan")?;
         for (index, &weight) in weights.iter().enumerate() {
             if NonZeroReal::new(weight).is_none() {
                 return Ok(Err(cadmpeg_ir::geometry::nurbs::NurbsError::UnusableWeight {
@@ -387,6 +411,7 @@ pub(in super::super) fn circular_pcurve(
                 }));
             }
         }
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(pole_count), "creo circular pcurve weighted pole projection")?;
         for (index, (point, weight)) in control_points.into_iter().zip(weights).enumerate() {
             let Some(point) = FinitePoint2::new(point) else {
                 return Ok(Err(cadmpeg_ir::geometry::nurbs::NurbsError::Structure(
@@ -402,6 +427,9 @@ pub(in super::super) fn circular_pcurve(
             };
             weighted.push(WeightedPole2 { point, weight: admitted_weight });
         }
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(knot_count).checked_mul(2)
+            .ok_or_else(|| ctx.refuse_codec_limit("creo circular pcurve knot admission", u64::MAX, u64::MAX))?,
+            "creo circular pcurve knot admission")?;
         let knots = match KnotValue::admit(knots) {
             Ok(knots) => knots,
             Err(error) => return Ok(Err(error)),
