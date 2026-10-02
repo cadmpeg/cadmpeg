@@ -66,6 +66,13 @@ Use repeatable `--crate NAME` arguments to restrict reported findings to named c
   `if __name__ == "__main__":` block fails: discovery imports the module and
   never runs that block.
 
+## Checked arithmetic
+
+Production `saturating_*` calls fail with `saturating_arithmetic`. Use checked
+arithmetic. The overflow branch propagates the caller context's resource refusal
+in decode code or a typed error elsewhere. Constant expressions must preserve
+the exact value or reject the invalid constant.
+
 ## Endian exceptions
 
 A standalone line comment immediately before a conversion admits exactly one

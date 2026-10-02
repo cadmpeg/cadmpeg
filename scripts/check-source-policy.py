@@ -450,10 +450,18 @@ def resolve_module_target(
     return None
 
 
+def scan_saturating_arithmetic(path: Path, code: str) -> list[Finding]:
+    """Require checked arithmetic with an explicit overflow branch."""
+    return [Finding(
+        "saturating_arithmetic", relative_path(path), code.count("\n", 0, match.start()) + 1,
+        "Use checked arithmetic and propagate a resource refusal or typed error on overflow.",
+    ) for match in re.finditer(r"\bsaturating_\w+\s*(?:::\s*<[^;{}]*>)?\s*\(", code)]
+
+
 def scan_patterns(path: Path, source: str) -> list[Finding]:
     """Inspect each source pattern once and report its location."""
     code, size = production_source(source)
-    findings = []
+    findings = scan_saturating_arithmetic(path, code)
 
     def report(rule: str, line: int, message: str) -> None:
         findings.append(Finding(rule, relative_path(path), line, message))

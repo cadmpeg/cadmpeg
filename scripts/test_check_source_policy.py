@@ -1217,5 +1217,28 @@ let text = "cadmpeg_ir::eval::curve_point(0.).ok()";
         self.assertEqual(self.scan(body), [])
 
 
+class SaturatingArithmetic(TempSourceCase):
+    def test_saturating_calls_require_checked_branches(self) -> None:
+        self.write("crates/demo/src/lib.rs", """fn f() {
+    count.saturating_add(1);
+    usize::saturating_mul(count, 2);
+    NonZeroU32::MIN.saturating_add(1);
+    count.saturating_sub
+        (1);
+}
+""")
+        self.assertEqual([f.line for f in self.findings("saturating_arithmetic")], [2, 3, 4, 5])
+
+    def test_checked_arithmetic_and_test_code_are_exempt(self) -> None:
+        self.write("crates/demo/src/lib.rs", """fn f() {
+    count.checked_add(1).ok_or(error)?;
+    // count.saturating_add(1);
+    let text = "count.saturating_mul(2)";
+}
+#[cfg(test)] mod tests { fn f() { count.saturating_sub(1); } }
+""")
+        self.assertEqual(self.findings("saturating_arithmetic"), [])
+
+
 if __name__ == "__main__":
     unittest.main()
