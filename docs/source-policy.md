@@ -184,10 +184,14 @@ charged context methods through the core method call graph. A charge on only
 one branch does not admit a loop. A direct
 `.map_err(Error::ResourceLimit)?` preserves the resource payload and is also
 admitted; closures and other error constructors are not admitted. A positive literal or a checked positive increment followed directly by
-`ok_or` or `ok_or_else` and `?` charges the iteration. Input-dependent body work has a separate charge. A scan can instead use a charge in the same block before it
+`ok_or` or `ok_or_else` and `?` charges the iteration. Input-dependent body work has a separate charge. A scan can instead use a dominating charge before it
 with its exact extent, `u64_from_index(values.len())`, or the capacity of a
 hash table whose buckets are scanned. A simple local extent
-alias is accepted. Each charge admits one scan. Conditional, later, dropped,
+alias is accepted. Comparison and search operands can use the same admission,
+including additive operand lengths and propagated `checked_add` sums. A charge
+can dominate a scan in a conditional child block. It cannot pay for repeated
+scans inside a loop or deferred closure from outside that scope. Each charge
+admits one scan. Conditional, later, dropped,
 zero, unrelated and reused charges do not admit it. Nested scans need their
 own charge. Bodies and predicates with further input-dependent work charge
 that work separately.

@@ -1311,6 +1311,76 @@ fn read(ctx: &DecodeContext<'_>, left: [String; 4], right: [String; 4], pair: (S
 }""")
         self.assertEqual([f.line for f in self.findings("uncharged_decode_work")], [4, 6, 7, 8])
 
+    def test_comparisons_and_searches_accept_total_operand_charges(self):
+        self.write(self.PATH, """fn read(ctx: &DecodeContext<'_>, left: &[u8], right: &[u8], text: &str, needle: &str) {
+    ctx.charge_work(u64_from_index(left.len()) + u64_from_index(right.len()), "compare")?;
+    left[..] == right[..];
+    ctx.charge_work(u64_from_index(left.len()).checked_add(u64_from_index(right.len())).ok_or_else(error)?, "compare")?;
+    left.cmp(right);
+    let work = u64_from_index(text.len()) + u64_from_index(needle.len());
+    ctx.charge_work(work, "search")?;
+    text.find(needle);
+    ctx.charge_work(u64_from_index(right.len()), "compare")?;
+    left != right;
+    ctx.charge_work(u64_from_index(needle.len()), "prefix")?;
+    text.starts_with(needle);
+}""")
+        self.assertEqual(self.findings("uncharged_decode_work"), [])
+
+    def test_outer_block_charge_dominates_single_conditional_scan(self):
+        self.write(self.PATH, """fn read(ctx: &DecodeContext<'_>) {
+    ctx.charge_work(u64_from_index(values.len()), "scan")?;
+    if flag { values.iter().any(predicate); }
+}""")
+        self.assertEqual(self.findings("uncharged_decode_work"), [])
+
+    def test_charges_outside_loops_and_closures_do_not_pay_repeated_searches(self):
+        self.write(self.PATH, """fn read(ctx: &DecodeContext<'_>) {
+    ctx.charge_work(u64_from_index(others.len()), "search")?;
+    for value in values {
+        ctx.charge_work(1, "iteration")?;
+        others.contains(&value);
+    }
+    ctx.charge_work(u64_from_index(others.len()), "search")?;
+    values.map(|value| others.contains(&value));
+    ctx.charge_work(u64_from_index(others.len()), "search")?;
+    values.map(|value| { others.contains(&value) });
+}""")
+        self.assertEqual([f.line for f in self.findings("uncharged_decode_work")], [5, 8, 10])
+
+    def test_comparison_charges_are_not_reused_and_track_operand_mutation(self):
+        self.write(self.PATH, """fn read(ctx: &DecodeContext<'_>, left: String, right: String) {
+    ctx.charge_work(u64_from_index(left.len()) + u64_from_index(right.len()), "compare")?;
+    left == right;
+    left == right;
+    ctx.charge_work(u64_from_index(left.len()) + u64_from_index(right.len()), "compare")?;
+    change(&mut right);
+    left == right;
+    ctx.charge_work(u64_from_index(other.len()), "compare")?;
+    left.cmp(&right);
+}""")
+        self.assertEqual([f.line for f in self.findings("uncharged_decode_work")], [4, 7, 9])
+
+    def test_comparison_calls_and_projections_are_not_fixed_by_syntax(self):
+        self.write(self.PATH, """fn read(ctx: &DecodeContext<'_>) {
+    left.window() == right.window();
+    first.text == second.text;
+    texts[index] == other_texts[index];
+    make_left() == make_right();
+}""")
+        self.assertEqual([f.line for f in self.findings("uncharged_decode_work")], [2, 3, 4, 5])
+
+    def test_charging_only_the_needle_does_not_pay_for_a_search(self):
+        self.write(self.PATH, """fn read(ctx: &DecodeContext<'_>, text: &str, needle: &str) {
+    ctx.charge_work(u64_from_index(needle.len()), "search")?;
+    text.find(needle);
+    ctx.charge_work(u64_from_index(needle.len()), "search")?;
+    text.contains(needle);
+    ctx.charge_work(u64_from_index(value.len()), "search")?;
+    values.contains(&value);
+}""")
+        self.assertEqual([f.line for f in self.findings("uncharged_decode_work")], [3, 5, 7])
+
     def test_unadmitted_loops_and_iterator_searches(self):
         self.write(self.PATH, """fn read(ctx: &DecodeContext<'_>) {
     for value in values { use_value(value); }
