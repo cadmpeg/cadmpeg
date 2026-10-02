@@ -39,8 +39,8 @@ fn feature_body_selection_retains_complete_input_local_identities_atomically() {
                     "nx:om-body-object#94".to_string(),
                     "nx:om-body-object#122".to_string(),
                 ],
-                "nx:om-object-indices#94,122".to_string()
-            )
+                "nx:om-object-indices#94,122".to_string(), &cadmpeg_test_support::service_decode_context(),
+            ).expect("body selection admission")
             .unwrap()
         );
         assert!(matches!(
@@ -70,8 +70,8 @@ fn feature_body_selection_retains_complete_input_local_identities_atomically() {
             .expect("resource admission"),
             BodySelection::local(
                 vec!["nx:om-body-object#94".to_string()],
-                "nx:om-object-indices#94,150".to_string()
-            )
+                "nx:om-object-indices#94,150".to_string(), &cadmpeg_test_support::service_decode_context(),
+            ).expect("body selection admission")
             .unwrap()
         );
         let bindings = BTreeMap::from([(94, vec![first.clone()])]);
@@ -200,8 +200,8 @@ fn feature_body_selection_uses_complete_offset_store_proof_for_colliding_index()
                 .expect("resource admission"),
             BodySelection::local(
                 vec!["nx:om-data-blocks-3:block#94".to_string()],
-                "nx:om-object-index#94".to_string()
-            )
+                "nx:om-object-index#94".to_string(), &cadmpeg_test_support::service_decode_context(),
+            ).expect("body selection admission")
             .unwrap()
         );
     });
@@ -567,8 +567,8 @@ fn nx_boolean_retains_disjoint_current_and_input_local_bodies() {
                     },
                     BodySelection::local(
                         vec!["nx:om-body-object#122".to_string()],
-                        "nx:om-object-indices#122".to_string()
-                    )
+                        "nx:om-object-indices#122".to_string(), &cadmpeg_test_support::service_decode_context(),
+                    ).expect("body selection admission")
                     .unwrap(), &cadmpeg_test_support::service_decode_context(),
                 ).expect("operand admission")
                 .unwrap(),
@@ -633,16 +633,16 @@ fn nx_boolean_projects_unique_offset_store_body_blocks_as_local_bodies() {
                 operands: cadmpeg_ir::features::CombineOperands::new(
                     BodySelection::local(
                         vec!["nx:om-data-blocks-3:block#401".to_string()],
-                        "nx:om-object-index#401".to_string()
-                    )
+                        "nx:om-object-index#401".to_string(), &cadmpeg_test_support::service_decode_context(),
+                    ).expect("body selection admission")
                     .unwrap(),
                     BodySelection::local(
                         vec![
                             "nx:om-data-blocks-3:block#402".to_string(),
                             "nx:om-data-blocks-3:block#403".to_string(),
                         ],
-                        "nx:om-object-indices#402,403".to_string()
-                    )
+                        "nx:om-object-indices#402,403".to_string(), &cadmpeg_test_support::service_decode_context(),
+                    ).expect("body selection admission")
                     .unwrap(), &cadmpeg_test_support::service_decode_context(),
                 ).expect("operand admission")
                 .unwrap(),

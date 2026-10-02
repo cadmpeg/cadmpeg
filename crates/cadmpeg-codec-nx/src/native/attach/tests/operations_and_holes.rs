@@ -189,13 +189,13 @@ fn nx_boolean_keeps_body_namespace_proofs_atomic() {
             operands: cadmpeg_ir::features::CombineOperands::new(
                 BodySelection::local(
                     vec!["nx:om-data-blocks-3:block#94".to_string()],
-                    "nx:om-object-index#94".to_string()
-                )
+                    "nx:om-object-index#94".to_string(), &cadmpeg_test_support::service_decode_context(),
+                ).expect("body selection admission")
                 .unwrap(),
                 BodySelection::local(
                     vec!["nx:om-data-blocks-3:block#122".to_string()],
-                    "nx:om-object-indices#122".to_string()
-                )
+                    "nx:om-object-indices#122".to_string(), &cadmpeg_test_support::service_decode_context(),
+                ).expect("body selection admission")
                 .unwrap(), &cadmpeg_test_support::service_decode_context(),
             ).expect("operand admission")
             .unwrap(),
@@ -278,8 +278,8 @@ fn nx_sew_projects_ordered_body_operands_without_inventing_tolerance() {
                     "nx:om-body-object#20".to_string(),
                     "nx:om-body-object#30".to_string(),
                 ],
-                "nx:om-object-indices#10,20,30".to_string()
-            )
+                "nx:om-object-indices#10,20,30".to_string(), &cadmpeg_test_support::service_decode_context(),
+            ).expect("body selection admission")
             .unwrap())
             .try_into()
             .unwrap(),
@@ -351,8 +351,8 @@ fn nx_sew_projects_ordered_body_operands_without_inventing_tolerance() {
                     "nx:om-body-object#10".to_string(),
                     "nx:om-body-object#20".to_string(),
                 ],
-                "nx:om-object-indices#10,20,30".to_string()
-            )
+                "nx:om-object-indices#10,20,30".to_string(), &cadmpeg_test_support::service_decode_context(),
+            ).expect("body selection admission")
             .unwrap())
             .try_into()
             .unwrap(),
@@ -399,8 +399,8 @@ fn nx_sew_projects_ordered_body_operands_without_inventing_tolerance() {
                     "nx:om-data-blocks-4:block#71".to_string(),
                     "nx:om-data-blocks-4:block#70".to_string(),
                 ],
-                "nx:om-object-indices#72,71,70".to_string()
-            )
+                "nx:om-object-indices#72,71,70".to_string(), &cadmpeg_test_support::service_decode_context(),
+            ).expect("body selection admission")
             .unwrap())
             .try_into()
             .unwrap(),
@@ -437,8 +437,8 @@ fn nx_delete_body_requires_a_primary_body_field() {
         FeatureDefinition::Operation(FeatureOperation::DeleteBody {
             bodies: BodySelection::local(
                 vec!["nx:om-body-object#20".to_string()],
-                "nx:om-object-index#20".to_string()
-            )
+                "nx:om-object-index#20".to_string(), &cadmpeg_test_support::service_decode_context(),
+            ).expect("body selection admission")
             .unwrap(),
             mode: BodyRetentionMode::DeleteSelected,
         })
@@ -448,8 +448,8 @@ fn nx_delete_body_requires_a_primary_body_field() {
         FeatureDefinition::Operation(FeatureOperation::DeleteBody {
             bodies: BodySelection::local(
                 vec!["nx:om-body-object#72".to_string()],
-                "nx:om-object-index#72".to_string()
-            )
+                "nx:om-object-index#72".to_string(), &cadmpeg_test_support::service_decode_context(),
+            ).expect("body selection admission")
             .unwrap(),
             mode: BodyRetentionMode::DeleteSelected,
         })
@@ -466,8 +466,8 @@ fn nx_delete_body_requires_a_primary_body_field() {
         FeatureDefinition::Operation(FeatureOperation::DeleteBody {
             bodies: BodySelection::local(
                 vec!["nx:om-data-blocks-2:block#72".to_string()],
-                "nx:om-object-index#72".to_string()
-            )
+                "nx:om-object-index#72".to_string(), &cadmpeg_test_support::service_decode_context(),
+            ).expect("body selection admission")
             .unwrap(),
             mode: BodyRetentionMode::DeleteSelected,
         })
@@ -498,13 +498,13 @@ fn nx_trim_body_retains_exact_input_store_target_and_tools() {
             operands: cadmpeg_ir::features::TrimBodyOperands::new(
                 BodySelection::local(
                     vec!["nx:om-data-blocks-2:block#114".to_string()],
-                    "nx:om-object-index#114".to_string()
-                )
+                    "nx:om-object-index#114".to_string(), &cadmpeg_test_support::service_decode_context(),
+                ).expect("body selection admission")
                 .unwrap(),
                 BodySelection::local(
                     vec!["nx:om-data-blocks-2:block#113".to_string()],
-                    "nx:om-object-indices#113".to_string()
-                )
+                    "nx:om-object-indices#113".to_string(), &cadmpeg_test_support::service_decode_context(),
+                ).expect("body selection admission")
                 .unwrap(), &cadmpeg_test_support::service_decode_context(),
             ).expect("operand admission")
             .unwrap(),
@@ -525,8 +525,8 @@ fn nx_trim_body_retains_exact_input_store_target_and_tools() {
             operands: cadmpeg_ir::features::TrimBodyOperands::new(
                 BodySelection::local(
                     vec!["nx:om-data-blocks-2:block#114".to_string()],
-                    "nx:om-object-index#114".to_string()
-                )
+                    "nx:om-object-index#114".to_string(), &cadmpeg_test_support::service_decode_context(),
+                ).expect("body selection admission")
                 .unwrap(),
                 BodySelection::Unresolved, &cadmpeg_test_support::service_decode_context(),
             ).expect("operand admission")
@@ -565,13 +565,13 @@ fn nx_trim_body_projects_distinct_target_and_ordered_tools() {
             operands: cadmpeg_ir::features::TrimBodyOperands::new(
                 BodySelection::local(
                     vec!["nx:om-body-object#10".to_string()],
-                    "nx:om-object-index#10".to_string()
-                )
+                    "nx:om-object-index#10".to_string(), &cadmpeg_test_support::service_decode_context(),
+                ).expect("body selection admission")
                 .unwrap(),
                 BodySelection::local(
                     vec!["nx:om-body-object#20".to_string()],
-                    "nx:om-object-indices#20".to_string()
-                )
+                    "nx:om-object-indices#20".to_string(), &cadmpeg_test_support::service_decode_context(),
+                ).expect("body selection admission")
                 .unwrap(), &cadmpeg_test_support::service_decode_context(),
             ).expect("operand admission")
             .unwrap(),
@@ -617,8 +617,8 @@ fn nx_trim_body_projects_distinct_target_and_ordered_tools() {
             operands: cadmpeg_ir::features::TrimBodyOperands::new(
                 BodySelection::local(
                     vec!["nx:om-body-object#10".to_string()],
-                    "nx:om-object-index#10".to_string()
-                )
+                    "nx:om-object-index#10".to_string(), &cadmpeg_test_support::service_decode_context(),
+                ).expect("body selection admission")
                 .unwrap(),
                 BodySelection::Unresolved, &cadmpeg_test_support::service_decode_context(),
             ).expect("operand admission")
@@ -1057,8 +1057,8 @@ fn nx_extract_body_projects_its_primary_source_namespace() {
         FeatureDefinition::Operation(FeatureOperation::ExtractBody {
             source: BodySelection::local(
                 vec!["nx:om-data-blocks-2:block#72".to_string()],
-                "nx:om-object-index#72".to_string()
-            )
+                "nx:om-object-index#72".to_string(), &cadmpeg_test_support::service_decode_context(),
+            ).expect("body selection admission")
             .unwrap(),
         })
     );

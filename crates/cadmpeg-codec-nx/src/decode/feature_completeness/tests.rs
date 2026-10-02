@@ -557,14 +557,14 @@ fn nx_selection_completeness_requires_nonempty_unique_identities() {
     assert!(!body_selection_is_incomplete(
         &BodySelection::local(
             vec!["nx:om-body-object#12".into()],
-            "nx:om-object-index#12".into()
-        )
+            "nx:om-object-index#12".into(), &cadmpeg_test_support::service_decode_context(),
+        ).expect("body selection admission")
         .unwrap()
     ));
     assert!(BodySelection::local(
         vec!["nx:om-body-object#12".into(), "nx:om-body-object#12".into()],
-        "nx:om-object-indices#12,13".into()
-    )
+        "nx:om-object-indices#12,13".into(), &cadmpeg_test_support::service_decode_context(),
+    ).expect("body selection admission")
     .is_err());
     assert!(face_selection_is_incomplete(&FaceSelection::Resolved {
         faces: Vec::new(),
@@ -1651,8 +1651,8 @@ fn nx_body_producing_feature_families_require_history_outputs() {
         .set_definition(FeatureDefinition::Operation(FeatureOperation::SewBodies {
             bodies: (cadmpeg_ir::features::BodySelection::local(
                 vec![output.as_str().to_owned(), "second-sheet".into()],
-                "nx:body-selection#sew".into(),
-            )
+                "nx:body-selection#sew".into(), &cadmpeg_test_support::service_decode_context(),
+            ).expect("body selection admission")
             .unwrap())
             .try_into()
             .unwrap(),
@@ -1669,13 +1669,13 @@ fn nx_body_producing_feature_families_require_history_outputs() {
             operands: cadmpeg_ir::features::CombineOperands::new(
                 cadmpeg_ir::features::BodySelection::local(
                     vec!["target-a".into()],
-                    "nx:body-selection#targets".into(),
-                )
+                    "nx:body-selection#targets".into(), &cadmpeg_test_support::service_decode_context(),
+                ).expect("body selection admission")
                 .unwrap(),
                 cadmpeg_ir::features::BodySelection::local(
                     vec!["tool".into()],
-                    "nx:body-selection#tools".into(),
-                )
+                    "nx:body-selection#tools".into(), &cadmpeg_test_support::service_decode_context(),
+                ).expect("body selection admission")
                 .unwrap(), &cadmpeg_test_support::service_decode_context(),
             ).expect("operand admission")
             .unwrap(),

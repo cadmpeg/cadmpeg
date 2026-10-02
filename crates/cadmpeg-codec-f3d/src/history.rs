@@ -2198,7 +2198,7 @@ fn combine_external_local_tools(
         bodies.push(id);
     }
     let native = ctx.copy_retained_text(&scope.id, "copy F3D Combine scope identity")?;
-    Ok(cadmpeg_ir::features::BodySelection::local_for_decode(bodies, native, ctx)?.ok())
+    Ok(cadmpeg_ir::features::BodySelection::local(bodies, native, ctx)?.ok())
 }
 
 fn historical_body_slot(id: &str) -> Option<i64> {

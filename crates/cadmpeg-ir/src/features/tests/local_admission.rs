@@ -92,6 +92,46 @@ fn feature_id(suffix: &str) -> FeatureId {
     FeatureId::mint(format!("test:model:feature#{suffix}")).unwrap()
 }
 
+#[test]
+fn local_and_generated_body_constructors_use_the_caller_session() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    for generated in [false, true] {
+        for dimension in [ResourceDimension::MaterializedBytes, ResourceDimension::CollectionItems, ResourceDimension::WorkUnits] {
+            let mut policy = DecodePolicy::service();
+            match dimension {
+                ResourceDimension::MaterializedBytes => policy.limits.max_materialized_bytes = 0,
+                ResourceDimension::CollectionItems => policy.limits.max_collection_items = 0,
+                ResourceDimension::WorkUnits => policy.limits.max_work_units = 0,
+                _ => unreachable!(),
+            }
+            let arena = DecodeArena::new();
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            let result = if generated {
+                let member = crate::features::GeneratedBodyRef::new(feature_id("producer"), "body".into()).unwrap();
+                BodySelection::generated(vec![member], "native".into(), &ctx)
+            } else {
+                BodySelection::local(vec!["body".into()], "native".into(), &ctx)
+            };
+            let limit = result.unwrap_err();
+            assert_eq!(limit.dimension, dimension);
+            assert!(matches!(ctx.finish_session(), Err(cadmpeg_core::CodecError::ResourceLimit(original)) if original == limit));
+        }
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = 0;
+        policy.limits.max_recursion_depth = 0;
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let selection = if generated {
+            let member = crate::features::GeneratedBodyRef::new(feature_id("producer"), "body".into()).unwrap();
+            BodySelection::generated(vec![member], "native".into(), &ctx)
+        } else {
+            BodySelection::local(vec!["body".into()], "native".into(), &ctx)
+        }.unwrap().unwrap();
+        assert!(matches!(selection, BodySelection::Local { .. } | BodySelection::Generated { .. }));
+        ctx.finish_session().unwrap();
+    }
+}
+
 fn body_id(suffix: &str) -> BodyId {
     BodyId::mint(format!("test:model:body#{suffix}")).unwrap()
 }

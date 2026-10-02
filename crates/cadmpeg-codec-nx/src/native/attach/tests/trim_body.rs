@@ -28,7 +28,7 @@ fn nx_trim_body_rejects_mixed_store_and_target_alias_tools() {
         };
         let expected_target = Some(FeatureDefinition::Operation(FeatureOperation::TrimBodies {
             operands: cadmpeg_ir::features::TrimBodyOperands::new(
-                BodySelection::local(vec![body.1.clone()], "nx:om-object-index#114".to_string())
+                BodySelection::local(vec![body.1.clone()], "nx:om-object-index#114".to_string(), &cadmpeg_test_support::service_decode_context(),).expect("body selection admission")
                     .unwrap(),
                 BodySelection::Unresolved, &cadmpeg_test_support::service_decode_context(),
             ).expect("operand admission")
@@ -63,7 +63,7 @@ fn nx_trim_body_rejects_mixed_store_and_target_alias_tools() {
             project_trim(std::slice::from_ref(&body), &[&target_alias_operand],),
             Some(FeatureDefinition::Operation(FeatureOperation::TrimBodies {
                 operands: cadmpeg_ir::features::TrimBodyOperands::new(
-                    BodySelection::local(vec![body.1], "nx:om-object-index#114".to_string())
+                    BodySelection::local(vec![body.1], "nx:om-object-index#114".to_string(), &cadmpeg_test_support::service_decode_context(),).expect("body selection admission")
                         .unwrap(),
                     BodySelection::Unresolved, &cadmpeg_test_support::service_decode_context(),
                 ).expect("operand admission")

@@ -428,8 +428,8 @@ fn validate_compact_body_selection_edits(
             crate::resolved_features::component_paths::compact_body_selection_value_charged(
                 &ctx,
                 &selection.local_body_ids,
-            )?,
-        )
+            )?, &ctx,
+        )?
         .map_err(|error| CodecError::NotImplemented(error.to_string()))?;
         if bodies != &expected {
             return Err(CodecError::NotImplemented(format!(

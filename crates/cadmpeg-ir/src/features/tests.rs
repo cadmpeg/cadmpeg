@@ -448,10 +448,10 @@ fn body_selection_admission_rejects_invalid_members() {
         vec![" ".to_owned()],
         vec!["a".to_owned(), "a".to_owned()],
     ] {
-        assert!(BodySelection::local(names.clone(), "native".into()).is_err());
+        assert!(BodySelection::local(names.clone(), "native".into(), &cadmpeg_test_support::service_decode_context(),).expect("body selection admission").is_err());
         assert!(NativeSelections::try_from(names).is_err());
     }
-    assert!(BodySelection::local(vec!["body".into()], " ".into()).is_err());
+    assert!(BodySelection::local(vec!["body".into()], " ".into(), &cadmpeg_test_support::service_decode_context(),).expect("body selection admission").is_err());
     let state = FeatureInputTopologyId::mint("test:model:feature-input#1").unwrap();
     assert!(BodySelection::historical(state, vec![], "native".into(), &cadmpeg_test_support::service_decode_context()).expect("selection storage is admitted").is_err());
     assert!(GeneratedBodyRef::new(

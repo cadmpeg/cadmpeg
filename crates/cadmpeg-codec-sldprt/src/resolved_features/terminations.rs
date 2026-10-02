@@ -1721,7 +1721,7 @@ pub(crate) fn project_compact_combine_paths(
             ctx.reserve_vec(&mut bodies, 1, OPERATION)?;
             bodies.push(body);
             let native = copy_termination_text(ctx, native, OPERATION)?;
-            let Ok(selection) = BodySelection::generated_for_decode(bodies, native, ctx)? else {
+            let Ok(selection) = BodySelection::generated(bodies, native, ctx)? else {
                 return Ok(None);
             };
             Ok(Some((selection, components, owner)))
