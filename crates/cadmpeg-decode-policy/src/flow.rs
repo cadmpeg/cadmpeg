@@ -164,10 +164,15 @@ impl<'tcx> Analysis<'_, 'tcx> {
         }
         seen.push(expression.hir_id);
         if let Some((definition, _)) = self.call(expression) {
-            if types::standard(self.tcx, definition) && self.tcx.item_name(definition).as_str() == "size_of" {
+            if types::standard(self.tcx, definition)
+                && self.tcx.item_name(definition).as_str() == "size_of"
+            {
                 let arguments = self.call_arguments(expression)?;
                 let element = arguments.types().next()?;
-                return Some(vec![ExtentTerm { factors: vec![format!("size:{element}")], coefficient: 1 }]);
+                return Some(vec![ExtentTerm {
+                    factors: vec![format!("size:{element}")],
+                    coefficient: 1,
+                }]);
             }
         }
         if let Some(count) = self.constant_count(expression, &mut Vec::new()) {
@@ -180,10 +185,15 @@ impl<'tcx> Analysis<'_, 'tcx> {
             ExprKind::AddrOf(_, _, inner) | ExprKind::DropTemps(inner) => {
                 return self.extent_terms(inner, seen)
             }
-            ExprKind::Binary(operator, left, right) if operator.node == rustc_hir::BinOpKind::Sub => {
+            ExprKind::Binary(operator, left, right)
+                if operator.node == rustc_hir::BinOpKind::Sub =>
+            {
                 let left = self.extent_terms(left, &mut seen.clone())?;
                 let right = self.extent_terms(right, &mut seen.clone())?;
-                return Some(vec![ExtentTerm { factors: vec![format!("difference:{left:?}:{right:?}")], coefficient: 1 }]);
+                return Some(vec![ExtentTerm {
+                    factors: vec![format!("difference:{left:?}:{right:?}")],
+                    coefficient: 1,
+                }]);
             }
             ExprKind::Cast(inner, _) => {
                 let source = self.expr_ty(inner);
@@ -211,7 +221,11 @@ impl<'tcx> Analysis<'_, 'tcx> {
                     .and_then(|operand| self.key(operand, &mut Vec::new()))
                     .map(|key| {
                         vec![ExtentTerm {
-                            factors: vec![if name.as_str() == "capacity" { format!("{key}.capacity") } else { key }],
+                            factors: vec![if name.as_str() == "capacity" {
+                                format!("{key}.capacity")
+                            } else {
+                                key
+                            }],
                             coefficient: 1,
                         }]
                     });
@@ -247,8 +261,12 @@ impl<'tcx> Analysis<'_, 'tcx> {
             }
         }
         if let Some(init) = self.initializer(expression) {
-            if let Some(terms) = self.extent_terms(init, seen) { return Some(terms); }
-            if !matches!(init.kind, ExprKind::If(..) | ExprKind::Match(..)) { return None; }
+            if let Some(terms) = self.extent_terms(init, seen) {
+                return Some(terms);
+            }
+            if !matches!(init.kind, ExprKind::If(..) | ExprKind::Match(..)) {
+                return None;
+            }
         }
         self.key(expression, &mut Vec::new()).map(|key| {
             vec![ExtentTerm {
@@ -360,8 +378,15 @@ impl<'tcx> Analysis<'_, 'tcx> {
         ) {
             self.flow.storage = true;
         }
-        if matches!(name.as_str(), "charge_retained" | "charge_retained_limit" | "reserve_scoped" | "reserve_scoped_limit") && self.trusted_context_callee(expression) {
-            if let Some(terms) = operands.get(1).and_then(|amount| self.extent_terms(amount, &mut Vec::new())) {
+        if matches!(
+            name.as_str(),
+            "charge_retained" | "charge_retained_limit" | "reserve_scoped" | "reserve_scoped_limit"
+        ) && self.trusted_context_callee(expression)
+        {
+            if let Some(terms) = operands
+                .get(1)
+                .and_then(|amount| self.extent_terms(amount, &mut Vec::new()))
+            {
                 self.flow.storage_extents.extend(terms);
             }
         }
@@ -459,8 +484,22 @@ impl<'tcx> Analysis<'_, 'tcx> {
                             || key.starts_with(&format!("{term}."))
                     })
             });
-            self.flow.storage_extents.retain(|term| !term.factors.iter().any(|factor| factor.contains(&key) || factor.starts_with(&format!("{key}.")) || key.starts_with(&format!("{factor}."))));
-            self.flow.storage_slots.retain(|credit| credit.target != key && !credit.target.starts_with(&format!("{key}.")) && !credit.terms.iter().flat_map(|term| &term.factors).any(|factor| factor.contains(&key)));
+            self.flow.storage_extents.retain(|term| {
+                !term.factors.iter().any(|factor| {
+                    factor.contains(&key)
+                        || factor.starts_with(&format!("{key}."))
+                        || key.starts_with(&format!("{factor}."))
+                })
+            });
+            self.flow.storage_slots.retain(|credit| {
+                credit.target != key
+                    && !credit.target.starts_with(&format!("{key}."))
+                    && !credit
+                        .terms
+                        .iter()
+                        .flat_map(|term| &term.factors)
+                        .any(|factor| factor.contains(&key))
+            });
             self.flow.mutated.insert(key);
         } else {
             self.flow.storage_extents.clear();

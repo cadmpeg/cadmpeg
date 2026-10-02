@@ -58,7 +58,9 @@ impl<'tcx> Analysis<'_, 'tcx> {
             operands.first().map(|operand| self.expr_ty(operand)),
         );
         let allocation = summary.map(|summary| summary.allocation);
-        if self.constant(expression, &mut Vec::new()) { return; }
+        if self.constant(expression, &mut Vec::new()) {
+            return;
+        }
         if allocation == Some(external::Allocation::None) {
             return;
         }
@@ -103,25 +105,46 @@ impl<'tcx> Analysis<'_, 'tcx> {
             return;
         }
         if let Some(external::Allocation::Input(index)) = allocation {
-            let shape = operands.get(index).map_or(Shape::Unknown, |operand| if self.fixed_value(operand) { Shape::Fixed } else { types::work(self.tcx, self.expr_ty(operand), &mut Vec::new()) });
-            self.shape_report(expression, shape, "external operation temporary or result storage");
+            let shape = operands.get(index).map_or(Shape::Unknown, |operand| {
+                if self.fixed_value(operand) {
+                    Shape::Fixed
+                } else {
+                    types::work(self.tcx, self.expr_ty(operand), &mut Vec::new())
+                }
+            });
+            self.shape_report(
+                expression,
+                shape,
+                "external operation temporary or result storage",
+            );
             return;
         }
         if allocation == Some(external::Allocation::Growth) {
             if name == "resize" {
                 if let Some(value) = operands.get(2) {
-                    if !self.constant(value, &mut Vec::new()) { self.shape_report(expression, self.clone_shape(self.expr_ty(value)), "resize child Clone"); }
+                    if !self.constant(value, &mut Vec::new()) {
+                        self.shape_report(
+                            expression,
+                            self.clone_shape(self.expr_ty(value)),
+                            "resize child Clone",
+                        );
+                    }
                 }
             }
-            if self.symbolic_storage(&operands, name) || self.admitted_slots(&operands, name) { return; }
+            if self.symbolic_storage(&operands, name) || self.admitted_slots(&operands, name) {
+                return;
+            }
             if let Some(receiver) = operands.first() {
                 let receiver_type = self.expr_ty_adjusted(receiver).peel_refs();
-                let shape = if matches!(receiver_type.kind(), ty::Adt(owner, _) if types::standard(self.tcx, owner.did()) && matches!(self.tcx.item_name(owner.did()).as_str(), "Vec" | "VecDeque" | "BinaryHeap")) {
+                let shape = if matches!(receiver_type.kind(), ty::Adt(owner, _) if types::standard(self.tcx, owner.did()) && matches!(self.tcx.item_name(owner.did()).as_str(), "Vec" | "VecDeque" | "BinaryHeap"))
+                {
                     match types::heap(self.tcx, receiver_type, &mut Vec::new()) {
                         Shape::Unknown => Shape::Dynamic,
                         shape => shape,
                     }
-                } else { types::heap(self.tcx, receiver_type, &mut Vec::new()) };
+                } else {
+                    types::heap(self.tcx, receiver_type, &mut Vec::new())
+                };
                 self.shape_report(
                     expression,
                     if shape == Shape::Dynamic
@@ -214,10 +237,8 @@ impl<'tcx> Analysis<'_, 'tcx> {
         }
         if name == "clone" {
             match self.implementation(expression, definition) {
-                Some(id) if !types::standard(self.tcx, id) => {
-                    if !types::derived(self.tcx, id) {
-                        return;
-                    }
+                Some(id) if !types::standard(self.tcx, id) && !types::derived(self.tcx, id) => {
+                    return;
                 }
                 None => {
                     self.shape_report(
@@ -230,7 +251,11 @@ impl<'tcx> Analysis<'_, 'tcx> {
                 _ => (),
             }
         }
-        if name == "default" && self.implementation(expression, definition).is_some_and(|id| types::derived(self.tcx, id)) {
+        if name == "default"
+            && self
+                .implementation(expression, definition)
+                .is_some_and(|id| types::derived(self.tcx, id))
+        {
             let shape = self.default_shape(self.expr_ty(expression), &mut Vec::new());
             self.shape_report(expression, shape, "derived Default");
             return;
@@ -394,16 +419,34 @@ impl<'tcx> Visitor<'tcx> for FormatShape<'_, '_, 'tcx> {
                         let value = self.analysis.expr_ty(operand).peel_refs();
                         let shape = match value.kind() {
                             ty::Str | ty::Slice(_) => Shape::Dynamic,
-                            ty::Adt(owner, _) if !types::standard(self.analysis.tcx, owner.did()) => {
-                                if name.as_str() == "new_debug" && self.analysis.trait_method(value, "Debug", "fmt").is_some_and(|id| types::derived(self.analysis.tcx, id)) {
+                            ty::Adt(owner, _)
+                                if !types::standard(self.analysis.tcx, owner.did()) =>
+                            {
+                                if name.as_str() == "new_debug"
+                                    && self
+                                        .analysis
+                                        .trait_method(value, "Debug", "fmt")
+                                        .is_some_and(|id| types::derived(self.analysis.tcx, id))
+                                {
                                     types::work(self.analysis.tcx, value, &mut Vec::new())
-                                } else { Shape::Unknown }
+                                } else {
+                                    Shape::Unknown
+                                }
                             }
                             _ => types::heap(self.analysis.tcx, value, &mut Vec::new()),
                         };
-                        self.shape = self.shape.join(if shape == Shape::Fixed && !self.analysis.trait_method(value, "Debug", "fmt").is_some_and(|id| types::derived(self.analysis.tcx, id)) {
-                            Shape::Unknown
-                        } else { shape });
+                        self.shape = self.shape.join(
+                            if shape == Shape::Fixed
+                                && !self
+                                    .analysis
+                                    .trait_method(value, "Debug", "fmt")
+                                    .is_some_and(|id| types::derived(self.analysis.tcx, id))
+                            {
+                                Shape::Unknown
+                            } else {
+                                shape
+                            },
+                        );
                     } else if name.as_str() == "from_usize"
                         && !self.analysis.constant(operand, &mut Vec::new())
                     {

@@ -206,7 +206,9 @@ impl<'tcx> Analysis<'_, 'tcx> {
             }
             ExprKind::Repeat(value, _) => self.constant(value, seen),
             ExprKind::Block(block, _) => block.expr.is_some_and(|value| self.constant(value, seen)),
-            ExprKind::If(_, yes, Some(no)) => self.constant(yes, &mut seen.clone()) && self.constant(no, &mut seen.clone()),
+            ExprKind::If(_, yes, Some(no)) => {
+                self.constant(yes, &mut seen.clone()) && self.constant(no, &mut seen.clone())
+            }
             ExprKind::Call(_, _) | ExprKind::MethodCall(_, _, _, _) => {
                 let Some((definition, operands)) = self.call(expression) else {
                     return false;
@@ -226,9 +228,21 @@ impl<'tcx> Analysis<'_, 'tcx> {
                             || self.constant(operand, seen)
                     }),
                     "size_of" | "align_of" => true,
-                    "must_use" | "identity" => operands.iter().all(|operand| self.constant(operand, &mut seen.clone())),
+                    "must_use" | "identity" => operands
+                        .iter()
+                        .all(|operand| self.constant(operand, &mut seen.clone())),
                     "format" => self.format_shape(&operands) == Shape::Fixed,
-                    "from" | "into" | "to_owned" | "to_string" | "clone" | "as_str" | "as_bytes" | "trim" | "trim_start" | "trim_end" | "to_ascii_lowercase" | "to_ascii_uppercase" | "to_lowercase" | "to_uppercase" | "replace" | "replacen" | "concat" | "join" | "repeat" => self.implementation(expression, definition).is_some_and(|id| types::standard(self.tcx, id)) && !operands.is_empty() && operands.iter().all(|operand| self.constant(operand, &mut seen.clone())),
+                    "from" | "into" | "to_owned" | "to_string" | "clone" | "as_str"
+                    | "as_bytes" | "trim" | "trim_start" | "trim_end" | "to_ascii_lowercase"
+                    | "to_ascii_uppercase" | "to_lowercase" | "to_uppercase" | "replace"
+                    | "replacen" | "concat" | "join" | "repeat" => {
+                        self.implementation(expression, definition)
+                            .is_some_and(|id| types::standard(self.tcx, id))
+                            && !operands.is_empty()
+                            && operands
+                                .iter()
+                                .all(|operand| self.constant(operand, &mut seen.clone()))
+                    }
                     "new" => operands.is_empty(),
                     "default" => {
                         operands.is_empty()
@@ -254,8 +268,15 @@ impl<'tcx> Analysis<'_, 'tcx> {
                     | rustc_hir::def::DefKind::AssocConst { .. },
                     _,
                 ) => true,
-                Res::Local(id) if self.fixed_parameters.contains(&id) && !self.flow.mutated.contains(&format!("local:{id:?}")) => true,
-                _ => self.initializer(expression).is_some_and(|init| self.constant(init, seen)),
+                Res::Local(id)
+                    if self.fixed_parameters.contains(&id)
+                        && !self.flow.mutated.contains(&format!("local:{id:?}")) =>
+                {
+                    true
+                }
+                _ => self
+                    .initializer(expression)
+                    .is_some_and(|init| self.constant(init, seen)),
             },
             _ => false,
         }

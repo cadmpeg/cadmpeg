@@ -33,7 +33,13 @@ impl<'tcx> Analysis<'_, 'tcx> {
                 // Comparing a dynamic sequence with a fixed-size operand reads
                 // at most that operand's fixed extent.
                 if let Some(definition) = self.typeck.type_dependent_def_id(expression.hir_id) {
-                    if self.implementation(expression, definition).and_then(|id| external::summary(self.tcx, id, Some(self.expr_ty(left)))).is_some_and(|cost| cost.work == external::Work::Fixed) { return; }
+                    if self
+                        .implementation(expression, definition)
+                        .and_then(|id| external::summary(self.tcx, id, Some(self.expr_ty(left))))
+                        .is_some_and(|cost| cost.work == external::Work::Fixed)
+                    {
+                        return;
+                    }
                     if self.checked_call(expression, definition) {
                         return;
                     }
@@ -47,7 +53,9 @@ impl<'tcx> Analysis<'_, 'tcx> {
                             );
                             return;
                         }
-                        if !types::derived(self.tcx, custom) { return; }
+                        if !types::derived(self.tcx, custom) {
+                            return;
+                        }
                     }
                 }
                 let bounded =
@@ -110,7 +118,9 @@ impl<'tcx> Analysis<'_, 'tcx> {
             );
             return;
         }
-        if self.constant(expression, &mut Vec::new()) { return; }
+        if self.constant(expression, &mut Vec::new()) {
+            return;
+        }
         if name == "clone" {
             match self.clone_shape(self.expr_ty(expression)) {
                 Shape::Fixed => return,
@@ -133,14 +143,34 @@ impl<'tcx> Analysis<'_, 'tcx> {
         }
         if name == "from_elem" && operands.first().is_some_and(|operand| matches!(self.expr_ty(operand).kind(), rustc_middle::ty::Tuple(fields) if fields.is_empty())) { return; }
         if name == "resize" {
-            let Some(fill) = operands.get(2) else { return; };
-            let child = if self.constant(fill, &mut Vec::new()) { Shape::Fixed } else { self.clone_shape(self.expr_ty(fill)) };
-            let shape = if operands.get(1).is_some_and(|count| self.constant(count, &mut Vec::new())) { child } else { child.join(Shape::Dynamic) };
+            let Some(fill) = operands.get(2) else {
+                return;
+            };
+            let child = if self.constant(fill, &mut Vec::new()) {
+                Shape::Fixed
+            } else {
+                self.clone_shape(self.expr_ty(fill))
+            };
+            let shape = if operands
+                .get(1)
+                .is_some_and(|count| self.constant(count, &mut Vec::new()))
+            {
+                child
+            } else {
+                child.join(Shape::Dynamic)
+            };
             if child == Shape::Unknown {
                 self.work_report(expression.span, child, Some(false), "resize child Clone");
             } else {
-                let paid = operands.get(1).map_or(Some(false), |count| self.take_credit(&[*count]));
-                self.work_report(expression.span, shape, if child == Shape::Dynamic { None } else { paid }, "resize");
+                let paid = operands
+                    .get(1)
+                    .map_or(Some(false), |count| self.take_credit(&[*count]));
+                self.work_report(
+                    expression.span,
+                    shape,
+                    if child == Shape::Dynamic { None } else { paid },
+                    "resize",
+                );
             }
             return;
         }
@@ -265,7 +295,11 @@ impl<'tcx> Analysis<'_, 'tcx> {
             };
             if let Some(element) = element {
                 let shape = types::slot_storage(self.tcx, element);
-                if shape == Shape::Unknown && !self.tcx.type_is_copy_modulo_regions(self.typing_env(), element) {
+                if shape == Shape::Unknown
+                    && !self
+                        .tcx
+                        .type_is_copy_modulo_regions(self.typing_env(), element)
+                {
                     self.work_report(
                         expression.span,
                         shape,
@@ -367,7 +401,15 @@ impl<'tcx> Analysis<'_, 'tcx> {
             external::Work::Argument(_) => self.take_credit(&[extent]),
             _ => self.take_credit(&operands),
         };
-        let fixed_copy = matches!(name, "extend_from_slice" | "copy_from_slice" | "copy_within" | "to_vec" | "to_owned") && match self.expr_ty(extent).peel_refs().kind() { rustc_middle::ty::Slice(element) | rustc_middle::ty::Array(element, _) => self.tcx.type_is_copy_modulo_regions(self.typing_env(), *element), _ => false };
+        let fixed_copy = matches!(
+            name,
+            "extend_from_slice" | "copy_from_slice" | "copy_within" | "to_vec" | "to_owned"
+        ) && match self.expr_ty(extent).peel_refs().kind() {
+            rustc_middle::ty::Slice(element) | rustc_middle::ty::Array(element, _) => self
+                .tcx
+                .type_is_copy_modulo_regions(self.typing_env(), *element),
+            _ => false,
+        };
         let checked_value = if matches!(summary.work, external::Work::Argument(_)) {
             self.expr_ty(extent).peel_refs()
         } else {
@@ -641,8 +683,12 @@ impl<'tcx> Analysis<'_, 'tcx> {
                 })
         });
         saved.storage |= self.flow.storage;
-        saved.storage_extents.retain(|term| self.flow.storage_extents.contains(term));
-        saved.storage_slots.retain(|credit| self.flow.storage_slots.contains(credit));
+        saved
+            .storage_extents
+            .retain(|term| self.flow.storage_extents.contains(term));
+        saved
+            .storage_slots
+            .retain(|credit| self.flow.storage_slots.contains(credit));
         self.flow = saved;
     }
 
@@ -705,7 +751,9 @@ impl<'tcx> Analysis<'_, 'tcx> {
                         } else {
                             self.flow.work.clear();
                         }
-                        if let Some(bounds) = self.extent_terms(input, &mut Vec::new()) { self.flow.loop_bounds.push(bounds); }
+                        if let Some(bounds) = self.extent_terms(input, &mut Vec::new()) {
+                            self.flow.loop_bounds.push(bounds);
+                        }
                         if let Some(body) = user_body {
                             self.visit_expr(body);
                         }
@@ -759,8 +807,12 @@ impl<'tcx> Analysis<'_, 'tcx> {
                     .work
                     .retain(|credit| after_yes.work.contains(credit));
                 self.flow.storage |= after_yes.storage;
-                self.flow.storage_extents.retain(|term| after_yes.storage_extents.contains(term));
-                self.flow.storage_slots.retain(|credit| after_yes.storage_slots.contains(credit));
+                self.flow
+                    .storage_extents
+                    .retain(|term| after_yes.storage_extents.contains(term));
+                self.flow
+                    .storage_slots
+                    .retain(|credit| after_yes.storage_slots.contains(credit));
                 self.flow.mutated.extend(after_yes.mutated);
                 return;
             }
@@ -778,8 +830,12 @@ impl<'tcx> Analysis<'_, 'tcx> {
                     self.visit_expr(arm.body);
                     merged.work.retain(|credit| self.flow.work.contains(credit));
                     merged.storage |= self.flow.storage;
-                    merged.storage_extents.retain(|term| self.flow.storage_extents.contains(term));
-                    merged.storage_slots.retain(|credit| self.flow.storage_slots.contains(credit));
+                    merged
+                        .storage_extents
+                        .retain(|term| self.flow.storage_extents.contains(term));
+                    merged
+                        .storage_slots
+                        .retain(|credit| self.flow.storage_slots.contains(credit));
                     merged.mutated.extend(self.flow.mutated.iter().cloned());
                 }
                 self.flow = merged;

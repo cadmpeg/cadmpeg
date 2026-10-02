@@ -30,7 +30,12 @@ pub fn moved_arrays(first: [String; 4], second: [String; 4]) {
     let _second = cadmpeg_core::array_collect(second);
 }
 
-pub fn imported_charged(ctx: &cadmpeg_core::DecodeContext, small: &mut Vec<u8>, large: &mut Vec<[u64; 8]>, n: usize) -> Result<(), ()> {
+pub fn imported_charged(
+    ctx: &cadmpeg_core::DecodeContext,
+    small: &mut Vec<u8>,
+    large: &mut Vec<[u64; 8]>,
+    n: usize,
+) -> Result<(), ()> {
     cadmpeg_core::reserve(ctx, small, n)?;
     cadmpeg_core::reserve(ctx, large, n)?;
     Ok(())
@@ -47,7 +52,11 @@ pub fn imported_mutation(input: &str) {
     let _text = cadmpeg_core::changed_text("fixed", input); // finding: uncharged_decode_allocation, uncharged_decode_work
 }
 
-pub fn imported_fills(ctx: &cadmpeg_core::DecodeContext, count: usize, text: String) -> Result<(), ()> {
+pub fn imported_fills(
+    ctx: &cadmpeg_core::DecodeContext,
+    count: usize,
+    text: String,
+) -> Result<(), ()> {
     let _fixed = cadmpeg_core::filled(ctx, count, 0u8)?;
     let _owned = cadmpeg_core::filled(ctx, count, text)?; // finding: uncharged_decode_allocation, unproven_decode_charge
     Ok(())

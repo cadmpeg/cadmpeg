@@ -13,8 +13,8 @@ mod allocation;
 mod callee;
 mod extent;
 mod external;
-mod flow;
 mod fixed;
+mod flow;
 mod instantiation;
 mod storage;
 mod types;
@@ -96,7 +96,9 @@ impl Callbacks for DecodeCallbacks {
                 findings: &mut concrete,
             }
             .visit_body(tcx.hir_body_owned_by(local));
-            self.findings.externals.extend(concrete.externals.iter().cloned());
+            self.findings
+                .externals
+                .extend(concrete.externals.iter().cloned());
             if let Some(symbolic) = bodies.get(&local) {
                 resolved.entry(local).or_default().extend(
                     symbolic
@@ -109,11 +111,19 @@ impl Callbacks for DecodeCallbacks {
                     concrete
                         .entries
                         .keys()
-                        .filter(|key| key.4 == "unproven_decode_charge" && symbolic.entries.get(*key) == concrete.entries.get(*key))
+                        .filter(|key| {
+                            key.4 == "unproven_decode_charge"
+                                && symbolic.entries.get(*key) == concrete.entries.get(*key)
+                        })
                         .cloned(),
                 );
                 for (key, messages) in concrete.entries {
-                    if !symbolic.entries.keys().any(|site| site.0 == key.0 && site.2 == key.2 && site.3 == key.3 && site.4 == "unproven_decode_charge") || symbolic.entries.get(&key).is_some_and(|original| {
+                    if !symbolic.entries.keys().any(|site| {
+                        site.0 == key.0
+                            && site.2 == key.2
+                            && site.3 == key.3
+                            && site.4 == "unproven_decode_charge"
+                    }) || symbolic.entries.get(&key).is_some_and(|original| {
                         key.4 != "unproven_decode_charge" || original == &messages
                     }) {
                         continue;
@@ -130,7 +140,7 @@ impl Callbacks for DecodeCallbacks {
                         typeck: tcx.typeck(instantiation.caller),
                         typing_owner: instantiation.caller,
                         arguments: None,
-                    fixed_parameters: HashSet::new(),
+                        fixed_parameters: HashSet::new(),
                         flow: flow::Flow::default(),
                         findings: &mut self.findings,
                     }
@@ -168,13 +178,16 @@ impl Callbacks for DecodeCallbacks {
                 messages.iter().cloned().collect::<Vec<_>>().join("; ")
             );
         }
-        for operation in &self.findings.externals { println!("{operation}"); }
+        for operation in &self.findings.externals {
+            println!("{operation}");
+        }
         Compilation::Continue
     }
 }
 
 fn production(tcx: TyCtxt<'_>, owner: DefId) -> bool {
-    if types::derived(tcx, owner) || !types::checked(tcx, owner)
+    if types::derived(tcx, owner)
+        || !types::checked(tcx, owner)
         || !matches!(
             tcx.def_kind(owner),
             rustc_hir::def::DefKind::Fn
@@ -185,7 +198,13 @@ fn production(tcx: TyCtxt<'_>, owner: DefId) -> bool {
         return false;
     }
     let parent = tcx.parent(owner);
-    if matches!(tcx.def_kind(parent), rustc_hir::def::DefKind::Impl { of_trait: true }) && types::serde_serialize(tcx, tcx.impl_trait_ref(parent).skip_binder().def_id) { return false; }
+    if matches!(
+        tcx.def_kind(parent),
+        rustc_hir::def::DefKind::Impl { of_trait: true }
+    ) && types::serde_serialize(tcx, tcx.impl_trait_ref(parent).skip_binder().def_id)
+    {
+        return false;
+    }
     let path = tcx
         .sess
         .source_map()
@@ -346,12 +365,29 @@ impl<'tcx> Visitor<'tcx> for Analysis<'_, 'tcx> {
         if std::env::var_os("CADMPEG_POLICY_EXTERNALS").is_some() {
             if let Some((definition, operands)) = self.call(expression).or_else(|| {
                 let definition = self.typeck.type_dependent_def_id(expression.hir_id)?;
-                let receiver = match expression.kind { ExprKind::Binary(_, left, _) | ExprKind::AssignOp(_, left, _) | ExprKind::Index(left, _, _) | ExprKind::Unary(_, left) => left, _ => return None };
+                let receiver = match expression.kind {
+                    ExprKind::Binary(_, left, _)
+                    | ExprKind::AssignOp(_, left, _)
+                    | ExprKind::Index(left, _, _)
+                    | ExprKind::Unary(_, left) => left,
+                    _ => return None,
+                };
                 Some((definition, vec![receiver]))
             }) {
-                let resolved = self.implementation(expression, definition).unwrap_or(definition);
-                if !types::checked(self.tcx, resolved) && !matches!(self.tcx.def_kind(resolved), rustc_hir::def::DefKind::Ctor(_, _)) {
-                    self.findings.externals.insert(external::inventory_row(self.tcx, resolved, operands.first().map(|operand| self.expr_ty(operand))));
+                let resolved = self
+                    .implementation(expression, definition)
+                    .unwrap_or(definition);
+                if !types::checked(self.tcx, resolved)
+                    && !matches!(
+                        self.tcx.def_kind(resolved),
+                        rustc_hir::def::DefKind::Ctor(_, _)
+                    )
+                {
+                    self.findings.externals.insert(external::inventory_row(
+                        self.tcx,
+                        resolved,
+                        operands.first().map(|operand| self.expr_ty(operand)),
+                    ));
                 }
             }
         }
