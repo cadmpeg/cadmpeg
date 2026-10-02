@@ -137,3 +137,15 @@ admit an infallible allocating spelling. A string literal or format with no
 runtime operand is fixed size. An unresolved Display operand uses the charged
 format operation, including fixed scalar diagnostics whose types the scanner
 cannot establish.
+
+
+The same rule checks `.to_vec()`, `String::from`, non-empty `vec!`, owned
+`.collect()` and `.clone()`, including associated trait call spellings. Use
+`copy_slice` for Copy elements, `copy_retained_strings` for strings,
+`collect_vec` or `try_collect_vec` for vectors, and the charged map or set
+operation for those collections. A filled vector uses `alloc_filled` with
+non-owning elements. A record clone constructs its fields with charged child
+copies. The rule rejects unresolved clone and collect types: Copy values use
+direct copies, and a non-allocating collect uses its specific operation.
+Vectors containing only literals are fixed size and excluded. Raw clones
+with unresolved ownership use a direct Copy assignment or charged child copies. No separate charge admits raw collection creation.
