@@ -128,7 +128,7 @@ fn check_fixture(name: &str) {
                 .any(|line| line.starts_with("uncharged_decode_allocation\t")
                     && line.contains("concrete instantiation")
                     && line.contains("String")),
-            "{actual}"
+            "stdout: {actual}; stderr: {}", String::from_utf8_lossy(&output.stderr)
         );
     }
     if name == "external" {
@@ -252,7 +252,7 @@ fn context_scope() {
 }
 
 #[test]
-fn writer_exclusion() {
+fn writer_without_decode_path() {
     check_fixture("writer");
 }
 

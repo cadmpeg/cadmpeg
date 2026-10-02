@@ -79,7 +79,10 @@ pub(crate) fn collect<'tcx>(tcx: TyCtxt<'tcx>, owners: &[LocalDefId]) -> Graph {
         if root(tcx, *owner) {
             graph.roots.insert(tcx.def_path_str(*owner));
         }
-        if !crate::production(tcx, owner.to_def_id()) {
+        let derived_operation = types::derived(tcx, owner.to_def_id())
+            && tcx.opt_item_name(owner.to_def_id()).is_some_and(|name|
+                matches!(name.as_str(), "clone" | "eq" | "partial_cmp" | "cmp" | "hash" | "fmt" | "default"));
+        if !crate::production(tcx, owner.to_def_id()) && !derived_operation {
             continue;
         }
         let mut findings = Findings::default();
@@ -116,9 +119,7 @@ impl Calls<'_, '_, '_> {
     fn method(&mut self, definition: DefId, resolved: Option<DefId>) {
         if let Some(id) = resolved {
             self.edge(id);
-            if !types::derived(self.analysis.tcx, id) {
-                return;
-            }
+            return;
         }
         let Some(trait_id) = self.analysis.tcx.trait_of_assoc(definition) else {
             self.edge(definition);

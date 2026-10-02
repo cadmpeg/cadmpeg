@@ -5,7 +5,7 @@ impl DecodeContext {
         Ok(())
     }
 }
-fn reserve<T>(ctx: &DecodeContext, values: &mut Vec<T>, count: usize) -> Result<(), ()> {
+pub fn reserve<T>(ctx: &DecodeContext, values: &mut Vec<T>, count: usize) -> Result<(), ()> {
     let bytes = count.checked_mul(std::mem::size_of::<T>()).ok_or(())?;
     ctx.charge_retained(u64::try_from(bytes).map_err(|_| ())?, "slots")?;
     values.try_reserve_exact(count).map_err(|_| ())?;
@@ -17,6 +17,7 @@ pub fn callers(
     large: &mut Vec<[u64; 8]>,
     n: usize,
 ) -> Result<(), ()> {
+    let _uncharged = no_charge::<u8>;
     reserve(ctx, small, n)?;
     reserve(ctx, large, n)?;
     Ok(())
@@ -30,7 +31,7 @@ pub fn compare(ctx: &DecodeContext, left: &Owned, right: &Owned) -> bool {
     left == right // finding: uncharged_decode_work
 }
 
-fn wrong_count<T>(
+pub fn wrong_count<T>(
     ctx: &DecodeContext,
     values: &mut Vec<T>,
     n: usize,
@@ -41,16 +42,16 @@ fn wrong_count<T>(
     values.try_reserve_exact(n).map_err(|_| ())?; // finding: unproven_decode_charge
     Ok(())
 }
-fn wrong_type<T>(ctx: &DecodeContext, values: &mut Vec<T>, n: usize) -> Result<(), ()> {
+pub fn wrong_type<T>(ctx: &DecodeContext, values: &mut Vec<T>, n: usize) -> Result<(), ()> {
     let bytes = n.checked_mul(std::mem::size_of::<u8>()).ok_or(())?;
     ctx.charge_retained(u64::try_from(bytes).map_err(|_| ())?, "wrong type")?;
     values.try_reserve_exact(n).map_err(|_| ())?; // finding: unproven_decode_charge
     Ok(())
 }
-fn no_charge<T>(values: &mut Vec<T>, value: T) {
+pub fn no_charge<T>(values: &mut Vec<T>, value: T) {
     values.push(value); // finding: uncharged_decode_allocation
 }
-fn duplicate<T>(ctx: &DecodeContext, values: &mut Vec<T>, n: usize) -> Result<(), ()> {
+pub fn duplicate<T>(ctx: &DecodeContext, values: &mut Vec<T>, n: usize) -> Result<(), ()> {
     let bytes = n.checked_mul(std::mem::size_of::<T>()).ok_or(())?;
     ctx.charge_retained(u64::try_from(bytes).map_err(|_| ())?, "one use")?;
     values.try_reserve_exact(n).map_err(|_| ())?;
@@ -69,18 +70,18 @@ impl DecodeContext {
         Ok(())
     }
 }
-fn pushed<T>(ctx: &DecodeContext, values: &mut Vec<T>, value: T) -> Result<(), ()> {
+pub fn pushed<T>(ctx: &DecodeContext, values: &mut Vec<T>, value: T) -> Result<(), ()> {
     ctx.reserve_vec(values, 1)?;
     values.push(value);
     Ok(())
 }
-fn copied<T: Copy>(ctx: &DecodeContext, values: &[T]) -> Result<Vec<T>, ()> {
+pub fn copied<T: Copy>(ctx: &DecodeContext, values: &[T]) -> Result<Vec<T>, ()> {
     ctx.charge_work(u64::try_from(values.len()).map_err(|_| ())?, "copy")?;
     let mut copy = ctx.collection_vec(values.len())?;
     copy.extend_from_slice(values);
     Ok(copy)
 }
-fn indexed<T>(
+pub fn indexed<T>(
     ctx: &DecodeContext,
     count: usize,
     mut value: impl FnMut(usize) -> T,
@@ -92,7 +93,7 @@ fn indexed<T>(
     }
     Ok(values)
 }
-fn wrong_target<T>(
+pub fn wrong_target<T>(
     ctx: &DecodeContext,
     first: &mut Vec<T>,
     second: &mut Vec<T>,
@@ -103,7 +104,7 @@ fn wrong_target<T>(
     Ok(())
 }
 
-fn growth_delta<T>(ctx: &DecodeContext, values: &mut Vec<T>, capacity: usize) -> Result<(), ()> {
+pub fn growth_delta<T>(ctx: &DecodeContext, values: &mut Vec<T>, capacity: usize) -> Result<(), ()> {
     let added = capacity - values.capacity();
     let bytes = added.checked_mul(std::mem::size_of::<T>()).ok_or(())?;
     ctx.charge_retained(u64::try_from(bytes).map_err(|_| ())?, "delta")?;
@@ -113,7 +114,7 @@ fn growth_delta<T>(ctx: &DecodeContext, values: &mut Vec<T>, capacity: usize) ->
     Ok(())
 }
 
-fn filled<T: Clone>(ctx: &DecodeContext, count: usize, value: T) -> Result<Vec<T>, ()> {
+pub fn filled<T: Clone>(ctx: &DecodeContext, count: usize, value: T) -> Result<Vec<T>, ()> {
     ctx.charge_work(u64::try_from(count).map_err(|_| ())?, "fill")?;
     let mut values = ctx.collection_vec(count)?;
     values.resize(count, value);
@@ -125,20 +126,20 @@ pub fn fills(ctx: &DecodeContext, count: usize, text: String) -> Result<(), ()> 
     Ok(())
 }
 
-fn double_push<T>(ctx: &DecodeContext, values: &mut Vec<T>, first: T, second: T) -> Result<(), ()> {
+pub fn double_push<T>(ctx: &DecodeContext, values: &mut Vec<T>, first: T, second: T) -> Result<(), ()> {
     ctx.reserve_vec(values, 1)?;
     values.push(first);
     values.push(second); // finding: unproven_decode_charge
     Ok(())
 }
-fn conditional<T>(ctx: &DecodeContext, values: &mut Vec<T>, value: T, yes: bool) -> Result<(), ()> {
+pub fn conditional<T>(ctx: &DecodeContext, values: &mut Vec<T>, value: T, yes: bool) -> Result<(), ()> {
     if yes {
         ctx.reserve_vec(values, 1)?;
     }
     values.push(value); // finding: unproven_decode_charge
     Ok(())
 }
-fn unrelated_result<T>(ctx: &DecodeContext, count: usize, value: T) -> Result<(), ()> {
+pub fn unrelated_result<T>(ctx: &DecodeContext, count: usize, value: T) -> Result<(), ()> {
     fn discard<T>(_: Vec<T>) -> Vec<T> {
         Vec::new()
     }
@@ -147,7 +148,7 @@ fn unrelated_result<T>(ctx: &DecodeContext, count: usize, value: T) -> Result<()
     Ok(())
 }
 
-fn computed_delta<T>(
+pub fn computed_delta<T>(
     ctx: &DecodeContext,
     values: &mut Vec<T>,
     requested: usize,
@@ -167,7 +168,7 @@ fn computed_delta<T>(
     Ok(())
 }
 
-fn duplicate_terms<T>(ctx: &DecodeContext, values: &mut Vec<T>, count: usize) -> Result<(), ()> {
+pub fn duplicate_terms<T>(ctx: &DecodeContext, values: &mut Vec<T>, count: usize) -> Result<(), ()> {
     let bytes = count.checked_mul(std::mem::size_of::<T>()).ok_or(())?;
     ctx.charge_retained(u64::try_from(bytes).map_err(|_| ())?, "one extent")?;
     let doubled = count.checked_add(count).ok_or(())?;
