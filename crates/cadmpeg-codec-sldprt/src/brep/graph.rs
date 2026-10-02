@@ -3312,11 +3312,15 @@ fn decode_graph(
             .chain(out.pcurves.iter().map(|entity| entity.id.as_str())),
         "index retained Parasolid entities",
     )?;
-    out.annotations
-        .provenance
-        .retain(|id, _| retained_ids.contains(id.as_str()));
+    let mut keep = |id: &str| {
+        let work = retained_ids.len().checked_add(1).and_then(|count| id.len().checked_add(1).and_then(|bytes| count.checked_mul(bytes)))
+            .ok_or_else(|| ctx.refuse_codec_limit("Parasolid annotation identity lookup", u64::MAX - 1, u64::MAX))?;
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(work), "Parasolid annotation identity lookup")?;
+        Ok(retained_ids.contains(id))
+    };
+    out.annotations.retain_provenance(ctx, &mut keep)?;
     let mut annotations = AnnotationBuilder::resume(std::mem::take(&mut out.annotations));
-    annotations.retain_exactness(|id| retained_ids.contains(id));
+    annotations.retain_exactness(ctx, keep)?;
     out.annotations = annotations.build();
     Ok(out)
 }

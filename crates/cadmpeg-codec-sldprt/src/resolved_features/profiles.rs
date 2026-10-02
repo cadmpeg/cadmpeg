@@ -259,9 +259,15 @@ pub(crate) fn bind_sketch_profiles(
     sketches.retain(|sketch| !superseded.contains(sketch.id.as_str()));
     sketch_entities.retain(|entity| !superseded.contains(entity.sketch.as_str()));
     sketch_constraints.retain(|constraint| !superseded.contains(constraint.sketch.as_str()));
-    annotations.provenance.retain(|id, _| !removed.contains(id));
+    let mut keep = |id: &str| {
+        let work = removed.len().checked_add(1).and_then(|count| id.len().checked_add(1).and_then(|bytes| count.checked_mul(bytes)))
+            .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
+        ctx.charge_work(u64_from_index(work), OPERATION)?;
+        Ok(!removed.contains(id))
+    };
+    annotations.retain_provenance(ctx, &mut keep)?;
     let mut builder = AnnotationBuilder::resume(std::mem::take(annotations));
-    builder.retain_exactness(|id| !removed.contains(id));
+    builder.retain_exactness(ctx, keep)?;
     *annotations = builder.build();
     bind_circular_profile_by_dimension(ctx, features, sketches, sketch_entities, parameters)?;
     Ok(())
