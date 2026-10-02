@@ -311,6 +311,7 @@ pub fn nurbs_surface_patch_workspace(surface: &NurbsSurface) -> Result<(u64, u64
 }
 
 fn rational_surface_patches_with_budget<'session>(
+    ctx: &DecodeContext<'_>,
     surface: &NurbsSurface,
     budget: &WorkBudget<'session>,
 ) -> Result<Option<Vec<RationalBezierSurfacePatch<'session>>>, ResourceLimit> {
@@ -369,7 +370,7 @@ fn rational_surface_patches_with_budget<'session>(
     {
         return Ok(None);
     }
-    let Some(homogeneous_controls) = positive_controls(&points, weights.as_deref())? else {
+    let Some(homogeneous_controls) = positive_controls(ctx, &points, weights.as_deref(), "Bezier positive controls")? else {
         return Ok(None);
     };
     // The Bezier spans of every row and column share the knots, so their
@@ -385,7 +386,7 @@ fn rational_surface_patches_with_budget<'session>(
     for v in 0..v_count {
         let mut controls = Vec::new();
         scratch::reserve_exact(&mut controls, u_count, "IR surface u row")?;
-        controls.extend((0..u_count).map(|u| homogeneous_controls[u * v_count + v]));
+        controls.extend((0..u_count).map(|u| homogeneous_controls.controls[u * v_count + v]));
         let Some(spans) = homogeneous_spans(u_degree, surface.u_knots(), controls)? else {
             return Ok(None);
         };
@@ -457,6 +458,7 @@ fn rational_surface_patches_with_budget<'session>(
 }
 
 fn rational_surface_residual_patches<'session>(
+    ctx: &DecodeContext<'_>,
     surface: &NurbsSurface,
     point: Point3,
     budget: &WorkBudget<'session>,
@@ -464,7 +466,7 @@ fn rational_surface_residual_patches<'session>(
     if !point.is_finite() {
         return Ok(None);
     }
-    let Some(mut patches) = rational_surface_patches_with_budget(surface, budget)? else {
+    let Some(mut patches) = rational_surface_patches_with_budget(ctx, surface, budget)? else {
         return Ok(None);
     };
     let Some(residual_work) = patches
@@ -614,7 +616,7 @@ pub fn nurbs_surface_parameter_segment_chord_bound_with_budget(
     if chord.iter().any(|point| !point.is_finite()) {
         return Ok(None);
     }
-    let Some(patches) = rational_surface_patches_with_budget(surface, budget)? else {
+    let Some(patches) = rational_surface_patches_with_budget(ctx, surface, budget)? else {
         return Ok(None);
     };
     let [first_u, first_v] = first.coordinates();
@@ -938,6 +940,7 @@ fn nurbs_surface_evaluation_cost(surface: &NurbsSurface) -> Option<usize> {
 }
 
 fn complete_nurbs_surface_starts<'session>(
+    ctx: &DecodeContext<'_>,
     surface: &NurbsSurface,
     point: Point3,
     seed: Option<FinitePoint2>,
@@ -946,7 +949,7 @@ fn complete_nurbs_surface_starts<'session>(
 ) -> Result<Option<(Vec<FinitePoint2>, WorkScratch<'session>)>, ResourceLimit> {
     const MAX_PATCHES: usize = 1_000_000;
 
-    let Some(patches) = rational_surface_residual_patches(surface, point, budget)? else {
+    let Some(patches) = rational_surface_residual_patches(ctx, surface, point, budget)? else {
         return Ok(None);
     };
     let Some(coordinate_scale) =
@@ -1259,6 +1262,7 @@ fn complete_nurbs_surface_starts<'session>(
 }
 
 fn solve_nurbs_surface_parameter(
+    ctx: &DecodeContext<'_>,
     surface: &NurbsSurface,
     point: Point3,
     seed: Option<Point2>,
@@ -1326,7 +1330,7 @@ fn solve_nurbs_surface_parameter(
         }
     }
     let Some((starts, _start_scratch)) =
-        complete_nurbs_surface_starts(surface, point, seed, fit_tolerance, budget)?
+        complete_nurbs_surface_starts(ctx, surface, point, seed, fit_tolerance, budget)?
     else {
         return Ok(None);
     };
@@ -1377,13 +1381,14 @@ fn solve_nurbs_surface_parameter(
 /// Find a globally closest parameter pair on a finite NURBS surface within a
 /// caller-owned work slice.
 pub fn nurbs_surface_closest_parameter_with_budget(
+    ctx: &DecodeContext<'_>,
     surface: &NurbsSurface,
     point: Point3,
     seed: Option<Point2>,
     budget: &WorkBudget<'_>,
 ) -> Result<Option<FinitePoint2>, ResourceLimit> {
     Ok(
-        solve_nurbs_surface_parameter(surface, point, seed, None, budget)?
+        solve_nurbs_surface_parameter(ctx, surface, point, seed, None, budget)?
             .map(|(parameters, _)| parameters),
     )
 }
@@ -1523,18 +1528,20 @@ pub fn nurbs_surface_parameter_near_point(
 /// When multiple fitting pairs exist, `seed` selects the nearest parameter
 /// branch. Without a seed, the pair nearest the parameter-space origin wins.
 pub fn nurbs_surface_parameter_within_tolerance(
+    ctx: &DecodeContext<'_>,
     surface: &NurbsSurface,
     point: Point3,
     seed: Option<Point2>,
     tolerance: f64,
 ) -> Result<Option<FinitePoint2>, ResourceLimit> {
-    let budget = WorkBudget::new(DEFAULT_NURBS_SURFACE_INVERSION_WORK);
-    nurbs_surface_parameter_within_tolerance_with_budget(surface, point, seed, tolerance, &budget)
+    let budget = ctx.work_budget(u64_from_index(DEFAULT_NURBS_SURFACE_INVERSION_WORK));
+    nurbs_surface_parameter_within_tolerance_with_budget(ctx, surface, point, seed, tolerance, &budget)
 }
 
 /// Find a NURBS surface parameter pair within `tolerance` using a
 /// caller-owned work slice. A negative or non-finite tolerance finds nothing.
 pub fn nurbs_surface_parameter_within_tolerance_with_budget(
+    ctx: &DecodeContext<'_>,
     surface: &NurbsSurface,
     point: Point3,
     seed: Option<Point2>,
@@ -1544,7 +1551,7 @@ pub fn nurbs_surface_parameter_within_tolerance_with_budget(
     let Some(tolerance) = NonNegativeReal::new(tolerance) else {
         return Ok(None);
     };
-    nurbs_surface_parameter_within_nonnegative_tolerance_with_budget(
+    nurbs_surface_parameter_within_nonnegative_tolerance_with_budget(ctx,
         surface, point, seed, tolerance, budget,
     )
 }
@@ -1552,6 +1559,7 @@ pub fn nurbs_surface_parameter_within_tolerance_with_budget(
 /// Find a NURBS surface parameter pair within an admitted `tolerance` using
 /// a caller-owned work slice.
 pub fn nurbs_surface_parameter_within_nonnegative_tolerance_with_budget(
+    ctx: &DecodeContext<'_>,
     surface: &NurbsSurface,
     point: Point3,
     seed: Option<Point2>,
@@ -1560,7 +1568,7 @@ pub fn nurbs_surface_parameter_within_nonnegative_tolerance_with_budget(
 ) -> Result<Option<FinitePoint2>, ResourceLimit> {
     let tolerance = tolerance.get();
     let Some((parameters, distance)) =
-        solve_nurbs_surface_parameter(surface, point, seed, Some(tolerance), budget)?
+        solve_nurbs_surface_parameter(ctx, surface, point, seed, Some(tolerance), budget)?
     else {
         return Ok(None);
     };

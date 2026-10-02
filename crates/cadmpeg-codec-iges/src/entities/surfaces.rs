@@ -532,11 +532,10 @@ fn homogeneous_bezier_spans(
                 .ok_or_else(|| CodecError::malformed("surface closure pole is missing"))?,
         );
     }
-    ctx.charge_collection_items(u64_from_index(count), "iges_surface_closure_controls")?;
-    let Some(controls) = positive_controls(&points, weights.as_deref())? else {
+    let Some(controls) = positive_controls(ctx, &points, weights.as_deref(), "iges_surface_closure_controls")? else {
         return Ok(None);
     };
-    homogeneous_spans_with_charge(degree, curve.knots(), controls, |count, operation| {
+    homogeneous_spans_with_charge(degree, curve.knots(), controls.controls, |count, operation| {
         ctx.charge_collection_items(u64_from_index(count), operation)
     })
 }

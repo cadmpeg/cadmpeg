@@ -683,7 +683,7 @@ fn unseeded_nurbs_surface_parameters_with_index_and_budget(
             return Ok(Some(parameters));
         }
     }
-    nurbs_surface_parameter_within_tolerance_with_budget(
+    nurbs_surface_parameter_within_tolerance_with_budget(geometry_budget.charges,
         nurbs,
         point,
         coarse,
@@ -1398,7 +1398,7 @@ fn complete_support_uv_wave(
                             let candidate = match &surface.geometry {
                                 SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(nurbs)) => {
                                     if let Some(seed) = seed {
-                                        nurbs_surface_parameter_within_tolerance_with_budget(
+                                        nurbs_surface_parameter_within_tolerance_with_budget(geometry_budget.charges,
                                             nurbs,
                                             *point,
                                             Some(seed),
