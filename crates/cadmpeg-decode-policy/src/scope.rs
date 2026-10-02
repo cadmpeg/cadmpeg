@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Decode roots and resolved production call reachability.
-mod objects;
 mod instances;
 mod listing;
+mod objects;
 
 use crate::{flow, types, Analysis, Findings};
 use rustc_hir::intravisit::{walk_expr, Visitor};
@@ -23,7 +23,10 @@ pub(crate) struct Graph {
 impl Graph {
     pub(crate) fn print(&self) {
         for (id, body) in &self.bodies {
-            println!("decode_body\t{id}\t{}\t{}\t{}\t{}\t{}", body.path, body.line, body.name, body.reason, body.eligible);
+            println!(
+                "decode_body\t{id}\t{}\t{}\t{}\t{}\t{}",
+                body.path, body.line, body.name, body.reason, body.eligible
+            );
         }
         for (root, name) in &self.roots {
             println!("decode_root\t{root}\t{name}");
@@ -42,7 +45,10 @@ impl Graph {
     pub(crate) fn print_unreachable(&self, reached: &BTreeSet<String>) {
         for (id, body) in &self.bodies {
             if !body.eligible || !reached.contains(id) {
-                println!("unreachable_decode_body\t{}\t{}\t{}\t{}", body.path, body.line, body.name, body.reason);
+                println!(
+                    "unreachable_decode_body\t{}\t{}\t{}\t{}",
+                    body.path, body.line, body.name, body.reason
+                );
             }
         }
     }
@@ -143,9 +149,13 @@ pub(crate) fn collect<'tcx>(tcx: TyCtxt<'tcx>, owners: &[LocalDefId]) -> Graph {
                     "clone" | "eq" | "partial_cmp" | "cmp" | "hash" | "fmt" | "default"
                 )
             });
-        let initializer = matches!(tcx.def_kind(*owner),
-            rustc_hir::def::DefKind::Static { .. } | rustc_hir::def::DefKind::Const { .. }
-                | rustc_hir::def::DefKind::AssocConst { .. } | rustc_hir::def::DefKind::AnonConst);
+        let initializer = matches!(
+            tcx.def_kind(*owner),
+            rustc_hir::def::DefKind::Static { .. }
+                | rustc_hir::def::DefKind::Const { .. }
+                | rustc_hir::def::DefKind::AssocConst { .. }
+                | rustc_hir::def::DefKind::AnonConst
+        );
         if !crate::production(tcx, owner.to_def_id()) && !derived_operation && !initializer {
             continue;
         }
@@ -193,14 +203,29 @@ impl<'tcx> Calls<'_, '_, 'tcx> {
             return;
         }
         let mut instances = Vec::new();
-        if !objects::targets(self.analysis.tcx, self.analysis.typing_env(), source, target, &mut instances) {
+        if !objects::targets(
+            self.analysis.tcx,
+            self.analysis.typing_env(),
+            source,
+            target,
+            &mut instances,
+        ) {
             self.graph.uncertain.insert(self.caller.clone());
         }
         for instance in instances {
-            instances::enqueue(self.analysis.tcx, self.graph, self.pending, &self.caller,
-                instance, self.analysis.typing_env(), 0);
+            instances::enqueue(
+                self.analysis.tcx,
+                self.graph,
+                self.pending,
+                &self.caller,
+                instance,
+                self.analysis.typing_env(),
+                0,
+            );
             if types::checked(self.analysis.tcx, instance.def_id()) {
-                self.graph.addresses.insert(key(self.analysis.tcx, instance.def_id()));
+                self.graph
+                    .addresses
+                    .insert(key(self.analysis.tcx, instance.def_id()));
             }
         }
     }
@@ -215,8 +240,10 @@ impl<'tcx> Calls<'_, '_, 'tcx> {
             return;
         };
         self.edge(definition);
-        if self.analysis.tcx.generics_of(self.analysis.typing_owner).count() != 0
-            && !root(self.analysis.tcx, self.analysis.typing_owner) {
+        if ty::GenericArgs::identity_for_item(self.analysis.tcx, self.analysis.typing_owner)
+            .has_non_region_param()
+            && !root(self.analysis.tcx, self.analysis.typing_owner)
+        {
             return;
         }
         self.graph.uncertain.insert(self.caller.clone());
@@ -246,8 +273,12 @@ impl<'tcx> Visitor<'tcx> for Calls<'_, '_, 'tcx> {
     fn visit_expr(&mut self, expression: &'tcx Expr<'tcx>) {
         if let ExprKind::Path(ref path) = expression.kind {
             if let Res::Def(kind, id) = self.analysis.typeck.qpath_res(path, expression.hir_id) {
-                if matches!(kind, rustc_hir::def::DefKind::Static { .. }
-                    | rustc_hir::def::DefKind::Const { .. } | rustc_hir::def::DefKind::AssocConst { .. }) {
+                if matches!(
+                    kind,
+                    rustc_hir::def::DefKind::Static { .. }
+                        | rustc_hir::def::DefKind::Const { .. }
+                        | rustc_hir::def::DefKind::AssocConst { .. }
+                ) {
                     self.edge(id);
                 }
             }
@@ -255,43 +286,70 @@ impl<'tcx> Visitor<'tcx> for Calls<'_, '_, 'tcx> {
         let mut source = self.analysis.expr_ty(expression);
         for adjustment in self.analysis.typeck.expr_adjustments(expression) {
             let target = self.analysis.substitute(adjustment.target);
-            if matches!(adjustment.kind, ty::adjustment::Adjust::Pointer(ty::adjustment::PointerCoercion::Unsize)) {
+            if matches!(
+                adjustment.kind,
+                ty::adjustment::Adjust::Pointer(ty::adjustment::PointerCoercion::Unsize)
+            ) {
                 self.coercion(source, target);
             }
             source = target;
         }
         if let ExprKind::Cast(operand, _) = expression.kind {
-            self.coercion(self.analysis.expr_ty_adjusted(operand), self.analysis.expr_ty(expression));
+            self.coercion(
+                self.analysis.expr_ty_adjusted(operand),
+                self.analysis.expr_ty(expression),
+            );
         }
         if let Some((id, _)) = self.analysis.call(expression) {
             if let Some(instance) = self.analysis.resolved_instance(expression, id) {
-                instances::enqueue(self.analysis.tcx, self.graph, self.pending, &self.caller,
-                    instance, self.analysis.typing_env(), 0);
+                instances::enqueue(
+                    self.analysis.tcx,
+                    self.graph,
+                    self.pending,
+                    &self.caller,
+                    instance,
+                    self.analysis.typing_env(),
+                    0,
+                );
             }
         }
         let value = self.analysis.expr_ty(expression);
         let reference = match value.peel_refs().kind() {
             ty::FnDef(id, args) => args.no_bound_vars().and_then(|args| {
-                ty::Instance::try_resolve(self.analysis.tcx, self.analysis.typing_env(), *id, args).ok().flatten()
+                ty::Instance::try_resolve(self.analysis.tcx, self.analysis.typing_env(), *id, args)
+                    .ok()
+                    .flatten()
             }),
             ty::Closure(id, args) => Some(ty::Instance::new_raw(*id, args)),
             _ => None,
         };
         if !self.direct_callee {
             if let Some(instance) = reference {
-                instances::enqueue(self.analysis.tcx, self.graph, self.pending, &self.caller,
-                    instance, self.analysis.typing_env(), 0);
+                instances::enqueue(
+                    self.analysis.tcx,
+                    self.graph,
+                    self.pending,
+                    &self.caller,
+                    instance,
+                    self.analysis.typing_env(),
+                    0,
+                );
             }
         }
         if !self.direct_callee {
             if let Some(instance) = reference {
                 if types::checked(self.analysis.tcx, instance.def_id()) {
-                    self.graph.addresses.insert(key(self.analysis.tcx, instance.def_id()));
+                    self.graph
+                        .addresses
+                        .insert(key(self.analysis.tcx, instance.def_id()));
                 }
             }
         }
         if let ExprKind::Call(callee, _) = expression.kind {
-            if matches!(self.analysis.expr_ty(callee).peel_refs().kind(), ty::FnPtr(..)) {
+            if matches!(
+                self.analysis.expr_ty(callee).peel_refs().kind(),
+                ty::FnPtr(..)
+            ) {
                 self.graph.uncertain.insert(self.caller.clone());
             }
         }

@@ -29,7 +29,9 @@ impl serde::Serialize for DecodeText<'_> {
             std::hint::black_box(byte);
         }
         let _deferred: fn(&[u8]) = |bytes| {
-            for byte in bytes { std::hint::black_box(byte); }
+            for byte in bytes {
+                std::hint::black_box(byte);
+            }
         };
         Err(serde::ser::Error::custom("fixed"))
     }
@@ -46,7 +48,9 @@ impl serde::Serialize for WriteText<'_> {
             std::hint::black_box(byte);
         }
         let _deferred: fn(&[u8]) = |bytes| {
-            for byte in bytes { std::hint::black_box(byte); }
+            for byte in bytes {
+                std::hint::black_box(byte);
+            }
         };
         Err(serde::ser::Error::custom("fixed"))
     }

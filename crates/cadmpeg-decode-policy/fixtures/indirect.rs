@@ -6,7 +6,8 @@ trait Work {
 struct Worker;
 impl Work for Worker {
     fn work(&self, bytes: &[u8]) {
-        for byte in bytes { // finding: uncharged_decode_work
+        for byte in bytes {
+            // finding: uncharged_decode_work
             std::hint::black_box(byte);
         }
     }
@@ -14,9 +15,12 @@ impl Work for Worker {
 struct Family {
     decode: fn(&[u8]),
 }
-static DECODERS: [Family; 1] = [Family { decode: table_target }];
+static DECODERS: [Family; 1] = [Family {
+    decode: table_target,
+}];
 fn table_target(bytes: &[u8]) {
-    for byte in bytes { // finding: uncharged_decode_work
+    for byte in bytes {
+        // finding: uncharged_decode_work
         std::hint::black_box(byte);
     }
 }

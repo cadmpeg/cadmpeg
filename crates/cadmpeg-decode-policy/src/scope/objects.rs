@@ -20,28 +20,48 @@ pub(super) fn targets<'tcx>(
                 return true;
             };
             let mut resolved = true;
-            for bound in rustc_type_ir::elaborate::supertraits(tcx, principal.with_self_ty(tcx, source)) {
+            for bound in
+                rustc_type_ir::elaborate::supertraits(tcx, principal.with_self_ty(tcx, source))
+            {
                 let trait_ref = tcx.instantiate_bound_regions_with_erased(bound);
                 for item in tcx.associated_items(trait_ref.def_id).in_definition_order() {
                     if !matches!(tcx.def_kind(item.def_id), rustc_hir::def::DefKind::AssocFn) {
                         continue;
                     }
                     let args = ty::GenericArgs::for_item(tcx, item.def_id, |parameter, _| {
-                        usize::try_from(parameter.index).ok().and_then(|index| trait_ref.args.get(index)).copied()
+                        usize::try_from(parameter.index)
+                            .ok()
+                            .and_then(|index| trait_ref.args.get(index))
+                            .copied()
                             .unwrap_or_else(|| tcx.mk_param_from_def(parameter))
                     });
-                    let args = match tcx.try_normalize_erasing_regions(environment, ty::Unnormalized::new_wip(args)) {
+                    let args = match tcx
+                        .try_normalize_erasing_regions(environment, ty::Unnormalized::new_wip(args))
+                    {
                         Ok(args) => args,
-                        Err(_) => { resolved = false; continue; }
+                        Err(_) => {
+                            resolved = false;
+                            continue;
+                        }
                     };
                     match Instance::try_resolve(tcx, environment, item.def_id, args) {
-                        Ok(Some(instance)) if !matches!(instance.def, ty::InstanceKind::Virtual(..)) => instances.push(instance),
+                        Ok(Some(instance))
+                            if !matches!(instance.def, ty::InstanceKind::Virtual(..)) =>
+                        {
+                            instances.push(instance)
+                        }
                         _ => {
                             resolved = false;
                             for implementation in tcx.all_impls(trait_ref.def_id) {
-                                if let Some(method) = tcx.associated_items(implementation).in_definition_order()
-                                    .find(|method| method.name() == item.name()) {
-                                    instances.push(Instance::new_raw(method.def_id, ty::GenericArgs::identity_for_item(tcx, method.def_id)));
+                                if let Some(method) = tcx
+                                    .associated_items(implementation)
+                                    .in_definition_order()
+                                    .find(|method| method.name() == item.name())
+                                {
+                                    instances.push(Instance::new_raw(
+                                        method.def_id,
+                                        ty::GenericArgs::identity_for_item(tcx, method.def_id),
+                                    ));
                                 }
                             }
                             if tcx.is_mir_available(item.def_id) {
@@ -53,15 +73,21 @@ pub(super) fn targets<'tcx>(
             }
             resolved && !source.has_non_region_param()
         }
-        (ty::Adt(left, left_args), ty::Adt(right, right_args)) if left == right => {
-            left_args.types().zip(right_args.types()).fold(true, |resolved, (left, right)| {
+        (ty::Adt(left, left_args), ty::Adt(right, right_args)) if left == right => left_args
+            .types()
+            .zip(right_args.types())
+            .fold(true, |resolved, (left, right)| {
                 targets(tcx, environment, left, right, instances) && resolved
-            })
+            }),
+        (ty::RawPtr(left, _), ty::RawPtr(right, _)) => {
+            targets(tcx, environment, *left, *right, instances)
         }
-        (ty::RawPtr(left, _), ty::RawPtr(right, _)) => targets(tcx, environment, *left, *right, instances),
-        (ty::Tuple(left), ty::Tuple(right)) => left.iter().zip(right.iter()).fold(true, |resolved, (left, right)| {
-            targets(tcx, environment, left, right, instances) && resolved
-        }),
+        (ty::Tuple(left), ty::Tuple(right)) => left
+            .iter()
+            .zip(right.iter())
+            .fold(true, |resolved, (left, right)| {
+                targets(tcx, environment, left, right, instances) && resolved
+            }),
         (_, ty::Dynamic(..)) => true,
         _ => true,
     }

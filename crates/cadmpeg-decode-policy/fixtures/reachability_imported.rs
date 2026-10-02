@@ -24,7 +24,8 @@ impl cadmpeg_core::Base for LocalWorker {
 }
 impl cadmpeg_core::Work for LocalWorker {
     fn work(&self, bytes: &[u8]) {
-        for byte in bytes { // reached-loop
+        for byte in bytes {
+            // reached-loop
             std::hint::black_box(byte);
         }
     }
@@ -35,7 +36,11 @@ impl cadmpeg_core::Base for EncoderWorker {
 }
 impl cadmpeg_core::Work for EncoderWorker {
     fn work(&self, bytes: &[u8]) {
-        for byte in bytes { std::hint::black_box(byte); }
+        for byte in bytes {
+            std::hint::black_box(byte);
+        }
     }
 }
-fn encode_generic(bytes: &[u8]) { cadmpeg_core::nested(&EncoderWorker, bytes); }
+fn encode_generic(bytes: &[u8]) {
+    cadmpeg_core::nested(&EncoderWorker, bytes);
+}
