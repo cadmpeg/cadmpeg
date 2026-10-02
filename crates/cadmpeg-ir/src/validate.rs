@@ -120,6 +120,21 @@ fn error_finding(findings: &mut Vec<Finding>, check: Check, entity: &str, messag
     });
 }
 
+fn record_finding(
+    ctx: &DecodeContext<'_>,
+    findings: &mut Vec<Finding>,
+    check: Check,
+    severity: Severity,
+    entity: &str,
+    message: std::fmt::Arguments<'_>,
+) -> Result<(), CodecError> {
+    ctx.reserve_retained_vec(findings, 1, "validation finding storage")?;
+    let message = ctx.format_retained(message, "validation finding message")?;
+    let entity = ctx.copy_retained_text(entity, "validation finding identity")?;
+    findings.push(Finding { check, severity, message, entity: Some(entity) });
+    Ok(())
+}
+
 /// Count the records represented by the IR arenas without running validation.
 ///
 /// Prefer [`CadIr::census`](crate::CadIr::census); this alias remains for
@@ -146,7 +161,7 @@ fn validate_model_with_index(
 
     // The identity walk enumerates every entity id in the product document;
     // native links resolve against that set.
-    check_identity_and_order(ir, &mut findings);
+    check_identity_and_order(ctx, ir, &mut findings)?;
     check_tolerances(ir, &mut findings);
     check_references(ctx, ir, ids, &mut findings)?;
     check_evaluation_cycles(ctx, ir, ids, &mut findings)?;
