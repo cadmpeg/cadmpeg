@@ -19,3 +19,7 @@ pub fn constructors(text: &str, bytes: &[u8]) {
 pub fn parse_bytes(bytes: &[u8]) {
     let _json = serde_json::from_slice::<serde_json::Value>(bytes); // finding: uncharged_decode_allocation, uncharged_decode_work
 }
+
+pub fn node_identity(node: roxmltree::Node<'_, '_>) {
+    let _same = node == node;
+}

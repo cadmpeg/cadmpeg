@@ -111,3 +111,12 @@ fn unrelated_result<T>(ctx: &DecodeContext, count: usize, value: T) -> Result<()
     values.push(value); // finding: unproven_decode_charge
     Ok(())
 }
+
+fn computed_delta<T>(ctx: &DecodeContext, values: &mut Vec<T>, requested: usize, exact: bool) -> Result<(), ()> {
+    let capacity = if exact { requested } else { requested.max(values.capacity()) };
+    let added = capacity - values.capacity();
+    let bytes = added.checked_mul(std::mem::size_of::<T>()).ok_or(())?;
+    ctx.charge_retained(u64::try_from(bytes).map_err(|_| ())?, "computed delta")?;
+    values.try_reserve_exact(capacity - values.len()).map_err(|_| ())?;
+    Ok(())
+}

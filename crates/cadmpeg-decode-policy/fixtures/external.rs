@@ -55,3 +55,11 @@ pub fn scalar_and_metadata(value: f64, number: u64, bytes: &[u8], text: &str) {
     let _next = bytes.iter().next();
     let _mapped = Some(number).map_or_else(|| 0, |n| n + 1);
 }
+
+pub fn reference_operators(value: &f64, number: &u64, flag: &bool) {
+    let _sum = value + value;
+    let _product = value * value;
+    let _bits = number & number;
+    let _inverse = !flag;
+    let _comparison = number >= number;
+}
