@@ -510,7 +510,7 @@ fn encoder_writes_source_less_line_sketches() {
         native_ref: None,
     });
     ir.model
-        .set_feature_regeneration_parent(extrude_feature_id, sketch_feature_id)
+        .set_feature_regeneration_parent(&cadmpeg_test_support::service_decode_context(), &(extrude_feature_id), &(sketch_feature_id))
         .unwrap();
 
     let mut encoded = Vec::new();

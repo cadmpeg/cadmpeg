@@ -160,7 +160,7 @@ impl DesignFeatureTransfer {
         }
         for (child, parent) in parents {
             ir.model
-                .set_feature_regeneration_parent_for_decode(ctx, &child, &parent)?;
+                .set_feature_regeneration_parent(ctx, &child, &parent)?;
         }
         Ok(())
     }

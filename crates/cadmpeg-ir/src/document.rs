@@ -1021,6 +1021,7 @@ impl Model {
         parent: &'a crate::features::FeatureId,
         ctx: &DecodeContext<'_>,
     ) -> Result<Result<(), RegenerationParentError<'a>>, CodecError> {
+        let admission = ModelAdmission(Some(ctx));
         const OPERATION: &str = "install decoded feature regeneration parent";
         for candidate in &self.features {
             ctx.charge_work(1, OPERATION)?;
@@ -1030,7 +1031,7 @@ impl Model {
             {
                 for member in children {
                     ctx.charge_work(1, OPERATION)?;
-                    if member == child {
+                    if admission.equal(member.as_str(), child.as_str(), OPERATION)? {
                         return Ok(Err(RegenerationParentError::TreeChild(child)));
                     }
                 }
@@ -1039,7 +1040,7 @@ impl Model {
         let mut child_ordinal = None;
         for feature in &self.features {
             ctx.charge_work(1, OPERATION)?;
-            if feature.id == *child {
+            if admission.equal(feature.id.as_str(), child.as_str(), OPERATION)? {
                 child_ordinal = Some(feature.ordinal);
                 break;
             }
@@ -1050,7 +1051,7 @@ impl Model {
         let mut parent_ordinal = None;
         for feature in &self.features {
             ctx.charge_work(1, OPERATION)?;
-            if feature.id == *parent {
+            if admission.equal(feature.id.as_str(), parent.as_str(), OPERATION)? {
                 parent_ordinal = Some(feature.ordinal);
                 break;
             }
@@ -1064,26 +1065,8 @@ impl Model {
         Ok(Ok(()))
     }
 
-    /// Set a regeneration predecessor without asserting structural tree membership.
-    pub fn set_feature_regeneration_parent(
-        &mut self,
-        child: crate::features::FeatureId,
-        parent: crate::features::FeatureId,
-    ) -> Result<(), FeatureRegenerationError> {
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let policy = cadmpeg_core::decode::DecodePolicy::default();
-        let (ctx, _) = DecodeContext::from_root_bytes_limit(&[], &arena, &policy)
-            .map_err(FeatureRegenerationError::Resource)?;
-        let result = self
-            .set_feature_regeneration_parent_for_decode(&ctx, &child, &parent)
-            .map_err(FeatureRegenerationError::from);
-        drop(child);
-        drop(parent);
-        result
-    }
-
     /// Set a decoded regeneration predecessor with charged text and map admission.
-    pub fn set_feature_regeneration_parent_for_decode(
+    pub fn set_feature_regeneration_parent(
         &mut self,
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         child: &crate::features::FeatureId,
@@ -1095,35 +1078,20 @@ impl Model {
                 ctx.format_retained(format_args!("{error}"), OPERATION)?,
             ));
         }
+        let work = self.feature_regeneration_parents.0.len().checked_add(1)
+            .and_then(|count| child.as_str().len().checked_add(1).and_then(|bytes| count.checked_mul(bytes)))
+            .and_then(|work| work.checked_mul(3))
+            .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
+        ctx.charge_work(u64_from_index(work), OPERATION)?;
         let parent = parent.try_clone_for_decode(ctx, OPERATION)?;
         if let Some(existing) = self.feature_regeneration_parents.0.get_mut(child) {
             *existing = parent;
         } else {
             let child = child.try_clone_for_decode(ctx, OPERATION)?;
-            ctx.insert_btree_map(&mut self.feature_regeneration_parents.0, child, parent, OPERATION)?;
+            ctx.admit_retained_btree_record::<crate::features::FeatureId, crate::features::FeatureId>(0, OPERATION)?;
+            self.feature_regeneration_parents.0.insert(child, parent);
         }
         Ok(())
-    }
-}
-
-/// Refusal while validating or storing a regeneration parent.
-#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-pub enum FeatureRegenerationError {
-    /// The parent relation failed its model invariant.
-    #[error("{0}")]
-    Invalid(String),
-    /// The operation exceeded its resource limit.
-    #[error("resource refusal: {0:?}")]
-    Resource(cadmpeg_core::decode::ResourceLimit),
-}
-
-impl From<CodecError> for FeatureRegenerationError {
-    fn from(error: CodecError) -> Self {
-        match error {
-            CodecError::ResourceLimit(error) => Self::Resource(error),
-            CodecError::Malformed(message) => Self::Invalid(message),
-            error => Self::Invalid(error.to_string()),
-        }
     }
 }
 
@@ -1142,10 +1110,10 @@ impl ProceduralCarrierError {
     }
 }
 
-/// Storage and work policy for model attachment and serde reconstruction.
-struct AttachmentAdmission<'ctx, 'arena>(Option<&'ctx DecodeContext<'arena>>);
+/// Storage and work policy for model construction and serde reconstruction.
+struct ModelAdmission<'ctx, 'arena>(Option<&'ctx DecodeContext<'arena>>);
 
-impl AttachmentAdmission<'_, '_> {
+impl ModelAdmission<'_, '_> {
     fn work(&self, count: usize, operation: &'static str) -> Result<(), CodecError> {
         match self.0 {
             Some(ctx) => ctx.charge_work(u64_from_index(count), operation),
@@ -1208,7 +1176,7 @@ impl Model {
         owner: &SurfaceId,
         procedural: ProceduralSurface,
     ) -> Result<Result<(), ProceduralCarrierError>, CodecError> {
-        let admission = AttachmentAdmission(ctx);
+        let admission = ModelAdmission(ctx);
         for existing in &self.procedural_surfaces {
             admission.work(1, "scan procedural surface constructions")?;
             if admission.equal(existing.id.as_str(), procedural.id.as_str(), "compare procedural surface constructions")? {
@@ -1317,7 +1285,7 @@ impl Model {
         owner: &CurveId,
         procedural: ProceduralCurve,
     ) -> Result<Result<(), ProceduralCarrierError>, CodecError> {
-        let admission = AttachmentAdmission(ctx);
+        let admission = ModelAdmission(ctx);
         for existing in &self.procedural_curves {
             admission.work(1, "scan procedural curve constructions")?;
             if admission.equal(existing.id.as_str(), procedural.id.as_str(), "compare procedural curve constructions")? {
