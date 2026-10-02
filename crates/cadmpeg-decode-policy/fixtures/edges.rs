@@ -9,7 +9,7 @@ impl DecodeContext {
         Ok(())
     }
 }
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug)] // finding: uncharged_decode_work
 pub struct Borrowed<'a> {
     pub text: &'a str,
 }

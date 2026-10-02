@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-use crate::{types, Analysis};
+use crate::{external, types, Analysis};
 use rustc_hir::intravisit::{walk_expr, Visitor};
 use rustc_hir::{Expr, ExprKind};
 use rustc_middle::ty::{self, TypingEnv};
@@ -52,89 +52,29 @@ impl<'tcx> Analysis<'_, 'tcx> {
         if self.checked_call(expression, definition) && name != "alloc_filled" {
             return;
         }
-        if name == "default" && types::standard(self.tcx, definition) {
-            match self.implementation(expression, definition) {
-                Some(id)
-                    if types::standard(self.tcx, id)
-                        || self.checked_body(id) => {}
-                _ => self.shape_report(
-                    expression,
-                    Shape::Unknown,
-                    "Default implementation allocator reachability unresolved",
-                ),
-            }
+        let summary = external::summary(self.tcx, definition,
+            operands.first().map(|operand| self.typeck.expr_ty(operand)));
+        let allocation = summary.map(|summary| summary.allocation);
+        if allocation == Some(external::Allocation::None) {
             return;
         }
-        if types::standard(self.tcx, definition)
-            && matches!(
-                name,
-                "new_uninit"
-                    | "must_use"
-                    | "write_box_via_move"
-                    | "box_assume_init_into_vec_unsafe"
-                    | "branch"
-                    | "from_residual"
-                    | "from_output"
-                    | "iter"
-                    | "iter_mut"
-                    | "into_iter"
-                    | "map"
-                    | "filter"
-                    | "filter_map"
-                    | "skip"
-                    | "take"
-                    | "enumerate"
-                    | "rev"
-                    | "zip"
-                    | "chain"
-                    | "peekable"
-                    | "fuse"
-                    | "copied"
-                    | "inspect"
-                    | "flat_map"
-                    | "flatten"
-                    | "step_by"
-                    | "skip_while"
-                    | "take_while"
-            )
-            || types::standard(self.tcx, definition) && name == "new" && operands.is_empty()
-        {
+        if summary.is_some_and(|summary| summary.zero_operand
+            .and_then(|index| operands.get(index)).is_some_and(|operand| self.zero_extent(operand))) {
             return;
         }
-        if types::standard(self.tcx, definition) {
-            if let ty::Adt(result, _) = self.typeck.expr_ty(expression).kind() {
-                let owner = self.tcx.item_name(result.did());
-                if types::standard(self.tcx, result.did())
-                    && (matches!(name, "from" | "into") && owner.as_str() == "Cow"
-                        || name == "new" && matches!(owner.as_str(), "Box" | "Rc" | "Arc"))
-                {
-                    return;
-                }
-            }
-            let count = if matches!(
-                name,
-                "from_elem"
-                    | "repeat"
-                    | "reserve"
-                    | "reserve_exact"
-                    | "try_reserve"
-                    | "try_reserve_exact"
-                    | "resize"
-                    | "resize_with"
-            ) {
-                operands.get(1)
-            } else {
-                None
-            };
-            if count.is_some_and(|count| self.zero_extent(count)) {
-                return;
-            }
-            if matches!(name, "push_str" | "extend" | "extend_from_slice") && operands.get(1).is_some_and(|operand| matches!(operand.kind, ExprKind::Array(values) if values.is_empty()) || matches!(operand.kind, ExprKind::Lit(literal) if matches!(literal.node, rustc_ast::LitKind::Str(value, _) if value.as_str().is_empty()))) { return; }
+        if summary.is_some_and(|summary| summary.empty_operand.and_then(|index| operands.get(index))
+            .is_some_and(|operand| matches!(operand.kind, ExprKind::Array(values) if values.is_empty())
+                || matches!(operand.kind, ExprKind::Lit(literal) if matches!(literal.node, rustc_ast::LitKind::Str(value, _) if value.as_str().is_empty())))) {
+            return;
+        }
+        if allocation == Some(external::Allocation::Conversion)
+            && matches!(self.typeck.expr_ty(expression).kind(), ty::Adt(owner, _) if types::standard(self.tcx, owner.did()) && self.tcx.item_name(owner.did()).as_str() == "Cow") {
+            return;
         }
         let context_call = operands.first().is_some_and(|operand| {
             types::has_context(self.tcx, self.typeck.expr_ty(operand), &mut Vec::new())
         });
-        if context_call {
+        if context_call && self.checked_call(expression, definition) {
             if name == "alloc_filled"
                 && !operands.get(1).is_some_and(|count| self.zero_extent(count))
             {
@@ -153,24 +93,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
             }
             return;
         }
-        if matches!(
-            name,
-            "push"
-                | "push_back"
-                | "push_front"
-                | "push_str"
-                | "insert"
-                | "extend"
-                | "extend_from_slice"
-                | "append"
-                | "resize"
-                | "resize_with"
-                | "reserve"
-                | "reserve_exact"
-                | "try_reserve"
-                | "try_reserve_exact"
-        ) && types::standard(self.tcx, definition)
-        {
+        if allocation == Some(external::Allocation::Growth) {
             if let Some(receiver) = operands.first() {
                 let shape = types::heap(
                     self.tcx,
@@ -203,19 +126,6 @@ impl<'tcx> Analysis<'_, 'tcx> {
             self.tcx.def_kind(definition),
             rustc_hir::def::DefKind::Ctor(_, _)
         ) {
-            return;
-        }
-        if !types::standard(self.tcx, definition) && name != "clone" {
-            if types::heap(self.tcx, self.typeck.expr_ty(expression), &mut Vec::new())
-                != Shape::Fixed
-                && !self.checked_body(definition)
-            {
-                self.shape_report(
-                    expression,
-                    Shape::Unknown,
-                    "opaque callee allocator reachability",
-                );
-            }
             return;
         }
         if name == "cloned" && types::standard(self.tcx, definition) {
@@ -253,42 +163,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
             }
             return;
         }
-        if !matches!(
-            name,
-            "to_string"
-                | "to_owned"
-                | "clone"
-                | "format"
-                | "to_vec"
-                | "collect"
-                | "from"
-                | "into"
-                | "from_elem"
-                | "with_capacity"
-                | "with_capacity_in"
-                | "from_iter"
-                | "repeat"
-                | "concat"
-                | "join"
-                | "into_boxed_slice"
-                | "into_owned"
-        ) {
-            if types::heap(self.tcx, self.typeck.expr_ty(expression), &mut Vec::new())
-                != Shape::Fixed
-            {
-                if operands.iter().any(|operand| {
-                    types::has_context(self.tcx, self.typeck.expr_ty(operand), &mut Vec::new())
-                }) {
-                    return;
-                }
-                if !self.checked_body(definition) {
-                    self.shape_report(
-                        expression,
-                        Shape::Unknown,
-                        "constructor or opaque callee: allocator reachability unresolved",
-                    );
-                }
-            }
+        if allocation.is_none() {
             return;
         }
         if matches!(name, "from" | "into") && types::standard(self.tcx, definition) {

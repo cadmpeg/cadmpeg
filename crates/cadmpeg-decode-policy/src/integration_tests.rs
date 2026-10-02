@@ -40,7 +40,7 @@ fn check_fixture(name: &str) {
     for line in actual.lines() {
         let fields: Vec<_> = line.split('\t').collect();
         if fields.len() == 4
-            && (if matches!(name, "edges" | "modular") {
+            && (if matches!(name, "edges" | "modular" | "external") {
                 true
             } else if name.starts_with("work") {
                 fields[0] != "uncharged_decode_allocation"
@@ -139,4 +139,9 @@ fn charge_proof_edges() {
 #[test]
 fn modular_body_proof() {
     check_fixture("modular");
+}
+
+#[test]
+fn external_operation_summaries() {
+    check_fixture("external");
 }

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-use crate::{types, Analysis};
+use crate::{external, types, Analysis};
 use rustc_hir::intravisit::{walk_expr, Visitor};
 use rustc_hir::{BinOpKind, Expr, ExprKind, LoopSource, MatchSource, StmtKind};
 use rustc_span::Span;
@@ -76,57 +76,22 @@ impl<'tcx> Analysis<'_, 'tcx> {
         if self.checked_call(expression, definition) {
             return;
         }
-        if self.context_operation(expression) {
-            if !self.trusted_context_callee(expression)
-                && !self.checked_body(definition)
-            {
-                self.work_report(
-                    expression.span,
-                    Shape::Unknown,
-                    Some(false),
-                    "context-taking callee admission unresolved",
-                );
-            }
-            return;
-        }
-        if !types::standard(self.tcx, definition) {
-            // An unavailable body can scale work with a scalar count too.
-            let known_index_conversion = self.tcx.crate_name(definition.krate).as_str()
-                == "cadmpeg_core"
-                && name.as_str() == "u64_from_index";
-            if !known_index_conversion && !self.checked_body(definition) {
-                let paid = self.take_credit(&operands);
-                self.work_report(
-                    expression.span,
-                    Shape::Unknown,
-                    paid,
-                    &format!("opaque callee work {}", self.tcx.def_path_str(definition)),
-                );
-            }
-            return;
-        }
         let name = name.as_str();
-        if self.tcx.trait_of_assoc(definition).is_some() {
-            if let Some(custom) = self.custom_trait(expression, definition) {
-                if !self.checked_body(custom) {
-                    self.work_report(
-                        expression.span,
-                        Shape::Unknown,
-                        Some(false),
-                        "custom trait work",
-                    );
-                }
+        if let Some(custom) = self.custom_trait(expression, definition) {
+            if self.checked_body(custom) {
                 return;
             }
-            if self.implementation(expression, definition).is_none() {
-                self.work_report(
-                    expression.span,
-                    Shape::Unknown,
-                    Some(false),
-                    "trait implementation unresolved",
-                );
-                return;
-            }
+        }
+        let Some(summary) = external::summary(self.tcx, definition,
+            operands.first().map(|operand| self.typeck.expr_ty(operand))) else {
+            self.report(expression.span, "unproven_decode_charge",
+                &format!("external operation missing summary: {}", self.tcx.def_path_str(definition)));
+            return;
+        };
+        if self.tcx.trait_of_assoc(definition).is_some()
+            && self.implementation(expression, definition).is_none() {
+            self.work_report(expression.span, Shape::Unknown, Some(false), "trait implementation unresolved");
+            return;
         }
         if name == "clone" && self.clone_shape(self.typeck.expr_ty(expression)) == Shape::Fixed {
             return;
@@ -224,169 +189,8 @@ impl<'tcx> Analysis<'_, 'tcx> {
                 }
             }
         }
-        let consumers = matches!(
-            name,
-            "any"
-                | "all"
-                | "position"
-                | "rposition"
-                | "find"
-                | "rfind"
-                | "find_map"
-                | "min"
-                | "max"
-                | "min_by"
-                | "max_by"
-                | "min_by_key"
-                | "max_by_key"
-                | "fold"
-                | "try_fold"
-                | "reduce"
-                | "sum"
-                | "product"
-                | "count"
-                | "for_each"
-                | "try_for_each"
-                | "collect"
-                | "from_iter"
-        );
-        let scans = matches!(
-            name,
-            "contains"
-                | "contains_key"
-                | "get"
-                | "get_mut"
-                | "starts_with"
-                | "ends_with"
-                | "eq"
-                | "cmp"
-                | "partial_cmp"
-                | "hash"
-                | "copy_from_slice"
-                | "copy_within"
-                | "extend_from_slice"
-                | "split_at"
-                | "trim"
-                | "trim_start"
-                | "trim_end"
-                | "replace"
-                | "replacen"
-                | "to_lowercase"
-                | "to_uppercase"
-                | "is_ascii"
-                | "from_utf8"
-                | "from_utf8_lossy"
-                | "to_vec"
-                | "clone"
-                | "to_owned"
-                | "to_string"
-                | "sort"
-                | "sort_by"
-                | "sort_by_key"
-                | "sort_unstable"
-                | "sort_unstable_by"
-                | "sort_unstable_by_key"
-                | "binary_search"
-                | "binary_search_by"
-                | "binary_search_by_key"
-                | "retain"
-                | "drain"
-                | "clear"
-                | "truncate"
-                | "resize"
-                | "append"
-                | "extend"
-                | "insert"
-                | "remove"
-                | "join"
-                | "concat"
-        );
-        if !consumers && !scans {
-            let path = self.tcx.def_path_str(definition);
-            let fixed_call = matches!(
-                name,
-                "len"
-                    | "capacity"
-                    | "is_empty"
-                    | "as_str"
-                    | "as_bytes"
-                    | "as_slice"
-                    | "as_mut_slice"
-                    | "as_ref"
-                    | "as_mut"
-                    | "borrow"
-                    | "borrow_mut"
-                    | "deref"
-                    | "deref_mut"
-                    | "new"
-                    | "new_uninit"
-                    | "default"
-                    | "with_capacity"
-                    | "with_capacity_in"
-                    | "iter"
-                    | "iter_mut"
-                    | "into_iter"
-                    | "map"
-                    | "filter"
-                    | "filter_map"
-                    | "skip"
-                    | "take"
-                    | "enumerate"
-                    | "rev"
-                    | "zip"
-                    | "chain"
-                    | "peekable"
-                    | "fuse"
-                    | "copied"
-                    | "cloned"
-                    | "inspect"
-                    | "flat_map"
-                    | "flatten"
-                    | "step_by"
-                    | "skip_while"
-                    | "take_while"
-                    | "branch"
-                    | "from_output"
-                    | "from_residual"
-                    | "ok_or"
-                    | "ok_or_else"
-                    | "map_err"
-                    | "must_use"
-                    | "write_box_via_move"
-                    | "box_assume_init_into_vec_unsafe"
-                    | "size_of"
-                    | "align_of"
-                    | "push"
-                    | "push_back"
-                    | "push_front"
-                    | "reserve"
-                    | "reserve_exact"
-                    | "try_reserve"
-                    | "try_reserve_exact"
-                    | "unwrap_or"
-                    | "unwrap_or_else"
-                    | "is_some"
-                    | "is_none"
-                    | "is_ok"
-                    | "is_err"
-            ) || matches!(
-                self.tcx.def_kind(definition),
-                rustc_hir::def::DefKind::Ctor(_, _)
-            ) || path.contains("fmt::")
-                || path.contains("fmt::rt");
-            if !fixed_call
-                && operands.iter().any(|operand| {
-                    types::work(self.tcx, self.typeck.expr_ty(operand), &mut Vec::new())
-                        != Shape::Fixed
-                })
-            {
-                self.work_report(
-                    expression.span,
-                    Shape::Unknown,
-                    Some(false),
-                    "standard callee work not summarized",
-                );
-            }
+        let consumers = summary.work == external::Work::Iterator;
+        if summary.work == external::Work::Fixed {
             return;
         }
         let Some(receiver) = operands.first() else {
@@ -495,12 +299,17 @@ impl<'tcx> Analysis<'_, 'tcx> {
                 }
             }
         }
+        let extent = match summary.work {
+            external::Work::Argument(index) => operands.get(index).copied().unwrap_or(receiver),
+            _ => receiver,
+        };
         let shape = if name == "count" {
             Shape::Unknown
         } else if consumers {
             self.iteration(receiver, &mut Vec::new())
         } else {
-            types::work(self.tcx, value, &mut Vec::new())
+            if self.constant(extent, &mut Vec::new()) { Shape::Fixed }
+            else { types::work(self.tcx, self.typeck.expr_ty(extent), &mut Vec::new()) }
         };
         if shape == Shape::Fixed {
             return;
