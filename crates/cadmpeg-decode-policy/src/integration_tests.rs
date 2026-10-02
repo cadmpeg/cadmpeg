@@ -169,6 +169,8 @@ fn check_fixture(name: &str) {
                 name,
                 "edges"
                     | "reachability"
+                    | "indirect"
+                    | "addresses"
                     | "fixed_ranges"
                     | "raw_steps"
                     | "conversions"
@@ -442,4 +444,14 @@ fn cross_crate_decode_reachability() {
         String::from_utf8_lossy(&output.stderr)
     );
     assert_eq!(output.status.code(), Some(1));
+}
+
+#[test]
+fn static_pointer_and_object_reachability() {
+    check_fixture("indirect");
+}
+
+#[test]
+fn address_taken_reachability() {
+    check_fixture("addresses");
 }

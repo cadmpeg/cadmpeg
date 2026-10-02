@@ -16,6 +16,8 @@ def resolve_graph(source):
     reached = set()
     roots = {}
     edges = {}
+    uncertain = set()
+    addresses = set()
     for row in source.splitlines():
         fields = row.split("\t")
         if len(fields) == 3 and fields[0] == "decode_root":
@@ -23,6 +25,12 @@ def resolve_graph(source):
             roots[fields[1]] = fields[2]
         elif len(fields) == 3 and fields[0] == "decode_edge":
             edges.setdefault(fields[1], set()).add(fields[2])
+        elif len(fields) == 2 and fields[0] == "decode_uncertain":
+            uncertain.add(fields[1])
+        elif len(fields) == 2 and fields[0] == "decode_address":
+            addresses.add(fields[1])
+    for caller in uncertain:
+        edges.setdefault(caller, set()).update(addresses)
     pending = list(reached)
     while pending:
         for callee in edges.get(pending.pop(), ()):

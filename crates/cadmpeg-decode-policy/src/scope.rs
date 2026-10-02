@@ -2,7 +2,7 @@
 //! Decode roots and resolved production call reachability.
 use crate::{flow, types, Analysis, Findings};
 use rustc_hir::intravisit::{walk_expr, Visitor};
-use rustc_hir::{Expr, ExprKind};
+use rustc_hir::{def::Res, Expr, ExprKind};
 use rustc_middle::ty::{self, TyCtxt};
 use rustc_span::def_id::{DefId, LocalDefId};
 use std::collections::{BTreeMap, BTreeSet, HashSet};
@@ -11,6 +11,8 @@ use std::collections::{BTreeMap, BTreeSet, HashSet};
 pub(crate) struct Graph {
     roots: BTreeMap<String, String>,
     edges: BTreeSet<(String, String)>,
+    uncertain: BTreeSet<String>,
+    addresses: BTreeSet<String>,
 }
 
 impl Graph {
@@ -20,6 +22,12 @@ impl Graph {
         }
         for (caller, callee) in &self.edges {
             println!("decode_edge\t{caller}\t{callee}");
+        }
+        for caller in &self.uncertain {
+            println!("decode_uncertain\t{caller}");
+        }
+        for callee in &self.addresses {
+            println!("decode_address\t{callee}");
         }
     }
 
@@ -38,6 +46,11 @@ impl Graph {
             let mut added = false;
             for (caller, callee) in &self.edges {
                 if reached.contains(caller) {
+                    added |= reached.insert(callee.clone());
+                }
+            }
+            if self.uncertain.iter().any(|caller| reached.contains(caller)) {
+                for callee in &self.addresses {
                     added |= reached.insert(callee.clone());
                 }
             }
@@ -107,7 +120,10 @@ pub(crate) fn collect<'tcx>(tcx: TyCtxt<'tcx>, owners: &[LocalDefId]) -> Graph {
                     "clone" | "eq" | "partial_cmp" | "cmp" | "hash" | "fmt" | "default"
                 )
             });
-        if !crate::production(tcx, owner.to_def_id()) && !derived_operation {
+        let initializer = matches!(tcx.def_kind(*owner),
+            rustc_hir::def::DefKind::Static { .. } | rustc_hir::def::DefKind::Const { .. }
+                | rustc_hir::def::DefKind::AssocConst { .. } | rustc_hir::def::DefKind::AnonConst);
+        if !crate::production(tcx, owner.to_def_id()) && !derived_operation && !initializer {
             continue;
         }
         let mut findings = Findings::default();
@@ -123,6 +139,7 @@ pub(crate) fn collect<'tcx>(tcx: TyCtxt<'tcx>, owners: &[LocalDefId]) -> Graph {
             },
             caller: key(tcx, owner.to_def_id()),
             graph: &mut graph,
+            direct_callee: false,
         }
         .visit_body(tcx.hir_body_owned_by(*owner));
     }
@@ -133,6 +150,7 @@ struct Calls<'a, 'b, 'tcx> {
     analysis: Analysis<'a, 'tcx>,
     caller: String,
     graph: &'b mut Graph,
+    direct_callee: bool,
 }
 
 impl Calls<'_, '_, '_> {
@@ -170,6 +188,32 @@ impl Calls<'_, '_, '_> {
 
 impl<'tcx> Visitor<'tcx> for Calls<'_, '_, 'tcx> {
     fn visit_expr(&mut self, expression: &'tcx Expr<'tcx>) {
+        if let ExprKind::Path(ref path) = expression.kind {
+            if let Res::Def(kind, id) = self.analysis.typeck.qpath_res(path, expression.hir_id) {
+                if matches!(kind, rustc_hir::def::DefKind::Static { .. }
+                    | rustc_hir::def::DefKind::Const { .. } | rustc_hir::def::DefKind::AssocConst { .. }) {
+                    self.edge(id);
+                }
+            }
+        }
+        let value = self.analysis.expr_ty(expression);
+        if !self.direct_callee {
+            let address = match value.peel_refs().kind() {
+                ty::FnDef(id, _) => Some(*id),
+                ty::Closure(id, _) if matches!(self.analysis.expr_ty_adjusted(expression).kind(), ty::FnPtr(..)) => Some(*id),
+                _ => None,
+            };
+            if let Some(id) = address {
+                if types::checked(self.analysis.tcx, id) {
+                    self.graph.addresses.insert(key(self.analysis.tcx, id));
+                }
+            }
+        }
+        if let ExprKind::Call(callee, _) = expression.kind {
+            if matches!(self.analysis.expr_ty(callee).peel_refs().kind(), ty::FnPtr(..)) {
+                self.graph.uncertain.insert(self.caller.clone());
+            }
+        }
         if let ty::Closure(id, _) = self.analysis.expr_ty(expression).peel_refs().kind() {
             self.edge(*id);
         }
@@ -190,8 +234,20 @@ impl<'tcx> Visitor<'tcx> for Calls<'_, '_, 'tcx> {
         } else if let ty::FnDef(id, _) = self.analysis.expr_ty(expression).kind() {
             self.edge(*id);
         }
-        if !matches!(expression.kind, ExprKind::Closure(_)) {
+        if let ExprKind::Call(callee, arguments) = expression.kind {
+            let direct = self.direct_callee;
+            self.direct_callee = matches!(self.analysis.expr_ty(callee).kind(), ty::FnDef(..));
+            self.visit_expr(callee);
+            self.direct_callee = false;
+            for argument in arguments {
+                self.visit_expr(argument);
+            }
+            self.direct_callee = direct;
+        } else if !matches!(expression.kind, ExprKind::Closure(_)) {
+            let direct = self.direct_callee;
+            self.direct_callee = false;
             walk_expr(self, expression);
+            self.direct_callee = direct;
         }
     }
 }
