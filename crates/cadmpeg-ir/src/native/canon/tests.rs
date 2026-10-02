@@ -635,3 +635,97 @@ fn known_sequence_length_reserves_only_its_backing_slots() {
     assert_eq!(value, serde_json::json!([1, 2, 3]));
     assert_eq!(value.as_array().unwrap().capacity(), 3);
 }
+
+
+#[test]
+fn canonical_native_root_and_transparent_wrappers_use_session_depth() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_recursion_depth = 0;
+    for trigger in 0..4 {
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let result = match trigger {
+            0 => CanonValue::for_record(&ctx).serialize_map(Some(0)).map(|_| ()),
+            1 => CanonValue::for_record(&ctx).serialize_seq(Some(0)).map(|_| ()),
+            2 => CanonValue::for_record(&ctx).serialize_some(&7).map(|_| ()),
+            3 => CanonValue::for_record(&ctx).serialize_newtype_struct("Wrapped", &7).map(|_| ()),
+            _ => unreachable!(),
+        };
+        let super::CanonError::Resource(cadmpeg_core::CodecError::ResourceLimit(first)) = result.err().unwrap() else { panic!("frame admission must refuse"); };
+        assert_eq!(first.dimension, ResourceDimension::RecursionDepth);
+        assert_eq!(first.operation, super::WORK);
+        assert_eq!(first.used, 0);
+        assert_eq!(first.additional, 1);
+        assert!(matches!(ctx.finish_session(), Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit == first));
+    }
+}
+
+#[test]
+fn canonical_native_scalar_visits_preserve_the_first_work_refusal() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    for trigger in 0..4 {
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let result = match trigger {
+            0 => CanonValue::for_record(&ctx).serialize_bool(true),
+            1 => CanonValue::for_record(&ctx).serialize_f64(1.0),
+            2 => CanonValue::for_record(&ctx).serialize_none(),
+            3 => CanonValue::for_record(&ctx).serialize_unit(),
+            _ => unreachable!(),
+        };
+        let super::CanonError::Resource(cadmpeg_core::CodecError::ResourceLimit(first)) = result.err().unwrap() else { panic!("scalar work admission must refuse"); };
+        assert_eq!(first.dimension, ResourceDimension::WorkUnits);
+        assert_eq!(first.used, 0);
+        assert_eq!(first.additional, 1);
+        assert!(matches!(ctx.finish_session(), Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit == first));
+    }
+}
+
+#[test]
+fn canonical_native_sequence_slots_are_admitted_before_allocation() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = CanonValue::for_record(&ctx).serialize_seq(Some(3)).err().unwrap();
+    let super::CanonError::Resource(cadmpeg_core::CodecError::ResourceLimit(first)) = error else { panic!("sequence slots must refuse"); };
+    assert_eq!(first.dimension, ResourceDimension::CollectionItems);
+    assert_eq!(first.additional, 3);
+    assert!(matches!(ctx.finish_session(), Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit == first));
+}
+
+#[test]
+fn canonical_native_key_comparisons_admit_the_complete_key_bound() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use serde_json::{Map, Value};
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    for copied in [false, true] {
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let mut entries = Map::from_iter([("a".into(), Value::Null), ("b".into(), Value::Null)]);
+        let error = if copied {
+            super::super::copy::insert(&ctx, &mut entries, String::new(), Value::Null).unwrap_err()
+        } else {
+            let mut map = super::CanonMap {
+                ctx: &ctx,
+                _nested: ctx.enter_nested(super::WORK).unwrap(),
+                entries,
+                key: None,
+                depth: super::MAX_NATIVE_NESTING_DEPTH,
+                sink: None,
+            };
+            let super::CanonError::Resource(error) = map.insert(String::new(), &7).unwrap_err() else { panic!("key comparison must refuse"); };
+            assert_eq!(map.entries.len(), 2);
+            error
+        };
+        let cadmpeg_core::CodecError::ResourceLimit(first) = error else { panic!("key work must refuse"); };
+        assert_eq!(first.dimension, ResourceDimension::WorkUnits);
+        assert_eq!(first.additional, 3);
+        assert!(matches!(ctx.finish_session(), Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit == first));
+    }
+}
