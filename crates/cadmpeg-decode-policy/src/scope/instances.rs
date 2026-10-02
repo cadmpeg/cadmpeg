@@ -33,7 +33,9 @@ pub(super) fn enqueue<'tcx>(
     }
     graph.edges.insert((caller.to_owned(), key(tcx, id)));
     if instance.args.has_non_region_param() {
-        graph.symbolic_edges.insert((caller.to_owned(), key(tcx, id)));
+        graph
+            .symbolic_edges
+            .insert((caller.to_owned(), key(tcx, id)));
         return;
     }
     if instance.args.has_escaping_bound_vars() {
