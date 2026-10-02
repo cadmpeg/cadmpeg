@@ -333,11 +333,10 @@ impl NativeRecord {
     #[cfg(test)]
     pub(crate) fn from_typed<T: Serialize>(record: &T) -> Result<Self, NativeConvertError> {
         let arena = cadmpeg_core::decode::DecodeArena::new();
-        let (ctx, _) = DecodeContext::from_root_bytes(
-            &[],
-            &arena,
-            &cadmpeg_core::decode::DecodePolicy::default(),
-        )?;
+        let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+        // Format-boundary fixtures admit the record root and every allowed field container.
+        policy.limits.max_recursion_depth = u64_from_index(MAX_NATIVE_NESTING_DEPTH + 1);
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
         Self::from_typed_for_decode(&ctx, record, None)
     }
 

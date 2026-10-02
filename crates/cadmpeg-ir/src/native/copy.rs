@@ -18,8 +18,9 @@ pub(super) fn fields(ctx: &DecodeContext<'_>, source: &Map<String, Value>) -> Re
 }
 
 pub(super) fn insert(ctx: &DecodeContext<'_>, fields: &mut Map<String, Value>, key: String, value: Value) -> Result<(), CodecError> {
-    let levels = u64::from(usize::BITS - fields.len().leading_zeros()) + 1;
-    let work = levels.checked_mul(32).and_then(|count| count.checked_mul(u64_from_index(key.len()))).and_then(|count| count.checked_add(1))
+    let work = key.len().checked_add(1)
+        .and_then(|bytes| fields.len().checked_add(1).and_then(|count| bytes.checked_mul(count)))
+        .map(u64_from_index)
         .ok_or_else(|| ctx.refuse_codec_limit("insert copied native field", u64::MAX - 1, u64::MAX))?;
     ctx.charge_work(work, "insert copied native field")?;
     ctx.admit_retained_btree_record::<String, Value>(0, "insert copied native field")?;
