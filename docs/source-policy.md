@@ -125,7 +125,8 @@ that permits unrelated violations to replace removed ones.
 core, IR decode paths, codec, container, assembly, Parasolid and Protein crates.
 Writer and encoder paths use the sort rule's path exclusions. Nested functions
 have independent contexts; closures keep the enclosing context. A borrowed
-context parameter, typed local or context field and a DecodeContext method
+or owned context parameter, imported context alias, constructor-bound local, typed
+local, context field and a DecodeContext method
 establish the scope.
 
 Input-dependent `format!`, `.to_string()` and `.to_owned()` use
@@ -148,15 +149,16 @@ non-owning elements. A record clone constructs its fields with charged child
 copies. The rule rejects unresolved clone and collect types: Copy values use
 direct copies, and a non-allocating collect uses its specific operation.
 Vectors containing only literals are fixed size and excluded. Raw clones
-with unresolved ownership use a direct Copy assignment or charged child copies. No separate charge admits raw collection creation.
+with unresolved ownership use a direct Copy assignment or charged child copies.
+No separate charge admits raw collection creation.
 
 
 ## Decode work admission
 
 `uncharged_decode_work` has the allocation rule's context and path scope.
 Input-sized `for`, `while` and `loop`, iterator consumers, searches, prefix
-comparisons and indexed slice equality require propagated work admission.
-Unresolved scan types use the same forms. Fixed literal ranges stay outside
+comparisons and decoded slice equality require propagated work admission.
+Unresolved scan types use the same forms. Fixed literal ranges and arrays stay outside
 the rule. A scalar `min` or `max` with an argument is constant time.
 
 A loop starts its body with `ctx.charge_work(..., operation)?` or the
@@ -170,7 +172,9 @@ that work separately.
 
 Use `ctx.position_by(values, fallible_predicate, operation)?` for a search
 and `ctx.equal_bytes(left, right, operation)?` for decoded byte equality.
-Heap-owning comparisons require charged child comparisons. An aggregate
+Heap-owning comparisons require charged child comparisons. Named equality
+with unresolved ownership uses an explicit scalar annotation or a charged
+comparison. An aggregate
 algorithm bound that the lexical rule cannot prove is expressed as explicit
 per-pass or per-iteration admission. The checker does not infer arbitrary
 arithmetic, alias mutations or a callback's complexity.

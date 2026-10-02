@@ -1938,8 +1938,15 @@ def decode_context_functions(sources):
             continue
         code, _ = production_source(source)
         tokens, pairs, parents = evaluation_tokens(code)
+        imported = evaluation_imports(tokens, pairs)
+        context_types = {"DecodeContext"} | {name for name, target in imported.items()
+                                             if target[-1:] == ("DecodeContext",)}
+        context_binding = re.compile(
+            r"\b([A-Za-z_]\w*)\s*:\s*(?:&\s*(?:'[A-Za-z_]\w*\s*)?(?:mut\s+)?)?"
+            r"(?:::\s*)?(?:[A-Za-z_]\w*\s*::\s*)*(?:" +
+            "|".join(re.escape(name) for name in sorted(context_types)) + r")\b")
         words = [token[0] for token in tokens]
-        parsed.append((path, source, code, tokens, pairs, parents, words))
+        parsed.append((path, source, code, tokens, pairs, parents, words, context_binding, context_types))
         for i, word in enumerate(words):
             if word != "struct" or i + 1 >= len(words):
                 continue
@@ -1948,9 +1955,9 @@ def decode_context_functions(sources):
                 opening += 1
             if opening in pairs and words[opening] == "{":
                 fields.setdefault((parts[1], words[i + 1]), set()).update(
-                    DECODE_CONTEXT_BINDING.findall(
+                    context_binding.findall(
                         code[tokens[opening].end():tokens[pairs[opening]].start()]))
-    for path, source, code, tokens, pairs, parents, words in parsed:
+    for path, source, code, tokens, pairs, parents, words, context_binding, context_types in parsed:
         functions = []
         for index, name, _, owner in evaluation_signatures(tokens, pairs, parents):
             opening = index + 2
@@ -1972,13 +1979,22 @@ def decode_context_functions(sources):
                       if not any(start <= i <= stop for start, stop in excluded)}
             scope = "".join(code[tokens[i].start():tokens[i].end()] + " "
                             for i in sorted(active))
-            bindings = set(DECODE_CONTEXT_BINDING.findall(scope))
-            bindings.update(re.findall(
-                r"\blet\s+(?:mut\s+)?([A-Za-z_]\w*)\s*=\s*&?\s*DecodeContext\b", scope))
+            bindings = set(context_binding.findall(scope))
+            for context_type in context_types:
+                bindings.update(re.findall(
+                    r"\blet\s+(?:mut\s+)?([A-Za-z_]\w*)\s*=\s*&?\s*" +
+                    re.escape(context_type) + r"\b", scope))
+                bindings.update(re.findall(
+                    r"\blet\s*\(\s*([A-Za-z_]\w*)\s*,[^;=]*\)\s*=\s*" +
+                    r"(?:[A-Za-z_]\w*\s*::\s*)*" + re.escape(context_type) +
+                    r"\s*::\s*(?:from_root_bytes(?:_limit)?|read_root)\b", scope))
             if owner == "DecodeContext":
                 bindings.add("self")
             context_fields = fields.get((Path(relative_path(path)).parts[1], owner), set())
             receivers = bindings | {"self." + field for field in context_fields}
+            for match in re.finditer(r"\blet\s+([A-Za-z_]\w*)\s*=\s*&?\s*([A-Za-z_]\w*(?:\s*\.\s*[A-Za-z_]\w*)?)\s*;", scope):
+                if re.sub(r"\s", "", match[2]) in receivers:
+                    receivers.add(match[1])
             if not receivers:
                 continue
             yield path, source, code, tokens, pairs, parents, words, body, end, active, receivers
@@ -1991,12 +2007,12 @@ def decode_fixed_text(source, code, start, end):
         r'(?:r\#*".*"\#*|"(?:[^"\\]|\\.)*")', raw, re.DOTALL))
 
 
-
 def decode_static_values(source, code, start, end):
     """Only literals and separators prove a fixed allocation independent of input."""
     masked = code[start:end]
     return bool(source[start:end].strip()) and not re.sub(
         r"\b(?:true|false|(?:0x[0-9a-fA-F_]+|[0-9][0-9_]*)(?:_[ui](?:8|16|32|64|128|size))?)\b|[\s,;.+\-]", "", masked)
+
 
 def scan_decode_allocations(sources: dict[Path, str]) -> list[Finding]:
     """Require charged text construction; unresolved operands are not exemptions."""
@@ -2122,6 +2138,28 @@ def decode_charge_covers(amount, extent):
     return amount in {extent, extent + ".len()", extent + ".capacity()"}
 
 
+def decode_block(parents, words, index):
+    """Closest block owns the charge; call parentheses do not change control flow."""
+    parent = parents.get(index)
+    while parent is not None and words[parent] != "{":
+        parent = parents.get(parent)
+    return parent
+
+
+def decode_scalar_receiver(code, name, position):
+    """An explicit primitive binding with no later rebinding has fixed work."""
+    if not re.fullmatch(r"[A-Za-z_]\w*", name):
+        return False
+    declarations = list(re.finditer(
+        r"\b" + re.escape(name) + r"\s*:\s*&?\s*(?:bool|char|[ui](?:8|16|32|64|128|size)|f(?:32|64))\b",
+        code[:position]))
+    if not declarations:
+        return False
+    tail = code[declarations[-1].end():position]
+    return not re.search(r"\blet\s+(?:mut\s+)?" + re.escape(name) + r"\b|\|[^|]*\b" +
+                         re.escape(name) + r"\b[^|]*\|", tail)
+
+
 def scan_decode_work(sources: dict[Path, str]) -> list[Finding]:
     """Reject unadmitted scans; unresolved linear-work forms require an explicit charge."""
     findings = []
@@ -2136,7 +2174,7 @@ def scan_decode_work(sources: dict[Path, str]) -> list[Finding]:
                 while stop < end and words[stop] != ";":
                     stop = pairs[stop] + 1 if stop in pairs and words[stop] in "([{" else stop + 1
                 expr = "".join(words[i + 3:stop])
-                aliases[words[i + 1]] = expr
+                aliases.setdefault(words[i + 1], []).append((i, expr))
             amount = decode_work_charge(words, pairs, i, receivers) if i > body else None
             if amount is not None:
                 charges[i] = amount
@@ -2163,8 +2201,13 @@ def scan_decode_work(sources: dict[Path, str]) -> list[Finding]:
                     if "in" not in header:
                         continue
                     extent = decode_extent("".join(header[header.index("in") + 1:]))
-                    if re.fullmatch(r"[0-9_]+", extent) or (extent.startswith("[") and decode_static_values(
-                            source, code, tokens[i].end(), tokens[opening].start())):
+                    in_index = i + 1 + header.index("in")
+                    if re.fullmatch(r"[0-9_]+", extent):
+                        continue
+                    if (words[in_index + 1:in_index + 2] == ["["]
+                            and pairs.get(in_index + 1) == opening - 1
+                            and decode_static_values(source, code,
+                                tokens[in_index + 1].end(), tokens[opening - 1].start())):
                         continue
                 else:
                     extent = "".join(header)
@@ -2178,24 +2221,42 @@ def scan_decode_work(sources: dict[Path, str]) -> list[Finding]:
                 opening = evaluation_call_open(words, i)
                 if word in {"min", "max"} and pairs.get(opening) != opening + 1:
                     continue
+                if word in {"position", "rposition", "eq", "cmp", "partial_cmp"} and pairs.get(opening) == opening + 1:
+                    continue
+                if word in {"eq", "cmp", "partial_cmp"} and decode_scalar_receiver(
+                        code[tokens[min(active)].start():], receiver,
+                        tokens[i].start() - tokens[min(active)].start()):
+                    continue
                 extent = decode_extent(receiver)
                 if extent.startswith("(") and ".." in extent:
                     continue
             elif word in {"=", "!"} and words[i + 1:i + 2] == ["="]:
                 left, right = i - 1, i + 2
+                if words[left:left + 1] in [["="], ["!"], ["<"], [">"]]:
+                    continue
                 left_name = words[left] if left >= 0 else ""
                 right_name = words[right] if right < len(words) else ""
-                indexed = words[left:left + 1] == ["]"] or words[right + 1:right + 2] == ["["]
-                if not indexed and left_name not in slice_names and right_name not in slice_names:
+                if (words[i - 4:i] in [[".", method, "(", ")"] for method in {"len", "capacity", "position"}]
+                        and words[right + 1:right + 5] in [[".", method, "(", ")"] for method in {"len", "capacity", "position"}]):
                     continue
+                indexed = words[left:left + 1] == ["]"] or words[right + 1:right + 2] == ["["]
                 if indexed:
                     raw_left = decode_receiver(words, pairs, i + 1)
                     extent = raw_left.split("[", 1)[0]
-                    # Equality of fixed scalar elements has constant work.
                     if ".." not in raw_left and ".." not in "".join(words[right:right + 12]):
                         continue
-                else:
+                elif left_name in slice_names or right_name in slice_names:
                     extent = left_name if left_name in slice_names else right_name
+                else:
+                    # Literal-size comparisons and explicitly scalar operands
+                    # have constant work. Unresolved named comparisons do not.
+                    if (not re.fullmatch(r"[A-Za-z_]\w*", left_name)
+                            or not re.fullmatch(r"[A-Za-z_]\w*", right_name)
+                            or right_name in {"true", "false", "None"}
+                            or decode_scalar_receiver(code, left_name, tokens[i].start())
+                            or decode_scalar_receiver(code, right_name, tokens[i].start())):
+                        continue
+                    extent = left_name
             else:
                 continue
             admitted = False
@@ -2204,16 +2265,20 @@ def scan_decode_work(sources: dict[Path, str]) -> list[Finding]:
                 first_stop = loop_body + 1
                 while first_stop < pairs[loop_body] and words[first_stop] != ";":
                     first_stop = pairs[first_stop] + 1 if first_stop in pairs and words[first_stop] in "([{" else first_stop + 1
-                admitted = any(loop_body < charge < first_stop and charges[charge] not in {"0", "0_u64"}
+                admitted = any(loop_body < charge < first_stop
+                               and decode_block(parents, words, charge) == loop_body
+                               and charges[charge] not in {"0", "0_u64"}
                                for charge in charges)
             if not admitted:
-                parent = parents.get(i)
+                parent = decode_block(parents, words, i)
                 for charge, amount in charges.items():
-                    if charge >= i or charge in consumed or parents.get(charge) != parent:
+                    if charge >= i or charge in consumed or decode_block(parents, words, charge) != parent:
                         continue
                     resolved = amount
-                    if amount in aliases:
-                        resolved = aliases[amount]
+                    for declared, expression in reversed(aliases.get(amount, [])):
+                        if declared < charge and decode_block(parents, words, declared) == parent:
+                            resolved = expression
+                            break
                     if decode_charge_covers(resolved, extent):
                         admitted = True
                         consumed.add(charge)
