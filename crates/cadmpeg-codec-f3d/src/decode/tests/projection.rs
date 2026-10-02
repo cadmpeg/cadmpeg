@@ -561,11 +561,11 @@ fn face_selection_resolution_accepts_complete_generated_and_partial_members() {
         &FaceSelection::generated(
             vec![GeneratedFaceRef::new(
                 FeatureId::mint("test:model:feature#source").expect("identity grammar"),
-                "test:model:face#1".into()
-            )
+                "test:model:face#1".into(), &cadmpeg_test_support::service_decode_context(),
+            ).expect("selection reference admission")
             .unwrap()],
-            "native:generated-face".into()
-        )
+            "native:generated-face".into(), &cadmpeg_test_support::service_decode_context(),
+        ).expect("selection reference admission")
         .unwrap()
     ));
     assert!(!face_selection_is_resolved(

@@ -319,11 +319,11 @@ fn generated_face_dependencies_follow_the_producer_feature() {
     let definition = IrFeatureDefinition::Operation(IrFeatureOperation::Thicken {
         faces: FaceSelection::generated(
             vec![
-                GeneratedFaceRef::new(producer.clone(), "surface#98".to_string())
+                GeneratedFaceRef::new(producer.clone(), "surface#98".to_string(), &cadmpeg_test_support::service_decode_context(),).expect("selection reference admission")
                     .expect("valid test fixture"),
             ],
-            "creo:allfeatur:thicken#9".to_string(),
-        )
+            "creo:allfeatur:thicken#9".to_string(), &cadmpeg_test_support::service_decode_context(),
+        ).expect("selection reference admission")
         .expect("valid test fixture"),
         thickness: None,
         side: None,
@@ -342,10 +342,10 @@ fn one_generated_face_dependency() -> IrFeatureDefinition {
     let producer = IrFeatureId::mint("creo:model:feature#97").expect("identity grammar");
     IrFeatureDefinition::Operation(IrFeatureOperation::Thicken {
         faces: FaceSelection::generated(
-            vec![GeneratedFaceRef::new(producer, "surface#98".to_string())
+            vec![GeneratedFaceRef::new(producer, "surface#98".to_string(), &cadmpeg_test_support::service_decode_context(),).expect("selection reference admission")
                 .expect("valid test fixture")],
-            "creo:allfeatur:thicken#9".to_string(),
-        )
+            "creo:allfeatur:thicken#9".to_string(), &cadmpeg_test_support::service_decode_context(),
+        ).expect("selection reference admission")
         .expect("valid test fixture"),
         thickness: None,
         side: None,
@@ -731,13 +731,13 @@ fn duplicate_generated_edges_keep_one_dependency() {
     let producer = IrFeatureId::mint("creo:model:feature#97").expect("identity grammar");
     let edges = EdgeSelection::generated(
         vec![
-            GeneratedEdgeRef::new(producer.clone(), "curve#77".to_string())
+            GeneratedEdgeRef::new(producer.clone(), "curve#77".to_string(), &cadmpeg_test_support::service_decode_context(),).expect("selection reference admission")
                 .expect("valid generated edge"),
-            GeneratedEdgeRef::new(producer.clone(), "curve#78".to_string())
+            GeneratedEdgeRef::new(producer.clone(), "curve#78".to_string(), &cadmpeg_test_support::service_decode_context(),).expect("selection reference admission")
                 .expect("valid generated edge"),
         ],
-        "creo:allfeatur:fillet#9".to_string(),
-    )
+        "creo:allfeatur:fillet#9".to_string(), &cadmpeg_test_support::service_decode_context(),
+    ).expect("selection reference admission")
     .expect("valid edge selection");
     let definition = IrFeatureDefinition::Operation(IrFeatureOperation::Fillet {
         groups: cadmpeg_ir::features::NonEmptyMembers::one(
@@ -763,11 +763,11 @@ fn generated_edge_dependencies_follow_the_producer_feature() {
         IrFeatureId::mint("creo:model:feature#97".to_string()).expect("identity grammar");
     let generated_edges = EdgeSelection::generated(
         vec![
-            GeneratedEdgeRef::new(producer.clone(), "curve#77".to_string())
+            GeneratedEdgeRef::new(producer.clone(), "curve#77".to_string(), &cadmpeg_test_support::service_decode_context(),).expect("selection reference admission")
                 .expect("valid test fixture"),
         ],
-        "creo:allfeatur:fillet#9".to_string(),
-    )
+        "creo:allfeatur:fillet#9".to_string(), &cadmpeg_test_support::service_decode_context(),
+    ).expect("selection reference admission")
     .expect("valid test fixture");
     let fillet = IrFeatureDefinition::Operation(IrFeatureOperation::Fillet {
         groups: cadmpeg_ir::features::NonEmptyMembers::one(

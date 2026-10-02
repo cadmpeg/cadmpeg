@@ -302,12 +302,12 @@ fn compact_surface_projection_binds_generated_thread_face_alias() {
     thread.native_ref = Some("native-thread".into());
     let producer = thread.id.clone();
     let generated =
-        GeneratedFaceRef::new(producer.clone(), "face-1".into()).expect("generated face identity");
+        GeneratedFaceRef::new(producer.clone(), "face-1".into(), &cadmpeg_test_support::service_decode_context(),).expect("selection reference admission").expect("generated face identity");
     thread
         .evaluation
         .set_definition(FeatureDefinition::Operation(
             FeatureOperation::CosmeticThread {
-                face: FaceSelection::generated(vec![generated], "native-face".into())
+                face: FaceSelection::generated(vec![generated], "native-face".into(), &cadmpeg_test_support::service_decode_context(),).expect("selection reference admission")
                     .expect("generated face selection"),
                 diameter: None,
                 extent: None,

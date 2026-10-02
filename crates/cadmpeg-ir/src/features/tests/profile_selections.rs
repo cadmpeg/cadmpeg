@@ -181,7 +181,7 @@ fn path_selection_members_are_checked_at_construction_and_on_wire() {
 fn generated_profiles_require_references_and_preserve_repeated_curves() {
     let feature = FeatureId::mint("test:test:feature#one").unwrap();
     for invalid in ["", " \t"] {
-        assert!(GeneratedCurveRef::new(feature.clone(), invalid.into()).is_err());
+        assert!(GeneratedCurveRef::new(feature.clone(), invalid.into(), &cadmpeg_test_support::service_decode_context(),).expect("selection reference admission").is_err());
         assert!(serde_json::from_value::<GeneratedCurveRef>(
             serde_json::json!({"feature": feature, "local_id": invalid})
         )
@@ -189,13 +189,13 @@ fn generated_profiles_require_references_and_preserve_repeated_curves() {
         .to_string()
         .contains("local_id"));
     }
-    let curve = GeneratedCurveRef::new(feature, "curve".into()).unwrap();
-    assert!(PlanarProfileRef::generated(vec![], "group".into()).is_err());
+    let curve = GeneratedCurveRef::new(feature, "curve".into(), &cadmpeg_test_support::service_decode_context(),).expect("selection reference admission").unwrap();
+    assert!(PlanarProfileRef::generated(vec![], "group".into(), &cadmpeg_test_support::service_decode_context(),).expect("selection reference admission").is_err());
     for native in ["", " \t"] {
-        assert!(PlanarProfileRef::generated(vec![curve.clone()], native.into()).is_err());
+        assert!(PlanarProfileRef::generated(vec![curve.clone()], native.into(), &cadmpeg_test_support::service_decode_context(),).expect("selection reference admission").is_err());
     }
     let profile = ProfileRef::Planar(
-        PlanarProfileRef::generated(vec![curve.clone(), curve.clone()], "group".into()).unwrap(),
+        PlanarProfileRef::generated(vec![curve.clone(), curve.clone()], "group".into(), &cadmpeg_test_support::service_decode_context(),).expect("selection reference admission").unwrap(),
     );
     let wire = serde_json::to_value(&profile).unwrap();
     assert_eq!(wire["value"]["curves"], serde_json::json!([curve, curve]));

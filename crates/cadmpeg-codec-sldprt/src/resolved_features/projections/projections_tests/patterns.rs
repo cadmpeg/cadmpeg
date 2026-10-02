@@ -126,8 +126,8 @@ fn pattern_surface_seed_uses_generated_face_and_dependency() {
         matches!(seeds.as_slice(), [PatternSeed::Faces(FaceSelection::Generated { faces, native })]
         if faces.as_slice() == [cadmpeg_ir::features::GeneratedFaceRef::new(
             FeatureId::mint("synthetic:test:id#producer").expect("identity grammar"),
-            "7".into(),
-        ).expect("generated face")]
+            "7".into(), &cadmpeg_test_support::service_decode_context(),
+        ).expect("selection reference admission").expect("generated face")]
             && native.as_str() == "sldprt:feature-input:surface-component-ids:7")
     );
     assert_eq!(

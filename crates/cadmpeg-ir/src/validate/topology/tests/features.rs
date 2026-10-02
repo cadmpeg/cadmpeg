@@ -57,8 +57,8 @@ fn historical_vertex_selection_requires_input_state_membership() {
                     vertex: VertexSelection::historical(
                         state_id.clone(),
                         historical_vertex,
-                        "vertex:local".into(),
-                    )
+                        "vertex:local".into(), &cadmpeg_test_support::service_decode_context(),
+                    ).expect("selection reference admission")
                     .unwrap(),
                 })),
             }),
@@ -614,9 +614,9 @@ fn generated_termination_vertices_require_declared_feature_dependencies() {
                     side: ExtrudeSide {
                         termination: LinearTermination::ToVertex {
                             vertex: VertexSelection::generated(
-                                GeneratedVertexRef::new(source.clone(), "vertex-0".into()).unwrap(),
-                                "test:vertex-selection".into(),
-                            )
+                                GeneratedVertexRef::new(source.clone(), "vertex-0".into(), &cadmpeg_test_support::service_decode_context(),).expect("selection reference admission").unwrap(),
+                                "test:vertex-selection".into(), &cadmpeg_test_support::service_decode_context(),
+                            ).expect("selection reference admission")
                             .unwrap(),
                         },
                         draft: None,
@@ -858,9 +858,9 @@ fn definition_references_must_be_declared_dependencies_in_every_configuration() 
             FeatureDefinition::Operation(FeatureOperation::Extrude {
                 profile: ProfileRef::Planar(
                     PlanarProfileRef::generated(
-                        vec![GeneratedCurveRef::new(source.clone(), "curve-0".into()).unwrap()],
-                        "synthetic:test:profile-selection".into(),
-                    )
+                        vec![GeneratedCurveRef::new(source.clone(), "curve-0".into(), &cadmpeg_test_support::service_decode_context(),).expect("selection reference admission").unwrap()],
+                        "synthetic:test:profile-selection".into(), &cadmpeg_test_support::service_decode_context(),
+                    ).expect("selection reference admission")
                     .unwrap(),
                 ),
                 direction: ExtrudeDirection::ProfileNormal {},
@@ -1045,7 +1045,7 @@ fn generated_body_selection_must_name_a_declared_producer_result() {
             panic!("test consumer must retain its generated body selection");
         };
         *bodies = vec![
-            GeneratedBodyRef::new(bodies[0].feature.clone(), "body#undeclared".into()).unwrap(),
+            GeneratedBodyRef::new(bodies[0].feature.clone(), "body#undeclared".into(), &cadmpeg_test_support::service_decode_context(),).expect("selection reference admission").unwrap(),
         ]
         .try_into()
         .unwrap();

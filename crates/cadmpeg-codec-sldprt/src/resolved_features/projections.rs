@@ -977,7 +977,7 @@ pub(crate) fn project_compact_edge_selections(
                     let feature = cadmpeg_ir::features::FeatureId::mint(id_text)
                         .map_err(|_| cadmpeg_core::CodecError::malformed("invalid SLDPRT generated edge feature id"))?;
                     let local_id = compact_edge_path_value_charged(ctx, selection)?;
-                    let Ok(edge) = cadmpeg_ir::features::GeneratedEdgeRef::new(feature, local_id) else {
+                    let Ok(edge) = cadmpeg_ir::features::GeneratedEdgeRef::new(feature, local_id, ctx,)? else {
                         complete = false;
                         break;
                     };
@@ -988,7 +988,7 @@ pub(crate) fn project_compact_edge_selections(
                     }
                 }
                 if complete && !generated.is_empty() {
-                    EdgeSelection::generated(generated, native)
+                    EdgeSelection::generated(generated, native, ctx,)?
                         .map_err(cadmpeg_core::CodecError::malformed)
                 } else {
                     Ok(EdgeSelection::Native(native))
@@ -1584,8 +1584,8 @@ pub(crate) fn project_compact_surface_selections(
                                     let local_id_text = ctx.format_retained(format_args!("{local_id}"), OPERATION)?;
                                     let Ok(face) = cadmpeg_ir::features::GeneratedFaceRef::new(
                                         producer_id,
-                                        local_id_text,
-                                    ) else {
+                                        local_id_text, ctx,
+                                    )? else {
                                         let seed = PatternSeed::Faces(
                                             cadmpeg_ir::features::FaceSelection::Native(native),
                                         );
@@ -1620,8 +1620,8 @@ pub(crate) fn project_compact_surface_selections(
                                     PatternSeed::Faces(
                                         cadmpeg_ir::features::FaceSelection::generated(
                                             faces,
-                                            native_copy,
-                                        )
+                                            native_copy, ctx,
+                                        )?
                                         .unwrap_or(cadmpeg_ir::features::FaceSelection::Native(native)),
                                     )
                                 }
@@ -1666,8 +1666,8 @@ pub(crate) fn project_compact_surface_selections(
                                 let local_id_text = ctx.format_retained(format_args!("{local_id}"), OPERATION)?;
                                 let Ok(face) = cadmpeg_ir::features::GeneratedFaceRef::new(
                                     producer_id,
-                                    local_id_text,
-                                ) else {
+                                    local_id_text, ctx,
+                                )? else {
                                     complete = false;
                                     continue;
                                 };
@@ -1694,7 +1694,7 @@ pub(crate) fn project_compact_surface_selections(
                         }
                         *targets = if complete && !faces.is_empty() {
                             let native_copy = ctx.format_retained(format_args!("{native}"), OPERATION)?;
-                            cadmpeg_ir::features::FaceSelection::generated(faces, native_copy)
+                            cadmpeg_ir::features::FaceSelection::generated(faces, native_copy, ctx,)?
                                 .unwrap_or(cadmpeg_ir::features::FaceSelection::Native(native))
                         } else {
                             cadmpeg_ir::features::FaceSelection::Native(native)
@@ -1749,7 +1749,7 @@ pub(crate) fn project_compact_surface_selections(
                             }
                             let producer_id = copy_projection_feature_id(ctx, producer, OPERATION)?;
                             let Ok(body) =
-                                cadmpeg_ir::features::GeneratedBodyRef::new(producer_id, local_id)
+                                cadmpeg_ir::features::GeneratedBodyRef::new(producer_id, local_id, ctx,)?
                             else {
                                 break 'feature_edit;
                             };
@@ -1778,14 +1778,14 @@ pub(crate) fn project_compact_surface_selections(
                             let local_id_text = ctx.format_retained(format_args!("{local_id}"), OPERATION)?;
                             let generated_face = cadmpeg_ir::features::GeneratedFaceRef::new(
                                 producer_id,
-                                local_id_text,
-                            );
+                                local_id_text, ctx,
+                            )?;
                             *tools = if let Ok(face) = generated_face {
                                 let mut faces = Vec::new();
                                 ctx.reserve_vec(&mut faces, 1, OPERATION)?;
                                 faces.push(face);
                                 let native_copy = ctx.format_retained(format_args!("{tool_native}"), OPERATION)?;
-                                FaceSelection::generated(faces, native_copy)
+                                FaceSelection::generated(faces, native_copy, ctx,)?
                                     .unwrap_or(FaceSelection::Native(tool_native))
                             } else {
                                 FaceSelection::Native(tool_native)
@@ -1833,14 +1833,14 @@ pub(crate) fn project_compact_surface_selections(
                                         }
                                         let local_id_text = ctx.format_retained(format_args!("{local_id}"), OPERATION)?;
                                         match cadmpeg_ir::features::GeneratedFaceRef::new(
-                                            copy_projection_feature_id(ctx, producer, OPERATION)?, local_id_text,
-                                        ) {
+                                            copy_projection_feature_id(ctx, producer, OPERATION)?, local_id_text, ctx,
+                                        )? {
                                             Ok(face) => {
                                                 let mut faces = Vec::new();
                                                 ctx.reserve_vec(&mut faces, 1, OPERATION)?;
                                                 faces.push(face);
                                                 let native_copy = ctx.format_retained(format_args!("{native}"), OPERATION)?;
-                                                cadmpeg_ir::features::FaceSelection::generated(faces, native_copy)
+                                                cadmpeg_ir::features::FaceSelection::generated(faces, native_copy, ctx,)?
                                                     .unwrap_or(cadmpeg_ir::features::FaceSelection::Native(native))
                                             }
                                             Err(_) => cadmpeg_ir::features::FaceSelection::Native(native),
@@ -1935,13 +1935,13 @@ pub(crate) fn project_compact_surface_selections(
                                 }
                                 let producer_id = copy_projection_feature_id(ctx, producer, OPERATION)?;
                                 let local_id_text = ctx.format_retained(format_args!("{local_id}"), OPERATION)?;
-                                match cadmpeg_ir::features::GeneratedFaceRef::new(producer_id, local_id_text) {
+                                match cadmpeg_ir::features::GeneratedFaceRef::new(producer_id, local_id_text, ctx,)? {
                                     Ok(face) => {
                                         let mut faces = Vec::new();
                                         ctx.reserve_vec(&mut faces, 1, OPERATION)?;
                                         faces.push(face);
                                         let native_copy = ctx.format_retained(format_args!("{native}"), OPERATION)?;
-                                        cadmpeg_ir::features::FaceSelection::generated(faces, native_copy)
+                                        cadmpeg_ir::features::FaceSelection::generated(faces, native_copy, ctx,)?
                                             .unwrap_or(cadmpeg_ir::features::FaceSelection::Native(native))
                                     }
                                     Err(_) => cadmpeg_ir::features::FaceSelection::Native(native),
@@ -2043,13 +2043,13 @@ pub(crate) fn project_compact_surface_selections(
                                     Some((feature, local_id)) => {
                                         let producer_id = copy_projection_feature_id(ctx, feature, OPERATION)?;
                                         let local_id_text = ctx.format_retained(format_args!("{local_id}"), OPERATION)?;
-                                        match cadmpeg_ir::features::GeneratedFaceRef::new(producer_id, local_id_text) {
+                                        match cadmpeg_ir::features::GeneratedFaceRef::new(producer_id, local_id_text, ctx,)? {
                                             Ok(face) => {
                                                 let mut generated_faces = Vec::new();
                                                 ctx.reserve_vec(&mut generated_faces, 1, OPERATION)?;
                                                 generated_faces.push(face);
                                                 let native_copy = ctx.format_retained(format_args!("{native}"), OPERATION)?;
-                                                cadmpeg_ir::features::FaceSelection::generated(generated_faces, native_copy)
+                                                cadmpeg_ir::features::FaceSelection::generated(generated_faces, native_copy, ctx,)?
                                                     .unwrap_or(cadmpeg_ir::features::FaceSelection::Native(native))
                                             }
                                             Err(_) => cadmpeg_ir::features::FaceSelection::Native(native),
@@ -2077,21 +2077,21 @@ pub(crate) fn project_compact_surface_selections(
                                     Some((feature, local_id)) => {
                                         let producer_id = copy_projection_feature_id(ctx, feature, OPERATION)?;
                                         let local_id_text = ctx.format_retained(format_args!("{local_id}"), OPERATION)?;
-                                        match cadmpeg_ir::features::GeneratedVertexRef::new(producer_id, local_id_text) {
+                                        match cadmpeg_ir::features::GeneratedVertexRef::new(producer_id, local_id_text, ctx,)? {
                                             Ok(generated_vertex) => {
                                                 let native_copy = ctx.format_retained(format_args!("{native}"), OPERATION)?;
-                                                cadmpeg_ir::features::VertexSelection::generated(generated_vertex, native_copy)
-                                                    .unwrap_or_else(|_| {
-                                                        cadmpeg_ir::features::VertexSelection::native(native).unwrap_or(
+                                                match cadmpeg_ir::features::VertexSelection::generated(generated_vertex, native_copy, ctx,)? {
+                                                    Ok(selection) => selection,
+                                                    Err(_) => cadmpeg_ir::features::VertexSelection::native(native, ctx,)?.unwrap_or(
                                                             cadmpeg_ir::features::VertexSelection::Unresolved,
-                                                        )
-                                                    })
+                                                        ),
+                                                }
                                             }
-                                            Err(_) => cadmpeg_ir::features::VertexSelection::native(native)
+                                            Err(_) => cadmpeg_ir::features::VertexSelection::native(native, ctx,)?
                                                 .unwrap_or(cadmpeg_ir::features::VertexSelection::Unresolved),
                                         }
                                     }
-                                    None => cadmpeg_ir::features::VertexSelection::native(native)
+                                    None => cadmpeg_ir::features::VertexSelection::native(native, ctx,)?
                                         .unwrap_or(cadmpeg_ir::features::VertexSelection::Unresolved),
                                 };
                             }
@@ -2432,7 +2432,7 @@ fn draft_face_selection(
         };
         let producer_id = copy_projection_feature_id(ctx, producer, OPERATION)?;
         let local_id_text = ctx.format_retained(format_args!("{local_id}"), OPERATION)?;
-        let Ok(face) = cadmpeg_ir::features::GeneratedFaceRef::new(producer_id, local_id_text)
+        let Ok(face) = cadmpeg_ir::features::GeneratedFaceRef::new(producer_id, local_id_text, ctx,)?
         else {
             return Ok(cadmpeg_ir::features::FaceSelection::Native(native));
         };
@@ -2466,7 +2466,7 @@ fn draft_face_selection(
         }
         let native_copy = ctx.format_retained(format_args!("{native}"), OPERATION)?;
         Ok(
-            cadmpeg_ir::features::FaceSelection::generated(generated, native_copy)
+            cadmpeg_ir::features::FaceSelection::generated(generated, native_copy, ctx,)?
                 .unwrap_or(cadmpeg_ir::features::FaceSelection::Native(native)),
         )
     }
@@ -2998,15 +2998,15 @@ pub(crate) fn project_unbound_cosmetic_thread_faces(
                         ctx.format_retained(format_args!("{local_id}"), GENERATED_OPERATION)?;
                     *face = match cadmpeg_ir::features::GeneratedFaceRef::new(
                         producer_id,
-                        local_id_text,
-                    ) {
+                        local_id_text, ctx,
+                    )? {
                         Ok(generated_face) => {
                             let mut faces = Vec::new();
                             ctx.reserve_vec(&mut faces, 1, GENERATED_OPERATION)?;
                             faces.push(generated_face);
                             let native_copy =
                                 ctx.format_retained(format_args!("{native}"), GENERATED_OPERATION)?;
-                            cadmpeg_ir::features::FaceSelection::generated(faces, native_copy)
+                            cadmpeg_ir::features::FaceSelection::generated(faces, native_copy, ctx,)?
                                 .unwrap_or(cadmpeg_ir::features::FaceSelection::Native(native))
                         }
                         Err(_) => cadmpeg_ir::features::FaceSelection::Native(native),

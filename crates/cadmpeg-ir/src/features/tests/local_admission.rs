@@ -107,7 +107,7 @@ fn local_and_generated_body_constructors_use_the_caller_session() {
             let arena = DecodeArena::new();
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
             let result = if generated {
-                let member = crate::features::GeneratedBodyRef::new(feature_id("producer"), "body".into()).unwrap();
+                let member = crate::features::GeneratedBodyRef::new(feature_id("producer"), "body".into(), &cadmpeg_test_support::service_decode_context(),).expect("selection reference admission").unwrap();
                 BodySelection::generated(vec![member], "native".into(), &ctx)
             } else {
                 BodySelection::local(vec!["body".into()], "native".into(), &ctx)
@@ -122,7 +122,7 @@ fn local_and_generated_body_constructors_use_the_caller_session() {
         let arena = DecodeArena::new();
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let selection = if generated {
-            let member = crate::features::GeneratedBodyRef::new(feature_id("producer"), "body".into()).unwrap();
+            let member = crate::features::GeneratedBodyRef::new(feature_id("producer"), "body".into(), &cadmpeg_test_support::service_decode_context(),).expect("selection reference admission").unwrap();
             BodySelection::generated(vec![member], "native".into(), &ctx)
         } else {
             BodySelection::local(vec!["body".into()], "native".into(), &ctx)
@@ -134,6 +134,55 @@ fn local_and_generated_body_constructors_use_the_caller_session() {
 
 fn body_id(suffix: &str) -> BodyId {
     BodyId::mint(format!("test:model:body#{suffix}")).unwrap()
+}
+
+#[test]
+fn selection_reference_constructors_admit_text_before_validation() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension, ResourceLimit};
+    use crate::features::{BodySelectionError, EdgeSelection, FaceSelection, GeneratedBodyRef,
+        GeneratedCurveRef, GeneratedEdgeRef, GeneratedFaceRef, GeneratedVertexRef, SelectionReference};
+
+    fn finish<T>(result: Result<Result<T, BodySelectionError>, ResourceLimit>)
+        -> Result<Result<(), BodySelectionError>, ResourceLimit> {
+        result.map(|result| result.map(|_| ()))
+    }
+    for owner in 0..12 {
+        for allowance in 0..=8 {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = allowance;
+            policy.limits.max_materialized_bytes = 0;
+            policy.limits.max_retained_bytes = 0;
+            policy.limits.max_collection_items = 0;
+            policy.limits.max_recursion_depth = 0;
+            let arena = DecodeArena::new();
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            let text = "  face  ".to_owned();
+            let reference = || "local".to_owned().try_into().unwrap();
+            let result = match owner {
+                0 => finish(SelectionReference::new(text, &ctx)),
+                1 => finish(GeneratedBodyRef::new(feature_id("producer"), text, &ctx)),
+                2 => finish(GeneratedFaceRef::new(feature_id("producer"), text, &ctx)),
+                3 => finish(GeneratedEdgeRef::new(feature_id("producer"), text, &ctx)),
+                4 => finish(GeneratedVertexRef::new(feature_id("producer"), text, &ctx)),
+                5 => finish(GeneratedCurveRef::new(feature_id("producer"), text, &ctx)),
+                6 => finish(FaceSelection::generated(vec![GeneratedFaceRef { feature: feature_id("producer"), local_id: reference() }], text, &ctx)),
+                7 => finish(EdgeSelection::generated(vec![GeneratedEdgeRef { feature: feature_id("producer"), local_id: reference() }], text, &ctx)),
+                8 => finish(PlanarProfileRef::generated(vec![GeneratedCurveRef { feature: feature_id("producer"), local_id: reference() }], text, &ctx)),
+                9 => finish(VertexSelection::generated(GeneratedVertexRef { feature: feature_id("producer"), local_id: reference() }, text, &ctx)),
+                10 => finish(VertexSelection::historical(FeatureInputTopologyId::mint("test:model:feature-input#state").unwrap(), HistoricalVertexId::mint("test:model:historical-vertex#one").unwrap(), text, &ctx)),
+                11 => finish(VertexSelection::native(text, &ctx)),
+                _ => unreachable!(),
+            };
+            if allowance < 8 {
+                let limit = result.unwrap_err();
+                assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+                assert!(matches!(ctx.finish_session(), Err(cadmpeg_core::CodecError::ResourceLimit(original)) if original == limit));
+            } else {
+                result.unwrap().unwrap();
+                ctx.finish_session().unwrap();
+            }
+        }
+    }
 }
 
 #[test]
@@ -357,8 +406,8 @@ fn three_point_admission_compares_targets_and_historical_states() {
         VertexSelection::historical(
             state.clone(),
             HistoricalVertexId::mint(format!("test:model:historical-vertex#{suffix}")).unwrap(),
-            native.into(),
-        )
+            native.into(), &cadmpeg_test_support::service_decode_context(),
+        ).expect("selection reference admission")
         .unwrap()
     };
     assert!(ThreePointSelection::try_from(Box::new([
@@ -375,7 +424,7 @@ fn three_point_admission_compares_targets_and_historical_states() {
     .is_err());
     let mixed = ThreePointSelection::try_from(Box::new([
         vertex(&state, "a", "one"),
-        VertexSelection::native("two".into()).unwrap(),
+        VertexSelection::native("two".into(), &cadmpeg_test_support::service_decode_context(),).expect("selection reference admission").unwrap(),
         VertexSelection::Unresolved,
     ]))
     .unwrap();

@@ -516,20 +516,25 @@ fn validate_compact_edge_selection_edits(
             )?;
         let generated = edge_selections
             .iter()
-            .map(|selection| {
-                let native_feature = selection.terminal_feature_ref.as_deref()?;
-                let feature = feature_ids_by_native.get(native_feature)?.clone();
+            .map(|selection| -> Result<Option<_>, CodecError> {
+                let Some(native_feature) = selection.terminal_feature_ref.as_deref() else {
+                    return Ok(None);
+                };
+                let Some(feature) = feature_ids_by_native.get(native_feature) else {
+                    return Ok(None);
+                };
+                let feature = feature.clone();
                 let local_id = selection
                     .local_edge_ids
                     .iter()
                     .map(u32::to_string)
                     .collect::<Vec<_>>()
                     .join(",");
-                cadmpeg_ir::features::GeneratedEdgeRef::new(feature, local_id).ok()
+                Ok(cadmpeg_ir::features::GeneratedEdgeRef::new(feature, local_id, &ctx,)?.ok())
             })
-            .collect::<Option<Vec<_>>>();
+            .collect::<Result<Option<Vec<_>>, CodecError>>()?;
         let expected = match generated.filter(|edges| !edges.is_empty()) {
-            Some(edges) => EdgeSelection::generated(edges, native.clone())
+            Some(edges) => EdgeSelection::generated(edges, native.clone(), &ctx,)?
                 .unwrap_or(EdgeSelection::Native(native)),
             None => EdgeSelection::Native(native),
         };
@@ -638,12 +643,15 @@ fn validate_compact_surface_selection_edits(
         let changed = match slot {
             SelectionSlot::Face(faces) => {
                 let expected = match generated {
-                    Some((feature, local_id)) => cadmpeg_ir::features::GeneratedFaceRef::new(
+                    Some((feature, local_id)) => match cadmpeg_ir::features::GeneratedFaceRef::new(
                         feature.clone(),
-                        local_id.to_string(),
-                    )
-                    .and_then(|face| FaceSelection::generated(vec![face], native.clone()))
-                    .unwrap_or(FaceSelection::Native(native)),
+                        local_id.to_string(), &ctx,
+                    )?
+                    {
+                        Ok(face) => FaceSelection::generated(vec![face], native.clone(), &ctx,)?
+                            .unwrap_or(FaceSelection::Native(native)),
+                        Err(_) => FaceSelection::Native(native),
+                    },
                     None => FaceSelection::Native(native),
                 };
                 faces != &expected
@@ -656,15 +664,18 @@ fn validate_compact_surface_selection_edits(
             }
             SelectionSlot::Vertex(vertex) => {
                 let expected = match generated {
-                    Some((feature, local_id)) => cadmpeg_ir::features::GeneratedVertexRef::new(
+                    Some((feature, local_id)) => match cadmpeg_ir::features::GeneratedVertexRef::new(
                         feature.clone(),
-                        local_id.to_string(),
-                    )
-                    .and_then(|vertex| VertexSelection::generated(vertex, native.clone()))
-                    .unwrap_or_else(|_| {
-                        VertexSelection::native(native).unwrap_or(VertexSelection::Unresolved)
-                    }),
-                    None => VertexSelection::native(native).unwrap_or(VertexSelection::Unresolved),
+                        local_id.to_string(), &ctx,
+                    )?
+                    {
+                        Ok(vertex) => match VertexSelection::generated(vertex, native.clone(), &ctx,)? {
+                            Ok(selection) => selection,
+                            Err(_) => VertexSelection::native(native, &ctx,)?.unwrap_or(VertexSelection::Unresolved),
+                        },
+                        Err(_) => VertexSelection::native(native, &ctx,)?.unwrap_or(VertexSelection::Unresolved),
+                    },
+                    None => VertexSelection::native(native, &ctx,)?.unwrap_or(VertexSelection::Unresolved),
                 };
                 vertex != &expected
             }

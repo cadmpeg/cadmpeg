@@ -148,8 +148,8 @@ pub(super) fn thicken_feature_definition(
         )? {
             FaceSelection::generated(
                 faces,
-                ctx.copy_retained_text(&native, "creo thicken generated native selection")?,
-            )
+                ctx.copy_retained_text(&native, "creo thicken generated native selection")?, ctx,
+            )?
             .unwrap_or(FaceSelection::Native(native))
         } else {
             FaceSelection::Native(native)
@@ -224,8 +224,8 @@ fn hole_face_selection(
     )? {
         return Ok(FaceSelection::generated(
             faces,
-            ctx.copy_retained_text(&native, "creo hole generated native selection")?,
-        )
+            ctx.copy_retained_text(&native, "creo hole generated native selection")?, ctx,
+        )?
         .unwrap_or(FaceSelection::Native(native)));
     }
     Ok(FaceSelection::Native(native))

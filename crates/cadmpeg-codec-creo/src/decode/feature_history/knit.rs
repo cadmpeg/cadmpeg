@@ -248,8 +248,8 @@ pub(super) fn knit_surface_feature_definition(
             match generated {
                 Some(faces) => FaceSelection::generated(
                     faces,
-                    ctx.copy_retained_text(&native, "creo knit generated native selection")?,
-                )
+                    ctx.copy_retained_text(&native, "creo knit generated native selection")?, ctx,
+                )?
                 .unwrap_or(FaceSelection::Native(native)),
                 None => FaceSelection::Native(native),
             }
@@ -644,7 +644,7 @@ pub(in super::super) fn generated_surface_face_refs(
             format_args!("surface#{surface_id}"),
             "creo generated surface local IDs",
         )?;
-        let Some(face) = GeneratedFaceRef::new(feature, local_id).ok() else {
+        let Some(face) = GeneratedFaceRef::new(feature, local_id, ctx,)?.ok() else {
             return Ok(None);
         };
         ctx.reserve_vec(&mut generated, 1, "creo generated surface face references")?;

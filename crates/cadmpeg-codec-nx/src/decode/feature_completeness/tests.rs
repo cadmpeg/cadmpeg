@@ -350,14 +350,14 @@ fn nx_extent_completeness_checks_nested_and_face_termination() {
         }
     ));
     assert!(termination_is_incomplete(&LinearTermination::ToVertex {
-        vertex: VertexSelection::native("nx:vertex-selection#0".to_string()).unwrap(),
+        vertex: VertexSelection::native("nx:vertex-selection#0".to_string(), &cadmpeg_test_support::service_decode_context(),).expect("selection reference admission").unwrap(),
     }));
     let vertex_feature = FeatureId::mint("test:test:feature#0").expect("identity grammar");
     let generated_vertex = LinearTermination::ToVertex {
         vertex: VertexSelection::generated(
-            GeneratedVertexRef::new(vertex_feature.clone(), "vertex-0".into()).unwrap(),
-            "nx:vertex-selection#1".into(),
-        )
+            GeneratedVertexRef::new(vertex_feature.clone(), "vertex-0".into(), &cadmpeg_test_support::service_decode_context(),).expect("selection reference admission").unwrap(),
+            "nx:vertex-selection#1".into(), &cadmpeg_test_support::service_decode_context(),
+        ).expect("selection reference admission")
         .unwrap(),
     };
     assert!(!termination_is_incomplete(&generated_vertex));
@@ -1033,9 +1033,9 @@ fn nx_revolve_completeness_checks_construction_and_output_lineage() {
     *incomplete.extent_mut().expect("fixture extent") = RevolveExtent::OneSided {
         termination: AngularTermination::ToVertex {
             vertex: VertexSelection::generated(
-                GeneratedVertexRef::new(source.clone(), "vertex-0".into()).unwrap(),
-                "test:vertex-selection".into(),
-            )
+                GeneratedVertexRef::new(source.clone(), "vertex-0".into(), &cadmpeg_test_support::service_decode_context(),).expect("selection reference admission").unwrap(),
+                "test:vertex-selection".into(), &cadmpeg_test_support::service_decode_context(),
+            ).expect("selection reference admission")
             .unwrap(),
         },
     };
@@ -1106,9 +1106,9 @@ fn nx_selection_completeness_rejects_repeated_faces_and_edges() {
     ),));
     let producer = FeatureId::mint("test:test:feature#profile-producer").expect("identity grammar");
     let generated = PlanarProfileRef::generated(
-        vec![GeneratedCurveRef::new(producer.clone(), "curve-0".into()).unwrap()],
-        "test:profile-selection".into(),
-    )
+        vec![GeneratedCurveRef::new(producer.clone(), "curve-0".into(), &cadmpeg_test_support::service_decode_context(),).expect("selection reference admission").unwrap()],
+        "test:profile-selection".into(), &cadmpeg_test_support::service_decode_context(),
+    ).expect("selection reference admission")
     .unwrap();
     assert!(!planar_profile_ref_is_incomplete(&generated));
     assert!(planar_profile_dependency_is_incomplete(&generated, &[],));
