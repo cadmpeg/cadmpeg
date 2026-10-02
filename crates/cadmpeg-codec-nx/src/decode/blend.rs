@@ -20,8 +20,9 @@ use cadmpeg_ir::eval::{
 };
 use cadmpeg_ir::features::FiniteVector3;
 use cadmpeg_ir::geometry::nurbs::bezier::{
-    homogeneous_spans, positive_controls, HomogeneousBezierSpans,
+    homogeneous_spans, positive_controls, HomogeneousBezierSpan,
 };
+use cadmpeg_ir::geometry::nurbs::scoped::ScopedRows;
 use cadmpeg_ir::geometry::{
     nurbs::NurbsCurve, pcurve::PcurveGeometry, BlendCrossSection, BlendRadiusLaw,
     ProceduralCurveDefinition, ProceduralSurface, ProceduralSurfaceDefinition, SolvedCurveGeometry,
@@ -3009,7 +3010,7 @@ pub(super) fn closest_pcurve_parameters(
 }
 
 struct HomogeneousCurveSpans<'ctx, const DIMENSION: usize> {
-    extraction: HomogeneousBezierSpans<'ctx, DIMENSION>,
+    extraction: ScopedRows<'ctx, HomogeneousBezierSpan<DIMENSION>>,
     coordinate_tolerance: f64,
 }
 
@@ -3079,7 +3080,7 @@ fn stationary_rational_distance_candidates<const DIMENSION: usize>(
     geometry_budget: &GeometryWorkBudget<'_>,
 ) -> Result<Option<Vec<(f64, f64)>>, cadmpeg_core::decode::ResourceLimit> {
     let mut candidates = Vec::new();
-    for span in &homogeneous.extraction.spans {
+    for span in homogeneous.extraction.iter() {
         let Some(derivative) =
             rational_squared_distance_derivative(&span.controls, geometry_budget)?
         else {
@@ -5020,7 +5021,7 @@ pub(super) fn closest_nurbs_curve_parameter_with_budget(
         return Ok(None);
     };
     let Some(spans) =
-        homogeneous_spans(geometry_budget.charges, degree, curve.knots(), &controls.controls)?
+        homogeneous_spans(geometry_budget.charges, degree, curve.knots(), &controls)?
     else {
         return Ok(None);
     };

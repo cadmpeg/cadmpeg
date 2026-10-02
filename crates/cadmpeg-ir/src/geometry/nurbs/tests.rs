@@ -1014,21 +1014,21 @@ fn nurbs_stores_hold_admitted_poles_and_take_admitted_lanes() {
     );
     assert_eq!(
         positive_controls(&cadmpeg_test_support::service_decode_context(), &surface.poles(), Some(&[1.0, 1.0, 2.0, 2.0]), "Bezier positive controls")
-            .expect("resource allocation did not fail").map(|output| output.controls),
+            .expect("resource allocation did not fail").map(|output| output.to_vec()),
         positive_controls(&cadmpeg_test_support::service_decode_context(),
             &surface.pole_grid().raw_points().concat(),
             Some(&[1.0, 1.0, 2.0, 2.0])
         , "Bezier positive controls")
-        .expect("resource allocation did not fail").map(|output| output.controls)
+        .expect("resource allocation did not fail").map(|output| output.to_vec())
     );
     assert_eq!(
-        positive_controls(&cadmpeg_test_support::service_decode_context(), &surface.poles(), None, "Bezier positive controls").expect("resource allocation did not fail").map(|output| output.controls),
+        positive_controls(&cadmpeg_test_support::service_decode_context(), &surface.poles(), None, "Bezier positive controls").expect("resource allocation did not fail").map(|output| output.to_vec()),
         positive_controls(&cadmpeg_test_support::service_decode_context(), &surface.poles(), Some(&[1.0; 4]), "Bezier positive controls")
-            .expect("resource allocation did not fail").map(|output| output.controls)
+            .expect("resource allocation did not fail").map(|output| output.to_vec())
     );
     assert_eq!(
         positive_controls(&cadmpeg_test_support::service_decode_context(), &[Point3::new(f64::INFINITY, 0.0, 0.0)], Some(&[1.0]), "Bezier positive controls")
-            .expect("resource allocation did not fail").map(|output| output.controls),
+            .expect("resource allocation did not fail").map(|output| output.to_vec()),
         None
     );
     let mut mapped = surface.clone();

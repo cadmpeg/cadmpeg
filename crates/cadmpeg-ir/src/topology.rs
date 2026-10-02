@@ -1122,13 +1122,6 @@ impl crate::geometry::nurbs::NurbsCurve {
     }
 }
 
-/// Active finite knot intervals with their live temporary reservation.
-#[derive(Debug)]
-pub(crate) struct ActiveKnotSpans<'ctx> {
-    pub(crate) spans: Vec<IncreasingParameterInterval>,
-    _storage: cadmpeg_core::decode::ScopedReservation<'ctx>,
-}
-
 impl crate::geometry::nurbs::KnotVector {
     /// Knots `first` and `last` as an interval, absent past the last knot or
     /// when `first` follows `last`. The vector admits finite non-decreasing
@@ -1147,7 +1140,7 @@ impl crate::geometry::nurbs::KnotVector {
         ctx: &'ctx DecodeContext<'_>,
         first: usize,
         last: usize,
-    ) -> Result<Option<ActiveKnotSpans<'ctx>>, cadmpeg_core::decode::ResourceLimit> {
+    ) -> Result<Option<crate::geometry::nurbs::scoped::ScopedRows<'ctx, IncreasingParameterInterval>>, cadmpeg_core::decode::ResourceLimit> {
         let Some(knots) = self.get(first..=last) else {
             return Ok(None);
         };
@@ -1161,7 +1154,7 @@ impl crate::geometry::nurbs::KnotVector {
                 spans.push(IncreasingParameterInterval([pair[0], pair[1]]));
             }
         }
-        Ok(Some(ActiveKnotSpans { spans, _storage: storage }))
+        Ok(Some(crate::geometry::nurbs::scoped::ScopedRows::new(spans, storage)))
     }
 }
 
@@ -1618,7 +1611,7 @@ mod tests {
         let arena = DecodeArena::new();
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
         let output = knots.active_spans(&ctx, 0, 5).expect("exact work").expect("valid range");
-        assert_eq!(output.spans.iter().copied().map(super::IncreasingParameterInterval::endpoints)
+        assert_eq!(output.iter().copied().map(super::IncreasingParameterInterval::endpoints)
             .collect::<Vec<_>>(), [[0.0, 1.0], [1.0, 2.5], [2.5, 4.0]]);
         drop(output);
         let reuse = ctx.reserve_scoped_limit(64, "test active spans released").expect("all bytes reusable");
@@ -1633,7 +1626,7 @@ mod tests {
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
         assert!(knots.active_spans(&ctx, 0, 6).expect("invalid range is constant-time").is_none());
         let empty = knots.active_spans(&ctx, 2, 3).expect("one repeated interval").expect("valid range");
-        assert!(empty.spans.is_empty());
+        assert!(empty.is_empty());
         drop(empty);
         ctx.finish_session().expect("empty output allocates no storage");
     }
@@ -1649,13 +1642,13 @@ mod tests {
         assert!(knots.span(4, 1).is_none());
         assert!(knots.span(1, 6).is_none());
         assert_eq!(
-            knots.active_spans(&cadmpeg_test_support::service_decode_context(), 0, 5).unwrap().map(|spans| spans.spans
-                .into_iter()
+            knots.active_spans(&cadmpeg_test_support::service_decode_context(), 0, 5).unwrap().map(|spans| spans
+                .iter().copied()
                 .map(super::IncreasingParameterInterval::endpoints)
                 .collect::<Vec<_>>()),
             Some(vec![[0.0, 1.0], [1.0, 2.5], [2.5, 4.0]])
         );
-        assert_eq!(knots.active_spans(&cadmpeg_test_support::service_decode_context(), 2, 3).unwrap().map(|spans| spans.spans), Some(Vec::new()));
+        assert_eq!(knots.active_spans(&cadmpeg_test_support::service_decode_context(), 2, 3).unwrap().map(|spans| spans.to_vec()), Some(Vec::new()));
         assert!(knots.active_spans(&cadmpeg_test_support::service_decode_context(), 0, 6).unwrap().is_none());
         assert_eq!(
             knots.finite_knot(4).map(crate::scalar::FiniteReal::get),
