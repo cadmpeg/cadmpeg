@@ -117,3 +117,23 @@ prove numerical correctness, memory safety, loss fidelity, or test ownership.
 Compiler checks, runtime validation, tests, and review remain necessary.
 Policy changes edit the relevant rule and its tests; there is no global budget
 that permits unrelated violations to replace removed ones.
+
+
+## Decode allocation admission
+
+`uncharged_decode_allocation` checks context-holding production functions in
+core, IR decode paths, codec, container, assembly, Parasolid and Protein crates.
+Writer and encoder paths use the sort rule's path exclusions. Nested functions
+have independent contexts; closures keep the enclosing context. A borrowed
+context parameter, typed local or context field and a DecodeContext method
+establish the scope.
+
+Input-dependent `format!`, `.to_string()` and `.to_owned()` use
+`ctx.format_retained(format_args!(...), operation)?` or
+`ctx.copy_retained_text(text, operation)?`. The resource-only copy form
+`copy_retained_text_limit` is also admitted. These operations charge before
+storage creation and propagate refusal. A separate storage charge does not
+admit an infallible allocating spelling. A string literal or format with no
+runtime operand is fixed size. An unresolved Display operand uses the charged
+format operation, including fixed scalar diagnostics whose types the scanner
+cannot establish.
