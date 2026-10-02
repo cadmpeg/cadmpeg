@@ -254,13 +254,13 @@ fn pcurve_bezier_extraction_preserves_rational_knot_spans() {
             .iter()
             .zip(weights)
             .map(|(point, weight)| [point.u * weight, point.v * weight, weight])
-            .collect();
-        let spans = homogeneous_spans(2, &knots, controls)
+            .collect::<Vec<_>>();
+        let spans = homogeneous_spans(geometry_ctx, 2, &knots, &controls)
             .expect("resource allocation did not fail")
             .expect("valid Bézier extraction");
 
-        assert_eq!(spans.len(), 3);
-        for span in spans {
+        assert_eq!(spans.spans.len(), 3);
+        for span in &spans.spans {
             for fraction in [0.0, 0.5, 1.0] {
                 let parameter = span.domain[0] + fraction * (span.domain[1] - span.domain[0]);
                 let expected = cadmpeg_ir::eval::nurbs_pcurve_uv(

@@ -11,12 +11,12 @@ use crate::directory::DirectoryEntry;
 use crate::global::{GlobalTable, ProjectedGlobal, RealPrecision};
 use crate::loss::IgesLossCode;
 use crate::parameter::ParameterRecord;
-use cadmpeg_core::decode::{refuse_local_limit, u64_from_index, DecodeContext};
+use cadmpeg_core::decode::{refuse_local_limit, DecodeContext};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::eval::finite_or_refusal;
 use cadmpeg_ir::features::{FinitePoint3, FiniteVector3};
 use cadmpeg_ir::geometry::nurbs::bezier::{
-    boundaries_within_resolution, homogeneous_spans_with_charge, positive_controls,
+    boundaries_within_resolution, homogeneous_spans, positive_controls, HomogeneousBezierSpans,
     HomogeneousBezierSpan,
 };
 use cadmpeg_ir::geometry::{
@@ -494,10 +494,10 @@ fn curve_geometry<'a>(ir: &'a CadIr, curve_id: &CurveId) -> Option<&'a CurveGeom
         .map(|curve| &curve.geometry)
 }
 
-fn homogeneous_bezier_spans(
-    ctx: &DecodeContext<'_>,
+fn homogeneous_bezier_spans<'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
     curve: &NurbsCurve,
-) -> Result<Option<Vec<HomogeneousBezierSpan>>, CodecError> {
+) -> Result<Option<HomogeneousBezierSpans<'ctx>>, CodecError> {
     let Ok(degree) = usize::try_from(curve.degree()) else {
         return Ok(None);
     };
@@ -535,9 +535,7 @@ fn homogeneous_bezier_spans(
     let Some(controls) = positive_controls(ctx, &points, weights.as_deref(), "iges_surface_closure_controls")? else {
         return Ok(None);
     };
-    homogeneous_spans_with_charge(degree, curve.knots(), controls.controls, |count, operation| {
-        ctx.charge_collection_items(u64_from_index(count), operation)
-    })
+    Ok(homogeneous_spans(ctx, degree, curve.knots(), &controls.controls)?)
 }
 
 fn bernstein_binomial(n: usize, k: usize) -> Option<f64> {
@@ -750,22 +748,24 @@ fn aligned_homogeneous_spans(
     first: &NurbsCurve,
     second: &NurbsCurve,
 ) -> Result<Option<Vec<(HomogeneousBezierSpan, HomogeneousBezierSpan)>>, CodecError> {
-    let Some(first_spans) = homogeneous_bezier_spans(ctx, first)? else {
+    let Some(first_extraction) = homogeneous_bezier_spans(ctx, first)? else {
         return Ok(None);
     };
-    let Some(second_spans) = homogeneous_bezier_spans(ctx, second)? else {
+    let first_spans = first_extraction.spans.as_slice();
+    let Some(second_extraction) = homogeneous_bezier_spans(ctx, second)? else {
         return Ok(None);
     };
+    let second_spans = second_extraction.spans.as_slice();
     let (Some(first_domain), Some(second_domain)) = (
-        homogeneous_span_domain(&first_spans),
-        homogeneous_span_domain(&second_spans),
+        homogeneous_span_domain(first_spans),
+        homogeneous_span_domain(second_spans),
     ) else {
         return Ok(None);
     };
-    let Some(mut boundaries) = normalized_span_boundaries(&first_spans, first_domain, ctx)? else {
+    let Some(mut boundaries) = normalized_span_boundaries(first_spans, first_domain, ctx)? else {
         return Ok(None);
     };
-    let Some(second_boundaries) = normalized_span_boundaries(&second_spans, second_domain, ctx)?
+    let Some(second_boundaries) = normalized_span_boundaries(second_spans, second_domain, ctx)?
     else {
         return Ok(None);
     };
@@ -778,12 +778,12 @@ fn aligned_homogeneous_spans(
     ctx.stable_sort_by(&mut boundaries, f64::total_cmp, |_| 0, "iges span boundary sort")?;
     boundaries.dedup();
     let Some(first_spans) =
-        partition_homogeneous_spans(&first_spans, first_domain, &boundaries, ctx)?
+        partition_homogeneous_spans(first_spans, first_domain, &boundaries, ctx)?
     else {
         return Ok(None);
     };
     let Some(second_spans) =
-        partition_homogeneous_spans(&second_spans, second_domain, &boundaries, ctx)?
+        partition_homogeneous_spans(second_spans, second_domain, &boundaries, ctx)?
     else {
         return Ok(None);
     };
@@ -1093,12 +1093,14 @@ fn homogeneous_curve_boundary_matches(
     {
         return Ok(None);
     }
-    let Some(first_spans) = homogeneous_bezier_spans(ctx, first)? else {
+    let Some(first_extraction) = homogeneous_bezier_spans(ctx, first)? else {
         return Ok(None);
     };
-    let Some(second_spans) = homogeneous_bezier_spans(ctx, second)? else {
+    let first_spans = first_extraction.spans.as_slice();
+    let Some(second_extraction) = homogeneous_bezier_spans(ctx, second)? else {
         return Ok(None);
     };
+    let second_spans = second_extraction.spans.as_slice();
     if first.degree() != second.degree()
         || first.knots() != second.knots()
         || first_spans.len() != second_spans.len()

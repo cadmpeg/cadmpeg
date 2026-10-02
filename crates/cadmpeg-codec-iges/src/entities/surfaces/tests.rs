@@ -590,7 +590,7 @@ fn unclamped_ruled_span_extraction_refuses_knot_insertion_storage() {
                     }
                     Ok(_) => panic!("span extraction succeeded before {operation}"),
                     Err(error) => panic!("unexpected span refusal at {operation}: {error}"),
-                }
+                };
             }
             assert!(
                 found,
@@ -607,8 +607,8 @@ fn unclamped_ruled_span_extraction_refuses_knot_insertion_storage() {
         let actual = super::homogeneous_bezier_spans(&ctx, &curve)
             .unwrap()
             .unwrap();
-        assert_eq!(actual.len(), expected.len());
-        for (actual, expected) in actual.iter().zip(expected) {
+        assert_eq!(actual.spans.len(), expected.spans.len());
+        for (actual, expected) in actual.spans.iter().zip(&expected.spans) {
             assert_eq!(actual.domain, expected.domain);
             assert_eq!(actual.controls, expected.controls);
         }
