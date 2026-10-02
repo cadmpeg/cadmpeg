@@ -1548,6 +1548,7 @@ impl DecodeContext<'_> {
         for (index, part) in parts.iter().enumerate() {
             self.charge_work(u64_from_index(part.as_ref().len()), operation)?;
             if index != 0 {
+                self.charge_work(u64_from_index(separator.len()), operation)?;
                 output.push_str(separator);
             }
             output.push_str(part.as_ref());

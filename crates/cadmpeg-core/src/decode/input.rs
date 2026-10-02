@@ -28,6 +28,7 @@ impl DecodeContext<'_> {
     ) -> Result<(), CodecError> {
         let mut chunk = [0_u8; 8192];
         while bytes.len() < length {
+            self.charge_work(1, "input prefix iteration")?;
             let count = (length - bytes.len()).min(chunk.len());
             self.charge_work(u64_from_index(count), "read input prefix")?;
             let read = reader.read(&mut chunk[..count]).map_err(CodecError::Io)?;
@@ -87,6 +88,18 @@ mod tests {
     use crate::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use crate::CodecError;
     use std::io::Cursor;
+
+    #[test]
+    fn input_prefix_iteration_refuses_before_read() {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let mut reader = Cursor::new(b"a");
+        assert!(matches!(ctx.read_input_prefix(&mut reader, 1),
+            Err(CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::WorkUnits));
+        assert_eq!(reader.position(), 0);
+    }
 
     #[test]
     fn input_prefix_refusal_keeps_input_dimension() {

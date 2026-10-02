@@ -1092,6 +1092,17 @@ fn read(ctx: &DecodeContext<'_>) {
         self.write(self.PATH, "#[cfg(test)] " + snippet)
         self.assertEqual(self.findings("uncharged_decode_allocation"), [])
 
+    def test_owned_renamed_and_inferred_contexts_are_in_scope(self):
+        self.write(self.PATH, """use cadmpeg_core::decode::DecodeContext as Context;
+fn owned(ctx: Context<'_>) { value.clone(); }
+fn inferred() {
+    let (ctx, root) = DecodeContext::from_root_bytes(data, arena, policy)?;
+    value.clone();
+}
+fn renamed(ctx: &Context<'_>) { value.clone(); }
+""")
+        self.assertEqual([f.line for f in self.findings("uncharged_decode_allocation")], [2, 5, 7])
+
     def test_core_context_methods_and_ir_decode_are_in_scope(self):
         self.write("crates/cadmpeg-core/src/decode/context.rs",
                    "impl DecodeContext<'_> { fn read(&self) { text.to_owned(); } }")
@@ -1129,6 +1140,7 @@ class DecodeWork(TempSourceCase):
     ctx.position_by(values, predicate, "scan")?;
     ctx.equal_bytes(left, right, "compare")?;
     for index in 0..4 { step(); }
+    for value in [1, 2] { step(); }
 }""")
         self.assertEqual(self.findings("uncharged_decode_work"), [])
 
@@ -1149,14 +1161,31 @@ class DecodeWork(TempSourceCase):
 }""")
         self.assertEqual([f.line for f in self.findings("uncharged_decode_work")], [3, 4, 9, 12, 13])
 
+    def test_conditional_first_statement_and_zero_charges_fail(self):
+        self.write(self.PATH, """fn read(ctx: &DecodeContext<'_>) {
+    for value in values { if condition { ctx.charge_work(1, "scan")?; } step(); }
+    for value in values { ctx.charge_work(0, "scan")?; step(); }
+    while cursor.position() < end { ctx.charge_work(1, "scan")?; step(); }
+}""")
+        self.assertEqual([f.line for f in self.findings("uncharged_decode_work")], [2, 3])
+
     def test_named_decoded_slices_need_comparison_admission(self):
         self.write(self.PATH, """fn read(ctx: &DecodeContext<'_>, left: &[u8], right: &[u8]) {
     left == right;
     left != right;
+    left.len() == right.len();
     ctx.charge_work(u64_from_index(left.len()), "compare")?;
     left == right;
 }""")
         self.assertEqual([f.line for f in self.findings("uncharged_decode_work")], [2, 3])
+
+    def test_unresolved_named_equality_requires_a_charged_shape(self):
+        self.write(self.PATH, """fn read(ctx: &DecodeContext<'_>, count: usize) {
+    first == second;
+    count == expected;
+    first == 0;
+}""")
+        self.assertEqual([f.line for f in self.findings("uncharged_decode_work")], [2])
 
     def test_inner_scans_need_their_own_charge(self):
         self.write(self.PATH, """fn read(ctx: &DecodeContext<'_>) {
