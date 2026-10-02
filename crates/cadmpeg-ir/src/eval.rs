@@ -5032,13 +5032,12 @@ fn model_curve_parameter_near_point_with_tolerance(
             }
             ProceduralCurveDefinition::Helix(_) => {
                 return helix_parameter_near_point(
-                    index,
-                    curve_id,
+                    ctx,
                     point,
                     seed,
                     tolerance,
                     procedural.definition(),
-                ).map_err(CodecError::from);
+                );
             }
             _ => {}
         }
@@ -5290,13 +5289,14 @@ fn model_curve_parameter_near_point_with_tolerance(
 /// Find a helix parameter near a caller-selected seed by bounded Newton
 /// refinement of the squared model-space distance.
 fn helix_parameter_near_point(
-    index: &crate::index::ModelIndex<'_>,
-    curve_id: &crate::ids::CurveId,
+    ctx: &DecodeContext<'_>,
     target: Point3,
     seed: f64,
     tolerance: NonNegativeLength,
     definition: &ProceduralCurveDefinition,
-) -> Result<Option<FiniteReal>, ResourceLimit> {
+) -> Result<Option<FiniteReal>, CodecError> {
+    let _depth = ctx.enter_nested("IR helix inverse evaluation")?;
+    ctx.charge_work(1, "IR helix inverse evaluation")?;
     let ProceduralCurveDefinition::Helix(helix_payload) = definition else {
         return Ok(None);
     };
@@ -5316,11 +5316,8 @@ fn helix_parameter_near_point(
 
     let mut parameter = seed;
     for _ in 0..MODEL_CURVE_PARAMETER_SEARCH_MAX_NEWTON_ITERATIONS {
-        let Some(differential) = finite_or_refusal(model_curve_differential_by_id(
-            index,
-            curve_id,
-            parameter.get(),
-        ))?
+        ctx.charge_work(1, "IR helix inverse iteration")?;
+        let Some(differential) = finite_or_refusal(helix_differential(definition, parameter.get()))?
         else {
             return Ok(None);
         };
@@ -5352,11 +5349,8 @@ fn helix_parameter_near_point(
         parameter = next;
     }
 
-    let Some(differential) = finite_or_refusal(model_curve_differential_by_id(
-        index,
-        curve_id,
-        parameter.get(),
-    ))?
+    ctx.charge_work(1, "IR helix inverse final evaluation")?;
+    let Some(differential) = finite_or_refusal(helix_differential(definition, parameter.get()))?
     else {
         return Ok(None);
     };
