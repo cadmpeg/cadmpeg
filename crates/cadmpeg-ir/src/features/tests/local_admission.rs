@@ -256,6 +256,27 @@ fn feature_result_members_admit_each_arena_and_release_the_index() {
 }
 
 #[test]
+fn split_face_planes_wire_preserves_arity_uniqueness_and_order() {
+    let first = feature_id("first");
+    let second = feature_id("second");
+    for (planes, message) in [
+        (Vec::new(), "planes must contain at least two planes"),
+        (vec![first.clone()], "planes must contain at least two planes"),
+        (vec![first.clone(), first.clone()], "planes must be distinct"),
+    ] {
+        assert_eq!(SplitFacePlanes::try_from(planes.clone()).unwrap_err(), message);
+        let error = serde_json::from_value::<SplitFacePlanes>(serde_json::to_value(planes).unwrap())
+            .unwrap_err().to_string();
+        assert!(error.contains(message), "{error}");
+    }
+    let planes = vec![second, first];
+    let wire = serde_json::to_value(&planes).unwrap();
+    let reconstructed = serde_json::from_value::<SplitFacePlanes>(wire.clone()).unwrap();
+    assert_eq!(reconstructed.as_ref(), planes.as_slice());
+    assert_eq!(serde_json::to_value(reconstructed).unwrap(), wire);
+}
+
+#[test]
 fn local_collection_admission_preserves_order_and_rejects_invalid_membership() {
     let first = feature_id("first");
     let second = feature_id("second");
