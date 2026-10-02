@@ -73,8 +73,9 @@ pub(crate) fn summary(
                 "text" | "is_element" | "is_text" | "tag_name" | "name" | "namespace" | "root"
                 | "children" | "descendants" | "attributes" | "range" | "parent",
             ) => (Allocation::None, Work::Fixed),
-            ("serde_json", "from_str" | "from_slice") if path.contains("Deserializer") =>
-                (Allocation::None, Work::Fixed),
+            ("serde_json", "from_str" | "from_slice") if path.contains("Deserializer") => {
+                (Allocation::None, Work::Fixed)
+            }
             ("serde_json", "from_str" | "from_slice") => (Allocation::Result, Work::Argument(0)),
             (
                 "serde_json",
@@ -107,6 +108,7 @@ pub(crate) fn summary(
         "replace" | "take" if path.contains("option::") => (Allocation::None, Work::Fixed),
         "repeat" if path.contains("iter::") => (Allocation::None, Work::Fixed),
         "from_utf8_lossy" => (Allocation::Result, Work::Receiver),
+        "insert" if path.contains("option::") => return None,
         "format" => (Allocation::Format, Work::Format),
         "clone" => (Allocation::Clone, Work::Receiver),
         "cloned" => (Allocation::Cloned, Work::Fixed),
@@ -163,7 +165,10 @@ pub(crate) fn summary(
         | "clear"
         | "truncate"
         | "remove" => (Allocation::None, Work::Receiver),
-        "new" if path.contains("CString") => return None,
+        "new" if !["vec::Vec", "string::String", "collections::", "boxed::Box", "rc::Rc",
+            "sync::Arc", "cell::", "sync::", "io::Cursor", "path::Path", "ffi::OsStr",
+            "hash::", "ops::RangeInclusive", "fmt::Arguments", "fmt::rt", "fmt::Argument"]
+            .iter().any(|owner| path.contains(owner)) => return None,
         "len"
         | "capacity"
         | "is_empty"

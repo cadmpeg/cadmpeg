@@ -36,3 +36,7 @@ pub fn lossy(bytes: &[u8]) {
 pub fn repeating(text: &str, count: usize) {
     let _copy = text.repeat(count); // finding: uncharged_decode_allocation, uncharged_decode_work
 }
+
+pub fn missing_constructor(name: &str) {
+    let _command = std::process::Command::new(name); // finding: unproven_decode_charge
+}
