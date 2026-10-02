@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Atomic staging for neutral entity transfer.
 
+use std::borrow::BorrowMut;
 use std::collections::{BTreeMap, HashMap};
 
 use cadmpeg_core::decode::{
@@ -508,10 +509,10 @@ enum CommittedIdentity {
 
 type CommittedIdentityIndex = HashMap<u64, Vec<CommittedIdentity>>;
 
-/// An exclusive document borrow with a caller-owned identity cache reservation.
+/// A document owner or exclusive borrow with a caller-owned identity cache.
 ///
-/// The cache is built on the first lookup or commit. The context and document
-/// stay borrowed until the session ends.
+/// The cache is built on the first lookup or commit. The context stays borrowed
+/// until the session ends. Each successful commit extends the existing cache.
 ///
 /// ```compile_fail
 /// use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
@@ -534,21 +535,21 @@ type CommittedIdentityIndex = HashMap<u64, Vec<CommittedIdentity>>;
 /// session.document().model.points.clear();
 /// ```
 #[derive(Debug)]
-pub struct CommitSession<'ctx, 'doc> {
-    state: CommitState<'doc>,
+pub struct CommitSession<'ctx, D: BorrowMut<CadIr>> {
+    state: CommitState<D>,
     ctx: &'ctx DecodeContext<'ctx>,
     storage: ScopedReservation<'ctx>,
 }
 
 #[derive(Debug)]
-struct CommitState<'doc> {
-    base: &'doc mut CadIr,
+struct CommitState<D: BorrowMut<CadIr>> {
+    base: D,
     identities: Option<CommittedIdentityIndex>,
 }
 
-impl<'ctx, 'doc> CommitSession<'ctx, 'doc> {
-    /// Borrow the document and caller's context without scanning identity arenas.
-    pub fn new(base: &'doc mut CadIr, ctx: &'ctx DecodeContext<'ctx>) -> Result<Self, CodecError> {
+impl<'ctx, D: BorrowMut<CadIr>> CommitSession<'ctx, D> {
+    /// Hold the document and caller's context without scanning identity arenas.
+    pub fn new(base: D, ctx: &'ctx DecodeContext<'ctx>) -> Result<Self, CodecError> {
         Ok(Self {
             state: CommitState { base, identities: None },
             ctx,
@@ -558,7 +559,24 @@ impl<'ctx, 'doc> CommitSession<'ctx, 'doc> {
 
     /// Read the committed document while its cache reservation remains live.
     pub fn document(&self) -> &CadIr {
-        self.state.base
+        self.state.base.borrow()
+    }
+
+    /// Invalidate cached positions before exposing the document for mutation.
+    pub fn document_mut(&mut self) -> Result<&mut CadIr, CodecError> {
+        let storage = self.ctx.reserve_scoped(0, "committed identity storage")?;
+        self.state.identities = None;
+        self.storage = storage;
+        Ok(self.state.base.borrow_mut())
+    }
+
+    /// Release the identity cache and return the document owner or exclusive borrow.
+    pub fn into_document(self) -> D {
+        let Self { state, ctx: _, storage } = self;
+        let CommitState { base, identities } = state;
+        drop(identities);
+        drop(storage);
+        base
     }
 
     /// Validate and commit one model draft under this session's context.
@@ -666,7 +684,7 @@ fn committed_identity_contains(
     Ok(false)
 }
 
-impl CommitState<'_> {
+impl<D: BorrowMut<CadIr>> CommitState<D> {
     fn lookup_with_storage(
         &mut self,
         identity: &str,
@@ -675,14 +693,14 @@ impl CommitState<'_> {
     ) -> Result<bool, CodecError> {
         storage.with_storage(|| self.ensure_identities(ctx))?;
         match &self.identities {
-            Some(index) => committed_identity_contains(self.base, index, identity, ctx),
+            Some(index) => committed_identity_contains(self.base.borrow(), index, identity, ctx),
             None => Err(CodecError::malformed("committed identity index is absent")),
         }
     }
 
     fn ensure_identities(&mut self, ctx: &DecodeContext<'_>) -> Result<(), CodecError> {
         if self.identities.is_none() {
-            self.identities = Some(index_committed_identities(self.base, ctx)?);
+            self.identities = Some(index_committed_identities(self.base.borrow(), ctx)?);
         }
         Ok(())
     }
@@ -699,13 +717,14 @@ impl CommitState<'_> {
         before_apply: impl FnOnce() -> Result<T, CodecError>,
     ) -> Result<Result<T, DraftError>, CodecError> {
         cache.with_storage(|| self.ensure_identities(ctx))?;
+        let base = self.base.borrow_mut();
         let identities = self
             .identities
             .as_mut()
             .ok_or_else(|| CodecError::Malformed("committed identity index is absent".into()))?;
         if let Err(error) = draft.validate_with_contains(
-            &self.base.model,
-            |identity| committed_identity_contains(self.base, identities, identity, ctx),
+            &base.model,
+            |identity| committed_identity_contains(base, identities, identity, ctx),
             ctx,
         )? {
             return Ok(Err(error));
@@ -713,12 +732,12 @@ impl CommitState<'_> {
         macro_rules! reserve_arenas {
             ($($field:ident: $ty:ty, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?;)*) => {
                 $(if !draft.model.$field.is_empty() {
-                    ctx.reserve_retained_vec(&mut self.base.model.$field, draft.model.$field.len(), "committed model arena slots")?;
+                    ctx.reserve_retained_vec(&mut base.model.$field, draft.model.$field.len(), "committed model arena slots")?;
                 })*
             };
         }
         crate::document::arena_registry!(reserve_arenas);
-        self.base
+        base
             .model
             .feature_regeneration_parents
             .reserve_append(&draft.model.feature_regeneration_parents, ctx)?;
@@ -728,7 +747,7 @@ impl CommitState<'_> {
                 ($($field:ident: $ty:ty, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?;)*) => {
                     $(for (offset, entity) in draft.model.$field.iter().enumerate() {
                         ctx.charge_work(u64_from_index(entity.identity().len()), "hash staged committed identity")?;
-                        insert_identity(&mut staged, identity_hash(entity.identity()), CommittedIdentity::Neutral(IdentitySlot { kind: <$ty as EntitySchema>::KIND, index: self.base.model.$field.len() + offset }), &DecodeStorage(ctx), "draft committed identity slots")?;
+                        insert_identity(&mut staged, identity_hash(entity.identity()), CommittedIdentity::Neutral(IdentitySlot { kind: <$ty as EntitySchema>::KIND, index: base.model.$field.len() + offset }), &DecodeStorage(ctx), "draft committed identity slots")?;
                     })*
                 };
             }
@@ -746,7 +765,7 @@ impl CommitState<'_> {
         for (hash, group) in staged.0 {
             identities.entry(hash).or_default().extend(group);
         }
-        self.base.model.append(draft.model);
+        base.model.append(draft.model);
         Ok(Ok(transferred))
     }
 }
@@ -757,6 +776,7 @@ mod tests {
     mod checkpoints;
     mod feature_parents;
     mod native_identity_slots;
+    mod owned_session;
 
     use super::{CommitSession, DraftError, ModelCheckpoint, ModelDraft};
     use crate::annotations::Annotations;
