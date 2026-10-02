@@ -18,7 +18,6 @@ fn uncalled_object() {
 static ADDRESSES: [fn(&[u8]); 1] = [deferred];
 fn deferred(bytes: &[u8]) {
     for byte in bytes {
-        // finding: uncharged_decode_work
         std::hint::black_box(byte);
     }
 }

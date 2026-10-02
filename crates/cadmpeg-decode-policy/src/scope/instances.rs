@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Concrete generic edges, including checked dependency MIR.
-use super::{key, objects, Graph};
+use super::{indirect, key, objects, Graph};
 use crate::types;
 use rustc_middle::mir::visit::Visitor;
 use rustc_middle::mir::{self, Body, Location, Operand, Rvalue};
@@ -39,7 +39,6 @@ pub(super) fn enqueue<'tcx>(
         return;
     }
     if instance.args.has_escaping_bound_vars() {
-        graph.uncertain.insert(caller.to_owned());
         return;
     }
     if instance
@@ -69,7 +68,6 @@ pub(super) fn expand<'tcx>(tcx: TyCtxt<'tcx>, graph: &mut Graph, mut pending: Ve
         if concrete.depth > tcx.recursion_limit().0
             || !tcx.is_mir_available(concrete.instance.def_id())
         {
-            graph.uncertain.insert(concrete.caller);
             continue;
         }
         let body = tcx.instance_mir(ty::InstanceKind::Item(concrete.instance.def_id()));
@@ -103,10 +101,7 @@ impl<'tcx> Edges<'_, 'tcx> {
                 ty::EarlyBinder::bind(self.tcx, value),
             ) {
             Ok(value) => Some(value),
-            Err(_) => {
-                self.graph.uncertain.insert(self.concrete.caller.clone());
-                None
-            }
+            Err(_) => None,
         }
     }
 
@@ -116,14 +111,18 @@ impl<'tcx> Edges<'_, 'tcx> {
                 instance
             }
             _ => {
-                self.graph.uncertain.insert(self.concrete.caller.clone());
+                if self.tcx.trait_of_assoc(id).is_some() {
+                    let method = key(self.tcx, id);
+                    self.graph.trait_calls.insert((self.concrete.caller.clone(), method.clone()));
+                    if args.types().next().is_some_and(|value| matches!(value.peel_refs().kind(), ty::Dynamic(..))) {
+                        self.graph.object_calls.insert((self.concrete.caller.clone(), method));
+                    }
+                }
                 return;
             }
         };
-        if address && types::checked(self.tcx, instance.def_id()) {
-            self.graph
-                .addresses
-                .insert(key(self.tcx, instance.def_id()));
+        if address {
+            indirect::address(self.tcx, self.graph, self.concrete.environment, Ty::new_fn_def(self.tcx, instance.def_id(), ty::Binder::dummy(instance.args)));
         }
         enqueue(
             self.tcx,
@@ -145,8 +144,6 @@ impl<'tcx> Visitor<'tcx> for Edges<'_, 'tcx> {
                     mir::TerminatorKind::Call { func, .. } if std::ptr::eq(func, operand));
                 if let Some(args) = args.no_bound_vars() {
                     self.target(*id, args, !direct_call);
-                } else {
-                    self.graph.uncertain.insert(self.concrete.caller.clone());
                 }
             }
         }
@@ -162,9 +159,7 @@ impl<'tcx> Visitor<'tcx> for Edges<'_, 'tcx> {
                     );
                 match args {
                     Ok(args) => self.target(value.def, args, false),
-                    Err(_) => {
-                        self.graph.uncertain.insert(self.concrete.caller.clone());
-                    }
+                    Err(_) => (),
                 }
             }
         }
@@ -182,15 +177,13 @@ impl<'tcx> Visitor<'tcx> for Edges<'_, 'tcx> {
                 let target = self.value(*target);
                 if let (Some(source), Some(target)) = (source, target) {
                     let mut instances = Vec::new();
-                    if !objects::targets(
+                    objects::targets(
                         self.tcx,
                         self.concrete.environment,
                         source,
                         target,
                         &mut instances,
-                    ) {
-                        self.graph.uncertain.insert(self.concrete.caller.clone());
-                    }
+                    );
                     for (method, instance) in instances {
                         objects::register(self.tcx, self.graph, self.pending, method, Concrete {
                             caller: self.concrete.caller.clone(), instance,
@@ -205,9 +198,7 @@ impl<'tcx> Visitor<'tcx> for Edges<'_, 'tcx> {
                     let value = Ty::new_closure(self.tcx, id, args);
                     if let Some(value) = self.value(value) {
                         if let ty::Closure(id, args) = value.kind() {
-                            if types::checked(self.tcx, *id) {
-                                self.graph.addresses.insert(key(self.tcx, *id));
-                            }
+                            indirect::address(self.tcx, self.graph, self.concrete.environment, value);
                             enqueue(
                                 self.tcx,
                                 self.graph,
@@ -228,11 +219,12 @@ impl<'tcx> Visitor<'tcx> for Edges<'_, 'tcx> {
 
     fn visit_terminator(&mut self, terminator: &mir::Terminator<'tcx>, location: Location) {
         if let mir::TerminatorKind::Call { func, .. } = &terminator.kind {
-            if self
-                .value(func.ty(self.body, self.tcx))
-                .is_some_and(|value| matches!(value.kind(), ty::FnPtr(..)))
-            {
-                self.graph.uncertain.insert(self.concrete.caller.clone());
+            if let Some(value) = self.value(func.ty(self.body, self.tcx)) {
+                if matches!(value.kind(), ty::FnPtr(..)) {
+                    if let Some(signature) = indirect::signature(self.tcx, self.concrete.environment, value) {
+                        self.graph.pointer_calls.insert((self.concrete.caller.clone(), signature));
+                    }
+                }
             }
         }
         self.super_terminator(terminator, location);
