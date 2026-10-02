@@ -213,12 +213,7 @@ fn production(tcx: TyCtxt<'_>, owner: DefId) -> bool {
     {
         return false;
     }
-    let parent = tcx.parent(owner);
-    if matches!(
-        tcx.def_kind(parent),
-        rustc_hir::def::DefKind::Impl { of_trait: true }
-    ) && types::serde_serialize(tcx, tcx.impl_trait_ref(parent).skip_binder().def_id)
-    {
+    if types::serialization_body(tcx, owner) {
         return false;
     }
     let path = tcx
