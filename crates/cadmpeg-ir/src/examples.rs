@@ -307,6 +307,8 @@ pub fn unit_cube() -> Result<CadIr, ExampleError> {
 
 /// A canonical fixture covering directed `SubD` and a Sum procedural surface.
 pub fn directed_subd_sum() -> Result<CadIr, ExampleError> {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &cadmpeg_core::decode::DecodePolicy::default())?;
     let mut ir = CadIr::empty();
     ir.model.curves = vec![
         Curve {
@@ -390,20 +392,19 @@ pub fn directed_subd_sum() -> Result<CadIr, ExampleError> {
                     [0.25, 0.75],
                     SubdEdgeTag::Crease,
                     None,
-                    [0.125, 0.875],
-                )
+                    [0.125, 0.875], &ctx)?
                 .map_err(|_| {
                     crate::geometry::ProceduralGeometryError::Payload(
                         "invalid directed SubD example edge",
                     )
                 })?,
-                SubdEdge::new([1, 2], [0.0, 0.5], SubdEdgeTag::SmoothX, None, [0.25, 0.75])
+                SubdEdge::new([1, 2], [0.0, 0.5], SubdEdgeTag::SmoothX, None, [0.25, 0.75], &ctx)?
                     .map_err(|_| {
                         crate::geometry::ProceduralGeometryError::Payload(
                             "invalid directed SubD example edge",
                         )
                     })?,
-                SubdEdge::new([2, 0], [1.0, 0.0], SubdEdgeTag::Smooth, None, [0.5, 0.5]).map_err(
+                SubdEdge::new([2, 0], [1.0, 0.0], SubdEdgeTag::Smooth, None, [0.5, 0.5], &ctx)?.map_err(
                     |_| {
                         crate::geometry::ProceduralGeometryError::Payload(
                             "invalid directed SubD example edge",
@@ -436,8 +437,6 @@ pub fn directed_subd_sum() -> Result<CadIr, ExampleError> {
             crate::geometry::ProceduralGeometryError::Payload("invalid directed SubD example cage")
         })?,
     });
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &cadmpeg_core::decode::DecodePolicy::default())?;
     ir.finalize(&ctx)?;
     Ok(ir)
 }
