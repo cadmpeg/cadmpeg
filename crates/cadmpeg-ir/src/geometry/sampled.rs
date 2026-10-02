@@ -371,25 +371,25 @@ impl PolylineSamples<FiniteReal, FinitePoint3> {
 
     /// Edit admitted points transactionally. The edit supplies an admitted
     /// point, so no coordinate needs another admission.
-    pub fn edit_admitted_points(
+    pub fn edit_admitted_points<E>(
         &mut self,
-        mut edit: impl FnMut(FinitePoint3) -> Result<FinitePoint3, GeometryLayoutError>,
-    ) -> Result<(), GeometryLayoutError> {
-        let mut candidate = self.clone();
-        match &mut candidate {
+        mut edit: impl FnMut(FinitePoint3) -> Result<FinitePoint3, E>,
+        ctx: &DecodeContext<'_>,
+    ) -> Result<Result<(), E>, CodecError> {
+        match self {
             Self::Unparameterized { points } => {
-                for point in points.iter_mut() {
+                edit_sample_rows(ctx, points, |point| {
                     *point = edit(*point)?;
-                }
+                    Ok(())
+                })
             }
             Self::Parameterized { vertices } => {
-                for vertex in vertices.iter_mut() {
+                edit_sample_rows(ctx, vertices, |vertex| {
                     vertex.point = edit(vertex.point)?;
-                }
+                    Ok(())
+                })
             }
         }
-        *self = candidate;
-        Ok(())
     }
 
     /// The samples with raw parameters and points.
@@ -407,6 +407,24 @@ impl PolylineSamples<FiniteReal, FinitePoint3> {
             },
         }
     }
+}
+
+fn edit_sample_rows<T: Copy, E>(
+    ctx: &DecodeContext<'_>,
+    rows: &mut [T],
+    mut edit: impl FnMut(&mut T) -> Result<(), E>,
+) -> Result<Result<(), E>, CodecError> {
+    let (copy, _storage) = ctx.copy_temporary_slice(rows, "IR sampled edit candidate")?;
+    let mut candidate = copy;
+    for row in &mut candidate {
+        ctx.charge_work(1, "IR sampled edit callback")?;
+        if let Err(error) = edit(row) {
+            return Ok(Err(error));
+        }
+    }
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(rows.len()), "IR sampled edit copy back")?;
+    rows.copy_from_slice(&candidate);
+    Ok(Ok(()))
 }
 
 impl PolylineCurve {
