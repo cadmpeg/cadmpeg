@@ -17,6 +17,7 @@ mod fixed;
 mod flow;
 mod instantiation;
 mod storage;
+mod scope;
 mod types;
 mod work;
 
@@ -43,6 +44,13 @@ impl Callbacks for DecodeCallbacks {
     fn after_analysis<'tcx>(&mut self, _compiler: &Compiler, tcx: TyCtxt<'tcx>) -> Compilation {
         let mut owners: Vec<_> = tcx.hir_body_owners().collect();
         owners.sort_by_key(|owner| owner.local_def_index.as_u32());
+        let graph = scope::collect(tcx, &owners);
+        if std::env::var_os("CADMPEG_POLICY_GRAPH").is_some() {
+            graph.print();
+            return Compilation::Continue;
+        }
+        let reachable = graph.reachable();
+        owners.retain(|owner| reachable.contains(&tcx.def_path_str(*owner)));
         let instantiations = instantiation::collect(tcx, &owners);
         let mut bodies = HashMap::new();
         for owner in owners {
@@ -223,31 +231,12 @@ fn production(tcx: TyCtxt<'_>, owner: DefId) -> bool {
                 | "integration_tests"
                 | "benches"
                 | "bin"
-                | "writer"
+
         )
     }) {
         return false;
     }
-    if parts
-        .windows(2)
-        .any(|pair| pair[0] == "history" && matches!(pair[1], "encode" | "write"))
-    {
-        return false;
-    }
-    if parts.last().is_some_and(|name| {
-        name.contains("test")
-            || name.starts_with("writer")
-            || matches!(*name, "zip_write.rs" | "export.rs")
-    }) {
-        return false;
-    }
-    if parts.windows(2).any(|pair| {
-        pair[0] == "resolved_features"
-            && matches!(
-                pair[1],
-                "sketch_write.rs" | "write_generate.rs" | "write_prepare.rs"
-            )
-    }) {
+    if parts.last().is_some_and(|name| name.contains("test")) {
         return false;
     }
     true

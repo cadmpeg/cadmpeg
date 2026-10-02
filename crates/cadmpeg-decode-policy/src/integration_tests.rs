@@ -164,6 +164,7 @@ fn check_fixture(name: &str) {
             && (if matches!(
                 name,
                 "edges"
+                    | "reachability"
                     | "modular"
                     | "external"
                     | "generic"
@@ -318,4 +319,9 @@ fn serde_derived_body_exclusion() {
 #[test]
 fn fixed_text_value_proof() {
     check_fixture("fixed_text");
+}
+
+#[test]
+fn decode_reachability() {
+    check_fixture("reachability");
 }

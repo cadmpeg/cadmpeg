@@ -1,0 +1,161 @@
+// SPDX-License-Identifier: Apache-2.0
+//! Decode roots and resolved production call reachability.
+use crate::{flow, types, Analysis, Findings};
+use rustc_hir::intravisit::{walk_expr, Visitor};
+use rustc_hir::{Expr, ExprKind};
+use rustc_middle::ty::{self, TyCtxt};
+use rustc_span::def_id::{DefId, LocalDefId};
+use std::collections::{BTreeSet, HashSet};
+
+#[derive(Default)]
+pub(crate) struct Graph {
+    roots: BTreeSet<String>,
+    edges: BTreeSet<(String, String)>,
+}
+
+impl Graph {
+    pub(crate) fn print(&self) {
+        for root in &self.roots {
+            println!("decode_root\t{root}");
+        }
+        for (caller, callee) in &self.edges {
+            println!("decode_edge\t{caller}\t{callee}");
+        }
+    }
+
+    pub(crate) fn reachable(&self) -> BTreeSet<String> {
+        if let Some(path) = std::env::var_os("CADMPEG_POLICY_SCOPE") {
+            match std::fs::read_to_string(path) {
+                Ok(source) => return source.lines().map(str::to_owned).collect(),
+                Err(error) => {
+                    eprintln!("cannot read decode scope: {error}");
+                    std::process::exit(2);
+                }
+            }
+        }
+        let mut reached = self.roots.clone();
+        loop {
+            let mut added = false;
+            for (caller, callee) in &self.edges {
+                if reached.contains(caller) {
+                    added |= reached.insert(callee.clone());
+                }
+            }
+            if !added {
+                return reached;
+            }
+        }
+    }
+}
+
+fn codec_input_method(tcx: TyCtxt<'_>, owner: DefId) -> bool {
+    let parent = tcx.parent(owner);
+    if !matches!(tcx.def_kind(parent), rustc_hir::def::DefKind::Impl { of_trait: true }) {
+        return false;
+    }
+    let trait_id = tcx.impl_trait_ref(parent).skip_binder().def_id;
+    let codec = matches!(tcx.item_name(trait_id).as_str(), "Codec" | "CodecBackend")
+        && (tcx.def_path_str(trait_id).starts_with("cadmpeg_ir::codec::")
+            || std::env::var_os("CADMPEG_POLICY_FIXTURE").is_some());
+    codec && matches!(tcx.item_name(owner).as_str(),
+        "detect_impl" | "inspect_impl" | "decode_impl" | "detect" | "inspect"
+            | "decode" | "decode_with_context")
+}
+
+fn root(tcx: TyCtxt<'_>, owner: LocalDefId) -> bool {
+    if !crate::production(tcx, owner.to_def_id()) {
+        return false;
+    }
+    codec_input_method(tcx, owner.to_def_id())
+        || matches!(tcx.def_kind(owner), rustc_hir::def::DefKind::Fn | rustc_hir::def::DefKind::AssocFn)
+            && tcx.visibility(owner).is_public()
+            && tcx.fn_sig(owner).instantiate_identity().skip_binder().inputs().iter()
+                .any(|input| types::has_context(tcx, *input, &mut Vec::new()))
+}
+
+pub(crate) fn collect<'tcx>(tcx: TyCtxt<'tcx>, owners: &[LocalDefId]) -> Graph {
+    let mut graph = Graph::default();
+    for owner in owners {
+        if root(tcx, *owner) {
+            graph.roots.insert(tcx.def_path_str(*owner));
+        }
+        if !crate::production(tcx, owner.to_def_id()) {
+            continue;
+        }
+        let mut findings = Findings::default();
+        Calls {
+            analysis: Analysis {
+                tcx,
+                typeck: tcx.typeck(*owner),
+                typing_owner: *owner,
+                arguments: None,
+                fixed_parameters: HashSet::new(),
+                flow: flow::Flow::default(),
+                findings: &mut findings,
+            },
+            caller: tcx.def_path_str(*owner),
+            graph: &mut graph,
+        }.visit_body(tcx.hir_body_owned_by(*owner));
+    }
+    graph
+}
+
+struct Calls<'a, 'b, 'tcx> {
+    analysis: Analysis<'a, 'tcx>,
+    caller: String,
+    graph: &'b mut Graph,
+}
+
+impl Calls<'_, '_, '_> {
+    fn edge(&mut self, callee: DefId) {
+        if types::checked(self.analysis.tcx, callee) {
+            self.graph.edges.insert((self.caller.clone(), self.analysis.tcx.def_path_str(callee)));
+        }
+    }
+
+    fn method(&mut self, definition: DefId, resolved: Option<DefId>) {
+        if let Some(id) = resolved {
+            self.edge(id);
+            if !types::derived(self.analysis.tcx, id) {
+                return;
+            }
+        }
+        let Some(trait_id) = self.analysis.tcx.trait_of_assoc(definition) else {
+            self.edge(definition);
+            return;
+        };
+        self.edge(definition);
+        for implementation in self.analysis.tcx.all_impls(trait_id) {
+            let item = self.analysis.tcx.associated_items(implementation)
+                .in_definition_order()
+                .find(|item| item.name() == self.analysis.tcx.item_name(definition));
+            if let Some(item) = item {
+                self.edge(item.def_id);
+            }
+        }
+    }
+}
+
+impl<'tcx> Visitor<'tcx> for Calls<'_, '_, 'tcx> {
+    fn visit_expr(&mut self, expression: &'tcx Expr<'tcx>) {
+        if let ty::Closure(id, _) = self.analysis.expr_ty(expression).peel_refs().kind() {
+            self.edge(*id);
+        }
+        if let Some((id, _)) = self.analysis.call(expression) {
+            self.method(id, self.analysis.implementation(expression, id));
+            if let Some(custom) = self.analysis.custom_trait(expression, id) {
+                self.edge(custom);
+            }
+        } else if let Some(id) = self.analysis.typeck.type_dependent_def_id(expression.hir_id) {
+            self.method(id, self.analysis.implementation(expression, id));
+            if let Some(custom) = self.analysis.custom_trait(expression, id) {
+                self.edge(custom);
+            }
+        } else if let ty::FnDef(id, _) = self.analysis.expr_ty(expression).kind() {
+            self.edge(*id);
+        }
+        if !matches!(expression.kind, ExprKind::Closure(_)) {
+            walk_expr(self, expression);
+        }
+    }
+}
