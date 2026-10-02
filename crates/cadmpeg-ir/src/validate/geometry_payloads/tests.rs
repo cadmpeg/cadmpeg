@@ -157,3 +157,66 @@ fn finite_nonzero_signed_sphere_radius_is_valid_without_a_size_floor() {
     let report = validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail");
     assert!(report.is_ok(), "findings: {:?}", report.findings);
 }
+
+#[test]
+fn tessellation_reference_validation_preserves_resource_refusals() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    let mut ir = unit_cube().unwrap();
+    ir.model.tessellations.push(Tessellation::new(
+        "test:model:tessellation#missing".try_into().unwrap(),
+        TessellationMesh::List { vertices: vec![Point3::new(0.0, 0.0, 0.0)], triangles: Vec::new() },
+        Vec::new(),
+    ).unwrap().with_body(Some("test:model:body#missing".try_into().unwrap())));
+    for dimension in [ResourceDimension::MaterializedBytes, ResourceDimension::CollectionItems,
+        ResourceDimension::WorkUnits, ResourceDimension::RetainedBytes] {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        match dimension {
+            ResourceDimension::MaterializedBytes => policy.limits.max_materialized_bytes = 0,
+            ResourceDimension::CollectionItems => policy.limits.max_collection_items = 0,
+            ResourceDimension::WorkUnits => policy.limits.max_work_units = 0,
+            ResourceDimension::RetainedBytes => policy.limits.max_retained_bytes = 0,
+            _ => panic!("test dimension"),
+        }
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let mut findings = Vec::new();
+        let Err(CodecError::ResourceLimit(limit)) = super::check_tessellations(&ctx, &ir, &mut findings) else { panic!("tessellation check must refuse"); };
+        assert_eq!(limit.dimension, dimension);
+        assert!(findings.is_empty());
+        assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(original)) if original == limit));
+    }
+}
+
+#[test]
+fn tessellation_reference_validation_preserves_finding_order_and_releases_indexes() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    use crate::report::{check::Check, Severity};
+    let owner = "test:model:tessellation#missing";
+    let mut ir = unit_cube().unwrap();
+    ir.model.tessellations.push(Tessellation::new(owner.try_into().unwrap(),
+        TessellationMesh::List { vertices: vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0), Point3::new(0.0, 1.0, 0.0)], triangles: vec![[0, 1, 2]] }, Vec::new(),
+    ).unwrap().with_body(Some("test:model:body#missing".try_into().unwrap()))
+        .with_faces(vec!["test:model:face#missing".try_into().unwrap(), "test:model:face#also-missing".try_into().unwrap()])
+        .with_texture_assignments(vec![crate::tessellation::TessellationTextureAssignment {
+            source_id: None, texture: "test:model:asset#missing".try_into().unwrap(), triangles: vec![0],
+        }]).unwrap());
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_materialized_bytes = 4096;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut findings = Vec::new();
+    super::check_tessellations(&ctx, &ir, &mut findings).unwrap();
+    assert_eq!(findings.len(), 3);
+    for (finding, message) in findings.iter().zip([
+        "references a missing tessellation body", "references a missing tessellation face", "references a missing tessellation texture asset",
+    ]) {
+        assert_eq!(finding.check, Check::Tessellation);
+        assert_eq!(finding.severity, Severity::Error);
+        assert_eq!(finding.entity.as_deref(), Some(owner));
+        assert_eq!(finding.message, message);
+    }
+    let released = ctx.reserve_scoped(4096, "tessellation reference indexes released").unwrap();
+    drop(released);
+    ctx.finish_session().unwrap();
+}

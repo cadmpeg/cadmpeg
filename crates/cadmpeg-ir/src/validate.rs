@@ -146,7 +146,7 @@ fn validate_model_with_index(
     // The identity walk enumerates every entity id in the product document;
     // native links resolve against that set.
     check_identity_and_order(ctx, ids.native_view(), &mut findings)?;
-    check_tolerances(ir, &mut findings);
+    check_tolerances(ctx, ir, &mut findings)?;
     check_references(ctx, ir, ids, &mut findings)?;
     check_evaluation_cycles(ctx, ir, ids, &mut findings)?;
     check_pmi(ctx, ir, &mut findings)?;
@@ -159,8 +159,8 @@ fn validate_model_with_index(
     check_edge_endpoint_consistency(ir, &mut findings)?;
     check_pcurve_surface_consistency(ctx, ir, &mut findings)?;
     check_procedural_support_consistency(ir, &mut findings)?;
-    check_topology_tolerances(ir, &mut findings);
-    check_tessellations(ir, &mut findings);
+    check_topology_tolerances(ctx, ir, &mut findings)?;
+    check_tessellations(ctx, ir, &mut findings)?;
     check_sketches(ctx, ir, &mut findings)?;
     check_spreadsheets(ctx, ir, &mut findings)?;
     check_products(ctx, ir, &mut findings)?;

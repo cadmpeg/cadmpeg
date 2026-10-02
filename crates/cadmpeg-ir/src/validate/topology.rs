@@ -86,18 +86,16 @@ fn check_law_curves<R, V, P>(
     }
 }
 
-pub(super) fn check_tolerances(ir: &CadIr, findings: &mut Vec<Finding>) {
+pub(super) fn check_tolerances(ctx: &DecodeContext<'_>, ir: &CadIr, findings: &mut Vec<Finding>) -> Result<(), CodecError> {
+    ctx.charge_work(1, "document tolerance check")?;
     if ir.tolerances.linear.get() > 1.0e6 || ir.tolerances.angular.get() > std::f64::consts::TAU {
-        findings.push(Finding {
-            check: Check::Tolerances,
-            severity: Severity::Warning,
-            message: "document tolerance is outside a sane canonical range".into(),
-            entity: None,
-        });
+        super::record_finding(ctx, findings, Check::Tolerances, Severity::Warning, None,
+            format_args!("document tolerance is outside a sane canonical range"))?;
     }
+    Ok(())
 }
 
-pub(super) fn check_topology_tolerances(ir: &CadIr, findings: &mut Vec<Finding>) {
+pub(super) fn check_topology_tolerances(ctx: &DecodeContext<'_>, ir: &CadIr, findings: &mut Vec<Finding>) -> Result<(), CodecError> {
     for (id, tolerance) in ir
         .model
         .vertices
@@ -116,15 +114,13 @@ pub(super) fn check_topology_tolerances(ir: &CadIr, findings: &mut Vec<Finding>)
                 .map(|entity| (entity.id.as_str(), entity.tolerance)),
         )
     {
+        ctx.charge_work(1, "topology tolerance row")?;
         if tolerance.is_some_and(|value| value.get() > 1.0e6) {
-            findings.push(Finding {
-                check: Check::Tolerances,
-                severity: Severity::Warning,
-                message: "topology tolerance is outside a sane canonical range".into(),
-                entity: Some(id.to_owned()),
-            });
+            super::record_finding(ctx, findings, Check::Tolerances, Severity::Warning, Some(id),
+                format_args!("topology tolerance is outside a sane canonical range"))?;
         }
     }
+    Ok(())
 }
 
 pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec<Finding>) -> Result<(), CodecError> {
