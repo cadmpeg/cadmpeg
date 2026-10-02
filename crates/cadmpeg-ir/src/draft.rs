@@ -1109,10 +1109,7 @@ mod tests {
             });
         }
         model
-            .set_feature_regeneration_parent(
-                "test:checkpoint:feature#child".try_into().unwrap(),
-                "test:checkpoint:feature#parent".try_into().unwrap(),
-            )
+            .set_feature_regeneration_parent(&cadmpeg_test_support::service_decode_context(), &("test:checkpoint:feature#child".try_into().unwrap()), &("test:checkpoint:feature#parent".try_into().unwrap()))
             .unwrap();
         checkpoint.0.discard_appended(&mut model, &ctx).unwrap();
         assert_eq!(model, original);
@@ -1182,7 +1179,7 @@ mod tests {
         let parent = "test:draft:feature#parent".try_into().unwrap();
         draft
             .model_mut()
-            .set_feature_regeneration_parent(child, parent)
+            .set_feature_regeneration_parent(&cadmpeg_test_support::service_decode_context(), &(child), &(parent))
             .unwrap();
         let expected = draft.model().clone();
         let mut ir = CadIr::empty();

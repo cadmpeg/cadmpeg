@@ -81,7 +81,7 @@ fn commit_regeneration_edges(
 ) -> Result<(), cadmpeg_core::CodecError> {
     for (child, parent) in edges {
         ir.model
-            .set_feature_regeneration_parent_for_decode(ctx, &child, &parent)?;
+            .set_feature_regeneration_parent(ctx, &child, &parent)?;
     }
     Ok(())
 }

@@ -33,10 +33,7 @@ pub(super) fn parent_draft() -> ModelDraft {
     }
     draft
         .model_mut()
-        .set_feature_regeneration_parent(
-            "test:parents:feature#1-child".try_into().unwrap(),
-            "test:parents:feature#0-parent".try_into().unwrap(),
-        )
+        .set_feature_regeneration_parent(&cadmpeg_test_support::service_decode_context(), &("test:parents:feature#1-child".try_into().unwrap()), &("test:parents:feature#0-parent".try_into().unwrap()))
         .unwrap();
     draft
 }

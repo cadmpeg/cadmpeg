@@ -42,10 +42,7 @@ fn staged_document() -> CadIr {
         });
     }
     ir.model
-        .set_feature_regeneration_parent(
-            "test:append:feature#child".try_into().unwrap(),
-            "test:append:feature#parent".try_into().unwrap(),
-        )
+        .set_feature_regeneration_parent(&cadmpeg_test_support::service_decode_context(), &("test:append:feature#child".try_into().unwrap()), &("test:append:feature#parent".try_into().unwrap()))
         .unwrap();
     for (format, arena, key) in [
         ("test", "existing", "appended"),

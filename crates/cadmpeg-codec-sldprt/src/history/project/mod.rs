@@ -172,7 +172,7 @@ impl FeatureProjection {
     ) -> Result<(), CodecError> {
         model.features = self.features;
         for (child, parent) in self.regeneration_parents {
-            let error = match model.set_feature_regeneration_parent_for_decode(ctx, &child, &parent)
+            let error = match model.set_feature_regeneration_parent(ctx, &child, &parent)
             {
                 Ok(()) => continue,
                 Err(CodecError::Malformed(error)) => error,

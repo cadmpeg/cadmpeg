@@ -347,7 +347,7 @@ fn feature_parent_wire_is_derived_from_its_single_owner() {
         ..Model::default()
     };
     regeneration
-        .set_feature_regeneration_parent(child_id, parent_id.clone())
+        .set_feature_regeneration_parent(&cadmpeg_test_support::service_decode_context(), &(child_id), &(parent_id.clone()))
         .unwrap();
     let value = serde_json::to_value(&regeneration).unwrap();
     assert_eq!(
@@ -919,7 +919,7 @@ fn parent_only_wire_preserves_regeneration_without_tree_membership() {
         ..Model::default()
     };
     model
-        .set_feature_regeneration_parent(child_id.clone(), parent_id.clone())
+        .set_feature_regeneration_parent(&cadmpeg_test_support::service_decode_context(), &(child_id.clone()), &(parent_id.clone()))
         .unwrap();
     assert_eq!(model.feature_tree_parent(&child_id), None);
     assert_eq!(model.feature_parent(&child_id), Some(&parent_id));

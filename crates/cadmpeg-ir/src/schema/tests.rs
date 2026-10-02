@@ -308,7 +308,7 @@ fn model_feature_schema_describes_serialized_regeneration_parent() {
         ));
     model.features.push(child_feature);
     model
-        .set_feature_regeneration_parent(child, parent.clone())
+        .set_feature_regeneration_parent(&cadmpeg_test_support::service_decode_context(), &(child), &(parent.clone()))
         .unwrap();
     let wire = serde_json::to_value(&model).unwrap();
     assert_eq!(wire["features"][1]["regeneration_parent"], parent.as_str());
