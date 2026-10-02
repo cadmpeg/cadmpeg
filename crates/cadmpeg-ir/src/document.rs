@@ -80,16 +80,16 @@ impl FeatureRegenerationParents {
         ctx: &DecodeContext<'_>,
     ) -> Result<(), CodecError> {
         if !self.0.is_empty() && !incoming.0.is_empty() {
-            for _edge in self.0.iter().chain(incoming.0.iter()) {
-                ctx.charge_collection_items(1, "append feature regeneration parents")?;
-                ctx.charge_retained(
-                    cadmpeg_core::decode::u64_from_index(std::mem::size_of::<(
-                        crate::features::FeatureId,
-                        crate::features::FeatureId,
-                    )>()),
-                    "append feature regeneration parents",
-                )?;
+            let count = self.0.len().checked_add(incoming.0.len()).ok_or_else(|| ctx.refuse_codec_limit("append feature regeneration parents", u64::MAX - 1, u64::MAX))?;
+            let mut longest = 0;
+            for (child, _) in self.0.iter().chain(incoming.0.iter()) {
+                ctx.charge_work(1, "append feature regeneration parent scan")?;
+                longest = longest.max(child.as_str().len());
+                ctx.admit_retained_btree_record::<crate::features::FeatureId, crate::features::FeatureId>(0, "append feature regeneration parents")?;
             }
+            let work = count.checked_add(1).and_then(|count| longest.checked_add(std::mem::size_of::<(crate::features::FeatureId, crate::features::FeatureId)>()).and_then(|bytes| count.checked_mul(bytes))).and_then(|work| work.checked_mul(4))
+                .ok_or_else(|| ctx.refuse_codec_limit("append feature regeneration parent moves", u64::MAX - 1, u64::MAX))?;
+            ctx.charge_work(u64_from_index(work), "append feature regeneration parent moves")?;
         }
         Ok(())
     }
@@ -1712,6 +1712,13 @@ impl JsonSchema for CadIr {
     }
 }
 
+fn admit_append_key(ctx: &DecodeContext<'_>, entries: usize, bytes: usize, operation: &'static str) -> Result<(), CodecError> {
+    let work = entries.checked_add(1).and_then(|count| bytes.checked_add(1).and_then(|bytes| count.checked_mul(bytes)))
+        .and_then(|work| work.checked_mul(4))
+        .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
+    ctx.charge_work(u64_from_index(work), operation)
+}
+
 impl CadIr {
     /// Appends staged neutral and native records, then admits the combined document.
     ///
@@ -1723,60 +1730,136 @@ impl CadIr {
     /// ```compile_fail
     /// use cadmpeg_ir::{CadIr, document::Model, native::Native};
     /// let mut ir = CadIr::empty();
-    /// ir.try_append(Model::default(), Native::default(), |candidate| {
+    /// let ctx = cadmpeg_test_support::service_decode_context();
+    /// ir.try_append(&ctx, Model::default(), Native::default(), |candidate| {
     ///     candidate.model.points.clear();
-    ///     Ok::<(), ()>(())
+    ///     Ok(Ok::<(), ()>(()))
     /// });
     /// ```
     pub fn try_append<T, E>(
         &mut self,
+        ctx: &DecodeContext<'_>,
         model: Model,
         native: Native,
-        admit: impl FnOnce(&Self) -> Result<T, E>,
-    ) -> Result<T, E> {
-        let native_lengths = self
-            .native
-            .0
-            .iter()
-            .map(|(format, namespace)| {
-                (
-                    format.clone(),
-                    namespace
-                        .arenas()
-                        .iter()
-                        .map(|(arena, records)| (arena.clone(), records.len()))
-                        .collect::<BTreeMap<_, _>>(),
-                )
-            })
-            .collect::<BTreeMap<_, _>>();
-        let parents = self.model.feature_regeneration_parents.clone();
+        admit: impl FnOnce(&Self) -> Result<Result<T, E>, CodecError>,
+    ) -> Result<Result<T, E>, CodecError> {
+        let native_lengths = if native.0.is_empty() { None } else {
+            Some(ctx.with_scoped_storage("append native checkpoint", || {
+                let mut lengths = BTreeMap::new();
+                for (format, namespace) in &self.native.0 {
+                    ctx.charge_work(1, "append native checkpoint scan")?;
+                    let mut arenas = BTreeMap::new();
+                    for (arena, records) in namespace.arenas() {
+                        admit_append_key(ctx, arenas.len(), arena.len(), "append native checkpoint keys")?;
+                        let key = ctx.copy_retained_text(arena, "append native checkpoint arena")?;
+                        ctx.insert_btree_map(&mut arenas, key, records.len(), "append native checkpoint arenas")?;
+                    }
+                    admit_append_key(ctx, lengths.len(), format.len(), "append native checkpoint keys")?;
+                    let key = ctx.copy_retained_text(format, "append native checkpoint namespace")?;
+                    ctx.insert_btree_map(&mut lengths, key, arenas, "append native checkpoint namespaces")?;
+                }
+                Ok::<_, CodecError>(lengths)
+            })?)
+        };
+        let mut speculative_parents = if model.feature_regeneration_parents.0.is_empty() { None } else {
+            Some(ctx.with_scoped_storage("append speculative parents", || {
+                let parents = self.model.feature_regeneration_parents.try_clone_for_decode(ctx, "append speculative parent copy")?;
+                parents.reserve_append(&model.feature_regeneration_parents, ctx)?;
+                Ok::<_, CodecError>(parents)
+            })?)
+        };
+        macro_rules! reserve_arenas {
+            ($($field:ident: $ty:ty, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?;)*) => {$(
+                if !model.$field.is_empty() {
+                    ctx.reserve_retained_vec(&mut self.model.$field, model.$field.len(), "append model arena slots")?;
+                    let moved = model.$field.len().checked_mul(std::mem::size_of::<$ty>())
+                        .ok_or_else(|| ctx.refuse_codec_limit("append model arena moves", u64::MAX - 1, u64::MAX))?;
+                    ctx.charge_work(u64_from_index(moved), "append model arena moves")?;
+                    ctx.charge_work(u64_from_index(model.$field.len()), "append model rollback admission")?;
+                }
+            )*};
+        }
+        arena_registry!(reserve_arenas);
+        let namespace_bound = self.native.0.len().checked_add(native.0.len())
+            .ok_or_else(|| ctx.refuse_codec_limit("append native namespace bound", u64::MAX - 1, u64::MAX))?;
+        for (format, incoming) in &native.0 {
+            admit_append_key(ctx, namespace_bound, format.len(), "append native namespace lookup")?;
+            if let Some(destination) = self.native.0.get_mut(format) {
+                let arena_bound = destination.arenas().len().checked_add(incoming.arenas().len())
+                    .ok_or_else(|| ctx.refuse_codec_limit("append native arena bound", u64::MAX - 1, u64::MAX))?;
+                for (arena, records) in incoming.arenas() {
+                    admit_append_key(ctx, arena_bound, arena.len(), "append native arena lookup")?;
+                    if let Some(existing) = destination.arenas_mut().get_mut(arena) {
+                        ctx.reserve_retained_vec(existing, records.len(), "append native record slots")?;
+                        let moved = records.len().checked_mul(std::mem::size_of::<crate::native::NativeRecord>())
+                            .ok_or_else(|| ctx.refuse_codec_limit("append native record moves", u64::MAX - 1, u64::MAX))?;
+                        ctx.charge_work(u64_from_index(moved), "append native record moves")?;
+                    } else {
+                        ctx.admit_retained_btree_record::<String, Vec<crate::native::NativeRecord>>(0, "append native arena nodes")?;
+                    }
+                }
+            } else {
+                ctx.admit_retained_btree_record::<String, crate::native::NativeNamespace>(0, "append native namespace nodes")?;
+            }
+        }
+        if let Some((lengths, _)) = &native_lengths {
+            // Admit the union walk before mutation so rollback can run after a refusal.
+            for (format, namespace) in self.native.0.iter().chain(native.0.iter()) {
+                ctx.charge_work(1, "append native rollback admission")?;
+                admit_append_key(ctx, lengths.len(), format.len(), "append native rollback namespace lookup")?;
+                if let Some(arenas) = lengths.get(format) {
+                    for (arena, records) in namespace.arenas() {
+                        ctx.charge_work(1, "append native rollback admission")?;
+                        admit_append_key(ctx, arenas.len(), arena.len(), "append native rollback arena lookup")?;
+                        ctx.charge_work(u64_from_index(records.len()), "append native rollback record admission")?;
+                    }
+                }
+            }
+        }
+        let original_parents = speculative_parents.as_mut().map(|(parents, _)| {
+            std::mem::replace(&mut self.model.feature_regeneration_parents, std::mem::take(parents))
+        });
         macro_rules! append_and_admit {
             ($($field:ident: $ty:ty, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?;)*) => {{
                 $(let $field = self.model.$field.len();)*
                 self.model.append(model);
                 for (format, mut namespace) in native.0 {
-                    let destination = self.native.namespace_mut(format).arenas_mut();
-                    for (arena, mut records) in std::mem::take(namespace.arenas_mut()) {
-                        destination.entry(arena).or_default().append(&mut records);
+                    match self.native.0.entry(format) {
+                        std::collections::btree_map::Entry::Vacant(entry) => { entry.insert(namespace); },
+                        std::collections::btree_map::Entry::Occupied(mut entry) => {
+                            let destination = entry.get_mut().arenas_mut();
+                            for (arena, mut records) in std::mem::take(namespace.arenas_mut()) {
+                                match destination.entry(arena) {
+                                    std::collections::btree_map::Entry::Vacant(entry) => { entry.insert(records); },
+                                    std::collections::btree_map::Entry::Occupied(mut entry) => { entry.get_mut().append(&mut records); },
+                                }
+                            }
+                        },
                     }
                 }
-                let result = admit(self);
-                if result.is_err() {
+                let result = match admit(self) {
+                    Ok(Ok(value)) => {
+                        match speculative_parents.map(|(_, storage)| storage.commit()).transpose() {
+                            Ok(_) => Ok(Ok(value)),
+                            Err(error) => Err(error),
+                        }
+                    },
+                    other => other,
+                };
+                if !result.as_ref().is_ok_and(|inner| inner.is_ok()) {
                     $(self.model.$field.truncate($field);)*
-                    self.model.feature_regeneration_parents = parents;
-                    self.native.0.retain(|format, namespace| {
-                        let Some(lengths) = native_lengths.get(format) else {
-                            return false;
-                        };
-                        namespace.arenas_mut().retain(|arena, records| {
-                            let Some(length) = lengths.get(arena) else {
-                                return false;
-                            };
-                            records.truncate(*length);
+                    if let Some(parents) = original_parents { self.model.feature_regeneration_parents = parents; }
+                    if let Some((lengths, _)) = &native_lengths {
+                        self.native.0.retain(|format, namespace| {
+                            let Some(arenas) = lengths.get(format) else { return false; };
+                            namespace.arenas_mut().retain(|arena, records| {
+                                let Some(length) = arenas.get(arena) else { return false; };
+                                records.truncate(*length);
+                                true
+                            });
                             true
                         });
-                        true
-                    });
+                    }
                 }
                 result
             }};
