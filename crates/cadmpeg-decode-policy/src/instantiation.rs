@@ -64,9 +64,9 @@ impl<'tcx> Visitor<'tcx> for Collector<'_, '_, 'tcx> {
                 _ => None,
             })
             .or_else(|| {
-                self.analysis.call(expression).and_then(|(definition, _)| {
-                    self.analysis.resolved_instance(expression, definition)
-                })
+                self.analysis.call(expression).map(|(definition, _)| definition)
+                    .or_else(|| self.analysis.typeck.type_dependent_def_id(expression.hir_id))
+                    .and_then(|definition| self.analysis.resolved_instance(expression, definition))
             });
         if let Some(instance) = instance {
             if self.analysis.checked_body(instance.def_id())
