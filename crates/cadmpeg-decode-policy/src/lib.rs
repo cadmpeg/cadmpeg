@@ -12,6 +12,7 @@ extern crate rustc_span;
 mod allocation;
 mod callee;
 mod extent;
+mod external;
 mod flow;
 mod types;
 mod work;
