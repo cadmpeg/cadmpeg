@@ -37,15 +37,16 @@ impl<'tcx> Analysis<'_, 'tcx> {
                         return;
                     }
                     if let Some(custom) = self.custom_trait(expression, definition) {
-                        if !self.checked_body(custom) {
+                        if !self.checked_body(custom) && !self.tcx.is_automatically_derived(self.tcx.parent(custom)) {
                             self.work_report(
                                 expression.span,
                                 Shape::Unknown,
                                 Some(false),
                                 "custom comparison work",
                             );
+                            return;
                         }
-                        return;
+                        if !self.tcx.is_automatically_derived(self.tcx.parent(custom)) { return; }
                     }
                 }
                 let bounded =
@@ -625,6 +626,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
                 })
         });
         saved.storage |= self.flow.storage;
+        saved.storage_extents.retain(|term| self.flow.storage_extents.contains(term));
         self.flow = saved;
     }
 
@@ -740,6 +742,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
                     .work
                     .retain(|credit| after_yes.work.contains(credit));
                 self.flow.storage |= after_yes.storage;
+                self.flow.storage_extents.retain(|term| after_yes.storage_extents.contains(term));
                 self.flow.mutated.extend(after_yes.mutated);
                 return;
             }
@@ -757,6 +760,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
                     self.visit_expr(arm.body);
                     merged.work.retain(|credit| self.flow.work.contains(credit));
                     merged.storage |= self.flow.storage;
+                    merged.storage_extents.retain(|term| self.flow.storage_extents.contains(term));
                     merged.mutated.extend(self.flow.mutated.iter().cloned());
                 }
                 self.flow = merged;

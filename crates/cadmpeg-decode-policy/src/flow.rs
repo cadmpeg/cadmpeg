@@ -19,6 +19,7 @@ pub(crate) struct Flow {
     pub(crate) work: Vec<Credit>,
     pub(crate) iterations: u64,
     pub(crate) storage: bool,
+    pub(crate) storage_extents: Vec<ExtentTerm>,
     pub(crate) mutated: std::collections::HashSet<String>,
 }
 
@@ -27,6 +28,7 @@ impl Default for Flow {
         Self {
             work: Vec::new(),
             storage: false,
+            storage_extents: Vec::new(),
             iterations: 1,
             mutated: std::collections::HashSet::new(),
         }
@@ -157,6 +159,13 @@ impl<'tcx> Analysis<'_, 'tcx> {
             return None;
         }
         seen.push(expression.hir_id);
+        if let Some((definition, _)) = self.call(expression) {
+            if types::standard(self.tcx, definition) && self.tcx.item_name(definition).as_str() == "size_of" {
+                let arguments = self.call_arguments(expression)?;
+                let element = arguments.types().next()?;
+                return Some(vec![ExtentTerm { factors: vec![format!("size:{element}")], coefficient: 1 }]);
+            }
+        }
         if let Some(count) = self.constant_count(expression, &mut Vec::new()) {
             return Some(vec![ExtentTerm {
                 factors: Vec::new(),
@@ -340,6 +349,11 @@ impl<'tcx> Analysis<'_, 'tcx> {
                 | "reserve_retained_vec_storage"
         ) {
             self.flow.storage = true;
+        }
+        if matches!(name.as_str(), "charge_retained" | "charge_retained_limit" | "reserve_scoped" | "reserve_scoped_limit") && self.trusted_context_callee(expression) {
+            if let Some(terms) = operands.get(1).and_then(|amount| self.extent_terms(amount, &mut Vec::new())) {
+                self.flow.storage_extents.extend(terms);
+            }
         }
         if !matches!(name.as_str(), "charge_work" | "charge_work_limit") {
             return;

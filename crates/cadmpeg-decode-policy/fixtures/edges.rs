@@ -9,7 +9,7 @@ impl DecodeContext {
         Ok(())
     }
 }
-#[derive(Clone, Copy, Debug)] // finding: uncharged_decode_work
+#[derive(Clone, Copy, Debug)]
 pub struct Borrowed<'a> {
     pub text: &'a str,
 }
@@ -150,7 +150,7 @@ pub fn custom_borrowed(ctx: &DecodeContext, value: &BorrowedClone<'_>) {
     let _copy = value.clone();
 }
 
-#[derive(PartialEq)] // finding: unproven_decode_charge
+#[derive(PartialEq)]
 pub struct Recursive {
     pub next: Option<Box<Recursive>>,
 }
@@ -170,7 +170,7 @@ pub fn recursive_comparison(
     small: Siblings,
 ) {
     let _ctx = ctx;
-    let _equal = left == right;
+    let _equal = left == right; // finding: unproven_decode_charge
     let _small = small == small;
 }
 

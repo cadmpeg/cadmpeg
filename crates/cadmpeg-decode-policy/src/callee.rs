@@ -5,7 +5,7 @@ use rustc_middle::ty::{self, Instance};
 use rustc_span::def_id::DefId;
 
 impl<'tcx> Analysis<'_, 'tcx> {
-    fn call_arguments(&self, expression: &'tcx Expr<'tcx>) -> Option<ty::GenericArgsRef<'tcx>> {
+    pub(crate) fn call_arguments(&self, expression: &'tcx Expr<'tcx>) -> Option<ty::GenericArgsRef<'tcx>> {
         let arguments = match expression.kind {
             ExprKind::Call(callee, _) => match self.expr_ty(callee).kind() {
                 ty::FnDef(_, arguments) => arguments.no_bound_vars()?,

@@ -58,6 +58,16 @@ pub(crate) fn summary(
             "HashMap" | "HashSet" | "BTreeMap" | "BTreeSet"
         )
     });
+    if tcx.is_automatically_derived(tcx.parent(definition)) {
+        let (allocation, work) = match name.as_str() {
+            "clone" => (Allocation::Clone, Work::Receiver),
+            "eq" | "ne" | "cmp" | "partial_cmp" => (Allocation::None, Work::Comparison),
+            "hash" | "fmt" => (Allocation::None, Work::Receiver),
+            "default" => (Allocation::Result, Work::Fixed),
+            _ => return None,
+        };
+        return Some(Summary { allocation, work, zero_operand: None, empty_operand: None });
+    }
     if !types::standard(tcx, definition) {
         let (allocation, work) = match (crate_name.as_str(), name.as_str()) {
             ("roxmltree", "parse" | "parse_with_options") => {

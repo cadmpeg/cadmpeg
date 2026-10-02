@@ -136,6 +136,7 @@ fn check_fixture(name: &str) {
                     | "imported"
                     | "dominance"
                     | "thirdparty"
+                    | "symbolic"
             ) {
                 true
             } else if name.starts_with("work") {
@@ -260,4 +261,9 @@ fn structural_extent_dominance() {
 #[test]
 fn third_party_operation_summaries() {
     check_fixture("thirdparty");
+}
+
+#[test]
+fn symbolic_generic_and_derived_costs() {
+    check_fixture("symbolic");
 }
