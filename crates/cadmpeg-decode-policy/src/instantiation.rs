@@ -12,6 +12,8 @@ pub(crate) struct Instantiation<'tcx> {
     pub(crate) caller: LocalDefId,
     pub(crate) span: Span,
     pub(crate) enumerated: bool,
+    pub(crate) fixed_operands: Vec<bool>,
+    pub(crate) fixed_parameters: HashSet<rustc_hir::HirId>,
 }
 
 pub(crate) fn collect<'tcx>(tcx: TyCtxt<'tcx>, owners: &[LocalDefId]) -> Vec<Instantiation<'tcx>> {
@@ -27,6 +29,7 @@ pub(crate) fn collect<'tcx>(tcx: TyCtxt<'tcx>, owners: &[LocalDefId]) -> Vec<Ins
                 typeck: tcx.typeck(*owner),
                 typing_owner: *owner,
                 arguments: None,
+                fixed_parameters: HashSet::new(),
                 flow: flow::Flow::default(),
                 findings: &mut findings,
             },
@@ -80,11 +83,16 @@ impl<'tcx> Visitor<'tcx> for Collector<'_, '_, 'tcx> {
                 && self.seen.insert(instance)
             {
                 let span = self.origin.unwrap_or(expression.span);
+                let fixed_operands: Vec<_> = self.analysis.call(expression).map_or_else(Vec::new, |(_, operands)| operands.into_iter().map(|operand| self.analysis.constant(operand, &mut Vec::new())).collect());
+                let mut fixed_parameters = instance.def_id().as_local().map_or_else(HashSet::new, |local| crate::fixed::bindings(self.analysis.tcx, local, &fixed_operands));
+                if matches!(self.analysis.tcx.def_kind(instance.def_id()), rustc_hir::def::DefKind::Closure) { fixed_parameters.extend(self.analysis.fixed_parameters.iter().copied()); }
                 self.result.push(Instantiation {
                     instance,
                     caller: self.caller,
                     span,
                     enumerated: self.seen.len() <= self.analysis.tcx.recursion_limit().0,
+                    fixed_operands,
+                    fixed_parameters: fixed_parameters.clone(),
                 });
                 if let Some(local) = instance.def_id().as_local() {
                     let tcx = self.analysis.tcx;
@@ -96,6 +104,7 @@ impl<'tcx> Visitor<'tcx> for Collector<'_, '_, 'tcx> {
                                 typeck: tcx.typeck(local),
                                 typing_owner: self.caller,
                                 arguments: Some(instance.args),
+                                fixed_parameters,
                                 flow: flow::Flow::default(),
                                 findings: self.analysis.findings,
                             },
@@ -112,6 +121,7 @@ impl<'tcx> Visitor<'tcx> for Collector<'_, '_, 'tcx> {
         }
         if !matches!(expression.kind, ExprKind::Closure(_)) {
             walk_expr(self, expression);
+            self.analysis.mutation(expression);
         }
     }
 }
@@ -197,10 +207,10 @@ pub(crate) fn check_imported<'tcx>(
     root: &Instantiation<'tcx>,
     findings: &mut Findings,
 ) {
-    let mut pending = vec![root.instance];
+    let mut pending = vec![(root.instance, root.fixed_operands.clone())];
     let mut seen = HashSet::new();
-    while let Some(instance) = pending.pop() {
-        if !seen.insert(instance) {
+    while let Some((instance, fixed_operands)) = pending.pop() {
+        if !seen.insert((instance, fixed_operands.clone())) {
             continue;
         }
         let mut reporter = Analysis {
@@ -208,6 +218,7 @@ pub(crate) fn check_imported<'tcx>(
             typeck: tcx.typeck(root.caller),
             typing_owner: root.caller,
             arguments: None,
+                fixed_parameters: HashSet::new(),
             flow: flow::Flow::default(),
             findings,
         };
@@ -299,7 +310,8 @@ pub(crate) fn check_imported<'tcx>(
                 continue;
             }
             if reporter.checked_body(resolved.def_id()) {
-                pending.push(resolved);
+                let fixed = args.iter().map(|operand| crate::fixed::mir_operand(tcx, body, &operand.node, &fixed_operands, &mut HashSet::new())).collect();
+                pending.push((resolved, fixed));
                 continue;
             }
             let receiver = args.first().map(|operand| {
@@ -319,6 +331,8 @@ pub(crate) fn check_imported<'tcx>(
                 );
                 continue;
             };
+            let fixed_receiver = args.first().is_some_and(|operand| crate::fixed::mir_operand(tcx, body, &operand.node, &fixed_operands, &mut HashSet::new()));
+            let fixed_extent = args.get(match summary.work { external::Work::Argument(index) => index, _ => 0 }).is_some_and(|operand| crate::fixed::mir_operand(tcx, body, &operand.node, &fixed_operands, &mut HashSet::new()));
             let Some(receiver) = receiver else {
                 continue;
             };
@@ -410,6 +424,7 @@ pub(crate) fn check_imported<'tcx>(
                             types::heap(tcx, receiver.peel_refs(), &mut Vec::new())
                         }
                     }
+                    external::Allocation::Conversion if !concrete && receiver.has_non_region_param() => types::Shape::Unknown,
                     external::Allocation::Conversion
                         if output == receiver
                             || matches!(
@@ -422,7 +437,7 @@ pub(crate) fn check_imported<'tcx>(
                     _ => types::heap(tcx, output, &mut Vec::new()),
                 }
             };
-            let allocation = if summary.allocation == external::Allocation::Growth {
+            let allocation = if fixed_receiver && matches!(summary.allocation, external::Allocation::Clone | external::Allocation::Conversion | external::Allocation::Result | external::Allocation::Input(0)) { types::Shape::Fixed } else if summary.allocation == external::Allocation::Growth {
                 // Backing slot bytes are proved in the generic body. Child
                 // cloning and key traits remain concrete work obligations.
                 types::Shape::Fixed
@@ -436,7 +451,7 @@ pub(crate) fn check_imported<'tcx>(
             };
             let raw_extent = args.get(index).map(|operand| operand.node.ty(body, tcx));
             let work_shape = |extent: rustc_middle::ty::Ty<'tcx>, allocation, concrete| {
-                if summary.work == external::Work::Fixed
+                if concrete && fixed_extent || summary.work == external::Work::Fixed
                     || summary.work == external::Work::Iterator
                         && vector_output
                         && (array_element.is_some() || array_iterator)

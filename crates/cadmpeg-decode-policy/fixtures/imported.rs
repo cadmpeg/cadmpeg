@@ -35,3 +35,14 @@ pub fn imported_charged(ctx: &cadmpeg_core::DecodeContext, small: &mut Vec<u8>, 
     cadmpeg_core::reserve(ctx, large, n)?;
     Ok(())
 }
+
+pub fn fixed_messages(input: &str) {
+    let _fixed = cadmpeg_core::text("fixed");
+    let fixed = "fixed".to_owned();
+    let _forward = cadmpeg_core::forward_text(fixed);
+    let _input = cadmpeg_core::text(input); // finding: uncharged_decode_allocation, uncharged_decode_work
+}
+
+pub fn imported_mutation(input: &str) {
+    let _text = cadmpeg_core::changed_text("fixed", input); // finding: uncharged_decode_allocation, uncharged_decode_work
+}

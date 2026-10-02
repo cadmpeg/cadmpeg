@@ -73,6 +73,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
             operands.first().map(|operand| self.expr_ty(operand)),
         );
         let allocation = summary.map(|summary| summary.allocation);
+        if self.constant(expression, &mut Vec::new()) { return; }
         if allocation == Some(external::Allocation::None) {
             return;
         }

@@ -65,3 +65,13 @@ pub fn reserve<T>(ctx: &DecodeContext, values: &mut Vec<T>, n: usize) -> Result<
     values.try_reserve_exact(n).map_err(|_| ())?;
     Ok(())
 }
+
+pub fn text<T: Into<String>>(message: T) -> String { message.into() }
+pub fn forward_text<T: Into<String>>(message: T) -> String { text(message) }
+
+fn overwrite<T>(value: &mut T, input: T) { *value = input; }
+pub fn changed_text<T: Into<String>>(message: T, input: T) -> String {
+    let mut message = message;
+    overwrite(&mut message, input);
+    text(message)
+}

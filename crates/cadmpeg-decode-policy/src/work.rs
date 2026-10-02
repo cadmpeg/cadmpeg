@@ -109,6 +109,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
             );
             return;
         }
+        if self.constant(expression, &mut Vec::new()) { return; }
         if name == "clone" {
             match self.clone_shape(self.expr_ty(expression)) {
                 Shape::Fixed => return,

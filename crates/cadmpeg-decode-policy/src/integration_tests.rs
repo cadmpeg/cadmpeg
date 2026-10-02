@@ -148,6 +148,7 @@ fn check_fixture(name: &str) {
                     | "symbolic"
                     | "derived"
                     | "serde"
+                    | "fixed_text"
             ) {
                 true
             } else if name.starts_with("work") {
@@ -284,3 +285,6 @@ fn derived_call_costs() { check_fixture("derived"); }
 
 #[test]
 fn serde_derived_body_exclusion() { check_fixture("serde"); }
+
+#[test]
+fn fixed_text_value_proof() { check_fixture("fixed_text"); }
