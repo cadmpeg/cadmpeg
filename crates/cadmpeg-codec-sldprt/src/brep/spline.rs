@@ -477,17 +477,30 @@ fn expanded_knots(
     multiplicities: &[u16],
     expected: usize,
 ) -> Result<Option<Vec<f64>>, cadmpeg_core::CodecError> {
+    let scan_count = if values.len() < multiplicities.len() {
+        values.len()
+    } else {
+        multiplicities.len()
+    };
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(scan_count),
+        "scan Parasolid knot multiplicities",
+    )?;
     let mut out = Vec::new();
     for (value, &multiplicity) in values.iter().zip(multiplicities) {
         if multiplicity == 0 {
             continue;
         }
-        let Some(next_len) = out.len().checked_add(usize::from(multiplicity)) else {
-            return Ok(None);
-        };
+        let next_len = out
+            .len()
+            .checked_add(usize::from(multiplicity))
+            .ok_or_else(|| {
+                ctx.refuse_codec_limit("expand Parasolid knots", u64::MAX - 1, u64::MAX)
+            })?;
         if next_len > expected {
             return Ok(None);
         }
+        ctx.charge_work(u64::from(multiplicity), "emit Parasolid expanded knots")?;
         ctx.reserve_vec(
             &mut out,
             usize::from(multiplicity),
@@ -2014,3 +2027,34 @@ mod tests {
 
 #[cfg(test)]
 mod patch_tests;
+
+#[cfg(test)]
+mod knot_work_tests {
+    #[test]
+    fn parasolid_knot_expansion_refuses_scan_and_emission_work() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        for (cap, operation) in [
+            (0, "scan Parasolid knot multiplicities"),
+            (2, "emit Parasolid expanded knots"),
+        ] {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = cap;
+            let (ctx, _) =
+                DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+            let result = super::expanded_knots(&ctx, &[0.0, 1.0], &[2, 2], 4);
+            assert!(
+                matches!(result, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::WorkUnits && limit.operation == operation)
+            );
+        }
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 6;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+        assert_eq!(
+            super::expanded_knots(&ctx, &[0.0, 1.0], &[2, 2], 4).expect("scan and emission"),
+            Some(vec![0.0, 0.0, 1.0, 1.0])
+        );
+    }
+}

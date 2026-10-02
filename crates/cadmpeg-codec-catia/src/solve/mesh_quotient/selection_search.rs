@@ -7,13 +7,14 @@ use super::{
     canonical_mesh_boundary_directions, changed_quotient_edges, common_supported_corner_equations,
     copy_mesh_assignment, copy_mesh_boundary_directions, copy_mesh_edge_rows,
     distinct_domain_matching_with_budget, initial_mesh_quotient,
-    mesh_candidates_equivalent_with_context, orient_face_cycles, reconstruct_mesh_selection,
-    same_unordered_pair, Arc, BoundaryDraft, CodecError, CoedgeUse, DecodeContext, EdgeRow,
-    FaceTopologyDraft, HashMap, HashSet, MeshBoundaryEdgeCandidate, MeshCandidateFailure,
-    MeshCandidateGauge, MeshEndpointResolve, MeshFaceBoundaryAssignment, MeshFaceSelection,
-    MeshFixedDirectionOption, MeshQuotient, MeshQuotientSignature, MeshSelectionSearch,
-    MeshSelectionStateSignature, MeshSolve, SearchOutcome, StandardTopologyDraft, VecDeque,
-    WorkBudget, MAX_FACE_EQUATION_CACHE_ENTRIES, MAX_SELECTION_STATE_MEMO_ENTRIES,
+    mesh_candidates_equivalent_with_context, mesh_candidates_identical_with_context,
+    orient_face_cycles, reconstruct_mesh_selection, same_unordered_pair, Arc, BoundaryDraft,
+    CodecError, CoedgeUse, DecodeContext, EdgeRow, FaceTopologyDraft, HashMap, HashSet,
+    MeshBoundaryEdgeCandidate, MeshCandidateFailure, MeshCandidateGauge, MeshEndpointResolve,
+    MeshFaceBoundaryAssignment, MeshFaceSelection, MeshFixedDirectionOption, MeshQuotient,
+    MeshQuotientSignature, MeshSelectionSearch, MeshSelectionStateSignature, MeshSolve,
+    SearchOutcome, StandardTopologyDraft, VecDeque, WorkBudget, MAX_FACE_EQUATION_CACHE_ENTRIES,
+    MAX_SELECTION_STATE_MEMO_ENTRIES,
 };
 
 #[cfg(test)]
@@ -983,7 +984,7 @@ impl<'storage> MeshSelectionSearch<'storage, '_> {
                     let candidate = (topology, assignment);
                     let gauge = self.candidate_gauge;
                     let equivalent = if let SearchOutcome::Solved(previous) = &self.outcome {
-                        previous == &candidate
+                        mesh_candidates_identical_with_context(self.ctx, previous, &candidate)?
                             || mesh_candidates_equivalent_with_context(
                                 self.ctx, previous, &candidate, gauge,
                             )?
@@ -1269,10 +1270,11 @@ impl<'storage> MeshSelectionSearch<'storage, '_> {
                                 let gauge = self.candidate_gauge;
                                 let equivalent =
                                     if let SearchOutcome::Solved(previous) = &self.outcome {
-                                        previous == &candidate
-                                            || mesh_candidates_equivalent_with_context(
-                                                self.ctx, previous, &candidate, gauge,
-                                            )?
+                                        mesh_candidates_identical_with_context(
+                                            self.ctx, previous, &candidate,
+                                        )? || mesh_candidates_equivalent_with_context(
+                                            self.ctx, previous, &candidate, gauge,
+                                        )?
                                     } else {
                                         false
                                     };
@@ -1389,7 +1391,7 @@ impl<'storage> MeshSelectionSearch<'storage, '_> {
             if let Some(candidate) = candidate {
                 let gauge = self.candidate_gauge;
                 let equivalent = if let SearchOutcome::Solved(previous) = &self.outcome {
-                    previous == &candidate
+                    mesh_candidates_identical_with_context(self.ctx, previous, &candidate)?
                         || mesh_candidates_equivalent_with_context(
                             self.ctx, previous, &candidate, gauge,
                         )?

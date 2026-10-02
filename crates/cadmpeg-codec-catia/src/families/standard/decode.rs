@@ -4074,6 +4074,12 @@ pub(super) fn standard_object_evidence_from_streams(
     let mut repeated_population_ids = HashSet::new();
     for population in &populations {
         let mut objects = HashMap::<u32, Option<Vec<u8>>>::new();
+        let scan_work = u64_from_index(population.len())
+            .checked_mul(4)
+            .ok_or_else(|| {
+                ctx.refuse_codec_limit("catia_b5_object_frame_scan", u64::MAX - 1, u64::MAX)
+            })?;
+        ctx.charge_work(scan_work, "catia_b5_object_frame_scan")?;
         for frame in crate::families::b5::graph::object_stream_frames(population) {
             let bytes = ctx.copy_retained_slice(
                 &population[frame.start..frame.end],
