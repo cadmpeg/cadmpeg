@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Focused validation checks for carriers parameterization.
 
-use super::identities::BorrowedIdentities;
+use crate::index::identities::BorrowedIdentities;
 use cadmpeg_core::decode::{u64_from_index, DecodeContext};
 use cadmpeg_core::CodecError;
 
@@ -901,7 +901,7 @@ pub(super) fn check_carrier_reachability(ctx: &cadmpeg_core::decode::DecodeConte
 }
 
 pub(super) fn check_parameter_domains(ctx: &cadmpeg_core::decode::DecodeContext<'_>, ir: &CadIr, findings: &mut Vec<Finding>) -> Result<(), cadmpeg_core::CodecError> {
-    let curves = super::identities::BorrowedIdentities::build(ctx, |add| {
+    let curves = crate::index::identities::BorrowedIdentities::build(ctx, |add| {
         for curve in &ir.model.curves { add(curve.id.as_str(), &curve.geometry)?; }
         Ok(())
     })?;
@@ -974,7 +974,7 @@ pub(super) fn check_parameter_domains(ctx: &cadmpeg_core::decode::DecodeContext<
             super::record_finding(ctx, findings, Check::ParameterDomain, Severity::Error, Some(edge.id.as_str()), format_args!("edge parameter range is outside its canonical carrier domain"))?;
         }
     }
-    let pcurves = super::identities::BorrowedIdentities::build(ctx, |add| {
+    let pcurves = crate::index::identities::BorrowedIdentities::build(ctx, |add| {
         for pcurve in &ir.model.pcurves { add(pcurve.id.as_str(), &pcurve.geometry)?; }
         Ok(())
     })?;

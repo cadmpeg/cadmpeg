@@ -6,7 +6,7 @@ use cadmpeg_core::CodecError;
 use crate::document::CadIr;
 use crate::geometry::{CompositeCurveSegment, CurveGeometry, SolvedCurveGeometry};
 use crate::report::{check::{Check, Finding}, Severity};
-use crate::validate::identities::BorrowedIdentities;
+use crate::index::identities::BorrowedIdentities;
 
 struct Frame<'ir, 'ctx> {
     node: &'ir str,

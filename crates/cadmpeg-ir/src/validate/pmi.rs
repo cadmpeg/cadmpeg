@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Product-manufacturing information reference validation.
 
-use super::{identities::BorrowedIdentities, record_finding};
+use crate::index::identities::BorrowedIdentities;
+use super::record_finding;
 use crate::document::CadIr;
 use crate::pmi::{PmiDefinition, PmiTarget};
 use crate::report::check::{Check, Finding};

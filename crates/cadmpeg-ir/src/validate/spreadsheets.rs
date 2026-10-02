@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Spreadsheet reference and layout validation.
 
-use super::{identities::BorrowedIdentities, record_finding, CadIr, Finding};
+use crate::index::identities::BorrowedIdentities;
+use super::{record_finding, CadIr, Finding};
 use crate::report::check::Check;
 
 pub(super) fn check_spreadsheets(ctx: &cadmpeg_core::decode::DecodeContext<'_>, ir: &CadIr, findings: &mut Vec<Finding>) -> Result<(), cadmpeg_core::CodecError> {

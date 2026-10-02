@@ -6,7 +6,8 @@ use cadmpeg_core::CodecError;
 
 use crate::document::CadIr;
 use crate::report::{check::{Check, Finding}, Severity};
-use crate::validate::{identities::BorrowedIdentities, record_finding};
+use crate::index::identities::BorrowedIdentities;
+use crate::validate::record_finding;
 
 #[derive(Clone, Copy)]
 enum RadialStatus {

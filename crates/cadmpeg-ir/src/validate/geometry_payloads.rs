@@ -12,15 +12,15 @@ pub(super) fn check_tessellations(
     ir: &CadIr,
     findings: &mut Vec<Finding>,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    let bodies = super::identities::BorrowedIdentities::build(ctx, |add| {
+    let bodies = crate::index::identities::BorrowedIdentities::build(ctx, |add| {
         for body in &ir.model.bodies { add(body.id.as_str(), ())?; }
         Ok(())
     })?;
-    let faces = super::identities::BorrowedIdentities::build(ctx, |add| {
+    let faces = crate::index::identities::BorrowedIdentities::build(ctx, |add| {
         for face in &ir.model.faces { add(face.id.as_str(), ())?; }
         Ok(())
     })?;
-    let assets = super::identities::BorrowedIdentities::build(ctx, |add| {
+    let assets = crate::index::identities::BorrowedIdentities::build(ctx, |add| {
         for asset in &ir.model.assets { add(asset.id.as_str(), ())?; }
         Ok(())
     })?;

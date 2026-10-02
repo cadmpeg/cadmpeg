@@ -128,7 +128,7 @@ fn sketch_indexes_release_all_temporary_storage_without_retention() {
 fn sketch_index_helpers_keep_last_duplicate_values_and_original_lookup_refusals() {
     use crate::features::{ParameterId, ParameterValue};
     use crate::sketches::{SketchGeometry, SketchGeometryDefinition};
-    use super::super::super::identities::BorrowedIdentities;
+    use crate::index::identities::BorrowedIdentities;
     let fixture = cadmpeg_test_support::service_decode_context();
     let id: crate::sketches::SketchEntityId = "test:model:entity#same".try_into().unwrap();
     let point = |u, v| SketchGeometry::try_from(SketchGeometryDefinition::Point { position: crate::math::Point2::new(u, v) }).unwrap();

@@ -4,14 +4,14 @@
 use cadmpeg_core::decode::{u64_from_index, DecodeContext, ScopedReservation};
 use cadmpeg_core::CodecError;
 
-pub(super) struct BorrowedIdentities<'ctx, 'ir, T = ()> {
+pub(crate) struct BorrowedIdentities<'ctx, 'ir, T = ()> {
     values: Vec<(u64, &'ir str, T)>,
     storage: ScopedReservation<'ctx>,
     ctx: &'ctx DecodeContext<'ctx>,
 }
 
 impl<'ctx, 'ir, T> BorrowedIdentities<'ctx, 'ir, T> {
-    pub(super) fn build(
+    pub(crate) fn build(
         ctx: &'ctx DecodeContext<'_>,
         visit: impl FnOnce(&mut dyn FnMut(&'ir str, T) -> Result<(), CodecError>) -> Result<(), CodecError>,
     ) -> Result<Self, CodecError> {
@@ -27,24 +27,24 @@ impl<'ctx, 'ir, T> BorrowedIdentities<'ctx, 'ir, T> {
         Ok(Self { values, storage, ctx })
     }
 
-    pub(super) fn contains(&self, ctx: &DecodeContext<'_>, id: &str) -> Result<bool, CodecError> {
+    pub(crate) fn contains(&self, ctx: &DecodeContext<'_>, id: &str) -> Result<bool, CodecError> {
         Ok(self.get(ctx, id)?.is_some())
     }
 
     /// Return the last inserted value with the complete identity.
-    pub(super) fn get(&self, ctx: &DecodeContext<'_>, id: &str) -> Result<Option<&T>, CodecError> {
+    pub(crate) fn get(&self, ctx: &DecodeContext<'_>, id: &str) -> Result<Option<&T>, CodecError> {
         let (_, _, found, _) = self.position(ctx, id)?;
         Ok(found.map(|position| &self.values[position].2))
     }
 
     /// Return a value only when the complete identity occurs once.
-    pub(super) fn get_unique(&self, ctx: &DecodeContext<'_>, id: &str) -> Result<Option<&T>, CodecError> {
+    pub(crate) fn get_unique(&self, ctx: &DecodeContext<'_>, id: &str) -> Result<Option<&T>, CodecError> {
         let (_, _, found, count) = self.position(ctx, id)?;
         Ok(if count == 1 { found.map(|position| &self.values[position].2) } else { None })
     }
 
     /// Insert one absent identity, using the context that owns the storage.
-    pub(super) fn insert_unique(&mut self, id: &'ir str, value: T) -> Result<bool, CodecError> {
+    pub(crate) fn insert_unique(&mut self, id: &'ir str, value: T) -> Result<bool, CodecError> {
         let (hash, low, found, _) = self.position(self.ctx, id)?;
         if found.is_some() { return Ok(false); }
         self.insert_at(hash, low, id, value)?;
@@ -52,7 +52,7 @@ impl<'ctx, 'ir, T> BorrowedIdentities<'ctx, 'ir, T> {
     }
 
     /// Replace the last matching value or admit a new identity slot.
-    pub(super) fn insert(&mut self, id: &'ir str, value: T) -> Result<Option<T>, CodecError> {
+    pub(crate) fn insert(&mut self, id: &'ir str, value: T) -> Result<Option<T>, CodecError> {
         let (hash, low, found, _) = self.position(self.ctx, id)?;
         if let Some(found) = found {
             return Ok(Some(std::mem::replace(&mut self.values[found].2, value)));
@@ -62,7 +62,7 @@ impl<'ctx, 'ir, T> BorrowedIdentities<'ctx, 'ir, T> {
     }
 
     /// Remove the last matching slot after admitting element movement.
-    pub(super) fn remove(&mut self, id: &str) -> Result<Option<T>, CodecError> {
+    pub(crate) fn remove(&mut self, id: &str) -> Result<Option<T>, CodecError> {
         let (_, _, found, _) = self.position(self.ctx, id)?;
         let Some(found) = found else { return Ok(None); };
         self.ctx.charge_work(u64_from_index(self.values.len() - found - 1), "remove validation identity slot")?;
@@ -76,20 +76,20 @@ impl<'ctx, 'ir, T> BorrowedIdentities<'ctx, 'ir, T> {
         Ok(())
     }
 
-    pub(super) fn get_mut(&mut self, ctx: &DecodeContext<'_>, id: &str) -> Result<Option<&mut T>, CodecError> {
+    pub(crate) fn get_mut(&mut self, ctx: &DecodeContext<'_>, id: &str) -> Result<Option<&mut T>, CodecError> {
         let (_, _, found, _) = self.position(ctx, id)?;
         Ok(found.map(|position| &mut self.values[position].2))
     }
 
-    pub(super) fn match_count(&self, ctx: &DecodeContext<'_>, id: &str) -> Result<usize, CodecError> {
+    pub(crate) fn match_count(&self, ctx: &DecodeContext<'_>, id: &str) -> Result<usize, CodecError> {
         Ok(self.position(ctx, id)?.3)
     }
 
-    pub(super) fn len(&self) -> usize { self.values.len() }
+    pub(crate) fn len(&self) -> usize { self.values.len() }
 
-    pub(super) fn values(&self) -> impl Iterator<Item = &T> { self.values.iter().map(|(_, _, value)| value) }
+    pub(crate) fn values(&self) -> impl Iterator<Item = &T> { self.values.iter().map(|(_, _, value)| value) }
 
-    pub(super) fn identities(&self) -> impl Iterator<Item = &'ir str> + '_ {
+    pub(crate) fn identities(&self) -> impl Iterator<Item = &'ir str> + '_ {
         self.values.iter().map(|(_, identity, _)| *identity)
     }
 
@@ -117,7 +117,7 @@ impl<'ctx, 'ir, T> BorrowedIdentities<'ctx, 'ir, T> {
 }
 
 impl<'ctx, 'ir> BorrowedIdentities<'ctx, 'ir> {
-    pub(super) fn extend_unique(&mut self, identities: impl IntoIterator<Item = &'ir str>) -> Result<(), CodecError> {
+    pub(crate) fn extend_unique(&mut self, identities: impl IntoIterator<Item = &'ir str>) -> Result<(), CodecError> {
         for identity in identities {
             self.ctx.charge_work(1, "extend validation identity scan")?;
             self.insert_unique(identity, ())?;

@@ -12,7 +12,7 @@ use crate::sketches::{
     SpatialSketchConstraintDefinitionInput as SpatialConstraint, SpatialSketchGeometry,
     SpatialSketchGeometryDefinition,
 };
-use super::identities::BorrowedIdentities;
+use crate::index::identities::BorrowedIdentities;
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 

@@ -3,7 +3,7 @@
 
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
-use super::identities::BorrowedIdentities;
+use crate::index::identities::BorrowedIdentities;
 use super::orders::Orders;
 
 use super::record_finding;
