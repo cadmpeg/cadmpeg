@@ -1124,3 +1124,76 @@ fn context_free_pole_reconstruction_does_not_enter_a_decode_constructor() {
     assert_eq!(serde_json::from_value::<NurbsCurve>(serde_json::to_value(&curve).unwrap()).unwrap(), curve);
     assert_eq!(serde_json::from_value::<NurbsSurface>(serde_json::to_value(&surface).unwrap()).unwrap(), surface);
 }
+
+#[test]
+fn weighted_pole_pairing_admits_each_slot_and_visit_before_weight() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    use std::cell::Cell;
+
+    for (dimension, cap, completed) in [
+        (ResourceDimension::RetainedBytes, 0, 0),
+        (ResourceDimension::CollectionItems, 0, 0),
+        (ResourceDimension::MaterializedBytes, 0, 0),
+        (ResourceDimension::WorkUnits, 0, 0),
+        (ResourceDimension::WorkUnits, 1, 1),
+    ] {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        match dimension {
+            ResourceDimension::RetainedBytes => policy.limits.max_retained_bytes = cap,
+            ResourceDimension::CollectionItems => policy.limits.max_collection_items = cap,
+            ResourceDimension::MaterializedBytes => policy.limits.max_materialized_bytes = cap,
+            ResourceDimension::WorkUnits => policy.limits.max_work_units = cap,
+            _ => panic!("fixture dimension"),
+        }
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+        let mut storage = ctx.reserve_scoped(0, "test pairing scope").expect("scope");
+        let visits = Cell::new(0);
+        let run = || super::weighted_poles(
+            vec![3_u32, 7], vec![1.0, 2.0],
+            |output| ctx.reserve_retained_vec(output, 1, "test weighted pairing"),
+            || ctx.charge_work(1, "test weighted pairing"),
+            |_, value| {
+                visits.set(visits.get() + 1);
+                Ok::<_, CodecError>(crate::scalar::NonZeroReal::new(value).expect("weight"))
+            },
+        );
+        let result = if dimension == ResourceDimension::MaterializedBytes {
+            storage.with_storage(run)
+        } else {
+            run()
+        };
+        let Err(CodecError::ResourceLimit(limit)) = result else {
+            panic!("pair admission must refuse before conversion");
+        };
+        assert_eq!(limit.dimension, dimension);
+        assert_eq!(limit.operation, "test weighted pairing");
+        assert_eq!(visits.get(), completed);
+        drop(storage);
+        assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit));
+    }
+}
+
+#[test]
+fn standard_weighted_pole_pairing_preserves_order_and_first_refusal() {
+    use super::{NurbsError, NurbsPoles3, WeightedPole3};
+    use crate::scalar::{FiniteReal, NonZeroReal};
+
+    let points = vec![3_u32, 7, 11];
+    let weights = vec![1.0, -2.0, 3.0];
+    let expected = NurbsPoles3::Rational {
+        points: vec![
+            WeightedPole3 { point: 3, weight: NonZeroReal::new(1.0).expect("weight") },
+            WeightedPole3 { point: 7, weight: NonZeroReal::new(-2.0).expect("weight") },
+            WeightedPole3 { point: 11, weight: NonZeroReal::new(3.0).expect("weight") },
+        ],
+    };
+    assert_eq!(NurbsPoles3::from_lanes(points.clone(), Some(weights.clone())).expect("raw"), expected);
+    assert_eq!(NurbsPoles3::from_finite_lanes(points.clone(), Some(weights.into_iter()
+        .map(|weight| FiniteReal::new(weight).expect("finite weight")).collect())).expect("finite"), expected);
+    assert_eq!(NurbsPoles3::from_lanes(points, Some(vec![1.0, 0.0, f64::NAN])),
+        Err(NurbsError::UnusableWeight { field: "poles".to_owned(), index: 1, weight: 0.0 }));
+    let wire = serde_json::to_value(&expected).expect("wire");
+    assert_eq!(serde_json::from_value::<NurbsPoles3<u32>>(wire).expect("standard reconstruction"), expected);
+}
