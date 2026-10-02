@@ -134,7 +134,7 @@ mod tests {
     use crate::math::Point2;
 
     fn curve(v: f64, weights: Option<Vec<f64>>) -> PcurveNurbs {
-        PcurveNurbs::from_lanes(1, vec![0.0, 0.0, 0.5, 1.0, 1.0], vec![Point2::new(0.0, v), Point2::new(1.0, v), Point2::new(2.0, v)], weights, false).unwrap()
+        PcurveNurbs::from_lanes(&cadmpeg_test_support::service_decode_context(), 1, vec![0.0, 0.0, 0.5, 1.0, 1.0], vec![Point2::new(0.0, v), Point2::new(1.0, v), Point2::new(2.0, v)], weights, false).expect("fixture pcurve construction admission").unwrap()
     }
 
     #[test]
@@ -187,7 +187,7 @@ mod tests {
         let ctx = cadmpeg_test_support::service_decode_context();
         let negative_weight = curve(0.0, Some(vec![1.0, -1.0, 1.0]));
         assert_eq!(super::clamped_nurbs_pcurve_endpoint_frames(&ctx, &negative_weight).unwrap(), None);
-        let degenerate = PcurveNurbs::from_lanes(1, vec![0.0, 0.0, 1.0, 1.0], vec![Point2::new(1.0, 2.0); 2], None, false).unwrap();
+        let degenerate = PcurveNurbs::from_lanes(&cadmpeg_test_support::service_decode_context(), 1, vec![0.0, 0.0, 1.0, 1.0], vec![Point2::new(1.0, 2.0); 2], None, false).expect("fixture pcurve construction admission").unwrap();
         assert_eq!(super::clamped_nurbs_pcurve_endpoint_frames(&ctx, &degenerate).unwrap(), None);
         let offset = super::clamped_nurbs_pcurve_endpoint_frames(&ctx, &curve(0.0, None)).unwrap().unwrap();
         assert_eq!(offset, [(Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)), (Point2::new(2.0, 0.0), Point2::new(1.0, 0.0))]);

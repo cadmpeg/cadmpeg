@@ -129,7 +129,7 @@ fn admitted_pcurve_point_refuses_weights_poles_and_derivative_bases() {
     use crate::geometry::pcurve::{PcurveGeometry, PcurveNurbs};
     use crate::math::Point2;
     let pcurve = PcurveGeometry::Nurbs {
-        nurbs: PcurveNurbs::from_lanes(
+        nurbs: PcurveNurbs::from_lanes(&cadmpeg_test_support::service_decode_context(), 
             2,
             vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
             vec![
@@ -139,7 +139,7 @@ fn admitted_pcurve_point_refuses_weights_poles_and_derivative_bases() {
             ],
             Some(vec![1.0, 1.0, 1.0]),
             false,
-        )
+        ).expect("fixture pcurve construction admission")
         .expect("finite rational line pcurve"),
     };
     for (cap, operation) in [
@@ -372,7 +372,7 @@ fn admitted_polar_pcurve_refuses_weight_copy() {
     use crate::geometry::pcurve::{PcurveGeometry, PolarNurbsPole, PolarPcurveNurbs};
     use crate::math::Point2;
     let geometry = PcurveGeometry::PolarNurbs {
-        nurbs: PolarPcurveNurbs::from_lanes(
+        nurbs: PolarPcurveNurbs::from_lanes(&cadmpeg_test_support::service_decode_context(), 
             2,
             vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
             vec![
@@ -391,7 +391,7 @@ fn admitted_polar_pcurve_refuses_weight_copy() {
             ],
             Some(vec![1.0; 3]),
             false,
-        )
+        ).expect("fixture pcurve construction admission")
         .expect("polar pcurve"),
     };
     let mut policy = DecodePolicy::service();

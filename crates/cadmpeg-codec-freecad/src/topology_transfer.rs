@@ -2341,12 +2341,12 @@ pub(crate) fn pcurve_geometry(
             let mut knots = ctx.collection_vec(nurbs.knots.len(), "FreeCAD pcurve knots")?;
             knots.extend(nurbs.knots.iter().map(|knot| knot.get()));
             Some(PcurveGeometry::Nurbs {
-                nurbs: PcurveNurbs::from_admitted_rows(
+                nurbs: PcurveNurbs::new(ctx, 
                     nurbs.degree,
                     cadmpeg_ir::geometry::nurbs::KnotVector::new(ctx, knots)??,
                     poles,
                     nurbs.periodic,
-                )?,
+                )??,
             })
         }
         TextCurve2d::Trimmed {

@@ -127,7 +127,7 @@ fn numerical_audit_pcurve_ranges_keep_active_domain_and_nonzero_intervals() {
     let points = vec![Point2::new(0., 0.), Point2::new(1., 0.)];
     for d in [1., 1e-16] {
         let c =
-            PcurveNurbs::from_lanes(1, vec![0., 0., d, d], points.clone(), None, false).unwrap();
+            PcurveNurbs::from_lanes(&cadmpeg_test_support::service_decode_context(), 1, vec![0., 0., d, d], points.clone(), None, false).expect("fixture pcurve construction admission").unwrap();
         let edge = Record {
             index: 1,
             name: "edge".into(),
@@ -152,7 +152,7 @@ fn numerical_audit_pcurve_ranges_keep_active_domain_and_nonzero_intervals() {
             Some(vec![[0., d]])
         );
     }
-    let c = PcurveNurbs::from_lanes(1, vec![-1., 0., 1., 2.], points, None, false).unwrap();
+    let c = PcurveNurbs::from_lanes(&cadmpeg_test_support::service_decode_context(), 1, vec![-1., 0., 1., 2.], points, None, false).expect("fixture pcurve construction admission").unwrap();
     assert_eq!(
         super::super::pcurve_ranges_on_domain(&c, None),
         Some(vec![[0., 1.]])

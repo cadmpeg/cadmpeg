@@ -659,13 +659,13 @@ fn rational_generator_does_not_get_an_affine_boundary_certificate() {
             source_object: None,
         });
         let rational = PcurveGeometry::Nurbs {
-            nurbs: cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
+            nurbs: cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(&cadmpeg_test_support::service_decode_context(), 
                 1,
                 vec![0.0, 0.0, 1.0, 1.0],
                 vec![Point2::new(0.0, 0.0), Point2::new(0.0, 1.0)],
                 Some(vec![1.0, 2.0]),
                 false,
-            )
+            ).expect("fixture pcurve construction admission")
             .expect("rational generator"),
         };
         let linear = PcurveGeometry::Line(
@@ -1713,13 +1713,13 @@ fn edge_incidence_uses_only_declared_tolerances_at_large_scale() {
             None,
         ));
         let pcurve = PcurveGeometry::Nurbs {
-            nurbs: cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
+            nurbs: cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(&cadmpeg_test_support::service_decode_context(), 
                 1,
                 vec![0.0, 0.0, 1.0, 1.0],
                 vec![Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)],
                 None,
                 false,
-            )
+            ).expect("fixture pcurve construction admission")
             .unwrap(),
         };
 

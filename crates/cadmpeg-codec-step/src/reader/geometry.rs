@@ -12,7 +12,7 @@ use cadmpeg_ir::eval::{nurbs_curve_parameter_domain, nurbs_curve_parameter_near_
 use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::geometry::{
     nurbs::{KnotVector, NurbsCurve, NurbsSurface, NurbsSurfaceAxis},
-    pcurve::{Pcurve, PcurveGeometry, PcurveNurbs, PcurveNurbsPoles},
+    pcurve::{Pcurve, PcurveGeometry, PcurveNurbs},
     sampled::{PolylineCurve, PolylineSamples},
     CompositeCurveSegment, CompositeCurveTransition, Curve, CurveGeometry, DirectedParameterRange,
     ProceduralCurve, ProceduralCurveDefinition, ProceduralGeometryError, ProceduralSurface,
@@ -5387,14 +5387,7 @@ fn nurbs_pcurve(
         )?;
     }
     let pcurve =
-        PcurveNurbsPoles::from_lanes(control_points, definition.weights).and_then(|poles| {
-            PcurveNurbs::new(
-                definition.degree,
-                definition.knots,
-                poles,
-                definition.periodic,
-            )
-        });
+        PcurveNurbs::from_lanes(ctx, definition.degree, definition.knots, control_points, definition.weights, definition.periodic)?;
     match pcurve {
         Ok(nurbs) => Ok(Some(PcurveGeometry::Nurbs { nurbs })),
         Err(error) => {
@@ -6144,7 +6137,7 @@ fn polyline_pcurve(
         ctx.push_vec(&mut knots, knot, "step_polyline_pcurve_knots")?;
     }
     ctx.push_vec(&mut knots, last, "step_polyline_pcurve_knots")?;
-    match PcurveNurbs::from_lanes(1, knots, control_points, None, false) {
+    match PcurveNurbs::from_lanes(ctx, 1, knots, control_points, None, false)? {
         Ok(nurbs) => Ok(Some(PcurveGeometry::Nurbs { nurbs })),
         Err(error) => {
             ctx.push_vec(

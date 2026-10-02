@@ -191,14 +191,14 @@ fn nurbs_surface_copy_refuses_inner_row_limit() {
 #[test]
 fn pcurve_nurbs_copy_refuses_pole_limit() {
     let geometry = PcurveGeometry::Nurbs {
-        nurbs: PcurveNurbs::new(
+        nurbs: PcurveNurbs::new(&cadmpeg_test_support::service_decode_context(), 
             1,
             vec![0.0, 0.0, 1.0, 1.0],
             PcurveNurbsPoles::Polynomial {
                 points: vec![Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)],
             },
             false,
-        )
+        ).expect("fixture pcurve construction admission")
         .expect("valid pcurve NURBS"),
     };
     let arena = DecodeArena::new();
@@ -234,14 +234,14 @@ fn pcurve_carrier_copy_refuses_collection_limit() {
 
 #[test]
 fn pcurve_coordinate_scale_uses_no_collection_items() {
-    let nurbs = PcurveNurbs::new(
+    let nurbs = PcurveNurbs::new(&cadmpeg_test_support::service_decode_context(), 
         1,
         vec![0.0, 0.0, 1.0, 1.0],
         PcurveNurbsPoles::Polynomial {
             points: vec![Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)],
         },
         false,
-    )
+    ).expect("fixture pcurve construction admission")
     .expect("valid pcurve NURBS");
     let mut geometry = PcurveGeometry::Nurbs { nurbs };
     let arena = DecodeArena::new();

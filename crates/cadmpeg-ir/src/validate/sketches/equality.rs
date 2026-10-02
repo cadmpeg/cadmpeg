@@ -65,7 +65,7 @@ mod tests {
     use cadmpeg_core::CodecError;
 
     fn nurbs(points: Vec<Point2>, weights: Option<Vec<f64>>) -> SketchGeometry {
-        SketchGeometry::nurbs(PcurveNurbs::from_lanes(1, vec![0.0, 0.0, 1.0, 1.0], points, weights, false).unwrap())
+        SketchGeometry::nurbs(PcurveNurbs::from_lanes(&cadmpeg_test_support::service_decode_context(), 1, vec![0.0, 0.0, 1.0, 1.0], points, weights, false).expect("fixture pcurve construction admission").unwrap())
     }
 
     fn reference(document: Option<&str>, object: &str, selectors: &[&str]) -> SketchGeometry {

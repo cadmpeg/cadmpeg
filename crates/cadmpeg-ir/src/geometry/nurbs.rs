@@ -7,7 +7,7 @@ pub mod bezier;
 pub mod bounds;
 pub(crate) mod scratch;
 
-mod admitted;
+pub(super) mod admitted;
 
 use crate::features::FinitePoint3;
 use crate::math::Point3;
@@ -211,11 +211,6 @@ pub enum NurbsPoles3<P = Point3> {
     },
 }
 
-/// The refusal of a pole position with a non-finite coordinate.
-pub(super) fn non_finite_control_point() -> NurbsError {
-    NurbsError::Structure("control_points contains a non-finite point".into())
-}
-
 /// A pole value a producer hands a NURBS store: a raw value, which the store
 /// admits in its own refusal order, or an admitted value, which it keeps.
 pub trait PoleValue<T>: Copy {
@@ -230,6 +225,15 @@ pub trait PoleValue<T>: Copy {
         poles: NurbsPoles3<Self>,
         convert: impl FnOnce(NurbsPoles3<Self>) -> Result<NurbsPoles3<T>, E>,
     ) -> Result<NurbsPoles3<T>, E> {
+        convert(poles)
+    }
+
+    /// Admit a parameter-space lane through its explicit conversion policy.
+    /// An implementation may keep storage whose positions are already admitted.
+    fn admit_pcurve_poles<E>(
+        poles: super::pcurve::PcurveNurbsPoles<Self>,
+        convert: impl FnOnce(super::pcurve::PcurveNurbsPoles<Self>) -> Result<super::pcurve::PcurveNurbsPoles<T>, E>,
+    ) -> Result<super::pcurve::PcurveNurbsPoles<T>, E> {
         convert(poles)
     }
 

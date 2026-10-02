@@ -666,7 +666,7 @@ mod tests {
     #[test]
     fn source_sketch_geometry_refuses_nurbs_copy_limit() {
         let geometry = SketchGeometry::nurbs(
-            cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
+            cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(&cadmpeg_test_support::service_decode_context(), 
                 2,
                 vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
                 vec![
@@ -676,7 +676,7 @@ mod tests {
                 ],
                 None,
                 false,
-            )
+            ).expect("fixture pcurve construction admission")
             .expect("source NURBS"),
         );
         let arena = DecodeArena::new();
@@ -2569,13 +2569,13 @@ mod tests {
     fn source_sketch_nurbs_copy_refuses_knots_and_poles_separately() {
         for rational in [false, true] {
             let geometry = SketchGeometry::nurbs(
-                cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
+                cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(&cadmpeg_test_support::service_decode_context(), 
                     1,
                     vec![0.0, 0.0, 1.0, 1.0],
                     vec![cadmpeg_ir::math::Point2::new(0.0, 0.0); 2],
                     rational.then(|| vec![1.0, 2.0]),
                     false,
-                )
+                ).expect("fixture pcurve construction admission")
                 .expect("curve"),
             );
             for cap in [3, 5] {
@@ -2602,13 +2602,13 @@ mod tests {
     fn pcurve_normalization_propagates_owned_scaling_work_refusal() {
         let mut pcurve = admission_pcurve();
         pcurve.geometry = cadmpeg_ir::geometry::pcurve::PcurveGeometry::Nurbs {
-            nurbs: cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
+            nurbs: cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(&cadmpeg_test_support::service_decode_context(), 
                 1,
                 vec![0.0, 0.0, 1.0, 1.0],
                 vec![cadmpeg_ir::math::Point2::new(1.0, 2.0); 2],
                 None,
                 false,
-            )
+            ).expect("fixture pcurve construction admission")
             .expect("curve"),
         };
         let arena = DecodeArena::new();

@@ -865,7 +865,7 @@ fn finite_nurbs_lanes_match_raw_curve_surface_and_pcurve_routes() {
     );
     let uv = vec![Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)];
     assert_eq!(
-        PcurveNurbs::from_finite_lanes(
+        PcurveNurbs::from_finite_lanes(&cadmpeg_test_support::service_decode_context(), 
             1,
             finite_knots(),
             uv.iter()
@@ -874,8 +874,8 @@ fn finite_nurbs_lanes_match_raw_curve_surface_and_pcurve_routes() {
                 .collect(),
             Some(finite_weights()),
             false,
-        ),
-        PcurveNurbs::from_lanes(1, knots, uv, Some(weights), false),
+        ).expect("fixture pcurve construction admission"),
+        PcurveNurbs::from_lanes(&cadmpeg_test_support::service_decode_context(), 1, knots, uv, Some(weights), false).expect("fixture pcurve construction admission"),
     );
 }
 
@@ -1044,17 +1044,17 @@ fn nurbs_stores_hold_admitted_poles_and_take_admitted_lanes() {
     let pcurve = pcurve();
     let held: &PcurveNurbsPoles<FinitePoint2> = pcurve.pole_rows();
     assert_eq!(
-        PcurveNurbs::new(1, pcurve.knots().to_vec(), held.clone(), true),
+        PcurveNurbs::new(&cadmpeg_test_support::service_decode_context(), 1, pcurve.knots().to_vec(), held.clone(), true).expect("fixture pcurve construction admission"),
         Ok(pcurve.clone())
     );
     assert_eq!(
-        PcurveNurbs::from_checked_lanes(
+        PcurveNurbs::from_checked_lanes(&cadmpeg_test_support::service_decode_context(), 
             1,
             pcurve.knots().clone(),
             pcurve.control_points(),
             pcurve.weights(),
             true,
-        ),
+        ).expect("fixture pcurve construction admission"),
         Ok(pcurve.clone())
     );
     let mut mapped = pcurve.clone();
@@ -1078,17 +1078,17 @@ fn nurbs_stores_hold_admitted_poles_and_take_admitted_lanes() {
 
     let polar = polar();
     assert_eq!(
-        PolarPcurveNurbs::new(1, polar.knots().to_vec(), polar.pole_rows().clone(), true),
+        PolarPcurveNurbs::new(&cadmpeg_test_support::service_decode_context(), 1, polar.knots().to_vec(), polar.pole_rows().clone(), true).expect("fixture pcurve construction admission"),
         Ok(polar.clone())
     );
     assert_eq!(
-        PolarPcurveNurbs::from_checked_lanes(
+        PolarPcurveNurbs::from_checked_lanes(&cadmpeg_test_support::service_decode_context(), 
             1,
             polar.knots().clone(),
             polar.poles(),
             polar.weights(),
             true,
-        ),
+        ).expect("fixture pcurve construction admission"),
         Ok(polar.clone())
     );
     assert_eq!(

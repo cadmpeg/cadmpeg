@@ -1023,7 +1023,7 @@ fn reverse_pcurve_over_range(
                 },
             };
             let reversed =
-                PolarPcurveNurbs::new(nurbs.degree(), reversed_knots, poles, nurbs.periodic())?;
+                PolarPcurveNurbs::new(ctx, nurbs.degree(), reversed_knots, poles, nurbs.periodic())??;
             Ok(Some(PcurveGeometry::PolarNurbs { nurbs: reversed }))
         }
         PcurveGeometry::Nurbs { nurbs } => {
@@ -1040,7 +1040,7 @@ fn reverse_pcurve_over_range(
                 },
             };
             let reversed =
-                PcurveNurbs::new(nurbs.degree(), reversed_knots, poles, nurbs.periodic())?;
+                PcurveNurbs::new(ctx, nurbs.degree(), reversed_knots, poles, nurbs.periodic())??;
             Ok(Some(PcurveGeometry::Nurbs { nurbs: reversed }))
         }
         PcurveGeometry::Trimmed(trimmed_pcurve) => {
@@ -1103,13 +1103,13 @@ fn reverse_pcurve_over_range(
             )) else {
                 return Ok(None);
             };
-            let reversed = PcurveNurbs::from_lanes(
+            let reversed = PcurveNurbs::from_lanes(ctx, 
                 2,
                 vec![start, start, start, end, end, end],
                 vec![first, middle, last],
                 None,
                 false,
-            )?;
+            )??;
             Ok(Some(PcurveGeometry::Nurbs { nurbs: reversed }))
         }
         _ => Ok(reverse_analytic_pcurve_over_range(pcurve, [start, end])),
@@ -2110,13 +2110,13 @@ fn exact_boundary_pcurve_with_index(
         ) {
             Ok(line) => PcurveGeometry::Line(line),
             Err(_) => {
-                let Ok(nurbs) = PcurveNurbs::from_lanes(
+                let Ok(nurbs) = (match PcurveNurbs::from_lanes(geometry_budget.charges, 
                     1,
                     vec![range[0], range[0], range[1], range[1]],
                     vec![first, second],
                     None,
                     false,
-                ) else {
+                ) { Ok(result) => result, Err(cadmpeg_core::CodecError::ResourceLimit(limit)) => return Err(limit), Err(_) => return Ok(None) }) else {
                     return Ok(None);
                 };
                 PcurveGeometry::Nurbs { nurbs }
@@ -2173,13 +2173,13 @@ fn exact_boundary_pcurve_with_index(
                 {
                     return Ok(None);
                 }
-                let Ok(nurbs) = PcurveNurbs::from_lanes(
+                let Ok(nurbs) = (match PcurveNurbs::from_lanes(geometry_budget.charges, 
                     1,
                     vec![range[0], range[0], range[1], range[1]],
                     vec![first, second],
                     None,
                     false,
-                ) else {
+                ) { Ok(result) => result, Err(cadmpeg_core::CodecError::ResourceLimit(limit)) => return Err(limit), Err(_) => return Ok(None) }) else {
                     return Ok(None);
                 };
                 PcurveGeometry::Nurbs { nurbs }
@@ -2318,13 +2318,13 @@ fn exact_boundary_pcurve_with_index(
                 match cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(origin, direction) {
                     Ok(line) => PcurveGeometry::Line(line),
                     Err(_) => {
-                        let Ok(nurbs) = PcurveNurbs::from_lanes(
+                        let Ok(nurbs) = (match PcurveNurbs::from_lanes(geometry_budget.charges, 
                             1,
                             vec![range[0], range[0], range[1], range[1]],
                             controls.to_vec(),
                             None,
                             false,
-                        ) else {
+                        ) { Ok(result) => result, Err(cadmpeg_core::CodecError::ResourceLimit(limit)) => return Err(limit), Err(_) => continue }) else {
                             continue;
                         };
                         PcurveGeometry::Nurbs { nurbs }
@@ -3549,13 +3549,13 @@ fn transfer_intersection_pcurve_with_budget<'a>(
         sample_parameters.push(sample.0);
         control_points.push(sample.1);
     }
-    let nurbs = PcurveNurbs::from_lanes(
+    let nurbs = PcurveNurbs::from_lanes(geometry_budget.charges, 
         1,
         linear_knots(&sample_parameters, geometry_budget)?,
         control_points,
         None,
         false,
-    )?;
+    )??;
     Ok(Some(PcurveGeometry::Nurbs { nurbs }))
 }
 

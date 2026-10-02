@@ -106,7 +106,7 @@ fn endpoint_lift_witness_refuses_a_pcurve_from_a_foreign_chart() {
     let endpoints = [*loci.first().expect("sites"), *loci.last().expect("sites")];
     let range = [0.0, 1.0];
     let line_through = |first: [f64; 2], last: [f64; 2]| PcurveGeometry::Nurbs {
-        nurbs: cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
+        nurbs: cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(&cadmpeg_test_support::service_decode_context(), 
             1,
             vec![range[0], range[0], range[1], range[1]],
             vec![
@@ -115,7 +115,7 @@ fn endpoint_lift_witness_refuses_a_pcurve_from_a_foreign_chart() {
             ],
             None,
             false,
-        )
+        ).expect("fixture pcurve construction admission")
         .expect("valid endpoint witness pcurve"),
     };
     let chart = solve_planar_chart_rechart(&stored, &loci, &target).expect("isometry");

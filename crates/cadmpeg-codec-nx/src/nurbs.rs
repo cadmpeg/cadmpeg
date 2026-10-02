@@ -352,26 +352,14 @@ fn decode_pcurves(
                 }
                 cadmpeg_ir::geometry::pcurve::PcurveNurbsPoles::Polynomial { points }
             };
-            propagate_resource!(ctx.charge_work(
-                cadmpeg_core::decode::u64_from_index(propagate_resource!(knots
-                    .len()
-                    .checked_mul(2)
-                    .ok_or_else(|| ctx.refuse_codec_limit(
-                        "validate NX NURBS curve",
-                        u64::MAX,
-                        u64::MAX
-                    )))),
-                "validate NX NURBS curve"
-            ));
-            let nurbs = cadmpeg_ir::geometry::pcurve::PcurveNurbs::new(
+            let nurbs = propagate_resource!(cadmpeg_ir::geometry::pcurve::PcurveNurbs::new(ctx, 
                 u32::from(descriptor.basis.degree),
                 knots,
                 poles,
                 descriptor.basis.periodic,
-            );
+            ));
             let nurbs = match nurbs {
                 Ok(nurbs) => nurbs,
-                Err(NurbsError::ResourceLimit(limit)) => return Some(Err(limit.into())),
                 Err(error) => {
                     propagate_resource!(ctx.push_retained_vec(
                         refusals,

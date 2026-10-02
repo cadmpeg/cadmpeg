@@ -244,9 +244,10 @@ pub(crate) fn reverse_pcurve_geometry(
             poles.reverse();
             note_refusal(
                 ctx,
-                KnotVector::new(ctx, reversed_knots)?.and_then(|knots| {
-                    PcurveNurbs::from_admitted_rows(nurbs.degree(), knots, poles, nurbs.periodic())
-                }),
+                match KnotVector::new(ctx, reversed_knots)? {
+                    Ok(knots) => PcurveNurbs::new(ctx, nurbs.degree(), knots, poles, nurbs.periodic())?,
+                    Err(error) => Err(error),
+                },
                 refusal,
                 record,
             )
@@ -1023,13 +1024,13 @@ mod tests {
     #[test]
     fn nurbs_refusal_note_refuses_retained_and_collection_limits() {
         let short_weight_lane = || {
-            PcurveNurbs::from_lanes(
+            PcurveNurbs::from_lanes(&cadmpeg_test_support::service_decode_context(), 
                 1,
                 vec![0.0, 0.0, 1.0, 1.0],
                 vec![Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)],
                 Some(vec![1.0]),
                 false,
-            )
+            ).expect("fixture pcurve construction admission")
         };
         let refused = crate::test_support::with_retained_limit(0, |ctx| {
             super::note_refusal(
@@ -1749,13 +1750,13 @@ mod tests {
         );
 
         let pcurve_nurbs = PcurveGeometry::Nurbs {
-            nurbs: cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
+            nurbs: cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(&cadmpeg_test_support::service_decode_context(), 
                 1,
                 vec![-f64::MAX, 0.0, 1.0, 1.0],
                 vec![Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)],
                 None,
                 false,
-            )
+            ).expect("fixture pcurve construction admission")
             .unwrap(),
         };
         assert!(
@@ -1775,13 +1776,13 @@ mod tests {
     fn two_refused_records_state_two_notes_each_naming_its_record() {
         let mut refusal = LaneRefusals::new();
         let short_weight_lane = || {
-            PcurveNurbs::from_lanes(
+            PcurveNurbs::from_lanes(&cadmpeg_test_support::service_decode_context(), 
                 1,
                 vec![0.0, 0.0, 1.0, 1.0],
                 vec![Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)],
                 Some(vec![1.0]),
                 false,
-            )
+            ).expect("fixture pcurve construction admission")
         };
         let first = crate::test_support::with_service_context(|ctx| {
             super::note_refusal(

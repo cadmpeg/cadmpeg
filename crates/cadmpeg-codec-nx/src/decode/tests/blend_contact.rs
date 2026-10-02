@@ -46,13 +46,13 @@ fn test_pcurve(
     weights: Option<Vec<f64>>,
 ) -> PcurveGeometry {
     PcurveGeometry::Nurbs {
-        nurbs: cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
+        nurbs: cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(&cadmpeg_test_support::service_decode_context(), 
             degree,
             knots,
             control_points,
             weights,
             false,
-        )
+        ).expect("fixture pcurve construction admission")
         .unwrap(),
     }
 }
@@ -799,13 +799,13 @@ fn spine_contact_pcurve_inverts_linear_and_rational_support_parameters() {
         let PcurveGeometry::Nurbs { nurbs } = &mut rational_folded else {
             unreachable!("folded test pcurve is NURBS");
         };
-        *nurbs = cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
+        *nurbs = cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(&cadmpeg_test_support::service_decode_context(), 
             nurbs.degree(),
             nurbs.knots().to_vec(),
             nurbs.pole_rows().raw_points(),
             Some(vec![1.0; 3]),
             nurbs.periodic(),
-        )
+        ).expect("fixture pcurve construction admission")
         .unwrap();
         assert_eq!(
             closest_pcurve_parameters(

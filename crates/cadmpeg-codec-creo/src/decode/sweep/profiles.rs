@@ -326,12 +326,12 @@ pub(in super::super) fn circular_pcurve(
             Ok(knots) => knots,
             Err(error) => return Ok(Err(error)),
         };
-        Ok(cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_admitted_rows(
+        Ok(cadmpeg_ir::geometry::pcurve::PcurveNurbs::new(ctx, 
             2,
             knots,
             PcurveNurbsPoles::Rational { points: weighted },
             false,
-        ))
+        )?)
     })()?;
     match nurbs {
         Ok(nurbs) => Ok(Some(PcurveGeometry::Nurbs { nurbs })),

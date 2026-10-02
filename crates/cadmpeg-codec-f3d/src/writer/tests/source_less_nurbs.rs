@@ -365,13 +365,13 @@ fn generated_source_less_face_lowers_line_pcurve_exactly() {
     assert_eq!(
         round_trip.ir().model.pcurves[0].geometry,
         PcurveGeometry::Nurbs {
-            nurbs: cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
+            nurbs: cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(&cadmpeg_test_support::service_decode_context(), 
                 1,
                 vec![-2.0, -2.0, 3.0, 3.0],
                 vec![Point2::new(1.0, -5.0), Point2::new(3.5, 5.0)],
                 None,
                 false,
-            )
+            ).expect("fixture pcurve construction admission")
             .unwrap(),
         }
     );

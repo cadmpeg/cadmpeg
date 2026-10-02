@@ -323,14 +323,14 @@ fn periodic_edge_range_keeps_a_finite_sweep_across_a_wide_seam() {
 #[test]
 fn periodic_pcurve_trim_shifts_a_wide_finite_seam_endpoint() {
     let max = f64::MAX;
-    let nurbs = PcurveNurbs::new(
+    let nurbs = PcurveNurbs::new(&cadmpeg_test_support::service_decode_context(), 
         1,
         vec![-max, -max, max, max],
         PcurveNurbsPoles::Polynomial {
             points: vec![Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)],
         },
         true,
-    )
+    ).expect("fixture pcurve construction admission")
     .expect("wide periodic pcurve");
     let geometry = PcurveGeometry::Nurbs { nurbs };
     assert_eq!(

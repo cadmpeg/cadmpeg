@@ -4619,7 +4619,7 @@ fn stage_extrusion_caps(
                     "extrusion cap staging: pcurve parameter range indexes {degree} and {end_index} exceed knot count {}",
                     pcurve.knots.len()
                 ))?;
-            let nurbs = PcurveNurbs::from_lanes(
+            let nurbs = PcurveNurbs::from_lanes(ctx, 
                 pcurve.degree,
                 ctx.copy_retained_slice(&pcurve.knots, "Rhino extrusion cap pcurve knots")?,
                 ctx.copy_retained_slice(
@@ -4634,7 +4634,7 @@ fn stage_extrusion_caps(
                     })
                     .transpose()?,
                 pcurve.periodic,
-            )
+            )?
             .map_err(|error| format!("extrusion cap staging: {error}"))?;
             let carrier =
                 cadmpeg_ir::topology::EdgeCarrier::new(Some(curve_id), Some(parameter_range))
@@ -6383,7 +6383,7 @@ fn decode_pcurves(
             .knots()
             .try_clone_for_decode(ctx, "Rhino Brep pcurve knots")?;
         let nurbs =
-            match PcurveNurbs::from_admitted_rows(nurbs.degree(), knots, poles, nurbs.periodic()) {
+            match PcurveNurbs::new(ctx, nurbs.degree(), knots, poles, nurbs.periodic())? {
                 Ok(nurbs) => nurbs,
                 Err(error) => {
                     warnings.push_admitted(

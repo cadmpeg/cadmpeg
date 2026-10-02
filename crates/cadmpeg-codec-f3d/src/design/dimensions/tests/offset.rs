@@ -157,13 +157,13 @@ fn counted_offset_accepts_fitted_nurbs_with_exact_endpoint_frames() {
             SketchEntityId::mint(id).unwrap(),
             SketchId::mint("generated:test:sketch#0").unwrap(),
             SketchGeometry::nurbs(
-                cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
+                cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(&cadmpeg_test_support::service_decode_context(), 
                     degree,
                     knots,
                     control_points,
                     None,
                     false,
-                )
+                ).expect("fixture pcurve construction admission")
                 .unwrap(),
             ),
         )
@@ -247,9 +247,9 @@ fn counted_offset_preserves_fitted_frame_work_refusal() {
     let entity = |key, v| SketchEntity::new(
         format!("test:model:entity#{key}").try_into().unwrap(),
         "test:model:sketch#owner".try_into().unwrap(),
-        SketchGeometry::nurbs(cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
+        SketchGeometry::nurbs(cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(&cadmpeg_test_support::service_decode_context(), 
             1, vec![0.0, 0.0, 1.0, 1.0], vec![Point2::new(0.0, v), Point2::new(1.0, v)], None, false,
-        ).unwrap()),
+        ).expect("fixture pcurve construction admission").unwrap()),
     );
     let source = entity("source", 0.0);
     let result = entity("result", 1.0);

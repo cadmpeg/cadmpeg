@@ -4042,12 +4042,12 @@ fn rechart_equivalent_surface_pcurve(
                     }
                 }
             }
-            let shifted = cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_admitted_rows(
+            let shifted = cadmpeg_ir::geometry::pcurve::PcurveNurbs::new(ctx, 
                 nurbs.degree(),
                 knots,
                 poles,
                 nurbs.periodic(),
-            )
+            ).map_err(RechartFailure::Resource)?
             .map_err(|_| RechartFailure::NonFinite)?;
             Ok(Some(PcurveGeometry::Nurbs { nurbs: shifted }))
         }
@@ -5141,7 +5141,7 @@ mod tests {
         let target = cone(Point3::new(0.0, 0.0, 0.0), 0.0);
         assert!(same_surface_locus(&source, &target));
         let pcurve = PcurveGeometry::Nurbs {
-            nurbs: cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
+            nurbs: cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(&cadmpeg_test_support::service_decode_context(), 
                 1,
                 vec![0.0, 0.0, 1.0, 1.0],
                 vec![
@@ -5150,7 +5150,7 @@ mod tests {
                 ],
                 None,
                 false,
-            )
+            ).expect("fixture pcurve construction admission")
             .expect("finite NURBS fixture"),
         };
         assert!(matches!(
@@ -5165,13 +5165,13 @@ mod tests {
     fn equivalent_surface_rechart_refuses_pcurve_copy_limit() {
         let surface = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None });
         let pcurve = PcurveGeometry::Nurbs {
-            nurbs: cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
+            nurbs: cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(&cadmpeg_test_support::service_decode_context(), 
                 1,
                 vec![0.0, 0.0, 1.0, 1.0],
                 vec![Point2::new(0.0, 0.0), Point2::new(1.0, 1.0)],
                 None,
                 false,
-            )
+            ).expect("fixture pcurve construction admission")
             .expect("valid pcurve fixture"),
         };
         let refused = crate::test_support::with_collection_limit(5, |ctx| {

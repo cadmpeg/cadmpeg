@@ -174,13 +174,13 @@ fn support_sides_move_pcurve_storage() {
     use cadmpeg_ir::geometry::{pcurve::PcurveGeometry, SupportPcurve};
     use cadmpeg_ir::math::Point2;
 
-    let pcurve = cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
+    let pcurve = cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(&cadmpeg_test_support::service_decode_context(), 
         1,
         vec![0.0, 0.0, 1.0, 1.0],
         vec![Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)],
         None,
         false,
-    )
+    ).expect("fixture pcurve construction admission")
     .unwrap();
     let knot_address = pcurve.knots().as_slice().as_ptr();
     let sides = into_support_sides(

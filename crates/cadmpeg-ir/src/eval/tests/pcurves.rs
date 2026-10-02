@@ -41,7 +41,7 @@ fn analytic_pcurves_preserve_angular_parameterization() {
         .unwrap(),
     );
     let polar_nurbs = PcurveGeometry::PolarNurbs {
-        nurbs: crate::geometry::pcurve::PolarPcurveNurbs::from_lanes(
+        nurbs: crate::geometry::pcurve::PolarPcurveNurbs::from_lanes(&cadmpeg_test_support::service_decode_context(), 
             2,
             vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
             vec![
@@ -60,7 +60,7 @@ fn analytic_pcurves_preserve_angular_parameterization() {
             ],
             Some(vec![1.0, std::f64::consts::FRAC_1_SQRT_2, 1.0]),
             false,
-        )
+        ).expect("fixture pcurve construction admission")
         .unwrap(),
     };
 
@@ -259,7 +259,7 @@ fn signed_offset_pcurves_use_the_exact_left_normal() {
         crate::geometry::pcurve::OffsetPcurve::try_new(
             0.25,
             Box::new(PcurveGeometry::Nurbs {
-                nurbs: crate::geometry::pcurve::PcurveNurbs::from_lanes(
+                nurbs: crate::geometry::pcurve::PcurveNurbs::from_lanes(&cadmpeg_test_support::service_decode_context(), 
                     2,
                     vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
                     vec![
@@ -269,7 +269,7 @@ fn signed_offset_pcurves_use_the_exact_left_normal() {
                     ],
                     Some(vec![1.0, std::f64::consts::FRAC_1_SQRT_2, 1.0]),
                     false,
-                )
+                ).expect("fixture pcurve construction admission")
                 .unwrap(),
             }),
         )
@@ -300,13 +300,13 @@ fn evaluation_extrapolates_past_a_declared_domain_for_every_carrier() {
     // Degree 1 over two poles on [0, 1]: the knot interval is the declared
     // domain and the curve is the segment (0, 0) to (1, 2).
     let nurbs = PcurveGeometry::Nurbs {
-        nurbs: crate::geometry::pcurve::PcurveNurbs::from_lanes(
+        nurbs: crate::geometry::pcurve::PcurveNurbs::from_lanes(&cadmpeg_test_support::service_decode_context(), 
             1,
             vec![0.0, 0.0, 1.0, 1.0],
             vec![Point2::new(0.0, 0.0), Point2::new(1.0, 2.0)],
             None,
             false,
-        )
+        ).expect("fixture pcurve construction admission")
         .unwrap(),
     };
     let trimmed = PcurveGeometry::Trimmed(

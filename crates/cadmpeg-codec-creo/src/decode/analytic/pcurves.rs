@@ -2352,12 +2352,12 @@ pub(in crate::decode) fn planar_curve_pcurve(
                         return None;
                     }
                 };
-                match PcurveNurbs::from_admitted_rows(
+                match match PcurveNurbs::new(ctx, 
                     nurbs.degree(),
                     knots,
                     poles,
                     nurbs.periodic(),
-                ) {
+                ) { Ok(result) => result, Err(error) => { resource_error = Some(error); return None; } } {
                     Ok(nurbs) => Some(PcurveGeometry::Nurbs { nurbs }),
                     Err(error) => {
                         refusal.note_checked(

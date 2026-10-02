@@ -1673,27 +1673,9 @@ fn zero_entity_support_pcurve(
         } else {
             None
         };
-        if weight_start.is_some() {
-            if let Err(error) = ctx.charge_collection_items(
-                u64_from_index(control_count),
-                "catia_zero_support_weighted_poles",
-            ) {
-                return Some(Err(error));
-            }
-        }
-        if let Err(error) = ctx.charge_collection_items(
-            u64_from_index(control_count),
-            "catia_zero_support_checked_poles",
-        ) {
-            return Some(Err(error));
-        }
         let nurbs = match crate::nurbs::note_refusal(
             ctx,
-            cadmpeg_ir::geometry::pcurve::PcurveNurbsPoles::from_checked_lanes(
-                control_points,
-                weights,
-            )
-            .and_then(|poles| PcurveNurbs::new(degree, knots, poles, false)),
+            match PcurveNurbs::from_checked_lanes(ctx, degree, knots, control_points, weights, false) { Ok(result) => result, Err(error) => return Some(Err(error)) },
             refusal,
             format_args!("zero-entity NURBS pcurve record at byte {}", record.pos),
         ) {
@@ -1787,20 +1769,15 @@ pub(super) fn zero_entity_neutral_pcurve(
     let knots = nurbs
         .knots()
         .try_clone_for_decode(ctx, "catia_zero_neutral_pcurve_knots")?;
-    let count = u64_from_index(nurbs.pole_rows().count());
-    if weights.is_some() {
-        ctx.charge_collection_items(count, "catia_zero_neutral_weighted_poles")?;
-    }
-    ctx.charge_collection_items(count, "catia_zero_neutral_checked_poles")?;
     crate::nurbs::note_refusal(
         ctx,
-        PcurveNurbs::from_checked_lanes(
+        PcurveNurbs::from_checked_lanes(ctx, 
             nurbs.degree(),
             knots,
             control_points,
             weights,
             nurbs.periodic(),
-        ),
+        )?,
         refusal,
         format_args!("zero-entity pcurve scaled onto its surface parameters: {record}"),
     )
@@ -2945,7 +2922,7 @@ mod tests {
     #[allow(clippy::unwrap_used)]
     fn test_pcurve(points: Vec<Point2>) -> PcurveGeometry {
         PcurveGeometry::Nurbs {
-            nurbs: PcurveNurbs::from_lanes(1, vec![0.0, 0.0, 1.0, 1.0], points, None, false)
+            nurbs: PcurveNurbs::from_lanes(&cadmpeg_test_support::service_decode_context(), 1, vec![0.0, 0.0, 1.0, 1.0], points, None, false).expect("fixture pcurve construction admission")
                 .unwrap(),
         }
     }

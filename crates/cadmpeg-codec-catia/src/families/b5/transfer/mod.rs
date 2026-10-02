@@ -575,7 +575,7 @@ fn build_plan(
                 let geometry = PcurveGeometry::Nurbs {
                     nurbs: admitted!(crate::nurbs::note_refusal(
                         ctx,
-                        PcurveNurbs::from_lanes(pcurve.degree, knots, points, weights, false,),
+                        admitted!(PcurveNurbs::from_lanes(ctx, pcurve.degree, knots, points, weights, false,)),
                         refusal,
                         format_args!("b5 object-stream pcurve record #{}", pcurve.object_id),
                     ))?,
@@ -1072,7 +1072,7 @@ pub(in crate::families) fn resolved_object_stream_pcurve(
     };
     let Some(nurbs) = crate::nurbs::note_refusal(
         ctx,
-        PcurveNurbs::from_lanes(
+        PcurveNurbs::from_lanes(ctx, 
             crate::families::a5a8::records::A8Pcurve::DEGREE,
             knots,
             ctx.collect_vec(
@@ -1083,7 +1083,7 @@ pub(in crate::families) fn resolved_object_stream_pcurve(
             )?,
             None,
             false,
-        ),
+        )?,
         refusal,
         format_args!("a8 object-stream pcurve record #{}", pcurve.support_id),
     )?
@@ -1375,7 +1375,7 @@ pub(in crate::families) fn resolved_extrusion_surface(
                     };
                     let nurbs = match crate::nurbs::note_refusal(
                         ctx,
-                        PcurveNurbs::from_lanes(pcurve.degree, knots, points, weights, false),
+                        match PcurveNurbs::from_lanes(ctx, pcurve.degree, knots, points, weights, false) { Ok(result) => result, Err(error) => return Some(Err(error)) },
                         refusal,
                         format_args!("b5 extrusion pcurve record #{pcurve_object_id}"),
                     ) {

@@ -1038,13 +1038,13 @@ pub(crate) fn rational_pcurve_arc(
     {
         return Ok(None);
     }
-    match cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
+    match cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(ctx, 
         2,
         knots,
         control_points,
         Some(weights),
         false,
-    ) {
+    )? {
         Ok(nurbs) => Ok(Some(PcurveGeometry::Nurbs { nurbs })),
         Err(error) => crate::nurbs::note_refusal(ctx, Err(error), refusal, record),
     }
@@ -1075,13 +1075,13 @@ pub(crate) fn quintic_jet_pcurve(
             .into_iter()
             .map(|point| Point2::new(point[0], point[1])),
     );
-    match cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
+    match cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(ctx, 
         degree,
         full_knots,
         control_points,
         None,
         false,
-    ) {
+    )? {
         Ok(nurbs) => Ok(Some(PcurveGeometry::Nurbs { nurbs })),
         Err(error) => crate::nurbs::note_refusal(ctx, Err(error), refusal, record),
     }

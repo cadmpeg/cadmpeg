@@ -330,7 +330,7 @@ mod tests {
 
     fn nurbs_pcurve_leaf() -> PcurveGeometry {
         PcurveGeometry::Nurbs {
-            nurbs: crate::geometry::pcurve::PcurveNurbs::from_lanes(
+            nurbs: crate::geometry::pcurve::PcurveNurbs::from_lanes(&cadmpeg_test_support::service_decode_context(), 
                 1,
                 vec![0.0, 0.0, 1.0, 1.0],
                 vec![
@@ -339,7 +339,7 @@ mod tests {
                 ],
                 None,
                 false,
-            )
+            ).expect("fixture pcurve construction admission")
             .unwrap(),
         }
     }

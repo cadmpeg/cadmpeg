@@ -2324,13 +2324,13 @@ mod tests {
         original.push(0x11);
         let records =
             crate::test_support::sab::frame(&original, 0, original.len(), RefWidth::Eight).unwrap();
-        let geometry = PcurveNurbs::from_lanes(
+        let geometry = PcurveNurbs::from_lanes(&cadmpeg_test_support::service_decode_context(), 
             1,
             vec![0.0, 0.0, 1.0, 1.0],
             vec![Point2::new(0.0, 0.0), Point2::new(1.0, 1.0)],
             None,
             false,
-        )
+        ).expect("fixture pcurve construction admission")
         .unwrap();
         let base = super::InlinePcurveEdit::IntcurveCache {
             native_geometry: &geometry,

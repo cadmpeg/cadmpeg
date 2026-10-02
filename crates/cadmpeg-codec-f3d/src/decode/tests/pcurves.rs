@@ -1136,13 +1136,13 @@ fn generated_f3d_rewrites_nurbs_pcurve_control_points() {
     let mut control_points = nurbs.pole_rows().raw_points();
     control_points[0].u = -0.5;
     control_points[1].v = 2.25;
-    *nurbs = cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
+    *nurbs = cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(&cadmpeg_test_support::service_decode_context(), 
         1,
         vec![-1.0, -1.0, 2.0, 2.0],
         control_points,
         nurbs.pole_rows().weights(),
         true,
-    )
+    ).expect("fixture pcurve construction admission")
     .unwrap();
     let cadmpeg_ir::geometry::pcurve::PcurveMetadata::AsmInline { form: inline } =
         &mut pcurve.metadata
@@ -1238,19 +1238,19 @@ fn generated_f3d_rewrites_rational_pcurve_weights() {
     if let Some(weights) = &mut weights {
         weights[1] = 0.75;
     }
-    let poles = cadmpeg_ir::geometry::pcurve::PcurveNurbsPoles::from_lanes(
+    let poles = cadmpeg_ir::geometry::pcurve::PcurveNurbsPoles::from_lanes(&cadmpeg_test_support::service_decode_context(), 
         nurbs.pole_rows().raw_points(),
         weights,
-    );
+    ).expect("fixture pcurve construction admission");
     {
         let replacement = poles.unwrap();
         edit::replace(nurbs, |previous| {
-            cadmpeg_ir::geometry::pcurve::PcurveNurbs::new(
+            cadmpeg_ir::geometry::pcurve::PcurveNurbs::new(&cadmpeg_test_support::service_decode_context(), 
                 previous.degree(),
                 previous.knots().to_vec(),
                 replacement,
                 previous.periodic(),
-            )
+            ).expect("fixture pcurve construction admission")
         })
     }
     .unwrap();
@@ -1302,12 +1302,12 @@ fn generated_f3d_rewrites_ref_form_pcurve_geometry_and_range() {
             let knots: &mut [f64] = &mut knots;
             knots.copy_from_slice(&[-1.0, -1.0, 2.0, 2.0]);
         };
-        cadmpeg_ir::geometry::pcurve::PcurveNurbs::new(
+        cadmpeg_ir::geometry::pcurve::PcurveNurbs::new(&cadmpeg_test_support::service_decode_context(), 
             previous.degree(),
             knots,
             previous.pole_rows().clone(),
             previous.periodic(),
-        )
+        ).expect("fixture pcurve construction admission")
     })
     .unwrap();
     let cadmpeg_ir::geometry::pcurve::PcurveMetadata::General { form: metadata } =

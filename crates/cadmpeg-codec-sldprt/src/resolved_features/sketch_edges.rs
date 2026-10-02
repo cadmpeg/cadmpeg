@@ -314,22 +314,13 @@ pub(super) fn project_edge(
                 Some(weights)
             }
         };
-        let passes = if weights.is_some() { 2usize } else { 1usize };
-        let admitted = count
-            .checked_mul(passes)
-            .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
-        ctx.charge_collection_items(
-            u64::try_from(admitted)
-                .map_err(|_| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?,
-            operation,
-        )?;
-        return match cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_checked_lanes(
+        return match cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_checked_lanes(ctx, 
             nurbs.degree(),
             knots,
             projected,
             weights,
             nurbs.periodic(),
-        ) {
+        )? {
             Ok(nurbs) => Ok(Some(SketchGeometry::nurbs(nurbs))),
             Err(error) => {
                 refusal.note(

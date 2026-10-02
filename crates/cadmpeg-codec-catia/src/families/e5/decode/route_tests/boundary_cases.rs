@@ -288,13 +288,13 @@ fn e5_boundary_nurbs_lift_refuses_low_collection_and_retained_limits() {
         Vector3::new(1.0, 0.0, 0.0),
     )
     .expect("valid plane fixture");
-    let nurbs = PcurveNurbs::from_lanes(
+    let nurbs = PcurveNurbs::from_lanes(&cadmpeg_test_support::service_decode_context(), 
         1,
         vec![0.0, 0.0, 1.0, 1.0],
         vec![Point2::new(0.0, 0.0), Point2::new(1.0, 2.0)],
         None,
         false,
-    )
+    ).expect("fixture pcurve construction admission")
     .expect("valid pcurve fixture");
     let retained = crate::test_support::with_retained_limit(0, |ctx| {
         super::super::e5_lift_plane_nurbs(
@@ -335,13 +335,13 @@ fn e5_boundary_nurbs_lift_refuses_low_collection_and_retained_limits() {
     .expect("valid lifted NURBS");
     assert_eq!(lifted.pole_count(), 2);
 
-    let rational = PcurveNurbs::from_lanes(
+    let rational = PcurveNurbs::from_lanes(&cadmpeg_test_support::service_decode_context(), 
         1,
         vec![0.0, 0.0, 1.0, 1.0],
         vec![Point2::new(0.0, 0.0), Point2::new(1.0, 2.0)],
         Some(vec![1.0, 2.0]),
         false,
-    )
+    ).expect("fixture pcurve construction admission")
     .expect("valid rational pcurve fixture");
     let retained = crate::test_support::with_retained_limit(0, |ctx| {
         super::super::e5_lift_plane_nurbs(
@@ -467,13 +467,13 @@ fn e5_plane_jet_boundary_rejects_nonfinite_world_poles() {
         range: finite_pair([0.0, 1.0]),
     };
     let pcurve = PcurveGeometry::Nurbs {
-        nurbs: PcurveNurbs::from_lanes(
+        nurbs: PcurveNurbs::from_lanes(&cadmpeg_test_support::service_decode_context(), 
             1,
             vec![0.0, 0.0, 1.0, 1.0],
             vec![Point2::new(large, 0.0), Point2::new(large, 1.0)],
             None,
             false,
-        )
+        ).expect("fixture pcurve construction admission")
         .expect("valid finite pcurve carrier"),
     };
     assert!(

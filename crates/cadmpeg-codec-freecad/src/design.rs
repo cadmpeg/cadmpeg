@@ -2100,20 +2100,14 @@ fn sketch_nurbs(
     let Some(lanes) = sketch_nurbs_lanes(ctx, kind, node)? else {
         return Ok(None);
     };
-    if lanes.weights.is_some() {
-        ctx.charge_collection_items(
-            cadmpeg_core::decode::u64_from_index(lanes.control_points.len()),
-            "fcstd sketch NURBS weighted pole pairs",
-        )?;
-    }
     Ok(Some(SketchGeometry::nurbs(
-        cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_checked_lanes(
+        cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_checked_lanes(ctx, 
             lanes.degree,
             lanes.knots,
             lanes.control_points,
             lanes.weights,
             lanes.periodic,
-        )?,
+        )??,
     )))
 }
 

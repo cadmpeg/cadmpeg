@@ -165,13 +165,13 @@ fn a_polar_nurbs_pcurve_whose_axial_spline_overflows_reports_the_point_it_reache
         axial,
     };
     let pcurve = PcurveGeometry::PolarNurbs {
-        nurbs: PolarPcurveNurbs::from_lanes(
+        nurbs: PolarPcurveNurbs::from_lanes(&cadmpeg_test_support::service_decode_context(), 
             1,
             vec![0.0, 0.0, 1.0, 1.0],
             vec![pole(0.0), pole(f64::MAX)],
             None,
             false,
-        )
+        ).expect("fixture pcurve construction admission")
         .expect("polar NURBS pcurve fixture"),
     };
     // At `t = 2` the axial spline reaches `2 MAX`; the radial spline stays at
@@ -210,13 +210,13 @@ fn a_spherical_great_circle_pcurve_whose_azimuth_or_phase_overflows_reports_the_
 #[test]
 fn a_nurbs_pcurve_whose_point_or_basis_overflows_reports_the_point_it_reached() {
     let linear = PcurveGeometry::Nurbs {
-        nurbs: PcurveNurbs::from_lanes(
+        nurbs: PcurveNurbs::from_lanes(&cadmpeg_test_support::service_decode_context(), 
             1,
             vec![0.0, 0.0, 1.0, 1.0],
             vec![Point2::new(0.0, 0.0), Point2::new(f64::MAX, 0.0)],
             None,
             false,
-        )
+        ).expect("fixture pcurve construction admission")
         .expect("NURBS pcurve fixture"),
     };
     assert_eq!(
@@ -248,7 +248,7 @@ fn a_nurbs_pcurve_whose_point_or_basis_overflows_reports_the_point_it_reached() 
         })
         .collect();
     let high_degree = PcurveGeometry::Nurbs {
-        nurbs: PcurveNurbs::from_lanes(20, knots, poles, None, false)
+        nurbs: PcurveNurbs::from_lanes(&cadmpeg_test_support::service_decode_context(), 20, knots, poles, None, false).expect("fixture pcurve construction admission")
             .expect("degree-20 NURBS pcurve fixture"),
     };
     assert!(is_non_finite_point2(
@@ -356,7 +356,7 @@ fn pcurve_tangents_whose_helper_quotient_overflows_report_the_tangent_they_reach
 #[test]
 fn nurbs_pcurve_tangents_whose_derivative_quotient_overflows_report_the_tangent_they_reached() {
     let nurbs = |degree, knots: Vec<f64>, poles: Vec<Point2>| PcurveGeometry::Nurbs {
-        nurbs: PcurveNurbs::from_lanes(degree, knots, poles, None, false)
+        nurbs: PcurveNurbs::from_lanes(&cadmpeg_test_support::service_decode_context(), degree, knots, poles, None, false).expect("fixture pcurve construction admission")
             .expect("NURBS pcurve fixture"),
     };
     // The derivative projection `1e10 / 1e-300` overflows.

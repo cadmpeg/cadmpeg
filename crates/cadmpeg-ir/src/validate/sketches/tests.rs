@@ -168,7 +168,7 @@ fn fitted_nurbs_offsets_validate_from_clamped_endpoint_frames() {
             source.clone(),
             sketch.clone(),
             SketchGeometry::nurbs(
-                crate::geometry::pcurve::PcurveNurbs::from_lanes(
+                crate::geometry::pcurve::PcurveNurbs::from_lanes(&cadmpeg_test_support::service_decode_context(), 
                     2,
                     vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
                     vec![
@@ -178,7 +178,7 @@ fn fitted_nurbs_offsets_validate_from_clamped_endpoint_frames() {
                     ],
                     None,
                     false,
-                )
+                ).expect("fixture pcurve construction admission")
                 .unwrap(),
             ),
         ),
@@ -186,7 +186,7 @@ fn fitted_nurbs_offsets_validate_from_clamped_endpoint_frames() {
             result.clone(),
             sketch.clone(),
             SketchGeometry::nurbs(
-                crate::geometry::pcurve::PcurveNurbs::from_lanes(
+                crate::geometry::pcurve::PcurveNurbs::from_lanes(&cadmpeg_test_support::service_decode_context(), 
                     3,
                     vec![0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0],
                     vec![
@@ -197,7 +197,7 @@ fn fitted_nurbs_offsets_validate_from_clamped_endpoint_frames() {
                     ],
                     None,
                     false,
-                )
+                ).expect("fixture pcurve construction admission")
                 .unwrap(),
             ),
         ),

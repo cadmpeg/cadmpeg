@@ -470,12 +470,12 @@ pub(in super::super) fn saved_spline_sketch_geometry(
         } else {
             cadmpeg_ir::geometry::pcurve::PcurveNurbsPoles::Polynomial { points: controls }
         };
-    match cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_admitted_rows(
+    match cadmpeg_ir::geometry::pcurve::PcurveNurbs::new(ctx, 
         nurbs.degree(),
         knots,
         poles,
         nurbs.periodic(),
-    ) {
+    )? {
         Ok(pcurve) => Ok(Some(SketchGeometry::nurbs(pcurve))),
         Err(error) => {
             refusal.note_checked(
@@ -800,12 +800,12 @@ pub(super) fn copy_pcurve_nurbs(
             points: ctx.copy_retained_slice(points, pole_operation)?,
         },
     };
-    cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_admitted_rows(
+    cadmpeg_ir::geometry::pcurve::PcurveNurbs::new(ctx, 
         curve.degree(),
         knots,
         poles,
         curve.periodic(),
-    )
+    )?
     .map_err(CodecError::malformed)
 }
 
@@ -921,7 +921,7 @@ pub(super) fn sketch_nurbs_pcurve(
             PcurveNurbsPoles::Rational { points: projected }
         }
     };
-    match PcurveNurbs::from_admitted_rows(nurbs.degree(), knots, poles, nurbs.periodic()) {
+    match PcurveNurbs::new(ctx, nurbs.degree(), knots, poles, nurbs.periodic())? {
         Ok(nurbs) => Ok(Some(PcurveGeometry::Nurbs { nurbs })),
         Err(error) => {
             refusal.note_checked(
@@ -1326,13 +1326,13 @@ mod tests {
 
     fn sketch_line_nurbs() -> SketchGeometry {
         SketchGeometry::nurbs(
-            PcurveNurbs::from_lanes(
+            PcurveNurbs::from_lanes(&cadmpeg_test_support::service_decode_context(), 
                 1,
                 vec![0.0, 0.0, 1.0, 1.0],
                 vec![Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)],
                 None,
                 false,
-            )
+            ).expect("fixture pcurve construction admission")
             .expect("linear sketch NURBS"),
         )
     }
@@ -1667,13 +1667,13 @@ mod tests {
         let lower = 9.0e307;
         let upper = f64::MAX;
         let geometry = SketchGeometry::nurbs(
-            PcurveNurbs::from_lanes(
+            PcurveNurbs::from_lanes(&cadmpeg_test_support::service_decode_context(), 
                 1,
                 vec![lower, lower, upper, upper],
                 vec![Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)],
                 None,
                 false,
-            )
+            ).expect("fixture pcurve construction admission")
             .expect("wide finite sketch NURBS"),
         );
         let reversed = crate::decode::with_test_decode_ctx(|ctx| {

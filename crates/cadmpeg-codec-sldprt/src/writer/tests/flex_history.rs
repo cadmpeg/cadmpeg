@@ -76,7 +76,7 @@ fn encoder_writes_source_less_curved_sketches() {
         })
         .unwrap(),
         cadmpeg_ir::sketches::SketchGeometry::try_from(SketchGeometryDefinition::Nurbs {
-            curve: cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
+            curve: cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(&cadmpeg_test_support::service_decode_context(), 
                 2,
                 vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
                 vec![
@@ -86,7 +86,7 @@ fn encoder_writes_source_less_curved_sketches() {
                 ],
                 Some(vec![1.0, 0.75, 1.0]),
                 false,
-            )
+            ).expect("fixture pcurve construction admission")
             .unwrap(),
         })
         .unwrap(),

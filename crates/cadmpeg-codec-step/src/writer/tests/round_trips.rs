@@ -462,7 +462,7 @@ pub(crate) fn writer_round_trips_rational_nurbs_pcurves(
         .into_parts()
         .0;
     ir.model.pcurves[0].geometry = cadmpeg_ir::geometry::pcurve::PcurveGeometry::Nurbs {
-        nurbs: cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
+        nurbs: cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(&cadmpeg_test_support::service_decode_context(), 
             1,
             vec![0.0, 0.0, 1.0, 1.0],
             vec![
@@ -471,7 +471,7 @@ pub(crate) fn writer_round_trips_rational_nurbs_pcurves(
             ],
             Some(vec![1.0, 2.0]),
             false,
-        )
+        ).expect("fixture pcurve construction admission")
         .unwrap(),
     };
     let geometry = ir.model.pcurves[0].geometry.clone();

@@ -51,13 +51,13 @@ fn numerical_audit_trim_domain_check_ignores_surface_knot_units() {
             let p = Pcurve {
                 id: PcurveId::mint("test:audit:pcurve#1").unwrap(),
                 geometry: PcurveGeometry::Nurbs {
-                    nurbs: PcurveNurbs::from_lanes(
+                    nurbs: PcurveNurbs::from_lanes(&cadmpeg_test_support::service_decode_context(), 
                         1,
                         vec![0., 0., 1., 1.],
                         uv.clone(),
                         None,
                         false,
-                    )
+                    ).expect("fixture pcurve construction admission")
                     .unwrap(),
                 },
                 metadata: PcurveMetadata::general(
