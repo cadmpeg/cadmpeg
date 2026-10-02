@@ -164,8 +164,6 @@ fn surface_solver_budget<'ctx>(
     surface: &cadmpeg_ir::geometry::nurbs::NurbsSurface,
     operation: &'static str,
 ) -> Result<cadmpeg_core::decode::WorkBudget<'ctx>, CodecError> {
-    let (_, extraction_work) = cadmpeg_ir::eval::nurbs_surface_patch_workspace(surface)?;
-    ctx.charge_work(extraction_work, operation)?;
     // One normalized evaluator unit also pays for fixed arithmetic and a
     // complete scan of both knot vectors. Its local ceiling stays unchanged.
     let scale = 64_u64
