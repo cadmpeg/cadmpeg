@@ -1303,6 +1303,7 @@ fn pcurve_trim_range_stops_at_the_admitted_nesting_depth() {
 }
 
 mod finding_admission;
+mod index_admission;
 mod overflowing_arms;
 mod parameter_scaling;
 mod parameter_storage;

@@ -2,8 +2,6 @@
 //! Geometric consistency checks: evaluated carrier geometry must land on the
 //! topology it supports.
 
-use std::collections::{HashMap, HashSet};
-
 use crate::document::CadIr;
 use crate::eval::{
     curve_parameter_near_point, curve_point, model_curve_point_by_id, model_surface_partials_by_id,
@@ -27,6 +25,7 @@ use cadmpeg_core::decode::{DecodeContext, ResourceLimit};
 use cadmpeg_core::CodecError;
 
 use super::pcurve_parameter_domain;
+use super::identities::BorrowedIdentities;
 mod scratch;
 use scratch::Scratch;
 
@@ -79,14 +78,14 @@ pub(super) fn check_procedural_support_consistency(
     findings: &mut Vec<Finding>,
 ) -> Result<(), CodecError> {
     let index = crate::index::ModelIndex::new(ir);
-    let curves = ir
-        .model
-        .curves
-        .iter()
-        .map(|curve| (curve.id.as_str(), &curve.geometry))
-        .collect::<HashMap<_, _>>();
+    let curves = BorrowedIdentities::build(ctx, |add| {
+        for curve in &ir.model.curves { add(curve.id.as_str(), &curve.geometry)?; }
+        Ok(())
+    })?;
+    let owners = curve_owners(ctx, ir)?;
     for procedural in &ir.model.procedural_curves {
-        let Some(owner) = ir.model.procedural_curve_owner(&procedural.id) else {
+        ctx.charge_work(1, "geometric procedural curve scan")?;
+        let Some(owner) = owners.get_unique(ctx, procedural.id.as_str())?.copied() else {
             continue;
         };
         if let crate::geometry::ProceduralCurveDefinition::TolerantIntersection {
@@ -125,7 +124,7 @@ pub(super) fn check_procedural_support_consistency(
             let base = definition_payload.base();
             let base_endpoints = definition_payload.base_endpoints();
             let offset = definition_payload.distance().get();
-            let Some(solved) = curves.get(owner.as_str()) else {
+            let Some(solved) = curves.get(ctx, owner.as_str())? else {
                 continue;
             };
             let solved = context
@@ -141,7 +140,7 @@ pub(super) fn check_procedural_support_consistency(
                     .cache_fit_tolerance()
                     .map(crate::geometry::FitTolerance::get),
             );
-            let Some(base) = curves.get(base.as_str()) else {
+            let Some(base) = curves.get(ctx, base.as_str())? else {
                 continue;
             };
             let base = base_endpoints.map(|parameter| match parameter {
@@ -224,7 +223,7 @@ pub(super) fn check_procedural_support_consistency(
             }
             _ => continue,
         };
-        let Some(curve) = curves.get(owner.as_str()) else {
+        let Some(curve) = curves.get(ctx, owner.as_str())? else {
             continue;
         };
         let solved = context
@@ -281,6 +280,7 @@ fn check_support_sides(
         } => (endpoints, Some(distance)),
     };
     for (side_index, side) in context.sides().iter().chain(third).enumerate() {
+        ctx.charge_work(1, "geometric support side scan")?;
         let (Some(surface_id), Some(pcurve)) = (&side.surface, &side.pcurve) else {
             continue;
         };
@@ -328,27 +328,32 @@ fn check_support_sides(
     Ok(())
 }
 
-fn vertex_positions(ir: &CadIr) -> HashMap<&str, (Point3, Option<f64>)> {
-    let points = ir
-        .model
-        .points
-        .iter()
-        .map(|point| (point.id.as_str(), point.position().get()))
-        .collect::<HashMap<_, _>>();
-    ir.model
-        .vertices
-        .iter()
-        .filter_map(|vertex| {
-            let position = points.get(vertex.point.as_str())?;
-            Some((
-                vertex.id.as_str(),
-                (
-                    *position,
-                    vertex.tolerance.map(crate::scalar::PositiveReal::get),
-                ),
-            ))
-        })
-        .collect()
+fn curve_owners<'ctx, 'ir>(ctx: &'ctx DecodeContext<'_>, ir: &'ir CadIr) -> Result<BorrowedIdentities<'ctx, 'ir, &'ir crate::ids::CurveId>, CodecError> {
+    BorrowedIdentities::build(ctx, |add| {
+        for curve in &ir.model.curves {
+            ctx.charge_work(1, "geometric curve owner scan")?;
+            if let Some(construction) = curve.geometry.procedural_construction() {
+                add(construction.as_str(), &curve.id)?;
+            }
+        }
+        Ok(())
+    })
+}
+
+fn vertex_positions<'ctx, 'ir>(ctx: &'ctx DecodeContext<'_>, ir: &'ir CadIr) -> Result<BorrowedIdentities<'ctx, 'ir, (Point3, Option<f64>)>, CodecError> {
+    let points = BorrowedIdentities::build(ctx, |add| {
+        for point in &ir.model.points { add(point.id.as_str(), point.position().get())?; }
+        Ok(())
+    })?;
+    BorrowedIdentities::build(ctx, |add| {
+        for vertex in &ir.model.vertices {
+            ctx.charge_work(1, "geometric vertex position scan")?;
+            if let Some(position) = points.get(ctx, vertex.point.as_str())? {
+                add(vertex.id.as_str(), (*position, vertex.tolerance.map(crate::scalar::PositiveReal::get)))?;
+            }
+        }
+        Ok(())
+    })
 }
 
 /// An edge's curve evaluated at its parameter range must land on the edge's
@@ -359,37 +364,31 @@ pub(super) fn check_edge_endpoint_consistency(
     ir: &CadIr,
     findings: &mut Vec<Finding>,
 ) -> Result<(), CodecError> {
-    let curves = ir
-        .model
-        .curves
-        .iter()
-        .map(|curve| (curve.id.as_str(), &curve.geometry))
-        .collect::<HashMap<_, _>>();
-    let curve_cache_tolerances = ir
-        .model
-        .procedural_curves
-        .iter()
-        .filter_map(|curve| {
-            Some((
-                ir.model.procedural_curve_owner(&curve.id)?.as_str(),
-                curve.cache_fit_tolerance(),
-            ))
-        })
-        .collect::<HashMap<_, _>>();
-    let vertices = vertex_positions(ir);
+    let curves = BorrowedIdentities::build(ctx, |add| {
+        for curve in &ir.model.curves { add(curve.id.as_str(), &curve.geometry)?; }
+        Ok(())
+    })?;
+    let owners = curve_owners(ctx, ir)?;
+    let curve_cache_tolerances = BorrowedIdentities::build(ctx, |add| {
+        for curve in &ir.model.procedural_curves {
+            ctx.charge_work(1, "geometric curve cache scan")?;
+            if let Some(owner) = owners.get_unique(ctx, curve.id.as_str())? {
+                add(owner.as_str(), curve.cache_fit_tolerance())?;
+            }
+        }
+        Ok(())
+    })?;
+    let vertices = vertex_positions(ctx, ir)?;
     for edge in &ir.model.edges {
+        ctx.charge_work(1, "geometric edge scan")?;
         let Some([start_t, end_t]) = edge.param_range().map(crate::units::FiniteVector::get) else {
             continue;
         };
-        let Some((curve_id, geometry)) = edge
-            .curve()
-            .and_then(|id| curves.get(id.as_str()).map(|geometry| (id, geometry)))
-        else {
-            continue;
-        };
+        let Some(curve_id) = edge.curve() else { continue; };
+        let Some(geometry) = curves.get(ctx, curve_id.as_str())? else { continue; };
         let (Some((start, start_tol)), Some((end, end_tol))) = (
-            vertices.get(edge.start.as_str()),
-            vertices.get(edge.end.as_str()),
+            vertices.get(ctx, edge.start.as_str())?,
+            vertices.get(ctx, edge.end.as_str())?,
         ) else {
             continue;
         };
@@ -406,7 +405,7 @@ pub(super) fn check_edge_endpoint_consistency(
                 *start_tol,
                 *end_tol,
                 curve_cache_tolerances
-                    .get(curve_id.as_str())
+                    .get(ctx, curve_id.as_str())?
                     .copied()
                     .flatten()
                     .map(crate::geometry::FitTolerance::get),
@@ -422,22 +421,21 @@ pub(super) fn check_edge_endpoint_consistency(
                 ))?;
         }
     }
-    let edges = ir
-        .model
-        .edges
-        .iter()
-        .map(|edge| (edge.id.as_str(), edge))
-        .collect::<HashMap<_, _>>();
+    let edges = BorrowedIdentities::build(ctx, |add| {
+        for edge in &ir.model.edges { add(edge.id.as_str(), edge)?; }
+        Ok(())
+    })?;
     for coedge in &ir.model.coedges {
+        ctx.charge_work(1, "geometric coedge scan")?;
         let Some(use_curve) = &coedge.use_curve else {
             continue;
         };
         let [start_t, end_t] = use_curve.parameter_range.endpoints();
         let curve_id = &use_curve.curve;
-        let Some(geometry) = curves.get(curve_id.as_str()) else {
+        let Some(geometry) = curves.get(ctx, curve_id.as_str())? else {
             continue;
         };
-        let Some(edge) = edges.get(coedge.edge.as_str()) else {
+        let Some(edge) = edges.get(ctx, coedge.edge.as_str())? else {
             continue;
         };
         let (first_vertex, last_vertex) = match coedge.sense {
@@ -445,8 +443,8 @@ pub(super) fn check_edge_endpoint_consistency(
             Sense::Reversed => (&edge.end, &edge.start),
         };
         let (Some((start, start_tol)), Some((end, end_tol))) = (
-            vertices.get(first_vertex.as_str()),
-            vertices.get(last_vertex.as_str()),
+            vertices.get(ctx, first_vertex.as_str())?,
+            vertices.get(ctx, last_vertex.as_str())?,
         ) else {
             continue;
         };
@@ -463,7 +461,7 @@ pub(super) fn check_edge_endpoint_consistency(
                 *start_tol,
                 *end_tol,
                 curve_cache_tolerances
-                    .get(curve_id.as_str())
+                    .get(ctx, curve_id.as_str())?
                     .copied()
                     .flatten()
                     .map(crate::geometry::FitTolerance::get),
@@ -493,92 +491,84 @@ pub(super) fn check_pcurve_surface_consistency(
     findings: &mut Vec<Finding>,
 ) -> Result<(), CodecError> {
     let index = crate::index::ModelIndex::new(ir);
-    let curves = ir
-        .model
-        .curves
-        .iter()
-        .map(|curve| (curve.id.as_str(), &curve.geometry))
-        .collect::<HashMap<_, _>>();
-    let surfaces = ir
-        .model
-        .surfaces
-        .iter()
-        .map(|surface| (surface.id.as_str(), &surface.geometry))
-        .collect::<HashMap<_, _>>();
-    let procedurally_parameterized_surfaces = ir
-        .model
-        .procedural_surfaces
-        .iter()
-        .filter(|surface| {
-            !matches!(
-                surface.definition(),
-                crate::geometry::ProceduralSurfaceDefinition::Subset(_)
-            )
-        })
-        .filter_map(|surface| {
-            ir.model
-                .procedural_surface_owner(&surface.id)
-                .map(super::super::ids::SurfaceId::as_str)
-        })
-        .collect::<HashSet<_>>();
-    let pcurves = ir
-        .model
-        .pcurves
-        .iter()
-        .map(|pcurve| (pcurve.id.as_str(), pcurve))
-        .collect::<HashMap<_, _>>();
-    let edges = ir
-        .model
-        .edges
-        .iter()
-        .map(|edge| (edge.id.as_str(), edge))
-        .collect::<HashMap<_, _>>();
-    let faces = ir
-        .model
-        .faces
-        .iter()
-        .map(|face| (face.id.as_str(), face))
-        .collect::<HashMap<_, _>>();
-    let loops = ir
-        .model
-        .loops
-        .iter()
-        .map(|lp| (lp.id.as_str(), lp))
-        .collect::<HashMap<_, _>>();
-    let vertices = vertex_positions(ir);
+    let curves = BorrowedIdentities::build(ctx, |add| {
+        for curve in &ir.model.curves { add(curve.id.as_str(), &curve.geometry)?; }
+        Ok(())
+    })?;
+    let surfaces = BorrowedIdentities::build(ctx, |add| {
+        for surface in &ir.model.surfaces { add(surface.id.as_str(), &surface.geometry)?; }
+        Ok(())
+    })?;
+    let surface_owners = BorrowedIdentities::build(ctx, |add| {
+        for surface in &ir.model.surfaces {
+            ctx.charge_work(1, "geometric surface owner scan")?;
+            if let Some(construction) = surface.geometry.procedural_construction() {
+                add(construction.as_str(), &surface.id)?;
+            }
+        }
+        Ok(())
+    })?;
+    let procedurally_parameterized_surfaces = BorrowedIdentities::build(ctx, |add| {
+        for surface in &ir.model.procedural_surfaces {
+            ctx.charge_work(1, "geometric procedural surface scan")?;
+            if !matches!(surface.definition(), crate::geometry::ProceduralSurfaceDefinition::Subset(_)) {
+                if let Some(owner) = surface_owners.get_unique(ctx, surface.id.as_str())? {
+                    add(owner.as_str(), ())?;
+                }
+            }
+        }
+        Ok(())
+    })?;
+    let pcurves = BorrowedIdentities::build(ctx, |add| {
+        for pcurve in &ir.model.pcurves { add(pcurve.id.as_str(), pcurve)?; }
+        Ok(())
+    })?;
+    let edges = BorrowedIdentities::build(ctx, |add| {
+        for edge in &ir.model.edges { add(edge.id.as_str(), edge)?; }
+        Ok(())
+    })?;
+    let faces = BorrowedIdentities::build(ctx, |add| {
+        for face in &ir.model.faces { add(face.id.as_str(), face)?; }
+        Ok(())
+    })?;
+    let loops = BorrowedIdentities::build(ctx, |add| {
+        for lp in &ir.model.loops { add(lp.id.as_str(), lp)?; }
+        Ok(())
+    })?;
+    let vertices = vertex_positions(ctx, ir)?;
 
     for coedge in &ir.model.coedges {
+        ctx.charge_work(1, "geometric coedge scan")?;
         let Some((first_use, last_use)) = coedge.pcurves.first().zip(coedge.pcurves.last()) else {
             continue;
         };
         let (Some(first), Some(last)) = (
-            pcurves.get(first_use.pcurve.as_str()),
-            pcurves.get(last_use.pcurve.as_str()),
+            pcurves.get(ctx, first_use.pcurve.as_str())?,
+            pcurves.get(ctx, last_use.pcurve.as_str())?,
         ) else {
             continue;
         };
-        let Some(face) = loops
-            .get(coedge.owner_loop.as_str())
-            .and_then(|lp| faces.get(lp.face.as_str()))
-        else {
-            continue;
+        let face = match loops.get(ctx, coedge.owner_loop.as_str())? {
+            Some(lp) => faces.get(ctx, lp.face.as_str())?,
+            None => None,
         };
-        let Some(geometry) = surfaces.get(face.surface.as_str()) else {
+        let Some(face) = face else { continue; };
+        let Some(geometry) = surfaces.get(ctx, face.surface.as_str())? else {
             continue;
         };
         // A procedural construction defines its own UV space. Its solved
         // surface is a model-space cache, not the carrier of that UV
         // parameterization, so mapping the pcurve through the cache is not a
         // valid consistency test.
-        if procedurally_parameterized_surfaces.contains(face.surface.as_str()) {
+        if procedurally_parameterized_surfaces.contains(ctx, face.surface.as_str())? {
             continue;
         }
-        let Some(edge) = edges.get(coedge.edge.as_str()) else {
+        let Some(edge) = edges.get(ctx, coedge.edge.as_str())? else {
             continue;
         };
         let (Some((start, start_tol)), Some((end, end_tol))) = (
-            vertices.get(edge.start.as_str()),
-            vertices.get(edge.end.as_str()),
+            vertices.get(ctx, edge.start.as_str())?,
+            vertices.get(ctx, edge.end.as_str())?,
         ) else {
             continue;
         };
@@ -586,9 +576,10 @@ pub(super) fn check_pcurve_surface_consistency(
         // intervals, honoring an opposite-sign parameterization and a stored
         // range. Multiple images are checked from the first image's start
         // extreme to the last image's end extreme.
-        let curve_geometry = edge
-            .curve()
-            .and_then(|curve| curves.get(curve.as_str()).copied());
+        let curve_geometry = match edge.curve() {
+            Some(curve) => curves.get(ctx, curve.as_str())?.copied(),
+            None => None,
+        };
         let bound = allowance(
             ir.tolerances.linear,
             &[
