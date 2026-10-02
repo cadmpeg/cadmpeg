@@ -251,3 +251,9 @@ pub(crate) fn iteration(tcx: TyCtxt<'_>, value: Ty<'_>) -> Shape {
         _ => Shape::Unknown,
     }
 }
+
+pub(crate) fn derived(tcx: TyCtxt<'_>, definition: rustc_span::def_id::DefId) -> bool {
+    let generated = tcx.def_span(definition).macro_backtrace().any(|expansion| matches!(expansion.kind, rustc_span::hygiene::ExpnKind::Macro(rustc_span::hygiene::MacroKind::Derive, _)));
+    let parent = tcx.parent(definition);
+    generated || matches!(tcx.def_kind(parent), rustc_hir::def::DefKind::Impl { .. }) && tcx.is_automatically_derived(parent)
+}

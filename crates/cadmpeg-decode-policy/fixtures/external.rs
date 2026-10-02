@@ -40,3 +40,18 @@ pub fn repeating(text: &str, count: usize) {
 pub fn missing_constructor(name: &str) {
     let _command = std::process::Command::new(name); // finding: unproven_decode_charge
 }
+
+pub fn scalar_and_metadata(value: f64, number: u64, bytes: &[u8], text: &str) {
+    let _abs = value.abs();
+    let _sin = value.sin();
+    let _bits = value.to_bits();
+    let _leading = number.leading_zeros();
+    let _first = bytes.first();
+    let _last = bytes.last();
+    let _array: [usize; 4] = std::array::from_fn(|index| index);
+    let _number = text.parse::<u64>(); // finding: uncharged_decode_work
+    let _same = text.eq_ignore_ascii_case(text); // finding: uncharged_decode_work
+    let _fixed = "a".eq_ignore_ascii_case("A");
+    let _next = bytes.iter().next();
+    let _mapped = Some(number).map_or_else(|| 0, |n| n + 1);
+}

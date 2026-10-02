@@ -29,6 +29,7 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 #[derive(Default)]
 struct Findings {
+    externals: BTreeSet<String>,
     entries: BTreeMap<(String, usize, u32, u32, String), BTreeSet<String>>,
 }
 
@@ -145,6 +146,7 @@ impl Callbacks for DecodeCallbacks {
                         .get(&local)
                         .is_some_and(|keys| keys.contains(key))
             });
+            self.findings.externals.extend(findings.externals);
             for (key, messages) in findings.entries {
                 self.findings
                     .entries
@@ -159,12 +161,13 @@ impl Callbacks for DecodeCallbacks {
                 messages.iter().cloned().collect::<Vec<_>>().join("; ")
             );
         }
+        for operation in &self.findings.externals { println!("{operation}"); }
         Compilation::Continue
     }
 }
 
 fn production(tcx: TyCtxt<'_>, owner: DefId) -> bool {
-    if tcx.is_automatically_derived(tcx.parent(owner)) || !types::checked(tcx, owner)
+    if types::derived(tcx, owner) || !types::checked(tcx, owner)
         || !matches!(
             tcx.def_kind(owner),
             rustc_hir::def::DefKind::Fn
@@ -174,6 +177,8 @@ fn production(tcx: TyCtxt<'_>, owner: DefId) -> bool {
     {
         return false;
     }
+    let parent = tcx.parent(owner);
+    if matches!(tcx.def_kind(parent), rustc_hir::def::DefKind::Impl { of_trait: true }) && tcx.item_name(tcx.impl_trait_ref(parent).skip_binder().def_id).as_str() == "Serialize" { return false; }
     let path = tcx
         .sess
         .source_map()
@@ -330,6 +335,14 @@ impl<'tcx> Analysis<'_, 'tcx> {
 
 impl<'tcx> Visitor<'tcx> for Analysis<'_, 'tcx> {
     fn visit_expr(&mut self, expression: &'tcx Expr<'tcx>) {
+        if std::env::var_os("CADMPEG_POLICY_EXTERNALS").is_some() {
+            if let Some((definition, operands)) = self.call(expression) {
+                let resolved = self.implementation(expression, definition).unwrap_or(definition);
+                if !types::checked(self.tcx, resolved) && !matches!(self.tcx.def_kind(resolved), rustc_hir::def::DefKind::Ctor(_, _)) {
+                    self.findings.externals.insert(external::inventory_row(self.tcx, resolved, operands.first().map(|operand| self.expr_ty(operand))));
+                }
+            }
+        }
         self.indirect(expression);
         self.allocation(expression);
         self.visit_work_expression(expression);

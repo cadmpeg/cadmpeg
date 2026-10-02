@@ -23,6 +23,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
         expression: &'tcx Expr<'tcx>,
         definition: DefId,
     ) -> Option<Instance<'tcx>> {
+        if !matches!(self.tcx.def_kind(definition), rustc_hir::def::DefKind::Fn | rustc_hir::def::DefKind::AssocFn | rustc_hir::def::DefKind::Ctor(_, rustc_hir::def::CtorKind::Fn)) { return None; }
         let args = self.call_arguments(expression)?;
         if args.len() != self.tcx.generics_of(definition).count() {
             return None;
@@ -197,7 +198,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
         match Instance::try_resolve(self.tcx, self.typing_env(), method.def_id, args) {
             Ok(Some(instance)) => {
                 let id = instance.def_id();
-                if self.tcx.is_automatically_derived(self.tcx.parent(id)) {
+                if types::derived(self.tcx, id) {
                     if let ty::Adt(definition, arguments) = value.kind() {
                         definition
                             .all_fields()
@@ -233,7 +234,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
         if seen.contains(&value) { return types::Shape::Unknown; }
         let Some(method) = self.trait_method(value, "Default", "default") else { return types::Shape::Unknown; };
         if types::standard(self.tcx, method) || self.checked_body(method) { return types::Shape::Fixed; }
-        if !self.tcx.is_automatically_derived(self.tcx.parent(method)) { return types::Shape::Unknown; }
+        if !types::derived(self.tcx, method) { return types::Shape::Unknown; }
         seen.push(value);
         let shape = match value.kind() {
             ty::Adt(owner, arguments) => owner.all_fields().fold(types::Shape::Fixed, |shape, field| shape.join(self.default_shape(field.ty(self.tcx, arguments).skip_norm_wip(), seen))),

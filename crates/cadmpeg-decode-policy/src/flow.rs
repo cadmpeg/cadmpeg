@@ -448,6 +448,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
                             || key.starts_with(&format!("{term}."))
                     })
             });
+            self.flow.storage_extents.retain(|term| !term.factors.iter().any(|factor| factor == &key || factor.starts_with(&format!("{key}.")) || key.starts_with(&format!("{factor}."))));
             self.flow.mutated.insert(key);
         } else {
             for credit in &mut self.flow.work {
