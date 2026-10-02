@@ -47,11 +47,39 @@ impl<'ctx, 'ir, T> BorrowedIdentities<'ctx, 'ir, T> {
     pub(super) fn insert_unique(&mut self, id: &'ir str, value: T) -> Result<bool, CodecError> {
         let (hash, low, found, _) = self.position(self.ctx, id)?;
         if found.is_some() { return Ok(false); }
+        self.insert_at(hash, low, id, value)?;
+        Ok(true)
+    }
+
+    /// Replace the last matching value or admit a new identity slot.
+    pub(super) fn insert(&mut self, id: &'ir str, value: T) -> Result<Option<T>, CodecError> {
+        let (hash, low, found, _) = self.position(self.ctx, id)?;
+        if let Some(found) = found {
+            return Ok(Some(std::mem::replace(&mut self.values[found].2, value)));
+        }
+        self.insert_at(hash, low, id, value)?;
+        Ok(None)
+    }
+
+    fn insert_at(&mut self, hash: u64, low: usize, id: &'ir str, value: T) -> Result<(), CodecError> {
         self.ctx.charge_work(u64_from_index(self.values.len() - low), "move validation identity slots")?;
         self.storage.with_storage(|| self.ctx.reserve_retained_vec(&mut self.values, 1, "borrowed validation identity slots"))?;
         self.values.insert(low, (hash, id, value));
-        Ok(true)
+        Ok(())
     }
+
+    pub(super) fn get_mut(&mut self, ctx: &DecodeContext<'_>, id: &str) -> Result<Option<&mut T>, CodecError> {
+        let (_, _, found, _) = self.position(ctx, id)?;
+        Ok(found.map(|position| &mut self.values[position].2))
+    }
+
+    pub(super) fn match_count(&self, ctx: &DecodeContext<'_>, id: &str) -> Result<usize, CodecError> {
+        Ok(self.position(ctx, id)?.3)
+    }
+
+    pub(super) fn len(&self) -> usize { self.values.len() }
+
+    pub(super) fn values(&self) -> impl Iterator<Item = &T> { self.values.iter().map(|(_, _, value)| value) }
 
     pub(super) fn identities(&self) -> impl Iterator<Item = &'ir str> + '_ {
         self.values.iter().map(|(_, identity, _)| *identity)
@@ -218,6 +246,23 @@ mod tests {
         }
         drop(ctx.reserve_scoped(4096, "borrowed set storage released").unwrap());
         ctx.finish_session().unwrap();
+    }
+
+    #[test]
+    fn borrowed_identity_replacement_mutation_and_counts_keep_shared_lookup_semantics() {
+        let ctx = cadmpeg_test_support::service_decode_context();
+        let id = "test:model:point#same";
+        let mut index = super::BorrowedIdentities::build(&ctx, |add| { add(id, 1)?; add(id, 2) }).unwrap();
+        assert_eq!(index.match_count(&ctx, id).unwrap(), 2);
+        assert_eq!(index.insert(id, 3).unwrap(), Some(2));
+        *index.get_mut(&ctx, id).unwrap().unwrap() = 4;
+        assert_eq!(index.get(&ctx, id).unwrap(), Some(&4));
+        assert_eq!(index.values().copied().collect::<Vec<_>>(), [1, 4]);
+        assert_eq!(index.len(), 2);
+        assert_eq!(index.insert("test:model:point#new", 5).unwrap(), None);
+        assert_eq!(index.match_count(&ctx, "test:model:point#new").unwrap(), 1);
+        assert_eq!(index.match_count(&ctx, "test:model:point#missing").unwrap(), 0);
+        assert_eq!(index.len(), 3);
     }
 
 }

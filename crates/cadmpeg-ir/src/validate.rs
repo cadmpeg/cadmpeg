@@ -55,10 +55,8 @@ use referential_integrity::check_typed_references;
 use semantic_annotations::check_semantic_annotations;
 use sketches::check_sketches;
 use spreadsheets::check_spreadsheets;
-use topology::{
-    check_coedge_pairing, check_references, check_shell_connectivity, check_tolerances,
-    check_topology_tolerances, check_wire_topology,
-};
+use topology::{check_references, check_tolerances, check_topology_tolerances};
+use topology::graphs::{check_coedge_pairing, check_shell_connectivity, check_wire_topology};
 
 /// The parameter interval a pcurve carrier is defined on, when the carrier
 /// states one.
@@ -150,9 +148,9 @@ fn validate_model_with_index(
     check_references(ctx, ir, ids, &mut findings)?;
     check_evaluation_cycles(ctx, ir, ids, &mut findings)?;
     check_pmi(ctx, ir, &mut findings)?;
-    check_coedge_pairing(ir, &mut findings);
-    check_shell_connectivity(ir, &mut findings);
-    check_wire_topology(ir, &mut findings);
+    check_coedge_pairing(ctx, ir, &mut findings)?;
+    check_shell_connectivity(ctx, ir, &mut findings)?;
+    check_wire_topology(ctx, ir, &mut findings)?;
     check_carrier_reachability(ctx, ids.native_view(), &mut findings)?;
     check_native_links(ctx, ids.native_view(), ids, &mut findings)?;
     check_parameter_domains(ctx, ir, &mut findings)?;
