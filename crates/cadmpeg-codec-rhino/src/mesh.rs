@@ -1405,7 +1405,7 @@ fn read_double_chunk<'a>(
         archive,
     )?;
     child.skip_remaining()?;
-    let direct = crate::chunks::direct_checksum_ranges(&chunk.body(), nested_buffer.as_slice())?;
+    let direct = crate::chunks::direct_checksum_ranges(expand.ctx(), &chunk.body(), nested_buffer.as_slice())?;
     if matches!(
         crate::chunks::verify_checksum_ranges(
             expand.ctx(),

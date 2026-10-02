@@ -1036,15 +1036,15 @@ fn parse_attributes(
     Ok((result, checksum_children))
 }
 
-fn view_child_checksum_warning<I>(
+fn view_child_checksum_warning<I, R>(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     data: &[u8],
     child: &crate::chunks::Chunk,
     direct_ranges: I,
 ) -> Result<Option<String>, FramingError>
 where
-    I: Clone + IntoIterator,
-    I::Item: std::borrow::Borrow<std::ops::Range<usize>>,
+    I: Clone + IntoIterator<Item = Result<R, FramingError>>,
+    R: std::borrow::Borrow<std::ops::Range<usize>>,
 {
     match verify_checksum_ranges(ctx, data, child, direct_ranges)? {
         ChecksumStatus::Mismatch { expected, actual } => Ok(Some(format!(
@@ -1060,7 +1060,7 @@ fn direct_view_child_checksum_warning(
     data: &[u8],
     child: &crate::chunks::Chunk,
 ) -> Result<Option<String>, FramingError> {
-    view_child_checksum_warning(ctx, data, child, std::slice::from_ref(&child.body()))
+    view_child_checksum_warning(ctx, data, child, std::iter::once(Ok(child.body())))
 }
 
 fn view_child_checksum_warning_excluding(
@@ -1069,7 +1069,7 @@ fn view_child_checksum_warning_excluding(
     child: &crate::chunks::Chunk,
     nested_children: &[std::ops::Range<usize>],
 ) -> Result<Option<String>, FramingError> {
-    let direct = direct_checksum_ranges(&child.body(), nested_children)?;
+    let direct = direct_checksum_ranges(ctx, &child.body(), nested_children)?;
     view_child_checksum_warning(ctx, data, child, &direct)
 }
 
@@ -1425,7 +1425,7 @@ fn parse_view(
             "view is missing its end marker",
         ));
     }
-    let direct = direct_checksum_ranges(&record.body(), &checksum_children)?;
+    let direct = direct_checksum_ranges(ctx, &record.body(), &checksum_children)?;
     let checksum_warning = match verify_checksum_ranges(ctx, data, record, &direct)? {
         ChecksumStatus::Mismatch { expected, actual } => Some(format!(
             "CRC mismatch at offset {} for typecode {:#x}: expected {expected:#x}, got {actual:#x}",
