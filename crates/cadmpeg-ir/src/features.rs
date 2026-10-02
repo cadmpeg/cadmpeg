@@ -9268,14 +9268,8 @@ impl<'a> IntoIterator for &'a SplitFacePlanes {
 
 impl<'de> Deserialize<'de> for SplitFacePlanes {
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        let planes = Vec::<FeatureId>::deserialize(deserializer)?;
-        if planes.len() < 2 { return Err(serde::de::Error::custom("planes must contain at least two planes")); }
-        let mut seen = std::collections::HashSet::new();
-        seen.try_reserve(planes.len()).map_err(serde::de::Error::custom)?;
-        for plane in &planes {
-            if !seen.insert(plane) { return Err(serde::de::Error::custom("planes must be distinct")); }
-        }
-        Ok(Self(SelectionMembers(planes)))
+        Self::try_from(Vec::<FeatureId>::deserialize(deserializer)?)
+            .map_err(serde::de::Error::custom)
     }
 }
 
