@@ -42,7 +42,7 @@ use crate::transform::Transform;
 use crate::units::{FinitePoint2, FiniteVector, UnitVector3};
 use crate::CadIr;
 use cadmpeg_core::decode::work_scratch::WorkScratch;
-use cadmpeg_core::decode::{u64_from_index, DecodeContext, ResourceLimit, WorkBudget};
+use cadmpeg_core::decode::{u64_from_index, DecodeContext, ResourceLimit, ScopedReservation, WorkBudget};
 use cadmpeg_core::CodecError;
 
 /// Evaluation under the caller decode resource limits.
@@ -216,13 +216,20 @@ pub fn analytic_surface_parameters_solved(
     }
 }
 
+#[derive(Debug)]
 struct RationalBezierSurfacePatch<'session> {
     u_domain: IncreasingParameterInterval,
     v_domain: IncreasingParameterInterval,
     u_degree: usize,
     v_degree: usize,
     controls: Vec<[f64; 4]>,
-    _scratch: WorkScratch<'session>,
+    _scratch: ScopedReservation<'session>,
+}
+
+#[derive(Debug)]
+struct SurfacePatches<'ctx> {
+    rows: Vec<RationalBezierSurfacePatch<'ctx>>,
+    _storage: ScopedReservation<'ctx>,
 }
 
 struct SurfacePatchQueueEntry<'session> {
@@ -311,170 +318,121 @@ pub fn nurbs_surface_patch_workspace(surface: &NurbsSurface) -> Result<(u64, u64
     })
 }
 
-fn rational_surface_patches_with_budget<'session>(
-    ctx: &DecodeContext<'_>,
+fn rational_surface_patches_with_budget<'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
     surface: &NurbsSurface,
-    budget: &WorkBudget<'session>,
-) -> Result<Option<Vec<RationalBezierSurfacePatch<'session>>>, ResourceLimit> {
-    let Some(u_degree) = usize::try_from(surface.u_degree()).ok() else {
+    budget: &WorkBudget<'_>,
+) -> Result<Option<SurfacePatches<'ctx>>, ResourceLimit> {
+    if !budget.charge() {
+        ctx.charge_work_limit(0, "IR surface extraction completion")?;
         return Ok(None);
-    };
-    let Some(v_degree) = usize::try_from(surface.v_degree()).ok() else {
-        return Ok(None);
-    };
+    }
+    let Some(u_degree) = usize::try_from(surface.u_degree()).ok() else { return Ok(None); };
+    let Some(v_degree) = usize::try_from(surface.v_degree()).ok() else { return Ok(None); };
     let u_count = surface.u_count();
     let v_count = surface.v_count();
-    let Some(control_count) = u_count.checked_mul(v_count) else {
-        return Ok(None);
-    };
-    let Some(patch_control_count) = (u_degree + 1).checked_mul(v_degree + 1) else {
-        return Ok(None);
-    };
-    if !budget.charge_by(control_count) {
-        return Ok(None);
-    }
-    if u_degree >= u_count || v_degree >= v_count {
-        return Ok(None);
-    }
+    let Some(control_count) = u_count.checked_mul(v_count) else { return Ok(None); };
+    if u_degree >= u_count || v_degree >= v_count { return Ok(None); }
+    let Some(patch_control_count) = (u_degree + 1).checked_mul(v_degree + 1) else { return Ok(None); };
+    let _point_storage;
     let mut points = Vec::new();
-    scratch::reserve_exact(&mut points, control_count, "IR surface control points")?;
+    _point_storage = ctx.reserve_temporary_vec(&mut points, control_count, "IR surface control points")?;
+    let _weight_storage;
     let mut weights = if surface.weight(0, 0).is_some() {
         let mut weights = Vec::new();
-        scratch::reserve_exact(&mut weights, control_count, "IR surface control weights")?;
+        _weight_storage = Some(ctx.reserve_temporary_vec(&mut weights, control_count, "IR surface control weights")?);
         Some(weights)
     } else {
+        _weight_storage = None;
         None
     };
     for u in 0..u_count {
         for v in 0..v_count {
-            let Some(point) = surface.pole(u, v) else {
-                return Ok(None);
-            };
+            ctx.charge_work_limit(1, "IR surface control point copy")?;
+            let Some(point) = surface.pole(u, v) else { return Ok(None); };
             points.push(point);
             if let Some(weights) = &mut weights {
-                let Some(weight) = surface.weight(u, v) else {
-                    return Ok(None);
-                };
+                ctx.charge_work_limit(1, "IR surface control weight copy")?;
+                let Some(weight) = surface.weight(u, v) else { return Ok(None); };
                 weights.push(weight.get());
             }
         }
     }
-    if weights
-        .as_ref()
-        .is_some_and(|weights| weights.iter().any(|weight| *weight <= 0.0))
-    {
-        return Ok(None);
-    }
-    let Some(homogeneous_controls) = positive_controls(ctx, &points, weights.as_deref(), "Bezier positive controls")? else {
-        return Ok(None);
-    };
-    // The Bezier spans of every row and column share the knots, so their
-    // domains are the intervals between consecutive distinct active knots.
-    let Some(u_domains) = surface.u_knots().active_spans(ctx, u_degree, u_count)? else {
-        return Ok(None);
-    };
-    let Some(v_domains) = surface.v_knots().active_spans(ctx, v_degree, v_count)? else {
-        return Ok(None);
-    };
+    let Some(homogeneous_controls) = positive_controls(ctx, &points, weights.as_deref(), "Bezier positive controls")? else { return Ok(None); };
+    // Every row and column has the same active knot intervals.
+    let Some(u_domains) = surface.u_knots().active_spans(ctx, u_degree, u_count)? else { return Ok(None); };
+    let Some(v_domains) = surface.v_knots().active_spans(ctx, v_degree, v_count)? else { return Ok(None); };
+    let _u_span_storage;
     let mut u_spans_by_v = Vec::new();
-    scratch::reserve_exact(&mut u_spans_by_v, v_count, "IR surface u spans")?;
+    _u_span_storage = ctx.reserve_temporary_vec(&mut u_spans_by_v, v_count, "IR surface u spans")?;
     for v in 0..v_count {
+        let _row_storage;
         let mut controls = Vec::new();
-        scratch::reserve_exact(&mut controls, u_count, "IR surface u row")?;
+        _row_storage = ctx.reserve_temporary_vec(&mut controls, u_count, "IR surface u row")?;
+        ctx.charge_work_limit(u64_from_index(u_count), "IR surface u row copy")?;
         controls.extend((0..u_count).map(|u| homogeneous_controls[u * v_count + v]));
-        let Some(spans) = homogeneous_spans(ctx, u_degree, surface.u_knots(), &controls)? else {
-            return Ok(None);
-        };
+        let Some(spans) = homogeneous_spans(ctx, u_degree, surface.u_knots(), &controls)? else { return Ok(None); };
+        ctx.charge_work_limit(1, "IR surface u span append")?;
         u_spans_by_v.push(spans);
     }
-    if u_spans_by_v
-        .iter()
-        .any(|spans| spans.len() != u_domains.len())
-    {
-        return Ok(None);
+    for spans in &u_spans_by_v {
+        ctx.charge_work_limit(1, "IR surface u span count scan")?;
+        if spans.len() != u_domains.len() { return Ok(None); }
     }
+    let storage;
     let mut patches = Vec::new();
-    let Some(patch_count) = u_domains.len().checked_mul(v_domains.len()) else {
-        return Ok(None);
-    };
-    scratch::reserve_exact(&mut patches, patch_count, "IR surface patches")?;
+    let Some(patch_count) = u_domains.len().checked_mul(v_domains.len()) else { return Ok(None); };
+    storage = ctx.reserve_temporary_vec(&mut patches, patch_count, "IR surface patches")?;
     for (u_span, &u_domain) in u_domains.iter().enumerate() {
+        ctx.charge_work_limit(1, "IR surface u domain visit")?;
+        let _v_span_storage;
         let mut v_spans_by_u = Vec::new();
-        scratch::reserve_exact(&mut v_spans_by_u, u_degree + 1, "IR surface v spans")?;
+        _v_span_storage = ctx.reserve_temporary_vec(&mut v_spans_by_u, u_degree + 1, "IR surface v spans")?;
         for u_control in 0..=u_degree {
+            let _row_storage;
             let mut controls = Vec::new();
-            scratch::reserve_exact(&mut controls, v_count, "IR surface v row")?;
+            _row_storage = ctx.reserve_temporary_vec(&mut controls, v_count, "IR surface v row")?;
+            ctx.charge_work_limit(u64_from_index(v_count), "IR surface v row copy")?;
             controls.extend((0..v_count).map(|v| u_spans_by_v[v][u_span].controls[u_control]));
-            let Some(spans) = homogeneous_spans(ctx, v_degree, surface.v_knots(), &controls)? else {
-                return Ok(None);
-            };
+            let Some(spans) = homogeneous_spans(ctx, v_degree, surface.v_knots(), &controls)? else { return Ok(None); };
+            ctx.charge_work_limit(1, "IR surface v span append")?;
             v_spans_by_u.push(spans);
         }
-        if v_spans_by_u
-            .iter()
-            .any(|spans| spans.len() != v_domains.len())
-        {
-            return Ok(None);
+        for spans in &v_spans_by_u {
+            ctx.charge_work_limit(1, "IR surface v span count scan")?;
+            if spans.len() != v_domains.len() { return Ok(None); }
         }
         for (v_span, &v_domain) in v_domains.iter().enumerate() {
-            if !budget.charge_by(patch_control_count) {
-                return Ok(None);
-            }
-            let control_bytes = patch_control_count
-                .checked_mul(std::mem::size_of::<[f64; 4]>())
-                .ok_or_else(|| {
-                    scratch::allocation_refusal(
-                        patch_control_count,
-                        "IR surface patch control bytes",
-                    )
-                })?;
-            let control_scratch = budget
-                .reserve_scratch(u64_from_index(control_bytes), "IR surface patch controls")?;
+            ctx.charge_work_limit(1, "IR surface v domain visit")?;
+            let control_scratch;
             let mut controls = Vec::new();
-            scratch::reserve_exact(
-                &mut controls,
-                patch_control_count,
-                "IR surface patch controls",
-            )?;
-            controls.extend(
-                (0..=u_degree).flat_map(|u| v_spans_by_u[u][v_span].controls.iter().copied()),
-            );
+            control_scratch = ctx.reserve_temporary_vec(&mut controls, patch_control_count, "IR surface patch controls")?;
+            ctx.charge_work_limit(u64_from_index(patch_control_count), "IR surface patch control copy")?;
+            controls.extend((0..=u_degree).flat_map(|u| v_spans_by_u[u][v_span].controls.iter().copied()));
+            ctx.charge_work_limit(1, "IR surface patch append")?;
             patches.push(RationalBezierSurfacePatch {
-                u_domain,
-                v_domain,
-                u_degree,
-                v_degree,
-                controls,
-                _scratch: control_scratch,
+                u_domain, v_domain, u_degree, v_degree, controls, _scratch: control_scratch,
             });
         }
     }
-    Ok((!patches.is_empty()).then_some(patches))
+    Ok((!patches.is_empty()).then_some(SurfacePatches { rows: patches, _storage: storage }))
 }
 
-fn rational_surface_residual_patches<'session>(
-    ctx: &DecodeContext<'_>,
+fn rational_surface_residual_patches<'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
     surface: &NurbsSurface,
     point: Point3,
-    budget: &WorkBudget<'session>,
-) -> Result<Option<Vec<RationalBezierSurfacePatch<'session>>>, ResourceLimit> {
-    if !point.is_finite() {
-        return Ok(None);
-    }
-    let Some(mut patches) = rational_surface_patches_with_budget(ctx, surface, budget)? else {
-        return Ok(None);
-    };
-    let Some(residual_work) = patches
-        .iter()
-        .try_fold(0usize, |work, patch| work.checked_add(patch.controls.len()))
-    else {
-        return Ok(None);
-    };
-    if !budget.charge_by(residual_work) {
-        return Ok(None);
-    }
-    for patch in &mut patches {
+    budget: &WorkBudget<'_>,
+) -> Result<Option<SurfacePatches<'ctx>>, ResourceLimit> {
+    if !point.is_finite() { return Ok(None); }
+    let Some(mut patches) = rational_surface_patches_with_budget(ctx, surface, budget)? else { return Ok(None); };
+    for patch in &mut patches.rows {
+        if !budget.charge() {
+            ctx.charge_work_limit(0, "IR surface residual completion")?;
+            return Ok(None);
+        }
         for control in &mut patch.controls {
+            ctx.charge_work_limit(1, "IR surface residual control")?;
             for (axis, coordinate) in [point.x, point.y, point.z].into_iter().enumerate() {
                 control[axis] -= control[3] * coordinate;
             }
@@ -630,7 +588,7 @@ pub fn nurbs_surface_parameter_segment_chord_bound_with_budget(
     let [last_u, last_v] = last.coordinates();
     let mut split_storage = ctx.reserve_scoped(0, "IR rational surface segment splits")?;
     let mut splits = Vec::new();
-    let Some(split_capacity) = patches
+    let Some(split_capacity) = patches.rows
         .len()
         .checked_mul(4)
         .and_then(|count| count.checked_add(2))
@@ -643,8 +601,8 @@ pub fn nurbs_surface_parameter_segment_chord_bound_with_budget(
         "IR rational surface segment splits",
     )?;
     splits.extend([0.0, 1.0]);
-    ctx.charge_work(u64_from_index(patches.len()).checked_mul(4).ok_or_else(|| ctx.refuse_codec_limit("IR surface segment boundary scan", u64::MAX - 1, u64::MAX))?, "IR surface segment boundary scan")?;
-    for patch in &patches {
+    ctx.charge_work(u64_from_index(patches.rows.len()).checked_mul(4).ok_or_else(|| ctx.refuse_codec_limit("IR surface segment boundary scan", u64::MAX - 1, u64::MAX))?, "IR surface segment boundary scan")?;
+    for patch in &patches.rows {
         let [u_lower, u_upper] = patch.u_domain.finite_endpoints();
         let [v_lower, v_upper] = patch.v_domain.finite_endpoints();
         for (boundary, start, end) in [
@@ -685,8 +643,8 @@ pub fn nurbs_surface_parameter_segment_chord_bound_with_budget(
         let Some(midpoint) = parameter_point(middle) else {
             return Ok(None);
         };
-        ctx.charge_work(u64_from_index(patches.len()), "IR surface segment patch search")?;
-        let Some(patch) = patches.iter().find(|patch| {
+        ctx.charge_work(u64_from_index(patches.rows.len()), "IR surface segment patch search")?;
+        let Some(patch) = patches.rows.iter().find(|patch| {
             patch.u_domain.lower() <= midpoint.u
                 && midpoint.u <= patch.u_domain.upper()
                 && patch.v_domain.lower() <= midpoint.v
@@ -762,34 +720,36 @@ fn rational_patch_distance_bounds_with_budget(
     (lower.is_finite() && diameter.is_finite()).then_some((lower, diameter))
 }
 
-fn split_rational_surface_patch<'session>(
-    ctx: &DecodeContext<'_>,
-    patch: &RationalBezierSurfacePatch<'session>,
+fn split_rational_surface_patch<'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
+    patch: &RationalBezierSurfacePatch<'_>,
     split_u: bool,
-    budget: &WorkBudget<'session>,
-) -> Result<Option<[RationalBezierSurfacePatch<'session>; 2]>, ResourceLimit> {
+    budget: &WorkBudget<'_>,
+) -> Result<Option<[RationalBezierSurfacePatch<'ctx>; 2]>, ResourceLimit> {
     let (degree, line_count) = if split_u {
         (patch.u_degree, patch.v_degree + 1)
     } else {
         (patch.v_degree, patch.u_degree + 1)
     };
-    let Some(work) = patch.controls.len().checked_mul(degree + 1) else {
-        return Ok(None);
-    };
-    if !budget.charge_by(work) {
+    if !budget.charge() {
+        ctx.charge_work_limit(0, "IR surface split completion")?;
         return Ok(None);
     }
+    let _first_line_storage;
     let mut first_lines = Vec::new();
-    scratch::reserve_exact(&mut first_lines, line_count, "IR surface patch first lines")?;
+    _first_line_storage = ctx.reserve_temporary_vec(&mut first_lines, line_count, "IR surface patch first lines")?;
+    let _second_line_storage;
     let mut second_lines = Vec::new();
-    scratch::reserve_exact(
+    _second_line_storage = ctx.reserve_temporary_vec(
         &mut second_lines,
         line_count,
         "IR surface patch second lines",
     )?;
     for line in 0..line_count {
+        let _row_storage;
         let mut controls = Vec::new();
-        scratch::reserve_exact(&mut controls, degree + 1, "IR surface patch split line")?;
+        _row_storage = ctx.reserve_temporary_vec(&mut controls, degree + 1, "IR surface patch split line")?;
+        ctx.charge_work_limit(u64_from_index(degree + 1), "IR surface patch split line copy")?;
         if split_u {
             controls.extend(
                 (0..=degree).map(|index| patch.controls[index * (patch.v_degree + 1) + line]),
@@ -803,21 +763,16 @@ fn split_rational_surface_patch<'session>(
             return Ok(None);
         };
         let (first, second) = split.into_polygons(ctx)?;
+        ctx.charge_work_limit(2, "IR surface split polygon append")?;
         first_lines.push(first);
         second_lines.push(second);
     }
-    let assemble = |lines: Vec<ScopedRows<'_, [f64; 4]>>| -> Result<(Vec<[f64; 4]>, WorkScratch<'session>), ResourceLimit> {
-        let bytes = patch.controls.len().checked_mul(std::mem::size_of::<[f64; 4]>())
-            .ok_or_else(|| scratch::allocation_refusal(patch.controls.len(), "IR assembled patch bytes"))?;
-        let reservation = budget.reserve_scratch(u64_from_index(bytes), "IR assembled surface patch controls")?;
+    let assemble = |lines: &[ScopedRows<'ctx, [f64; 4]>]| -> Result<(Vec<[f64; 4]>, ScopedReservation<'ctx>), ResourceLimit> {
+        let reservation;
         let mut controls = Vec::new();
-        scratch::reserve_exact(
-            &mut controls,
-            patch.controls.len(),
-            "IR surface patch assembled controls",
-        )?;
+        reservation = ctx.reserve_temporary_vec(&mut controls, patch.controls.len(), "IR surface patch assembled controls")?;
+        ctx.charge_work_limit(u64_from_index(patch.controls.len()), "IR surface patch assembled copy")?;
         if split_u {
-            let lines = &lines;
             controls.extend(
                 (0..=patch.u_degree).flat_map(|u| (0..=patch.v_degree).map(move |v| lines[v][u])),
             );
@@ -837,8 +792,8 @@ fn split_rational_surface_patch<'session>(
         };
         (patch.u_domain, patch.u_domain, first_v, second_v)
     };
-    let (first_controls, first_scratch) = assemble(first_lines)?;
-    let (second_controls, second_scratch) = assemble(second_lines)?;
+    let (first_controls, first_scratch) = assemble(&first_lines)?;
+    let (second_controls, second_scratch) = assemble(&second_lines)?;
     Ok(Some([
         RationalBezierSurfacePatch {
             u_domain: first_u,
@@ -957,11 +912,11 @@ fn complete_nurbs_surface_starts<'session>(
 ) -> Result<Option<(Vec<FinitePoint2>, WorkScratch<'session>)>, ResourceLimit> {
     const MAX_PATCHES: usize = 1_000_000;
 
-    let Some(patches) = rational_surface_residual_patches(ctx, surface, point, budget)? else {
+    let Some(mut patches) = rational_surface_residual_patches(ctx, surface, point, budget)? else {
         return Ok(None);
     };
     let Some(coordinate_scale) =
-        patches
+        patches.rows
             .iter()
             .flat_map(|patch| &patch.controls)
             .try_fold(1.0_f64, |scale, control| {
@@ -1068,7 +1023,7 @@ fn complete_nurbs_surface_starts<'session>(
                 consider_upper(candidate)?;
             }
         }
-        for patch in &patches {
+        for patch in &patches.rows {
             let Some(candidate) =
                 refined_upper(center(patch), patch.u_domain.into(), patch.v_domain.into())?
             else {
@@ -1090,7 +1045,7 @@ fn complete_nurbs_surface_starts<'session>(
     let mut queue_scratch = budget.reserve_scratch(0, "IR surface patch queue")?;
     let mut queue = BinaryHeap::new();
     let mut sequence = 0usize;
-    for patch in patches {
+    for patch in patches.rows.drain(..) {
         let Some((lower_bound, diameter)) =
             rational_patch_distance_bounds_with_budget(&patch, budget)
         else {
@@ -1117,6 +1072,7 @@ fn complete_nurbs_surface_starts<'session>(
         });
         sequence += 1;
     }
+    drop(patches);
     let mut terminal_scratch = budget.reserve_scratch(0, "IR surface terminal parameters")?;
     let mut terminal = Vec::<(FinitePoint2, f64)>::new();
     let mut examined = 0usize;
