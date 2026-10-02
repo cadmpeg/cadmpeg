@@ -2641,6 +2641,7 @@ impl TreeChildren {
         active_child: Option<FeatureId>,
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ) -> Result<Self, FeatureCollectionError> {
+        ctx.charge_work_limit(0, "validate active tree child")?;
         if let Some(active) = &active_child {
             let mut present = false;
             for child in &children {
@@ -6404,6 +6405,7 @@ impl EdgeSelection {
     /// Admits generated members and their native reference.
     pub fn generated(edges: Vec<GeneratedEdgeRef>, native: String, ctx: &cadmpeg_core::decode::DecodeContext<'_>)
     -> Result<Result<Self, BodySelectionError>, cadmpeg_core::decode::ResourceLimit> {
+    ctx.charge_work_limit(0, "validate persistent selection reference")?;
     let edges = match edges.try_into() { Ok(members) => members, Err(error) => return Ok(Err(error)) };
     Ok(SelectionReference::new(native, ctx)?.map(|native| Self::Generated { edges, native }))
 }
@@ -6486,6 +6488,7 @@ impl FaceSelection {
     /// Admits generated members and their native reference.
     pub fn generated(faces: Vec<GeneratedFaceRef>, native: String, ctx: &cadmpeg_core::decode::DecodeContext<'_>)
     -> Result<Result<Self, BodySelectionError>, cadmpeg_core::decode::ResourceLimit> {
+    ctx.charge_work_limit(0, "validate persistent selection reference")?;
     let faces = match faces.try_into() { Ok(members) => members, Err(error) => return Ok(Err(error)) };
     Ok(SelectionReference::new(native, ctx)?.map(|native| Self::Generated { faces, native }))
 }
@@ -6780,6 +6783,7 @@ impl<T: Eq + std::hash::Hash> SelectionMembers<T> {
         admission: &S,
         value: Vec<T>,
     ) -> Result<Result<Self, BodySelectionError>, S::Error> {
+        admission.work(0)?;
         if value.is_empty() { return Ok(Err(BodySelectionError::Empty)); }
         if !membership::distinct(admission, &value, value.len(), |_| true)? {
             return Ok(Err(BodySelectionError::RepeatedBody));
@@ -6854,6 +6858,7 @@ impl NativeSelections {
         admission: &S,
         value: Vec<String>,
     ) -> Result<Result<Self, BodySelectionError>, S::Error> {
+        admission.work(0)?;
         if value.is_empty() { return Ok(Err(BodySelectionError::Empty)); }
         for name in &value {
             admission.work(name.len())?;
@@ -7018,6 +7023,7 @@ impl<B> BodyMembers<B> {
     ) -> Result<Result<Self, BodySelectionError>, S::Error>
     where B: Eq + std::hash::Hash,
     {
+        admission.work(0)?;
         if rows.is_empty() { return Ok(Err(BodySelectionError::Empty)); }
         let mut bodies = admission.index(rows.len())?;
         let mut native = admission.index(rows.len())?;
@@ -9084,6 +9090,7 @@ impl PlanarProfileRef {
     /// Admits generated profile curves and their native reference.
     pub fn generated(curves: Vec<GeneratedCurveRef>, native: String, ctx: &cadmpeg_core::decode::DecodeContext<'_>)
     -> Result<Result<Self, BodySelectionError>, cadmpeg_core::decode::ResourceLimit> {
+    ctx.charge_work_limit(0, "validate persistent selection reference")?;
     let curves = match curves.try_into() { Ok(members) => members, Err(error) => return Ok(Err(error)) };
     Ok(SelectionReference::new(native, ctx)?.map(|native| Self::Generated { curves, native }))
 }
