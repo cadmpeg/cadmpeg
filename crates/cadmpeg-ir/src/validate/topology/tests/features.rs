@@ -662,7 +662,7 @@ fn generated_termination_vertices_require_declared_feature_dependencies() {
         )]),
         native_ref: None,
     });
-    ir.model.features[1].dependencies.insert(source.clone());
+    ir.model.features[1].dependencies.insert(&cadmpeg_test_support::service_decode_context(), source.clone(), "insert fixture member").expect("member insertion admission");
     assert!(!validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail")
         .findings
         .iter()
@@ -681,7 +681,7 @@ fn generated_termination_vertices_require_declared_feature_dependencies() {
         .feature_states
         .get_mut(&extrude)
         .expect("configured extrude");
-    state.dependencies.insert(source);
+    state.dependencies.insert(&cadmpeg_test_support::service_decode_context(), source, "insert fixture member").expect("member insertion admission");
     assert!(validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail").is_ok());
 }
 
@@ -749,7 +749,7 @@ fn pattern_feature_seeds_must_be_declared_dependencies() {
         .iter()
         .any(|finding| finding.message == message));
 
-    ir.model.features[1].dependencies.insert(seed);
+    ir.model.features[1].dependencies.insert(&cadmpeg_test_support::service_decode_context(), seed, "insert fixture member").expect("member insertion admission");
     assert!(!validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail")
         .findings
         .iter()
@@ -882,9 +882,9 @@ fn definition_references_must_be_declared_dependencies_in_every_configuration() 
             }),
         ),
     ];
-    ir.model.features[2].dependencies.insert(source.clone());
-    ir.model.features[3].dependencies.insert(source.clone());
-    ir.model.features[6].dependencies.insert(source.clone());
+    ir.model.features[2].dependencies.insert(&cadmpeg_test_support::service_decode_context(), source.clone(), "insert fixture member").expect("member insertion admission");
+    ir.model.features[3].dependencies.insert(&cadmpeg_test_support::service_decode_context(), source.clone(), "insert fixture member").expect("member insertion admission");
+    ir.model.features[6].dependencies.insert(&cadmpeg_test_support::service_decode_context(), source.clone(), "insert fixture member").expect("member insertion admission");
     ir.model.configurations.push(DesignConfiguration {
         id: ConfigurationId::mint("synthetic:test:configuration#offset-plane")
             .expect("identity grammar"),
@@ -947,22 +947,22 @@ fn definition_references_must_be_declared_dependencies_in_every_configuration() 
         block.as_str()
     )));
 
-    ir.model.features[1].dependencies.insert(source.clone());
-    ir.model.features[5].dependencies.insert(block.clone());
+    ir.model.features[1].dependencies.insert(&cadmpeg_test_support::service_decode_context(), source.clone(), "insert fixture member").expect("member insertion admission");
+    ir.model.features[5].dependencies.insert(&cadmpeg_test_support::service_decode_context(), block.clone(), "insert fixture member").expect("member insertion admission");
     for feature in [&offset, &derived, &pattern, &profile] {
         ir.model.configurations[0]
             .feature_states
             .get_mut(feature)
             .expect("configuration feature state")
             .dependencies
-            .insert(source.clone());
+            .insert(&cadmpeg_test_support::service_decode_context(), source.clone(), "insert fixture member").expect("member insertion admission");
     }
     ir.model.configurations[0]
         .feature_states
         .get_mut(&instance)
         .expect("block-instance state")
         .dependencies
-        .insert(block);
+        .insert(&cadmpeg_test_support::service_decode_context(), block, "insert fixture member").expect("member insertion admission");
     let report = validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail");
     assert!(report.is_ok(), "{:#?}", report.findings);
 }

@@ -492,7 +492,7 @@ pub(crate) fn project_adjacent_extrusion_profiles(
                     features[profile_index].id.as_str(),
                 )?)
                 .map_err(CodecError::malformed)?;
-                features[index].dependencies.insert_for_decode(
+                features[index].dependencies.insert(
                     ctx,
                     dependency,
                     "collect SLDPRT adjacent profile dependencies",
@@ -796,7 +796,7 @@ pub(crate) fn project_dissected_sketches(
                 .dependencies
                 .retain(|dependency| dependency != &child);
             if !feature.dependencies.contains(&owner) {
-                feature.dependencies.insert_for_decode(
+                feature.dependencies.insert(
                     ctx,
                     owner,
                     "collect SLDPRT dissected profile dependencies",

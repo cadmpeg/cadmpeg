@@ -496,7 +496,7 @@ pub(crate) fn transfer(
             dependencies.len(),
             "fcstd distinct feature dependencies",
         )?;
-        dependency_members.extend_for_decode(
+        dependency_members.append(
             ctx,
             dependencies,
             "fcstd distinct feature dependencies",

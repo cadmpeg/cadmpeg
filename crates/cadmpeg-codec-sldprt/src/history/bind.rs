@@ -242,7 +242,7 @@ pub(crate) fn bind_unique_sketch_feature(
         };
         let native_ref = copy_binding_text(ctx, native_ref)?;
         if !features[*index].dependencies.contains(&base_dependency) {
-            features[*index].dependencies.insert_for_decode(
+            features[*index].dependencies.insert(
                 ctx,
                 copy_binding_feature_id(ctx, &base_dependency)?,
                 "bind SLDPRT sketch alias dependency",
@@ -294,7 +294,7 @@ pub(crate) fn bind_unique_sketch_feature(
                         binding.has_profile,
                     )? && !dependencies.contains(&binding.feature_id)
                     {
-                        dependencies.insert_for_decode(
+                        dependencies.insert(
                             ctx,
                             copy_binding_feature_id(ctx, &binding.feature_id)?,
                             "bind SLDPRT sketch dependency",

@@ -225,7 +225,7 @@ fn complete_extrude_feature(
             allow_multi_profile_faces: None,
         }),
     );
-    feature.dependencies.insert(profile);
+    feature.dependencies.insert(&cadmpeg_test_support::service_decode_context(), profile, "insert fixture member").expect("member insertion admission");
     feature
         .evaluation
         .set_outputs(cadmpeg_ir::features::DistinctMembers::try_from(outputs, &cadmpeg_test_support::service_decode_context()).unwrap());

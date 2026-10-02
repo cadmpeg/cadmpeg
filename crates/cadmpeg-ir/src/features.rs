@@ -2676,32 +2676,16 @@ impl TreeChildren {
         &self.active_child
     }
 
-    /// Add a child unless it is already a member.
-    pub fn insert(&mut self, child: FeatureId) {
-        self.children.insert(child);
-    }
-
-    /// Add a decoded child after reserving its collection slot.
-    pub fn insert_for_decode(
+    /// Add a child after admitting its membership comparisons and retained slot.
+    pub fn insert(
         &mut self,
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         child: FeatureId,
         operation: &'static str,
     ) -> Result<(), cadmpeg_core::CodecError> {
-        for member in &self.children {
-            ctx.charge_work(1, operation)?;
-            if member == &child {
-                return Ok(());
-            }
-        }
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(self.children.len()),
-            operation,
-        )?;
-        ctx.reserve_retained_vec_limit(&mut self.children.0, 1, operation)?;
-        self.insert(child);
-        Ok(())
+        self.children.insert(ctx, child, operation).map(|_| ())
     }
+
 }
 
 impl std::ops::Deref for TreeChildren {
@@ -6627,58 +6611,29 @@ impl<T: Eq + std::hash::Hash> DistinctMembers<T> {
 }
 
 impl<T: PartialEq> DistinctMembers<T> {
-    /// Inserts a new member after charging and reserving its decode slot.
-    pub fn insert_for_decode(
+    /// Insert a member after admitting comparisons and a retained collection slot.
+    pub fn insert(
         &mut self,
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         value: T,
         operation: &'static str,
     ) -> Result<bool, cadmpeg_core::CodecError> {
-        for member in &self.0 {
-            ctx.charge_work(1, operation)?;
-            if member == &value {
-                return Ok(false);
-            }
-        }
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(self.0.len()),
-            operation,
-        )?;
-        ctx.reserve_retained_vec_limit(&mut self.0, 1, operation)?;
-        Ok(self.insert(value))
+        membership::insert(&membership::DecodeAdmission { ctx, operation }, &mut self.0, value)
+            .map_err(Into::into)
     }
 
-    /// Add distinct decoded members in source order.
-    pub fn extend_for_decode(
+    /// Append distinct members in source order through the caller context.
+    pub fn append(
         &mut self,
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         values: impl IntoIterator<Item = T>,
         operation: &'static str,
     ) -> Result<(), cadmpeg_core::CodecError> {
+        ctx.charge_work_limit(0, operation)?;
         for value in values {
-            self.insert_for_decode(ctx, value, operation)?;
+            self.insert(ctx, value, operation)?;
         }
         Ok(())
-    }
-
-    /// Collect decoded members, retaining only their first occurrence.
-    pub fn from_iter_for_decode(
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-        values: impl IntoIterator<Item = T>,
-        operation: &'static str,
-    ) -> Result<Self, cadmpeg_core::CodecError> {
-        let mut members = Self::default();
-        members.extend_for_decode(ctx, values, operation)?;
-        Ok(members)
-    }
-
-    /// Inserts a member unless it is already present, and returns whether it was added.
-    pub fn insert(&mut self, value: T) -> bool {
-        if self.0.contains(&value) {
-            return false;
-        }
-        self.0.push(value);
-        true
     }
 }
 
@@ -6718,7 +6673,10 @@ impl<T> DistinctMembers<T> {
 impl<T: PartialEq> Extend<T> for DistinctMembers<T> {
     fn extend<I: IntoIterator<Item = T>>(&mut self, iter: I) {
         for member in iter {
-            self.insert(member);
+            match membership::insert(&membership::StandardAdmission, &mut self.0, member) {
+                Ok(_) => {},
+                Err(error) => match error {},
+            }
         }
     }
 }

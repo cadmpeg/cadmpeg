@@ -189,7 +189,7 @@ fn curve_construction_family_cannot_claim_a_body_output() {
         }),
     );
     section.evaluation.edit(|_, outputs| {
-        outputs.insert(body);
+        outputs.insert(&cadmpeg_test_support::service_decode_context(), body, "insert fixture output").expect("output insertion admission");
     });
     ir.model.features.push(section);
 
@@ -585,7 +585,7 @@ fn replay_requires_dependencies_to_precede_their_consumers() {
     let mut ir = complete_block_ir();
     ir.model.features[0]
         .dependencies
-        .insert(FeatureId::mint("synthetic:test:id#later".to_string()).expect("identity grammar"));
+        .insert(&cadmpeg_test_support::service_decode_context(), FeatureId::mint("synthetic:test:id#later".to_string()).expect("identity grammar"), "insert fixture member").expect("member insertion admission");
 
     assert_eq!(
         evaluate_saved_body_census(&ir),
@@ -840,7 +840,7 @@ fn keep_selected_removes_every_unselected_body() {
     let retained = ir.model.bodies[0].id.clone();
     let removed = BodyId::mint("test:model:entity#removed".to_string()).expect("identity grammar");
     ir.model.features[0].evaluation.edit(|_, outputs| {
-        outputs.insert(removed.clone());
+        outputs.insert(&cadmpeg_test_support::service_decode_context(), removed.clone(), "insert fixture output").expect("output insertion admission");
     });
     ir.model.features[0]
         .evaluation

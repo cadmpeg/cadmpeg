@@ -1614,7 +1614,7 @@ fn nx_body_producing_feature_families_require_history_outputs() {
     assert_eq!(losses.len(), 1);
     assert!(losses[0].message.contains("datum plane (1)"));
 
-    ir.model.features[0].dependencies.insert(datum);
+    ir.model.features[0].dependencies.insert(&cadmpeg_test_support::service_decode_context(), datum, "insert fixture member").expect("member insertion admission");
     losses.clear();
     append_design_intent_losses(&ir, &mut losses);
     assert!(losses.is_empty());

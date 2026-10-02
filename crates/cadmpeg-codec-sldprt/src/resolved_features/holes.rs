@@ -2016,7 +2016,7 @@ pub(crate) fn project_hole_position_sketches(
                 .map_err(|_| CodecError::malformed("invalid admitted SLDPRT feature identity"))?;
                 feature
                     .dependencies
-                    .insert_for_decode(ctx, dependency, OPERATION)?;
+                    .insert(ctx, dependency, OPERATION)?;
             }
         }
     }

@@ -1063,7 +1063,7 @@ pub(crate) fn project_compact_edge_selections(
                     let id = cadmpeg_ir::features::FeatureId::mint(id_text)
                         .map_err(|_| cadmpeg_core::CodecError::malformed("invalid SLDPRT edge dependency id"))?;
                     ctx.charge_work(u64_from_index(dependencies.len()), DEPENDENCY_OPERATION)?;
-                    dependencies.insert_for_decode(ctx, id, DEPENDENCY_OPERATION)?;
+                    dependencies.insert(ctx, id, DEPENDENCY_OPERATION)?;
                 }
             }
             Ok(())
@@ -1611,7 +1611,7 @@ pub(crate) fn project_compact_surface_selections(
                                     }
                                     if !dependencies.contains(producer) {
                                         let dependency = copy_projection_feature_id(ctx, producer, OPERATION)?;
-                                        dependencies.insert_for_decode(ctx, dependency, OPERATION)?;
+                                        dependencies.insert(ctx, dependency, OPERATION)?;
                                     }
                                     let mut faces = Vec::new();
                                     ctx.reserve_vec(&mut faces, 1, OPERATION)?;
@@ -1688,7 +1688,7 @@ pub(crate) fn project_compact_surface_selections(
                             {
                                 if !dependencies.contains(producer) {
                                     let dependency = copy_projection_feature_id(ctx, producer, OPERATION)?;
-                                    dependencies.insert_for_decode(ctx, dependency, OPERATION)?;
+                                    dependencies.insert(ctx, dependency, OPERATION)?;
                                 }
                             }
                         }
@@ -1761,7 +1761,7 @@ pub(crate) fn project_compact_surface_selections(
                                 .unwrap_or(BodySelection::Native(target_native));
                             if !dependencies.contains(producer) {
                                 let dependency = copy_projection_feature_id(ctx, producer, OPERATION)?;
-                                dependencies.insert_for_decode(ctx, dependency, OPERATION)?;
+                                dependencies.insert(ctx, dependency, OPERATION)?;
                             }
                         }
                         let tool_native = compact_surface_selection_value(ctx, &tool.components)?;
@@ -1792,7 +1792,7 @@ pub(crate) fn project_compact_surface_selections(
                             };
                             if !dependencies.contains(producer) {
                                 let dependency = copy_projection_feature_id(ctx, producer, OPERATION)?;
-                                dependencies.insert_for_decode(ctx, dependency, OPERATION)?;
+                                dependencies.insert(ctx, dependency, OPERATION)?;
                             }
                         }
                         break 'feature_edit;
@@ -1829,7 +1829,7 @@ pub(crate) fn project_compact_surface_selections(
                                         if producer != feature_id
                                             && !dependencies.contains(producer)
                                         {
-                                            dependencies.insert_for_decode(ctx, copy_projection_feature_id(ctx, producer, OPERATION)?, OPERATION)?;
+                                            dependencies.insert(ctx, copy_projection_feature_id(ctx, producer, OPERATION)?, OPERATION)?;
                                         }
                                         let local_id_text = ctx.format_retained(format_args!("{local_id}"), OPERATION)?;
                                         match cadmpeg_ir::features::GeneratedFaceRef::new(
@@ -1855,7 +1855,7 @@ pub(crate) fn project_compact_surface_selections(
                                     .filter(|producer| *producer != feature_id)
                                 {
                                     if !dependencies.contains(producer) {
-                                        dependencies.insert_for_decode(ctx, copy_projection_feature_id(ctx, producer, OPERATION)?, OPERATION)?;
+                                        dependencies.insert(ctx, copy_projection_feature_id(ctx, producer, OPERATION)?, OPERATION)?;
                                     }
                                 }
                                 Ok(face)
@@ -1897,7 +1897,7 @@ pub(crate) fn project_compact_surface_selections(
                             {
                                 if !dependencies.contains(producer) {
                                     let dependency = copy_projection_feature_id(ctx, producer, OPERATION)?;
-                                    dependencies.insert_for_decode(ctx, dependency, OPERATION)?;
+                                    dependencies.insert(ctx, dependency, OPERATION)?;
                                 }
                             }
                         }
@@ -1931,7 +1931,7 @@ pub(crate) fn project_compact_surface_selections(
                             Some((producer, local_id)) => {
                                 if !dependencies.contains(producer) {
                                     let dependency = copy_projection_feature_id(ctx, producer, OPERATION)?;
-                                    dependencies.insert_for_decode(ctx, dependency, OPERATION)?;
+                                    dependencies.insert(ctx, dependency, OPERATION)?;
                                 }
                                 let producer_id = copy_projection_feature_id(ctx, producer, OPERATION)?;
                                 let local_id_text = ctx.format_retained(format_args!("{local_id}"), OPERATION)?;
@@ -2105,7 +2105,7 @@ pub(crate) fn project_compact_surface_selections(
                     {
                         if !dependencies.contains(producer) {
                             let dependency = copy_projection_feature_id(ctx, producer, OPERATION)?;
-                            dependencies.insert_for_decode(ctx, dependency, OPERATION)?;
+                            dependencies.insert(ctx, dependency, OPERATION)?;
                         }
                     }
                 }
@@ -2157,7 +2157,7 @@ pub(crate) fn project_compact_surface_selections(
                     let copy = copy_projection_feature_id(ctx, producer, ALIAS_OPERATION)?;
                     feature
                         .dependencies
-                        .insert_for_decode(ctx, copy, ALIAS_OPERATION)?;
+                        .insert(ctx, copy, ALIAS_OPERATION)?;
                 }
             }
         }
@@ -2461,7 +2461,7 @@ fn draft_face_selection(
     } else {
         for dependency in generated_dependencies {
             if !dependencies.contains(&dependency) {
-                dependencies.insert_for_decode(ctx, dependency, OPERATION)?;
+                dependencies.insert(ctx, dependency, OPERATION)?;
             }
         }
         let native_copy = ctx.format_retained(format_args!("{native}"), OPERATION)?;
@@ -3014,7 +3014,7 @@ pub(crate) fn project_unbound_cosmetic_thread_faces(
                     if producer != feature_id && !dependencies.contains(producer) {
                         let dependency =
                             copy_projection_feature_id(ctx, producer, GENERATED_OPERATION)?;
-                        dependencies.insert_for_decode(ctx, dependency, GENERATED_OPERATION)?;
+                        dependencies.insert(ctx, dependency, GENERATED_OPERATION)?;
                     }
                     return Ok(());
                 }

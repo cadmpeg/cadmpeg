@@ -28,7 +28,7 @@ fn parameter_dependencies_reject_duplicates_and_preserve_source_order() {
     let second = ParameterId::mint("test:test:parameter#second").unwrap();
     assert!(DistinctMembers::try_from(vec![first.clone(), first.clone()], &cadmpeg_test_support::service_decode_context()).is_err());
     let mut dependencies = DistinctMembers::try_from(vec![second.clone(), first.clone()], &cadmpeg_test_support::service_decode_context()).unwrap();
-    assert!(!dependencies.insert(first.clone()));
+    assert!(!dependencies.insert(&cadmpeg_test_support::service_decode_context(), first.clone(), "insert fixture member").expect("member insertion admission"));
     assert_eq!(dependencies.as_slice(), &[second.clone(), first.clone()]);
     dependencies.retain(|id| id == &first);
     assert_eq!(dependencies.as_slice(), std::slice::from_ref(&first));

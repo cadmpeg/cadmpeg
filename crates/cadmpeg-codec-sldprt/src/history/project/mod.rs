@@ -419,7 +419,7 @@ pub(crate) fn project_feature_model(
                     children, ..
                 }) = definition
                 {
-                    result = children.insert_for_decode(ctx, child, "collect SLDPRT tree children");
+                    result = children.insert(ctx, child, "collect SLDPRT tree children");
                 }
             });
         result?;
@@ -791,7 +791,7 @@ pub(super) fn bind_offset_plane_references(
                 cadmpeg_core::decode::u64_from_index(feature.dependencies.as_slice().len()),
                 "bind SLDPRT offset plane dependencies",
             )?;
-            feature.dependencies.insert_for_decode(
+            feature.dependencies.insert(
                 ctx,
                 reference_id,
                 "bind SLDPRT offset plane dependencies",
@@ -985,7 +985,7 @@ pub(super) fn bind_offset_plane_references(
                 cadmpeg_core::decode::u64_from_index(features[index].dependencies.as_slice().len()),
                 "bind SLDPRT offset plane dependencies",
             )?;
-            features[index].dependencies.insert_for_decode(
+            features[index].dependencies.insert(
                 ctx,
                 reference,
                 "bind SLDPRT offset plane dependencies",
@@ -1085,7 +1085,7 @@ fn bind_native_construction_features(
                         cadmpeg_core::decode::u64_from_index(dependencies.as_slice().len()),
                         "bind SLDPRT native construction references",
                     )?;
-                    dependencies.insert_for_decode(
+                    dependencies.insert(
                         ctx,
                         copy_projected_feature_id(ctx, target)?,
                         "bind SLDPRT native construction dependencies",
@@ -1465,7 +1465,7 @@ fn project_feature_dependencies(
             if dependency == &owner || dependencies.contains(dependency) {
                 continue;
             }
-            dependencies.insert_for_decode(
+            dependencies.insert(
                 ctx,
                 copy_projected_feature_id(ctx, dependency)?,
                 "collect SLDPRT feature dependencies",

@@ -72,3 +72,45 @@ pub(super) fn distinct<'ctx, T: Eq + Hash, S: Admission<'ctx>>(
     }
     Ok(true)
 }
+
+/// Admission for ordered insertion, including context-free iterator reconstruction.
+pub(super) trait AppendAdmission {
+    type Error;
+    fn work(&self, count: usize) -> Result<(), Self::Error>;
+    fn push<T>(&self, values: &mut Vec<T>, value: T) -> Result<(), Self::Error>;
+}
+
+impl AppendAdmission for StandardAdmission {
+    type Error = std::convert::Infallible;
+    fn work(&self, _count: usize) -> Result<(), Self::Error> { Ok(()) }
+    fn push<T>(&self, values: &mut Vec<T>, value: T) -> Result<(), Self::Error> {
+        values.push(value);
+        Ok(())
+    }
+}
+
+impl AppendAdmission for DecodeAdmission<'_, '_> {
+    type Error = ResourceLimit;
+    fn work(&self, count: usize) -> Result<(), Self::Error> {
+        self.ctx.charge_work_limit(u64_from_index(count), self.operation)
+    }
+    fn push<T>(&self, values: &mut Vec<T>, value: T) -> Result<(), Self::Error> {
+        self.ctx.reserve_retained_vec_limit(values, 1, self.operation)?;
+        values.push(value);
+        Ok(())
+    }
+}
+
+pub(super) fn insert<T: PartialEq, S: AppendAdmission>(
+    admission: &S,
+    values: &mut Vec<T>,
+    value: T,
+) -> Result<bool, S::Error> {
+    admission.work(0)?;
+    for member in values.iter() {
+        admission.work(1)?;
+        if member == &value { return Ok(false); }
+    }
+    admission.push(values, value)?;
+    Ok(true)
+}

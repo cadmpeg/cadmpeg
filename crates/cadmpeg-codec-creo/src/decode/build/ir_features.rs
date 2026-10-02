@@ -147,7 +147,7 @@ fn merge_feature_dependencies(
     incoming: Vec<IrFeatureId>,
 ) -> Result<(), cadmpeg_core::CodecError> {
     for dependency in incoming {
-        target.insert_for_decode(ctx, dependency, "creo IR Feature dependency members")?;
+        target.insert(ctx, dependency, "creo IR Feature dependency members")?;
     }
     Ok(())
 }
