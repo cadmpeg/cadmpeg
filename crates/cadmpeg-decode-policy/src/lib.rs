@@ -97,7 +97,7 @@ impl<'tcx> Allocation<'tcx> {
         match value.kind() {
             rustc_middle::ty::Adt(definition, arguments) => {
                 let path = self.tcx.def_path_str(definition.did());
-                if matches!(path.as_str(), "alloc::string::String" | "alloc::vec::Vec" | "alloc::boxed::Box") {
+                if matches!(path.as_str(), "alloc::string::String" | "std::string::String" | "alloc::vec::Vec" | "std::vec::Vec" | "alloc::boxed::Box" | "std::boxed::Box") {
                     return true;
                 }
                 definition.all_fields().any(|field| self.heap_type(field.ty(self.tcx, arguments).skip_norm_wip(), seen))
