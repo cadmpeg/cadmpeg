@@ -31,11 +31,13 @@ impl<'tcx> Analysis<'_, 'tcx> {
             }
         }
         for term in &mut terms { term.factors.push(format!("size:{element}")); term.factors.sort(); }
-        if terms.iter().all(|term| self.flow.storage_extents.contains(term)) {
-            for term in terms { if let Some(index) = self.flow.storage_extents.iter().position(|credit| credit == &term) { self.flow.storage_extents.remove(index); } }
-            return true;
+        let mut remaining = self.flow.storage_extents.clone();
+        for term in terms {
+            let Some(index) = remaining.iter().position(|credit| credit == &term) else { return false; };
+            remaining.remove(index);
         }
-        false
+        self.flow.storage_extents = remaining;
+        true
     }
 
     fn allocated_binding(&self, expression: &Expr<'tcx>) -> Option<String> {

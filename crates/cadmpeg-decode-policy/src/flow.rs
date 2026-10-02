@@ -463,6 +463,8 @@ impl<'tcx> Analysis<'_, 'tcx> {
             self.flow.storage_slots.retain(|credit| credit.target != key && !credit.target.starts_with(&format!("{key}.")) && !credit.terms.iter().flat_map(|term| &term.factors).any(|factor| factor.contains(&key)));
             self.flow.mutated.insert(key);
         } else {
+            self.flow.storage_extents.clear();
+            self.flow.storage_slots.clear();
             for credit in &mut self.flow.work {
                 credit.opaque = true;
             }

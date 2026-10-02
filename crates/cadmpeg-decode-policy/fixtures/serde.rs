@@ -7,3 +7,11 @@ pub fn parse(text: &str) {
     let mut deserializer = serde_json::Deserializer::from_str(text);
     let _record = Owned::deserialize(&mut deserializer); // finding: uncharged_decode_allocation, uncharged_decode_work
 }
+
+trait Serialize { fn serialize(&self); }
+struct Local<'a>(&'a str);
+impl Serialize for Local<'_> {
+    fn serialize(&self) {
+        let _copy = self.0.to_owned(); // finding: uncharged_decode_allocation, uncharged_decode_work
+    }
+}
