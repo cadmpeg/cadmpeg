@@ -790,11 +790,7 @@ fn legacy_spline(
         stored_knots[0] = -stored_knots[0];
         stored_knots[1] = -stored_knots[1];
     }
-    let reconstructed = knot_count.checked_add(2).ok_or_else(|| {
-        CodecError::NotImplemented("Rhino V1 spline knot count exceeds address space".to_string())
-    })?;
-    admit_v1_values::<f64>(ctx, reconstructed, "Rhino V1 spline reconstructed knots")?;
-    let knots = crate::surfaces::reconstruct_knots(&stored_knots, order, cv_count)
+    let knots = crate::surfaces::reconstruct_knots(ctx, &stored_knots, order, cv_count)
         .map_err(geometry_error)?;
     let mut control_points = ctx.retained_vec::<Point3>(cv_count, "Rhino V1 spline poles")?;
     let mut weights = if rational != 0 {
@@ -1567,11 +1563,9 @@ fn legacy_surface(
     for _ in 0..v_count {
         stored_v.push(reader.f64().map_err(|error| malformed(&error))?);
     }
-    admit_v1_values::<f64>(ctx, u_count + 2, "Rhino V1 surface U knots")?;
-    admit_v1_values::<f64>(ctx, v_count + 2, "Rhino V1 surface V knots")?;
-    let u_knots = crate::surfaces::reconstruct_knots(&stored_u, orders[0], counts[0])
+    let u_knots = crate::surfaces::reconstruct_knots(ctx, &stored_u, orders[0], counts[0])
         .map_err(geometry_error)?;
-    let v_knots = crate::surfaces::reconstruct_knots(&stored_v, orders[1], counts[1])
+    let v_knots = crate::surfaces::reconstruct_knots(ctx, &stored_v, orders[1], counts[1])
         .map_err(geometry_error)?;
     let pole_count = counts[0].checked_mul(counts[1]).ok_or_else(|| {
         CodecError::NotImplemented("V1 surface pole count exceeds address space".to_string())

@@ -837,20 +837,20 @@ fn valid_sum_payload() -> Vec<u8> {
 #[test]
 fn reconstructs_spec_examples_and_one_sided_vectors() {
     assert_eq!(
-        reconstruct_knots(&[0.0, 0.0, 0.0, 1.0, 2.0, 3.0, 3.0], 3, 6).expect("required invariant"),
+        reconstruct_knots(&cadmpeg_test_support::service_decode_context(), &[0.0, 0.0, 0.0, 1.0, 2.0, 3.0, 3.0], 3, 6).expect("required invariant"),
         vec![0.0, 0.0, 0.0, 0.0, 1.0, 2.0, 3.0, 3.0, 3.0]
     );
     assert_eq!(
-        reconstruct_knots(&[0.0, 1.0, 2.0, 3.0, 5.0, 6.0, 7.0], 3, 6).expect("required invariant"),
+        reconstruct_knots(&cadmpeg_test_support::service_decode_context(), &[0.0, 1.0, 2.0, 3.0, 5.0, 6.0, 7.0], 3, 6).expect("required invariant"),
         vec![-2.0, 0.0, 1.0, 2.0, 3.0, 5.0, 6.0, 7.0, 9.0]
     );
     assert_eq!(
-        reconstruct_knots(&[0.0, 0.0, 0.0, 1.0, 2.0, 3.0, 4.0], 3, 6).expect("required invariant")
+        reconstruct_knots(&cadmpeg_test_support::service_decode_context(), &[0.0, 0.0, 0.0, 1.0, 2.0, 3.0, 4.0], 3, 6).expect("required invariant")
             [0],
         0.0
     );
     assert_eq!(
-        reconstruct_knots(&[0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 5.0], 3, 6).expect("required invariant")
+        reconstruct_knots(&cadmpeg_test_support::service_decode_context(), &[0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 5.0], 3, 6).expect("required invariant")
             [8],
         5.0
     );
@@ -860,7 +860,7 @@ fn reconstructs_spec_examples_and_one_sided_vectors() {
 /// locates, so the refusal names no offset instead of naming byte 0.
 #[test]
 fn a_knot_reconstruction_refusal_names_no_byte() {
-    let error = reconstruct_knots(&[0.0, 1.0], 3, 6).expect_err("knot count mismatch");
+    let error = reconstruct_knots(&cadmpeg_test_support::service_decode_context(), &[0.0, 1.0], 3, 6).expect_err("knot count mismatch");
     assert!(matches!(
         error,
         GeometryError::Malformed(FramingError::Unpositioned { ref message })
@@ -952,7 +952,7 @@ fn checked_source_knots_reconstruct_without_scalar_readmission() {
     );
     let reconstructed = super::reconstruct_checked_knots(&cadmpeg_test_support::service_decode_context(), &checked, 3, 6)
         .expect("reconstructed checked knot vector");
-    let expected = reconstruct_knots(&stored, 3, 6).expect("raw reference reconstruction");
+    let expected = reconstruct_knots(&cadmpeg_test_support::service_decode_context(), &stored, 3, 6).expect("raw reference reconstruction");
     assert_eq!(reconstructed.as_slice(), expected.as_slice());
 }
 
@@ -1832,3 +1832,5 @@ fn checked_knot_reconstruction_preserves_the_callers_resource_refusal() {
         assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit));
     }
 }
+
+mod reconstruction;
