@@ -74,7 +74,6 @@ struct ObjectWorker;
 impl Work for ObjectWorker {
     fn work(&self, bytes: &[u8]) {
         for byte in bytes {
-            // finding: uncharged_decode_work
             std::hint::black_box(byte);
         }
     }

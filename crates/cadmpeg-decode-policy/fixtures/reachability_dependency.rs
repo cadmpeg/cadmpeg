@@ -34,7 +34,6 @@ pub struct Worker;
 impl Base for Worker {
     fn base(&self, bytes: &[u8]) {
         for byte in bytes {
-            // reached-loop
             std::hint::black_box(byte);
         }
     }
@@ -42,7 +41,6 @@ impl Base for Worker {
 impl Work for Worker {
     fn work(&self, bytes: &[u8]) {
         for byte in bytes {
-            // reached-loop
             std::hint::black_box(byte);
         }
     }
@@ -65,7 +63,6 @@ struct DeferredWorker;
 impl Base for DeferredWorker {
     fn base(&self, bytes: &[u8]) {
         for byte in bytes {
-            // reached-loop
             std::hint::black_box(byte);
         }
     }
@@ -73,7 +70,6 @@ impl Base for DeferredWorker {
 impl Work for DeferredWorker {
     fn work(&self, bytes: &[u8]) {
         for byte in bytes {
-            // reached-loop
             std::hint::black_box(byte);
         }
     }

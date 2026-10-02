@@ -17,7 +17,6 @@ struct Factory;
 impl Base for Factory {
     fn base(&self, bytes: &[u8]) {
         for byte in bytes {
-            // finding: uncharged_decode_work
             std::hint::black_box(byte);
         }
     }
@@ -25,7 +24,6 @@ impl Base for Factory {
 impl Work for Factory {
     fn work(&self, bytes: &[u8]) {
         for byte in bytes {
-            // finding: uncharged_decode_work
             std::hint::black_box(byte);
         }
     }

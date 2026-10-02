@@ -151,8 +151,10 @@ and closures form a call graph across all checked crates. A read of a static or
 const reaches its initializer and the function addresses that initializer stores.
 A reachable function address reaches its body even without a direct call.
 Concrete object coercions through references, Box, Arc and nested pointer types
-reach every method of the concrete implementation and its supertraits, including
-default and Self: Sized methods. Concrete generic instances resolve parameter
+reach only methods called through a reachable trait object. Calls through a
+subtrait select methods in its supertrait vtable. Uncalled methods, including
+Self: Sized methods, do not gain reachability from a coercion. Default methods
+remain checked when called. Concrete generic instances resolve parameter
 calls through local and dependency MIR before body selection. Their targets are
 attached to the originating caller. Unconstrained generic decode roots carry
 symbolic type arguments through helper chains and reach each possible checked

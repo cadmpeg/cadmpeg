@@ -17,6 +17,8 @@ pub(crate) struct Graph {
     edges: BTreeSet<(String, String)>,
     uncertain: BTreeSet<String>,
     addresses: BTreeSet<String>,
+    objects: BTreeSet<(String, String, String)>,
+    object_calls: BTreeSet<(String, String)>,
     symbolic_roots: BTreeSet<String>,
     symbolic_edges: BTreeSet<(String, String)>,
     bodies: BTreeMap<String, listing::Body>,
@@ -47,6 +49,12 @@ impl Graph {
         }
         for callee in &self.addresses {
             println!("decode_address\t{callee}");
+        }
+        for (caller, method, target) in &self.objects {
+            println!("decode_object\t{caller}\t{method}\t{target}");
+        }
+        for (caller, method) in &self.object_calls {
+            println!("decode_object_call\t{caller}\t{method}");
         }
     }
 
@@ -84,6 +92,14 @@ impl Graph {
                 if symbolic.contains(caller) {
                     added |= symbolic.insert(callee.clone());
                     added |= reached.insert(callee.clone());
+                }
+            }
+            for (caller, method, target) in &self.objects {
+                if reached.contains(caller) && self.object_calls.iter().any(|(caller, called)| called == method && reached.contains(caller)) {
+                    added |= reached.insert(target.clone());
+                    if symbolic.contains(caller) {
+                        added |= symbolic.insert(target.clone());
+                    }
                 }
             }
             if self.uncertain.iter().any(|caller| reached.contains(caller)) {
@@ -236,34 +252,18 @@ impl<'tcx> Calls<'_, '_, 'tcx> {
         {
             self.graph.uncertain.insert(self.caller.clone());
         }
-        for instance in instances {
-            if deferred {
-                if types::checked(self.analysis.tcx, instance.def_id()) {
-                    self.graph.symbolic_edges.insert((
-                        self.caller.clone(),
-                        key(self.analysis.tcx, instance.def_id()),
-                    ));
-                }
-                continue;
-            }
-            instances::enqueue(
-                self.analysis.tcx,
-                self.graph,
-                self.pending,
-                &self.caller,
-                instance,
-                self.analysis.typing_env(),
-                0,
+        for (method, instance) in instances {
+            objects::register(
+                self.analysis.tcx, self.graph, self.pending, method,
+                instances::Concrete {
+                    caller: self.caller.clone(), instance,
+                    environment: self.analysis.typing_env(), depth: 0,
+                },
             );
-            if types::checked(self.analysis.tcx, instance.def_id()) {
-                self.graph
-                    .addresses
-                    .insert(key(self.analysis.tcx, instance.def_id()));
-            }
         }
     }
 
-    fn method(&mut self, definition: DefId, resolved: Option<DefId>) {
+    fn method(&mut self, expression: &'tcx Expr<'tcx>, definition: DefId, resolved: Option<DefId>) {
         if let Some(id) = resolved {
             self.edge(id);
             return;
@@ -272,6 +272,10 @@ impl<'tcx> Calls<'_, '_, 'tcx> {
             self.edge(definition);
             return;
         };
+        let object = self.analysis.call_arguments(expression).is_some_and(|args| args.types().next().is_some_and(|value| matches!(value.peel_refs().kind(), ty::Dynamic(..))));
+        if object {
+            self.graph.object_calls.insert((self.caller.clone(), key(self.analysis.tcx, definition)));
+        }
         self.edge(definition);
         self.graph
             .symbolic_edges
@@ -280,7 +284,7 @@ impl<'tcx> Calls<'_, '_, 'tcx> {
             ty::GenericArgs::identity_for_item(self.analysis.tcx, self.analysis.typing_owner)
                 .has_non_region_param()
                 && !root(self.analysis.tcx, self.analysis.typing_owner);
-        if deferred {
+        if deferred && !object {
             return;
         }
         self.graph.uncertain.insert(self.caller.clone());
@@ -394,7 +398,7 @@ impl<'tcx> Visitor<'tcx> for Calls<'_, '_, 'tcx> {
             self.edge(*id);
         }
         if let Some((id, _)) = self.analysis.call(expression) {
-            self.method(id, self.analysis.implementation(expression, id));
+            self.method(expression, id, self.analysis.implementation(expression, id));
             if let Some(custom) = self.analysis.custom_trait(expression, id) {
                 self.edge(custom);
             }
@@ -403,7 +407,7 @@ impl<'tcx> Visitor<'tcx> for Calls<'_, '_, 'tcx> {
             .typeck
             .type_dependent_def_id(expression.hir_id)
         {
-            self.method(id, self.analysis.implementation(expression, id));
+            self.method(expression, id, self.analysis.implementation(expression, id));
             if let Some(custom) = self.analysis.custom_trait(expression, id) {
                 self.edge(custom);
             }
