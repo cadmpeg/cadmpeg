@@ -2736,7 +2736,7 @@ pub(super) fn intersection_side(
             )?;
             let mut valid = true;
             for pair in uv {
-                if let Some(point) = surface_parameters(geometry, **pair) {
+                if let Some(point) = surface_parameters(ctx, geometry, **pair)? {
                     control_points.push(point.get());
                 } else {
                     valid = false;
@@ -2777,32 +2777,37 @@ pub(super) fn intersection_side(
 /// parameters and the axial parameter of a cylinder or cone are lengths in
 /// metres, the others are unchanged. A scaled parameter is finite only when
 /// the serialized one is, so the one admission states both.
-pub(super) fn surface_parameters(surface: &SurfaceGeometry, uv: [f64; 2]) -> Option<FinitePoint2> {
-    match surface {
-        SurfaceGeometry::Procedural { .. } => FinitePoint2::new(Point2::new(uv[0], uv[1])),
-        SurfaceGeometry::Solved(solved) => surface_parameters_solved(solved, uv),
-    }
-}
-
-fn surface_parameters_solved(
-    surface: &SolvedSurfaceGeometry,
+pub(super) fn surface_parameters(
+    ctx: &DecodeContext<'_>,
+    surface: &SurfaceGeometry,
     uv: [f64; 2],
-) -> Option<FinitePoint2> {
-    let point = match surface {
-        SolvedSurfaceGeometry::Plane(_) => Point2::new(uv[0] * 1000.0, uv[1] * 1000.0),
-        SolvedSurfaceGeometry::Cylinder(_) | SolvedSurfaceGeometry::Cone(_) => {
-            Point2::new(uv[0], uv[1] * 1000.0)
+) -> Result<Option<FinitePoint2>, cadmpeg_core::decode::ResourceLimit> {
+    let mut surface = match surface {
+        SurfaceGeometry::Procedural { .. } => {
+            ctx.charge_work_limit(1, "nx support parameter surface visit")?;
+            return Ok(FinitePoint2::new(Point2::new(uv[0], uv[1])));
         }
-        SolvedSurfaceGeometry::Sphere(_)
-        | SolvedSurfaceGeometry::Torus(_)
-        | SolvedSurfaceGeometry::Nurbs(_)
-        | SolvedSurfaceGeometry::Polygonal(_)
-        | SolvedSurfaceGeometry::Unknown { .. } => Point2::new(uv[0], uv[1]),
-        SolvedSurfaceGeometry::Transformed(placed) => {
-            return surface_parameters_solved(placed.basis(), uv)
-        }
+        SurfaceGeometry::Solved(surface) => surface,
     };
-    FinitePoint2::new(point)
+    loop {
+        ctx.charge_work_limit(1, "nx support parameter surface visit")?;
+        let point = match surface {
+            SolvedSurfaceGeometry::Plane(_) => Point2::new(uv[0] * 1000.0, uv[1] * 1000.0),
+            SolvedSurfaceGeometry::Cylinder(_) | SolvedSurfaceGeometry::Cone(_) => {
+                Point2::new(uv[0], uv[1] * 1000.0)
+            }
+            SolvedSurfaceGeometry::Sphere(_)
+            | SolvedSurfaceGeometry::Torus(_)
+            | SolvedSurfaceGeometry::Nurbs(_)
+            | SolvedSurfaceGeometry::Polygonal(_)
+            | SolvedSurfaceGeometry::Unknown { .. } => Point2::new(uv[0], uv[1]),
+            SolvedSurfaceGeometry::Transformed(placed) => {
+                surface = placed.basis();
+                continue;
+            }
+        };
+        return Ok(FinitePoint2::new(point));
+    }
 }
 
 pub(super) fn normalize_pcurve_parameters(
@@ -2815,10 +2820,10 @@ pub(super) fn normalize_pcurve_parameters(
             let origin = line_pcurve.origin().as_raw();
             let direction = line_pcurve.direction().as_raw();
             let end = Point2::new(origin.u + direction.u, origin.v + direction.v);
-            let Some(converted_origin) = surface_parameters(surface, [origin.u, origin.v]) else {
+            let Some(converted_origin) = surface_parameters(ctx, surface, [origin.u, origin.v])? else {
                 return Ok(None);
             };
-            let Some(converted_end) = surface_parameters(surface, [end.u, end.v]) else {
+            let Some(converted_end) = surface_parameters(ctx, surface, [end.u, end.v])? else {
                 return Ok(None);
             };
             let Some(converted_direction) = cadmpeg_ir::units::NonzeroPoint2::new(Point2::new(
@@ -2842,7 +2847,7 @@ pub(super) fn normalize_pcurve_parameters(
                 let Some(point) = nurbs.pole_rows().point_at(ordinal) else {
                     return Ok(None);
                 };
-                let Some(position) = surface_parameters(surface, [point.u, point.v]) else {
+                let Some(position) = surface_parameters(ctx, surface, [point.u, point.v])? else {
                     return Ok(None);
                 };
                 converted.push(position);
@@ -2878,6 +2883,43 @@ mod tests {
     use cadmpeg_ir::scalar::NonNegativeLength;
 
     #[test]
+    fn support_parameter_surface_walk_admits_every_visit_without_recursion() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        use cadmpeg_ir::geometry::{PlacedSurface, analytic::PlaneSurface};
+        use cadmpeg_ir::math::Vector3;
+        use cadmpeg_ir::transform::Transform;
+
+        let mut solved = SolvedSurfaceGeometry::Plane(PlaneSurface::try_new(Point3::new(0., 0., 0.),
+            Vector3::new(0., 0., 1.), Vector3::new(1., 0., 0.)).expect("plane"));
+        for _ in 0..4 {
+            solved = SolvedSurfaceGeometry::Transformed(PlacedSurface::try_new(Box::new(solved),
+                Transform::identity()).expect("placed surface"));
+        }
+        let surface = SurfaceGeometry::Solved(solved);
+        for cap in 0..5 {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+            let limit = super::surface_parameters(&ctx, &surface, [2., 3.]).expect_err("every layer requires work");
+            assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+            assert_eq!(limit.operation, "nx support parameter surface visit");
+            assert!(matches!(ctx.finish_session(), Err(cadmpeg_core::CodecError::ResourceLimit(sticky)) if sticky == limit));
+        }
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 5;
+        policy.limits.max_recursion_depth = 0;
+        policy.limits.max_retained_bytes = 0;
+        policy.limits.max_materialized_bytes = 0;
+        policy.limits.max_collection_items = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+        assert_eq!(super::surface_parameters(&ctx, &surface, [2., 3.]).expect("exact visits")
+            .expect("finite point").get(), Point2::new(2000., 3000.));
+        ctx.finish_session().expect("constant stack and zero storage");
+    }
+
+    #[test]
     fn pcurve_parameter_normalization_preserves_refusals_and_releases_scratch() {
         use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
         use cadmpeg_core::CodecError;
@@ -2908,7 +2950,7 @@ mod tests {
             assert_eq!(edited, original);
             assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit));
         }
-        for cap in 0..4 {
+        for cap in 0..6 {
             let arena = DecodeArena::new();
             let mut policy = DecodePolicy::service();
             policy.limits.max_work_units = cap;
@@ -2917,14 +2959,15 @@ mod tests {
             let Err(CodecError::ResourceLimit(limit)) = super::normalize_pcurve_parameters(&ctx, &mut edited, &surface)
                 else { panic!("normalization requires both passes"); };
             assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
-            assert_eq!(limit.operation, if cap < 2 { "nx normalized pcurve control conversion" }
-                else { "IR pcurve pole replacement" });
+            assert_eq!(limit.operation, if cap >= 4 { "IR pcurve pole replacement" }
+                else if cap % 2 == 0 { "nx normalized pcurve control conversion" }
+                else { "nx support parameter surface visit" });
             assert_eq!(edited, original);
             assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit));
         }
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        policy.limits.max_work_units = 4;
+        policy.limits.max_work_units = 6;
         policy.limits.max_retained_bytes = 0;
         policy.limits.max_materialized_bytes = 4096;
         policy.limits.max_collection_items = 2;
