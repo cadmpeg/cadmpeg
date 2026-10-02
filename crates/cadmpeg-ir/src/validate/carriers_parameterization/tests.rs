@@ -474,3 +474,129 @@ fn parameter_domain_indexes_preserve_resource_refusals_and_release_storage() {
     drop(ctx.reserve_scoped(8192, "domain indexes released").unwrap());
     ctx.finish_session().unwrap();
 }
+
+#[test]
+fn carrier_law_walk_preserves_first_later_and_active_session_refusals() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    use crate::geometry::LawExpression;
+    let expression: LawExpression = LawExpression::Algebraic { operator: "outer".into(), operands: vec![
+        LawExpression::Algebraic { operator: "inner".into(), operands: vec![LawExpression::Null {}] },
+    ] };
+    for (dimension, cap, active) in [
+        (ResourceDimension::RecursionDepth, 0, false), (ResourceDimension::RecursionDepth, 2, false),
+        (ResourceDimension::RecursionDepth, 2, true), (ResourceDimension::WorkUnits, 0, false),
+        (ResourceDimension::WorkUnits, 2, false),
+    ] {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        match dimension {
+            ResourceDimension::RecursionDepth => policy.limits.max_recursion_depth = cap,
+            ResourceDimension::WorkUnits => policy.limits.max_work_units = cap,
+            _ => panic!("test dimension"),
+        }
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let mut index = super::BorrowedIdentities::build(&ctx, |_| Ok(())).unwrap();
+        let caller = if active { Some(ctx.enter_nested("carrier law caller").unwrap()) } else { None };
+        let Err(CodecError::ResourceLimit(limit)) = super::collect_law_curves(&expression, &mut index, &ctx) else { panic!("law walk must refuse"); };
+        assert_eq!(limit.dimension, dimension);
+        assert_eq!(limit.operation, if dimension == ResourceDimension::RecursionDepth { "carrier law nesting" } else { "carrier law visit" });
+        assert!(index.identities().next().is_none());
+        drop(caller);
+        drop(index);
+        assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(original)) if original == limit));
+    }
+}
+
+#[test]
+fn carrier_reachability_preserves_index_scan_and_finding_refusals() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    let mut ir = unit_cube().unwrap();
+    let mut orphan = ir.model.curves[0].clone();
+    orphan.id = "test:model:curve#orphan".try_into().unwrap();
+    orphan.source_object = None;
+    ir.model.curves.push(orphan);
+    for dimension in [ResourceDimension::MaterializedBytes, ResourceDimension::CollectionItems,
+        ResourceDimension::WorkUnits, ResourceDimension::RetainedBytes] {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        match dimension {
+            ResourceDimension::MaterializedBytes => policy.limits.max_materialized_bytes = 0,
+            ResourceDimension::CollectionItems => policy.limits.max_collection_items = 0,
+            ResourceDimension::WorkUnits => policy.limits.max_work_units = 0,
+            ResourceDimension::RetainedBytes => policy.limits.max_retained_bytes = 0,
+            _ => panic!("test dimension"),
+        }
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let mut findings = Vec::new();
+        let Err(CodecError::ResourceLimit(limit)) = super::check_carrier_reachability(&ctx, crate::native::view::NativeView::new(&ir, None), &mut findings) else { panic!("carrier check must refuse"); };
+        assert_eq!(limit.dimension, dimension);
+        assert!(findings.is_empty());
+        assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(original)) if original == limit));
+    }
+}
+
+#[test]
+fn carrier_reachability_expands_composite_cycles_once_and_releases_scopes() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    use crate::geometry::{CompositeCurveSegment, CompositeCurveTransition};
+    let mut ir = unit_cube().unwrap();
+    let root = ir.model.curves[0].id.clone();
+    let mut first = ir.model.curves[0].clone();
+    first.id = "test:model:curve#first".try_into().unwrap();
+    first.source_object = None;
+    let mut second = first.clone();
+    second.id = "test:model:curve#second".try_into().unwrap();
+    let segment = |curve| CompositeCurveSegment { curve, same_sense: true, transition: CompositeCurveTransition::Discontinuous };
+    ir.model.curves[0].geometry = CurveGeometry::Solved(SolvedCurveGeometry::Composite {
+        segments: vec![segment(first.id.clone()), segment(first.id.clone()), segment(second.id.clone())].try_into().unwrap(), self_intersect: None,
+    });
+    first.geometry = CurveGeometry::Solved(SolvedCurveGeometry::Composite {
+        segments: vec![segment(root)].try_into().unwrap(), self_intersect: None,
+    });
+    second.geometry = CurveGeometry::Solved(SolvedCurveGeometry::Composite {
+        segments: vec![segment(first.id.clone())].try_into().unwrap(), self_intersect: None,
+    });
+    ir.model.curves.extend([first, second]);
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    policy.limits.max_materialized_bytes = 4096;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut findings = Vec::new();
+    super::check_carrier_reachability(&ctx, crate::native::view::NativeView::new(&ir, None), &mut findings).unwrap();
+    assert!(findings.is_empty());
+    drop(ctx.reserve_scoped(4096, "carrier indexes and queue released").unwrap());
+    ctx.finish_session().unwrap();
+}
+
+#[test]
+fn carrier_reachability_preserves_orphan_arena_order() {
+    let mut ir = unit_cube().unwrap();
+    let mut surface = ir.model.surfaces[0].clone();
+    surface.id = "test:model:surface#orphan".try_into().unwrap();
+    surface.source_object = None;
+    ir.model.surfaces.push(surface);
+    let mut curve = ir.model.curves[0].clone();
+    curve.id = "test:model:curve#orphan".try_into().unwrap();
+    curve.source_object = None;
+    ir.model.curves.push(curve);
+    ir.model.pcurves.push(crate::geometry::pcurve::Pcurve {
+        id: "test:model:pcurve#orphan".try_into().unwrap(), geometry: line_pcurve_leaf(), metadata: Default::default(),
+    });
+    let mut point = ir.model.points[0].clone();
+    point.id = "test:model:point#orphan".try_into().unwrap();
+    point.source_object = None;
+    ir.model.points.push(point);
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let mut findings = Vec::new();
+    super::check_carrier_reachability(&ctx, crate::native::view::NativeView::new(&ir, None), &mut findings).unwrap();
+    assert_eq!(findings.len(), 4);
+    for (finding, kind) in findings.iter().zip(["surface", "curve", "pcurve", "point"]) {
+        assert_eq!(finding.check, Check::CarrierReachability);
+        assert_eq!(finding.severity, crate::report::Severity::Error);
+        assert_eq!(finding.entity.as_deref(), Some(format!("test:model:{kind}#orphan").as_str()));
+        assert_eq!(finding.message, format!("orphan {kind} carrier"));
+    }
+}
