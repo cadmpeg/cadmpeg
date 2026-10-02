@@ -296,10 +296,13 @@ pub(in super::super) fn circular_pcurve(
     let span = end_angle - start_angle;
     let count = (span.abs() / std::f64::consts::FRAC_PI_2).ceil().max(1.0);
     if !count.is_finite() || count > f64::from(MAX_CIRCULAR_PCURVE_SEGMENTS) {
-        let requested = match cadmpeg_core::convert::truncate_f64_to_u64(count) {
-            Some(requested) => requested,
-            None => u64::MAX,
-        };
+        let requested = cadmpeg_core::convert::truncate_f64_to_u64(count).ok_or_else(|| {
+            ctx.refuse_codec_limit(
+                "creo circular pcurve segments",
+                u64::from(MAX_CIRCULAR_PCURVE_SEGMENTS),
+                u64::MAX,
+            )
+        })?;
         return Err(ctx.refuse_codec_limit(
             "creo circular pcurve segments",
             u64::from(MAX_CIRCULAR_PCURVE_SEGMENTS),
@@ -315,9 +318,15 @@ pub(in super::super) fn circular_pcurve(
                 "Creo pcurve segment index cannot be represented exactly",
             )
         })?;
-    let pole_count = segment_count.checked_mul(2).and_then(|n| n.checked_add(1))
-        .ok_or_else(|| ctx.refuse_codec_limit("creo circular pcurve controls", u64::MAX, u64::MAX))?;
-    let knot_count = segment_count.checked_mul(2).and_then(|n| n.checked_add(4))
+    let pole_count = segment_count
+        .checked_mul(2)
+        .and_then(|n| n.checked_add(1))
+        .ok_or_else(|| {
+            ctx.refuse_codec_limit("creo circular pcurve controls", u64::MAX, u64::MAX)
+        })?;
+    let knot_count = segment_count
+        .checked_mul(2)
+        .and_then(|n| n.checked_add(4))
         .ok_or_else(|| ctx.refuse_codec_limit("creo circular pcurve knots", u64::MAX, u64::MAX))?;
     let mut control_points = Vec::new();
     ctx.reserve_vec(

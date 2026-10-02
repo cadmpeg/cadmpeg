@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use std::collections::BTreeMap;
-use cadmpeg_ir::sketches::SketchGeometry;
 use crate::feature::definitions::test_support::with_points;
+use cadmpeg_ir::sketches::SketchGeometry;
+use std::collections::BTreeMap;
 
 pub(super) fn resolved_section_reference_line_geometry(
     definition: &crate::feature::definitions::FeatureDefinition,
@@ -127,265 +127,273 @@ pub(super) fn base_definition() -> crate::feature::definitions::FeatureDefinitio
             body: Vec::new(),
             offset: 80,
         }],
-        skamps: Some(crate::feature::definitions::SolverSubtable::Declared { header: crate::feature::definitions::FeatureSolverTableHeader {
-            declared_count: 15,
-            entity_ref: 1,
-            offset: 46,
-        }, rows: vec![
-            crate::feature::definitions::FeatureSkamp {
-                id: 3,
-                kind: 1,
-                flags: 0,
-                status: 1,
-                items: vec![crate::feature::definitions::FeatureSkampItem {
-                    entity_id: 12,
-                    sense: 0,
-                }],
-                offset: 50,
+        skamps: Some(crate::feature::definitions::SolverSubtable::Declared {
+            header: crate::feature::definitions::FeatureSolverTableHeader {
+                declared_count: 15,
+                entity_ref: 1,
+                offset: 46,
             },
-            crate::feature::definitions::FeatureSkamp {
-                id: 4,
-                kind: 2,
-                flags: 0,
-                status: 1,
-                items: vec![crate::feature::definitions::FeatureSkampItem {
-                    entity_id: 12,
-                    sense: 0,
-                }],
-                offset: 60,
-            },
-            crate::feature::definitions::FeatureSkamp {
-                id: 5,
-                kind: 7,
-                flags: 0,
-                status: 1,
-                items: vec![crate::feature::definitions::FeatureSkampItem {
-                    entity_id: 12,
-                    sense: 4,
-                }],
-                offset: 70,
-            },
-            crate::feature::definitions::FeatureSkamp {
-                id: 6,
-                kind: 1,
-                flags: 0,
-                status: 1,
-                items: vec![crate::feature::definitions::FeatureSkampItem {
-                    entity_id: 13,
-                    sense: 0,
-                }],
-                offset: 71,
-            },
-            crate::feature::definitions::FeatureSkamp {
-                id: 7,
-                kind: 0,
-                flags: 0,
-                status: 1,
-                items: vec![
-                    crate::feature::definitions::FeatureSkampItem {
+            rows: vec![
+                crate::feature::definitions::FeatureSkamp {
+                    id: 3,
+                    kind: 1,
+                    flags: 0,
+                    status: 1,
+                    items: vec![crate::feature::definitions::FeatureSkampItem {
                         entity_id: 12,
                         sense: 0,
-                    },
-                    crate::feature::definitions::FeatureSkampItem {
-                        entity_id: 13,
-                        sense: 2,
-                    },
-                ],
-                offset: 72,
-            },
-            crate::feature::definitions::FeatureSkamp {
-                id: 8,
-                kind: 4,
-                flags: 0,
-                status: 1,
-                items: vec![
-                    crate::feature::definitions::FeatureSkampItem {
-                        entity_id: 12,
-                        sense: 3,
-                    },
-                    crate::feature::definitions::FeatureSkampItem {
-                        entity_id: 13,
-                        sense: 2,
-                    },
-                ],
-                offset: 73,
-            },
-            crate::feature::definitions::FeatureSkamp {
-                id: 9,
-                kind: 14,
-                flags: 0,
-                status: 1,
-                items: vec![
-                    crate::feature::definitions::FeatureSkampItem {
+                    }],
+                    offset: 50,
+                },
+                crate::feature::definitions::FeatureSkamp {
+                    id: 4,
+                    kind: 2,
+                    flags: 0,
+                    status: 1,
+                    items: vec![crate::feature::definitions::FeatureSkampItem {
                         entity_id: 12,
                         sense: 0,
-                    },
-                    crate::feature::definitions::FeatureSkampItem {
+                    }],
+                    offset: 60,
+                },
+                crate::feature::definitions::FeatureSkamp {
+                    id: 5,
+                    kind: 7,
+                    flags: 0,
+                    status: 1,
+                    items: vec![crate::feature::definitions::FeatureSkampItem {
                         entity_id: 12,
-                        sense: 2,
-                    },
-                    crate::feature::definitions::FeatureSkampItem {
-                        entity_id: 13,
-                        sense: 3,
-                    },
-                ],
-                offset: 74,
-            },
-            crate::feature::definitions::FeatureSkamp {
-                id: 10,
-                kind: 14,
-                flags: 0,
-                status: 1,
-                items: vec![
-                    crate::feature::definitions::FeatureSkampItem {
-                        entity_id: 12,
-                        sense: 0,
-                    },
-                    crate::feature::definitions::FeatureSkampItem {
-                        entity_id: 13,
                         sense: 4,
-                    },
-                    crate::feature::definitions::FeatureSkampItem {
-                        entity_id: 13,
-                        sense: 4,
-                    },
-                ],
-                offset: 75,
-            },
-            crate::feature::definitions::FeatureSkamp {
-                id: 11,
-                kind: 3,
-                flags: 0,
-                status: 1,
-                items: vec![
-                    crate::feature::definitions::FeatureSkampItem {
-                        entity_id: 14,
-                        sense: 0,
-                    },
-                    crate::feature::definitions::FeatureSkampItem {
-                        entity_id: 13,
-                        sense: 4,
-                    },
-                ],
-                offset: 76,
-            },
-            crate::feature::definitions::FeatureSkamp {
-                id: 12,
-                kind: 9,
-                flags: 0,
-                status: 1,
-                items: vec![
-                    crate::feature::definitions::FeatureSkampItem {
-                        entity_id: 12,
-                        sense: 0,
-                    },
-                    crate::feature::definitions::FeatureSkampItem {
-                        entity_id: 14,
-                        sense: 0,
-                    },
-                ],
-                offset: 77,
-            },
-            crate::feature::definitions::FeatureSkamp {
-                id: 13,
-                kind: 5,
-                flags: 0,
-                status: 1,
-                items: vec![
-                    crate::feature::definitions::FeatureSkampItem {
-                        entity_id: 12,
-                        sense: 0,
-                    },
-                    crate::feature::definitions::FeatureSkampItem {
-                        entity_id: 15,
-                        sense: 0,
-                    },
-                ],
-                offset: 78,
-            },
-            crate::feature::definitions::FeatureSkamp {
-                id: 14,
-                kind: 7,
-                flags: 0,
-                status: 1,
-                items: vec![
-                    crate::feature::definitions::FeatureSkampItem {
-                        entity_id: 12,
-                        sense: 0,
-                    },
-                    crate::feature::definitions::FeatureSkampItem {
-                        entity_id: 15,
-                        sense: 0,
-                    },
-                ],
-                offset: 79,
-            },
-            crate::feature::definitions::FeatureSkamp {
-                id: 15,
-                kind: 8,
-                flags: 0,
-                status: 1,
-                items: vec![
-                    crate::feature::definitions::FeatureSkampItem {
-                        entity_id: 12,
-                        sense: 0,
-                    },
-                    crate::feature::definitions::FeatureSkampItem {
-                        entity_id: 15,
-                        sense: 0,
-                    },
-                ],
-                offset: 80,
-            },
-            crate::feature::definitions::FeatureSkamp {
-                id: 16,
-                kind: 6,
-                flags: 0,
-                status: 1,
-                items: vec![
-                    crate::feature::definitions::FeatureSkampItem {
+                    }],
+                    offset: 70,
+                },
+                crate::feature::definitions::FeatureSkamp {
+                    id: 6,
+                    kind: 1,
+                    flags: 0,
+                    status: 1,
+                    items: vec![crate::feature::definitions::FeatureSkampItem {
                         entity_id: 13,
                         sense: 0,
-                    },
-                    crate::feature::definitions::FeatureSkampItem {
-                        entity_id: 16,
-                        sense: 0,
-                    },
-                ],
-                offset: 81,
-            },
-            crate::feature::definitions::FeatureSkamp {
-                id: 17,
-                kind: 17,
-                flags: 2,
-                status: 1,
-                items: vec![
-                    crate::feature::definitions::FeatureSkampItem {
-                        entity_id: 12,
-                        sense: 2,
-                    },
-                    crate::feature::definitions::FeatureSkampItem {
-                        entity_id: 15,
-                        sense: 2,
-                    },
-                ],
-                offset: 82,
-            },
-        ] }),
+                    }],
+                    offset: 71,
+                },
+                crate::feature::definitions::FeatureSkamp {
+                    id: 7,
+                    kind: 0,
+                    flags: 0,
+                    status: 1,
+                    items: vec![
+                        crate::feature::definitions::FeatureSkampItem {
+                            entity_id: 12,
+                            sense: 0,
+                        },
+                        crate::feature::definitions::FeatureSkampItem {
+                            entity_id: 13,
+                            sense: 2,
+                        },
+                    ],
+                    offset: 72,
+                },
+                crate::feature::definitions::FeatureSkamp {
+                    id: 8,
+                    kind: 4,
+                    flags: 0,
+                    status: 1,
+                    items: vec![
+                        crate::feature::definitions::FeatureSkampItem {
+                            entity_id: 12,
+                            sense: 3,
+                        },
+                        crate::feature::definitions::FeatureSkampItem {
+                            entity_id: 13,
+                            sense: 2,
+                        },
+                    ],
+                    offset: 73,
+                },
+                crate::feature::definitions::FeatureSkamp {
+                    id: 9,
+                    kind: 14,
+                    flags: 0,
+                    status: 1,
+                    items: vec![
+                        crate::feature::definitions::FeatureSkampItem {
+                            entity_id: 12,
+                            sense: 0,
+                        },
+                        crate::feature::definitions::FeatureSkampItem {
+                            entity_id: 12,
+                            sense: 2,
+                        },
+                        crate::feature::definitions::FeatureSkampItem {
+                            entity_id: 13,
+                            sense: 3,
+                        },
+                    ],
+                    offset: 74,
+                },
+                crate::feature::definitions::FeatureSkamp {
+                    id: 10,
+                    kind: 14,
+                    flags: 0,
+                    status: 1,
+                    items: vec![
+                        crate::feature::definitions::FeatureSkampItem {
+                            entity_id: 12,
+                            sense: 0,
+                        },
+                        crate::feature::definitions::FeatureSkampItem {
+                            entity_id: 13,
+                            sense: 4,
+                        },
+                        crate::feature::definitions::FeatureSkampItem {
+                            entity_id: 13,
+                            sense: 4,
+                        },
+                    ],
+                    offset: 75,
+                },
+                crate::feature::definitions::FeatureSkamp {
+                    id: 11,
+                    kind: 3,
+                    flags: 0,
+                    status: 1,
+                    items: vec![
+                        crate::feature::definitions::FeatureSkampItem {
+                            entity_id: 14,
+                            sense: 0,
+                        },
+                        crate::feature::definitions::FeatureSkampItem {
+                            entity_id: 13,
+                            sense: 4,
+                        },
+                    ],
+                    offset: 76,
+                },
+                crate::feature::definitions::FeatureSkamp {
+                    id: 12,
+                    kind: 9,
+                    flags: 0,
+                    status: 1,
+                    items: vec![
+                        crate::feature::definitions::FeatureSkampItem {
+                            entity_id: 12,
+                            sense: 0,
+                        },
+                        crate::feature::definitions::FeatureSkampItem {
+                            entity_id: 14,
+                            sense: 0,
+                        },
+                    ],
+                    offset: 77,
+                },
+                crate::feature::definitions::FeatureSkamp {
+                    id: 13,
+                    kind: 5,
+                    flags: 0,
+                    status: 1,
+                    items: vec![
+                        crate::feature::definitions::FeatureSkampItem {
+                            entity_id: 12,
+                            sense: 0,
+                        },
+                        crate::feature::definitions::FeatureSkampItem {
+                            entity_id: 15,
+                            sense: 0,
+                        },
+                    ],
+                    offset: 78,
+                },
+                crate::feature::definitions::FeatureSkamp {
+                    id: 14,
+                    kind: 7,
+                    flags: 0,
+                    status: 1,
+                    items: vec![
+                        crate::feature::definitions::FeatureSkampItem {
+                            entity_id: 12,
+                            sense: 0,
+                        },
+                        crate::feature::definitions::FeatureSkampItem {
+                            entity_id: 15,
+                            sense: 0,
+                        },
+                    ],
+                    offset: 79,
+                },
+                crate::feature::definitions::FeatureSkamp {
+                    id: 15,
+                    kind: 8,
+                    flags: 0,
+                    status: 1,
+                    items: vec![
+                        crate::feature::definitions::FeatureSkampItem {
+                            entity_id: 12,
+                            sense: 0,
+                        },
+                        crate::feature::definitions::FeatureSkampItem {
+                            entity_id: 15,
+                            sense: 0,
+                        },
+                    ],
+                    offset: 80,
+                },
+                crate::feature::definitions::FeatureSkamp {
+                    id: 16,
+                    kind: 6,
+                    flags: 0,
+                    status: 1,
+                    items: vec![
+                        crate::feature::definitions::FeatureSkampItem {
+                            entity_id: 13,
+                            sense: 0,
+                        },
+                        crate::feature::definitions::FeatureSkampItem {
+                            entity_id: 16,
+                            sense: 0,
+                        },
+                    ],
+                    offset: 81,
+                },
+                crate::feature::definitions::FeatureSkamp {
+                    id: 17,
+                    kind: 17,
+                    flags: 2,
+                    status: 1,
+                    items: vec![
+                        crate::feature::definitions::FeatureSkampItem {
+                            entity_id: 12,
+                            sense: 2,
+                        },
+                        crate::feature::definitions::FeatureSkampItem {
+                            entity_id: 15,
+                            sense: 2,
+                        },
+                    ],
+                    offset: 82,
+                },
+            ],
+        }),
         triples: None,
         offset: 45,
     };
-    let definition = crate::feature::definitions::FeatureDefinition {
-        identity: crate::feature::definitions::DefinitionIdentity::Parsed { schema_id: std::num::NonZeroU32::new(917), owner_feature_id: Some(40) },
+    crate::feature::definitions::FeatureDefinition {
+        identity: crate::feature::definitions::DefinitionIdentity::Parsed {
+            schema_id: std::num::NonZeroU32::new(917),
+            owner_feature_id: Some(40),
+        },
         body: Vec::new(),
         parameter_frames: Vec::new(),
         outlines: Vec::new(),
-        variables: Some(with_points(crate::feature::definitions::FeatureVariableTable {
-            declared_count: 0,
-            entity_ref: None,
-            rows: Vec::new(),
-            offset: 89,
-        }, vec![
+        variables: Some(with_points(
+            crate::feature::definitions::FeatureVariableTable {
+                declared_count: 0,
+                entity_ref: None,
+                rows: Vec::new(),
+                offset: 89,
+            },
+            vec![
                 crate::feature::definitions::FeatureSectionPoint {
                     point_id: 1,
                     u: Some(0.0),
@@ -396,14 +404,18 @@ pub(super) fn base_definition() -> crate::feature::definitions::FeatureDefinitio
                     u: Some(3.0),
                     v: Some(2.0),
                 },
-            ])),
+            ],
+        )),
         segments: Some(crate::feature::definitions::FeatureSegmentTable {
-declared_count: 5,
-has_elided_prototype: false,
-entity_ref: None,
-rows: (vec![segment, arc, point, other_line, other_arc]).into_iter().map(crate::feature::segment_rows::SegmentRow::Ordinary).collect(),
-offset: 30,
-}),
+            declared_count: 5,
+            has_elided_prototype: false,
+            entity_ref: None,
+            rows: (vec![segment, arc, point, other_line, other_arc])
+                .into_iter()
+                .map(crate::feature::segment_rows::SegmentRow::Ordinary)
+                .collect(),
+            offset: 30,
+        }),
         trim_entities: None,
         trim_vertices: None,
         order_table: None,
@@ -427,15 +439,21 @@ offset: 30,
         relations: Some(relations),
         saved_section: None,
         offset: 0,
-    };
-    definition
+    }
 }
 
-pub(super) fn distance_definition(definition: &crate::feature::definitions::FeatureDefinition) -> crate::feature::definitions::FeatureDefinition {
+pub(super) fn distance_definition(
+    definition: &crate::feature::definitions::FeatureDefinition,
+) -> crate::feature::definitions::FeatureDefinition {
     let mut distance_definition = definition.clone();
-    distance_definition.segments.as_mut().expect("segments").rows.edit_ordinary(|rows| {
-        rows[0].vertical_horizontal = Some(0);
-    });
+    distance_definition
+        .segments
+        .as_mut()
+        .expect("segments")
+        .rows
+        .edit_ordinary(|rows| {
+            rows[0].vertical_horizontal = Some(0);
+        });
     let distance_relation = &mut distance_definition
         .relations
         .as_mut()
