@@ -16,6 +16,8 @@ use super::identities::BorrowedIdentities;
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 
+mod equality;
+
 const EPS_SKETCH_VALIDATION_GEOMETRY: f64 = 1.0e-9;
 const EPS_SKETCH_VALIDATION_EXACT_GEOMETRY: f64 = 1.0e-12;
 
@@ -463,9 +465,7 @@ fn same_spatial_owner(
     expected: &crate::sketches::SpatialSketchId,
 ) -> Result<bool, CodecError> {
     let Some(owner) = owner else { return Ok(false); };
-    if owner.as_str().len() != expected.as_str().len() { return Ok(false); }
-    ctx.charge_work(cadmpeg_core::decode::u64_from_index(owner.as_str().len()), "compare spatial sketch owner")?;
-    Ok(owner == expected)
+    equality::text_equal(ctx, owner.as_str(), expected.as_str(), "compare spatial sketch owner")
 }
 
 pub(super) fn check_sketches(
@@ -1231,9 +1231,11 @@ pub(super) fn check_sketches(
             }
         }
         if let Constraint::ProjectedCopy { source, result } = constraint.definition.kind() {
-            let valid = geometry.get(ctx, source.as_str())?
-                .zip(geometry.get(ctx, result.as_str())?)
-                .is_none_or(|(source, result)| source == result);
+            let valid = match geometry.get(ctx, source.as_str())?
+                .zip(geometry.get(ctx, result.as_str())?) {
+                Some((source, result)) => equality::geometry_equal(ctx, source, result)?,
+                None => true,
+            };
             if !valid {
                 record_finding(ctx, findings, Check::GeometricConsistency, crate::report::Severity::Error, Some(constraint.id.as_str()), format_args!("{}", "projected-copy entities do not have identical geometry"))?;
             }

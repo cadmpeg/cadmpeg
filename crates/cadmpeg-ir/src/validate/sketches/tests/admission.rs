@@ -194,3 +194,26 @@ fn sketch_offset_predicate_preserves_fitted_frame_refusal() {
     assert_eq!(limit.operation, "sketch NURBS endpoint knot scan");
     assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(original)) if original == limit));
 }
+
+#[test]
+fn projected_sketch_copy_keeps_missing_member_semantics_and_finding_order() {
+    let mut ir = index_fixture(0);
+    ir.model.sketch_entities[1].geometry = crate::sketches::SketchGeometry::try_from(crate::sketches::SketchGeometryDefinition::Point { position: crate::math::Point2::new(3.0, 4.0) }).unwrap();
+    for (key, result) in [("mismatch", ir.model.sketch_entities[1].id().clone()), ("missing", "test:model:entity#missing".try_into().unwrap())] {
+        ir.model.sketch_constraints.push(crate::sketches::SketchConstraint {
+            id: format!("test:model:constraint#{key}").try_into().unwrap(),
+            sketch: ir.model.sketch_entities[0].sketch.clone(),
+            definition: SketchConstraintDefinitionInput::ProjectedCopy { source: ir.model.sketch_entities[0].id().clone(), result }.try_into().unwrap(),
+            name: None, driving: None, active: None, virtual_space: None, visible: None, orientation: None, label_distance: None, label_position: None, metadata: None, native_ref: None,
+        });
+    }
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let mut findings = vec![];
+    super::super::check_sketches(&ctx, &ir, &mut findings).unwrap();
+    assert_eq!(findings.len(), 1);
+    assert_eq!(findings[0].check, crate::report::check::Check::GeometricConsistency);
+    assert_eq!(findings[0].severity, crate::report::Severity::Error);
+    assert_eq!(findings[0].entity.as_deref(), Some("test:model:constraint#mismatch"));
+    assert_eq!(findings[0].message, "projected-copy entities do not have identical geometry");
+    ctx.finish_session().unwrap();
+}
