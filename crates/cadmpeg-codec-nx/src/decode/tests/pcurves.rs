@@ -1507,7 +1507,7 @@ fn nurbs_surface_fit_uses_the_declared_geometric_tolerance() {
     point.z += 0.001;
 
     let parameters =
-        cadmpeg_ir::eval::nurbs_surface_parameter_within_tolerance(&surface, point, None, 0.01)
+        cadmpeg_ir::eval::nurbs_surface_parameter_within_tolerance(&cadmpeg_test_support::service_decode_context(), &surface, point, None, 0.01)
             .expect("resource allocation did not fail")
             .unwrap();
     let mapped =

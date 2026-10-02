@@ -406,7 +406,7 @@ fn audit_regression_surface_inversion_accepts_large_parameter_origins() {
     ).expect("fixture constructor admission")
     .unwrap();
     let target = Point3::new(0.5, 0.5, 0.);
-    let uv = crate::eval::nurbs_surface_closest_parameter_with_budget(
+    let uv = crate::eval::nurbs_surface_closest_parameter_with_budget(&cadmpeg_test_support::service_decode_context(),
         &surface,
         target,
         None,

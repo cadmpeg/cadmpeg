@@ -4469,7 +4469,7 @@ fn surface_contact_direction_with_index_and_budget(
     );
     let parameters = match carrier.geometry.solved() {
         Some(SolvedSurfaceGeometry::Nurbs(nurbs)) => {
-            nurbs_surface_parameter_within_tolerance_with_budget(
+            nurbs_surface_parameter_within_tolerance_with_budget(geometry_budget.charges,
                 nurbs,
                 center,
                 None,
@@ -5014,19 +5014,15 @@ pub(super) fn closest_nurbs_curve_parameter_with_budget(
             control.z - point.z,
         ));
     }
-    geometry_budget.charges.charge_collection_items_limit(
-        cadmpeg_core::decode::u64_from_index(count),
-        "nx spine positive controls",
-    )?;
-    let Some(controls) = positive_controls(
+    let Some(controls) = positive_controls(geometry_budget.charges,
         &residuals,
         (!weights.is_empty()).then_some(weights.as_slice()),
-    )?
+     "nx spine positive controls")?
     else {
         return Ok(None);
     };
     let Some(spans) =
-        homogeneous_spans_with_charge(degree, curve.knots(), controls, |count, operation| {
+        homogeneous_spans_with_charge(degree, curve.knots(), controls.controls, |count, operation| {
             geometry_budget.charges.charge_collection_items_limit(
                 cadmpeg_core::decode::u64_from_index(count),
                 operation,

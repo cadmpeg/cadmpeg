@@ -187,7 +187,7 @@ pub(super) fn nurbs_surface_parameter_within_tolerance(
 ) -> Result<Option<cadmpeg_ir::units::FinitePoint2>, CodecError> {
     const OPERATION: &str = "invert SLDPRT NURBS surface globally";
     let budget = surface_solver_budget(ctx, surface, OPERATION)?;
-    let result = cadmpeg_ir::eval::nurbs_surface_parameter_within_tolerance_with_budget(
+    let result = cadmpeg_ir::eval::nurbs_surface_parameter_within_tolerance_with_budget(ctx,
         surface, point, seed, tolerance, &budget,
     );
     // A zero charge observes the session's original sticky refusal.

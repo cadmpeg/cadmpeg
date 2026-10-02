@@ -5,7 +5,7 @@ use super::scratch;
 use super::PoleValue;
 use crate::features::FinitePoint3;
 use crate::math::sum::ExactSignedSum;
-use cadmpeg_core::decode::{u64_from_index, DecodeContext, ResourceLimit};
+use cadmpeg_core::decode::{u64_from_index, DecodeContext, ResourceLimit, ScopedReservation};
 
 /// One nonempty knot span and its homogeneous Bezier control polygon.
 #[derive(Clone, Debug)]
@@ -16,52 +16,63 @@ pub struct HomogeneousBezierSpan<const DIMENSION: usize = 4> {
     pub controls: Vec<[f64; DIMENSION]>,
 }
 
+/// A homogeneous polygon with its live temporary-storage reservation.
+#[derive(Debug)]
+pub struct HomogeneousControls<'ctx> {
+    /// Positive-weight coordinates followed by the homogeneous weight.
+    pub controls: Vec<[f64; 4]>,
+    _storage: ScopedReservation<'ctx>,
+}
+
 /// Form a positive-weight homogeneous polygon without common-scale overflow.
 /// Refuse a raw pole with a non-finite coordinate, and a relative weight or
-/// coordinate product that would disappear.
-/// The output polygon and its scratch have one control per admitted input pole; absent weights
-/// are read as 1.0 without allocating a weight array.
-pub fn positive_controls<P: PoleValue<FinitePoint3>>(
+/// coordinate product that would disappear. Absent weights read as 1.0.
+pub fn positive_controls<'ctx, P: PoleValue<FinitePoint3>>(
+    ctx: &'ctx DecodeContext<'_>,
     points: &[P],
     weights: Option<&[f64]>,
-) -> Result<Option<Vec<[f64; 4]>>, ResourceLimit> {
-    if weights.is_some_and(|weights| points.len() != weights.len())
-        || points.is_empty()
-        || weights.is_some_and(|weights| {
-            weights
-                .iter()
-                .any(|weight| !weight.is_finite() || *weight <= 0.0)
-        })
-    {
+    operation: &'static str,
+) -> Result<Option<HomogeneousControls<'ctx>>, ResourceLimit> {
+    if weights.is_some_and(|weights| points.len() != weights.len()) || points.is_empty() {
         return Ok(None);
     }
-    let weight_at = |index: usize| weights.map_or(1.0, |weights| weights[index]);
-    let scale = weights.map_or(1.0, |weights| {
-        weights.iter().copied().fold(0.0_f64, f64::max)
-    });
+    let mut scale = 1.0;
+    if let Some(weights) = weights {
+        for weight in weights {
+            ctx.charge_work_limit(1, "Bezier positive weight validation")?;
+            if !weight.is_finite() || *weight <= 0.0 {
+                return Ok(None);
+            }
+        }
+        scale = 0.0_f64;
+        for weight in weights {
+            ctx.charge_work_limit(1, "Bezier positive weight scale")?;
+            scale = scale.max(*weight);
+        }
+    }
+    let storage;
     let mut output = Vec::new();
-    scratch::reserve_exact(&mut output, points.len(), "Bezier positive controls")?;
-    Ok(points
-        .iter()
-        .enumerate()
-        .try_fold(output, |mut output, (index, point)| {
-            let weight = weight_at(index) / scale;
-            let point = point.admit()?.get();
-            if weight == 0.0 {
-                return None;
-            }
-            let result = [weight * point.x, weight * point.y, weight * point.z, weight];
-            if result.iter().any(|v| !v.is_finite())
-                || [point.x, point.y, point.z]
-                    .iter()
-                    .zip(result)
-                    .any(|(raw, product)| *raw != 0.0 && product == 0.0)
-            {
-                return None;
-            }
-            output.push(result);
-            Some(output)
-        }))
+    storage = ctx.reserve_temporary_vec(&mut output, points.len(), operation)?;
+    for (index, point) in points.iter().enumerate() {
+        ctx.charge_work_limit(1, "Bezier positive control conversion")?;
+        let weight = weights.map_or(1.0, |weights| weights[index]) / scale;
+        let Some(point) = point.admit() else {
+            return Ok(None);
+        };
+        let point = point.get();
+        if weight == 0.0 {
+            return Ok(None);
+        }
+        let result = [weight * point.x, weight * point.y, weight * point.z, weight];
+        if result.iter().any(|value| !value.is_finite())
+            || [point.x, point.y, point.z].iter().zip(result)
+                .any(|(raw, product)| *raw != 0.0 && product == 0.0)
+        {
+            return Ok(None);
+        }
+        output.push(result);
+    }
+    Ok(Some(HomogeneousControls { controls: output, _storage: storage }))
 }
 
 /// Knot and control scratch is bounded by the admitted knot and control counts.
@@ -301,6 +312,57 @@ pub fn boundaries_within_resolution(
 #[cfg(test)]
 mod tests {
     use super::{boundaries_within_resolution, homogeneous_spans};
+    #[test]
+    fn positive_controls_preserve_refusals_and_hold_scoped_storage() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        use cadmpeg_core::CodecError;
+        use crate::math::Point3;
+        let points = [Point3::new(0.0, 1.0, 2.0), Point3::new(3.0, 4.0, 5.0)];
+        let weights = [2.0, 1.0];
+        for cap in 0..6 {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = cap;
+            let arena = DecodeArena::new();
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+            let limit = super::positive_controls(&ctx, &points, Some(&weights), "Bezier positive controls")
+                .expect_err("weight scans and conversion need work");
+            assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+            assert_eq!(limit.operation, if cap < 2 { "Bezier positive weight validation" }
+                else if cap < 4 { "Bezier positive weight scale" }
+                else { "Bezier positive control conversion" });
+            assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit));
+        }
+        for dimension in [ResourceDimension::MaterializedBytes, ResourceDimension::CollectionItems] {
+            let mut policy = DecodePolicy::service();
+            match dimension {
+                ResourceDimension::MaterializedBytes => policy.limits.max_materialized_bytes = 0,
+                ResourceDimension::CollectionItems => policy.limits.max_collection_items = 0,
+                _ => unreachable!("tested storage dimensions"),
+            }
+            let arena = DecodeArena::new();
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+            let limit = super::positive_controls(&ctx, &points, None, "Bezier positive controls").expect_err("scratch storage");
+            assert_eq!(limit.dimension, dimension);
+            assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit));
+        }
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 6;
+        policy.limits.max_retained_bytes = 0;
+        policy.limits.max_materialized_bytes = 64;
+        policy.limits.max_collection_items = 2;
+        policy.limits.max_recursion_depth = 0;
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+        let output = super::positive_controls(&ctx, &points, Some(&weights), "Bezier positive controls")
+            .expect("exact work and scoped bytes").expect("positive weights");
+        assert_eq!(output.controls, [[0.0, 1.0, 2.0, 1.0], [1.5, 2.0, 2.5, 0.5]]);
+        drop(output);
+        let reuse = ctx.reserve_scoped_limit(64, "test positive controls scratch released")
+            .expect("complete scratch allowance is reusable");
+        drop(reuse);
+        ctx.finish_session().expect("no retained temporary storage");
+    }
+
     #[test]
     fn boundary_certificate_preserves_every_caller_work_refusal() {
         use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};

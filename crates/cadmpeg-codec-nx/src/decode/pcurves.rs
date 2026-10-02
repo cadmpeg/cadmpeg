@@ -2249,14 +2249,14 @@ fn exact_boundary_pcurve_with_index(
     if !has_linear_boundary {
         return Ok(None);
     }
-    let first_parameters = nurbs_surface_parameter_within_nonnegative_tolerance_with_budget(
+    let first_parameters = nurbs_surface_parameter_within_nonnegative_tolerance_with_budget(geometry_budget.charges,
         nurbs,
         endpoints[0],
         None,
         nonnegative_tolerance,
         geometry_budget,
     )?;
-    let second_parameters = nurbs_surface_parameter_within_nonnegative_tolerance_with_budget(
+    let second_parameters = nurbs_surface_parameter_within_nonnegative_tolerance_with_budget(geometry_budget.charges,
         nurbs,
         endpoints[1],
         None,
@@ -4230,7 +4230,7 @@ fn surface_parameters_for_fit_with_index_and_budget_and_grid_cache<'a>(
     };
     match carrier.geometry.solved() {
         Some(SolvedSurfaceGeometry::Nurbs(nurbs)) => {
-            nurbs_surface_parameter_within_tolerance_with_budget(
+            nurbs_surface_parameter_within_tolerance_with_budget(geometry_budget.charges,
                 nurbs,
                 point,
                 seed,

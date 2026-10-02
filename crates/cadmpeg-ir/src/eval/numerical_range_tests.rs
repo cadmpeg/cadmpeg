@@ -174,7 +174,7 @@ fn numerical_0922_far_surface_query_keeps_inverse() {
     let s = bilinear([0., 1.], 1.);
     for z in [1., 1e200] {
         let budget = cadmpeg_core::decode::WorkBudget::new(100_000);
-        let result = crate::eval::nurbs_surface_closest_parameter_with_budget(
+        let result = crate::eval::nurbs_surface_closest_parameter_with_budget(&cadmpeg_test_support::service_decode_context(),
             &s,
             Point3::new(0.5, 0.5, z),
             None,
