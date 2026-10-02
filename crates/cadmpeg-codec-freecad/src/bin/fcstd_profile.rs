@@ -403,15 +403,15 @@ fn collect_native_observations(ir: &CadIr, observed: &mut Observed) {
         .flatten()
     {
         let fields = record.fields();
-        insert_string(&fields, "form", &mut observed.shape_forms);
-        insert_map_keys(&fields, "curves_2d", &mut observed.curves_2d);
-        insert_map_keys(&fields, "curves_3d", &mut observed.curves_3d);
-        insert_map_keys(&fields, "surfaces", &mut observed.surfaces);
-        insert_map_keys(&fields, "topology", &mut observed.topology);
+        insert_string(fields, "form", &mut observed.shape_forms);
+        insert_map_keys(fields, "curves_2d", &mut observed.curves_2d);
+        insert_map_keys(fields, "curves_3d", &mut observed.curves_3d);
+        insert_map_keys(fields, "surfaces", &mut observed.surfaces);
+        insert_map_keys(fields, "topology", &mut observed.topology);
     }
     for record in namespace.arenas().get("applications").into_iter().flatten() {
         let fields = record.fields();
-        insert_string(&fields, "type_name", &mut observed.application_types);
+        insert_string(fields, "type_name", &mut observed.application_types);
         if fields.get("inert_payload").and_then(Value::as_bool) == Some(true) {
             observed
                 .application_constructs
@@ -436,7 +436,7 @@ fn collect_native_observations(ir: &CadIr, observed: &mut Observed) {
     }
     for record in namespace.arenas().get("drawings").into_iter().flatten() {
         let fields = record.fields();
-        insert_string(&fields, "kind", &mut observed.drawing_types);
+        insert_string(fields, "kind", &mut observed.drawing_types);
         if fields
             .get("side_entries")
             .and_then(Value::as_array)
@@ -545,7 +545,7 @@ fn collect_native_observations(ir: &CadIr, observed: &mut Observed) {
     }
     for record in namespace.arenas().get("joints").into_iter().flatten() {
         let fields = record.fields();
-        insert_string(&fields, "kind", &mut observed.joint_kinds);
+        insert_string(fields, "kind", &mut observed.joint_kinds);
         if fields
             .get("references")
             .and_then(Value::as_array)

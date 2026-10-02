@@ -645,7 +645,7 @@ fn typed_fields(
         "persistent_design_links" => typed!(crate::records::sketch_links::PersistentDesignLink),
         "persistent_subentity_tags" => typed!(crate::records::sketch_links::PersistentSubentityTag),
         "sketch_curve_links" => typed!(crate::records::sketch_links::SketchCurveLink),
-        _ => record.fields_for_decode(ctx)?,
+        _ => record.copy_fields(ctx)?,
     })
 }
 
