@@ -1,15 +1,29 @@
 // SPDX-License-Identifier: Apache-2.0
-use std::collections::{HashMap, HashSet, BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::rc::Rc;
 use std::sync::Arc;
 pub struct DecodeContext;
 impl DecodeContext {
-    pub fn copy_slice(&self, values: &[u8]) -> Vec<u8> { values.to_vec() } // finding: uncharged_decode_allocation
-    pub fn alloc_filled<T: Clone>(&self, n: usize, value: T) -> Vec<T> { vec![value; n] } // finding: uncharged_decode_allocation
+    pub fn copy_slice(&self, values: &[u8]) -> Vec<u8> {
+        values.to_vec()
+    } // finding: uncharged_decode_allocation
+    pub fn alloc_filled<T: Clone>(&self, n: usize, value: T) -> Vec<T> {
+        vec![value; n]
+    } // finding: unproven_decode_charge
 }
 #[derive(Clone)]
-pub struct Record { pub values: Vec<u8> }
-pub fn decode(ctx: &DecodeContext, bytes: &[u8], text: &str, n: usize, record: &Record, shared: Rc<String>, atomic: Arc<Vec<u8>>) {
+pub struct Record {
+    pub values: Vec<u8>,
+}
+pub fn decode(
+    ctx: &DecodeContext,
+    bytes: &[u8],
+    text: &str,
+    n: usize,
+    record: &Record,
+    shared: Rc<String>,
+    atomic: Arc<Vec<u8>>,
+) {
     let _ctx = ctx;
     let _a = bytes.to_vec(); // finding: uncharged_decode_allocation
     let _b: Vec<_> = bytes.iter().copied().collect(); // finding: uncharged_decode_allocation
@@ -25,7 +39,7 @@ pub fn decode(ctx: &DecodeContext, bytes: &[u8], text: &str, n: usize, record: &
     let _l = Vec::<u8>::with_capacity(n); // finding: uncharged_decode_allocation
     let mut values = Vec::new();
     values.extend(bytes); // finding: uncharged_decode_allocation
-    values.push(0); // finding: uncharged_decode_allocation
+    values.push(0); // finding: unproven_decode_charge
     let _new = String::new();
     let _empty = Vec::<u8>::new();
     let _map = HashMap::<u8, u8>::new();
@@ -43,4 +57,10 @@ pub fn decode(ctx: &DecodeContext, bytes: &[u8], text: &str, n: usize, record: &
     let _child = ctx.alloc_filled(n, child); // finding: uncharged_decode_allocation
     let _ref = Rc::clone(&shared);
     let _arc = atomic.clone();
+}
+
+pub fn bounded_growth(ctx: &DecodeContext) {
+    let _ctx = ctx;
+    let mut values = Vec::new();
+    values.extend([1u8, 2]); // finding: unproven_decode_charge
 }

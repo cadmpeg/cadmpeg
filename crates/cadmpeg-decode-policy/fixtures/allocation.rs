@@ -1,14 +1,32 @@
 // SPDX-License-Identifier: Apache-2.0
 pub struct DecodeContext;
 #[derive(Clone, Copy)]
-pub enum Kind { A, B }
-#[derive(Clone)]
-pub struct Owned { pub text: String }
-pub struct Custom { pub text: String }
-impl Clone for Custom {
-    fn clone(&self) -> Self { Self { text: String::new() } }
+pub enum Kind {
+    A,
+    B,
 }
-pub fn decode(ctx: &DecodeContext, text: &str, owned: &Owned, custom: &Custom, number: u32, kind: Kind) {
+#[derive(Clone)]
+pub struct Owned {
+    pub text: String,
+}
+pub struct Custom {
+    pub text: String,
+}
+impl Clone for Custom {
+    fn clone(&self) -> Self {
+        Self {
+            text: String::new(),
+        }
+    }
+}
+pub fn decode(
+    ctx: &DecodeContext,
+    text: &str,
+    owned: &Owned,
+    custom: &Custom,
+    number: u32,
+    kind: Kind,
+) {
     let _ctx = ctx;
     let _text = text.to_string(); // finding: uncharged_decode_allocation
     let _owned = owned.clone(); // finding: uncharged_decode_allocation

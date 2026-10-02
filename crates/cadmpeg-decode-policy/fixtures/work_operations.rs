@@ -1,13 +1,34 @@
 // SPDX-License-Identifier: Apache-2.0
-use std::hash::{Hash, Hasher};
 use std::collections::hash_map::DefaultHasher;
+use std::hash::{Hash, Hasher};
 pub struct DecodeContext;
-impl DecodeContext { pub fn charge_work(&self, _n: u64, _operation: &str) -> Result<(), ()> { Ok(()) } }
+impl DecodeContext {
+    pub fn charge_work(&self, _n: u64, _operation: &str) -> Result<(), ()> {
+        Ok(())
+    }
+}
 #[derive(Clone, Copy, PartialEq)]
-pub struct Fixed { pub x: u32, pub y: u32 }
-pub struct Heap { pub id: u32, pub text: String }
-impl PartialEq for Heap { fn eq(&self, other: &Self) -> bool { self.id == other.id } }
-pub fn decode(ctx: &DecodeContext, bytes: &[u8], other: &[u8], target: &mut [u8], n: usize, record: &Heap) -> Result<(), ()> {
+pub struct Fixed {
+    pub x: u32,
+    pub y: u32,
+}
+pub struct Heap {
+    pub id: u32,
+    pub text: String,
+}
+impl PartialEq for Heap {
+    fn eq(&self, other: &Self) -> bool {
+        self.id == other.id
+    }
+}
+pub fn decode(
+    ctx: &DecodeContext,
+    bytes: &[u8],
+    other: &[u8],
+    target: &mut [u8],
+    n: usize,
+    record: &Heap,
+) -> Result<(), ()> {
     let mut hasher = DefaultHasher::new();
     bytes.hash(&mut hasher); // finding: uncharged_decode_work
     ctx.charge_work(bytes.len() as u64, "hash")?;

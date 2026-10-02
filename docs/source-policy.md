@@ -129,9 +129,10 @@ findings. The four columns are rule, path, line and message. Exit status is 1
 on any finding. Compiler failures retain their nonzero exit status.
 
 The tool is `crates/cadmpeg-decode-policy`, outside the default workspace.
-Its `rust-toolchain.toml` pins `nightly-2026-09-08`, with `rustc-dev`, `rust-src`
-and `llvm-tools-preview`. The script installs missing pinned components, builds the driver and runs one Cargo
-check for the selected production libraries. Its target directory is
+Its `rust-toolchain.toml` pins `nightly-2026-09-08`, with `rustc-dev`, `rust-src`,
+`llvm-tools-preview` and `clippy`. The script installs missing pinned
+components, builds the driver and runs one Cargo check for the selected
+production libraries. Its target directory is
 `target/decode-policy`. Decode package artifacts are removed before a run
 so Cargo cannot omit findings for unchanged source.
 
@@ -154,8 +155,14 @@ allocate when copied. The rule checks standard allocating constructors,
 `format!`, `to_string`, `to_owned`, `to_vec`, heap `collect`, `vec!`, `From`
 and `Into`, derived or standard heap `Clone`, and collection growth.
 `Vec::new`, `String::new` and empty collection constructors allocate no
-storage. Moving an owned value does not allocate. A custom `Clone` is checked
-in its body; owning a heap field alone does not prove that it allocates.
+storage. Moving an owned value does not allocate. A fresh owned vector iterator
+collected into the same vector type reuses its buffer without a scan.
+Consumed or adapted owning iterators require proof of storage reuse. A custom `Clone` is checked
+in its body, including temporary storage when its result borrows data.
+Owning a heap field alone does not prove that it allocates. Derived clones
+follow each field's concrete clone implementation. Zero-sized vector
+elements require no backing allocation. A borrowed `Cow` conversion does
+not allocate.
 
 Use `ctx.copy_retained_text` or `copy_retained_text_limit` for text copies,
 `ctx.format_retained(format_args!(...), operation)?` for variable text,
@@ -179,10 +186,16 @@ comparisons, searches, hashes and copies without work admission. Slices,
 strings, vectors, maps, sets and `View` have variable extents. Scalars,
 fixed-size Copy values, arrays and constant-bounded ranges have fixed
 extents. Fixed array slots do not admit variable-size child comparisons.
-A `take` bound does not make an input-sized source fixed.
+A `take` bound does not make an input-sized source fixed. A slice iterator's
+`count` and integer or character range `count` use metadata or bounded
+arithmetic. Filling a unit-element vector sets its length without a scan.
+Copies of zero-sized Copy elements transfer no bytes. Unknown iterator
+implementations and element layouts require proof before these exceptions
+apply.
 
 Use `ctx.charge_work(extent, operation)?` or `charge_work_limit` before the
-operation. A simple extent alias can carry a length. Additive lengths and
+operation. The charge must resolve to the core operation; a same-named
+wrapper does not establish admission. A simple extent alias can carry a length. Additive lengths and
 propagated checked sums can carry comparison bounds. A credit admits one
 operation. A conditional, later, dropped, reused or unrelated charge does
 not admit it. Mutation or mutable access invalidates extent evidence.
@@ -192,8 +205,9 @@ operation before work. Filtering and skipping can inspect input before a
 yielded iteration; a charge in that iteration does not admit those visits.
 
 Use `ctx.position_by` for fallible search and `ctx.equal_bytes` for byte
-comparison. A callee that takes the context owns its work admission. Its
-arguments and callbacks remain checked. Custom comparison implementations
+comparison. A core context operation owns its work admission. Other context-taking
+callees need a body that proves admission; an unavailable or unresolved
+body uses the third rule. Arguments and callbacks remain checked. Custom comparison implementations
 are inspected separately from their owning types.
 
 ### Undecided operations
@@ -201,7 +215,9 @@ are inspected separately from their owning types.
 `unproven_decode_charge` reports operations for which type resolution does
 not establish allocator reachability, extent or charge coverage. Generic
 values, trait objects, opaque callees, unresolved callbacks and unsupported
-charge arithmetic use this rule. These are findings and fail the gate.
+charge arithmetic use this rule. A nonstandard formatter whose output
+extent is not proved also uses this rule; an owned field does not prove
+that its formatter reads that field. These findings fail the gate.
 They are not reported as known allocation or work defects. Use a concrete
 type, a core charged operation, or explicit admission with a direct extent
 inside the operation. A length charge alone does not establish child-byte,
