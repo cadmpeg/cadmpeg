@@ -1037,7 +1037,53 @@ fn geometry_snapshot_matches_filtered_model_wire_without_intermediate_tree() {
     });
     object.insert("kind".into(), serde_json::json!("brep"));
     assert_eq!(
-        serde_json::to_string(&model.geometry_snapshot("brep")).expect("snapshot serializes"),
+        serde_json::to_string(&model.geometry_snapshot(&cadmpeg_test_support::service_decode_context(), "brep").expect("snapshot admission")).expect("snapshot serializes"),
         serde_json::to_string(&baseline).expect("baseline serializes"),
     );
+}
+
+#[test]
+fn geometry_snapshot_admits_procedural_owner_comparison_before_serialization() {
+    let mut model = Model::default();
+    model.curves.push(Curve {
+        id: "test:snapshot:curve#one".try_into().unwrap(),
+        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
+        source_object: None,
+    });
+    model.procedural_curves.push(ProceduralCurve::new(
+        "test:snapshot:construction#one".try_into().unwrap(),
+        ProceduralCurveDefinition::Exact { cache: None },
+    ));
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_work_units = 1;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) = model.geometry_snapshot(&ctx, "brep") else { panic!("owner comparison must retain its refusal"); };
+    assert_eq!(limit.operation, "find geometry snapshot procedural owner");
+    assert_eq!(limit.dimension, cadmpeg_core::decode::ResourceDimension::WorkUnits);
+    assert!(matches!(ctx.finish_session(), Err(cadmpeg_core::CodecError::ResourceLimit(sticky)) if sticky == limit));
+}
+
+#[test]
+fn geometry_snapshot_preserves_parent_validation_resource_refusals() {
+    let mut model = Model::default();
+    model.features.push(crate::features::Feature {
+        id: "test:snapshot:feature#one".try_into().unwrap(), ordinal: 0,
+        name: None, suppressed: None, dependencies: Default::default(), source_properties: Default::default(),
+        source_tag: None, source_text: None, source_content: Default::default(),
+        evaluation: crate::features::FeatureEvaluation::from_definition(crate::features::FeatureDefinition::Operation(crate::features::FeatureOperation::StoredGeometry {})), native_ref: None,
+    });
+    for dimension in [cadmpeg_core::decode::ResourceDimension::CollectionItems, cadmpeg_core::decode::ResourceDimension::MaterializedBytes] {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        match dimension {
+            cadmpeg_core::decode::ResourceDimension::CollectionItems => policy.limits.max_collection_items = 0,
+            cadmpeg_core::decode::ResourceDimension::MaterializedBytes => policy.limits.max_materialized_bytes = 0,
+            _ => unreachable!(),
+        }
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) = model.geometry_snapshot(&ctx, "brep") else { panic!("snapshot parent admission must refuse"); };
+        assert_eq!(limit.dimension, dimension);
+        assert!(matches!(ctx.finish_session(), Err(cadmpeg_core::CodecError::ResourceLimit(sticky)) if sticky == limit));
+    }
 }
