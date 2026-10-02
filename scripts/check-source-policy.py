@@ -2030,7 +2030,7 @@ def scan_decode_allocations(sources: dict[Path, str]) -> list[Finding]:
                 first = tokens[opening].end()
                 last = tokens[pairs[opening]].start()
                 raw = source[first:last].strip()
-                if decode_fixed_text(source, code, first, last) and not re.search(r"(?<!\{)\{(?!\{)", raw):
+                if decode_fixed_text(source, code, first, last) and "{" not in raw.replace("{{", "").replace("}}", ""):
                     continue
                 replacement = "ctx.format_retained(format_args!(...), operation)?"
             elif (word in {"to_string", "to_owned"} and i > 1
@@ -2279,7 +2279,11 @@ def scan_decode_work(sources: dict[Path, str]) -> list[Finding]:
                         if declared < charge and decode_block(parents, words, declared) == parent:
                             resolved = expression
                             break
-                    if decode_charge_covers(resolved, extent):
+                    between = "".join(words[pairs[evaluation_call_open(words, charge)] + 2:i])
+                    root = extent.split(".", 1)[0]
+                    mutated = re.search(r"(?:&mut" + re.escape(root) + r"\b|\b" +
+                                        re.escape(root) + r"(?:=|\.(?:push|insert|extend|append|resize|retain|clear)\())", between)
+                    if decode_charge_covers(resolved, extent) and not mutated:
                         admitted = True
                         consumed.add(charge)
                         break
