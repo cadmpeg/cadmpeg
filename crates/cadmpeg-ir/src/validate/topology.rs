@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Focused validation checks for topology.
 
-use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet};
 use std::fmt;
 
 use cadmpeg_core::decode::{u64_from_index, DecodeContext};
@@ -22,6 +22,7 @@ use crate::report::{
     Severity,
 };
 pub(super) mod graphs;
+mod composite;
 
 fn collect_pattern_paths<'a>(
     pattern: &'a PatternKind,
@@ -390,32 +391,7 @@ pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelI
             CurveGeometry::Solved(_) => {}
         }
     }
-    let composite_segments = ir
-        .model
-        .curves
-        .iter()
-        .filter_map(|curve| match &curve.geometry {
-            CurveGeometry::Solved(SolvedCurveGeometry::Composite { segments, .. }) => Some((
-                curve.id.as_str(),
-                segments
-                    .iter()
-                    .map(|segment| segment.curve.as_str())
-                    .collect::<Vec<_>>(),
-            )),
-            _ => None,
-        })
-        .collect::<BTreeMap<_, _>>();
-    let mut complete = HashSet::new();
-    let mut active = HashSet::new();
-    for curve in composite_segments.keys().copied() {
-        check_composite_cycle(
-            curve,
-            &composite_segments,
-            &mut active,
-            &mut complete,
-            findings,
-        );
-    }
+    composite::check(ctx, ir, findings)?;
     for procedural in &ir.model.procedural_surfaces {
         match procedural.definition() {
             ProceduralSurfaceDefinition::Exact(..) => {}
@@ -4360,46 +4336,6 @@ fn check_feature_sketch_references(
                 }
             }
         }
-    }
-}
-
-fn check_composite_cycle<'a>(
-    curve: &'a str,
-    segments: &BTreeMap<&'a str, Vec<&'a str>>,
-    active: &mut HashSet<&'a str>,
-    complete: &mut HashSet<&'a str>,
-    findings: &mut Vec<Finding>,
-) {
-    if complete.contains(curve) {
-        return;
-    }
-    active.insert(curve);
-    let mut stack = vec![(curve, 0usize)];
-    while let Some((node, child_index)) = stack.last_mut() {
-        let children = &segments[*node];
-        if *child_index >= children.len() {
-            let Some((node, _)) = stack.pop() else {
-                break;
-            };
-            active.remove(node);
-            complete.insert(node);
-            continue;
-        }
-        let child = children[*child_index];
-        *child_index += 1;
-        if !segments.contains_key(child) || complete.contains(child) {
-            continue;
-        }
-        if !active.insert(child) {
-            findings.push(Finding {
-                check: Check::ReferentialIntegrity,
-                severity: Severity::Error,
-                message: "composite curve graph contains a cycle".into(),
-                entity: Some(child.into()),
-            });
-            continue;
-        }
-        stack.push((child, 0));
     }
 }
 
