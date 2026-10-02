@@ -43,7 +43,9 @@ impl<'tcx> Analysis<'_, 'tcx> {
     }
 
     pub(crate) fn allocation(&mut self, expression: &'tcx Expr<'tcx>) {
-        if self.admit_conversion(expression) { return; }
+        if self.admit_conversion(expression) {
+            return;
+        }
         let Some((definition, operands)) = self.call(expression) else {
             return;
         };
@@ -132,7 +134,9 @@ impl<'tcx> Analysis<'_, 'tcx> {
                     }
                 }
             }
-            if self.symbolic_storage(expression, &operands, name) || self.admitted_slots(&operands, name) {
+            if self.symbolic_storage(expression, &operands, name)
+                || self.admitted_slots(&operands, name)
+            {
                 return;
             }
             if let Some(receiver) = operands.first() {

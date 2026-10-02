@@ -1,8 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 pub struct DecodeContext;
 impl DecodeContext {
-    pub fn charge_retained(&self, _bytes: u64, _operation: &str) -> Result<(), ()> { Ok(()) }
-    pub fn charge_work(&self, _bytes: u64, _operation: &str) -> Result<(), ()> { Ok(()) }
+    pub fn charge_retained(&self, _bytes: u64, _operation: &str) -> Result<(), ()> {
+        Ok(())
+    }
+    pub fn charge_work(&self, _bytes: u64, _operation: &str) -> Result<(), ()> {
+        Ok(())
+    }
 }
 pub fn exact(ctx: &DecodeContext, bytes: &[u8]) -> Result<Vec<u8>, ()> {
     let count = bytes.len();
@@ -45,7 +49,9 @@ pub fn wrong_width(ctx: &DecodeContext, count: usize) -> Result<(), ()> {
     Ok(())
 }
 pub fn conditional(ctx: &DecodeContext, count: usize, yes: bool) -> Result<(), ()> {
-    if yes { ctx.charge_retained(u64::try_from(count).map_err(|_| ())?, "bytes")?; }
+    if yes {
+        ctx.charge_retained(u64::try_from(count).map_err(|_| ())?, "bytes")?;
+    }
     let mut output = Vec::<u8>::new();
     output.try_reserve_exact(count).map_err(|_| ())?; // finding: unproven_decode_charge
     Ok(())
@@ -68,11 +74,13 @@ pub fn failed_reserve(ctx: &DecodeContext, bytes: &[u8]) -> Result<(), ()> {
 
 pub fn repeated_reserve(ctx: &DecodeContext, count: usize, repeats: usize) -> Result<(), ()> {
     ctx.charge_retained(u64::try_from(count).map_err(|_| ())?, "once")?;
-    for _ in 0..repeats { // finding: uncharged_decode_work
+    for _ in 0..repeats {
+        // finding: uncharged_decode_work
         let mut output = Vec::<u8>::new();
         output.try_reserve_exact(count).map_err(|_| ())?; // finding: unproven_decode_charge
     }
-    for _ in 0..repeats { // finding: uncharged_decode_work
+    for _ in 0..repeats {
+        // finding: uncharged_decode_work
         ctx.charge_retained(u64::try_from(count).map_err(|_| ())?, "each")?;
         let mut output = Vec::<u8>::new();
         output.try_reserve_exact(count).map_err(|_| ())?;

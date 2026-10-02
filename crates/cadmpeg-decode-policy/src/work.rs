@@ -18,7 +18,13 @@ impl<'tcx> Analysis<'_, 'tcx> {
     }
 
     pub(crate) fn work(&mut self, expression: &'tcx Expr<'tcx>) {
-        if self.findings.admitted_operations.contains(&expression.hir_id) { return; }
+        if self
+            .findings
+            .admitted_operations
+            .contains(&expression.hir_id)
+        {
+            return;
+        }
         if let ExprKind::Binary(operator, left, right) = expression.kind {
             if matches!(
                 operator.node,
@@ -59,9 +65,10 @@ impl<'tcx> Analysis<'_, 'tcx> {
                         }
                     }
                 }
-                let bounded =
-                    self.constant(left, &mut Vec::new()) || self.constant(right, &mut Vec::new())
-                        || self.bounded_work(left) || self.bounded_work(right);
+                let bounded = self.constant(left, &mut Vec::new())
+                    || self.constant(right, &mut Vec::new())
+                    || self.bounded_work(left)
+                    || self.bounded_work(right);
                 if !bounded {
                     let mut paid = self.take_credit(&[left, right]);
                     if paid == Some(true)
@@ -393,10 +400,9 @@ impl<'tcx> Analysis<'_, 'tcx> {
         if matches!(
             name,
             "starts_with" | "ends_with" | "eq" | "cmp" | "partial_cmp"
-        ) && operands
-            .get(1)
-            .is_some_and(|operand| self.constant(operand, &mut Vec::new()) || self.bounded_work(operand))
-        {
+        ) && operands.get(1).is_some_and(|operand| {
+            self.constant(operand, &mut Vec::new()) || self.bounded_work(operand)
+        }) {
             return;
         }
         let mut paid = match summary.work {
@@ -684,7 +690,9 @@ impl<'tcx> Analysis<'_, 'tcx> {
                         .any(|key| term == key || term.starts_with(&format!("{key}.")))
                 })
         });
-        saved.storage_parameters.retain(|parameter| self.flow.storage_parameters.contains(parameter));
+        saved
+            .storage_parameters
+            .retain(|parameter| self.flow.storage_parameters.contains(parameter));
         saved.storage |= self.flow.storage;
         saved
             .storage_extents
@@ -811,7 +819,9 @@ impl<'tcx> Analysis<'_, 'tcx> {
                 self.flow
                     .work
                     .retain(|credit| after_yes.work.contains(credit));
-                self.flow.storage_parameters.retain(|parameter| after_yes.storage_parameters.contains(parameter));
+                self.flow
+                    .storage_parameters
+                    .retain(|parameter| after_yes.storage_parameters.contains(parameter));
                 self.flow.storage |= after_yes.storage;
                 self.flow
                     .storage_extents
@@ -835,7 +845,9 @@ impl<'tcx> Analysis<'_, 'tcx> {
                     }
                     self.visit_expr(arm.body);
                     merged.work.retain(|credit| self.flow.work.contains(credit));
-                    merged.storage_parameters.retain(|parameter| self.flow.storage_parameters.contains(parameter));
+                    merged
+                        .storage_parameters
+                        .retain(|parameter| self.flow.storage_parameters.contains(parameter));
                     merged.storage |= self.flow.storage;
                     merged
                         .storage_extents

@@ -50,16 +50,28 @@ impl Graph {
 
 fn codec_input_method(tcx: TyCtxt<'_>, owner: DefId) -> bool {
     let parent = tcx.parent(owner);
-    if !matches!(tcx.def_kind(parent), rustc_hir::def::DefKind::Impl { of_trait: true }) {
+    if !matches!(
+        tcx.def_kind(parent),
+        rustc_hir::def::DefKind::Impl { of_trait: true }
+    ) {
         return false;
     }
     let trait_id = tcx.impl_trait_ref(parent).skip_binder().def_id;
     let codec = matches!(tcx.item_name(trait_id).as_str(), "Codec" | "CodecBackend")
-        && (tcx.crate_name(trait_id.krate).as_str() == "cadmpeg_ir" && tcx.item_name(tcx.parent(trait_id)).as_str() == "codec"
+        && (tcx.crate_name(trait_id.krate).as_str() == "cadmpeg_ir"
+            && tcx.item_name(tcx.parent(trait_id)).as_str() == "codec"
             || std::env::var_os("CADMPEG_POLICY_FIXTURE").is_some());
-    codec && matches!(tcx.item_name(owner).as_str(),
-        "detect_impl" | "inspect_impl" | "decode_impl" | "detect" | "inspect"
-            | "decode" | "decode_with_context")
+    codec
+        && matches!(
+            tcx.item_name(owner).as_str(),
+            "detect_impl"
+                | "inspect_impl"
+                | "decode_impl"
+                | "detect"
+                | "inspect"
+                | "decode"
+                | "decode_with_context"
+        )
 }
 
 fn root(tcx: TyCtxt<'_>, owner: LocalDefId) -> bool {
@@ -67,9 +79,16 @@ fn root(tcx: TyCtxt<'_>, owner: LocalDefId) -> bool {
         return false;
     }
     codec_input_method(tcx, owner.to_def_id())
-        || matches!(tcx.def_kind(owner), rustc_hir::def::DefKind::Fn | rustc_hir::def::DefKind::AssocFn)
-            && tcx.visibility(owner).is_public()
-            && tcx.fn_sig(owner).instantiate_identity().skip_binder().inputs().iter()
+        || matches!(
+            tcx.def_kind(owner),
+            rustc_hir::def::DefKind::Fn | rustc_hir::def::DefKind::AssocFn
+        ) && tcx.visibility(owner).is_public()
+            && tcx
+                .fn_sig(owner)
+                .instantiate_identity()
+                .skip_binder()
+                .inputs()
+                .iter()
                 .any(|input| types::has_context(tcx, *input, &mut Vec::new()))
 }
 
@@ -77,11 +96,17 @@ pub(crate) fn collect<'tcx>(tcx: TyCtxt<'tcx>, owners: &[LocalDefId]) -> Graph {
     let mut graph = Graph::default();
     for owner in owners {
         if root(tcx, *owner) {
-            graph.roots.insert(key(tcx, owner.to_def_id()), tcx.def_path_str(*owner));
+            graph
+                .roots
+                .insert(key(tcx, owner.to_def_id()), tcx.def_path_str(*owner));
         }
         let derived_operation = types::derived(tcx, owner.to_def_id())
-            && tcx.opt_item_name(owner.to_def_id()).is_some_and(|name|
-                matches!(name.as_str(), "clone" | "eq" | "partial_cmp" | "cmp" | "hash" | "fmt" | "default"));
+            && tcx.opt_item_name(owner.to_def_id()).is_some_and(|name| {
+                matches!(
+                    name.as_str(),
+                    "clone" | "eq" | "partial_cmp" | "cmp" | "hash" | "fmt" | "default"
+                )
+            });
         if !crate::production(tcx, owner.to_def_id()) && !derived_operation {
             continue;
         }
@@ -98,7 +123,8 @@ pub(crate) fn collect<'tcx>(tcx: TyCtxt<'tcx>, owners: &[LocalDefId]) -> Graph {
             },
             caller: key(tcx, owner.to_def_id()),
             graph: &mut graph,
-        }.visit_body(tcx.hir_body_owned_by(*owner));
+        }
+        .visit_body(tcx.hir_body_owned_by(*owner));
     }
     graph
 }
@@ -112,7 +138,9 @@ struct Calls<'a, 'b, 'tcx> {
 impl Calls<'_, '_, '_> {
     fn edge(&mut self, callee: DefId) {
         if types::checked(self.analysis.tcx, callee) {
-            self.graph.edges.insert((self.caller.clone(), key(self.analysis.tcx, callee)));
+            self.graph
+                .edges
+                .insert((self.caller.clone(), key(self.analysis.tcx, callee)));
         }
     }
 
@@ -127,7 +155,10 @@ impl Calls<'_, '_, '_> {
         };
         self.edge(definition);
         for implementation in self.analysis.tcx.all_impls(trait_id) {
-            let item = self.analysis.tcx.associated_items(implementation)
+            let item = self
+                .analysis
+                .tcx
+                .associated_items(implementation)
                 .in_definition_order()
                 .find(|item| item.name() == self.analysis.tcx.item_name(definition));
             if let Some(item) = item {
@@ -147,7 +178,11 @@ impl<'tcx> Visitor<'tcx> for Calls<'_, '_, 'tcx> {
             if let Some(custom) = self.analysis.custom_trait(expression, id) {
                 self.edge(custom);
             }
-        } else if let Some(id) = self.analysis.typeck.type_dependent_def_id(expression.hir_id) {
+        } else if let Some(id) = self
+            .analysis
+            .typeck
+            .type_dependent_def_id(expression.hir_id)
+        {
             self.method(id, self.analysis.implementation(expression, id));
             if let Some(custom) = self.analysis.custom_trait(expression, id) {
                 self.edge(custom);

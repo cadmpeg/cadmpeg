@@ -13,7 +13,12 @@ pub(crate) struct Slots {
 }
 
 impl<'tcx> Analysis<'_, 'tcx> {
-    pub(crate) fn symbolic_storage(&mut self, expression: &'tcx Expr<'tcx>, operands: &[&'tcx Expr<'tcx>], name: &str) -> bool {
+    pub(crate) fn symbolic_storage(
+        &mut self,
+        expression: &'tcx Expr<'tcx>,
+        operands: &[&'tcx Expr<'tcx>],
+        name: &str,
+    ) -> bool {
         if !matches!(name, "try_reserve_exact" | "reserve_exact") {
             return false;
         }
@@ -27,7 +32,10 @@ impl<'tcx> Analysis<'_, 'tcx> {
             return false;
         }
         let element = match self.tcx.item_name(owner.did()).as_str() {
-            "Vec" => match arguments.types().next() { Some(element) => element, None => return false },
+            "Vec" => match arguments.types().next() {
+                Some(element) => element,
+                None => return false,
+            },
             "String" => self.tcx.types.u8,
             _ => return false,
         };
@@ -67,7 +75,9 @@ impl<'tcx> Analysis<'_, 'tcx> {
             }
         }
         let counts = terms.clone();
-        let Some(scaled) = self.scaled_storage_terms(&terms) else { return false; };
+        let Some(scaled) = self.scaled_storage_terms(&terms) else {
+            return false;
+        };
         terms = scaled;
         let size_factor = format!("size:{element}");
         for term in &mut terms {
@@ -75,11 +85,20 @@ impl<'tcx> Analysis<'_, 'tcx> {
             term.factors.sort();
         }
         let mut credits = self.flow.storage_extents.clone();
-        if let Ok(layout) = self.tcx.layout_of(self.typing_env().as_query_input(element)) {
+        if let Ok(layout) = self
+            .tcx
+            .layout_of(self.typing_env().as_query_input(element))
+        {
             let bytes = layout.size.bytes();
             for term in terms.iter_mut().chain(credits.iter_mut()) {
-                if let Some(index) = term.factors.iter().position(|factor| factor == &size_factor) {
-                    let Some(coefficient) = term.coefficient.checked_mul(bytes) else { return false; };
+                if let Some(index) = term
+                    .factors
+                    .iter()
+                    .position(|factor| factor == &size_factor)
+                {
+                    let Some(coefficient) = term.coefficient.checked_mul(bytes) else {
+                        return false;
+                    };
                     term.coefficient = coefficient;
                     term.factors.remove(index);
                 }
@@ -91,12 +110,12 @@ impl<'tcx> Analysis<'_, 'tcx> {
         self.flow.storage_extents = credits;
         if name == "reserve_exact" || self.reserve_success(expression) {
             if let Some(target) = self.key(receiver, &mut Vec::new()) {
-            self.flow.storage_slots.push(Slots {
-                target,
-                terms: counts,
-                loop_depth: self.flow.loop_bounds.len(),
-                reserved: true,
-            });
+                self.flow.storage_slots.push(Slots {
+                    target,
+                    terms: counts,
+                    loop_depth: self.flow.loop_bounds.len(),
+                    reserved: true,
+                });
             }
         }
         true
@@ -129,7 +148,10 @@ impl<'tcx> Analysis<'_, 'tcx> {
                     ExprKind::Match(_, _, rustc_hir::MatchSource::TryDesugar(_)) => return true,
                     ExprKind::DropTemps(_) | ExprKind::AddrOf(_, _, _) => (),
                     ExprKind::Call(_, _) | ExprKind::MethodCall(_, _, _, _)
-                        if self.call(parent).is_some_and(|(id, _)| types::standard(self.tcx, id) && matches!(self.tcx.item_name(id).as_str(), "map_err" | "branch")) => (),
+                        if self.call(parent).is_some_and(|(id, _)| {
+                            types::standard(self.tcx, id)
+                                && matches!(self.tcx.item_name(id).as_str(), "map_err" | "branch")
+                        }) => {}
                     _ => return false,
                 },
                 _ => return false,
@@ -158,14 +180,12 @@ impl<'tcx> Analysis<'_, 'tcx> {
                         if self.call(value).is_some_and(|(id, _)| {
                             types::standard(self.tcx, id)
                                 && self.tcx.item_name(id).as_str() == "branch"
-                        }) =>
-                    {}
+                        }) => {}
                     ExprKind::MethodCall(_, _, _, _)
                         if self.call(value).is_some_and(|(id, _)| {
                             types::standard(self.tcx, id)
                                 && self.tcx.item_name(id).as_str() == "map_err"
-                        }) =>
-                    {}
+                        }) => {}
                     _ => return None,
                 },
                 Node::Param(_) | Node::Item(_) => return None,
@@ -293,7 +313,13 @@ impl<'tcx> Analysis<'_, 'tcx> {
             return false;
         };
         for (index, credit) in self.flow.storage_slots.iter().enumerate() {
-            if credit.target != target || credit.reserved && matches!(name, "reserve" | "reserve_exact" | "try_reserve" | "try_reserve_exact") {
+            if credit.target != target
+                || credit.reserved
+                    && matches!(
+                        name,
+                        "reserve" | "reserve_exact" | "try_reserve" | "try_reserve_exact"
+                    )
+            {
                 continue;
             }
             let mut required = terms.clone();
@@ -331,9 +357,14 @@ impl<'tcx> Analysis<'_, 'tcx> {
 pub(crate) fn consume_terms(credits: &mut Vec<ExtentTerm>, required: &[ExtentTerm]) -> bool {
     let mut remaining = credits.clone();
     for term in required {
-        if term.coefficient == 0 { continue; }
-        let Some(index) = remaining.iter().position(|credit|
-            credit.factors == term.factors && credit.coefficient >= term.coefficient) else { return false; };
+        if term.coefficient == 0 {
+            continue;
+        }
+        let Some(index) = remaining.iter().position(|credit| {
+            credit.factors == term.factors && credit.coefficient >= term.coefficient
+        }) else {
+            return false;
+        };
         remaining[index].coefficient -= term.coefficient;
         remaining.retain(|credit| credit.coefficient != 0);
     }

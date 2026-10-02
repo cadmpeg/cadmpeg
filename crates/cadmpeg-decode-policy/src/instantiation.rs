@@ -26,9 +26,15 @@ pub(crate) fn collect<'tcx>(tcx: TyCtxt<'tcx>, owners: &[LocalDefId]) -> Vec<Ins
         }
         let mut findings = Findings::default();
         Analysis {
-            tcx, typeck: tcx.typeck(*owner), typing_owner: *owner, arguments: None,
-            fixed_parameters: HashSet::new(), flow: flow::Flow::default(), findings: &mut findings,
-        }.visit_body(tcx.hir_body_owned_by(*owner));
+            tcx,
+            typeck: tcx.typeck(*owner),
+            typing_owner: *owner,
+            arguments: None,
+            fixed_parameters: HashSet::new(),
+            flow: flow::Flow::default(),
+            findings: &mut findings,
+        }
+        .visit_body(tcx.hir_body_owned_by(*owner));
         Collector {
             analysis: Analysis {
                 tcx,
@@ -126,8 +132,19 @@ impl<'tcx> Visitor<'tcx> for Collector<'_, '_, 'tcx> {
                 ) {
                     fixed_parameters.extend(self.analysis.fixed_parameters.iter().copied());
                 }
-                let admitted_operands = self.analysis.findings.conversions.get(&expression.hir_id).cloned().unwrap_or_default();
-                let admitted_parameters = instance.def_id().as_local().map_or_else(HashSet::new, |local| crate::fixed::bindings(self.analysis.tcx, local, &admitted_operands));
+                let admitted_operands = self
+                    .analysis
+                    .findings
+                    .conversions
+                    .get(&expression.hir_id)
+                    .cloned()
+                    .unwrap_or_default();
+                let admitted_parameters = instance
+                    .def_id()
+                    .as_local()
+                    .map_or_else(HashSet::new, |local| {
+                        crate::fixed::bindings(self.analysis.tcx, local, &admitted_operands)
+                    });
                 self.result.push(Instantiation {
                     instance,
                     caller: self.caller,
@@ -144,10 +161,15 @@ impl<'tcx> Visitor<'tcx> for Collector<'_, '_, 'tcx> {
                     if self.seen.len() <= limit {
                         let mut findings = Findings::default();
                         Analysis {
-                            tcx, typeck: tcx.typeck(local), typing_owner: self.caller,
-                            arguments: Some(instance.args), fixed_parameters: fixed_parameters.clone(),
-                            flow: flow::Flow::with_parameters(&admitted_parameters), findings: &mut findings,
-                        }.visit_body(tcx.hir_body_owned_by(local));
+                            tcx,
+                            typeck: tcx.typeck(local),
+                            typing_owner: self.caller,
+                            arguments: Some(instance.args),
+                            fixed_parameters: fixed_parameters.clone(),
+                            flow: flow::Flow::with_parameters(&admitted_parameters),
+                            findings: &mut findings,
+                        }
+                        .visit_body(tcx.hir_body_owned_by(local));
                         Collector {
                             analysis: Analysis {
                                 tcx,
@@ -257,7 +279,11 @@ pub(crate) fn check_imported<'tcx>(
     root: &Instantiation<'tcx>,
     findings: &mut Findings,
 ) {
-    let mut pending = vec![(root.instance, root.fixed_operands.clone(), root.admitted_operands.clone())];
+    let mut pending = vec![(
+        root.instance,
+        root.fixed_operands.clone(),
+        root.admitted_operands.clone(),
+    )];
     let mut seen = HashSet::new();
     while let Some((instance, fixed_operands, admitted_operands)) = pending.pop() {
         if !seen.insert((instance, fixed_operands.clone(), admitted_operands.clone())) {
@@ -299,12 +325,6 @@ pub(crate) fn check_imported<'tcx>(
             };
             let raw = func.ty(body, tcx);
             if let rustc_middle::ty::FnDef(id, _) = raw.kind() {
-                if tcx
-                    .trait_of_assoc(*id)
-                    .is_some_and(|trait_id| types::serde_serialize(tcx, trait_id))
-                {
-                    continue;
-                }
                 let name = tcx.opt_item_name(*id);
                 let dependent = tcx.trait_of_assoc(*id).is_some()
                     || name.is_some_and(|name| {
@@ -396,7 +416,12 @@ pub(crate) fn check_imported<'tcx>(
                         )
                     })
                     .collect();
-                let paid = args.iter().map(|arg| crate::conversion::operand_admitted(body, &arg.node, &admitted_operands)).collect();
+                let paid = args
+                    .iter()
+                    .map(|arg| {
+                        crate::conversion::operand_admitted(body, &arg.node, &admitted_operands)
+                    })
+                    .collect();
                 pending.push((resolved, fixed, paid));
                 continue;
             }
@@ -590,16 +615,20 @@ pub(crate) fn check_imported<'tcx>(
                     _ => types::heap(tcx, output, &mut Vec::new()),
                 }
             };
-            let admitted_conversion = operation_name.is_some_and(|name| matches!(name.as_str(), "into" | "from" | "to_owned"))
-                && args.first().is_some_and(|arg| crate::conversion::operand_admitted(body, &arg.node, &admitted_operands));
-            let allocation = if admitted_conversion { types::Shape::Fixed } else if fixed_receiver
-                && matches!(
-                    summary.allocation,
-                    external::Allocation::Clone
-                        | external::Allocation::Conversion
-                        | external::Allocation::Result
-                        | external::Allocation::Input(0)
-                ) {
+            let admitted_conversion = operation_name
+                .is_some_and(|name| matches!(name.as_str(), "into" | "from" | "to_owned"))
+                && args.first().is_some_and(|arg| {
+                    crate::conversion::operand_admitted(body, &arg.node, &admitted_operands)
+                });
+            let allocation = if admitted_conversion
+                || fixed_receiver
+                    && matches!(
+                        summary.allocation,
+                        external::Allocation::Clone
+                            | external::Allocation::Conversion
+                            | external::Allocation::Result
+                            | external::Allocation::Input(0)
+                    ) {
                 types::Shape::Fixed
             } else if summary.allocation == external::Allocation::Growth {
                 // Backing slot bytes are proved in the generic body. Child

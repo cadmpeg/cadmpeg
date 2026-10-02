@@ -104,7 +104,11 @@ pub fn wrong_target<T>(
     Ok(())
 }
 
-pub fn growth_delta<T>(ctx: &DecodeContext, values: &mut Vec<T>, capacity: usize) -> Result<(), ()> {
+pub fn growth_delta<T>(
+    ctx: &DecodeContext,
+    values: &mut Vec<T>,
+    capacity: usize,
+) -> Result<(), ()> {
     let added = capacity - values.capacity();
     let bytes = added.checked_mul(std::mem::size_of::<T>()).ok_or(())?;
     ctx.charge_retained(u64::try_from(bytes).map_err(|_| ())?, "delta")?;
@@ -126,13 +130,23 @@ pub fn fills(ctx: &DecodeContext, count: usize, text: String) -> Result<(), ()> 
     Ok(())
 }
 
-pub fn double_push<T>(ctx: &DecodeContext, values: &mut Vec<T>, first: T, second: T) -> Result<(), ()> {
+pub fn double_push<T>(
+    ctx: &DecodeContext,
+    values: &mut Vec<T>,
+    first: T,
+    second: T,
+) -> Result<(), ()> {
     ctx.reserve_vec(values, 1)?;
     values.push(first);
     values.push(second); // finding: unproven_decode_charge
     Ok(())
 }
-pub fn conditional<T>(ctx: &DecodeContext, values: &mut Vec<T>, value: T, yes: bool) -> Result<(), ()> {
+pub fn conditional<T>(
+    ctx: &DecodeContext,
+    values: &mut Vec<T>,
+    value: T,
+    yes: bool,
+) -> Result<(), ()> {
     if yes {
         ctx.reserve_vec(values, 1)?;
     }
@@ -168,7 +182,11 @@ pub fn computed_delta<T>(
     Ok(())
 }
 
-pub fn duplicate_terms<T>(ctx: &DecodeContext, values: &mut Vec<T>, count: usize) -> Result<(), ()> {
+pub fn duplicate_terms<T>(
+    ctx: &DecodeContext,
+    values: &mut Vec<T>,
+    count: usize,
+) -> Result<(), ()> {
     let bytes = count.checked_mul(std::mem::size_of::<T>()).ok_or(())?;
     ctx.charge_retained(u64::try_from(bytes).map_err(|_| ())?, "one extent")?;
     let doubled = count.checked_add(count).ok_or(())?;

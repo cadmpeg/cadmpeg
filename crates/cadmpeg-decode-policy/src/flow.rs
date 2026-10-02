@@ -389,7 +389,9 @@ impl<'tcx> Analysis<'_, 'tcx> {
                 .get(1)
                 .and_then(|amount| self.extent_terms(amount, &mut Vec::new()))
             {
-                if let Some(terms) = self.scaled_storage_terms(&terms) { self.flow.storage_extents.extend(terms); }
+                if let Some(terms) = self.scaled_storage_terms(&terms) {
+                    self.flow.storage_extents.extend(terms);
+                }
             }
         }
         self.record_slots(expression);
@@ -486,7 +488,9 @@ impl<'tcx> Analysis<'_, 'tcx> {
                             || key.starts_with(&format!("{term}."))
                     })
             });
-            self.flow.storage_parameters.retain(|parameter| parameter != &key && !parameter.starts_with(&format!("{key}.")));
+            self.flow.storage_parameters.retain(|parameter| {
+                parameter != &key && !parameter.starts_with(&format!("{key}."))
+            });
             self.flow.storage_extents.retain(|term| {
                 !term.factors.iter().any(|factor| {
                     factor.contains(&key)
@@ -533,8 +537,17 @@ impl<'tcx> Analysis<'_, 'tcx> {
         }
         if let Some((definition, operands)) = self.call(expression) {
             let reserved = types::standard(self.tcx, definition)
-                && matches!(self.tcx.item_name(definition).as_str(), "try_reserve_exact" | "reserve_exact");
-            let slots: Vec<_> = self.flow.storage_slots.iter().filter(|credit| credit.reserved).cloned().collect();
+                && matches!(
+                    self.tcx.item_name(definition).as_str(),
+                    "try_reserve_exact" | "reserve_exact"
+                );
+            let slots: Vec<_> = self
+                .flow
+                .storage_slots
+                .iter()
+                .filter(|credit| credit.reserved)
+                .cloned()
+                .collect();
             for operand in operands {
                 if matches!(
                     self.expr_ty_adjusted(operand).kind(),
@@ -545,7 +558,9 @@ impl<'tcx> Analysis<'_, 'tcx> {
             }
             if reserved {
                 for credit in slots {
-                    if !self.flow.storage_slots.contains(&credit) { self.flow.storage_slots.push(credit); }
+                    if !self.flow.storage_slots.contains(&credit) {
+                        self.flow.storage_slots.push(credit);
+                    }
                 }
             }
         }
@@ -555,7 +570,10 @@ impl<'tcx> Analysis<'_, 'tcx> {
 impl Flow {
     pub(crate) fn with_parameters(parameters: &std::collections::HashSet<HirId>) -> Self {
         Self {
-            storage_parameters: parameters.iter().map(|id| format!("local:{id:?}")).collect(),
+            storage_parameters: parameters
+                .iter()
+                .map(|id| format!("local:{id:?}"))
+                .collect(),
             ..Self::default()
         }
     }

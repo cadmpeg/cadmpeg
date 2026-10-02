@@ -21,3 +21,31 @@ impl Serialize for Local<'_> {
         let _copy = self.0.to_owned(); // finding: uncharged_decode_allocation, uncharged_decode_work
     }
 }
+
+struct DecodeText<'a>(&'a str);
+impl serde::Serialize for DecodeText<'_> {
+    fn serialize<S: serde::Serializer>(&self, _serializer: S) -> Result<S::Ok, S::Error> {
+        for byte in self.0.as_bytes() {
+            // finding: uncharged_decode_work
+            std::hint::black_box(byte);
+        }
+        Err(serde::ser::Error::custom("fixed")) // finding: unproven_decode_charge
+    }
+}
+pub fn decode_serialization<S: serde::Serializer>(ctx: &DecodeContext, text: &str, serializer: S) {
+    let _context = ctx;
+    let _record = serde::Serialize::serialize(&DecodeText(text), serializer);
+}
+
+struct WriteText<'a>(&'a str);
+impl serde::Serialize for WriteText<'_> {
+    fn serialize<S: serde::Serializer>(&self, _serializer: S) -> Result<S::Ok, S::Error> {
+        for byte in self.0.as_bytes() {
+            std::hint::black_box(byte);
+        }
+        Err(serde::ser::Error::custom("fixed"))
+    }
+}
+pub fn serialization_only<S: serde::Serializer>(text: &str, serializer: S) {
+    let _record = serde::Serialize::serialize(&WriteText(text), serializer);
+}
