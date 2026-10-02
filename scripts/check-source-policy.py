@@ -2062,6 +2062,172 @@ def scan_decode_allocations(sources: dict[Path, str]) -> list[Finding]:
     return findings
 
 
+DECODE_SCAN_METHODS = {
+    "any", "all", "position", "rposition", "find", "rfind", "find_map",
+    "min_by_key", "max_by_key", "min_by", "max_by", "min", "max",
+    "contains", "starts_with", "ends_with", "eq", "cmp", "partial_cmp",
+    "fold", "try_fold", "reduce", "sum", "count", "for_each", "try_for_each",
+}
+
+
+def decode_receiver(words, pairs, index):
+    """Read the complete receiver of a method, including chained calls."""
+    stop = index - 1
+    start = stop - 1
+    while start >= 0:
+        if words[start] in {")", "]"}:
+            opening = pairs.get(start)
+            if opening is None:
+                break
+            start = opening - 1
+            continue
+        if start > 0 and words[start - 1] in {".", "::"}:
+            start -= 2
+            continue
+        break
+    return "".join(words[max(0, start):stop])
+
+
+def decode_work_charge(words, pairs, index, receivers):
+    """A charge must use this context and propagate its Result with ?."""
+    if words[index] not in {"charge_work", "charge_work_limit"}:
+        return None
+    if decode_receiver(words, pairs, index) not in receivers:
+        return None
+    opening = evaluation_call_open(words, index)
+    if opening not in pairs or words[pairs[opening] + 1:pairs[opening] + 2] != ["?"]:
+        return None
+    stop = opening + 1
+    while stop < pairs[opening]:
+        if words[stop] == ",":
+            break
+        stop = pairs[stop] + 1 if stop in pairs and words[stop] in "([{" else stop + 1
+    return "".join(words[opening + 1:stop])
+
+
+def decode_extent(expression):
+    """Normalize direct collection iteration and counted ranges to their extent."""
+    expression = expression.lstrip("&")
+    if ".." in expression:
+        expression = expression.split("..", 1)[1].lstrip("=")
+    for suffix in (".enumerate()", ".rev()", ".copied()", ".cloned()",
+                   ".into_iter()", ".iter_mut()", ".iter()", ".as_bytes()", ".keys()", ".values()"):
+        expression = expression.replace(suffix, "")
+    return expression
+
+
+def decode_charge_covers(amount, extent):
+    """Accept an exact named extent or its length wrapped by u64_from_index."""
+    amount = re.sub(r"(?:(?:[A-Za-z_]\w*::)*u64_from_index|u64::from)\(([^()]*(?:\.len\(\))?)\)", r"\1", amount)
+    return amount in {extent, extent + ".len()", extent + ".capacity()"}
+
+
+def scan_decode_work(sources: dict[Path, str]) -> list[Finding]:
+    """Reject unadmitted scans; unresolved linear-work forms require an explicit charge."""
+    findings = []
+    for (path, source, code, tokens, pairs, parents, words, body, end,
+         active, receivers) in decode_context_functions(sources):
+        charges = {}
+        aliases = {}
+        # Simple extent aliases retain identity, not arbitrary arithmetic.
+        for i in sorted(active):
+            if words[i] == "let" and words[i + 2:i + 3] == ["="]:
+                stop = i + 3
+                while stop < end and words[stop] != ";":
+                    stop = pairs[stop] + 1 if stop in pairs and words[stop] in "([{" else stop + 1
+                expr = "".join(words[i + 3:stop])
+                aliases[words[i + 1]] = expr
+            amount = decode_work_charge(words, pairs, i, receivers) if i > body else None
+            if amount is not None:
+                charges[i] = amount
+        slice_names = set(re.findall(
+            r"\b([A-Za-z_]\w*)\s*:\s*(?:&\s*(?:'[A-Za-z_]\w*\s*)?(?:mut\s+)?\[|Vec\s*<|String\b|&\s*str\b)",
+            code[tokens[min(active)].start():tokens[body].start()]))
+        consumed = set()
+        for i in sorted(active):
+            if i <= body:
+                continue
+            word = words[i]
+            loop_body = None
+            extent = None
+            if word in {"for", "while", "loop"}:
+                # Ignore impl/trait headers and higher-ranked type declarations.
+                opening = i + 1
+                while opening < end and words[opening] not in {"{", ";"}:
+                    opening = pairs[opening] + 1 if opening in pairs and words[opening] in "([" else opening + 1
+                if opening not in pairs or words[opening] != "{":
+                    continue
+                loop_body = opening
+                header = words[i + 1:opening]
+                if word == "for":
+                    if "in" not in header:
+                        continue
+                    extent = decode_extent("".join(header[header.index("in") + 1:]))
+                    if re.fullmatch(r"[0-9_]+", extent) or (extent.startswith("[") and decode_static_values(
+                            source, code, tokens[i].end(), tokens[opening].start())):
+                        continue
+                else:
+                    extent = "".join(header)
+            elif word in DECODE_SCAN_METHODS and words[i - 1:i] == ["."]:
+                if evaluation_call_open(words, i) is None:
+                    continue
+                receiver = decode_receiver(words, pairs, i)
+                if receiver in receivers:
+                    continue
+                # Scalar min/max are constant-time; iterator variants have no operand.
+                opening = evaluation_call_open(words, i)
+                if word in {"min", "max"} and pairs.get(opening) != opening + 1:
+                    continue
+                extent = decode_extent(receiver)
+                if extent.startswith("(") and ".." in extent:
+                    continue
+            elif word in {"=", "!"} and words[i + 1:i + 2] == ["="]:
+                left, right = i - 1, i + 2
+                left_name = words[left] if left >= 0 else ""
+                right_name = words[right] if right < len(words) else ""
+                indexed = words[left:left + 1] == ["]"] or words[right + 1:right + 2] == ["["]
+                if not indexed and left_name not in slice_names and right_name not in slice_names:
+                    continue
+                if indexed:
+                    raw_left = decode_receiver(words, pairs, i + 1)
+                    extent = raw_left.split("[", 1)[0]
+                    # Equality of fixed scalar elements has constant work.
+                    if ".." not in raw_left and ".." not in "".join(words[right:right + 12]):
+                        continue
+                else:
+                    extent = left_name if left_name in slice_names else right_name
+            else:
+                continue
+            admitted = False
+            if loop_body is not None:
+                # Charge in the first statement, before input-dependent body work.
+                first_stop = loop_body + 1
+                while first_stop < pairs[loop_body] and words[first_stop] != ";":
+                    first_stop = pairs[first_stop] + 1 if first_stop in pairs and words[first_stop] in "([{" else first_stop + 1
+                admitted = any(loop_body < charge < first_stop and charges[charge] not in {"0", "0_u64"}
+                               for charge in charges)
+            if not admitted:
+                parent = parents.get(i)
+                for charge, amount in charges.items():
+                    if charge >= i or charge in consumed or parents.get(charge) != parent:
+                        continue
+                    resolved = amount
+                    if amount in aliases:
+                        resolved = aliases[amount]
+                    if decode_charge_covers(resolved, extent):
+                        admitted = True
+                        consumed.add(charge)
+                        break
+            if not admitted:
+                findings.append(Finding(
+                    "uncharged_decode_work", relative_path(path),
+                    code.count("\n", 0, tokens[i].start()) + 1,
+                    f"{word} scans decoded data or has unresolved work; use a propagated ctx.charge_work "
+                    "for this extent immediately before the scan, or as the first loop-body statement. "
+                    "Use ctx.position_by / ctx.equal_bytes for fallible search or byte equality."))
+    return findings
+
+
 def check_source() -> list[Finding]:
     sources = {
         path.resolve(): path.read_text(encoding="utf-8", errors="replace")
@@ -2073,6 +2239,7 @@ def check_source() -> list[Finding]:
             findings.extend(scan_patterns(path, source))
     findings.extend(scan_decode_sorts(sources))
     findings.extend(scan_decode_allocations(sources))
+    findings.extend(scan_decode_work(sources))
     findings.extend(scan_evaluation_refusals(sources))
     findings.extend(scan_wire_mirror_docs(sources))
     findings.extend(scan_module_visibility(sources))

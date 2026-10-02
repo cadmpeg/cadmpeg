@@ -1100,6 +1100,86 @@ fn read(ctx: &DecodeContext<'_>) {
         self.assertEqual(len(self.findings("uncharged_decode_allocation")), 2)
 
 
+class DecodeWork(TempSourceCase):
+    PATH = "crates/cadmpeg-codec-demo/src/read.rs"
+
+    def test_unadmitted_loops_and_iterator_searches(self):
+        self.write(self.PATH, """fn read(ctx: &DecodeContext<'_>) {
+    for value in values { use_value(value); }
+    while remaining > 0 { remaining -= 1; }
+    loop { step(); }
+    values.iter().any(predicate);
+    values.iter().all(predicate);
+    values.iter().position(predicate);
+    values.iter().find(predicate);
+    values.iter().min_by_key(key);
+    values.iter().max_by_key(key);
+    values.contains(&value);
+    left[..] == right[..];
+}""")
+        self.assertEqual([f.line for f in self.findings("uncharged_decode_work")], list(range(2, 13)))
+
+    def test_extent_and_per_iteration_charges_are_accepted(self):
+        self.write(self.PATH, """fn read(ctx: &DecodeContext<'_>) {
+    ctx.charge_work(u64_from_index(values.len()), "scan")?;
+    values.iter().any(predicate);
+    for value in values { ctx.charge_work(1, "scan")?; use_value(value); }
+    while remaining > 0 { ctx.charge_work_limit(1, "scan")?; step(); }
+    loop { ctx.charge_work(1, "scan")?; step(); }
+    ctx.position_by(values, predicate, "scan")?;
+    ctx.equal_bytes(left, right, "compare")?;
+    for index in 0..4 { step(); }
+}""")
+        self.assertEqual(self.findings("uncharged_decode_work"), [])
+
+    def test_wrong_late_conditional_dropped_and_reused_charges_fail(self):
+        self.write(self.PATH, """fn read(ctx: &DecodeContext<'_>) {
+    ctx.charge_work(u64_from_index(other.len()), "scan")?;
+    values.iter().any(predicate);
+    values.iter().any(predicate);
+    ctx.charge_work(u64_from_index(values.len()), "scan")?;
+    if condition { ctx.charge_work(u64_from_index(values.len()), "scan")?; }
+    values.iter().all(predicate);
+    ctx.charge_work(u64_from_index(values.len()), "scan").ok();
+    values.iter().find(predicate);
+    ctx.charge_work(u64_from_index(values.len()), "scan")?;
+    values.iter().position(predicate);
+    values.iter().position(predicate);
+    for value in values { use_value(value); ctx.charge_work(1, "scan")?; }
+}""")
+        self.assertEqual([f.line for f in self.findings("uncharged_decode_work")], [3, 4, 9, 12, 13])
+
+    def test_named_decoded_slices_need_comparison_admission(self):
+        self.write(self.PATH, """fn read(ctx: &DecodeContext<'_>, left: &[u8], right: &[u8]) {
+    left == right;
+    left != right;
+    ctx.charge_work(u64_from_index(left.len()), "compare")?;
+    left == right;
+}""")
+        self.assertEqual([f.line for f in self.findings("uncharged_decode_work")], [2, 3])
+
+    def test_inner_scans_need_their_own_charge(self):
+        self.write(self.PATH, """fn read(ctx: &DecodeContext<'_>) {
+    for value in values {
+        ctx.charge_work(1, "outer")?;
+        others.iter().any(predicate);
+    }
+}""")
+        self.assertEqual([f.line for f in self.findings("uncharged_decode_work")], [4])
+
+    def test_nested_context_and_scope(self):
+        self.write(self.PATH, """fn read(ctx: &DecodeContext<'_>) {
+    fn independent() { for value in values { step(); } }
+    values.map(|value| others.iter().any(predicate));
+}
+#[cfg(test)] fn test(ctx: &DecodeContext<'_>) { values.iter().any(predicate); }
+""")
+        self.assertEqual([f.line for f in self.findings("uncharged_decode_work")], [3])
+        self.write("crates/cadmpeg-codec-demo/src/writer.rs",
+                   "fn write(ctx: &DecodeContext<'_>) { values.iter().any(predicate); }")
+        self.assertEqual([f.line for f in self.findings("uncharged_decode_work")], [3])
+
+
 class SourcePolicyCommand(TempSourceCase):
     def run_check(self, *args: str) -> tuple[int, str]:
         output = io.StringIO()
