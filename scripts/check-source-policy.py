@@ -2845,6 +2845,10 @@ def scan_decode_work(sources: dict[Path, str]) -> list[Finding]:
                 receiver = decode_receiver(words, pairs, i)
                 if receiver in receivers:
                     continue
+                # Context-taking helpers own their scans. Their bodies are
+                # checked independently, including helpers with scan-like names.
+                if decode_charged_call(words, pairs, i, receivers, methods):
+                    continue
                 # Scalar min/max are constant-time; iterator variants have no operand.
                 opening = evaluation_call_open(words, i)
                 if word in {"min", "max"} and pairs.get(opening) != opening + 1:
