@@ -849,34 +849,14 @@ impl BsplineSurface {
 
     /// Build a rectangular grid with full knot vectors for both parameters.
     pub fn new(
+        ctx: &DecodeContext<'_>,
         u_degree: u32,
         v_degree: u32,
         u_knots: Vec<f64>,
         v_knots: Vec<f64>,
         control_points: Vec<Vec<Point3>>,
-    ) -> Result<Self, NurbsError> {
-        let u_count = control_points.len();
-        let v_count = control_points.first().map_or(0, Vec::len);
-        let u_knots = bspline_axis_knots("u", u_degree, u_count, u_knots)?;
-        let v_knots = bspline_axis_knots("v", v_degree, v_count, v_knots)?;
-        require_rectangular_grid(&StandardNurbsAdmission, "control_points", &control_points)?;
-        let mut rows = Vec::new();
-        scratch::reserve_exact(
-            &mut rows,
-            control_points.len(),
-            "IR admitted B-spline grid rows",
-        )?;
-        for row in control_points {
-            rows.push(admit_finite_row_3(row)?);
-        }
-        let control_points = rows;
-        Ok(Self {
-            u_degree,
-            v_degree,
-            u_knots,
-            v_knots,
-            control_points,
-        })
+    ) -> Result<Result<Self, NurbsError>, CodecError> {
+        admitted::finish(build_bspline_surface(ctx, u_degree, v_degree, u_knots, v_knots, control_points))
     }
 
     /// Degree in the first parameter.
@@ -908,36 +888,43 @@ impl BsplineSurface {
     }
 }
 
+fn build_bspline_surface<S: NurbsAdmission>(
+    admission: &S,
+    u_degree: u32,
+    v_degree: u32,
+    u_knots: Vec<f64>,
+    v_knots: Vec<f64>,
+    control_points: Vec<Vec<Point3>>,
+) -> Result<BsplineSurface, S::Error> {
+    let u_count = control_points.len();
+    let v_count = control_points.first().map_or(0, Vec::len);
+    let u_knots = bspline_axis_knots(admission, "u", "u_knots", u_degree, u_count, u_knots)?;
+    let v_knots = bspline_axis_knots(admission, "v", "v_knots", v_degree, v_count, v_knots)?;
+    require_rectangular_grid(admission, "control_points", &control_points)?;
+    let control_points = admission.collect(control_points, "IR admitted B-spline grid rows", |row| {
+        admission.collect(row, "IR admitted B-spline grid poles", |point| map_pole(admission, point))
+    })?;
+    Ok(BsplineSurface { u_degree, v_degree, u_knots, v_knots, control_points })
+}
+
 /// Admit one B-spline axis: more poles than its degree, the full knot count
 /// for them, and finite non-decreasing knots, refused in that order.
-fn bspline_axis_knots(
+fn bspline_axis_knots<S: NurbsAdmission>(
+    admission: &S,
     axis: &str,
+    knot_field: &str,
     degree: u32,
     count: usize,
     knots: Vec<f64>,
-) -> Result<KnotVector, NurbsError> {
+) -> Result<KnotVector, S::Error> {
     if count <= cadmpeg_core::decode::index_from_u32(degree) {
-        return Err(NurbsError::Structure(format!(
+        return Err(admission.structure(format_args!(
             "control_points {axis} count must exceed degree {degree}, found {count}"
-        )));
+        ))?);
     }
-    require_length(
-        &StandardNurbsAdmission,
-        &format!("{axis}_knots"),
-        knots.len(),
-        checked_knot_count(&StandardNurbsAdmission, axis, count, degree)?,
-    )?;
-    build_raw_knots(&StandardNurbsAdmission, knots, "")
-}
-
-/// Admit one control-point row whose every point is finite.
-fn admit_finite_row_3(row: Vec<Point3>) -> Result<Vec<FinitePoint3>, NurbsError> {
-    let mut output = Vec::new();
-    scratch::reserve_exact(&mut output, row.len(), "IR admitted B-spline grid poles")?;
-    for point in row {
-        output.push(FinitePoint3::new(point).ok_or_else(non_finite_control_point)?);
-    }
-    Ok(output)
+    require_length(admission, knot_field, knots.len(),
+        checked_knot_count(admission, axis, count, degree)?)?;
+    build_raw_knots(admission, knots, "")
 }
 
 impl<'de> Deserialize<'de> for BsplineSurface {
@@ -955,7 +942,8 @@ impl<'de> Deserialize<'de> for BsplineSurface {
             control_points: Vec<Vec<Point3>>,
         }
         let wire = Wire::deserialize(deserializer)?;
-        Self::new(
+        build_bspline_surface(
+            &StandardNurbsAdmission,
             wire.u_degree,
             wire.v_degree,
             wire.u_knots,

@@ -9,7 +9,7 @@ use crate::{
 fn admitted_nurbs_curve_mapping_refuses_knot_and_pole_limits() {
     use crate::geometry::nurbs::NurbsCurve;
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    let curve = NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
+    let curve = NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(),
         1,
         vec![0.0, 0.0, 1.0, 1.0],
         vec![Point3::new(1.0, 2.0, 3.0), Point3::new(4.0, 5.0, 6.0)],
@@ -360,7 +360,7 @@ fn owned_curve_mapping_preserves_polynomial_and_rational_poles() {
     use crate::features::FinitePoint3;
     use crate::geometry::nurbs::NurbsCurve;
 
-    let rational = NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
+    let rational = NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(),
         1,
         vec![0.0, 0.0, 1.0, 1.0],
         vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
@@ -435,7 +435,7 @@ fn curve_map_updates_every_polynomial_and_rational_pole_atomically() {
     use crate::features::FinitePoint3;
     use crate::geometry::nurbs::NurbsCurve;
 
-    let polynomial = NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
+    let polynomial = NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(),
         1,
         vec![0.0, 0.0, 1.0, 1.0],
         vec![Point3::new(1.0, 2.0, 3.0), Point3::new(4.0, 5.0, 6.0)],
@@ -494,7 +494,7 @@ fn surface_map_updates_every_polynomial_and_rational_pole_atomically() {
     use crate::geometry::nurbs::{NurbsSurface, NurbsSurfaceAxis, NurbsSurfaceLanes};
 
     let rational = surface();
-    let polynomial = NurbsSurface::from_lanes(&cadmpeg_test_support::service_decode_context(), 
+    let polynomial = NurbsSurface::from_lanes(&cadmpeg_test_support::service_decode_context(),
         NurbsSurfaceAxis::new(1, rational.u_knots().to_vec(), rational.u_periodic()),
         NurbsSurfaceAxis::new(1, rational.v_knots().to_vec(), rational.v_periodic()),
         NurbsSurfaceLanes::new(
@@ -591,7 +591,7 @@ fn surface_transposition_preserves_every_pole_and_weight() {
         None,
         Some(vec![vec![-1.0, 2.0], vec![3.0, -4.0], vec![5.0, 6.0]]),
     ] {
-        let mut surface = NurbsSurface::from_lanes(&cadmpeg_test_support::service_decode_context(), 
+        let mut surface = NurbsSurface::from_lanes(&cadmpeg_test_support::service_decode_context(),
             crate::geometry::nurbs::NurbsSurfaceAxis::new(
                 2,
                 vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
@@ -626,7 +626,7 @@ fn bspline_surface_edit_refusal_keeps_control_points() {
     use crate::geometry::nurbs::{BsplineSurface, NurbsError};
     let points = vec![vec![Point3::new(0.0, 0.0, 0.0); 2]; 2];
     let knots = vec![0.0, 0.0, 1.0, 1.0];
-    let mut surface = BsplineSurface::new(1, 1, knots.clone(), knots, points).unwrap();
+    let mut surface = BsplineSurface::new(&cadmpeg_test_support::service_decode_context(), 1, 1, knots.clone(), knots, points).expect("fixture B-spline admission").unwrap();
     let original = surface.clone();
     let refusal = surface.try_map_control_points(|index, point| {
         if index == 3 {
@@ -650,15 +650,15 @@ fn bspline_surface_numeric_admission_and_transactional_edit() {
     use crate::math::Point3;
     let points = vec![vec![Point3::new(0.0, 0.0, 0.0); 2]; 2];
     let knots = vec![0.0, 0.0, 1.0, 1.0];
-    assert!(BsplineSurface::new(
+    assert!(BsplineSurface::new(&cadmpeg_test_support::service_decode_context(),
         1,
         1,
         vec![0.0, 1.0, 0.0, 1.0],
         knots.clone(),
         points.clone()
-    )
+    ).expect("fixture B-spline admission")
     .is_err());
-    let mut surface = BsplineSurface::new(1, 1, knots.clone(), knots, points).unwrap();
+    let mut surface = BsplineSurface::new(&cadmpeg_test_support::service_decode_context(), 1, 1, knots.clone(), knots, points).expect("fixture B-spline admission").unwrap();
     let original = surface.clone();
     assert!(surface
         .try_map_control_points(|_, point| {
@@ -828,7 +828,7 @@ fn finite_nurbs_lanes_match_raw_curve_surface_and_pcurve_routes() {
             Some(finite_weights()),
             false
         ),
-        NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
+        NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(),
             1,
             knots.clone(),
             points.clone(),
@@ -856,7 +856,7 @@ fn finite_nurbs_lanes_match_raw_curve_surface_and_pcurve_routes() {
             NurbsSurfaceLanes::new(finite_grid(), Some(finite_weight_grid())),
             false,
         ),
-        NurbsSurface::from_lanes(&cadmpeg_test_support::service_decode_context(), 
+        NurbsSurface::from_lanes(&cadmpeg_test_support::service_decode_context(),
             NurbsSurfaceAxis::new(1, knots.clone(), false),
             NurbsSurfaceAxis::new(1, knots.clone(), false),
             NurbsSurfaceLanes::new(grid, Some(vec![weights.clone(), weights.clone()])),
@@ -890,7 +890,7 @@ fn a_bspline_surface_holds_its_admitted_knots_and_poles() {
         vec![Point3::new(1.0, 0.0, 0.0), Point3::new(1.0, 1.0, 2.0)],
     ];
     let knots = vec![0.0, 0.0, 1.0, 1.0];
-    let surface = BsplineSurface::new(1, 1, knots.clone(), knots.clone(), points.clone()).unwrap();
+    let surface = BsplineSurface::new(&cadmpeg_test_support::service_decode_context(), 1, 1, knots.clone(), knots.clone(), points.clone()).expect("fixture B-spline admission").unwrap();
     assert_eq!(surface.u_knots, KnotVector::new(&cadmpeg_test_support::service_decode_context(), knots.clone()).expect("fixture knot admission").unwrap());
     assert_eq!(
         surface.control_points[1][1],
@@ -1557,3 +1557,5 @@ fn knot_constructors_share_work_keep_storage_and_preserve_refusal() {
     assert_eq!(limit.operation, "IR NURBS refusal text");
     assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit));
 }
+
+mod bspline;
