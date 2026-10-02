@@ -293,7 +293,7 @@ pub(in super::super) fn circular_pcurve(
         "creo circular pcurve weighted poles",
     )?;
     let nurbs = (|| -> Result<Result<cadmpeg_ir::geometry::pcurve::PcurveNurbs, cadmpeg_ir::geometry::nurbs::NurbsError>, cadmpeg_core::CodecError> {
-        use cadmpeg_ir::geometry::nurbs::KnotValue;
+        use cadmpeg_ir::geometry::nurbs::KnotVector;
         use cadmpeg_ir::geometry::pcurve::{PcurveNurbsPoles, WeightedPole2};
         use cadmpeg_ir::scalar::NonZeroReal;
         use cadmpeg_ir::units::FinitePoint2;
@@ -322,7 +322,7 @@ pub(in super::super) fn circular_pcurve(
             };
             weighted.push(WeightedPole2 { point, weight: admitted_weight });
         }
-        let knots = match KnotValue::admit(knots) {
+        let knots = match KnotVector::new(ctx, knots)? {
             Ok(knots) => knots,
             Err(error) => return Ok(Err(error)),
         };

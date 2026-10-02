@@ -188,7 +188,7 @@ fn linear_pcurve_geometry(
         })?);
     }
     let knots =
-        cadmpeg_ir::geometry::nurbs::KnotVector::new(linear_knots(parameters, geometry_budget)?)?;
+        cadmpeg_ir::geometry::nurbs::KnotVector::new(ctx, linear_knots(parameters, geometry_budget)?)??;
     let nurbs = cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_admitted_rows(
         1,
         knots,

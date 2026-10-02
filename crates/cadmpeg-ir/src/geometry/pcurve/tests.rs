@@ -269,7 +269,7 @@ fn nurbs_pcurve_scaling_scales_the_poles_and_keeps_the_knot_lane() {
 
 #[test]
 fn admitted_pcurve_nurbs_parts_keep_the_raw_constructor_geometry() {
-    use crate::geometry::nurbs::KnotValue;
+    use crate::geometry::nurbs::KnotVector;
     use crate::geometry::pcurve::{PcurveNurbsPoles, WeightedPole2};
     use crate::scalar::NonZeroReal;
     use crate::units::FinitePoint2;
@@ -291,7 +291,7 @@ fn admitted_pcurve_nurbs_parts_keep_the_raw_constructor_geometry() {
     .expect("raw pcurve");
     let admitted = PcurveNurbs::from_admitted_rows(
         1,
-        KnotValue::admit(knots).expect("admitted knots"),
+        KnotVector::new(&ctx, knots).expect("fixture knot admission").expect("admitted knots"),
         PcurveNurbsPoles::Rational {
             points: points
                 .into_iter()

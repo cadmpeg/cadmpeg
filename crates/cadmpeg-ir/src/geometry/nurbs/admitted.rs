@@ -27,7 +27,7 @@ impl From<NurbsError> for ConstructionError {
     }
 }
 
-fn finish<T>(result: Result<T, ConstructionError>) -> Result<Result<T, NurbsError>, CodecError> {
+pub(super) fn finish<T>(result: Result<T, ConstructionError>) -> Result<Result<T, NurbsError>, CodecError> {
     match result {
         Ok(value) => Ok(Ok(value)),
         Err(ConstructionError::Geometry(NurbsError::ResourceLimit(limit))) => Err(limit.into()),

@@ -2245,11 +2245,7 @@ fn sketch_nurbs_lanes(
     } else {
         None
     };
-    ctx.charge_collection_items(
-        cadmpeg_core::decode::u64_from_index(expanded_count),
-        "fcstd sketch NURBS knot conversion",
-    )?;
-    let Some(knots) = KnotVector::from_finite_lanes(full_knots).ok() else {
+    let Some(knots) = KnotVector::from_finite_lanes(ctx, full_knots)?.ok() else {
         return Ok(None);
     };
     Ok(Some(SketchNurbsLanes {

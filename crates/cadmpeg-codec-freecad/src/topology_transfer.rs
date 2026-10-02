@@ -2343,7 +2343,7 @@ pub(crate) fn pcurve_geometry(
             Some(PcurveGeometry::Nurbs {
                 nurbs: PcurveNurbs::from_admitted_rows(
                     nurbs.degree,
-                    cadmpeg_ir::geometry::nurbs::KnotVector::new(knots)?,
+                    cadmpeg_ir::geometry::nurbs::KnotVector::new(ctx, knots)??,
                     poles,
                     nurbs.periodic,
                 )?,

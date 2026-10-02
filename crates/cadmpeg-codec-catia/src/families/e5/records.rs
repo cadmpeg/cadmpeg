@@ -854,13 +854,13 @@ fn e5_nurbs_surface(
         NurbsSurface::from_admitted_grid(
             cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
                 u_degree,
-                cadmpeg_ir::geometry::nurbs::KnotVector::new(u_knots)
+                cadmpeg_ir::geometry::nurbs::KnotVector::new(ctx, u_knots)?
                     .map_err(cadmpeg_core::CodecError::malformed)?,
                 false,
             ),
             cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
                 v_degree,
-                cadmpeg_ir::geometry::nurbs::KnotVector::new(v_knots)
+                cadmpeg_ir::geometry::nurbs::KnotVector::new(ctx, v_knots)?
                     .map_err(cadmpeg_core::CodecError::malformed)?,
                 false,
             ),

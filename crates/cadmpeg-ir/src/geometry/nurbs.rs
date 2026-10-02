@@ -42,19 +42,13 @@ impl KnotVector {
     /// # Errors
     ///
     /// Refuses a non-finite knot, then a decreasing pair.
-    pub fn new(knots: Vec<f64>) -> Result<Self, NurbsError> {
-        require_nondecreasing_knots(&StandardNurbsAdmission, &knots, "")?;
-        Ok(Self(knots))
+    pub fn new(ctx: &DecodeContext<'_>, knots: Vec<f64>) -> Result<Result<Self, NurbsError>, CodecError> {
+        admitted::finish(build_raw_knots(ctx, knots, ""))
     }
 
     /// Build a knot vector from finite values. Only their order is checked.
-    pub fn from_finite_lanes(knots: Vec<FiniteReal>) -> Result<Self, NurbsError> {
-        let mut values = Vec::new();
-        scratch::reserve_exact(&mut values, knots.len(), "IR finite knot values")?;
-        values.extend(knots.into_iter().map(FiniteReal::get));
-        let knots = values;
-        require_knot_order(&StandardNurbsAdmission, &knots, "")?;
-        Ok(Self(knots))
+    pub fn from_finite_lanes(ctx: &DecodeContext<'_>, knots: Vec<FiniteReal>) -> Result<Result<Self, NurbsError>, CodecError> {
+        admitted::finish(build_finite_knots(ctx, knots, ""))
     }
 
     /// Move the admitted knot storage into its owner without copying it.
@@ -119,7 +113,10 @@ pub trait KnotValue: knot_value_sealed::Sealed {
     /// Number of knots before cardinality validation.
     fn knot_count(&self) -> usize;
     /// Admit raw knots or keep an admitted knot vector.
-    fn admit(self) -> Result<KnotVector, NurbsError>;
+    fn admit<E>(self,
+        raw: impl FnOnce(Vec<f64>) -> Result<KnotVector, E>,
+        finite: impl FnOnce(Vec<FiniteReal>) -> Result<KnotVector, E>,
+    ) -> Result<KnotVector, E>;
 }
 
 impl KnotValue for Vec<f64> {
@@ -127,8 +124,11 @@ impl KnotValue for Vec<f64> {
         Vec::len(self)
     }
 
-    fn admit(self) -> Result<KnotVector, NurbsError> {
-        KnotVector::new(self)
+    fn admit<E>(self,
+        raw: impl FnOnce(Vec<f64>) -> Result<KnotVector, E>,
+        _finite: impl FnOnce(Vec<FiniteReal>) -> Result<KnotVector, E>,
+    ) -> Result<KnotVector, E> {
+        raw(self)
     }
 }
 
@@ -137,8 +137,11 @@ impl KnotValue for Vec<FiniteReal> {
         Vec::len(self)
     }
 
-    fn admit(self) -> Result<KnotVector, NurbsError> {
-        KnotVector::from_finite_lanes(self)
+    fn admit<E>(self,
+        _raw: impl FnOnce(Vec<f64>) -> Result<KnotVector, E>,
+        finite: impl FnOnce(Vec<FiniteReal>) -> Result<KnotVector, E>,
+    ) -> Result<KnotVector, E> {
+        finite(self)
     }
 }
 
@@ -147,9 +150,28 @@ impl KnotValue for KnotVector {
         self.0.len()
     }
 
-    fn admit(self) -> Result<KnotVector, NurbsError> {
+    fn admit<E>(self,
+        _raw: impl FnOnce(Vec<f64>) -> Result<KnotVector, E>,
+        _finite: impl FnOnce(Vec<FiniteReal>) -> Result<KnotVector, E>,
+    ) -> Result<KnotVector, E> {
         Ok(self)
     }
+}
+
+fn build_raw_knots<S: NurbsAdmission>(admission: &S, knots: Vec<f64>, prefix: &str) -> Result<KnotVector, S::Error> {
+    require_nondecreasing_knots(admission, &knots, prefix)?;
+    Ok(KnotVector(knots))
+}
+
+fn build_finite_knots<S: NurbsAdmission>(admission: &S, knots: Vec<FiniteReal>, prefix: &str) -> Result<KnotVector, S::Error> {
+    let values = admission.collect(knots, "IR finite knot values", |value| Ok(value.get()))?;
+    require_knot_order(admission, &values, prefix)?;
+    Ok(KnotVector(values))
+}
+
+pub(super) fn admit_knots<S: NurbsAdmission, K: KnotValue>(admission: &S, knots: K, prefix: &str) -> Result<KnotVector, S::Error> {
+    knots.admit(|values| build_raw_knots(admission, values, prefix),
+        |values| build_finite_knots(admission, values, prefix))
 }
 
 /// One rational pole in model space: its position and its weight.
@@ -905,7 +927,7 @@ fn bspline_axis_knots(
         knots.len(),
         checked_knot_count(&StandardNurbsAdmission, axis, count, degree)?,
     )?;
-    KnotVector::new(knots)
+    build_raw_knots(&StandardNurbsAdmission, knots, "")
 }
 
 /// Admit one control-point row whose every point is finite.
@@ -1272,11 +1294,11 @@ impl NurbsSurface {
         } = v;
         require_surface_shape(&StandardNurbsAdmission, u_degree, u_knots.knot_count(), v_degree, v_knots.knot_count(), &poles)?;
         let poles = poles.admit()?;
-        let u_knots = u_knots.admit().map_err(|error| match error {
+        let u_knots = admit_knots(&StandardNurbsAdmission, u_knots, "").map_err(|error| match error {
             NurbsError::ResourceLimit(limit) => NurbsError::ResourceLimit(limit),
             error => NurbsError::Structure(format!("u_{error}")),
         })?;
-        let v_knots = v_knots.admit().map_err(|error| match error {
+        let v_knots = admit_knots(&StandardNurbsAdmission, v_knots, "").map_err(|error| match error {
             NurbsError::ResourceLimit(limit) => NurbsError::ResourceLimit(limit),
             error => NurbsError::Structure(format!("v_{error}")),
         })?;
@@ -1664,7 +1686,7 @@ impl NurbsCurve {
     ) -> Result<Self, NurbsError> {
         require_curve_cardinality(&StandardNurbsAdmission, degree, knots.knot_count(), poles.count(), "control_points")?;
         let poles = poles.admit()?;
-        let knots = knots.admit()?;
+        let knots = admit_knots(&StandardNurbsAdmission, knots, "")?;
         Ok(Self {
             degree,
             knots,
@@ -1692,7 +1714,7 @@ impl NurbsCurve {
     pub fn edit_knots(&mut self, edit: impl FnOnce(&mut [f64])) -> Result<(), NurbsError> {
         let mut values = self.knots.to_vec();
         edit(&mut values);
-        self.knots = KnotVector::new(values)?;
+        self.knots = build_raw_knots(&StandardNurbsAdmission, values, "")?;
         Ok(())
     }
 
@@ -1710,7 +1732,7 @@ impl NurbsCurve {
             self.poles.count(),
             "control_points",
         )?;
-        self.knots = KnotVector::new(knots)?;
+        self.knots = build_raw_knots(&StandardNurbsAdmission, knots, "")?;
         Ok(self)
     }
 
