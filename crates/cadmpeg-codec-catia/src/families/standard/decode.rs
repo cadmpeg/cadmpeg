@@ -6990,8 +6990,13 @@ fn attach_standard_topology(
         (topology, point_assignment)
     } else {
         if work_budget.exhausted() {
-            ctx.charge_work(0, "catia_mesh_topology_work").map_err(StandardTopologyError::Resource)?;
-            return Err(StandardTopologyError::Resource(ctx.refuse_codec_limit("catia_mesh_topology_work", 0, 1)));
+            ctx.charge_work(0, "catia_mesh_topology_work")
+                .map_err(StandardTopologyError::Resource)?;
+            return Err(StandardTopologyError::Resource(ctx.refuse_codec_limit(
+                "catia_mesh_topology_work",
+                0,
+                1,
+            )));
         }
         return Err((if matches!(
             diagnostics.mesh_failure,
@@ -7025,8 +7030,10 @@ fn attach_standard_topology(
     else {
         return Err(StandardTopologyFailure::InvalidTopologySolution.into());
     };
-    let Some(topology) = crate::families::standard::topology::admitted::StandardTopology::new(ctx, topology)
-        .map_err(StandardTopologyError::Resource)? else {
+    let Some(topology) =
+        crate::families::standard::topology::admitted::StandardTopology::new(ctx, topology)
+            .map_err(StandardTopologyError::Resource)?
+    else {
         return Err(StandardTopologyFailure::InvalidTopologySolution.into());
     };
     let mut resolved_limit_curve_bindings = Vec::new();
@@ -7330,8 +7337,11 @@ fn emit_standard_topology(
     } = inputs;
     if topology.vertex_points().len() != ir.model.points.len()
         || topology.edge_rows().len() != edge_vertices.len()
-        || topology.logical_vertex_count() != point_assignment.len() {
-        return Err(CodecError::malformed("admitted topology does not match its emission tables"));
+        || topology.logical_vertex_count() != point_assignment.len()
+    {
+        return Err(CodecError::malformed(
+            "admitted topology does not match its emission tables",
+        ));
     }
 
     let mut edge_reversed = Vec::new();

@@ -239,7 +239,11 @@ fn completed_mesh_search_refuses_edge_and_point_collection_limits() {
             reversed: Some(false),
         }]],
     }]];
-    let edge_rows = vec![{ assert!(EdgeRow::new(1, vec![0], EdgeBoundaryLayout::CompleteBoundaryRun).is_none()); EdgeRow::new(1, vec![0, 0], EdgeBoundaryLayout::CompleteBoundaryRun).expect("admitted edge row") }];
+    let edge_rows = vec![{
+        assert!(EdgeRow::new(1, vec![0], EdgeBoundaryLayout::CompleteBoundaryRun).is_none());
+        EdgeRow::new(1, vec![0, 0], EdgeBoundaryLayout::CompleteBoundaryRun)
+            .expect("admitted edge row")
+    }];
     let edge_candidates = vec![vec![[0, 0]]];
     let vertex_points = [[0.0; 3]];
     let domain = Arc::new(HashSet::from([0]));
@@ -408,7 +412,11 @@ fn forced_face_selection_does_not_exhaust_the_work_budget() {
         }]],
     }]];
     let edge_candidates = vec![vec![[0, 0]]];
-    let edge_rows = vec![{ assert!(EdgeRow::new(1, vec![0], EdgeBoundaryLayout::CompleteBoundaryRun).is_none()); EdgeRow::new(1, vec![0, 0], EdgeBoundaryLayout::CompleteBoundaryRun).expect("admitted edge row") }];
+    let edge_rows = vec![{
+        assert!(EdgeRow::new(1, vec![0], EdgeBoundaryLayout::CompleteBoundaryRun).is_none());
+        EdgeRow::new(1, vec![0, 0], EdgeBoundaryLayout::CompleteBoundaryRun)
+            .expect("admitted edge row")
+    }];
     let mut search = MeshSelectionSearch {
         ctx: &ctx,
         assignments: &assignments,
@@ -461,7 +469,11 @@ fn overmerged_face_options_do_not_exhaust_the_work_budget() {
     }]];
     let edge_candidates = vec![Vec::new(); 2];
     let edge_rows = vec![
-        { assert!(EdgeRow::new(1, vec![0], EdgeBoundaryLayout::CompleteBoundaryRun).is_none()); EdgeRow::new(1, vec![0, 0], EdgeBoundaryLayout::CompleteBoundaryRun).expect("admitted edge row") };
+        {
+            assert!(EdgeRow::new(1, vec![0], EdgeBoundaryLayout::CompleteBoundaryRun).is_none());
+            EdgeRow::new(1, vec![0, 0], EdgeBoundaryLayout::CompleteBoundaryRun)
+                .expect("admitted edge row")
+        };
         2
     ];
     let mut search = MeshSelectionSearch {
@@ -553,10 +565,29 @@ fn mesh_selection_merges_corner_equations_common_to_every_option() {
     assert!(search
         .propagate_forced_face_equations(&mut quotient)
         .expect("service resource budget"));
-    assert_eq!(crate::test_support::with_service_context(|ctx| quotient.find(ctx, 1)).expect("service forest traversal"), crate::test_support::with_service_context(|ctx| quotient.find(ctx, 2)).expect("service forest traversal"));
-    assert_eq!(crate::test_support::with_service_context(|ctx| quotient.find(ctx, 3)).expect("service forest traversal"), crate::test_support::with_service_context(|ctx| quotient.find(ctx, 4)).expect("service forest traversal"));
-    assert_eq!(crate::test_support::with_service_context(|ctx| quotient.find(ctx, 5)).expect("service forest traversal"), crate::test_support::with_service_context(|ctx| quotient.find(ctx, 0)).expect("service forest traversal"));
-    assert_eq!(crate::test_support::with_service_context(|ctx| quotient.root_count(ctx)).expect("service quotient traversal"), 3);
+    assert_eq!(
+        crate::test_support::with_service_context(|ctx| quotient.find(ctx, 1))
+            .expect("service forest traversal"),
+        crate::test_support::with_service_context(|ctx| quotient.find(ctx, 2))
+            .expect("service forest traversal")
+    );
+    assert_eq!(
+        crate::test_support::with_service_context(|ctx| quotient.find(ctx, 3))
+            .expect("service forest traversal"),
+        crate::test_support::with_service_context(|ctx| quotient.find(ctx, 4))
+            .expect("service forest traversal")
+    );
+    assert_eq!(
+        crate::test_support::with_service_context(|ctx| quotient.find(ctx, 5))
+            .expect("service forest traversal"),
+        crate::test_support::with_service_context(|ctx| quotient.find(ctx, 0))
+            .expect("service forest traversal")
+    );
+    assert_eq!(
+        crate::test_support::with_service_context(|ctx| quotient.root_count(ctx))
+            .expect("service quotient traversal"),
+        3
+    );
 }
 
 #[test]
@@ -607,8 +638,17 @@ fn mesh_selection_merges_equations_common_to_every_assignment() {
     assert!(search
         .propagate_forced_face_equations(&mut quotient)
         .expect("service resource budget"));
-    assert_eq!(crate::test_support::with_service_context(|ctx| quotient.find(ctx, 1)).expect("service forest traversal"), crate::test_support::with_service_context(|ctx| quotient.find(ctx, 2)).expect("service forest traversal"));
-    assert_eq!(crate::test_support::with_service_context(|ctx| quotient.root_count(ctx)).expect("service quotient traversal"), 5);
+    assert_eq!(
+        crate::test_support::with_service_context(|ctx| quotient.find(ctx, 1))
+            .expect("service forest traversal"),
+        crate::test_support::with_service_context(|ctx| quotient.find(ctx, 2))
+            .expect("service forest traversal")
+    );
+    assert_eq!(
+        crate::test_support::with_service_context(|ctx| quotient.root_count(ctx))
+            .expect("service quotient traversal"),
+        5
+    );
 }
 
 #[test]
@@ -663,9 +703,23 @@ fn mesh_selection_common_equations_ignore_infeasible_assignments() {
     assert!(search
         .propagate_forced_face_equations(&mut quotient)
         .expect("service resource budget"));
-    assert_eq!(crate::test_support::with_service_context(|ctx| quotient.find(ctx, 1)).expect("service forest traversal"), crate::test_support::with_service_context(|ctx| quotient.find(ctx, 2)).expect("service forest traversal"));
-    assert_eq!(crate::test_support::with_service_context(|ctx| quotient.find(ctx, 3)).expect("service forest traversal"), crate::test_support::with_service_context(|ctx| quotient.find(ctx, 0)).expect("service forest traversal"));
-    assert_eq!(crate::test_support::with_service_context(|ctx| quotient.root_count(ctx)).expect("service quotient traversal"), 4);
+    assert_eq!(
+        crate::test_support::with_service_context(|ctx| quotient.find(ctx, 1))
+            .expect("service forest traversal"),
+        crate::test_support::with_service_context(|ctx| quotient.find(ctx, 2))
+            .expect("service forest traversal")
+    );
+    assert_eq!(
+        crate::test_support::with_service_context(|ctx| quotient.find(ctx, 3))
+            .expect("service forest traversal"),
+        crate::test_support::with_service_context(|ctx| quotient.find(ctx, 0))
+            .expect("service forest traversal")
+    );
+    assert_eq!(
+        crate::test_support::with_service_context(|ctx| quotient.root_count(ctx))
+            .expect("service quotient traversal"),
+        4
+    );
 }
 
 #[test]
@@ -709,12 +763,24 @@ fn mesh_selection_propagates_closed_ports_without_enumerating_directions() {
     };
     let mut quotient = MeshQuotient::new((0..26).map(|_| Arc::new((0..13).collect())).collect());
     for edge in 0..13 {
-        crate::test_support::with_service_context(|ctx| quotient.merge_charged(ctx, edge * 2, edge * 2 + 1)).expect("service merge").expect("closed port");
+        crate::test_support::with_service_context(|ctx| {
+            quotient.merge_charged(ctx, edge * 2, edge * 2 + 1)
+        })
+        .expect("service merge")
+        .expect("closed port");
     }
 
-    assert_eq!(crate::test_support::with_service_context(|ctx| quotient.root_count(ctx)).expect("service quotient traversal"), 13);
+    assert_eq!(
+        crate::test_support::with_service_context(|ctx| quotient.root_count(ctx))
+            .expect("service quotient traversal"),
+        13
+    );
     assert!(search
         .propagate_forced_face_equations(&mut quotient)
         .expect("service resource budget"));
-    assert_eq!(crate::test_support::with_service_context(|ctx| quotient.root_count(ctx)).expect("service quotient traversal"), 1);
+    assert_eq!(
+        crate::test_support::with_service_context(|ctx| quotient.root_count(ctx))
+            .expect("service quotient traversal"),
+        1
+    );
 }

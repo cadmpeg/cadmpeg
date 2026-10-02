@@ -1,4 +1,5 @@
 use crate::families::standard::records::AnalyticSurfaceKind;
+use crate::families::standard::topology::EdgeRow;
 use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
 use cadmpeg_ir::math::{Point3, Vector3};
 use std::collections::{HashMap, HashSet};
@@ -211,7 +212,7 @@ fn standard_topology_recovers_a_quad_boundary_and_port_vertices() {
     assert_eq!(topology.face_count(), 1);
     assert_eq!(topology.edge_rows().len(), 4);
     assert_eq!(topology.vertex_points().len(), 4);
-    let boundary = &topology.faces()[0].boundaries[0];
+    let boundary = &topology.faces[0].boundaries[0];
     assert_eq!(boundary.coedges.len(), 4);
     assert_eq!(
         boundary
@@ -237,7 +238,7 @@ fn compact_standard_topology_recovers_a_triangle_boundary_and_vertices() {
     assert_eq!(topology.face_count(), 1);
     assert_eq!(topology.edge_rows().len(), 3);
     assert_eq!(topology.vertex_points().len(), 3);
-    assert_eq!(topology.faces()[0].boundaries[0].coedges.len(), 3);
+    assert_eq!(topology.faces[0].boundaries[0].coedges.len(), 3);
     assert_eq!(
         crate::test_support::with_service_context(|ctx| {
             crate::families::standard::fbb::standard_edge_count(ctx, &bytes)
@@ -315,7 +316,7 @@ fn standard_topology_accepts_delimiters_between_counted_edge_tables() {
         topology
             .edge_rows()
             .iter()
-            .map(|row| row.kind())
+            .map(EdgeRow::kind)
             .collect::<Vec<_>>(),
         vec![1, 1, 2, 2]
     );
@@ -326,7 +327,7 @@ fn standard_topology_accepts_delimiters_between_counted_edge_tables() {
         .expect("service resource budget")
         .expect("edge rows")
         .iter()
-        .map(|row| row.kind())
+        .map(EdgeRow::kind)
         .collect::<Vec<_>>(),
         vec![1, 1, 2, 2]
     );
@@ -395,8 +396,11 @@ fn fbb_topology_reads_u24_mesh_and_edge_handles() {
     })
     .expect("service resource budget")
     .expect("valid FBB topology");
-    assert_eq!(topology.edge_rows()[0].handles(), vec![0x01_0010, 0x01_0011]);
-    assert_eq!(topology.faces()[0].boundaries[0].coedges.len(), 8);
+    assert_eq!(
+        topology.edge_rows()[0].handles(),
+        vec![0x01_0010, 0x01_0011]
+    );
+    assert_eq!(topology.faces[0].boundaries[0].coedges.len(), 8);
     assert_eq!(topology.logical_vertex_count(), 8);
     assert_eq!(topology.vertex_points().len(), 4);
     let table_ports = crate::solve::missing_edge::fbb_global_edge_port_identities(&ctx, &bytes)
@@ -528,7 +532,7 @@ fn fbb_topology_recovers_unique_flanking_rows_without_reclassifying_complete_row
     .expect("service resource budget")
     .expect("mixed FBB boundary topology");
     assert_eq!(topology.face_count(), 1);
-    assert_eq!(topology.faces()[0].boundaries[0].coedges.len(), 5);
+    assert_eq!(topology.faces[0].boundaries[0].coedges.len(), 5);
     assert_eq!(
         topology.edge_rows()[0].boundary_layout(),
         crate::families::standard::topology::EdgeBoundaryLayout::InteriorWithFlankingCorners
@@ -577,7 +581,7 @@ fn fbb_topology_reads_u16_mesh_and_edge_handles() {
     .expect("service resource budget")
     .expect("valid u16 FBB topology");
     assert_eq!(topology.edge_rows()[0].handles(), vec![0x1010, 0x1011]);
-    assert_eq!(topology.faces()[0].boundaries[0].coedges.len(), 4);
+    assert_eq!(topology.faces[0].boundaries[0].coedges.len(), 4);
     assert_eq!(topology.vertex_points().len(), 4);
 }
 
@@ -618,7 +622,7 @@ fn fbb_topology_reads_u8_mesh_and_edge_handles() {
     .expect("service resource budget")
     .expect("valid u8 FBB topology");
     assert_eq!(topology.edge_rows()[0].handles(), vec![0x10, 0x11]);
-    assert_eq!(topology.faces()[0].boundaries[0].coedges.len(), 4);
+    assert_eq!(topology.faces[0].boundaries[0].coedges.len(), 4);
     assert_eq!(topology.vertex_points().len(), 4);
     assert_eq!(
         crate::test_support::with_service_context(|ctx| {
@@ -745,7 +749,7 @@ fn standard_topology_matches_edge_interiors_and_collapses_endpoint_ports() {
     })
     .expect("service resource budget")
     .expect("interior-run topology");
-    let coedges = &topology.faces()[0].boundaries[0].coedges;
+    let coedges = &topology.faces[0].boundaries[0].coedges;
     assert_eq!(
         coedges.iter().map(|use_| use_.edge_row).collect::<Vec<_>>(),
         vec![0, 1, 2]
@@ -793,8 +797,8 @@ fn standard_legacy_two_strip_packet_recovers_two_face_boundaries() {
     })
     .expect("service resource budget")
     .expect("legacy B=2 packet");
-    assert_eq!(topology.faces()[0].boundaries.len(), 2);
-    assert!(topology.faces()[0]
+    assert_eq!(topology.faces[0].boundaries.len(), 2);
+    assert!(topology.faces[0]
         .boundaries
         .iter()
         .all(|boundary| boundary.coedges.len() == 3));

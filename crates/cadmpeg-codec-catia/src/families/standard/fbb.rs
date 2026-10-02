@@ -11,9 +11,9 @@ use cadmpeg_ir::scalar::FiniteReal;
 use cadmpeg_ir::units::FiniteVector;
 
 use crate::families::standard::topology::{
-    reconstruct, reconstruct_incidence, reconstruct_incidence_with_edge_classes_and_mesh, BoundaryDraft,
-    CoedgeUse, EdgeBoundaryLayout, EdgeRow, StandardIncidenceEvidence, StandardTopologyDraft,
-    TrimRecord,
+    reconstruct, reconstruct_incidence, reconstruct_incidence_with_edge_classes_and_mesh,
+    BoundaryDraft, CoedgeUse, EdgeBoundaryLayout, EdgeRow, StandardIncidenceEvidence,
+    StandardTopologyDraft, TrimRecord,
 };
 use crate::families::standard::trim_packet::TrimPacket;
 use crate::layout::fbb_face_row as fbb_row;
@@ -284,13 +284,15 @@ pub(super) fn parse_standard_motif(
     };
     let mut edge_points = Vec::new();
     for row in &edge_rows {
-        let Some(first) = row.handles()
+        let Some(first) = row
+            .handles()
             .first()
             .and_then(|handle| port_points.get(handle))
         else {
             return Ok(None);
         };
-        let Some(last) = row.handles()
+        let Some(last) = row
+            .handles()
             .last()
             .and_then(|handle| port_points.get(handle))
         else {
@@ -781,7 +783,7 @@ pub(super) fn classify_fbb_edge_layouts(
         let complete_matches = cycles
             .iter()
             .flat_map(|face| face.iter())
-            .map(|cycle| pattern_match_count(cycle, &row.handles()))
+            .map(|cycle| pattern_match_count(cycle, row.handles()))
             .sum::<usize>();
         if complete_matches != 0 {
             continue;
@@ -802,8 +804,8 @@ pub(super) fn classify_fbb_edge_layouts(
             matched |= count != 0;
             unique_per_cycle &= count <= 1;
         }
-        if matched && unique_per_cycle {
-            if !row.select_flanking_corners() { return Ok(None); }
+        if matched && unique_per_cycle && !row.select_flanking_corners() {
+            return Ok(None);
         }
     }
     Ok(Some(()))
@@ -1195,7 +1197,10 @@ mod allocation_tests {
         use crate::families::standard::topology::{EdgeBoundaryLayout, EdgeRow};
         use crate::solve::union_find::UnionFind;
 
-        let rows = [[0, 1], [1, 2], [2, 0]].map(|handles| EdgeRow::new(1, handles.to_vec(), EdgeBoundaryLayout::CompleteBoundaryRun).expect("admitted edge row"));
+        let rows = [[0, 1], [1, 2], [2, 0]].map(|handles| {
+            EdgeRow::new(1, handles.to_vec(), EdgeBoundaryLayout::CompleteBoundaryRun)
+                .expect("admitted edge row")
+        });
         let run = |ctx: &DecodeContext<'_>| {
             let mut union = UnionFind::new(6);
             super::cover_cycle(ctx, &[0, 1, 2], &rows, &mut union)
@@ -1578,11 +1583,15 @@ fn parse_edge_tables_scoped_width(
                 }
                 if let Err(error) = ctx.push_vec(
                     &mut rows,
-                    EdgeRow::new(kind, handles, if arity == 2 {
+                    EdgeRow::new(
+                        kind,
+                        handles,
+                        if arity == 2 {
                             EdgeBoundaryLayout::CompleteBoundaryRun
                         } else {
                             EdgeBoundaryLayout::InteriorWithFlankingCorners
-                        })?,
+                        },
+                    )?,
                     "catia_standard_edge_rows",
                 ) {
                     return Some(Err(error));

@@ -397,7 +397,10 @@ fn coordinate_rows_canonicalize_logical_vertex_labels() {
             }])
             .expect("nonempty topology boundary")],
         }],
-        edge_rows: vec![EdgeRow::new(1, vec![0, 1], EdgeBoundaryLayout::CompleteBoundaryRun).expect("admitted edge row")],
+        edge_rows: vec![
+            EdgeRow::new(1, vec![0, 1], EdgeBoundaryLayout::CompleteBoundaryRun)
+                .expect("admitted edge row"),
+        ],
         vertex_points: vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]],
         logical_vertex_count: 2,
     };
@@ -451,8 +454,10 @@ fn mesh_candidate_comparison_ignores_boundary_cycle_start() {
             .expect("nonempty topology boundary")],
         }],
         edge_rows: vec![
-            EdgeRow::new(1, vec![0, 1], EdgeBoundaryLayout::CompleteBoundaryRun).expect("admitted edge row"),
-            EdgeRow::new(1, vec![1, 0], EdgeBoundaryLayout::CompleteBoundaryRun).expect("admitted edge row"),
+            EdgeRow::new(1, vec![0, 1], EdgeBoundaryLayout::CompleteBoundaryRun)
+                .expect("admitted edge row"),
+            EdgeRow::new(1, vec![1, 0], EdgeBoundaryLayout::CompleteBoundaryRun)
+                .expect("admitted edge row"),
         ],
         vertex_points: vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]],
         logical_vertex_count: 2,
@@ -486,7 +491,14 @@ fn mesh_candidate_comparison_ignores_boundary_direction_and_order() {
         .expect("nonempty topology boundary")
     };
     let edge_rows = (0..4)
-        .map(|edge| EdgeRow::new(1, vec![edge, edge + 1], EdgeBoundaryLayout::CompleteBoundaryRun).expect("admitted edge row"))
+        .map(|edge| {
+            EdgeRow::new(
+                1,
+                vec![edge, edge + 1],
+                EdgeBoundaryLayout::CompleteBoundaryRun,
+            )
+            .expect("admitted edge row")
+        })
         .collect::<Vec<_>>();
     let left_topology = StandardTopologyDraft {
         faces: vec![FaceTopologyDraft {
@@ -527,8 +539,34 @@ fn mesh_candidate_comparison_preserves_same_class_edge_row_interchange() {
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
         .expect("fixture fits the input limit");
     let edge_rows = vec![
-        EdgeRow::new(2, vec![10, 11], EdgeBoundaryLayout::InteriorWithFlankingCorners).expect("admitted edge row"),
-        EdgeRow::new(2, vec![10, 12], EdgeBoundaryLayout::InteriorWithFlankingCorners).expect("admitted edge row"),
+        {
+            assert!(EdgeRow::new(
+                2,
+                vec![10, 11],
+                EdgeBoundaryLayout::InteriorWithFlankingCorners
+            )
+            .is_none());
+            EdgeRow::new(
+                2,
+                vec![10, 10, 11],
+                EdgeBoundaryLayout::InteriorWithFlankingCorners,
+            )
+            .expect("admitted edge row")
+        },
+        {
+            assert!(EdgeRow::new(
+                2,
+                vec![10, 12],
+                EdgeBoundaryLayout::InteriorWithFlankingCorners
+            )
+            .is_none());
+            EdgeRow::new(
+                2,
+                vec![10, 10, 12],
+                EdgeBoundaryLayout::InteriorWithFlankingCorners,
+            )
+            .expect("admitted edge row")
+        },
     ];
     let topology = |swapped: bool| StandardTopologyDraft {
         faces: vec![FaceTopologyDraft {
@@ -566,8 +604,34 @@ fn mesh_candidate_comparison_collapses_unbound_observable_edge_gauge() {
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
         .expect("fixture fits the input limit");
     let edge_rows = vec![
-        EdgeRow::new(2, vec![10, 11], EdgeBoundaryLayout::InteriorWithFlankingCorners).expect("admitted edge row"),
-        EdgeRow::new(2, vec![20, 21], EdgeBoundaryLayout::InteriorWithFlankingCorners).expect("admitted edge row"),
+        {
+            assert!(EdgeRow::new(
+                2,
+                vec![10, 11],
+                EdgeBoundaryLayout::InteriorWithFlankingCorners
+            )
+            .is_none());
+            EdgeRow::new(
+                2,
+                vec![10, 10, 11],
+                EdgeBoundaryLayout::InteriorWithFlankingCorners,
+            )
+            .expect("admitted edge row")
+        },
+        {
+            assert!(EdgeRow::new(
+                2,
+                vec![20, 21],
+                EdgeBoundaryLayout::InteriorWithFlankingCorners
+            )
+            .is_none());
+            EdgeRow::new(
+                2,
+                vec![20, 20, 21],
+                EdgeBoundaryLayout::InteriorWithFlankingCorners,
+            )
+            .expect("admitted edge row")
+        },
     ];
     let topology = |swapped: bool| StandardTopologyDraft {
         faces: vec![FaceTopologyDraft {

@@ -90,8 +90,8 @@ fn canonicalize_topology_boundary_gauges(
                 boundary.coedges.as_slice(),
                 "catia_mesh_gauge_reversed_coedges",
             )?;
-            let mut reversed =
-                NonEmptyMembers::<CoedgeUse>::try_from(reversed).map_err(cadmpeg_core::CodecError::malformed)?;
+            let mut reversed = NonEmptyMembers::<CoedgeUse>::try_from(reversed)
+                .map_err(cadmpeg_core::CodecError::malformed)?;
             reversed.reverse();
             for coedge in &mut reversed {
                 coedge.reversed = !coedge.reversed;
@@ -1167,7 +1167,9 @@ fn canonicalize_mesh_edge_row_gauges(
         }
         for (edge, row) in new_rows.iter_mut().enumerate() {
             if normalize_rows[edge] {
-                if let Err(error) = row.normalize_handles(ctx) { return Some(Err(error)); }
+                if let Err(error) = row.normalize_handles(ctx) {
+                    return Some(Err(error));
+                }
             }
         }
         for coedge in topology
@@ -1213,8 +1215,10 @@ fn mesh_edge_gauge_rows_refuse_each_collection_limit() {
             }],
         }],
         edge_rows: vec![
-            EdgeRow::new(1, vec![0, 1], EdgeBoundaryLayout::CompleteBoundaryRun).expect("admitted edge row"),
-            EdgeRow::new(1, vec![1, 0], EdgeBoundaryLayout::CompleteBoundaryRun).expect("admitted edge row"),
+            EdgeRow::new(1, vec![0, 1], EdgeBoundaryLayout::CompleteBoundaryRun)
+                .expect("admitted edge row"),
+            EdgeRow::new(1, vec![1, 0], EdgeBoundaryLayout::CompleteBoundaryRun)
+                .expect("admitted edge row"),
         ],
         vertex_points: vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]],
         logical_vertex_count: 2,
@@ -1592,8 +1596,16 @@ pub(super) fn mesh_candidates_equivalent_with_context(
 fn endpoint_pair_gauge_canonicalization_snapshots_row_values() {
     catia_test_context!(ctx);
     let edge_rows = [
-        EdgeRow::new(1, Vec::new(), EdgeBoundaryLayout::CompleteBoundaryRun).expect("admitted edge row"),
-        EdgeRow::new(1, Vec::new(), EdgeBoundaryLayout::CompleteBoundaryRun).expect("admitted edge row"),
+        {
+            assert!(EdgeRow::new(1, Vec::new(), EdgeBoundaryLayout::CompleteBoundaryRun).is_none());
+            EdgeRow::new(1, vec![0, 0], EdgeBoundaryLayout::CompleteBoundaryRun)
+                .expect("admitted edge row")
+        },
+        {
+            assert!(EdgeRow::new(1, Vec::new(), EdgeBoundaryLayout::CompleteBoundaryRun).is_none());
+            EdgeRow::new(1, vec![0, 0], EdgeBoundaryLayout::CompleteBoundaryRun)
+                .expect("admitted edge row")
+        },
     ];
     let edge_faces = [[0, 1], [0, 1]];
     let edge_geometry = [MeshEdgeGeometry::Line, MeshEdgeGeometry::Line];
@@ -1620,7 +1632,11 @@ fn endpoint_pair_gauge_canonicalization_snapshots_row_values() {
 
 #[test]
 fn complete_endpoint_pair_gauge_charges_options_and_result() {
-    let rows = [EdgeRow::new(1, Vec::new(), EdgeBoundaryLayout::CompleteBoundaryRun).expect("admitted edge row")];
+    let rows = [{
+        assert!(EdgeRow::new(1, Vec::new(), EdgeBoundaryLayout::CompleteBoundaryRun).is_none());
+        EdgeRow::new(1, vec![0, 0], EdgeBoundaryLayout::CompleteBoundaryRun)
+            .expect("admitted edge row")
+    }];
     let faces = [[0, 1]];
     let geometry = [MeshEdgeGeometry::Line];
     let candidates = [vec![[0, 1]]];
@@ -1664,8 +1680,16 @@ fn complete_endpoint_pair_gauge_charges_options_and_result() {
 fn mesh_candidate_comparison_collapses_coordinate_row_gauge() {
     catia_test_context!(ctx);
     let edge_rows = vec![
-        { assert!(EdgeRow::new(1, vec![10], EdgeBoundaryLayout::CompleteBoundaryRun).is_none()); EdgeRow::new(1, vec![10, 10], EdgeBoundaryLayout::CompleteBoundaryRun).expect("admitted edge row") },
-        { assert!(EdgeRow::new(1, vec![11], EdgeBoundaryLayout::CompleteBoundaryRun).is_none()); EdgeRow::new(1, vec![11, 11], EdgeBoundaryLayout::CompleteBoundaryRun).expect("admitted edge row") },
+        {
+            assert!(EdgeRow::new(1, vec![10], EdgeBoundaryLayout::CompleteBoundaryRun).is_none());
+            EdgeRow::new(1, vec![10, 10], EdgeBoundaryLayout::CompleteBoundaryRun)
+                .expect("admitted edge row")
+        },
+        {
+            assert!(EdgeRow::new(1, vec![11], EdgeBoundaryLayout::CompleteBoundaryRun).is_none());
+            EdgeRow::new(1, vec![11, 11], EdgeBoundaryLayout::CompleteBoundaryRun)
+                .expect("admitted edge row")
+        },
     ];
     let edge_faces = vec![[0, 1], [0, 1]];
     let edge_geometry = vec![MeshEdgeGeometry::Line, MeshEdgeGeometry::Line];
@@ -1687,38 +1711,42 @@ fn mesh_candidate_comparison_collapses_coordinate_row_gauge() {
     let topology = |swapped: bool| StandardTopologyDraft {
         faces: vec![
             crate::families::standard::topology::FaceTopologyDraft {
-                boundaries: vec![crate::families::standard::topology::BoundaryDraft::new(vec![
-                    CoedgeUse {
-                        edge_row: 0,
-                        reversed: false,
-                        start_vertex: if swapped { 2 } else { 0 },
-                        end_vertex: if swapped { 3 } else { 1 },
-                    },
-                    CoedgeUse {
-                        edge_row: 1,
-                        reversed: false,
-                        start_vertex: if swapped { 3 } else { 1 },
-                        end_vertex: if swapped { 2 } else { 0 },
-                    },
-                ])
-                .expect("nonempty topology boundary")],
+                boundaries: vec![
+                    crate::families::standard::topology::BoundaryDraft::new(vec![
+                        CoedgeUse {
+                            edge_row: 0,
+                            reversed: false,
+                            start_vertex: if swapped { 2 } else { 0 },
+                            end_vertex: if swapped { 3 } else { 1 },
+                        },
+                        CoedgeUse {
+                            edge_row: 1,
+                            reversed: false,
+                            start_vertex: if swapped { 3 } else { 1 },
+                            end_vertex: if swapped { 2 } else { 0 },
+                        },
+                    ])
+                    .expect("nonempty topology boundary"),
+                ],
             },
             crate::families::standard::topology::FaceTopologyDraft {
-                boundaries: vec![crate::families::standard::topology::BoundaryDraft::new(vec![
-                    CoedgeUse {
-                        edge_row: 0,
-                        reversed: false,
-                        start_vertex: if swapped { 2 } else { 0 },
-                        end_vertex: if swapped { 3 } else { 1 },
-                    },
-                    CoedgeUse {
-                        edge_row: 1,
-                        reversed: false,
-                        start_vertex: if swapped { 3 } else { 1 },
-                        end_vertex: if swapped { 2 } else { 0 },
-                    },
-                ])
-                .expect("nonempty topology boundary")],
+                boundaries: vec![
+                    crate::families::standard::topology::BoundaryDraft::new(vec![
+                        CoedgeUse {
+                            edge_row: 0,
+                            reversed: false,
+                            start_vertex: if swapped { 2 } else { 0 },
+                            end_vertex: if swapped { 3 } else { 1 },
+                        },
+                        CoedgeUse {
+                            edge_row: 1,
+                            reversed: false,
+                            start_vertex: if swapped { 3 } else { 1 },
+                            end_vertex: if swapped { 2 } else { 0 },
+                        },
+                    ])
+                    .expect("nonempty topology boundary"),
+                ],
             },
         ],
         edge_rows: edge_rows.clone(),
@@ -1757,10 +1785,17 @@ fn mesh_candidate_comparison_collapses_independent_seam_row_coordinate_automorph
     const COMPONENT_COUNT: usize = 3;
     catia_test_context!(ctx);
     let edge_rows = (0..COMPONENT_COUNT * 2)
-        .map(|edge| EdgeRow::new(2, vec![
-                u32::try_from(edge * 2).expect("fixture value fits u32"),
-                u32::try_from(edge * 2 + 1).expect("fixture value fits u32"),
-            ], EdgeBoundaryLayout::CompleteBoundaryRun).expect("admitted edge row"))
+        .map(|edge| {
+            EdgeRow::new(
+                2,
+                vec![
+                    u32::try_from(edge * 2).expect("fixture value fits u32"),
+                    u32::try_from(edge * 2 + 1).expect("fixture value fits u32"),
+                ],
+                EdgeBoundaryLayout::CompleteBoundaryRun,
+            )
+            .expect("admitted edge row")
+        })
         .collect::<Vec<_>>();
     let edge_faces = (0..COMPONENT_COUNT * 2).map(|_| [0, 1]).collect::<Vec<_>>();
     let edge_geometry = [
@@ -2276,8 +2311,16 @@ fn relation_row_signature(
 fn relation_state_memo_collapses_coordinate_gauge() {
     catia_test_context!(ctx);
     let edge_rows = [
-        { assert!(EdgeRow::new(1, vec![10], EdgeBoundaryLayout::CompleteBoundaryRun).is_none()); EdgeRow::new(1, vec![10, 10], EdgeBoundaryLayout::CompleteBoundaryRun).expect("admitted edge row") },
-        { assert!(EdgeRow::new(1, vec![11], EdgeBoundaryLayout::CompleteBoundaryRun).is_none()); EdgeRow::new(1, vec![11, 11], EdgeBoundaryLayout::CompleteBoundaryRun).expect("admitted edge row") },
+        {
+            assert!(EdgeRow::new(1, vec![10], EdgeBoundaryLayout::CompleteBoundaryRun).is_none());
+            EdgeRow::new(1, vec![10, 10], EdgeBoundaryLayout::CompleteBoundaryRun)
+                .expect("admitted edge row")
+        },
+        {
+            assert!(EdgeRow::new(1, vec![11], EdgeBoundaryLayout::CompleteBoundaryRun).is_none());
+            EdgeRow::new(1, vec![11, 11], EdgeBoundaryLayout::CompleteBoundaryRun)
+                .expect("admitted edge row")
+        },
     ];
     let edge_faces = [[0, 1], [0, 1]];
     let edge_geometry = [MeshEdgeGeometry::Line, MeshEdgeGeometry::Line];
@@ -2375,8 +2418,16 @@ fn endpoint_relation_gauge_charges_nested_state_copies() {
 fn relation_state_memo_uses_coordinate_gauge_domain_alternatives() {
     catia_test_context!(ctx);
     let edge_rows = [
-        { assert!(EdgeRow::new(1, vec![10], EdgeBoundaryLayout::CompleteBoundaryRun).is_none()); EdgeRow::new(1, vec![10, 10], EdgeBoundaryLayout::CompleteBoundaryRun).expect("admitted edge row") },
-        { assert!(EdgeRow::new(1, vec![11], EdgeBoundaryLayout::CompleteBoundaryRun).is_none()); EdgeRow::new(1, vec![11, 11], EdgeBoundaryLayout::CompleteBoundaryRun).expect("admitted edge row") },
+        {
+            assert!(EdgeRow::new(1, vec![10], EdgeBoundaryLayout::CompleteBoundaryRun).is_none());
+            EdgeRow::new(1, vec![10, 10], EdgeBoundaryLayout::CompleteBoundaryRun)
+                .expect("admitted edge row")
+        },
+        {
+            assert!(EdgeRow::new(1, vec![11], EdgeBoundaryLayout::CompleteBoundaryRun).is_none());
+            EdgeRow::new(1, vec![11, 11], EdgeBoundaryLayout::CompleteBoundaryRun)
+                .expect("admitted edge row")
+        },
     ];
     let edge_faces = [[0, 1], [0, 1]];
     let edge_geometry = [MeshEdgeGeometry::Line, MeshEdgeGeometry::Line];
@@ -2418,8 +2469,10 @@ fn relation_state_memo_uses_coordinate_gauge_domain_alternatives() {
 fn relation_state_memo_applies_one_row_mapping_to_assigned_and_domains() {
     catia_test_context!(ctx);
     let edge_rows = [
-        EdgeRow::new(2, vec![10, 11], EdgeBoundaryLayout::CompleteBoundaryRun).expect("admitted edge row"),
-        EdgeRow::new(2, vec![20, 21], EdgeBoundaryLayout::CompleteBoundaryRun).expect("admitted edge row"),
+        EdgeRow::new(2, vec![10, 11], EdgeBoundaryLayout::CompleteBoundaryRun)
+            .expect("admitted edge row"),
+        EdgeRow::new(2, vec![20, 21], EdgeBoundaryLayout::CompleteBoundaryRun)
+            .expect("admitted edge row"),
     ];
     let edge_faces = [[0, 1], [0, 1]];
     let edge_geometry = [MeshEdgeGeometry::Line, MeshEdgeGeometry::Line];
@@ -2467,8 +2520,10 @@ fn mesh_coordinate_gauge_propagates_collection_refusals() {
     use cadmpeg_core::decode::{DecodeArena, DecodePolicy, ResourceDimension};
 
     let edge_rows = [
-        EdgeRow::new(2, vec![10, 11], EdgeBoundaryLayout::CompleteBoundaryRun).expect("admitted edge row"),
-        EdgeRow::new(2, vec![20, 21], EdgeBoundaryLayout::CompleteBoundaryRun).expect("admitted edge row"),
+        EdgeRow::new(2, vec![10, 11], EdgeBoundaryLayout::CompleteBoundaryRun)
+            .expect("admitted edge row"),
+        EdgeRow::new(2, vec![20, 21], EdgeBoundaryLayout::CompleteBoundaryRun)
+            .expect("admitted edge row"),
     ];
     let edge_faces = [[0, 1], [0, 1]];
     let edge_geometry = [MeshEdgeGeometry::Line, MeshEdgeGeometry::Line];
@@ -2529,7 +2584,11 @@ fn mesh_coordinate_gauge_propagates_collection_refusals() {
 fn mesh_candidate_canonicalization_propagates_collection_refusals() {
     use cadmpeg_core::decode::{DecodeArena, DecodePolicy, ResourceDimension};
 
-    let edge_rows = vec![{ assert!(EdgeRow::new(1, vec![10], EdgeBoundaryLayout::CompleteBoundaryRun).is_none()); EdgeRow::new(1, vec![10, 10], EdgeBoundaryLayout::CompleteBoundaryRun).expect("admitted edge row") }];
+    let edge_rows = vec![{
+        assert!(EdgeRow::new(1, vec![10], EdgeBoundaryLayout::CompleteBoundaryRun).is_none());
+        EdgeRow::new(1, vec![10, 10], EdgeBoundaryLayout::CompleteBoundaryRun)
+            .expect("admitted edge row")
+    }];
     let topology = StandardTopologyDraft {
         faces: vec![crate::families::standard::topology::FaceTopologyDraft {
             boundaries: vec![
@@ -2608,7 +2667,8 @@ fn mesh_candidate_canonicalization_propagates_collection_refusals() {
 
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 7;
+    // Coedge, boundary, face, two handles, row and two points use eight slots.
+    policy.limits.max_collection_items = 8;
     let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
         .expect("fixture fits the input limit");
     let error =

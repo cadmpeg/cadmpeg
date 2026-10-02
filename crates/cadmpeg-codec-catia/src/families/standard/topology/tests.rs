@@ -39,7 +39,11 @@ fn standard_topology_copies_refuse_retained_bytes_before_growth() {
         with_zero_retained(|ctx| face_topology.clone_charged(ctx)),
         Err(CodecError::ResourceLimit(limit)) if limit.operation == "catia_standard_topology_copy_coedges"
     ));
-    let row = { assert!(EdgeRow::new(1, vec![7], EdgeBoundaryLayout::CompleteBoundaryRun).is_none()); EdgeRow::new(1, vec![7, 7], EdgeBoundaryLayout::CompleteBoundaryRun).expect("admitted edge row") };
+    let row = {
+        assert!(EdgeRow::new(1, vec![7], EdgeBoundaryLayout::CompleteBoundaryRun).is_none());
+        EdgeRow::new(1, vec![7, 7], EdgeBoundaryLayout::CompleteBoundaryRun)
+            .expect("admitted edge row")
+    };
     assert!(matches!(
         with_zero_retained(|ctx| row.clone_charged(ctx)),
         Err(CodecError::ResourceLimit(limit)) if limit.operation == "catia_standard_edge_row_copy_handles"
@@ -73,7 +77,11 @@ fn reconstructed_mesh_copies_refuse_retained_bytes_before_growth() {
     use crate::solve::missing_edge::MeshFaceBoundaryAssignment;
     use cadmpeg_core::CodecError;
 
-    let row = { assert!(EdgeRow::new(1, vec![7], EdgeBoundaryLayout::CompleteBoundaryRun).is_none()); EdgeRow::new(1, vec![7, 7], EdgeBoundaryLayout::CompleteBoundaryRun).expect("admitted edge row") };
+    let row = {
+        assert!(EdgeRow::new(1, vec![7], EdgeBoundaryLayout::CompleteBoundaryRun).is_none());
+        EdgeRow::new(1, vec![7, 7], EdgeBoundaryLayout::CompleteBoundaryRun)
+            .expect("admitted edge row")
+    };
     let selected: [MeshFaceBoundaryAssignment; 0] = [];
     assert!(matches!(
         with_zero_retained(|ctx| reconstruct_mesh_selection(ctx, std::slice::from_ref(&row), &[], &selected, &[])),
@@ -110,7 +118,11 @@ fn standard_topology_copy_refuses_each_nested_collection_limit() {
                 }),
             }],
         }],
-        edge_rows: vec![{ assert!(EdgeRow::new(1, vec![7], EdgeBoundaryLayout::CompleteBoundaryRun).is_none()); EdgeRow::new(1, vec![7, 7], EdgeBoundaryLayout::CompleteBoundaryRun).expect("admitted edge row") }],
+        edge_rows: vec![{
+            assert!(EdgeRow::new(1, vec![7], EdgeBoundaryLayout::CompleteBoundaryRun).is_none());
+            EdgeRow::new(1, vec![7, 7], EdgeBoundaryLayout::CompleteBoundaryRun)
+                .expect("admitted edge row")
+        }],
         vertex_points: vec![[0.0, 0.0, 0.0]],
         logical_vertex_count: 1,
     };
@@ -125,8 +137,7 @@ fn standard_topology_copy_refuses_each_nested_collection_limit() {
         (3, "catia_standard_edge_row_copy_handles"),
         (5, "catia_standard_topology_copy_edge_rows"),
         (6, "catia_standard_topology_copy_vertex_points"),
-    ]
-    {
+    ] {
         assert_eq!(
             standard_collection_limit_operation(limit, |ctx| {
                 topology.clone_charged(ctx)?;
@@ -152,7 +163,11 @@ fn standard_native_vertex_binding_refuses_before_identity_and_edge_growth() {
                 }),
             }],
         }],
-        edge_rows: vec![{ assert!(EdgeRow::new(1, vec![7], EdgeBoundaryLayout::CompleteBoundaryRun).is_none()); EdgeRow::new(1, vec![7, 7], EdgeBoundaryLayout::CompleteBoundaryRun).expect("admitted edge row") }],
+        edge_rows: vec![{
+            assert!(EdgeRow::new(1, vec![7], EdgeBoundaryLayout::CompleteBoundaryRun).is_none());
+            EdgeRow::new(1, vec![7, 7], EdgeBoundaryLayout::CompleteBoundaryRun)
+                .expect("admitted edge row")
+        }],
         vertex_points: Vec::new(),
         logical_vertex_count: 2,
     };
@@ -214,7 +229,17 @@ fn duplicate_face_slot_fixture(
     use super::{complete_duplicate_face_slots, EdgeBoundaryLayout, EdgeRow};
 
     let rows = (0..3)
-        .map(|handle| { assert!(EdgeRow::new(0, vec![handle], EdgeBoundaryLayout::CompleteBoundaryRun).is_none()); EdgeRow::new(1, vec![handle, handle], EdgeBoundaryLayout::CompleteBoundaryRun).expect("admitted edge row") })
+        .map(|handle| {
+            assert!(
+                EdgeRow::new(0, vec![handle], EdgeBoundaryLayout::CompleteBoundaryRun).is_none()
+            );
+            EdgeRow::new(
+                1,
+                vec![handle, handle],
+                EdgeBoundaryLayout::CompleteBoundaryRun,
+            )
+            .expect("admitted edge row")
+        })
         .collect::<Vec<_>>();
     complete_duplicate_face_slots(
         ctx,
@@ -342,7 +367,17 @@ fn ambiguous_duplicate_face_fixture(
     use super::{complete_duplicate_face_slots, EdgeBoundaryLayout, EdgeRow};
 
     let rows = (0..4)
-        .map(|handle| { assert!(EdgeRow::new(0, vec![handle], EdgeBoundaryLayout::CompleteBoundaryRun).is_none()); EdgeRow::new(1, vec![handle, handle], EdgeBoundaryLayout::CompleteBoundaryRun).expect("admitted edge row") })
+        .map(|handle| {
+            assert!(
+                EdgeRow::new(0, vec![handle], EdgeBoundaryLayout::CompleteBoundaryRun).is_none()
+            );
+            EdgeRow::new(
+                1,
+                vec![handle, handle],
+                EdgeBoundaryLayout::CompleteBoundaryRun,
+            )
+            .expect("admitted edge row")
+        })
         .collect::<Vec<_>>();
     complete_duplicate_face_slots(
         ctx,
@@ -414,8 +449,16 @@ fn standard_duplicate_face_comparison_refuses_nested_face_lists() {
     use cadmpeg_core::CodecError;
 
     let rows = [
-        { assert!(EdgeRow::new(1, vec![10], EdgeBoundaryLayout::CompleteBoundaryRun).is_none()); EdgeRow::new(1, vec![10, 10], EdgeBoundaryLayout::CompleteBoundaryRun).expect("admitted edge row") },
-        { assert!(EdgeRow::new(1, vec![10], EdgeBoundaryLayout::CompleteBoundaryRun).is_none()); EdgeRow::new(1, vec![10, 10], EdgeBoundaryLayout::CompleteBoundaryRun).expect("admitted edge row") },
+        {
+            assert!(EdgeRow::new(1, vec![10], EdgeBoundaryLayout::CompleteBoundaryRun).is_none());
+            EdgeRow::new(1, vec![10, 10], EdgeBoundaryLayout::CompleteBoundaryRun)
+                .expect("admitted edge row")
+        },
+        {
+            assert!(EdgeRow::new(1, vec![10], EdgeBoundaryLayout::CompleteBoundaryRun).is_none());
+            EdgeRow::new(1, vec![10, 10], EdgeBoundaryLayout::CompleteBoundaryRun)
+                .expect("admitted edge row")
+        },
     ];
     let run = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
         duplicate_face_assignments_equivalent(
@@ -449,7 +492,11 @@ fn standard_duplicate_face_copy_refuses_before_completed_result() {
     use super::{complete_duplicate_face_slots, EdgeBoundaryLayout, EdgeRow};
     use cadmpeg_core::CodecError;
 
-    let rows = [{ assert!(EdgeRow::new(1, vec![10], EdgeBoundaryLayout::CompleteBoundaryRun).is_none()); EdgeRow::new(1, vec![10, 10], EdgeBoundaryLayout::CompleteBoundaryRun).expect("admitted edge row") }];
+    let rows = [{
+        assert!(EdgeRow::new(1, vec![10], EdgeBoundaryLayout::CompleteBoundaryRun).is_none());
+        EdgeRow::new(1, vec![10, 10], EdgeBoundaryLayout::CompleteBoundaryRun)
+            .expect("admitted edge row")
+    }];
     let run = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
         complete_duplicate_face_slots(ctx, &rows, &[[0, 1]], &[[0, 1]], 2, None, None)
     };
@@ -472,7 +519,13 @@ fn standard_face_edges_propagate_collection_refusal() {
     let operation = standard_collection_limit_operation(1, |ctx| {
         reconstruct_incidence(
             ctx,
-            vec![{ assert!(EdgeRow::new(0, vec![7, 7], EdgeBoundaryLayout::CompleteBoundaryRun).is_none()); EdgeRow::new(1, vec![7, 7], EdgeBoundaryLayout::CompleteBoundaryRun).expect("admitted edge row") }],
+            vec![{
+                assert!(
+                    EdgeRow::new(0, vec![7, 7], EdgeBoundaryLayout::CompleteBoundaryRun).is_none()
+                );
+                EdgeRow::new(1, vec![7, 7], EdgeBoundaryLayout::CompleteBoundaryRun)
+                    .expect("admitted edge row")
+            }],
             vec![[1.0, 0.0, 0.0]],
             &[[0, 1]],
             &[[0, 0]],
@@ -490,7 +543,13 @@ fn standard_face_edge_entries_refuse_collection_limit() {
     let operation = standard_collection_limit_operation(3, |ctx| {
         reconstruct_incidence(
             ctx,
-            vec![{ assert!(EdgeRow::new(0, vec![7, 7], EdgeBoundaryLayout::CompleteBoundaryRun).is_none()); EdgeRow::new(1, vec![7, 7], EdgeBoundaryLayout::CompleteBoundaryRun).expect("admitted edge row") }],
+            vec![{
+                assert!(
+                    EdgeRow::new(0, vec![7, 7], EdgeBoundaryLayout::CompleteBoundaryRun).is_none()
+                );
+                EdgeRow::new(1, vec![7, 7], EdgeBoundaryLayout::CompleteBoundaryRun)
+                    .expect("admitted edge row")
+            }],
             vec![[1.0, 0.0, 0.0]],
             &[[0, 1]],
             &[[0, 0]],
@@ -508,7 +567,11 @@ fn standard_incidence_mapped_collections_refuse_nested_limits() {
     use std::collections::HashSet;
 
     let rows = || {
-        vec![{ assert!(EdgeRow::new(0, vec![7, 7], EdgeBoundaryLayout::CompleteBoundaryRun).is_none()); EdgeRow::new(1, vec![7, 7], EdgeBoundaryLayout::CompleteBoundaryRun).expect("admitted edge row") }]
+        vec![{
+            assert!(EdgeRow::new(0, vec![7, 7], EdgeBoundaryLayout::CompleteBoundaryRun).is_none());
+            EdgeRow::new(1, vec![7, 7], EdgeBoundaryLayout::CompleteBoundaryRun)
+                .expect("admitted edge row")
+        }]
     };
     let run = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
         reconstruct_incidence(ctx, rows(), vec![[1.0, 0.0, 0.0]], &[[0, 1]], &[[0, 0]], 2)
@@ -641,7 +704,11 @@ fn standard_edge_vertices_propagate_collection_refusal() {
             }])
             .expect("nonempty boundary")],
         }],
-        edge_rows: vec![{ assert!(EdgeRow::new(1, vec![10], EdgeBoundaryLayout::CompleteBoundaryRun).is_none()); EdgeRow::new(1, vec![10, 10], EdgeBoundaryLayout::CompleteBoundaryRun).expect("admitted edge row") }],
+        edge_rows: vec![{
+            assert!(EdgeRow::new(1, vec![10], EdgeBoundaryLayout::CompleteBoundaryRun).is_none());
+            EdgeRow::new(1, vec![10, 10], EdgeBoundaryLayout::CompleteBoundaryRun)
+                .expect("admitted edge row")
+        }],
         vertex_points: vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]],
         logical_vertex_count: 2,
     };
@@ -686,8 +753,20 @@ fn standard_completed_edge_vertices_refuse_before_absent_row() {
             }],
         }],
         edge_rows: vec![
-            { assert!(EdgeRow::new(1, vec![10], EdgeBoundaryLayout::CompleteBoundaryRun).is_none()); EdgeRow::new(1, vec![10, 10], EdgeBoundaryLayout::CompleteBoundaryRun).expect("admitted edge row") },
-            { assert!(EdgeRow::new(1, vec![11], EdgeBoundaryLayout::CompleteBoundaryRun).is_none()); EdgeRow::new(1, vec![11, 11], EdgeBoundaryLayout::CompleteBoundaryRun).expect("admitted edge row") },
+            {
+                assert!(
+                    EdgeRow::new(1, vec![10], EdgeBoundaryLayout::CompleteBoundaryRun).is_none()
+                );
+                EdgeRow::new(1, vec![10, 10], EdgeBoundaryLayout::CompleteBoundaryRun)
+                    .expect("admitted edge row")
+            },
+            {
+                assert!(
+                    EdgeRow::new(1, vec![11], EdgeBoundaryLayout::CompleteBoundaryRun).is_none()
+                );
+                EdgeRow::new(1, vec![11, 11], EdgeBoundaryLayout::CompleteBoundaryRun)
+                    .expect("admitted edge row")
+            },
         ],
         vertex_points: Vec::new(),
         logical_vertex_count: 2,
@@ -721,7 +800,11 @@ fn standard_vertex_point_domains_propagate_collection_refusal() {
             }])
             .expect("nonempty boundary")],
         }],
-        edge_rows: vec![{ assert!(EdgeRow::new(1, vec![10], EdgeBoundaryLayout::CompleteBoundaryRun).is_none()); EdgeRow::new(1, vec![10, 10], EdgeBoundaryLayout::CompleteBoundaryRun).expect("admitted edge row") }],
+        edge_rows: vec![{
+            assert!(EdgeRow::new(1, vec![10], EdgeBoundaryLayout::CompleteBoundaryRun).is_none());
+            EdgeRow::new(1, vec![10, 10], EdgeBoundaryLayout::CompleteBoundaryRun)
+                .expect("admitted edge row")
+        }],
         vertex_points: vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]],
         logical_vertex_count: 2,
     };
@@ -763,8 +846,20 @@ fn standard_vertex_point_domain_entries_refuse_collection_limit() {
             .expect("nonempty boundary")],
         }],
         edge_rows: vec![
-            { assert!(EdgeRow::new(1, vec![10], EdgeBoundaryLayout::CompleteBoundaryRun).is_none()); EdgeRow::new(1, vec![10, 10], EdgeBoundaryLayout::CompleteBoundaryRun).expect("admitted edge row") },
-            { assert!(EdgeRow::new(1, vec![11], EdgeBoundaryLayout::CompleteBoundaryRun).is_none()); EdgeRow::new(1, vec![11, 11], EdgeBoundaryLayout::CompleteBoundaryRun).expect("admitted edge row") },
+            {
+                assert!(
+                    EdgeRow::new(1, vec![10], EdgeBoundaryLayout::CompleteBoundaryRun).is_none()
+                );
+                EdgeRow::new(1, vec![10, 10], EdgeBoundaryLayout::CompleteBoundaryRun)
+                    .expect("admitted edge row")
+            },
+            {
+                assert!(
+                    EdgeRow::new(1, vec![11], EdgeBoundaryLayout::CompleteBoundaryRun).is_none()
+                );
+                EdgeRow::new(1, vec![11, 11], EdgeBoundaryLayout::CompleteBoundaryRun)
+                    .expect("admitted edge row")
+            },
         ],
         vertex_points: vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [2.0, 0.0, 0.0]],
         logical_vertex_count: 3,
@@ -831,7 +926,13 @@ fn resource_limit_topology() -> StandardTopologyDraft {
     StandardTopologyDraft {
         faces: vec![face(), face()],
         edge_rows: (0..2)
-            .map(|edge| { assert!(EdgeRow::new(0, vec![edge], EdgeBoundaryLayout::CompleteBoundaryRun).is_none()); EdgeRow::new(1, vec![edge, edge], EdgeBoundaryLayout::CompleteBoundaryRun).expect("admitted edge row") })
+            .map(|edge| {
+                assert!(
+                    EdgeRow::new(0, vec![edge], EdgeBoundaryLayout::CompleteBoundaryRun).is_none()
+                );
+                EdgeRow::new(1, vec![edge, edge], EdgeBoundaryLayout::CompleteBoundaryRun)
+                    .expect("admitted edge row")
+            })
             .collect(),
         vertex_points: Vec::new(),
         logical_vertex_count: 2,
@@ -937,7 +1038,11 @@ fn mesh_selection_reconstruction_refuses_nested_collection_limits() {
     use cadmpeg_core::CodecError;
     use std::collections::HashSet;
 
-    let rows = vec![{ assert!(EdgeRow::new(0, vec![0], EdgeBoundaryLayout::CompleteBoundaryRun).is_none()); EdgeRow::new(1, vec![0, 0], EdgeBoundaryLayout::CompleteBoundaryRun).expect("admitted edge row") }];
+    let rows = vec![{
+        assert!(EdgeRow::new(0, vec![0], EdgeBoundaryLayout::CompleteBoundaryRun).is_none());
+        EdgeRow::new(1, vec![0, 0], EdgeBoundaryLayout::CompleteBoundaryRun)
+            .expect("admitted edge row")
+    }];
     let assignment_for = |edge| MeshFaceBoundaryAssignment {
         boundaries: vec![vec![MeshBoundaryEdgeCandidate {
             edge,
@@ -1099,13 +1204,27 @@ fn edge_row_admission_couples_table_kind_and_boundary_shape() {
     for handles in [Vec::new(), vec![0]] {
         assert!(EdgeRow::new(1, handles, EdgeBoundaryLayout::CompleteBoundaryRun).is_none());
     }
-    assert!(EdgeRow::new(1, vec![0, 1], EdgeBoundaryLayout::InteriorWithFlankingCorners).is_none());
+    assert!(EdgeRow::new(
+        1,
+        vec![0, 1],
+        EdgeBoundaryLayout::InteriorWithFlankingCorners
+    )
+    .is_none());
     for kind in [1, 2] {
-        let row = EdgeRow::new(kind, vec![0, 1, 2], EdgeBoundaryLayout::InteriorWithFlankingCorners).expect("interior handle");
+        let row = EdgeRow::new(
+            kind,
+            vec![0, 1, 2],
+            EdgeBoundaryLayout::InteriorWithFlankingCorners,
+        )
+        .expect("interior handle");
         assert_eq!(row.kind(), kind);
         assert_eq!(row.boundary_pattern(), Some(&[1][..]));
     }
-    let mut complete = EdgeRow::new(1, vec![0, 1], EdgeBoundaryLayout::CompleteBoundaryRun).expect("complete run");
+    let mut complete =
+        EdgeRow::new(1, vec![0, 1], EdgeBoundaryLayout::CompleteBoundaryRun).expect("complete run");
     assert!(!complete.select_flanking_corners());
-    assert_eq!(complete.boundary_layout(), EdgeBoundaryLayout::CompleteBoundaryRun);
+    assert_eq!(
+        complete.boundary_layout(),
+        EdgeBoundaryLayout::CompleteBoundaryRun
+    );
 }

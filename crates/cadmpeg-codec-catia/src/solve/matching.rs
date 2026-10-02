@@ -24,7 +24,9 @@ fn charge_matching_work(
     }
     let visit = ctx.work_budget(1);
     if !visit.charge() {
-        if let Some(limit) = ctx.resource_refusal() { return Err(limit.into()); }
+        if let Some(limit) = ctx.resource_refusal() {
+            return Err(limit.into());
+        }
         return Err(ctx.refuse_codec_limit("catia matching work", 0, 1));
     }
     if budget.is_some_and(|budget| budget.consume_child(&visit).is_err()) {
@@ -417,21 +419,27 @@ pub(crate) fn unique_coordinate_bijection(
         let mut order = Vec::new();
         ctx.reserve_vec(&mut order, domains.len(), "catia_bijection_order")?;
         for (vertex, domain) in domains.iter().enumerate() {
-            ctx.charge_work(cadmpeg_core::decode::u64_from_index(domain.len()), "catia_bijection_order_keys")?;
-            let count = if let Some((_, class)) = forced.filter(|(forced_vertex, _)| *forced_vertex == vertex) {
+            ctx.charge_work(
+                cadmpeg_core::decode::u64_from_index(domain.len()),
+                "catia_bijection_order_keys",
+            )?;
+            let count = if let Some((_, class)) =
+                forced.filter(|(forced_vertex, _)| *forced_vertex == vertex)
+            {
                 slots_by_class[class].len()
             } else {
-                domain.iter().try_fold(0usize, |count, class| count.checked_add(slots_by_class[*class].len()))
-                    .ok_or_else(|| ctx.refuse_codec_limit("catia_bijection_order_keys", u64::MAX - 1, u64::MAX))?
+                domain
+                    .iter()
+                    .try_fold(0usize, |count, class| {
+                        count.checked_add(slots_by_class[*class].len())
+                    })
+                    .ok_or_else(|| {
+                        ctx.refuse_codec_limit("catia_bijection_order_keys", u64::MAX - 1, u64::MAX)
+                    })?
             };
             order.push((count, vertex));
         }
-        ctx.sort_unstable_by(
-            &mut order,
-            Ord::cmp,
-            |_| 0,
-            "catia_bijection_order_sort",
-        )?;
+        ctx.sort_unstable_by(&mut order, Ord::cmp, |_| 0, "catia_bijection_order_sort")?;
         let mut seen_vertices =
             ctx.alloc_filled(domains.len(), 0usize, "catia_bijection_seen_vertices")?;
         let mut seen_slots =
@@ -659,7 +667,10 @@ mod tests {
             super::charge_matching_work(ctx, Some(&budget)).expect("one visit fits exactly");
             assert_eq!(budget.remaining(), 0);
             assert!(ctx.resource_refusal().is_none());
-            assert!(matches!(super::charge_matching_work(ctx, Some(&budget)), Err(CodecError::ResourceLimit(_))));
+            assert!(matches!(
+                super::charge_matching_work(ctx, Some(&budget)),
+                Err(CodecError::ResourceLimit(_))
+            ));
         });
     }
 
@@ -667,7 +678,11 @@ mod tests {
     fn matching_detached_slice_still_charges_the_caller() {
         crate::test_support::with_work_limit(0, |ctx| {
             let budget = cadmpeg_core::decode::WorkBudget::new(1);
-            let CodecError::ResourceLimit(limit) = super::charge_matching_work(ctx, Some(&budget)).expect_err("caller work must be admitted") else { panic!("resource refusal") };
+            let CodecError::ResourceLimit(limit) = super::charge_matching_work(ctx, Some(&budget))
+                .expect_err("caller work must be admitted")
+            else {
+                panic!("resource refusal")
+            };
             assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
             assert_eq!(ctx.resource_refusal(), Some(limit));
         });
@@ -677,9 +692,15 @@ mod tests {
     fn coordinate_bijection_refuses_unadmitted_sort_key_scan() {
         let domains = [HashSet::from([0_usize])];
         // One-element domain admission, projection, sort, and dedup precede the key scan.
-        let before_keys = 5 + 16 * u64::try_from(std::mem::size_of::<usize>()).expect("index bytes");
+        let before_keys =
+            5 + 16 * u64::try_from(std::mem::size_of::<usize>()).expect("index bytes");
         crate::test_support::with_work_limit(before_keys, |ctx| {
-            let cadmpeg_core::CodecError::ResourceLimit(limit) = super::unique_coordinate_bijection(ctx, &domains, &[[0.0; 3]]).expect_err("keys require work") else { panic!("resource refusal") };
+            let cadmpeg_core::CodecError::ResourceLimit(limit) =
+                super::unique_coordinate_bijection(ctx, &domains, &[[0.0; 3]])
+                    .expect_err("keys require work")
+            else {
+                panic!("resource refusal")
+            };
             assert_eq!(limit.operation, "catia_bijection_order_keys");
             assert_eq!(ctx.resource_refusal(), Some(limit));
         });

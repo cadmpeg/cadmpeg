@@ -1618,29 +1618,38 @@ fn standard_emission_reverses_face_pcurve_range_and_refuses_edge_flag_limit() {
         }];
         let topology = crate::families::standard::topology::StandardTopologyDraft {
             faces: vec![crate::families::standard::topology::FaceTopologyDraft {
-                boundaries: vec![crate::families::standard::topology::BoundaryDraft::new(vec![
-                    crate::families::standard::topology::CoedgeUse {
-                        edge_row: 0,
-                        reversed,
-                        start_vertex: 0,
-                        end_vertex: 1,
-                    },
-                    crate::families::standard::topology::CoedgeUse {
-                        edge_row: 0,
-                        reversed: !reversed,
-                        start_vertex: 1,
-                        end_vertex: 0,
-                    },
-                ])
-                .expect("nonempty topology boundary")],
+                boundaries: vec![
+                    crate::families::standard::topology::BoundaryDraft::new(vec![
+                        crate::families::standard::topology::CoedgeUse {
+                            edge_row: 0,
+                            reversed,
+                            start_vertex: 0,
+                            end_vertex: 1,
+                        },
+                        crate::families::standard::topology::CoedgeUse {
+                            edge_row: 0,
+                            reversed: !reversed,
+                            start_vertex: 1,
+                            end_vertex: 0,
+                        },
+                    ])
+                    .expect("nonempty topology boundary"),
+                ],
             }],
-            edge_rows: vec![crate::families::standard::topology::EdgeRow::new(1, vec![0, 1], crate::families::standard::topology::EdgeBoundaryLayout::CompleteBoundaryRun).expect("admitted edge row")],
+            edge_rows: vec![crate::families::standard::topology::EdgeRow::new(
+                1,
+                vec![0, 1],
+                crate::families::standard::topology::EdgeBoundaryLayout::CompleteBoundaryRun,
+            )
+            .expect("admitted edge row")],
             vertex_points: vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]],
             logical_vertex_count: 2,
         };
         let topology = crate::test_support::with_service_context(|ctx| {
             crate::families::standard::topology::admitted::StandardTopology::new(ctx, topology)
-        }).expect("service admission").expect("closed topology");
+        })
+        .expect("service admission")
+        .expect("closed topology");
         let mut annotations = AnnotationBuilder::new();
         let mut limited_ir = ir.clone();
         let limited = crate::test_support::with_collection_limit(0, |ctx| {
@@ -1709,8 +1718,15 @@ fn standard_emission_reverses_face_pcurve_range_and_refuses_edge_flag_limit() {
                 .expect("identity grammar")
         );
 
-        assert_eq!(closing_use.vertex, VertexId::mint("catia:standard:v#0".to_string()).expect("identity grammar"));
-        assert_eq!(closing_use.after, cadmpeg_ir::ids::CoedgeId::mint("catia:standard:coedge#0:0:1".to_string()).expect("identity grammar"));
+        assert_eq!(
+            closing_use.vertex,
+            VertexId::mint("catia:standard:v#0".to_string()).expect("identity grammar")
+        );
+        assert_eq!(
+            closing_use.after,
+            cadmpeg_ir::ids::CoedgeId::mint("catia:standard:coedge#0:0:1".to_string())
+                .expect("identity grammar")
+        );
 
         let [pcurve] = ir.model.coedges[0].pcurves.as_slice() else {
             panic!("standard line occurrence must retain its pcurve");

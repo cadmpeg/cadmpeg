@@ -1530,7 +1530,9 @@ fn native_namespace_retains_count_framed_owner_packet_and_face_node_relation() {
 
     let mut invalid = serde_json::to_value(packet).expect("owner packet wire");
     invalid["payload"]["tail"] = serde_json::json!("");
-    assert!(serde_json::from_value::<crate::native::CatiaConsolidatedOwnerPacket>(invalid).is_err());
+    assert!(
+        serde_json::from_value::<crate::native::CatiaConsolidatedOwnerPacket>(invalid).is_err()
+    );
 }
 
 #[test]
@@ -1813,7 +1815,11 @@ fn consolidated_cone_deserialization_rejects_combined_frame_and_chart_defects() 
     let native = crate::native::CatiaNative::decode(&b2_cone_stream());
     let cone = &native.consolidated_cones[0];
     let valid = serde_json::to_value(cone).expect("cone wire");
-    assert_eq!(serde_json::from_value::<crate::native::CatiaConsolidatedCone>(valid.clone()).expect("admitted cone"), *cone);
+    assert_eq!(
+        serde_json::from_value::<crate::native::CatiaConsolidatedCone>(valid.clone())
+            .expect("admitted cone"),
+        *cone
+    );
     for (field, value) in [
         ("direction_y", serde_json::json!([1.0, 0.0, 0.0])),
         ("axis", serde_json::json!([0.0, 0.0, -1.0])),
@@ -1825,7 +1831,10 @@ fn consolidated_cone_deserialization_rejects_combined_frame_and_chart_defects() 
     ] {
         let mut invalid = valid.clone();
         invalid[field] = value;
-        assert!(serde_json::from_value::<crate::native::CatiaConsolidatedCone>(invalid).is_err(), "{field}");
+        assert!(
+            serde_json::from_value::<crate::native::CatiaConsolidatedCone>(invalid).is_err(),
+            "{field}"
+        );
     }
 }
 

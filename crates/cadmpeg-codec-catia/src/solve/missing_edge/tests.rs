@@ -10,7 +10,8 @@ use std::collections::HashSet;
 use std::sync::Arc;
 
 fn row(handles: &[u32]) -> EdgeRow {
-    EdgeRow::new(2, handles.to_vec(), EdgeBoundaryLayout::CompleteBoundaryRun).expect("admitted edge row")
+    EdgeRow::new(2, handles.to_vec(), EdgeBoundaryLayout::CompleteBoundaryRun)
+        .expect("admitted edge row")
 }
 
 fn handles(values: &[u32]) -> HashSet<u32> {

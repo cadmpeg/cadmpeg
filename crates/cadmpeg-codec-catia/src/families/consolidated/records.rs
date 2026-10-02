@@ -341,12 +341,15 @@ impl<const LOWER: usize, const UPPER: usize> TryFrom<Vec<FiniteReal>> for Scalar
 
 impl<const LOWER: usize, const UPPER: usize> std::ops::Deref for ScalarLane<LOWER, UPPER> {
     type Target = [FiniteReal];
-    fn deref(&self) -> &Self::Target { &self.0 }
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
 }
 
 impl<'de, const LOWER: usize, const UPPER: usize> Deserialize<'de> for ScalarLane<LOWER, UPPER> {
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        Self::try_from(Vec::<FiniteReal>::deserialize(deserializer)?).map_err(serde::de::Error::custom)
+        Self::try_from(Vec::<FiniteReal>::deserialize(deserializer)?)
+            .map_err(serde::de::Error::custom)
     }
 }
 
@@ -1546,7 +1549,8 @@ pub(crate) fn consolidated_owner_boundary_cycles_from_records(
                 }
                 let span = &records[first_edge_index..owner_index];
                 if span.iter().any(|record| {
-                    record.family() != ConsolidatedFamily::B || !matches!(record.class(), 0x5d | 0x5e)
+                    record.family() != ConsolidatedFamily::B
+                        || !matches!(record.class(), 0x5d | 0x5e)
                 }) || span.iter().filter(|record| record.class() == 0x5e).count() != 4
                 {
                     return None;

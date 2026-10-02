@@ -268,7 +268,10 @@ fn preview_images_in_segments(
     segments: &[FinjplSegment],
 ) -> Result<Vec<PreviewImage>, CodecError> {
     let mut previews = Vec::new();
-    for segment in segments.iter().filter(|segment| segment.type_word == 0x0101_0003) {
+    for segment in segments
+        .iter()
+        .filter(|segment| segment.type_word == 0x0101_0003)
+    {
         let bytes = &data[segment.range.clone()];
         ctx.charge_work(u64_from_index(bytes.len()), "catia_jpeg_candidate_scan")?;
         let mut selected = None;
@@ -463,69 +466,71 @@ fn jpeg_extent(
     data: &[u8],
     start: usize,
 ) -> Result<Option<(usize, u16, u16, u8)>, CodecError> {
-    let Some(suffix) = data.get(start..) else { return Ok(None) };
+    let Some(suffix) = data.get(start..) else {
+        return Ok(None);
+    };
     ctx.charge_work(u64_from_index(suffix.len()), "catia_jpeg_marker_walk")?;
     Ok((|| {
-    if data.get(start..start + 2) != Some(&[0xff, 0xd8]) {
-        return None;
-    }
-    let mut at = start + 2;
-    let mut frame = None;
-    let mut in_entropy = false;
-    while at + 1 < data.len() {
-        if data[at] != 0xff {
-            if in_entropy {
+        if data.get(start..start + 2) != Some(&[0xff, 0xd8]) {
+            return None;
+        }
+        let mut at = start + 2;
+        let mut frame = None;
+        let mut in_entropy = false;
+        while at + 1 < data.len() {
+            if data[at] != 0xff {
+                if in_entropy {
+                    at += 1;
+                    continue;
+                }
+                return None;
+            }
+            while data.get(at) == Some(&0xff) {
                 at += 1;
+            }
+            let marker = *data.get(at)?;
+            at += 1;
+            if in_entropy && marker == 0x00 {
                 continue;
             }
-            return None;
-        }
-        while data.get(at) == Some(&0xff) {
-            at += 1;
-        }
-        let marker = *data.get(at)?;
-        at += 1;
-        if in_entropy && marker == 0x00 {
-            continue;
-        }
-        if marker == 0xd9 {
-            let (width, height, components) = frame?;
-            return Some((at, width, height, components));
-        }
-        if matches!(marker, 0x01 | 0xd0..=0xd8) {
-            continue;
-        }
-        let length = usize::from(View::u16_be_at(data, at)?);
-        if length < 2 {
-            return None;
-        }
-        let payload = at + 2;
-        let end = at.checked_add(length)?;
-        if end > data.len() {
-            return None;
-        }
-        if matches!(marker, 0xc0..=0xc3 | 0xc5..=0xc7 | 0xc9..=0xcb | 0xcd..=0xcf) {
-            if length < 8 {
+            if marker == 0xd9 {
+                let (width, height, components) = frame?;
+                return Some((at, width, height, components));
+            }
+            if matches!(marker, 0x01 | 0xd0..=0xd8) {
+                continue;
+            }
+            let length = usize::from(View::u16_be_at(data, at)?);
+            if length < 2 {
                 return None;
             }
-            let width = View::u16_be_at(data, payload + 3)?;
-            let height = View::u16_be_at(data, payload + 1)?;
-            let components = data[payload + 5];
-            let expected_length = 8usize.checked_add(3usize.checked_mul(components.into())?)?;
-            if width == 0
-                || height == 0
-                || components == 0
-                || length != expected_length
-                || frame.is_some()
-            {
+            let payload = at + 2;
+            let end = at.checked_add(length)?;
+            if end > data.len() {
                 return None;
             }
-            frame = Some((width, height, components));
+            if matches!(marker, 0xc0..=0xc3 | 0xc5..=0xc7 | 0xc9..=0xcb | 0xcd..=0xcf) {
+                if length < 8 {
+                    return None;
+                }
+                let width = View::u16_be_at(data, payload + 3)?;
+                let height = View::u16_be_at(data, payload + 1)?;
+                let components = data[payload + 5];
+                let expected_length = 8usize.checked_add(3usize.checked_mul(components.into())?)?;
+                if width == 0
+                    || height == 0
+                    || components == 0
+                    || length != expected_length
+                    || frame.is_some()
+                {
+                    return None;
+                }
+                frame = Some((width, height, components));
+            }
+            in_entropy = marker == 0xda;
+            at = end;
         }
-        in_entropy = marker == 0xda;
-        at = end;
-    }
-    None
+        None
     })())
 }
 
@@ -537,8 +542,13 @@ fn jpeg_extent(
 /// storage type `0x0000_008e` breaking ties. An unresolved tie rejects E5
 /// selection.
 #[cfg(test)]
-pub(crate) fn e5_record_stream(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<Option<Range<usize>>, CodecError> {
-    let Some(body) = outer_body_range(data) else { return Ok(None) };
+pub(crate) fn e5_record_stream(
+    ctx: &DecodeContext<'_>,
+    data: &[u8],
+) -> Result<Option<Range<usize>>, CodecError> {
+    let Some(body) = outer_body_range(data) else {
+        return Ok(None);
+    };
     ctx.charge_work(u64_from_index(body.bytes().len()), "catia_e5_segment_scan")?;
     let mut markers = memchr::memmem::find_iter(body.bytes(), FINJPL_MARKER)
         .map(|relative| body.range.start + relative);
@@ -612,7 +622,9 @@ fn select_e5_record_stream(
     candidates: impl Iterator<Item = (Range<usize>, u32)>,
 ) -> Result<Option<Range<usize>>, CodecError> {
     ctx.charge_work(u64_from_index(data.len()), "catia_e5_preamble_scan")?;
-    let Some(preamble) = outer_preamble_range(data) else { return Ok(None) };
+    let Some(preamble) = outer_preamble_range(data) else {
+        return Ok(None);
+    };
     if coherent_e5_record_count(ctx, &data[preamble.clone()])? >= 10 {
         return Ok(Some(preamble));
     }
@@ -647,7 +659,11 @@ fn select_e5_record_stream(
             _ => {}
         }
     }
-    Ok(if tied { None } else { best.map(|(_, _, range)| range) })
+    Ok(if tied {
+        None
+    } else {
+        best.map(|(_, _, range)| range)
+    })
 }
 
 /// Count the longest declared-stride E5 walk in a bounded byte region.
@@ -698,7 +714,11 @@ pub(crate) fn all_e5_record_spans(data: &[u8]) -> impl Iterator<Item = Range<usi
     })
 }
 
-fn e5_record_walk_count(ctx: &DecodeContext<'_>, data: &[u8], start: usize) -> Result<(usize, usize), CodecError> {
+fn e5_record_walk_count(
+    ctx: &DecodeContext<'_>,
+    data: &[u8],
+    start: usize,
+) -> Result<(usize, usize), CodecError> {
     ctx.charge_work(u64_from_index(data.len() - start), "catia_e5_stride_walk")?;
     let mut count = 0;
     let mut position = start;
@@ -1037,7 +1057,10 @@ pub(crate) fn parse_stream_directory(
     if data.len() < inner_hdr::LEN {
         return Ok(None);
     }
-    ctx.charge_work(u64_from_index(data.len() - OUTER_MAGIC.len()), "catia_nested_magic_scan")?;
+    ctx.charge_work(
+        u64_from_index(data.len() - OUTER_MAGIC.len()),
+        "catia_nested_magic_scan",
+    )?;
     let Some((inner, dir_offset, b)) = (|| {
         let inner = find_from(data, OUTER_MAGIC, OUTER_MAGIC.len())?;
         let a = usize::try_from(View::u32_be_at(
@@ -1483,7 +1506,10 @@ fn parse_outer_container_declarations(
     if data.len() < 64 {
         return Ok(declarations);
     }
-    ctx.charge_work(u64_from_index(data.len()), "catia_container_declaration_scan")?;
+    ctx.charge_work(
+        u64_from_index(data.len()),
+        "catia_container_declaration_scan",
+    )?;
     for start in 0..data.len() - 64 {
         if data.get(start + 8..start + 12) != Some(HEADER)
             || data.get(start + 16..start + 24) != Some(PREFIX)
@@ -1492,13 +1518,19 @@ fn parse_outer_container_declarations(
             continue;
         }
         let strings_start = start + 40;
-        ctx.charge_work(u64_from_index(data.len() - strings_start), "catia_container_terminal_scan")?;
+        ctx.charge_work(
+            u64_from_index(data.len() - strings_start),
+            "catia_container_terminal_scan",
+        )?;
         let Some(relative_terminal) = memchr::memmem::find(&data[strings_start..], TERMINAL) else {
             continue;
         };
         let terminal = strings_start + relative_terminal;
         for _ in 0..2 {
-            ctx.charge_work(u64_from_index(relative_terminal), "catia_container_class_scan")?;
+            ctx.charge_work(
+                u64_from_index(relative_terminal),
+                "catia_container_class_scan",
+            )?;
         }
         let Some((class_name, base_class)) = declaration_class_pair(&data[strings_start..terminal])
         else {
@@ -1524,7 +1556,10 @@ fn parse_outer_container_declarations(
         )?;
         for descriptor in descriptors {
             for _ in 0..2 {
-                ctx.charge_work(u64_from_index(descriptor.name.len()), "catia_container_descriptor_lookup")?;
+                ctx.charge_work(
+                    u64_from_index(descriptor.name.len()),
+                    "catia_container_descriptor_lookup",
+                )?;
             }
         }
         let stream_name = match (
@@ -1728,7 +1763,9 @@ pub(crate) fn scan_bytes<'a>(
 ) -> Result<ContainerScan<'a>, CodecError> {
     let data = data.into();
     if data.get(..OUTER_MAGIC.len()) != Some(OUTER_MAGIC.as_slice()) {
-        return Err(CodecError::WrongFormat("missing V5_CFV2 container magic".to_owned()));
+        return Err(CodecError::WrongFormat(
+            "missing V5_CFV2 container magic".to_owned(),
+        ));
     }
     let outer_dir_offset = View::u32_be_at(&data, outer_hdr::DIRECTORY_OFFSET)
         .ok_or_else(|| CodecError::malformed("truncated outer directory offset"))?;

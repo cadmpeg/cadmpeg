@@ -79,11 +79,18 @@ impl UnionFind<'_> {
     }
 
     /// Returns the representative of `node`, compressing its admitted path.
-    pub(crate) fn find(&mut self, ctx: &DecodeContext<'_>, mut node: usize) -> Result<usize, CodecError> {
+    pub(crate) fn find(
+        &mut self,
+        ctx: &DecodeContext<'_>,
+        mut node: usize,
+    ) -> Result<usize, CodecError> {
         let root = self.root(ctx, node)?;
         while node != root {
             ctx.charge_work(2, "catia_union_compression")?;
-            let slot = self.parents.get_mut(node).ok_or_else(|| CodecError::malformed("union node is outside its forest"))?;
+            let slot = self
+                .parents
+                .get_mut(node)
+                .ok_or_else(|| CodecError::malformed("union node is outside its forest"))?;
             let parent = *slot;
             *slot = root;
             node = parent;
@@ -92,22 +99,39 @@ impl UnionFind<'_> {
     }
 
     /// Returns the representative without changing the forest.
-    pub(super) fn root(&self, ctx: &DecodeContext<'_>, mut node: usize) -> Result<usize, CodecError> {
+    pub(super) fn root(
+        &self,
+        ctx: &DecodeContext<'_>,
+        mut node: usize,
+    ) -> Result<usize, CodecError> {
         loop {
             ctx.charge_work(1, "catia_union_traversal")?;
-            let parent = *self.parents.get(node).ok_or_else(|| CodecError::malformed("union node is outside its forest"))?;
-            if parent == node { return Ok(node); }
+            let parent = *self
+                .parents
+                .get(node)
+                .ok_or_else(|| CodecError::malformed("union node is outside its forest"))?;
+            if parent == node {
+                return Ok(node);
+            }
             node = parent;
         }
     }
 
     /// Merges the sets containing two nodes admitted against this forest.
-    pub(crate) fn union(&mut self, ctx: &DecodeContext<'_>, left: usize, right: usize) -> Result<(), CodecError> {
+    pub(crate) fn union(
+        &mut self,
+        ctx: &DecodeContext<'_>,
+        left: usize,
+        right: usize,
+    ) -> Result<(), CodecError> {
         let left = self.find(ctx, left)?;
         let right = self.find(ctx, right)?;
         if left != right {
             ctx.charge_work(1, "catia_union_link")?;
-            *self.parents.get_mut(right).ok_or_else(|| CodecError::malformed("union root is outside its forest"))? = left;
+            *self
+                .parents
+                .get_mut(right)
+                .ok_or_else(|| CodecError::malformed("union root is outside its forest"))? = left;
         }
         Ok(())
     }
@@ -138,7 +162,11 @@ mod tests {
             .expect("fixture fits the input limit");
         let mut union = UnionFind::charged(&ctx, 2, "catia_union_test_parents")
             .expect("service resource budget");
-        assert_eq!(crate::test_support::with_service_context(|ctx| union.find(ctx, 1)).expect("service forest traversal"), 1);
+        assert_eq!(
+            crate::test_support::with_service_context(|ctx| union.find(ctx, 1))
+                .expect("service forest traversal"),
+            1
+        );
 
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
@@ -229,29 +257,67 @@ mod tests {
         const LAST: usize = 100_000;
         let mut union = UnionFind::new(LAST + 1);
         for node in 0..LAST {
-            crate::test_support::with_service_context(|ctx| union.union(ctx, node + 1, node)).expect("service forest traversal");
+            crate::test_support::with_service_context(|ctx| union.union(ctx, node + 1, node))
+                .expect("service forest traversal");
         }
-        assert_eq!(crate::test_support::with_service_context(|ctx| union.root(ctx, 0)).expect("service forest traversal"), LAST);
-        assert_eq!(crate::test_support::with_service_context(|ctx| union.find(ctx, 0)).expect("service forest traversal"), LAST);
+        assert_eq!(
+            crate::test_support::with_service_context(|ctx| union.root(ctx, 0))
+                .expect("service forest traversal"),
+            LAST
+        );
+        assert_eq!(
+            crate::test_support::with_service_context(|ctx| union.find(ctx, 0))
+                .expect("service forest traversal"),
+            LAST
+        );
         assert!(union.parents.iter().all(|parent| *parent == LAST));
         let separate = union.push();
-        assert_eq!(crate::test_support::with_service_context(|ctx| union.find(ctx, separate)).expect("service forest traversal"), separate);
-        assert_ne!(crate::test_support::with_service_context(|ctx| union.find(ctx, 0)).expect("service forest traversal"), separate);
-        crate::test_support::with_service_context(|ctx| union.union(ctx, separate, 0)).expect("service forest traversal");
-        assert_eq!(crate::test_support::with_service_context(|ctx| union.find(ctx, 0)).expect("service forest traversal"), separate);
-        assert_eq!(crate::test_support::with_service_context(|ctx| union.find(ctx, LAST)).expect("service forest traversal"), separate);
-        assert_eq!(crate::test_support::with_service_context(|ctx| union.root(ctx, separate)).expect("service forest traversal"), separate);
+        assert_eq!(
+            crate::test_support::with_service_context(|ctx| union.find(ctx, separate))
+                .expect("service forest traversal"),
+            separate
+        );
+        assert_ne!(
+            crate::test_support::with_service_context(|ctx| union.find(ctx, 0))
+                .expect("service forest traversal"),
+            separate
+        );
+        crate::test_support::with_service_context(|ctx| union.union(ctx, separate, 0))
+            .expect("service forest traversal");
+        assert_eq!(
+            crate::test_support::with_service_context(|ctx| union.find(ctx, 0))
+                .expect("service forest traversal"),
+            separate
+        );
+        assert_eq!(
+            crate::test_support::with_service_context(|ctx| union.find(ctx, LAST))
+                .expect("service forest traversal"),
+            separate
+        );
+        assert_eq!(
+            crate::test_support::with_service_context(|ctx| union.root(ctx, separate))
+                .expect("service forest traversal"),
+            separate
+        );
     }
     #[test]
     fn union_traversal_refuses_before_walking_a_long_chain() {
         let mut union = UnionFind::new(32);
         crate::test_support::with_service_context(|ctx| {
-            for node in 0..31 { union.union(ctx, node + 1, node).expect("service merge"); }
+            for node in 0..31 {
+                union.union(ctx, node + 1, node).expect("service merge");
+            }
         });
-        let refusal = crate::test_support::with_work_limit(4, |ctx| union.find(ctx, 0)).expect_err("chain exceeds work");
-        let cadmpeg_core::CodecError::ResourceLimit(limit) = refusal else { panic!("work refusal") };
+        let refusal = crate::test_support::with_work_limit(4, |ctx| union.find(ctx, 0))
+            .expect_err("chain exceeds work");
+        let cadmpeg_core::CodecError::ResourceLimit(limit) = refusal else {
+            panic!("work refusal")
+        };
         assert_eq!(limit.operation, "catia_union_traversal");
-        assert_eq!(limit.dimension, cadmpeg_core::decode::ResourceDimension::WorkUnits);
+        assert_eq!(
+            limit.dimension,
+            cadmpeg_core::decode::ResourceDimension::WorkUnits
+        );
         assert_eq!(union.parents[0], 1);
     }
 
@@ -259,15 +325,26 @@ mod tests {
     fn union_nodes_are_admitted_against_each_forest() {
         crate::test_support::with_service_context(|ctx| {
             let mut empty = UnionFind::new(0);
-            assert!(matches!(empty.find(ctx, 0), Err(cadmpeg_core::CodecError::Malformed(_))));
-            assert!(matches!(empty.root(ctx, 0), Err(cadmpeg_core::CodecError::Malformed(_))));
-            assert!(matches!(empty.union(ctx, 0, 0), Err(cadmpeg_core::CodecError::Malformed(_))));
+            assert!(matches!(
+                empty.find(ctx, 0),
+                Err(cadmpeg_core::CodecError::Malformed(_))
+            ));
+            assert!(matches!(
+                empty.root(ctx, 0),
+                Err(cadmpeg_core::CodecError::Malformed(_))
+            ));
+            assert!(matches!(
+                empty.union(ctx, 0, 0),
+                Err(cadmpeg_core::CodecError::Malformed(_))
+            ));
             let mut small = UnionFind::new(1);
             let large = UnionFind::new(2);
             let foreign = large.root(ctx, 1).expect("large node");
-            assert!(matches!(small.find(ctx, foreign), Err(cadmpeg_core::CodecError::Malformed(_))));
+            assert!(matches!(
+                small.find(ctx, foreign),
+                Err(cadmpeg_core::CodecError::Malformed(_))
+            ));
             assert_eq!(small.root(ctx, 0).expect("own node"), 0);
         });
     }
-
 }
