@@ -1945,23 +1945,28 @@ pub(super) fn project(
     ctx: &DecodeContext<'_>,
     sequences: &mut super::geometry::SourceSequences,
 ) -> Result<(ProjectionOutcome, Vec<BoundaryVertexDerivation>), CodecError> {
+    let mut lookup_storage = ctx.reserve_scoped(0, "IGES projection source lookup")?;
     let mut records = BTreeMap::new();
     for record in parameters {
-        ctx.insert_btree_map(
-            &mut records,
-            record.directory_sequence,
-            record,
-            "iges trimming parameter index",
-        )?;
+        lookup_storage.with_storage(|| {
+            ctx.insert_btree_map(
+                &mut records,
+                record.directory_sequence,
+                record,
+                "iges trimming parameter index",
+            )
+        })?;
     }
     let mut entries = BTreeMap::new();
     for entry in directory {
-        ctx.insert_btree_map(
-            &mut entries,
-            entry.sequence,
-            entry,
-            "iges trimming directory index",
-        )?;
+        lookup_storage.with_storage(|| {
+            ctx.insert_btree_map(
+                &mut entries,
+                entry.sequence,
+                entry,
+                "iges trimming directory index",
+            )
+        })?;
     }
     let mut decoded = BTreeSet::new();
     let mut losses = Vec::new();
@@ -1974,9 +1979,13 @@ pub(super) fn project(
     let mut edges_by_curve = BTreeMap::<&CurveId, Vec<&Edge>>::new();
     for edge in &ir.model.edges {
         if let Some(curve) = edge.curve() {
-            ctx.admit_btree_entry(&edges_by_curve, &curve, "iges boundary carrier index nodes")?;
+            lookup_storage.with_storage(|| {
+                ctx.admit_btree_entry(&edges_by_curve, &curve, "iges boundary carrier index nodes")
+            })?;
             let group = edges_by_curve.entry(curve).or_default();
-            ctx.reserve_vec(group, 1, "iges boundary carrier edge references")?;
+            lookup_storage.with_storage(|| {
+                ctx.reserve_vec(group, 1, "iges boundary carrier edge references")
+            })?;
             group.push(edge);
         }
     }

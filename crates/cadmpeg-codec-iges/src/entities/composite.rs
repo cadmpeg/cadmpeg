@@ -2062,6 +2062,7 @@ fn anchor_analytic_nurbs_endpoint_poles(
 fn project_native_composite(
     ir: &mut CadIr,
     index: &mut CompositeIndex,
+    index_storage: &mut cadmpeg_core::decode::ScopedReservation<'_>,
     entry: &DirectoryEntry,
     child_curves: &[CurveId],
     join_tolerance: f64,
@@ -2074,8 +2075,10 @@ fn project_native_composite(
     {
         return Ok(None);
     }
-    let mut endpoints =
-        ctx.collection_vec(child_curves.len(), "iges composite native endpoints")?;
+    let mut endpoint_storage = ctx.reserve_scoped(0, "IGES composite native endpoint storage")?;
+    let mut endpoints = endpoint_storage.with_storage(|| {
+        ctx.collection_vec(child_curves.len(), "iges composite native endpoints")
+    })?;
     for curve_id in child_curves {
         let Some(endpoint) = curve_endpoints(ctx, ir, curve_id, index, join_tolerance)? else {
             return Ok(None);
@@ -2180,18 +2183,21 @@ fn project_native_composite(
         end: end_vertex.try_clone_for_decode(ctx, "iges composite projection identity copy")?,
         tolerance: None,
     });
-    index.add_model_entity(
-        &curve_id,
-        ir.model.curves.len() - 1,
-        CompositeEdge {
-            start: start_vertex
-                .try_clone_for_decode(ctx, "iges composite projection identity copy")?,
-            end: end_vertex.try_clone_for_decode(ctx, "iges composite projection identity copy")?,
-            param_range: None,
-        },
-        [(start_vertex, start), (end_vertex, end)],
-        ctx,
-    )?;
+    index_storage.with_storage(|| {
+        index.add_model_entity(
+            &curve_id,
+            ir.model.curves.len() - 1,
+            CompositeEdge {
+                start: start_vertex
+                    .try_clone_for_decode(ctx, "iges composite projection identity copy")?,
+                end: end_vertex
+                    .try_clone_for_decode(ctx, "iges composite projection identity copy")?,
+                param_range: None,
+            },
+            [(start_vertex, start), (end_vertex, end)],
+            ctx,
+        )
+    })?;
     Ok(Some(edge_id))
 }
 
@@ -2234,6 +2240,7 @@ impl fmt::Display for CompositeRefusal {
 fn project_degraded_composite(
     ir: &mut CadIr,
     index: &mut CompositeIndex,
+    index_storage: &mut cadmpeg_core::decode::ScopedReservation<'_>,
     carrier: CompositeCarrier<'_>,
     reason: impl fmt::Display,
     ctx: &DecodeContext<'_>,
@@ -2243,6 +2250,7 @@ fn project_degraded_composite(
     let edge = project_native_composite(
         ir,
         index,
+        index_storage,
         carrier.entry,
         carrier.child_curves,
         carrier.join_tolerance,
@@ -2325,23 +2333,28 @@ fn project_with_type_130_policy(
     sequences: &mut super::geometry::SourceSequences,
     only_type_130_children: bool,
 ) -> Result<WireProjectionOutcome, CodecError> {
+    let mut lookup_storage = ctx.reserve_scoped(0, "IGES projection source lookup")?;
     let mut records = BTreeMap::new();
     for record in parameters {
-        ctx.insert_btree_map(
-            &mut records,
-            record.directory_sequence,
-            record,
-            "iges composite parameter index",
-        )?;
+        lookup_storage.with_storage(|| {
+            ctx.insert_btree_map(
+                &mut records,
+                record.directory_sequence,
+                record,
+                "iges composite parameter index",
+            )
+        })?;
     }
     let mut entries = BTreeMap::new();
     for entry in directory {
-        ctx.insert_btree_map(
-            &mut entries,
-            entry.sequence,
-            entry,
-            "iges composite directory index",
-        )?;
+        lookup_storage.with_storage(|| {
+            ctx.insert_btree_map(
+                &mut entries,
+                entry.sequence,
+                entry,
+                "iges composite directory index",
+            )
+        })?;
     }
     let mut decoded = BTreeSet::new();
     let mut losses = Vec::new();
@@ -2601,6 +2614,7 @@ fn project_with_type_130_policy(
             let edge = project_degraded_composite(
                 ir,
                 &mut index,
+                &mut index_storage,
                 carrier,
                 reason,
                 ctx,
@@ -2626,6 +2640,7 @@ fn project_with_type_130_policy(
                 let edge = project_degraded_composite(
                     ir,
                     &mut index,
+                    &mut index_storage,
                     carrier,
                     // The error names its own cause: a carrier the IR
                     // refuses, or a child that does not raise to the
@@ -2659,6 +2674,7 @@ fn project_with_type_130_policy(
             let edge = project_degraded_composite(
                 ir,
                 &mut index,
+                &mut index_storage,
                 carrier,
                 "child endpoints do not join within the Global minimum resolution",
                 ctx,
@@ -2685,6 +2701,7 @@ fn project_with_type_130_policy(
             let edge = project_degraded_composite(
                 ir,
                 &mut index,
+                &mut index_storage,
                 carrier,
                 "its start cannot be evaluated",
                 ctx,
@@ -2710,6 +2727,7 @@ fn project_with_type_130_policy(
             let edge = project_degraded_composite(
                 ir,
                 &mut index,
+                &mut index_storage,
                 carrier,
                 "its end cannot be evaluated",
                 ctx,
@@ -2796,19 +2814,21 @@ fn project_with_type_130_policy(
             end: end_vertex.try_clone_for_decode(ctx, "iges composite projection identity copy")?,
             tolerance: None,
         });
-        index.add_model_entity(
-            &curve_id,
-            ir.model.curves.len() - 1,
-            CompositeEdge {
-                start: start_vertex
-                    .try_clone_for_decode(ctx, "iges composite projection identity copy")?,
-                end: end_vertex
-                    .try_clone_for_decode(ctx, "iges composite projection identity copy")?,
-                param_range: Some([0.0, cursor]),
-            },
-            [(start_vertex, start), (end_vertex, end)],
-            ctx,
-        )?;
+        index_storage.with_storage(|| {
+            index.add_model_entity(
+                &curve_id,
+                ir.model.curves.len() - 1,
+                CompositeEdge {
+                    start: start_vertex
+                        .try_clone_for_decode(ctx, "iges composite projection identity copy")?,
+                    end: end_vertex
+                        .try_clone_for_decode(ctx, "iges composite projection identity copy")?,
+                    param_range: Some([0.0, cursor]),
+                },
+                [(start_vertex, start), (end_vertex, end)],
+                ctx,
+            )
+        })?;
         let component_count = segments.preceding.len().checked_add(1).ok_or_else(|| {
             refuse_local_limit("iges composite procedural components", u64::MAX, 1)
         })?;
