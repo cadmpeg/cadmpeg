@@ -321,7 +321,7 @@ fn support_uv_lane_matches_surface_with_budget(
         if uv.iter().any(|value| missing_support_parameter(*value)) {
             return Ok(false);
         }
-        let Some(uv) = surface_parameters(geometry, **uv) else {
+        let Some(uv) = surface_parameters(geometry_budget.charges, geometry, **uv)? else {
             return Ok(false);
         };
         let Some(candidate) = decoded_surface_point_with_geometry_and_budget(
@@ -603,23 +603,26 @@ fn pcurve_control_point_seed(pcurve: Option<&PcurveGeometry>, index: usize) -> O
 }
 
 fn serialized_support_uv_seed_candidates(
+    ctx: &DecodeContext<'_>,
     geometry: &SurfaceGeometry,
     serialized: &SerializedSupportUv,
     side: usize,
     point_index: usize,
-) -> [Option<Point2>; 4] {
+) -> Result<[Option<Point2>; 4], cadmpeg_core::decode::ResourceLimit> {
     let lane_order = [side, 1 - side];
-    std::array::from_fn(|candidate| {
-        let lanes = if candidate < 2 {
-            &serialized.values
-        } else {
-            &serialized.ext11
-        };
+    let mut candidates = [None; 4];
+    for (candidate, output) in candidates.iter_mut().enumerate() {
+        let lanes = if candidate < 2 { &serialized.values } else { &serialized.ext11 };
         let lane = lane_order[candidate % 2];
-        let [u, v] = **lanes[lane].as_deref()?.get(point_index)?;
-        (!missing_support_parameter(u) && !missing_support_parameter(v))
-            .then(|| surface_parameters(geometry, [u, v]).map(FinitePoint2::get))?
-    })
+        let Some(uv) = lanes[lane].as_deref().and_then(|lane| lane.get(point_index)) else {
+            continue;
+        };
+        let [u, v] = **uv;
+        if !missing_support_parameter(u) && !missing_support_parameter(v) {
+            *output = surface_parameters(ctx, geometry, [u, v])?.map(FinitePoint2::get);
+        }
+    }
+    Ok(candidates)
 }
 
 fn ordered_support_uv_seed_candidates(
@@ -691,23 +694,29 @@ fn unseeded_nurbs_surface_parameters_with_index_and_budget(
 }
 
 fn serialized_support_uv_seed_for_side(
+    ctx: &DecodeContext<'_>,
     geometry: &SurfaceGeometry,
     serialized: &SerializedSupportUv,
     side: usize,
-) -> Option<Point2> {
+) -> Result<Option<Point2>, cadmpeg_core::decode::ResourceLimit> {
     let lane_order = [side, 1 - side];
-    [
+    for (lanes, lane) in [
         (&serialized.values, lane_order[0]),
         (&serialized.ext11, lane_order[0]),
         (&serialized.ext11, lane_order[1]),
         (&serialized.values, lane_order[1]),
-    ]
-    .into_iter()
-    .find_map(|(lanes, lane)| {
-        let [u, v] = **lanes[lane].as_deref()?.first()?;
-        (!missing_support_parameter(u) && !missing_support_parameter(v))
-            .then(|| surface_parameters(geometry, [u, v]).map(FinitePoint2::get))?
-    })
+    ] {
+        let Some(uv) = lanes[lane].as_deref().and_then(|lane| lane.first()) else {
+            continue;
+        };
+        let [u, v] = **uv;
+        if !missing_support_parameter(u) && !missing_support_parameter(v) {
+            if let Some(point) = surface_parameters(ctx, geometry, [u, v])? {
+                return Ok(Some(point.get()));
+            }
+        }
+    }
+    Ok(None)
 }
 
 #[cfg(test)]
@@ -800,7 +809,7 @@ pub(super) fn complete_ext11_support_uv_with_budget(
             )?;
             let mut valid = true;
             for uv in values.iter() {
-                if let Some(point) = surface_parameters(surface_geometry, **uv) {
+                if let Some(point) = surface_parameters(ctx, surface_geometry, **uv)? {
                     controls.push(point.get());
                 } else {
                     valid = false;
@@ -1355,11 +1364,12 @@ fn complete_support_uv_wave(
                             return Ok(None);
                         }
                         let serialized_seeds = serialized_support_uv_seed_candidates(
+                            ctx,
                             &surface.geometry,
                             serialized,
                             side,
                             point_index,
-                        );
+                        )?;
                         let continuation_seed = uv.last().copied();
                         let retained_pcurve_seed = pcurve_control_point_seed(
                             context.sides()[side]
@@ -1998,17 +2008,16 @@ fn complete_coupled_support_uv(
             }
             break;
         }
-        let seeds = std::array::from_fn(|side| {
+        let mut seeds = [None; 2];
+        for (side, seed) in seeds.iter_mut().enumerate() {
             let support = &context.sides()[side];
-            pcurve_control_point_seed(support.pcurve.as_ref().map(|pcurve| &pcurve.geometry), 0)
-                .or_else(|| {
-                    model_index
-                        .surfaces(surfaces[side].as_str())
-                        .and_then(|surface| {
-                            serialized_support_uv_seed_for_side(&surface.geometry, serialized, side)
-                        })
-                })
-        });
+            *seed = pcurve_control_point_seed(support.pcurve.as_ref().map(|pcurve| &pcurve.geometry), 0);
+            if seed.is_none() {
+                if let Some(surface) = model_index.surfaces(surfaces[side].as_str()) {
+                    *seed = serialized_support_uv_seed_for_side(ctx, &surface.geometry, serialized, side)?;
+                }
+            }
+        }
         let parent_geometry_budget = geometry_budget;
         let lane_geometry_budget =
             parent_geometry_budget.child_slice(support_uv_lane_geometry_work_limit(
@@ -2876,6 +2885,43 @@ mod tests {
     use cadmpeg_ir::ids::SurfaceId;
     use cadmpeg_ir::math::Point2;
     use cadmpeg_ir::math::Point3;
+
+    #[test]
+    fn serialized_support_seed_selection_preserves_surface_walk_refusals() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+        use cadmpeg_ir::geometry::analytic::PlaneSurface;
+        use cadmpeg_ir::math::Vector3;
+
+        let surface = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(PlaneSurface::try_new(
+            Point3::new(0., 0., 0.), Vector3::new(0., 0., 1.), Vector3::new(1., 0., 0.)).expect("plane")));
+        let source = super::SerializedSupportUv::from_values([Some(vec![[1., 2.]]), Some(vec![[3., 4.]])]);
+        for cap in 0..2 {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+            let limit = super::serialized_support_uv_seed_candidates(&ctx, &surface, &source, 0, 0)
+                .expect_err("first and later candidate work refusals propagate");
+            assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+            assert!(matches!(ctx.finish_session(), Err(cadmpeg_core::CodecError::ResourceLimit(sticky)) if sticky == limit));
+        }
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+        let limit = super::serialized_support_uv_seed_for_side(&ctx, &surface, &source, 0)
+            .expect_err("seed absence does not replace resource refusal");
+        assert!(matches!(ctx.finish_session(), Err(cadmpeg_core::CodecError::ResourceLimit(sticky)) if sticky == limit));
+
+        let arena = DecodeArena::new();
+        policy.limits.max_work_units = 3;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+        assert_eq!(super::serialized_support_uv_seed_candidates(&ctx, &surface, &source, 0, 0).expect("two candidates"),
+            [Some(Point2::new(1000., 2000.)), Some(Point2::new(3000., 4000.)), None, None]);
+        assert_eq!(super::serialized_support_uv_seed_for_side(&ctx, &surface, &source, 0).expect("first seed"),
+            Some(Point2::new(1000., 2000.)));
+        ctx.finish_session().expect("exact candidate visits");
+    }
 
     fn attach_empty_model_under_policy(
         adjust: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
