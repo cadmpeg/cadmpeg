@@ -22,7 +22,7 @@ pub(crate) fn collect<'tcx>(tcx: TyCtxt<'tcx>, owners: &[LocalDefId]) -> Vec<Ins
         }
         let mut findings = Findings::default();
         Collector {
-            analysis: Analysis { tcx, typeck: tcx.typeck(*owner), owner: *owner,
+            analysis: Analysis { tcx, typeck: tcx.typeck(*owner), typing_owner: *owner,
                 arguments: None, flow: flow::Flow::default(), findings: &mut findings },
             caller: *owner,
             origin: None,
@@ -43,8 +43,18 @@ struct Collector<'a, 'b, 'tcx> {
 
 impl<'tcx> Visitor<'tcx> for Collector<'_, '_, 'tcx> {
     fn visit_expr(&mut self, expression: &'tcx Expr<'tcx>) {
-        if let Some((definition, _)) = self.analysis.call(expression) {
-            if let Some(instance) = self.analysis.resolved_instance(expression, definition) {
+        let closure_type = match expression.kind {
+            ExprKind::Call(callee, _) => Some(self.analysis.expr_ty(callee)),
+            ExprKind::Closure(_) => Some(self.analysis.expr_ty(expression)),
+            _ => None,
+        };
+        let instance = closure_type.and_then(|value| match value.peel_refs().kind() {
+            rustc_middle::ty::Closure(definition, args) => Some(Instance {
+                def: rustc_middle::ty::InstanceKind::Item(*definition), args }),
+            _ => None,
+        }).or_else(|| self.analysis.call(expression).and_then(|(definition, _)|
+            self.analysis.resolved_instance(expression, definition)));
+        if let Some(instance) = instance {
                 if self.analysis.checked_body(instance.def_id())
                     && instance.args.iter().any(|argument| !matches!(argument.kind(), rustc_middle::ty::GenericArgKind::Lifetime(_))) && !instance.args.has_non_region_param()
                     && self.seen.insert(instance) {
@@ -56,7 +66,7 @@ impl<'tcx> Visitor<'tcx> for Collector<'_, '_, 'tcx> {
                         let limit = tcx.recursion_limit().0;
                         if self.seen.len() <= limit {
                             Collector {
-                                analysis: Analysis { tcx, typeck: tcx.typeck(local), owner: local,
+                                analysis: Analysis { tcx, typeck: tcx.typeck(local), typing_owner: self.caller,
                                     arguments: Some(instance.args), flow: flow::Flow::default(),
                                     findings: self.analysis.findings },
                                 caller: self.caller, origin: Some(span), seen: self.seen.clone(),
@@ -64,8 +74,8 @@ impl<'tcx> Visitor<'tcx> for Collector<'_, '_, 'tcx> {
                             }.visit_body(tcx.hir_body_owned_by(local));
                         }
                     }
+                    self.seen.remove(&instance);
                 }
-            }
         }
         if !matches!(expression.kind, ExprKind::Closure(_)) {
             walk_expr(self, expression);
@@ -80,7 +90,7 @@ pub(crate) fn check_imported<'tcx>(tcx: TyCtxt<'tcx>, root: &Instantiation<'tcx>
         if !seen.insert(instance) {
             continue;
         }
-        let mut reporter = Analysis { tcx, typeck: tcx.typeck(root.caller), owner: root.caller,
+        let mut reporter = Analysis { tcx, typeck: tcx.typeck(root.caller), typing_owner: root.caller,
             arguments: None, flow: flow::Flow::default(), findings };
         if seen.len() > tcx.recursion_limit().0 || !tcx.is_mir_available(instance.def_id()) {
             reporter.report(root.span, "unproven_decode_charge", "generic instantiations cannot be enumerated: checked dependency body unavailable or recursion limit reached");
@@ -104,7 +114,12 @@ pub(crate) fn check_imported<'tcx>(tcx: TyCtxt<'tcx>, root: &Instantiation<'tcx>
                 reporter.report(root.span, "unproven_decode_charge", "generic instantiation has late-bound arguments");
                 continue;
             };
-            let resolved = Instance::try_resolve(tcx, rustc_middle::ty::TypingEnv::fully_monomorphized(),
+            let Ok(arguments) = tcx.try_normalize_erasing_regions(reporter.typing_env(),
+                rustc_middle::ty::Unnormalized::new_wip(arguments)) else {
+                reporter.report(root.span, "unproven_decode_charge", "generic instantiation arguments cannot be normalized");
+                continue;
+            };
+            let resolved = Instance::try_resolve(tcx, reporter.typing_env(),
                 *definition, arguments).ok().flatten();
             let Some(resolved) = resolved else {
                 reporter.report(root.span, "unproven_decode_charge", &format!("generic instantiation unresolved: {concrete}"));

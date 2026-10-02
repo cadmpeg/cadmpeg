@@ -1,25 +1,20 @@
 // SPDX-License-Identifier: Apache-2.0
 use crate::{types, Analysis};
 use rustc_hir::{Expr, ExprKind};
-use rustc_middle::ty::{self, Instance, TypingEnv};
+use rustc_middle::ty::{self, Instance};
 use rustc_span::def_id::DefId;
 
 impl<'tcx> Analysis<'_, 'tcx> {
     fn call_arguments(&self, expression: &'tcx Expr<'tcx>) -> Option<ty::GenericArgsRef<'tcx>> {
-        match expression.kind {
+        let arguments = match expression.kind {
             ExprKind::Call(callee, _) => match self.expr_ty(callee).kind() {
-                ty::FnDef(_, args) => self
-                    .tcx
-                    .try_normalize_erasing_regions(
-                        TypingEnv::post_analysis(self.tcx, self.owner),
-                        ty::Unnormalized::new_wip(*args),
-                    )
-                    .ok()?
-                    .no_bound_vars(),
-                _ => None,
+                ty::FnDef(_, arguments) => arguments.no_bound_vars()?,
+                _ => return None,
             },
-            _ => Some(self.substitute(self.typeck.node_args(expression.hir_id))),
-        }
+            _ => self.substitute(self.typeck.node_args(expression.hir_id)),
+        };
+        self.tcx.try_normalize_erasing_regions(self.typing_env(),
+            ty::Unnormalized::new_wip(arguments)).ok()
     }
 
     pub(crate) fn resolved_instance(&self, expression: &'tcx Expr<'tcx>, definition: DefId)
@@ -28,7 +23,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
         if args.len() != self.tcx.generics_of(definition).count() {
             return None;
         }
-        Instance::try_resolve(self.tcx, TypingEnv::post_analysis(self.tcx, self.owner),
+        Instance::try_resolve(self.tcx, self.typing_env(),
             definition, args).ok().flatten()
     }
 
@@ -48,7 +43,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
                 Some(local) => crate::production(self.tcx, local)
                     && self.tcx.hir_maybe_body_owned_by(local).is_some(),
                 None => matches!(self.tcx.def_kind(definition),
-                    rustc_hir::def::DefKind::Fn | rustc_hir::def::DefKind::AssocFn)
+                    rustc_hir::def::DefKind::Fn | rustc_hir::def::DefKind::AssocFn | rustc_hir::def::DefKind::Closure)
                     && self.tcx.trait_of_assoc(definition).is_none(),
             }
     }
@@ -106,9 +101,13 @@ impl<'tcx> Analysis<'_, 'tcx> {
                 .collect();
             if let Ok(Some(instance)) = Instance::try_resolve(
                 self.tcx,
-                TypingEnv::post_analysis(self.tcx, self.owner),
+                self.typing_env(),
                 definition,
-                self.tcx.mk_args(&peeled),
+                match self.tcx.try_normalize_erasing_regions(self.typing_env(),
+                    ty::Unnormalized::new_wip(self.tcx.mk_args(&peeled))) {
+                    Ok(arguments) => arguments,
+                    Err(_) => return None,
+                },
             ) {
                 implementation = instance.def_id();
             }
@@ -147,7 +146,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
         let projection = ty::Ty::new_projection(self.tcx, ty::IsRigid::No, item.def_id, [value]);
         self.tcx
             .try_normalize_erasing_regions(
-                TypingEnv::post_analysis(self.tcx, self.owner),
+                self.typing_env(),
                 ty::Unnormalized::new_wip(projection),
             )
             .ok()
@@ -171,10 +170,13 @@ impl<'tcx> Analysis<'_, 'tcx> {
         else {
             return types::Shape::Unknown;
         };
-        let args = self.tcx.mk_args(&[value.into()]);
+        let Ok(args) = self.tcx.try_normalize_erasing_regions(self.typing_env(),
+            ty::Unnormalized::new_wip(self.tcx.mk_args(&[value.into()]))) else {
+            return types::Shape::Unknown;
+        };
         match Instance::try_resolve(
             self.tcx,
-            TypingEnv::post_analysis(self.tcx, self.owner),
+            self.typing_env(),
             method.def_id,
             args,
         ) {

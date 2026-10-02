@@ -48,7 +48,7 @@ impl Callbacks for DecodeCallbacks {
                 Analysis {
                     tcx,
                     typeck: tcx.typeck(owner),
-                    owner,
+                    typing_owner: owner,
                     arguments: None,
                     flow: flow::Flow::default(),
                     findings: &mut findings,
@@ -62,7 +62,7 @@ impl Callbacks for DecodeCallbacks {
         let mut unresolved = HashMap::<LocalDefId, BTreeSet<_>>::new();
         for instantiation in instantiations {
             if !instantiation.enumerated {
-                Analysis { tcx, typeck: tcx.typeck(instantiation.caller), owner: instantiation.caller,
+                Analysis { tcx, typeck: tcx.typeck(instantiation.caller), typing_owner: instantiation.caller,
                     arguments: None, flow: flow::Flow::default(), findings: &mut self.findings }
                     .report(instantiation.span, "unproven_decode_charge", "generic instantiations exceed the compiler recursion limit");
                 continue;
@@ -72,7 +72,7 @@ impl Callbacks for DecodeCallbacks {
                 continue;
             };
             let mut concrete = Findings::default();
-            Analysis { tcx, typeck: tcx.typeck(local), owner: local,
+            Analysis { tcx, typeck: tcx.typeck(local), typing_owner: instantiation.caller,
                 arguments: Some(instantiation.instance.args), flow: flow::Flow::default(),
                 findings: &mut concrete }.visit_body(tcx.hir_body_owned_by(local));
             if let Some(symbolic) = bodies.get(&local) {
@@ -86,7 +86,7 @@ impl Callbacks for DecodeCallbacks {
                     }
                     let types = instantiation.instance.args.types().map(|value| value.to_string())
                         .collect::<Vec<_>>().join(", ");
-                    Analysis { tcx, typeck: tcx.typeck(instantiation.caller), owner: instantiation.caller,
+                    Analysis { tcx, typeck: tcx.typeck(instantiation.caller), typing_owner: instantiation.caller,
                         arguments: None, flow: flow::Flow::default(), findings: &mut self.findings }
                         .report(instantiation.span, &key.4, &format!("concrete instantiation <{types}> of {}: {}",
                             tcx.def_path_str(local), messages.into_iter().collect::<Vec<_>>().join("; ")));
@@ -183,13 +183,17 @@ fn production(tcx: TyCtxt<'_>, owner: LocalDefId) -> bool {
 struct Analysis<'a, 'tcx> {
     tcx: TyCtxt<'tcx>,
     typeck: &'tcx TypeckResults<'tcx>,
-    owner: LocalDefId,
+    typing_owner: LocalDefId,
     arguments: Option<rustc_middle::ty::GenericArgsRef<'tcx>>,
     flow: flow::Flow,
     findings: &'a mut Findings,
 }
 
 impl<'tcx> Analysis<'_, 'tcx> {
+    fn typing_env(&self) -> rustc_middle::ty::TypingEnv<'tcx> {
+        rustc_middle::ty::TypingEnv::post_analysis(self.tcx, self.typing_owner)
+    }
+
     fn substitute<T>(&self, value: T) -> T
     where T: rustc_middle::ty::TypeFoldable<TyCtxt<'tcx>> + Copy {
         self.arguments.map_or(value, |arguments|
@@ -197,11 +201,15 @@ impl<'tcx> Analysis<'_, 'tcx> {
     }
 
     fn expr_ty(&self, expression: &Expr<'tcx>) -> rustc_middle::ty::Ty<'tcx> {
-        self.substitute(self.typeck.expr_ty(expression))
+        let value = self.substitute(self.typeck.expr_ty(expression));
+        self.tcx.try_normalize_erasing_regions(self.typing_env(),
+            rustc_middle::ty::Unnormalized::new_wip(value)).unwrap_or(value)
     }
 
     fn expr_ty_adjusted(&self, expression: &Expr<'tcx>) -> rustc_middle::ty::Ty<'tcx> {
-        self.substitute(self.typeck.expr_ty_adjusted(expression))
+        let value = self.substitute(self.typeck.expr_ty_adjusted(expression));
+        self.tcx.try_normalize_erasing_regions(self.typing_env(),
+            rustc_middle::ty::Unnormalized::new_wip(value)).unwrap_or(value)
     }
 
     fn call(&self, expression: &'tcx Expr<'tcx>) -> Option<(DefId, Vec<&'tcx Expr<'tcx>>)> {
@@ -278,7 +286,9 @@ pub fn run(arguments: &[String]) -> bool {
     let mut callbacks = DecodeCallbacks {
         findings: Findings::default(),
     };
-    rustc_driver::run_compiler(arguments, &mut callbacks);
+    let mut arguments = arguments.to_vec();
+    arguments.push("-Zalways-encode-mir".to_owned());
+    rustc_driver::run_compiler(&arguments, &mut callbacks);
     !callbacks.findings.entries.is_empty()
 }
 

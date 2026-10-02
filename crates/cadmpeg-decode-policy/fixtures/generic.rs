@@ -37,3 +37,15 @@ impl Local for Empty { fn visit(&self) {} }
 fn bounded<T: Local>(value: &T) {
     value.visit();
 }
+
+pub fn repeated(value: &String) {
+    let _first = copy(value); // finding: uncharged_decode_allocation, uncharged_decode_work
+    let _second = copy(value); // finding: uncharged_decode_allocation, uncharged_decode_work
+}
+fn closure_copy<T: Clone>(value: &T) {
+    let callback = || value.clone();
+    let _copy = callback();
+}
+pub fn closed(value: &String) {
+    closure_copy(value); // finding: uncharged_decode_allocation, uncharged_decode_work
+}

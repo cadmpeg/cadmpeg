@@ -2,7 +2,7 @@
 use crate::{external, types, Analysis};
 use rustc_hir::intravisit::{walk_expr, Visitor};
 use rustc_hir::{Expr, ExprKind};
-use rustc_middle::ty::{self, TypingEnv};
+use rustc_middle::ty;
 use types::Shape;
 
 impl<'tcx> Analysis<'_, 'tcx> {
@@ -24,7 +24,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
                     && match value.kind() {
                         ty::Str | ty::Slice(_) => false,
                         _ => self.tcx.type_is_copy_modulo_regions(
-                            TypingEnv::post_analysis(self.tcx, self.owner),
+                            self.typing_env(),
                             value,
                         ),
                     }
@@ -52,7 +52,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
         if self.checked_call(expression, definition) && name != "alloc_filled" {
             return;
         }
-        let summary = external::summary(self.tcx, definition,
+        let summary = external::summary(self.tcx, self.implementation(expression, definition).unwrap_or(definition),
             operands.first().map(|operand| self.expr_ty(operand)));
         let allocation = summary.map(|summary| summary.allocation);
         if allocation == Some(external::Allocation::None) {
