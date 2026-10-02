@@ -154,9 +154,9 @@ fn validate_model_with_index(
     check_carrier_reachability(ctx, ids.native_view(), &mut findings)?;
     check_native_links(ctx, ids.native_view(), ids, &mut findings)?;
     check_parameter_domains(ctx, ir, &mut findings)?;
-    check_edge_endpoint_consistency(ir, &mut findings)?;
+    check_edge_endpoint_consistency(ctx, ir, &mut findings)?;
     check_pcurve_surface_consistency(ctx, ir, &mut findings)?;
-    check_procedural_support_consistency(ir, &mut findings)?;
+    check_procedural_support_consistency(ctx, ir, &mut findings)?;
     check_topology_tolerances(ctx, ir, &mut findings)?;
     check_tessellations(ctx, ir, &mut findings)?;
     check_sketches(ctx, ir, &mut findings)?;

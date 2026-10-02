@@ -394,11 +394,11 @@ fn untrimmed_surface_curve() -> CadIr {
 #[test]
 fn procedural_support_endpoints_honor_the_per_side_parameter_mapping() {
     let mut findings = Vec::new();
-    check_procedural_support_consistency(&mapped_surface_curve([2.0, 3.0]), &mut findings)
+    check_procedural_support_consistency(&cadmpeg_test_support::service_decode_context(), &mapped_surface_curve([2.0, 3.0]), &mut findings)
         .expect("resource allocation did not fail");
     assert!(findings.is_empty());
 
-    check_procedural_support_consistency(&mapped_surface_curve([3.0, 2.0]), &mut findings)
+    check_procedural_support_consistency(&cadmpeg_test_support::service_decode_context(), &mapped_surface_curve([3.0, 2.0]), &mut findings)
         .expect("resource allocation did not fail");
     assert_eq!(findings.len(), 1);
     assert!(findings[0].message.contains("support side 0"));
@@ -407,7 +407,7 @@ fn procedural_support_endpoints_honor_the_per_side_parameter_mapping() {
 #[test]
 fn surface_offset_support_constrains_the_embedded_base_curve() {
     let mut findings = Vec::new();
-    check_procedural_support_consistency(&mapped_surface_offset(), &mut findings)
+    check_procedural_support_consistency(&cadmpeg_test_support::service_decode_context(), &mapped_surface_offset(), &mut findings)
         .expect("resource allocation did not fail");
     assert!(findings.is_empty());
 
@@ -449,7 +449,7 @@ fn surface_offset_support_constrains_the_embedded_base_curve() {
             None => definition.clear_legacy_cache(),
         }
     });
-    check_procedural_support_consistency(&context_first, &mut findings)
+    check_procedural_support_consistency(&cadmpeg_test_support::service_decode_context(), &context_first, &mut findings)
         .expect("resource allocation did not fail");
     assert!(findings.is_empty());
 
@@ -464,7 +464,7 @@ fn surface_offset_support_constrains_the_embedded_base_curve() {
     origin.y = 2.0;
     let origin = crate::features::FinitePoint3::new(origin).unwrap();
     *line_curve = crate::geometry::analytic::LineCurve::new(origin, direction);
-    check_procedural_support_consistency(&ir, &mut findings)
+    check_procedural_support_consistency(&cadmpeg_test_support::service_decode_context(), &ir, &mut findings)
         .expect("resource allocation did not fail");
     assert_eq!(findings.len(), 2);
     assert!(findings
@@ -1301,6 +1301,7 @@ fn pcurve_trim_range_stops_at_the_admitted_nesting_depth() {
     );
 }
 
+mod finding_admission;
 mod overflowing_arms;
 mod parameter_scaling;
 
@@ -1322,7 +1323,7 @@ fn a_support_side_whose_points_overflow_misses_its_contract_by_nan() {
     let mut ir = mapped_surface_curve([1.0e300, 2.0e300]);
     ir.model.surfaces[0].geometry = overflowing_plane();
     let mut findings = Vec::new();
-    check_procedural_support_consistency(&ir, &mut findings)
+    check_procedural_support_consistency(&cadmpeg_test_support::service_decode_context(), &ir, &mut findings)
         .expect("resource allocation did not fail");
     assert_eq!(findings.len(), 1, "{findings:?}");
     assert_eq!(
