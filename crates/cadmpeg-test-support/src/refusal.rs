@@ -42,7 +42,7 @@ pub fn states_the_key(key: &str, message: &str) {
 pub fn resource_limit_at<T>(
     dimension: cadmpeg_core::decode::ResourceDimension,
     operation: &str,
-    run: impl Fn(u64) -> Result<T, cadmpeg_core::CodecError>,
+    mut run: impl FnMut(u64) -> Result<T, cadmpeg_core::CodecError>,
 ) -> cadmpeg_core::CodecError {
     use cadmpeg_core::CodecError;
     let mut cap = 0;

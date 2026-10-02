@@ -30,40 +30,36 @@ fn fixture() -> (DesignParameterScope, DesignBodyBinding) {
 
 fn assert_selection_refusal(operation: &'static str, retained: bool) {
     let (scope, binding) = fixture();
-    let max_limit = if retained { 256 } else { 4 };
-    for limit in 0..max_limit {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::default();
-        if retained {
-            policy.limits.max_retained_bytes = limit;
-        } else {
-            policy.limits.max_collection_items = limit;
-        }
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let result = design_body_selection(
-            &ctx,
-            &scope,
-            [20].into_iter(),
-            std::slice::from_ref(&binding),
+
+    {
+        let error = cadmpeg_test_support::refusal::resource_limit_at(
+            if retained {
+                ResourceDimension::RetainedBytes
+            } else {
+                ResourceDimension::CollectionItems
+            },
+            operation,
+            |cap| {
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::default();
+                if retained {
+                    policy.limits.max_retained_bytes = cap;
+                } else {
+                    policy.limits.max_collection_items = cap;
+                }
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+                let result = design_body_selection(
+                    &ctx,
+                    &scope,
+                    [20].into_iter(),
+                    std::slice::from_ref(&binding),
+                );
+                result
+            },
         );
-        match result {
-            Err(CodecError::ResourceLimit(failure))
-                if failure.operation == operation
-                    && failure.dimension
-                        == (if retained {
-                            ResourceDimension::RetainedBytes
-                        } else {
-                            ResourceDimension::CollectionItems
-                        }) =>
-            {
-                return
-            }
-            Err(CodecError::ResourceLimit(_)) => {}
-            Ok(_) => panic!("expected {operation} refusal, got success"),
-            Err(error) => panic!("expected {operation} refusal: {error}"),
-        }
+        assert!(matches!(error, CodecError::ResourceLimit(failure)
+            if failure.operation == operation && failure.dimension == (if retained { ResourceDimension::RetainedBytes } else { ResourceDimension::CollectionItems })));
     }
-    panic!("no {operation} refusal");
 }
 
 #[test]
@@ -182,34 +178,30 @@ fn copied_body_fixture() -> (DesignParameterScope, DesignBodyBinding) {
 
 fn assert_copied_body_output_refusal(operation: &'static str, retained: bool) {
     let (scope, binding) = copied_body_fixture();
-    let max_limit = if retained { 2048 } else { 128 };
-    for limit in 0..max_limit {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::default();
-        if retained {
-            policy.limits.max_retained_bytes = limit;
-        } else {
-            policy.limits.max_collection_items = limit;
-        }
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        match project_copied_body(&ctx, &scope, &binding) {
-            Err(CodecError::ResourceLimit(failure))
-                if failure.operation == operation
-                    && failure.dimension
-                        == (if retained {
-                            ResourceDimension::RetainedBytes
-                        } else {
-                            ResourceDimension::CollectionItems
-                        }) =>
-            {
-                return
-            }
-            Err(CodecError::ResourceLimit(_)) => {}
-            Ok(_) => panic!("expected {operation} refusal, got success"),
-            Err(error) => panic!("expected {operation} refusal: {error}"),
-        }
+
+    {
+        let error = cadmpeg_test_support::refusal::resource_limit_at(
+            if retained {
+                ResourceDimension::RetainedBytes
+            } else {
+                ResourceDimension::CollectionItems
+            },
+            operation,
+            |cap| {
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::default();
+                if retained {
+                    policy.limits.max_retained_bytes = cap;
+                } else {
+                    policy.limits.max_collection_items = cap;
+                }
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+                project_copied_body(&ctx, &scope, &binding)
+            },
+        );
+        assert!(matches!(error, CodecError::ResourceLimit(failure)
+            if failure.operation == operation && failure.dimension == (if retained { ResourceDimension::RetainedBytes } else { ResourceDimension::CollectionItems })));
     }
-    panic!("no {operation} refusal");
 }
 
 #[test]

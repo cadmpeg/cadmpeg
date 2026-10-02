@@ -34,6 +34,7 @@ fn relation_kind_text_refuses_retained_limit_and_preserves_order() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
     policy.limits.max_retained_bytes = u64::try_from(expected.len() - 1).unwrap();
+
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(matches!(relation_kind_name(&relation, &ctx),
         Err(CodecError::ResourceLimit(failure)) if failure.dimension == ResourceDimension::RetainedBytes

@@ -345,12 +345,11 @@ impl DesignMeshTextureTable {
         let filenames_start = flags_start.and_then(|start| {
             start.checked_add(MESH_TEXTURE_FLAGS_ENTRY_BYTES * u64::from(count) + 4)
         });
-        let mut resources =
-            {
+        let mut resources = {
             let mut storage = Vec::new();
             storage.try_reserve_exact(rows.len()).map(|()| storage)
         }
-                .map_err(|error| error.to_string())?;
+        .map_err(|error| error.to_string())?;
         for row in rows {
             let flags_guid = flags_start.and_then(|start| {
                 start.checked_add(MESH_TEXTURE_FLAGS_ENTRY_BYTES * u64::from(row.ordinal) + 4)
@@ -1527,12 +1526,13 @@ impl TryFrom<DesignMeshFeatureWire> for DesignMeshFeature {
                 "body_record_indices must repeat bodies.body_record.record_index in order".into(),
             );
         }
-        let mut bodies =
-            {
+        let mut bodies = {
             let mut storage = Vec::new();
-            storage.try_reserve_exact(wire.bodies.len()).map(|()| storage)
+            storage
+                .try_reserve_exact(wire.bodies.len())
+                .map(|()| storage)
         }
-                .map_err(|error| error.to_string())?;
+        .map_err(|error| error.to_string())?;
         for body in wire.bodies {
             bodies.push(DesignMeshBody::from_wire(body)?);
         }

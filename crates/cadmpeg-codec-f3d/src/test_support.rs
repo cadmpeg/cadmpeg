@@ -51,6 +51,7 @@ pub(crate) fn resource_refusal_at<T>(
             ResourceDimension::CollectionItems => &mut policy.limits.max_collection_items,
             ResourceDimension::RetainedBytes => &mut policy.limits.max_retained_bytes,
             ResourceDimension::WorkUnits => &mut policy.limits.max_work_units,
+            ResourceDimension::MaterializedBytes => &mut policy.limits.max_materialized_bytes,
             _ => panic!("unsupported refusal dimension"),
         }
     }

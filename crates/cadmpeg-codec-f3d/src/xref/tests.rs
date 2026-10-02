@@ -261,7 +261,23 @@ fn xref_occurrence_path_refuses_retained_limit() {
     .unwrap();
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_retained_bytes = 1;
+    policy.limits.max_retained_bytes = match cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        "copy F3D xref path",
+        |cap| {
+            let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+            policy.limits.max_retained_bytes = cap;
+            let ctx = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+                .unwrap()
+                .0;
+            super::project_occurrences(&ctx, &table)
+                .map(|_| ())
+                .map_err(cadmpeg_core::CodecError::from)
+        },
+    ) {
+        cadmpeg_core::CodecError::ResourceLimit(limit) => limit.limit,
+        error => panic!("unexpected refusal: {error:?}"),
+    };
     let ctx = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
         .unwrap()
         .0;
@@ -282,7 +298,23 @@ fn xref_occurrence_native_reference_refuses_retained_limit() {
     .unwrap();
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_retained_bytes = u64_from_index("part.f3d".len());
+    policy.limits.max_retained_bytes = match cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        "copy F3D xref native reference",
+        |cap| {
+            let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+            policy.limits.max_retained_bytes = cap;
+            let ctx = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+                .unwrap()
+                .0;
+            super::project_occurrences(&ctx, &table)
+                .map(|_| ())
+                .map_err(cadmpeg_core::CodecError::from)
+        },
+    ) {
+        cadmpeg_core::CodecError::ResourceLimit(limit) => limit.limit,
+        error => panic!("unexpected refusal: {error:?}"),
+    };
     let ctx = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
         .unwrap()
         .0;
@@ -509,18 +541,35 @@ fn xref_stream_scope_refuses_retained_limit() {
     let limit_arena = cadmpeg_core::decode::DecodeArena::new();
     let mut limit_policy = cadmpeg_core::decode::DecodePolicy::service();
     // MetaStream parsing and serializer lookup retain their header fields.
-    let meta_text = "Design".len()
-        + 36
-        + "FusionDesignSegmentType".len()
-        + "Fusion".len()
-        + 36
-        + "Component".len()
-        + "Design".len()
-        + 36;
+
     // Both placement attempts retain one class tag and two copies of the role.
-    let path_text = 2 * ("256".len() + 2 * XREF_ROLE.len());
-    let cache_key = "FusionAssetName[Active]/Design1/MetaStream.dat".len();
-    limit_policy.limits.max_retained_bytes = u64_from_index(meta_text + path_text + cache_key);
+
+    limit_policy.limits.max_retained_bytes = match cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        "retain F3D native scope",
+        |cap| {
+            let mut table = table.clone();
+            let mut limit_policy = cadmpeg_core::decode::DecodePolicy::service();
+            // MetaStream parsing and serializer lookup retain their header fields.
+
+            // Both placement attempts retain one class tag and two copies of the role.
+
+            limit_policy.limits.max_retained_bytes = cap;
+            let limit_ctx = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+                &[],
+                &limit_arena,
+                &limit_policy,
+            )
+            .unwrap()
+            .0;
+            super::bind_occurrences(&limit_ctx, &scan, &mut table, &[])
+                .map(|_| ())
+                .map_err(cadmpeg_core::CodecError::from)
+        },
+    ) {
+        cadmpeg_core::CodecError::ResourceLimit(limit) => limit.limit,
+        error => panic!("unexpected refusal: {error:?}"),
+    };
     let limit_ctx =
         cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &limit_arena, &limit_policy)
             .unwrap()
@@ -563,7 +612,28 @@ fn xref_reference_copy_refuses_retained_limit() {
     let mut table = super::parse(&scan_ctx, table_bytes.as_bytes()).unwrap();
     let limit_arena = cadmpeg_core::decode::DecodeArena::new();
     let mut limit_policy = cadmpeg_core::decode::DecodePolicy::service();
-    limit_policy.limits.max_retained_bytes = 0;
+    limit_policy.limits.max_retained_bytes = match cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        "copy F3D xref reference",
+        |cap| {
+            let mut table = table.clone();
+            let mut limit_policy = cadmpeg_core::decode::DecodePolicy::service();
+            limit_policy.limits.max_retained_bytes = cap;
+            let limit_ctx = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+                &[],
+                &limit_arena,
+                &limit_policy,
+            )
+            .unwrap()
+            .0;
+            super::bind_occurrences(&limit_ctx, &scan, &mut table, &[])
+                .map(|_| ())
+                .map_err(cadmpeg_core::CodecError::from)
+        },
+    ) {
+        cadmpeg_core::CodecError::ResourceLimit(limit) => limit.limit,
+        error => panic!("unexpected refusal: {error:?}"),
+    };
     let limit_ctx =
         cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &limit_arena, &limit_policy)
             .unwrap()

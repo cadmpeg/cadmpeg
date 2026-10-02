@@ -96,6 +96,7 @@ fn surface_extend_boundary_id_refuses_retained_limit() {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::default();
         policy.limits.max_retained_bytes = limit;
+
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         if matches!(super::project_single_scope_with_context(&ctx, &scope),
             Err(CodecError::ResourceLimit(failure))
@@ -138,6 +139,7 @@ fn surface_offset_boundary_id_refuses_retained_limit() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
     policy.limits.max_retained_bytes = 0;
+
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(matches!(
         crate::design::feature_project::project_surface_offset(

@@ -281,7 +281,17 @@ fn sketch_point_identity_finding_refuses_retained_limit() {
     native.sketch_points.push(duplicate);
     native.sketch_curve_identities.clear();
     native.sketch_surfaces.clear();
-    let error = sketch_geometry_error(native, u64::MAX, 0);
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        "retain F3D validation entity",
+        |cap| {
+            Err::<(), cadmpeg_core::CodecError>(sketch_geometry_error(
+                native.clone(),
+                u64::MAX,
+                cap,
+            ))
+        },
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "retain F3D validation entity")
@@ -696,7 +706,11 @@ fn occurrence_duplicate_entity_refuses_retained_limit() {
             101,
             "AAAAAAAA-BBBB-4CCC-8DDD-EEEEEEEEEEEE",
         ));
-    let error = occurrence_error(native, u64::MAX, 72);
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        "retain F3D validation entity",
+        |cap| Err::<(), cadmpeg_core::CodecError>(occurrence_error(native.clone(), u64::MAX, cap)),
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "retain F3D validation entity")
@@ -892,10 +906,16 @@ fn placement_invalid_finding_refuses_collection_limit() {
 
 #[test]
 fn placement_invalid_entity_refuses_retained_limit() {
-    let error = placement_error(
-        placement_native(validation_placement(None, None, false)),
-        u64::MAX,
-        0,
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        "retain F3D validation entity",
+        |cap| {
+            Err::<(), cadmpeg_core::CodecError>(placement_error(
+                placement_native(validation_placement(None, None, false)),
+                u64::MAX,
+                cap,
+            ))
+        },
     );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -996,7 +1016,11 @@ fn parameter_owner_finding_refuses_collection_limit() {
 
 #[test]
 fn parameter_owner_entity_refuses_retained_limit() {
-    let error = parameter_owner_error(u64::MAX, 0);
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        "retain F3D validation entity",
+        |cap| Err::<(), cadmpeg_core::CodecError>(parameter_owner_error(u64::MAX, cap)),
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "retain F3D validation entity")
@@ -1094,7 +1118,17 @@ fn companion_finding_refuses_collection_limit() {
 
 #[test]
 fn companion_entity_refuses_retained_limit() {
-    let error = companion_error(validation_companion(false), u64::MAX, 0);
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        "retain F3D validation entity",
+        |cap| {
+            Err::<(), cadmpeg_core::CodecError>(companion_error(
+                validation_companion(false),
+                u64::MAX,
+                cap,
+            ))
+        },
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "retain F3D validation entity")

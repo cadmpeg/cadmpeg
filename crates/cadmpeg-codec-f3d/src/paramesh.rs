@@ -2269,11 +2269,22 @@ mod tests {
     #[test]
     fn paramesh_raw_stream_refuses_retained_limit() {
         let body = raw_stream_body(&[0x81, 0xa1, b'D', 3], 1, &[7]);
-        let error = with_mesh_limits(u64::MAX, 1, u64::MAX, |ctx| {
-            inflate_stream_charged(ctx, &body)
-                .err()
-                .expect("stream limit")
-        });
+        let error = cadmpeg_test_support::refusal::resource_limit_at(
+            cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+            "retain paramesh stream bytes",
+            |cap| {
+                Err::<(), cadmpeg_core::CodecError>(with_mesh_limits(
+                    u64::MAX,
+                    cap,
+                    u64::MAX,
+                    |ctx| {
+                        inflate_stream_charged(ctx, &body)
+                            .err()
+                            .expect("stream limit")
+                    },
+                ))
+            },
+        );
         assert!(matches!(error, CodecError::ResourceLimit(limit)
             if limit.operation == "retain paramesh stream bytes"));
     }

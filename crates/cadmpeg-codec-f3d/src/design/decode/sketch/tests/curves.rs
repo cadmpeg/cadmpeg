@@ -297,6 +297,7 @@ fn assert_line_diagnostic_limit(values: [f64; 12], expected: &str) {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::default();
     policy.limits.max_retained_bytes = u64::try_from(expected.len() - 1).unwrap();
+
     let (ctx, _) =
         cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(
@@ -355,6 +356,7 @@ fn assert_arc_diagnostic_limit(values: [f64; 12]) {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::default();
     policy.limits.max_retained_bytes = u64::try_from(expected.len() - 1).unwrap();
+
     let (ctx, _) =
         cadmpeg_core::decode::DecodeContext::from_root_bytes(&payload, &arena, &policy).unwrap();
     assert!(matches!(decode_circular_arc(&ctx, &payload, 17),

@@ -138,6 +138,57 @@ fn spatial_scope_sketch_id_refuses_retained_limit() {
                 .len(),
     )
     .unwrap();
+    let refusal_cap = match cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::RetainedBytes,
+        "f3d spatial scope sketch id",
+        |cap| {
+            let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+            match ResourceDimension::RetainedBytes {
+                cadmpeg_core::decode::ResourceDimension::RetainedBytes => {
+                    policy.limits.max_retained_bytes = cap
+                }
+                cadmpeg_core::decode::ResourceDimension::CollectionItems => {
+                    policy.limits.max_collection_items = cap
+                }
+                cadmpeg_core::decode::ResourceDimension::MaterializedBytes => {
+                    policy.limits.max_materialized_bytes = cap
+                }
+                cadmpeg_core::decode::ResourceDimension::WorkUnits => {
+                    policy.limits.max_work_units = cap
+                }
+                dimension => panic!("unsupported refusal dimension: {dimension:?}"),
+            }
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            (project_spatial_dimension_constraints(
+                &ctx,
+                &fixture.inputs(),
+                std::slice::from_ref(&fixture.spatial),
+                &[],
+                EPS_SPATIAL_DIMENSION_LINEAR,
+            ))
+            .map(|_| ())
+            .map_err(cadmpeg_core::CodecError::from)
+        },
+    ) {
+        cadmpeg_core::CodecError::ResourceLimit(limit) => limit.limit,
+        error => panic!("unexpected refusal: {error:?}"),
+    };
+    policy.limits = cadmpeg_core::decode::DecodePolicy::service().limits;
+    match ResourceDimension::RetainedBytes {
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes => {
+            policy.limits.max_retained_bytes = refusal_cap
+        }
+        cadmpeg_core::decode::ResourceDimension::CollectionItems => {
+            policy.limits.max_collection_items = refusal_cap
+        }
+        cadmpeg_core::decode::ResourceDimension::MaterializedBytes => {
+            policy.limits.max_materialized_bytes = refusal_cap
+        }
+        cadmpeg_core::decode::ResourceDimension::WorkUnits => {
+            policy.limits.max_work_units = refusal_cap
+        }
+        dimension => panic!("unsupported refusal dimension: {dimension:?}"),
+    }
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let result = project_spatial_dimension_constraints(
         &ctx,
@@ -157,31 +208,28 @@ fn spatial_parameter_count_id_refuses_retained_limit() {
     let companion = parameter_companion();
     let mut inputs = fixture.inputs();
     inputs.companions = std::slice::from_ref(&companion);
-    for limit in 0..16_384 {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::default();
-        policy.limits.max_retained_bytes = limit;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let result = project_spatial_dimension_constraints(
-            &ctx,
-            &inputs,
-            std::slice::from_ref(&fixture.spatial),
-            &[],
-            EPS_SPATIAL_DIMENSION_LINEAR,
+    {
+        let error = cadmpeg_test_support::refusal::resource_limit_at(
+            ResourceDimension::RetainedBytes,
+            "f3d spatial parameter count id",
+            |cap| {
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::default();
+                policy.limits.max_retained_bytes = cap;
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+                let result = project_spatial_dimension_constraints(
+                    &ctx,
+                    &inputs,
+                    std::slice::from_ref(&fixture.spatial),
+                    &[],
+                    EPS_SPATIAL_DIMENSION_LINEAR,
+                );
+                result
+            },
         );
-        match result {
-            Err(CodecError::ResourceLimit(failure))
-                if failure.operation == "f3d spatial parameter count id"
-                    && failure.dimension == ResourceDimension::RetainedBytes =>
-            {
-                return
-            }
-            Err(CodecError::ResourceLimit(_)) => {}
-            Ok(_) => panic!("expected spatial parameter count ID refusal"),
-            Err(error) => panic!("expected spatial parameter count ID refusal: {error}"),
-        }
+        assert!(matches!(error, CodecError::ResourceLimit(failure)
+            if failure.operation == "f3d spatial parameter count id" && failure.dimension == (ResourceDimension::RetainedBytes)));
     }
-    panic!("no spatial parameter count ID refusal");
 }
 
 #[test]
@@ -255,31 +303,28 @@ fn assert_spatial_companion_retained_refusal(operation: &'static str) {
     let mut inputs = fixture.inputs();
     inputs.companions = std::slice::from_ref(&companion);
     inputs.entities = &[];
-    for limit in 0..16_384 {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::default();
-        policy.limits.max_retained_bytes = limit;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let result = project_spatial_dimension_constraints(
-            &ctx,
-            &inputs,
-            std::slice::from_ref(&fixture.spatial),
-            std::slice::from_ref(&entity),
-            EPS_SPATIAL_DIMENSION_LINEAR,
+    {
+        let error = cadmpeg_test_support::refusal::resource_limit_at(
+            ResourceDimension::RetainedBytes,
+            operation,
+            |cap| {
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::default();
+                policy.limits.max_retained_bytes = cap;
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+                let result = project_spatial_dimension_constraints(
+                    &ctx,
+                    &inputs,
+                    std::slice::from_ref(&fixture.spatial),
+                    std::slice::from_ref(&entity),
+                    EPS_SPATIAL_DIMENSION_LINEAR,
+                );
+                result
+            },
         );
-        match result {
-            Err(CodecError::ResourceLimit(failure))
-                if failure.operation == operation
-                    && failure.dimension == ResourceDimension::RetainedBytes =>
-            {
-                return
-            }
-            Err(CodecError::ResourceLimit(_)) => {}
-            Ok(_) => panic!("expected {operation} refusal"),
-            Err(error) => panic!("expected {operation} refusal: {error}"),
-        }
+        assert!(matches!(error, CodecError::ResourceLimit(failure)
+            if failure.operation == operation && failure.dimension == (ResourceDimension::RetainedBytes)));
     }
-    panic!("no {operation} refusal");
 }
 
 #[test]

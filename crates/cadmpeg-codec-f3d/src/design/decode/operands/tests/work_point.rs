@@ -11,6 +11,7 @@ fn work_point_input_copy_refuses_collection_limit() {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::default();
     policy.limits.max_collection_items = 0;
+
     let (ctx, _) =
         cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(matches!(

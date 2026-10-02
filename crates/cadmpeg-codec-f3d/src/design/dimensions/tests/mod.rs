@@ -56,36 +56,11 @@ fn assert_dimension_refusal(
     dimension: cadmpeg_core::decode::ResourceDimension,
     run: impl Fn(&cadmpeg_core::decode::DecodeContext<'_>) -> Result<(), cadmpeg_core::CodecError>,
 ) {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    use cadmpeg_core::CodecError;
-    let invoke = |limit| {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::default();
-        match dimension {
-            ResourceDimension::CollectionItems => policy.limits.max_collection_items = limit,
-            ResourceDimension::RetainedBytes => policy.limits.max_retained_bytes = limit,
-            _ => panic!("unsupported dimension refusal limit"),
-        }
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        run(&ctx)
-    };
-    for limit in 0..4096 {
-        match invoke(limit) {
-            Err(CodecError::ResourceLimit(failure))
-                if failure.operation == operation && failure.dimension == dimension =>
-            {
-                let below = failure.used.checked_add(failure.additional).unwrap() - 1;
-                assert!(
-                    matches!(invoke(below), Err(CodecError::ResourceLimit(failure))
-                    if failure.operation == operation && failure.dimension == dimension)
-                );
-                return;
-            }
-            Err(CodecError::ResourceLimit(_)) => {}
-            result => panic!("missing {operation} refusal: {result:?}"),
-        }
-    }
-    panic!("no {operation} refusal");
+    let error = crate::test_support::resource_refusal_at(dimension, operation, 0, run);
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == dimension && limit.operation == operation)
+    );
 }
 
 mod spatial_parallel_limits;

@@ -973,6 +973,62 @@ fn parameter_companion_decode_refuses_index_output_and_identifier_limits() {
             let mut policy = DecodePolicy::default();
             policy.limits.max_collection_items = items;
             policy.limits.max_retained_bytes = retained;
+            let refusal_cap = match cadmpeg_test_support::refusal::resource_limit_at(
+                dimension,
+                operation,
+                |cap| {
+                    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+                    match dimension {
+                        cadmpeg_core::decode::ResourceDimension::RetainedBytes => {
+                            policy.limits.max_retained_bytes = cap
+                        }
+                        cadmpeg_core::decode::ResourceDimension::CollectionItems => {
+                            policy.limits.max_collection_items = cap
+                        }
+                        cadmpeg_core::decode::ResourceDimension::MaterializedBytes => {
+                            policy.limits.max_materialized_bytes = cap
+                        }
+                        cadmpeg_core::decode::ResourceDimension::WorkUnits => {
+                            policy.limits.max_work_units = cap
+                        }
+                        cadmpeg_core::decode::ResourceDimension::RecursionDepth => {
+                            policy.limits.max_recursion_depth = cap
+                        }
+                        dimension => panic!("unsupported refusal dimension: {dimension:?}"),
+                    }
+                    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+                    (super::decode_parameter_companions(
+                        &ctx,
+                        scan,
+                        &[owner.clone()],
+                        &[header.clone()],
+                    ))
+                    .map(|_| ())
+                    .map_err(cadmpeg_core::CodecError::from)
+                },
+            ) {
+                cadmpeg_core::CodecError::ResourceLimit(limit) => limit.limit,
+                error => panic!("unexpected refusal: {error:?}"),
+            };
+            policy.limits = cadmpeg_core::decode::DecodePolicy::service().limits;
+            match dimension {
+                cadmpeg_core::decode::ResourceDimension::RetainedBytes => {
+                    policy.limits.max_retained_bytes = refusal_cap
+                }
+                cadmpeg_core::decode::ResourceDimension::CollectionItems => {
+                    policy.limits.max_collection_items = refusal_cap
+                }
+                cadmpeg_core::decode::ResourceDimension::MaterializedBytes => {
+                    policy.limits.max_materialized_bytes = refusal_cap
+                }
+                cadmpeg_core::decode::ResourceDimension::WorkUnits => {
+                    policy.limits.max_work_units = refusal_cap
+                }
+                cadmpeg_core::decode::ResourceDimension::RecursionDepth => {
+                    policy.limits.max_recursion_depth = refusal_cap
+                }
+                dimension => panic!("unsupported refusal dimension: {dimension:?}"),
+            }
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
             let result =
                 super::decode_parameter_companions(&ctx, scan, &[owner.clone()], &[header.clone()]);
@@ -1354,6 +1410,54 @@ fn parameter_companion_binding_refuses_output_recipe_and_id_limits() {
         let mut policy = DecodePolicy::default();
         policy.limits.max_collection_items = items;
         policy.limits.max_retained_bytes = retained;
+        let refusal_cap =
+            match cadmpeg_test_support::refusal::resource_limit_at(dimension, operation, |cap| {
+                let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+                match dimension {
+                    cadmpeg_core::decode::ResourceDimension::RetainedBytes => {
+                        policy.limits.max_retained_bytes = cap
+                    }
+                    cadmpeg_core::decode::ResourceDimension::CollectionItems => {
+                        policy.limits.max_collection_items = cap
+                    }
+                    cadmpeg_core::decode::ResourceDimension::MaterializedBytes => {
+                        policy.limits.max_materialized_bytes = cap
+                    }
+                    cadmpeg_core::decode::ResourceDimension::WorkUnits => {
+                        policy.limits.max_work_units = cap
+                    }
+                    cadmpeg_core::decode::ResourceDimension::RecursionDepth => {
+                        policy.limits.max_recursion_depth = cap
+                    }
+                    dimension => panic!("unsupported refusal dimension: {dimension:?}"),
+                }
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+                (super::bind_parameter_companion_payloads(&ctx, vec![companion.clone()], &inputs))
+                    .map(|_| ())
+                    .map_err(cadmpeg_core::CodecError::from)
+            }) {
+                cadmpeg_core::CodecError::ResourceLimit(limit) => limit.limit,
+                error => panic!("unexpected refusal: {error:?}"),
+            };
+        policy.limits = cadmpeg_core::decode::DecodePolicy::service().limits;
+        match dimension {
+            cadmpeg_core::decode::ResourceDimension::RetainedBytes => {
+                policy.limits.max_retained_bytes = refusal_cap
+            }
+            cadmpeg_core::decode::ResourceDimension::CollectionItems => {
+                policy.limits.max_collection_items = refusal_cap
+            }
+            cadmpeg_core::decode::ResourceDimension::MaterializedBytes => {
+                policy.limits.max_materialized_bytes = refusal_cap
+            }
+            cadmpeg_core::decode::ResourceDimension::WorkUnits => {
+                policy.limits.max_work_units = refusal_cap
+            }
+            cadmpeg_core::decode::ResourceDimension::RecursionDepth => {
+                policy.limits.max_recursion_depth = refusal_cap
+            }
+            dimension => panic!("unsupported refusal dimension: {dimension:?}"),
+        }
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let result =
             super::bind_parameter_companion_payloads(&ctx, vec![companion.clone()], &inputs);

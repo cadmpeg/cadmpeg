@@ -178,6 +178,7 @@ fn configuration_numeric_scalar_text_refuses_retained_limit() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
     policy.limits.max_retained_bytes = 2;
+
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let scalar = crate::records::configuration::ConfigurationScalar::Number(
         serde_json::Number::from_f64(2.5).unwrap(),
@@ -200,15 +201,26 @@ fn configuration_numeric_scalar_text_refuses_retained_limit() {
 #[test]
 fn configuration_json_array_capacity_refuses_retained_limit() {
     let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = 4 * cadmpeg_core::decode::u64_from_index(std::mem::size_of::<serde_json::Value>()) - 1;
-    refuse(b"[null]", policy, ResourceDimension::RetainedBytes, "f3d configuration JSON array allocation");
+    policy.limits.max_retained_bytes =
+        4 * cadmpeg_core::decode::u64_from_index(std::mem::size_of::<serde_json::Value>()) - 1;
+    refuse(
+        b"[null]",
+        policy,
+        ResourceDimension::RetainedBytes,
+        "f3d configuration JSON array allocation",
+    );
 }
 
 #[test]
 fn configuration_json_object_node_refuses_retained_limit() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = 1;
-    refuse(br#"{"a":null}"#, policy, ResourceDimension::RetainedBytes, "f3d configuration JSON object allocation");
+    refuse(
+        br#"{"a":null}"#,
+        policy,
+        ResourceDimension::RetainedBytes,
+        "f3d configuration JSON object allocation",
+    );
 }
 
 #[test]
@@ -216,5 +228,10 @@ fn configuration_json_escaped_text_scratch_refuses_capacity_rounding() {
     let bytes = br#""\naaaaaaaa""#;
     let mut policy = DecodePolicy::service();
     policy.limits.max_materialized_bytes = cadmpeg_core::decode::u64_from_index(bytes.len());
-    refuse(bytes, policy, ResourceDimension::MaterializedBytes, "f3d configuration JSON");
+    refuse(
+        bytes,
+        policy,
+        ResourceDimension::MaterializedBytes,
+        "f3d configuration JSON",
+    );
 }

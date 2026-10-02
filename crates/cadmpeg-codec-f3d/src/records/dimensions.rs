@@ -1089,7 +1089,9 @@ impl TryFrom<DesignDimensionAnnotationFrameWire> for DesignDimensionAnnotationFr
         }
         let mut return_members = {
             let mut storage = Vec::new();
-            storage.try_reserve_exact(wire.return_members.len()).map(|()| storage)
+            storage
+                .try_reserve_exact(wire.return_members.len())
+                .map(|()| storage)
         }
         .map_err(|error| error.to_string())?;
         for (value, offset) in wire

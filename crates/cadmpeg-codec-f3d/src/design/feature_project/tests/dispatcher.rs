@@ -218,6 +218,7 @@ fn scale_center_id_refuses_retained_limit() {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::default();
         policy.limits.max_retained_bytes = limit;
+
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         if matches!(super::project_single_scope_with_context(&ctx, &scope),
             Err(CodecError::ResourceLimit(failure))
@@ -1055,6 +1056,7 @@ fn loft_native_path_refuses_retained_limit() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
     policy.limits.max_retained_bytes = 4;
+
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(matches!(
         crate::design::feature_project::loft_path_from_edge_selection(
@@ -1079,6 +1081,7 @@ fn empty_surface_patch_path_refuses_native_copy_limit() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
     policy.limits.max_retained_bytes = 0;
+
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(matches!(
         crate::design::feature_project::resolved_surface_patch_path(
@@ -1237,6 +1240,7 @@ fn thread_face_group_refuses_collection_limit() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
     policy.limits.max_collection_items = 0;
+
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(matches!(
         crate::design::feature_project::project_thread_face_selection(&ctx, &scope, &[150], &[group], &[]),
@@ -1255,6 +1259,110 @@ fn thread_face_native_id_refuses_retained_limit() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
     policy.limits.max_retained_bytes = 0;
+    let refusal_cap = match cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::RetainedBytes,
+        "f3d Thread face native id",
+        |cap| {
+            let group = group.clone();
+            let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+            match ResourceDimension::RetainedBytes {
+                cadmpeg_core::decode::ResourceDimension::RetainedBytes => {
+                    policy.limits.max_retained_bytes = cap
+                }
+                cadmpeg_core::decode::ResourceDimension::CollectionItems => {
+                    policy.limits.max_collection_items = cap
+                }
+                cadmpeg_core::decode::ResourceDimension::MaterializedBytes => {
+                    policy.limits.max_materialized_bytes = cap
+                }
+                cadmpeg_core::decode::ResourceDimension::WorkUnits => {
+                    policy.limits.max_work_units = cap
+                }
+                dimension => panic!("unsupported refusal dimension: {dimension:?}"),
+            }
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            (crate::design::feature_project::project_thread_face_selection(
+                &ctx,
+                &scope,
+                &[150],
+                &[group],
+                &[],
+            ))
+            .map(|_| ())
+            .map_err(cadmpeg_core::CodecError::from)
+        },
+    ) {
+        cadmpeg_core::CodecError::ResourceLimit(limit) => limit.limit,
+        error => panic!("unexpected refusal: {error:?}"),
+    };
+    policy.limits = cadmpeg_core::decode::DecodePolicy::service().limits;
+    match ResourceDimension::RetainedBytes {
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes => {
+            policy.limits.max_retained_bytes = refusal_cap
+        }
+        cadmpeg_core::decode::ResourceDimension::CollectionItems => {
+            policy.limits.max_collection_items = refusal_cap
+        }
+        cadmpeg_core::decode::ResourceDimension::MaterializedBytes => {
+            policy.limits.max_materialized_bytes = refusal_cap
+        }
+        cadmpeg_core::decode::ResourceDimension::WorkUnits => {
+            policy.limits.max_work_units = refusal_cap
+        }
+        dimension => panic!("unsupported refusal dimension: {dimension:?}"),
+    }
+    let refusal_cap = match cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::RetainedBytes,
+        "f3d Thread face native id",
+        |cap| {
+            let group = group.clone();
+            let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+            match ResourceDimension::RetainedBytes {
+                cadmpeg_core::decode::ResourceDimension::RetainedBytes => {
+                    policy.limits.max_retained_bytes = cap
+                }
+                cadmpeg_core::decode::ResourceDimension::CollectionItems => {
+                    policy.limits.max_collection_items = cap
+                }
+                cadmpeg_core::decode::ResourceDimension::MaterializedBytes => {
+                    policy.limits.max_materialized_bytes = cap
+                }
+                cadmpeg_core::decode::ResourceDimension::WorkUnits => {
+                    policy.limits.max_work_units = cap
+                }
+                dimension => panic!("unsupported refusal dimension: {dimension:?}"),
+            }
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            (crate::design::feature_project::project_thread_face_selection(
+                &ctx,
+                &scope,
+                &[150],
+                &[group],
+                &[],
+            ))
+            .map(|_| ())
+            .map_err(cadmpeg_core::CodecError::from)
+        },
+    ) {
+        cadmpeg_core::CodecError::ResourceLimit(limit) => limit.limit,
+        error => panic!("unexpected refusal: {error:?}"),
+    };
+    policy.limits = cadmpeg_core::decode::DecodePolicy::service().limits;
+    match ResourceDimension::RetainedBytes {
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes => {
+            policy.limits.max_retained_bytes = refusal_cap
+        }
+        cadmpeg_core::decode::ResourceDimension::CollectionItems => {
+            policy.limits.max_collection_items = refusal_cap
+        }
+        cadmpeg_core::decode::ResourceDimension::MaterializedBytes => {
+            policy.limits.max_materialized_bytes = refusal_cap
+        }
+        cadmpeg_core::decode::ResourceDimension::WorkUnits => {
+            policy.limits.max_work_units = refusal_cap
+        }
+        dimension => panic!("unsupported refusal dimension: {dimension:?}"),
+    }
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(matches!(
         crate::design::feature_project::project_thread_face_selection(&ctx, &scope, &[150], &[group], &[]),
@@ -1281,6 +1389,7 @@ fn merged_direct_edge_refuses_collection_limit() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
     policy.limits.max_collection_items = 0;
+
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(matches!(
         crate::design::feature_project::merge_edge_selections(&ctx, &scope, &selections),
@@ -1307,6 +1416,7 @@ fn merged_direct_edge_id_refuses_retained_limit() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
     policy.limits.max_retained_bytes = 0;
+
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(matches!(
         crate::design::feature_project::merge_edge_selections(&ctx, &scope, &selections),
@@ -1336,6 +1446,7 @@ fn merged_historical_edge_refuses_collection_limit() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
     policy.limits.max_collection_items = 0;
+
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(matches!(
         crate::design::feature_project::merge_edge_selections(&ctx, &scope, &[selection]),

@@ -1,3 +1,4 @@
+use cadmpeg_core::decode::ResourceDimension;
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
@@ -184,6 +185,7 @@ fn ordered_selected_profile_refuses_collection_limit() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
     policy.limits.max_collection_items = 0;
+
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(matches!(
         super::super::ordered_unique_profile_selections([
@@ -199,6 +201,7 @@ fn ordered_selected_region_refuses_collection_limit() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
     policy.limits.max_collection_items = 0;
+
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let region = cadmpeg_ir::features::SketchProfileRegion::loops(0, Vec::new()).unwrap();
     assert!(matches!(
@@ -225,26 +228,33 @@ fn assert_merged_profile_refusal(operation: &'static str, region: bool, retained
     } else {
         ProfileRef::Planar(PlanarProfileRef::sketch_profiles(sketch.clone(), vec![0]).unwrap())
     };
-    for limit in 0..16 {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::default();
-        if retained {
-            policy.limits.max_retained_bytes = limit;
-        } else {
-            policy.limits.max_collection_items = limit;
-        }
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        match super::super::merge_resolved_profile_selections(
-            &sketch,
-            std::slice::from_ref(&selection),
-            &ctx,
-        ) {
-            Err(CodecError::ResourceLimit(failure)) if failure.operation == operation => return,
-            Err(CodecError::ResourceLimit(_)) => {}
-            other => panic!("expected merged profile refusal at {operation}: {other:?}"),
-        }
+    {
+        let error = cadmpeg_test_support::refusal::resource_limit_at(
+            if retained {
+                ResourceDimension::RetainedBytes
+            } else {
+                ResourceDimension::CollectionItems
+            },
+            operation,
+            |cap| {
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::default();
+                if retained {
+                    policy.limits.max_retained_bytes = cap;
+                } else {
+                    policy.limits.max_collection_items = cap;
+                }
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+                super::super::merge_resolved_profile_selections(
+                    &sketch,
+                    std::slice::from_ref(&selection),
+                    &ctx,
+                )
+            },
+        );
+        assert!(matches!(error, CodecError::ResourceLimit(failure)
+            if failure.operation == operation && failure.dimension == (if retained { ResourceDimension::RetainedBytes } else { ResourceDimension::CollectionItems })));
     }
-    panic!("no merged profile refusal at {operation}");
 }
 
 #[test]
@@ -288,26 +298,33 @@ fn assert_merged_trimmed_region_refusal(operation: &'static str, retained: bool)
         SketchProfileRegion::trimmed(vec![boundary.clone()], vec![vec![boundary]]).unwrap();
     let selection =
         ProfileRef::Planar(PlanarProfileRef::sketch_regions(sketch.clone(), vec![region]).unwrap());
-    for limit in 0..16 {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::default();
-        if retained {
-            policy.limits.max_retained_bytes = limit;
-        } else {
-            policy.limits.max_collection_items = limit;
-        }
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        match super::super::merge_resolved_profile_selections(
-            &sketch,
-            std::slice::from_ref(&selection),
-            &ctx,
-        ) {
-            Err(CodecError::ResourceLimit(failure)) if failure.operation == operation => return,
-            Err(CodecError::ResourceLimit(_)) => {}
-            other => panic!("expected trimmed region refusal at {operation}: {other:?}"),
-        }
+    {
+        let error = cadmpeg_test_support::refusal::resource_limit_at(
+            if retained {
+                ResourceDimension::RetainedBytes
+            } else {
+                ResourceDimension::CollectionItems
+            },
+            operation,
+            |cap| {
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::default();
+                if retained {
+                    policy.limits.max_retained_bytes = cap;
+                } else {
+                    policy.limits.max_collection_items = cap;
+                }
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+                super::super::merge_resolved_profile_selections(
+                    &sketch,
+                    std::slice::from_ref(&selection),
+                    &ctx,
+                )
+            },
+        );
+        assert!(matches!(error, CodecError::ResourceLimit(failure)
+            if failure.operation == operation && failure.dimension == (if retained { ResourceDimension::RetainedBytes } else { ResourceDimension::CollectionItems })));
     }
-    panic!("no trimmed region refusal at {operation}");
 }
 
 #[test]
@@ -350,6 +367,7 @@ fn resolved_member_profile_refuses_collection_limit() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
     policy.limits.max_collection_items = 0;
+
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(matches!(
         super::super::resolved_selection_member_profiles(&member, &sketch, &ctx),
@@ -555,44 +573,49 @@ fn assert_extrude_selection_refusal(operation: &'static str, matched: bool, reta
             .unwrap();
     }
     let arrangement_budget = WorkBudget::new(MAX_ARRANGEMENT_WALK_WORK);
-    for limit in 0..16 {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::default();
-        if retained {
-            policy.limits.max_retained_bytes = limit
-                + 2 * u64::try_from(neutral_sketch_curve_id(&sketch.id, 100, 0).as_str().len())
-                    .unwrap();
-        } else {
-            policy.limits.max_collection_items = limit;
-        }
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let scope_histories = HashMap::new();
-        let resolution = ExtrudeProfileResolution {
-            entities: &[],
-            spatial_sketches: &[],
-            spatial_entities: &[],
-            histories: &[],
-            scope_histories: &scope_histories,
-            linear_tolerance: 0.000_001,
-            angular_tolerance: 0.000_000_001,
-            arrangement_budget: &arrangement_budget,
-            ctx: &ctx,
-        };
-        match super::super::resolved_extrude_profile_selection(
-            &sketch.id,
-            &group,
-            std::slice::from_ref(&member),
-            &sketch,
-            resolution.scoped(&[]),
-            None,
-            None,
-        ) {
-            Err(CodecError::ResourceLimit(failure)) if failure.operation == operation => return,
-            Err(CodecError::ResourceLimit(_)) => {}
-            other => panic!("expected extrude selection refusal at {operation}: {other:?}"),
-        }
+    {
+        let error = cadmpeg_test_support::refusal::resource_limit_at(
+            if retained {
+                ResourceDimension::RetainedBytes
+            } else {
+                ResourceDimension::CollectionItems
+            },
+            operation,
+            |cap| {
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::default();
+                if retained {
+                    policy.limits.max_retained_bytes = cap;
+                } else {
+                    policy.limits.max_collection_items = cap;
+                }
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+                let scope_histories = HashMap::new();
+                let resolution = ExtrudeProfileResolution {
+                    entities: &[],
+                    spatial_sketches: &[],
+                    spatial_entities: &[],
+                    histories: &[],
+                    scope_histories: &scope_histories,
+                    linear_tolerance: 0.000_001,
+                    angular_tolerance: 0.000_000_001,
+                    arrangement_budget: &arrangement_budget,
+                    ctx: &ctx,
+                };
+                super::super::resolved_extrude_profile_selection(
+                    &sketch.id,
+                    &group,
+                    std::slice::from_ref(&member),
+                    &sketch,
+                    resolution.scoped(&[]),
+                    None,
+                    None,
+                )
+            },
+        );
+        assert!(matches!(error, CodecError::ResourceLimit(failure)
+            if failure.operation == operation && failure.dimension == (if retained { ResourceDimension::RetainedBytes } else { ResourceDimension::CollectionItems })));
     }
-    panic!("no extrude selection refusal at {operation}");
 }
 
 #[test]
@@ -1032,29 +1055,36 @@ fn assert_historical_face_profile_refusal(operation: &'static str, retained: boo
         )],
     }];
     let feature = cadmpeg_ir::features::FeatureId::mint("synthetic:test:feature#1").unwrap();
-    for limit in 0..16_384 {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::default();
-        if retained {
-            policy.limits.max_retained_bytes = limit;
-        } else {
-            policy.limits.max_collection_items = limit;
-        }
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        match super::super::historical_face_profile_selection(
-            &[&group],
-            std::slice::from_ref(&member),
-            Some(2),
-            &feature,
-            &histories,
-            &ctx,
-        ) {
-            Err(CodecError::ResourceLimit(failure)) if failure.operation == operation => return,
-            Err(CodecError::ResourceLimit(_)) => {}
-            other => panic!("expected historical face profile refusal at {operation}: {other:?}"),
-        }
+    {
+        let error = cadmpeg_test_support::refusal::resource_limit_at(
+            if retained {
+                ResourceDimension::RetainedBytes
+            } else {
+                ResourceDimension::CollectionItems
+            },
+            operation,
+            |cap| {
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::default();
+                if retained {
+                    policy.limits.max_retained_bytes = cap;
+                } else {
+                    policy.limits.max_collection_items = cap;
+                }
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+                super::super::historical_face_profile_selection(
+                    &[&group],
+                    std::slice::from_ref(&member),
+                    Some(2),
+                    &feature,
+                    &histories,
+                    &ctx,
+                )
+            },
+        );
+        assert!(matches!(error, CodecError::ResourceLimit(failure)
+            if failure.operation == operation && failure.dimension == (if retained { ResourceDimension::RetainedBytes } else { ResourceDimension::CollectionItems })));
     }
-    panic!("no historical face profile refusal at {operation}");
 }
 
 #[test]

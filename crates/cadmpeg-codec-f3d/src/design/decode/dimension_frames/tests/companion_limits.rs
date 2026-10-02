@@ -49,6 +49,7 @@ fn typed_dimension_companions_refuse_collection_limit() {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::default();
         policy.limits.max_collection_items = 0;
+
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         assert!(matches!(
             crate::design::decode::dimension_frames::decode_dimension_null_locus_pairs(&ctx, &inputs, &[pair], &[]),
@@ -106,6 +107,7 @@ fn dimension_presentation_sketch_scopes_refuse_collection_limit() {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::default();
         policy.limits.max_collection_items = 0;
+
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         assert!(matches!(
             crate::design::decode::dimension_frames::decode_dimension_presentation_frames(&ctx, &inputs, &[]),

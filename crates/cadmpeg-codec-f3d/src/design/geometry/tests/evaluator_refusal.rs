@@ -56,6 +56,7 @@ fn certified_nurbs_tubes_refuse_point_copy_limit() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
     policy.limits.max_collection_items = 1;
+
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(matches!(
         super::super::certified_nurbs_tubes(&curve, 0.5, &ctx),
@@ -76,6 +77,7 @@ fn certified_nurbs_tubes_refuse_weight_copy_limit() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
     policy.limits.max_collection_items = 2;
+
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(matches!(
         super::super::certified_nurbs_tubes(&curve, 0.5, &ctx),
@@ -102,6 +104,7 @@ fn sketch_nurbs_endpoints_refuse_pole_copy_limit() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
     policy.limits.max_collection_items = 1;
+
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(matches!(
         super::super::sketch_entity_endpoints(&entity, &ctx),
@@ -128,6 +131,7 @@ fn closed_sketch_nurbs_endpoints_propagate_collection_refusal() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
     policy.limits.max_collection_items = 1;
+
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(matches!(
         closed_sketch_profiles(&ctx, &sketch_id, &[entity], 0.01),
@@ -162,6 +166,7 @@ fn coincident_nurbs_loci_propagate_endpoint_refusal() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
     policy.limits.max_collection_items = 1;
+
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(matches!(
         crate::design::dimensions::exact_coincident_loci(&[&nurbs, &point], &ctx),

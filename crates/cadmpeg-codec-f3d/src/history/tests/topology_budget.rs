@@ -96,8 +96,12 @@ fn historical_tag_references_refuse_collection_limit() {
 
 #[test]
 fn historical_tag_token_refuses_retained_limit() {
-    let ctx = limited_context(u64::MAX, 0);
-    let error = super::super::historical_topology_with_tags(&ctx, &tagged_brep()).unwrap_err();
+    let error = crate::test_support::resource_refusal_at(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        "copy F3D historical tag token",
+        0,
+        |ctx| super::super::historical_topology_with_tags(ctx, &tagged_brep()),
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "copy F3D historical tag token")

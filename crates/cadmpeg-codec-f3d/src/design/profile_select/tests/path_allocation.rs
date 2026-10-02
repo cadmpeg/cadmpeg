@@ -181,27 +181,34 @@ fn assert_spatial_path_refusal(operation: &'static str, retained: bool, profile:
         spatial_sketches: &sketches,
         spatial_sketch_entities: &entities,
     };
-    for limit in 0..16_384 {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::default();
-        if retained {
-            policy.limits.max_retained_bytes = limit;
-        } else {
-            policy.limits.max_collection_items = limit;
-        }
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let result = if profile {
-            resolve_entity_selection_profile(&group, &resolution, &ctx).map(|_| ())
-        } else {
-            resolve_entity_selection_path(&group, &resolution, &ctx).map(|_| ())
-        };
-        match result {
-            Err(CodecError::ResourceLimit(failure)) if failure.operation == operation => return,
-            Err(CodecError::ResourceLimit(_)) => {}
-            other => panic!("expected spatial path refusal at {operation}: {other:?}"),
-        }
+    {
+        let error = cadmpeg_test_support::refusal::resource_limit_at(
+            if retained {
+                cadmpeg_core::decode::ResourceDimension::RetainedBytes
+            } else {
+                cadmpeg_core::decode::ResourceDimension::CollectionItems
+            },
+            operation,
+            |cap| {
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::default();
+                if retained {
+                    policy.limits.max_retained_bytes = cap;
+                } else {
+                    policy.limits.max_collection_items = cap;
+                }
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+                let result = if profile {
+                    resolve_entity_selection_profile(&group, &resolution, &ctx).map(|_| ())
+                } else {
+                    resolve_entity_selection_path(&group, &resolution, &ctx).map(|_| ())
+                };
+                result
+            },
+        );
+        assert!(matches!(error, CodecError::ResourceLimit(failure)
+            if failure.operation == operation && failure.dimension == (if retained { cadmpeg_core::decode::ResourceDimension::RetainedBytes } else { cadmpeg_core::decode::ResourceDimension::CollectionItems })));
     }
-    panic!("no spatial path refusal at {operation}");
 }
 
 #[test]

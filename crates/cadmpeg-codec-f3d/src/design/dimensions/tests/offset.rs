@@ -959,6 +959,7 @@ fn dimension_binding_scope_refuses_collection_limit() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
     policy.limits.max_collection_items = 0;
+
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let mut bindings = std::collections::HashMap::new();
     assert!(matches!(
@@ -979,6 +980,7 @@ fn dimension_binding_record_refuses_collection_limit() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
     policy.limits.max_collection_items = 1;
+
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let mut bindings = std::collections::HashMap::new();
     assert!(matches!(
@@ -1013,6 +1015,7 @@ fn dimension_placement_scope_refuses_collection_limit() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
     policy.limits.max_collection_items = 0;
+
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(matches!(
             bind_dimension_loci(
@@ -1053,6 +1056,7 @@ fn dimension_companion_scope_refuses_collection_limit() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
     policy.limits.max_collection_items = 0;
+
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(matches!(
             bind_dimension_loci(

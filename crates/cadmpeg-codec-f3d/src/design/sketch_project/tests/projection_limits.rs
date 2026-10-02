@@ -1,3 +1,4 @@
+use cadmpeg_core::decode::ResourceDimension;
 // SPDX-License-Identifier: Apache-2.0
 use crate::design::sketch_project::project_sketch_design;
 use crate::design::sketch_project::project_spatial_sketch_constraints;
@@ -65,6 +66,7 @@ fn sketch_placement_indices_refuse_collection_limit() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
     policy.limits.max_collection_items = 0;
+
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(matches!(
         project_sketch_design(&ctx, std::slice::from_ref(&placement), &[], &[], &[], &[], EPS_PROJECTION_LIMITS_E6),
@@ -73,6 +75,7 @@ fn sketch_placement_indices_refuse_collection_limit() {
                 && failure.operation == "f3d planar sketch placement index"
     ));
     let arena = DecodeArena::new();
+
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(matches!(
         project_spatial_sketch_design(&ctx, &[placement], &[], &[], &[], &[], EPS_PROJECTION_LIMITS_E6),
@@ -90,6 +93,7 @@ fn spatial_sketch_curve_index_refuses_collection_limit() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
     policy.limits.max_collection_items = 0;
+
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(matches!(
         project_spatial_sketch_design(&ctx, &[], &[], &[curve], &[], &[], EPS_PROJECTION_LIMITS_E6),
@@ -107,6 +111,7 @@ fn spline_segment_index_refuses_collection_limit() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
     policy.limits.max_collection_items = 0;
+
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let mut segments = std::collections::HashMap::new();
     assert!(matches!(
@@ -162,6 +167,7 @@ fn spatial_spline_member_index_refuses_collection_limit() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
     policy.limits.max_collection_items = 0;
+
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(matches!(
         crate::design::sketch_project::distinct_return_member_indices(&ctx, &members),
@@ -190,6 +196,7 @@ fn spatial_spline_segment_candidate_refuses_collection_limit() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
     policy.limits.max_collection_items = 0;
+
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let mut segments = Vec::new();
     let candidate = (10, [Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)]);
@@ -243,6 +250,7 @@ fn spatial_constraint_indices_refuse_collection_limits() {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::default();
         policy.limits.max_collection_items = limit;
+
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         assert!(
             matches!(
@@ -266,6 +274,7 @@ fn spatial_geometry_owner_refuses_collection_limit() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
     policy.limits.max_collection_items = 0;
+
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(matches!(
         crate::design::sketch_project::spatial_geometry_owners(&ctx, &[], &[curve]),
@@ -323,6 +332,7 @@ fn text_frame_owner_indices_refuse_collection_limits() {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::default();
         policy.limits.max_collection_items = 0;
+
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         assert!(
             matches!(
@@ -367,6 +377,7 @@ fn spatial_surface_owner_refuses_collection_limit() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
     policy.limits.max_collection_items = 0;
+
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(matches!(
         project_spatial_sketch_design(&ctx, &[], &[], &[], &[surface], &[], EPS_PROJECTION_LIMITS_E6),
@@ -391,6 +402,7 @@ fn spatial_surface_lanes_refuse_each_collection_limit() {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::default();
         policy.limits.max_collection_items = limit;
+
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         assert!(
             matches!(
@@ -413,30 +425,29 @@ fn spatial_sketch_id_index_copy_refuses_retained_limit() {
     use cadmpeg_core::CodecError;
     let placement = owner_limit_placement();
     let surface = owner_limit_surface();
-    for limit in 0..2048 {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::default();
-        policy.limits.max_retained_bytes = limit;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        match project_spatial_sketch_design(
-            &ctx,
-            std::slice::from_ref(&placement),
-            &[],
-            &[],
-            std::slice::from_ref(&surface),
-            &[],
-            EPS_PROJECTION_LIMITS_E6,
-        ) {
-            Err(CodecError::ResourceLimit(failure))
-                if failure.operation == "f3d spatial sketch id index copy" =>
-            {
-                return
-            }
-            Err(CodecError::ResourceLimit(_)) => {}
-            other => panic!("expected spatial sketch ID copy refusal: {other:?}"),
-        }
+    {
+        let error = cadmpeg_test_support::refusal::resource_limit_at(
+            ResourceDimension::RetainedBytes,
+            "f3d spatial sketch id index copy",
+            |cap| {
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::default();
+                policy.limits.max_retained_bytes = cap;
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+                project_spatial_sketch_design(
+                    &ctx,
+                    std::slice::from_ref(&placement),
+                    &[],
+                    &[],
+                    std::slice::from_ref(&surface),
+                    &[],
+                    EPS_PROJECTION_LIMITS_E6,
+                )
+            },
+        );
+        assert!(matches!(error, CodecError::ResourceLimit(failure)
+            if failure.operation == "f3d spatial sketch id index copy" && failure.dimension == (ResourceDimension::RetainedBytes)));
     }
-    panic!("no spatial sketch ID copy refusal");
 }
 
 #[test]
@@ -452,6 +463,7 @@ fn sketch_nurbs_lanes_refuse_collection_limit() {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::default();
         policy.limits.max_collection_items = 0;
+
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         assert!(
             matches!(
@@ -512,6 +524,7 @@ fn text_frame_curve_records_refuse_collection_limit() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
     policy.limits.max_collection_items = 2;
+
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(matches!(
         crate::design::sketch_project::text_frame_curve_records(&ctx, &[relation], &[curve], &[text]),
@@ -556,6 +569,7 @@ fn projected_sketch_text_copies_refuse_retained_limit() {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::default();
         policy.limits.max_retained_bytes = 4;
+
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         assert!(
             matches!(
@@ -587,6 +601,7 @@ fn projected_sketch_entries_refuse_collection_limit() {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::default();
         policy.limits.max_collection_items = 0;
+
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let mut entries = Vec::new();
         assert!(
@@ -623,6 +638,7 @@ fn spatial_constraint_sketch_membership_refuses_work_limit() {
     let mut policy = DecodePolicy::default();
     policy.limits.max_work_units =
         2 * cadmpeg_core::decode::u64_from_index(entity.sketch.as_str().len());
+
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(matches!(
         project_spatial_sketch_constraints(&ctx, std::slice::from_ref(&placement), &[], &[], &[], &[], &[entity]),
@@ -646,6 +662,7 @@ fn spatial_constraint_copies_and_output_refuse_matching_limits() {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::default();
         policy.limits.max_retained_bytes = 4;
+
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         assert!(matches!(
             ctx.copy_retained_text("input", operation),
@@ -662,6 +679,7 @@ fn spatial_constraint_copies_and_output_refuse_matching_limits() {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::default();
         policy.limits.max_collection_items = 0;
+
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let mut items = Vec::new();
         assert!(matches!(
@@ -676,6 +694,7 @@ fn spatial_constraint_copies_and_output_refuse_matching_limits() {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::default();
         policy.limits.max_collection_items = 0;
+
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let mut members = std::collections::HashSet::new();
         assert!(matches!(

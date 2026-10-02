@@ -12,22 +12,29 @@ fn assert_refusal(
     retained: bool,
     mut call: impl FnMut(&DecodeContext<'_>) -> Result<(), CodecError>,
 ) {
-    for limit in 0..128 {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::default();
-        if retained {
-            policy.limits.max_retained_bytes = limit;
-        } else {
-            policy.limits.max_collection_items = limit;
-        }
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        match call(&ctx) {
-            Err(CodecError::ResourceLimit(failure)) if failure.operation == operation => return,
-            Err(CodecError::ResourceLimit(_)) => {}
-            other => panic!("expected bound selection refusal at {operation}: {other:?}"),
-        }
+    {
+        let error = cadmpeg_test_support::refusal::resource_limit_at(
+            if retained {
+                cadmpeg_core::decode::ResourceDimension::RetainedBytes
+            } else {
+                cadmpeg_core::decode::ResourceDimension::CollectionItems
+            },
+            operation,
+            |cap| {
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::default();
+                if retained {
+                    policy.limits.max_retained_bytes = cap;
+                } else {
+                    policy.limits.max_collection_items = cap;
+                }
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+                call(&ctx)
+            },
+        );
+        assert!(matches!(error, CodecError::ResourceLimit(failure)
+            if failure.operation == operation && failure.dimension == (if retained { cadmpeg_core::decode::ResourceDimension::RetainedBytes } else { cadmpeg_core::decode::ResourceDimension::CollectionItems })));
     }
-    panic!("no bound selection refusal at {operation}");
 }
 
 #[test]

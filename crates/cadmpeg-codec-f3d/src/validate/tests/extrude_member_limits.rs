@@ -209,7 +209,11 @@ fn extrude_member_invalid_finding_refuses_collection_limit() {
 
 #[test]
 fn extrude_member_invalid_entity_refuses_retained_limit() {
-    let error = member_error(false, false, u64::MAX, 0);
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        "retain F3D validation entity",
+        |cap| Err::<(), cadmpeg_core::CodecError>(member_error(false, false, u64::MAX, cap)),
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "retain F3D validation entity")

@@ -838,6 +838,7 @@ fn edge_flange_native_height_target_id_refuses_retained_limit() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
     policy.limits.max_retained_bytes = u64::try_from(native.len() - 1).unwrap();
+
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let result = edge_flange_to_object_fixture(&ctx, false, false);
     assert!(
@@ -863,6 +864,7 @@ fn edge_flange_two_sided_edge_width_refuses_collection_limit() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
     policy.limits.max_collection_items = 0;
+
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let result = edge_flange_to_object_fixture(&ctx, true, true);
     assert!(
@@ -1479,6 +1481,7 @@ fn surface_patch_continuities_refuse_collection_limit() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
     policy.limits.max_collection_items = 1;
+
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(
         matches!(crate::design::feature_project::surface_patch_boundary_continuities(&ctx, &scope),

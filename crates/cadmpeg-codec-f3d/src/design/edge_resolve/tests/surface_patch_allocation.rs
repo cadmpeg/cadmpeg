@@ -31,30 +31,37 @@ fn assert_surface_patch_refusal(operation: &'static str, retained: bool, contrad
     let operands = [first, second];
     let feature_id =
         cadmpeg_ir::features::FeatureId::mint("f3d:model:feature#surface-patch").unwrap();
-    for limit in 0..256 {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::default();
-        if retained {
-            policy.limits.max_retained_bytes = limit;
-        } else {
-            policy.limits.max_collection_items = limit;
-        }
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        match resolved_surface_patch_edge_group(
-            &group,
-            std::slice::from_ref(&group),
-            &operands,
-            &[],
-            Some(7),
-            &feature_id,
-            &ctx,
-        ) {
-            Err(CodecError::ResourceLimit(failure)) if failure.operation == operation => return,
-            Err(CodecError::ResourceLimit(_)) => {}
-            other => panic!("expected surface patch refusal at {operation}: {other:?}"),
-        }
+    {
+        let error = cadmpeg_test_support::refusal::resource_limit_at(
+            if retained {
+                ResourceDimension::RetainedBytes
+            } else {
+                ResourceDimension::CollectionItems
+            },
+            operation,
+            |cap| {
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::default();
+                if retained {
+                    policy.limits.max_retained_bytes = cap;
+                } else {
+                    policy.limits.max_collection_items = cap;
+                }
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+                resolved_surface_patch_edge_group(
+                    &group,
+                    std::slice::from_ref(&group),
+                    &operands,
+                    &[],
+                    Some(7),
+                    &feature_id,
+                    &ctx,
+                )
+            },
+        );
+        assert!(matches!(error, CodecError::ResourceLimit(failure)
+            if failure.operation == operation && failure.dimension == (if retained { ResourceDimension::RetainedBytes } else { ResourceDimension::CollectionItems })));
     }
-    panic!("no surface patch refusal at {operation}");
 }
 
 macro_rules! surface_patch_collection_refusal {

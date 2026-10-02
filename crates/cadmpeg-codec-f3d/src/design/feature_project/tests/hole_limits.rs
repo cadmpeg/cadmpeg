@@ -67,19 +67,25 @@ fn hole_fallback_face_id_refuses_retained_limit() {
         }) if id == scope.id
     ));
 
-    for limit in 0..128 {
-        let mut policy = DecodePolicy::default();
-        policy.limits.max_retained_bytes = limit;
-        let arena = DecodeArena::new();
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        if matches!(
-            project_hole(&ctx, &scope, &indexed, &[]),
-            Err(CodecError::ResourceLimit(failure))
+    {
+        let error = cadmpeg_test_support::refusal::resource_limit_at(
+            cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+            "f3d Hole fallback face id",
+            |cap| {
+                let mut policy = DecodePolicy::default();
+                policy.limits.max_retained_bytes = cap;
+                let arena = DecodeArena::new();
+
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+                (project_hole(&ctx, &scope, &indexed, &[]))
+                    .map(|_| ())
+                    .map_err(cadmpeg_core::CodecError::from)
+            },
+        );
+        assert!(
+            matches!(Err::<(), cadmpeg_core::CodecError>(error), Err(CodecError::ResourceLimit(failure))
                 if failure.dimension == ResourceDimension::RetainedBytes
-                    && failure.operation == "f3d Hole fallback face id"
-        ) {
-            return;
-        }
+                    && failure.operation == "f3d Hole fallback face id")
+        );
     }
-    panic!("no Hole fallback face ID refusal");
 }

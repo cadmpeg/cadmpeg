@@ -1216,34 +1216,30 @@ fn assert_history_graph_refusal(operation: &'static str, retained: bool) {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
     let scopes = history_graph_limit_fixture();
-    let max_limit = if retained { 512 } else { 24 };
-    for limit in 0..max_limit {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::default();
-        if retained {
-            policy.limits.max_retained_bytes = limit;
-        } else {
-            policy.limits.max_collection_items = limit;
-        }
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        match ScopeHistoryGraph::new(&ctx, &scopes, &[], &[], &[], &[]) {
-            Err(cadmpeg_core::CodecError::ResourceLimit(failure))
-                if failure.operation == operation
-                    && failure.dimension
-                        == (if retained {
-                            ResourceDimension::RetainedBytes
-                        } else {
-                            ResourceDimension::CollectionItems
-                        }) =>
-            {
-                return
-            }
-            Err(CodecError::ResourceLimit(_)) => {}
-            Ok(_) => panic!("expected {operation} refusal, got success"),
-            Err(error) => panic!("expected {operation} refusal: {error}"),
-        }
+
+    {
+        let error = cadmpeg_test_support::refusal::resource_limit_at(
+            if retained {
+                ResourceDimension::RetainedBytes
+            } else {
+                ResourceDimension::CollectionItems
+            },
+            operation,
+            |cap| {
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::default();
+                if retained {
+                    policy.limits.max_retained_bytes = cap;
+                } else {
+                    policy.limits.max_collection_items = cap;
+                }
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+                ScopeHistoryGraph::new(&ctx, &scopes, &[], &[], &[], &[])
+            },
+        );
+        assert!(matches!(error, CodecError::ResourceLimit(failure)
+            if failure.operation == operation && failure.dimension == (if retained { ResourceDimension::RetainedBytes } else { ResourceDimension::CollectionItems })));
     }
-    panic!("no {operation} refusal");
 }
 
 #[test]
@@ -1301,13 +1297,13 @@ fn predecessor_stream_refuses_retained_limit() {
     .unwrap();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
-    policy.limits.max_retained_bytes = 0;
+    policy.limits.max_materialized_bytes = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let Err(error) = graph.predecessor(&ctx, &scopes[1], |_| true) else {
         panic!("expected predecessor stream refusal");
     };
     assert!(matches!(error, CodecError::ResourceLimit(failure)
-        if failure.dimension == ResourceDimension::RetainedBytes
+        if failure.dimension == ResourceDimension::MaterializedBytes
             && failure.operation == "f3d predecessor stream"));
 }
 
@@ -1407,49 +1403,63 @@ fn assert_projected_feature_refusal(operation: &'static str, retained: bool) {
         width.record_index = 42;
         native.push(width);
     }
-    let materialized = expression_lookup && operation != "f3d expression owner lookup";
-    let max_limit = if retained { 4096 } else { 128 };
-    for limit in 0..max_limit {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::default();
-        if materialized {
-            policy.limits.max_materialized_bytes = limit;
-        } else if retained {
-            policy.limits.max_retained_bytes = limit;
-        } else {
-            policy.limits.max_collection_items = limit;
-        }
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let result = project_parameter_design_with_edge_identities(
-            &ctx,
-            &crate::design::feature_project::ProjectInputs {
-                native: &native,
-                owners,
-                scopes: &scopes,
-                timelines: std::slice::from_ref(&timeline),
-                ..Default::default()
+    let materialized = expression_lookup
+        || (retained
+            && matches!(
+                operation,
+                "f3d feature history state id"
+                    | "f3d parameter scope index id"
+                    | "f3d feature alias owner id"
+                    | "f3d feature alias name"
+                    | "f3d feature alias parameter id"
+                    | "f3d owned alias name"
+                    | "f3d owned alias parameter id"
+                    | "f3d document alias name"
+                    | "f3d document alias parameter id"
+                    | "f3d parameter owner index id"
+                    | "f3d parameter owner index owner id"
+                    | "f3d feature order index id"
+            ));
+
+    {
+        let error = cadmpeg_test_support::refusal::resource_limit_at(
+            if materialized {
+                ResourceDimension::MaterializedBytes
+            } else {
+                if retained {
+                    ResourceDimension::RetainedBytes
+                } else {
+                    ResourceDimension::CollectionItems
+                }
+            },
+            operation,
+            |cap| {
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::default();
+                if materialized {
+                    policy.limits.max_materialized_bytes = cap;
+                } else if retained {
+                    policy.limits.max_retained_bytes = cap;
+                } else {
+                    policy.limits.max_collection_items = cap;
+                }
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+                let result = project_parameter_design_with_edge_identities(
+                    &ctx,
+                    &crate::design::feature_project::ProjectInputs {
+                        native: &native,
+                        owners,
+                        scopes: &scopes,
+                        timelines: std::slice::from_ref(&timeline),
+                        ..Default::default()
+                    },
+                );
+                result
             },
         );
-        match result {
-            Err(CodecError::ResourceLimit(failure))
-                if failure.operation == operation
-                    && failure.dimension
-                        == (if materialized {
-                            ResourceDimension::MaterializedBytes
-                        } else if retained {
-                            ResourceDimension::RetainedBytes
-                        } else {
-                            ResourceDimension::CollectionItems
-                        }) =>
-            {
-                return
-            }
-            Err(CodecError::ResourceLimit(_)) => {}
-            Ok(_) => panic!("expected {operation} refusal, got success"),
-            Err(error) => panic!("expected {operation} refusal: {error}"),
-        }
+        assert!(matches!(error, CodecError::ResourceLimit(failure)
+            if failure.operation == operation && failure.dimension == (if materialized { ResourceDimension::MaterializedBytes } else { if retained { ResourceDimension::RetainedBytes } else { ResourceDimension::CollectionItems } })));
     }
-    panic!("no {operation} refusal");
 }
 
 #[test]
@@ -1635,47 +1645,45 @@ fn assert_expression_dependency_refusal(operation: &'static str, retained: bool)
         parameter(41, "Width / 2", "Half"),
     ];
     let materialized = operation == "f3d expression identifier lookup";
-    let max_limit = if retained { 4096 } else { 128 };
-    for limit in 0..max_limit {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::default();
-        if materialized {
-            policy.limits.max_materialized_bytes = limit;
-        } else if retained {
-            policy.limits.max_retained_bytes = limit;
-        } else {
-            policy.limits.max_collection_items = limit;
-        }
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let result = project_parameter_design_with_edge_identities(
-            &ctx,
-            &crate::design::feature_project::ProjectInputs {
-                native: &native,
-                scopes: &scopes,
-                timelines: std::slice::from_ref(&timeline),
-                ..Default::default()
+
+    {
+        let error = cadmpeg_test_support::refusal::resource_limit_at(
+            if materialized {
+                ResourceDimension::MaterializedBytes
+            } else {
+                if retained {
+                    ResourceDimension::RetainedBytes
+                } else {
+                    ResourceDimension::CollectionItems
+                }
+            },
+            operation,
+            |cap| {
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::default();
+                if materialized {
+                    policy.limits.max_materialized_bytes = cap;
+                } else if retained {
+                    policy.limits.max_retained_bytes = cap;
+                } else {
+                    policy.limits.max_collection_items = cap;
+                }
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+                let result = project_parameter_design_with_edge_identities(
+                    &ctx,
+                    &crate::design::feature_project::ProjectInputs {
+                        native: &native,
+                        scopes: &scopes,
+                        timelines: std::slice::from_ref(&timeline),
+                        ..Default::default()
+                    },
+                );
+                result
             },
         );
-        match result {
-            Err(CodecError::ResourceLimit(failure))
-                if failure.operation == operation
-                    && failure.dimension
-                        == (if materialized {
-                            ResourceDimension::MaterializedBytes
-                        } else if retained {
-                            ResourceDimension::RetainedBytes
-                        } else {
-                            ResourceDimension::CollectionItems
-                        }) =>
-            {
-                return
-            }
-            Err(CodecError::ResourceLimit(_)) => {}
-            Ok(_) => panic!("expected {operation} refusal, got success"),
-            Err(error) => panic!("expected {operation} refusal: {error}"),
-        }
+        assert!(matches!(error, CodecError::ResourceLimit(failure)
+            if failure.operation == operation && failure.dimension == (if materialized { ResourceDimension::MaterializedBytes } else { if retained { ResourceDimension::RetainedBytes } else { ResourceDimension::CollectionItems } })));
     }
-    panic!("no {operation} refusal");
 }
 
 #[test]
@@ -1704,6 +1712,11 @@ fn parameter_dependency_id_refuses_retained_limit() {
 }
 
 fn assert_history_dependency_refusal(operation: &'static str, retained: bool) {
+    let dimension = if operation == "f3d feature history state id" {
+        cadmpeg_core::decode::ResourceDimension::MaterializedBytes
+    } else {
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes
+    };
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
     let (mut scopes, timeline) = authored_ordinal_limit_fixture();
@@ -1717,42 +1730,42 @@ fn assert_history_dependency_refusal(operation: &'static str, retained: bool) {
             draft.layout_fixture_tail();
         })
         .unwrap();
-    let max_limit = if retained { 2048 } else { 48 };
-    for limit in 0..max_limit {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::default();
-        if retained {
-            policy.limits.max_retained_bytes = limit;
-        } else {
-            policy.limits.max_collection_items = limit;
-        }
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let result = project_parameter_design_with_edge_identities(
-            &ctx,
-            &crate::design::feature_project::ProjectInputs {
-                scopes: &scopes,
-                timelines: std::slice::from_ref(&timeline),
-                ..Default::default()
+
+    {
+        let error = cadmpeg_test_support::refusal::resource_limit_at(
+            if retained {
+                dimension
+            } else {
+                ResourceDimension::CollectionItems
+            },
+            operation,
+            |cap| {
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::default();
+                if retained {
+                    if operation == "f3d feature history state id" {
+                        policy.limits.max_materialized_bytes = cap;
+                    } else {
+                        policy.limits.max_retained_bytes = cap;
+                    }
+                } else {
+                    policy.limits.max_collection_items = cap;
+                }
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+                let result = project_parameter_design_with_edge_identities(
+                    &ctx,
+                    &crate::design::feature_project::ProjectInputs {
+                        scopes: &scopes,
+                        timelines: std::slice::from_ref(&timeline),
+                        ..Default::default()
+                    },
+                );
+                result
             },
         );
-        match result {
-            Err(CodecError::ResourceLimit(failure))
-                if failure.operation == operation
-                    && failure.dimension
-                        == (if retained {
-                            ResourceDimension::RetainedBytes
-                        } else {
-                            ResourceDimension::CollectionItems
-                        }) =>
-            {
-                return
-            }
-            Err(CodecError::ResourceLimit(_)) => {}
-            Ok(_) => panic!("expected {operation} refusal, got success"),
-            Err(error) => panic!("expected {operation} refusal: {error}"),
-        }
+        assert!(matches!(error, CodecError::ResourceLimit(failure)
+            if failure.operation == operation && failure.dimension == (if retained { dimension } else { ResourceDimension::CollectionItems })));
     }
-    panic!("no {operation} refusal");
 }
 
 #[test]

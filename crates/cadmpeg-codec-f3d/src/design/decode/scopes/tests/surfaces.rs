@@ -1512,6 +1512,7 @@ fn surface_patch_boundary_refuses_collection_limit() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
     policy.limits.max_collection_items = 0;
+
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let result = surface_patch_boundaries(&ctx, &bytes, &records, &[42]);
     assert!(matches!(

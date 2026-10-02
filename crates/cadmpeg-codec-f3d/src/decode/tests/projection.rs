@@ -330,7 +330,22 @@ fn mesh_texture_output_refuses_collection_limit() {
 fn mesh_texture_source_id_refuses_retained_limit() {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_retained_bytes = 0;
+    policy.limits.max_retained_bytes = match cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        "copy F3D mesh texture source ID",
+        |cap| {
+            let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+            policy.limits.max_retained_bytes = cap;
+            let (ctx, _) =
+                cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            mesh_texture_assignments(&ctx, Some(&[1]), &one_mesh_texture(), 1)
+                .map(|_| ())
+                .map_err(cadmpeg_core::CodecError::from)
+        },
+    ) {
+        cadmpeg_core::CodecError::ResourceLimit(limit) => limit.limit,
+        error => panic!("unexpected refusal: {error:?}"),
+    };
     let (ctx, _) =
         cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let error = mesh_texture_assignments(&ctx, Some(&[1]), &one_mesh_texture(), 1).unwrap_err();
@@ -344,7 +359,22 @@ fn mesh_texture_source_id_refuses_retained_limit() {
 fn mesh_texture_asset_id_refuses_retained_limit() {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_retained_bytes = u64::try_from("resource:one".len()).unwrap();
+    policy.limits.max_retained_bytes = match cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        "copy F3D mesh texture asset ID",
+        |cap| {
+            let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+            policy.limits.max_retained_bytes = cap;
+            let (ctx, _) =
+                cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            mesh_texture_assignments(&ctx, Some(&[1]), &one_mesh_texture(), 1)
+                .map(|_| ())
+                .map_err(cadmpeg_core::CodecError::from)
+        },
+    ) {
+        cadmpeg_core::CodecError::ResourceLimit(limit) => limit.limit,
+        error => panic!("unexpected refusal: {error:?}"),
+    };
     let (ctx, _) =
         cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let error = mesh_texture_assignments(&ctx, Some(&[1]), &one_mesh_texture(), 1).unwrap_err();
@@ -1302,7 +1332,32 @@ fn projection_loss_refuses_collection_limit() {
 fn projection_loss_refuses_retained_limit() {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_retained_bytes = 0;
+    policy.limits.max_retained_bytes = match cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        "retain F3D projection loss",
+        |cap| {
+            let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+            policy.limits.max_retained_bytes = cap;
+            let (ctx, _) =
+                cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            let mut report = cadmpeg_ir::codec::DecodeBody::new(
+                cadmpeg_ir::report::decode::DecodeTransfer::ContainerOnly {},
+            );
+            super::super::push_loss_vec(
+                &ctx,
+                &mut report.losses,
+                crate::loss::F3dLossCode::FeatureDefinitionIncomplete,
+                format_args!("one incomplete feature"),
+                "collect F3D projection losses",
+                "retain F3D projection loss",
+            )
+            .map(|_| ())
+            .map_err(cadmpeg_core::CodecError::from)
+        },
+    ) {
+        cadmpeg_core::CodecError::ResourceLimit(limit) => limit.limit,
+        error => panic!("unexpected refusal: {error:?}"),
+    };
     let (ctx, _) =
         cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let mut report = cadmpeg_ir::codec::DecodeBody::new(

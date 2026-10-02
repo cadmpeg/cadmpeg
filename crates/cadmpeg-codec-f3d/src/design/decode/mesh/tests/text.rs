@@ -20,14 +20,17 @@ fn mesh_guid_ownership_preserves_retained_refusals() {
                 if failure.dimension == ResourceDimension::RetainedBytes && failure.operation == "retain F3D mesh GUID"));
         });
         if textures {
-            crate::test_support::with_decode_policy(&policy, |ctx| {
+            {
                 let frame = sole_typed_frame(&graph, MESH_TEXTURE_TABLE_TYPE_GUID);
-                let error = super::super::parse_mesh_texture_table_record(ctx, &graph.bytes, frame)
-                    .err()
-                    .unwrap();
+                let error = crate::test_support::resource_refusal_at(
+                    ResourceDimension::RetainedBytes,
+                    "retain F3D mesh texture GUID",
+                    0,
+                    |ctx| super::super::parse_mesh_texture_table_record(ctx, &graph.bytes, frame),
+                );
                 assert!(matches!(error, CodecError::ResourceLimit(failure)
                     if failure.dimension == ResourceDimension::RetainedBytes && failure.operation == "retain F3D mesh texture GUID"));
-            });
+            }
         }
     }
 }

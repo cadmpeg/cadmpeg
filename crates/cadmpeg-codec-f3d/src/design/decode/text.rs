@@ -123,6 +123,7 @@ mod tests {
             let arena = DecodeArena::new();
             let mut policy = DecodePolicy::service();
             policy.limits.max_retained_bytes = retained;
+
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
             let result = super::fixed_relaxed_guid_text(&ctx, &bytes, 0);
             if retained < 36 {

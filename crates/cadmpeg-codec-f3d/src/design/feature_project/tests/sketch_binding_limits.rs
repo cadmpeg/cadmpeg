@@ -47,36 +47,37 @@ fn fixture() -> Vec<Feature> {
 }
 
 fn assert_refusal(operation: &'static str, retained: bool) {
-    let max_limit = if retained { 512 } else { 8 };
-    for limit in 0..max_limit {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::default();
-        if retained {
-            policy.limits.max_retained_bytes = limit;
-        } else {
-            policy.limits.max_collection_items = limit;
-        }
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let mut features = fixture();
-        let result = bind_sketch_feature_geometry(&ctx, &mut features, &[], &[], &[], &[]);
-        match result {
-            Err(CodecError::ResourceLimit(failure))
-                if failure.operation == operation
-                    && failure.dimension
-                        == (if retained {
-                            ResourceDimension::RetainedBytes
-                        } else {
-                            ResourceDimension::CollectionItems
-                        }) =>
-            {
-                return
-            }
-            Err(CodecError::ResourceLimit(_)) => {}
-            Ok(()) => panic!("expected {operation} refusal, got success"),
-            Err(error) => panic!("expected {operation} refusal: {error}"),
-        }
+    let materialized = retained && operation.starts_with("f3d sketch feature index");
+
+    {
+        let error = cadmpeg_test_support::refusal::resource_limit_at(
+            if materialized {
+                ResourceDimension::MaterializedBytes
+            } else if retained {
+                ResourceDimension::RetainedBytes
+            } else {
+                ResourceDimension::CollectionItems
+            },
+            operation,
+            |cap| {
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::default();
+                if materialized {
+                    policy.limits.max_materialized_bytes = cap;
+                } else if retained {
+                    policy.limits.max_retained_bytes = cap;
+                } else {
+                    policy.limits.max_collection_items = cap;
+                }
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+                let mut features = fixture();
+                let result = bind_sketch_feature_geometry(&ctx, &mut features, &[], &[], &[], &[]);
+                result
+            },
+        );
+        assert!(matches!(error, CodecError::ResourceLimit(failure)
+            if failure.operation == operation && failure.dimension == (if materialized { ResourceDimension::MaterializedBytes } else if retained { ResourceDimension::RetainedBytes } else { ResourceDimension::CollectionItems })));
     }
-    panic!("no {operation} refusal");
 }
 
 #[test]
@@ -192,43 +193,38 @@ fn spatial_fixture() -> (
 }
 
 fn assert_spatial_refusal(operation: &'static str, retained: bool) {
-    let max_limit = if retained { 512 } else { 8 };
-    for limit in 0..max_limit {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::default();
-        if retained {
-            policy.limits.max_retained_bytes = limit;
-        } else {
-            policy.limits.max_collection_items = limit;
-        }
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let (mut features, scope, placement, spatial) = spatial_fixture();
-        let result = bind_sketch_feature_geometry(
-            &ctx,
-            &mut features,
-            std::slice::from_ref(&scope),
-            std::slice::from_ref(&placement),
-            &[],
-            std::slice::from_ref(&spatial),
+    {
+        let error = cadmpeg_test_support::refusal::resource_limit_at(
+            if retained {
+                ResourceDimension::RetainedBytes
+            } else {
+                ResourceDimension::CollectionItems
+            },
+            operation,
+            |cap| {
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::default();
+                if retained {
+                    policy.limits.max_retained_bytes = cap;
+                } else {
+                    policy.limits.max_collection_items = cap;
+                }
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+                let (mut features, scope, placement, spatial) = spatial_fixture();
+                let result = bind_sketch_feature_geometry(
+                    &ctx,
+                    &mut features,
+                    std::slice::from_ref(&scope),
+                    std::slice::from_ref(&placement),
+                    &[],
+                    std::slice::from_ref(&spatial),
+                );
+                result
+            },
         );
-        match result {
-            Err(CodecError::ResourceLimit(failure))
-                if failure.operation == operation
-                    && failure.dimension
-                        == (if retained {
-                            ResourceDimension::RetainedBytes
-                        } else {
-                            ResourceDimension::CollectionItems
-                        }) =>
-            {
-                return
-            }
-            Err(CodecError::ResourceLimit(_)) => {}
-            Ok(()) => panic!("expected {operation} refusal, got success"),
-            Err(error) => panic!("expected {operation} refusal: {error}"),
-        }
+        assert!(matches!(error, CodecError::ResourceLimit(failure)
+            if failure.operation == operation && failure.dimension == (if retained { ResourceDimension::RetainedBytes } else { ResourceDimension::CollectionItems })));
     }
-    panic!("no {operation} refusal");
 }
 
 #[test]

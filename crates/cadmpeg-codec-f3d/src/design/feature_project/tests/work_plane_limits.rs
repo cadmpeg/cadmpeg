@@ -72,6 +72,7 @@ fn work_plane_vertex_recipe_id_refuses_retained_limit() {
     policy.limits.max_retained_bytes =
         u64::try_from(feature.as_str().len() + prefix.as_str().len()).unwrap();
     let arena = DecodeArena::new();
+
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(
         matches!(super::super::project_work_plane(&ctx, &plane, transform),

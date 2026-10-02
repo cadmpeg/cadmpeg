@@ -110,6 +110,96 @@ fn sketch_placement_candidate_refuses_collection_and_entity_id_limits() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
     policy.limits.max_collection_items = 0;
+    let refusal_cap = match cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::CollectionItems,
+        "f3d sketch placement candidate",
+        |cap| {
+            let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+            match ResourceDimension::CollectionItems {
+                cadmpeg_core::decode::ResourceDimension::RetainedBytes => {
+                    policy.limits.max_retained_bytes = cap
+                }
+                cadmpeg_core::decode::ResourceDimension::CollectionItems => {
+                    policy.limits.max_collection_items = cap
+                }
+                cadmpeg_core::decode::ResourceDimension::MaterializedBytes => {
+                    policy.limits.max_materialized_bytes = cap
+                }
+                cadmpeg_core::decode::ResourceDimension::WorkUnits => {
+                    policy.limits.max_work_units = cap
+                }
+                dimension => panic!("unsupported refusal dimension: {dimension:?}"),
+            }
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            (parse_sketch_placement_candidates(&ctx, &bytes, 177, &entity_id, 185, &records))
+                .map(|_| ())
+                .map_err(cadmpeg_core::CodecError::from)
+        },
+    ) {
+        cadmpeg_core::CodecError::ResourceLimit(limit) => limit.limit,
+        error => panic!("unexpected refusal: {error:?}"),
+    };
+    policy.limits = cadmpeg_core::decode::DecodePolicy::service().limits;
+    match ResourceDimension::CollectionItems {
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes => {
+            policy.limits.max_retained_bytes = refusal_cap
+        }
+        cadmpeg_core::decode::ResourceDimension::CollectionItems => {
+            policy.limits.max_collection_items = refusal_cap
+        }
+        cadmpeg_core::decode::ResourceDimension::MaterializedBytes => {
+            policy.limits.max_materialized_bytes = refusal_cap
+        }
+        cadmpeg_core::decode::ResourceDimension::WorkUnits => {
+            policy.limits.max_work_units = refusal_cap
+        }
+        dimension => panic!("unsupported refusal dimension: {dimension:?}"),
+    }
+    let refusal_cap = match cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::CollectionItems,
+        "f3d sketch placement candidate",
+        |cap| {
+            let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+            match ResourceDimension::CollectionItems {
+                cadmpeg_core::decode::ResourceDimension::RetainedBytes => {
+                    policy.limits.max_retained_bytes = cap
+                }
+                cadmpeg_core::decode::ResourceDimension::CollectionItems => {
+                    policy.limits.max_collection_items = cap
+                }
+                cadmpeg_core::decode::ResourceDimension::MaterializedBytes => {
+                    policy.limits.max_materialized_bytes = cap
+                }
+                cadmpeg_core::decode::ResourceDimension::WorkUnits => {
+                    policy.limits.max_work_units = cap
+                }
+                dimension => panic!("unsupported refusal dimension: {dimension:?}"),
+            }
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            (parse_sketch_placement_candidates(&ctx, &bytes, 177, &entity_id, 185, &records))
+                .map(|_| ())
+                .map_err(cadmpeg_core::CodecError::from)
+        },
+    ) {
+        cadmpeg_core::CodecError::ResourceLimit(limit) => limit.limit,
+        error => panic!("unexpected refusal: {error:?}"),
+    };
+    policy.limits = cadmpeg_core::decode::DecodePolicy::service().limits;
+    match ResourceDimension::CollectionItems {
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes => {
+            policy.limits.max_retained_bytes = refusal_cap
+        }
+        cadmpeg_core::decode::ResourceDimension::CollectionItems => {
+            policy.limits.max_collection_items = refusal_cap
+        }
+        cadmpeg_core::decode::ResourceDimension::MaterializedBytes => {
+            policy.limits.max_materialized_bytes = refusal_cap
+        }
+        cadmpeg_core::decode::ResourceDimension::WorkUnits => {
+            policy.limits.max_work_units = refusal_cap
+        }
+        dimension => panic!("unsupported refusal dimension: {dimension:?}"),
+    }
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(matches!(
         parse_sketch_placement_candidates(&ctx, &bytes, 177, &entity_id, 185, &records),
@@ -120,6 +210,96 @@ fn sketch_placement_candidate_refuses_collection_and_entity_id_limits() {
 
     policy.limits.max_collection_items = 1;
     policy.limits.max_retained_bytes = u64_from_index(entity_id.as_str().len()) - 1;
+    let refusal_cap = match cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::RetainedBytes,
+        "f3d sketch placement entity ID",
+        |cap| {
+            let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+            match ResourceDimension::RetainedBytes {
+                cadmpeg_core::decode::ResourceDimension::RetainedBytes => {
+                    policy.limits.max_retained_bytes = cap
+                }
+                cadmpeg_core::decode::ResourceDimension::CollectionItems => {
+                    policy.limits.max_collection_items = cap
+                }
+                cadmpeg_core::decode::ResourceDimension::MaterializedBytes => {
+                    policy.limits.max_materialized_bytes = cap
+                }
+                cadmpeg_core::decode::ResourceDimension::WorkUnits => {
+                    policy.limits.max_work_units = cap
+                }
+                dimension => panic!("unsupported refusal dimension: {dimension:?}"),
+            }
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            (parse_sketch_placement_candidates(&ctx, &bytes, 177, &entity_id, 185, &records))
+                .map(|_| ())
+                .map_err(cadmpeg_core::CodecError::from)
+        },
+    ) {
+        cadmpeg_core::CodecError::ResourceLimit(limit) => limit.limit,
+        error => panic!("unexpected refusal: {error:?}"),
+    };
+    policy.limits = cadmpeg_core::decode::DecodePolicy::service().limits;
+    match ResourceDimension::RetainedBytes {
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes => {
+            policy.limits.max_retained_bytes = refusal_cap
+        }
+        cadmpeg_core::decode::ResourceDimension::CollectionItems => {
+            policy.limits.max_collection_items = refusal_cap
+        }
+        cadmpeg_core::decode::ResourceDimension::MaterializedBytes => {
+            policy.limits.max_materialized_bytes = refusal_cap
+        }
+        cadmpeg_core::decode::ResourceDimension::WorkUnits => {
+            policy.limits.max_work_units = refusal_cap
+        }
+        dimension => panic!("unsupported refusal dimension: {dimension:?}"),
+    }
+    let refusal_cap = match cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::RetainedBytes,
+        "f3d sketch placement entity ID",
+        |cap| {
+            let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+            match ResourceDimension::RetainedBytes {
+                cadmpeg_core::decode::ResourceDimension::RetainedBytes => {
+                    policy.limits.max_retained_bytes = cap
+                }
+                cadmpeg_core::decode::ResourceDimension::CollectionItems => {
+                    policy.limits.max_collection_items = cap
+                }
+                cadmpeg_core::decode::ResourceDimension::MaterializedBytes => {
+                    policy.limits.max_materialized_bytes = cap
+                }
+                cadmpeg_core::decode::ResourceDimension::WorkUnits => {
+                    policy.limits.max_work_units = cap
+                }
+                dimension => panic!("unsupported refusal dimension: {dimension:?}"),
+            }
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            (parse_sketch_placement_candidates(&ctx, &bytes, 177, &entity_id, 185, &records))
+                .map(|_| ())
+                .map_err(cadmpeg_core::CodecError::from)
+        },
+    ) {
+        cadmpeg_core::CodecError::ResourceLimit(limit) => limit.limit,
+        error => panic!("unexpected refusal: {error:?}"),
+    };
+    policy.limits = cadmpeg_core::decode::DecodePolicy::service().limits;
+    match ResourceDimension::RetainedBytes {
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes => {
+            policy.limits.max_retained_bytes = refusal_cap
+        }
+        cadmpeg_core::decode::ResourceDimension::CollectionItems => {
+            policy.limits.max_collection_items = refusal_cap
+        }
+        cadmpeg_core::decode::ResourceDimension::MaterializedBytes => {
+            policy.limits.max_materialized_bytes = refusal_cap
+        }
+        cadmpeg_core::decode::ResourceDimension::WorkUnits => {
+            policy.limits.max_work_units = refusal_cap
+        }
+        dimension => panic!("unsupported refusal dimension: {dimension:?}"),
+    }
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(matches!(
         parse_sketch_placement_candidates(&ctx, &bytes, 177, &entity_id, 185, &records),
@@ -141,6 +321,7 @@ fn sketch_placement_stream_index_refuses_collection_limit() {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::default();
         policy.limits.max_collection_items = 0;
+
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         assert!(matches!(
             crate::design::decode::sketch::decode_sketch_placements(&ctx, scan, &[], &[]),
@@ -1217,37 +1398,28 @@ fn sketch_graph_collections_and_text_refuse_limits() {
                 && failure.operation == operation)
         );
     }
-    for (limit, dimension, operation) in [
+    for (dimension, operation) in [
         (
-            4,
             ResourceDimension::RetainedBytes,
             "f3d sketch relation owner text",
         ),
         (
-            5,
             ResourceDimension::MaterializedBytes,
             "f3d sketch relation scope text",
         ),
     ] {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::default();
-        match dimension {
-            ResourceDimension::RetainedBytes => policy.limits.max_retained_bytes = limit,
-            ResourceDimension::MaterializedBytes => policy.limits.max_materialized_bytes = limit,
-            _ => unreachable!(),
-        }
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let mut points = [sketch_graph_point(20)];
-        let mut relations = [sketch_graph_relation()];
-        let error = bind_sketch_graph(
-            &ctx,
-            &[sketch_graph_header(100, vec![20])],
-            &mut points,
-            &mut [],
-            &mut [],
-            &mut relations,
-        )
-        .expect_err("text limit must refuse sketch graph");
+        let error = crate::test_support::resource_refusal_at(dimension, operation, 0, |ctx| {
+            let mut points = [sketch_graph_point(20)];
+            let mut relations = [sketch_graph_relation()];
+            bind_sketch_graph(
+                ctx,
+                &[sketch_graph_header(100, vec![20])],
+                &mut points,
+                &mut [],
+                &mut [],
+                &mut relations,
+            )
+        });
         assert!(
             matches!(error, cadmpeg_core::CodecError::ResourceLimit(failure)
             if failure.dimension == dimension && failure.operation == operation)

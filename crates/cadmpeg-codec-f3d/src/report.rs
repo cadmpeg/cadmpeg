@@ -245,7 +245,27 @@ mod tests {
         let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
         let scan = crate::container::scan(&ctx, root).unwrap();
         let mut limited_policy = DecodePolicy::service();
-        limited_policy.limits.max_retained_bytes = 0;
+        limited_policy.limits.max_retained_bytes =
+            match cadmpeg_test_support::refusal::resource_limit_at(
+                cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+                "retain F3D summary note",
+                |cap| {
+                    let mut limited_policy = DecodePolicy::service();
+                    limited_policy.limits.max_retained_bytes = cap;
+                    let (limited, _) =
+                        DecodeContext::from_root_bytes(&[], &arena, &limited_policy).unwrap();
+                    crate::container::summary_notes(
+                        &limited,
+                        &scan,
+                        crate::container::SummaryScope::FullDecode,
+                    )
+                    .map(|_| ())
+                    .map_err(cadmpeg_core::CodecError::from)
+                },
+            ) {
+                cadmpeg_core::CodecError::ResourceLimit(limit) => limit.limit,
+                error => panic!("unexpected refusal: {error:?}"),
+            };
         let (limited, _) = DecodeContext::from_root_bytes(&[], &arena, &limited_policy).unwrap();
         let error = crate::container::summary_notes(
             &limited,

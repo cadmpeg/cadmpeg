@@ -94,22 +94,29 @@ fn text_fixture(frame: bool) -> (SketchRelation, SketchEntity, SketchEntity) {
 fn assert_text_refusal(frame: bool, retained: bool, operation: &'static str) {
     let (relation, path, text) = text_fixture(frame);
     let projected = std::collections::HashMap::from([(("scope", 1), &path), (("scope", 2), &text)]);
-    for limit in 0..256 {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::default();
-        if retained {
-            policy.limits.max_retained_bytes = limit;
-        } else {
-            policy.limits.max_collection_items = limit;
-        }
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        match exact_text_relation(&relation, "scope", &projected, &ctx) {
-            Err(CodecError::ResourceLimit(failure)) if failure.operation == operation => return,
-            Err(CodecError::ResourceLimit(_)) => {}
-            other => panic!("expected refusal at {operation}: {other:?}"),
-        }
+    {
+        let error = cadmpeg_test_support::refusal::resource_limit_at(
+            if retained {
+                cadmpeg_core::decode::ResourceDimension::RetainedBytes
+            } else {
+                cadmpeg_core::decode::ResourceDimension::CollectionItems
+            },
+            operation,
+            |cap| {
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::default();
+                if retained {
+                    policy.limits.max_retained_bytes = cap;
+                } else {
+                    policy.limits.max_collection_items = cap;
+                }
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+                exact_text_relation(&relation, "scope", &projected, &ctx)
+            },
+        );
+        assert!(matches!(error, CodecError::ResourceLimit(failure)
+            if failure.operation == operation && failure.dimension == (if retained { cadmpeg_core::decode::ResourceDimension::RetainedBytes } else { cadmpeg_core::decode::ResourceDimension::CollectionItems })));
     }
-    panic!("no refusal at {operation}");
 }
 
 #[test]

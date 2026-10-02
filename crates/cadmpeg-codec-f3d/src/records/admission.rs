@@ -23,7 +23,10 @@ impl RecordAdmission<'_, '_> {
             Self::Charged(ctx) => ctx.reserve_vec(values, count, operation),
             Self::Admitted => values.try_reserve(count).map_err(|_| {
                 CodecError::ResourceLimit(ResourceLimit::allocation_failed(
-                    ResourceDimension::CollectionItems, u64::MAX, u64_from_index(count), operation,
+                    ResourceDimension::CollectionItems,
+                    u64::MAX,
+                    u64_from_index(count),
+                    operation,
                 ))
             }),
         }
@@ -40,7 +43,7 @@ impl RecordAdmission<'_, '_> {
                 let mut values = Vec::new();
                 self.reserve_vec(&mut values, count, operation)?;
                 Ok(values)
-            },
+            }
         }
     }
 
@@ -54,7 +57,10 @@ impl RecordAdmission<'_, '_> {
             Self::Charged(ctx) => ctx.reserve_set(values, count, operation),
             Self::Admitted => values.try_reserve(count).map_err(|_| {
                 CodecError::ResourceLimit(ResourceLimit::allocation_failed(
-                    ResourceDimension::CollectionItems, u64::MAX, u64_from_index(count), operation,
+                    ResourceDimension::CollectionItems,
+                    u64::MAX,
+                    u64_from_index(count),
+                    operation,
                 ))
             }),
         }

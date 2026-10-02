@@ -383,7 +383,23 @@ fn historical_recipe_identity_refuses_retained_limit() {
     let (topology, mut reference) = recipe_limit_case();
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_retained_bytes = 0;
+    policy.limits.max_retained_bytes = match cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        "retain F3D historical face identity",
+        |cap| {
+            let mut reference = reference.clone();
+            let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+            policy.limits.max_retained_bytes = cap;
+            let (ctx, _) =
+                cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            bind_historical_recipe_reference_candidates(&ctx, &mut reference, &topology)
+                .map(|_| ())
+                .map_err(cadmpeg_core::CodecError::from)
+        },
+    ) {
+        cadmpeg_core::CodecError::ResourceLimit(limit) => limit.limit,
+        error => panic!("unexpected refusal: {error:?}"),
+    };
     let (ctx, _) =
         cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let error =
