@@ -1804,14 +1804,14 @@ pub(super) fn embedded_base_curve_resolving_refs(
                 (origin[1] + direction[1]) * LEN_TO_MM,
                 (origin[2] + direction[2]) * LEN_TO_MM,
             );
-            NurbsCurve::new(
+            propagate_resource!(NurbsCurve::new(ctx, 
                 1,
                 vec![0.0, 0.0, 1.0, 1.0],
                 cadmpeg_ir::geometry::nurbs::NurbsPoles3::Polynomial {
                     points: vec![start, end],
                 },
                 false,
-            )
+            ))
             .ok()
             .map(Ok)
         }
@@ -1820,7 +1820,7 @@ pub(super) fn embedded_base_curve_resolving_refs(
             let normal = cur.take_vector3()?;
             let major = cur.take_vector3()?;
             let ratio = cur.take_f64()?;
-            ellipse_to_nurbs(center, normal, major, ratio).map(Ok)
+            ellipse_to_nurbs(ctx, center, normal, major, ratio)
         }
         "degenerate_curve" => {
             let point = cur.take_position()?;
@@ -1829,14 +1829,14 @@ pub(super) fn embedded_base_curve_resolving_refs(
                 point[1] * LEN_TO_MM,
                 point[2] * LEN_TO_MM,
             );
-            NurbsCurve::new(
+            propagate_resource!(NurbsCurve::new(ctx, 
                 1,
                 vec![0.0, 0.0, 1.0, 1.0],
                 cadmpeg_ir::geometry::nurbs::NurbsPoles3::Polynomial {
                     points: vec![at, at],
                 },
                 false,
-            )
+            ))
             .ok()
             .map(Ok)
         }

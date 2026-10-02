@@ -147,7 +147,7 @@ fn periodic_nurbs_surface_coordinates_reduce_into_the_knot_domain() {
     {
         let replacement = true;
         edit::replace(&mut surface, |previous| {
-            NurbsSurface::new(
+            NurbsSurface::new(&cadmpeg_test_support::service_decode_context(), 
                 NurbsSurfaceAxis::new(
                     previous.u_degree(),
                     previous.u_knots().to_vec(),
@@ -160,7 +160,7 @@ fn periodic_nurbs_surface_coordinates_reduce_into_the_knot_domain() {
                 ),
                 previous.pole_grid().clone(),
                 previous.normal_reversed(),
-            )
+            ).expect("fixture final NURBS admission")
         })
         .unwrap();
     };
@@ -171,7 +171,7 @@ fn periodic_nurbs_surface_coordinates_reduce_into_the_knot_domain() {
     {
         let replacement = false;
         edit::replace(&mut surface, |previous| {
-            NurbsSurface::new(
+            NurbsSurface::new(&cadmpeg_test_support::service_decode_context(), 
                 NurbsSurfaceAxis::new(
                     previous.u_degree(),
                     previous.u_knots().to_vec(),
@@ -184,7 +184,7 @@ fn periodic_nurbs_surface_coordinates_reduce_into_the_knot_domain() {
                 ),
                 previous.pole_grid().clone(),
                 previous.normal_reversed(),
-            )
+            ).expect("fixture final NURBS admission")
         })
         .unwrap();
     };
@@ -1069,7 +1069,7 @@ fn offset_uses_the_nurbs_carrier_normal_orientation() {
     {
         let replacement = true;
         edit::replace(&mut support, |previous| {
-            NurbsSurface::new(
+            NurbsSurface::new(&cadmpeg_test_support::service_decode_context(), 
                 NurbsSurfaceAxis::new(
                     previous.u_degree(),
                     previous.u_knots().to_vec(),
@@ -1082,7 +1082,7 @@ fn offset_uses_the_nurbs_carrier_normal_orientation() {
                 ),
                 previous.pole_grid().clone(),
                 replacement,
-            )
+            ).expect("fixture final NURBS admission")
         })
         .unwrap();
     };

@@ -3646,7 +3646,7 @@ fn oriented_curve_entity(
             version,
         )?,
         CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)) => {
-            let (reversed, range) = reverse_nurbs(nurbs, span.range)?;
+            let (reversed, range) = reverse_nurbs(ctx, nurbs, span.range)?;
             let reversed_span = CurveSpan {
                 range,
                 ..reversed_span
@@ -3682,7 +3682,7 @@ fn oriented_curve_entity(
                     "IGES reversed circular edge span is not convertible ({span:?})"
                 ))
             })?;
-            let (reversed, range) = reverse_nurbs(&reversed, span.range)?;
+            let (reversed, range) = reverse_nurbs(ctx, &reversed, span.range)?;
             let reversed_span = CurveSpan {
                 range,
                 ..reversed_span
@@ -3720,7 +3720,7 @@ fn oriented_curve_entity(
                     "IGES reversed elliptical edge span is not convertible ({span:?})"
                 ))
             })?;
-            let (reversed, range) = reverse_nurbs(&reversed, span.range)?;
+            let (reversed, range) = reverse_nurbs(ctx, &reversed, span.range)?;
             let reversed_span = CurveSpan {
                 range,
                 ..reversed_span
@@ -3756,7 +3756,7 @@ fn oriented_curve_entity(
                     "IGES reversed parabolic edge span is not convertible ({span:?})"
                 ))
             })?;
-            let (reversed, range) = reverse_nurbs(&reversed, span.range)?;
+            let (reversed, range) = reverse_nurbs(ctx, &reversed, span.range)?;
             let reversed_span = CurveSpan {
                 range,
                 ..reversed_span
@@ -3778,7 +3778,7 @@ fn oriented_curve_entity(
                 false,
             )?
             .map_err(|error| CodecError::malformed(format_args!("polyline: {error}")))?;
-            let (reversed, range) = reverse_nurbs(&original, span.range)?;
+            let (reversed, range) = reverse_nurbs(ctx, &original, span.range)?;
             let reversed_span = CurveSpan {
                 range,
                 ..reversed_span
@@ -4020,11 +4020,12 @@ fn oriented_pcurve_entity(
     let nurbs = nurbs
         .lift(|point| Point3::new(point.u, point.v, 0.0))
         .map_err(|error| CodecError::malformed(format_args!("pcurve {}: {error}", pcurve.id)))?;
-    let (reversed, range) = reverse_nurbs(&nurbs, range)?;
+    let (reversed, range) = reverse_nurbs(ctx, &nurbs, range)?;
     encode_nurbs(ctx, &reversed, range, "PCURVE")
 }
 
 fn reverse_nurbs(
+    ctx: &DecodeContext<'_>,
     nurbs: &NurbsCurve,
     range: FiniteVector<2>,
 ) -> Result<(NurbsCurve, FiniteVector<2>), CodecError> {
@@ -4049,7 +4050,7 @@ fn reverse_nurbs(
     let reversed_range = FiniteVector::from([reflect(range_end)?, reflect(range_start)?]);
     let mut poles = nurbs.pole_rows().clone();
     poles.reverse();
-    let reversed = NurbsCurve::new(nurbs.degree(), knots, poles, nurbs.periodic())
+    let reversed = NurbsCurve::new(ctx, nurbs.degree(), knots, poles, nurbs.periodic())?
         .map_err(|error| CodecError::malformed(format_args!("reversed NURBS: {error}")))?;
     Ok((reversed, reversed_range))
 }

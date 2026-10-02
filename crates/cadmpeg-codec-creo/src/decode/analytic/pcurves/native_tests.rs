@@ -608,11 +608,12 @@ fn boundary_nurbs_endpoint_witnesses_use_the_intrinsic_domain() {
         let replacement = true;
         edit::replace(&mut periodic, |previous| {
             cadmpeg_ir::geometry::nurbs::NurbsCurve::new(
+                &evaluation_ctx,
                 previous.degree(),
                 previous.knots().to_vec(),
                 previous.pole_rows().clone(),
                 replacement,
-            )
+            ).expect("fixture final NURBS admission")
         })
         .expect("admitted periodic fixture");
     };

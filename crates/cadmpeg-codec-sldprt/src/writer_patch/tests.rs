@@ -70,7 +70,7 @@ fn native_patch_edits_compact_counted_nurbs_surface_arrays() {
             let knots: &mut [f64] = &mut knots;
             knots[2..].fill(2.0);
         };
-        cadmpeg_ir::geometry::nurbs::NurbsSurface::new(
+        cadmpeg_ir::geometry::nurbs::NurbsSurface::new(&cadmpeg_test_support::service_decode_context(), 
             cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
                 previous.u_degree(),
                 knots,
@@ -83,7 +83,7 @@ fn native_patch_edits_compact_counted_nurbs_surface_arrays() {
             ),
             previous.pole_grid().clone(),
             previous.normal_reversed(),
-        )
+        ).expect("fixture final NURBS admission")
     })
     .unwrap();
     edit::replace(&mut new, |previous| {
@@ -92,7 +92,7 @@ fn native_patch_edits_compact_counted_nurbs_surface_arrays() {
             let knots: &mut [f64] = &mut knots;
             knots[2..].fill(3.0);
         };
-        cadmpeg_ir::geometry::nurbs::NurbsSurface::new(
+        cadmpeg_ir::geometry::nurbs::NurbsSurface::new(&cadmpeg_test_support::service_decode_context(), 
             cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
                 previous.u_degree(),
                 previous.u_knots().to_vec(),
@@ -105,7 +105,7 @@ fn native_patch_edits_compact_counted_nurbs_surface_arrays() {
             ),
             previous.pole_grid().clone(),
             previous.normal_reversed(),
-        )
+        ).expect("fixture final NURBS admission")
     })
     .unwrap();
     let dirty_slots = [
@@ -225,7 +225,7 @@ fn native_patch_edits_nurbs_carriers_beside_untyped_surfaces() {
                 let knots: &mut [f64] = &mut knots;
                 knots[2..].fill(2.0);
             };
-            cadmpeg_ir::geometry::nurbs::NurbsSurface::new(
+            cadmpeg_ir::geometry::nurbs::NurbsSurface::new(&cadmpeg_test_support::service_decode_context(), 
                 cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
                     previous.u_degree(),
                     knots,
@@ -238,7 +238,7 @@ fn native_patch_edits_nurbs_carriers_beside_untyped_surfaces() {
                 ),
                 previous.pole_grid().clone(),
                 previous.normal_reversed(),
-            )
+            ).expect("fixture final NURBS admission")
         })
         .unwrap();
         edit::replace(surface, |previous| {
@@ -247,7 +247,7 @@ fn native_patch_edits_nurbs_carriers_beside_untyped_surfaces() {
                 let knots: &mut [f64] = &mut knots;
                 knots[2..].fill(3.0);
             };
-            cadmpeg_ir::geometry::nurbs::NurbsSurface::new(
+            cadmpeg_ir::geometry::nurbs::NurbsSurface::new(&cadmpeg_test_support::service_decode_context(), 
                 cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
                     previous.u_degree(),
                     previous.u_knots().to_vec(),
@@ -260,7 +260,7 @@ fn native_patch_edits_nurbs_carriers_beside_untyped_surfaces() {
                 ),
                 previous.pole_grid().clone(),
                 previous.normal_reversed(),
-            )
+            ).expect("fixture final NURBS admission")
         })
         .unwrap();
         let expected_surface = surface.clone();

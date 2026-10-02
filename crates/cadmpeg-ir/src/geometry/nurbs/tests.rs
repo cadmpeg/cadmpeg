@@ -77,22 +77,22 @@ fn admitted_nurbs_surface_grid_preserves_constructor_wire_and_errors() {
             false,
         )
     };
-    let old = NurbsSurface::new(
+    let old = NurbsSurface::new(&cadmpeg_test_support::service_decode_context(), 
         axis(),
         axis(),
         NurbsPoleGrid::Polynomial { rows: rows.clone() },
         false,
-    )
+    ).expect("fixture final NURBS admission")
     .expect("old surface");
     let admitted =
-        NurbsSurface::from_admitted_grid(axis(), axis(), NurbsPoleGrid::Polynomial { rows }, false)
+        NurbsSurface::new(&cadmpeg_test_support::service_decode_context(), axis(), axis(), NurbsPoleGrid::Polynomial { rows }, false).expect("fixture final NURBS admission")
             .expect("admitted surface");
     assert_eq!(admitted, old);
     assert_eq!(
         serde_json::to_vec(&admitted).expect("wire"),
         serde_json::to_vec(&old).expect("wire")
     );
-    let short = NurbsSurface::from_admitted_grid(
+    let short = NurbsSurface::new(&cadmpeg_test_support::service_decode_context(), 
         NurbsSurfaceAxis::new(
             1,
             KnotVector::new(&cadmpeg_test_support::service_decode_context(), vec![0.0, 1.0]).expect("fixture knot admission").expect("finite knots"),
@@ -106,10 +106,10 @@ fn admitted_nurbs_surface_grid_preserves_constructor_wire_and_errors() {
             ],
         },
         false,
-    )
+    ).expect("fixture final NURBS admission")
     .expect_err("short knot axis");
     assert_eq!(short.to_string(), "u_knots must contain 4 values, found 2");
-    let ragged = NurbsSurface::from_admitted_grid(
+    let ragged = NurbsSurface::new(&cadmpeg_test_support::service_decode_context(), 
         axis(),
         axis(),
         NurbsPoleGrid::Polynomial {
@@ -119,7 +119,7 @@ fn admitted_nurbs_surface_grid_preserves_constructor_wire_and_errors() {
             ],
         },
         false,
-    )
+    ).expect("fixture final NURBS admission")
     .expect_err("ragged pole grid");
     assert_eq!(
         ragged.to_string(),
@@ -208,7 +208,7 @@ fn admitted_nurbs_curve_keeps_pole_storage() {
         panic!("fixture must be rational");
     };
     let pole_storage = points.as_ptr();
-    let rebuilt = NurbsCurve::new(degree, knots, poles, periodic).unwrap();
+    let rebuilt = NurbsCurve::new(&cadmpeg_test_support::service_decode_context(), degree, knots, poles, periodic).expect("fixture final NURBS admission").unwrap();
     let NurbsPoles3::Rational { points } = rebuilt.pole_rows() else {
         panic!("rebuilt curve must remain rational");
     };
@@ -227,7 +227,7 @@ fn admitted_nurbs_surface_keeps_outer_and_inner_pole_storage() {
     };
     let outer_storage = rows.as_ptr();
     let inner_storage = rows.iter().map(Vec::as_ptr).collect::<Vec<_>>();
-    let rebuilt = NurbsSurface::new(
+    let rebuilt = NurbsSurface::new(&cadmpeg_test_support::service_decode_context(), 
         NurbsSurfaceAxis::new(
             original.u_degree(),
             original.u_knots().clone(),
@@ -240,7 +240,7 @@ fn admitted_nurbs_surface_keeps_outer_and_inner_pole_storage() {
         ),
         grid,
         original.normal_reversed(),
-    )
+    ).expect("fixture final NURBS admission")
     .unwrap();
     let NurbsPoleGrid::Rational { rows } = rebuilt.pole_grid() else {
         panic!("rebuilt surface must remain rational");
@@ -303,14 +303,14 @@ fn admitted_nurbs_parts_preserve_the_existing_curve_and_surface_wire() {
     };
     let curve = curve();
     let knots = KnotVector::from_finite_lanes(&cadmpeg_test_support::service_decode_context(), finite_knots(curve.knots())).expect("fixture knot admission").unwrap();
-    let from_parts = NurbsCurve::new(1, knots.clone(), curve.pole_rows().clone(), true).unwrap();
+    let from_parts = NurbsCurve::new(&cadmpeg_test_support::service_decode_context(), 1, knots.clone(), curve.pole_rows().clone(), true).expect("fixture final NURBS admission").unwrap();
     assert_eq!(from_parts, curve);
     assert_eq!(
         serde_json::to_vec(&from_parts).unwrap(),
         serde_json::to_vec(&curve).unwrap()
     );
     assert_eq!(
-        NurbsCurve::new(2, knots, curve.pole_rows().clone(), true),
+        NurbsCurve::new(&cadmpeg_test_support::service_decode_context(), 2, knots, curve.pole_rows().clone(), true).expect("fixture final NURBS admission"),
         Err(NurbsError::Structure(
             "control_points must contain more than degree 2 poles, found 2".into()
         ))
@@ -331,7 +331,7 @@ fn admitted_nurbs_parts_preserve_the_existing_curve_and_surface_wire() {
         KnotVector::from_finite_lanes(&cadmpeg_test_support::service_decode_context(), finite_knots(surface.v_knots())).expect("fixture knot admission").unwrap(),
         false,
     );
-    let from_parts = NurbsSurface::new(u, v, surface.pole_grid().clone(), true).unwrap();
+    let from_parts = NurbsSurface::new(&cadmpeg_test_support::service_decode_context(), u, v, surface.pole_grid().clone(), true).expect("fixture final NURBS admission").unwrap();
     assert_eq!(from_parts, surface);
     assert_eq!(
         serde_json::to_vec(&from_parts).unwrap(),
@@ -346,7 +346,7 @@ fn admitted_surface_grid_preserves_the_existing_wire() {
     let surface = surface();
     let u = NurbsSurfaceAxis::new(1, surface.u_knots().clone(), true);
     let v = NurbsSurfaceAxis::new(1, surface.v_knots().clone(), false);
-    let admitted = NurbsSurface::from_admitted_grid(u, v, surface.pole_grid().clone(), true)
+    let admitted = NurbsSurface::new(&cadmpeg_test_support::service_decode_context(), u, v, surface.pole_grid().clone(), true).expect("fixture final NURBS admission")
         .expect("admitted fixture grid");
     assert_eq!(admitted, surface);
     assert_eq!(
@@ -921,7 +921,7 @@ fn nurbs_stores_hold_admitted_poles_and_take_admitted_lanes() {
     let curve = curve();
     let held: &NurbsPoles3<FinitePoint3> = curve.pole_rows();
     assert_eq!(
-        NurbsCurve::new(1, curve.knots().to_vec(), held.clone(), true),
+        NurbsCurve::new(&cadmpeg_test_support::service_decode_context(), 1, curve.knots().to_vec(), held.clone(), true).expect("fixture final NURBS admission"),
         Ok(curve.clone())
     );
     assert_eq!(held.to_raw().points(), curve.pole_rows().raw_points());
@@ -1000,7 +1000,7 @@ fn nurbs_stores_hold_admitted_poles_and_take_admitted_lanes() {
     let u = || NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], true);
     let v = || NurbsSurfaceAxis::new(1, vec![2.0, 2.0, 5.0, 5.0], false);
     assert_eq!(
-        crate::geometry::nurbs::NurbsSurface::new(u(), v(), surface.pole_grid().clone(), true),
+        crate::geometry::nurbs::NurbsSurface::new(&cadmpeg_test_support::service_decode_context(), u(), v(), surface.pole_grid().clone(), true).expect("fixture final NURBS admission"),
         Ok(surface.clone())
     );
     assert_eq!(
@@ -1120,10 +1120,10 @@ fn context_free_pole_reconstruction_does_not_enter_a_decode_constructor() {
         }
     }
     let points = vec![Pole(Point3::new(0.0, 0.0, 0.0)), Pole(Point3::new(1.0, 0.0, 0.0))];
-    let curve = NurbsCurve::new(1, vec![0.0, 0.0, 1.0, 1.0], NurbsPoles3::Polynomial { points: points.clone() }, false).unwrap();
+    let curve = NurbsCurve::new(&cadmpeg_test_support::service_decode_context(), 1, vec![0.0, 0.0, 1.0, 1.0], NurbsPoles3::Polynomial { points: points.clone() }, false).expect("fixture final NURBS admission").unwrap();
     assert_eq!(curve.control_points(), vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)]);
     let axis = || NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false);
-    let surface = NurbsSurface::new(axis(), axis(), NurbsPoleGrid::Polynomial { rows: vec![points.clone(), points] }, false).unwrap();
+    let surface = NurbsSurface::new(&cadmpeg_test_support::service_decode_context(), axis(), axis(), NurbsPoleGrid::Polynomial { rows: vec![points.clone(), points] }, false).expect("fixture final NURBS admission").unwrap();
     assert_eq!(surface.u_count(), 2);
     assert_eq!(surface.v_count(), 2);
     assert_eq!(serde_json::from_value::<NurbsCurve>(serde_json::to_value(&curve).unwrap()).unwrap(), curve);
@@ -1561,3 +1561,5 @@ fn knot_constructors_share_work_keep_storage_and_preserve_refusal() {
 mod bspline;
 
 mod pairing;
+
+mod construction;

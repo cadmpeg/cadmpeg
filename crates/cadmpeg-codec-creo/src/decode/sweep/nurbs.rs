@@ -764,12 +764,12 @@ pub(in super::super) fn extruded_nurbs_surface(
             return Ok(None);
         }
     };
-    match NurbsSurface::from_admitted_grid(
+    match NurbsSurface::new(ctx, 
         NurbsSurfaceAxis::new(directrix.degree(), u_knots, directrix.periodic()),
         NurbsSurfaceAxis::new(1, v_knots, false),
         poles,
         false,
-    ) {
+    )? {
         Ok(surface) => Ok(Some(surface)),
         Err(error) => {
             refusal.note_checked(
@@ -848,7 +848,7 @@ pub(super) fn sketch_nurbs_curve(
         }
     };
     let Some(nurbs) =
-        NurbsCurve::new_admitted_poles(curve.degree(), knots, poles, curve.periodic()).ok()
+        NurbsCurve::new(ctx, curve.degree(), knots, poles, curve.periodic())?.ok()
     else {
         return Ok(None);
     };

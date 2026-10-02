@@ -237,7 +237,7 @@ fn reusable_nurbs_evaluator_keeps_constant_and_linear_spans_inline() {
     for degree in [0, 1] {
         for rational in [false, true] {
             let count = usize::try_from(degree).expect("constant or linear degree") + 1;
-            let knots = (0..count)
+            let knots: Vec<f64> = (0..count)
                 .map(|_| 0.0)
                 .chain((0..count).map(|_| 1.0))
                 .collect();

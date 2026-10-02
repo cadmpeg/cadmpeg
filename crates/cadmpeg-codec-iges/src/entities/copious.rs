@@ -10,7 +10,7 @@ use crate::parameter::ParameterRecord;
 use cadmpeg_core::decode::{refuse_local_limit, DecodeContext};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::geometry::{
-    nurbs::{KnotVector, NurbsCurve, NurbsPoles3},
+    nurbs::{KnotVector, NurbsCurve},
     Curve, CurveGeometry, SolvedCurveGeometry,
 };
 use cadmpeg_ir::ids::{EdgeId, VertexId};
@@ -624,8 +624,7 @@ pub(super) fn project(
         raw_knots.extend(knots.into_iter().map(FiniteReal::get));
         let nurbs = match KnotVector::new(ctx, raw_knots)? {
             Err(error) => Err(error),
-            Ok(knots) => NurbsPoles3::from_checked_lanes(ctx, positions, None)?
-                .and_then(|poles| NurbsCurve::new(1, knots, poles, false)),
+            Ok(knots) => NurbsCurve::from_checked_lanes(ctx, 1, knots, positions, None, false)?,
         };
         ctx.reserve_vec(&mut ir.model.curves, 1, "iges copious neutral curves")?;
         ctx.charge_entities(1, "iges_geometry_copious")?;

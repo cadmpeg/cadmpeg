@@ -246,24 +246,6 @@ fn profile_knots(ctx: &DecodeContext<'_>, profile: &NurbsCurve) -> Result<Vec<f6
     Ok(knots)
 }
 
-fn charge_grid_admission(
-    ctx: &DecodeContext<'_>,
-    rows: usize,
-    poles: usize,
-    passes: usize,
-    operation: &'static str,
-) -> Result<(), CodecError> {
-    let items = rows
-        .checked_add(poles)
-        .and_then(|count| count.checked_mul(passes))
-        .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
-    ctx.charge_collection_items(
-        u64::try_from(items)
-            .map_err(|_| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?,
-        operation,
-    )
-}
-
 /// Build the ruled NURBS patch of a swept surface over `v` in
 /// `[v_start, v_end]` millimetres of travel along the unit direction.
 pub(super) fn swept_nurbs(
@@ -316,31 +298,16 @@ pub(super) fn swept_nurbs(
         .as_ref()
         .map(|values| curve_rows(ctx, values, 2, "construct swept surface weight rows"))
         .transpose()?;
-    charge_grid_admission(
-        ctx,
-        n,
-        count,
-        1,
-        "admit swept surface poles",
-    )?;
     let knots = profile_knots(ctx, profile)?;
-    match cadmpeg_ir::geometry::nurbs::NurbsPoleGrid::from_checked_lanes(ctx, control_rows, weight_rows)?
-        .and_then(|poles| {
-            NurbsSurface::new(
-                cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
+    match NurbsSurface::from_checked_lanes(ctx, cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
                     profile.degree(),
                     knots,
                     profile.periodic(),
-                ),
-                cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
+                ), cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
                     1,
                     vec![v_start, v_start, v_end, v_end],
                     false,
-                ),
-                poles,
-                false,
-            )
-        }) {
+                ), cadmpeg_ir::geometry::nurbs::NurbsSurfaceLanes::new(control_rows, weight_rows), false)? {
         Ok(surface) => Ok(Some(surface)),
         Err(error) => {
             refusal.note(

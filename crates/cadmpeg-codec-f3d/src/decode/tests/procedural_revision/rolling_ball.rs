@@ -398,7 +398,7 @@ fn generated_f3d_rewrites_rolling_ball_support_cache() {
             let knots: &mut [f64] = &mut knots;
             knots.copy_from_slice(&[-1.0, -1.0, 2.0, 2.0]);
         };
-        cadmpeg_ir::geometry::nurbs::NurbsSurface::new(
+        cadmpeg_ir::geometry::nurbs::NurbsSurface::new(&cadmpeg_test_support::service_decode_context(), 
             cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
                 previous.u_degree(),
                 knots,
@@ -411,7 +411,7 @@ fn generated_f3d_rewrites_rolling_ball_support_cache() {
             ),
             previous.pole_grid().clone(),
             previous.normal_reversed(),
-        )
+        ).expect("fixture final NURBS admission")
     })
     .unwrap();
     let expected = surface.clone();

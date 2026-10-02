@@ -11,7 +11,7 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::eval::finite_or_refusal;
 use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::geometry::{
-    nurbs::{KnotVector, NurbsCurve, NurbsPoles3},
+    nurbs::{KnotVector, NurbsCurve},
     Curve, CurveGeometry, SolvedCurveGeometry,
 };
 use cadmpeg_ir::ids::{BodyId, CurveId, EdgeId, FaceId, PointId, SurfaceId, VertexId};
@@ -2711,12 +2711,11 @@ pub(crate) fn project_geometry(
             values.extend(native_weights.into_iter().map(NonZeroReal::from));
             Some(values)
         };
-        let nurbs =
-            match NurbsPoles3::from_checked_lanes(ctx, control_points, weights)?.and_then(|poles| {
-                // IGES PROP4 is informational; neutral evaluation uses the
-                // serialized active carrier without periodic parameter wrapping.
-                NurbsCurve::new(degree, knots, poles, false)
-            }) {
+        // IGES PROP4 is informational; neutral evaluation uses the
+        // serialized active carrier without periodic parameter wrapping.
+        let nurbs = match NurbsCurve::from_checked_lanes(
+            ctx, degree, knots, control_points, weights, false,
+        )? {
                 Ok(nurbs) => nurbs,
                 Err(error) => {
                     super::push_entity_loss(

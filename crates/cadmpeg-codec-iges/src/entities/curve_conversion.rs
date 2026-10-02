@@ -138,12 +138,12 @@ pub(crate) fn elliptical_arc_nurbs(
             knots.extend([end, end, end]);
         }
     }
-    Ok(Some(NurbsCurve::new(
+    Ok(Some(NurbsCurve::new(ctx, 
         2,
         knots,
         NurbsPoles3::Rational { points: poles },
         false,
-    )?))
+    )??))
 }
 
 fn finite_arc_point(point: Point3) -> Result<FinitePoint3, NurbsError> {
@@ -220,12 +220,12 @@ pub(crate) fn parabolic_arc_nurbs(
     for point in [start_point, middle_point, end_point] {
         points.push(finite_arc_point(point)?);
     }
-    Ok(Some(NurbsCurve::new(
+    Ok(Some(NurbsCurve::new(ctx, 
         2,
         knots,
         NurbsPoles3::Polynomial { points },
         false,
-    )?))
+    )??))
 }
 
 #[cfg(test)]

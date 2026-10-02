@@ -116,14 +116,14 @@ surface_copy_limit_test!(
 #[test]
 fn nurbs_curve_copy_refuses_knot_limit() {
     let geometry = SolvedCurveGeometry::Nurbs(
-        NurbsCurve::new(
+        NurbsCurve::new(&cadmpeg_test_support::service_decode_context(), 
             1,
             vec![0.0, 0.0, 1.0, 1.0],
             NurbsPoles3::Polynomial {
                 points: vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
             },
             false,
-        )
+        ).expect("fixture final NURBS admission")
         .expect("valid NURBS"),
     );
     let arena = DecodeArena::new();
@@ -167,14 +167,14 @@ fn nurbs_surface_copy_refuses_inner_row_limit() {
         [Point3::new(1.0, 0.0, 0.0), Point3::new(1.0, 1.0, 0.0)],
     ];
     let geometry = SolvedSurfaceGeometry::Nurbs(
-        NurbsSurface::new(
+        NurbsSurface::new(&cadmpeg_test_support::service_decode_context(), 
             NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
             NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
             NurbsPoleGrid::Polynomial {
                 rows: points.map(Vec::from).into(),
             },
             false,
-        )
+        ).expect("fixture final NURBS admission")
         .expect("valid NURBS surface"),
     );
     let arena = DecodeArena::new();

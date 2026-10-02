@@ -870,7 +870,7 @@ fn same_basis_ruled_surface(
     u_knots.extend_from_slice(first.knots());
     let mut v_knots = ctx.collection_vec(4, "iges ruled same-basis v knots")?;
     v_knots.extend([0.0, 0.0, 1.0, 1.0]);
-    NurbsSurface::new(
+    NurbsSurface::new(ctx, 
         NurbsSurfaceAxis::new(
             first.degree(),
             u_knots,
@@ -879,7 +879,7 @@ fn same_basis_ruled_surface(
         NurbsSurfaceAxis::new(1, v_knots, false),
         poles,
         false,
-    )
+    )?
     .map_err(CodecError::malformed)
 }
 
@@ -956,12 +956,12 @@ fn ruled_surface_carrier(
     )?
     .map_err(CodecError::malformed)?;
     Ok(Some(
-        NurbsSurface::new(
+        NurbsSurface::new(ctx, 
             NurbsSurfaceAxis::new(degree, u_knots, first.periodic() && second.periodic()),
             NurbsSurfaceAxis::new(1, v_knots, false),
             poles,
             false,
-        )
+        )?
         .map_err(cadmpeg_core::CodecError::malformed)?,
     ))
 }
@@ -2223,8 +2223,8 @@ pub(super) fn project(
             "iges tabulated weighted rows",
             "iges tabulated weighted row controls",
         )?;
-        let surface = match paired.and_then(|poles| {
-            NurbsSurface::new(
+        let construction = match paired { Err(error) => Err(error), Ok(poles) => {
+            NurbsSurface::new(ctx, 
                 NurbsSurfaceAxis::new(
                     placed_directrix.degree(),
                     u_knots,
@@ -2233,8 +2233,9 @@ pub(super) fn project(
                 NurbsSurfaceAxis::new(1, v_knots, false),
                 poles,
                 false,
-            )
-        }) {
+            )?
+        } };
+        let surface = match construction {
             Ok(nurbs) => nurbs,
             Err(error) => {
                 super::push_entity_loss(
@@ -2691,8 +2692,8 @@ pub(super) fn project(
             "iges revolution weighted rows",
             "iges revolution weighted row controls",
         )?;
-        let surface = match paired.and_then(|poles| {
-            NurbsSurface::new(
+        let construction = match paired { Err(error) => Err(error), Ok(poles) => {
+            NurbsSurface::new(ctx, 
                 NurbsSurfaceAxis::new(generatrix.degree(), u_knots, generatrix.periodic()),
                 NurbsSurfaceAxis::new(
                     2,
@@ -2704,8 +2705,9 @@ pub(super) fn project(
                 ),
                 poles,
                 false,
-            )
-        }) {
+            )?
+        } };
+        let surface = match construction {
             Ok(nurbs) => nurbs,
             Err(error) => {
                 super::push_entity_loss(
@@ -3317,14 +3319,15 @@ pub(super) fn project(
             "iges NURBS surface weighted rows",
             "iges NURBS surface weighted row controls",
         )?;
-        let surface = match paired.and_then(|poles| {
-            NurbsSurface::new(
+        let construction = match paired { Err(error) => Err(error), Ok(poles) => {
+            NurbsSurface::new(ctx, 
                 NurbsSurfaceAxis::new(u_degree, u_knots, flags[3] == Some(1)),
                 NurbsSurfaceAxis::new(v_degree, v_knots, flags[4] == Some(1)),
                 poles,
                 false,
-            )
-        }) {
+            )?
+        } };
+        let surface = match construction {
             Ok(nurbs) => nurbs,
             Err(error) => {
                 super::push_entity_loss(

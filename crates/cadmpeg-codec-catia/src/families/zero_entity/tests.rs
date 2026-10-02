@@ -507,12 +507,12 @@ fn native_namespace_retains_zero_entity_surface_support_runs() {
     {
         let replacement = true;
         edit::replace(model_curve, |previous| {
-            cadmpeg_ir::geometry::nurbs::NurbsCurve::new(
+            cadmpeg_ir::geometry::nurbs::NurbsCurve::new(&cadmpeg_test_support::service_decode_context(), 
                 previous.degree(),
                 previous.knots().to_vec(),
                 previous.pole_rows().clone(),
                 replacement,
-            )
+            ).expect("fixture final NURBS admission")
         })
         .unwrap();
     };

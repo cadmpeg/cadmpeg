@@ -1435,7 +1435,7 @@ pub(crate) mod tests {
                             cadmpeg_core::convert::f64_from_index(value)
                                 .expect("fixture index is exactly representable")
                         })
-                        .collect(),
+                        .collect::<Vec<f64>>(),
                     points,
                     None,
                     false,

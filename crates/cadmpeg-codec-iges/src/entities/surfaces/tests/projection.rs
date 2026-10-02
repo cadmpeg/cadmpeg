@@ -414,12 +414,12 @@ fn rational_boundary_comparison_accepts_projectively_scaled_curves() {
         {
             let replacement = scaled_poles;
             edit::replace(&mut scaled, |previous| {
-                cadmpeg_ir::geometry::nurbs::NurbsCurve::new(
+                cadmpeg_ir::geometry::nurbs::NurbsCurve::new(&cadmpeg_test_support::service_decode_context(), 
                     previous.degree(),
                     previous.knots().to_vec(),
                     replacement,
                     previous.periodic(),
-                )
+                ).expect("fixture final NURBS admission")
             })
         }
         .unwrap();

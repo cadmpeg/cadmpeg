@@ -395,16 +395,6 @@ fn weighted_poles<P, W, E>(
     Ok(output)
 }
 
-impl<P: PoleValue<FinitePoint3>> NurbsPoles3<P> {
-    /// The poles with admitted positions.
-    ///
-    /// # Errors
-    ///
-    /// Refuses a pole position with a non-finite coordinate.
-    fn admit(self) -> Result<NurbsPoles3<FinitePoint3>, NurbsError> {
-        P::admit_curve_poles(self, |poles| map_curve_poles(&StandardNurbsAdmission, poles))
-    }
-}
 
 impl NurbsPoles3<FinitePoint3> {
     /// The poles with raw positions, for a reader that edits or writes them.
@@ -602,16 +592,6 @@ fn pair_grid_lanes<P, W, S: NurbsAdmission>(
     Ok(NurbsPoleGrid::Rational { rows: output })
 }
 
-impl<P: PoleValue<FinitePoint3>> NurbsPoleGrid<P> {
-    /// The grid with admitted positions.
-    ///
-    /// # Errors
-    ///
-    /// Refuses a pole position with a non-finite coordinate.
-    fn admit(self) -> Result<NurbsPoleGrid<FinitePoint3>, NurbsError> {
-        P::admit_surface_poles(self, |grid| map_surface_poles(&StandardNurbsAdmission, grid))
-    }
-}
 
 impl NurbsPoleGrid<FinitePoint3> {
     /// The grid with raw positions, for a reader that edits or writes them.
@@ -1143,6 +1123,35 @@ impl<P, W> NurbsSurfaceLanes<P, W> {
     }
 }
 
+pub(super) fn build_curve<P: PoleValue<FinitePoint3>, K: KnotValue, S: NurbsAdmission>(
+    admission: &S,
+    degree: u32,
+    knots: K,
+    poles: NurbsPoles3<P>,
+    periodic: bool,
+) -> Result<NurbsCurve, S::Error> {
+    require_curve_cardinality(admission, degree, knots.knot_count(), poles.count(), "control_points")?;
+    let poles = P::admit_curve_poles(poles, |poles| map_curve_poles(admission, poles))?;
+    let knots = admit_knots(admission, knots, "")?;
+    Ok(NurbsCurve { degree, knots, poles, periodic })
+}
+
+fn build_surface<P: PoleValue<FinitePoint3>, U: KnotValue, V: KnotValue, S: NurbsAdmission>(
+    admission: &S,
+    u: NurbsSurfaceAxis<U>,
+    v: NurbsSurfaceAxis<V>,
+    poles: NurbsPoleGrid<P>,
+    normal_reversed: bool,
+) -> Result<NurbsSurface, S::Error> {
+    let NurbsSurfaceAxis { degree: u_degree, knots: u_knots, periodic: u_periodic } = u;
+    let NurbsSurfaceAxis { degree: v_degree, knots: v_knots, periodic: v_periodic } = v;
+    require_surface_shape(admission, u_degree, u_knots.knot_count(), v_degree, v_knots.knot_count(), &poles)?;
+    let poles = P::admit_surface_poles(poles, |poles| map_surface_poles(admission, poles))?;
+    let u_knots = admit_knots(admission, u_knots, "u_")?;
+    let v_knots = admit_knots(admission, v_knots, "v_")?;
+    Ok(NurbsSurface { u_degree, v_degree, u_knots, v_knots, poles, normal_reversed, u_periodic, v_periodic })
+}
+
 fn require_surface_shape<P, S: NurbsAdmission>(
     admission: &S,
     u_degree: u32,
@@ -1215,72 +1224,15 @@ impl NurbsSurface {
     /// non-finite raw pole coordinate and then a non-finite or decreasing
     /// knot.
     pub fn new<P: PoleValue<FinitePoint3>, U: KnotValue, V: KnotValue>(
+        ctx: &DecodeContext<'_>,
         u: NurbsSurfaceAxis<U>,
         v: NurbsSurfaceAxis<V>,
         poles: NurbsPoleGrid<P>,
         normal_reversed: bool,
-    ) -> Result<Self, NurbsError> {
-        let NurbsSurfaceAxis {
-            degree: u_degree,
-            knots: u_knots,
-            periodic: u_periodic,
-        } = u;
-        let NurbsSurfaceAxis {
-            degree: v_degree,
-            knots: v_knots,
-            periodic: v_periodic,
-        } = v;
-        require_surface_shape(&StandardNurbsAdmission, u_degree, u_knots.knot_count(), v_degree, v_knots.knot_count(), &poles)?;
-        let poles = poles.admit()?;
-        let u_knots = admit_knots(&StandardNurbsAdmission, u_knots, "").map_err(|error| match error {
-            NurbsError::ResourceLimit(limit) => NurbsError::ResourceLimit(limit),
-            error => NurbsError::Structure(format!("u_{error}")),
-        })?;
-        let v_knots = admit_knots(&StandardNurbsAdmission, v_knots, "").map_err(|error| match error {
-            NurbsError::ResourceLimit(limit) => NurbsError::ResourceLimit(limit),
-            error => NurbsError::Structure(format!("v_{error}")),
-        })?;
-        Ok(Self {
-            u_degree,
-            v_degree,
-            u_knots,
-            v_knots,
-            poles,
-            normal_reversed,
-            u_periodic,
-            v_periodic,
-        })
+    ) -> Result<Result<Self, NurbsError>, CodecError> {
+        admitted::finish(build_surface(ctx, u, v, poles, normal_reversed))
     }
 
-    /// Build a surface from owned admitted knots and pole rows without copying them.
-    pub fn from_admitted_grid(
-        u: NurbsSurfaceAxis<KnotVector>,
-        v: NurbsSurfaceAxis<KnotVector>,
-        poles: NurbsPoleGrid<FinitePoint3>,
-        normal_reversed: bool,
-    ) -> Result<Self, NurbsError> {
-        let NurbsSurfaceAxis {
-            degree: u_degree,
-            knots: u_knots,
-            periodic: u_periodic,
-        } = u;
-        let NurbsSurfaceAxis {
-            degree: v_degree,
-            knots: v_knots,
-            periodic: v_periodic,
-        } = v;
-        require_surface_shape(&StandardNurbsAdmission, u_degree, u_knots.knot_count(), v_degree, v_knots.knot_count(), &poles)?;
-        Ok(Self {
-            u_degree,
-            v_degree,
-            u_knots,
-            v_knots,
-            poles,
-            normal_reversed,
-            u_periodic,
-            v_periodic,
-        })
-    }
 
     /// Degree in the u parametric direction.
     pub const fn u_degree(&self) -> u32 {
@@ -1328,7 +1280,7 @@ impl NurbsSurface {
             weights,
         } = lanes;
         let poles = pair_grid_lanes(ctx, control_points, weights, &mut storage, |index, weight| admit_finite_weight(ctx, "pole grid row", index, weight))?;
-        Ok(Self::new(u, v, poles, normal_reversed)?)
+        build_surface(ctx, u, v, poles, normal_reversed)
         })())
     }
 
@@ -1354,7 +1306,7 @@ impl NurbsSurface {
             weights,
         } = lanes;
         let poles = pair_grid_lanes(ctx, control_points, weights, &mut storage, |_, weight| Ok(weight))?;
-        Ok(Self::new(u, v, poles, normal_reversed)?)
+        build_surface(ctx, u, v, poles, normal_reversed)
         })())
     }
 
@@ -1501,7 +1453,7 @@ impl<'de> Deserialize<'de> for NurbsSurface {
         }
 
         let wire = Wire::deserialize(deserializer)?;
-        Self::new(
+        build_surface(&StandardNurbsAdmission,
             NurbsSurfaceAxis::new(wire.u_degree, wire.u_knots, wire.u_periodic),
             NurbsSurfaceAxis::new(wire.v_degree, wire.v_knots, wire.v_periodic),
             wire.poles,
@@ -1540,23 +1492,6 @@ pub struct NurbsCurve {
 }
 
 impl NurbsCurve {
-    /// Build a curve from finite knots and pole rows that the caller already
-    /// admitted through its decode context. This checks cardinality without
-    /// copying the pole collection.
-    pub fn new_admitted_poles(
-        degree: u32,
-        knots: KnotVector,
-        poles: NurbsPoles3<FinitePoint3>,
-        periodic: bool,
-    ) -> Result<Self, NurbsError> {
-        require_curve_cardinality(&StandardNurbsAdmission, degree, knots.len(), poles.count(), "control_points")?;
-        Ok(Self {
-            degree,
-            knots,
-            poles,
-            periodic,
-        })
-    }
 
     /// Copy the admitted lanes through the decode collection budget.
     pub fn try_clone_for_decode(
@@ -1625,20 +1560,13 @@ impl NurbsCurve {
     /// non-finite raw pole coordinate and then a non-finite or decreasing
     /// knot.
     pub fn new<P: PoleValue<FinitePoint3>, K: KnotValue>(
+        ctx: &DecodeContext<'_>,
         degree: u32,
         knots: K,
         poles: NurbsPoles3<P>,
         periodic: bool,
-    ) -> Result<Self, NurbsError> {
-        require_curve_cardinality(&StandardNurbsAdmission, degree, knots.knot_count(), poles.count(), "control_points")?;
-        let poles = poles.admit()?;
-        let knots = admit_knots(&StandardNurbsAdmission, knots, "")?;
-        Ok(Self {
-            degree,
-            knots,
-            poles,
-            periodic,
-        })
+    ) -> Result<Result<Self, NurbsError>, CodecError> {
+        admitted::finish(build_curve(ctx, degree, knots, poles, periodic))
     }
 
     /// Curve degree.
@@ -1695,7 +1623,7 @@ impl NurbsCurve {
         admitted::finish((|| {
         let mut storage = None;
         let poles = pair_curve_lanes(ctx, control_points, weights, &mut storage, |index, weight| admit_finite_weight(ctx, "poles", index, weight))?;
-        Ok(Self::new(degree, knots, poles, periodic)?)
+        build_curve(ctx, degree, knots, poles, periodic)
         })())
     }
 
@@ -1717,7 +1645,7 @@ impl NurbsCurve {
         admitted::finish((|| {
         let mut storage = if weights.is_some() && !P::RETAINS_POLE_STORAGE { Some(ctx.reserve_scoped(0, "IR NURBS paired poles")?) } else { None };
         let poles = pair_curve_lanes(ctx, control_points, weights, &mut storage, |_, weight| Ok(weight))?;
-        Ok(Self::new(degree, knots, poles, periodic)?)
+        build_curve(ctx, degree, knots, poles, periodic)
         })())
     }
 
@@ -1837,7 +1765,7 @@ impl<'de> Deserialize<'de> for NurbsCurve {
         }
 
         let wire = Wire::deserialize(deserializer)?;
-        Self::new(wire.degree, wire.knots, wire.poles, wire.periodic)
+        build_curve(&StandardNurbsAdmission, wire.degree, wire.knots, wire.poles, wire.periodic)
             .map_err(serde::de::Error::custom)
     }
 }

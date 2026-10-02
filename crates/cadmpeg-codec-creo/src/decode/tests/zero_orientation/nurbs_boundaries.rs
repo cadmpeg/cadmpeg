@@ -236,7 +236,7 @@ fn shared_extrusion_generator_requires_equivalent_boundaries_and_separated_nets(
         let replacement = NurbsPoleGrid::from_lanes(&cadmpeg_test_support::service_decode_context(), reversed_grid, reversed_weights).expect("fixture pole pairing admission")
             .expect("finite fixture geometry preserves NURBS invariants");
         edit::replace(&mut reversed, |previous| {
-            NurbsSurface::new(
+            NurbsSurface::new(&cadmpeg_test_support::service_decode_context(), 
                 NurbsSurfaceAxis::new(
                     previous.u_degree(),
                     previous.u_knots().to_vec(),
@@ -249,7 +249,7 @@ fn shared_extrusion_generator_requires_equivalent_boundaries_and_separated_nets(
                 ),
                 replacement,
                 previous.normal_reversed(),
-            )
+            ).expect("fixture final NURBS admission")
         })
     }
     .expect("finite fixture geometry preserves NURBS invariants");
@@ -271,7 +271,7 @@ fn shared_extrusion_generator_requires_equivalent_boundaries_and_separated_nets(
         let replacement = NurbsPoleGrid::from_lanes(&cadmpeg_test_support::service_decode_context(), same_side_grid, same_side_weights).expect("fixture pole pairing admission")
             .expect("finite fixture geometry preserves NURBS invariants");
         edit::replace(&mut same_side, |previous| {
-            NurbsSurface::new(
+            NurbsSurface::new(&cadmpeg_test_support::service_decode_context(), 
                 NurbsSurfaceAxis::new(
                     previous.u_degree(),
                     previous.u_knots().to_vec(),
@@ -284,7 +284,7 @@ fn shared_extrusion_generator_requires_equivalent_boundaries_and_separated_nets(
                 ),
                 replacement,
                 previous.normal_reversed(),
-            )
+            ).expect("fixture final NURBS admission")
         })
     }
     .expect("finite fixture geometry preserves NURBS invariants");
@@ -301,7 +301,7 @@ fn shared_extrusion_generator_requires_equivalent_boundaries_and_separated_nets(
     {
         let replacement = true;
         edit::replace(&mut periodic_transverse, |previous| {
-            NurbsSurface::new(
+            NurbsSurface::new(&cadmpeg_test_support::service_decode_context(), 
                 NurbsSurfaceAxis::new(
                     previous.u_degree(),
                     previous.u_knots().to_vec(),
@@ -314,7 +314,7 @@ fn shared_extrusion_generator_requires_equivalent_boundaries_and_separated_nets(
                 ),
                 previous.pole_grid().clone(),
                 previous.normal_reversed(),
-            )
+            ).expect("fixture final NURBS admission")
         })
         .expect("admitted periodic fixture");
     };
@@ -335,7 +335,7 @@ fn shared_extrusion_generator_requires_equivalent_boundaries_and_separated_nets(
         let replacement = NurbsPoleGrid::from_lanes(&cadmpeg_test_support::service_decode_context(), different_grid, different_weights).expect("fixture pole pairing admission")
             .expect("finite fixture geometry preserves NURBS invariants");
         edit::replace(&mut different_boundary, |previous| {
-            NurbsSurface::new(
+            NurbsSurface::new(&cadmpeg_test_support::service_decode_context(), 
                 NurbsSurfaceAxis::new(
                     previous.u_degree(),
                     previous.u_knots().to_vec(),
@@ -348,7 +348,7 @@ fn shared_extrusion_generator_requires_equivalent_boundaries_and_separated_nets(
                 ),
                 replacement,
                 previous.normal_reversed(),
-            )
+            ).expect("fixture final NURBS admission")
         })
     }
     .expect("finite fixture geometry preserves NURBS invariants");

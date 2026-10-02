@@ -388,12 +388,12 @@ pub(crate) fn reverse_nurbs_curve(
         Ok(knots) => knots,
         Err(error) => return Ok(Err(error)),
     };
-    Ok(NurbsCurve::new(
+    Ok(NurbsCurve::new(ctx, 
         curve.degree(),
         knots,
         poles,
         curve.periodic(),
-    ))
+    )?)
 }
 
 /// State one trim endpoint inside the carrier domain, or refuse it.

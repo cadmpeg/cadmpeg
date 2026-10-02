@@ -140,19 +140,19 @@ fn weight_rules_admit_a_signed_nonzero_weight_in_every_nurbs_carrier() {
     {
         let replacement = curve_weights(&curve, vec![1e-200, -1e-200]).unwrap();
         edit::replace(&mut curve, |previous| {
-            crate::geometry::nurbs::NurbsCurve::new(
+            crate::geometry::nurbs::NurbsCurve::new(&cadmpeg_test_support::service_decode_context(), 
                 previous.degree(),
                 previous.knots().to_vec(),
                 replacement,
                 previous.periodic(),
-            )
+            ).expect("fixture final NURBS admission")
         })
     }
     .unwrap();
     {
         let replacement = surface_weights(&surface, vec![vec![-1e-200; 2]; 2]).unwrap();
         edit::replace(&mut surface, |previous| {
-            crate::geometry::nurbs::NurbsSurface::new(
+            crate::geometry::nurbs::NurbsSurface::new(&cadmpeg_test_support::service_decode_context(), 
                 crate::geometry::nurbs::NurbsSurfaceAxis::new(
                     previous.u_degree(),
                     previous.u_knots().to_vec(),
@@ -165,7 +165,7 @@ fn weight_rules_admit_a_signed_nonzero_weight_in_every_nurbs_carrier() {
                 ),
                 replacement,
                 previous.normal_reversed(),
-            )
+            ).expect("fixture final NURBS admission")
         })
     }
     .unwrap();
@@ -259,7 +259,7 @@ fn failed_numeric_edits_preserve_the_whole_carrier() {
     assert!(edit::replace(&mut surface, |previous| {
         let mut knots = previous.u_knots().to_vec();
         (<[f64]>::reverse)(&mut knots);
-        crate::geometry::nurbs::NurbsSurface::new(
+        crate::geometry::nurbs::NurbsSurface::new(&cadmpeg_test_support::service_decode_context(), 
             crate::geometry::nurbs::NurbsSurfaceAxis::new(
                 previous.u_degree(),
                 knots,
@@ -272,7 +272,7 @@ fn failed_numeric_edits_preserve_the_whole_carrier() {
             ),
             previous.pole_grid().clone(),
             previous.normal_reversed(),
-        )
+        ).expect("fixture final NURBS admission")
     })
     .is_err());
     assert!(edit::replace(&mut surface, |previous| {
@@ -281,7 +281,7 @@ fn failed_numeric_edits_preserve_the_whole_carrier() {
             let knots: &mut [f64] = &mut knots;
             knots[1] = f64::NAN;
         };
-        crate::geometry::nurbs::NurbsSurface::new(
+        crate::geometry::nurbs::NurbsSurface::new(&cadmpeg_test_support::service_decode_context(), 
             crate::geometry::nurbs::NurbsSurfaceAxis::new(
                 previous.u_degree(),
                 previous.u_knots().to_vec(),
@@ -294,7 +294,7 @@ fn failed_numeric_edits_preserve_the_whole_carrier() {
             ),
             previous.pole_grid().clone(),
             previous.normal_reversed(),
-        )
+        ).expect("fixture final NURBS admission")
     })
     .is_err());
     assert!(surface

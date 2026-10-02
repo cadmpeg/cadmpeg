@@ -2121,7 +2121,7 @@ impl PcurveNurbs {
             .map(|point| lift(point.get()))
             .collect();
         let poles = super::nurbs::pair_curve_lanes(&StandardNurbsAdmission, points, self.weights(), &mut None, |_, weight| Ok(weight))?;
-        NurbsCurve::new(self.degree, self.knots.clone(), poles, self.periodic)
+        super::nurbs::build_curve(&StandardNurbsAdmission, self.degree, self.knots.clone(), poles, self.periodic)
     }
 
     /// Curve degree.

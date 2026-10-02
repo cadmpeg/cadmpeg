@@ -2124,10 +2124,6 @@ fn zero_entity_lift_pcurve(
     let knots = nurbs
         .knots()
         .try_clone_for_decode(ctx, "catia_zero_lifted_pcurve_knots")?;
-    ctx.charge_collection_items(
-        u64_from_index(nurbs.pole_rows().count()),
-        "catia_zero_lifted_checked_poles",
-    )?;
     crate::nurbs::note_refusal(
         ctx,
         NurbsCurve::from_checked_lanes(ctx, nurbs.degree(), knots, points, weights, nurbs.periodic())?,

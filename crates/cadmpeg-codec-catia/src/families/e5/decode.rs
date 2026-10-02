@@ -3146,7 +3146,7 @@ fn e5_lift_plane_nurbs(
         .try_clone_for_decode(ctx, "catia_e5_boundary_lifted_knots")?;
     crate::nurbs::note_refusal(
         ctx,
-        NurbsCurve::new(nurbs.degree(), knots, poles, nurbs.periodic()),
+        NurbsCurve::new(ctx, nurbs.degree(), knots, poles, nurbs.periodic())?,
         refusal,
         format_args!(
             "e5 boundary curve lifted from the pcurve on surface record {surface_record_id}"
