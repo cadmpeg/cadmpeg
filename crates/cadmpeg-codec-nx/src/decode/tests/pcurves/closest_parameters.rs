@@ -259,8 +259,8 @@ fn pcurve_bezier_extraction_preserves_rational_knot_spans() {
             .expect("resource allocation did not fail")
             .expect("valid Bézier extraction");
 
-        assert_eq!(spans.spans.len(), 3);
-        for span in &spans.spans {
+        assert_eq!(spans.len(), 3);
+        for span in spans.iter() {
             for fraction in [0.0, 0.5, 1.0] {
                 let parameter = span.domain[0] + fraction * (span.domain[1] - span.domain[0]);
                 let expected = cadmpeg_ir::eval::nurbs_pcurve_uv(

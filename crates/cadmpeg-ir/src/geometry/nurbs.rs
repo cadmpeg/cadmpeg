@@ -5,6 +5,8 @@
 pub mod bezier;
 /// Rational control-polygon speed bounds.
 pub mod bounds;
+/// Immutable temporary rows with scoped storage ownership.
+pub mod scoped;
 pub(crate) mod scratch;
 
 pub(super) mod admitted;

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Homogeneous Bezier extraction and rational boundary bounds.
 
+use super::scoped::ScopedRows;
 use super::PoleValue;
 use crate::features::FinitePoint3;
 use crate::math::sum::ExactSignedSum;
@@ -15,14 +16,6 @@ pub struct HomogeneousBezierSpan<const DIMENSION: usize = 4> {
     pub controls: Vec<[f64; DIMENSION]>,
 }
 
-/// A homogeneous polygon with its live temporary-storage reservation.
-#[derive(Debug)]
-pub struct HomogeneousControls<'ctx> {
-    /// Positive-weight coordinates followed by the homogeneous weight.
-    pub controls: Vec<[f64; 4]>,
-    _storage: ScopedReservation<'ctx>,
-}
-
 /// Form a positive-weight homogeneous polygon without common-scale overflow.
 /// Refuse a raw pole with a non-finite coordinate, and a relative weight or
 /// coordinate product that would disappear. Absent weights read as 1.0.
@@ -31,7 +24,7 @@ pub fn positive_controls<'ctx, P: PoleValue<FinitePoint3>>(
     points: &[P],
     weights: Option<&[f64]>,
     operation: &'static str,
-) -> Result<Option<HomogeneousControls<'ctx>>, ResourceLimit> {
+) -> Result<Option<ScopedRows<'ctx, [f64; 4]>>, ResourceLimit> {
     if weights.is_some_and(|weights| points.len() != weights.len()) || points.is_empty() {
         return Ok(None);
     }
@@ -71,15 +64,7 @@ pub fn positive_controls<'ctx, P: PoleValue<FinitePoint3>>(
         }
         output.push(result);
     }
-    Ok(Some(HomogeneousControls { controls: output, _storage: storage }))
-}
-
-/// Extracted spans with their live header and control-storage reservation.
-#[derive(Debug)]
-pub struct HomogeneousBezierSpans<'ctx, const DIMENSION: usize = 4> {
-    /// Nonempty active spans in parameter order.
-    pub spans: Vec<HomogeneousBezierSpan<DIMENSION>>,
-    _storage: ScopedReservation<'ctx>,
+    Ok(Some(ScopedRows::new(output, storage)))
 }
 
 struct BezierWorkingSpline<'ctx, const DIMENSION: usize> {
@@ -164,7 +149,7 @@ pub fn homogeneous_spans<'ctx, const DIMENSION: usize>(
     degree: usize,
     knots: &[f64],
     controls: &[[f64; DIMENSION]],
-) -> Result<Option<HomogeneousBezierSpans<'ctx, DIMENSION>>, ResourceLimit> {
+) -> Result<Option<ScopedRows<'ctx, HomogeneousBezierSpan<DIMENSION>>>, ResourceLimit> {
     let count = controls.len();
     let Some(expected_knots) = count.checked_add(degree).and_then(|value| value.checked_add(1)) else {
         return Ok(None);
@@ -243,7 +228,7 @@ pub fn homogeneous_spans<'ctx, const DIMENSION: usize>(
         }
     }
     if spans.is_empty() { Ok(None) }
-    else { Ok(Some(HomogeneousBezierSpans { spans, _storage: storage })) }
+    else { Ok(Some(ScopedRows::new(spans, storage))) }
 }
 
 /// Prove equal-degree positive-weight rational Bezier boundaries agree.
@@ -390,11 +375,11 @@ mod tests {
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
         let output = homogeneous_spans(&ctx, 1, &knots, &controls).expect("exact work")
             .expect("one active span");
-        assert_eq!(output.spans.len(), 1);
-        assert_eq!(output.spans[0].domain, [0.0, 1.0]);
-        assert_eq!(output.spans[0].controls, controls);
-        let bytes = output.spans.capacity() * std::mem::size_of::<super::HomogeneousBezierSpan>()
-            + output.spans.iter().map(|span| span.controls.capacity()
+        assert_eq!(output.len(), 1);
+        assert_eq!(output[0].domain, [0.0, 1.0]);
+        assert_eq!(output[0].controls, controls);
+        let bytes = output.capacity() * std::mem::size_of::<super::HomogeneousBezierSpan>()
+            + output.iter().map(|span| span.controls.capacity()
                 * std::mem::size_of::<[f64; 4]>()).sum::<usize>();
         let bytes = u64::try_from(bytes).expect("test allocation bytes fit");
         assert!(bytes > 0);
@@ -438,9 +423,9 @@ mod tests {
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
         let output = homogeneous_spans(&ctx, 1, &knots, &controls).expect("exact insertion work")
             .expect("one active span");
-        assert_eq!(output.spans.len(), 1);
-        assert_eq!(output.spans[0].domain, [0.0, 1.0]);
-        assert_eq!(output.spans[0].controls, controls);
+        assert_eq!(output.len(), 1);
+        assert_eq!(output[0].domain, [0.0, 1.0]);
+        assert_eq!(output[0].controls, controls);
         drop(output);
         let reuse = ctx.reserve_scoped_limit(4096, "test inserted Bezier scratch released")
             .expect("all working and output scratch released");
@@ -491,7 +476,7 @@ mod tests {
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
         let output = super::positive_controls(&ctx, &points, Some(&weights), "Bezier positive controls")
             .expect("exact work and scoped bytes").expect("positive weights");
-        assert_eq!(output.controls, [[0.0, 1.0, 2.0, 1.0], [1.5, 2.0, 2.5, 0.5]]);
+        assert_eq!(&*output, [[0.0, 1.0, 2.0, 1.0], [1.5, 2.0, 2.5, 0.5]]);
         drop(output);
         let reuse = ctx.reserve_scoped_limit(64, "test positive controls scratch released")
             .expect("complete scratch allowance is reusable");
@@ -540,7 +525,7 @@ mod tests {
         )
         .expect("resource allocation did not fail")
         .unwrap();
-        let controls = &spans.spans[0].controls;
+        let controls = &spans[0].controls;
         let midpoint = (controls[0][1] + 2.0 * controls[1][1] + controls[2][1]) / 4.0;
         assert_eq!(midpoint, 0.75);
         let spans = homogeneous_spans(&ctx,
@@ -551,13 +536,13 @@ mod tests {
         .expect("resource allocation did not fail")
         .unwrap();
         assert_eq!(
-            spans.spans[1].controls.iter().map(|p| p[0]).collect::<Vec<_>>(),
+            spans[1].controls.iter().map(|p| p[0]).collect::<Vec<_>>(),
             [3., 4., 5.]
         );
         let zero = homogeneous_spans(&ctx, 0, &[0., 1., 2.], &[[0., 0., 0., 1.], [1., 0., 0., 1.]])
             .expect("resource allocation did not fail")
             .unwrap();
-        assert_eq!(zero.spans.len(), 2);
+        assert_eq!(zero.len(), 2);
     }
     #[test]
     fn numerical_followup_boundary_certificate_keeps_small_cross_products() {
@@ -588,8 +573,8 @@ mod tests {
         )
         .expect("resource allocation did not fail")
         .unwrap();
-        assert_eq!(actual.spans.len(), expected.spans.len());
-        for (actual, expected) in actual.spans.iter().zip(&expected.spans) {
+        assert_eq!(actual.len(), expected.len());
+        for (actual, expected) in actual.iter().zip(expected.iter()) {
             assert_eq!(actual.controls, expected.controls);
             assert_eq!(actual.domain.map(|t| t / 1e308), expected.domain);
         }
