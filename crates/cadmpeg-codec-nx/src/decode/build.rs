@@ -302,7 +302,7 @@ pub(super) fn try_decode_geometry(
                 cadmpeg_core::decode::u64_from_index(stream.file_offset),
                 Some(stream.kind().label()),
             )?;
-            annotations.exactness_for_decode(ctx, unknown.id().as_str(), Exactness::Derived)?;
+            annotations.exactness(ctx, unknown.id().as_str(), Exactness::Derived)?;
             unknowns.push(unknown);
             stream_unknowns.push((si, unknown_index));
             continue;
@@ -960,7 +960,7 @@ pub(super) fn try_decode_geometry(
             if charted.is_some() || uncharted.is_some() {
                 annotations.derived(ctx, curve_id.as_str(), "geometry")?;
             } else {
-                annotations.exactness_for_decode(ctx, curve_id.as_str(), Exactness::Unknown)?;
+                annotations.exactness(ctx, curve_id.as_str(), Exactness::Unknown)?;
             }
             ctx.reserve_vec(&mut ir.model.curves, 1, "nx intersection curves")?;
             ir.model.curves.push(Curve {
@@ -1020,7 +1020,7 @@ pub(super) fn try_decode_geometry(
             if charted.is_some() || uncharted.is_some() {
                 annotations.derived(ctx, procedural_id.as_str(), "definition")?;
             } else {
-                annotations.exactness_for_decode(
+                annotations.exactness(
                     ctx,
                     procedural_id.as_str(),
                     Exactness::Unknown,
@@ -1481,7 +1481,7 @@ pub(super) fn try_decode_geometry(
             cadmpeg_core::decode::u64_from_index(stream.file_offset),
             Some(stream.kind().label()),
         )?;
-        annotations.exactness_for_decode(ctx, unknown.id().as_str(), Exactness::Derived)?;
+        annotations.exactness(ctx, unknown.id().as_str(), Exactness::Derived)?;
         unknowns.push(unknown);
         stream_unknowns.push((si, unknown_index));
     }
@@ -2519,7 +2519,7 @@ fn finalize_point_topology(
     )?;
     for id in [body_id.as_str(), region_id.as_str(), shell_id.as_str()] {
         annotations.note_for_decode(ctx, id, &stream, 0, Some("derived_point_topology"))?;
-        annotations.exactness_for_decode(ctx, id, Exactness::Inferred)?;
+        annotations.exactness(ctx, id, Exactness::Inferred)?;
     }
 
     let point_count = ir.model.points.len();
@@ -2543,7 +2543,7 @@ fn finalize_point_topology(
             0,
             Some("derived_point_topology"),
         )?;
-        annotations.exactness_for_decode(ctx, vertex_id.as_str(), Exactness::Inferred)?;
+        annotations.exactness(ctx, vertex_id.as_str(), Exactness::Inferred)?;
         ir.model.vertices.push(Vertex {
             id: vertex_id.try_clone_for_decode(ctx, "nx point vertex identity copy")?,
             point: point

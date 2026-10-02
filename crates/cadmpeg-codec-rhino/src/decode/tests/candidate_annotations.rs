@@ -10,7 +10,7 @@ fn rejected_candidate_annotations_do_not_consume_retained_storage() {
     with_transaction_limits(&scan, u64::MAX, Some(0), Some(8192), |expand| {
         let mut context = DecodeContext::new(&scan, expand).unwrap();
         let mut annotations = AnnotationBuilder::new();
-        annotations.exactness("rhino:test:point#candidate", Exactness::Derived);
+        annotations.exactness(&cadmpeg_test_support::service_decode_context(), "rhino:test:point#candidate", Exactness::Derived).unwrap();
         context.annotations = annotations.build();
         let original = context.annotations.clone();
         let session = expand.ctx();
@@ -33,7 +33,7 @@ fn candidate_annotation_copy_preserves_materialized_refusal() {
     with_transaction_limits(&scan, u64::MAX, None, Some(0), |expand| {
         let mut context = DecodeContext::new(&scan, expand).unwrap();
         let mut annotations = AnnotationBuilder::new();
-        annotations.exactness("rhino:test:point#candidate", Exactness::Derived);
+        annotations.exactness(&cadmpeg_test_support::service_decode_context(), "rhino:test:point#candidate", Exactness::Derived).unwrap();
         context.annotations = annotations.build();
         let original = context.annotations.clone();
         let result = context.validate_candidate::<()>(|_, _| panic!("copy must refuse before applying the candidate"));

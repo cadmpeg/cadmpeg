@@ -1538,7 +1538,7 @@ fn declared_entity_handle_circular_carrier_replaces_nested_support_geometry() {
         entity_id.as_str(),
         constraint_id.as_str(),
     ] {
-        builder.exactness(id, cadmpeg_ir::Exactness::Derived);
+        builder.exactness(&cadmpeg_test_support::service_decode_context(), id, cadmpeg_ir::Exactness::Derived).unwrap();
     }
     annotations = builder.build();
 

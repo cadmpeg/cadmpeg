@@ -298,7 +298,7 @@ fn build_metadata_ir(
                 cadmpeg_core::decode::u64_from_index(stream.file_offset),
                 Some(stream.kind().label()),
             )?;
-            annotations.exactness_for_decode(ctx, unknown.id().as_str(), Exactness::Derived)?;
+            annotations.exactness(ctx, unknown.id().as_str(), Exactness::Derived)?;
             unknowns.push(unknown);
         }
     }

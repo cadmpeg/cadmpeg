@@ -4391,7 +4391,7 @@ fn set_exactness(
     exactness: Exactness,
 ) -> Result<(), cadmpeg_core::CodecError> {
     let mut builder = AnnotationBuilder::resume(std::mem::take(annotations));
-    let result = builder.exactness_for_decode(ctx, id, exactness).map(|_| ());
+    let result = builder.exactness(ctx, id, exactness).map(|_| ());
     *annotations = builder.build();
     result
 }

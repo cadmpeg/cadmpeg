@@ -12,8 +12,8 @@ fn fixture() -> AnnotationBuilder {
     let stream = StreamHandle::new(crate::stream_name!("source"));
     builder.note(FIRST, &stream, 7).tag("first");
     builder.note(SECOND, &stream, 9).tag("second");
-    builder.exactness(FIRST, Exactness::Derived);
-    builder.exactness(SECOND, Exactness::Inferred);
+    builder.exactness(&cadmpeg_test_support::service_decode_context(), FIRST, Exactness::Derived).unwrap();
+    builder.exactness(&cadmpeg_test_support::service_decode_context(), SECOND, Exactness::Inferred).unwrap();
     builder
 }
 

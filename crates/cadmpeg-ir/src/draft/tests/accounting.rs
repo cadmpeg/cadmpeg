@@ -34,7 +34,7 @@ fn refused_accounted_draft_leaves_all_existing_destinations_unchanged() {
     let mut base = CadIr::empty();
     base.model.points.push(point(existing));
     let mut builder = crate::annotations::AnnotationBuilder::new();
-    builder.exactness(existing, Exactness::Inferred);
+    builder.exactness(&cadmpeg_test_support::service_decode_context(), existing, Exactness::Inferred).unwrap();
     let mut annotations = builder.build();
     let before = (base.clone(), annotations.clone());
 
@@ -54,7 +54,7 @@ fn rejected_accounted_draft_does_not_retain_the_annotation_copy() {
     let mut base = CadIr::empty();
     base.model.points.push(point(identity));
     let mut builder = crate::annotations::AnnotationBuilder::new();
-    builder.exactness(identity, Exactness::Inferred);
+    builder.exactness(&cadmpeg_test_support::service_decode_context(), identity, Exactness::Inferred).unwrap();
     let mut annotations = builder.build();
     let before = (base.clone(), annotations.clone());
     let mut draft = point_draft(identity).with_accounting();

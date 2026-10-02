@@ -9,7 +9,7 @@ fn remapping_refuses_collisions_across_tables_without_mutation() {
     builder
         .note("test:model:point#provenance", &stream, 7)
         .tag("point");
-    builder.exactness("test:model:point#exactness", Exactness::Inferred);
+    builder.exactness(&cadmpeg_test_support::service_decode_context(), "test:model:point#exactness", Exactness::Inferred).unwrap();
     let mut annotations = builder.build();
     let before = annotations.clone();
     let ctx = cadmpeg_test_support::service_decode_context();
@@ -28,7 +28,7 @@ fn remapping_calls_once_per_identity_and_preserves_each_annotation() {
     let mut builder = AnnotationBuilder::new();
     let stream = StreamHandle::new(crate::stream_name!("source"));
     builder.note("test:model:point#a", &stream, 7).tag("point");
-    builder.exactness("test:model:point#a", Exactness::Inferred);
+    builder.exactness(&cadmpeg_test_support::service_decode_context(), "test:model:point#a", Exactness::Inferred).unwrap();
     builder.derived(&cadmpeg_test_support::service_decode_context(), "test:model:point#b", "position").unwrap();
     let mut annotations = builder.build();
     let before = annotations.clone();
@@ -66,7 +66,7 @@ fn appending_refuses_shared_identities_in_either_table_without_mutation() {
         left.note("test:model:point#shared", &stream, 1);
         let mut right = AnnotationBuilder::new();
         right.note("test:model:point#new", &stream, 2);
-        right.exactness("test:model:point#shared", Exactness::Derived);
+        right.exactness(&cadmpeg_test_support::service_decode_context(), "test:model:point#shared", Exactness::Derived).unwrap();
         let (mut target, incoming) = if reverse {
             (right.build(), left.build())
         } else {
@@ -88,7 +88,7 @@ fn appending_disjoint_annotations_preserves_both_tables() {
     left.note("test:model:point#a", &stream, 1);
     let mut right = AnnotationBuilder::new();
     right.note("test:model:point#b", &stream, 2).tag("point");
-    right.exactness("test:model:point#b", Exactness::Derived);
+    right.exactness(&cadmpeg_test_support::service_decode_context(), "test:model:point#b", Exactness::Derived).unwrap();
     let mut target = left.build();
     let incoming = right.build();
     let original = target.clone();
@@ -105,7 +105,7 @@ fn charged_remapping_preserves_collision_text_and_tables() {
     let mut builder = AnnotationBuilder::new();
     let stream = StreamHandle::new(crate::stream_name!("source"));
     builder.note("source-a", &stream, 7).tag("point");
-    builder.exactness("source-b", Exactness::Inferred);
+    builder.exactness(&cadmpeg_test_support::service_decode_context(), "source-b", Exactness::Inferred).unwrap();
     let mut annotations = builder.build();
     let before = annotations.clone();
     let arena = cadmpeg_core::decode::DecodeArena::new();

@@ -167,7 +167,7 @@ fn attach_container_payloads(
         let id: UnknownId = IdScope::native(cadmpeg_ir::identity_component!("container-entry"))
             .id(&cadmpeg_ir::identity_component!("opaque"), ordinal);
         annotations.note_for_decode(ctx, &id, &annotation_stream, offset, Some(content.label()))?;
-        annotations.exactness_for_decode(ctx, &id, Exactness::ByteExact)?;
+        annotations.exactness(ctx, &id, Exactness::ByteExact)?;
         push_native_unknown(
             ctx,
             unknowns,
@@ -212,7 +212,7 @@ fn attach_indexed_om_unknowns(
                         offset,
                         Some("OM_ENTITY_RECORD"),
                     )?;
-                    annotations.exactness_for_decode(ctx, &id, Exactness::ByteExact)?;
+                    annotations.exactness(ctx, &id, Exactness::ByteExact)?;
                     push_native_unknown(
                         ctx,
                         unknowns,
@@ -246,7 +246,7 @@ fn attach_indexed_om_unknowns(
                         offset,
                         Some("OM_DATA_BLOCK"),
                     )?;
-                    annotations.exactness_for_decode(ctx, &id, Exactness::ByteExact)?;
+                    annotations.exactness(ctx, &id, Exactness::ByteExact)?;
                     push_native_unknown(
                         ctx,
                         unknowns,
@@ -323,7 +323,7 @@ pub(super) fn attach(
             source_offset,
             Some("DISPLAY_JT_TESSELLATION"),
         )?;
-        annotations.exactness_for_decode(ctx, tessellation.id.as_str(), Exactness::Derived)?;
+        annotations.exactness(ctx, tessellation.id.as_str(), Exactness::Derived)?;
         ir.model.tessellations.push(tessellation);
     }
     NATIVE_CATALOGUE.note_phase(ctx, NotePhase::GroupA, model, annotations)?;
@@ -489,7 +489,7 @@ fn attach_part_attributes<'a>(
             source_offset,
             Some("Attribute"),
         )?;
-        annotations.exactness_for_decode(ctx, attribute_id, Exactness::ByteExact)?;
+        annotations.exactness(ctx, attribute_id, Exactness::ByteExact)?;
         let id: AttributeId = extended_id(attribute_id, &cadmpeg_ir::identity_key!("neutral"))
             .ok_or_else(|| {
                 CodecError::malformed(format_args!("NX part attribute id is not an identity"))
@@ -1466,7 +1466,7 @@ fn attach_jpeg_preview_assets(
                 source_offset,
                 Some("JPEG_PREVIEW_INVALID"),
             )?;
-            annotations.exactness_for_decode(ctx, native_ref.as_str(), Exactness::ByteExact)?;
+            annotations.exactness(ctx, native_ref.as_str(), Exactness::ByteExact)?;
             push_native_unknown(
                 ctx,
                 unknowns,
@@ -1490,7 +1490,7 @@ fn attach_jpeg_preview_assets(
             source_offset,
             Some("JPEG_PREVIEW_ASSET"),
         )?;
-        annotations.exactness_for_decode(ctx, id.as_str(), Exactness::ByteExact)?;
+        annotations.exactness(ctx, id.as_str(), Exactness::ByteExact)?;
         annotations
             .derived(ctx, id.as_str(), "id")
             .map_err(cadmpeg_core::CodecError::from)?;
@@ -1639,7 +1639,7 @@ fn attach_material_texture_assets(
             texture.source_offset,
             Some("MATERIAL_TEXTURE_ASSET"),
         )?;
-        annotations.exactness_for_decode(ctx, asset.id.as_str(), Exactness::ByteExact)?;
+        annotations.exactness(ctx, asset.id.as_str(), Exactness::ByteExact)?;
         annotations
             .derived(ctx, asset.id.as_str(), "id")
             .map_err(cadmpeg_core::CodecError::from)?;
@@ -3458,7 +3458,7 @@ fn attach_feature_operations(
             label.source_offset,
             Some("TEXT_SEMANTIC_ANNOTATION"),
         )?;
-        annotations.exactness_for_decode(ctx, annotation.id.as_str(), Exactness::Derived)?;
+        annotations.exactness(ctx, annotation.id.as_str(), Exactness::Derived)?;
         cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
             &mut ir.model.semantic_annotations,
             1,
@@ -5550,7 +5550,7 @@ fn attach_feature_operations(
             label.source_offset,
             Some("FEATURE_OPERATION"),
         )?;
-        annotations.exactness_for_decode(ctx, &id, Exactness::Derived)?;
+        annotations.exactness(ctx, &id, Exactness::Derived)?;
         let source_content = feature_source_content(ctx, operation_payload_string_records)?;
         let mut referenced_parameters = Vec::new();
         let mut parameter_reservation = ctx.reserve_scoped(0, "NX referenced parameters")?;
@@ -6466,7 +6466,7 @@ fn attach_sketch_graph(
                 *source_offset,
                 Some(tag),
             )?;
-            annotations.exactness_for_decode(ctx, entity.id().as_str(), Exactness::ByteExact)?;
+            annotations.exactness(ctx, entity.id().as_str(), Exactness::ByteExact)?;
         }
         annotations.note_for_decode(
             ctx,
@@ -6475,7 +6475,7 @@ fn attach_sketch_graph(
             label.source_offset,
             Some("SKETCH"),
         )?;
-        annotations.exactness_for_decode(ctx, sketch_id.as_str(), Exactness::Derived)?;
+        annotations.exactness(ctx, sketch_id.as_str(), Exactness::Derived)?;
         emit_sketch(ctx, ir, label, &sketch_id, entities)?;
         return Ok(Some(sketch_id));
     }
@@ -6644,7 +6644,7 @@ fn attach_sketch_graph(
                     *source_offset,
                     Some("SKETCH_POINT"),
                 )?;
-                annotations.exactness_for_decode(ctx, entity.id().as_str(), Exactness::Derived)?;
+                annotations.exactness(ctx, entity.id().as_str(), Exactness::Derived)?;
             }
             SketchGeometryDefinition::Native { native_kind } => {
                 let tag = if native_kind == "nx-fixed-point" {
@@ -6659,7 +6659,7 @@ fn attach_sketch_graph(
                     *source_offset,
                     Some(tag),
                 )?;
-                annotations.exactness_for_decode(
+                annotations.exactness(
                     ctx,
                     entity.id().as_str(),
                     Exactness::ByteExact,
@@ -6675,7 +6675,7 @@ fn attach_sketch_graph(
         label.source_offset,
         Some("SKETCH"),
     )?;
-    annotations.exactness_for_decode(ctx, sketch_id.as_str(), Exactness::Derived)?;
+    annotations.exactness(ctx, sketch_id.as_str(), Exactness::Derived)?;
     emit_sketch(ctx, ir, label, &sketch_id, entities)?;
     Ok(Some(sketch_id))
 }

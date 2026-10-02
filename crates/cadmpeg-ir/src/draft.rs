@@ -637,7 +637,7 @@ impl<'ctx, D: BorrowMut<CadIr>> CommitSession<'ctx, D> {
         let (_, transaction) = transaction.update(|annotations| {
             let mut builder = AnnotationBuilder::resume(std::mem::take(annotations));
             for (identity, exactness) in accounting.exactness {
-                builder.exactness_owned_for_decode(ctx, identity, exactness)?;
+                builder.exactness_owned(ctx, identity, exactness)?;
             }
             *annotations = builder.build();
             Ok::<_, CodecError>(())
