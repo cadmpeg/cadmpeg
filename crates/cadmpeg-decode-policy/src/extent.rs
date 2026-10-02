@@ -10,7 +10,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
         expression: &'tcx Expr<'tcx>,
         source: &'tcx Expr<'tcx>,
     ) -> Option<Shape> {
-        let output = self.typeck.expr_ty(expression);
+        let output = self.expr_ty(expression);
         let ty::Adt(owner, _) = output.kind() else {
             return None;
         };
@@ -19,7 +19,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
         {
             return None;
         }
-        if self.typeck.expr_ty(source) == output {
+        if self.expr_ty(source) == output {
             return Some(Shape::Fixed);
         }
         if self.call(source).is_some_and(|(definition, args)| {
@@ -27,11 +27,11 @@ impl<'tcx> Analysis<'_, 'tcx> {
                 && self.tcx.item_name(definition).as_str() == "into_iter"
                 && args
                     .first()
-                    .is_some_and(|value| self.typeck.expr_ty(value) == output)
+                    .is_some_and(|value| self.expr_ty(value) == output)
         }) {
             return Some(Shape::Fixed);
         }
-        if self.owns_vector_iterator(self.typeck.expr_ty(source)) {
+        if self.owns_vector_iterator(self.expr_ty(source)) {
             Some(Shape::Unknown)
         } else {
             None
@@ -141,7 +141,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
                 match self.tcx.item_name(definition).as_str() {
                     "len" => operands.first().is_some_and(|operand| {
                         matches!(
-                            self.typeck.expr_ty(operand).peel_refs().kind(),
+                            self.expr_ty(operand).peel_refs().kind(),
                             ty::Array(_, _)
                         ) || self.constant(operand, seen)
                     }),
@@ -188,7 +188,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
             return Shape::Unknown;
         }
         seen.push(expression.hir_id);
-        let value = self.typeck.expr_ty(expression).peel_refs();
+        let value = self.expr_ty(expression).peel_refs();
         let constant_container = match value.kind() {
             ty::Str | ty::Slice(_) | ty::Array(_, _) => true,
             ty::Adt(owner, _) => {
@@ -219,7 +219,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
             }
             ExprKind::Array(_) | ExprKind::Repeat(_, _) => return Shape::Fixed,
             ExprKind::Struct(_, fields, _) => {
-                if let ty::Adt(definition, _) = self.typeck.expr_ty(expression).peel_refs().kind() {
+                if let ty::Adt(definition, _) = self.expr_ty(expression).peel_refs().kind() {
                     if types::standard(self.tcx, definition.did())
                         && self
                             .tcx
@@ -243,7 +243,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
         if let Some((definition, operands)) = self.call(expression) {
             let name = self.tcx.item_name(definition);
             if name.as_str() == "new" && types::standard(self.tcx, definition) {
-                if let ty::Adt(result, _) = self.typeck.expr_ty(expression).kind() {
+                if let ty::Adt(result, _) = self.expr_ty(expression).kind() {
                     if self.tcx.item_name(result.did()).as_str() == "RangeInclusive" {
                         return if operands
                             .iter()
@@ -301,7 +301,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
                 return shape;
             }
         }
-        let value = self.typeck.expr_ty(expression).peel_refs();
+        let value = self.expr_ty(expression).peel_refs();
         if matches!(value.kind(), ty::Array(_, _)) {
             return Shape::Fixed;
         }

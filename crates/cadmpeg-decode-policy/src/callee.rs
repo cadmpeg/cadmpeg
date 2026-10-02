@@ -7,7 +7,7 @@ use rustc_span::def_id::DefId;
 impl<'tcx> Analysis<'_, 'tcx> {
     fn call_arguments(&self, expression: &'tcx Expr<'tcx>) -> Option<ty::GenericArgsRef<'tcx>> {
         match expression.kind {
-            ExprKind::Call(callee, _) => match self.typeck.expr_ty(callee).kind() {
+            ExprKind::Call(callee, _) => match self.expr_ty(callee).kind() {
                 ty::FnDef(_, args) => self
                     .tcx
                     .try_normalize_erasing_regions(
@@ -18,28 +18,28 @@ impl<'tcx> Analysis<'_, 'tcx> {
                     .no_bound_vars(),
                 _ => None,
             },
-            _ => Some(self.typeck.node_args(expression.hir_id)),
+            _ => Some(self.substitute(self.typeck.node_args(expression.hir_id))),
         }
     }
 
-    pub(crate) fn implementation(
-        &self,
-        expression: &'tcx Expr<'tcx>,
-        definition: DefId,
-    ) -> Option<DefId> {
+    pub(crate) fn resolved_instance(&self, expression: &'tcx Expr<'tcx>, definition: DefId)
+        -> Option<Instance<'tcx>> {
         let args = self.call_arguments(expression)?;
         if args.len() != self.tcx.generics_of(definition).count() {
             return None;
         }
-        Instance::try_resolve(
-            self.tcx,
-            TypingEnv::post_analysis(self.tcx, self.owner),
-            definition,
-            args,
-        )
-        .ok()
-        .flatten()
-        .map(|instance| instance.def_id())
+        Instance::try_resolve(self.tcx, TypingEnv::post_analysis(self.tcx, self.owner),
+            definition, args).ok().flatten()
+    }
+
+    pub(crate) fn implementation(&self, expression: &'tcx Expr<'tcx>, definition: DefId)
+        -> Option<DefId> {
+        let instance = self.resolved_instance(expression, definition)?;
+        if matches!(instance.def, ty::InstanceKind::Virtual(_, _)) {
+            None
+        } else {
+            Some(instance.def_id())
+        }
     }
 
     pub(crate) fn checked_body(&self, definition: DefId) -> bool {
@@ -54,7 +54,23 @@ impl<'tcx> Analysis<'_, 'tcx> {
     }
 
     pub(crate) fn checked_call(&self, expression: &'tcx Expr<'tcx>, definition: DefId) -> bool {
-        self.implementation(expression, definition).is_some_and(|id| self.checked_body(id))
+        if self.implementation(expression, definition).is_some_and(|id| self.checked_body(id)) {
+            return true;
+        }
+        if self.call_arguments(expression).is_some_and(|arguments|
+            arguments.types().any(|value| matches!(value.peel_refs().kind(), ty::Dynamic(..)))) {
+            return false;
+        }
+        let Some(trait_id) = self.tcx.trait_of_assoc(definition) else { return false; };
+        if !trait_id.is_local() || self.tcx.visibility(trait_id).is_public() {
+            return false;
+        }
+        let mut implementations = self.tcx.all_impls(trait_id).peekable();
+        implementations.peek().is_some() && implementations.all(|id| {
+            self.tcx.associated_items(id).in_definition_order()
+                .find(|item| item.name() == self.tcx.item_name(definition))
+                .map_or_else(|| self.checked_body(definition), |item| self.checked_body(item.def_id))
+        })
     }
 
     pub(crate) fn custom_trait(
@@ -108,10 +124,10 @@ impl<'tcx> Analysis<'_, 'tcx> {
         let ExprKind::Call(callee, _) = expression.kind else {
             return;
         };
-        if matches!(self.typeck.expr_ty(callee).kind(), ty::FnDef(_, _)) {
+        if matches!(self.expr_ty(callee).kind(), ty::FnDef(_, _)) {
             return;
         }
-        if let ty::Closure(definition, _) = self.typeck.expr_ty(callee).peel_refs().kind() {
+        if let ty::Closure(definition, _) = self.expr_ty(callee).peel_refs().kind() {
             if self.checked_body(*definition) {
                 return;
             }
