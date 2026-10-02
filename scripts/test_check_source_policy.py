@@ -1417,6 +1417,50 @@ fn search(values: &[u8], ctx: &DecodeContext<'_>) -> Result<bool, Error> {
             ("crates/cadmpeg-codec-demo/src/search.rs", 3),
         ])
 
+    def test_indexed_copy_scalars_and_fixed_slices_are_accepted(self):
+        self.write(self.PATH, """#[derive(Clone, Copy)] struct Count { value: usize }
+fn read(ctx: &DecodeContext<'_>, bytes: &[u8], fixed: [u8; 4], count: Count) {
+    bytes[index] == bytes[other];
+    fixed[..] == fixed[..];
+    count.value == other_count.value;
+    fixed.iter().filter(predicate).take(limit).any(predicate);
+    values.map(|left: [u8; 4]| left.cmp(&right));
+    values.map(|left: [u8; 4]| { left.cmp(&right) });
+}""")
+        self.assertEqual(self.findings("uncharged_decode_work"), [])
+
+    def test_projected_comparison_cannot_use_an_unrelated_local_scalar_proof(self):
+        self.write(self.PATH, """fn read(ctx: &DecodeContext<'_>, text: usize, left: [u8; 4]) {
+    first.text == second.text;
+    values.map(|left: [u8; 4]| left);
+    left_text.cmp(&other);
+    { let local: [u8; 4] = fixed(); local.cmp(&other); }
+    local.cmp(&other);
+}""")
+        self.assertEqual([f.line for f in self.findings("uncharged_decode_work")], [2, 4, 6])
+
+    def test_copy_type_names_do_not_cross_ambiguous_declarations(self):
+        self.write("crates/cadmpeg-codec-demo/src/fixed.rs", "#[derive(Clone, Copy)] enum Kind { One, Two }")
+        self.write(self.PATH, """struct Kind { text: String }
+fn read(ctx: &DecodeContext<'_>, kind: Kind) {
+    kind == other;
+}""")
+        self.assertEqual([f.line for f in self.findings("uncharged_decode_work")], [3])
+
+    def test_fixed_prefixes_do_not_exempt_full_string_searches(self):
+        self.write(self.PATH, """fn read(ctx: &DecodeContext<'_>, text: &str, bytes: &[u8], count: usize, left: String, right: String, strings: [String; 4]) {
+    text.starts_with("fixed");
+    text.ends_with(r"fixed");
+    bytes.starts_with(b"fixed");
+    text.eq("fixed");
+    count.min(other_count);
+    text.contains("fixed");
+    text.find("fixed");
+    left.min(right);
+    strings.iter().min();
+}""")
+        self.assertEqual([f.line for f in self.findings("uncharged_decode_work")], [7, 8, 9, 10])
+
     def test_unadmitted_loops_and_iterator_searches(self):
         self.write(self.PATH, """fn read(ctx: &DecodeContext<'_>) {
     for value in values { use_value(value); }
