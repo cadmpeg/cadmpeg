@@ -88,7 +88,10 @@ pub(super) fn native_tolerant_coedge_extension(
             };
             let mut native_curve = curve.clone();
             if *curve_reversed {
-                native_curve.reverse_parameterization();
+                let writer_arena = cadmpeg_core::decode::DecodeArena::new();
+                let writer_policy = cadmpeg_core::decode::DecodePolicy::desktop();
+                let (writer_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &writer_arena, &writer_policy)?;
+                native_curve.reverse_parameterization(&writer_ctx)?;
             }
             native_ref(records, -1);
             native_i64(records, 1);

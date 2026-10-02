@@ -264,7 +264,7 @@ fn fitted_nurbs_offsets_validate_from_clamped_endpoint_frames() {
                 let SketchGeometryDefinition::Nurbs { curve } = definition else {
                     unreachable!("test result is a NURBS")
                 };
-                curve.reverse_parameterization();
+                curve.reverse_parameterization(&cadmpeg_test_support::service_decode_context()).expect("signed reversal admission");
             };
             definition.try_into()
         },
@@ -296,7 +296,7 @@ fn fitted_nurbs_offsets_validate_from_clamped_endpoint_frames() {
                 let SketchGeometryDefinition::Nurbs { curve } = definition else {
                     unreachable!("test result is a NURBS")
                 };
-                curve.reverse_parameterization();
+                curve.reverse_parameterization(&cadmpeg_test_support::service_decode_context()).expect("signed reversal admission");
                 let last = curve.pole_rows().count() - 1;
                 curve
                     .try_map_control_points(|pole_index, point| {

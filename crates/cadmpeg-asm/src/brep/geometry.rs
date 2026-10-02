@@ -512,7 +512,7 @@ pub(super) fn record_reversed(rec: &Record) -> bool {
 /// Lines negate their direction, conics negate their plane normal (flipping
 /// the angular sweep while keeping the zero-angle direction), and B-splines
 /// reverse poles and knots. Carriers without an orientation pass through.
-pub(super) fn reverse_curve_geometry(geometry: &mut CurveGeometry) {
+pub(super) fn reverse_curve_geometry(ctx: &cadmpeg_core::decode::DecodeContext<'_>, geometry: &mut CurveGeometry) -> Result<(), cadmpeg_core::CodecError> {
     match geometry {
         CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve)) => {
             line_curve.reverse_parameterization();
@@ -524,10 +524,11 @@ pub(super) fn reverse_curve_geometry(geometry: &mut CurveGeometry) {
             ellipse_curve.reverse_parameterization();
         }
         CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)) => {
-            curve.reverse_parameterization();
+            curve.reverse_parameterization(ctx)?;
         }
         _ => {}
     }
+    Ok(())
 }
 
 pub(super) fn reverse_procedural_curve_definition(

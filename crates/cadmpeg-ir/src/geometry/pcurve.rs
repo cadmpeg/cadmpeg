@@ -2073,9 +2073,11 @@ impl PcurveNurbs {
     }
 
     /// Reverse poles, weights, and the signed knot parameterization together.
-    pub fn reverse_parameterization(&mut self) {
+    pub fn reverse_parameterization(&mut self, ctx: &DecodeContext<'_>) -> Result<(), CodecError> {
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(self.poles.count() / 2), "IR signed pole reversal")?;
+        self.knots.reverse_negated(ctx)?;
         self.poles.reverse();
-        self.knots.reverse_negated();
+        Ok(())
     }
 }
 

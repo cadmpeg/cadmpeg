@@ -714,7 +714,7 @@ fn nurbs_stores_hand_out_their_admitted_poles_knots_and_weights() {
         None
     );
     let mut reversed = curve.clone();
-    reversed.reverse_parameterization();
+    reversed.reverse_parameterization(&cadmpeg_test_support::service_decode_context()).expect("signed reversal admission");
     assert_eq!(reversed.knots().as_slice(), [-5.0, -5.0, -2.0, -2.0]);
 
     let surface = surface();

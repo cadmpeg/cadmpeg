@@ -382,26 +382,26 @@ fn failed_numeric_edits_preserve_the_whole_carrier() {
 fn reversal_preserves_weight_and_parameter_correspondence() {
     let mut curve = curve();
     let original = curve.clone();
-    curve.reverse_parameterization();
+    curve.reverse_parameterization(&cadmpeg_test_support::service_decode_context()).expect("signed reversal admission");
     assert_eq!(curve.knots().as_slice(), &[-5.0, -5.0, -2.0, -2.0]);
     assert_eq!(
         curve.control_points(),
         vec![original.control_points()[1], original.control_points()[0]]
     );
     assert_eq!(curve.pole_rows().weights(), Some(vec![2.0, -1.0]));
-    curve.reverse_parameterization();
+    curve.reverse_parameterization(&cadmpeg_test_support::service_decode_context()).expect("signed reversal admission");
     assert_eq!(curve, original);
 
     let mut pcurve = pcurve();
     let original = pcurve.clone();
-    pcurve.reverse_parameterization();
+    pcurve.reverse_parameterization(&cadmpeg_test_support::service_decode_context()).expect("signed reversal admission");
     assert_eq!(pcurve.knots().as_slice(), &[-5.0, -5.0, -2.0, -2.0]);
     assert_eq!(
         pcurve.control_points(),
         vec![original.control_points()[1], original.control_points()[0]]
     );
     assert_eq!(pcurve.pole_rows().weights(), Some(vec![2.0, 1.0]));
-    pcurve.reverse_parameterization();
+    pcurve.reverse_parameterization(&cadmpeg_test_support::service_decode_context()).expect("signed reversal admission");
     assert_eq!(pcurve, original);
 }
 
@@ -433,4 +433,60 @@ fn analytic_pcurve_admission_preserves_nonunit_axes_and_unordered_radii() {
     let mut wire = serde_json::to_value(offset).unwrap();
     wire["basis"]["direction"] = serde_json::json!({"u": 0.0, "v": 0.0});
     assert!(serde_json::from_value::<PcurveGeometry>(wire).is_err());
+}
+
+#[test]
+fn signed_reversal_refuses_every_pass_before_any_carrier_changes() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    fn check<T: Clone + PartialEq + std::fmt::Debug>(
+        original: T,
+        pole_count: usize,
+        knot_count: usize,
+        reverse: impl Fn(&mut T, &DecodeContext<'_>) -> Result<(), CodecError>,
+    ) {
+        let pole_swaps = u64::try_from(pole_count / 2).expect("pole swaps");
+        let knot_swaps = u64::try_from(knot_count / 2).expect("knot swaps");
+        let negations = u64::try_from(knot_count).expect("knot negations");
+        let total = pole_swaps + knot_swaps + negations;
+        for cap in 0..total {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+            let mut edited = original.clone();
+            let Err(CodecError::ResourceLimit(limit)) = reverse(&mut edited, &ctx) else {
+                panic!("every reversal pass requires admission");
+            };
+            assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+            assert_eq!(limit.operation, if cap < pole_swaps {
+                "IR signed pole reversal"
+            } else if cap < pole_swaps + knot_swaps {
+                "IR signed knot reversal"
+            } else {
+                "IR signed knot negation"
+            });
+            assert_eq!(edited, original);
+            assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit));
+        }
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 2 * total;
+        policy.limits.max_retained_bytes = 0;
+        policy.limits.max_materialized_bytes = 0;
+        policy.limits.max_collection_items = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+        let mut edited = original.clone();
+        reverse(&mut edited, &ctx).expect("first reversal");
+        assert_ne!(edited, original);
+        reverse(&mut edited, &ctx).expect("second reversal");
+        assert_eq!(edited, original);
+        ctx.finish_session().expect("exact work and zero storage");
+    }
+
+    let curve = curve();
+    check(curve.clone(), curve.pole_rows().count(), curve.knots().len(), NurbsCurve::reverse_parameterization);
+    let pcurve = pcurve();
+    check(pcurve.clone(), pcurve.pole_rows().count(), pcurve.knots().len(), PcurveNurbs::reverse_parameterization);
 }

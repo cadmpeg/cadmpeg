@@ -1204,7 +1204,7 @@ fn generated_projected_brep_c2_curve(
                 let sum = projected.knots()[usize::try_from(projected.degree()).map_err(|_| {
                     CodecError::Malformed("Rhino count exceeds address space".into())
                 })?] + projected.knots()[projected.pole_count()];
-                projected.reverse_parameterization();
+                projected.reverse_parameterization(&writer_ctx)?;
                 projected
                     .edit_knots(&writer_ctx, |knots| {
                         for knot in knots {

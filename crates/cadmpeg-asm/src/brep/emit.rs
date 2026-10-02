@@ -3725,7 +3725,7 @@ fn emit_carrier_curve(
     if reversed_curve_refs.contains(&i) {
         if forward_curve_refs.contains(&i) {
             let mut reversed = geometry.try_clone_for_decode(ctx, "ASM reversed carrier curve")?;
-            reverse_curve_geometry(&mut reversed);
+            reverse_curve_geometry(ctx, &mut reversed)?;
             charged_push!(
                 ctx,
                 out.curves,
@@ -3736,7 +3736,7 @@ fn emit_carrier_curve(
                 }
             );
         } else {
-            reverse_curve_geometry(&mut geometry);
+            reverse_curve_geometry(ctx, &mut geometry)?;
         }
     }
     charged_push!(
@@ -5330,7 +5330,7 @@ pub(super) fn emit_coedges(
                 )) => match nurbs::core::curve_cache_resolving_refs(ctx, &r.tokens, token_table) {
                     Some(Ok(mut curve)) => {
                         if *curve_reversed {
-                            curve.reverse_parameterization();
+                            curve.reverse_parameterization(ctx)?;
                         }
                         let curve_id = brep_id!(format, CurveId, "tolerant-coedge-curve", i);
                         charged_push!(
