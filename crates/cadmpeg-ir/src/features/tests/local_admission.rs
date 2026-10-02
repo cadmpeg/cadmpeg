@@ -10,6 +10,67 @@ use crate::features::{
 use crate::ids::{BodyId, FeatureInputTopologyId, HistoricalVertexId};
 
 #[test]
+fn membership_constructors_preserve_refusals_and_release_scoped_indexes() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    use crate::features::{DistinctMembers, FeatureContent, FeatureSourceContent, NativeSelections};
+
+    fn retain_output<T>(ctx: &DecodeContext<'_>, output: T) -> Result<(), CodecError> {
+        let storage = ctx.reserve_scoped_limit(200, "membership index released")?;
+        drop(storage);
+        drop(output);
+        Ok(())
+    }
+
+    for owner in 0..5 {
+        for dimension in [Some(ResourceDimension::MaterializedBytes),
+            Some(ResourceDimension::CollectionItems), Some(ResourceDimension::WorkUnits), None] {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_materialized_bytes = 200;
+            policy.limits.max_retained_bytes = 0;
+            policy.limits.max_recursion_depth = 0;
+            policy.limits.max_collection_items = 8;
+            match dimension {
+                Some(ResourceDimension::MaterializedBytes) => policy.limits.max_materialized_bytes = 0,
+                Some(ResourceDimension::CollectionItems) => policy.limits.max_collection_items = 0,
+                Some(ResourceDimension::WorkUnits) => policy.limits.max_work_units = 0,
+                None => {},
+                Some(_) => unreachable!(),
+            }
+            let arena = DecodeArena::new();
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            let result = (|| -> Result<(), CodecError> {
+                match owner {
+                    0 => retain_output(&ctx, DistinctMembers::try_from(vec![body_id("first"), body_id("second")], &ctx)?),
+                    1 => retain_output(&ctx, SelectionMembers::new(vec![body_id("first"), body_id("second")], &ctx, "selection members")??),
+                    2 => retain_output(&ctx, NativeSelections::new(vec!["first".into(), "second".into()], &ctx, "native members")??),
+                    3 => retain_output(&ctx, FeatureContent::new(vec![
+                        FeatureSourceContent::Feature(feature_id("first")),
+                        FeatureSourceContent::Text("same".into()),
+                        FeatureSourceContent::Text("same".into()),
+                        FeatureSourceContent::Feature(feature_id("second")),
+                    ], &ctx, "source content")?),
+                    4 => retain_output(&ctx, BodyMembers::try_from_rows(vec![
+                        crate::features::BodyMember::new(body_id("first"), cadmpeg_core::text::NonBlankString::new("native-first".to_owned()).unwrap()),
+                        crate::features::BodyMember::new(body_id("second"), cadmpeg_core::text::NonBlankString::new("native-second".to_owned()).unwrap()),
+                    ], &ctx)??),
+                    _ => unreachable!(),
+                }
+            })();
+            if let Some(dimension) = dimension {
+                let Err(CodecError::ResourceLimit(limit)) = result else { panic!("owner {owner}: resource refusal required"); };
+                assert_eq!(limit.dimension, dimension);
+                assert_ne!(limit.operation, "membership index released");
+                assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(original)) if original == limit));
+            } else {
+                result.unwrap();
+                ctx.finish_session().unwrap();
+            }
+        }
+    }
+}
+
+#[test]
 fn charged_native_selections_refuse_uniqueness_index_limit() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 
@@ -17,7 +78,7 @@ fn charged_native_selections_refuse_uniqueness_index_limit() {
     policy.limits.max_collection_items = 1;
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let result = crate::features::NativeSelections::try_from_for_decode(
+    let result = crate::features::NativeSelections::new(
         vec!["first".into(), "second".into()],
         &ctx,
         "test native selection uniqueness",
@@ -96,7 +157,7 @@ fn charged_selection_members_refuse_uniqueness_index_limit() {
     policy.limits.max_collection_items = 1;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(matches!(
-        SelectionMembers::try_from_for_decode(
+        SelectionMembers::new(
             vec!["first", "second"], &ctx, "selection uniqueness",
         ),
         Err(failure)
