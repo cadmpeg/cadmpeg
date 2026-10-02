@@ -9183,22 +9183,39 @@ pub struct ThreePointSelection(Box<[VertexSelection; 3]>);
 impl TryFrom<Box<[VertexSelection; 3]>> for ThreePointSelection {
     type Error = &'static str;
     fn try_from(points: Box<[VertexSelection; 3]>) -> Result<Self, Self::Error> {
-        if same_vertex_target(&points[0], &points[1])
-            || same_vertex_target(&points[0], &points[2])
-            || same_vertex_target(&points[1], &points[2])
-        {
-            return Err("points must select three distinct vertex targets");
-        }
-        let mut states = points.iter().filter_map(|point| match point {
-            VertexSelection::Historical { state, .. } => Some(state),
-            _ => None,
-        });
-        if let Some(state) = states.next() {
-            if states.any(|candidate| candidate != state) {
-                return Err("points must use the same input topology");
+        selection_overlap::standard_result(Self::build(&selection_overlap::StandardAdmission, points))
+    }
+}
+
+impl ThreePointSelection {
+    /// Admit target and historical-state comparisons through the caller context.
+    pub fn new(points: Box<[VertexSelection; 3]>, ctx: &cadmpeg_core::decode::DecodeContext<'_>)
+        -> Result<Result<Self, &'static str>, cadmpeg_core::decode::ResourceLimit> {
+        Self::build(ctx, points)
+    }
+
+    fn build<S: selection_overlap::OverlapAdmission>(admission: &S, points: Box<[VertexSelection; 3]>)
+        -> Result<Result<Self, &'static str>, S::Error> {
+        admission.work(0)?;
+        for (first, second) in [(0, 1), (0, 2), (1, 2)] {
+            if selection_overlap::vertex_targets_equal(admission, &points[first], &points[second])? {
+                return Ok(Err("points must select three distinct vertex targets"));
             }
         }
-        Ok(Self(points))
+        let mut state: Option<&FeatureInputTopologyId> = None;
+        for point in points.iter() {
+            admission.work(1)?;
+            if let VertexSelection::Historical { state: candidate, .. } = point {
+                match state {
+                    Some(state) if !selection_overlap::text_equal(admission, state.as_str(), candidate.as_str())? => {
+                        return Ok(Err("points must use the same input topology"));
+                    }
+                    Some(_) => {},
+                    None => state = Some(candidate),
+                }
+            }
+        }
+        Ok(Ok(Self(points)))
     }
 }
 
@@ -9288,35 +9305,6 @@ impl std::ops::Deref for GeometryImportPath {
 impl<'de> Deserialize<'de> for GeometryImportPath {
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         Self::try_from(String::deserialize(deserializer)?).map_err(serde::de::Error::custom)
-    }
-}
-
-fn same_vertex_target(
-    first: &crate::features::VertexSelection,
-    second: &crate::features::VertexSelection,
-) -> bool {
-    use crate::features::VertexSelection;
-
-    match (first, second) {
-        (
-            VertexSelection::Generated { vertex: first, .. },
-            VertexSelection::Generated { vertex: second, .. },
-        ) => first == second,
-        (
-            VertexSelection::Historical {
-                state: first_state,
-                vertex: first_vertex,
-                ..
-            },
-            VertexSelection::Historical {
-                state: second_state,
-                vertex: second_vertex,
-                ..
-            },
-        ) => first_state == second_state && first_vertex == second_vertex,
-        (VertexSelection::Native(first), VertexSelection::Native(second)) => first == second,
-        (VertexSelection::Unresolved, VertexSelection::Unresolved) => true,
-        _ => false,
     }
 }
 

@@ -3,7 +3,7 @@
 
 use cadmpeg_core::decode::{u64_from_index, DecodeContext, ResourceLimit};
 
-use super::{BodyMembers, BodySelection, FaceSelection, GeneratedBodyRef, GeneratedFaceRef};
+use super::{BodyMembers, BodySelection, FaceSelection, GeneratedBodyRef, GeneratedFaceRef, VertexSelection};
 use crate::ids::{BodyId, FeatureInputTopologyId, HistoricalBodyId, HistoricalFaceId};
 
 pub(super) trait OverlapAdmission {
@@ -32,7 +32,7 @@ pub(super) fn standard_result<T>(value: Result<T, std::convert::Infallible>) -> 
     }
 }
 
-fn text_equal<S: OverlapAdmission>(admission: &S, first: &str, second: &str) -> Result<bool, S::Error> {
+pub(super) fn text_equal<S: OverlapAdmission>(admission: &S, first: &str, second: &str) -> Result<bool, S::Error> {
     admission.work(1)?;
     if first.len() != second.len() { return Ok(false); }
     admission.work(first.len())?;
@@ -87,6 +87,27 @@ pub(super) fn face_selections_overlap<S: OverlapAdmission>(
                     && text_equal(admission, first.local_id.as_str(), second.local_id.as_str())?)
             })
         }
+        _ => Ok(false),
+    }
+}
+
+pub(super) fn vertex_targets_equal<S: OverlapAdmission>(
+    admission: &S,
+    first: &VertexSelection,
+    second: &VertexSelection,
+) -> Result<bool, S::Error> {
+    match (first, second) {
+        (VertexSelection::Generated { vertex: first, .. }, VertexSelection::Generated { vertex: second, .. }) => {
+            Ok(text_equal(admission, first.feature.as_str(), second.feature.as_str())?
+                && text_equal(admission, first.local_id.as_str(), second.local_id.as_str())?)
+        }
+        (VertexSelection::Historical { state: first_state, vertex: first_vertex, .. },
+            VertexSelection::Historical { state: second_state, vertex: second_vertex, .. }) => {
+            Ok(text_equal(admission, first_state.as_str(), second_state.as_str())?
+                && text_equal(admission, first_vertex.as_str(), second_vertex.as_str())?)
+        }
+        (VertexSelection::Native(first), VertexSelection::Native(second)) => text_equal(admission, first.as_str(), second.as_str()),
+        (VertexSelection::Unresolved, VertexSelection::Unresolved) => Ok(true),
         _ => Ok(false),
     }
 }
