@@ -11,6 +11,35 @@ const EPS_INVERSE_CONTRACT_MARGIN: f64 = 1.0e-12;
 const EPS_SURFACE_INVERSE_FIT: f64 = 1.0e-10;
 
 #[test]
+fn surface_inverse_returns_attached_refusal_before_optional_result() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    let surface = bilinear_surface();
+    let point = Point3::new(0.3, 0.7, 0.0);
+    for trigger in 0..4 {
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+        let budget = ctx.work_budget(10_000);
+        let result = match trigger {
+            0 => crate::eval::nurbs_surface_closest_parameter_with_budget(&ctx, &surface, point, None, &budget),
+            1 => nurbs_surface_parameter_within_tolerance(&ctx, &surface, point, None, EPS_SURFACE_INVERSE_FIT),
+            2 => nurbs_surface_parameter_within_tolerance_with_budget(&ctx, &surface, point, None, EPS_SURFACE_INVERSE_FIT, &budget),
+            3 => crate::eval::nurbs_surface_parameter_within_nonnegative_tolerance_with_budget(
+                &ctx, &surface, point, None,
+                crate::scalar::NonNegativeReal::new(EPS_SURFACE_INVERSE_FIT).expect("nonnegative"), &budget),
+            _ => unreachable!("four public entry points"),
+        };
+        let limit = result.expect_err("an attached work refusal is not optional absence");
+        assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+        assert_eq!(limit.limit, 0);
+        assert_eq!(limit.operation, "work_budget");
+        assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit));
+    }
+}
+
+#[test]
 fn nurbs_surface_inverse_distinguishes_closest_and_tolerance_contracts() {
     let surface = bilinear_surface();
     let point = Point3::new(0.3, 0.7, 0.2);
