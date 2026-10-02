@@ -26,9 +26,9 @@ fn subd_round_trip_and_directed_ring_validation() {
                 SubdVertex::new(Point3::new(0.0, 1.0, 0.0), SubdVertexTag::Smooth, None).unwrap(),
             ],
             vec![
-                SubdEdge::new([0, 1], [0.0, 0.25], SubdEdgeTag::Smooth, None, [1.0, 1.0]).unwrap(),
-                SubdEdge::new([1, 2], [0.25, 0.0], SubdEdgeTag::SmoothX, None, [1.0, 1.0]).unwrap(),
-                SubdEdge::new([2, 0], [0.0, 0.0], SubdEdgeTag::Smooth, None, [1.0, 1.0]).unwrap(),
+                SubdEdge::new([0, 1], [0.0, 0.25], SubdEdgeTag::Smooth, None, [1.0, 1.0], &cadmpeg_test_support::service_decode_context()).expect("fixture SubD edge admission").unwrap(),
+                SubdEdge::new([1, 2], [0.25, 0.0], SubdEdgeTag::SmoothX, None, [1.0, 1.0], &cadmpeg_test_support::service_decode_context()).expect("fixture SubD edge admission").unwrap(),
+                SubdEdge::new([2, 0], [0.0, 0.0], SubdEdgeTag::Smooth, None, [1.0, 1.0], &cadmpeg_test_support::service_decode_context()).expect("fixture SubD edge admission").unwrap(),
             ],
             vec![SubdFace::new(vec![
                 SubdEdgeUse {
@@ -224,7 +224,7 @@ fn triangle_cage() -> crate::subd::SubdCage {
         [[0, 1], [1, 2], [2, 0]]
             .into_iter()
             .map(|vertices| {
-                SubdEdge::new(vertices, [0.0, 0.0], SubdEdgeTag::Smooth, None, [0.0, 0.0]).unwrap()
+                SubdEdge::new(vertices, [0.0, 0.0], SubdEdgeTag::Smooth, None, [0.0, 0.0], &cadmpeg_test_support::service_decode_context()).expect("fixture SubD edge admission").unwrap()
             })
             .collect(),
         vec![SubdFace::new(
@@ -374,7 +374,7 @@ fn cage_symmetry_references_stay_in_range() {
 
 #[test]
 fn edge_admission_requires_distinct_endpoints() {
-    assert!(SubdEdge::new([0, 0], [0.0, 0.0], SubdEdgeTag::Smooth, None, [0.0, 0.0]).is_err());
+    assert!(SubdEdge::new([0, 0], [0.0, 0.0], SubdEdgeTag::Smooth, None, [0.0, 0.0], &cadmpeg_test_support::service_decode_context()).expect("fixture SubD edge admission").is_err());
     let mut wire = serde_json::to_value(&triangle_cage().edges[0]).unwrap();
     wire["vertices"] = serde_json::json!([0, 0]);
     assert!(serde_json::from_value::<SubdEdge>(wire).is_err());
@@ -383,8 +383,7 @@ fn edge_admission_requires_distinct_endpoints() {
         [0.0, 0.0],
         SubdEdgeTag::Smooth,
         None,
-        [0.0, 0.0]
-    )
+        [0.0, 0.0], &cadmpeg_test_support::service_decode_context()).expect("fixture SubD edge admission")
     .is_ok());
 }
 
@@ -396,7 +395,7 @@ fn edge_numeric_admission_rejects_invalid_controls() {
             let mut sharpness = [0.0, 0.0];
             sharpness[index] = invalid;
             assert!(
-                SubdEdge::new([0, 1], sharpness, SubdEdgeTag::Smooth, None, [0.0, 0.0]).is_err()
+                SubdEdge::new([0, 1], sharpness, SubdEdgeTag::Smooth, None, [0.0, 0.0], &cadmpeg_test_support::service_decode_context()).expect("fixture SubD edge admission").is_err()
             );
             let mut wire = base.clone();
             wire["sharpness"] = serde_json::json!(sharpness);
@@ -409,8 +408,7 @@ fn edge_numeric_admission_rejects_invalid_controls() {
             [0.0, 0.0],
             SubdEdgeTag::Smooth,
             Some(invalid),
-            [0.0, 0.0]
-        )
+            [0.0, 0.0], &cadmpeg_test_support::service_decode_context()).expect("fixture SubD edge admission")
         .is_err());
     }
     for invalid in [0.0, -1.0] {
@@ -423,7 +421,7 @@ fn edge_numeric_admission_rejects_invalid_controls() {
             let mut coefficients = [0.0, 0.0];
             coefficients[index] = invalid;
             assert!(
-                SubdEdge::new([0, 1], [0.0, 0.0], SubdEdgeTag::Smooth, None, coefficients).is_err()
+                SubdEdge::new([0, 1], [0.0, 0.0], SubdEdgeTag::Smooth, None, coefficients, &cadmpeg_test_support::service_decode_context()).expect("fixture SubD edge admission").is_err()
             );
             let mut wire = base.clone();
             wire["sector_coefficients"] = serde_json::json!(coefficients);
@@ -440,8 +438,7 @@ fn edge_admission_preserves_signed_coefficients_and_optional_intervals() {
             [0.0, f64::MAX],
             SubdEdgeTag::SmoothX,
             interval,
-            [-2.0, 3.0],
-        )
+            [-2.0, 3.0], &cadmpeg_test_support::service_decode_context()).expect("fixture SubD edge admission")
         .unwrap();
         assert_eq!(edge.vertices, [1, 0]);
         assert_eq!(edge.sharpness.map(NonNegativeReal::get), [0.0, f64::MAX]);
@@ -564,4 +561,79 @@ fn subd_carriers_hold_their_admitted_points_axes_and_weights() {
             "second_axis": Vector3::new(0.0, 1.0, 0.0),
         })
     );
+}
+
+#[test]
+fn edge_constructors_keep_first_and_later_caller_work_refusals() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    for parts in [false, true] {
+        for (cap, operation) in [(0, "SubD edge endpoints"), (1, "SubD edge sharpness"), (2, "SubD edge sharpness"), (3, "SubD edge sector coefficients"), (4, "SubD edge sector coefficients")] {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            let result = if parts {
+                SubdEdge::from_parts([1, 0], [0.0, 1.0], SubdEdgeTag::SmoothX, None, [-2.0, 3.0], &ctx)
+            } else {
+                SubdEdge::new([1, 0], [0.0, 1.0], SubdEdgeTag::SmoothX, None, [-2.0, 3.0], &ctx)
+            };
+            let Err(CodecError::ResourceLimit(limit)) = result else { panic!("edge work must refuse"); };
+            assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+            assert_eq!(limit.operation, operation);
+            assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(original)) if original == limit));
+        }
+    }
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let Err(CodecError::ResourceLimit(limit)) = SubdEdge::from_controls([1, 0], [NonNegativeReal::ZERO; 2], SubdEdgeTag::Smooth, None, [FiniteReal::ZERO; 2], &ctx) else { panic!("typed edge work must refuse"); };
+    assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+    assert_eq!(limit.operation, "SubD edge endpoints");
+    assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(original)) if original == limit));
+}
+
+#[test]
+fn edge_admission_diagnostics_use_caller_storage_and_valid_controls_allocate_nothing() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    for dimension in [ResourceDimension::RetainedBytes, ResourceDimension::MaterializedBytes] {
+        for (vertices, sharpness, interval, coefficients) in [([0, 0], [0.0, 0.0], None, [0.0, 0.0]), ([0, 1], [-1.0, 0.0], None, [0.0, 0.0]), ([0, 1], [0.0, 0.0], Some(0.0), [0.0, 0.0]), ([0, 1], [0.0, 0.0], None, [f64::NAN, 0.0])] {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            match dimension {
+                ResourceDimension::RetainedBytes => policy.limits.max_retained_bytes = 0,
+                ResourceDimension::MaterializedBytes => policy.limits.max_materialized_bytes = 0,
+                _ => panic!("storage dimension"),
+            }
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            let mut storage = ctx.reserve_scoped(0, "SubD edge admission error").unwrap();
+            let result = if dimension == ResourceDimension::MaterializedBytes {
+                storage.with_storage(|| SubdEdge::new(vertices, sharpness, SubdEdgeTag::Smooth, interval, coefficients, &ctx))
+            } else {
+                SubdEdge::new(vertices, sharpness, SubdEdgeTag::Smooth, interval, coefficients, &ctx)
+            };
+            let Err(CodecError::ResourceLimit(limit)) = result else { panic!("diagnostic storage must refuse"); };
+            assert_eq!(limit.dimension, dimension);
+            assert_eq!(limit.operation, "SubD edge admission error");
+            drop(storage);
+            assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(original)) if original == limit));
+        }
+    }
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    policy.limits.max_materialized_bytes = 0;
+    policy.limits.max_collection_items = 0;
+    policy.limits.max_work_units = 5;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let edge = SubdEdge::new([1, 0], [0.0, 1.0], SubdEdgeTag::SmoothX, Some(2.0), [-2.0, 3.0], &ctx).unwrap().unwrap();
+    assert_eq!(edge.vertices, [1, 0]);
+    assert_eq!(edge.sharpness.map(NonNegativeReal::get), [0.0, 1.0]);
+    assert_eq!(edge.knot_interval.map(PositiveReal::get), Some(2.0));
+    assert_eq!(edge.sector_coefficients.map(FiniteReal::get), [-2.0, 3.0]);
+    ctx.finish_session().unwrap();
+    let wire = serde_json::to_value(&edge).unwrap();
+    assert_eq!(serde_json::from_value::<SubdEdge>(wire).unwrap(), edge);
 }
