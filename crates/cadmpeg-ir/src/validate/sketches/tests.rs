@@ -1064,3 +1064,5 @@ fn extreme_lines_preserve_parallelism_and_span_separation() {
         Some(1.0)
     );
 }
+
+mod admission;

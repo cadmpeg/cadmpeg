@@ -58,3 +58,22 @@ fn geometric_scratch_releases_consumed_storage_without_retained_copies() {
     drop(ctx.reserve_scoped(64, "scratch storage released").unwrap());
     ctx.finish_session().unwrap();
 }
+
+#[test]
+fn validation_filter_admits_source_before_projection_and_keeps_original_refusal() {
+    for cap in [0, 3] {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = cap;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let visits = std::cell::Cell::new(0);
+        let Err(CodecError::ResourceLimit(limit)) = super::Scratch::filter_map(&ctx, [0, 1, 2], |value| {
+            visits.set(visits.get() + 1);
+            Ok((value != 0).then_some(value))
+        }) else { panic!("filter must refuse"); };
+        assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+        assert_eq!(limit.operation, "validation filter scan");
+        assert_eq!(visits.get(), if cap == 0 { 0 } else { 2 });
+        assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(original)) if original == limit));
+    }
+}
