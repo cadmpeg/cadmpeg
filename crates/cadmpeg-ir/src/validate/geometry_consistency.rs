@@ -72,9 +72,10 @@ fn procedural_support_allowance(
 /// Embedded support pcurves must map through their surfaces onto the curve
 /// they constrain at both ends of the construction interval.
 pub(super) fn check_procedural_support_consistency(
+    ctx: &DecodeContext<'_>,
     ir: &CadIr,
     findings: &mut Vec<Finding>,
-) -> Result<(), ResourceLimit> {
+) -> Result<(), CodecError> {
     let index = crate::index::ModelIndex::new(ir);
     let curves = ir
         .model
@@ -100,13 +101,7 @@ pub(super) fn check_procedural_support_consistency(
                 .endpoints()
                 .map(|parameter| measured_point(model_curve_point_by_id(&index, owner, parameter)));
             let [Some(start), Some(end)] = [evaluated[0]?, evaluated[1]?] else {
-                findings.push(Finding {
-                    check: Check::GeometricConsistency,
-                    severity: Severity::Error,
-                    message: "charted tolerant intersection does not evaluate at both endpoints"
-                        .into(),
-                    entity: Some(procedural.id.as_str().to_owned()),
-                });
+                super::record_finding(ctx, findings, Check::GeometricConsistency, Severity::Error, Some(procedural.id.as_str()), format_args!("charted tolerant intersection does not evaluate at both endpoints"))?;
                 continue;
             };
             let mismatch = worse_mismatch(
@@ -114,15 +109,10 @@ pub(super) fn check_procedural_support_consistency(
                 Point3::distance(end, endpoints[1].get()),
             );
             if !mismatch.is_finite() || mismatch > tolerance {
-                findings.push(Finding {
-                    check: Check::GeometricConsistency,
-                    severity: Severity::Error,
-                    message: format!(
+                super::record_finding(ctx, findings, Check::GeometricConsistency, Severity::Error, Some(procedural.id.as_str()), format_args!(
                         "charted tolerant intersection misses its endpoint witnesses by \
                          {mismatch:.6}"
-                    ),
-                    entity: Some(procedural.id.as_str().to_owned()),
-                });
+                    ))?;
             }
             continue;
         }
@@ -158,6 +148,7 @@ pub(super) fn check_procedural_support_consistency(
             });
             let [Some(base_start), Some(base_end)] = [base[0]?, base[1]?] else {
                 check_support_sides(
+                    ctx,
                     context,
                     None,
                     SupportEndpointContract::Offset {
@@ -176,17 +167,13 @@ pub(super) fn check_procedural_support_consistency(
                 (Point3::distance(solved_end, base_end) - offset.abs()).abs(),
             );
             if !offset_mismatch.is_finite() || offset_mismatch > bound {
-                findings.push(Finding {
-                    check: Check::GeometricConsistency,
-                    severity: Severity::Error,
-                    message: format!(
+                super::record_finding(ctx, findings, Check::GeometricConsistency, Severity::Error, Some(procedural.id.as_str()), format_args!(
                         "surface-offset solved curve misses its base offset distance by \
                          {offset_mismatch:.6}"
-                    ),
-                    entity: Some(procedural.id.as_str().to_owned()),
-                });
+                    ))?;
             }
             check_support_sides(
+                ctx,
                 context,
                 None,
                 SupportEndpointContract::Coincident([base_start, base_end]),
@@ -252,6 +239,7 @@ pub(super) fn check_procedural_support_consistency(
                 .map(crate::geometry::FitTolerance::get),
         );
         check_support_sides(
+            ctx,
             &context,
             third,
             SupportEndpointContract::Coincident([solved_start, solved_end]),
@@ -274,6 +262,7 @@ enum SupportEndpointContract {
 }
 
 fn check_support_sides(
+    ctx: &DecodeContext<'_>,
     context: &crate::geometry::IntcurveSupportContext,
     third: Option<&crate::geometry::IntcurveSupportSide>,
     contract: SupportEndpointContract,
@@ -281,7 +270,7 @@ fn check_support_sides(
     bound: f64,
     entity: &str,
     findings: &mut Vec<Finding>,
-) -> Result<(), ResourceLimit> {
+) -> Result<(), CodecError> {
     let (constrained, expected_distance) = match contract {
         SupportEndpointContract::Coincident(endpoints) => (endpoints, None),
         SupportEndpointContract::Offset {
@@ -328,15 +317,10 @@ fn check_support_sides(
             endpoint_mismatch(constrained[1], support_end),
         );
         if !mismatch.is_finite() || mismatch > bound {
-            findings.push(Finding {
-                check: Check::GeometricConsistency,
-                severity: Severity::Error,
-                message: format!(
+            super::record_finding(ctx, findings, Check::GeometricConsistency, Severity::Error, Some(entity), format_args!(
                     "procedural support side {side_index} misses its endpoint distance contract by \
                      {mismatch:.6}"
-                ),
-                entity: Some(entity.to_owned()),
-            });
+                ))?;
         }
     }
     Ok(())
@@ -369,9 +353,10 @@ fn vertex_positions(ir: &CadIr) -> HashMap<&str, (Point3, Option<f64>)> {
 /// start and end vertex positions within the topology tolerances or the
 /// evaluated curve cache's fit tolerance.
 pub(super) fn check_edge_endpoint_consistency(
+    ctx: &DecodeContext<'_>,
     ir: &CadIr,
     findings: &mut Vec<Finding>,
-) -> Result<(), ResourceLimit> {
+) -> Result<(), CodecError> {
     let curves = ir
         .model
         .curves
@@ -430,14 +415,9 @@ pub(super) fn check_edge_endpoint_consistency(
             Point3::distance(at_end, *end),
         );
         if !mismatch.is_finite() || mismatch > bound {
-            findings.push(Finding {
-                check: Check::GeometricConsistency,
-                severity: Severity::Error,
-                message: format!(
+            super::record_finding(ctx, findings, Check::GeometricConsistency, Severity::Error, Some(edge.id.as_str()), format_args!(
                     "edge curve endpoints miss the edge's vertex positions by {mismatch:.6}"
-                ),
-                entity: Some(edge.id.as_str().to_owned()),
-            });
+                ))?;
         }
     }
     let edges = ir
@@ -492,14 +472,9 @@ pub(super) fn check_edge_endpoint_consistency(
             Point3::distance(at_end, *end),
         );
         if !mismatch.is_finite() || mismatch > bound {
-            findings.push(Finding {
-                check: Check::GeometricConsistency,
-                severity: Severity::Error,
-                message: format!(
+            super::record_finding(ctx, findings, Check::GeometricConsistency, Severity::Error, Some(coedge.id.as_str()), format_args!(
                     "coedge use-curve endpoints miss the traversal vertices by {mismatch:.6}"
-                ),
-                entity: Some(coedge.id.as_str().to_owned()),
-            });
+                ))?;
         }
     }
     Ok(())
@@ -729,15 +704,10 @@ pub(super) fn check_pcurve_surface_consistency(
             continue;
         };
         if !mismatch.is_finite() || mismatch > bound {
-            findings.push(Finding {
-                check: Check::GeometricConsistency,
-                severity: Severity::Error,
-                message: format!(
+            super::record_finding(ctx, findings, Check::GeometricConsistency, Severity::Error, Some(coedge.id.as_str()), format_args!(
                     "pcurve mapped through the face surface misses the edge's vertex positions \
                      by {mismatch:.6}"
-                ),
-                entity: Some(coedge.id.as_str().to_owned()),
-            });
+                ))?;
         }
     }
     Ok(())
