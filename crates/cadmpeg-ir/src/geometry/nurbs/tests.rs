@@ -1234,9 +1234,9 @@ fn raw_lane_constructors_share_caller_work_and_keep_refusal() {
         panic!("surface construction must use the exhausted caller account");
     };
     assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
-    assert_eq!(limit.operation, "IR NURBS knot finiteness");
+    assert_eq!(limit.operation, "IR NURBS grid row shape");
     assert_eq!(limit.used, 8);
-    assert_eq!(limit.additional, 4);
+    assert_eq!(limit.additional, 1);
     assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit));
     assert_eq!(curve.knots().as_slice(), &[0.0, 0.0, 1.0, 1.0]);
 }
@@ -1364,4 +1364,127 @@ fn admitted_pole_conversion_keeps_all_four_owned_storage_shapes() {
     assert_eq!(rows.as_ptr(), pointer);
     assert_eq!(rows[0].as_ptr(), first);
     assert_eq!(rows[1][1].weight.get(), 3.0);
+}
+
+#[test]
+fn surface_shape_visits_refuse_before_each_row_and_keep_semantic_order() {
+    use super::{NurbsError, NurbsPoleGrid, NurbsSurface, NurbsSurfaceAxis, NurbsSurfaceLanes};
+    use crate::features::FinitePoint3;
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let point = FinitePoint3::new(Point3::new(2.0, 3.0, 5.0)).expect("point");
+    for ragged in [false, true] {
+        let rows = vec![vec![point; 2], vec![point; if ragged { 1 } else { 2 }]];
+        for cap in [0, 1] {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+            let result = super::require_surface_shape(&ctx, 1, 4, 1, 4,
+                &NurbsPoleGrid::Polynomial { rows: rows.clone() });
+            let Err(super::admitted::ConstructionError::Resource(CodecError::ResourceLimit(limit))) = result else {
+                panic!("each row width needs caller work before comparison");
+            };
+            assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+            assert_eq!(limit.operation, "IR NURBS grid row shape");
+            assert_eq!(limit.used, cap);
+            assert_eq!(limit.additional, 1);
+            assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit));
+        }
+        let standard = super::require_surface_shape(&super::StandardNurbsAdmission, 1, 4, 1, 4,
+            &NurbsPoleGrid::Polynomial { rows: rows.clone() });
+        let admitted = NurbsSurface::from_lanes(&cadmpeg_test_support::service_decode_context(),
+            NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+            NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+            NurbsSurfaceLanes::new(rows, None), false).expect("admission").map(|_| ());
+        assert_eq!(admitted, standard);
+        if ragged {
+            assert_eq!(standard, Err(NurbsError::Structure(
+                "control_points row must contain 2 values, found 1".to_owned())));
+        } else {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_retained_bytes = 0;
+            policy.limits.max_collection_items = 0;
+            policy.limits.max_work_units = 2;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+            assert!(super::require_surface_shape(&ctx, 1, 4, 1, 4,
+                &NurbsPoleGrid::Polynomial { rows: vec![vec![point; 2]; 2] }).is_ok());
+            assert!(ctx.finish_session().is_ok());
+        }
+    }
+}
+
+#[test]
+fn surface_pairing_rows_refuse_first_and_later_visits() {
+    use super::{NurbsSurface, NurbsSurfaceAxis, NurbsSurfaceLanes};
+    use crate::features::FinitePoint3;
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let point = FinitePoint3::new(Point3::new(2.0, 3.0, 5.0)).expect("point");
+    for (cap, operation) in [
+        (0, "IR NURBS paired grid rows"),
+        (1, "IR NURBS paired poles"),
+        (3, "IR NURBS paired grid rows"),
+        (4, "IR NURBS paired poles"),
+        (6, "IR NURBS grid row shape"),
+        (7, "IR NURBS grid row shape"),
+    ] {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = cap;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+        let result = NurbsSurface::from_lanes(&ctx,
+            NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+            NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+            NurbsSurfaceLanes::new(vec![vec![point; 2]; 2], Some(vec![vec![3.0; 2]; 2])), false);
+        let Err(CodecError::ResourceLimit(limit)) = result else {
+            panic!("pair and shape visits must use the same caller account");
+        };
+        assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+        assert_eq!(limit.operation, operation);
+        assert_eq!(limit.used, cap);
+        assert_eq!(limit.additional, 1);
+        assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit));
+    }
+}
+
+#[test]
+fn shared_knot_checks_preserve_prefix_order_and_original_refusal() {
+    use super::NurbsError;
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    for prefix in ["", "u_", "v_"] {
+        for (knots, message) in [
+            (vec![f64::NAN, 1.0, 0.0, 1.0], format!("{prefix}knots contains a non-finite value")),
+            (vec![0.0, 1.0, 0.0, 1.0], format!("{prefix}knots must be non-decreasing")),
+        ] {
+            let standard = super::require_nondecreasing_knots(&super::StandardNurbsAdmission, &knots, prefix);
+            assert_eq!(standard, Err(NurbsError::Structure(message.clone())));
+            let ctx = cadmpeg_test_support::service_decode_context();
+            let admitted = super::require_nondecreasing_knots(&ctx, &knots, prefix);
+            assert!(matches!(admitted, Err(super::admitted::ConstructionError::Geometry(NurbsError::Structure(text))) if text == message));
+            assert!(ctx.finish_session().is_ok());
+        }
+        for (cap, operation) in [(0, "IR NURBS knot finiteness"), (4, "IR NURBS knot order")] {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_retained_bytes = 0;
+            policy.limits.max_collection_items = 0;
+            policy.limits.max_work_units = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+            let result = super::require_nondecreasing_knots(&ctx, &[0.0, 0.0, 1.0, 1.0], prefix);
+            let Err(super::admitted::ConstructionError::Resource(CodecError::ResourceLimit(limit))) = result else {
+                panic!("both knot scans need the caller account");
+            };
+            assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+            assert_eq!(limit.operation, operation);
+            assert_eq!(limit.used, cap);
+            assert_eq!(limit.additional, 4);
+            assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit));
+        }
+    }
 }

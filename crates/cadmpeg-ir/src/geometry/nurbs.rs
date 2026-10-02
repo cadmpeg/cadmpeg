@@ -43,7 +43,7 @@ impl KnotVector {
     ///
     /// Refuses a non-finite knot, then a decreasing pair.
     pub fn new(knots: Vec<f64>) -> Result<Self, NurbsError> {
-        require_nondecreasing_knots(&knots)?;
+        require_nondecreasing_knots(&StandardNurbsAdmission, &knots, "")?;
         Ok(Self(knots))
     }
 
@@ -53,9 +53,7 @@ impl KnotVector {
         scratch::reserve_exact(&mut values, knots.len(), "IR finite knot values")?;
         values.extend(knots.into_iter().map(FiniteReal::get));
         let knots = values;
-        if !knots_nondecreasing(&knots) {
-            return Err(NurbsError::Structure("knots must be non-decreasing".into()));
-        }
+        require_knot_order(&StandardNurbsAdmission, &knots, "")?;
         Ok(Self(knots))
     }
 
@@ -250,8 +248,8 @@ impl PoleValue<FinitePoint3> for FinitePoint3 {
     }
 }
 
-/// Storage and diagnostic policy for one pole conversion algorithm.
-trait PoleStorage {
+/// Explicit storage, work and diagnostic policy for NURBS admission.
+pub(super) trait NurbsAdmission {
     type Error;
 
     fn collect<I, T>(
@@ -261,12 +259,15 @@ trait PoleStorage {
         convert: impl FnMut(I) -> Result<T, Self::Error>,
     ) -> Result<Vec<T>, Self::Error>;
 
-    fn invalid_point(&self) -> Result<Self::Error, Self::Error>;
+    fn work(&self, count: u64, operation: &'static str) -> Result<(), Self::Error>;
+
+    fn structure(&self, message: std::fmt::Arguments<'_>) -> Result<Self::Error, Self::Error>;
+
 }
 
-struct StandardPoleStorage;
+pub(super) struct StandardNurbsAdmission;
 
-impl PoleStorage for StandardPoleStorage {
+impl NurbsAdmission for StandardNurbsAdmission {
     type Error = NurbsError;
 
     fn collect<I, T>(
@@ -283,22 +284,26 @@ impl PoleStorage for StandardPoleStorage {
         Ok(output)
     }
 
-    fn invalid_point(&self) -> Result<Self::Error, Self::Error> {
-        Ok(non_finite_control_point())
+    fn work(&self, _count: u64, _operation: &'static str) -> Result<(), Self::Error> {
+        Ok(())
+    }
+
+    fn structure(&self, message: std::fmt::Arguments<'_>) -> Result<Self::Error, Self::Error> {
+        Ok(NurbsError::Structure(message.to_string()))
     }
 }
 
-fn map_pole<P: PoleValue<T>, T, S: PoleStorage>(
+fn map_pole<P: PoleValue<T>, T, S: NurbsAdmission>(
     storage: &S,
     point: P,
 ) -> Result<T, S::Error> {
     match point.admit() {
         Some(point) => Ok(point),
-        None => Err(storage.invalid_point()?),
+        None => Err(storage.structure(format_args!("control_points contains a non-finite point"))?),
     }
 }
 
-fn map_curve_poles<P: PoleValue<T>, T, S: PoleStorage>(
+fn map_curve_poles<P: PoleValue<T>, T, S: NurbsAdmission>(
     storage: &S,
     poles: NurbsPoles3<P>,
 ) -> Result<NurbsPoles3<T>, S::Error> {
@@ -315,7 +320,7 @@ fn map_curve_poles<P: PoleValue<T>, T, S: PoleStorage>(
     })
 }
 
-fn map_surface_poles<P: PoleValue<T>, T, S: PoleStorage>(
+fn map_surface_poles<P: PoleValue<T>, T, S: NurbsAdmission>(
     storage: &S,
     grid: NurbsPoleGrid<P>,
 ) -> Result<NurbsPoleGrid<T>, S::Error> {
@@ -376,7 +381,7 @@ impl<P: PoleValue<FinitePoint3>> NurbsPoles3<P> {
     ///
     /// Refuses a pole position with a non-finite coordinate.
     fn admit(self) -> Result<NurbsPoles3<FinitePoint3>, NurbsError> {
-        P::admit_curve_poles(self, |poles| map_curve_poles(&StandardPoleStorage, poles))
+        P::admit_curve_poles(self, |poles| map_curve_poles(&StandardNurbsAdmission, poles))
     }
 }
 
@@ -601,7 +606,7 @@ impl<P: PoleValue<FinitePoint3>> NurbsPoleGrid<P> {
     ///
     /// Refuses a pole position with a non-finite coordinate.
     fn admit(self) -> Result<NurbsPoleGrid<FinitePoint3>, NurbsError> {
-        P::admit_surface_poles(self, |grid| map_surface_poles(&StandardPoleStorage, grid))
+        P::admit_surface_poles(self, |grid| map_surface_poles(&StandardNurbsAdmission, grid))
     }
 }
 
@@ -832,7 +837,7 @@ impl BsplineSurface {
         let v_count = control_points.first().map_or(0, Vec::len);
         let u_knots = bspline_axis_knots("u", u_degree, u_count, u_knots)?;
         let v_knots = bspline_axis_knots("v", v_degree, v_count, v_knots)?;
-        require_rectangular_grid("control_points", &control_points)?;
+        require_rectangular_grid(&StandardNurbsAdmission, "control_points", &control_points)?;
         let mut rows = Vec::new();
         scratch::reserve_exact(
             &mut rows,
@@ -895,9 +900,10 @@ fn bspline_axis_knots(
         )));
     }
     require_length(
+        &StandardNurbsAdmission,
         &format!("{axis}_knots"),
         knots.len(),
-        checked_knot_count(axis, count, degree)?,
+        checked_knot_count(&StandardNurbsAdmission, axis, count, degree)?,
     )?;
     KnotVector::new(knots)
 }
@@ -987,37 +993,51 @@ impl From<NurbsError> for cadmpeg_core::CodecError {
     }
 }
 
-fn checked_knot_count(field: &str, pole_count: usize, degree: u32) -> Result<usize, NurbsError> {
-    pole_count
-        .checked_add(cadmpeg_core::decode::index_from_u32(degree))
-        .and_then(|count| count.checked_add(1))
-        .ok_or_else(|| NurbsError::Structure(format!("{field} knot count overflows usize")))
+fn checked_knot_count<S: NurbsAdmission>(
+    admission: &S,
+    field: &str,
+    pole_count: usize,
+    degree: u32,
+) -> Result<usize, S::Error> {
+    let Ok(degree) = usize::try_from(degree) else {
+        return Err(admission.structure(format_args!("{field} knot count overflows usize"))?);
+    };
+    match pole_count.checked_add(degree).and_then(|count| count.checked_add(1)) {
+        Some(count) => Ok(count),
+        None => Err(admission.structure(format_args!("{field} knot count overflows usize"))?),
+    }
 }
 
-/// Every row of a control grid states the same pole count.
-///
-/// The grid is one object, so its rectangularity is one shape mint over that
-/// object, not a comparison between two independently stated lists.
-fn require_rectangular_grid<T>(field: &str, rows: &[Vec<T>]) -> Result<(), NurbsError> {
+/// Check every row width in source order through the caller's work policy.
+fn require_rectangular_grid<T, S: NurbsAdmission>(
+    admission: &S,
+    field: &str,
+    rows: &[Vec<T>],
+) -> Result<(), S::Error> {
     let width = rows.first().map_or(0, Vec::len);
     for row in rows {
+        admission.work(1, "IR NURBS grid row shape")?;
         if row.len() != width {
-            return Err(NurbsError::Structure(format!(
-                "{field} row must contain {width} values, found {}",
-                row.len(),
-            )));
+            return Err(admission.structure(format_args!(
+                "{field} row must contain {width} values, found {}", row.len(),
+            ))?);
         }
     }
     Ok(())
 }
 
-fn require_length(field: &str, actual: usize, expected: usize) -> Result<(), NurbsError> {
+fn require_length<S: NurbsAdmission>(
+    admission: &S,
+    field: &str,
+    actual: usize,
+    expected: usize,
+) -> Result<(), S::Error> {
     if actual == expected {
         Ok(())
     } else {
-        Err(NurbsError::Structure(format!(
+        Err(admission.structure(format_args!(
             "{field} must contain {expected} values, found {actual}"
-        )))
+        ))?)
     }
 }
 
@@ -1064,41 +1084,55 @@ pub(super) fn admit_finite_weight(
     })
 }
 
-fn require_finite_scalars(field: &str, values: &[f64]) -> Result<(), NurbsError> {
+fn require_finite_scalars<S: NurbsAdmission>(
+    admission: &S,
+    prefix: &str,
+    values: &[f64],
+) -> Result<(), S::Error> {
+    admission.work(cadmpeg_core::decode::u64_from_index(values.len()), "IR NURBS knot finiteness")?;
     if values.iter().all(|value| value.is_finite()) {
         Ok(())
     } else {
-        Err(NurbsError::Structure(format!(
-            "{field} contains a non-finite value"
-        )))
+        Err(admission.structure(format_args!("{prefix}knots contains a non-finite value"))?)
     }
 }
 
-pub(super) fn require_nondecreasing_knots(knots: &[f64]) -> Result<(), NurbsError> {
-    require_finite_scalars("knots", knots)?;
+fn require_knot_order<S: NurbsAdmission>(
+    admission: &S,
+    knots: &[f64],
+    prefix: &str,
+) -> Result<(), S::Error> {
+    admission.work(cadmpeg_core::decode::u64_from_index(knots.len()), "IR NURBS knot order")?;
     if knots_nondecreasing(knots) {
         Ok(())
     } else {
-        Err(NurbsError::Structure("knots must be non-decreasing".into()))
+        Err(admission.structure(format_args!("{prefix}knots must be non-decreasing"))?)
     }
 }
 
-pub(super) fn require_curve_cardinality(
+fn require_nondecreasing_knots<S: NurbsAdmission>(
+    admission: &S,
+    knots: &[f64],
+    prefix: &str,
+) -> Result<(), S::Error> {
+    require_finite_scalars(admission, prefix, knots)?;
+    require_knot_order(admission, knots, prefix)
+}
+
+pub(super) fn require_curve_cardinality<S: NurbsAdmission>(
+    admission: &S,
     degree: u32,
     knot_count: usize,
     pole_count: usize,
     point_field: &str,
-) -> Result<(), NurbsError> {
-    if pole_count <= cadmpeg_core::decode::index_from_u32(degree) {
-        return Err(NurbsError::Structure(format!(
+) -> Result<(), S::Error> {
+    if u64::try_from(pole_count).is_ok_and(|count| count <= u64::from(degree)) {
+        return Err(admission.structure(format_args!(
             "{point_field} must contain more than degree {degree} poles, found {pole_count}"
-        )));
+        ))?);
     }
-    require_length(
-        "knots",
-        knot_count,
-        checked_knot_count("curve", pole_count, degree)?,
-    )
+    require_length(admission, "knots", knot_count,
+        checked_knot_count(admission, "curve", pole_count, degree)?)
 }
 
 /// One parameter axis of a tensor-product NURBS surface.
@@ -1149,38 +1183,33 @@ impl<P, W> NurbsSurfaceLanes<P, W> {
     }
 }
 
-fn require_surface_shape<P, U: KnotValue, V: KnotValue>(
+fn require_surface_shape<P, S: NurbsAdmission>(
+    admission: &S,
     u_degree: u32,
-    u_knots: &U,
+    u_knots: usize,
     v_degree: u32,
-    v_knots: &V,
+    v_knots: usize,
     poles: &NurbsPoleGrid<P>,
-) -> Result<(), NurbsError> {
+) -> Result<(), S::Error> {
     let u_count = poles.u_count();
     let v_count = poles.v_count();
-    if u_count <= cadmpeg_core::decode::index_from_u32(u_degree) {
-        return Err(NurbsError::Structure(format!(
+    if u64::try_from(u_count).is_ok_and(|count| count <= u64::from(u_degree)) {
+        return Err(admission.structure(format_args!(
             "u_count must exceed u_degree {u_degree}, found {u_count}"
-        )));
+        ))?);
     }
-    if v_count <= cadmpeg_core::decode::index_from_u32(v_degree) {
-        return Err(NurbsError::Structure(format!(
+    if u64::try_from(v_count).is_ok_and(|count| count <= u64::from(v_degree)) {
+        return Err(admission.structure(format_args!(
             "v_count must exceed v_degree {v_degree}, found {v_count}"
-        )));
+        ))?);
     }
-    require_length(
-        "u_knots",
-        u_knots.knot_count(),
-        checked_knot_count("u", u_count, u_degree)?,
-    )?;
-    require_length(
-        "v_knots",
-        v_knots.knot_count(),
-        checked_knot_count("v", v_count, v_degree)?,
-    )?;
+    require_length(admission, "u_knots", u_knots,
+        checked_knot_count(admission, "u", u_count, u_degree)?)?;
+    require_length(admission, "v_knots", v_knots,
+        checked_knot_count(admission, "v", v_count, v_degree)?)?;
     match poles {
-        NurbsPoleGrid::Polynomial { rows } => require_rectangular_grid("control_points", rows)?,
-        NurbsPoleGrid::Rational { rows } => require_rectangular_grid("control_points", rows)?,
+        NurbsPoleGrid::Polynomial { rows } => require_rectangular_grid(admission, "control_points", rows)?,
+        NurbsPoleGrid::Rational { rows } => require_rectangular_grid(admission, "control_points", rows)?,
     }
     Ok(())
 }
@@ -1241,7 +1270,7 @@ impl NurbsSurface {
             knots: v_knots,
             periodic: v_periodic,
         } = v;
-        require_surface_shape(u_degree, &u_knots, v_degree, &v_knots, &poles)?;
+        require_surface_shape(&StandardNurbsAdmission, u_degree, u_knots.knot_count(), v_degree, v_knots.knot_count(), &poles)?;
         let poles = poles.admit()?;
         let u_knots = u_knots.admit().map_err(|error| match error {
             NurbsError::ResourceLimit(limit) => NurbsError::ResourceLimit(limit),
@@ -1280,7 +1309,7 @@ impl NurbsSurface {
             knots: v_knots,
             periodic: v_periodic,
         } = v;
-        require_surface_shape(u_degree, &u_knots, v_degree, &v_knots, &poles)?;
+        require_surface_shape(&StandardNurbsAdmission, u_degree, u_knots.knot_count(), v_degree, v_knots.knot_count(), &poles)?;
         Ok(Self {
             u_degree,
             v_degree,
@@ -1552,7 +1581,7 @@ impl NurbsCurve {
         poles: NurbsPoles3<FinitePoint3>,
         periodic: bool,
     ) -> Result<Self, NurbsError> {
-        require_curve_cardinality(degree, knots.len(), poles.count(), "control_points")?;
+        require_curve_cardinality(&StandardNurbsAdmission, degree, knots.len(), poles.count(), "control_points")?;
         Ok(Self {
             degree,
             knots,
@@ -1633,7 +1662,7 @@ impl NurbsCurve {
         poles: NurbsPoles3<P>,
         periodic: bool,
     ) -> Result<Self, NurbsError> {
-        require_curve_cardinality(degree, knots.knot_count(), poles.count(), "control_points")?;
+        require_curve_cardinality(&StandardNurbsAdmission, degree, knots.knot_count(), poles.count(), "control_points")?;
         let poles = poles.admit()?;
         let knots = knots.admit()?;
         Ok(Self {
@@ -1675,6 +1704,7 @@ impl NurbsCurve {
     /// non-finite knot, or a decreasing pair.
     pub fn with_knots(mut self, knots: Vec<f64>) -> Result<Self, NurbsError> {
         require_curve_cardinality(
+            &StandardNurbsAdmission,
             self.degree,
             knots.len(),
             self.poles.count(),
