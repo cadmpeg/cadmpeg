@@ -3,7 +3,7 @@
 
 use super::nurbs::{
     admit_finite_weight, admit_weight, non_finite_control_point, require_curve_cardinality,
-    require_weight_lane, KnotVector, NurbsCurve, NurbsError, PoleValue,
+    require_weight_lane, KnotVector, NurbsCurve, NurbsError, PoleValue, StandardNurbsAdmission,
 };
 use super::{FitTolerance, MAX_GEOMETRY_NESTING};
 use crate::ids::PcurveId;
@@ -1758,7 +1758,7 @@ impl PolarPcurveNurbs {
         poles: PolarNurbsPoles<FinitePoint2, FiniteReal>,
         periodic: bool,
     ) -> Result<Self, NurbsError> {
-        require_curve_cardinality(degree, knots.len(), poles.count(), "poles")?;
+        require_curve_cardinality(&StandardNurbsAdmission, degree, knots.len(), poles.count(), "poles")?;
         if degree == 0 {
             return Err(NurbsError::Structure(
                 "polar NURBS degree must be positive".into(),
@@ -1813,7 +1813,7 @@ impl PolarPcurveNurbs {
         poles: PolarNurbsPoles<P, S>,
         periodic: bool,
     ) -> Result<Self, NurbsError> {
-        require_curve_cardinality(degree, knots.knot_count(), poles.count(), "poles")?;
+        require_curve_cardinality(&StandardNurbsAdmission, degree, knots.knot_count(), poles.count(), "poles")?;
         if degree == 0 {
             return Err(NurbsError::Structure(
                 "polar NURBS degree must be positive".into(),
@@ -2061,7 +2061,7 @@ impl PcurveNurbs {
         poles: PcurveNurbsPoles<FinitePoint2>,
         periodic: bool,
     ) -> Result<Self, NurbsError> {
-        require_curve_cardinality(degree, knots.len(), poles.count(), "control_points")?;
+        require_curve_cardinality(&StandardNurbsAdmission, degree, knots.len(), poles.count(), "control_points")?;
         if degree == 0 {
             return Err(NurbsError::Structure(
                 "pcurve NURBS degree must be positive".into(),
@@ -2092,7 +2092,7 @@ impl PcurveNurbs {
         poles: PcurveNurbsPoles<P>,
         periodic: bool,
     ) -> Result<Self, NurbsError> {
-        require_curve_cardinality(degree, knots.knot_count(), poles.count(), "control_points")?;
+        require_curve_cardinality(&StandardNurbsAdmission, degree, knots.knot_count(), poles.count(), "control_points")?;
         if degree == 0 {
             return Err(NurbsError::Structure(
                 "pcurve NURBS degree must be positive".into(),
