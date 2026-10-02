@@ -109,7 +109,6 @@ mod records;
 mod report;
 mod tsm;
 mod validate;
-mod value_tree;
 mod writer;
 mod xref;
 mod zip_write;

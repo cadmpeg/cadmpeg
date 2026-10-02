@@ -246,7 +246,14 @@ impl<T: RewriteIdentities> RewriteIdentities for Vec<T> {
     }
     fn rewrite_identities<F: FnMut(&str) -> Result<String, CodecError>>(self, ctx: &DecodeContext<'_>, map: &mut IdentityMap<'_, F>) -> Result<Self, CodecError> {
         let _depth = ctx.enter_nested("identity rewrite sequence")?;
-        ctx.try_collect_vec(self.into_iter().map(|value| value.rewrite_identities(ctx, map)), "identity rewrite sequence")
+        ctx.charge_work(1, "identity rewrite sequence")?;
+        let mut rewritten = Vec::new();
+        for value in self {
+            let value = value.rewrite_identities(ctx, map)?;
+            ctx.charge_work(u64_from_index(std::mem::size_of::<T>()), "identity rewrite sequence")?;
+            ctx.push_retained_vec(&mut rewritten, value, "identity rewrite sequence")?;
+        }
+        Ok(rewritten)
     }
 }
 
