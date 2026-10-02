@@ -1210,6 +1210,7 @@ fn container_only_dimension_parameter_refuses_collection_limit() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
     policy.limits.max_collection_items = 3;
+
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(matches!(container_only_dimension_parameters(&ctx, &native),
         Err(CodecError::ResourceLimit(failure))

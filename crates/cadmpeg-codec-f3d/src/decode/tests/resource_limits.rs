@@ -653,7 +653,22 @@ fn selected_body_key_index_refuses_collection_limit() {
 fn selected_body_blob_name_refuses_retained_limit() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = 0;
+    policy.limits.max_retained_bytes = match cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        "retain F3D selected body blob name",
+        |cap| {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_retained_bytes = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            let mut index = std::collections::HashMap::new();
+            super::super::index_selected_body_key(&ctx, &mut index, "BREP0.smb", 7)
+                .map(|_| ())
+                .map_err(cadmpeg_core::CodecError::from)
+        },
+    ) {
+        cadmpeg_core::CodecError::ResourceLimit(limit) => limit.limit,
+        error => panic!("unexpected refusal: {error:?}"),
+    };
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let mut index = std::collections::HashMap::new();
     let error =
@@ -839,7 +854,27 @@ fn mesh_texture_table_index_refuses_collection_limit() {
 fn mesh_texture_table_key_refuses_retained_limit() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = 0;
+    policy.limits.max_retained_bytes = match cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        "retain F3D mesh texture table key",
+        |cap| {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_retained_bytes = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            let mut tables = std::collections::HashMap::new();
+            super::super::insert_mesh_texture_table(
+                &ctx,
+                &mut tables,
+                "tessellation:one",
+                &one_texture_table(),
+            )
+            .map(|_| ())
+            .map_err(cadmpeg_core::CodecError::from)
+        },
+    ) {
+        cadmpeg_core::CodecError::ResourceLimit(limit) => limit.limit,
+        error => panic!("unexpected refusal: {error:?}"),
+    };
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let mut tables = std::collections::HashMap::new();
     let error = super::super::insert_mesh_texture_table(
@@ -945,7 +980,28 @@ fn unresolved_mesh_attribute_loss_refuses_collection_limit() {
 fn unresolved_mesh_attribute_loss_refuses_retained_limit() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = 0;
+    policy.limits.max_retained_bytes = match cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        "retain F3D unresolved mesh attribute loss",
+        |cap| {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_retained_bytes = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            let mut report = cadmpeg_ir::codec::DecodeBody::new(
+                cadmpeg_ir::report::decode::DecodeTransfer::ContainerOnly {},
+            );
+            let unresolved = std::collections::BTreeMap::from([(
+                crate::paramesh::MeshAttributeDomain::Vertex,
+                1,
+            )]);
+            super::super::report_unresolved_mesh_attributes(&ctx, &mut report, &unresolved)
+                .map(|_| ())
+                .map_err(cadmpeg_core::CodecError::from)
+        },
+    ) {
+        cadmpeg_core::CodecError::ResourceLimit(limit) => limit.limit,
+        error => panic!("unexpected refusal: {error:?}"),
+    };
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let mut report = cadmpeg_ir::codec::DecodeBody::new(
         cadmpeg_ir::report::decode::DecodeTransfer::ContainerOnly {},
@@ -1038,7 +1094,21 @@ fn geometry_loss_collection_refuses_limit() {
 fn geometry_loss_text_refuses_retained_limit() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = 0;
+    policy.limits.max_retained_bytes = match cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        "retain F3D geometry loss",
+        |cap| {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_retained_bytes = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            super::super::geometry_losses(&ctx, &crate::brep::Brep::default())
+                .map(|_| ())
+                .map_err(cadmpeg_core::CodecError::from)
+        },
+    ) {
+        cadmpeg_core::CodecError::ResourceLimit(limit) => limit.limit,
+        error => panic!("unexpected refusal: {error:?}"),
+    };
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let error = super::super::geometry_losses(&ctx, &crate::brep::Brep::default()).unwrap_err();
     assert!(

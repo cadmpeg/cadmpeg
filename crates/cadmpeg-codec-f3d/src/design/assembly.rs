@@ -251,38 +251,30 @@ pub(crate) fn project_assembly_joints(
     native_occurrences: &[DesignComponentOccurrence],
     features: &[Feature],
 ) -> Result<Vec<AssemblyJoint>, CodecError> {
+    let mut lookup_storage = ctx.reserve_scoped(0, "f3d assembly lookup storage")?;
     let mut occurrences = BTreeMap::new();
     for occurrence in native_occurrences {
         let Some(stream) = native_stream(&occurrence.id) else {
             continue;
         };
-        let source = occurrence.occurrence_guid.as_str();
-        let (reservation, key) = {
-            let mut reservation = ctx.reserve_scoped(0, "f3d assembly occurrence key")?;
-            let mut key =
-                ctx.copy_scoped_text(source, &mut reservation, "f3d assembly occurrence key")?;
+        lookup_storage.with_storage(|| -> Result<(), CodecError> {
+            let mut key = ctx.copy_retained_text(
+                occurrence.occurrence_guid.as_str(),
+                "f3d assembly occurrence key",
+            )?;
             key.make_ascii_lowercase();
-            (Some(reservation), key)
-        };
-        let key = (stream, key);
-        ctx.admit_btree_entry(&occurrences, &key, "f3d assembly occurrence map entry")?;
-        match occurrences.entry(key) {
-            std::collections::btree_map::Entry::Vacant(entry) => {
-                {
-                    ctx.charge_retained(
-                        u64::try_from(source.len()).map_err(|_| {
-                            ctx.refuse_codec_limit("f3d assembly occurrence key length", 0, 1)
-                        })?,
-                        "f3d assembly occurrence key",
-                    )?;
+            let key = (stream, key);
+            ctx.admit_btree_entry(&occurrences, &key, "f3d assembly occurrence map entry")?;
+            match occurrences.entry(key) {
+                std::collections::btree_map::Entry::Vacant(entry) => {
+                    entry.insert(Some(occurrence));
                 }
-                entry.insert(Some(occurrence));
+                std::collections::btree_map::Entry::Occupied(mut entry) => {
+                    *entry.get_mut() = None;
+                }
             }
-            std::collections::btree_map::Entry::Occupied(mut entry) => {
-                *entry.get_mut() = None;
-            }
-        }
-        drop(reservation);
+            Ok(())
+        })?;
     }
     let mut joints = BTreeMap::new();
     for scope in scopes {
@@ -363,9 +355,11 @@ pub(crate) fn project_assembly_joints(
         });
         let translation_offset = [x?, y?, z?];
         if !joints.contains_key(id.as_str()) {
-            {}
-            let key = copy_assembly_text(ctx, id.as_str(), false)?;
-            ctx.admit_btree_entry(&joints, &key, "f3d assembly joint map entry")?;
+            let key = lookup_storage.with_storage(|| -> Result<String, CodecError> {
+                let key = copy_assembly_text(ctx, id.as_str(), false)?;
+                ctx.admit_btree_entry(&joints, &key, "f3d assembly joint map entry")?;
+                Ok(key)
+            })?;
             let native_ref = copy_assembly_text(ctx, &scope.id, false)?;
             let mut joint = AssemblyJoint::paired(
                 id,
@@ -436,7 +430,7 @@ fn project_qualified_operands(
                     }
                     let object = copy_assembly_text(ctx, root_guid.as_str(), true)?;
                     let subelement_guids = &path.occurrence_guids()[1..];
-                    {}
+
                     let mut subelements = Vec::new();
                     {
                         ctx.reserve_vec(
@@ -726,7 +720,7 @@ mod tests {
     #[test]
     fn assembly_path_subelements_refuse_collection_limit() {
         let qualifier = qualified_occurrence_path("330", 2, 4);
-        let error = qualified_path_refusal(&qualifier, 100, 0, u64::MAX);
+        let error = qualified_path_refusal(&qualifier, u64::MAX, 0, u64::MAX);
         assert!(
             matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::CollectionItems
@@ -737,11 +731,25 @@ mod tests {
     #[test]
     fn assembly_path_subelement_text_refuses_retained_limit() {
         let qualifier = qualified_occurrence_path("330", 2, 4);
-        let error = qualified_path_refusal(&qualifier, 71, 2, u64::MAX);
+        let error = crate::test_support::resource_refusal_at(
+            ResourceDimension::RetainedBytes,
+            "f3d assembly operand text",
+            1,
+            |ctx| {
+                super::project_qualified_operands(
+                    ctx,
+                    [&qualifier, &qualifier],
+                    "design",
+                    &BTreeMap::new(),
+                    &[],
+                    &[],
+                )
+            },
+        );
         assert!(
             matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == ResourceDimension::RetainedBytes
-                && limit.operation == "f3d assembly operand text")
+        if limit.dimension == ResourceDimension::RetainedBytes
+            && limit.operation == "f3d assembly operand text")
         );
     }
 
@@ -923,13 +931,29 @@ mod tests {
         let occurrence = one_native_occurrence();
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::default();
-        policy.limits.max_retained_bytes = 35;
+        policy.limits.max_materialized_bytes =
+            match cadmpeg_test_support::refusal::resource_limit_at(
+                cadmpeg_core::decode::ResourceDimension::MaterializedBytes,
+                "f3d assembly occurrence key",
+                |cap| {
+                    let occurrence = occurrence.clone();
+                    let mut policy = DecodePolicy::default();
+                    policy.limits.max_materialized_bytes = cap;
+                    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+                    super::project_assembly_joints(&ctx, &[], &[occurrence], &[])
+                        .map(|_| ())
+                        .map_err(cadmpeg_core::CodecError::from)
+                },
+            ) {
+                cadmpeg_core::CodecError::ResourceLimit(limit) => limit.limit,
+                error => panic!("unexpected refusal: {error:?}"),
+            };
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let error = super::project_assembly_joints(&ctx, &[], &[occurrence], &[])
-            .expect_err("one occurrence key needs 36 retained bytes");
+            .expect_err("one occurrence key needs 36 scoped bytes");
         assert!(
             matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == ResourceDimension::RetainedBytes
+            if limit.dimension == ResourceDimension::MaterializedBytes
                 && limit.operation == "f3d assembly occurrence key")
         );
     }
@@ -1009,51 +1033,40 @@ mod tests {
     #[test]
     fn assembly_joint_key_refuses_retained_limit() {
         let scopes = one_joint_scopes();
-        let identifier_bytes = scopes[..2]
-            .iter()
-            .map(|scope| crate::ids::neutral_feature_id(scope).as_str().len())
-            .sum::<usize>()
-            + crate::test_support::with_decode_context(|ctx| {
-                crate::ids::neutral_assembly_joint_id(ctx, &scopes[2])
-            })
-            .expect("joint identifier")
-            .as_str()
-            .len();
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::default();
-        policy.limits.max_retained_bytes = u64::try_from(identifier_bytes).unwrap();
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let error = super::project_assembly_joints(&ctx, &scopes, &[], &[])
-            .expect_err("the joint map key needs retained text");
+        let error = crate::test_support::resource_refusal_at(
+            ResourceDimension::MaterializedBytes,
+            "f3d assembly operand text",
+            0,
+            |ctx| super::project_assembly_joints(ctx, &scopes, &[], &[]),
+        );
         assert!(
             matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == ResourceDimension::RetainedBytes
-                && limit.operation == "f3d assembly operand text")
+        if limit.dimension == ResourceDimension::MaterializedBytes
+            && limit.operation == "f3d assembly operand text")
         );
     }
 
     #[test]
     fn assembly_joint_native_reference_refuses_retained_limit() {
         let scopes = one_joint_scopes();
-        let key_length = crate::test_support::with_decode_context(|ctx| {
-            crate::ids::neutral_assembly_joint_id(ctx, &scopes[2])
-        })
-        .expect("joint identifier")
-        .as_str()
-        .len();
-        let identifier_bytes = scopes[..2]
-            .iter()
-            .map(|scope| crate::ids::neutral_feature_id(scope).as_str().len())
-            .sum::<usize>()
-            + crate::test_support::with_decode_context(|ctx| {
-                crate::ids::neutral_assembly_joint_id(ctx, &scopes[2])
-            })
-            .expect("joint identifier")
-            .as_str()
-            .len();
+
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::default();
-        policy.limits.max_retained_bytes = u64::try_from(identifier_bytes + key_length).unwrap();
+        policy.limits.max_retained_bytes = match cadmpeg_test_support::refusal::resource_limit_at(
+            cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+            "f3d assembly operand text",
+            |cap| {
+                let mut policy = DecodePolicy::default();
+                policy.limits.max_retained_bytes = cap;
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+                super::project_assembly_joints(&ctx, &scopes, &[], &[])
+                    .map(|_| ())
+                    .map_err(cadmpeg_core::CodecError::from)
+            },
+        ) {
+            cadmpeg_core::CodecError::ResourceLimit(limit) => limit.limit,
+            error => panic!("unexpected refusal: {error:?}"),
+        };
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let error = super::project_assembly_joints(&ctx, &scopes, &[], &[])
             .expect_err("the native reference follows the retained joint key");
@@ -1653,6 +1666,7 @@ mod tests {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::default();
         policy.limits.max_retained_bytes = u64::try_from(occurrence.as_str().len() - 1).unwrap();
+
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let result = super::project_qualified_operands(
             &ctx,
@@ -1762,6 +1776,7 @@ mod tests {
         let mut policy = DecodePolicy::default();
         policy.limits.max_retained_bytes =
             u64::try_from(crate::ids::neutral_feature_id(&scope).as_str().len()).unwrap() - 1;
+
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let scopes = [scope];
         let qualifiers = [

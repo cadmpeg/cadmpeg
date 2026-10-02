@@ -1,5 +1,4 @@
 // SPDX-License-Identifier: Apache-2.0
-use cadmpeg_core::decode::u64_from_index;
 
 use super::{
     collect_brep_references, insert_brep_adjacency, persistent_design_links,
@@ -372,14 +371,17 @@ fn brep_replacement_index_refuses_collection_limit() {
 
 #[test]
 fn brep_remapped_id_refuses_retained_limit() {
-    let mut brep = one_body_brep();
-    let original = "f3d:brep:entity#1";
-    let replacement = format!("f3d:brep/source/{}", original.strip_prefix("f3d:").unwrap());
-    let before_remap = original.len() + "f3d:".len() + replacement.len();
-    let error = with_limits(u64::MAX, u64_from_index(before_remap), |ctx| {
-        brep.qualify_ids(ctx, crate::ids::ID_FORMAT, "source")
-            .unwrap_err()
-    });
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        "copy F3D BREP remapped ID",
+        |cap| {
+            let mut brep = one_body_brep();
+            Err::<(), cadmpeg_core::CodecError>(with_limits(u64::MAX, cap, |ctx| {
+                brep.qualify_ids(ctx, crate::ids::ID_FORMAT, "source")
+                    .unwrap_err()
+            }))
+        },
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "copy F3D BREP remapped ID")

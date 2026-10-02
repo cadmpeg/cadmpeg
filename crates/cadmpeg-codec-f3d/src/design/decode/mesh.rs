@@ -3231,6 +3231,7 @@ mod tests {
             let arena = cadmpeg_core::decode::DecodeArena::new();
             let mut policy = cadmpeg_core::decode::DecodePolicy::default();
             policy.limits.max_collection_items = 0;
+
             let (ctx, _) =
                 cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
             assert!(matches!(
@@ -3312,6 +3313,7 @@ mod tests {
             let arena = cadmpeg_core::decode::DecodeArena::new();
             let mut policy = cadmpeg_core::decode::DecodePolicy::default();
             policy.limits.max_collection_items = 0;
+
             let (ctx, _) =
                 cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
             assert!(matches!(
@@ -3332,6 +3334,7 @@ mod tests {
             let arena = cadmpeg_core::decode::DecodeArena::new();
             let mut policy = cadmpeg_core::decode::DecodePolicy::default();
             policy.limits.max_collection_items = 0;
+
             let (ctx, _) =
                 cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
             assert!(matches!(
@@ -3348,6 +3351,7 @@ mod tests {
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let mut policy = cadmpeg_core::decode::DecodePolicy::default();
         policy.limits.max_retained_bytes = 0;
+
         let (ctx, _) =
             cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         assert!(matches!(
@@ -3376,6 +3380,7 @@ mod tests {
             let arena = cadmpeg_core::decode::DecodeArena::new();
             let mut policy = cadmpeg_core::decode::DecodePolicy::default();
             policy.limits.max_retained_bytes = limit;
+
             let (ctx, _) =
                 cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
             assert!(matches!(
@@ -3785,6 +3790,7 @@ mod tests {
             let mut policy = cadmpeg_core::decode::DecodePolicy::default();
             policy.limits.max_collection_items = collection_limit;
             policy.limits.max_retained_bytes = retained_limit;
+
             let (ctx, _) =
                 cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
             assert!(matches!(
@@ -3820,6 +3826,7 @@ mod tests {
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let mut policy = cadmpeg_core::decode::DecodePolicy::default();
         policy.limits.max_collection_items = 0;
+
         let (ctx, _) =
             cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         assert!(matches!(
@@ -3911,6 +3918,7 @@ mod tests {
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let mut policy = cadmpeg_core::decode::DecodePolicy::default();
         policy.limits.max_retained_bytes = u64::try_from(expected.len() - 1).unwrap();
+
         let (ctx, _) =
             cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         assert!(
@@ -3930,6 +3938,7 @@ mod tests {
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let mut policy = cadmpeg_core::decode::DecodePolicy::default();
         policy.limits.max_retained_bytes = u64::try_from(expected.len() - 1).unwrap();
+
         let (ctx, _) =
             cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         assert!(

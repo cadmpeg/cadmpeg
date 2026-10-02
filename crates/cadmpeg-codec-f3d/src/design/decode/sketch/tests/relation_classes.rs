@@ -74,25 +74,49 @@ fn sketch_relation_assembly_refuses_collection_and_retained_limits() {
         }
         let definition =
             SketchRelationDefinition::new(parsed.state, None).expect("plain relation definition");
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::default();
-        if let Some(limit) = collection_limit {
-            policy.limits.max_collection_items = limit;
-        }
-        if let Some(limit) = retained_limit {
-            policy.limits.max_retained_bytes = limit;
-        }
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let error = admit_sketch_relation(
-            &ctx,
-            &mut Vec::new(),
-            "BulkStream.dat",
-            &header,
-            &record,
-            parsed,
-            definition,
-        )
-        .expect_err("resource limit must refuse relation assembly");
+        let error = if retained_limit.is_some() {
+            crate::test_support::resource_refusal_at(dimension, operation, 0, |ctx| {
+                let mut parsed =
+                    tested_parse_classed_sketch_relation(&record, SketchRelationClass::Plain)
+                        .expect("plain relation parse");
+                if auxiliary {
+                    parsed
+                        .auxiliary_references
+                        .push(crate::records::identity::Located {
+                            value: 301,
+                            offset: 0,
+                        });
+                }
+                let definition = SketchRelationDefinition::new(parsed.state, None)
+                    .expect("plain relation definition");
+                admit_sketch_relation(
+                    ctx,
+                    &mut Vec::new(),
+                    "BulkStream.dat",
+                    &header,
+                    &record,
+                    parsed,
+                    definition,
+                )
+            })
+        } else {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::default();
+            if let Some(limit) = collection_limit {
+                policy.limits.max_collection_items = limit;
+            }
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            admit_sketch_relation(
+                &ctx,
+                &mut Vec::new(),
+                "BulkStream.dat",
+                &header,
+                &record,
+                parsed,
+                definition,
+            )
+            .expect_err("resource limit must refuse relation assembly")
+        };
         assert!(
             matches!(error, cadmpeg_core::CodecError::ResourceLimit(failure)
             if failure.dimension == dimension && failure.operation == operation)

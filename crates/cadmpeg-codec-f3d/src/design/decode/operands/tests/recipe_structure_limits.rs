@@ -48,6 +48,7 @@ fn edge_recipe_structure_refuses_recursion_limit() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
     policy.limits.max_recursion_depth = 0;
+
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(matches!(
         edge_recipe_structure_with_context(&ctx, &EDGE_RECIPE),
@@ -62,6 +63,7 @@ fn edge_recipe_structure_refuses_candidate_work_limit() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
     policy.limits.max_work_units = 0;
+
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(matches!(
         edge_recipe_structure_with_context(&ctx, &EDGE_RECIPE),
@@ -81,6 +83,7 @@ fn edge_recipe_topology_references_refuse_collection_limit() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
     policy.limits.max_collection_items = 0;
+
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(matches!(
         edge_recipe_local_topology_references_with_context(&ctx, &structure, 1),
@@ -95,6 +98,7 @@ fn edge_recipe_entries_refuse_collection_limit() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
     policy.limits.max_collection_items = 0;
+
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(matches!(
         edge_recipe_entries_with_context(&ctx, &[1, 4, 1, 1, 1, 4, 4, 4]),
@@ -113,6 +117,7 @@ fn face_recipe_structure_refuses_collection_limit() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
     policy.limits.max_collection_items = 0;
+
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(matches!(
         face_recipe_structure_with_context(&ctx, &program),
@@ -132,6 +137,7 @@ fn surface_patch_recipe_entries_refuse_collection_limit() {
     let mut policy = DecodePolicy::default();
     // Two clause slots, six field slots and nine field words precede the topology entry.
     policy.limits.max_collection_items = 2 + 6 + 9;
+
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(matches!(
         surface_patch_recipe_structure_with_context(&ctx, &program, 4),

@@ -85,6 +85,7 @@ fn named_scope_tail_refuses_temporary_text_limit() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
     policy.limits.max_materialized_bytes = 0;
+
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let result = named_parameter_scope_tail_is_valid(&ctx, &bytes, 0, bytes.len(), bytes.len());
     assert!(matches!(
@@ -131,6 +132,7 @@ fn sketch_scope_entity_id_copy_refuses_retained_limit() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
     policy.limits.max_retained_bytes = u64_from_index(source.as_str().len()) - 1;
+
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let result = copy_sketch_entity_id(&ctx, &source);
     assert!(matches!(

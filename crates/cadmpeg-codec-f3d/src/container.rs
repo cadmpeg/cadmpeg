@@ -922,7 +922,6 @@ fn asm_magic_label(bytes: &[u8]) -> String {
 
 #[cfg(test)]
 mod tests {
-    use cadmpeg_core::decode::u64_from_index;
 
     use super::is_f3d_name;
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, View};
@@ -985,19 +984,18 @@ mod tests {
 
     #[test]
     fn container_entry_name_refuses_retained_limit() {
-        let mut policy = DecodePolicy::service();
         let bytes = crate::test_support::zip_test::f3d_with_smbh(&[]);
-        let mut archive = zip::ZipArchive::new(std::io::Cursor::new(&bytes)).unwrap();
-        let mut name_bytes = 0_u64;
-        for index in 0..archive.len() {
-            name_bytes += u64_from_index(archive.by_index(index).unwrap().name().len());
-        }
-        policy.limits.max_retained_bytes = name_bytes * 4;
         let arena = DecodeArena::new();
-        let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
-        let Err(error) = super::scan(&ctx, root) else {
-            panic!("entry name must refuse");
-        };
+        let error = cadmpeg_test_support::refusal::resource_limit_at(
+            cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+            "retain F3D entry name",
+            |cap| {
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_retained_bytes = cap;
+                let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+                super::scan(&ctx, root).map(|_| ())
+            },
+        );
         assert!(
             matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.operation == "retain F3D entry name")
@@ -1082,18 +1080,21 @@ mod tests {
         let arena = DecodeArena::new();
         let policy = DecodePolicy::default();
         let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
-        let scan = super::scan(&ctx, root).unwrap();
-        let mut limited_policy = DecodePolicy::service();
-        limited_policy.limits.max_retained_bytes = u64_from_index(
-            "Design".len()
-                + "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee".len()
-                + "FusionDesignSegmentType".len()
-                + "Fusion".len(),
+        super::scan(&ctx, root).unwrap();
+        let error = cadmpeg_test_support::refusal::resource_limit_at(
+            cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+            "cache F3D MetaStream name",
+            |cap| {
+                let mut limited_policy = DecodePolicy::service();
+                limited_policy.limits.max_retained_bytes = cap;
+                let (limited, _) =
+                    DecodeContext::from_root_bytes(&[], &arena, &limited_policy).unwrap();
+                let (unlimited, root) =
+                    DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+                let fresh_scan = super::scan(&unlimited, root).unwrap();
+                fresh_scan.parsed_metastream(&limited, name).map(|_| ())
+            },
         );
-        let (limited, _) = DecodeContext::from_root_bytes(&[], &arena, &limited_policy).unwrap();
-        let Err(error) = scan.parsed_metastream(&limited, name) else {
-            panic!("MetaStream cache name must refuse");
-        };
         assert!(
             matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.operation == "cache F3D MetaStream name")

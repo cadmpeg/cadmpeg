@@ -29,6 +29,7 @@ fn sketch_indexed_vectors_refuse_outer_and_inner_limits() {
             let arena = DecodeArena::new();
             let mut policy = DecodePolicy::default();
             policy.limits.max_collection_items = limit;
+
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
             let mut index = std::collections::HashMap::<usize, Vec<usize>>::new();
             assert!(
@@ -67,6 +68,7 @@ fn closed_sketch_profile_collections_refuse_matching_limits() {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::default();
         policy.limits.max_collection_items = 0;
+
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let mut items = Vec::new();
         assert!(
@@ -82,6 +84,7 @@ fn closed_sketch_profile_collections_refuse_matching_limits() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
     policy.limits.max_collection_items = 0;
+
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let mut seen = std::collections::HashSet::new();
     assert!(matches!(
@@ -104,6 +107,7 @@ fn closed_sketch_profile_id_copies_refuse_retained_limit() {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::default();
         policy.limits.max_retained_bytes = 0;
+
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         assert!(
             matches!(
@@ -157,6 +161,7 @@ fn branched_profile_component_refuses_limit() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
     policy.limits.max_collection_items = 0;
+
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let mut items = std::collections::HashSet::new();
     assert!(matches!(
@@ -171,6 +176,7 @@ fn branched_profile_visited_refuses_limit() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
     policy.limits.max_collection_items = 0;
+
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let mut items = std::collections::HashSet::new();
     assert!(matches!(
@@ -185,6 +191,7 @@ fn branched_profile_outgoing_node_refuses_limit() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
     policy.limits.max_collection_items = 0;
+
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let mut index = std::collections::HashMap::<usize, Vec<usize>>::new();
     assert!(matches!(
@@ -199,6 +206,7 @@ fn branched_profile_outgoing_edge_refuses_limit() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
     policy.limits.max_collection_items = 1;
+
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let mut index = std::collections::HashMap::<usize, Vec<usize>>::new();
     assert!(matches!(
@@ -213,6 +221,7 @@ fn branched_profile_next_refuses_limit() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
     policy.limits.max_collection_items = 0;
+
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let mut items = std::collections::HashMap::new();
     assert!(matches!(
@@ -227,6 +236,7 @@ fn branched_profile_entity_id_refuses_limit() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
     policy.limits.max_retained_bytes = 0;
+
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(matches!(
         SketchEntityId::mint("synthetic:test:id#edge").expect("test identity").try_clone_for_decode(&ctx, "f3d branched profile entity id"),
@@ -261,6 +271,7 @@ fn tangent_profile_used_edge_refuses_limit() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
     policy.limits.max_collection_items = 0;
+
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let mut items = std::collections::HashSet::new();
     assert!(matches!(
@@ -275,6 +286,7 @@ fn tangent_profile_entity_id_refuses_limit() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
     policy.limits.max_retained_bytes = 0;
+
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(matches!(
         SketchEntityId::mint("synthetic:test:id#edge").expect("test identity").try_clone_for_decode(&ctx, "f3d tangent profile entity id"),
@@ -312,6 +324,7 @@ fn line_profile_vertex_refuses_collection_limit() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
     policy.limits.max_collection_items = 0;
+
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(matches!(
         crate::design::geometry::line_profile_vertices(&profile, &entities, PROFILE_LIMIT_TEST_TOLERANCE, &ctx),
@@ -326,6 +339,7 @@ fn circular_arc_profile_segment_refuses_collection_limit() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
     policy.limits.max_collection_items = 0;
+
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(matches!(
         crate::design::geometry::circular_arc_profile_segments(&profile, &entities, PROFILE_LIMIT_TEST_TOLERANCE, &ctx),
@@ -340,6 +354,7 @@ fn certified_profile_tubes_refuse_collection_limit() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
     policy.limits.max_collection_items = 0;
+
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(matches!(
         crate::design::geometry::certified_profile_loop(&profile, &entities,
@@ -363,6 +378,7 @@ fn arrangement_split_endpoints_refuse_collection_limit() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
     policy.limits.max_collection_items = 1;
+
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(matches!(
         crate::design::geometry::arrangement_split_parameters(&line, [0.0, 1.0], &[],
@@ -378,6 +394,7 @@ fn arrangement_split_parameter_refuses_collection_limit() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
     policy.limits.max_collection_items = 2;
+
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(matches!(
         crate::design::geometry::arrangement_split_parameters(&line, [0.0, 1.0],
@@ -393,6 +410,7 @@ fn profile_use_polyline_refuses_collection_limit() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
     policy.limits.max_collection_items = 2;
+
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(matches!(
         crate::design::geometry::profile_use_polyline(&entities[0], [0.0, 1.0], false,

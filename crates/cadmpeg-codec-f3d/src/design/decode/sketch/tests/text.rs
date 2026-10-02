@@ -644,36 +644,37 @@ fn sketch_curve_output_refuses_collection_limit() {
 
 #[test]
 fn sketch_point_and_curve_ids_refuse_retained_limit() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::decode::ResourceDimension;
 
     let (bytes, meta, _, _, _, _) = indexed_sketch_fixture();
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::default();
-    policy.limits.max_retained_bytes =
-        u64_from_index(crate::ids::native_scope("Design/BulkStream.dat").len());
     for (decode_point, operation) in [
         (true, "f3d sketch point ID"),
         (false, "f3d sketch curve ID"),
     ] {
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let error = if decode_point {
-            crate::design::decode::sketch::decode_sketch_points_from_stream(
-                &ctx,
-                &bytes,
-                &meta,
-                "Design/BulkStream.dat",
-            )
-            .err()
-        } else {
-            crate::design::decode::sketch::decode_sketch_curve_identities_from_stream(
-                &ctx,
-                &bytes,
-                &meta,
-                "Design/BulkStream.dat",
-            )
-            .err()
-        }
-        .expect("retained limit must refuse sketch record ID");
+        let error = crate::test_support::resource_refusal_at(
+            ResourceDimension::RetainedBytes,
+            operation,
+            0,
+            |ctx| {
+                if decode_point {
+                    crate::design::decode::sketch::decode_sketch_points_from_stream(
+                        ctx,
+                        &bytes,
+                        &meta,
+                        "Design/BulkStream.dat",
+                    )
+                    .map(|_| ())
+                } else {
+                    crate::design::decode::sketch::decode_sketch_curve_identities_from_stream(
+                        ctx,
+                        &bytes,
+                        &meta,
+                        "Design/BulkStream.dat",
+                    )
+                    .map(|_| ())
+                }
+            },
+        );
         assert!(
             matches!(error, cadmpeg_core::CodecError::ResourceLimit(failure)
             if failure.dimension == ResourceDimension::RetainedBytes

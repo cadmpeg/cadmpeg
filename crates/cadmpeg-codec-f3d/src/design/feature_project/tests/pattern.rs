@@ -170,21 +170,27 @@ fn assert_circular_seed_refusal(role: DesignOperandRole, operation: &'static str
 
     let scope = circular_scope();
     let seed_group = group(10, 20, role);
-    for limit in 0..128 {
-        let mut policy = DecodePolicy::default();
-        policy.limits.max_retained_bytes = limit;
-        let arena = DecodeArena::new();
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        if matches!(
-            project_circular_pattern(&ctx, &scope, std::slice::from_ref(&seed_group), &[]),
-            Err(CodecError::ResourceLimit(failure))
+    {
+        let error = cadmpeg_test_support::refusal::resource_limit_at(
+            cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+            operation,
+            |cap| {
+                let mut policy = DecodePolicy::default();
+                policy.limits.max_retained_bytes = cap;
+                let arena = DecodeArena::new();
+
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+                (project_circular_pattern(&ctx, &scope, std::slice::from_ref(&seed_group), &[]))
+                    .map(|_| ())
+                    .map_err(cadmpeg_core::CodecError::from)
+            },
+        );
+        assert!(
+            matches!(Err::<(), cadmpeg_core::CodecError>(error), Err(CodecError::ResourceLimit(failure))
                 if failure.dimension == ResourceDimension::RetainedBytes
-                    && failure.operation == operation
-        ) {
-            return;
-        }
+                    && failure.operation == operation)
+        );
     }
-    panic!("no circular pattern seed refusal at {operation}");
 }
 
 #[test]
@@ -255,20 +261,32 @@ fn assert_rectangular_seed_refusal(role: DesignOperandRole, operation: &'static 
 
     let scope = rectangular_scope();
     let seed_group = group(10, 20, role);
-    for limit in 0..128 {
-        let mut policy = DecodePolicy::default();
-        policy.limits.max_retained_bytes = limit;
-        let arena = DecodeArena::new();
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        if matches!(project_rectangular_pattern_scalars(&ctx, &scope, std::slice::from_ref(&seed_group), &[]),
-            Err(CodecError::ResourceLimit(failure))
+    {
+        let error = cadmpeg_test_support::refusal::resource_limit_at(
+            cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+            operation,
+            |cap| {
+                let mut policy = DecodePolicy::default();
+                policy.limits.max_retained_bytes = cap;
+                let arena = DecodeArena::new();
+
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+                (project_rectangular_pattern_scalars(
+                    &ctx,
+                    &scope,
+                    std::slice::from_ref(&seed_group),
+                    &[],
+                ))
+                .map(|_| ())
+                .map_err(cadmpeg_core::CodecError::from)
+            },
+        );
+        assert!(
+            matches!(Err::<(), cadmpeg_core::CodecError>(error), Err(CodecError::ResourceLimit(failure))
                 if failure.dimension == ResourceDimension::RetainedBytes
                     && failure.operation == operation)
-        {
-            return;
-        }
+        );
     }
-    panic!("no rectangular pattern seed refusal at {operation}");
 }
 
 #[test]
@@ -290,6 +308,7 @@ fn rectangular_pattern_seed_output_refuses_collection_limit() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
     policy.limits.max_collection_items = 0;
+
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(matches!(project_rectangular_pattern_scalars(&ctx, &scope,
         std::slice::from_ref(&seed_group), &[]), Err(CodecError::ResourceLimit(failure))

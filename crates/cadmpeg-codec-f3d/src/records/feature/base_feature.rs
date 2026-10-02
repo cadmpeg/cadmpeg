@@ -806,9 +806,9 @@ impl TryFrom<DesignBaseFeatureConstructionWire> for DesignBaseFeatureConstructio
                     );
                 }
                 let mut bodies = {
-            let mut storage = Vec::new();
-            storage.try_reserve_exact(count).map(|()| storage)
-        }
+                    let mut storage = Vec::new();
+                    storage.try_reserve_exact(count).map(|()| storage)
+                }
                 .map_err(|error| error.to_string())?;
                 for index in 0..count {
                     if body_entity_suffixes[index] != u64::from(body_reference_records[index])

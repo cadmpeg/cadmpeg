@@ -155,21 +155,27 @@ fn assert_mirror_seed_refusal(role: DesignOperandRole, operation: &'static str) 
         group(10, 20, role),
         group(10, 30, DesignOperandRole::ROLE_0X5),
     ];
-    for limit in 0..128 {
-        let mut policy = DecodePolicy::default();
-        policy.limits.max_retained_bytes = limit;
-        let arena = DecodeArena::new();
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        if matches!(
-            project_mirror(&ctx, &scope, &groups, &[], &[]),
-            Err(CodecError::ResourceLimit(failure))
+    {
+        let error = cadmpeg_test_support::refusal::resource_limit_at(
+            cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+            operation,
+            |cap| {
+                let mut policy = DecodePolicy::default();
+                policy.limits.max_retained_bytes = cap;
+                let arena = DecodeArena::new();
+
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+                (project_mirror(&ctx, &scope, &groups, &[], &[]))
+                    .map(|_| ())
+                    .map_err(cadmpeg_core::CodecError::from)
+            },
+        );
+        assert!(
+            matches!(Err::<(), cadmpeg_core::CodecError>(error), Err(CodecError::ResourceLimit(failure))
                 if failure.dimension == ResourceDimension::RetainedBytes
-                    && failure.operation == operation
-        ) {
-            return;
-        }
+                    && failure.operation == operation)
+        );
     }
-    panic!("no mirror seed refusal at {operation}");
 }
 
 #[test]

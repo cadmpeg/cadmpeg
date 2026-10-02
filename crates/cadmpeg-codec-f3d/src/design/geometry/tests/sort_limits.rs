@@ -19,6 +19,7 @@ fn circle_angle_ordering_refuses_sort_scratch_limit() {
     // The sort scratch holds two index vectors for the 21 retained angles.
     policy.limits.max_materialized_bytes =
         u64::try_from(21 * 2 * std::mem::size_of::<usize>() - 1).unwrap();
+
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(
         matches!(crate::design::geometry::arrangement_circle_angles(&points,

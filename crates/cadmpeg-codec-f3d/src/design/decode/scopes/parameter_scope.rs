@@ -556,20 +556,25 @@ pub(crate) fn admit_history_bound_scope_variants(
     scopes: &mut Vec<DesignParameterScope>,
     histories: &[crate::history_records::AsmHistory],
 ) -> Result<(), CodecError> {
-    let (mut admitted, _admitted_storage) = ctx.temporary_vec(scopes.len(), "f3d scope admission")?;
-    for _ in 0..scopes.len() { admitted.push(true); }
+    let (mut admitted, _admitted_storage) =
+        ctx.temporary_vec(scopes.len(), "f3d scope admission")?;
+    for _ in 0..scopes.len() {
+        admitted.push(true);
+    }
     let mut group_storage = ctx.reserve_scoped(0, "f3d scope admission groups")?;
     let mut groups = HashMap::<(&str, u32), Vec<usize>>::new();
     for (index, scope) in scopes.iter().enumerate() {
         let stream = native_stream(&scope.id).unwrap_or(ids::DEFAULT_STREAM);
         let key = (stream, scope.record_index);
-        group_storage.with_storage(|| ctx.push_hash_group(
-            &mut groups,
-            key,
-            index,
-            "f3d scope admission groups",
-            "f3d scope admission group indices",
-        ))?;
+        group_storage.with_storage(|| {
+            ctx.push_hash_group(
+                &mut groups,
+                key,
+                index,
+                "f3d scope admission groups",
+                "f3d scope admission group indices",
+            )
+        })?;
     }
 
     for indices in groups.values() {
@@ -693,7 +698,8 @@ fn equivalent_scope_variant_payload(
         .checked_mul(2)
         .ok_or_else(|| ctx.refuse_codec_limit("f3d scope variant comparison work", 0, 1))?;
     ctx.charge_work(work, "f3d scope variant comparison")?;
-    let scratch_bytes = serialized.checked_mul(2)
+    let scratch_bytes = serialized
+        .checked_mul(2)
         .and_then(|bytes| bytes.checked_add(16))
         .ok_or_else(|| ctx.refuse_codec_limit("f3d scope variant JSON size", 0, 1))?;
     let _scratch = ctx.reserve_scoped(u64_from_index(scratch_bytes), "f3d scope variant JSON")?;
@@ -743,10 +749,7 @@ fn scope_variant_json(
 ) -> Result<Option<serde_json::Value>, CodecError> {
     use serde::de::DeserializeSeed;
 
-    let bytes = ctx.collection_vec(
-        serialized_length,
-        "f3d scope variant JSON",
-    )?;
+    let bytes = ctx.collection_vec(serialized_length, "f3d scope variant JSON")?;
     let mut writer = ScopeJsonWriter {
         bytes,
         limit: serialized_length,

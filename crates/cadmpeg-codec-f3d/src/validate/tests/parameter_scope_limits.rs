@@ -48,7 +48,11 @@ fn parameter_scope_finding_refuses_collection_limit() {
 
 #[test]
 fn parameter_scope_entity_refuses_retained_limit() {
-    let error = scope_error(u64::MAX, 0);
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        "retain F3D validation entity",
+        |cap| Err::<(), cadmpeg_core::CodecError>(scope_error(u64::MAX, cap)),
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "retain F3D validation entity")

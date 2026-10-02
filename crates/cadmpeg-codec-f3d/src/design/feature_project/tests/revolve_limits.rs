@@ -98,6 +98,7 @@ fn revolve_native_profile_id_refuses_retained_limit() {
     let mut policy = DecodePolicy::default();
     policy.limits.max_retained_bytes = 0;
     let arena = DecodeArena::new();
+
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(
         matches!(project(&ctx), Err(CodecError::ResourceLimit(failure))

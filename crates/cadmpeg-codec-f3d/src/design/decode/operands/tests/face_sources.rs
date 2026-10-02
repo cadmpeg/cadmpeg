@@ -15,6 +15,7 @@ fn face_source_reference_headers_refuse_collection_limit() {
     let records =
         crate::design::decode::sketch::IndexedRecordOffsets::build(&service, &[]).unwrap();
     policy.limits.max_collection_items = 1;
+
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(matches!(
         face_source_reference_headers(&ctx, &[], 0, [7u32, 8].iter(), &records),
@@ -44,6 +45,7 @@ fn face_source_output_refuses_collection_limit() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
     policy.limits.max_collection_items = 0;
+
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let mut out = Vec::new();
     assert!(matches!(

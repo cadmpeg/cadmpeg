@@ -17,6 +17,7 @@ fn operand_header_index_refuses_collection_limit() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
     policy.limits.max_collection_items = 0;
+
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(matches!(
         indexed_operand_headers(&ctx, std::slice::from_ref(&header)),

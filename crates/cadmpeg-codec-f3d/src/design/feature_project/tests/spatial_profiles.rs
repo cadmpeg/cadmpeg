@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 use crate::design::feature_project::closed_spatial_sketch_profiles;
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-use cadmpeg_core::CodecError;
+use cadmpeg_core::decode::ResourceDimension;
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::scalar::Length;
 use cadmpeg_ir::sketches::{
@@ -59,29 +58,13 @@ fn spatial_profile_closed_loop_and_circle_keep_order() {
 
 fn assert_limit(operation: &'static str, dimension: ResourceDimension) {
     let (sketch, entities) = fixture();
-    for limit in 0..256 {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::default();
-        match dimension {
-            ResourceDimension::RetainedBytes => policy.limits.max_retained_bytes = limit,
-            ResourceDimension::CollectionItems => policy.limits.max_collection_items = limit,
-            ResourceDimension::WorkUnits => policy.limits.max_work_units = limit,
-            _ => panic!("unsupported test dimension"),
-        }
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let result = closed_spatial_sketch_profiles(&ctx, &sketch, &entities, EPS_PROFILE_CLOSE);
-        match result {
-            Err(CodecError::ResourceLimit(failure))
-                if failure.operation == operation && failure.dimension == dimension =>
-            {
-                return
-            }
-            Err(CodecError::ResourceLimit(_)) => {}
-            Ok(_) => panic!("expected {operation} refusal"),
-            Err(error) => panic!("expected {operation} refusal: {error}"),
-        }
-    }
-    panic!("no {operation} refusal");
+    let error = crate::test_support::resource_refusal_at(dimension, operation, 0, |ctx| {
+        closed_spatial_sketch_profiles(ctx, &sketch, &entities, EPS_PROFILE_CLOSE)
+    });
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(failure)
+        if failure.operation == operation && failure.dimension == dimension)
+    );
 }
 
 #[test]

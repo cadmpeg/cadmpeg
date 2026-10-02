@@ -69,6 +69,7 @@ fn edge_operand_header_and_offset_indices_refuse_collection_limits() {
             (2, "f3d edge operand stream offset"),
         ] {
             policy.limits.max_collection_items = limit;
+
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
             assert!(matches!(
                 decode_edge_operands(&ctx, scan, &[], &[], std::slice::from_ref(&header), &[]),
@@ -85,6 +86,7 @@ fn edge_operand_member_index_refuses_collection_limit() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
     policy.limits.max_collection_items = 0;
+
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let mut indices = std::collections::HashSet::new();
     assert!(matches!(
@@ -111,6 +113,7 @@ fn vertex_operand_header_index_refuses_collection_limit() {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::default();
         policy.limits.max_collection_items = 0;
+
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         assert!(matches!(
             decode_edge_treatment_vertex_operands(
@@ -139,6 +142,7 @@ fn work_plane_header_index_refuses_collection_limit() {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::default();
         policy.limits.max_collection_items = 0;
+
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         assert!(matches!(
             bind_work_plane_constructions(&ctx, scan, &mut [], std::slice::from_ref(&header),
@@ -166,6 +170,7 @@ fn work_point_header_index_refuses_collection_limit() {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::default();
         policy.limits.max_collection_items = 0;
+
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         assert!(matches!(
             bind_work_point_input_carriers(&ctx, scan, &mut [], std::slice::from_ref(&header), &[], &[], &[]),
@@ -190,6 +195,7 @@ fn work_point_plane_indices_refuse_collection_limits() {
             (1, "f3d WorkPoint work-plane index"),
         ] {
             policy.limits.max_collection_items = limit;
+
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
             assert!(matches!(
                 bind_work_point_input_carriers(&ctx, scan, std::slice::from_mut(&mut scope), &[], &[], &[], &[]),
@@ -231,6 +237,7 @@ fn edge_identity_header_index_refuses_collection_limit() {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::default();
         policy.limits.max_collection_items = 0;
+
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         assert!(matches!(
             decode_edge_identity_operands(&ctx, scan, &[], &[], std::slice::from_ref(&header)),
@@ -262,6 +269,7 @@ fn face_operand_header_and_scope_indices_refuse_collection_limits() {
             (1, "f3d face operand scope index"),
         ] {
             policy.limits.max_collection_items = limit;
+
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
             assert!(matches!(
                 decode_face_operands(&ctx, scan, std::slice::from_ref(&scope), &[],
@@ -279,6 +287,7 @@ fn face_operand_seen_key_refuses_collection_limit() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
     policy.limits.max_collection_items = 0;
+
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let mut seen = std::collections::HashSet::new();
     assert!(matches!(

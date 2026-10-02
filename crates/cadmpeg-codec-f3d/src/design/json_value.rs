@@ -13,8 +13,10 @@ pub(in crate::design) fn reserve_json_scratch<'ctx>(
     length: usize,
     operation: &'static str,
 ) -> Result<ScopedReservation<'ctx>, CodecError> {
-    let bound = length.checked_mul(2)
-        .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))?.max(8);
+    let bound = length
+        .checked_mul(2)
+        .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))?
+        .max(8);
     ctx.reserve_scoped(cadmpeg_core::decode::u64_from_index(bound), operation)
 }
 
@@ -171,7 +173,10 @@ impl<'de> Visitor<'de> for ValueSeed<'_, '_> {
                     expected: "raw value",
                 })?;
                 let _raw_scratch = self.admit(reserve_json_scratch(
-                    self.ctx, raw.len(), "f3d configuration raw JSON scratch"))?;
+                    self.ctx,
+                    raw.len(),
+                    "f3d configuration raw JSON scratch",
+                ))?;
                 let mut deserializer = serde_json::Deserializer::from_str(&raw);
                 let value = ValueSeed {
                     ctx: self.ctx,
@@ -183,11 +188,15 @@ impl<'de> Visitor<'de> for ValueSeed<'_, '_> {
                 deserializer.end().map_err(serde::de::Error::custom)?;
                 return Ok(value);
             }
-            self.admit(self.ctx.charge_work(cadmpeg_core::decode::u64_from_index(fields.len()),
-                "f3d configuration JSON object lookup"))?;
+            self.admit(self.ctx.charge_work(
+                cadmpeg_core::decode::u64_from_index(fields.len()),
+                "f3d configuration JSON object lookup",
+            ))?;
             if !fields.contains_key(&key) {
-                self.admit(self.ctx.admit_btree_node_storage::<String, Value>(fields.len(),
-                    "f3d configuration JSON object allocation"))?;
+                self.admit(self.ctx.admit_btree_node_storage::<String, Value>(
+                    fields.len(),
+                    "f3d configuration JSON object allocation",
+                ))?;
             }
             let value = map.next_value_seed(ValueSeed {
                 ctx: self.ctx,

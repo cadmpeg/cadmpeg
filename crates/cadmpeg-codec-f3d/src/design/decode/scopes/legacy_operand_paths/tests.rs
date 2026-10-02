@@ -118,6 +118,7 @@ fn legacy_path_limit(dimension: ResourceDimension, operation: &str) {
         ResourceDimension::WorkUnits => policy.limits.max_work_units = 1,
         _ => panic!("unsupported test limit"),
     }
+
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(
         matches!(super::exact_legacy_class_388_operand_path_envelope(

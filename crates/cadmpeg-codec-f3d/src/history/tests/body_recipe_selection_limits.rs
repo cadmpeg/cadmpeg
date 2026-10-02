@@ -327,7 +327,11 @@ fn body_recipe_validation_refuses_collection_limit() {
 
 #[test]
 fn body_recipe_identity_refuses_retained_limit() {
-    let error = bind(u64::MAX, 0).unwrap_err();
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        "retain F3D history input identity",
+        |cap| bind(u64::MAX, cap).map(|_| ()),
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "retain F3D history input identity")
@@ -486,7 +490,11 @@ fn external_body_displayed_refuses_collection_limit() {
 
 #[test]
 fn external_body_prefix_refuses_retained_limit() {
-    let error = external_body(u64::MAX, 0, Some("other")).unwrap_err();
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        "retain F3D current history prefix",
+        |cap| external_body(u64::MAX, cap, Some("other")).map(|_| ()),
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "retain F3D current history prefix")
@@ -495,7 +503,11 @@ fn external_body_prefix_refuses_retained_limit() {
 
 #[test]
 fn external_body_candidate_id_refuses_retained_limit() {
-    let error = external_body(u64::MAX, 0, None).unwrap_err();
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        "copy F3D external body candidate",
+        |cap| external_body(u64::MAX, cap, None).map(|_| ()),
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "copy F3D external body candidate")

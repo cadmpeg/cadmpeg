@@ -191,53 +191,60 @@ fn assert_extrude_binder_refusal(operation: &'static str, mode: u8, retained: bo
     };
     let arrangement_budget = WorkBudget::new(crate::design::geometry::MAX_ARRANGEMENT_WALK_WORK);
     let scope_histories = HashMap::new();
-    for limit in 0..128 {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::default();
-        if retained {
-            policy.limits.max_retained_bytes = limit;
-        } else {
-            policy.limits.max_collection_items = limit;
-        }
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let mut feature = binder_feature(&scope, profile.clone());
-        let curve_resolution = SketchCurveSelectionResolution {
-            scopes: &[],
-            groups: &[],
-            operands: &[],
-            placements: &[],
-            curve_identities: &[],
-            sketches,
-            sketch_entities: &[],
-            spatial_sketches,
-            spatial_sketch_entities: &[],
-        };
-        let resolution = ExtrudeProfileResolution {
-            entities: &[],
-            spatial_sketches,
-            spatial_entities: &[],
-            histories: &[],
-            scope_histories: &scope_histories,
-            linear_tolerance: 0.000_001,
-            angular_tolerance: 0.000_000_001,
-            arrangement_budget: &arrangement_budget,
-            ctx: &ctx,
-        };
-        match bind_extrude_profile_selections(
-            std::slice::from_mut(&mut feature),
-            std::slice::from_ref(&scope),
-            std::slice::from_ref(&group),
-            members,
-            sketches,
-            &curve_resolution,
-            resolution,
-        ) {
-            Err(CodecError::ResourceLimit(failure)) if failure.operation == operation => return,
-            Err(CodecError::ResourceLimit(_)) => {}
-            other => panic!("expected extrude binder refusal at {operation}: {other:?}"),
-        }
+    {
+        let error = cadmpeg_test_support::refusal::resource_limit_at(
+            if retained {
+                cadmpeg_core::decode::ResourceDimension::RetainedBytes
+            } else {
+                cadmpeg_core::decode::ResourceDimension::CollectionItems
+            },
+            operation,
+            |cap| {
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::default();
+                if retained {
+                    policy.limits.max_retained_bytes = cap;
+                } else {
+                    policy.limits.max_collection_items = cap;
+                }
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+                let mut feature = binder_feature(&scope, profile.clone());
+                let curve_resolution = SketchCurveSelectionResolution {
+                    scopes: &[],
+                    groups: &[],
+                    operands: &[],
+                    placements: &[],
+                    curve_identities: &[],
+                    sketches,
+                    sketch_entities: &[],
+                    spatial_sketches,
+                    spatial_sketch_entities: &[],
+                };
+                let resolution = ExtrudeProfileResolution {
+                    entities: &[],
+                    spatial_sketches,
+                    spatial_entities: &[],
+                    histories: &[],
+                    scope_histories: &scope_histories,
+                    linear_tolerance: 0.000_001,
+                    angular_tolerance: 0.000_000_001,
+                    arrangement_budget: &arrangement_budget,
+                    ctx: &ctx,
+                };
+                bind_extrude_profile_selections(
+                    std::slice::from_mut(&mut feature),
+                    std::slice::from_ref(&scope),
+                    std::slice::from_ref(&group),
+                    members,
+                    sketches,
+                    &curve_resolution,
+                    resolution,
+                )
+            },
+        );
+        assert!(matches!(error, CodecError::ResourceLimit(failure)
+            if failure.operation == operation && failure.dimension == (if retained { cadmpeg_core::decode::ResourceDimension::RetainedBytes } else { cadmpeg_core::decode::ResourceDimension::CollectionItems })));
     }
-    panic!("no extrude binder refusal at {operation}");
 }
 
 #[test]

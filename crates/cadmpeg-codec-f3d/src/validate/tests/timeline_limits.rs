@@ -227,7 +227,13 @@ fn timeline_duplicate_type_entity_refuses_retained_limit() {
         crate::design::decode::meta::FEATURE_TIMELINE_TYPE_GUID,
         &[35],
     ));
-    let error = timeline_error_with(native, u64::MAX, 0);
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        "retain F3D validation entity",
+        |cap| {
+            Err::<(), cadmpeg_core::CodecError>(timeline_error_with(native.clone(), u64::MAX, cap))
+        },
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "retain F3D validation entity")
@@ -257,7 +263,13 @@ fn timeline_invalid_record_entity_refuses_retained_limit() {
             value: 17,
             offset: 100,
         }]);
-    let error = timeline_error_with(native, u64::MAX, 0);
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        "retain F3D validation entity",
+        |cap| {
+            Err::<(), cadmpeg_core::CodecError>(timeline_error_with(native.clone(), u64::MAX, cap))
+        },
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "retain F3D validation entity")
@@ -279,7 +291,13 @@ fn timeline_missing_record_finding_refuses_collection_limit() {
 fn timeline_missing_record_entity_refuses_retained_limit() {
     let mut native = native();
     native.design_feature_timelines.clear();
-    let error = timeline_error_with(native, u64::MAX, 0);
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        "retain F3D validation entity",
+        |cap| {
+            Err::<(), cadmpeg_core::CodecError>(timeline_error_with(native.clone(), u64::MAX, cap))
+        },
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "retain F3D validation entity")
@@ -319,7 +337,13 @@ fn timeline_authored_order_entity_refuses_retained_limit() {
                 101,
             ));
     }
-    let error = timeline_error_with(native, u64::MAX, 0);
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        "retain F3D validation entity",
+        |cap| {
+            Err::<(), cadmpeg_core::CodecError>(timeline_error_with(native.clone(), u64::MAX, cap))
+        },
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "retain F3D validation entity")
@@ -428,7 +452,17 @@ fn timeline_forward_history_finding_refuses_collection_limit() {
 
 #[test]
 fn timeline_forward_history_entity_refuses_retained_limit() {
-    let error = timeline_error_with(forward_history_native(), u64::MAX, 330);
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        "retain F3D validation entity",
+        |cap| {
+            Err::<(), cadmpeg_core::CodecError>(timeline_error_with(
+                forward_history_native(),
+                u64::MAX,
+                cap,
+            ))
+        },
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "retain F3D validation entity")
@@ -446,7 +480,17 @@ fn timeline_cyclic_history_finding_refuses_collection_limit() {
 
 #[test]
 fn timeline_cyclic_history_entity_refuses_retained_limit() {
-    let error = timeline_error_with(cyclic_history_native(), u64::MAX, 549);
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        "retain F3D validation entity",
+        |cap| {
+            Err::<(), cadmpeg_core::CodecError>(timeline_error_with(
+                cyclic_history_native(),
+                u64::MAX,
+                cap,
+            ))
+        },
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "retain F3D validation entity")

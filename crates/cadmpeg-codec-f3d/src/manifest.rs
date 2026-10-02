@@ -322,7 +322,8 @@ pub(crate) fn parse_top_level(
         // An unreadable version field is corrupt bytes: nothing names a generation,
         // so there is no recognized document to refuse.
         let version = cursor.ascii("top-level manifest version")?;
-        let asset_folder_bases = parse_top_level_body(ctx, bytes, cursor).map_err(|error| {
+        let mut asset_storage = ctx.reserve_scoped(0, "F3D manifest asset views")?;
+        let asset_folder_bases = asset_storage.with_storage(|| parse_top_level_body(ctx, bytes, cursor)).map_err(|error| {
         if error.is_resource() {
             error
         } else {
@@ -383,6 +384,7 @@ fn parse_top_level_body<'a, 'ctx>(
         )?
     };
 
+    let mut registry_storage = ctx.reserve_scoped(0, "F3D manifest registry storage")?;
     let mut registry_names = BTreeSet::new();
     for ordinal in 0..registry_count {
         let (field, _field_budget) = ctx.format_scoped(
@@ -401,11 +403,13 @@ fn parse_top_level_body<'a, 'ctx>(
                 format_args!("empty or duplicate name {name:?}"),
             ));
         }
-        ctx.insert_btree_set(
-            &mut registry_names,
-            name,
-            "index F3D manifest registry names",
-        )?;
+        registry_storage.with_storage(|| {
+            ctx.insert_btree_set(
+                &mut registry_names,
+                name,
+                "index F3D manifest registry names",
+            )
+        })?;
         let (field, _field_budget) = ctx.format_scoped(
             format_args!("top-level manifest registry value {ordinal}"),
             "describe F3D manifest field",
@@ -546,9 +550,11 @@ pub(crate) fn resolve_design_folder<'a, 'n>(
     entry_names: impl IntoIterator<Item = &'n str>,
     mut entry_bytes: impl FnMut(&str) -> Option<&'a [u8]>,
 ) -> Result<String, CodecError> {
+    let mut storage = ctx.reserve_scoped(0, "F3D manifest folder lookups")?;
     let mut names = Vec::new();
     for name in entry_names {
-        ctx.push_vec(&mut names, name, "index F3D manifest entry names")?;
+        storage
+            .with_storage(|| ctx.push_vec(&mut names, name, "index F3D manifest entry names"))?;
     }
     let mut design_folders = Vec::new();
 
@@ -627,11 +633,13 @@ pub(crate) fn resolve_design_folder<'a, 'n>(
         ) {
             let name =
                 ctx.format_scoped(format_args!("{folder}"), "retain F3D Design asset folder")?;
-            ctx.push_vec(
-                &mut design_folders,
-                name,
-                "collect F3D Design asset folders",
-            )?;
+            storage.with_storage(|| {
+                ctx.push_vec(
+                    &mut design_folders,
+                    name,
+                    "collect F3D Design asset folders",
+                )
+            })?;
         }
     }
 
@@ -712,40 +720,45 @@ fn parse_asset_header<'a>(
 fn parse_capability_registry<'ctx>(
     cursor: &mut Cursor<'_, 'ctx, '_>,
 ) -> Result<(), ManifestFailure<'ctx>> {
-    let capability_count = cursor.count(
-        "Fusion asset manifest capability count",
-        MAX_REGISTRY_ENTRIES,
-    )?;
-    let mut capability_names = BTreeSet::new();
-    for ordinal in 0..capability_count {
-        let (field, _field_budget) = cursor.ctx.format_scoped(
-            format_args!("Fusion asset manifest capability name {ordinal}"),
-            "describe F3D manifest field",
+    let mut storage = cursor
+        .ctx
+        .reserve_scoped(0, "F3D asset capability scratch")?;
+    storage.with_storage(|| {
+        let capability_count = cursor.count(
+            "Fusion asset manifest capability count",
+            MAX_REGISTRY_ENTRIES,
         )?;
-        let name = cursor.ascii(&field)?;
-        cursor.ctx.charge_work(
-            u64_from_index(name.len()) * u64_from_index(capability_names.len() + 1) * 2,
-            "compare F3D asset capability names",
-        )?;
-        if name.is_empty() || capability_names.contains(&name) {
-            return Err(probe_malformed(
-                cursor.ctx,
-                "Fusion asset manifest capabilities",
-                format_args!("empty or duplicate name {name:?}"),
-            ));
+        let mut capability_names = BTreeSet::new();
+        for ordinal in 0..capability_count {
+            let (field, _field_budget) = cursor.ctx.format_scoped(
+                format_args!("Fusion asset manifest capability name {ordinal}"),
+                "describe F3D manifest field",
+            )?;
+            let name = cursor.ascii(&field)?;
+            cursor.ctx.charge_work(
+                u64_from_index(name.len()) * u64_from_index(capability_names.len() + 1) * 2,
+                "compare F3D asset capability names",
+            )?;
+            if name.is_empty() || capability_names.contains(&name) {
+                return Err(probe_malformed(
+                    cursor.ctx,
+                    "Fusion asset manifest capabilities",
+                    format_args!("empty or duplicate name {name:?}"),
+                ));
+            }
+            cursor.ctx.insert_btree_set(
+                &mut capability_names,
+                name,
+                "index F3D asset capability names",
+            )?;
+            let (field, _field_budget) = cursor.ctx.format_scoped(
+                format_args!("Fusion asset manifest capability value {ordinal}"),
+                "describe F3D manifest field",
+            )?;
+            let _value = cursor.u32(&field)?;
         }
-        cursor.ctx.insert_btree_set(
-            &mut capability_names,
-            name,
-            "index F3D asset capability names",
-        )?;
-        let (field, _field_budget) = cursor.ctx.format_scoped(
-            format_args!("Fusion asset manifest capability value {ordinal}"),
-            "describe F3D manifest field",
-        )?;
-        let _value = cursor.u32(&field)?;
-    }
-    Ok(())
+        Ok(())
+    })
 }
 
 fn parse_current_design_asset<'a, 'ctx>(

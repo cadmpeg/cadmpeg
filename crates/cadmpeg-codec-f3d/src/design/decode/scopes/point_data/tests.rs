@@ -35,6 +35,7 @@ fn work_point_counted_inputs_refuse_collection_limit() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
     policy.limits.max_collection_items = 1;
+
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let result = exact_work_point_construction_with_ctx(
         &ctx,

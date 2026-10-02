@@ -1968,9 +1968,9 @@ fn bipartite_assignment(
             };
             if assignable {
                 if displaced.is_none() {
-                    members_storage.with_storage(|| ctx.reserve_map(
-                        edge_members, 1, "f3d edge assignment members",
-                    ))?;
+                    members_storage.with_storage(|| {
+                        ctx.reserve_map(edge_members, 1, "f3d edge assignment members")
+                    })?;
                 }
                 edge_members.insert(*edge, member);
                 return Ok(true);
@@ -1982,9 +1982,8 @@ fn bipartite_assignment(
     let mut members_storage = ctx.reserve_scoped(0, "f3d edge assignment members")?;
     let mut edge_members = HashMap::new();
     for member in 0..candidate_sets.len() {
-        let (assigned, _visited_reservation) = ctx.with_scoped_storage(
-            "f3d edge assignment visits",
-            || {
+        let (assigned, _visited_reservation) =
+            ctx.with_scoped_storage("f3d edge assignment visits", || {
                 let mut visited = HashSet::new();
                 augment(
                     member,
@@ -1994,8 +1993,7 @@ fn bipartite_assignment(
                     ctx,
                     &mut members_storage,
                 )
-            },
-        )?;
+            })?;
         if !assigned {
             return Ok(None);
         }

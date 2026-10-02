@@ -505,6 +505,7 @@ mod tests {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::default();
         policy.limits.max_retained_bytes = u64_from_index(scope.id.len()) - 1;
+
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let result = exact_legacy_as_built_face_selection(
             &ctx,

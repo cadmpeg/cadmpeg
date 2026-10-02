@@ -97,6 +97,7 @@ fn operand_recipe_index_refuses_collection_limit() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
     policy.limits.max_collection_items = 0;
+
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(matches!(
         crate::design::decode::operands::indexed_operand_recipes(
@@ -131,6 +132,7 @@ fn operand_face_candidate_refuses_collection_and_retained_limits() {
         let mut policy = DecodePolicy::default();
         policy.limits.max_collection_items = collection_limit;
         policy.limits.max_retained_bytes = retained_limit;
+
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let mut candidates = Vec::new();
         assert!(matches!(
@@ -163,6 +165,7 @@ fn referenced_operand_faces_refuses_collection_limit() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
     policy.limits.max_collection_items = 0;
+
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(matches!(
         crate::design::decode::operands::referenced_operand_faces(
