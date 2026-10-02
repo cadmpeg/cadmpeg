@@ -138,7 +138,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
         let path = location.file.name.prefer_local_unconditionally().to_string();
         let relative = std::env::current_dir().ok().and_then(|root| std::path::Path::new(&path).strip_prefix(root).ok().map(|path| path.display().to_string())).unwrap_or(path);
         let source = span.source_callsite();
-        self.findings.entries.entry((relative, location.line, source.lo().0, source.hi().0, rule.to_owned())).or_default().insert(message.to_owned());
+        self.findings.entries.entry((relative, location.line, source.lo().0, source.hi().0, rule.to_owned())).or_default().insert(format!("[column {}] {message}", location.col.0 + 1));
     }
 
     fn shape_report(&mut self, expression: &Expr<'tcx>, shape: types::Shape, operation: &str) {

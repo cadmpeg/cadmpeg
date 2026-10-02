@@ -37,7 +37,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
             if name == "alloc_filled" {
                 if let Some(value) = operands.get(2) {
                     let shape = self.clone_shape(self.typeck.expr_ty(value));
-                    let empty = self.call(value).is_some_and(|(id, args)| types::standard(self.tcx, id) && args.is_empty() && matches!(self.tcx.item_name(id).as_str(), "new" | "default"));
+                    let empty = self.constant(value, &mut Vec::new()) || self.call(value).is_some_and(|(id, args)| types::standard(self.tcx, id) && args.is_empty() && matches!(self.tcx.item_name(id).as_str(), "new" | "default"));
                     if !empty { self.shape_report(expression, shape, "alloc_filled child Clone"); }
                 }
             }

@@ -37,6 +37,8 @@ pub fn decode(ctx: &DecodeContext, bytes: &[u8], text: &str, n: usize, record: &
     let _count = bytes.iter().count();
     let _copy = ctx.copy_slice(bytes);
     let _filled = ctx.alloc_filled(n, 0u8);
+    let _none = ctx.alloc_filled(n, None::<String>);
+    let _empty_child = ctx.alloc_filled(n, Vec::<String>::new());
     let child = record.clone(); // finding: uncharged_decode_allocation
     let _child = ctx.alloc_filled(n, child); // finding: uncharged_decode_allocation
     let _ref = Rc::clone(&shared);

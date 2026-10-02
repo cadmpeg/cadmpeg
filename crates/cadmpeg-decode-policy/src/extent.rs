@@ -47,6 +47,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
             }
             ExprKind::Field(_, _) => self.initializer(expression).is_some_and(|init| self.constant(init, seen)),
             ExprKind::Path(ref path) => match self.typeck.qpath_res(path, expression.hir_id) {
+                Res::Def(rustc_hir::def::DefKind::Ctor(_, _), definition) if types::standard(self.tcx, definition) && self.tcx.item_name(self.tcx.parent(definition)).as_str() == "None" => true,
                 Res::Def(rustc_hir::def::DefKind::Const { .. } | rustc_hir::def::DefKind::AssocConst { .. }, _) => true,
                 _ => self.initializer(expression).is_some_and(|init| self.constant(init, seen)),
             },
