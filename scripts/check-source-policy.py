@@ -2647,6 +2647,9 @@ def decode_type_shape(expression, constants, copy_types):
     expression = re.sub(r"^&\s*(?:'[A-Za-z_]\w*\s*)?(?:mut\s+)?", "", expression.strip())
     if expression in DECODE_PRIMITIVES or expression in copy_types:
         return True, True
+    optional = re.fullmatch(r"(?:(?:std|core)::option::)?Option\s*<(.+)>", expression)
+    if optional:
+        return True, decode_type_shape(optional[1], constants, copy_types)[1]
     if expression.startswith("[") and expression.endswith("]"):
         parts = list(decode_split(expression[1:-1], ";"))
         # Rust array types require a compile-time length, including associated
@@ -2904,10 +2907,15 @@ def decode_expression_shape(expression, code, position, constants, copy_types, t
     words = [token[0] for token in tokens]
     bounds = list(decode_split(expression, ".."))
     if len(bounds) == 2:
-        return (decode_constant_expression(bounds[0], constants)
-                and decode_constant_expression(bounds[1].lstrip("="), constants)), False
+        fixed = (decode_constant_expression(bounds[0], constants)
+                 and decode_constant_expression(bounds[1].lstrip("="), constants))
+        return fixed, fixed
     if words[-1:] == [")"] and pairs.get(len(words) - 1) is not None:
         opening = pairs[len(words) - 1]
+        if words[:opening] in [["Some"], ["Option", "::", "Some"]]:
+            shape = decode_expression_shape(expression[tokens[opening].end():-1], code,
+                                            position, constants, copy_types, types, seen)
+            return True, shape[1]
         if opening >= 2 and words[opening - 2] == ".":
             method = words[opening - 1]
             if method in {"len", "capacity", "position"}:

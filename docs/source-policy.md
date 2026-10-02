@@ -171,7 +171,9 @@ constant lengths, constant-bounded ranges, and their iterator chains have a
 fixed iteration count. Tuple and array comparisons have fixed work when their
 elements have fixed comparison work. Explicit primitive types and structural
 `Copy` scalars have fixed comparison work. Arrays of strings have a fixed slot
-count but still require charged child comparisons. A range with a runtime
+count but still require charged child comparisons. `Option` has at most one
+item; its comparison work follows its child type or constructor operand.
+A range with a runtime
 bound and an input-sized iterator with `take` remain input-sized. Fixed byte
 comparisons against literals and scalar count queries stay outside the rule.
 A primitive scalar `min` or `max` with an argument has fixed comparison work.

@@ -1781,6 +1781,16 @@ impl Reader<'_> {
         self.assertEqual([f.line for f in self.findings("uncharged_decode_work")], [6, 7])
 
 
+    def test_fixed_ranges_and_optional_copy_operands_have_bounded_work(self):
+        self.write(self.PATH, """fn read(ctx: &DecodeContext<'_>, optional: Option<u64>) {
+    (9..=16).contains(&value);
+    optional == other;
+    data.get(0..2) == Some(&[0x1f, 0x9d]);
+    dynamic == Some(heap);
+}""")
+        self.assertEqual([f.line for f in self.findings("uncharged_decode_work")], [5])
+
+
 class SourcePolicyCommand(TempSourceCase):
     def run_check(self, *args: str) -> tuple[int, str]:
         output = io.StringIO()
