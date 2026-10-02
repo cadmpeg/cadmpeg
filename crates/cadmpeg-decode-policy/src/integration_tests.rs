@@ -175,6 +175,7 @@ fn check_fixture(name: &str) {
                     | "generic_scope"
                     | "fallback"
                     | "object_fallback"
+                    | "method_scope"
                     | "symbolic_scope"
                     | "fixed_ranges"
                     | "raw_steps"
@@ -579,4 +580,9 @@ fn lifetime_object_fallback() {
 #[test]
 fn unconstrained_generic_root_reachability() {
     check_fixture("symbolic_scope");
+}
+
+#[test]
+fn called_object_methods_only() {
+    check_fixture("method_scope");
 }

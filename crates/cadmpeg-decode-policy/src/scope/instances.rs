@@ -191,21 +191,12 @@ impl<'tcx> Visitor<'tcx> for Edges<'_, 'tcx> {
                     ) {
                         self.graph.uncertain.insert(self.concrete.caller.clone());
                     }
-                    for instance in instances {
-                        if types::checked(self.tcx, instance.def_id()) {
-                            self.graph
-                                .addresses
-                                .insert(key(self.tcx, instance.def_id()));
-                        }
-                        enqueue(
-                            self.tcx,
-                            self.graph,
-                            self.pending,
-                            &self.concrete.caller,
-                            instance,
-                            self.concrete.environment,
-                            self.concrete.depth + 1,
-                        );
+                    for (method, instance) in instances {
+                        objects::register(self.tcx, self.graph, self.pending, method, Concrete {
+                            caller: self.concrete.caller.clone(), instance,
+                            environment: self.concrete.environment,
+                            depth: self.concrete.depth + 1,
+                        });
                     }
                 }
             }

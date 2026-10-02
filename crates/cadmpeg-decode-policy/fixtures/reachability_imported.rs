@@ -66,7 +66,6 @@ impl cadmpeg_core::SymbolicWork for SymbolicWorker {
 impl cadmpeg_core::SymbolicObject for SymbolicWorker {
     fn work(&self, bytes: &[u8]) {
         for byte in bytes {
-            // reached-loop
             std::hint::black_box(byte);
         }
     }

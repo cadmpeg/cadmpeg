@@ -20,6 +20,8 @@ def resolve_graph(source):
     addresses = set()
     symbolic = set()
     symbolic_edges = {}
+    objects = []
+    object_calls = []
     for row in source.splitlines():
         fields = row.split("\t")
         if len(fields) == 3 and fields[0] == "decode_root":
@@ -35,23 +37,29 @@ def resolve_graph(source):
             uncertain.add(fields[1])
         elif len(fields) == 2 and fields[0] == "decode_address":
             addresses.add(fields[1])
-    pending_symbolic = list(symbolic)
-    while pending_symbolic:
-        caller = pending_symbolic.pop()
-        for callee in symbolic_edges.get(caller, ()):
-            edges.setdefault(caller, set()).add(callee)
-            if callee not in symbolic:
-                symbolic.add(callee)
-                pending_symbolic.append(callee)
-    for caller in uncertain:
-        edges.setdefault(caller, set()).update(addresses)
-    pending = list(reached)
-    while pending:
-        for callee in edges.get(pending.pop(), ()):
-            if callee not in reached:
-                reached.add(callee)
-                pending.append(callee)
-    return reached, roots
+        elif len(fields) == 4 and fields[0] == "decode_object":
+            objects.append(fields[1:])
+        elif len(fields) == 3 and fields[0] == "decode_object_call":
+            object_calls.append(fields[1:])
+    while True:
+        before = (len(reached), len(symbolic))
+        for caller, targets in edges.items():
+            if caller in reached:
+                reached.update(targets)
+        for caller, targets in symbolic_edges.items():
+            if caller in symbolic:
+                symbolic.update(targets)
+                reached.update(targets)
+        called = {method for caller, method in object_calls if caller in reached}
+        for caller, method, target in objects:
+            if caller in reached and method in called:
+                reached.add(target)
+                if caller in symbolic:
+                    symbolic.add(target)
+        if reached & uncertain:
+            reached.update(addresses)
+        if before == (len(reached), len(symbolic)):
+            return reached, roots
 
 
 def unreachable_bodies(source, reached):

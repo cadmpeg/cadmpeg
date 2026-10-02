@@ -4,7 +4,6 @@ trait Base {
     fn base(&self, bytes: &[u8]);
     fn default_method(&self, bytes: &[u8]) {
         for byte in bytes {
-            // finding: uncharged_decode_work
             std::hint::black_box(byte);
         }
     }
@@ -19,7 +18,6 @@ struct Worker;
 impl Base for Worker {
     fn base(&self, bytes: &[u8]) {
         for byte in bytes {
-            // finding: uncharged_decode_work
             std::hint::black_box(byte);
         }
     }
@@ -27,13 +25,11 @@ impl Base for Worker {
 impl Work for Worker {
     fn work(&self, bytes: &[u8]) {
         for byte in bytes {
-            // finding: uncharged_decode_work
             std::hint::black_box(byte);
         }
     }
     fn sized(&self, bytes: &[u8]) {
         for byte in bytes {
-            // finding: uncharged_decode_work
             std::hint::black_box(byte);
         }
     }
@@ -77,7 +73,6 @@ struct HigherWorker;
 impl<'a> Higher<'a> for HigherWorker {
     fn scan(&self, bytes: &'a [u8]) {
         for byte in bytes {
-            // finding: uncharged_decode_work
             std::hint::black_box(byte);
         }
     }

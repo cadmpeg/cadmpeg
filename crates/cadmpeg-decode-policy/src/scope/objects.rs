@@ -1,5 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Concrete implementations erased by unsizing coercions.
+use super::{instances, key, Graph};
+use crate::types;
+use rustc_span::def_id::DefId;
 use rustc_middle::ty::{self, Instance, Ty, TyCtxt, TypeVisitableExt};
 
 pub(super) fn targets<'tcx>(
@@ -7,7 +10,7 @@ pub(super) fn targets<'tcx>(
     environment: ty::TypingEnv<'tcx>,
     source: Ty<'tcx>,
     target: Ty<'tcx>,
-    instances: &mut Vec<Instance<'tcx>>,
+    instances: &mut Vec<(DefId, Instance<'tcx>)>,
 ) -> bool {
     let source = source.peel_refs();
     let target = target.peel_refs();
@@ -48,7 +51,7 @@ pub(super) fn targets<'tcx>(
                         Ok(Some(instance))
                             if !matches!(instance.def, ty::InstanceKind::Virtual(..)) =>
                         {
-                            instances.push(instance)
+                            instances.push((item.def_id, instance))
                         }
                         _ => {
                             resolved = false;
@@ -58,13 +61,13 @@ pub(super) fn targets<'tcx>(
                                     .in_definition_order()
                                     .find(|method| method.name() == item.name())
                                 {
-                                    instances.push(Instance::new_raw(
+                                    instances.push((item.def_id, Instance::new_raw(
                                         method.def_id,
                                         ty::GenericArgs::identity_for_item(tcx, method.def_id),
-                                    ));
+                                    )));
                                 }
                             }
-                            instances.push(Instance::new_raw(item.def_id, args));
+                            instances.push((item.def_id, Instance::new_raw(item.def_id, args)));
                         }
                     }
                 }
@@ -89,4 +92,20 @@ pub(super) fn targets<'tcx>(
         (_, ty::Dynamic(..)) => true,
         _ => true,
     }
+}
+
+/// Keep concrete MIR behind both the coercion and the called trait method.
+pub(super) fn register<'tcx>(
+    tcx: TyCtxt<'tcx>,
+    graph: &mut Graph,
+    pending: &mut Vec<instances::Concrete<'tcx>>,
+    method: DefId,
+    concrete: instances::Concrete<'tcx>,
+) {
+    if !types::checked(tcx, concrete.instance.def_id()) {
+        return;
+    }
+    let target = format!("object:{}:{}:{}:{:?}", concrete.caller, key(tcx, method), key(tcx, concrete.instance.def_id()), concrete.instance.args);
+    graph.objects.insert((concrete.caller, key(tcx, method), target.clone()));
+    instances::enqueue(tcx, graph, pending, &target, concrete.instance, concrete.environment, concrete.depth);
 }
