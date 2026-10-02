@@ -2637,6 +2637,7 @@ def decode_fixed_catalog(sources):
     """Read integer constants and structural Copy scalar types per crate."""
     catalogs = {}
     records = []
+    declarations = {}
     for path, source in sources.items():
         if not is_production_rs(path):
             continue
@@ -2663,6 +2664,8 @@ def decode_fixed_catalog(sources):
                     constants.add(words[i + 1])
             if word not in {"struct", "enum"}:
                 continue
+            key = (parts[1], words[i + 1])
+            declarations[key] = declarations.get(key, 0) + 1
             opening = i + 2
             # Generic records require their instantiated field types.
             if words[opening:opening + 1] == ["<"]:
@@ -2691,7 +2694,8 @@ def decode_fixed_catalog(sources):
         additions = 0
         for crate, name, fields in records:
             constants, copy_types = catalogs[crate]
-            if name not in copy_types and all(decode_type_shape(field, constants, copy_types)[1] for field in fields):
+            if (declarations[(crate, name)] == 1 and name not in copy_types
+                    and all(decode_type_shape(field, constants, copy_types)[1] for field in fields)):
                 copy_types.add(name)
                 additions += 1
         if not additions:
@@ -2715,18 +2719,44 @@ def decode_binding_visible(code, declaration, position, name):
         if closing < 0:
             return False
         expression = tail[closing + 1:]
-        tokens, pairs, _ = evaluation_tokens(expression)
-        if tokens and tokens[0][0] == "{" and pairs.get(0) is not None:
-            return False
-        if any(token[0] in {",", ";"} and index not in pairs
-               for index, token in enumerate(tokens)):
-            return False
+        stack = []
+        block_body = expression.lstrip().startswith("{")
+        for character in expression:
+            if character in "([{":
+                stack.append(character)
+            elif character in ")]}":
+                if not stack:
+                    return False
+                stack.pop()
+                if not stack and block_body:
+                    return False
+            elif character in ",;" and not stack:
+                return False
     for pipe in re.finditer(r"\|", tail):
         if decode_closure_open(tail, pipe.start()):
             closing = tail.find("|", pipe.end())
             if closing >= 0 and re.search(r"\b" + re.escape(name) + r"\b", tail[pipe.end():closing]):
                 return False
     return True
+
+
+def decode_binding_value(code, name, position):
+    """Read the visible binding's complete type or initializer."""
+    if not re.fullmatch(r"[A-Za-z_]\w*", name):
+        return None
+    declarations = list(re.finditer(r"\b" + re.escape(name) + r"\s*:\s*|\blet\s+(?:mut\s+)?" + re.escape(name) + r"\s*=\s*", code[:position]))
+    if not declarations:
+        return None
+    declaration = declarations[-1]
+    if not decode_binding_visible(code, declaration, position, name):
+        return None
+    remainder = code[declaration.end():position]
+    tokens, pairs, _ = evaluation_tokens(remainder)
+    stop = 0
+    while stop < len(tokens) and tokens[stop][0] not in {",", ";", "=", ")", "|"}:
+        stop = pairs[stop] + 1 if stop in pairs and tokens[stop][0] in "([{" else stop + 1
+    value = remainder[:tokens[stop].start()] if stop < len(tokens) else remainder
+    return ":" in declaration[0], value, declaration.start()
 
 
 def decode_expression_shape(expression, code, position, constants, copy_types, seen=frozenset()):
@@ -2737,20 +2767,45 @@ def decode_expression_shape(expression, code, position, constants, copy_types, s
     seen = seen | {expression}
     tokens, pairs, _ = evaluation_tokens(expression)
     words = [token[0] for token in tokens]
+    bounds = list(decode_split(expression, ".."))
+    if len(bounds) == 2:
+        return (decode_constant_expression(bounds[0], constants)
+                and decode_constant_expression(bounds[1].lstrip("="), constants)), False
     if words[-1:] == [")"] and pairs.get(len(words) - 1) is not None:
         opening = pairs[len(words) - 1]
         if opening >= 2 and words[opening - 2] == ".":
             method = words[opening - 1]
-            if method in {"iter", "iter_mut", "into_iter", "enumerate", "rev", "copied", "cloned", "map", "as_slice", "as_bytes"}:
+            if method in {"len", "capacity", "position"}:
+                return True, True
+            if method in {"iter", "iter_mut", "into_iter", "enumerate", "rev", "copied", "cloned", "map", "filter", "filter_map", "take", "skip", "step_by", "inspect", "scan", "as_slice", "as_bytes"}:
                 shape = decode_expression_shape(expression[:tokens[opening - 2].start()], code,
                                                 position, constants, copy_types, seen)
-                return shape[0], shape[1] and method not in {"map", "enumerate"}
+                return shape[0], shape[1] and method not in {"map", "enumerate", "filter_map", "scan"}
         if opening == 0:
             inner = expression[1:-1]
             parts = [part for part in decode_split(inner, ",") if part]
             if len(parts) == 1:
                 return decode_expression_shape(inner, code, position, constants, copy_types, seen)
             return True, all(decode_expression_shape(part, code, position, constants, copy_types, seen)[1] for part in parts)
+    if words[-1:] == ["]"] and pairs.get(len(words) - 1, 0) > 0:
+        opening = pairs[len(words) - 1]
+        base = expression[:tokens[opening].start()]
+        binding = decode_binding_value(code, base, position)
+        if binding:
+            annotated, value, declared = binding
+            value = re.sub(r"^&\s*(?:'[A-Za-z_]\w*\s*)?(?:mut\s+)?", "", value.strip())
+            if annotated and value.startswith("[") and value.endswith("]"):
+                item = next(decode_split(value[1:-1], ";"))
+                if ".." not in words[opening:]:
+                    return decode_type_shape(item, constants, copy_types)
+            shape = decode_expression_shape(base, code, position, constants, copy_types, seen)
+            if ".." in words[opening:]:
+                return shape
+            if shape[1]:
+                return True, True
+    if re.fullmatch(r"[A-Za-z_]\w*(?:\.[A-Za-z_]\w*|\.[0-9]+)+", expression):
+        if decode_expression_shape(expression.split(".", 1)[0], code, position, constants, copy_types, seen)[1]:
+            return True, True
     if ".." in words:
         index = words.index("..")
         return (decode_constant_expression("".join(words[:index]), constants)
@@ -2766,23 +2821,13 @@ def decode_expression_shape(expression, code, position, constants, copy_types, s
                          for part in decode_split(inner, ",") if part)
     if decode_constant_expression(expression, constants) or expression in {"true", "false"}:
         return True, True
-    if not re.fullmatch(r"[A-Za-z_]\w*", expression):
+    binding = decode_binding_value(code, expression, position)
+    if not binding:
         return False, False
-    declarations = list(re.finditer(r"\b" + re.escape(expression) + r"\s*:\s*|\blet\s+(?:mut\s+)?" + re.escape(expression) + r"\s*=\s*", code[:position]))
-    if not declarations:
-        return False, False
-    declaration = declarations[-1]
-    if not decode_binding_visible(code, declaration, position, expression):
-        return False, False
-    remainder = code[declaration.end():position]
-    value_tokens, value_pairs, _ = evaluation_tokens(remainder)
-    stop = 0
-    while stop < len(value_tokens) and value_tokens[stop][0] not in {",", ";", "=", ")", "|"}:
-        stop = value_pairs[stop] + 1 if stop in value_pairs and value_tokens[stop][0] in "([{" else stop + 1
-    value = remainder[:value_tokens[stop].start()] if stop < len(value_tokens) else remainder
-    if ":" in declaration[0]:
+    annotated, value, declared = binding
+    if annotated:
         return decode_type_shape(value, constants, copy_types)
-    return decode_expression_shape(value, code, declaration.start(), constants, copy_types, seen)
+    return decode_expression_shape(value, code, declared, constants, copy_types, seen)
 
 
 def scan_decode_work(sources: dict[Path, str]) -> list[Finding]:
@@ -2849,9 +2894,8 @@ def scan_decode_work(sources: dict[Path, str]) -> list[Finding]:
                 # checked independently, including helpers with scan-like names.
                 if decode_charged_call(words, pairs, i, receivers, methods):
                     continue
-                # Scalar min/max are constant-time; iterator variants have no operand.
                 opening = evaluation_call_open(words, i)
-                if word in {"min", "max"} and pairs.get(opening) != opening + 1:
+                if opening not in pairs:
                     continue
                 if word in {"position", "rposition", "eq", "cmp", "partial_cmp"} and pairs.get(opening) == opening + 1:
                     continue
@@ -2860,21 +2904,28 @@ def scan_decode_work(sources: dict[Path, str]) -> list[Finding]:
                         tokens[i].start() - tokens[min(active)].start()):
                     continue
                 extent = decode_extent(receiver)
-                if word in {"contains", "starts_with", "ends_with", "eq", "cmp", "partial_cmp", "find", "rfind"}:
+                if word in {"contains", "starts_with", "ends_with", "eq", "cmp", "partial_cmp", "find", "rfind", "min", "max"}:
                     operands = [decode_extent("".join(words[first:last]))
                                 for first, last in decode_call_arguments(words, pairs, opening)]
+                if word in {"starts_with", "ends_with", "eq", "cmp", "partial_cmp", "min", "max"}:
+                    raw_argument = source[tokens[opening].end():tokens[pairs[opening]].start()].strip()
+                    literal = re.fullmatch(r'(?:b|br\#*|r\#*)?"(?:[^"\\]|\\.)*"\#*|(?:b)?\'(?:[^\'\\]|\\.)*\'', raw_argument)
+                    if literal or any(decode_expression_shape(operand, scope_code, tokens[i].start() - scope_start,
+                                                              constants, copy_types)[1] for operand in operands):
+                        continue
                 shape = decode_expression_shape(receiver, scope_code, tokens[i].start() - scope_start,
                                                 constants, copy_types)
-                if shape[1] or (shape[0] and word not in {"contains", "starts_with", "ends_with", "eq", "cmp", "partial_cmp"}):
+                if shape[1] or (shape[0] and word not in {"contains", "starts_with", "ends_with", "eq", "cmp", "partial_cmp", "min", "max", "min_by", "max_by", "min_by_key", "max_by_key"}):
                     continue
             elif word in {"=", "!"} and words[i + 1:i + 2] == ["="]:
                 left, right = i - 1, i + 2
                 if words[left:left + 1] in [["="], ["!"], ["<"], [">"]]:
                     continue
-                left_name = words[left] if left >= 0 else ""
                 right_name = words[right] if right < len(words) else ""
+                raw_left = decode_receiver(words, pairs, i + 1)
+                raw_right = "".join(words[right:decode_operand_end(words, pairs, right, end)])
                 if any(decode_expression_shape(name, scope_code, tokens[i].start() - scope_start,
-                                               constants, copy_types)[1] for name in (left_name, right_name)):
+                                               constants, copy_types)[1] for name in (raw_left, raw_right)):
                     continue
                 count_queries = [[".", method, "(", ")"] for method in {"len", "capacity", "position"}]
                 right_query = right
@@ -2886,16 +2937,14 @@ def scan_decode_work(sources: dict[Path, str]) -> list[Finding]:
                     continue
                 # Byte and character literals keep a b prefix in the masked
                 # token stream. Their comparison has a fixed upper bound.
-                raw_right = source[tokens[i + 1].end():].lstrip()
-                if re.match(r"(?:b|br\#*)?[\"']", raw_right):
+                raw_literal = source[tokens[i + 1].end():].lstrip()
+                if re.match(r"(?:b|br\#*)?[\"']", raw_literal):
                     continue
-                if (decode_scalar_receiver(code[tokens[min(active)].start():], left_name,
+                if (decode_scalar_receiver(code[tokens[min(active)].start():], raw_left,
                                            tokens[i].start() - tokens[min(active)].start())
-                        or decode_scalar_receiver(code[tokens[min(active)].start():], right_name,
+                        or decode_scalar_receiver(code[tokens[min(active)].start():], raw_right,
                                                   tokens[i].start() - tokens[min(active)].start())):
                     continue
-                raw_left = decode_receiver(words, pairs, i + 1)
-                raw_right = "".join(words[right:decode_operand_end(words, pairs, right, end)])
                 if right_name == "None":
                     continue
                 extent = decode_extent(raw_left)
