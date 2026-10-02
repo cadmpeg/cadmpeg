@@ -1592,7 +1592,7 @@ fn curve_on_parameter_range(
                 mapped
             };
             if curve
-                .edit_knots(|knots| knots.copy_from_slice(&mapped))
+                .edit_knots(ctx, |knots| knots.copy_from_slice(&mapped))?
                 .is_err()
             {
                 return Ok(None);

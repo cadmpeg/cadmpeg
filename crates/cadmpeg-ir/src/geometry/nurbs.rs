@@ -1590,11 +1590,16 @@ impl NurbsCurve {
     }
 
     /// Atomically edit knot values and preserve their invariants.
-    pub fn edit_knots(&mut self, edit: impl FnOnce(&mut [f64])) -> Result<(), NurbsError> {
-        let mut values = self.knots.to_vec();
-        edit(&mut values);
-        self.knots = build_raw_knots(&StandardNurbsAdmission, values, "")?;
-        Ok(())
+    pub fn edit_knots(&mut self, ctx: &DecodeContext<'_>, edit: impl FnOnce(&mut [f64])) -> Result<Result<(), NurbsError>, CodecError> {
+        admitted::finish((|| {
+            let (mut values, storage) = ctx.copy_temporary_slice(self.knots.as_slice(), "IR NURBS edited knots").map_err(CodecError::from)?;
+            ctx.charge_work(cadmpeg_core::decode::u64_from_index(values.len()), "IR NURBS knot edit")?;
+            edit(&mut values);
+            let knots = build_raw_knots(ctx, values, "")?;
+            storage.commit()?;
+            self.knots = knots;
+            Ok(())
+        })())
     }
 
     /// Replace the knot vector of an owned curve without copying its poles.
@@ -1603,16 +1608,18 @@ impl NurbsCurve {
     ///
     /// Refuses a knot count inconsistent with the degree and pole count, a
     /// non-finite knot, or a decreasing pair.
-    pub fn with_knots(mut self, knots: Vec<f64>) -> Result<Self, NurbsError> {
-        require_curve_cardinality(
-            &StandardNurbsAdmission,
-            self.degree,
-            knots.len(),
-            self.poles.count(),
-            "control_points",
-        )?;
-        self.knots = build_raw_knots(&StandardNurbsAdmission, knots, "")?;
-        Ok(self)
+    pub fn with_knots(mut self, ctx: &DecodeContext<'_>, knots: Vec<f64>) -> Result<Result<Self, NurbsError>, CodecError> {
+        admitted::finish((|| {
+            require_curve_cardinality(
+                ctx,
+                self.degree,
+                knots.len(),
+                self.poles.count(),
+                "control_points",
+            )?;
+            self.knots = build_raw_knots(ctx, knots, "")?;
+            Ok(self)
+        })())
     }
 
     /// Build from finite knots, poles, and weights. Only relationships and

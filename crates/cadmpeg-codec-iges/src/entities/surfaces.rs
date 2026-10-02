@@ -1706,11 +1706,11 @@ pub(super) fn project(
             let knot_sum = second.knots()[0] + second.knots()[second.knots().len() - 1];
             second.reverse_parameterization();
             if second
-                .edit_knots(|knots| {
+                .edit_knots(ctx, |knots| {
                     for knot in knots {
                         *knot += knot_sum;
                     }
-                })
+                })?
                 .is_err()
             {
                 super::push_attributed_loss(

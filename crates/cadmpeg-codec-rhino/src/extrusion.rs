@@ -1682,7 +1682,7 @@ pub(crate) mod tests {
             panic!("polygon NURBS fixture");
         };
         curve
-            .edit_knots(|knots| {
+            .edit_knots(&ctx, |knots| {
                 knots.copy_from_slice(&[
                     -f64::MAX,
                     -f64::MAX,
@@ -1693,6 +1693,7 @@ pub(crate) mod tests {
                     f64::MAX,
                 ]);
             })
+            .expect("knot edit admission")
             .expect("wide polygon knot interval");
         assert_eq!(
             exact_orientation(&ctx, &profile, 0).expect("finite orientation"),

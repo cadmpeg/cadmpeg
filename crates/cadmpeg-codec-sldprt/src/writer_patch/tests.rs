@@ -194,7 +194,7 @@ fn native_patch_edits_nurbs_carriers_beside_untyped_surfaces() {
                 })
             })
             .unwrap();
-        curve.edit_knots(|knots| knots[3..].fill(2.0)).unwrap();
+        curve.edit_knots(&cadmpeg_test_support::service_decode_context(), |knots| knots[3..].fill(2.0)).expect("knot edit admission").unwrap();
         let expected_curve = curve.clone();
         let surface = ir_edit
             .model
