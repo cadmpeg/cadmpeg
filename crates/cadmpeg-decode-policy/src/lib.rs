@@ -106,7 +106,7 @@ impl Callbacks for DecodeCallbacks {
                         .cloned(),
                 );
                 for (key, messages) in concrete.entries {
-                    if symbolic.entries.get(&key).is_some_and(|original| {
+                    if !symbolic.entries.keys().any(|site| site.0 == key.0 && site.2 == key.2 && site.3 == key.3 && site.4 == "unproven_decode_charge") || symbolic.entries.get(&key).is_some_and(|original| {
                         key.4 != "unproven_decode_charge" || original == &messages
                     }) {
                         continue;
@@ -164,7 +164,7 @@ impl Callbacks for DecodeCallbacks {
 }
 
 fn production(tcx: TyCtxt<'_>, owner: DefId) -> bool {
-    if !types::checked(tcx, owner)
+    if tcx.is_automatically_derived(tcx.parent(owner)) || !types::checked(tcx, owner)
         || !matches!(
             tcx.def_kind(owner),
             rustc_hir::def::DefKind::Fn

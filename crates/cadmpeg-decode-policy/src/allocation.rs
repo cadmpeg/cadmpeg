@@ -42,6 +42,21 @@ impl<'tcx> Analysis<'_, 'tcx> {
         format.shape
     }
 
+    fn symbolic_storage(&mut self, operands: &[&'tcx Expr<'tcx>], name: &str) -> bool {
+        if !matches!(name, "try_reserve_exact" | "reserve_exact") { return false; }
+        let Some(receiver) = operands.first() else { return false; };
+        let ty::Adt(owner, arguments) = self.expr_ty(receiver).peel_refs().kind() else { return false; };
+        if !types::standard(self.tcx, owner.did()) || self.tcx.item_name(owner.did()).as_str() != "Vec" { return false; }
+        let Some(element) = arguments.types().next() else { return false; };
+        let Some(mut terms) = operands.get(1).and_then(|count| self.extent_terms(count, &mut Vec::new())) else { return false; };
+        for term in &mut terms { term.factors.push(format!("size:{element}")); term.factors.sort(); }
+        if terms.iter().all(|term| self.flow.storage_extents.contains(term)) {
+            for term in terms { if let Some(index) = self.flow.storage_extents.iter().position(|credit| credit == &term) { self.flow.storage_extents.remove(index); } }
+            return true;
+        }
+        false
+    }
+
     pub(crate) fn allocation(&mut self, expression: &'tcx Expr<'tcx>) {
         let Some((definition, operands)) = self.call(expression) else {
             return;
@@ -102,6 +117,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
             return;
         }
         if allocation == Some(external::Allocation::Growth) {
+            if self.symbolic_storage(&operands, name) { return; }
             if let Some(receiver) = operands.first() {
                 let shape = types::heap(
                     self.tcx,

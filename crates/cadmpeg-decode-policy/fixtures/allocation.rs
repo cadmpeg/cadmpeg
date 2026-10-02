@@ -5,7 +5,7 @@ pub enum Kind {
     A,
     B,
 }
-#[derive(Clone)] // finding: uncharged_decode_allocation
+#[derive(Clone)]
 pub struct Owned {
     pub text: String,
 }
@@ -29,7 +29,7 @@ pub fn decode(
 ) {
     let _ctx = ctx;
     let _text = text.to_string(); // finding: uncharged_decode_allocation
-    let _owned = owned.clone();
+    let _owned = owned.clone(); // finding: uncharged_decode_allocation
     let _formatted = format!("value: {text}"); // finding: uncharged_decode_allocation
     let _fixed = number.to_string();
     let _enum = kind.clone();
