@@ -283,7 +283,7 @@ pub(in crate::decode) fn orient_nonperiodic_nurbs_edge_carrier(
         let CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)) = geometry else {
             return Ok(None);
         };
-        require_some!(reverse_nonperiodic_nurbs(nurbs, intrinsic_range));
+        require_some!(nurbs.reverse_parameterization_in_range(ctx, intrinsic_range[0], intrinsic_range[1])?);
         let [Some(first), Some(second)] = [first, second].map(FiniteReal::new) else {
             return Ok(None);
         };
@@ -313,18 +313,11 @@ pub(in crate::decode) fn orient_nonperiodic_nurbs_edge_carrier(
             let CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)) = geometry else {
                 return Ok(None);
             };
-            require_some!(reverse_nonperiodic_nurbs(nurbs, intrinsic_range));
+            require_some!(nurbs.reverse_parameterization_in_range(ctx, intrinsic_range[0], intrinsic_range[1])?);
             Some(range)
         }
         _ => None,
     })
-}
-
-/// Reverse a curve over `[start, end]`: the reversed parameterization with
-/// each knot reflected about the range. A knot whose reflection overflows
-/// leaves the curve unchanged.
-fn reverse_nonperiodic_nurbs(nurbs: &mut NurbsCurve, [start, end]: [FiniteReal; 2]) -> Option<()> {
-    nurbs.reverse_parameterization_in_range(start, end)
 }
 
 pub(in crate::decode) fn full_periodic_nurbs_edge_parameter_range(
@@ -759,7 +752,6 @@ mod native_parameter_tests;
 
 #[cfg(test)]
 mod tests {
-    use super::reverse_nonperiodic_nurbs;
     use cadmpeg_ir::geometry::nurbs::NurbsCurve;
     use cadmpeg_ir::math::Point3;
 
@@ -776,7 +768,7 @@ mod tests {
         let mut reversed = original.clone();
 
         let range = [cadmpeg_ir::scalar::FiniteReal::new(f64::MAX).expect("finite range"); 2];
-        assert!(reverse_nonperiodic_nurbs(&mut reversed, range).is_none());
+        assert!(reversed.reverse_parameterization_in_range(&cadmpeg_test_support::service_decode_context(), range[0], range[1]).expect("range reversal admission").is_none());
         assert_eq!(reversed, original);
     }
 }

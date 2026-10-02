@@ -870,7 +870,7 @@ pub(super) fn oriented_sketch_nurbs_curve(
         return Ok(None);
     };
     Ok(nurbs
-        .reverse_parameterization_in_range(lower, upper)
+        .reverse_parameterization_in_range(ctx, lower, upper)?
         .map(|()| nurbs))
 }
 
