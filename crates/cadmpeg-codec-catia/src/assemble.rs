@@ -94,6 +94,7 @@ pub(crate) fn neutral_model_is_admissible(
 ) -> Result<bool, cadmpeg_core::CodecError> {
     ir.model.finalize(ctx)?;
     Ok(cadmpeg_ir::admit_with_additional_native_identities(
+        ctx,
         ir,
         pending_unknowns.iter().map(|record| record.id().as_str()),
         cadmpeg_ir::CATIA_ADMISSION_CHECKS,
