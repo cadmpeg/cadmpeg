@@ -1,10 +1,33 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Homogeneous sums and quotient derivatives with an extended exponent range.
+use super::decode;
 use crate::features::FinitePoint3;
 use crate::geometry::nurbs::scratch;
 use crate::math::sum::{product_sum, ExactSignedSum, ProductSum, ScaledValue};
 use crate::scalar::FiniteReal;
 use cadmpeg_core::decode::ResourceLimit;
+
+/// Cloneable pole traversal. Admission precedes each input-dependent advance.
+#[derive(Clone)]
+struct SumTerms<'scratch, 'ctx, 'arena, I> {
+    terms: I,
+    scratch: &'scratch decode::Scratch<'ctx, 'arena>,
+    input_sized: bool,
+}
+
+impl<I: Iterator> Iterator for SumTerms<'_, '_, '_, I> {
+    type Item = I::Item;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.terms.size_hint().1 == Some(0) {
+            return None;
+        }
+        if self.input_sized {
+            self.scratch.work(1, "IR homogeneous pole traversal")?;
+        }
+        self.terms.next()
+    }
+}
 
 #[derive(Clone, Copy)]
 pub(super) struct Homogeneous {
@@ -14,8 +37,11 @@ pub(super) struct Homogeneous {
 
 impl Homogeneous {
     pub(super) fn sum(
+        scratch: &decode::Scratch<'_, '_>,
         terms: impl Iterator<Item = Option<([f64; 2], f64, FinitePoint3)>> + Clone,
-    ) -> Option<Self> {
+    ) -> Result<Option<Self>, ResourceLimit> {
+        let input_sized = terms.size_hint().1.is_none_or(|count| count > 2);
+        let terms = SumTerms { terms, scratch, input_sized };
         let mut values = [None; 4];
         for (axis, value) in values.iter_mut().enumerate() {
             let sum = product_sum(terms.clone().map(|term| {
@@ -27,10 +53,11 @@ impl Homogeneous {
                     [point.x, point.y, point.z, 1.0][axis],
                 ])
             }));
+            scratch.unless_refused()?;
             // `values` carries the same exact zero that `ExactSignedSum::finish`
             // and `add_scaled_product` state as `None`.
             *value = match sum {
-                ProductSum::Undefined => return None,
+                ProductSum::Undefined => return Ok(None),
                 ProductSum::Zero => None,
                 ProductSum::Value(value) => Some(value),
             };
@@ -38,7 +65,9 @@ impl Homogeneous {
         let mut constant = [None; 3];
         let mut first = true;
         for term in terms {
-            let (basis, weight, point) = term?;
+            let Some((basis, weight, point)) = term else {
+                return Ok(None);
+            };
             if basis.contains(&0.0) || weight == 0.0 {
                 continue;
             }
@@ -51,7 +80,8 @@ impl Homogeneous {
             }
             first = false;
         }
-        Some(Self { values, constant })
+        scratch.unless_refused()?;
+        Ok(Some(Self { values, constant }))
     }
 
     /// Keep source weights when they remain normal. Otherwise choose one
@@ -171,3 +201,6 @@ pub(super) fn finite_lanes<const N: usize>(
     }
     Ok(coordinates)
 }
+
+#[cfg(test)]
+mod tests;
