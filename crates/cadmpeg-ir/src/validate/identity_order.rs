@@ -84,18 +84,15 @@ macro_rules! define_model_identity_checks {
 crate::document::arena_registry!(define_model_identity_checks);
 
 /// Check model and native identities and preserve arena-ordered findings.
-pub(super) fn check_identity_and_order(ctx: &DecodeContext<'_>, ir: &CadIr, findings: &mut Vec<Finding>) -> Result<(), CodecError> {
+pub(super) fn check_identity_and_order(ctx: &DecodeContext<'_>, view: crate::native::view::NativeView<'_>, findings: &mut Vec<Finding>) -> Result<(), CodecError> {
     let mut seen = (HashSet::new(), ctx.reserve_scoped(0, "validation identity storage")?);
-    check_model_identity_and_order(ctx, ir, &mut seen, findings)?;
+    check_model_identity_and_order(ctx, view.ir, &mut seen, findings)?;
     let mut by_arena: (BTreeMap<String, Vec<&str>>, _) = (BTreeMap::new(), ctx.reserve_scoped(0, "validation native order storage")?);
-    for (format, namespace) in &ir.native.0 {
-        ctx.charge_work(1, "validation native namespace scan")?;
-        for (arena, records) in namespace.arenas() {
-            ctx.charge_work(1, "validation native arena scan")?;
-            for record in records {
+    view.visit(|work| ctx.charge_work(u64_from_index(work), "validation native arena scan"), |format, arena, records| {
+            for record in records.records() {
                 push_identity(ctx, &mut seen, findings, record.id())?;
             }
-            if records.is_empty() { continue; }
+            if records.len() == 0 { return Ok(()); }
             by_arena.1.with_storage(|| {
                 let label = ctx.format_retained(format_args!("native.{format}.{arena}"), "validation native arena name")?;
                 let work = label.len().checked_add(1)
@@ -109,32 +106,18 @@ pub(super) fn check_identity_and_order(ctx: &DecodeContext<'_>, ir: &CadIr, find
                         entry.insert(Vec::new())
                     }
                 };
-                for record in records {
+                for record in records.records() {
                     ctx.charge_work(1, "validation native order scan")?;
                     ctx.push_retained_vec(ids, record.id(), "validation native order slots")?;
                 }
                 Ok::<_, CodecError>(())
             })?;
-        }
-    }
+        Ok(())
+    })?;
     for (arena, ids) in &by_arena.0 {
         check_order(ctx, arena, ids.iter().copied(), findings)?;
     }
     Ok(())
-}
-
-pub(super) fn collect_native_ids(ir: &CadIr) -> Vec<(String, &str)> {
-    ir.native
-        .0
-        .iter()
-        .flat_map(|(format, namespace)| {
-            namespace.arenas().iter().flat_map(move |(arena, records)| {
-                records
-                    .iter()
-                    .map(move |record| (format!("native.{format}.{arena}"), record.id()))
-            })
-        })
-        .collect()
 }
 
 #[cfg(test)]

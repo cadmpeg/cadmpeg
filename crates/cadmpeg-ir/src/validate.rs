@@ -29,6 +29,7 @@ pub(crate) mod evaluation_cycles;
 mod geometry_consistency;
 mod geometry_payloads;
 mod identity_order;
+mod identities;
 mod pmi;
 mod presentation;
 mod products;
@@ -143,6 +144,30 @@ pub fn entity_census(ir: &CadIr) -> BTreeMap<CensusKey, usize> {
     crate::document::entity_census(ir)
 }
 
+macro_rules! define_validation_census {
+    ($( $field:ident: $element:ty, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?; )*) => {
+        fn validation_census(ctx: &DecodeContext<'_>, view: crate::native::view::NativeView<'_>) -> Result<BTreeMap<CensusKey, usize>, CodecError> {
+            let mut counts = BTreeMap::new();
+            $(ctx.insert_btree_map(&mut counts, CensusKey::model(crate::document::ArenaName::registered(stringify!($field))), view.ir.model.$field.len(), "validation model census slots")?;)*
+            ctx.charge_work(cadmpeg_core::decode::u64_from_index(view.ir.model.surfaces.len()), "validation surface census scan")?;
+            let unknown_surfaces = view.ir.model.surfaces.iter().filter(|surface| matches!(surface.geometry,
+                crate::geometry::SurfaceGeometry::Solved(crate::geometry::SolvedSurfaceGeometry::Unknown { .. }))).count();
+            ctx.insert_btree_map(&mut counts, CensusKey::surfaces_unknown_geometry(), unknown_surfaces, "validation surface census slot")?;
+            view.visit(|work| ctx.charge_work(cadmpeg_core::decode::u64_from_index(work), "validation native census scan"), |format, arena, records| {
+                if records.len() == 0 { return Ok(()); }
+                let key = ctx.format_retained(format_args!("native.{format}.{arena}"), "validation native census key")?;
+                let work = key.len().checked_add(1).and_then(|bytes| counts.len().checked_add(1).and_then(|count| bytes.checked_mul(count)))
+                    .ok_or_else(|| ctx.refuse_codec_limit("validation census key comparisons", u64::MAX - 1, u64::MAX))?;
+                ctx.charge_work(cadmpeg_core::decode::u64_from_index(work), "validation census key comparisons")?;
+                ctx.insert_btree_map(&mut counts, CensusKey::from_wire(key), records.len(), "validation native census slots")?;
+                Ok(())
+            })?;
+            Ok(counts)
+        }
+    };
+}
+crate::document::arena_registry!(define_validation_census);
+
 /// Validate `ir` and copy `losses` into the returned report unchanged.
 fn validate_model(ctx: &DecodeContext<'_>, ir: &CadIr, losses: Vec<LossNote>) -> Result<ValidationReport, CodecError> {
     let index = crate::index::ModelIndex::new_for_decode(ir, ctx)?;
@@ -161,7 +186,7 @@ fn validate_model_with_index(
 
     // The identity walk enumerates every entity id in the product document;
     // native links resolve against that set.
-    check_identity_and_order(ctx, ir, &mut findings)?;
+    check_identity_and_order(ctx, ids.native_view(), &mut findings)?;
     check_tolerances(ir, &mut findings);
     check_references(ctx, ir, ids, &mut findings)?;
     check_evaluation_cycles(ctx, ir, ids, &mut findings)?;
@@ -169,8 +194,8 @@ fn validate_model_with_index(
     check_coedge_pairing(ir, &mut findings);
     check_shell_connectivity(ir, &mut findings);
     check_wire_topology(ir, &mut findings);
-    check_carrier_reachability(ir, &mut findings);
-    check_native_links(ir, ids, &mut findings);
+    check_carrier_reachability(ctx, ids.native_view(), &mut findings)?;
+    check_native_links(ctx, ids.native_view(), ids, &mut findings)?;
     check_parameter_domains(ir, &mut findings);
     check_edge_endpoint_consistency(ir, &mut findings)?;
     check_pcurve_surface_consistency(ctx, ir, &mut findings)?;
@@ -186,7 +211,7 @@ fn validate_model_with_index(
     check_typed_references(ir, ids, &mut findings);
 
     Ok(ValidationReport {
-        entity_counts: entity_census(ir),
+        entity_counts: validation_census(ctx, ids.native_view())?,
         findings,
         losses,
     })
@@ -205,17 +230,17 @@ fn standalone_validation(
 
 fn validate_annotations<'a>(
     ctx: &DecodeContext<'_>,
-    ir: &'a CadIr,
     ids: &crate::index::ModelIndex<'a>,
     annotations: &crate::annotations::Annotations,
     additional: impl IntoIterator<Item = &'a str>,
     findings: &mut Vec<Finding>,
 ) -> Result<(), CodecError> {
-    let all_ids = ctx.with_scoped_storage("annotation identity storage", || {
-        ctx.collect_string_set(ids.identities().chain(additional), "annotation identities")
+    let all_ids = identities::BorrowedIdentities::build(ctx, |add| {
+        for id in ids.identities().chain(additional) { add(id)?; }
+        Ok(())
     })?;
-    check_annotations(ir, annotations, &all_ids.0, findings);
-    ctx.charge_work(0, "IR annotation validation")
+    check_annotations(ctx, ids.native_view(), annotations, &all_ids, findings)
+
 }
 
 fn validate_model_with_annotations(
@@ -226,7 +251,7 @@ fn validate_model_with_annotations(
 ) -> Result<ValidationReport, CodecError> {
     let index = crate::index::ModelIndex::new_for_decode(ir, ctx)?;
     let mut report = validate_model_with_index(ctx, ir, losses, &index)?;
-    validate_annotations(ctx, ir, &index, annotations, std::iter::empty(), &mut report.findings)?;
+    validate_annotations(ctx, &index, annotations, std::iter::empty(), &mut report.findings)?;
     Ok(report)
 }
 
@@ -265,7 +290,7 @@ pub fn validate_neutral_with_source_fidelity(
     standalone_validation(|ctx| {
         let index = crate::index::ModelIndex::new_for_decode(ir, ctx)?;
         let mut report = validate_model_with_index(ctx, ir, losses, &index)?;
-        validate_annotations(ctx, ir, &index, &source_fidelity.annotations,
+        validate_annotations(ctx, &index, &source_fidelity.annotations,
             source_fidelity.retained_records().keys().map(|id| id.as_str()),
             &mut report.findings)?;
         Ok(report)

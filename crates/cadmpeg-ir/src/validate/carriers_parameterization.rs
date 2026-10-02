@@ -35,7 +35,8 @@ fn collect_law_curves<'a, R, V, P>(
     }
 }
 
-pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>) {
+pub(super) fn check_carrier_reachability(ctx: &cadmpeg_core::decode::DecodeContext<'_>, view: crate::native::view::NativeView<'_>, findings: &mut Vec<Finding>) -> Result<(), cadmpeg_core::CodecError> {
+    let ir = view.ir;
     let mut surfaces = ir
         .model
         .faces
@@ -795,26 +796,24 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
     }
     // NativeLinks reports malformed link fields. Read each source link here so
     // one malformed record cannot erase reachability from the other records.
-    let mut native_links = Vec::new();
-    for record in ir
-        .native
-        .0
-        .values()
-        .filter_map(|namespace| namespace.arenas().get("unknowns"))
-        .flatten()
-    {
-        if let Some(serde_json::Value::Array(links)) = record.fields().get("links") {
-            for link in links {
-                if let serde_json::Value::String(link) = link {
-                    native_links.push(link);
+    let mut native_storage = ctx.reserve_scoped(0, "carrier native identity storage")?;
+    view.visit(|work| ctx.charge_work(cadmpeg_core::decode::u64_from_index(work), "carrier native arena scan"), |_, arena, records| {
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(arena.len()), "carrier native arena comparison")?;
+        if arena == "unknowns" {
+            for record in records.records() {
+                for link in record.links(ctx)? {
+                    let link = link?;
+                    ctx.charge_work(cadmpeg_core::decode::u64_from_index(link.len()), "carrier native link hash")?;
+                    native_storage.with_storage(|| {
+                        ctx.insert_hash_set(&mut surfaces, link, "carrier native surface slots")?;
+                        ctx.insert_hash_set(&mut curves, link, "carrier native curve slots")?;
+                        Ok::<_, cadmpeg_core::CodecError>(())
+                    })?;
                 }
             }
         }
-    }
-    for link in &native_links {
-        surfaces.insert(link.as_str());
-        curves.insert(link.as_str());
-    }
+        Ok(())
+    })?;
     let composite_segments = ir
         .model
         .curves
@@ -867,13 +866,9 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
                 .map(|entity| ("point", entity.id.as_str())),
         )
     {
-        findings.push(Finding {
-            check: Check::CarrierReachability,
-            severity: Severity::Error,
-            message: format!("orphan {kind} carrier"),
-            entity: Some(id.into()),
-        });
+        super::record_finding(ctx, findings, Check::CarrierReachability, Severity::Error, id, format_args!("orphan {kind} carrier"))?;
     }
+    Ok(())
 }
 
 pub(super) fn check_parameter_domains(ir: &CadIr, findings: &mut Vec<Finding>) {

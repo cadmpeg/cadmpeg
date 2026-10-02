@@ -17,6 +17,7 @@ mod canon;
 mod copy;
 pub mod catalogue;
 mod replay;
+pub(crate) mod view;
 
 #[cfg(test)]
 thread_local! {

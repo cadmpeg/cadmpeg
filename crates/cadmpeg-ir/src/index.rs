@@ -355,24 +355,25 @@ macro_rules! define_model_index {
             identities: HashMap<&'a str, ()>,
             include_native: bool,
             additional_native_identities: Vec<&'a str>,
+            native_unknowns: Option<(&'a str, &'a [crate::unknown::UnknownRecord])>,
         }
 
         impl<'a> ModelIndex<'a> {
             /// Build all decode lookups under a live temporary reservation.
             pub fn new_for_decode<'ctx>(ir: &'a CadIr, ctx: &'ctx DecodeContext<'_>) -> Result<DecodeModelIndex<'ctx, 'a>, ResourceLimit> {
-                Self::new_with_sources_for_decode(ir, true, std::iter::empty(), ctx)
+                Self::new_with_sources_for_decode(ir, true, std::iter::empty(), None, ctx)
             }
 
             /// Build model-only decode lookups under a live temporary reservation.
             pub fn new_model_only_for_decode<'ctx>(ir: &'a CadIr, ctx: &'ctx DecodeContext<'_>) -> Result<DecodeModelIndex<'ctx, 'a>, ResourceLimit> {
-                Self::new_with_sources_for_decode(ir, false, std::iter::empty(), ctx)
+                Self::new_with_sources_for_decode(ir, false, std::iter::empty(), None, ctx)
             }
 
-            fn new_with_sources_for_decode<'ctx>(ir: &'a CadIr, include_native: bool, additional: impl IntoIterator<Item = &'a str>, ctx: &'ctx DecodeContext<'_>) -> Result<DecodeModelIndex<'ctx, 'a>, ResourceLimit> {
+            fn new_with_sources_for_decode<'ctx>(ir: &'a CadIr, include_native: bool, additional: impl IntoIterator<Item = &'a str>, native_unknowns: Option<(&'a str, &'a [crate::unknown::UnknownRecord])>, ctx: &'ctx DecodeContext<'_>) -> Result<DecodeModelIndex<'ctx, 'a>, ResourceLimit> {
                 let mut reservation = ctx.reserve_scoped_limit(0, "model lookup storage")?;
                 let index = reservation.with_storage_limit(|| {
                     let storage = DecodeStorage(ctx);
-                    let mut index = Self::with_identity_sources(ir, include_native, additional, &storage)?;
+                    let mut index = Self::with_identity_sources(ir, include_native, additional, native_unknowns, &storage)?;
                     $(index.$lookup = OnceLock::from(build_identity_index(&ir.model.$lookup, &storage)?);)*
                     Ok::<_, ResourceLimit>(index)
                 })?;
@@ -381,7 +382,7 @@ macro_rules! define_model_index {
 
             /// Builds lazy typed lookups and a borrowed identity universe.
             pub fn new(ir: &'a CadIr) -> Self {
-                public_result(Self::with_identity_sources(ir, true, std::iter::empty(), &PublicStorage))
+                public_result(Self::with_identity_sources(ir, true, std::iter::empty(), None, &PublicStorage))
             }
 
             /// Builds typed model lookups without indexing the native namespaces.
@@ -391,7 +392,7 @@ macro_rules! define_model_index {
             /// adds work without changing any lookup result and is especially
             /// costly for codecs that retain a large native namespace.
             pub fn new_model_only(ir: &'a CadIr) -> Self {
-                public_result(Self::with_identity_sources(ir, false, std::iter::empty(), &PublicStorage))
+                public_result(Self::with_identity_sources(ir, false, std::iter::empty(), None, &PublicStorage))
             }
 
             /// Build scoped decode lookups with native identities staged outside the document.
@@ -400,13 +401,28 @@ macro_rules! define_model_index {
                 additional: impl IntoIterator<Item = &'a str>,
                 ctx: &'ctx DecodeContext<'_>,
             ) -> Result<DecodeModelIndex<'ctx, 'a>, ResourceLimit> {
-                Self::new_with_sources_for_decode(ir, true, additional, ctx)
+                Self::new_with_sources_for_decode(ir, true, additional, None, ctx)
+            }
+
+            /// Build scoped lookups with one native unknown arena replaced by borrowed source facts.
+            pub(crate) fn with_native_unknowns<'ctx>(
+                ir: &'a CadIr,
+                format: &'a str,
+                records: &'a [crate::unknown::UnknownRecord],
+                ctx: &'ctx DecodeContext<'_>,
+            ) -> Result<DecodeModelIndex<'ctx, 'a>, ResourceLimit> {
+                Self::new_with_sources_for_decode(ir, true, std::iter::empty(), Some((format, records)), ctx)
+            }
+
+            pub(crate) fn native_view(&self) -> crate::native::view::NativeView<'a> {
+                crate::native::view::NativeView::new(self.ir, self.native_unknowns)
             }
 
             fn with_identity_sources<S: IndexStorage>(
                 ir: &'a CadIr,
                 include_native: bool,
                 additional: impl IntoIterator<Item = &'a str>,
+                native_unknowns: Option<(&'a str, &'a [crate::unknown::UnknownRecord])>,
                 storage: &S,
             ) -> Result<Self, S::Error> {
                 let mut procedural_surface_by_surface =
@@ -466,6 +482,7 @@ macro_rules! define_model_index {
                     identities: HashMap::new(),
                     include_native,
                     additional_native_identities,
+                    native_unknowns,
                 };
                 index.identities = index.build_identity_set(storage)?;
                 Ok(index)
@@ -476,15 +493,24 @@ macro_rules! define_model_index {
             }
 
             fn build_identity_set<S: IndexStorage>(&self, storage: &S) -> Result<HashMap<&'a str, ()>, S::Error> {
-                let native_count = if self.include_native { self.ir.native.0.values().flat_map(|namespace| namespace.arenas().values().flatten()).count() } else { 0 };
+                let mut native_count = 0;
+                if self.include_native {
+                    self.native_view().visit(|count| storage.work(count, "model native arena scan"), |_, _, records| {
+                        native_count += records.len();
+                        Ok(())
+                    })?;
+                }
                 let count = self.ir.model.entity_count() + native_count + self.additional_native_identities.len();
                 let mut identities = storage.map(count, "model identity universe slots")?;
                 $(for entity in &self.ir.model.$field { storage.work(entity.identity().len(), "model identity universe scan")?; identities.insert(entity.identity(), ()); })*
                 if self.include_native {
-                    for record in self.ir.native.0.values().flat_map(|namespace| namespace.arenas().values().flatten()) {
-                        storage.work(record.id().len(), "model native identity scan")?;
-                        identities.insert(record.id(), ());
-                    }
+                    self.native_view().visit(|count| storage.work(count, "model native arena scan"), |_, _, records| {
+                        for record in records.records() {
+                            storage.work(record.id().len(), "model native identity scan")?;
+                            identities.insert(record.id(), ());
+                        }
+                        Ok(())
+                    })?;
                     for identity in &self.additional_native_identities { storage.work(identity.len(), "model additional identity scan")?; identities.insert(*identity, ()); }
                 }
                 Ok(identities)

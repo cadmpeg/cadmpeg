@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 
-use super::annotated_entity_json;
+use super::check_annotations;
 use crate::report::check::Check;
 use crate::validate::validate_neutral;
 use crate::{examples::unit_cube, NativeNamespace, NativeRecord};
 use serde_json::{Map, Value};
-use std::collections::HashSet;
+
 
 #[test]
 fn model_entity_wins_when_native_id_collides() {
@@ -22,9 +22,16 @@ fn model_entity_wins_when_native_id_collides() {
         .expect("valid native identity")],
     );
     ir.native.0.insert("collision".into(), namespace);
-    let entities = annotated_entity_json(&ir, &HashSet::from([id.as_str()]));
-    assert!(entities[&id].get("position").is_some());
-    assert!(entities[&id].get("native_only").is_none());
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let all_ids = super::BorrowedIdentities::build(&ctx, |add| add(id.as_str())).unwrap();
+    let mut builder = crate::AnnotationBuilder::new();
+    builder.derived(&id, "position").unwrap();
+    builder.derived(&id, "native_only").unwrap();
+    let mut findings = Vec::new();
+    check_annotations(&ctx, crate::native::view::NativeView::new(&ir, None), &builder.build(), &all_ids, &mut findings).unwrap();
+    assert!(!findings.iter().any(|finding| finding.message.contains("`position`")));
+    assert!(findings.iter().any(|finding| finding.message.contains("`native_only`")));
+
 }
 
 #[test]
