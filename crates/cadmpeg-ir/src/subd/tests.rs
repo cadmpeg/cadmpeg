@@ -45,8 +45,7 @@ fn subd_round_trip_and_directed_ring_validation() {
                 },
             ])
             .unwrap()],
-            Vec::new(),
-        )
+            Vec::new(), &cadmpeg_test_support::service_decode_context()).expect("fixture SubD admission")
         .unwrap(),
     });
     assert!(validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail").is_ok());
@@ -71,8 +70,7 @@ fn subd_round_trip_and_directed_ring_validation() {
         cage.vertices.clone(),
         cage.edges.clone(),
         vec![SubdFace::new(edges).unwrap()],
-        Vec::new()
-    )
+        Vec::new(), &cadmpeg_test_support::service_decode_context()).expect("fixture SubD admission")
     .is_err());
 }
 
@@ -137,8 +135,7 @@ fn radial_symmetry_keeps_maps_at_the_flat_wire_boundary() {
             vec![SubdRadialSymmetryMap {
                 selector: SubdRadialMapSelector::Ef,
                 pairs: vec![[1, 2]],
-            }],
-        )
+            }], &cadmpeg_test_support::service_decode_context()).expect("fixture SubD admission")
         .unwrap(),
         SubdPlaneFrame::new(
             Point3::new(0.0, 0.0, 0.0),
@@ -148,8 +145,7 @@ fn radial_symmetry_keeps_maps_at_the_flat_wire_boundary() {
         .unwrap(),
         Vec::new(),
         Vec::new(),
-        Vec::new(),
-    )
+        Vec::new(), &cadmpeg_test_support::service_decode_context()).expect("fixture SubD admission")
     .unwrap();
     let wire = serde_json::to_value(&symmetry).unwrap();
     assert_eq!(
@@ -236,15 +232,14 @@ fn triangle_cage() -> crate::subd::SubdCage {
                 .collect(),
         )
         .unwrap()],
-        Vec::new(),
-    )
+        Vec::new(), &cadmpeg_test_support::service_decode_context()).expect("fixture SubD admission")
     .unwrap()
 }
 
 fn rejects_cage_wire(wire: serde_json::Value) {
     let parts: super::SubdCageWire = serde_json::from_value(wire.clone()).unwrap();
     assert!(
-        super::SubdCage::new(parts.vertices, parts.edges, parts.faces, parts.symmetries).is_err()
+        super::SubdCage::new(parts.vertices, parts.edges, parts.faces, parts.symmetries, &cadmpeg_test_support::service_decode_context()).expect("fixture SubD admission").is_err()
     );
     assert!(serde_json::from_value::<super::SubdCage>(wire).is_err());
 }
@@ -345,16 +340,15 @@ fn cage_mutation_rejects_invalid_layout_without_changing_the_cage() {
             vertices[0].tag = SubdVertexTag::Corner;
             vertices[1].secondary_grips = Some(super::SubdVertexGripLayout::new(
                 super::SubdGripDirection::North,
-                Vec::new(),
-            )?);
+                Vec::new(), &cadmpeg_test_support::service_decode_context()).expect("fixture SubD admission")?);
             Ok(())
-        })
+        }, &cadmpeg_test_support::service_decode_context()).expect("fixture SubD admission")
         .is_err());
     assert_eq!(cage, original);
     cage.edit_vertices(|vertices| {
         vertices[0].tag = SubdVertexTag::Corner;
         Ok(())
-    })
+    }, &cadmpeg_test_support::service_decode_context()).expect("fixture SubD admission")
     .unwrap();
     assert_eq!(cage.vertices[0].tag, SubdVertexTag::Corner);
 }
@@ -510,7 +504,7 @@ fn grip_layout_admits_cyclic_arity_before_cage_construction() {
         ],
     ] {
         let wire = serde_json::json!({ "direction": "north", "wedges": wedges });
-        assert!(SubdVertexGripLayout::new(SubdGripDirection::North, wedges).is_err());
+        assert!(SubdVertexGripLayout::new(SubdGripDirection::North, wedges, &cadmpeg_test_support::service_decode_context()).expect("fixture SubD admission").is_err());
         assert!(serde_json::from_value::<SubdVertexGripLayout>(wire).is_err());
     }
     for wedges in [
@@ -522,7 +516,7 @@ fn grip_layout_admits_cyclic_arity_before_cage_construction() {
         ],
     ] {
         let wire = serde_json::json!({ "direction": "north", "wedges": wedges });
-        let layout = SubdVertexGripLayout::new(SubdGripDirection::North, wedges).unwrap();
+        let layout = SubdVertexGripLayout::new(SubdGripDirection::North, wedges, &cadmpeg_test_support::service_decode_context()).expect("fixture SubD admission").unwrap();
         assert_eq!(serde_json::to_value(&layout).unwrap(), wire);
         assert_eq!(
             serde_json::from_value::<SubdVertexGripLayout>(wire).unwrap(),
@@ -637,3 +631,5 @@ fn edge_admission_diagnostics_use_caller_storage_and_valid_controls_allocate_not
     let wire = serde_json::to_value(&edge).unwrap();
     assert_eq!(serde_json::from_value::<SubdEdge>(wire).unwrap(), edge);
 }
+
+mod admission;

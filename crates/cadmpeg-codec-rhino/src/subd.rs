@@ -1335,7 +1335,7 @@ fn materialize(
         id,
         scheme: SubdScheme::CatmullClark,
         source_object: None,
-        cage: cadmpeg_ir::subd::SubdCage::new(vertices, edges, faces, Vec::new())
+        cage: cadmpeg_ir::subd::SubdCage::new(vertices, edges, faces, Vec::new(), ctx).map_err(SubdError::from)?
             .map_err(|error| malformed(level.source_offset, error.to_string()))?,
     })
 }
