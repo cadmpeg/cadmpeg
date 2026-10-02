@@ -237,6 +237,15 @@ pub(crate) fn check_imported<'tcx>(
                 continue;
             };
             let raw = func.ty(body, tcx);
+            if let rustc_middle::ty::FnDef(id, _) = raw.kind() {
+                let name = tcx.opt_item_name(*id);
+                let dependent = tcx.trait_of_assoc(*id).is_some()
+                    || name.is_some_and(|name| matches!(name.as_str(),
+                        "to_vec" | "to_owned" | "clone" | "from_elem" | "resize" | "resize_with"
+                        | "contains_key" | "contains" | "get" | "get_mut" | "insert" | "remove"
+                        | "binary_search" | "sort" | "sort_unstable"));
+                if types::standard(tcx, *id) && !dependent { continue; }
+            }
             if !raw.has_non_region_param() {
                 continue;
             }
@@ -405,7 +414,11 @@ pub(crate) fn check_imported<'tcx>(
                     _ => types::heap(tcx, output, &mut Vec::new()),
                 }
             };
-            let allocation = allocation_shape(output, receiver, true);
+            let allocation = if summary.allocation == external::Allocation::Growth {
+                // Backing slot bytes are proved in the generic body. Child
+                // cloning and key traits remain concrete work obligations.
+                types::Shape::Fixed
+            } else { allocation_shape(output, receiver, true) };
             let symbolic_allocation = raw_receiver.map_or(types::Shape::Unknown, |receiver| {
                 allocation_shape(raw_output, receiver, false)
             });

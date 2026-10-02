@@ -55,3 +55,13 @@ pub fn array_collect<T>(values: [T; 4]) -> Vec<T> {
 pub fn minimum<T: Ord>(first: T, second: T) -> T {
     std::cmp::min(first, second)
 }
+
+impl DecodeContext {
+    pub fn charge_retained(&self, _bytes: u64, _operation: &str) -> Result<(), ()> { Ok(()) }
+}
+pub fn reserve<T>(ctx: &DecodeContext, values: &mut Vec<T>, n: usize) -> Result<(), ()> {
+    let bytes = n.checked_mul(std::mem::size_of::<T>()).ok_or(())?;
+    ctx.charge_retained(u64::try_from(bytes).map_err(|_| ())?, "slots")?;
+    values.try_reserve_exact(n).map_err(|_| ())?;
+    Ok(())
+}

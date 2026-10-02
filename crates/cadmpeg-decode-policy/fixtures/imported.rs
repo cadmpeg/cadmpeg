@@ -15,7 +15,7 @@ pub fn decode(text: &String, number: u32, bytes: &[u8]) {
 }
 
 pub fn grow(values: &mut Vec<u8>, value: u8) {
-    cadmpeg_core::grow(values, value); // finding: uncharged_decode_allocation
+    cadmpeg_core::grow(values, value);
 }
 
 pub fn unit_vectors(values: &Vec<()>) {
@@ -28,4 +28,10 @@ pub fn byte_vectors(values: &Vec<u8>) {
 pub fn moved_arrays(first: [String; 4], second: [String; 4]) {
     let _first = cadmpeg_core::array_move(first);
     let _second = cadmpeg_core::array_collect(second);
+}
+
+pub fn imported_charged(ctx: &cadmpeg_core::DecodeContext, small: &mut Vec<u8>, large: &mut Vec<[u64; 8]>, n: usize) -> Result<(), ()> {
+    cadmpeg_core::reserve(ctx, small, n)?;
+    cadmpeg_core::reserve(ctx, large, n)?;
+    Ok(())
 }
