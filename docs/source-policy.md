@@ -95,7 +95,9 @@ named type in source and does not resolve type aliases.
 ## Lint suppressions
 
 `lint_suppression` rejects production `#[allow(...)]` and `#[expect(...)]`,
-including inner attributes and conditional suppressions. Fix the code covered
+including inner attributes and conditional suppressions active in production.
+Suppressions under `cfg_attr(test, ...)` or a flat `all(..., test, ...)`
+predicate apply only to tests and are exempt. Fix the code covered
 by the lint. Test modules and test files retain their suppressions. The one
 exception is the module-level expectation in `cadmpeg-core/src/convert.rs` for
 `as_conversions`, `cast_possible_truncation`, `cast_precision_loss` and

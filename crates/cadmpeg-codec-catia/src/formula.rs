@@ -4060,7 +4060,10 @@ impl FormulaExpressionParser<'_, '_, '_, '_> {
             return false;
         }
         let before_is_identifier = match self.at.checked_sub(1) {
-            Some(before) => self.source.as_bytes().get(before)
+            Some(before) => self
+                .source
+                .as_bytes()
+                .get(before)
                 .is_some_and(|byte| byte.is_ascii_alphanumeric() || *byte == b'_'),
             None => false, // Position zero has no preceding identifier byte.
         };

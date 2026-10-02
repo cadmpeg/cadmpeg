@@ -169,7 +169,9 @@ pub(crate) fn bind_sketch_profiles(
                     && annotations
                         .provenance
                         .get(sketch.id.as_str())
-                        .is_some_and(|source| source.offset > start && end.is_none_or(|end| source.offset < end))
+                        .is_some_and(|source| {
+                            source.offset > start && end.is_none_or(|end| source.offset < end)
+                        })
             });
             let Some(sketch) = enclosed.next() else {
                 continue;

@@ -369,7 +369,8 @@ fn decode_vertex_normals_inner(
                     ctx, &exponents, &mantissae
                 ))?);
             }
-            let mut normals = propagate_resource!(ctx.collection_vec(count, "nx JT decoded vector"));
+            let mut normals =
+                propagate_resource!(ctx.collection_vec(count, "nx JT decoded vector"));
             for ((x, y), z) in components[0].iter().zip(&components[1]).zip(&components[2]) {
                 normals.push([*x, *y, *z]);
             }
@@ -387,7 +388,8 @@ fn decode_vertex_normals_inner(
                 codes.push(values);
             }
             let bits = NormalBits::new(expected_bits)?;
-            let mut normals = propagate_resource!(ctx.collection_vec(count, "nx JT decoded vector"));
+            let mut normals =
+                propagate_resource!(ctx.collection_vec(count, "nx JT decoded vector"));
             for (((sextant, octant), theta), psi) in
                 codes[0].iter().zip(&codes[1]).zip(&codes[2]).zip(&codes[3])
             {

@@ -460,10 +460,12 @@ def integer_limit_default(words: list[str]) -> bool:
     if words[:1] == ["move"]:
         words = words[1:]
     if words[:1] == ["|"]:
-        try:
-            words = words[words.index("|", 1) + 1:]
-        except ValueError:
+        tokens, _, parents = evaluation_tokens(" ".join(words))
+        closing = next((at for at in range(1, len(tokens))
+                        if tokens[at][0] == "|" and at not in parents), None)
+        if closing is None:
             return False
+        words = words[closing + 1:]
         if words[:1] == ["->"]:
             if "{" not in words:
                 return False
@@ -495,7 +497,18 @@ def scan_integer_clamps(path: Path, code: str) -> list[Finding]:
         if opening is None or opening not in pairs:
             continue
         end = pairs[opening]
-        for argument_end in range(opening + 1, end):
+        argument_start = opening + 1
+        if words[argument_start:argument_start + 1] == ["move"]:
+            argument_start += 1
+        if words[argument_start:argument_start + 1] == ["|"]:
+            # Parameter commas, including generic type arguments, stay inside
+            # the closure's two top-level pipes.
+            closing = next((at for at in range(argument_start + 1, end)
+                            if words[at] == "|" and parents.get(at) == opening), None)
+            if closing is None:
+                continue
+            argument_start = closing + 1
+        for argument_end in range(argument_start, end):
             if words[argument_end] == "," and parents.get(argument_end) == opening:
                 end = argument_end
                 break
@@ -568,6 +581,23 @@ def scan_lint_suppressions(path: Path, source: str, code: str) -> list[Finding]:
         end = pairs[opening]
         suppressions = [at for at in range(opening + 1, end)
                         if words[at] in {"allow", "expect"} and words[at + 1:at + 2] == ["("]]
+        production_suppressions = []
+        for suppression in suppressions:
+            ancestor = parents.get(suppression)
+            test_only = False
+            while ancestor is not None and ancestor != opening:
+                if ancestor > 0 and words[ancestor - 1] == "cfg_attr":
+                    condition_end = next((at for at in range(ancestor + 1, pairs[ancestor])
+                                          if words[at] == "," and parents.get(at) == ancestor), None)
+                    if condition_end is not None:
+                        condition = "".join(words[ancestor + 1:condition_end])
+                        if attr_is_test_cfg("#[cfg(" + condition + ")]"):
+                            test_only = True
+                            break
+                ancestor = parents.get(ancestor)
+            if not test_only:
+                production_suppressions.append(suppression)
+        suppressions = production_suppressions
         if not suppressions:
             continue
         allowed = False

@@ -1283,6 +1283,8 @@ class IntegerLimitDefaults(TempSourceCase):
             "value.map_or((::std::primitive::isize::MIN), identity)",
             "value.map_or_else(|(_, error)| { std::u8::MAX }, identity)",
             "value.unwrap_or::<u32>(u32::MAX)",
+            "value.unwrap_or_else(|error: Result<A, B>| u64::MAX)",
+            "value.map_or_else(|(A | B)| u32::MIN, identity)",
         ]
         for expression in expressions:
             with self.subTest(expression=expression):
@@ -1331,6 +1333,10 @@ fn f() {}
 fn g() {}
 """)
         self.assertEqual([f.line for f in self.findings("lint_suppression")], [1, 2, 4])
+        for predicate in ['not(test)', 'any(test, feature = "x")']:
+            self.write("crates/demo/src/lib.rs",
+                       f"#[cfg_attr({predicate}, allow(unused))] fn f() {{}}")
+            self.assertEqual(len(self.findings("lint_suppression")), 1)
 
     def test_only_one_exact_module_conversion_expectation_is_exempt(self) -> None:
         path = "crates/cadmpeg-core/src/convert.rs"
@@ -1352,6 +1358,11 @@ fn g() {}
     def test_comments_literals_and_test_suppressions_are_exempt(self) -> None:
         self.write("crates/demo/src/lib.rs", """// #[allow(unused)]
 fn f() { let s = "#[expect(unused)]"; }
+#![cfg_attr(test, allow(clippy::unwrap_used))]
+#[cfg_attr(all(feature = "x", test), expect(unused))]
+fn g() {}
+#[cfg_attr(feature = "x", cfg_attr(test, allow(unused)))]
+fn h() {}
 #[cfg(test)]
 #[allow(dead_code)]
 mod tests { #![allow(clippy::unwrap_used)] fn f() {} }
