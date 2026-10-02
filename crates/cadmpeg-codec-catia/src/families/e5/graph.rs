@@ -1169,6 +1169,8 @@ fn expand_nurbs_knots_limited(
     multiplicities: &[u32],
     max_control_count: usize,
 ) -> Result<Option<(Vec<FiniteReal>, usize)>, CodecError> {
+    ctx.charge_work(u64_from_index(knots.len()), "catia_e5_knot_order_scan")?;
+    ctx.charge_work(u64_from_index(multiplicities.len()), "catia_e5_multiplicity_scan")?;
     if knots.len() != multiplicities.len()
         || knots.is_empty()
         || knots.windows(2).any(|pair| pair[0] >= pair[1])
@@ -1176,14 +1178,13 @@ fn expand_nurbs_knots_limited(
     {
         return Ok(None);
     }
-    let Some(total) = multiplicities
-        .iter()
-        .try_fold(0usize, |total, multiplicity| {
-            total.checked_add(usize::try_from(*multiplicity).ok()?)
-        })
-    else {
-        return Ok(None);
-    };
+    ctx.charge_work(u64_from_index(multiplicities.len()), "catia_e5_knot_expansion_scan")?;
+    let total = multiplicities.iter().try_fold(0usize, |total, &multiplicity| {
+        let repeats = usize::try_from(multiplicity).map_err(|_|
+            ctx.refuse_codec_limit("catia_e5_pcurve_expanded_knots", u64::MAX - 1, u64::MAX))?;
+        total.checked_add(repeats).ok_or_else(||
+            ctx.refuse_codec_limit("catia_e5_pcurve_expanded_knots", u64::MAX - 1, u64::MAX))
+    })?;
     let Some((degree, control_count)) = usize::try_from(degree)
         .ok()
         .and_then(|degree| Some((degree, total.checked_sub(degree.checked_add(1)?)?)))
@@ -1200,12 +1201,12 @@ fn expand_nurbs_knots_limited(
         return Err(ctx.refuse_codec_limit("catia_e5_pcurve_expanded_knots", u64::MAX, u64::MAX));
     };
     ctx.charge_retained(bytes, "catia_e5_pcurve_expanded_knots")?;
+    ctx.charge_work(u64_from_index(total), "catia_e5_knot_expansion_emit")?;
     let mut expanded = Vec::new();
     ctx.reserve_vec(&mut expanded, total, "catia_e5_pcurve_expanded_knots")?;
     for (knot, multiplicity) in knots.iter().zip(multiplicities) {
-        let Ok(count) = usize::try_from(*multiplicity) else {
-            return Ok(None);
-        };
+        let count = usize::try_from(*multiplicity).map_err(|_|
+            ctx.refuse_codec_limit("catia_e5_pcurve_expanded_knots", u64::MAX - 1, u64::MAX))?;
         expanded.extend(std::iter::repeat_with(|| *knot).take(count));
     }
     Ok((expanded.len() == total).then_some((expanded, control_count)))
@@ -3128,5 +3129,27 @@ mod tests {
         assert!(operations.contains("catia e5 orientation component"));
         assert!(operations.contains("catia e5 orientation member indices"));
         assert!(operations.contains("catia e5 oriented members"));
+    }
+}
+
+#[cfg(test)]
+mod knot_work_tests {
+    #[test]
+    fn e5_knot_expansion_refuses_scan_and_emission_work() {
+        let knots = crate::test_support::test_b5::finite_lane(&[0.0, 1.0]);
+        for (cap, operation) in [(0, "catia_e5_knot_order_scan"),
+            (2, "catia_e5_multiplicity_scan"), (4, "catia_e5_knot_expansion_scan"),
+            (9, "catia_e5_knot_expansion_emit")] {
+            let result = crate::test_support::with_work_limit(cap, |ctx| {
+                super::expand_nurbs_knots_limited(ctx, 1, &knots, &[2, 2], 2)
+            });
+            assert!(matches!(result, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+                if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+                    && limit.operation == operation));
+        }
+        assert_eq!(crate::test_support::with_work_limit(10, |ctx| {
+            super::expand_nurbs_knots_limited(ctx, 1, &knots, &[2, 2], 2)
+        }).expect("scan and emission work"), Some((
+            crate::test_support::test_b5::finite_lane(&[0.0, 0.0, 1.0, 1.0]), 2)));
     }
 }

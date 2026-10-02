@@ -321,7 +321,7 @@ fn parsed_a5_nurbs_curves(data: &[u8]) -> Vec<crate::families::a5a8::records::A5
     })
 }
 
-fn a5_nurbs_curve_stream() -> Vec<u8> {
+pub(super) fn a5_nurbs_curve_stream() -> Vec<u8> {
     let knots = [-2.220_264_955_47_f64, 0.0, 2.220_264_955_47];
     let points = [
         [25.024_609_677_8, 20.779_735_044_5, 13.0],

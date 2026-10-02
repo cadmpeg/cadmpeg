@@ -7,12 +7,11 @@ type A8BSplineOutput = Result<Option<(Vec<f64>, Vec<FiniteVector<2>>)>, cadmpeg_
 
 use super::knot_lane::A8KnotLane;
 use crate::math::distance;
-use crate::nurbs::pole_count;
 use crate::wire::bytes::{compact_int, f64_le, f64_point, read_f64_array, u32_le_24};
 #[cfg(test)]
 use crate::wire::records::{consolidated_records, ConsolidatedPcurve};
 use crate::wire::records::{ConsolidatedFamily, ConsolidatedFrame, ConsolidatedRecord};
-use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::decode::{u64_from_index, DecodeContext, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::{FinitePoint3, FiniteVector3};
 use cadmpeg_ir::geometry::{
@@ -825,6 +824,8 @@ fn parse_a5_nurbs_curve(
         return Ok(None);
     };
     let mut knots = Vec::new();
+    ctx.charge_work(u64_from_index(knot_count), "catia_a5_nurbs_knot_expansion_scan")?;
+    ctx.charge_work(u64_from_index(expanded_count), "catia_a5_nurbs_knot_expansion_emit")?;
     ctx.reserve_vec(&mut knots, expanded_count, "catia_a5_nurbs_expanded_knots")?;
     for (index, knot) in distinct_knots.into_iter().enumerate() {
         let multiplicity = if index == 0 || index + 1 == knot_count {
@@ -2422,23 +2423,30 @@ fn a5_knots(
         distinct.len(),
         "catia_a5_knot_multiplicities",
     )?;
+    ctx.charge_work(u64_from_index(distinct.len()), "catia_a5_multiplicity_emit")?;
     multiplicities.push(endpoint);
     multiplicities.extend(std::iter::repeat_with(|| interior).take(distinct.len() - 2));
     multiplicities.push(endpoint);
-    let Some(count) = pole_count(&multiplicities, degree) else {
+    ctx.charge_work(u64_from_index(multiplicities.len()), "catia_a5_knot_expansion_scan")?;
+    let expanded_count = multiplicities.iter().try_fold(0usize, |sum, &value| {
+        let repeats = usize::try_from(value).map_err(|_|
+            ctx.refuse_codec_limit("catia_a5_expanded_knots", u64::MAX - 1, u64::MAX))?;
+        sum.checked_add(repeats).ok_or_else(||
+            ctx.refuse_codec_limit("catia_a5_expanded_knots", u64::MAX - 1, u64::MAX))
+    })?;
+    let degree = usize::try_from(degree).map_err(|_|
+        ctx.refuse_codec_limit("catia_a5_expanded_knots", u64::MAX - 1, u64::MAX))?;
+    let Some(count) = expanded_count.checked_sub(degree + 1) else {
         return Ok(None);
     };
-    let Some(expanded_count) = multiplicities.iter().try_fold(0usize, |sum, &value| {
-        sum.checked_add(usize::try_from(value).ok()?)
-    }) else {
-        return Ok(None);
-    };
+    let count = u32::try_from(count).map_err(|_|
+        ctx.refuse_codec_limit("catia_a5_expanded_knots", u64::MAX - 1, u64::MAX))?;
+    ctx.charge_work(u64_from_index(expanded_count), "catia_a5_knot_expansion_emit")?;
     let mut knots = Vec::new();
     ctx.reserve_vec(&mut knots, expanded_count, "catia_a5_expanded_knots")?;
     for (&knot, &multiplicity) in distinct.iter().zip(&multiplicities) {
-        let Some(repeats) = usize::try_from(multiplicity).ok() else {
-            return Ok(None);
-        };
+        let repeats = usize::try_from(multiplicity).map_err(|_|
+            ctx.refuse_codec_limit("catia_a5_expanded_knots", u64::MAX - 1, u64::MAX))?;
         knots.extend(std::iter::repeat_with(|| knot).take(repeats));
     }
     Ok(Some((knots, count)))
