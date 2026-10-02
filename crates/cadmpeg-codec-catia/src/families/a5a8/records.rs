@@ -1642,12 +1642,8 @@ fn a8_surface_from_external_grid(
     else {
         return Ok(None);
     };
-    let Some(u_knots) = header.u_knots.expanded(ctx)? else {
-        return Ok(None);
-    };
-    let Some(v_knots) = header.v_knots.expanded(ctx)? else {
-        return Ok(None);
-    };
+    let u_knots = header.u_knots.expanded(ctx)?;
+    let v_knots = header.v_knots.expanded(ctx)?;
     let control_points = grid_rows(ctx, control_points, row_len, "catia_a8_external_pole_rows")?;
     let weights = weights
         .map(|values| grid_rows(ctx, values, row_len, "catia_a8_external_weight_rows"))
@@ -2315,12 +2311,8 @@ fn a8_surface_from_parsed(
     if a8_surface_suffix_start(data, pole_start, end).is_none() {
         return Ok(None);
     }
-    let Some(u_knots) = u_knots.expanded(ctx)? else {
-        return Ok(None);
-    };
-    let Some(v_knots) = v_knots.expanded(ctx)? else {
-        return Ok(None);
-    };
+    let u_knots = u_knots.expanded(ctx)?;
+    let v_knots = v_knots.expanded(ctx)?;
     let control_points = grid_rows(ctx, control_points, v_count, "catia_a8_inline_pole_rows")?;
     let weights = rational
         .then(|| grid_rows(ctx, weights, v_count, "catia_a8_inline_weight_rows"))
