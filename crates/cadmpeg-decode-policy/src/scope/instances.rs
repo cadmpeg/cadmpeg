@@ -123,6 +123,9 @@ impl<'tcx> Visitor<'tcx> for Edges<'_, 'tcx> {
                     let value = Ty::new_closure(self.tcx, id, args);
                     if let Some(value) = self.value(value) {
                         if let ty::Closure(id, args) = value.kind() {
+                            if types::checked(self.tcx, *id) {
+                                self.graph.addresses.insert(key(self.tcx, *id));
+                            }
                             enqueue(self.tcx, self.graph, self.pending, &self.concrete.caller,
                                 Instance::new_raw(*id, args), self.concrete.environment, self.concrete.depth + 1);
                         }

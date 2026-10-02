@@ -40,12 +40,24 @@ def resolve_graph(source):
     return reached, roots
 
 
+def unreachable_bodies(source, reached):
+    rows = set()
+    for line in source.splitlines():
+        fields = line.split("\t")
+        if len(fields) == 7 and fields[0] == "decode_body":
+            if fields[6] == "false" or fields[1] not in reached:
+                rows.add("\t".join(("unreachable_decode_body", *fields[2:6])))
+    return sorted(rows)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--crate", action="append", default=[], help="select a decode crate")
     parser.add_argument("--output", type=Path, help="write sorted TSV findings or external operation inventory")
     parser.add_argument("--external-output", type=Path, help="also save the resolved operation inventory during a findings run")
     parser.add_argument("--list-externals", action="store_true", help="list resolved external operations with allocation and named work costs")
+    parser.add_argument("--list-unreachable", action="store_true", help="list excluded production bodies with path, line, name and reason")
+    parser.add_argument("--unreachable-output", type=Path, help="also save excluded production bodies during a findings run")
     args = parser.parse_args()
     toolchain = tomllib.loads((TOOL / "rust-toolchain.toml").read_text())["toolchain"]
     pin = toolchain["channel"]
@@ -95,6 +107,18 @@ def main():
     scope = target / "decode-scope.txt"
     scope.write_text("".join(name + "\n" for name in sorted(reached)))
     (target / "decode-roots.txt").write_text("".join(name + "\n" for name in sorted(roots.values())))
+    unreachable = unreachable_bodies(graph.stdout, reached)
+    if args.crate:
+        selected = {"crates/" + name + "/" for name in packages}
+        unreachable = [line for line in unreachable if any(line.split("\t")[1].startswith(path) for path in selected)]
+    excluded = "".join(line + "\n" for line in unreachable)
+    if args.unreachable_output:
+        args.unreachable_output.write_text(excluded)
+    if args.list_unreachable:
+        sys.stdout.write(excluded)
+        if args.output:
+            args.output.write_text(excluded)
+        return 0
     del env["CADMPEG_POLICY_GRAPH"]
     env["CADMPEG_POLICY_SCOPE"] = str(scope)
     clean = clean_packages()

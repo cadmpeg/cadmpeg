@@ -2,6 +2,7 @@
 //! Decode roots and resolved production call reachability.
 mod objects;
 mod instances;
+mod listing;
 
 use crate::{flow, types, Analysis, Findings};
 use rustc_hir::intravisit::{walk_expr, Visitor};
@@ -16,10 +17,14 @@ pub(crate) struct Graph {
     edges: BTreeSet<(String, String)>,
     uncertain: BTreeSet<String>,
     addresses: BTreeSet<String>,
+    bodies: BTreeMap<String, listing::Body>,
 }
 
 impl Graph {
     pub(crate) fn print(&self) {
+        for (id, body) in &self.bodies {
+            println!("decode_body\t{id}\t{}\t{}\t{}\t{}\t{}", body.path, body.line, body.name, body.reason, body.eligible);
+        }
         for (root, name) in &self.roots {
             println!("decode_root\t{root}\t{name}");
         }
@@ -31,6 +36,14 @@ impl Graph {
         }
         for callee in &self.addresses {
             println!("decode_address\t{callee}");
+        }
+    }
+
+    pub(crate) fn print_unreachable(&self, reached: &BTreeSet<String>) {
+        for (id, body) in &self.bodies {
+            if !body.eligible || !reached.contains(id) {
+                println!("unreachable_decode_body\t{}\t{}\t{}\t{}", body.path, body.line, body.name, body.reason);
+            }
         }
     }
 
@@ -112,6 +125,9 @@ pub(crate) fn collect<'tcx>(tcx: TyCtxt<'tcx>, owners: &[LocalDefId]) -> Graph {
     let mut graph = Graph::default();
     let mut pending = Vec::new();
     for owner in owners {
+        if let Some(body) = listing::body(tcx, *owner) {
+            graph.bodies.insert(key(tcx, owner.to_def_id()), body);
+        }
         if root(tcx, *owner) {
             if ty::GenericArgs::identity_for_item(tcx, *owner).has_non_region_param() {
                 graph.uncertain.insert(key(tcx, owner.to_def_id()));
@@ -173,6 +189,9 @@ impl<'tcx> Calls<'_, '_, 'tcx> {
     }
 
     fn coercion(&mut self, source: ty::Ty<'tcx>, target: ty::Ty<'tcx>) {
+        if source.has_non_region_param() && !root(self.analysis.tcx, self.analysis.typing_owner) {
+            return;
+        }
         let mut instances = Vec::new();
         if !objects::targets(self.analysis.tcx, self.analysis.typing_env(), source, target, &mut instances) {
             self.graph.uncertain.insert(self.caller.clone());
@@ -196,7 +215,8 @@ impl<'tcx> Calls<'_, '_, 'tcx> {
             return;
         };
         self.edge(definition);
-        if self.analysis.tcx.generics_of(self.analysis.typing_owner).count() != 0 {
+        if self.analysis.tcx.generics_of(self.analysis.typing_owner).count() != 0
+            && !root(self.analysis.tcx, self.analysis.typing_owner) {
             return;
         }
         self.graph.uncertain.insert(self.caller.clone());
@@ -215,6 +235,14 @@ impl<'tcx> Calls<'_, '_, 'tcx> {
 }
 
 impl<'tcx> Visitor<'tcx> for Calls<'_, '_, 'tcx> {
+    fn visit_anon_const(&mut self, constant: &'tcx rustc_hir::AnonConst) {
+        self.edge(constant.def_id.to_def_id());
+    }
+
+    fn visit_inline_const(&mut self, constant: &'tcx rustc_hir::ConstBlock) {
+        self.edge(constant.def_id.to_def_id());
+    }
+
     fn visit_expr(&mut self, expression: &'tcx Expr<'tcx>) {
         if let ExprKind::Path(ref path) = expression.kind {
             if let Res::Def(kind, id) = self.analysis.typeck.qpath_res(path, expression.hir_id) {
@@ -243,7 +271,9 @@ impl<'tcx> Visitor<'tcx> for Calls<'_, '_, 'tcx> {
         }
         let value = self.analysis.expr_ty(expression);
         let reference = match value.peel_refs().kind() {
-            ty::FnDef(id, args) => args.no_bound_vars().map(|args| ty::Instance::new_raw(*id, args)),
+            ty::FnDef(id, args) => args.no_bound_vars().and_then(|args| {
+                ty::Instance::try_resolve(self.analysis.tcx, self.analysis.typing_env(), *id, args).ok().flatten()
+            }),
             ty::Closure(id, args) => Some(ty::Instance::new_raw(*id, args)),
             _ => None,
         };
@@ -254,14 +284,9 @@ impl<'tcx> Visitor<'tcx> for Calls<'_, '_, 'tcx> {
             }
         }
         if !self.direct_callee {
-            let address = match value.peel_refs().kind() {
-                ty::FnDef(id, _) => Some(*id),
-                ty::Closure(id, _) if matches!(self.analysis.expr_ty_adjusted(expression).kind(), ty::FnPtr(..)) => Some(*id),
-                _ => None,
-            };
-            if let Some(id) = address {
-                if types::checked(self.analysis.tcx, id) {
-                    self.graph.addresses.insert(key(self.analysis.tcx, id));
+            if let Some(instance) = reference {
+                if types::checked(self.analysis.tcx, instance.def_id()) {
+                    self.graph.addresses.insert(key(self.analysis.tcx, instance.def_id()));
                 }
             }
         }

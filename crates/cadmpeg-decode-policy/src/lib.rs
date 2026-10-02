@@ -54,6 +54,10 @@ impl Callbacks for DecodeCallbacks {
             return Compilation::Continue;
         }
         let reachable = graph.reachable();
+        if std::env::var_os("CADMPEG_POLICY_UNREACHABLE").is_some() {
+            graph.print_unreachable(&reachable);
+            return Compilation::Continue;
+        }
         owners.retain(|owner| reachable.contains(&scope::key(tcx, owner.to_def_id())));
         let instantiations = instantiation::collect(tcx, &owners);
         let mut bodies = HashMap::new();
