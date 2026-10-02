@@ -25,7 +25,7 @@ fn check_fixture(name: &str) {
     let mut findings = Vec::new();
     for line in actual.lines() {
         let fields: Vec<_> = line.split('\t').collect();
-        if fields.len() == 4 && (if name.starts_with("work") { fields[0] != "uncharged_decode_allocation" } else { fields[0] != "uncharged_decode_work" }) { findings.push((fields[2].parse::<usize>().expect("line number"), fields[0].to_owned())); }
+        if fields.len() == 4 && (if name == "edges" { true } else if name.starts_with("work") { fields[0] != "uncharged_decode_allocation" } else { fields[0] != "uncharged_decode_work" }) { findings.push((fields[2].parse::<usize>().expect("line number"), fields[0].to_owned())); }
     }
     let source = std::fs::read_to_string(path).expect("fixture source");
     let mut expected: Vec<_> = source.lines().enumerate().flat_map(|(index, line)| line.split_once("// finding: ").into_iter().flat_map(move |(_, rules)| rules.split(", ").map(move |rule| (index + 1, rule.trim().to_owned())))).collect();
@@ -58,3 +58,6 @@ fn scan_hash_copy_shapes() { check_fixture("work_operations"); }
 
 #[test]
 fn mutation_and_deferred_scans() { check_fixture("work_flow"); }
+
+#[test]
+fn charge_proof_edges() { check_fixture("edges"); }

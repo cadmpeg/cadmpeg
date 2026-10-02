@@ -13,12 +13,18 @@ impl<'tcx> Analysis<'_, 'tcx> {
             ExprKind::AddrOf(_, _, inner) | ExprKind::DropTemps(inner) => self.fixed_value(inner),
             _ => {
                 let value = self.typeck.expr_ty(expression).peel_refs();
-                types::heap(self.tcx, value, &mut Vec::new()) == Shape::Fixed && match value.kind() {
+                types::heap(self.tcx, value, &mut Vec::new()) == Shape::Fixed && types::work(self.tcx, value, &mut Vec::new()) == Shape::Fixed && match value.kind() {
                     ty::Str | ty::Slice(_) => false,
                     _ => self.tcx.type_is_copy_modulo_regions(TypingEnv::post_analysis(self.tcx, self.owner), value),
                 }
             }
         }
+    }
+
+    pub(crate) fn format_shape(&self, operands: &[&'tcx Expr<'tcx>]) -> Shape {
+        let mut format = FormatShape { analysis: self, shape: Shape::Fixed };
+        for operand in operands { format.visit_expr(operand); }
+        format.shape
     }
 
     pub(crate) fn allocation(&mut self, expression: &'tcx Expr<'tcx>) {
@@ -69,9 +75,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
         let result = types::heap(self.tcx, self.typeck.expr_ty(expression), &mut Vec::new());
         if result == Shape::Fixed { return; }
         if name == "format" && types::standard(self.tcx, definition) {
-            let mut format = FormatShape { analysis: self, shape: Shape::Fixed };
-            for operand in operands { format.visit_expr(operand); }
-            let shape = format.shape;
+            let shape = self.format_shape(&operands);
             self.shape_report(expression, shape, "format!");
             return;
         }
