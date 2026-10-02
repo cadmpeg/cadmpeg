@@ -142,6 +142,8 @@ fn copy_admitted_text_preserves_utf8() {
 fn copy_temporary_slice_refuses_before_allocation_and_clone() {
     #[derive(Debug, Copy)]
     struct ObservedClone<'a>(&'a std::cell::Cell<usize>);
+    // The observer detects any Clone call before allocation admission.
+    #[allow(clippy::expl_impl_clone_on_copy, clippy::non_canonical_clone_impl)]
     impl Clone for ObservedClone<'_> {
         fn clone(&self) -> Self {
             self.0.set(self.0.get() + 1);
