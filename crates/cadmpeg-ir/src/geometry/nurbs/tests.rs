@@ -73,7 +73,7 @@ fn admitted_nurbs_surface_grid_preserves_constructor_wire_and_errors() {
     let axis = || {
         NurbsSurfaceAxis::new(
             1,
-            KnotVector::new(vec![0.0, 0.0, 1.0, 1.0]).expect("finite knots"),
+            KnotVector::new(&cadmpeg_test_support::service_decode_context(), vec![0.0, 0.0, 1.0, 1.0]).expect("fixture knot admission").expect("finite knots"),
             false,
         )
     };
@@ -95,7 +95,7 @@ fn admitted_nurbs_surface_grid_preserves_constructor_wire_and_errors() {
     let short = NurbsSurface::from_admitted_grid(
         NurbsSurfaceAxis::new(
             1,
-            KnotVector::new(vec![0.0, 1.0]).expect("finite knots"),
+            KnotVector::new(&cadmpeg_test_support::service_decode_context(), vec![0.0, 1.0]).expect("fixture knot admission").expect("finite knots"),
             false,
         ),
         axis(),
@@ -129,7 +129,7 @@ fn admitted_nurbs_surface_grid_preserves_constructor_wire_and_errors() {
 
 #[test]
 fn knot_copy_refuses_collection_limit_before_allocation() {
-    let knots = super::KnotVector::new(vec![0.0, 0.0, 1.0, 1.0]).expect("valid knots");
+    let knots = super::KnotVector::new(&cadmpeg_test_support::service_decode_context(), vec![0.0, 0.0, 1.0, 1.0]).expect("fixture knot admission").expect("valid knots");
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
     policy.limits.max_collection_items = 3;
@@ -147,7 +147,7 @@ fn knot_copy_refuses_collection_limit_before_allocation() {
 
 #[test]
 fn knot_copy_refuses_retained_limit_before_allocation() {
-    let knots = super::KnotVector::new(vec![0.0, 0.0, 1.0, 1.0]).expect("valid knots");
+    let knots = super::KnotVector::new(&cadmpeg_test_support::service_decode_context(), vec![0.0, 0.0, 1.0, 1.0]).expect("fixture knot admission").expect("valid knots");
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
     policy.limits.max_retained_bytes = 31;
@@ -165,7 +165,7 @@ fn knot_copy_refuses_retained_limit_before_allocation() {
 
 #[test]
 fn knot_copy_succeeds_under_service_profile() {
-    let knots = super::KnotVector::new(vec![0.0, 0.0, 1.0, 1.0]).expect("valid knots");
+    let knots = super::KnotVector::new(&cadmpeg_test_support::service_decode_context(), vec![0.0, 0.0, 1.0, 1.0]).expect("fixture knot admission").expect("valid knots");
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let policy = cadmpeg_core::decode::DecodePolicy::service();
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
@@ -302,7 +302,7 @@ fn admitted_nurbs_parts_preserve_the_existing_curve_and_surface_wire() {
             .collect::<Vec<_>>()
     };
     let curve = curve();
-    let knots = KnotVector::from_finite_lanes(finite_knots(curve.knots())).unwrap();
+    let knots = KnotVector::from_finite_lanes(&cadmpeg_test_support::service_decode_context(), finite_knots(curve.knots())).expect("fixture knot admission").unwrap();
     let from_parts = NurbsCurve::new(1, knots.clone(), curve.pole_rows().clone(), true).unwrap();
     assert_eq!(from_parts, curve);
     assert_eq!(
@@ -316,19 +316,19 @@ fn admitted_nurbs_parts_preserve_the_existing_curve_and_surface_wire() {
         ))
     );
     assert_eq!(
-        KnotVector::from_finite_lanes(finite_knots(&[0.0, 1.0, 0.5])),
+        KnotVector::from_finite_lanes(&cadmpeg_test_support::service_decode_context(), finite_knots(&[0.0, 1.0, 0.5])).expect("fixture knot admission"),
         Err(NurbsError::Structure("knots must be non-decreasing".into()))
     );
 
     let surface = surface();
     let u = NurbsSurfaceAxis::new(
         1,
-        KnotVector::from_finite_lanes(finite_knots(surface.u_knots())).unwrap(),
+        KnotVector::from_finite_lanes(&cadmpeg_test_support::service_decode_context(), finite_knots(surface.u_knots())).expect("fixture knot admission").unwrap(),
         true,
     );
     let v = NurbsSurfaceAxis::new(
         1,
-        KnotVector::from_finite_lanes(finite_knots(surface.v_knots())).unwrap(),
+        KnotVector::from_finite_lanes(&cadmpeg_test_support::service_decode_context(), finite_knots(surface.v_knots())).expect("fixture knot admission").unwrap(),
         false,
     );
     let from_parts = NurbsSurface::new(u, v, surface.pole_grid().clone(), true).unwrap();
@@ -773,17 +773,17 @@ fn finite_knot_lanes_keep_the_raw_wire_and_order_refusal() {
         .map(FiniteReal::new)
         .collect::<Option<Vec<_>>>()
         .unwrap();
-    let from_finite = KnotVector::from_finite_lanes(admitted).unwrap();
-    let from_raw = KnotVector::new(raw).unwrap();
+    let from_finite = KnotVector::from_finite_lanes(&cadmpeg_test_support::service_decode_context(), admitted).expect("fixture knot admission").unwrap();
+    let from_raw = KnotVector::new(&cadmpeg_test_support::service_decode_context(), raw).expect("fixture knot admission").unwrap();
     assert_eq!(from_finite, from_raw);
     assert_eq!(
         serde_json::to_vec(&from_finite).unwrap(),
         serde_json::to_vec(&from_raw).unwrap()
     );
-    assert!(KnotVector::from_finite_lanes(vec![
+    assert!(KnotVector::from_finite_lanes(&cadmpeg_test_support::service_decode_context(), vec![
         FiniteReal::new(1.0).unwrap(),
         FiniteReal::new(0.0).unwrap(),
-    ])
+    ]).expect("fixture knot admission")
     .is_err());
 }
 
@@ -891,7 +891,7 @@ fn a_bspline_surface_holds_its_admitted_knots_and_poles() {
     ];
     let knots = vec![0.0, 0.0, 1.0, 1.0];
     let surface = BsplineSurface::new(1, 1, knots.clone(), knots.clone(), points.clone()).unwrap();
-    assert_eq!(surface.u_knots, KnotVector::new(knots.clone()).unwrap());
+    assert_eq!(surface.u_knots, KnotVector::new(&cadmpeg_test_support::service_decode_context(), knots.clone()).expect("fixture knot admission").unwrap());
     assert_eq!(
         surface.control_points[1][1],
         FinitePoint3::new(Point3::new(1.0, 1.0, 2.0)).unwrap()
@@ -957,7 +957,7 @@ fn nurbs_stores_hold_admitted_poles_and_take_admitted_lanes() {
     assert_eq!(
         NurbsCurve::from_checked_lanes(
             1,
-            super::KnotVector::new(vec![0.0, 0.0, 1.0, 1.0]).unwrap(),
+            super::KnotVector::new(&cadmpeg_test_support::service_decode_context(), vec![0.0, 0.0, 1.0, 1.0]).expect("fixture knot admission").unwrap(),
             non_finite,
             None,
             false,
@@ -967,7 +967,7 @@ fn nurbs_stores_hold_admitted_poles_and_take_admitted_lanes() {
     assert_eq!(
         NurbsCurve::from_checked_lanes(
             4,
-            super::KnotVector::new(vec![0.0, 0.0, 1.0, 1.0]).unwrap(),
+            super::KnotVector::new(&cadmpeg_test_support::service_decode_context(), vec![0.0, 0.0, 1.0, 1.0]).expect("fixture knot admission").unwrap(),
             vec![Point3::new(f64::NAN, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
             None,
             false,
@@ -1487,4 +1487,73 @@ fn shared_knot_checks_preserve_prefix_order_and_original_refusal() {
             assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit));
         }
     }
+}
+
+#[test]
+fn knot_constructors_share_work_keep_storage_and_preserve_refusal() {
+    use super::{KnotVector, NurbsError};
+    use crate::scalar::FiniteReal;
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 8;
+    policy.limits.max_retained_bytes = 0;
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+    let values = vec![0.0, 0.0, 1.0, 1.0];
+    let storage = values.as_ptr();
+    let knots = KnotVector::new(&ctx, values).expect("two admitted scans").expect("ordered knots");
+    assert_eq!(knots.as_ptr(), storage);
+    let retained = super::admit_knots(&ctx, knots, "").unwrap_or_else(|_| panic!("admitted knots must keep storage without admission"));
+    assert_eq!(retained.as_ptr(), storage);
+    let Err(CodecError::ResourceLimit(limit)) = KnotVector::new(&ctx, vec![0.0; 4]) else {
+        panic!("second construction must use the exhausted account");
+    };
+    assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+    assert_eq!(limit.operation, "IR NURBS knot finiteness");
+    assert_eq!(limit.used, 8);
+    assert_eq!(limit.additional, 4);
+    assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit));
+
+    for (dimension, cap, operation) in [
+        (ResourceDimension::RetainedBytes, 0, "IR finite knot values"),
+        (ResourceDimension::CollectionItems, 0, "IR finite knot values"),
+        (ResourceDimension::WorkUnits, 0, "IR finite knot values"),
+        (ResourceDimension::WorkUnits, 3, "IR finite knot values"),
+        (ResourceDimension::WorkUnits, 4, "IR NURBS knot order"),
+    ] {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        match dimension {
+            ResourceDimension::RetainedBytes => policy.limits.max_retained_bytes = cap,
+            ResourceDimension::CollectionItems => policy.limits.max_collection_items = cap,
+            ResourceDimension::WorkUnits => policy.limits.max_work_units = cap,
+            _ => panic!("test dimension"),
+        }
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+        let Err(CodecError::ResourceLimit(limit)) = KnotVector::from_finite_lanes(&ctx, vec![FiniteReal::ZERO; 4]) else {
+            panic!("finite conversion must refuse admission");
+        };
+        assert_eq!(limit.dimension, dimension);
+        assert_eq!(limit.operation, operation);
+        assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit));
+    }
+
+    let ctx = cadmpeg_test_support::service_decode_context();
+    assert_eq!(KnotVector::new(&ctx, vec![0.0, 2.0, 1.0, f64::NAN]).expect("diagnostic admitted"),
+        Err(NurbsError::Structure("knots contains a non-finite value".into())));
+    assert_eq!(KnotVector::new(&ctx, vec![0.0, 2.0, 1.0]).expect("diagnostic admitted"),
+        Err(NurbsError::Structure("knots must be non-decreasing".into())));
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+    let Err(CodecError::ResourceLimit(limit)) = KnotVector::new(&ctx, vec![f64::NAN]) else {
+        panic!("diagnostic storage refusal must stay outer");
+    };
+    assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
+    assert_eq!(limit.operation, "IR NURBS refusal text");
+    assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit));
 }

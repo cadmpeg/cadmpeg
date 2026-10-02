@@ -950,7 +950,7 @@ fn checked_source_knots_reconstruct_without_scalar_readmission() {
             .as_slice(),
         stored
     );
-    let reconstructed = super::reconstruct_checked_knots(&checked, 3, 6)
+    let reconstructed = super::reconstruct_checked_knots(&cadmpeg_test_support::service_decode_context(), &checked, 3, 6)
         .expect("reconstructed checked knot vector");
     let expected = reconstruct_knots(&stored, 3, 6).expect("raw reference reconstruction");
     assert_eq!(reconstructed.as_slice(), expected.as_slice());
@@ -1807,4 +1807,28 @@ fn numerical_followup_plane_map_retains_finite_extrapolated_controls() {
     assert!(result.is_finite());
     assert!((result / 1.2e308 - 1.).abs() < 16. * f64::EPSILON);
     assert_eq!(super::map_parameter(0.5, [0., 1.], [-1e308, 1e308]), 0.);
+}
+
+#[test]
+fn checked_knot_reconstruction_preserves_the_callers_resource_refusal() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    let knots = (0..7).map(|value| cadmpeg_ir::scalar::FiniteReal::new(f64::from(value)).expect("finite knot")).collect::<Vec<_>>();
+    for dimension in [ResourceDimension::WorkUnits, ResourceDimension::MaterializedBytes, ResourceDimension::CollectionItems, ResourceDimension::RetainedBytes] {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        match dimension {
+            ResourceDimension::WorkUnits => policy.limits.max_work_units = 0,
+            ResourceDimension::MaterializedBytes => policy.limits.max_materialized_bytes = 0,
+            ResourceDimension::CollectionItems => policy.limits.max_collection_items = 0,
+            ResourceDimension::RetainedBytes => policy.limits.max_retained_bytes = 0,
+            _ => panic!("test dimension"),
+        }
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+        let Err(crate::curves::GeometryError::Codec(CodecError::ResourceLimit(limit))) = super::reconstruct_checked_knots(&ctx, &knots, 3, 6) else {
+            panic!("knot reconstruction must retain the caller refusal");
+        };
+        assert_eq!(limit.dimension, dimension);
+        assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit));
+    }
 }

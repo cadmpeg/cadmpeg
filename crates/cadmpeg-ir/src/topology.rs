@@ -1574,7 +1574,7 @@ mod tests {
 
     #[test]
     fn knot_spans_read_finite_intervals_between_knots() {
-        let knots = crate::geometry::nurbs::KnotVector::new(vec![0.0, 0.0, 1.0, 1.0, 2.5, 4.0])
+        let knots = crate::geometry::nurbs::KnotVector::new(&cadmpeg_test_support::service_decode_context(), vec![0.0, 0.0, 1.0, 1.0, 2.5, 4.0]).expect("fixture knot admission")
             .expect("non-decreasing knots");
         assert_eq!(
             knots.span(1, 4).map(super::ParameterInterval::endpoints),

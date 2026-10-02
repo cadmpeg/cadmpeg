@@ -12,7 +12,7 @@ type QuinticJetOutput<const N: usize> =
     Result<Option<(Vec<f64>, Vec<FiniteVector<N>>)>, cadmpeg_core::CodecError>;
 
 use cadmpeg_ir::features::FinitePoint3;
-use cadmpeg_ir::geometry::nurbs::KnotValue;
+use cadmpeg_ir::geometry::nurbs::KnotVector;
 use cadmpeg_ir::geometry::{
     nurbs::{NurbsCurve, NurbsError},
     pcurve::{PcurveGeometry, PcurveNurbs},
@@ -244,7 +244,7 @@ pub(crate) fn reverse_pcurve_geometry(
             poles.reverse();
             note_refusal(
                 ctx,
-                reversed_knots.admit().and_then(|knots| {
+                KnotVector::new(ctx, reversed_knots)?.and_then(|knots| {
                     PcurveNurbs::from_admitted_rows(nurbs.degree(), knots, poles, nurbs.periodic())
                 }),
                 refusal,
@@ -384,7 +384,7 @@ pub(crate) fn reverse_nurbs_curve(
         }
     };
     poles.reverse();
-    let knots = match reverse_knots(ctx, curve.knots(), range)?.admit() {
+    let knots = match KnotVector::new(ctx, reverse_knots(ctx, curve.knots(), range)?)? {
         Ok(knots) => knots,
         Err(error) => return Ok(Err(error)),
     };

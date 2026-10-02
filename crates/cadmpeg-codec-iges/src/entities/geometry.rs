@@ -2446,7 +2446,7 @@ pub(crate) fn project_geometry(
         let domain_end = finite_knots[control_count];
         let mut raw_knots = ctx.collection_vec(finite_knots.len(), "iges NURBS admitted knots")?;
         raw_knots.extend(finite_knots.into_iter().map(FiniteReal::get));
-        let Ok(knots) = KnotVector::new(raw_knots) else {
+        let Ok(knots) = KnotVector::new(ctx, raw_knots)? else {
             super::push_entity_loss(
                 ctx,
                 &mut losses,

@@ -2,7 +2,7 @@
 //! Parameter-space curves, NURBS payloads, and source parameterization.
 
 use super::nurbs::{
-    admit_finite_weight, admit_weight, non_finite_control_point, require_curve_cardinality,
+    admit_finite_weight, admit_knots, admit_weight, non_finite_control_point, require_curve_cardinality,
     require_weight_lane, KnotVector, NurbsCurve, NurbsError, PoleValue, StandardNurbsAdmission,
 };
 use super::{FitTolerance, MAX_GEOMETRY_NESTING};
@@ -1820,7 +1820,7 @@ impl PolarPcurveNurbs {
             ));
         }
         let poles = poles.admit()?;
-        let knots = knots.admit()?;
+        let knots = admit_knots(&StandardNurbsAdmission, knots, "")?;
         Ok(Self {
             degree,
             knots,
@@ -2099,7 +2099,7 @@ impl PcurveNurbs {
             ));
         }
         let poles = poles.admit()?;
-        let knots = knots.admit()?;
+        let knots = admit_knots(&StandardNurbsAdmission, knots, "")?;
         Ok(Self {
             degree,
             knots,

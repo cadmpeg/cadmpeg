@@ -1649,7 +1649,7 @@ fn read_polyline(
     knots.extend_from_slice(&parameters[1..point_count - 1]);
     knots.push(parameters[point_count - 1]);
     knots.push(parameters[point_count - 1]);
-    let knots = cadmpeg_ir::geometry::nurbs::KnotVector::from_finite_lanes(knots)
+    let knots = cadmpeg_ir::geometry::nurbs::KnotVector::from_finite_lanes(ctx, knots)?
         .map_err(|error| GeometryError::malformed(reader.position(), error.to_string()))?;
     NurbsCurve::from_checked_lanes(1, knots, points, None, false)
         .map_err(|error| GeometryError::malformed(reader.position(), error.to_string()))

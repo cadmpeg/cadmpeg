@@ -5321,7 +5321,7 @@ fn default_nurbs_knots(
     if knots.len() != expected {
         return Ok(None);
     }
-    Ok(KnotVector::from_finite_lanes(knots).ok())
+    Ok(KnotVector::from_finite_lanes(ctx, knots)?.ok())
 }
 
 fn nurbs_curve(
@@ -6421,7 +6421,7 @@ fn expand_knots(
         ctx.reserve_vec(&mut knots, count, "step_expanded_nurbs_knots")?;
         knots.extend(std::iter::repeat_with(|| knot).take(count));
     }
-    Ok(KnotVector::from_finite_lanes(knots).ok())
+    Ok(KnotVector::from_finite_lanes(ctx, knots)?.ok())
 }
 
 fn references(value: &Value, ctx: &DecodeContext<'_>) -> Result<Option<Vec<u64>>, CodecError> {

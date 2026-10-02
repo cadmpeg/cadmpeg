@@ -753,7 +753,7 @@ pub(in super::super) fn extruded_nurbs_surface(
     let mut v_knots = Vec::new();
     ctx.reserve_vec(&mut v_knots, 4, "creo extruded NURBS V knots")?;
     v_knots.extend([0.0, 0.0, 1.0, 1.0]);
-    let v_knots = match cadmpeg_ir::geometry::nurbs::KnotValue::admit(v_knots) {
+    let v_knots = match cadmpeg_ir::geometry::nurbs::KnotVector::new(ctx, v_knots)? {
         Ok(knots) => knots,
         Err(error) => {
             refusal.note_checked(

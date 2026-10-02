@@ -3092,7 +3092,7 @@ pub(super) fn project(
             ctx.collection_vec(finite_v_knots.len(), "iges NURBS surface admitted v knots")?;
         raw_v_knots.extend(finite_v_knots.into_iter().map(FiniteReal::get));
         let (Ok(u_knots), Ok(v_knots)) =
-            (KnotVector::new(raw_u_knots), KnotVector::new(raw_v_knots))
+            (KnotVector::new(ctx, raw_u_knots)?, KnotVector::new(ctx, raw_v_knots)?)
         else {
             super::push_entity_loss(
                 ctx,
