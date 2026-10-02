@@ -505,8 +505,8 @@ pub(super) fn emit_edges(
             let owner = curve_id
                 .try_clone_for_decode(admission.context(), "catia_b5_edge_procedural_owner_id")?;
             admission.charge()?;
-            let _attached = ir.model.add_procedural_curve_for_decode(
-                admission.context(),
+            let _attached = ir.model.add_procedural_curve(
+                Some(admission.context()),
                 &owner,
                 procedural,
             )?;

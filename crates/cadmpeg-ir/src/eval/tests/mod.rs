@@ -389,7 +389,7 @@ fn budgeted_model_surface_charges_nurbs_directrix_work() {
         source_object: None,
     });
     ir.model
-        .add_procedural_surface(
+        .add_procedural_surface(None, 
             &surface_id,
             procedural_surface! {
                 id: ProceduralSurfaceId::mint("test:model:entity#budgeted-sweep-construction").expect("valid identity"),
@@ -403,7 +403,7 @@ fn budgeted_model_surface_charges_nurbs_directrix_work() {
                 cache_fit_tolerance: None,
                 record_bounds: None,
             },
-        )
+        ).unwrap()
         .unwrap();
     let index = crate::index::ModelIndex::new(&ir);
     let budget = WorkBudget::new(5);
@@ -1159,7 +1159,7 @@ fn offset_of_reversed_subset_uses_the_local_surface_normal() {
         },
     ];
     ir.model
-        .add_procedural_surface(
+        .add_procedural_surface(None, 
             &subset_id,
             procedural_surface! {
                 id: subset_construction,
@@ -1167,10 +1167,10 @@ fn offset_of_reversed_subset_uses_the_local_surface_normal() {
                 cache_fit_tolerance: None,
                 record_bounds: None,
             },
-        )
+        ).unwrap()
         .expect("subset surface exists and has no procedural construction");
     ir.model
-        .add_procedural_surface(
+        .add_procedural_surface(None, 
             &offset_id,
             procedural_surface! {
                 id: offset_construction,
@@ -1178,7 +1178,7 @@ fn offset_of_reversed_subset_uses_the_local_surface_normal() {
                 cache_fit_tolerance: None,
                 record_bounds: None,
             },
-        )
+        ).unwrap()
         .expect("offset surface exists and has no procedural construction");
     let index = crate::index::ModelIndex::new(&ir);
     assert_eq!(
@@ -1219,7 +1219,7 @@ fn curve_bounded_surface_delegates_evaluation_to_its_support() {
         },
     ];
     ir.model
-        .add_procedural_surface(
+        .add_procedural_surface(None, 
             &bounded_id,
             procedural_surface! {
                 id: ProceduralSurfaceId::mint("test:model:entity#curve-bounded-construction").expect("valid identity"),
@@ -1232,7 +1232,7 @@ fn curve_bounded_surface_delegates_evaluation_to_its_support() {
                 cache_fit_tolerance: None,
                 record_bounds: None,
             },
-        )
+        ).unwrap()
         .unwrap();
     let index = crate::index::ModelIndex::new(&ir);
     assert_eq!(
@@ -1280,7 +1280,7 @@ fn linear_sweep_surface_evaluation_uses_directrix_and_sweep_parameters() {
         source_object: None,
     });
     ir.model
-        .add_procedural_surface(
+        .add_procedural_surface(None, 
             &surface_id,
             procedural_surface! {
                 id: ProceduralSurfaceId::mint("test:model:entity#sweep-construction").expect("valid identity"),
@@ -1294,7 +1294,7 @@ fn linear_sweep_surface_evaluation_uses_directrix_and_sweep_parameters() {
                 cache_fit_tolerance: None,
                 record_bounds: None,
             },
-        )
+        ).unwrap()
         .unwrap();
     let index = crate::index::ModelIndex::new(&ir);
     let point = model_surface_point_by_id(&index, &surface_id, 0.5, 4.0)
@@ -1423,7 +1423,7 @@ fn axis_revolution_surface_evaluation_rotates_the_profile_parameterization() {
         source_object: None,
     });
     ir.model
-        .add_procedural_surface(
+        .add_procedural_surface(None, 
             &surface_id,
             procedural_surface! {
                 id: ProceduralSurfaceId::mint("test:model:entity#revolution-construction").expect("valid identity"),
@@ -1438,7 +1438,7 @@ fn axis_revolution_surface_evaluation_rotates_the_profile_parameterization() {
                 cache_fit_tolerance: None,
                 record_bounds: None,
             },
-        )
+        ).unwrap()
         .unwrap();
     let index = crate::index::ModelIndex::new(&ir);
     let point = model_surface_point_by_id(&index, &surface_id, std::f64::consts::FRAC_PI_2, 1.5)
@@ -1484,7 +1484,7 @@ fn revolution_surface_maps_its_angular_parameter_interval() {
         source_object: None,
     });
     ir.model
-        .add_procedural_surface(
+        .add_procedural_surface(None, 
             &surface_id,
             procedural_surface! {
                 id: ProceduralSurfaceId::mint("test:model:entity#mapped-revolution-construction").expect("valid identity"),
@@ -1492,7 +1492,7 @@ fn revolution_surface_maps_its_angular_parameter_interval() {
                 cache_fit_tolerance: None,
                 record_bounds: None,
             },
-        )
+        ).unwrap()
         .unwrap();
     let index = crate::index::ModelIndex::new(&ir);
     let partials = model_surface_second_partials_by_id(&index, &surface_id, 1.5, 12.0)
@@ -1531,7 +1531,7 @@ fn revolution_over_wide_angular_parameter_interval_maps_interior_angle() {
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
         source_object: None,
     });
-    ir.model.add_procedural_surface(
+    ir.model.add_procedural_surface(None, 
         &surface_id,
         procedural_surface! {
             id: ProceduralSurfaceId::mint("test:model:entity#wide-angle-construction").expect("valid identity"),
@@ -1549,7 +1549,7 @@ fn revolution_over_wide_angular_parameter_interval_maps_interior_angle() {
             cache_fit_tolerance: None,
             record_bounds: None,
         },
-    ).unwrap();
+    ).unwrap().unwrap();
     let index = crate::index::ModelIndex::new(&ir);
     let point = model_surface_point_by_id(&index, &surface_id, 0.0, 0.0)
         .expect("wide mapped revolution point")
@@ -1625,7 +1625,7 @@ fn revolution_surface_maps_a_normalized_line_domain_to_its_distance_carrier() {
         source_object: None,
     });
     ir.model
-        .add_procedural_surface(
+        .add_procedural_surface(None, 
             &surface_id,
             procedural_surface! {
                 id: ProceduralSurfaceId::mint("test:model:entity#normalized-revolution-construction").expect("valid identity"),
@@ -1639,7 +1639,7 @@ fn revolution_surface_maps_a_normalized_line_domain_to_its_distance_carrier() {
                 ])
                 .expect("finite record bounds")),
             },
-        )
+        ).unwrap()
         .unwrap();
     let index = crate::index::ModelIndex::new(&ir);
     let point = model_surface_point_by_id(&index, &surface_id, 5.0, 0.0)

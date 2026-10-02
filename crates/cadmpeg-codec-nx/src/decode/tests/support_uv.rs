@@ -428,7 +428,7 @@ fn coupled_uv_completion_uses_values_lane_before_budgeted_offset_inverse() {
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
             source_object: None,
         });
-        let _attached = ir.model.add_procedural_curve(
+        let _attached = ir.model.add_procedural_curve(None, 
             &curve,
             ProceduralCurve::new(
                 procedural_id.clone(),

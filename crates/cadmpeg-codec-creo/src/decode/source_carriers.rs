@@ -595,7 +595,7 @@ impl SourceUnitCarriers {
         }
 
         ir.model
-            .add_procedural_surface_for_decode(ctx, owner, procedural)?
+            .add_procedural_surface(Some(ctx), owner, procedural)?
             .map_err(CodecError::malformed)
     }
 
@@ -611,7 +611,7 @@ impl SourceUnitCarriers {
         }
 
         ir.model
-            .add_procedural_curve_for_decode(ctx, owner, procedural)?
+            .add_procedural_curve(Some(ctx), owner, procedural)?
             .map_err(CodecError::malformed)
     }
 

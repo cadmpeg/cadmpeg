@@ -248,7 +248,7 @@ fn a_charted_tolerant_intersection_whose_end_overflows_misses_its_witnesses_by_n
         .unwrap(),
     );
     ir.model
-        .add_procedural_curve(
+        .add_procedural_curve(None, 
             &curve,
             crate::geometry::ProceduralCurve::new(
                 crate::ids::ProceduralCurveId::mint("test:model:procedural#intersection").unwrap(),
@@ -269,7 +269,7 @@ fn a_charted_tolerant_intersection_whose_end_overflows_misses_its_witnesses_by_n
                     cache: None,
                 },
             ),
-        )
+        ).unwrap()
         .unwrap();
     let mut findings = Vec::new();
     check_procedural_support_consistency(&ir, &mut findings)
@@ -580,7 +580,7 @@ fn a_charted_tolerant_intersection_on_a_blend_whose_support_partial_overflows_mi
         .unwrap(),
     );
     ir.model
-        .add_procedural_curve(
+        .add_procedural_curve(None, 
             &curve,
             crate::geometry::ProceduralCurve::new(
                 crate::ids::ProceduralCurveId::mint("test:model:procedural#intersection").unwrap(),
@@ -601,7 +601,7 @@ fn a_charted_tolerant_intersection_on_a_blend_whose_support_partial_overflows_mi
                     cache: None,
                 },
             ),
-        )
+        ).unwrap()
         .unwrap();
     let mut findings = Vec::new();
     check_procedural_support_consistency(&ir, &mut findings)

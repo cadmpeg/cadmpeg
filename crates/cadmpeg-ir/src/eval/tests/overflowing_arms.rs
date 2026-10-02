@@ -643,7 +643,7 @@ fn tolerant_intersection_model(pcurve: PcurveGeometry) -> (CadIr, CurveId) {
         source_object: None,
     });
     ir.model
-        .add_procedural_curve(
+        .add_procedural_curve(None, 
             &curve,
             ProceduralCurve::new(
                 ProceduralCurveId::mint("test:model:procedural#intersection")
@@ -665,7 +665,7 @@ fn tolerant_intersection_model(pcurve: PcurveGeometry) -> (CadIr, CurveId) {
                     cache: None,
                 },
             ),
-        )
+        ).unwrap()
         .expect("procedural curve fixture");
     (ir, curve)
 }
@@ -738,7 +738,7 @@ fn acyclic_replica_chain_beyond_sixty_four_frames_retains_its_point() {
             source_object: None,
         });
         ir.model
-            .add_procedural_curve(
+            .add_procedural_curve(None, 
                 &replica,
                 ProceduralCurve::new(
                     ProceduralCurveId::mint(format!("test:model:procedural#replica-{ordinal}"))
@@ -748,7 +748,7 @@ fn acyclic_replica_chain_beyond_sixty_four_frames_retains_its_point() {
                         transform: Transform::identity(),
                     },
                 ),
-            )
+            ).unwrap()
             .expect("replica fixture");
         source = replica;
     }
@@ -784,7 +784,7 @@ fn budgeted_ruled_surface_exhausts_when_its_directrix_cycle_has_no_local_budget(
         source_object: None,
     });
     ir.model
-        .add_procedural_curve(
+        .add_procedural_curve(None, 
             &curve,
             ProceduralCurve::new(
                 ProceduralCurveId::mint("test:model:procedural#replica").expect("valid identity"),
@@ -793,7 +793,7 @@ fn budgeted_ruled_surface_exhausts_when_its_directrix_cycle_has_no_local_budget(
                     transform: Transform::identity(),
                 },
             ),
-        )
+        ).unwrap()
         .expect("procedural curve fixture");
     ir.model.surfaces.push(Surface {
         id: surface.clone(),
@@ -801,7 +801,7 @@ fn budgeted_ruled_surface_exhausts_when_its_directrix_cycle_has_no_local_budget(
         source_object: None,
     });
     ir.model
-        .add_procedural_surface(
+        .add_procedural_surface(None, 
             &surface,
             ProceduralSurface::new(
                 ProceduralSurfaceId::mint("test:model:procedural#ruled").expect("valid identity"),
@@ -812,7 +812,7 @@ fn budgeted_ruled_surface_exhausts_when_its_directrix_cycle_has_no_local_budget(
                 },
                 None,
             ),
-        )
+        ).unwrap()
         .expect("procedural surface fixture");
     let index = crate::index::ModelIndex::new(&ir);
     let budget = WorkBudget::new(usize::MAX);

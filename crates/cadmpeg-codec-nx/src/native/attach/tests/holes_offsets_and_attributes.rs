@@ -41,7 +41,7 @@ fn insert_test_procedural_surface(
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
         source_object: None,
     });
-    ir.model.add_procedural_surface(owner, procedural).unwrap();
+    ir.model.add_procedural_surface(None, owner, procedural).unwrap().unwrap();
 }
 
 fn attach_test_body_procedural_surface(

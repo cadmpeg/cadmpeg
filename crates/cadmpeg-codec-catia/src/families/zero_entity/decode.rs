@@ -2094,10 +2094,10 @@ mod tests {
             source_object: None,
         });
         ir.model
-            .add_procedural_curve(
+            .add_procedural_curve(None, 
                 &curve_id,
                 ProceduralCurve::new(construction_id.clone(), definition.clone()),
-            )
+            ).unwrap()
             .unwrap();
         let support_runs = vec![
             crate::families::zero_entity::records::ZeroEntitySupportRun {

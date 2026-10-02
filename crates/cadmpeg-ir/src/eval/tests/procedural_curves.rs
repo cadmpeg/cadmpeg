@@ -37,7 +37,7 @@ fn cached_subset_retains_local_parameters_for_points_derivatives_and_inversion()
             });
         }
         ir.model
-            .add_procedural_curve(
+            .add_procedural_curve(None, 
                 &subset,
                 ProceduralCurve::new(
                     ProceduralCurveId::mint("test:model:procedural-curve#subset").unwrap(),
@@ -51,7 +51,7 @@ fn cached_subset_retains_local_parameters_for_points_derivatives_and_inversion()
                         .unwrap(),
                     ),
                 ),
-            )
+            ).unwrap()
             .unwrap();
         let index = crate::index::ModelIndex::new(&ir);
         let expected = Point3::new(if sense { 3.0 } else { 4.0 }, 0.0, 0.0);
@@ -107,7 +107,7 @@ fn subset_curve_over_wide_interval_maps_finite_local_parameter() {
         });
     }
     ir.model
-        .add_procedural_curve(
+        .add_procedural_curve(None, 
             &subset,
             ProceduralCurve::new(
                 ProceduralCurveId::mint("test:model:procedural-curve#wide-subset").unwrap(),
@@ -121,7 +121,7 @@ fn subset_curve_over_wide_interval_maps_finite_local_parameter() {
                     .unwrap(),
                 ),
             ),
-        )
+        ).unwrap()
         .unwrap();
     let index = crate::index::ModelIndex::new(&ir);
     assert_eq!(

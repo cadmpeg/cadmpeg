@@ -755,7 +755,7 @@ mod tests {
             source_object: None,
         });
         ir.model
-            .add_procedural_surface(
+            .add_procedural_surface(None, 
                 &cached_surface,
                 procedural_surface! {
                     id: crate::ids::ProceduralSurfaceId::mint("test:model:procedural#cached").expect("valid identity"),
@@ -763,7 +763,7 @@ mod tests {
                     cache_fit_tolerance: Some(0.01),
                     record_bounds: None,
                 },
-            )
+            ).unwrap()
             .unwrap();
 
         let index = ModelIndex::new_model_only(&ir);
@@ -782,7 +782,7 @@ mod tests {
 
         assert!(ir
             .model
-            .add_procedural_surface(
+            .add_procedural_surface(None, 
                 &cached_surface,
                 procedural_surface! {
                     id: crate::ids::ProceduralSurfaceId::mint("test:model:procedural#cached-duplicate").expect("valid identity"),
@@ -790,7 +790,7 @@ mod tests {
                     cache_fit_tolerance: Some(0.02),
                     record_bounds: None,
                 },
-            )
+            ).unwrap()
             .is_err());
     }
 }
