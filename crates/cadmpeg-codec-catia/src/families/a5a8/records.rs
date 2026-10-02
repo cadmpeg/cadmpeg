@@ -1066,7 +1066,7 @@ pub(in crate::families) fn rolling_ball_jet_definition(
             }),
     );
     Ok(
-        cadmpeg_ir::geometry::RollingBallJetStations::from_parts_for_decode(
+        cadmpeg_ir::geometry::RollingBallJetStations::from_parts(
             A8FreeformCurve::DEGREE,
             stations,
             ctx,
