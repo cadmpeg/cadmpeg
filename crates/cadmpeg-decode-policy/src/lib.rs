@@ -14,8 +14,9 @@ mod types;
 mod extent;
 mod flow;
 mod work;
+mod callee;
 
-use std::collections::{BTreeSet, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 use rustc_driver::{Callbacks, Compilation};
 use rustc_hir::intravisit::{walk_expr, Visitor};
 use rustc_hir::{Body, Expr, ExprKind};
@@ -24,8 +25,13 @@ use rustc_middle::ty::{TyCtxt, TypeckResults};
 use rustc_span::def_id::{DefId, LocalDefId};
 use rustc_span::Span;
 
+#[derive(Default)]
+struct Findings {
+    entries: BTreeMap<(String, usize, u32, u32, String), BTreeSet<String>>,
+}
+
 struct DecodeCallbacks {
-    findings: BTreeSet<String>,
+    findings: Findings,
 }
 
 impl Callbacks for DecodeCallbacks {
@@ -59,7 +65,9 @@ impl Callbacks for DecodeCallbacks {
                     .visit_body(tcx.hir_body_owned_by(owner));
             }
         }
-        for finding in &self.findings { println!("{finding}"); }
+        for ((path, line, _, _, rule), messages) in &self.findings.entries {
+            println!("{rule}\t{path}\t{line}\t{}", messages.iter().cloned().collect::<Vec<_>>().join("; "));
+        }
         Compilation::Continue
     }
 }
@@ -100,7 +108,7 @@ struct Analysis<'a, 'tcx> {
     owner: LocalDefId,
     flow: flow::Flow,
     stack: Vec<LocalDefId>,
-    findings: &'a mut BTreeSet<String>,
+    findings: &'a mut Findings,
 }
 
 impl<'tcx> Analysis<'_, 'tcx> {
@@ -124,7 +132,8 @@ impl<'tcx> Analysis<'_, 'tcx> {
         let location = self.tcx.sess.source_map().lookup_char_pos(span.source_callsite().lo());
         let path = location.file.name.prefer_local_unconditionally().to_string();
         let relative = std::env::current_dir().ok().and_then(|root| std::path::Path::new(&path).strip_prefix(root).ok().map(|path| path.display().to_string())).unwrap_or(path);
-        self.findings.insert(format!("{rule}\t{relative}\t{}\t{message}", location.line));
+        let source = span.source_callsite();
+        self.findings.entries.entry((relative, location.line, source.lo().0, source.hi().0, rule.to_owned())).or_default().insert(message.to_owned());
     }
 
     fn shape_report(&mut self, expression: &Expr<'tcx>, shape: types::Shape, operation: &str) {
@@ -138,6 +147,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
 
 impl<'tcx> Visitor<'tcx> for Analysis<'_, 'tcx> {
     fn visit_expr(&mut self, expression: &'tcx Expr<'tcx>) {
+        self.indirect(expression);
         self.allocation(expression);
         self.visit_work_expression(expression);
     }
@@ -145,9 +155,9 @@ impl<'tcx> Visitor<'tcx> for Analysis<'_, 'tcx> {
 
 /// Runs rustc and returns whether decode-contract findings were emitted.
 pub fn run(arguments: &[String]) -> bool {
-    let mut callbacks = DecodeCallbacks { findings: BTreeSet::new() };
+    let mut callbacks = DecodeCallbacks { findings: Findings::default() };
     rustc_driver::run_compiler(arguments, &mut callbacks);
-    !callbacks.findings.is_empty()
+    !callbacks.findings.entries.is_empty()
 }
 
 #[cfg(test)]

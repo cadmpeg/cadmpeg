@@ -12,6 +12,7 @@ pub(crate) struct Credit {
 pub(crate) struct Flow {
     pub(crate) work: Vec<Credit>,
     pub(crate) storage: bool,
+    pub(crate) mutated: std::collections::HashSet<String>,
 }
 
 impl<'tcx> Analysis<'_, 'tcx> {
@@ -95,8 +96,16 @@ impl<'tcx> Analysis<'_, 'tcx> {
         false
     }
 
+    fn context_operand(&self, expression: &'tcx Expr<'tcx>) -> bool {
+        if types::has_context(self.tcx, self.typeck.expr_ty(expression), &mut Vec::new()) { return true; }
+        match expression.kind {
+            ExprKind::Field(base, _) | ExprKind::AddrOf(_, _, base) => self.context_operand(base),
+            _ => false,
+        }
+    }
+
     pub(crate) fn context_operation(&self, expression: &'tcx Expr<'tcx>) -> bool {
-        self.call(expression).is_some_and(|(_, operands)| operands.iter().any(|operand| types::has_context(self.tcx, self.typeck.expr_ty(operand), &mut Vec::new())))
+        self.call(expression).is_some_and(|(_, operands)| operands.iter().any(|operand| self.context_operand(operand)))
     }
 
     pub(crate) fn record_charge(&mut self, expression: &'tcx Expr<'tcx>) {
@@ -121,8 +130,22 @@ impl<'tcx> Analysis<'_, 'tcx> {
         Some(false)
     }
 
-    pub(crate) fn invalidate(&mut self) {
-        self.flow.work.clear();
+    pub(crate) fn invalidate_target(&mut self, expression: &'tcx Expr<'tcx>) {
+        if let Some(key) = self.key(expression, &mut Vec::new()) {
+            self.flow.work.retain(|credit| !credit.extents.iter().any(|term| term == &key || term.starts_with(&format!("{key}.")) || key.starts_with(&format!("{term}."))));
+            self.flow.mutated.insert(key);
+        } else {
+            for credit in &mut self.flow.work { credit.opaque = true; }
+        }
         self.flow.storage = false;
+    }
+
+    pub(crate) fn mutation(&mut self, expression: &'tcx Expr<'tcx>) {
+        if let ExprKind::Assign(target, _, _) | ExprKind::AssignOp(_, target, _) = expression.kind { self.invalidate_target(target); }
+        if let Some((_, operands)) = self.call(expression) {
+            for operand in operands {
+                if matches!(self.typeck.expr_ty_adjusted(operand).kind(), rustc_middle::ty::Ref(_, _, rustc_hir::Mutability::Mut)) { self.invalidate_target(operand); }
+            }
+        }
     }
 }

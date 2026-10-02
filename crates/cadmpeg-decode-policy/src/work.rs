@@ -21,6 +21,12 @@ impl<'tcx> Analysis<'_, 'tcx> {
                 let shape = types::work(self.tcx, self.typeck.expr_ty(left), &mut Vec::new()).join(types::work(self.tcx, self.typeck.expr_ty(right), &mut Vec::new()));
                 // Comparing a dynamic sequence with a fixed-size operand reads
                 // at most that operand's fixed extent.
+                if let Some(definition) = self.typeck.type_dependent_def_id(expression.hir_id) {
+                    if let Some(custom) = self.custom_trait(expression, definition) {
+                        if self.local_has_effects(custom) != Some(false) { self.work_report(expression.span, Shape::Unknown, Some(false), "custom comparison work"); }
+                        return;
+                    }
+                }
                 let bounded = self.constant(left, &mut Vec::new()) || self.constant(right, &mut Vec::new());
                 if !bounded {
                     let paid = self.take_credit(&[left, right]);
@@ -34,7 +40,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
         if !types::standard(self.tcx, definition) {
             if operands.iter().any(|operand| types::work(self.tcx, self.typeck.expr_ty(operand), &mut Vec::new()) != Shape::Fixed) {
                 // Calls into opaque code can hide scans even when they return a scalar.
-                if !definition.is_local() {
+                if self.local_has_effects(definition) != Some(false) {
                     let paid = self.take_credit(&operands);
                     self.work_report(expression.span, Shape::Unknown, paid, "opaque callee work");
                 }
@@ -42,6 +48,15 @@ impl<'tcx> Analysis<'_, 'tcx> {
             return;
         }
         let name = name.as_str();
+        if matches!(name, "clone" | "eq" | "cmp" | "partial_cmp" | "hash") {
+            if let Some(custom) = self.custom_trait(expression, definition) {
+                if self.local_has_effects(custom) != Some(false) {
+                    self.work_report(expression.span, Shape::Unknown, Some(false), "custom trait work");
+                }
+                return;
+            }
+            if name == "clone" && types::heap(self.tcx, self.typeck.expr_ty(expression), &mut Vec::new()) == Shape::Fixed { return; }
+        }
         let consumers = matches!(name, "any" | "all" | "position" | "rposition" | "find" | "rfind" | "find_map" | "min" | "max" | "min_by" | "max_by" | "min_by_key" | "max_by_key" | "fold" | "try_fold" | "reduce" | "sum" | "product" | "count" | "for_each" | "try_for_each" | "collect" | "from_iter");
         let scans = matches!(name, "contains" | "contains_key" | "get" | "get_mut" | "starts_with" | "ends_with" | "eq" | "cmp" | "partial_cmp" | "hash" | "copy_from_slice" | "copy_within" | "extend_from_slice" | "split_at" | "trim" | "trim_start" | "trim_end" | "replace" | "replacen" | "to_lowercase" | "to_uppercase" | "is_ascii" | "from_utf8" | "from_utf8_lossy" | "to_vec" | "clone" | "to_owned" | "to_string" | "sort" | "sort_by" | "sort_by_key" | "sort_unstable" | "sort_unstable_by" | "sort_unstable_by_key" | "binary_search" | "binary_search_by" | "binary_search_by_key" | "retain" | "drain" | "clear" | "truncate" | "resize" | "append" | "extend" | "insert" | "remove" | "join" | "concat");
         if !consumers && !scans { return; }
@@ -164,11 +179,11 @@ impl<'tcx> Analysis<'_, 'tcx> {
                 self.flow = merged;
                 return;
             }
-            ExprKind::Assign(_, _, _) | ExprKind::AssignOp(_, _, _) => self.invalidate(),
             _ => (),
         }
         self.work(expression);
         walk_expr(self, expression);
         self.record_charge(expression);
+        self.mutation(expression);
     }
 }

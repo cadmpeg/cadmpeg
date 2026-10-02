@@ -29,7 +29,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
         if context_call {
             if name == "alloc_filled" {
                 if let Some(value) = operands.get(2) {
-                    let shape = types::heap(self.tcx, self.typeck.expr_ty(value), &mut Vec::new());
+                    let shape = self.clone_shape(self.typeck.expr_ty(value));
                     let empty = self.call(value).is_some_and(|(id, args)| types::standard(self.tcx, id) && args.is_empty() && matches!(self.tcx.item_name(id).as_str(), "new" | "default"));
                     if !empty { self.shape_report(expression, shape, "alloc_filled child Clone"); }
                 }
@@ -44,10 +44,14 @@ impl<'tcx> Analysis<'_, 'tcx> {
             return;
         }
         if name == "cloned" && types::standard(self.tcx, definition) {
-            let value = self.typeck.expr_ty(expression);
-            if let ty::Adt(_, arguments) = value.kind() {
-                let shape = arguments.types().fold(Shape::Fixed, |shape, value| shape.join(types::work(self.tcx, value, &mut Vec::new())));
-                if shape != Shape::Fixed { self.shape_report(expression, Shape::Unknown, "lazy cloned iterator: child Clone requires resolution"); }
+            let value = operands.first().and_then(|operand| self.iterator_item(self.typeck.expr_ty(operand))).map(|value| value.peel_refs());
+            let shape = value.map_or(Shape::Unknown, |value| self.clone_shape(value));
+            if shape != Shape::Fixed {
+                let consumed = self.tcx.hir_parent_iter(expression.hir_id).any(|(_, node)| match node {
+                    rustc_hir::Node::Expr(parent) => self.call(parent).is_some_and(|(id, _)| matches!(self.tcx.item_name(id).as_str(), "collect" | "from_iter" | "collect_vec" | "try_collect_vec" | "any" | "find" | "for_each")),
+                    _ => false,
+                });
+                self.shape_report(expression, if consumed { shape } else { Shape::Unknown }, "cloned iterator child copies");
             }
             return;
         }
@@ -55,7 +59,9 @@ impl<'tcx> Analysis<'_, 'tcx> {
             if types::heap(self.tcx, self.typeck.expr_ty(expression), &mut Vec::new()) != Shape::Fixed {
                 if self.tcx.def_kind(definition) == rustc_hir::def::DefKind::Ctor(rustc_hir::def::CtorOf::Struct, rustc_hir::def::CtorKind::Fn) || self.tcx.def_kind(definition) == rustc_hir::def::DefKind::Ctor(rustc_hir::def::CtorOf::Variant, rustc_hir::def::CtorKind::Fn) { return; }
                 if operands.iter().any(|operand| types::has_context(self.tcx, self.typeck.expr_ty(operand), &mut Vec::new())) { return; }
-                self.shape_report(expression, Shape::Unknown, "constructor or opaque callee: allocator reachability unresolved");
+                if self.local_has_effects(definition) != Some(false) {
+                    self.shape_report(expression, Shape::Unknown, "constructor or opaque callee: allocator reachability unresolved");
+                }
             }
             return;
         }

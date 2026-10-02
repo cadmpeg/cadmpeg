@@ -50,7 +50,7 @@ pub(crate) fn has_context<'tcx>(tcx: TyCtxt<'tcx>, value: Ty<'tcx>, seen: &mut V
     seen.push(value);
     match value.kind() {
         ty::Adt(definition, arguments) => {
-            tcx.item_name(definition.did()).as_str() == "DecodeContext" || definition.all_fields().any(|field| has_context(tcx, field.ty(tcx, arguments).skip_norm_wip(), seen))
+            (tcx.item_name(definition.did()).as_str() == "DecodeContext" && (tcx.crate_name(definition.did().krate).as_str() == "cadmpeg_core" || std::env::var_os("CADMPEG_POLICY_FIXTURE").is_some())) || definition.all_fields().any(|field| has_context(tcx, field.ty(tcx, arguments).skip_norm_wip(), seen))
         }
         ty::Tuple(fields) => fields.iter().any(|field| has_context(tcx, field, seen)),
         _ => false,
