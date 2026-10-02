@@ -84,12 +84,12 @@ fn pcurve_parameter_domain(
         PcurveGeometry::Nurbs { nurbs } => crate::eval::nurbs_pcurve_parameter_domain(
             nurbs.degree(),
             nurbs.knots(),
-            nurbs.control_points().len(),
+            nurbs.pole_rows().count(),
         ),
         PcurveGeometry::PolarNurbs { nurbs } => crate::eval::nurbs_pcurve_parameter_domain(
             nurbs.degree(),
             nurbs.knots(),
-            nurbs.poles().len(),
+            nurbs.pole_rows().count(),
         ),
         PcurveGeometry::Trimmed(trimmed_pcurve) => {
             let [start, end] = trimmed_pcurve.parameter_range().finite_endpoints();

@@ -825,7 +825,7 @@ fn blend_surface_parameters_inner(
             .and_then(|curve| match curve.geometry.solved() {
                 Some(SolvedCurveGeometry::Nurbs(nurbs)) => {
                     let degree = usize::try_from(nurbs.degree()).ok()?;
-                    let count = nurbs.control_points().len();
+                    let count = nurbs.pole_rows().count();
                     let lower = *nurbs.knots().get(degree)?;
                     let upper = *nurbs.knots().get(count)?;
                     Some(
@@ -1129,7 +1129,7 @@ pub(super) fn blend_surface_parameter_grid_with_index_and_budget(
     let Some(degree) = usize::try_from(nurbs.degree()).ok() else {
         return Ok(None);
     };
-    let count = nurbs.control_points().len();
+    let count = nurbs.pole_rows().count();
     let (Some(lower), Some(upper)) = (nurbs.knots().get(degree), nurbs.knots().get(count)) else {
         return Ok(None);
     };
@@ -1319,7 +1319,7 @@ fn refine_blend_surface_parameters_with_section_domain_and_budget(
         .and_then(|curve| match curve.geometry.solved() {
             Some(SolvedCurveGeometry::Nurbs(nurbs)) => {
                 let degree = usize::try_from(nurbs.degree()).ok()?;
-                let count = nurbs.control_points().len();
+                let count = nurbs.pole_rows().count();
                 Some([*nurbs.knots().get(degree)?, *nurbs.knots().get(count)?])
             }
             _ => None,
@@ -2809,7 +2809,7 @@ fn pcurve_domain(pcurve: &PcurveGeometry) -> Option<([f64; 2], bool)> {
         return None;
     };
     let degree = usize::try_from(nurbs.degree()).ok()?;
-    let count = nurbs.control_points().len();
+    let count = nurbs.pole_rows().count();
     let domain = [*nurbs.knots().get(degree)?, *nurbs.knots().get(count)?];
     (domain[0].is_finite() && domain[1].is_finite() && domain[0] < domain[1])
         .then_some((domain, nurbs.periodic()))
@@ -2933,7 +2933,7 @@ pub(super) fn closest_pcurve_parameters(
     let Ok(degree) = usize::try_from(nurbs.degree()) else {
         return Ok(None);
     };
-    let count = nurbs.control_points().len();
+    let count = nurbs.pole_rows().count();
     let (Some(lower), Some(upper)) = (nurbs.knots().get(degree), nurbs.knots().get(count)) else {
         return Ok(None);
     };
@@ -4963,7 +4963,7 @@ pub(super) fn closest_nurbs_curve_parameter_with_budget(
     let Ok(degree) = usize::try_from(curve.degree()) else {
         return Ok(None);
     };
-    let count = curve.control_points().len();
+    let count = curve.pole_rows().count();
     if !point.is_finite() {
         return Ok(None);
     }

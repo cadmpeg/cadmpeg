@@ -2280,7 +2280,7 @@ fn surface_isoline_along(
 ) -> Result<Option<NurbsCurve>, cadmpeg_core::decode::ResourceLimit> {
     use cadmpeg_ir::eval::IsolineDirection;
     let Some((direction, at)) = (|| {
-        (pcurve.degree() == 1 && pcurve.control_points().len() == 2 && pcurve.weights().is_none())
+        (pcurve.degree() == 1 && pcurve.pole_rows().count() == 2 && pcurve.weights().is_none())
             .then_some(())?;
         let start = *pcurve.control_points().first()?;
         let end = *pcurve.control_points().last()?;
@@ -3835,7 +3835,7 @@ pub(crate) fn nurbs_curve_parameter_domain(curve: &NurbsCurve) -> Option<[f64; 2
     let degree = usize::try_from(curve.degree()).ok()?;
     Some([
         *curve.knots().get(degree)?,
-        *curve.knots().get(curve.control_points().len())?,
+        *curve.knots().get(curve.pole_rows().count())?,
     ])
 }
 
