@@ -177,13 +177,6 @@ impl<'tcx> Analysis<'_, 'tcx> {
                 }
                 return None;
             }
-            ExprKind::Binary(operator, left, right)
-                if operator.node == rustc_hir::BinOpKind::Add =>
-            {
-                let mut terms = self.extent_terms(left, &mut seen.clone())?;
-                terms.extend(self.extent_terms(right, &mut seen.clone())?);
-                return Some(terms);
-            }
             ExprKind::Match(scrutinee, _, MatchSource::TryDesugar(_)) => {
                 let (_, args) = self.call(scrutinee)?;
                 return args.first().and_then(|arg| self.extent_terms(arg, seen));

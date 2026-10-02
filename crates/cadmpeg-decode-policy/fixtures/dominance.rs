@@ -86,3 +86,11 @@ pub fn reassigned(ctx: &DecodeContext, bytes: &[u8], other: &[u8]) -> Result<(),
     for _byte in alias {} // finding: uncharged_decode_work
     Ok(())
 }
+
+pub fn unchecked_sum(ctx: &DecodeContext, bytes: &[u8], other: &[u8]) -> Result<(), ()> {
+    let work = (bytes.len() as u64) + (other.len() as u64);
+    ctx.charge_work(work, "unchecked sum")?;
+    for _byte in bytes {} // finding: unproven_decode_charge
+    for _byte in other {} // finding: unproven_decode_charge
+    Ok(())
+}
