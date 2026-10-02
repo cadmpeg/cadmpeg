@@ -32,15 +32,15 @@ fn construction_rejects_invalid_knots_and_non_finite_poles() {
             false
         ).expect("fixture constructor admission")
         .is_err());
-        assert!(PcurveNurbs::from_lanes(
+        assert!(PcurveNurbs::from_lanes(&cadmpeg_test_support::service_decode_context(), 
             1,
             knots.clone(),
             pcurve().pole_rows().raw_points(),
             None,
             false
-        )
+        ).expect("fixture pcurve construction admission")
         .is_err());
-        assert!(PolarPcurveNurbs::from_lanes(
+        assert!(PolarPcurveNurbs::from_lanes(&cadmpeg_test_support::service_decode_context(), 
             1,
             knots,
             vec![
@@ -52,21 +52,21 @@ fn construction_rejects_invalid_knots_and_non_finite_poles() {
             ],
             None,
             false
-        )
+        ).expect("fixture pcurve construction admission")
         .is_err());
 
         let mut points = curve().pole_rows().raw_points();
         points[1].z = invalid;
         assert!(NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 1, curve().knots().to_vec(), points, None, false).expect("fixture constructor admission").is_err());
-        assert!(PcurveNurbs::from_lanes(
+        assert!(PcurveNurbs::from_lanes(&cadmpeg_test_support::service_decode_context(), 
             1,
             pcurve().knots().to_vec(),
             vec![Point2::new(0.0, invalid); 2],
             None,
             false
-        )
+        ).expect("fixture pcurve construction admission")
         .is_err());
-        assert!(PolarPcurveNurbs::from_lanes(
+        assert!(PolarPcurveNurbs::from_lanes(&cadmpeg_test_support::service_decode_context(), 
             1,
             polar().knots().to_vec(),
             vec![
@@ -78,7 +78,7 @@ fn construction_rejects_invalid_knots_and_non_finite_poles() {
             ],
             None,
             false
-        )
+        ).expect("fixture pcurve construction admission")
         .is_err());
 
         let source = surface();
@@ -121,14 +121,14 @@ fn pcurve_weights(
     pcurve: &PcurveNurbs,
     weights: Vec<f64>,
 ) -> Result<PcurveNurbsPoles, crate::geometry::nurbs::NurbsError> {
-    PcurveNurbsPoles::from_lanes(pcurve.pole_rows().raw_points(), Some(weights))
+    PcurveNurbsPoles::from_lanes(&cadmpeg_test_support::service_decode_context(), pcurve.pole_rows().raw_points(), Some(weights)).expect("fixture pcurve construction admission")
 }
 
 fn polar_weights(
     polar: &PolarPcurveNurbs,
     weights: Vec<f64>,
 ) -> Result<PolarNurbsPoles, crate::geometry::nurbs::NurbsError> {
-    PolarNurbsPoles::from_lanes(polar.pole_rows().to_raw().poles(), Some(weights))
+    PolarNurbsPoles::from_lanes(&cadmpeg_test_support::service_decode_context(), polar.pole_rows().to_raw().poles(), Some(weights)).expect("fixture pcurve construction admission")
 }
 
 #[test]
@@ -172,24 +172,24 @@ fn weight_rules_admit_a_signed_nonzero_weight_in_every_nurbs_carrier() {
     {
         let replacement = pcurve_weights(&pcurve, vec![1e-200, -1e-200]).unwrap();
         edit::replace(&mut pcurve, |previous| {
-            crate::geometry::pcurve::PcurveNurbs::new(
+            crate::geometry::pcurve::PcurveNurbs::new(&cadmpeg_test_support::service_decode_context(), 
                 previous.degree(),
                 previous.knots().to_vec(),
                 replacement,
                 previous.periodic(),
-            )
+            ).expect("fixture pcurve construction admission")
         })
     }
     .unwrap();
     {
         let replacement = polar_weights(&polar, vec![1e-200, -1e-200]).unwrap();
         edit::replace(&mut polar, |previous| {
-            crate::geometry::pcurve::PolarPcurveNurbs::new(
+            crate::geometry::pcurve::PolarPcurveNurbs::new(&cadmpeg_test_support::service_decode_context(), 
                 previous.degree(),
                 previous.knots().to_vec(),
                 replacement,
                 previous.periodic(),
-            )
+            ).expect("fixture pcurve construction admission")
         })
     }
     .unwrap();
@@ -313,12 +313,12 @@ fn failed_numeric_edits_preserve_the_whole_carrier() {
     assert!(edit::replace(&mut pcurve, |previous| {
         let mut knots = previous.knots().to_vec();
         (<[f64]>::reverse)(&mut knots);
-        crate::geometry::pcurve::PcurveNurbs::new(
+        crate::geometry::pcurve::PcurveNurbs::new(&cadmpeg_test_support::service_decode_context(), 
             previous.degree(),
             knots,
             previous.pole_rows().clone(),
             previous.periodic(),
-        )
+        ).expect("fixture pcurve construction admission")
     })
     .is_err());
     assert!(pcurve
@@ -336,13 +336,13 @@ fn failed_numeric_edits_preserve_the_whole_carrier() {
     assert!(edit::replace(&mut polar, |previous| {
         let mut knots = previous.knots().to_vec();
         (<[f64]>::reverse)(&mut knots);
-        crate::geometry::pcurve::PolarPcurveNurbs::from_lanes(
+        crate::geometry::pcurve::PolarPcurveNurbs::from_lanes(&cadmpeg_test_support::service_decode_context(), 
             previous.degree(),
             knots,
             previous.pole_rows().to_raw().poles(),
             previous.pole_rows().weights(),
             previous.periodic(),
-        )
+        ).expect("fixture pcurve construction admission")
     })
     .is_err());
     assert!(edit::replace(&mut polar, |previous| {
@@ -350,13 +350,13 @@ fn failed_numeric_edits_preserve_the_whole_carrier() {
         for pole in &mut poles {
             pole.radial.v = f64::INFINITY;
         }
-        PolarPcurveNurbs::from_lanes(
+        PolarPcurveNurbs::from_lanes(&cadmpeg_test_support::service_decode_context(), 
             previous.degree(),
             previous.knots().to_vec(),
             poles,
             previous.pole_rows().weights(),
             previous.periodic(),
-        )
+        ).expect("fixture pcurve construction admission")
     })
     .is_err());
     assert!(edit::replace(&mut polar, |previous| {
@@ -364,13 +364,13 @@ fn failed_numeric_edits_preserve_the_whole_carrier() {
         for pole in &mut poles {
             pole.axial = f64::NAN;
         }
-        PolarPcurveNurbs::from_lanes(
+        PolarPcurveNurbs::from_lanes(&cadmpeg_test_support::service_decode_context(), 
             previous.degree(),
             previous.knots().to_vec(),
             poles,
             previous.pole_rows().weights(),
             previous.periodic(),
-        )
+        ).expect("fixture pcurve construction admission")
     })
     .is_err());
     assert!(polar_weights(&polar, vec![1.0, 0.0]).is_err());

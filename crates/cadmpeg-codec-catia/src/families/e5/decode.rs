@@ -3032,7 +3032,7 @@ fn e5_pcurve_on_surface(
             }
             let Some(nurbs) = crate::nurbs::note_refusal(
                 ctx,
-                PcurveNurbs::from_lanes(*degree, knot_values, scaled_points, None, false),
+                PcurveNurbs::from_lanes(ctx, *degree, knot_values, scaled_points, None, false)?,
                 refusal,
                 format_args!(
                     "e5 NURBS pcurve on surface record {} at byte {}",

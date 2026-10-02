@@ -1304,13 +1304,13 @@ fn native_support_pcurves_bind_standard_edge_endpoints() {
 #[test]
 fn native_support_pcurve_copy_refuses_retained_and_collection_limits() {
     let pcurve = PcurveGeometry::Nurbs {
-        nurbs: cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
+        nurbs: cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(&cadmpeg_test_support::service_decode_context(), 
             1,
             vec![0.0, 0.0, 1.0, 1.0],
             vec![Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)],
             None,
             false,
-        )
+        ).expect("fixture pcurve construction admission")
         .expect("valid linear pcurve"),
     };
     let carrier = crate::families::b5::transfer::ResolvedPcurveSurface::Geometry(

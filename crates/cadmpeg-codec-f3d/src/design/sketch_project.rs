@@ -443,13 +443,13 @@ pub(crate) fn project_sketch_design(
                     .is_some()
                     .then(|| ctx.collect_vec(poles.weights(), "f3d planar sketch nurbs weights"))
                     .transpose()?;
-                SketchGeometry::nurbs(cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
+                SketchGeometry::nurbs(cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(ctx, 
                     geometry.degree(),
                     geometry.knots_copy(ctx)?,
                     planar_poles,
                     weights,
                     false,
-                )?)
+                )??)
             }
             _ => continue,
         };

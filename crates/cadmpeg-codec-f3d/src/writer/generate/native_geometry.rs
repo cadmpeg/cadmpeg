@@ -3472,13 +3472,19 @@ fn native_radius_function_pcurve_block(
     bytes: &mut Vec<u8>,
     function: &PcurveGeometry,
 ) -> Result<(), CodecError> {
+    // Source-less geometry generation uses an independent writer policy.
+    let writer_arena = cadmpeg_core::decode::DecodeArena::new();
+    let writer_policy = cadmpeg_core::decode::DecodePolicy::desktop();
+    let (writer_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &writer_arena, &writer_policy,
+    )?;
     let PcurveGeometry::Nurbs { nurbs } = function else {
         return Err(CodecError::NotImplemented(
             "variable-blend radius function must be a NURBS pcurve".into(),
         ));
     };
     let native = PcurveGeometry::Nurbs {
-        nurbs: cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_checked_lanes(
+        nurbs: cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_checked_lanes(&writer_ctx, 
             nurbs.degree(),
             nurbs.knots().clone(),
             nurbs
@@ -3488,7 +3494,7 @@ fn native_radius_function_pcurve_block(
                 .collect::<Vec<_>>(),
             nurbs.weights(),
             nurbs.periodic(),
-        )
+        )?
         .map_err(|error| CodecError::NotImplemented(error.to_string()))?,
     };
     native_nurbs_pcurve_block(bytes, &native)
@@ -5984,6 +5990,12 @@ fn native_support_pcurve_for_range(
     pcurve: &PcurveGeometry,
     range: [f64; 2],
 ) -> Result<PcurveNurbs, CodecError> {
+    // Source-less geometry generation uses an independent writer policy.
+    let writer_arena = cadmpeg_core::decode::DecodeArena::new();
+    let writer_policy = cadmpeg_core::decode::DecodePolicy::desktop();
+    let (writer_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &writer_arena, &writer_policy,
+    )?;
     let native = native_pcurve_geometry(pcurve, range)?;
     let mut poles = native.pole_rows().to_raw();
     match geometry {
@@ -6029,12 +6041,12 @@ fn native_support_pcurve_for_range(
         }
         _ => return Ok(native.into_owned()),
     }
-    PcurveNurbs::new(
+    PcurveNurbs::new(&writer_ctx, 
         native.degree(),
         native.knots().to_vec(),
         poles,
         native.periodic(),
-    )
+    )?
     .map_err(|error| CodecError::NotImplemented(error.to_string()))
 }
 
@@ -6116,13 +6128,13 @@ mod pcurve_chart_tests {
                 .unwrap(),
             ));
             let pcurve = PcurveGeometry::Nurbs {
-                nurbs: cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
+                nurbs: cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(&cadmpeg_test_support::service_decode_context(), 
                     1,
                     vec![0.0, 0.0, 1.0, 1.0],
                     vec![Point2::new(1.25, 15.0), Point2::new(2.5, -3.0)],
                     None,
                     false,
-                )
+                ).expect("fixture pcurve construction admission")
                 .expect("valid test pcurve"),
             };
             let nurbs = native_support_pcurve(&support, &pcurve).expect("native cone chart");
@@ -6876,6 +6888,12 @@ fn native_pcurve_geometry(
     geometry: &PcurveGeometry,
     range: [f64; 2],
 ) -> Result<Cow<'_, PcurveNurbs>, CodecError> {
+    // Source-less geometry generation uses an independent writer policy.
+    let writer_arena = cadmpeg_core::decode::DecodeArena::new();
+    let writer_policy = cadmpeg_core::decode::DecodePolicy::desktop();
+    let (writer_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &writer_arena, &writer_policy,
+    )?;
     match geometry {
         PcurveGeometry::Line(line_pcurve) => {
             let origin = line_pcurve.origin().as_raw();
@@ -6885,7 +6903,7 @@ fn native_pcurve_geometry(
                     "source-less F3D line pcurve requires an ordered finite range".into(),
                 ));
             }
-            PcurveNurbs::from_lanes(
+            PcurveNurbs::from_lanes(&writer_ctx, 
                 1,
                 vec![range[0], range[0], range[1], range[1]],
                 vec![
@@ -6900,7 +6918,7 @@ fn native_pcurve_geometry(
                 ],
                 None,
                 false,
-            )
+            )?
             .map(Cow::Owned)
             .map_err(|error| CodecError::NotImplemented(error.to_string()))
         }

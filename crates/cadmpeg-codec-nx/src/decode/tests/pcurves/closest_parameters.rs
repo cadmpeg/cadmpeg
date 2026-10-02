@@ -25,13 +25,13 @@ fn rational_pcurve_incidence_isolates_close_branches() {
         .map(|(numerator, weight)| Point2::new(numerator / weight, 0.0))
         .collect::<Vec<_>>();
         let pcurve = PcurveGeometry::Nurbs {
-            nurbs: cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
+            nurbs: cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(&cadmpeg_test_support::service_decode_context(), 
                 4,
                 vec![0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0, 1.0],
                 controls,
                 Some(weights.to_vec()),
                 false,
-            )
+            ).expect("fixture pcurve construction admission")
             .unwrap(),
         };
         let roots =
@@ -62,13 +62,13 @@ fn rational_pcurve_closest_search_retains_close_global_branches() {
         .map(|(numerator, weight)| Point2::new(numerator / weight, 0.0))
         .collect();
         let pcurve = PcurveGeometry::Nurbs {
-            nurbs: cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
+            nurbs: cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(&cadmpeg_test_support::service_decode_context(), 
                 4,
                 vec![0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0, 1.0],
                 control_points,
                 Some(weights.to_vec()),
                 false,
-            )
+            ).expect("fixture pcurve construction admission")
             .unwrap(),
         };
         let parameters =
@@ -153,7 +153,7 @@ fn periodic_nurbs_inversion_lifts_the_continuation_phase() {
     crate::test_support::with_decode_context(|geometry_ctx| {
         let knots = vec![0.0, 0.0, 1.0, 2.0, 2.0];
         let pcurve = PcurveGeometry::Nurbs {
-            nurbs: cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
+            nurbs: cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(&cadmpeg_test_support::service_decode_context(), 
                 1,
                 knots.clone(),
                 vec![
@@ -163,7 +163,7 @@ fn periodic_nurbs_inversion_lifts_the_continuation_phase() {
                 ],
                 None,
                 true,
-            )
+            ).expect("fixture pcurve construction admission")
             .unwrap(),
         };
         let curve = NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
@@ -220,13 +220,13 @@ fn polynomial_root_isolation_retains_repeated_real_roots() {
 fn coincident_pcurve_interval_retains_seed_and_boundaries() {
     crate::test_support::with_decode_context(|geometry_ctx| {
         let pcurve = PcurveGeometry::Nurbs {
-            nurbs: cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
+            nurbs: cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(&cadmpeg_test_support::service_decode_context(), 
                 2,
                 vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
                 vec![Point2::new(2.0, -3.0); 3],
                 None,
                 false,
-            )
+            ).expect("fixture pcurve construction admission")
             .unwrap(),
         };
         let roots =

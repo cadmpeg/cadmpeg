@@ -125,6 +125,12 @@ pub(super) fn decode_pcurve_block_with_end(
     marker_pos: usize,
     int_width: RefWidth,
 ) -> Option<(PcurveNurbs, usize)> {
+    // Byte-addressed inspection supplies writer patch layouts under its own policy.
+    let writer_arena = cadmpeg_core::decode::DecodeArena::new();
+    let writer_policy = cadmpeg_core::decode::DecodePolicy::desktop();
+    let (writer_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &writer_arena, &writer_policy,
+    ).ok()?;
     let marker = marker_at(b, marker_pos)?;
     let rational = marker.rational();
     let mut pos = marker_pos + marker.byte_len();
@@ -180,12 +186,12 @@ pub(super) fn decode_pcurve_block_with_end(
         PcurveNurbsPoles::Polynomial { points }
     };
     Some((
-        PcurveNurbs::new(
+        PcurveNurbs::new(&writer_ctx, 
             u32::try_from(degree).ok()?,
             knots,
             poles,
             is_periodic(closure),
-        )
+        ).ok()?
         .ok()?,
         pos,
     ))
@@ -266,12 +272,12 @@ pub(super) fn pcurve_block_with_end(
         PcurveNurbsPoles::Polynomial { points }
     };
     Some(Ok((
-        PcurveNurbs::new(
+        propagate_resource!(PcurveNurbs::new(ctx, 
             u32::try_from(degree).ok()?,
             knots,
             poles,
             is_periodic(closure),
-        )
+        ))
         .ok()?,
         cur.pos(),
     )))

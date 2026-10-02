@@ -4036,39 +4036,14 @@ fn derive_cylindrical_pcurves(
                 } else {
                     None
                 };
-                let admitted_poles = u64_from_index(poles.len());
-                let copied_poles = admitted_poles
-                    .checked_mul(if weights.is_some() { 2 } else { 1 })
-                    .ok_or_else(|| {
-                        ctx.refuse_codec_limit(
-                            "admit cylindrical polar poles",
-                            u64::MAX - 1,
-                            u64::MAX,
-                        )
-                    })?;
-                ctx.charge_collection_items(copied_poles, "admit cylindrical polar poles")?;
-                let admission_work = copied_poles
-                    .checked_mul(32)
-                    .and_then(|work| work.checked_add(u64_from_index(knots.len())))
-                    .ok_or_else(|| {
-                        ctx.refuse_codec_limit(
-                            "admit cylindrical polar poles",
-                            u64::MAX - 1,
-                            u64::MAX,
-                        )
-                    })?;
-                ctx.charge_work(admission_work, "admit cylindrical polar poles")?;
-                let polar = match PolarPcurveNurbs::from_checked_lanes(
+                let polar = match PolarPcurveNurbs::from_checked_lanes(ctx, 
                     nurbs.degree(),
                     knots,
                     poles,
                     weights,
                     nurbs.periodic(),
-                ) {
+                )? {
                     Ok(polar) => polar,
-                    Err(cadmpeg_ir::geometry::nurbs::NurbsError::ResourceLimit(limit)) => {
-                        return Err(limit.into())
-                    }
                     Err(error) => {
                         let note = crate::loss::spline_lane_refusal(
                             ctx,
@@ -5516,12 +5491,8 @@ fn intersection_support_pcurve(
         let mut knots = Vec::new();
         ctx.reserve_vec(&mut knots, knots_source.len(), "copy intersection support pcurve knots")?;
         knots.extend_from_slice(knots_source);
-        ctx.charge_collection_items(
-            u64::try_from(control_points.len()).map_err(|_| ctx.refuse_codec_limit("admit intersection support pcurve controls", u64::MAX - 1, u64::MAX))?,
-            "admit intersection support pcurve controls",
-        )?;
         let nurbs =
-            match PcurveNurbs::from_lanes(1, knots, control_points, None, false) {
+            match PcurveNurbs::from_lanes(ctx, 1, knots, control_points, None, false)? {
                 Ok(nurbs) => nurbs,
                 Err(error) => {
                     refusal.note(
@@ -6664,7 +6635,7 @@ fn nurbs_degree_one_cache_pcurve(
         "copy NURBS cache pcurve knots",
     )?;
     knots.extend_from_slice(curve.knots());
-    let nurbs = PcurveNurbs::from_lanes(1, knots, control_points, None, false)?;
+    let nurbs = PcurveNurbs::from_lanes(ctx, 1, knots, control_points, None, false)??;
     Ok(Some((PcurveGeometry::Nurbs { nurbs }, fit_tolerance)))
 }
 

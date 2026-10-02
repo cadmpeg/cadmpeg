@@ -18,12 +18,12 @@ fn admitted_pcurve_parts_keep_rational_pole_storage() {
         panic!("fixture must be rational");
     };
     let storage = points.as_ptr();
-    let rebuilt = PcurveNurbs::from_admitted_rows(
+    let rebuilt = PcurveNurbs::new(&cadmpeg_test_support::service_decode_context(), 
         original.degree(),
         original.knots().clone(),
         poles,
         original.periodic(),
-    )
+    ).expect("fixture pcurve construction admission")
     .unwrap();
     let PcurveNurbsPoles::Rational { points } = rebuilt.pole_rows() else {
         panic!("rebuilt pcurve must be rational");
@@ -152,13 +152,13 @@ fn in_place_pcurve_pole_scale_refuses_atomically() {
     use crate::geometry::nurbs::NurbsError;
     use crate::units::FinitePoint2;
 
-    let mut nurbs = PcurveNurbs::from_lanes(
+    let mut nurbs = PcurveNurbs::from_lanes(&cadmpeg_test_support::service_decode_context(), 
         1,
         vec![0.0, 0.0, 1.0, 1.0],
         vec![Point2::new(1.0, 2.0), Point2::new(f64::MAX, 3.0)],
         Some(vec![1.0, 2.0]),
         false,
-    )
+    ).expect("fixture pcurve construction admission")
     .expect("finite source poles");
     let original = nurbs.clone();
     let error = nurbs
@@ -176,13 +176,13 @@ fn in_place_pcurve_pole_scale_refuses_atomically() {
 fn polynomial_pcurve_map_updates_all_poles_and_refuses_last_atomically() {
     use crate::units::FinitePoint2;
 
-    let mut curve = PcurveNurbs::from_lanes(
+    let mut curve = PcurveNurbs::from_lanes(&cadmpeg_test_support::service_decode_context(), 
         1,
         vec![0.0, 0.0, 1.0, 1.0],
         vec![Point2::new(1.0, 2.0), Point2::new(3.0, 4.0)],
         None,
         false,
-    )
+    ).expect("fixture pcurve construction admission")
     .unwrap();
     let original = curve.clone();
     let refusal = curve.try_map_control_points(|index, point| {
@@ -256,13 +256,13 @@ fn a_refused_nurbs_pcurve_scale_keeps_the_prior_poles() {
 fn nurbs_pcurve_scaling_scales_the_poles_and_keeps_the_knot_lane() {
     let mut geometry = PcurveGeometry::Nurbs { nurbs: pcurve() };
     assert!(geometry.try_scale_coordinates([2.0, 3.0]).is_ok());
-    let expected = PcurveNurbs::from_lanes(
+    let expected = PcurveNurbs::from_lanes(&cadmpeg_test_support::service_decode_context(), 
         pcurve().degree(),
         pcurve().knots().to_vec(),
         vec![Point2::new(2.0, 6.0), Point2::new(6.0, 12.0)],
         pcurve().pole_rows().weights(),
         pcurve().periodic(),
-    )
+    ).expect("fixture pcurve construction admission")
     .unwrap();
     assert_eq!(geometry, PcurveGeometry::Nurbs { nurbs: expected });
 }
@@ -281,15 +281,15 @@ fn admitted_pcurve_nurbs_parts_keep_the_raw_constructor_geometry() {
     let knots = vec![0.0, 0.0, 1.0, 1.0];
     let points = [Point2::new(1.0, 2.0), Point2::new(3.0, 4.0)];
     let weights = [1.0, 2.0];
-    let raw = PcurveNurbs::from_lanes(
+    let raw = PcurveNurbs::from_lanes(&cadmpeg_test_support::service_decode_context(), 
         1,
         knots.clone(),
         points.to_vec(),
         Some(weights.to_vec()),
         false,
-    )
+    ).expect("fixture pcurve construction admission")
     .expect("raw pcurve");
-    let admitted = PcurveNurbs::from_admitted_rows(
+    let admitted = PcurveNurbs::new(&cadmpeg_test_support::service_decode_context(), 
         1,
         KnotVector::new(&ctx, knots).expect("fixture knot admission").expect("admitted knots"),
         PcurveNurbsPoles::Rational {
@@ -303,7 +303,7 @@ fn admitted_pcurve_nurbs_parts_keep_the_raw_constructor_geometry() {
                 .collect(),
         },
         false,
-    )
+    ).expect("fixture pcurve construction admission")
     .expect("admitted pcurve");
     assert_eq!(admitted, raw);
     assert_eq!(
@@ -318,13 +318,13 @@ fn admitted_pcurve_nurbs_parts_keep_the_raw_constructor_geometry() {
 fn polynomial_pcurve_nurbs_try_clone_keeps_its_admitted_lanes() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 
-    let polynomial = PcurveNurbs::from_lanes(
+    let polynomial = PcurveNurbs::from_lanes(&cadmpeg_test_support::service_decode_context(), 
         1,
         vec![0.0, 0.0, 1.0, 1.0],
         vec![Point2::new(0.0, 0.0), Point2::new(1.0, 1.0)],
         None,
         false,
-    )
+    ).expect("fixture pcurve construction admission")
     .expect("polynomial pcurve");
     let arena = DecodeArena::new();
     let policy = DecodePolicy::service();
@@ -340,7 +340,7 @@ mod metadata;
 
 #[test]
 fn pcurve_lift_rejects_non_finite_model_poles() {
-    let curve = crate::geometry::pcurve::PcurveNurbs::from_lanes(
+    let curve = crate::geometry::pcurve::PcurveNurbs::from_lanes(&cadmpeg_test_support::service_decode_context(), 
         1,
         vec![0.0, 0.0, 1.0, 1.0],
         vec![
@@ -349,7 +349,7 @@ fn pcurve_lift_rejects_non_finite_model_poles() {
         ],
         None,
         false,
-    )
+    ).expect("fixture pcurve construction admission")
     .unwrap();
     assert!(curve
         .lift(|point| crate::math::Point3::new(point.u, point.v, f64::NAN))

@@ -2373,42 +2373,16 @@ fn append_legacy_brep(
                         }
                     }
                 }
-                if pcurve_weights.is_some() {
-                    admit_v1_values::<
-                        cadmpeg_ir::geometry::pcurve::WeightedPole2<
-                            cadmpeg_ir::units::FinitePoint2,
-                        >,
-                    >(
-                        ctx,
-                        trim.pcurve.pole_count(),
-                        "Rhino V1 pcurve weighted poles",
-                    )?;
-                    admit_v1_values::<
-                        cadmpeg_ir::geometry::pcurve::WeightedPole2<
-                            cadmpeg_ir::units::FinitePoint2,
-                        >,
-                    >(
-                        ctx,
-                        trim.pcurve.pole_count(),
-                        "Rhino V1 pcurve admitted poles",
-                    )?;
-                } else {
-                    admit_v1_values::<cadmpeg_ir::units::FinitePoint2>(
-                        ctx,
-                        trim.pcurve.pole_count(),
-                        "Rhino V1 pcurve admitted poles",
-                    )?;
-                }
                 model.pcurves.push(Pcurve {
                     id: pcurve_id.try_clone_for_decode(ctx, "Rhino V1 typed identity copy")?,
                     geometry: PcurveGeometry::Nurbs {
-                        nurbs: PcurveNurbs::from_checked_lanes(
+                        nurbs: PcurveNurbs::from_checked_lanes(ctx, 
                             trim.pcurve.degree(),
                             pcurve_knots,
                             pcurve_points,
                             pcurve_weights,
                             trim.pcurve.periodic(),
-                        )
+                        )?
                         .map_err(|error| CodecError::Malformed(error.to_string()))?,
                     },
                     metadata: cadmpeg_ir::geometry::pcurve::PcurveMetadata::general(

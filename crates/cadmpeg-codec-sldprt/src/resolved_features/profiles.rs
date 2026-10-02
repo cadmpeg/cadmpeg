@@ -5259,13 +5259,13 @@ mod detached_legacy_sketch_tests {
         }]]
         .try_into()
         .unwrap();
-        let curve = cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
+        let curve = cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(&cadmpeg_test_support::service_decode_context(), 
             1,
             vec![0.0, 0.0, 1.0, 1.0],
             vec![Point2::new(0.0, 0.0), Point2::new(1.0, 2.0)],
             Some(vec![1.0, 2.0]),
             false,
-        )
+        ).expect("fixture pcurve construction admission")
         .unwrap();
         let entities = [
             SketchEntity::new(curve_id, source_id.clone(), SketchGeometry::nurbs(curve)),

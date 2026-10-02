@@ -44,7 +44,7 @@ fn sketch_constraint_loci_preserve_first_and_later_original_refusals() {
 
 #[test]
 fn sketch_nurbs_endpoints_read_rational_poles_without_copying_all_rows() {
-    let curve = crate::geometry::pcurve::PcurveNurbs::from_lanes(1, vec![0.0, 0.0, 0.5, 1.0, 1.0], vec![crate::math::Point2::new(0.0, 0.0), crate::math::Point2::new(2.0, 8.0), crate::math::Point2::new(3.0, 4.0)], Some(vec![1.0, 2.0, 1.0]), false).unwrap();
+    let curve = crate::geometry::pcurve::PcurveNurbs::from_lanes(&cadmpeg_test_support::service_decode_context(), 1, vec![0.0, 0.0, 0.5, 1.0, 1.0], vec![crate::math::Point2::new(0.0, 0.0), crate::math::Point2::new(2.0, 8.0), crate::math::Point2::new(3.0, 4.0)], Some(vec![1.0, 2.0, 1.0]), false).expect("fixture pcurve construction admission").unwrap();
     let geometry = crate::sketches::SketchGeometry::nurbs(curve);
     let endpoints = (crate::math::Point2::new(0.0, 0.0), crate::math::Point2::new(3.0, 4.0));
     assert_eq!(super::super::oriented_endpoints(&geometry, false), Some(endpoints));
@@ -182,9 +182,9 @@ fn spatial_sketch_owner_comparison_preserves_refusal_and_absence_semantics() {
 
 #[test]
 fn sketch_offset_predicate_preserves_fitted_frame_refusal() {
-    let geometry = crate::sketches::SketchGeometry::nurbs(crate::geometry::pcurve::PcurveNurbs::from_lanes(
+    let geometry = crate::sketches::SketchGeometry::nurbs(crate::geometry::pcurve::PcurveNurbs::from_lanes(&cadmpeg_test_support::service_decode_context(), 
         1, vec![0.0, 0.0, 1.0, 1.0], vec![crate::math::Point2::new(0.0, 0.0), crate::math::Point2::new(1.0, 0.0)], None, false,
-    ).unwrap());
+    ).expect("fixture pcurve construction admission").unwrap());
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_work_units = 0;

@@ -561,19 +561,19 @@ fn semantic_writer_applies_rational_and_non_rational_sketch_nurbs_edits() {
                     .unwrap();
                 if let Some(mut weights) = curve.pole_rows().weights() {
                     weights[1] = 0.75;
-                    let poles = cadmpeg_ir::geometry::pcurve::PcurveNurbsPoles::from_lanes(
+                    let poles = cadmpeg_ir::geometry::pcurve::PcurveNurbsPoles::from_lanes(&cadmpeg_test_support::service_decode_context(), 
                         curve.pole_rows().raw_points(),
                         Some(weights),
-                    );
+                    ).expect("fixture pcurve construction admission");
                     {
                         let replacement = poles.unwrap();
                         edit::replace(curve, |previous| {
-                            cadmpeg_ir::geometry::pcurve::PcurveNurbs::new(
+                            cadmpeg_ir::geometry::pcurve::PcurveNurbs::new(&cadmpeg_test_support::service_decode_context(), 
                                 previous.degree(),
                                 previous.knots().to_vec(),
                                 replacement,
                                 previous.periodic(),
-                            )
+                            ).expect("fixture pcurve construction admission")
                         })
                     }
                     .unwrap();

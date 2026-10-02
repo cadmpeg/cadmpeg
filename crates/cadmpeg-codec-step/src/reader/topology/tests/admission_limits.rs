@@ -926,7 +926,7 @@ fn pcurve_seed_refusal(collection_limit: u64, break_only: bool) -> CodecError {
         cadmpeg_ir::geometry::SolvedSurfaceGeometry::Unknown { record: None },
     );
     let pcurve = cadmpeg_ir::geometry::pcurve::PcurveGeometry::Nurbs {
-        nurbs: cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
+        nurbs: cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(&cadmpeg_test_support::service_decode_context(), 
             1,
             vec![0.0, 0.0, 0.5, 1.0, 1.0],
             vec![
@@ -936,7 +936,7 @@ fn pcurve_seed_refusal(collection_limit: u64, break_only: bool) -> CodecError {
             ],
             None,
             false,
-        )
+        ).expect("fixture pcurve construction admission")
         .expect("finite pcurve"),
     };
     let arena = DecodeArena::new();

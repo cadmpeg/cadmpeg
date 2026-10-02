@@ -138,13 +138,13 @@ fn numerical_ranges_hyperbolic_point_survives_unrepresentable_derivatives() {
 #[test]
 fn numerical_ranges_nurbs_basis_supports_spans_wider_than_f64() {
     let pcurve = PcurveGeometry::Nurbs {
-        nurbs: crate::geometry::pcurve::PcurveNurbs::from_lanes(
+        nurbs: crate::geometry::pcurve::PcurveNurbs::from_lanes(&cadmpeg_test_support::service_decode_context(), 
             1,
             vec![-1e308, -1e308, 1e308, 1e308],
             vec![Point2::new(0., 0.), Point2::new(1., 0.)],
             None,
             false,
-        )
+        ).expect("fixture pcurve construction admission")
         .unwrap(),
     };
     for (parameter, expected) in [(-1e308, 0.), (0., 0.5), (1e308, 1.)] {

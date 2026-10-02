@@ -5,7 +5,7 @@ use cadmpeg_ir::math::Point2;
 use cadmpeg_ir::sketches::SketchGeometry;
 fn fixture(operation: &'static str) {
     let geometry = SketchGeometry::nurbs(
-        PcurveNurbs::from_lanes(
+        PcurveNurbs::from_lanes(&cadmpeg_test_support::service_decode_context(), 
             2,
             vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
             vec![
@@ -15,7 +15,7 @@ fn fixture(operation: &'static str) {
             ],
             Some(vec![1.0, 0.5, 1.0]),
             false,
-        )
+        ).expect("fixture pcurve construction admission")
         .unwrap(),
     );
     super::assert_dimension_refusal(operation, ResourceDimension::CollectionItems, |ctx| {

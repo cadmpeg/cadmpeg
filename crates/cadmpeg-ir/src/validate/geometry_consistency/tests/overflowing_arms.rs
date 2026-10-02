@@ -13,13 +13,13 @@ fn a_support_side_whose_nurbs_pcurve_overflows_misses_its_contract_by_nan() {
     // times f64::MAX. The plane maps the infinite u to a point with no finite
     // coordinate.
     let pcurve = PcurveGeometry::Nurbs {
-        nurbs: PcurveNurbs::from_lanes(
+        nurbs: PcurveNurbs::from_lanes(&cadmpeg_test_support::service_decode_context(), 
             1,
             vec![0.0, 0.0, 1.0, 1.0],
             vec![Point2::new(0.0, 0.0), Point2::new(f64::MAX, 0.0)],
             None,
             false,
-        )
+        ).expect("fixture pcurve construction admission")
         .unwrap(),
     };
     let ir = mapped_surface_curve_with_pcurve(pcurve, [2.0, 3.0]);

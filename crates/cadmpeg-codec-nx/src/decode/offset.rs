@@ -2756,13 +2756,13 @@ pub(super) fn intersection_side(
     };
     let pcurve = match lanes {
         Some((control_points, knots)) => Some(PcurveGeometry::Nurbs {
-            nurbs: cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
+            nurbs: cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(ctx, 
                 1,
                 knots,
                 control_points,
                 None,
                 false,
-            )
+            )?
             .map_err(cadmpeg_core::CodecError::malformed)?,
         }),
         None => None,

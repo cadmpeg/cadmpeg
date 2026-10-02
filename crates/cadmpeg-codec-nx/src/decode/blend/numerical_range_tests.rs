@@ -54,13 +54,13 @@ fn numerical_0922_contact_inverse_ignores_knot_units() {
         let index = cadmpeg_ir::index::ModelIndex::new_model_only(&ir);
         for d in [1., 1e9] {
             let p = PcurveGeometry::Nurbs {
-                nurbs: PcurveNurbs::from_lanes(
+                nurbs: PcurveNurbs::from_lanes(&cadmpeg_test_support::service_decode_context(), 
                     1,
                     vec![0., 0., d, d],
                     vec![Point2::new(0., 0.), Point2::new(1., 0.)],
                     None,
                     false,
-                )
+                ).expect("fixture pcurve construction admission")
                 .unwrap(),
             };
             let t = closest_contact_pcurve_parameter_with_geometry_and_budget(
@@ -272,7 +272,7 @@ fn numerical_0922b_common_weight_inverse() {
 fn numerical_audit_pcurve_newton_converges_on_small_chart() {
     for d in [1., 1e-16] {
         let p = PcurveGeometry::Nurbs {
-            nurbs: PcurveNurbs::from_lanes(
+            nurbs: PcurveNurbs::from_lanes(&cadmpeg_test_support::service_decode_context(), 
                 2,
                 vec![0., 0., 0., d, d, d],
                 vec![
@@ -282,7 +282,7 @@ fn numerical_audit_pcurve_newton_converges_on_small_chart() {
                 ],
                 None,
                 false,
-            )
+            ).expect("fixture pcurve construction admission")
             .unwrap(),
         };
         let t = closest_pcurve_parameter_from_seed(&p, Point2::new(0.25, 0.), 0.9 * d)
@@ -319,13 +319,13 @@ fn numerical_audit_inverse_and_grid_keep_wide_finite_chart() {
                     < 64. * f64::EPSILON
             );
             let p = PcurveGeometry::Nurbs {
-                nurbs: PcurveNurbs::from_lanes(
+                nurbs: PcurveNurbs::from_lanes(&cadmpeg_test_support::service_decode_context(), 
                     1,
                     vec![a, a, b, b],
                     vec![Point2::new(0., 0.), Point2::new(1., 0.)],
                     None,
                     false,
-                )
+                ).expect("fixture pcurve construction admission")
                 .unwrap(),
             };
             let t = closest_pcurve_parameter_from_coarse_grid(&p, Point2::new(0.3, 0.))

@@ -1299,7 +1299,7 @@ fn reversed_edge_negates_its_pcurve_validation_interval() {
         edge_pcurve_parameter_ranges(&edge),
         Some([[-0.55, -0.60], [0.55, 0.60]])
     );
-    let candidate = cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
+    let candidate = cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(&cadmpeg_test_support::service_decode_context(), 
         1,
         vec![0.0, 0.0, 1.0, 1.0],
         vec![
@@ -1308,7 +1308,7 @@ fn reversed_edge_negates_its_pcurve_validation_interval() {
         ],
         None,
         false,
-    )
+    ).expect("fixture pcurve construction admission")
     .unwrap();
     assert_eq!(
         pcurve_ranges_on_domain(&candidate, Some(&edge)),

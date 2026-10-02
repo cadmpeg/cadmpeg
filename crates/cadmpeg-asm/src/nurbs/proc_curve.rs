@@ -3854,7 +3854,7 @@ mod cache_form_tests {
     use cadmpeg_ir::math::Point3;
 
     fn linear_pcurve(points: [Point2; 2]) -> PcurveNurbs {
-        PcurveNurbs::from_lanes(1, vec![0.0, 0.0, 1.0, 1.0], points.into(), None, false).unwrap()
+        PcurveNurbs::from_lanes(&cadmpeg_test_support::service_decode_context(), 1, vec![0.0, 0.0, 1.0, 1.0], points.into(), None, false).expect("fixture pcurve construction admission").unwrap()
     }
 
     #[test]

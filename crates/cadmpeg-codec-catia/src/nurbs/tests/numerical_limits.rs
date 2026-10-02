@@ -43,13 +43,13 @@ fn reversed_nurbs_copies_refuse_low_collection_and_retained_limits() {
         if limit.operation == "catia_reverse_curve_poles")
     );
     let pcurve = PcurveGeometry::Nurbs {
-        nurbs: PcurveNurbs::from_lanes(
+        nurbs: PcurveNurbs::from_lanes(&cadmpeg_test_support::service_decode_context(), 
             1,
             vec![0.0, 0.0, 1.0, 1.0],
             vec![Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)],
             None,
             false,
-        )
+        ).expect("fixture pcurve construction admission")
         .expect("linear pcurve"),
     };
     let retained = crate::test_support::with_retained_limit(0, |ctx| {
@@ -129,13 +129,13 @@ fn reversal_preserves_large_parameter_offsets_and_endpoint_values() {
         .expect("reversed curve");
         assert_eq!(reversed_range, range);
         let pcurve = PcurveGeometry::Nurbs {
-            nurbs: PcurveNurbs::from_lanes(
+            nurbs: PcurveNurbs::from_lanes(&cadmpeg_test_support::service_decode_context(), 
                 1,
                 knots,
                 vec![Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)],
                 None,
                 false,
-            )
+            ).expect("fixture pcurve construction admission")
             .expect("linear pcurve"),
         };
         let reversed_pcurve = crate::test_support::with_service_context(|ctx| {
@@ -174,13 +174,13 @@ fn wide_finite_nurbs_ranges_reverse_and_normalize_without_a_finite_width() {
         .expect("wide finite curve"),
     ));
     let pcurve = PcurveGeometry::Nurbs {
-        nurbs: PcurveNurbs::from_lanes(
+        nurbs: PcurveNurbs::from_lanes(&cadmpeg_test_support::service_decode_context(), 
             1,
             knots,
             vec![Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)],
             None,
             false,
-        )
+        ).expect("fixture pcurve construction admission")
         .expect("wide finite pcurve"),
     };
     let mut refusal = LaneRefusals::new();

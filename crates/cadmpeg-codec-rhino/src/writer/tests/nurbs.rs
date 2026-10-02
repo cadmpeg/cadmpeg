@@ -173,13 +173,13 @@ fn explicit_nurbs_pcurves_round_trip_owned_geometry_and_tolerance() {
         ir.model.pcurves.push(cadmpeg_ir::geometry::pcurve::Pcurve {
             id: id.clone(),
             geometry: cadmpeg_ir::geometry::pcurve::PcurveGeometry::Nurbs {
-                nurbs: cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
+                nurbs: cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(&cadmpeg_test_support::service_decode_context(), 
                     2,
                     vec![2.0, 2.0, 2.0, 5.0, 5.0, 5.0],
                     control_points,
                     Some(vec![1.0, 0.75, 1.0]),
                     false,
-                )
+                ).expect("fixture pcurve construction admission")
                 .expect("valid explicit pcurve"),
             },
             metadata: cadmpeg_ir::geometry::pcurve::PcurveMetadata::general(
@@ -603,7 +603,7 @@ fn generally_trimmed_nurbs_face_round_trips_outer_loop_and_hole() {
             .expect("valid trimmed edge"),
         ));
     ir.model.pcurves[0].geometry = cadmpeg_ir::geometry::pcurve::PcurveGeometry::Nurbs {
-        nurbs: cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
+        nurbs: cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(&cadmpeg_test_support::service_decode_context(), 
             2,
             vec![
                 domain[0], domain[0], domain[0], domain[1], domain[1], domain[1],
@@ -614,7 +614,7 @@ fn generally_trimmed_nurbs_face_round_trips_outer_loop_and_hole() {
                 .collect(),
             Some(vec![1.0, 0.8, 1.0]),
             false,
-        )
+        ).expect("fixture pcurve construction admission")
         .expect("valid trimmed pcurve"),
     };
     let expected_surface = ir.model.surfaces[0].geometry.clone();
@@ -804,7 +804,7 @@ fn reversed_trim_reflects_interior_knots_without_domain_sum_overflow() {
     let pcurve = Pcurve {
         id: cadmpeg_ir::ids::PcurveId::mint("test:model:pcurve#large-domain").unwrap(),
         geometry: PcurveGeometry::Nurbs {
-            nurbs: PcurveNurbs::from_lanes(1, knots, uv.clone(), None, false).unwrap(),
+            nurbs: PcurveNurbs::from_lanes(&cadmpeg_test_support::service_decode_context(), 1, knots, uv.clone(), None, false).expect("fixture pcurve construction admission").unwrap(),
         },
         metadata: PcurveMetadata::general(
             None,
@@ -880,7 +880,7 @@ fn numerical_ranges_trim_sampling_avoids_wide_domain_subtraction() {
     let pcurve = Pcurve {
         id: cadmpeg_ir::ids::PcurveId::mint("test:model:pcurve#large-domain").unwrap(),
         geometry: PcurveGeometry::Nurbs {
-            nurbs: PcurveNurbs::from_lanes(1, knots, uv.clone(), None, false).unwrap(),
+            nurbs: PcurveNurbs::from_lanes(&cadmpeg_test_support::service_decode_context(), 1, knots, uv.clone(), None, false).expect("fixture pcurve construction admission").unwrap(),
         },
         metadata: PcurveMetadata::general(
             None,

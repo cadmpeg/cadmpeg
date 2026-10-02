@@ -29,14 +29,14 @@ fn wide_pcurve_domain_keeps_its_finite_midpoint_seed() {
     let pcurve = Pcurve {
         id: "test:model:pcurve#wide-domain".try_into().unwrap(),
         geometry: PcurveGeometry::Nurbs {
-            nurbs: crate::geometry::pcurve::PcurveNurbs::new(
+            nurbs: crate::geometry::pcurve::PcurveNurbs::new(&cadmpeg_test_support::service_decode_context(), 
                 1,
                 vec![-f64::MAX, -f64::MAX, f64::MAX * 0.5, f64::MAX * 0.5],
                 crate::geometry::pcurve::PcurveNurbsPoles::Polynomial {
                     points: vec![Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)],
                 },
                 false,
-            )
+            ).expect("fixture pcurve construction admission")
             .unwrap(),
         },
         metadata: PcurveMetadata::default(),
@@ -581,7 +581,7 @@ fn trimmed_surface_pcurve_uses_the_local_parameterization_for_validation() {
 fn untrimmed_nurbs_pcurve_uses_its_own_endpoint_parameters() {
     let mut ir = untrimmed_surface_curve();
     ir.model.pcurves[0].geometry = PcurveGeometry::Nurbs {
-        nurbs: crate::geometry::pcurve::PcurveNurbs::from_lanes(
+        nurbs: crate::geometry::pcurve::PcurveNurbs::from_lanes(&cadmpeg_test_support::service_decode_context(), 
             2,
             vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
             vec![
@@ -591,7 +591,7 @@ fn untrimmed_nurbs_pcurve_uses_its_own_endpoint_parameters() {
             ],
             Some(vec![1.0, 2.0_f64.sqrt() / 2.0, 1.0]),
             false,
-        )
+        ).expect("fixture pcurve construction admission")
         .unwrap(),
     };
     let mut findings = Vec::new();
@@ -638,7 +638,7 @@ fn raw_nurbs_domain_is_not_treated_as_edge_trim() {
             .try_into()
             .expect("valid identity"),
         geometry: PcurveGeometry::Nurbs {
-            nurbs: crate::geometry::pcurve::PcurveNurbs::from_lanes(
+            nurbs: crate::geometry::pcurve::PcurveNurbs::from_lanes(&cadmpeg_test_support::service_decode_context(), 
                 2,
                 vec![-1.0, 0.0, 0.0, 1.0, 1.0, 2.0],
                 vec![
@@ -648,7 +648,7 @@ fn raw_nurbs_domain_is_not_treated_as_edge_trim() {
                 ],
                 None,
                 false,
-            )
+            ).expect("fixture pcurve construction admission")
             .unwrap(),
         },
         metadata: PcurveMetadata::default(),
@@ -668,13 +668,13 @@ fn collapsed_trimmed_pcurve_falls_back_to_its_basis_domain() {
             [1.0, 1.0],
             true,
             Box::new(PcurveGeometry::Nurbs {
-                nurbs: crate::geometry::pcurve::PcurveNurbs::from_lanes(
+                nurbs: crate::geometry::pcurve::PcurveNurbs::from_lanes(&cadmpeg_test_support::service_decode_context(), 
                     1,
                     vec![0.0, 0.0, 1.0, 1.0],
                     vec![Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)],
                     None,
                     true,
-                )
+                ).expect("fixture pcurve construction admission")
                 .unwrap(),
             }),
         )
@@ -978,7 +978,7 @@ fn pcurve_surface_mismatch_is_flagged() {
         ir.model.pcurves.push(crate::geometry::pcurve::Pcurve {
             id: crate::ids::PcurveId::mint("synthetic:cube:pcurve#0").expect("valid identity"),
             geometry: crate::geometry::pcurve::PcurveGeometry::Nurbs {
-                nurbs: crate::geometry::pcurve::PcurveNurbs::from_lanes(
+                nurbs: crate::geometry::pcurve::PcurveNurbs::from_lanes(&cadmpeg_test_support::service_decode_context(), 
                     1,
                     vec![0.0, 0.0, 1.0, 1.0],
                     vec![
@@ -987,7 +987,7 @@ fn pcurve_surface_mismatch_is_flagged() {
                     ],
                     None,
                     false,
-                )
+                ).expect("fixture pcurve construction admission")
                 .unwrap(),
             },
             metadata: PcurveMetadata::general(
@@ -1051,7 +1051,7 @@ fn pcurve_surface_mismatch_is_flagged() {
             id: crate::ids::PcurveId::mint("synthetic:cube:pcurve#procedural")
                 .expect("valid identity"),
             geometry: crate::geometry::pcurve::PcurveGeometry::Nurbs {
-                nurbs: crate::geometry::pcurve::PcurveNurbs::from_lanes(
+                nurbs: crate::geometry::pcurve::PcurveNurbs::from_lanes(&cadmpeg_test_support::service_decode_context(), 
                     1,
                     vec![0.0, 0.0, 1.0, 1.0],
                     vec![
@@ -1060,7 +1060,7 @@ fn pcurve_surface_mismatch_is_flagged() {
                     ],
                     None,
                     false,
-                )
+                ).expect("fixture pcurve construction admission")
                 .unwrap(),
             },
             metadata: PcurveMetadata::default(),
@@ -1145,7 +1145,7 @@ fn pcurve_surface_mismatch_is_flagged() {
             id: crate::ids::PcurveId::mint("synthetic:cube:pcurve#negative")
                 .expect("valid identity"),
             geometry: crate::geometry::pcurve::PcurveGeometry::Nurbs {
-                nurbs: crate::geometry::pcurve::PcurveNurbs::from_lanes(
+                nurbs: crate::geometry::pcurve::PcurveNurbs::from_lanes(&cadmpeg_test_support::service_decode_context(), 
                     1,
                     vec![-10.0, -10.0, 0.0, 0.0],
                     vec![
@@ -1154,7 +1154,7 @@ fn pcurve_surface_mismatch_is_flagged() {
                     ],
                     None,
                     false,
-                )
+                ).expect("fixture pcurve construction admission")
                 .unwrap(),
             },
             metadata: PcurveMetadata::default(),
@@ -1234,13 +1234,13 @@ fn placed_nurbs_surface(placements: usize) -> Result<SolvedSurfaceGeometry, &'st
 
 fn nurbs_pcurve_leaf() -> PcurveGeometry {
     PcurveGeometry::Nurbs {
-        nurbs: crate::geometry::pcurve::PcurveNurbs::from_lanes(
+        nurbs: crate::geometry::pcurve::PcurveNurbs::from_lanes(&cadmpeg_test_support::service_decode_context(), 
             1,
             vec![0.0, 0.0, 1.0, 1.0],
             vec![Point2::new(0.0, 0.0), Point2::new(1.0, 1.0)],
             None,
             false,
-        )
+        ).expect("fixture pcurve construction admission")
         .unwrap(),
     }
 }

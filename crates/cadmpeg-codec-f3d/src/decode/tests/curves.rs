@@ -1547,7 +1547,7 @@ fn generated_mixed_offset_supports_write_source_less() {
         context.sides()[0].pcurve,
         Some(
             cadmpeg_ir::geometry::pcurve::PcurveGeometry::Nurbs {
-                nurbs: cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
+                nurbs: cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(&cadmpeg_test_support::service_decode_context(), 
                     1,
                     vec![0.0, 0.0, 1.0, 1.0],
                     vec![
@@ -1556,7 +1556,7 @@ fn generated_mixed_offset_supports_write_source_less() {
                     ],
                     None,
                     false,
-                )
+                ).expect("fixture pcurve construction admission")
                 .unwrap(),
             }
             .into()

@@ -325,7 +325,7 @@ fn opposite_intersection_blend_contact_keeps_adaptive_fit_certification() {
 
     crate::test_support::with_decode_context(|geometry_ctx| {
         let source_pcurve = PcurveGeometry::Nurbs {
-            nurbs: PcurveNurbs::from_lanes(
+            nurbs: PcurveNurbs::from_lanes(&cadmpeg_test_support::service_decode_context(), 
                 2,
                 vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
                 vec![
@@ -335,7 +335,7 @@ fn opposite_intersection_blend_contact_keeps_adaptive_fit_certification() {
                 ],
                 None,
                 false,
-            )
+            ).expect("fixture pcurve construction admission")
             .expect("valid blend-contact pcurve"),
         };
         let mut ir = blend_contact_transfer_fixture(1, &source_pcurve, CONTACT_FIT_TOLERANCE, true);
@@ -714,13 +714,13 @@ fn blend_contact_transfer_fixture(
         source_object: None,
     });
     let contact_pcurve = PcurveGeometry::Nurbs {
-        nurbs: PcurveNurbs::from_lanes(
+        nurbs: PcurveNurbs::from_lanes(&cadmpeg_test_support::service_decode_context(), 
             1,
             vec![0.0, 0.0, 1.0, 1.0],
             vec![Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)],
             None,
             false,
-        )
+        ).expect("fixture pcurve construction admission")
         .expect("valid contact pcurve"),
     };
     let contact_surface = if contact_on_source_support {

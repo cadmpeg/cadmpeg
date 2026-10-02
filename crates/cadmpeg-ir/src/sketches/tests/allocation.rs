@@ -17,13 +17,13 @@ fn copy_with_policy(
 
 #[test]
 fn sketch_nurbs_copy_refuses_each_nested_collection() {
-    let curve = PcurveNurbs::from_lanes(
+    let curve = PcurveNurbs::from_lanes(&cadmpeg_test_support::service_decode_context(), 
         1,
         vec![0.0, 0.0, 1.0, 1.0],
         vec![Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)],
         None,
         false,
-    )
+    ).expect("fixture pcurve construction admission")
     .expect("linear NURBS fixture");
     let geometry = SketchGeometry::nurbs(curve);
     let mut policy = DecodePolicy::service();

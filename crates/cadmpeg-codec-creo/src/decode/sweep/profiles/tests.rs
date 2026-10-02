@@ -164,13 +164,13 @@ fn profile_sketch_copy_with_limit(
     limit: u64,
 ) -> Result<Option<SketchGeometry>, cadmpeg_core::CodecError> {
     let geometry = super::ProfileGeometry::Nurbs {
-        curve: PcurveNurbs::from_lanes(
+        curve: PcurveNurbs::from_lanes(&cadmpeg_test_support::service_decode_context(), 
             1,
             vec![0.0, 0.0, 1.0, 1.0],
             vec![Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)],
             None,
             false,
-        )
+        ).expect("fixture pcurve construction admission")
         .expect("linear pcurve fixture"),
     };
     let arena = cadmpeg_core::decode::DecodeArena::new();
@@ -268,13 +268,13 @@ fn profile_line(start: [f64; 2], end: [f64; 2]) -> super::ProfileEntity {
 }
 
 fn profile_nurbs_line() -> super::ProfileEntity {
-    let curve = PcurveNurbs::from_lanes(
+    let curve = PcurveNurbs::from_lanes(&cadmpeg_test_support::service_decode_context(), 
         1,
         vec![0.0, 0.0, 1.0, 1.0],
         vec![Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)],
         None,
         false,
-    )
+    ).expect("fixture pcurve construction admission")
     .expect("linear profile pcurve");
     super::ProfileEntity {
         geometry: super::ProfileGeometry::Nurbs { curve },
@@ -561,7 +561,7 @@ fn resolved_nurbs_profile_refuses_source_geometry_copy_limit() {
     let sketch_id = SketchId::mint("creo:model:sketch#74").expect("identity grammar");
     let entity_id =
         SketchEntityId::mint("creo:featdefs:sketch_entity#74:1").expect("identity grammar");
-    let nurbs = PcurveNurbs::from_lanes(
+    let nurbs = PcurveNurbs::from_lanes(&cadmpeg_test_support::service_decode_context(), 
         2,
         vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
         vec![
@@ -571,7 +571,7 @@ fn resolved_nurbs_profile_refuses_source_geometry_copy_limit() {
         ],
         None,
         false,
-    )
+    ).expect("fixture pcurve construction admission")
     .expect("closed source NURBS");
     let mut ir = CadIr::empty();
     ir.model.sketches.push(sketch(&sketch_id, &entity_id));
@@ -659,13 +659,13 @@ fn forward_arc_sweep_reduces_a_wide_finite_angle_interval() {
 #[test]
 fn nurbs_profile_area_uses_finite_gauss_samples_on_a_wide_domain() {
     let geometry = SketchGeometry::nurbs(
-        PcurveNurbs::from_lanes(
+        PcurveNurbs::from_lanes(&cadmpeg_test_support::service_decode_context(), 
             1,
             vec![-f64::MAX, -f64::MAX, f64::MAX, f64::MAX],
             vec![Point2::new(1.0, 0.0), Point2::new(1.0, 1.0)],
             None,
             false,
-        )
+        ).expect("fixture pcurve construction admission")
         .expect("wide finite sketch NURBS"),
     );
     let area = crate::decode::with_test_decode_ctx(|ctx| {
@@ -1022,7 +1022,7 @@ fn resolved_profile_nurbs_copy_refuses_knots_and_poles_separately() {
     for rational in [false, true] {
         let sketch_id = SketchId::mint("creo:model:sketch#74").expect("ID");
         let entity_id = SketchEntityId::mint("creo:featdefs:sketch_entity#74:1").expect("ID");
-        let curve = PcurveNurbs::from_lanes(
+        let curve = PcurveNurbs::from_lanes(&cadmpeg_test_support::service_decode_context(), 
             2,
             vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
             vec![
@@ -1032,7 +1032,7 @@ fn resolved_profile_nurbs_copy_refuses_knots_and_poles_separately() {
             ],
             rational.then(|| vec![1.0, 2.0, 1.0]),
             false,
-        )
+        ).expect("fixture pcurve construction admission")
         .expect("curve");
         let mut ir = CadIr::empty();
         ir.model.sketches.push(sketch(&sketch_id, &entity_id));

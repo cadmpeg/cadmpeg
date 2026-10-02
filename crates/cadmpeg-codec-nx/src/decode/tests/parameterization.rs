@@ -825,13 +825,13 @@ fn completed_intersection_support_lane_attaches_after_topology_emission() {
                                 surface: Some(surface),
                                 pcurve: Some(
                                     PcurveGeometry::Nurbs {
-                                        nurbs: PcurveNurbs::from_lanes(
+                                        nurbs: PcurveNurbs::from_lanes(&cadmpeg_test_support::service_decode_context(), 
                                             1,
                                             vec![0.0, 0.0, 1.0, 1.0],
                                             vec![Point2::new(0.0, 0.0), Point2::new(10.0, 0.0)],
                                             None,
                                             false,
-                                        )
+                                        ).expect("fixture pcurve construction admission")
                                         .expect("valid support pcurve"),
                                     }
                                     .into(),
