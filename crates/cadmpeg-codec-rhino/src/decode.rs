@@ -2566,7 +2566,7 @@ impl<'a> DecodeContext<'a> {
                         vertex.set_point(moved);
                     }
                     Ok(())
-                })
+                }, ctx)?
                 .map_err(|error| error.to_string())?;
             ctx.reserve_scoped_vec(scratch, &mut links, 1, "Rhino transformed instance links")?;
             let id = ctx.format_scoped_text(

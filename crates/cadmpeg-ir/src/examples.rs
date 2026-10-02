@@ -431,8 +431,7 @@ pub fn directed_subd_sum() -> Result<CadIr, ExampleError> {
                     "invalid directed SubD example face",
                 )
             })?],
-            Vec::new(),
-        )
+            Vec::new(), &ctx)?
         .map_err(|_| {
             crate::geometry::ProceduralGeometryError::Payload("invalid directed SubD example cage")
         })?,

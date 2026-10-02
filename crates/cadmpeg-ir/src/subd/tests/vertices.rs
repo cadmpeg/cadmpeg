@@ -43,13 +43,13 @@ fn cage_edits_roll_back_when_a_vertex_rejects_its_position() {
             Err(SubdError::EditRefused(
                 "the second vertex rejects its position".into(),
             ))
-        })
+        }, &cadmpeg_test_support::service_decode_context()).expect("fixture SubD admission")
         .is_err());
     assert_eq!(cage, original);
     cage.edit_vertices(|vertices| {
         vertices[0].set_point(moved);
         Ok(())
-    })
+    }, &cadmpeg_test_support::service_decode_context()).expect("fixture SubD admission")
     .unwrap();
     assert_eq!(cage.vertices[0].point(), Point3::new(2.0, 3.0, 4.0));
 }
