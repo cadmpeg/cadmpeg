@@ -1221,13 +1221,22 @@ fn canonicalize_native_curve_knots(
     curve: &mut cadmpeg_ir::geometry::nurbs::NurbsCurve,
     id: &str,
 ) -> Result<(), CodecError> {
+    // Native-canonical writer checks state an independent construction policy.
+    let writer_arena = cadmpeg_core::decode::DecodeArena::new();
+    let writer_policy = cadmpeg_core::decode::DecodePolicy::desktop();
+    let (writer_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &writer_arena, &writer_policy,
+    )?;
     let order = usize::try_from(curve.degree())
         .map_err(|_| CodecError::Malformed("Rhino count exceeds address space".into()))?
         + 1;
     let count = curve.control_points().len();
     let stored = curve.knots()[1..curve.knots().len() - 1].to_vec();
-    let reconstructed = crate::surfaces::reconstruct_knots(&stored, order, count)
-        .map_err(|error| CodecError::NotImplemented(format!("curve {id}: {error}")))?;
+    let reconstructed = crate::surfaces::reconstruct_knots(&writer_ctx, &stored, order, count)
+        .map_err(|error| match error {
+            crate::curves::GeometryError::Codec(CodecError::ResourceLimit(limit)) => CodecError::ResourceLimit(limit),
+            error => CodecError::NotImplemented(format!("curve {id}: {error}")),
+        })?;
     curve
         .edit_knots(|knots| knots.copy_from_slice(&reconstructed))
         .map_err(|error| CodecError::NotImplemented(format!("curve {id}: {error}")))?;
@@ -1900,14 +1909,23 @@ fn check_knot_roundtrip(
     count: usize,
     declared_periodic: bool,
 ) -> Result<(), CodecError> {
+    // Native-canonical writer checks state an independent construction policy.
+    let writer_arena = cadmpeg_core::decode::DecodeArena::new();
+    let writer_policy = cadmpeg_core::decode::DecodePolicy::desktop();
+    let (writer_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &writer_arena, &writer_policy,
+    )?;
     let stored = &full[1..full.len() - 1];
     if stored[order - 2] >= stored[count - 1] {
         return Err(CodecError::NotImplemented(format!(
             "{direction} {id} has a non-increasing native NURBS domain"
         )));
     }
-    let reconstructed = crate::surfaces::reconstruct_knots(stored, order, count)
-        .map_err(|error| CodecError::NotImplemented(format!("{direction} {id}: {error}")))?;
+    let reconstructed = crate::surfaces::reconstruct_knots(&writer_ctx, stored, order, count)
+        .map_err(|error| match error {
+            crate::curves::GeometryError::Codec(CodecError::ResourceLimit(limit)) => CodecError::ResourceLimit(limit),
+            error => CodecError::NotImplemented(format!("{direction} {id}: {error}")),
+        })?;
     let periodic = crate::surfaces::periodic_knots(stored, order, count);
     if reconstructed != full || periodic != declared_periodic {
         return Err(CodecError::NotImplemented(format!(

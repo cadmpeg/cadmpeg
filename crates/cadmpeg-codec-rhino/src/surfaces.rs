@@ -1388,22 +1388,15 @@ fn read_poles(
 
 /// Reconstruct the omitted endpoints. The indexes below are zero-based.
 pub(crate) fn reconstruct_knots(
+    ctx: &DecodeContext<'_>,
     knots: &[f64],
     order: usize,
     cv_count: usize,
 ) -> Result<Vec<f64>, GeometryError> {
-    let ([start, end], capacity, _) =
+    let ([start, end], capacity) =
         reconstructed_endpoints(knots.len(), order, cv_count, |index| knots[index])?;
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(
-        &[],
-        &arena,
-        &cadmpeg_core::decode::DecodePolicy::default(),
-    )?;
     let mut result = ctx.retained_vec(capacity, "Rhino NURBS reconstructed knots")?;
-    result.push(start.get());
-    result.extend_from_slice(knots);
-    result.push(end.get());
+    fill_reconstructed_knots(ctx, &mut result, knots, [start.get(), end.get()], capacity)?;
     Ok(result)
 }
 
@@ -1413,16 +1406,27 @@ fn reconstruct_checked_knots(
     order: usize,
     cv_count: usize,
 ) -> Result<KnotVector, GeometryError> {
-    let ([start, end], capacity, _) =
+    let ([start, end], capacity) =
         reconstructed_endpoints(knots.len(), order, cv_count, |index| knots[index].get())?;
     let mut result = Vec::new();
     let _storage = ctx.reserve_temporary_vec(&mut result, capacity, "Rhino NURBS reconstructed knots").map_err(CodecError::from)?;
-    ctx.charge_work(cadmpeg_core::decode::u64_from_index(capacity), "Rhino NURBS reconstructed knots")?;
-    result.push(start);
-    result.extend_from_slice(knots);
-    result.push(end);
+    fill_reconstructed_knots(ctx, &mut result, knots, [start, end], capacity)?;
     KnotVector::from_finite_lanes(ctx, result)?
         .map_err(|_| GeometryError::unpositioned("NURBS reconstructed knots are invalid"))
+}
+
+fn fill_reconstructed_knots<T: Copy>(
+    ctx: &DecodeContext<'_>,
+    output: &mut Vec<T>,
+    knots: &[T],
+    [start, end]: [T; 2],
+    count: usize,
+) -> Result<(), CodecError> {
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(count), "Rhino NURBS reconstructed knots")?;
+    output.push(start);
+    output.extend_from_slice(knots);
+    output.push(end);
+    Ok(())
 }
 
 fn reconstructed_endpoints(
@@ -1430,7 +1434,7 @@ fn reconstructed_endpoints(
     order: usize,
     cv_count: usize,
     knot: impl Fn(usize) -> f64,
-) -> Result<([FiniteReal; 2], usize, u64), GeometryError> {
+) -> Result<([FiniteReal; 2], usize), GeometryError> {
     let m = order
         .checked_add(cv_count)
         .and_then(|value| value.checked_sub(2))
@@ -1461,13 +1465,7 @@ fn reconstructed_endpoints(
     let capacity = order.checked_add(cv_count).ok_or_else(|| {
         GeometryError::not_implemented("NURBS reconstructed knot count exceeds address space")
     })?;
-    let allocation_bytes = capacity
-        .checked_mul(8)
-        .map(cadmpeg_core::decode::u64_from_index)
-        .ok_or_else(|| {
-            GeometryError::not_implemented("NURBS reconstructed knot bytes exceed address space")
-        })?;
-    Ok(([start, end], capacity, allocation_bytes))
+    Ok(([start, end], capacity))
 }
 
 pub(crate) fn periodic_knots(knots: &[f64], order: usize, cv_count: usize) -> bool {
