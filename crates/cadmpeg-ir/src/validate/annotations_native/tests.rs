@@ -40,7 +40,7 @@ fn annotation_keys_and_field_paths_are_checked() {
     let mut source_fidelity = crate::SourceFidelity::default();
     let mut annotations = crate::AnnotationBuilder::new();
     let stream = crate::annotations::StreamHandle::new(crate::stream_name!("test:source"));
-    annotations.note("missing", &stream, 0);
+    annotations.note(&cadmpeg_test_support::service_decode_context(), "missing", &stream, 0, None).unwrap();
     annotations
         .derived(&cadmpeg_test_support::service_decode_context(), ir.model.edges[0].id.as_str(), "not_a_serialized_field")
         .expect("nonempty exactness field");

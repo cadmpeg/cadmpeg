@@ -7,8 +7,7 @@ fn remapping_refuses_collisions_across_tables_without_mutation() {
     let mut builder = AnnotationBuilder::new();
     let stream = StreamHandle::new(crate::stream_name!("source"));
     builder
-        .note("test:model:point#provenance", &stream, 7)
-        .tag("point");
+        .note(&cadmpeg_test_support::service_decode_context(), "test:model:point#provenance", &stream, 7, Some("point")).unwrap();
     builder.exactness(&cadmpeg_test_support::service_decode_context(), "test:model:point#exactness", Exactness::Inferred).unwrap();
     let mut annotations = builder.build();
     let before = annotations.clone();
@@ -27,7 +26,7 @@ fn remapping_refuses_collisions_across_tables_without_mutation() {
 fn remapping_calls_once_per_identity_and_preserves_each_annotation() {
     let mut builder = AnnotationBuilder::new();
     let stream = StreamHandle::new(crate::stream_name!("source"));
-    builder.note("test:model:point#a", &stream, 7).tag("point");
+    builder.note(&cadmpeg_test_support::service_decode_context(), "test:model:point#a", &stream, 7, Some("point")).unwrap();
     builder.exactness(&cadmpeg_test_support::service_decode_context(), "test:model:point#a", Exactness::Inferred).unwrap();
     builder.derived(&cadmpeg_test_support::service_decode_context(), "test:model:point#b", "position").unwrap();
     let mut annotations = builder.build();
@@ -63,9 +62,9 @@ fn appending_refuses_shared_identities_in_either_table_without_mutation() {
     for reverse in [false, true] {
         let stream = StreamHandle::new(crate::stream_name!("source"));
         let mut left = AnnotationBuilder::new();
-        left.note("test:model:point#shared", &stream, 1);
+        left.note(&cadmpeg_test_support::service_decode_context(), "test:model:point#shared", &stream, 1, None).unwrap();
         let mut right = AnnotationBuilder::new();
-        right.note("test:model:point#new", &stream, 2);
+        right.note(&cadmpeg_test_support::service_decode_context(), "test:model:point#new", &stream, 2, None).unwrap();
         right.exactness(&cadmpeg_test_support::service_decode_context(), "test:model:point#shared", Exactness::Derived).unwrap();
         let (mut target, incoming) = if reverse {
             (right.build(), left.build())
@@ -85,9 +84,9 @@ fn appending_refuses_shared_identities_in_either_table_without_mutation() {
 fn appending_disjoint_annotations_preserves_both_tables() {
     let stream = StreamHandle::new(crate::stream_name!("source"));
     let mut left = AnnotationBuilder::new();
-    left.note("test:model:point#a", &stream, 1);
+    left.note(&cadmpeg_test_support::service_decode_context(), "test:model:point#a", &stream, 1, None).unwrap();
     let mut right = AnnotationBuilder::new();
-    right.note("test:model:point#b", &stream, 2).tag("point");
+    right.note(&cadmpeg_test_support::service_decode_context(), "test:model:point#b", &stream, 2, Some("point")).unwrap();
     right.exactness(&cadmpeg_test_support::service_decode_context(), "test:model:point#b", Exactness::Derived).unwrap();
     let mut target = left.build();
     let incoming = right.build();
@@ -104,7 +103,7 @@ fn appending_disjoint_annotations_preserves_both_tables() {
 fn charged_remapping_preserves_collision_text_and_tables() {
     let mut builder = AnnotationBuilder::new();
     let stream = StreamHandle::new(crate::stream_name!("source"));
-    builder.note("source-a", &stream, 7).tag("point");
+    builder.note(&cadmpeg_test_support::service_decode_context(), "source-a", &stream, 7, Some("point")).unwrap();
     builder.exactness(&cadmpeg_test_support::service_decode_context(), "source-b", Exactness::Inferred).unwrap();
     let mut annotations = builder.build();
     let before = annotations.clone();

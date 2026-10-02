@@ -296,7 +296,7 @@ fn annotation_provenance_refuses_collection_limit() {
     let stream = cadmpeg_ir::annotations::StreamHandle::new(cadmpeg_ir::stream_name!("f3d:native"));
     let mut annotations = cadmpeg_ir::annotations::AnnotationBuilder::new();
     let error = annotations
-        .note_for_decode(&ctx, "f3d:test:entity#one", &stream, 0, Some("entity"))
+        .note(&ctx, "f3d:test:entity#one", &stream, 0, Some("entity"))
         .unwrap_err();
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -313,7 +313,7 @@ fn annotation_provenance_refuses_retained_limit() {
     let stream = cadmpeg_ir::annotations::StreamHandle::new(cadmpeg_ir::stream_name!("f3d:native"));
     let mut annotations = cadmpeg_ir::annotations::AnnotationBuilder::new();
     let error = annotations
-        .note_for_decode(&ctx, "f3d:test:entity#one", &stream, 0, Some("entity"))
+        .note(&ctx, "f3d:test:entity#one", &stream, 0, Some("entity"))
         .unwrap_err();
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)

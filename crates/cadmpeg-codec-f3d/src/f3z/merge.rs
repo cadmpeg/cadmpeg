@@ -407,7 +407,7 @@ fn rescope_fidelity(
         .map_err(CodecError::malformed)?;
         let stream =
             StreamHandle::new_for_decode(ctx, stream, "allocate annotation stream handle")?;
-        builder.note_for_decode(
+        builder.note(
             ctx,
             &id,
             &stream,

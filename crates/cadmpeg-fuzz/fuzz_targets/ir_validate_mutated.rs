@@ -113,13 +113,17 @@ fuzz_target!(|data: &[u8]| {
         }
         11 => {
             // Add an annotation for an entity that does not exist.
+            let arena = cadmpeg_core::decode::DecodeArena::new();
+            let policy = cadmpeg_core::decode::DecodePolicy::service();
+            let Ok((annotation_ctx, _)) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy) else { return; };
             let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
             let stream = StreamHandle::new(cadmpeg_ir::stream_name!("fuzz:nonexistent"));
-            annotations.note("nonexistent", &stream, u64::MAX);
-            source_fidelity
+            if annotations.note(&annotation_ctx, "nonexistent", &stream, u64::MAX, None).is_err() { return; }
+            let Ok(appended) = source_fidelity
                 .annotations
-                .append(annotations.build())
-                .expect("annotation arena append");
+                .append(&annotation_ctx, annotations.build(), "fuzz annotation append") else { return; };
+            appended.expect("annotation arena append");
+            if annotation_ctx.finish_session().is_err() { return; }
         }
         12 => {
             if let Some(edge) = ir.model.edges.first().cloned() {

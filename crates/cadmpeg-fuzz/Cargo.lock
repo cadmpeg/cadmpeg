@@ -282,6 +282,7 @@ dependencies = [
  "base64",
  "cadmpeg-core",
  "serde",
+ "serde-value",
  "serde_json",
  "sha2",
  "thiserror",

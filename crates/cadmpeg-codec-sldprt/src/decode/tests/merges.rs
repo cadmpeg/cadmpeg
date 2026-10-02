@@ -14,11 +14,11 @@ fn brep_merge_propagates_annotation_refusal_from_the_decode_context() {
     let mut source = Brep::default();
     let stream = StreamHandle::new(cadmpeg_ir::stream_name!("source"));
     let mut first = AnnotationBuilder::new();
-    first.note("sldprt:model:point#first", &stream, 1);
+    first.note(&cadmpeg_test_support::service_decode_context(), "sldprt:model:point#first", &stream, 1, None).unwrap();
     target.annotations = first.build();
     let before = target.annotations.clone();
     let mut second = AnnotationBuilder::new();
-    second.note("sldprt:model:point#second", &stream, 2);
+    second.note(&cadmpeg_test_support::service_decode_context(), "sldprt:model:point#second", &stream, 2, None).unwrap();
     source.annotations = second.build();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();

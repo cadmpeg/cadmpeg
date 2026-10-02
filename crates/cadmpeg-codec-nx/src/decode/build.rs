@@ -295,7 +295,7 @@ pub(super) fn try_decode_geometry(
                 ctx.reserve_vec(&mut stream_unknowns, 1, "nx geometry unknown indices")
             }?;
             let unknown = unknown_stream_metadata(ctx, si, stream)?;
-            annotations.note_for_decode(
+            annotations.note(
                 ctx,
                 unknown.id().as_str(),
                 &container_stream,
@@ -432,7 +432,7 @@ pub(super) fn try_decode_geometry(
             counts.nurbs_surfaces += 1;
             let id: SurfaceId =
                 scope.id_charged(ctx, &cadmpeg_ir::identity_component!("nurbs-surf"), fi)?;
-            annotations.note_for_decode(
+            annotations.note(
                 ctx,
                 id.as_str(),
                 &source_stream,
@@ -476,7 +476,7 @@ pub(super) fn try_decode_geometry(
             } else {
                 let surface_id: SurfaceId =
                     scope.id_charged(ctx, &cadmpeg_ir::identity_component!("offset-surf"), oi)?;
-                annotations.note_for_decode(
+                annotations.note(
                     ctx,
                     surface_id.as_str(),
                     &source_stream,
@@ -512,7 +512,7 @@ pub(super) fn try_decode_geometry(
                 });
                 (surface_id, None)
             };
-            annotations.note_for_decode(
+            annotations.note(
                 ctx,
                 procedural_id.as_str(),
                 &source_stream,
@@ -560,7 +560,7 @@ pub(super) fn try_decode_geometry(
                 scope.id_charged(ctx, &cadmpeg_ir::identity_component!("blend-surf"), bi)?;
             let procedural_id: ProceduralSurfaceId =
                 scope.id_charged(ctx, &cadmpeg_ir::identity_component!("blend"), bi)?;
-            annotations.note_for_decode(
+            annotations.note(
                 ctx,
                 surface_id.as_str(),
                 &source_stream,
@@ -592,7 +592,7 @@ pub(super) fn try_decode_geometry(
                     instance_path: Vec::new(),
                 }),
             });
-            annotations.note_for_decode(
+            annotations.note(
                 ctx,
                 procedural_id.as_str(),
                 &source_stream,
@@ -712,7 +712,7 @@ pub(super) fn try_decode_geometry(
             counts.nurbs_curves += 1;
             let id: CurveId =
                 scope.id_charged(ctx, &cadmpeg_ir::identity_component!("nurbs-crv"), ci)?;
-            annotations.note_for_decode(
+            annotations.note(
                 ctx,
                 id.as_str(),
                 &source_stream,
@@ -734,7 +734,7 @@ pub(super) fn try_decode_geometry(
         for (pi, pcurve) in nurbs_pcurves.into_iter().enumerate() {
             let id: PcurveId =
                 scope.id_charged(ctx, &cadmpeg_ir::identity_component!("pcurve"), pi)?;
-            annotations.note_for_decode(
+            annotations.note(
                 ctx,
                 id.as_str(),
                 &source_stream,
@@ -950,7 +950,7 @@ pub(super) fn try_decode_geometry(
                     },
                 ));
             }
-            annotations.note_for_decode(
+            annotations.note(
                 ctx,
                 curve_id.as_str(),
                 &source_stream,
@@ -1010,7 +1010,7 @@ pub(super) fn try_decode_geometry(
                     instance_path: Vec::new(),
                 }),
             });
-            annotations.note_for_decode(
+            annotations.note(
                 ctx,
                 procedural_id.as_str(),
                 &source_stream,
@@ -1474,7 +1474,7 @@ pub(super) fn try_decode_geometry(
                 "nx unknown entity links",
             )?;
         }
-        annotations.note_for_decode(
+        annotations.note(
             ctx,
             unknown.id().as_str(),
             &container_stream,
@@ -2518,7 +2518,7 @@ fn finalize_point_topology(
         "allocate annotation stream handle",
     )?;
     for id in [body_id.as_str(), region_id.as_str(), shell_id.as_str()] {
-        annotations.note_for_decode(ctx, id, &stream, 0, Some("derived_point_topology"))?;
+        annotations.note(ctx, id, &stream, 0, Some("derived_point_topology"))?;
         annotations.exactness(ctx, id, Exactness::Inferred)?;
     }
 
@@ -2536,7 +2536,7 @@ fn finalize_point_topology(
     for (index, point) in ir.model.points.iter().enumerate() {
         let vertex_id: VertexId =
             derived.id_charged(ctx, &cadmpeg_ir::identity_component!("point-vertex"), index)?;
-        annotations.note_for_decode(
+        annotations.note(
             ctx,
             vertex_id.as_str(),
             &stream,

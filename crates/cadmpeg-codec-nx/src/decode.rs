@@ -291,7 +291,7 @@ fn build_metadata_ir(
     for (si, stream) in scan.streams.iter().enumerate() {
         if stream.kind().is_parasolid() {
             let unknown = unknown_stream(ctx, si, stream)?;
-            annotations.note_for_decode(
+            annotations.note(
                 ctx,
                 unknown.id().as_str(),
                 &source_stream,

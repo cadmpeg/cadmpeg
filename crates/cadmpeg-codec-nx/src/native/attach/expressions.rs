@@ -177,7 +177,7 @@ pub(in crate::native) fn attach_expression_parameters(
             .map(|expression| expression.source_offset)
             .min()
             .unwrap_or(0);
-        annotations.note_for_decode(
+        annotations.note(
             ctx,
             &feature_id,
             &stream,
@@ -307,7 +307,7 @@ pub(in crate::native) fn attach_expression_parameters(
                 cadmpeg_core::decode::u64_from_index(id_bytes),
                 "NX expression parameter identity",
             )?;
-            annotations.note_for_decode(
+            annotations.note(
                 ctx,
                 id.as_str(),
                 &stream,

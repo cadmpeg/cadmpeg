@@ -4513,7 +4513,7 @@ fn note_native_annotation(
     id: &str,
     tag: &str,
 ) -> Result<(), CodecError> {
-    annotations.note_for_decode(ctx, id, stream, trailing_offset(id), Some(tag))
+    annotations.note(ctx, id, stream, trailing_offset(id), Some(tag))
 }
 
 fn populate_annotations(
@@ -4530,7 +4530,7 @@ fn populate_annotations(
     if let Some((stream_name, records)) = brep {
         let stream = annotation_stream(ctx, stream_name)?;
         for record in records {
-            annotations.note_for_decode(
+            annotations.note(
                 ctx,
                 &record.id,
                 &stream,
@@ -4759,7 +4759,7 @@ fn populate_annotations(
         .transpose()?;
     if let Some(stream) = appearance_stream {
         for appearance in &ir.model.appearances {
-            annotations.note_for_decode(
+            annotations.note(
                 ctx,
                 appearance.id.as_str(),
                 &stream,
@@ -4769,7 +4769,7 @@ fn populate_annotations(
         }
     }
     for binding in &ir.model.appearance_bindings {
-        annotations.note_for_decode(
+        annotations.note(
             ctx,
             binding.id.as_str(),
             &native_stream,
@@ -4781,7 +4781,7 @@ fn populate_annotations(
         if let Some(fallback) = container::select_fallback_brep(scan) {
             let stream = annotation_stream(ctx, &fallback.name)?;
             for unknown in unknowns {
-                annotations.note_for_decode(
+                annotations.note(
                     ctx,
                     unknown.id().as_str(),
                     &stream,
