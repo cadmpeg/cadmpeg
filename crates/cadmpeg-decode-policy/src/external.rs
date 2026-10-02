@@ -100,8 +100,12 @@ pub(crate) fn summary(
             (Allocation::None, Work::Fixed)
         }
         "min" | "max" if path.contains("cmp::") => {
-            if value.is_some_and(|value| matches!(value.kind(), ty::Adt(owner, _)
-                if !types::standard(tcx, owner.did()))) { return None; }
+            if value.is_some_and(|value| {
+                matches!(value.kind(), ty::Adt(owner, _)
+                if !types::standard(tcx, owner.did()))
+            }) {
+                return None;
+            }
             (Allocation::None, Work::Comparison)
         }
         "finish" if path.contains("hash::") => (Allocation::None, Work::Fixed),
@@ -170,10 +174,30 @@ pub(crate) fn summary(
         | "clear"
         | "truncate"
         | "remove" => (Allocation::None, Work::Receiver),
-        "new" if !["vec::Vec", "string::String", "collections::", "boxed::Box", "rc::Rc",
-            "sync::Arc", "cell::", "sync::", "io::Cursor", "path::Path", "ffi::OsStr",
-            "hash::", "ops::RangeInclusive", "fmt::Arguments", "fmt::rt", "fmt::Argument"]
-            .iter().any(|owner| path.contains(owner)) => return None,
+        "new"
+            if ![
+                "vec::Vec",
+                "string::String",
+                "collections::",
+                "boxed::Box",
+                "rc::Rc",
+                "sync::Arc",
+                "cell::",
+                "sync::",
+                "io::Cursor",
+                "path::Path",
+                "ffi::OsStr",
+                "hash::",
+                "ops::RangeInclusive",
+                "fmt::Arguments",
+                "fmt::rt",
+                "fmt::Argument",
+            ]
+            .iter()
+            .any(|owner| path.contains(owner)) =>
+        {
+            return None
+        }
         "len"
         | "capacity"
         | "is_empty"

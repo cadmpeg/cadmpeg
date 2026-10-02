@@ -356,12 +356,14 @@ impl<'tcx> Analysis<'_, 'tcx> {
             {
                 return;
             }
-            let terms = self.extent_terms(amount, &mut Vec::new()).and_then(|mut terms| {
-                for term in &mut terms {
-                    term.coefficient = term.coefficient.checked_mul(self.flow.iterations)?;
-                }
-                Some(terms)
-            });
+            let terms = self
+                .extent_terms(amount, &mut Vec::new())
+                .and_then(|mut terms| {
+                    for term in &mut terms {
+                        term.coefficient = term.coefficient.checked_mul(self.flow.iterations)?;
+                    }
+                    Some(terms)
+                });
             self.flow.work.push(Credit {
                 opaque: terms.is_none(),
                 extents: terms.unwrap_or_default(),

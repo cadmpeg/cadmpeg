@@ -18,7 +18,9 @@ pub fn grow(values: &mut Vec<u8>, value: u8) {
     cadmpeg_core::grow(values, value); // finding: uncharged_decode_allocation
 }
 
-pub fn unit_vectors(values: &Vec<()>) { let _copy = cadmpeg_core::vector_copy(values); }
+pub fn unit_vectors(values: &Vec<()>) {
+    let _copy = cadmpeg_core::vector_copy(values);
+}
 pub fn byte_vectors(values: &Vec<u8>) {
     let _copy = cadmpeg_core::vector_copy(values); // finding: uncharged_decode_allocation, uncharged_decode_work
 }
