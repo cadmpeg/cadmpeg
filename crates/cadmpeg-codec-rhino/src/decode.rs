@@ -5883,9 +5883,17 @@ pub(crate) fn embedded_brep_json(
     if staged.kind != BrepTransferKind::FullTopology {
         return None;
     }
+    let snapshot = match staged.draft.model().geometry_snapshot(expand.ctx(), "brep") {
+        Ok(snapshot) => snapshot,
+        Err(error @ cadmpeg_core::CodecError::ResourceLimit(_)) => {
+            *refusal = Some(error);
+            return None;
+        }
+        Err(_) => return None,
+    };
     match crate::wire::admitted_canonical_json(
         expand.ctx(),
-        &staged.draft.model().geometry_snapshot("brep"),
+        &snapshot,
         "Rhino embedded Brep JSON",
     ) {
         Ok(text) => Some(text),

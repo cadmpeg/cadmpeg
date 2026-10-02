@@ -338,13 +338,13 @@ macro_rules! sorted_model_value {
     ($model:expr, $ctx:expr, curves) => { sorted_rows($ctx, &$model.curves, |value| Ok(CurveWire(value)))? };
     ($model:expr, $ctx:expr, procedural_surfaces) => {
         sorted_rows($ctx, &$model.procedural_surfaces, |procedural| {
-            admit_owner_scan($ctx, &$model.surfaces, procedural.id.as_str())?;
+            admit_owner_scan($ctx, &$model.surfaces, procedural.id.as_str(), "find digest procedural owner")?;
             Ok(ProceduralSurfaceWire { owner: $model.procedural_surface_owner(&procedural.id), procedural })
         })?
     };
     ($model:expr, $ctx:expr, procedural_curves) => {
         sorted_rows($ctx, &$model.procedural_curves, |procedural| {
-            admit_owner_scan($ctx, &$model.curves, procedural.id.as_str())?;
+            admit_owner_scan($ctx, &$model.curves, procedural.id.as_str(), "find digest procedural owner")?;
             Ok(ProceduralCurveWire { owner: $model.procedural_curve_owner(&procedural.id), procedural })
         })?
     };
@@ -606,9 +606,9 @@ fn sorted_rows<'a, T: crate::schema::EntitySchema, U>(
     result
 }
 
-fn admit_owner_scan<T>(ctx: &DecodeContext<'_>, owners: &[T], identity: &str) -> Result<(), CodecError> {
-    let work = cadmpeg_core::decode::u64_from_index(owners.len()).checked_mul(cadmpeg_core::decode::u64_from_index(identity.len()).checked_add(1).ok_or_else(|| ctx.refuse_codec_limit("find digest procedural owner", u64::MAX - 1, u64::MAX))?).ok_or_else(|| ctx.refuse_codec_limit("find digest procedural owner", u64::MAX - 1, u64::MAX))?;
-    ctx.charge_work(work, "find digest procedural owner")
+fn admit_owner_scan<T>(ctx: &DecodeContext<'_>, owners: &[T], identity: &str, operation: &'static str) -> Result<(), CodecError> {
+    let work = cadmpeg_core::decode::u64_from_index(owners.len()).checked_mul(cadmpeg_core::decode::u64_from_index(identity.len()).checked_add(1).ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?).ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
+    ctx.charge_work(work, operation)
 }
 
 macro_rules! declare_arena_name {
@@ -675,9 +675,20 @@ pub struct GeometrySnapshot<'a> {
 }
 
 impl Model {
-    /// Serializes the geometry and topology arenas without staging owned rows.
-    pub fn geometry_snapshot<'a>(&'a self, kind: &'a str) -> GeometrySnapshot<'a> {
-        GeometrySnapshot { model: self, kind }
+    /// Admit parent validation and owner scans for a borrowed geometry serialization view.
+    pub fn geometry_snapshot<'a>(&'a self, ctx: &DecodeContext<'_>, kind: &'a str) -> Result<GeometrySnapshot<'a>, CodecError> {
+        if let Err(error) = feature_parents::validate(Some(ctx), &[self])? {
+            return Err(CodecError::Malformed(ctx.format_retained(format_args!("{error}"), "geometry snapshot parent diagnostic")?));
+        }
+        for procedural in &self.procedural_surfaces {
+            ctx.charge_work(1, "geometry snapshot procedural scan")?;
+            admit_owner_scan(ctx, &self.surfaces, procedural.id.as_str(), "find geometry snapshot procedural owner")?;
+        }
+        for procedural in &self.procedural_curves {
+            ctx.charge_work(1, "geometry snapshot procedural scan")?;
+            admit_owner_scan(ctx, &self.curves, procedural.id.as_str(), "find geometry snapshot procedural owner")?;
+        }
+        Ok(GeometrySnapshot { model: self, kind })
     }
 }
 
@@ -779,7 +790,6 @@ impl Serialize for ProceduralCurveRows<'_> {
 impl Serialize for GeometrySnapshot<'_> {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         let model = self.model;
-        feature_parents::validate(None, &[model]).map_err(serde::ser::Error::custom)?.map_err(serde::ser::Error::custom)?;
         let mut map = serializer.serialize_map(Some(16))?;
         map.serialize_entry("bodies", &model.bodies)?;
         map.serialize_entry("coedges", &model.coedges)?;

@@ -55,7 +55,7 @@ fn embedded_brep_snapshot_refuses_retained_limit() {
     let semantic = cadmpeg_test_support::service_decode_context();
     let expected = crate::wire::admitted_json(
         &semantic,
-        &model.geometry_snapshot("brep"),
+        &model.geometry_snapshot(&semantic, "brep").expect("snapshot admission"),
         "Rhino embedded Brep JSON",
     )
     .expect("service profile admits snapshot");
@@ -66,7 +66,7 @@ fn embedded_brep_snapshot_refuses_retained_limit() {
         .expect("empty root admitted");
     let refusal = crate::wire::admitted_json(
         &ctx,
-        &model.geometry_snapshot("brep"),
+        &model.geometry_snapshot(&ctx, "brep").expect("snapshot admission"),
         "Rhino embedded Brep JSON",
     )
     .expect_err("snapshot text exceeds retained limit");
