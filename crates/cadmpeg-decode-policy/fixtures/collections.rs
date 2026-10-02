@@ -9,7 +9,7 @@ impl DecodeContext {
     } // finding: uncharged_decode_allocation
     pub fn alloc_filled<T: Clone>(&self, n: usize, value: T) -> Vec<T> {
         vec![value; n]
-    } // finding: unproven_decode_charge
+    }
 }
 #[derive(Clone)] // finding: uncharged_decode_allocation
 pub struct Record {
@@ -50,9 +50,9 @@ pub fn decode(
     let _fixed_range: Vec<_> = (0..4).collect();
     let _count = bytes.iter().count();
     let _copy = ctx.copy_slice(bytes);
-    let _filled = ctx.alloc_filled(n, 0u8);
-    let _none = ctx.alloc_filled(n, None::<String>);
-    let _empty_child = ctx.alloc_filled(n, Vec::<String>::new());
+    let _filled = ctx.alloc_filled(n, 0u8); // finding: uncharged_decode_allocation
+    let _none = ctx.alloc_filled(n, None::<String>); // finding: uncharged_decode_allocation
+    let _empty_child = ctx.alloc_filled(n, Vec::<String>::new()); // finding: uncharged_decode_allocation
     let child = record.clone();
     let _child = ctx.alloc_filled(n, child); // finding: uncharged_decode_allocation
     let _ref = Rc::clone(&shared);

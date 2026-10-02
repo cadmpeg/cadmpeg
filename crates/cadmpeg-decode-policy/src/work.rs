@@ -28,8 +28,8 @@ impl<'tcx> Analysis<'_, 'tcx> {
                     | BinOpKind::Gt
                     | BinOpKind::Ge
             ) {
-                let shape = types::work(self.tcx, self.typeck.expr_ty(left), &mut Vec::new()).join(
-                    types::work(self.tcx, self.typeck.expr_ty(right), &mut Vec::new()),
+                let shape = types::work(self.tcx, self.expr_ty(left), &mut Vec::new()).join(
+                    types::work(self.tcx, self.expr_ty(right), &mut Vec::new()),
                 );
                 // Comparing a dynamic sequence with a fixed-size operand reads
                 // at most that operand's fixed extent.
@@ -54,8 +54,8 @@ impl<'tcx> Analysis<'_, 'tcx> {
                 if !bounded {
                     let mut paid = self.take_credit(&[left, right]);
                     if paid == Some(true)
-                        && (self.deep_work(self.typeck.expr_ty(left))
-                            || self.deep_work(self.typeck.expr_ty(right)))
+                        && (self.deep_work(self.expr_ty(left))
+                            || self.deep_work(self.expr_ty(right)))
                     {
                         paid = None;
                     }
@@ -83,7 +83,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
             }
         }
         let Some(summary) = external::summary(self.tcx, definition,
-            operands.first().map(|operand| self.typeck.expr_ty(operand))) else {
+            operands.first().map(|operand| self.expr_ty(operand))) else {
             self.report(expression.span, "unproven_decode_charge",
                 &format!("external operation missing summary: {}", self.tcx.def_path_str(definition)));
             return;
@@ -93,7 +93,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
             self.work_report(expression.span, Shape::Unknown, Some(false), "trait implementation unresolved");
             return;
         }
-        if name == "clone" && self.clone_shape(self.typeck.expr_ty(expression)) == Shape::Fixed {
+        if name == "clone" && self.clone_shape(self.expr_ty(expression)) == Shape::Fixed {
             return;
         }
         if name == "format" {
@@ -101,7 +101,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
             self.work_report(expression.span, shape, Some(false), "format!");
             return;
         }
-        if name == "from_elem" && operands.first().is_some_and(|operand| matches!(self.typeck.expr_ty(operand).kind(), rustc_middle::ty::Tuple(fields) if fields.is_empty())) { return; }
+        if name == "from_elem" && operands.first().is_some_and(|operand| matches!(self.expr_ty(operand).kind(), rustc_middle::ty::Tuple(fields) if fields.is_empty())) { return; }
         if matches!(name, "from_elem" | "repeat") {
             let count = operands.get(1);
             let fixed_count = count.is_some_and(|count| self.constant(count, &mut Vec::new()));
@@ -109,7 +109,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
                 Shape::Fixed
             } else {
                 let child = operands.first().map_or(Shape::Unknown, |operand| {
-                    types::work(self.tcx, self.typeck.expr_ty(operand), &mut Vec::new())
+                    types::work(self.tcx, self.expr_ty(operand), &mut Vec::new())
                 });
                 if child == Shape::Unknown {
                     Shape::Unknown
@@ -125,7 +125,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
             return;
         }
         if matches!(name, "from" | "into" | "into_owned") {
-            let result = self.typeck.expr_ty(expression);
+            let result = self.expr_ty(expression);
             if matches!(result.kind(), rustc_middle::ty::Adt(definition, _) if types::standard(self.tcx, definition.did()) && self.tcx.item_name(definition.did()).as_str() == "Cow")
             {
                 return;
@@ -143,15 +143,15 @@ impl<'tcx> Analysis<'_, 'tcx> {
             if result
                 == operands
                     .first()
-                    .map_or(self.typeck.expr_ty(expression), |operand| {
-                        self.typeck.expr_ty(operand)
+                    .map_or(self.expr_ty(expression), |operand| {
+                        self.expr_ty(operand)
                     })
             {
                 return;
             }
             if let Some(receiver) = operands.first() {
                 if matches!(
-                    self.typeck.expr_ty(receiver).peel_refs().kind(),
+                    self.expr_ty(receiver).peel_refs().kind(),
                     rustc_middle::ty::Str | rustc_middle::ty::Slice(_)
                 ) {
                     let known_copy = matches!(result.kind(), rustc_middle::ty::Adt(definition, _) if types::standard(self.tcx, definition.did()) && matches!(self.tcx.item_name(definition.did()).as_str(), "String" | "Vec" | "Box" | "Rc" | "Arc" | "PathBuf" | "OsString"));
@@ -177,7 +177,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
                 if self.vector_collection_reuse(expression, source) == Some(Shape::Fixed) {
                     return;
                 }
-                if matches!(self.typeck.expr_ty(source).kind(), rustc_middle::ty::Adt(owner, _) if types::standard(self.tcx, owner.did()) && self.tcx.item_name(owner.did()).as_str() == "IntoIter" && self.tcx.def_path_str(owner.did()).contains("vec::"))
+                if matches!(self.expr_ty(source).kind(), rustc_middle::ty::Adt(owner, _) if types::standard(self.tcx, owner.did()) && self.tcx.item_name(owner.did()).as_str() == "IntoIter" && self.tcx.def_path_str(owner.did()).contains("vec::"))
                 {
                     self.work_report(
                         expression.span,
@@ -196,7 +196,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
         let Some(receiver) = operands.first() else {
             return;
         };
-        let value = self.typeck.expr_ty(receiver).peel_refs();
+        let value = self.expr_ty(receiver).peel_refs();
         if matches!(
             value.kind(),
             rustc_middle::ty::Bool
@@ -309,7 +309,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
             self.iteration(receiver, &mut Vec::new())
         } else {
             if self.constant(extent, &mut Vec::new()) { Shape::Fixed }
-            else { types::work(self.tcx, self.typeck.expr_ty(extent), &mut Vec::new()) }
+            else { types::work(self.tcx, self.expr_ty(extent), &mut Vec::new()) }
         };
         if shape == Shape::Fixed {
             return;
@@ -348,7 +348,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
 
     fn capacity_iteration(&self, expression: &'tcx Expr<'tcx>) -> bool {
         if let rustc_middle::ty::Adt(definition, _) =
-            self.typeck.expr_ty(expression).peel_refs().kind()
+            self.expr_ty(expression).peel_refs().kind()
         {
             if types::standard(self.tcx, definition.did())
                 && matches!(
@@ -506,7 +506,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
             return false;
         };
         if !matches!(
-            self.typeck.expr_ty(variable).kind(),
+            self.expr_ty(variable).kind(),
             rustc_middle::ty::Uint(_)
         ) {
             return false;
@@ -746,7 +746,7 @@ impl<'tcx> Visitor<'tcx> for ShrinkGuard<'_, '_, 'tcx> {
         if let Some((_, operands)) = self.analysis.call(expression) {
             if operands.iter().any(|operand| {
                 matches!(
-                    self.analysis.typeck.expr_ty_adjusted(operand).kind(),
+                    self.analysis.expr_ty_adjusted(operand).kind(),
                     rustc_middle::ty::Ref(_, _, rustc_hir::Mutability::Mut)
                 ) && self.analysis.key(operand, &mut Vec::new()).as_deref() == Some(self.variable)
             }) {

@@ -14,6 +14,7 @@ mod callee;
 mod extent;
 mod external;
 mod flow;
+mod instantiation;
 mod types;
 mod work;
 
@@ -24,7 +25,7 @@ use rustc_interface::interface::Compiler;
 use rustc_middle::ty::{TyCtxt, TypeckResults};
 use rustc_span::def_id::{DefId, LocalDefId};
 use rustc_span::Span;
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 #[derive(Default)]
 struct Findings {
@@ -39,16 +40,65 @@ impl Callbacks for DecodeCallbacks {
     fn after_analysis<'tcx>(&mut self, _compiler: &Compiler, tcx: TyCtxt<'tcx>) -> Compilation {
         let mut owners: Vec<_> = tcx.hir_body_owners().collect();
         owners.sort_by_key(|owner| owner.local_def_index.as_u32());
+        let instantiations = instantiation::collect(tcx, &owners);
+        let mut bodies = HashMap::new();
         for owner in owners {
             if production(tcx, owner) {
+                let mut findings = Findings::default();
                 Analysis {
                     tcx,
                     typeck: tcx.typeck(owner),
                     owner,
+                    arguments: None,
                     flow: flow::Flow::default(),
-                    findings: &mut self.findings,
+                    findings: &mut findings,
                 }
                 .visit_body(tcx.hir_body_owned_by(owner));
+                bodies.insert(owner, findings);
+
+            }
+        }
+        let mut resolved = HashMap::<LocalDefId, BTreeSet<_>>::new();
+        let mut unresolved = HashMap::<LocalDefId, BTreeSet<_>>::new();
+        for instantiation in instantiations {
+            if !instantiation.enumerated {
+                Analysis { tcx, typeck: tcx.typeck(instantiation.caller), owner: instantiation.caller,
+                    arguments: None, flow: flow::Flow::default(), findings: &mut self.findings }
+                    .report(instantiation.span, "unproven_decode_charge", "generic instantiations exceed the compiler recursion limit");
+                continue;
+            }
+            let Some(local) = instantiation.instance.def_id().as_local() else {
+                instantiation::check_imported(tcx, &instantiation, &mut self.findings);
+                continue;
+            };
+            let mut concrete = Findings::default();
+            Analysis { tcx, typeck: tcx.typeck(local), owner: local,
+                arguments: Some(instantiation.instance.args), flow: flow::Flow::default(),
+                findings: &mut concrete }.visit_body(tcx.hir_body_owned_by(local));
+            if let Some(symbolic) = bodies.get(&local) {
+                resolved.entry(local).or_default().extend(symbolic.entries.keys()
+                    .filter(|key| key.4 == "unproven_decode_charge").cloned());
+                unresolved.entry(local).or_default().extend(concrete.entries.keys()
+                    .filter(|key| key.4 == "unproven_decode_charge").cloned());
+                for (key, messages) in concrete.entries {
+                    if symbolic.entries.get(&key).is_some_and(|original| key.4 != "unproven_decode_charge" || original == &messages) {
+                        continue;
+                    }
+                    let types = instantiation.instance.args.types().map(|value| value.to_string())
+                        .collect::<Vec<_>>().join(", ");
+                    Analysis { tcx, typeck: tcx.typeck(instantiation.caller), owner: instantiation.caller,
+                        arguments: None, flow: flow::Flow::default(), findings: &mut self.findings }
+                        .report(instantiation.span, &key.4, &format!("concrete instantiation <{types}> of {}: {}",
+                            tcx.def_path_str(local), messages.into_iter().collect::<Vec<_>>().join("; ")));
+                }
+
+            }
+        }
+        for (local, mut findings) in bodies {
+            findings.entries.retain(|key, _| !resolved.get(&local).is_some_and(|keys| keys.contains(key))
+                || unresolved.get(&local).is_some_and(|keys| keys.contains(key)));
+            for (key, messages) in findings.entries {
+                self.findings.entries.entry(key).or_default().extend(messages);
             }
         }
         for ((path, line, _, _, rule), messages) in &self.findings.entries {
@@ -134,11 +184,26 @@ struct Analysis<'a, 'tcx> {
     tcx: TyCtxt<'tcx>,
     typeck: &'tcx TypeckResults<'tcx>,
     owner: LocalDefId,
+    arguments: Option<rustc_middle::ty::GenericArgsRef<'tcx>>,
     flow: flow::Flow,
     findings: &'a mut Findings,
 }
 
 impl<'tcx> Analysis<'_, 'tcx> {
+    fn substitute<T>(&self, value: T) -> T
+    where T: rustc_middle::ty::TypeFoldable<TyCtxt<'tcx>> + Copy {
+        self.arguments.map_or(value, |arguments|
+            rustc_middle::ty::EarlyBinder::bind(self.tcx, value).instantiate(self.tcx, arguments).skip_norm_wip())
+    }
+
+    fn expr_ty(&self, expression: &Expr<'tcx>) -> rustc_middle::ty::Ty<'tcx> {
+        self.substitute(self.typeck.expr_ty(expression))
+    }
+
+    fn expr_ty_adjusted(&self, expression: &Expr<'tcx>) -> rustc_middle::ty::Ty<'tcx> {
+        self.substitute(self.typeck.expr_ty_adjusted(expression))
+    }
+
     fn call(&self, expression: &'tcx Expr<'tcx>) -> Option<(DefId, Vec<&'tcx Expr<'tcx>>)> {
         match expression.kind {
             ExprKind::MethodCall(_, receiver, arguments, _) => {
@@ -147,7 +212,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
                 operands.extend(arguments);
                 Some((definition, operands))
             }
-            ExprKind::Call(callee, arguments) => match self.typeck.expr_ty(callee).kind() {
+            ExprKind::Call(callee, arguments) => match self.expr_ty(callee).kind() {
                 rustc_middle::ty::FnDef(definition, _) => {
                     Some((*definition, arguments.iter().collect()))
                 }

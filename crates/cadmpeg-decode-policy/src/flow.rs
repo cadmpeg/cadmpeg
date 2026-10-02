@@ -35,7 +35,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
                 _ => None,
             },
             ExprKind::Struct(_, fields, _) => {
-                if let rustc_middle::ty::Adt(definition, _) = self.typeck.expr_ty(expression).kind()
+                if let rustc_middle::ty::Adt(definition, _) = self.expr_ty(expression).kind()
                 {
                     if types::standard(self.tcx, definition.did())
                         && self.tcx.item_name(definition.did()).as_str() == "Range"
@@ -107,8 +107,8 @@ impl<'tcx> Analysis<'_, 'tcx> {
                 return self.extent_terms(inner, seen)
             }
             ExprKind::Cast(inner, _) => {
-                let source = self.typeck.expr_ty(inner);
-                let destination = self.typeck.expr_ty(expression);
+                let source = self.expr_ty(inner);
+                let destination = self.expr_ty(expression);
                 if source == destination
                     || matches!((source.kind(), destination.kind()), (rustc_middle::ty::Uint(left), rustc_middle::ty::Uint(right)) if left.bit_width().or(Some(self.tcx.data_layout.pointer_size().bits())).zip(right.bit_width().or(Some(self.tcx.data_layout.pointer_size().bits()))).is_some_and(|(left, right)| left <= right))
                 {
@@ -141,7 +141,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
             }
             if (name.as_str() == "u64_from_index" && self.tcx.crate_name(definition.krate).as_str() == "cadmpeg_core")
                 || (types::standard(self.tcx, definition) && matches!(name.as_str(), "ok_or" | "ok_or_else"))
-                || (types::standard(self.tcx, definition) && name.as_str() == "from" && operands.first().is_some_and(|operand| matches!((self.typeck.expr_ty(operand).kind(), self.typeck.expr_ty(expression).kind()), (rustc_middle::ty::Uint(left), rustc_middle::ty::Uint(right)) if left.bit_width().or(Some(self.tcx.data_layout.pointer_size().bits())).zip(right.bit_width().or(Some(self.tcx.data_layout.pointer_size().bits()))).is_some_and(|(left, right)| left <= right)))) {
+                || (types::standard(self.tcx, definition) && name.as_str() == "from" && operands.first().is_some_and(|operand| matches!((self.expr_ty(operand).kind(), self.expr_ty(expression).kind()), (rustc_middle::ty::Uint(left), rustc_middle::ty::Uint(right)) if left.bit_width().or(Some(self.tcx.data_layout.pointer_size().bits())).zip(right.bit_width().or(Some(self.tcx.data_layout.pointer_size().bits()))).is_some_and(|(left, right)| left <= right)))) {
                 return operands
                     .first()
                     .and_then(|operand| self.extent_terms(operand, seen));
@@ -199,7 +199,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
     }
 
     fn context_operand(&self, expression: &'tcx Expr<'tcx>) -> bool {
-        if types::has_context(self.tcx, self.typeck.expr_ty(expression), &mut Vec::new()) {
+        if types::has_context(self.tcx, self.expr_ty(expression), &mut Vec::new()) {
             return true;
         }
         match expression.kind {
@@ -219,7 +219,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
             self.tcx.crate_name(definition.krate).as_str() == "cadmpeg_core"
                 || std::env::var_os("CADMPEG_POLICY_FIXTURE").is_some()
                     && matches!(self.tcx.def_kind(definition), rustc_hir::def::DefKind::AssocFn)
-                    && operands.first().is_some_and(|operand| matches!(self.typeck.expr_ty(operand).peel_refs().kind(), rustc_middle::ty::Adt(owner, _) if self.tcx.item_name(owner.did()).as_str() == "DecodeContext"))
+                    && operands.first().is_some_and(|operand| matches!(self.expr_ty(operand).peel_refs().kind(), rustc_middle::ty::Adt(owner, _) if self.tcx.item_name(owner.did()).as_str() == "DecodeContext"))
         })
     }
 
@@ -326,7 +326,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
         if let Some((_, operands)) = self.call(expression) {
             for operand in operands {
                 if matches!(
-                    self.typeck.expr_ty_adjusted(operand).kind(),
+                    self.expr_ty_adjusted(operand).kind(),
                     rustc_middle::ty::Ref(_, _, rustc_hir::Mutability::Mut)
                 ) {
                     self.invalidate_target(operand);

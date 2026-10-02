@@ -6,7 +6,7 @@ use std::process::Command;
 fn fixture_child() {
     let path = std::env::var("CADMPEG_POLICY_INPUT").expect("fixture path");
     let directory = std::env::var("CADMPEG_POLICY_OUTPUT").expect("fixture output");
-    let args = vec![
+    let mut args = vec![
         "rustc".to_owned(),
         path,
         "--crate-type=lib".to_owned(),
@@ -15,6 +15,9 @@ fn fixture_child() {
         "--out-dir".to_owned(),
         directory,
     ];
+    if let Ok(dependency) = std::env::var("CADMPEG_POLICY_DEPENDENCY") {
+        args.extend(["--extern".to_owned(), format!("cadmpeg_core={dependency}")]);
+    }
     std::process::exit(i32::from(crate::run(&args)));
 }
 
@@ -23,7 +26,17 @@ fn check_fixture(name: &str) {
     let path = root.join("fixtures").join(format!("{name}.rs"));
     let output_dir = root.join("target/fixtures").join(name);
     std::fs::create_dir_all(&output_dir).expect("fixture directory");
-    let output = Command::new(std::env::current_exe().expect("test binary"))
+    let mut command = Command::new(std::env::current_exe().expect("test binary"));
+    if name == "imported" {
+        let dependency = output_dir.join("libcadmpeg_core.rlib");
+        let status = Command::new("rustc")
+            .args(["+nightly-2026-09-08", "--crate-name=cadmpeg_core", "--crate-type=rlib", "--edition=2021"])
+            .arg(root.join("fixtures/imported_dependency.rs"))
+            .arg("-o").arg(&dependency).status().expect("dependency compiler");
+        assert!(status.success());
+        command.env("CADMPEG_POLICY_DEPENDENCY", dependency);
+    }
+    let output = command
         .args([
             "--exact",
             "integration_tests::fixture_child",
@@ -40,7 +53,7 @@ fn check_fixture(name: &str) {
     for line in actual.lines() {
         let fields: Vec<_> = line.split('\t').collect();
         if fields.len() == 4
-            && (if matches!(name, "edges" | "modular" | "external") {
+            && (if matches!(name, "edges" | "modular" | "external" | "generic" | "imported") {
                 true
             } else if name.starts_with("work") {
                 fields[0] != "uncharged_decode_allocation"
@@ -144,4 +157,14 @@ fn modular_body_proof() {
 #[test]
 fn external_operation_summaries() {
     check_fixture("external");
+}
+
+#[test]
+fn concrete_generic_instantiations() {
+    check_fixture("generic");
+}
+
+#[test]
+fn imported_generic_instantiations() {
+    check_fixture("imported");
 }

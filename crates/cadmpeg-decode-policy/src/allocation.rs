@@ -18,7 +18,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
             ExprKind::Lit(_) => true,
             ExprKind::AddrOf(_, _, inner) | ExprKind::DropTemps(inner) => self.fixed_value(inner),
             _ => {
-                let value = self.typeck.expr_ty(expression).peel_refs();
+                let value = self.expr_ty(expression).peel_refs();
                 types::heap(self.tcx, value, &mut Vec::new()) == Shape::Fixed
                     && types::work(self.tcx, value, &mut Vec::new()) == Shape::Fixed
                     && match value.kind() {
@@ -53,7 +53,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
             return;
         }
         let summary = external::summary(self.tcx, definition,
-            operands.first().map(|operand| self.typeck.expr_ty(operand)));
+            operands.first().map(|operand| self.expr_ty(operand)));
         let allocation = summary.map(|summary| summary.allocation);
         if allocation == Some(external::Allocation::None) {
             return;
@@ -68,18 +68,18 @@ impl<'tcx> Analysis<'_, 'tcx> {
             return;
         }
         if allocation == Some(external::Allocation::Conversion)
-            && matches!(self.typeck.expr_ty(expression).kind(), ty::Adt(owner, _) if types::standard(self.tcx, owner.did()) && self.tcx.item_name(owner.did()).as_str() == "Cow") {
+            && matches!(self.expr_ty(expression).kind(), ty::Adt(owner, _) if types::standard(self.tcx, owner.did()) && self.tcx.item_name(owner.did()).as_str() == "Cow") {
             return;
         }
         let context_call = operands.first().is_some_and(|operand| {
-            types::has_context(self.tcx, self.typeck.expr_ty(operand), &mut Vec::new())
+            types::has_context(self.tcx, self.expr_ty(operand), &mut Vec::new())
         });
         if context_call && self.checked_call(expression, definition) {
             if name == "alloc_filled"
                 && !operands.get(1).is_some_and(|count| self.zero_extent(count))
             {
                 if let Some(value) = operands.get(2) {
-                    let shape = self.clone_shape(self.typeck.expr_ty(value));
+                    let shape = self.clone_shape(self.expr_ty(value));
                     let empty = self.constant(value, &mut Vec::new())
                         || self.call(value).is_some_and(|(id, args)| {
                             types::standard(self.tcx, id)
@@ -97,7 +97,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
             if let Some(receiver) = operands.first() {
                 let shape = types::heap(
                     self.tcx,
-                    self.typeck.expr_ty_adjusted(receiver).peel_refs(),
+                    self.expr_ty_adjusted(receiver).peel_refs(),
                     &mut Vec::new(),
                 );
                 self.shape_report(
@@ -131,7 +131,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
         if name == "cloned" && types::standard(self.tcx, definition) {
             let value = operands
                 .first()
-                .and_then(|operand| self.iterator_item(self.typeck.expr_ty(operand)))
+                .and_then(|operand| self.iterator_item(self.expr_ty(operand)))
                 .map(|value| value.peel_refs());
             let shape = value.map_or(Shape::Unknown, |value| self.clone_shape(value));
             if shape != Shape::Fixed {
@@ -167,12 +167,12 @@ impl<'tcx> Analysis<'_, 'tcx> {
             return;
         }
         if matches!(name, "from" | "into") && types::standard(self.tcx, definition) {
-            if let ty::Adt(result, _) = self.typeck.expr_ty(expression).kind() {
+            if let ty::Adt(result, _) = self.expr_ty(expression).kind() {
                 if types::standard(self.tcx, result.did())
                     && matches!(self.tcx.item_name(result.did()).as_str(), "Rc" | "Arc")
                     && operands.first().is_some_and(|operand| {
                         matches!(
-                            self.typeck.expr_ty(operand).peel_refs().kind(),
+                            self.expr_ty(operand).peel_refs().kind(),
                             ty::Slice(_) | ty::Str
                         )
                     })
@@ -209,7 +209,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
                 _ => (),
             }
         }
-        let result = types::heap(self.tcx, self.typeck.expr_ty(expression), &mut Vec::new());
+        let result = types::heap(self.tcx, self.expr_ty(expression), &mut Vec::new());
         if result == Shape::Fixed {
             return;
         }
@@ -247,7 +247,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
         }
         if name == "to_string"
             && operands.first().is_some_and(|operand| {
-                match self.typeck.expr_ty(operand).peel_refs().kind() {
+                match self.expr_ty(operand).peel_refs().kind() {
                     ty::Str => false,
                     ty::Adt(definition, _) => !types::standard(self.tcx, definition.did()),
                     _ => true,
@@ -291,10 +291,10 @@ impl<'tcx> Analysis<'_, 'tcx> {
                     if self.constant(operand, &mut Vec::new()) {
                         return;
                     }
-                    if self.typeck.expr_ty(operand) == self.typeck.expr_ty(expression) {
+                    if self.expr_ty(operand) == self.expr_ty(expression) {
                         return;
                     }
-                    let shape = match self.typeck.expr_ty(operand).peel_refs().kind() {
+                    let shape = match self.expr_ty(operand).peel_refs().kind() {
                         ty::Str | ty::Slice(_) => Shape::Dynamic,
                         ty::Array(_, _) => Shape::Fixed,
                         _ => Shape::Unknown,
@@ -312,7 +312,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
                 if count.is_some_and(|count| self.constant(count, &mut Vec::new()))
                     && (name != "from_elem"
                         || operands.first().is_some_and(|value| {
-                            types::heap(self.tcx, self.typeck.expr_ty(value), &mut Vec::new())
+                            types::heap(self.tcx, self.expr_ty(value), &mut Vec::new())
                                 == Shape::Fixed
                         }))
                 {
@@ -341,7 +341,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
         self.shape_report(
             expression,
             if name == "clone" {
-                self.clone_shape(self.typeck.expr_ty(expression))
+                self.clone_shape(self.expr_ty(expression))
             } else {
                 result
             },
@@ -365,7 +365,7 @@ impl<'tcx> Visitor<'tcx> for FormatShape<'_, '_, 'tcx> {
             {
                 for operand in operands {
                     if !self.analysis.fixed_value(operand) {
-                        let value = self.analysis.typeck.expr_ty(operand).peel_refs();
+                        let value = self.analysis.expr_ty(operand).peel_refs();
                         let shape = match value.kind() {
                             ty::Str | ty::Slice(_) => Shape::Dynamic,
                             ty::Adt(owner, _)
