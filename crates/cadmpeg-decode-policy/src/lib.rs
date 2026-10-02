@@ -14,6 +14,7 @@ mod callee;
 mod extent;
 mod external;
 mod flow;
+mod fixed;
 mod instantiation;
 mod types;
 mod work;
@@ -25,7 +26,7 @@ use rustc_interface::interface::Compiler;
 use rustc_middle::ty::{TyCtxt, TypeckResults};
 use rustc_span::def_id::{DefId, LocalDefId};
 use rustc_span::Span;
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 #[derive(Default)]
 struct Findings {
@@ -51,6 +52,7 @@ impl Callbacks for DecodeCallbacks {
                     typeck: tcx.typeck(owner),
                     typing_owner: owner,
                     arguments: None,
+                    fixed_parameters: HashSet::new(),
                     flow: flow::Flow::default(),
                     findings: &mut findings,
                 }
@@ -67,6 +69,7 @@ impl Callbacks for DecodeCallbacks {
                     typeck: tcx.typeck(instantiation.caller),
                     typing_owner: instantiation.caller,
                     arguments: None,
+                    fixed_parameters: HashSet::new(),
                     flow: flow::Flow::default(),
                     findings: &mut self.findings,
                 }
@@ -87,6 +90,7 @@ impl Callbacks for DecodeCallbacks {
                 typeck: tcx.typeck(local),
                 typing_owner: instantiation.caller,
                 arguments: Some(instantiation.instance.args),
+                fixed_parameters: instantiation.fixed_parameters.clone(),
                 flow: flow::Flow::default(),
                 findings: &mut concrete,
             }
@@ -124,6 +128,7 @@ impl Callbacks for DecodeCallbacks {
                         typeck: tcx.typeck(instantiation.caller),
                         typing_owner: instantiation.caller,
                         arguments: None,
+                    fixed_parameters: HashSet::new(),
                         flow: flow::Flow::default(),
                         findings: &mut self.findings,
                     }
@@ -232,6 +237,7 @@ struct Analysis<'a, 'tcx> {
     typeck: &'tcx TypeckResults<'tcx>,
     typing_owner: LocalDefId,
     arguments: Option<rustc_middle::ty::GenericArgsRef<'tcx>>,
+    fixed_parameters: HashSet<rustc_hir::HirId>,
     flow: flow::Flow,
     findings: &'a mut Findings,
 }
