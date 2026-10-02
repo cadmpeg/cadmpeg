@@ -75,3 +75,46 @@ fn structural_projection_counts_both_variant_containers() {
         assert!(matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::RecursionDepth && limit.used == 1 && limit.additional == 1));
     }
 }
+
+struct DisplayText;
+
+impl std::fmt::Display for DisplayText {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("abcde")
+    }
+}
+
+impl Serialize for DisplayText {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.collect_str(self)
+    }
+}
+
+#[test]
+fn structural_display_text_uses_only_scoped_storage() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_materialized_bytes = 5;
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let projected = project(&ctx, &DisplayText, "project display text").unwrap();
+    assert_eq!(*projected, serde_value::Value::String("abcde".into()));
+    drop(projected);
+    let storage = ctx.reserve_scoped(5, "display text released").unwrap();
+    drop(storage);
+    ctx.finish_session().unwrap();
+}
+
+#[test]
+fn structural_display_text_preserves_formatting_refusal() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_materialized_bytes = 4;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = project(&ctx, &DisplayText, "project display text").unwrap_err();
+    let CodecError::ResourceLimit(limit) = error else { panic!("display formatting must refuse"); };
+    assert_eq!(limit.dimension, ResourceDimension::MaterializedBytes);
+    assert_eq!(limit.operation, "project display text");
+    assert_eq!(limit.additional, 5);
+    assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(first)) if first == limit));
+}

@@ -165,6 +165,13 @@ impl<'s, 'ctx, 'arena> Serializer for Projector<'s, 'ctx, 'arena> {
     type SerializeStructVariant = Object<'s, 'ctx, 'arena>;
     project_scalar! { serialize_bool(bool) => Bool, serialize_i8(i8) => I8, serialize_i16(i16) => I16, serialize_i32(i32) => I32, serialize_i64(i64) => I64, serialize_u8(u8) => U8, serialize_u16(u16) => U16, serialize_u32(u32) => U32, serialize_u64(u64) => U64, serialize_f32(f32) => F32, serialize_f64(f64) => F64, serialize_char(char) => Char }
     fn serialize_str(self, value: &str) -> Result<Value, Error> { self.text(value) }
+    fn collect_str<T: std::fmt::Display + ?Sized>(self, value: &T) -> Result<Value, Error> {
+        let _depth = self.node()?;
+        let text = self.admit(self.storage.borrow_mut().with_storage(|| {
+            self.ctx.format_retained(format_args!("{value}"), self.operation)
+        }))?;
+        Ok(Value::String(text))
+    }
     fn serialize_bytes(self, value: &[u8]) -> Result<Value, Error> {
         let _depth = self.node()?;
         let bytes = self.admit(self.storage.borrow_mut().with_storage(|| self.ctx.copy_retained_slice(value, self.operation)))?;

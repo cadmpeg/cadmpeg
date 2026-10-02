@@ -75,7 +75,7 @@ macro_rules! native_record {
             fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
                 #[derive(Serialize)]
                 struct Wire<'a> {
-                    id: String,
+                    id: identity::NativeRecordIdentity<'a>,
                     $entity: &'a $entity_ty,
                     record_index: u32,
                     $(
@@ -84,7 +84,7 @@ macro_rules! native_record {
                     )*
                 }
                 Wire {
-                    id: self.id(),
+                    id: self.source_namespace.serialized_id($kind, self.record_index),
                     $entity: &self.$entity,
                     record_index: self.record_index,
                     $($field: &self.$field,)*
@@ -226,7 +226,24 @@ pub struct FaceSidedness {
 
 impl Serialize for FaceSidedness {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        FaceSidednessWire::from(self.clone()).serialize(serializer)
+        #[derive(Serialize)]
+        struct Wire<'a> {
+            id: identity::NativeRecordIdentity<'a>,
+            face: &'a FaceId,
+            record_index: u32,
+            native_sense: cadmpeg_ir::topology::Sense,
+            normalized_sense: cadmpeg_ir::topology::Sense,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            containment: Option<FaceContainment>,
+        }
+        Wire {
+            id: self.source_namespace.serialized_id("face-sidedness", self.record_index),
+            face: &self.face,
+            record_index: self.record_index,
+            native_sense: self.native_sense,
+            normalized_sense: self.normalized_sense(),
+            containment: self.containment,
+        }.serialize(serializer)
     }
 }
 
@@ -249,6 +266,15 @@ impl JsonSchema for FaceSidedness {
 }
 
 impl FaceSidedness {
+    fn normalized_sense(&self) -> cadmpeg_ir::topology::Sense {
+        use cadmpeg_ir::topology::Sense;
+        match (self.native_sense, self.carrier_flipped) {
+            (Sense::Forward, true) => Sense::Reversed,
+            (Sense::Reversed, true) => Sense::Forward,
+            (sense, false) => sense,
+        }
+    }
+
     /// Derive the native record id from its source identity.
     #[must_use]
     pub fn id(&self) -> String {
@@ -278,12 +304,7 @@ pub struct FaceSidednessWire {
 
 impl From<FaceSidedness> for FaceSidednessWire {
     fn from(value: FaceSidedness) -> Self {
-        use cadmpeg_ir::topology::Sense;
-        let normalized_sense = match (value.native_sense, value.carrier_flipped) {
-            (Sense::Forward, true) => Sense::Reversed,
-            (Sense::Reversed, true) => Sense::Forward,
-            (sense, false) => sense,
-        };
+        let normalized_sense = value.normalized_sense();
         Self {
             id: value.id(),
             face: value.face,
