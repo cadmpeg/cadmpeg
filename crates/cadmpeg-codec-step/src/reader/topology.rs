@@ -2444,7 +2444,7 @@ struct Built {
 
 fn drop_committed_surfaces(
     draft: &mut ModelDraft,
-    session: &mut CommitSession<'_, '_>,
+    session: &mut CommitSession<'_, &mut CadIr>,
     ctx: &DecodeContext<'_>,
 ) -> Result<(), CodecError> {
     ctx.charge_work(u64_from_index(draft.model().surfaces.len()), "filter committed surfaces")?;
