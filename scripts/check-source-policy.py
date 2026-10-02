@@ -2162,6 +2162,21 @@ DECODE_SCAN_METHODS = {
 }
 
 
+def decode_called_name(words, opening):
+    """Find a call's name before an optional turbofish argument list."""
+    name = opening - 1
+    if name >= 0 and words[name] == ">":
+        depth = 1
+        generic = name - 1
+        while generic >= 0 and depth:
+            depth += (words[generic] == ">") - (words[generic] == "<")
+            generic -= 1
+        if depth or words[generic:generic + 1] != ["::"]:
+            return None
+        name = generic - 1
+    return name if name >= 0 and re.fullmatch(r"[A-Za-z_]\w*", words[name]) else None
+
+
 def decode_receiver(words, pairs, index):
     """Read the complete receiver of a method, including chained calls."""
     stop = index - 1
@@ -2172,10 +2187,12 @@ def decode_receiver(words, pairs, index):
             if opening is None:
                 break
             start = opening
-            if opening and (re.fullmatch(r"[A-Za-z_]\w*", words[opening - 1])
-                            or words[opening - 1] in {")", "]"}):
-                if words[opening - 1] not in {"in", "if", "return", "while", "match"}:
-                    start = opening - 1
+            called = decode_called_name(words, opening) if words[opening] == "(" else None
+            if words[opening] == "[" and opening and re.fullmatch(r"[A-Za-z_]\w*", words[opening - 1]):
+                called = opening - 1
+            if called is not None or (opening and words[opening - 1] in {")", "]"}):
+                if words[called if called is not None else opening - 1] not in {"in", "if", "return", "while", "match"}:
+                    start = called if called is not None else opening - 1
                     continue
             if start > 0 and words[start - 1] in {".", "::"}:
                 start -= 2
@@ -2632,7 +2649,9 @@ def decode_type_shape(expression, constants, copy_types):
         return True, True
     if expression.startswith("[") and expression.endswith("]"):
         parts = list(decode_split(expression[1:-1], ";"))
-        if len(parts) == 2 and decode_constant_expression(parts[1], constants):
+        # Rust array types require a compile-time length, including associated
+        # constants and const parameters declared outside the current function.
+        if len(parts) == 2:
             return True, decode_type_shape(parts[0], constants, copy_types)[1]
     if expression.startswith("(") and expression.endswith(")"):
         parts = [part for part in decode_split(expression[1:-1], ",") if part]
@@ -2821,11 +2840,12 @@ def decode_expression_type(expression, code, position, types, seen=frozenset()):
         opening = pairs[len(words) - 1]
         if opening == 0:
             return decode_expression_type(expression[1:-1], code, position, types, seen)
-        if opening >= 2 and words[opening - 2] == ".":
-            method = words[opening - 1]
+        called = decode_called_name(words, opening)
+        if called is not None and called >= 2 and words[called - 1] == ".":
+            method = words[called]
             if method in {"len", "capacity", "position"}:
                 return "usize"
-            base = decode_expression_type(expression[:tokens[opening - 2].start()], code, position, types, seen)
+            base = decode_expression_type(expression[:tokens[called - 1].start()], code, position, types, seen)
             if base in DECODE_PRIMITIVES - {"bool", "char"} and method in {
                     "checked_add", "checked_sub", "checked_mul", "checked_div", "checked_rem"}:
                 return f"Option<{base}>"

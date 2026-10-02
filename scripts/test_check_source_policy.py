@@ -1756,6 +1756,30 @@ impl Reader<'_> {
 }""")
         self.assertEqual([f.line for f in self.findings("uncharged_decode_work")], [5, 10, 13])
 
+    def test_array_type_lengths_need_no_local_constant_declaration(self):
+        self.write(self.PATH, """struct Reader<'a> { ctx: &'a DecodeContext<'a> }
+impl Reader<'_> {
+    fn bytes<const N: usize>(&self) -> [u8; N] { make_array() }
+    fn read(&self, bytes: [u8; Layout::WIDTH], texts: [String; Layout::WIDTH]) {
+        for byte in bytes { use_byte(byte); }
+        self.bytes::<4>().iter().any(predicate);
+        texts == other;
+    }
+}""")
+        self.assertEqual([f.line for f in self.findings("uncharged_decode_work")], [7])
+
+    def test_generic_call_receivers_preserve_input_sized_results(self):
+        self.write(self.PATH, """struct Reader<'a> { ctx: &'a DecodeContext<'a> }
+impl Reader<'_> {
+    fn names<const N: usize>(&self) -> Vec<String> { make_names() }
+    fn heap<T>(&self) -> Vec<String> { make_names() }
+    fn read(&self) {
+        self.names::<4>().iter().any(predicate);
+        self.heap::<Vec<[u8; 4]>>().iter().any(predicate);
+    }
+}""")
+        self.assertEqual([f.line for f in self.findings("uncharged_decode_work")], [6, 7])
+
 
 class SourcePolicyCommand(TempSourceCase):
     def run_check(self, *args: str) -> tuple[int, str]:
