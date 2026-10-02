@@ -198,3 +198,50 @@ fn basis_recurrence_preserves_each_write_and_blend_refusal() {
         assert_eq!(values, [0.25, 0.5, 0.25]);
     });
 }
+
+#[test]
+fn finite_basis_inspection_preserves_refusals_and_stops_at_first_nonfinite() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, ResourceDimension};
+    use crate::eval::decode::Scratch;
+    for cap in 0..3 {
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = cap;
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+        let scratch = Scratch::new(&ctx);
+        assert_eq!(super::all_finite(&scratch, &[0.25, 0.5, 0.25]), None);
+        let limit = scratch.refused().expect("inspection refusal");
+        assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+        assert_eq!(limit.operation, "IR B-spline finite basis inspection");
+        drop(scratch);
+        assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit));
+    }
+    for nonfinite in [false, true] {
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 3;
+        policy.limits.max_materialized_bytes = 0;
+        policy.limits.max_collection_items = 0;
+        policy.limits.max_retained_bytes = 0;
+        policy.limits.max_recursion_depth = 0;
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+        let scratch = Scratch::new(&ctx);
+        let middle = if nonfinite { f64::NAN } else { 0.5 };
+        assert_eq!(super::all_finite(&scratch, &[0.25, middle, 0.25]), Some(!nonfinite));
+        if nonfinite {
+            ctx.charge_work_limit(1, "unused final basis visit").expect("third value was not visited");
+        }
+        drop(scratch);
+        ctx.finish_session().expect("inspection completed");
+    }
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    with_policy(policy, |ctx| {
+        let scratch = Scratch::new(ctx);
+        assert_eq!(super::all_finite(&scratch, &[]), Some(true));
+        assert_eq!(super::all_finite(&scratch, &[1.0]), Some(true));
+        assert_eq!(super::all_finite(&scratch, &[0.25, 0.75]), Some(true));
+        assert_eq!(super::all_finite(&scratch, &[0.25, f64::INFINITY]), Some(false));
+        assert_eq!(scratch.refused(), None);
+    });
+}

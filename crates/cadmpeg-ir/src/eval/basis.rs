@@ -147,6 +147,22 @@ pub(super) fn fill_bspline_basis(
     Ok(Some(()))
 }
 
+/// Inspect the finite range of a basis, admitting input-sized visits first.
+pub(super) fn all_finite(
+    scratch: &decode::Scratch<'_, '_>,
+    values: &[f64],
+) -> Option<bool> {
+    for value in values {
+        if values.len() > 2 {
+            scratch.work(1, "IR B-spline finite basis inspection")?;
+        }
+        if !value.is_finite() {
+            return Some(false);
+        }
+    }
+    Some(true)
+}
+
 /// The quotient of three finite lanes over the exact knot difference, NaN where
 /// a lane or the quotient left the finite range, and `None` with the refusal
 /// recorded when the quotient was refused a resource.
