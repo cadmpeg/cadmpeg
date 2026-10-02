@@ -895,13 +895,12 @@ fn scale_radius_spec(
             use cadmpeg_ir::features::edge_treatments::VariableRadiiMapError;
             RadiusSpec::Variable {
                 points: points
-                    .try_map_radii_owned(ctx, |radius| {
+                    .try_map_radii(ctx, |radius| {
                         radius.scaled(scale).ok_or_else(|| {
                             malformed_refusal(ctx, "Creo scaled length must be finite")
                         })
                     })?
                     .map_err(|error| match error {
-                        VariableRadiiMapError::Resource(limit) => CodecError::ResourceLimit(limit),
                         VariableRadiiMapError::Radius(error) => error,
                         VariableRadiiMapError::Admission(message) => {
                             malformed_refusal(ctx, message)
