@@ -3,18 +3,6 @@
 
 use cadmpeg_core::decode::{ResourceDimension, ResourceLimit};
 
-/// Allocate a scratch vector bounded by the admitted control or knot count.
-pub(crate) fn filled<T: Clone>(
-    count: usize,
-    value: T,
-    operation: &'static str,
-) -> Result<Vec<T>, ResourceLimit> {
-    let mut output = Vec::new();
-    reserve_exact(&mut output, count, operation)?;
-    output.extend(std::iter::repeat_with(|| value.clone()).take(count));
-    Ok(output)
-}
-
 /// Reserve scratch capacity before copying admitted geometry into a vector.
 pub(crate) fn reserve_exact<T>(
     output: &mut Vec<T>,
@@ -38,12 +26,13 @@ pub(crate) fn allocation_refusal(additional: usize, operation: &'static str) -> 
 
 #[cfg(test)]
 mod tests {
-    use super::{filled, reserve_exact};
+    use super::reserve_exact;
     use cadmpeg_core::decode::{ResourceDimension, ResourceFailure};
 
     #[test]
     fn evaluator_scratch_refuses_unrepresentable_control_count() {
-        let error = filled(usize::MAX, 0_u8, "IR test control scratch")
+        let mut output = Vec::<u8>::new();
+        let error = reserve_exact(&mut output, usize::MAX, "IR test control scratch")
             .expect_err("unrepresentable control count must be refused");
         assert_eq!(
             error.dimension,
