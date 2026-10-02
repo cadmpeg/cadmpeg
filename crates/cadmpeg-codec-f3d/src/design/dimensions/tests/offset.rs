@@ -484,8 +484,7 @@ fn spatial_counted_offset_projects_source_and_result_sets_without_metric_pairs()
                 entity: entity.id().clone(),
                 reversed: false,
             })
-            .collect(),
-    )
+            .collect(), &cadmpeg_test_support::service_decode_context(), "spatial profile uniqueness").expect("fixture collection admission")
     .unwrap();
     let sketch = SpatialSketch {
         id: sketch_id.clone(),

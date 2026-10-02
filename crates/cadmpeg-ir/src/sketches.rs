@@ -37,18 +37,39 @@ impl From<cadmpeg_core::CodecError> for SketchCollectionError {
     }
 }
 
-fn default_sketch_collection<T>(
-    build: impl FnOnce(
-        &cadmpeg_core::decode::DecodeContext<'_>,
-    ) -> Result<Result<T, &'static str>, cadmpeg_core::CodecError>,
-) -> Result<T, SketchCollectionError> {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[],
-        &arena,
-        &cadmpeg_core::decode::DecodePolicy::default(),
-    )?;
-    build(&ctx)?.map_err(SketchCollectionError::Invalid)
+fn distinct_sketch_members<'id>(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    identities: impl ExactSizeIterator<Item = &'id str>,
+    operation: &'static str,
+) -> Result<bool, cadmpeg_core::CodecError> {
+    // Drop the temporary identities before their storage reservation.
+    let (storage, mut members) = {
+        let mut values = Vec::new();
+        let reservation = ctx.reserve_temporary_vec(&mut values, identities.len(), operation)?;
+        (reservation, values)
+    };
+    for identity in identities {
+        ctx.charge_work(1, operation)?;
+        let mut low = 0;
+        let mut high = members.len();
+        while low < high {
+            ctx.charge_work(1, operation)?;
+            let middle = low + (high - low) / 2;
+            let candidate: &str = members[middle];
+            ctx.charge_work(cadmpeg_core::decode::u64_from_index(candidate.len().min(identity.len())), operation)?;
+            match candidate.cmp(identity) {
+                std::cmp::Ordering::Less => low = middle + 1,
+                std::cmp::Ordering::Greater => high = middle,
+                std::cmp::Ordering::Equal => return Ok(false),
+            }
+        }
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(members.len() - low), operation)?;
+        ctx.charge_work(1, operation)?;
+        members.insert(low, identity);
+    }
+    drop(members);
+    drop(storage);
+    Ok(true)
 }
 
 pub mod scaling;
@@ -1447,27 +1468,8 @@ impl TryFrom<SpatialSketchProfileWire> for SpatialSketchProfile {
 }
 
 impl SpatialSketchProfile {
-    /// Admit a finite plane and distinct closed boundary under the default policy.
-    pub fn try_new(
-        origin: Point3,
-        normal: Vector3,
-        u_axis: Vector3,
-        boundary: Vec<SpatialSketchEntityUse>,
-    ) -> Result<Self, SketchCollectionError> {
-        default_sketch_collection(|ctx| {
-            Self::try_new_for_decode(
-                origin,
-                normal,
-                u_axis,
-                boundary,
-                ctx,
-                "spatial profile uniqueness",
-            )
-        })
-    }
-
     /// Build a decoded profile through the shared typed-parts admission body.
-    pub fn try_new_for_decode(
+    pub fn try_new(
         origin: Point3,
         normal: Vector3,
         u_axis: Vector3,
@@ -1484,30 +1486,11 @@ impl SpatialSketchProfile {
         let Some(u_axis) = UnitVector3::new(u_axis) else {
             return Ok(Err(SPATIAL_PROFILE_AXES_ERROR));
         };
-        Self::from_parts_for_decode(origin, normal, u_axis, boundary, ctx, operation)
-    }
-
-    /// Admit finite profile controls under the default decode policy.
-    pub fn from_parts(
-        origin: FinitePoint3,
-        normal: UnitVector3,
-        u_axis: UnitVector3,
-        boundary: Vec<SpatialSketchEntityUse>,
-    ) -> Result<Self, SketchCollectionError> {
-        default_sketch_collection(|ctx| {
-            Self::from_parts_for_decode(
-                origin,
-                normal,
-                u_axis,
-                boundary,
-                ctx,
-                "spatial profile uniqueness",
-            )
-        })
+        Self::from_parts(origin, normal, u_axis, boundary, ctx, operation)
     }
 
     /// Admit typed plane controls and charge temporary uniqueness storage.
-    pub fn from_parts_for_decode(
+    pub fn from_parts(
         origin: FinitePoint3,
         normal: UnitVector3,
         u_axis: UnitVector3,
@@ -1515,7 +1498,6 @@ impl SpatialSketchProfile {
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         operation: &'static str,
     ) -> Result<Result<Self, &'static str>, cadmpeg_core::CodecError> {
-        use crate::index::{DecodeStorage, IndexStorage};
         let [n, u] = [normal.as_raw(), u_axis.as_raw()];
         ctx.charge_work(1, operation)?;
         let dot = n.x * u.x + n.y * u.y + n.z * u.z;
@@ -1527,20 +1509,11 @@ impl SpatialSketchProfile {
                 "spatial profile boundary must be nonempty and contain distinct entities",
             ));
         }
-        let storage = DecodeStorage(ctx);
-        let mut unique = storage.temporary_map(boundary.len(), operation)?;
-        for use_ in &boundary {
-            ctx.charge_work(
-                cadmpeg_core::decode::u64_from_index(use_.entity.as_str().len()),
-                operation,
-            )?;
-            if unique.insert(&use_.entity, ()).is_some() {
-                return Ok(Err(
-                    "spatial profile boundary must be nonempty and contain distinct entities",
-                ));
-            }
+        if !distinct_sketch_members(ctx, boundary.iter().map(|use_| use_.entity.as_str()), operation)? {
+            return Ok(Err(
+                "spatial profile boundary must be nonempty and contain distinct entities",
+            ));
         }
-        drop(unique);
         Ok(Ok(Self {
             origin,
             normal,
@@ -3244,39 +3217,22 @@ impl TryFrom<SketchPolygonWire> for SketchPolygon {
 }
 
 impl SketchPolygon {
-    /// Admit polygon members under the default decode policy.
-    pub fn try_new(entities: Vec<SketchEntityId>) -> Result<Self, SketchCollectionError> {
-        default_sketch_collection(|ctx| {
-            Self::try_new_for_decode(entities, ctx, "sketch polygon uniqueness")
-        })
-    }
-
     /// Admit decoded members and charge temporary uniqueness storage.
-    pub fn try_new_for_decode(
+    pub fn try_new(
         entities: Vec<SketchEntityId>,
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         operation: &'static str,
     ) -> Result<Result<Self, &'static str>, cadmpeg_core::CodecError> {
-        use crate::index::{DecodeStorage, IndexStorage};
         if entities.len() < 3 {
             return Ok(Err(
                 "entities requires at least three distinct polygon members",
             ));
         }
-        let storage = DecodeStorage(ctx);
-        let mut unique = storage.temporary_map(entities.len(), operation)?;
-        for entity in &entities {
-            ctx.charge_work(
-                cadmpeg_core::decode::u64_from_index(entity.as_str().len()),
-                operation,
-            )?;
-            if unique.insert(entity, ()).is_some() {
-                return Ok(Err(
-                    "entities requires at least three distinct polygon members",
-                ));
-            }
+        if !distinct_sketch_members(ctx, entities.iter().map(SketchEntityId::as_str), operation)? {
+            return Ok(Err(
+                "entities requires at least three distinct polygon members",
+            ));
         }
-        drop(unique);
         Ok(Ok(Self { entities }))
     }
 

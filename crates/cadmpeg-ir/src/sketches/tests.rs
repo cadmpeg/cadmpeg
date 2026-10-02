@@ -138,7 +138,7 @@ fn polygon_constraints_round_trip_and_require_distinct_members() {
         sketch,
         definition: crate::sketches::SketchConstraintDefinition::try_from(
             SketchConstraintDefinitionInput::Polygon {
-                polygon: crate::sketches::SketchPolygon::try_new(members.clone()).unwrap(),
+                polygon: crate::sketches::SketchPolygon::try_new(members.clone(), &cadmpeg_test_support::service_decode_context(), "sketch polygon uniqueness").expect("fixture collection admission").unwrap(),
             },
         )
         .unwrap(),
@@ -1201,13 +1201,13 @@ fn polygon_membership_is_checked_at_admission() {
         members[..2].to_vec(),
         vec![members[0].clone(), members[1].clone(), members[0].clone()],
     ] {
-        assert!(SketchPolygon::try_new(entities.clone()).is_err());
+        assert!(SketchPolygon::try_new(entities.clone(), &cadmpeg_test_support::service_decode_context(), "sketch polygon uniqueness").expect("fixture collection admission").is_err());
         let wire = serde_json::json!({"kind": "polygon", "polygon": {"entities": entities}});
         assert!(serde_json::from_value::<SketchConstraintDefinitionInput>(wire).is_err());
     }
     let wire = serde_json::json!({"kind": "polygon", "polygon": {"entities": members}});
     let definition = SketchConstraintDefinitionInput::Polygon {
-        polygon: SketchPolygon::try_new(members).unwrap(),
+        polygon: SketchPolygon::try_new(members, &cadmpeg_test_support::service_decode_context(), "sketch polygon uniqueness").expect("fixture collection admission").unwrap(),
     };
     assert_eq!(serde_json::to_value(&definition).unwrap(), wire);
     assert_eq!(

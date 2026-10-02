@@ -533,7 +533,7 @@ fn polygon_constraint_requires_three_distinct_resolved_members() {
                 first.id().clone(),
                 second.id().clone(),
                 third.id().clone()
-            ])
+            ], &cadmpeg_test_support::service_decode_context(), "sketch polygon uniqueness").expect("fixture collection admission")
             .unwrap()
         })
     );

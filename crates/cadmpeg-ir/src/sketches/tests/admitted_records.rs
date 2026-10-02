@@ -25,7 +25,7 @@ fn spatial_profile_uniqueness_index_refuses_collection_limit() {
         entity: SpatialSketchEntityId::mint("test:model:entity#profile-edge").unwrap(),
         reversed: false,
     }];
-    let result = SpatialSketchProfile::try_new_for_decode(
+    let result = SpatialSketchProfile::try_new(
         Point3::new(0.0, 0.0, 0.0),
         Vector3::new(0.0, 0.0, 1.0),
         Vector3::new(1.0, 0.0, 0.0),
@@ -53,7 +53,7 @@ fn polygon_uniqueness_index_refuses_collection_limit() {
     policy.limits.max_collection_items = 2;
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let result = crate::sketches::SketchPolygon::try_new_for_decode(
+    let result = crate::sketches::SketchPolygon::try_new(
         entities,
         &ctx,
         "test polygon uniqueness",
@@ -312,16 +312,14 @@ fn spatial_sketch_records_hold_their_admitted_frames_and_scalars() {
         origin,
         unit(0.0, 0.0, 1.0),
         unit(1.0, 0.0, 0.0),
-        boundary.clone()
-    )
+        boundary.clone(), &cadmpeg_test_support::service_decode_context(), "spatial profile uniqueness").expect("fixture collection admission")
     .is_ok());
     assert_eq!(
         SpatialSketchProfile::from_parts(
             origin,
             unit(0.0, 0.0, 1.0),
             unit(0.0, 0.0, 1.0),
-            boundary
-        )
+            boundary, &cadmpeg_test_support::service_decode_context(), "spatial profile uniqueness").expect("fixture collection admission")
         .unwrap_err()
         .to_string(),
         "spatial profile normal and u_axis must be unit and orthogonal"
@@ -350,7 +348,7 @@ fn polygon_uniqueness_refuses_scoped_storage_and_work() {
             policy.limits.max_work_units = 0;
         }
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let result = crate::sketches::SketchPolygon::try_new_for_decode(
+        let result = crate::sketches::SketchPolygon::try_new(
             entities,
             &ctx,
             "polygon temporary uniqueness",
@@ -358,5 +356,84 @@ fn polygon_uniqueness_refuses_scoped_storage_and_work() {
         assert!(
             matches!(result, Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.dimension == dimension)
         );
+    }
+}
+
+#[test]
+fn sketch_member_comparisons_refuse_before_first_and_later_visits_and_shifts() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    for cap in [0, 3, 4, 10, 11, 12, 13] {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = cap;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let Err(CodecError::ResourceLimit(limit)) = crate::sketches::distinct_sketch_members(
+            &ctx, ["z", "x", "x-a"].into_iter(), "sketch member comparison test",
+        ) else { panic!("member scan must refuse"); };
+        assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+        assert_eq!(limit.operation, "sketch member comparison test");
+        assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(original)) if original == limit));
+    }
+    let ctx = cadmpeg_test_support::service_decode_context();
+    assert!(crate::sketches::distinct_sketch_members(&ctx, ["z", "x", "x-a"].into_iter(), "sketch member comparison test").unwrap());
+    assert!(!crate::sketches::distinct_sketch_members(&ctx, ["z", "x", "x-a", "x"].into_iter(), "sketch member comparison test").unwrap());
+    ctx.finish_session().unwrap();
+}
+
+#[test]
+fn sketch_constructors_keep_original_refusals_without_retaining_temporary_slots() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    let members = ["prefix-long", "prefix", "alpha"].map(|suffix| {
+        crate::sketches::SketchEntityId::mint(format!("test:model:entity#{suffix}")).unwrap()
+    });
+    let boundary = ["prefix-long", "prefix", "alpha"].map(|suffix| SpatialSketchEntityUse {
+        entity: SpatialSketchEntityId::mint(format!("test:model:entity#{suffix}")).unwrap(),
+        reversed: true,
+    });
+    let origin = Point3::new(1.0, 2.0, 3.0);
+    let normal = Vector3::new(0.0, 0.0, 1.0);
+    let u_axis = Vector3::new(1.0, 0.0, 0.0);
+    for profile in [false, true] {
+        for dimension in [ResourceDimension::MaterializedBytes, ResourceDimension::CollectionItems, ResourceDimension::WorkUnits] {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            match dimension {
+                ResourceDimension::MaterializedBytes => policy.limits.max_materialized_bytes = 0,
+                ResourceDimension::CollectionItems => policy.limits.max_collection_items = 1,
+                ResourceDimension::WorkUnits => policy.limits.max_work_units = 3,
+                _ => panic!("test dimension"),
+            }
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            let result = if profile {
+                SpatialSketchProfile::try_new(origin, normal, u_axis, boundary.to_vec(), &ctx, "sketch constructor test").map(|_| ())
+            } else {
+                crate::sketches::SketchPolygon::try_new(members.to_vec(), &ctx, "sketch constructor test").map(|_| ())
+            };
+            let Err(CodecError::ResourceLimit(limit)) = result else { panic!("constructor must refuse"); };
+            assert_eq!(limit.dimension, dimension);
+            assert_eq!(limit.operation, "sketch constructor test");
+            assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(original)) if original == limit));
+        }
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = 0;
+        policy.limits.max_materialized_bytes = 512;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        if profile {
+            let profile = SpatialSketchProfile::try_new(origin, normal, u_axis, boundary.to_vec(), &ctx, "sketch constructor test").unwrap().unwrap();
+            assert_eq!(profile.boundary(), boundary);
+            let invalid = SpatialSketchProfile::try_new(origin, normal, u_axis, vec![boundary[0].clone(), boundary[1].clone(), boundary[0].clone()], &ctx, "sketch constructor test").unwrap().unwrap_err();
+            assert_eq!(invalid, "spatial profile boundary must be nonempty and contain distinct entities");
+        } else {
+            let polygon = crate::sketches::SketchPolygon::try_new(members.to_vec(), &ctx, "sketch constructor test").unwrap().unwrap();
+            assert_eq!(polygon.entities(), members);
+            let invalid = crate::sketches::SketchPolygon::try_new(vec![members[0].clone(), members[1].clone(), members[0].clone()], &ctx, "sketch constructor test").unwrap().unwrap_err();
+            assert_eq!(invalid, "entities requires at least three distinct polygon members");
+        }
+        let reservation = ctx.reserve_scoped_limit(512, "released sketch member index").unwrap();
+        drop(reservation);
+        ctx.finish_session().unwrap();
     }
 }
