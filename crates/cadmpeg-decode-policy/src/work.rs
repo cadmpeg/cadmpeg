@@ -33,6 +33,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
                 // Comparing a dynamic sequence with a fixed-size operand reads
                 // at most that operand's fixed extent.
                 if let Some(definition) = self.typeck.type_dependent_def_id(expression.hir_id) {
+                    if self.implementation(expression, definition).and_then(|id| external::summary(self.tcx, id, Some(self.expr_ty(left)))).is_some_and(|cost| cost.work == external::Work::Fixed) { return; }
                     if self.checked_call(expression, definition) {
                         return;
                     }

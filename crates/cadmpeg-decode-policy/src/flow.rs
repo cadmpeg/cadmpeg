@@ -247,7 +247,8 @@ impl<'tcx> Analysis<'_, 'tcx> {
             }
         }
         if let Some(init) = self.initializer(expression) {
-            return self.extent_terms(init, seen);
+            if let Some(terms) = self.extent_terms(init, seen) { return Some(terms); }
+            if !matches!(init.kind, ExprKind::If(..) | ExprKind::Match(..)) { return None; }
         }
         self.key(expression, &mut Vec::new()).map(|key| {
             vec![ExtentTerm {

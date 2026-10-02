@@ -78,9 +78,12 @@ pub(crate) fn summary(
             ("serde" | "serde_core", "new" | "size_hint" | "is_human_readable") => (Allocation::None, Work::Fixed),
             ("serde" | "serde_core", "serialize" | "collect_seq" | "collect_map" | "collect_str" | "serialize_bytes" | "serialize_seq" | "serialize_map" | "serialize_str" | "serialize_some" | "serialize_field" | "serialize_entry" | "serialize_element" | "serialize_key" | "serialize_value" | "serialize_newtype_struct" | "serialize_newtype_variant") => (Allocation::Input(1), Work::Argument(1)),
             ("serde" | "serde_core", "end" | "skip_field" | "serialize_bool" | "serialize_char" | "serialize_f32" | "serialize_f64" | "serialize_i128" | "serialize_i16" | "serialize_i32" | "serialize_i64" | "serialize_i8" | "serialize_u128" | "serialize_u16" | "serialize_u32" | "serialize_u64" | "serialize_u8" | "serialize_none" | "serialize_struct" | "serialize_struct_variant" | "serialize_tuple" | "serialize_tuple_struct" | "serialize_tuple_variant" | "serialize_unit" | "serialize_unit_struct" | "serialize_unit_variant") => (Allocation::None, Work::Fixed),
-            ("serde_json", "deserialize_any" | "deserialize") => (Allocation::Input(0), Work::Receiver),
+            ("serde_json", "deserialize_any" | "deserialize" | "deserialize_map") => (Allocation::Input(0), Work::Receiver),
             ("serde_json", "custom") => (Allocation::Input(0), Work::Argument(0)),
             ("serde_json", "clone") => (Allocation::Clone, Work::Receiver),
+            ("serde_json", "eq" | "ne" | "cmp" | "partial_cmp" | "lt" | "le" | "gt" | "ge") => (Allocation::None, Work::Comparison),
+            ("serde_json", "index" | "index_mut") => (Allocation::None, Work::Argument(1)),
+            ("roxmltree", "eq" | "ne") => (Allocation::None, Work::Fixed),
             ("serde_json", "fmt") => (Allocation::None, Work::Receiver),
             ("serde_json", "serialize" | "to_value" | "from_value" | "to_vec") => (Allocation::Input(0), Work::Receiver),
             ("serde_json", "to_writer") => (Allocation::Input(1), Work::Argument(1)),
@@ -158,6 +161,9 @@ pub(crate) fn summary(
         });
     }
     let (allocation, work) = match name.as_str() {
+        "add" | "sub" | "mul" | "div" | "rem" | "neg" | "not" | "bitand" | "bitor" | "bitxor" | "shl" | "shr" => {
+            if value.is_some_and(|value| matches!(value.kind(), ty::Bool | ty::Char | ty::Int(_) | ty::Uint(_) | ty::Float(_))) || path.contains("num::nonzero") { (Allocation::None, Work::Fixed) } else { (Allocation::Result, Work::Receiver) }
+        }
         "from_str_radix" if path.contains("num::") => (Allocation::None, Work::Argument(0)),
         _ if path.contains("num::<impl ") || path.contains("f32::<impl f32>") || path.contains("f64::<impl f64>") || path.contains("char::methods::<impl char>") => (Allocation::None, Work::Fixed),
         "index" | "index_mut" if path.contains("ops::Index") => (Allocation::None, Work::Fixed),
@@ -209,7 +215,7 @@ pub(crate) fn summary(
         "panic" | "panic_fmt" | "assert_failed" => (Allocation::None, Work::Fixed),
         "by_ref" | "cycle" | "map_while" | "scan" | "empty" | "once" | "repeat_n" | "repeat_with" | "successors" | "from_fn" | "peek" | "pop" | "pop_front" | "swap_remove" | "remainder" | "keys" | "values" | "values_mut" | "into_keys" | "into_values" | "into_vec" | "key" | "into_mut" | "and_modify" | "identity" | "each_ref" | "from_ref" | "from_mut" | "from_raw" | "as_ptr" | "leak" | "into_inner" | "into_bytes" | "set" | "get_or_init" | "get_or_insert" | "get_or_insert_with" | "as_deref" | "as_deref_mut" | "map_or" | "map_or_else" | "unwrap_or_default" | "unwrap" | "is_ok_and" | "is_break" | "start" | "extension" | "file_name" | "file_stem" | "strong_count" | "fetch_add" | "with" | "then_with" | "is_eq" | "is_gt" | "is_le" | "is_lt" | "valid_up_to" | "error_len" | "kind" | "rewind" | "seek" | "stream_position" | "flush" => (Allocation::None, Work::Fixed),
         "call" | "call_mut" | "call_once" if path.contains("ops::") => (Allocation::None, Work::Fixed),
-        "lt" | "ne" => (Allocation::None, Work::Comparison),
+        "lt" | "le" | "gt" | "ge" | "ne" => (Allocation::None, Work::Comparison),
         "from_le_bytes" | "from_be_bytes" | "from_ne_bytes" | "to_le_bytes" | "to_be_bytes"
         | "to_ne_bytes"
             if path.contains("num::") =>
