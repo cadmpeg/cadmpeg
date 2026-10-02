@@ -53,7 +53,7 @@ fn check_fixture(name: &str) {
     for line in actual.lines() {
         let fields: Vec<_> = line.split('\t').collect();
         if fields.len() == 4
-            && (if matches!(name, "edges" | "modular" | "external" | "generic" | "imported") {
+            && (if matches!(name, "edges" | "modular" | "external" | "generic" | "imported" | "dominance") {
                 true
             } else if name.starts_with("work") {
                 fields[0] != "uncharged_decode_allocation"
@@ -167,4 +167,9 @@ fn concrete_generic_instantiations() {
 #[test]
 fn imported_generic_instantiations() {
     check_fixture("imported");
+}
+
+#[test]
+fn structural_extent_dominance() {
+    check_fixture("dominance");
 }
