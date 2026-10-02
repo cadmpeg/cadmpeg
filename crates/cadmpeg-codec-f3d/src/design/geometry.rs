@@ -32,7 +32,7 @@ macro_rules! geometric {
 
 /// Format-side work cap for arrangement edge retention walks.
 ///
-/// Session `work_budget` callers take `min(this, policy.max_work_units)`.
+/// The local walk slice and the caller's session work allowance are charged separately.
 pub(crate) const MAX_ARRANGEMENT_WALK_WORK: usize = 1_000_000;
 
 #[derive(Clone)]
@@ -345,9 +345,6 @@ fn sketch_arrangement_faces(
         ctx.push_vec(&mut edges, edge, "f3d arrangement edge")?;
     }
     arrangement_retain_cycle_edges(&mut edges, nodes.len(), budget, ctx)?;
-    if budget.exhausted() {
-        return Ok(None);
-    }
     if edges.len() < 3 {
         return Ok(None);
     }
@@ -1043,9 +1040,19 @@ fn arrangement_node(
     Ok(nodes.len() - 1)
 }
 
-fn arrangement_cycle_work(edge_count: usize, ctx: &DecodeContext<'_>) -> Result<usize, CodecError> {
+fn arrangement_cycle_work(
+    edge_count: usize,
+    node_count: usize,
+    ctx: &DecodeContext<'_>,
+) -> Result<usize, CodecError> {
     edge_count
-        .checked_mul(edge_count)
+        .checked_add(1)
+        .and_then(|count| count.checked_mul(edge_count))
+        .and_then(|count| {
+            node_count
+                .checked_add(1)
+                .and_then(|nodes| count.checked_mul(nodes))
+        })
         .ok_or_else(|| ctx.refuse_codec_limit("F3D arrangement cycle work", 0, u64::MAX))
 }
 
@@ -1063,10 +1070,21 @@ fn arrangement_retain_cycle_edges(
     ctx: &DecodeContext<'_>,
 ) -> Result<(), CodecError> {
     loop {
-        // Each retention pass may run a BFS per edge (O(E²) worst case).
-        let work = arrangement_cycle_work(edges.len(), ctx)?;
+        // One BFS per edge scans all edges at each visited node: O(E² V).
+        // The bound also admits visit initialization and retention scans.
+        let work = arrangement_cycle_work(edges.len(), node_count, ctx)?;
+        let remaining = budget.remaining();
         if !budget.charge_by(work) {
-            return Ok(());
+            return Err(ctx.resource_refusal().map_or_else(
+                || {
+                    ctx.refuse_codec_limit(
+                        "F3D arrangement cycle work",
+                        cadmpeg_core::decode::u64_from_index(remaining),
+                        cadmpeg_core::decode::u64_from_index(work),
+                    )
+                },
+                CodecError::ResourceLimit,
+            ));
         }
         let mut keep = Vec::new();
         for (index, edge) in edges.iter().enumerate() {
@@ -1472,14 +1490,10 @@ fn sketch_geometry_point(
             ))
         }
         SketchGeometryDefinition::Nurbs { curve } if !curve.periodic() => {
-            let (control_points, weights) = nurbs_pcurve_evaluator_lanes(curve, ctx)?;
-            cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::nurbs_pcurve_uv(
-                curve.degree(),
-                curve.knots(),
-                &control_points,
-                weights.as_deref(),
-                parameter,
-            ))?
+            let geometry = nurbs_evaluation_geometry(curve, ctx, "f3d nurbs evaluator input")?;
+            cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::decode::pcurve_uv_for_decode(
+                ctx, &geometry, parameter,
+            )?)?
             .map(Point2::from)
         }
         _ => None,
@@ -2155,6 +2169,22 @@ fn certified_arc_tubes(
     Ok(Some(tubes))
 }
 
+fn nurbs_evaluation_geometry(
+    curve: &PcurveNurbs,
+    ctx: &DecodeContext<'_>,
+    operation: &'static str,
+) -> Result<cadmpeg_ir::geometry::pcurve::PcurveGeometry, CodecError> {
+    let copies = cadmpeg_core::decode::u64_from_index(curve.knots().len())
+        .checked_add(cadmpeg_core::decode::u64_from_index(
+            curve.pole_rows().count(),
+        ))
+        .ok_or_else(|| ctx.refuse_codec_limit(operation, 0, u64::MAX))?;
+    ctx.charge_work(copies, operation)?;
+    Ok(cadmpeg_ir::geometry::pcurve::PcurveGeometry::Nurbs {
+        nurbs: curve.try_clone_for_decode(ctx, operation)?,
+    })
+}
+
 fn certified_nurbs_tubes(
     curve: &PcurveNurbs,
     target_error: f64,
@@ -2163,17 +2193,8 @@ fn certified_nurbs_tubes(
     let speed = geometric!(nurbs_speed_bound(curve));
     let degree = index_from_u32(curve.degree());
     let knots = curve.knots();
-    {
-        let count = u64::try_from(curve.pole_rows().count())
-            .map_err(|_| ctx.refuse_codec_limit("f3d nurbs tube points", 0, 1))?;
-        ctx.charge_collection_items(count, "f3d nurbs tube points")?;
-        if matches!(curve.pole_rows(), PcurveNurbsPoles::Rational { .. }) {
-            ctx.charge_collection_items(count, "f3d nurbs tube weights")?;
-        }
-    }
-    let control_points = curve.pole_rows().try_raw_points()?;
-    let weights = curve.pole_rows().try_weights()?;
-    let count = control_points.len();
+    let geometry = nurbs_evaluation_geometry(curve, ctx, "f3d nurbs tube input")?;
+    let count = curve.pole_rows().count();
     let mut tubes = Vec::new();
     for span in knots[degree..=count].windows(2) {
         if span[0] == span[1] {
@@ -2201,23 +2222,19 @@ fn certified_nurbs_tubes(
                 }
             };
             let start = *geometric!(cadmpeg_ir::eval::finite_or_refusal(
-                cadmpeg_ir::eval::nurbs_pcurve_uv(
-                    curve.degree(),
-                    knots,
-                    &control_points,
-                    weights.as_deref(),
+                cadmpeg_ir::eval::decode::pcurve_uv_for_decode(
+                    ctx,
+                    &geometry,
                     geometric!(parameter(index)),
-                )
+                )?
             )?)
             .as_raw();
             let end = *geometric!(cadmpeg_ir::eval::finite_or_refusal(
-                cadmpeg_ir::eval::nurbs_pcurve_uv(
-                    curve.degree(),
-                    knots,
-                    &control_points,
-                    weights.as_deref(),
+                cadmpeg_ir::eval::decode::pcurve_uv_for_decode(
+                    ctx,
+                    &geometry,
                     geometric!(parameter(index + 1)),
-                )
+                )?
             )?)
             .as_raw();
             {
@@ -3776,23 +3793,15 @@ pub(super) fn sketch_entity_endpoints(
             Some([point_at(start_angle.get()), point_at(end_angle.get())])
         }
         SketchGeometryDefinition::Nurbs { curve } if !curve.periodic() => {
-            let (control_points, weights) = nurbs_pcurve_evaluator_lanes(curve, ctx)?;
+            let geometry = nurbs_evaluation_geometry(curve, ctx, "f3d nurbs evaluator input")?;
             let start_parameter = curve.knots()[index_from_u32(curve.degree())];
-            let end_parameter = curve.knots()[control_points.len()];
-            let start = cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::nurbs_pcurve_uv(
-                curve.degree(),
-                curve.knots(),
-                &control_points,
-                weights.as_deref(),
-                start_parameter,
-            ))?;
-            let end = cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::nurbs_pcurve_uv(
-                curve.degree(),
-                curve.knots(),
-                &control_points,
-                weights.as_deref(),
-                end_parameter,
-            ))?;
+            let end_parameter = curve.knots()[curve.pole_rows().count()];
+            let start = cadmpeg_ir::eval::finite_or_refusal(
+                cadmpeg_ir::eval::decode::pcurve_uv_for_decode(ctx, &geometry, start_parameter)?,
+            )?;
+            let end = cadmpeg_ir::eval::finite_or_refusal(
+                cadmpeg_ir::eval::decode::pcurve_uv_for_decode(ctx, &geometry, end_parameter)?,
+            )?;
             start
                 .zip(end)
                 .map(|(start, end)| [*start.as_raw(), *end.as_raw()])

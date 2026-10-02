@@ -305,7 +305,7 @@ impl TryFrom<FeaturePatternConstructionFixedLaneWire> for FeaturePatternConstruc
         let lane = FramedScalarRun::new(
             Q155LaneFrame,
             wire.payload_offset,
-            NonEmpty::from_vec(values).ok_or("values must contain a Q1.55 atom")?,
+            NonEmpty::from_admitted_vec(values).ok_or("values must contain a Q1.55 atom")?,
         )?;
         if !lane
             .iter()

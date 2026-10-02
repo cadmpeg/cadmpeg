@@ -103,15 +103,9 @@ impl BaseTypeGuid {
     }
 }
 
-/// One type-table entry from a `MetaStream` segment header. The entry registers
-/// a record type and lists the entities whose sibling `BulkStream` records
-/// carry it.
-#[derive(Debug, PartialEq, Deserialize)]
-#[cfg_attr(not(test), derive(Clone))]
-#[serde(try_from = "SegmentTypeWire")]
-pub(crate) struct SegmentType {
-    /// Globally unique deterministic identifier for this native record.
-    pub(crate) id: String,
+/// One framed type registration before it receives an archive-scoped identity.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct SegmentTypeData {
     /// Byte offset of this type-table entry in its `MetaStream`.
     pub(crate) byte_offset: u64,
     /// GUID naming this entry's record type. Class tags are segment-local, so
@@ -134,6 +128,55 @@ pub(crate) struct SegmentType {
     pub(crate) entities: ReferenceRun<u64>,
 }
 
+/// An identified type registration whose native key binds its `MetaStream` offset.
+#[derive(Debug, PartialEq, Deserialize)]
+#[cfg_attr(not(test), derive(Clone))]
+#[serde(try_from = "SegmentTypeWire")]
+pub(crate) struct SegmentType {
+    id: NativeRecordId,
+    data: SegmentTypeData,
+}
+
+impl SegmentType {
+    pub(crate) fn try_new(id: String, data: SegmentTypeData) -> Result<Self, String> {
+        let id = NativeRecordId::try_f3d_new(id, "design-type", data.byte_offset)?;
+        if !id.stream().ends_with("/MetaStream.dat") {
+            return Err("type id must name its containing MetaStream".into());
+        }
+        Ok(Self { id, data })
+    }
+    pub(crate) fn id(&self) -> &String {
+        self.id.text()
+    }
+    #[cfg(test)]
+    pub(crate) fn set_module(&mut self, module: String) {
+        self.data.module = module;
+    }
+    #[cfg(test)]
+    pub(crate) fn set_entities(&mut self, entities: ReferenceRun<u64>) {
+        self.data.entities = entities;
+    }
+    #[cfg(test)]
+    pub(crate) fn set_base_type_guid(&mut self, base: BaseTypeGuid) {
+        self.data.base_type_guid = base;
+    }
+    #[cfg(test)]
+    pub(crate) fn set_version(&mut self, version: u32) {
+        self.data.version = version;
+    }
+    #[cfg(test)]
+    pub(crate) fn set_type_guid(&mut self, guid: DesignRelaxedGuidText) {
+        self.data.type_guid = guid;
+    }
+}
+
+impl std::ops::Deref for SegmentType {
+    type Target = SegmentTypeData;
+    fn deref(&self) -> &Self::Target {
+        &self.data
+    }
+}
+
 #[cfg(test)]
 thread_local! {
     static SEGMENT_TYPE_CLONE_COUNT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
@@ -145,14 +188,7 @@ impl Clone for SegmentType {
         SEGMENT_TYPE_CLONE_COUNT.with(|count| count.set(count.get() + 1));
         Self {
             id: self.id.clone(),
-            byte_offset: self.byte_offset,
-            type_guid: self.type_guid.clone(),
-            type_guid_offset: self.type_guid_offset,
-            base_type_guid: self.base_type_guid.clone(),
-            version: self.version,
-            version_offset: self.version_offset,
-            module: self.module.clone(),
-            entities: self.entities.clone(),
+            data: self.data.clone(),
         }
     }
 }
@@ -198,7 +234,7 @@ impl Serialize for SegmentType {
             BaseTypeGuid::Guid { value, .. } => Some(value.as_str()),
         };
         SegmentTypeWireRef {
-            id: &self.id,
+            id: self.id.text(),
             byte_offset: self.byte_offset,
             type_guid: &self.type_guid,
             type_guid_offset: self.type_guid_offset,
@@ -263,34 +299,38 @@ impl TryFrom<SegmentTypeWire> for SegmentType {
     type Error = String;
     /// Nonempty `base_type_guid` text outside the relaxed GUID domain is not decoder-producible and is rejected deliberately.
     fn try_from(wire: SegmentTypeWire) -> Result<Self, Self::Error> {
-        Ok(Self {
-            id: wire.id,
-            byte_offset: wire.byte_offset,
-            type_guid: wire.type_guid,
-            type_guid_offset: wire.type_guid_offset,
-            version: wire.version,
-            version_offset: wire.version_offset,
-            module: wire.module,
-            entities: ReferenceRun::from_columns(
-                wire.entity_ids,
-                wire.entity_id_offsets,
-                "entity_ids/entity_id_offsets",
-            )?,
-            base_type_guid: BaseTypeGuid::from_wire(
-                wire.base_type_guid,
-                wire.base_type_guid_offset,
-            )?,
-        })
+        Self::try_new(
+            wire.id,
+            SegmentTypeData {
+                byte_offset: wire.byte_offset,
+                type_guid: wire.type_guid,
+                type_guid_offset: wire.type_guid_offset,
+                version: wire.version,
+                version_offset: wire.version_offset,
+                module: wire.module,
+                entities: ReferenceRun::from_columns(
+                    wire.entity_ids,
+                    wire.entity_id_offsets,
+                    "entity_ids/entity_id_offsets",
+                )?,
+                base_type_guid: BaseTypeGuid::from_wire(
+                    wire.base_type_guid,
+                    wire.base_type_guid_offset,
+                )?,
+            },
+        )
     }
 }
 
 #[cfg(test)]
 impl From<SegmentType> for SegmentTypeWire {
     fn from(value: SegmentType) -> Self {
+        let id = value.id.into_string();
+        let value = value.data;
         let (entity_ids, entity_id_offsets) = value.entities.into_wire();
         let (base_type_guid, base_type_guid_offset) = value.base_type_guid.into_wire();
         Self {
-            id: value.id,
+            id,
             byte_offset: value.byte_offset,
             type_guid: value.type_guid,
             type_guid_offset: value.type_guid_offset,
@@ -482,7 +522,7 @@ impl Clone for DesignFeatureTimeline {
 impl DesignFeatureTimeline {
     /// Returns the admitted native identity.
     pub(crate) fn id(&self) -> &String {
-        &self.id.text
+        self.id.text()
     }
     /// Returns the timeline source frame.
     pub(crate) fn frame(&self) -> &DesignTimelineFrame {
@@ -490,7 +530,7 @@ impl DesignFeatureTimeline {
     }
     /// Returns the Design segment encoded in the identity.
     pub(crate) fn segment(&self) -> &str {
-        &self.id.text[..self.segment_end]
+        &self.id.text()[..self.segment_end]
     }
     /// Admits a record whose identity matches its source location.
     pub(crate) fn try_new(
@@ -502,7 +542,7 @@ impl DesignFeatureTimeline {
         context_record_index: std::num::NonZeroU64,
     ) -> Result<Self, String> {
         let id = NativeRecordId::try_new(id, "design-feature-timeline", frame.byte_offset())?;
-        let segment_end = crate::ids::design_segment(&id.text)
+        let segment_end = crate::ids::design_segment(id.text())
             .ok_or("timeline.id must contain a Design segment")?
             .len();
         Ok(Self {
@@ -552,7 +592,7 @@ struct DesignFeatureTimelineWireRef<'a> {
 impl Serialize for DesignFeatureTimeline {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         DesignFeatureTimelineWireRef {
-            id: &self.id.text,
+            id: self.id.text(),
             byte_offset: self.frame.byte_offset,
             class_tag: self.class_tag.as_str(),
             record_index: self.record_index.get(),
@@ -641,7 +681,7 @@ impl From<DesignFeatureTimeline> for DesignFeatureTimelineWire {
         Self {
             item_record_indices,
             item_record_index_offsets,
-            id: value.id.text,
+            id: value.id.into_string(),
             byte_offset: value.frame.byte_offset,
             class_tag: value.class_tag.into(),
             record_index: value.record_index.get(),
@@ -1033,7 +1073,7 @@ impl From<DesignEntityHeader> for DesignEntityHeaderWire {
             member_offsets,
             id: header.id,
             byte_offset: header.byte_offset,
-            entity_id: header.entity_id.text,
+            entity_id: header.entity_id.into_string(),
             class_tag: header.class_tag.into(),
             optional_slot_present: header.optional_slot_present,
             module,

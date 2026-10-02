@@ -31,7 +31,7 @@ fn parse_malformed(
         format_args!("F3D {field}: {message}"),
         "describe malformed F3D manifest",
     ) {
-        Ok(text) => crate::error::malformed(text),
+        Ok(text) => CodecError::Malformed(text),
         Err(refusal) => refusal,
     }
 }
@@ -78,7 +78,7 @@ fn probe_malformed<'ctx>(
         "describe malformed F3D manifest",
     ) {
         Ok((text, reservation)) => ManifestFailure {
-            error: crate::error::malformed(text),
+            error: CodecError::Malformed(text),
             reservation: Some(reservation),
         },
         Err(refusal) => refusal.into(),
@@ -1132,7 +1132,7 @@ fn push_u32(out: &mut Vec<u8>, value: u32) {
 }
 
 fn malformed(field: &str, message: impl std::fmt::Display) -> CodecError {
-    crate::error::malformed(format!("F3D {field}: {message}"))
+    CodecError::malformed(format_args!("F3D {field}: {message}"))
 }
 
 fn truncated<'ctx>(ctx: &'ctx DecodeContext<'_>, field: &str) -> ManifestFailure<'ctx> {

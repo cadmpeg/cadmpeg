@@ -139,12 +139,11 @@ mod tests {
         matches_native_surface_id, native_surface_id, native_surface_namespace,
         transfer_part_product,
     };
-    use crate::container::scan_bytes_ok;
     use crate::surface::{SurfaceKind, SurfaceRow};
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 
     fn named_scan() -> crate::container::ContainerScan<'static> {
-        let mut scan = scan_bytes_ok(Vec::new());
+        let mut scan = crate::test_support::empty_container_scan();
         scan.framing.model_name = Some(crate::container::ModelName {
             name: "wheel".into(),
             offset: 0,
@@ -324,7 +323,7 @@ mod tests {
 
     #[test]
     fn native_surface_id_preserves_nonvisible_namespace() {
-        let mut scan = scan_bytes_ok(Vec::new());
+        let mut scan = crate::test_support::empty_container_scan();
         scan.surfaces.nonvisible_rows.push(SurfaceRow {
             id: 17,
             kind: SurfaceKind::Plane,

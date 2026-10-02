@@ -87,6 +87,7 @@ fn read_array<T>(
     operation: &'static str,
     mut read: impl FnMut(usize) -> Option<T>,
 ) -> Result<Option<Vec<T>>, cadmpeg_core::CodecError> {
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(count), operation)?;
     let mut values = Vec::new();
     ctx.reserve_vec(&mut values, count, operation)?;
     for index in 0..count {
@@ -204,6 +205,10 @@ fn scan_arrays(
     bytes: &[u8],
     compact_attrs: Option<&HashSet<u16>>,
 ) -> Result<Arrays, cadmpeg_core::CodecError> {
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(bytes.len()),
+        "scan Parasolid spline arrays",
+    )?;
     let mut arrays = Arrays::default();
     for off in 0..bytes.len().checked_sub(9).map_or(0, |end| end) {
         if bytes.get(off) == Some(&0) {
@@ -226,6 +231,10 @@ fn scan_arrays(
             Some([0x00, tag @ (0x2d | 0x7f | 0x80)]) => *tag,
             _ => continue,
         };
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(arr_hdr::LEN),
+            "probe Parasolid spline array",
+        )?;
         let Some(p) = array_body(bytes, off, tag) else {
             continue;
         };
@@ -392,11 +401,16 @@ fn scan_curve_descriptors(
     ctx: &DecodeContext<'_>,
     bytes: &[u8],
 ) -> Result<HashMap<u16, CurveDescriptor>, cadmpeg_core::CodecError> {
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(bytes.len()),
+        "scan Parasolid curve descriptors",
+    )?;
     let mut out = HashMap::new();
     for off in 0..bytes.len().checked_sub(29).map_or(0, |end| end) {
         if bytes.get(off..off + 2) != Some(&[0x00, 0x88]) {
             continue;
         }
+        ctx.charge_work(29, "probe Parasolid curve descriptor")?;
         let mut p = off + 2;
         if bytes.get(p) == Some(&0xff) {
             p += 1;
@@ -463,17 +477,30 @@ fn expanded_knots(
     multiplicities: &[u16],
     expected: usize,
 ) -> Result<Option<Vec<f64>>, cadmpeg_core::CodecError> {
+    let scan_count = if values.len() < multiplicities.len() {
+        values.len()
+    } else {
+        multiplicities.len()
+    };
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(scan_count),
+        "scan Parasolid knot multiplicities",
+    )?;
     let mut out = Vec::new();
     for (value, &multiplicity) in values.iter().zip(multiplicities) {
         if multiplicity == 0 {
             continue;
         }
-        let Some(next_len) = out.len().checked_add(usize::from(multiplicity)) else {
-            return Ok(None);
-        };
+        let next_len = out
+            .len()
+            .checked_add(usize::from(multiplicity))
+            .ok_or_else(|| {
+                ctx.refuse_codec_limit("expand Parasolid knots", u64::MAX - 1, u64::MAX)
+            })?;
         if next_len > expected {
             return Ok(None);
         }
+        ctx.charge_work(u64::from(multiplicity), "emit Parasolid expanded knots")?;
         ctx.reserve_vec(
             &mut out,
             usize::from(multiplicity),
@@ -484,18 +511,33 @@ fn expanded_knots(
     Ok(Some(out))
 }
 
-fn unique_knots(knots: &[f64]) -> (Vec<f64>, Vec<usize>) {
-    let mut runs = Vec::<(f64, usize)>::new();
+fn unique_knots(
+    ctx: &DecodeContext<'_>,
+    knots: &[f64],
+) -> Result<(Vec<f64>, Vec<usize>), cadmpeg_core::CodecError> {
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(knots.len()),
+        "compress Parasolid patch knots",
+    )?;
+    let mut values = Vec::new();
+    let mut multiplicities = Vec::<usize>::new();
     for &knot in knots {
-        if let Some((last, multiplicity)) = runs.last_mut() {
-            if *last == knot {
-                *multiplicity += 1;
-                continue;
+        if values.last() == Some(&knot) {
+            if let Some(multiplicity) = multiplicities.last_mut() {
+                *multiplicity = multiplicity.checked_add(1).ok_or_else(|| {
+                    ctx.refuse_codec_limit("compress Parasolid patch knots", u64::MAX, u64::MAX)
+                })?;
             }
+        } else {
+            ctx.push_vec(&mut values, knot, "collect Parasolid patch knot values")?;
+            ctx.push_vec(
+                &mut multiplicities,
+                1,
+                "collect Parasolid patch knot multiplicities",
+            )?;
         }
-        runs.push((knot, 1));
     }
-    runs.into_iter().unzip()
+    Ok((values, multiplicities))
 }
 
 fn multiplicity_sum(values: &[u16]) -> Option<usize> {
@@ -526,6 +568,10 @@ fn array_spans(
     tag: u8,
     attr: u16,
 ) -> Result<Vec<ArraySpan>, cadmpeg_core::CodecError> {
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(bytes.len()),
+        "scan Parasolid patch array spans",
+    )?;
     let mut spans = Vec::new();
     for off in 0..bytes.len().checked_sub(9).map_or(0, |end| end) {
         let Some(p) = array_body(bytes, off, tag) else {
@@ -537,43 +583,72 @@ fn array_spans(
             continue;
         };
         if count <= MAX_ARRAY_VALUES && View::u16_be_at(bytes, p + arr_hdr::ATTR) == Some(attr) {
-            spans.push(ArraySpan {
-                start: p + arr_hdr::LEN,
-                count,
-            });
+            ctx.push_vec(
+                &mut spans,
+                ArraySpan {
+                    start: p + arr_hdr::LEN,
+                    count,
+                },
+                "collect Parasolid patch array spans",
+            )?;
         }
     }
-    spans.extend(
-        arrays
-            .compact
-            .get(&attr)
-            .into_iter()
-            .flatten()
-            .map(|array| ArraySpan {
+    for array in arrays.compact.get(&attr).into_iter().flatten() {
+        ctx.push_vec(
+            &mut spans,
+            ArraySpan {
                 start: array.offset + compact_arr::LEN,
                 count: array.count,
-            }),
-    );
+            },
+            "collect Parasolid patch array spans",
+        )?;
+    }
     ctx.stable_sort_by(
         &mut spans,
         |left, right| (left.start, left.count).cmp(&(right.start, right.count)),
         |_| 0,
         "sldprt parasolid array spans sort",
     )?;
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(spans.len()),
+        "deduplicate Parasolid patch array spans",
+    )?;
     spans.dedup();
     Ok(spans)
 }
 
-fn f64_values(bytes: &[u8], span: ArraySpan) -> Option<Vec<f64>> {
-    (0..span.count)
-        .map(|index| View::f64_be_at(bytes, span.start + index * 8))
-        .collect()
+fn f64_values(
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+    span: ArraySpan,
+) -> Result<Option<Vec<f64>>, cadmpeg_core::CodecError> {
+    read_array(
+        ctx,
+        span.count,
+        "read Parasolid patch scalar values",
+        |index| {
+            span.start
+                .checked_add(index.checked_mul(8)?)
+                .and_then(|offset| View::f64_be_at(bytes, offset))
+        },
+    )
 }
 
-fn u16_values(bytes: &[u8], span: ArraySpan) -> Option<Vec<u16>> {
-    (0..span.count)
-        .map(|index| View::u16_be_at(bytes, span.start + index * 2))
-        .collect()
+fn u16_values(
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+    span: ArraySpan,
+) -> Result<Option<Vec<u16>>, cadmpeg_core::CodecError> {
+    read_array(
+        ctx,
+        span.count,
+        "read Parasolid patch multiplicities",
+        |index| {
+            span.start
+                .checked_add(index.checked_mul(2)?)
+                .and_then(|offset| View::u16_be_at(bytes, offset))
+        },
+    )
 }
 
 fn unique_control_span(
@@ -583,25 +658,33 @@ fn unique_control_span(
     attr: u16,
     old_values: &[f64],
 ) -> Result<Option<ArraySpan>, cadmpeg_core::CodecError> {
-    let spans = array_spans(ctx, bytes, arrays, 0x2d, attr)?
-        .into_iter()
-        .filter(|span| span.count == old_values.len())
-        .collect::<Vec<_>>();
-    if spans.len() == 1 {
-        return Ok(Some(spans[0]));
+    let mut spans = array_spans(ctx, bytes, arrays, 0x2d, attr)?;
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(spans.len()),
+        "filter Parasolid patch control spans",
+    )?;
+    spans.retain(|span| span.count == old_values.len());
+    if let [span] = spans.as_slice() {
+        return Ok(Some(*span));
     }
-    let mut matching = spans.into_iter().filter(|&span| {
-        f64_values(bytes, span).is_some_and(|values| {
-            values.iter().zip(old_values).all(|(native, expected)| {
-                let scale = native.abs().max(expected.abs()).max(1.0);
-                (native - expected).abs() <= 16.0 * f64::EPSILON * scale
-            })
-        })
-    });
-    let Some(selected) = matching.next() else {
-        return Ok(None);
-    };
-    Ok(matching.next().is_none().then_some(selected))
+    let mut selected = None;
+    for span in spans {
+        let Some(values) = f64_values(ctx, bytes, span)? else {
+            continue;
+        };
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(values.len()),
+            "match Parasolid patch control span",
+        )?;
+        if values.iter().zip(old_values).all(|(native, expected)| {
+            let scale = native.abs().max(expected.abs()).max(1.0);
+            (native - expected).abs() <= 16.0 * f64::EPSILON * scale
+        }) && selected.replace(span).is_some()
+        {
+            return Ok(None);
+        }
+    }
+    Ok(selected)
 }
 
 fn unique_surface_knot_span(
@@ -620,17 +703,33 @@ fn unique_surface_knot_span(
     let multiplicity_spans = array_spans(ctx, bytes, arrays, 0x7f, multiplicity_attr)?;
     let mut pairs = Vec::new();
     for knot_span in knot_spans {
-        let Some(knots) = f64_values(bytes, knot_span) else {
+        let Some(knots) = f64_values(ctx, bytes, knot_span)? else {
             continue;
         };
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(multiplicity_spans.len()),
+            "scan Parasolid patch multiplicity spans",
+        )?;
         for multiplicity_span in multiplicity_spans
             .iter()
             .copied()
             .filter(|span| span.count == knot_span.count)
         {
-            let Some(multiplicities) = u16_values(bytes, multiplicity_span) else {
+            let Some(multiplicities) = u16_values(ctx, bytes, multiplicity_span)? else {
                 continue;
             };
+            ctx.charge_work(
+                cadmpeg_core::decode::u64_from_index(knots.len())
+                    .checked_mul(3)
+                    .ok_or_else(|| {
+                        ctx.refuse_codec_limit(
+                            "match Parasolid patch knot spans",
+                            u64::MAX,
+                            u64::MAX,
+                        )
+                    })?,
+                "match Parasolid patch knot spans",
+            )?;
             let Some((knots, multiplicities)) =
                 surface_knot_arrays(&knots, &multiplicities, declared_count)
             else {
@@ -643,7 +742,11 @@ fn unique_surface_knot_span(
                     .map(usize::from)
                     .eq(old_multiplicities.iter().copied())
             {
-                pairs.push((knot_span, multiplicity_span));
+                ctx.push_vec(
+                    &mut pairs,
+                    (knot_span, multiplicity_span),
+                    "collect Parasolid patch knot span pairs",
+                )?;
             }
         }
     }
@@ -664,6 +767,10 @@ fn unique_surface_knot_span(
         |_| 0,
         "sldprt parasolid surface knot span pairs sort",
     )?;
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(pairs.len()),
+        "deduplicate Parasolid patch knot pairs",
+    )?;
     pairs.dedup();
     Ok(match pairs.as_slice() {
         [(knots, _)] => Some(*knots),
@@ -671,139 +778,204 @@ fn unique_surface_knot_span(
     })
 }
 
-fn patch_f64_span(bytes: &mut [u8], span: ArraySpan, values: &[f64]) -> Option<()> {
+fn patch_f64_span(
+    ctx: &DecodeContext<'_>,
+    bytes: &mut [u8],
+    span: ArraySpan,
+    values: &[f64],
+) -> Result<Option<()>, cadmpeg_core::CodecError> {
     if values.len() > span.count {
-        return None;
+        return Ok(None);
     }
-    for (index, value) in values.iter().enumerate() {
-        bytes
-            .get_mut(span.start + index * 8..span.start + (index + 1) * 8)?
-            .copy_from_slice(&value.to_be_bytes());
+    let Some(size) = values.len().checked_mul(8) else {
+        return Ok(None);
+    };
+    let Some(end) = span.start.checked_add(size) else {
+        return Ok(None);
+    };
+    let Some(slots) = bytes.get_mut(span.start..end) else {
+        return Ok(None);
+    };
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(size),
+        "write Parasolid patch scalar span",
+    )?;
+    for (slot, value) in slots.chunks_exact_mut(8).zip(values) {
+        slot.copy_from_slice(&value.to_be_bytes());
     }
-    Some(())
+    Ok(Some(()))
 }
 
-fn patch_f64_array(bytes: &mut [u8], tag: u8, attr: u16, values: &[f64]) -> Option<()> {
-    let (start, count) = array_span(bytes, tag, attr)?;
+fn patch_f64_array(
+    ctx: &DecodeContext<'_>,
+    bytes: &mut [u8],
+    tag: u8,
+    attr: u16,
+    values: &[f64],
+) -> Result<Option<()>, cadmpeg_core::CodecError> {
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(bytes.len()),
+        "find Parasolid patch scalar array",
+    )?;
+    let Some((start, count)) = array_span(bytes, tag, attr) else {
+        return Ok(None);
+    };
     if count != values.len() {
-        return None;
+        return Ok(None);
     }
-    for (index, value) in values.iter().enumerate() {
-        bytes
-            .get_mut(start + index * 8..start + (index + 1) * 8)?
-            .copy_from_slice(&value.to_be_bytes());
-    }
-    Some(())
+    patch_f64_span(ctx, bytes, ArraySpan { start, count }, values)
 }
 
 fn append_homogeneous_pole(
+    ctx: &DecodeContext<'_>,
     out: &mut Vec<f64>,
     point: FinitePoint3,
     weight: Option<f64>,
     scale: f64,
-) -> Option<()> {
+) -> Result<Option<()>, cadmpeg_core::CodecError> {
     let point = point.get();
     let factor = weight.unwrap_or(1.0);
     if factor.abs() <= f64::EPSILON {
-        return None;
+        return Ok(None);
     }
+    ctx.charge_work(4, "form Parasolid homogeneous patch pole")?;
     let homogeneous = [point.x, point.y, point.z].map(|value| value * scale * factor);
     if !homogeneous.iter().all(|value| value.is_finite()) {
-        return None;
+        return Ok(None);
     }
+    ctx.reserve_vec(
+        out,
+        3 + usize::from(weight.is_some()),
+        "collect Parasolid homogeneous patch poles",
+    )?;
     out.extend(homogeneous);
     if let Some(weight) = weight {
         out.push(weight);
     }
-    Some(())
+    Ok(Some(()))
 }
 
-fn homogeneous_poles(poles: &NurbsPoles3<FinitePoint3>, scale: f64) -> Option<Vec<f64>> {
+fn homogeneous_poles(
+    ctx: &DecodeContext<'_>,
+    poles: &NurbsPoles3<FinitePoint3>,
+    scale: f64,
+) -> Result<Option<Vec<f64>>, cadmpeg_core::CodecError> {
     let mut out = Vec::new();
     match poles {
         NurbsPoles3::Polynomial { points } => {
             for point in points {
-                append_homogeneous_pole(&mut out, *point, None, scale)?;
+                if append_homogeneous_pole(ctx, &mut out, *point, None, scale)?.is_none() {
+                    return Ok(None);
+                }
             }
         }
         NurbsPoles3::Rational { points } => {
             for pole in points {
-                append_homogeneous_pole(&mut out, pole.point, Some(pole.weight.get()), scale)?;
+                if append_homogeneous_pole(
+                    ctx,
+                    &mut out,
+                    pole.point,
+                    Some(pole.weight.get()),
+                    scale,
+                )?
+                .is_none()
+                {
+                    return Ok(None);
+                }
             }
         }
     }
-    Some(out)
+    Ok(Some(out))
 }
 
-fn homogeneous_grid_poles(poles: &NurbsPoleGrid<FinitePoint3>, scale: f64) -> Option<Vec<f64>> {
+fn homogeneous_grid_poles(
+    ctx: &DecodeContext<'_>,
+    poles: &NurbsPoleGrid<FinitePoint3>,
+    scale: f64,
+) -> Result<Option<Vec<f64>>, cadmpeg_core::CodecError> {
     let mut out = Vec::new();
     match poles {
         NurbsPoleGrid::Polynomial { rows } => {
             for point in rows.iter().flatten() {
-                append_homogeneous_pole(&mut out, *point, None, scale)?;
+                if append_homogeneous_pole(ctx, &mut out, *point, None, scale)?.is_none() {
+                    return Ok(None);
+                }
             }
         }
         NurbsPoleGrid::Rational { rows } => {
             for pole in rows.iter().flatten() {
-                append_homogeneous_pole(&mut out, pole.point, Some(pole.weight.get()), scale)?;
+                if append_homogeneous_pole(
+                    ctx,
+                    &mut out,
+                    pole.point,
+                    Some(pole.weight.get()),
+                    scale,
+                )?
+                .is_none()
+                {
+                    return Ok(None);
+                }
             }
         }
     }
-    Some(out)
+    Ok(Some(out))
 }
 
 /// Patch retained curve pole and knot arrays without changing their storage shape.
 pub(crate) fn patch_nurbs_curve(
+    ctx: &DecodeContext<'_>,
     bytes: &mut [u8],
     wrapper_offset: usize,
     old: &NurbsCurve,
     new: &NurbsCurve,
     scale: f64,
-) -> Option<()> {
+) -> Result<Option<()>, cadmpeg_core::CodecError> {
     if old.degree() != new.degree()
         || old.control_points().len() != new.control_points().len()
         || old.weights().is_some() != new.weights().is_some()
         || old.periodic() != new.periodic()
     {
-        return None;
+        return Ok(None);
     }
-    let (old_unique, old_mult) = unique_knots(old.knots());
-    let (new_unique, new_mult) = unique_knots(new.knots());
+    let (old_unique, old_mult) = unique_knots(ctx, old.knots())?;
+    let (new_unique, new_mult) = unique_knots(ctx, new.knots())?;
     if old_mult != new_mult || old_unique.len() != new_unique.len() {
-        return None;
+        return Ok(None);
     }
-    let mut p = wrapper_offset + 2;
+    let mut p = wrapper_offset.checked_add(2).ok_or_else(|| {
+        cadmpeg_core::CodecError::malformed("Parasolid patch wrapper offset overflow")
+    })?;
     if bytes.get(p) == Some(&0xff) {
         p += 1;
     }
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        bytes,
-        &arena,
-        &cadmpeg_core::decode::DecodePolicy::service(),
-    )
-    .ok()?;
-    let descriptors = scan_curve_descriptors(&ctx, bytes).ok()?;
-    let descriptor = curve_descriptor(bytes, p, &descriptors)?;
+    let descriptors = scan_curve_descriptors(ctx, bytes)?;
+    let Some(descriptor) = curve_descriptor(bytes, p, &descriptors) else {
+        return Ok(None);
+    };
     if descriptor.degree != old.degree()
         || descriptor.control_count != old.control_points().len()
         || descriptor.dimension != if old.weights().is_some() { 4 } else { 3 }
     {
-        return None;
+        return Ok(None);
     }
-    let poles = homogeneous_poles(new.pole_rows(), scale)?;
-    patch_f64_array(bytes, 0x2d, descriptor.control_attr, &poles)?;
-    patch_f64_array(bytes, 0x80, descriptor.knot_attr, &new_unique)
+    let Some(poles) = homogeneous_poles(ctx, new.pole_rows(), scale)? else {
+        return Ok(None);
+    };
+    if patch_f64_array(ctx, bytes, 0x2d, descriptor.control_attr, &poles)?.is_none() {
+        return Ok(None);
+    }
+    patch_f64_array(ctx, bytes, 0x80, descriptor.knot_attr, &new_unique)
 }
 
 /// Patch retained surface pole and knot arrays without changing their storage shape.
 pub(crate) fn patch_nurbs_surface(
+    ctx: &DecodeContext<'_>,
     bytes: &mut [u8],
     wrapper_offset: usize,
     old: &NurbsSurface,
     new: &NurbsSurface,
     scale: f64,
-) -> Option<()> {
+) -> Result<Option<()>, cadmpeg_core::CodecError> {
     if old.u_degree() != new.u_degree()
         || old.v_degree() != new.v_degree()
         || old.u_count() != new.u_count()
@@ -813,38 +985,40 @@ pub(crate) fn patch_nurbs_surface(
         || old.u_periodic() != new.u_periodic()
         || old.v_periodic() != new.v_periodic()
     {
-        return None;
+        return Ok(None);
     }
-    let (old_u, old_u_mult) = unique_knots(old.u_knots());
-    let (new_u, new_u_mult) = unique_knots(new.u_knots());
-    let (old_v, old_v_mult) = unique_knots(old.v_knots());
-    let (new_v, new_v_mult) = unique_knots(new.v_knots());
+    let (old_u, old_u_mult) = unique_knots(ctx, old.u_knots())?;
+    let (new_u, new_u_mult) = unique_knots(ctx, new.u_knots())?;
+    let (old_v, old_v_mult) = unique_knots(ctx, old.v_knots())?;
+    let (new_v, new_v_mult) = unique_knots(ctx, new.v_knots())?;
     if old_u_mult != new_u_mult
         || old_v_mult != new_v_mult
         || old_u.len() != new_u.len()
         || old_v.len() != new_v.len()
     {
-        return None;
+        return Ok(None);
     }
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        bytes,
-        &arena,
-        &cadmpeg_core::decode::DecodePolicy::service(),
-    )
-    .ok()?;
-    let descriptors = scan_surface_descriptors(&ctx, bytes).ok()?;
-    let compact_attrs = descriptors
-        .values()
-        .flat_map(|descriptor| descriptor.refs)
-        .collect();
-    let arrays = scan_arrays(&ctx, bytes, Some(&compact_attrs)).ok()?;
-    let mut p = wrapper_offset + 2;
+    let descriptors = scan_surface_descriptors(ctx, bytes)?;
+    let compact_attrs = ctx.collect_hash_set(
+        descriptors.values().flat_map(|descriptor| descriptor.refs),
+        "index Parasolid patch compact attributes",
+    )?;
+    let arrays = scan_arrays(ctx, bytes, Some(&compact_attrs))?;
+    let mut p = wrapper_offset.checked_add(2).ok_or_else(|| {
+        cadmpeg_core::CodecError::malformed("Parasolid patch wrapper offset overflow")
+    })?;
     if bytes.get(p) == Some(&0xff) {
         p += 1;
     }
-    let descriptor_attr = View::u16_be_at(bytes, p + 17)?;
-    let descriptor = descriptors.get(&descriptor_attr)?;
+    let Some(descriptor_at) = p.checked_add(17) else {
+        return Ok(None);
+    };
+    let Some(descriptor_attr) = View::u16_be_at(bytes, descriptor_at) else {
+        return Ok(None);
+    };
+    let Some(descriptor) = descriptors.get(&descriptor_attr) else {
+        return Ok(None);
+    };
     let [control_attr, _, _, u_knot_attr, v_knot_attr] = descriptor.refs;
     let dimension = if old.weights().is_some() { 4 } else { 3 };
     if descriptor.u_degree != old.u_degree()
@@ -855,35 +1029,49 @@ pub(crate) fn patch_nurbs_surface(
         || descriptor.u_periodic != old.u_periodic()
         || descriptor.v_periodic != old.v_periodic()
     {
-        return None;
+        return Ok(None);
     }
-    let old_poles = homogeneous_grid_poles(old.pole_grid(), scale)?;
-    let poles = homogeneous_grid_poles(new.pole_grid(), scale)?;
-    let control_span =
-        unique_control_span(&ctx, bytes, &arrays, control_attr, &old_poles).ok()??;
-    let u_knot_span = unique_surface_knot_span(
-        &ctx,
+    let Some(old_poles) = homogeneous_grid_poles(ctx, old.pole_grid(), scale)? else {
+        return Ok(None);
+    };
+    let Some(poles) = homogeneous_grid_poles(ctx, new.pole_grid(), scale)? else {
+        return Ok(None);
+    };
+    let Some(control_span) = unique_control_span(ctx, bytes, &arrays, control_attr, &old_poles)?
+    else {
+        return Ok(None);
+    };
+    let Some(u_knot_span) = unique_surface_knot_span(
+        ctx,
         bytes,
         &arrays,
         (u_knot_attr, descriptor.refs[1]),
         descriptor.u_knot_count,
         &old_u,
         &old_u_mult,
-    )
-    .ok()??;
-    let v_knot_span = unique_surface_knot_span(
-        &ctx,
+    )?
+    else {
+        return Ok(None);
+    };
+    let Some(v_knot_span) = unique_surface_knot_span(
+        ctx,
         bytes,
         &arrays,
         (v_knot_attr, descriptor.refs[2]),
         descriptor.v_knot_count,
         &old_v,
         &old_v_mult,
-    )
-    .ok()??;
-    patch_f64_span(bytes, control_span, &poles)?;
-    patch_f64_span(bytes, u_knot_span, &new_u)?;
-    patch_f64_span(bytes, v_knot_span, &new_v)
+    )?
+    else {
+        return Ok(None);
+    };
+    if patch_f64_span(ctx, bytes, control_span, &poles)?.is_none() {
+        return Ok(None);
+    }
+    if patch_f64_span(ctx, bytes, u_knot_span, &new_u)?.is_none() {
+        return Ok(None);
+    }
+    patch_f64_span(ctx, bytes, v_knot_span, &new_v)
 }
 
 /// Every compact NURBS curve carrier in `bytes`, keyed by attribute id.
@@ -900,6 +1088,10 @@ pub(crate) fn scan_curve_carriers(
 ) -> Result<HashMap<u16, CurveCarrier>, cadmpeg_core::CodecError> {
     let arrays = scan_arrays(ctx, bytes, None)?;
     let descriptors = scan_curve_descriptors(ctx, bytes)?;
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(bytes.len()),
+        "scan Parasolid curve wrappers",
+    )?;
     let mut out = HashMap::new();
     for off in 0..bytes.len().checked_sub(6).map_or(0, |end| end) {
         if bytes.get(off..off + 2) != Some(&[0x00, 0x86]) {
@@ -1015,8 +1207,19 @@ fn scan_surface_descriptors(
     ctx: &DecodeContext<'_>,
     bytes: &[u8],
 ) -> Result<HashMap<u16, SurfaceDescriptor>, cadmpeg_core::CodecError> {
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(bytes.len()),
+        "scan Parasolid surface descriptors",
+    )?;
     let mut out = HashMap::new();
     for off in 0..bytes.len().checked_sub(1).map_or(0, |end| end) {
+        if bytes.get(off..off + 2) != Some(&[0x00, 0x7e]) {
+            continue;
+        }
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(surf_desc::LEN),
+            "probe Parasolid surface descriptor",
+        )?;
         let Some(descriptor) = parse_surface_descriptor(bytes, off) else {
             continue;
         };
@@ -1136,6 +1339,10 @@ pub(crate) fn scan_surface_carriers(
         compact_attrs.extend(descriptor.refs);
     }
     let arrays = scan_arrays(ctx, bytes, Some(&compact_attrs))?;
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(bytes.len()),
+        "scan Parasolid surface wrappers",
+    )?;
     let mut out = HashMap::new();
     for off in 0..bytes.len().checked_sub(1).map_or(0, |end| end) {
         if bytes.get(off..off + 2) != Some(&[0x00, 0x7c]) {
@@ -1148,7 +1355,10 @@ pub(crate) fn scan_surface_carriers(
         let Some(attr) = View::u16_be_at(bytes, p) else {
             continue;
         };
-        let Some(descriptor_attr) = View::u16_be_at(bytes, p + 17) else {
+        let Some(descriptor_at) = p.checked_add(17) else {
+            continue;
+        };
+        let Some(descriptor_attr) = View::u16_be_at(bytes, descriptor_at) else {
             continue;
         };
         let Some(descriptor) = descriptors.get(&descriptor_attr) else {
@@ -1739,7 +1949,8 @@ mod tests {
         let knots = std::iter::repeat_n(0.0, count)
             .chain(std::iter::once(1.0))
             .collect::<Vec<_>>();
-        let (values, multiplicities) = unique_knots(&knots);
+        let (values, multiplicities) =
+            unique_knots(&cadmpeg_test_support::service_decode_context(), &knots).unwrap();
         assert_eq!(values, [0.0, 1.0]);
         assert_eq!(multiplicities, [count, 1]);
     }
@@ -1752,6 +1963,7 @@ mod tests {
         let point = FinitePoint3::new(cadmpeg_ir::math::Point3::new(1.0e300, 0.0, 0.0)).unwrap();
         assert_eq!(
             super::homogeneous_poles(
+                &cadmpeg_test_support::service_decode_context(),
                 &NurbsPoles3::Rational {
                     points: vec![cadmpeg_ir::geometry::nurbs::WeightedPole3 {
                         point,
@@ -1759,11 +1971,13 @@ mod tests {
                     }]
                 },
                 0.001
-            ),
+            )
+            .unwrap(),
             None
         );
         assert_eq!(
             super::homogeneous_poles(
+                &cadmpeg_test_support::service_decode_context(),
                 &NurbsPoles3::Rational {
                     points: vec![cadmpeg_ir::geometry::nurbs::WeightedPole3 {
                         point,
@@ -1771,7 +1985,8 @@ mod tests {
                     }]
                 },
                 0.001
-            ),
+            )
+            .unwrap(),
             Some(vec![1.0e300 * 0.001 * 2.0, 0.0, 0.0, 2.0])
         );
     }
@@ -1790,6 +2005,40 @@ mod tests {
             )
             .unwrap(),
             None
+        );
+    }
+}
+
+#[cfg(test)]
+mod patch_tests;
+
+#[cfg(test)]
+mod knot_work_tests {
+    #[test]
+    fn parasolid_knot_expansion_refuses_scan_and_emission_work() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        for (cap, operation) in [
+            (0, "scan Parasolid knot multiplicities"),
+            (2, "emit Parasolid expanded knots"),
+        ] {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = cap;
+            let (ctx, _) =
+                DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+            let result = super::expanded_knots(&ctx, &[0.0, 1.0], &[2, 2], 4);
+            assert!(
+                matches!(result, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::WorkUnits && limit.operation == operation)
+            );
+        }
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 6;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+        assert_eq!(
+            super::expanded_knots(&ctx, &[0.0, 1.0], &[2, 2], 4).expect("scan and emission"),
+            Some(vec![0.0, 0.0, 1.0, 1.0])
         );
     }
 }

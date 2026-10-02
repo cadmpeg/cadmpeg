@@ -372,9 +372,9 @@ fn checksum_warning_excluding(
     label: &str,
     warnings: &mut Diagnostics,
 ) -> Result<(), FramingError> {
-    let direct = direct_checksum_ranges(&chunk.body(), children)?;
+    let direct = direct_checksum_ranges(ctx, &chunk.body(), children)?;
     if matches!(
-        verify_checksum_ranges(data, chunk, &direct)?,
+        verify_checksum_ranges(ctx, data, chunk, &direct)?,
         ChecksumStatus::Mismatch { .. }
     ) {
         warnings.push_coded_admitted(

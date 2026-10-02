@@ -141,11 +141,20 @@ impl RhinoArchiveVersion {
 impl CodecBackend for RhinoCodec {
     const FORMAT: FormatId = FormatId::new(dialect::FORMAT);
 
-    fn detect_impl(&self, prefix: &[u8]) -> Confidence {
+    fn detect_impl(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        prefix: cadmpeg_core::decode::View<'_>,
+    ) -> Result<Confidence, cadmpeg_core::CodecError> {
+        let prefix = prefix.window();
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(prefix.len()),
+            "detect input",
+        )?;
         if prefix.windows(MAGIC.len()).any(|window| window == MAGIC) {
-            Confidence::High
+            Ok(Confidence::High)
         } else {
-            Confidence::No
+            Ok(Confidence::No)
         }
     }
 

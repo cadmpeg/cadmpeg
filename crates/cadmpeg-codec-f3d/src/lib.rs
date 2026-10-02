@@ -92,7 +92,6 @@ mod container;
 mod decode;
 mod design;
 mod dialect;
-mod error;
 mod f3z;
 mod history;
 mod history_records;
@@ -176,22 +175,32 @@ impl CodecBackend for F3dCodec {
         validate::validate_native_charged(ctx, ir)
     }
 
-    fn detect_impl(&self, prefix: &[u8]) -> Confidence {
+    fn detect_impl(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        prefix: cadmpeg_core::decode::View<'_>,
+    ) -> Result<Confidence, cadmpeg_core::CodecError> {
+        let prefix = prefix.window();
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(prefix.len().min(ZIP_MAGIC.len())),
+            "detect ZIP magic",
+        )?;
         if !prefix.starts_with(ZIP_MAGIC) {
-            return Confidence::No;
+            return Ok(Confidence::No);
         }
-        // A ZIP alone is a weak signal (many formats are ZIPs). An f3d or f3z
-        // marker string in the prefix — entry names are stored in cleartext in
-        // ZIP local headers — makes it conclusive.
-        if container::DETECT_MARKERS
+        for marker in container::DETECT_MARKERS
             .iter()
             .chain(container::F3Z_DETECT_MARKERS)
-            .any(|m| contains(prefix, m))
         {
-            Confidence::High
-        } else {
-            Confidence::Low
+            ctx.charge_work(
+                cadmpeg_core::decode::u64_from_index(prefix.len()),
+                "detect Fusion marker",
+            )?;
+            if contains(prefix, marker) {
+                return Ok(Confidence::High);
+            }
         }
+        Ok(Confidence::Low)
     }
 
     fn inspect_impl(

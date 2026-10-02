@@ -29,7 +29,12 @@ use cadmpeg_core::CodecError;
 /// decoded text is owned: it comes from a string decode that has no home in the
 /// header record, so a borrow would have nothing to point at.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(super) enum AdmittedSchemaIdentifier {
+pub(super) struct AdmittedSchemaIdentifier {
+    state: AdmittedSchemaState,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum AdmittedSchemaState {
     /// The schema name and the optional object identifier are both valid.
     Valid {
         /// The decoded identifier text, as the source states it.
@@ -57,20 +62,33 @@ impl AdmittedSchemaIdentifier {
             }
             SchemaIdentifierForm::Invalid => return None,
         };
-        Some(match out_of_range {
-            None => Self::Valid { text: identifier },
-            Some((name, component)) => Self::ObjectIdentifierOutOfRange {
-                text: identifier,
-                name,
-                component,
+        Some(Self {
+            state: match out_of_range {
+                None => AdmittedSchemaState::Valid { text: identifier },
+                Some((name, component)) => AdmittedSchemaState::ObjectIdentifierOutOfRange {
+                    text: identifier,
+                    name,
+                    component,
+                },
             },
         })
     }
 
     /// The decoded identifier text, as the source states it.
     pub(super) fn text(&self) -> &str {
-        match self {
-            Self::Valid { text } | Self::ObjectIdentifierOutOfRange { text, .. } => text,
+        match &self.state {
+            AdmittedSchemaState::Valid { text }
+            | AdmittedSchemaState::ObjectIdentifierOutOfRange { text, .. } => text,
+        }
+    }
+
+    /// The proved schema name and first out-of-range component, when present.
+    pub(super) fn out_of_range(&self) -> Option<(&str, &str)> {
+        match &self.state {
+            AdmittedSchemaState::Valid { .. } => None,
+            AdmittedSchemaState::ObjectIdentifierOutOfRange {
+                name, component, ..
+            } => Some((name, component)),
         }
     }
 

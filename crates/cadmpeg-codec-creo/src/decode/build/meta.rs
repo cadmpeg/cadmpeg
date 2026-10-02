@@ -1276,13 +1276,8 @@ mod tests {
         let (ctx, _) =
             DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
         let mut attributes = BTreeMap::new();
-        let error = insert_source_attribute(
-            &ctx,
-            &mut attributes,
-            "principal_unit",
-            crate::legacy::PrincipalUnitSystem::UnknownBinarySelector(7),
-        )
-        .expect_err("token needs one more retained byte");
+        let error = insert_source_attribute(&ctx, &mut attributes, "principal_unit", "unknown:7")
+            .expect_err("token needs one more retained byte");
         assert!(
             matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::RetainedBytes

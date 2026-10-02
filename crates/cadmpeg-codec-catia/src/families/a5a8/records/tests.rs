@@ -125,11 +125,11 @@ fn selected_nested_a8_surface_frame_decodes_without_a_flat_rescan() {
     .expect("selected nested surface header");
     assert_eq!(
         (
-            header
-                .u_count()
+            crate::test_support::with_service_context(|ctx| header.u_count(ctx))
+                .expect("pole count admission")
                 .expect("fixture U lattice has a valid pole count"),
-            header
-                .v_count()
+            crate::test_support::with_service_context(|ctx| header.v_count(ctx))
+                .expect("pole count admission")
                 .expect("fixture V lattice has a valid pole count")
         ),
         (3, 3)
@@ -309,6 +309,7 @@ fn a8_surface_parser_accepts_inline_continuation_tail_variants() {
         .expect("one inline-tail surface");
         let [header] = crate::test_support::with_service_context(|ctx| {
             crate::families::a5a8::records::a8_surface_headers(ctx, &bytes)
+                .expect("frame scan admission")
                 .collect::<Result<Vec<_>, _>>()
                 .expect("service decode")
         })
@@ -329,6 +330,7 @@ fn a8_elided_surface_requires_the_fixed_zero_continuation() {
 
     let [header] = crate::test_support::with_service_context(|ctx| {
         crate::families::a5a8::records::a8_surface_headers(ctx, &bytes)
+            .expect("frame scan admission")
             .collect::<Result<Vec<_>, _>>()
             .expect("service decode")
     })
@@ -386,6 +388,7 @@ fn a8_surface_parser_accepts_each_object_frame_flag() {
         assert_eq!(
             crate::test_support::with_service_context(|ctx| {
                 crate::families::a5a8::records::a8_surface_headers(ctx, &bytes)
+                    .expect("frame scan admission")
                     .collect::<Result<Vec<_>, _>>()
                     .expect("service decode")
             })
@@ -433,6 +436,7 @@ fn a8_surface_header_rejects_nonfinite_and_repeated_distinct_knots() {
         assert!(
             crate::test_support::with_service_context(|ctx| {
                 crate::families::a5a8::records::a8_surface_headers(ctx, &bytes)
+                    .expect("frame scan admission")
                     .collect::<Result<Vec<_>, _>>()
                     .expect("service decode")
             })
@@ -457,6 +461,7 @@ fn a8_surface_header_survives_an_opaque_pole_representation() {
     .is_empty());
     let headers = crate::test_support::with_service_context(|ctx| {
         crate::families::a5a8::records::a8_surface_headers(ctx, &bytes)
+            .expect("frame scan admission")
             .collect::<Result<Vec<_>, _>>()
             .expect("service decode")
     });
@@ -465,11 +470,11 @@ fn a8_surface_header_survives_an_opaque_pole_representation() {
     assert_eq!((headers[0].u_degree, headers[0].v_degree), (2, 2));
     assert_eq!(
         (
-            headers[0]
-                .u_count()
+            crate::test_support::with_service_context(|ctx| headers[0].u_count(ctx))
+                .expect("pole count admission")
                 .expect("fixture U lattice has a valid pole count"),
-            headers[0]
-                .v_count()
+            crate::test_support::with_service_context(|ctx| headers[0].v_count(ctx))
+                .expect("pole count admission")
                 .expect("fixture V lattice has a valid pole count")
         ),
         (3, 3)
@@ -487,6 +492,7 @@ fn copied_a8_surface_header_refuses_each_knot_lane_limit() {
     let bytes = a8_surface_stream();
     let [header] = crate::test_support::with_service_context(|ctx| {
         crate::families::a5a8::records::a8_surface_headers(ctx, &bytes)
+            .expect("frame scan admission")
             .collect::<Result<Vec<_>, _>>()
     })
     .expect("service budget")
@@ -526,6 +532,7 @@ fn a8_surface_header_identifies_an_elided_pole_grid() {
     .is_empty());
     let headers = crate::test_support::with_service_context(|ctx| {
         crate::families::a5a8::records::a8_surface_headers(ctx, &bytes)
+            .expect("frame scan admission")
             .collect::<Result<Vec<_>, _>>()
             .expect("service decode")
     });
@@ -540,6 +547,7 @@ fn a8_surface_header_identifies_an_elided_pole_grid() {
 fn a8_surface_header_retains_an_inline_parameter_tail() {
     let headers = crate::test_support::with_service_context(|ctx| {
         crate::families::a5a8::records::a8_surface_headers(ctx, &a8_inline_tail_surface_stream())
+            .expect("frame scan admission")
             .collect::<Result<Vec<_>, _>>()
             .expect("service decode")
     });
@@ -558,6 +566,7 @@ fn a8_surface_header_rejects_an_incomplete_elided_program() {
     bytes[59 + 44] = 1;
     let [header] = crate::test_support::with_service_context(|ctx| {
         crate::families::a5a8::records::a8_surface_headers(ctx, &bytes)
+            .expect("frame scan admission")
             .collect::<Result<Vec<_>, _>>()
             .expect("service decode")
     })
@@ -590,6 +599,7 @@ fn a8_elided_surface_requires_length_closed_nested_children() {
 
     let [header] = crate::test_support::with_service_context(|ctx| {
         crate::families::a5a8::records::a8_surface_headers(ctx, &bytes)
+            .expect("frame scan admission")
             .collect::<Result<Vec<_>, _>>()
             .expect("service decode")
     })
@@ -603,6 +613,7 @@ fn a8_elided_surface_requires_length_closed_nested_children() {
     bytes[a8_end + 3] = 250;
     let [header] = crate::test_support::with_service_context(|ctx| {
         crate::families::a5a8::records::a8_surface_headers(ctx, &bytes)
+            .expect("frame scan admission")
             .collect::<Result<Vec<_>, _>>()
             .expect("service decode")
     })
@@ -629,6 +640,7 @@ fn a8_elided_surface_resolves_one_external_pole_grid_gap() {
 
     let [header] = crate::test_support::with_service_context(|ctx| {
         crate::families::a5a8::records::a8_surface_headers(ctx, &bytes)
+            .expect("frame scan admission")
             .collect::<Result<Vec<_>, _>>()
             .expect("service decode")
     })
@@ -689,6 +701,7 @@ fn a8_external_grid_poles_refuse_collection_limit_before_materialization() {
     let bytes = a8_elided_surface_stream();
     let [header] = crate::test_support::with_service_context(|ctx| {
         crate::families::a5a8::records::a8_surface_headers(ctx, &bytes)
+            .expect("frame scan admission")
             .collect::<Result<Vec<_>, _>>()
             .expect("service decode")
     })
@@ -792,6 +805,7 @@ fn a8_elided_surface_uses_the_pcurve_support_reference_to_disambiguate_equal_gri
     bytes.extend(second);
     let headers = crate::test_support::with_service_context(|ctx| {
         crate::families::a5a8::records::a8_surface_headers(ctx, &bytes)
+            .expect("frame scan admission")
             .collect::<Result<Vec<_>, _>>()
             .expect("service decode")
     });
@@ -1887,3 +1901,5 @@ fn a8_pcurve_bspline_refuses_nested_jet_allocations() {
 mod decode_transfer;
 
 mod curve_and_guide_records;
+
+mod work_admission;

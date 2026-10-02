@@ -82,7 +82,7 @@ fn generated_nurbs_extent_reconciles_native_and_transferred_planes() {
                 row_offset: 0,
                 offset: 0,
             };
-        let mut scan = crate::container::scan_bytes_ok(Vec::new());
+        let mut scan = crate::test_support::empty_container_scan();
         scan.surfaces.rows.extend([
             row(
                 31,

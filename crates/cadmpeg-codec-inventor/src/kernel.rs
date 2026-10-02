@@ -130,7 +130,7 @@ pub(crate) fn decode_kernel_carrier(
             asm_header::record_stream_start_with_header(bytes, header).ok_or_else(|| {
                 CodecError::Malformed("Inventor ASM carrier has no record stream".into())
             })?,
-            asm_header::solved_record_limit_with_header(bytes, header),
+            asm_header::solved_record_limit_with_header(ctx, bytes, header)?,
         ),
         KernelFamily::Acis => {
             // Every save-format band frames and decodes the same way. The band
@@ -141,7 +141,7 @@ pub(crate) fn decode_kernel_carrier(
                 acis_header::record_stream_start_with_header(bytes, header).ok_or_else(|| {
                     CodecError::Malformed("Inventor ACIS carrier has no record stream".into())
                 })?,
-                acis_header::solved_record_limit_with_header(bytes, header),
+                acis_header::solved_record_limit_with_header(ctx, bytes, header)?,
             )
         }
     };

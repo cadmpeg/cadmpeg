@@ -2905,7 +2905,7 @@ fn design_body_selection(
         let mut matches = body_bindings
             .iter()
             .filter(|binding| {
-                native_stream(&binding.id) == Some(stream) && binding.entity_suffix == suffix
+                native_stream(binding.id()) == Some(stream) && binding.entity_suffix == suffix
             })
             .filter_map(|binding| binding.body.as_ref());
         let Some(body) = matches.next() else {

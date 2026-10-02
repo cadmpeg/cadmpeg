@@ -173,7 +173,7 @@ fn feature_for_output_refresh() -> cadmpeg_ir::features::Feature {
 
 #[test]
 fn feature_output_refresh_refuses_before_update_rows() {
-    let scan = crate::container::scan_bytes_ok(Vec::new());
+    let scan = crate::test_support::empty_container_scan();
     let mut ir = cadmpeg_ir::document::CadIr::empty();
     ir.model.features.push(feature_for_output_refresh());
     let arena = DecodeArena::new();
@@ -193,7 +193,7 @@ fn feature_output_refresh_refuses_before_update_rows() {
 
 #[test]
 fn feature_output_refresh_preserves_feature_order() {
-    let scan = crate::container::scan_bytes_ok(Vec::new());
+    let scan = crate::test_support::empty_container_scan();
     let mut ir = cadmpeg_ir::document::CadIr::empty();
     ir.model.features.push(feature_for_output_refresh());
     crate::decode::with_test_decode_ctx(|ctx| refresh_feature_outputs(ctx, &scan, &mut ir))
@@ -289,7 +289,7 @@ fn existing_feature_dependency_merge_preserves_first_order_and_uniqueness() {
 
 #[test]
 fn native_operation_feature_refuses_kind_retained_limit() {
-    let mut scan = crate::container::scan_bytes_ok(Vec::new());
+    let mut scan = crate::test_support::empty_container_scan();
     scan.features
         .operations
         .push(crate::feature::operations::FeatureOperation {
@@ -367,7 +367,7 @@ fn native_operation_feature_refuses_kind_retained_limit() {
 
 #[test]
 fn native_row_feature_refuses_kind_retained_limit() {
-    let mut scan = crate::container::scan_bytes_ok(Vec::new());
+    let mut scan = crate::test_support::empty_container_scan();
     scan.features.rows.push(one_feature_row());
     let mut reached_kind = false;
     let mut limit = 0_u64;
@@ -432,7 +432,7 @@ fn native_row_feature_refuses_kind_retained_limit() {
 
 #[test]
 fn native_row_feature_refuses_name_retained_limit() {
-    let mut scan = crate::container::scan_bytes_ok(Vec::new());
+    let mut scan = crate::test_support::empty_container_scan();
     scan.features.rows.push(one_feature_row());
     let mut reached_name = false;
     let mut limit = 0_u64;
@@ -494,7 +494,7 @@ fn native_row_feature_refuses_name_retained_limit() {
 
 #[test]
 fn stored_operation_feature_name_refuses_retained_limit() {
-    let mut scan = crate::container::scan_bytes_ok(Vec::new());
+    let mut scan = crate::test_support::empty_container_scan();
     scan.features
         .operations
         .push(crate::feature::operations::FeatureOperation {
@@ -571,7 +571,7 @@ fn stored_operation_feature_name_refuses_retained_limit() {
 
 #[test]
 fn recipe_source_tag_refuses_retained_limit() {
-    let mut scan = crate::container::scan_bytes_ok(Vec::new());
+    let mut scan = crate::test_support::empty_container_scan();
     scan.features
         .operations
         .push(crate::feature::operations::FeatureOperation {

@@ -209,8 +209,7 @@ fn prt_with_file_entry(name: &[u8], payload: &[u8]) -> Result<Vec<u8>, CodecErro
 #[cfg(test)]
 mod tests {
     use super::{record, single_part_prt_with_partition};
-    use cadmpeg_container::compression::inflate_zlib_probe;
-    use cadmpeg_core::decode::DecodePolicy;
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
     use cadmpeg_core::CodecError;
 
     #[test]
@@ -242,8 +241,17 @@ mod tests {
         assert_eq!(offset, directory + 16);
         assert_eq!(footer_offset, offset + size);
         assert_eq!(&file[footer_offset..], b"FOOTER\0\0\0\0\0\0\0\0");
-        let recovered =
-            inflate_zlib_probe(&file[offset..footer_offset], stream.len()).expect("zlib partition");
+        let arena = DecodeArena::new();
+        let (ctx, root) = DecodeContext::from_root_bytes(
+            &file[offset..footer_offset],
+            &arena,
+            &DecodePolicy::default(),
+        )
+        .expect("root");
+        let (recovered, _storage) = ctx
+            .inflate_probe(root, stream.len(), true)
+            .expect("probe")
+            .expect("zlib partition");
         assert_eq!(recovered, stream);
     }
 

@@ -8,15 +8,19 @@ mod arena;
 mod budget;
 pub mod collect;
 mod context;
+mod deflate;
 mod error;
+mod input;
 mod policy;
 mod probe;
 mod sort;
 mod space;
 pub mod tree;
+mod unique;
 mod utf16;
 mod view;
 pub mod work_scratch;
+pub mod zstd;
 
 #[cfg(test)]
 mod tests;

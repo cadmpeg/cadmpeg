@@ -684,7 +684,8 @@ fn type_2_reals_decode_compact_bits_runs_and_child_rows() {
     );
     assert_eq!(
         persistence.real_values.rows[2].payload,
-        RealPayload::array(
+        crate::decode::with_test_decode_ctx(|ctx| RealPayload::array(
+            ctx,
             vec![2, 2],
             vec![
                 RealRun {
@@ -700,19 +701,22 @@ fn type_2_reals_decode_compact_bits_runs_and_child_rows() {
                     value: Real(1.0f64.to_bits()),
                 },
             ]
-        )
+        ))
+        .expect("numeric array work admission")
         .expect("complete numeric array")
     );
     assert_eq!(persistence.real_values.rows[2].payload.element_count(), 4);
     assert_eq!(
         persistence.real_values.rows[3].payload,
-        RealPayload::array(
+        crate::decode::with_test_decode_ctx(|ctx| RealPayload::array(
+            ctx,
             vec![1],
             vec![RealRun {
                 count: 1,
                 value: Real(2.0f64.to_bits()),
             }]
-        )
+        ))
+        .expect("numeric array work admission")
         .expect("complete numeric array")
     );
 }
@@ -745,7 +749,8 @@ fn type_1_integers_decode_signed_scalars_runs_and_child_rows() {
     );
     assert_eq!(
         persistence.integer_values.rows[1].payload,
-        IntegerPayload::array(
+        crate::decode::with_test_decode_ctx(|ctx| IntegerPayload::array(
+            ctx,
             vec![4],
             vec![
                 IntegerRun { count: 1, value: 1 },
@@ -755,18 +760,21 @@ fn type_1_integers_decode_signed_scalars_runs_and_child_rows() {
                 },
                 IntegerRun { count: 1, value: 0 },
             ]
-        )
+        ))
+        .expect("numeric array work admission")
         .expect("complete numeric array")
     );
     assert_eq!(
         persistence.integer_values.rows[2].payload,
-        IntegerPayload::array(
+        crate::decode::with_test_decode_ctx(|ctx| IntegerPayload::array(
+            ctx,
             vec![1],
             vec![IntegerRun {
                 count: 1,
                 value: 42,
             }]
-        )
+        ))
+        .expect("numeric array work admission")
         .expect("complete numeric array")
     );
 }
@@ -800,7 +808,8 @@ fn remaining_numeric_types_decode_their_scalar_and_array_grammars() {
     assert_eq!(persistence.type_5_values.unresolved_count, 0);
     assert_eq!(
         persistence.type_5_values.rows[1].payload,
-        UnsignedPayload::array(
+        crate::decode::with_test_decode_ctx(|ctx| UnsignedPayload::array(
+            ctx,
             vec![3],
             vec![
                 NumericRun { count: 1, value: 0 },
@@ -809,7 +818,8 @@ fn remaining_numeric_types_decode_their_scalar_and_array_grammars() {
                     value: 144,
                 },
             ]
-        )
+        ))
+        .expect("numeric array work admission")
         .expect("complete numeric array")
     );
     assert_eq!(persistence.type_6_values.rows.len(), 2);
@@ -828,13 +838,15 @@ fn remaining_numeric_types_decode_their_scalar_and_array_grammars() {
     assert_eq!(persistence.type_11_values.unresolved_count, 0);
     assert_eq!(
         persistence.type_11_values.rows[1].payload,
-        UnsignedPayload::array(
+        crate::decode::with_test_decode_ctx(|ctx| UnsignedPayload::array(
+            ctx,
             vec![1],
             vec![NumericRun {
                 count: 1,
                 value: 14633,
             }]
-        )
+        ))
+        .expect("numeric array work admission")
         .expect("complete numeric array")
     );
     assert_eq!(persistence.type_11_values.rows[1].parent, Some(root_offset));

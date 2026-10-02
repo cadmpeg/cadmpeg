@@ -15,7 +15,7 @@ use crate::container::ContainerScan;
 use crate::design::decode::text::design_record_id_charged;
 use crate::ids::native_stream;
 use crate::records::{
-    entity_header::{DesignFeatureTimeline, SegmentType, DESIGN_MODULE_FUSION},
+    entity_header::{DesignFeatureTimeline, SegmentType, SegmentTypeData, DESIGN_MODULE_FUSION},
     recipes::DesignComponentNamingSpace,
 };
 
@@ -31,7 +31,7 @@ pub(crate) const FEATURE_TIMELINE_TYPE_VERSIONS: [u32; 2] = [2, 3];
 
 /// Whether a type-table row has the exact registration metadata of a supported
 /// feature-timeline frame.
-pub(crate) fn is_supported_feature_timeline_type(design_type: &SegmentType) -> bool {
+pub(crate) fn is_supported_feature_timeline_type(design_type: &SegmentTypeData) -> bool {
     FEATURE_TIMELINE_TYPE_VERSIONS.contains(&design_type.version)
         && design_type.module == DESIGN_MODULE_FUSION
         && design_type
@@ -105,7 +105,7 @@ pub(crate) fn decode_types(
 
 fn copy_design_type(
     ctx: &DecodeContext<'_>,
-    design_type: &SegmentType,
+    design_type: &SegmentTypeData,
     stream: &str,
 ) -> Result<SegmentType, CodecError> {
     use crate::records::identity::ReferenceRun;
@@ -133,17 +133,26 @@ fn copy_design_type(
         design_type.byte_offset,
         "f3d design type id suffix",
     )?;
-    Ok(SegmentType {
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(id.len())
+            .checked_mul(8)
+            .ok_or_else(|| ctx.refuse_codec_limit("admit F3D type identity", 0, u64::MAX))?,
+        "admit F3D type identity",
+    )?;
+    SegmentType::try_new(
         id,
-        byte_offset: design_type.byte_offset,
-        type_guid: design_type.type_guid.clone(),
-        type_guid_offset: design_type.type_guid_offset,
-        base_type_guid: design_type.base_type_guid.clone(),
-        version: design_type.version,
-        version_offset: design_type.version_offset,
-        module,
-        entities,
-    })
+        crate::records::entity_header::SegmentTypeData {
+            byte_offset: design_type.byte_offset,
+            type_guid: design_type.type_guid.clone(),
+            type_guid_offset: design_type.type_guid_offset,
+            base_type_guid: design_type.base_type_guid.clone(),
+            version: design_type.version,
+            version_offset: design_type.version_offset,
+            module,
+            entities,
+        },
+    )
+    .map_err(CodecError::Malformed)
 }
 
 fn insert_component_naming_space(
@@ -383,13 +392,13 @@ pub(in crate::design::decode) struct DesignPrimaryFrame<'a> {
     pub(super) class_tag: crate::records::references::DesignClassTag,
     pub(super) start: usize,
     pub(super) end: usize,
-    pub(super) design_type: &'a SegmentType,
+    pub(super) design_type: &'a SegmentTypeData,
 }
 
 fn dynamic_type<'a>(
     meta: &'a crate::metastream::MetaStream,
     class_tag: &crate::records::references::DesignClassTag,
-) -> Option<(usize, &'a SegmentType)> {
+) -> Option<(usize, &'a SegmentTypeData)> {
     let ordinal = class_tag.as_str().parse::<usize>().ok()?.checked_sub(256)?;
     Some((ordinal, meta.types.get(ordinal)?))
 }
@@ -489,7 +498,7 @@ pub(super) struct TypedPrimaryFrame<'a> {
     pub(super) entity_id: u64,
     pub(super) start: usize,
     pub(super) end: usize,
-    pub(super) design_type: &'a SegmentType,
+    pub(super) design_type: &'a SegmentTypeData,
 }
 
 /// Resolve every entity registered to `type_guid` through the sibling
@@ -566,7 +575,7 @@ pub(super) fn stream_types_by_entity<'a>(
 ) -> Result<HashMap<u64, (&'a str, u32)>, CodecError> {
     let mut by_entity = HashMap::new();
     for design_type in types.iter().filter(|design_type| {
-        native_stream(&design_type.id)
+        native_stream(design_type.id())
             .is_some_and(|scope| meta_scope_matches_bulk(scope, bulk_entry_name))
     }) {
         for &entity_id in design_type.entities.values() {
@@ -592,7 +601,7 @@ pub(super) fn stream_types_by_class_tag<'a>(
     for (ordinal, design_type) in types
         .iter()
         .filter(|design_type| {
-            native_stream(&design_type.id)
+            native_stream(design_type.id())
                 .is_some_and(|scope| meta_scope_matches_bulk(scope, bulk_entry_name))
         })
         .enumerate()
@@ -824,7 +833,7 @@ pub(crate) fn decode_feature_timelines(
             scan.entry_bytes(&meta_entry.entry.name)?,
             &meta_entry.entry.name,
         )?;
-        let is_timeline_type = |design_type: &SegmentType| {
+        let is_timeline_type = |design_type: &SegmentTypeData| {
             design_type
                 .type_guid
                 .as_str()

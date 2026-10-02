@@ -565,7 +565,7 @@ pub(super) fn reference_line_records(
         let id = ctx.format_retained(
             format_args!(
                 "creo:mdl_ref_info:{}_record#{}",
-                family(&line.kind),
+                family(line.kind()),
                 line.offset
             ),
             "creo native reference line IDs",
@@ -573,9 +573,9 @@ pub(super) fn reference_line_records(
         ctx.reserve_vec(&mut records, 1, "creo native reference line records")?;
         records.push(CreoReferenceLineRecord {
             id,
-            kind: line.kind.clone(),
-            start: line.start.get().into(),
-            end: line.end.get().into(),
+            kind: line.kind().clone(),
+            start: line.start().get().into(),
+            end: line.end().get().into(),
             offset: line.offset,
         });
     }
@@ -596,15 +596,15 @@ pub(super) fn reference_circle_records(
         records.push(CreoReferenceCircleRecord {
             id,
             entity_id: circle.entity_id,
-            center: circle.center.get().into(),
-            center_source: if circle.center_stored {
+            center: circle.center().get().into(),
+            center_source: if circle.center_stored() {
                 "stored"
             } else {
                 "endpoint_midpoint"
             },
-            radius: circle.radius.get(),
-            axis: (*circle.axis.as_raw()).into(),
-            endpoints: [circle.start.get().into(), circle.end.get().into()],
+            radius: circle.radius().get(),
+            axis: (*circle.axis().as_raw()).into(),
+            endpoints: [circle.start().get().into(), circle.end().get().into()],
             offset: circle.offset,
         });
     }
@@ -662,11 +662,11 @@ pub(super) fn reference_ellipse_records(
             id,
             source_conic_id,
             source_entity_id: ellipse.source_entity_id,
-            center: ellipse.center.get().into(),
-            axis: (*ellipse.axis.as_raw()).into(),
-            major_direction: (*ellipse.major_direction.as_raw()).into(),
-            major_radius: ellipse.major_radius.get(),
-            minor_radius: ellipse.minor_radius.get(),
+            center: ellipse.center().get().into(),
+            axis: (*ellipse.axis().as_raw()).into(),
+            major_direction: (*ellipse.major_direction().as_raw()).into(),
+            major_radius: ellipse.major_radius().get(),
+            minor_radius: ellipse.minor_radius().get(),
             offset: ellipse.offset,
         });
     }
@@ -974,7 +974,7 @@ mod feature_entity_table_record_tests {
     use std::collections::BTreeSet;
 
     fn scan_with_table() -> crate::container::ContainerScan<'static> {
-        let mut scan = crate::container::scan_bytes_ok(Vec::new());
+        let mut scan = crate::test_support::empty_container_scan();
         scan.features.entity_tables.push(FeatureEntityTable::new(
             4,
             29,
@@ -1356,7 +1356,7 @@ mod feature_projection_limit_tests {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 
     fn scan() -> crate::container::ContainerScan<'static> {
-        let mut scan = crate::container::scan_bytes_ok(Vec::new());
+        let mut scan = crate::test_support::empty_container_scan();
         scan.features.entities.push(FeatureEntity {
             entity_id: 4,
             type_byte: 1,
@@ -1602,7 +1602,7 @@ mod feature_choice_field_record_tests {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 
     fn scan() -> crate::container::ContainerScan<'static> {
-        let mut scan = crate::container::scan_bytes_ok(Vec::new());
+        let mut scan = crate::test_support::empty_container_scan();
         let values = [
             FeatureFieldValue::Empty,
             FeatureFieldValue::CompactInt(7),
@@ -1910,7 +1910,7 @@ mod topology_projection_limit_tests {
     use std::num::NonZeroU32;
 
     fn scan() -> crate::container::ContainerScan<'static> {
-        let mut scan = crate::container::scan_bytes_ok(Vec::new());
+        let mut scan = crate::test_support::empty_container_scan();
         let half_edge = HalfEdgeId {
             curve_id: 8,
             side: Side::Zero,
@@ -1935,7 +1935,7 @@ mod topology_projection_limit_tests {
         ));
         scan.topology.vertices.push(
             crate::decode::with_test_decode_ctx(|ctx| {
-                crate::topology::TopologicalVertex::new(ctx, 1, vec![half_edge])
+                crate::topology::TopologicalVertex::new_for_test(ctx, 1, vec![half_edge])
             })
             .expect("vertex admission")
             .expect("valid vertex fixture"),
@@ -1949,7 +1949,7 @@ mod topology_projection_limit_tests {
             });
         scan.topology.face_components.push(
             crate::decode::with_test_decode_ctx(|ctx| {
-                crate::topology::FaceComponent::new(ctx, vec![1], vec![8])
+                crate::topology::FaceComponent::new_for_test(ctx, vec![1], vec![8])
             })
             .expect("component admission")
             .expect("valid component fixture"),
@@ -2432,7 +2432,7 @@ mod curve_plane_projection_limit_tests {
     use cadmpeg_ir::units::UnitVector3;
 
     fn scan() -> crate::container::ContainerScan<'static> {
-        let mut scan = crate::container::scan_bytes_ok(Vec::new());
+        let mut scan = crate::test_support::empty_container_scan();
         scan.curves.fc_coordinates.push(FcCurveCoordinates {
             curve_id: 8,
             subtype: 1,
@@ -3173,7 +3173,7 @@ mod surface_projection_limit_tests {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 
     fn scan() -> crate::container::ContainerScan<'static> {
-        let mut scan = crate::container::scan_bytes_ok(Vec::new());
+        let mut scan = crate::test_support::empty_container_scan();
         scan.surfaces.rows.push(SurfaceRow {
             id: 7,
             kind: SurfaceKind::Plane,
@@ -3581,7 +3581,7 @@ mod curve_projection_limit_tests {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 
     fn scan() -> crate::container::ContainerScan<'static> {
-        let mut scan = crate::container::scan_bytes_ok(Vec::new());
+        let mut scan = crate::test_support::empty_container_scan();
         let scalar = CurveParameterScalar {
             value: 2.0,
             raw: vec![0xf9, 0],
@@ -3873,7 +3873,7 @@ mod surface_parameter_projection_limit_tests {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 
     fn scan() -> crate::container::ContainerScan<'static> {
-        let mut scan = crate::container::scan_bytes_ok(Vec::new());
+        let mut scan = crate::test_support::empty_container_scan();
         scan.surfaces.rows.push(SurfaceRow {
             id: 7,
             kind: SurfaceKind::Plane,
@@ -4167,7 +4167,7 @@ mod pcurve_endpoint_projection_limit_tests {
 
     #[test]
     fn positional_pcurve_endpoint_refuses_collection_limit() {
-        let mut scan = crate::container::scan_bytes_ok(Vec::new());
+        let mut scan = crate::test_support::empty_container_scan();
         scan.curves.pcurves.push(crate::curve::PcurveEndpoints {
             curve_id: 7,
             faces: [None; 2],
@@ -4193,7 +4193,7 @@ mod pcurve_endpoint_projection_limit_tests {
 
     #[test]
     fn prototype_pcurve_endpoint_refuses_collection_limit() {
-        let mut scan = crate::container::scan_bytes_ok(Vec::new());
+        let mut scan = crate::test_support::empty_container_scan();
         scan.curves
             .bound_prototype_pcurves
             .push(crate::curve::BoundPrototypePcurve {
@@ -4329,7 +4329,7 @@ mod curve_expression_projection_limit_tests {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 
     fn scan() -> crate::container::ContainerScan<'static> {
-        let mut scan = crate::container::scan_bytes_ok(Vec::new());
+        let mut scan = crate::test_support::empty_container_scan();
         let assignment = CurveExpressionAssignment {
             target: CurveExpressionTarget::Parameter {
                 name: "p".into(),
@@ -4512,8 +4512,7 @@ pub(super) fn sketch_records<'a>(
                 }),
             table_headers: sketch_table_headers(ctx, definition)?,
             section_points: sketch_section_point_records(ctx, definition)?,
-            solved_external_ids: crate::decode::collect_items(
-                ctx,
+            solved_external_ids: ctx.collect_vec(
                 definition
                     .trim_entities
                     .iter()
@@ -4524,12 +4523,9 @@ pub(super) fn sketch_records<'a>(
                 let resolved_coordinates = resolved_section_coordinates(ctx, definition)?;
                 let resolved_radii = resolved_section_radii(ctx, definition)?;
                 let resolved_scalars = resolved_section_scalar_values(ctx, definition)?;
-                crate::decode::project_items(
-                    ctx,
-                    definition.variables.iter().flat_map(|table| &table.rows),
-                    "creo native sketch variables",
-                    |row| {
-                        Ok(CreoSketchVariable {
+                ctx.try_collect_vec(
+                    (definition.variables.iter().flat_map(|table| &table.rows)).map(|row| {
+                        Ok::<_, CodecError>(CreoSketchVariable {
                             variable_type: row.variable_type.code(),
                             key: row.key,
                             value: row.value,
@@ -4557,40 +4553,40 @@ pub(super) fn sketch_records<'a>(
                             },
                             offset: row.offset,
                         })
-                    },
+                    }),
+                    "creo native sketch variables",
                 )?
             },
-            equations: crate::decode::collect_items(
-                ctx,
-                crate::feature::definitions::equation_table(
+            equations: ctx.try_collect_vec(
+                (crate::feature::definitions::equation_table(
                     ctx,
                     &definition.body,
                     0,
                     definition.body.len(),
                 )?
                 .into_iter()
-                .flat_map(|table| table.rows)
-                .map(|equation| CreoSketchEquation {
-                    equation_id: equation.equation_id,
-                    function_id: equation.function_id,
-                    explicit_argument_count: equation.explicit_argument_count,
-                    arguments: equation.arguments,
-                    arguments_body: equation.arguments_body,
-                    auxiliary_body: equation.auxiliary_body,
-                    body: equation.body,
-                    offset: equation.offset,
+                .flat_map(|table| table.rows))
+                .map(|equation| {
+                    Ok::<_, CodecError>(CreoSketchEquation {
+                        equation_id: equation.equation_id,
+                        function_id: equation.function_id,
+                        explicit_argument_count: equation.explicit_argument_count,
+                        arguments: equation.arguments,
+                        arguments_body: equation.arguments_body,
+                        auxiliary_body: equation.auxiliary_body,
+                        body: equation.body,
+                        offset: definition.body_position(equation.offset)?.source()?.get(),
+                    })
                 }),
                 "creo native sketch equations",
             )?,
-            segments: crate::decode::project_items(
-                ctx,
-                definition
+            segments: ctx.try_collect_vec(
+                (definition
                     .segments
                     .iter()
-                    .flat_map(|table| table.rows.ordinary()),
-                "creo native sketch segments",
-                |segment| {
-                    Ok(CreoSketchSegment {
+                    .flat_map(|table| table.rows.ordinary()))
+                .map(|segment| {
+                    Ok::<_, CodecError>(CreoSketchSegment {
                         external_id: segment.external_id,
                         kind: match segment.kind {
                             crate::feature::definitions::FeatureSegmentKind::Line(_) => "line",
@@ -4608,10 +4604,10 @@ pub(super) fn sketch_records<'a>(
                             .copy_retained(&segment.body, "creo native sketch segment body")?,
                         offset: segment.offset,
                     })
-                },
+                }),
+                "creo native sketch segments",
             )?,
-            circle_segments: crate::decode::collect_items(
-                ctx,
+            circle_segments: ctx.collect_vec(
                 definition
                     .segments
                     .iter()
@@ -4624,8 +4620,7 @@ pub(super) fn sketch_records<'a>(
                     }),
                 "creo native sketch circle segments",
             )?,
-            point_segments: crate::decode::collect_items(
-                ctx,
+            point_segments: ctx.collect_vec(
                 definition
                     .segments
                     .iter()
@@ -4637,8 +4632,7 @@ pub(super) fn sketch_records<'a>(
                     }),
                 "creo native sketch point segments",
             )?,
-            centered_line_segments: crate::decode::collect_items(
-                ctx,
+            centered_line_segments: ctx.collect_vec(
                 definition
                     .segments
                     .iter()
@@ -4650,8 +4644,7 @@ pub(super) fn sketch_records<'a>(
                     }),
                 "creo native sketch centered line segments",
             )?,
-            reference_line_segments: crate::decode::collect_items(
-                ctx,
+            reference_line_segments: ctx.collect_vec(
                 definition
                     .segments
                     .iter()
@@ -4665,8 +4658,7 @@ pub(super) fn sketch_records<'a>(
                     }),
                 "creo native sketch reference line segments",
             )?,
-            bounded_curve_segments: crate::decode::collect_items(
-                ctx,
+            bounded_curve_segments: ctx.collect_vec(
                 definition
                     .segments
                     .iter()
@@ -4684,8 +4676,7 @@ pub(super) fn sketch_records<'a>(
                     }),
                 "creo native sketch bounded curve segments",
             )?,
-            conic_segments: crate::decode::collect_items(
-                ctx,
+            conic_segments: ctx.collect_vec(
                 definition
                     .segments
                     .iter()
@@ -4699,15 +4690,13 @@ pub(super) fn sketch_records<'a>(
                     }),
                 "creo native sketch conic segments",
             )?,
-            opaque_segments: crate::decode::project_items(
-                ctx,
-                definition
+            opaque_segments: ctx.try_collect_vec(
+                (definition
                     .segments
                     .iter()
-                    .flat_map(|table| table.rows.opaque()),
-                "creo native sketch opaque segments",
-                |segment| {
-                    Ok(CreoSketchOpaqueSegment {
+                    .flat_map(|table| table.rows.opaque()))
+                .map(|segment| {
+                    Ok::<_, CodecError>(CreoSketchOpaqueSegment {
                         external_id: segment.external_id,
                         kind: segment.kind,
                         point_ids: segment.point_ids,
@@ -4723,10 +4712,10 @@ pub(super) fn sketch_records<'a>(
                         )?,
                         offset: segment.offset,
                     })
-                },
+                }),
+                "creo native sketch opaque segments",
             )?,
-            trim_entities: crate::decode::collect_items(
-                ctx,
+            trim_entities: ctx.collect_vec(
                 definition
                     .trim_entities
                     .iter()
@@ -4744,18 +4733,15 @@ pub(super) fn sketch_records<'a>(
                     }),
                 "creo native sketch trim entities",
             )?,
-            trim_vertices: crate::decode::project_items(
-                ctx,
-                definition
+            trim_vertices: ctx.try_collect_vec(
+                (definition
                     .trim_vertices
                     .iter()
-                    .flat_map(|table| &table.rows),
-                "creo native sketch trim vertices",
-                |vertex| {
-                    Ok(CreoSketchTrimVertex {
+                    .flat_map(|table| &table.rows))
+                .map(|vertex| {
+                    Ok::<_, CodecError>(CreoSketchTrimVertex {
                         vertex_id: vertex.vertex_id,
-                        entities: crate::decode::collect_items(
-                            ctx,
+                        entities: ctx.collect_vec(
                             vertex.entities.iter().copied(),
                             "creo native sketch trim vertex entities",
                         )?,
@@ -4765,10 +4751,10 @@ pub(super) fn sketch_records<'a>(
                         }),
                         offset: vertex.offset,
                     })
-                },
+                }),
+                "creo native sketch trim vertices",
             )?,
-            order_rows: crate::decode::collect_items(
-                ctx,
+            order_rows: ctx.collect_vec(
                 definition
                     .order_table
                     .iter()
@@ -4781,8 +4767,7 @@ pub(super) fn sketch_records<'a>(
                     }),
                 "creo native sketch order rows",
             )?,
-            saved_entities: crate::decode::collect_items(
-                ctx,
+            saved_entities: ctx.collect_vec(
                 definition
                     .saved_section
                     .iter()
@@ -4856,12 +4841,9 @@ pub(super) fn sketch_records<'a>(
                     }),
                 "creo native sketch saved entities",
             )?,
-            dimensions: crate::decode::project_items(
-                ctx,
-                definition.dimensions.iter().flat_map(|table| &table.rows),
-                "creo native sketch dimensions",
-                |dimension| {
-                    Ok(CreoSketchDimension {
+            dimensions: ctx.try_collect_vec(
+                (definition.dimensions.iter().flat_map(|table| &table.rows)).map(|dimension| {
+                    Ok::<_, CodecError>(CreoSketchDimension {
                         external_id: dimension.external_id,
                         dimension_type: dimension.dimension_type,
                         value: match &dimension.value {
@@ -4904,11 +4886,10 @@ pub(super) fn sketch_records<'a>(
                             .as_ref()
                             .map(
                                 |table| -> Result<CreoSketchDimensionReferenceTable, CodecError> {
-                                    Ok(CreoSketchDimensionReferenceTable {
+                                    Ok::<_, CodecError>(CreoSketchDimensionReferenceTable {
                                         declared_count: table.declared_count,
                                         entity_ref: table.entity_ref,
-                                        rows: crate::decode::collect_items(
-                                            ctx,
+                                        rows: ctx.collect_vec(
                                             table.rows.iter().map(|reference| {
                                                 CreoSketchDimensionReference {
                                                     item_id: reference.item_id,
@@ -4926,14 +4907,12 @@ pub(super) fn sketch_records<'a>(
                             .transpose()?,
                         offset: dimension.offset,
                     })
-                },
+                }),
+                "creo native sketch dimensions",
             )?,
-            relations: crate::decode::project_items(
-                ctx,
-                definition.relations.iter().flat_map(|table| &table.rows),
-                "creo native sketch relations",
-                |relation| {
-                    Ok(CreoSketchRelation {
+            relations: ctx.try_collect_vec(
+                (definition.relations.iter().flat_map(|table| &table.rows)).map(|relation| {
+                    Ok::<_, CodecError>(CreoSketchRelation {
                         relation_id: relation.relation_id,
                         used: relation.used,
                         operands: ctx.copy_retained(
@@ -4948,23 +4927,21 @@ pub(super) fn sketch_records<'a>(
                             .copy_retained(&relation.body, "creo native sketch relation body")?,
                         offset: relation.offset,
                     })
-                },
+                }),
+                "creo native sketch relations",
             )?,
-            skamps: crate::decode::project_items(
-                ctx,
-                definition
+            skamps: ctx.try_collect_vec(
+                (definition
                     .relations
                     .iter()
-                    .flat_map(FeatureRelationTable::skamps),
-                "creo native sketch skamps",
-                |skamp| {
-                    Ok(CreoSketchSkamp {
+                    .flat_map(FeatureRelationTable::skamps))
+                .map(|skamp| {
+                    Ok::<_, CodecError>(CreoSketchSkamp {
                         id: skamp.id,
                         kind: skamp.kind,
                         flags: skamp.flags,
                         status: skamp.status,
-                        items: crate::decode::collect_items(
-                            ctx,
+                        items: ctx.collect_vec(
                             skamp.items.iter().map(|item| CreoSketchSkampItem {
                                 entity_id: item.entity_id,
                                 sense: item.sense,
@@ -4973,10 +4950,10 @@ pub(super) fn sketch_records<'a>(
                         )?,
                         offset: skamp.offset,
                     })
-                },
+                }),
+                "creo native sketch skamps",
             )?,
-            relation_triples: crate::decode::collect_items(
-                ctx,
+            relation_triples: ctx.collect_vec(
                 definition
                     .relations
                     .iter()
@@ -5038,7 +5015,7 @@ mod sketch_projection_limit_tests {
     }
 
     fn scan() -> crate::container::ContainerScan<'static> {
-        let mut scan = crate::container::scan_bytes_ok(Vec::new());
+        let mut scan = crate::test_support::empty_container_scan();
         scan.features.definitions.push(definition());
         scan
     }
@@ -5240,8 +5217,7 @@ pub(super) fn sketch_section_point_records(
             "creo sketch section point ID nodes",
         )?;
     }
-    crate::decode::collect_items(
-        ctx,
+    ctx.collect_vec(
         point_ids.into_iter().map(|point_id| {
             let [u, v] = points.get(&point_id).copied().unwrap_or([None; 2]);
             let state = if ambiguous.contains(&point_id) {
@@ -5329,7 +5305,7 @@ mod feature_definition_projection_limit_tests {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 
     fn scan() -> crate::container::ContainerScan<'static> {
-        let mut scan = crate::container::scan_bytes_ok(Vec::new());
+        let mut scan = crate::test_support::empty_container_scan();
         let mut local_scalars = std::array::from_fn(|_| DecodedField {
             value: None,
             body: Vec::new(),
@@ -5460,7 +5436,7 @@ mod tests {
         max_retained_bytes: u64,
         max_collection_items: u64,
     ) -> Result<Vec<super::CreoExpandedSectionRecord>, cadmpeg_core::CodecError> {
-        let mut scan = crate::container::scan_bytes_ok(Vec::new());
+        let mut scan = crate::test_support::empty_container_scan();
         scan.framing
             .expanded_sections
             .push(crate::container::ExpandedSection {
@@ -5538,28 +5514,30 @@ mod tests {
         use cadmpeg_ir::features::FinitePoint3;
         use cadmpeg_ir::scalar::{FiniteReal, PositiveLength};
         use cadmpeg_ir::units::UnitVector3;
-        let mut scan = crate::container::scan_bytes_ok(Vec::new());
+        let mut scan = crate::test_support::empty_container_scan();
         let point = |coordinates: [f64; 3]| {
             FinitePoint3::new(coordinates.into()).expect("finite reference point")
         };
-        scan.references.lines.push(crate::reference::ReferenceLine {
-            kind: crate::reference::ReferenceLineKind::Line,
-            start: point([0.0, 0.0, 0.0]),
-            end: point([1.0, 0.0, 0.0]),
-            offset: 0,
-        });
-        scan.references
-            .circles
-            .push(crate::reference::ReferenceCircle {
-                entity_id: 7,
-                center: point([0.0, 0.0, 0.0]),
-                center_stored: true,
-                radius: PositiveLength::new(1.0).expect("positive radius"),
-                axis: UnitVector3::new([0.0, 0.0, 1.0].into()).expect("unit axis"),
-                start: point([1.0, 0.0, 0.0]),
-                end: point([0.0, 1.0, 0.0]),
-                offset: 0,
-            });
+        scan.references.lines.push(
+            crate::reference::ReferenceLine::try_new(
+                crate::reference::ReferenceLineKind::Line,
+                point([0.0, 0.0, 0.0]),
+                point([1.0, 0.0, 0.0]),
+                0,
+            )
+            .expect("checked reference geometry"),
+        );
+        scan.references.circles.push(
+            crate::reference::ReferenceCircle::try_new(
+                7,
+                crate::reference::ReferenceCircleCenter::Stored(point([0.0, 0.0, 0.0])),
+                PositiveLength::new(1.0).expect("positive radius"),
+                UnitVector3::new([0.0, 0.0, 1.0].into()).expect("unit axis"),
+                [point([1.0, 0.0, 0.0]), point([0.0, 1.0, 0.0])],
+                0,
+            )
+            .expect("checked reference geometry"),
+        );
         scan.references
             .conics
             .push(crate::reference::ReferenceConic {
@@ -5576,17 +5554,20 @@ mod tests {
                 body: vec![0x31, 0x32],
                 offset: 0,
             });
-        scan.references
-            .ellipses
-            .push(crate::reference::ReferenceEllipse {
-                source_entity_id: 8,
-                center: point([0.0, 0.0, 0.0]),
-                axis: UnitVector3::new([0.0, 0.0, 1.0].into()).expect("unit axis"),
-                major_direction: UnitVector3::new([1.0, 0.0, 0.0].into()).expect("unit direction"),
-                major_radius: PositiveLength::new(2.0).expect("positive radius"),
-                minor_radius: PositiveLength::new(1.0).expect("positive radius"),
-                offset: 0,
-            });
+        scan.references.ellipses.push(
+            crate::reference::ReferenceEllipse::try_new(
+                8,
+                point([0.0, 0.0, 0.0]),
+                UnitVector3::new([0.0, 0.0, 1.0].into()).expect("unit axis"),
+                UnitVector3::new([1.0, 0.0, 0.0].into()).expect("unit direction"),
+                [
+                    PositiveLength::new(2.0).expect("positive radius"),
+                    PositiveLength::new(1.0).expect("positive radius"),
+                ],
+                0,
+            )
+            .expect("checked reference geometry"),
+        );
         scan
     }
 
@@ -5766,7 +5747,7 @@ mod tests {
     }
 
     fn reference_name_scan() -> crate::container::ContainerScan<'static> {
-        let mut scan = crate::container::scan_bytes_ok(Vec::new());
+        let mut scan = crate::test_support::empty_container_scan();
         scan.features
             .reference_names
             .push(crate::feature::operations::FeatureReferenceName {
@@ -5798,7 +5779,7 @@ mod tests {
             FeatureOperation, IdKeyword, OperationKind, OperationName, RecipeResolution,
             RecipeState,
         };
-        let mut scan = crate::container::scan_bytes_ok(Vec::new());
+        let mut scan = crate::test_support::empty_container_scan();
         scan.features.operations.push(FeatureOperation {
             feature_id: 40,
             kind: OperationKind::Native,
@@ -5998,7 +5979,7 @@ mod tests {
     #[test]
     fn overlapping_feature_candidates_do_not_expose_short_headers() {
         let payload = [1, 0xe3, 2, 0, 0, 0xe3, 0xf6, 0x83, 0x8f, 0xe1];
-        let mut scan = crate::container::scan_bytes_ok(Vec::new());
+        let mut scan = crate::test_support::empty_container_scan();
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let policy = cadmpeg_core::decode::DecodePolicy::service();
         let (ctx, _) =
@@ -6012,4 +5993,5 @@ mod tests {
         assert_eq!(records[0].header, [0, 0]);
         assert_eq!(records[0].body, &payload[3..]);
     }
+    mod projection_admission;
 }

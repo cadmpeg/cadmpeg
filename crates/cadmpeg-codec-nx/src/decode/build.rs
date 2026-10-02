@@ -33,7 +33,7 @@ use crate::decode::ids::IdScope;
 use crate::framing::node_kind::NodeKind;
 use crate::loss::NxLossCode;
 use crate::topology::{Graph, Node};
-use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::dialect::DialectLayers;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::annotations::StreamHandle;
@@ -105,7 +105,7 @@ fn ordered_fixed_candidates<'a, T>(
         if let Some(value) = graph_value(node) {
             ctx.insert_btree_map(
                 &mut candidates,
-                node.pos,
+                node.pos(),
                 (value, node),
                 "nx analytic candidate index",
             )?;
@@ -127,7 +127,6 @@ type GeometryDecode = (
 
 pub(super) fn try_decode_geometry(
     ctx: &DecodeContext<'_>,
-    root: View<'_>,
     scan: &Scan,
     dialects: &DialectLayers,
     dialect_losses: &[LossNote],
@@ -382,7 +381,7 @@ pub(super) fn try_decode_geometry(
                 point: pid.try_clone_for_decode(ctx, "nx vertex point identity")?,
                 tolerance: None,
             });
-            ctx.insert_btree_map(&mut points_by_xmt, node.xmt, pid, "nx point node index")?;
+            ctx.insert_btree_map(&mut points_by_xmt, node.xmt(), pid, "nx point node index")?;
             counts.points += 1;
         }
         for (fi, (geometry, node)) in ordered_surface_candidates(ctx, graph)?
@@ -426,7 +425,12 @@ pub(super) fn try_decode_geometry(
                 geometry,
                 source_object: None,
             });
-            ctx.insert_btree_map(&mut surfaces_by_xmt, node.xmt, id, "nx surface node index")?;
+            ctx.insert_btree_map(
+                &mut surfaces_by_xmt,
+                node.xmt(),
+                id,
+                "nx surface node index",
+            )?;
         }
         for (fi, surf) in nurbs_surfaces.into_iter().enumerate() {
             counts.nurbs_surfaces += 1;
@@ -447,7 +451,12 @@ pub(super) fn try_decode_geometry(
                 source_object: None,
             });
             if let Some(node) = graph.at_pos(surf.pos) {
-                ctx.insert_btree_map(&mut surfaces_by_xmt, node.xmt, id, "nx surface node index")?;
+                ctx.insert_btree_map(
+                    &mut surfaces_by_xmt,
+                    node.xmt(),
+                    id,
+                    "nx surface node index",
+                )?;
             }
         }
         let saved_offset_carriers = saved_offset_carriers(
@@ -706,7 +715,7 @@ pub(super) fn try_decode_geometry(
                 geometry,
                 source_object: None,
             });
-            ctx.insert_btree_map(&mut curves_by_xmt, node.xmt, id, "nx curve node index")?;
+            ctx.insert_btree_map(&mut curves_by_xmt, node.xmt(), id, "nx curve node index")?;
         }
         for (ci, crv) in nurbs_curves.into_iter().enumerate() {
             counts.nurbs_curves += 1;
@@ -727,7 +736,7 @@ pub(super) fn try_decode_geometry(
                 source_object: None,
             });
             if let Some(node) = graph.at_pos(crv.pos) {
-                ctx.insert_btree_map(&mut curves_by_xmt, node.xmt, id, "nx curve node index")?;
+                ctx.insert_btree_map(&mut curves_by_xmt, node.xmt(), id, "nx curve node index")?;
             }
         }
 
@@ -749,7 +758,7 @@ pub(super) fn try_decode_geometry(
                 metadata: cadmpeg_ir::geometry::pcurve::PcurveMetadata::default(),
             });
             if let Some(node) = graph.at_pos(pcurve.pos) {
-                ctx.insert_btree_map(&mut pcurves_by_xmt, node.xmt, id, "nx pcurve node index")?;
+                ctx.insert_btree_map(&mut pcurves_by_xmt, node.xmt(), id, "nx pcurve node index")?;
             }
         }
         let intersection_scan = view.intersections.try_clone_for_decode(ctx)?;
@@ -1516,7 +1525,6 @@ pub(super) fn try_decode_geometry(
     // Extract once: body selection and annotation attachment both read it.
     let model = crate::native::model::NativeModel::extract(
         ctx,
-        root,
         &scan.container,
         &scan.streams,
         &mut parsed,
@@ -1923,7 +1931,7 @@ pub(super) fn topology_body_node_ids(
                 .shell_fields()
                 .is_some_and(|fields| fields.body.map(u32::from) == Some(body_xmt))
             {
-                ctx.insert_btree_set(&mut shells, shell.xmt, "nx topology body shells")?;
+                ctx.insert_btree_set(&mut shells, shell.xmt(), "nx topology body shells")?;
             }
         }
         let mut faces = Vec::new();
@@ -1936,7 +1944,7 @@ pub(super) fn topology_body_node_ids(
             }) {
                 ctx.reserve_vec(&mut faces, 1, "nx topology body faces")?;
                 faces.push(face);
-                ctx.insert_btree_set(&mut face_xmts, face.xmt, "nx topology body face nodes")?;
+                ctx.insert_btree_set(&mut face_xmts, face.xmt(), "nx topology body face nodes")?;
             }
         }
         let mut loops = BTreeSet::new();
@@ -1946,7 +1954,7 @@ pub(super) fn topology_body_node_ids(
                     .face
                     .is_some_and(|target| face_xmts.contains(&u32::from(target)))
             }) {
-                ctx.insert_btree_set(&mut loops, loop_.xmt, "nx topology body loops")?;
+                ctx.insert_btree_set(&mut loops, loop_.xmt(), "nx topology body loops")?;
             }
         }
         let mut fins = Vec::new();
@@ -1989,7 +1997,7 @@ pub(super) fn topology_body_node_ids(
         }
         let mut edge_count = 0;
         for edge in graph.of_kind(NodeKind::Edge) {
-            if edge_xmts.contains(&edge.xmt) {
+            if edge_xmts.contains(&edge.xmt()) {
                 edge_count += 1;
                 let Some(id) = edge.u32_at(4) else {
                     continue 'body;
@@ -2002,7 +2010,7 @@ pub(super) fn topology_body_node_ids(
         }
         let mut vertex_count = 0;
         for vertex in graph.of_kind(NodeKind::Vertex) {
-            if vertex_xmts.contains(&vertex.xmt) {
+            if vertex_xmts.contains(&vertex.xmt()) {
                 vertex_count += 1;
                 let Some(id) = vertex.u32_at(4) else {
                     continue 'body;

@@ -44,7 +44,7 @@ pub(crate) fn transfer(
         .filter(|object| is_registered_drawing_type(&object.type_name))
     {
         let source = by_owner
-            .get(object.id.as_str())
+            .get(object.id().as_str())
             .map_or(&[][..], Vec::as_slice);
         let mut owned = owner_storage.with_storage(|| {
             ctx.collection_vec(source.len(), "fcstd drawing selected properties")
@@ -121,8 +121,8 @@ pub(crate) fn transfer(
             }
         }
         drawings.push(DrawingRecord {
-            id: crate::native::native_id_charged(ctx, "drawing", &object.name)?,
-            object: ctx.copy_retained_text(&object.id, "fcstd drawing object")?,
+            id: crate::native::native_id_charged(ctx, "drawing", object.name())?,
+            object: ctx.copy_retained_text(object.id(), "fcstd drawing object")?,
             kind,
             sources,
             relationships,

@@ -214,7 +214,8 @@ fn display_jt_document_storage_refuses_before_vector_reservation() {
 #[test]
 fn display_jt_document_work_refuses_before_toc_scan() {
     let adjust_policy = |policy: &mut cadmpeg_core::decode::DecodePolicy| {
-        policy.limits.max_work_units = 1;
+        // One directory entry is scanned before the document and TOC passes.
+        policy.limits.max_work_units = 1 + 1;
     };
     assert_eq!(
         refused_at(adjust_policy),

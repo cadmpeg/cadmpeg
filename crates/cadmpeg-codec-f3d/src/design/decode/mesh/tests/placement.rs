@@ -59,7 +59,7 @@ fn reflected_mesh_placement_preserves_triangle_and_corner_order() {
             role: 4,
             resource_guid: None,
             authored_name: None,
-            groups: Vec::new(),
+            groups: crate::paramesh::UniqueFaceGroups::default(),
             elements: crate::paramesh::MeshElements::Float {
                 width: crate::paramesh::FloatWidth::Quad,
                 values: (0..80).collect(),

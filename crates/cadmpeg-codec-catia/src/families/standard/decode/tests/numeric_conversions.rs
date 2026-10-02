@@ -49,6 +49,7 @@ fn visualization_refuses_coordinate(coordinate: f64, axis: usize) -> bool {
                 brep: &[],
                 support_override: Some(&supports),
                 source: &[],
+                e5_record_range: None,
                 use_vertex_roster: true,
                 native_edge_faces: &HashMap::new(),
                 native_edge_supports: &HashMap::new(),

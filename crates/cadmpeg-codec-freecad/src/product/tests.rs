@@ -47,8 +47,11 @@ fn local_copy_on_change_target_identity_refuses_at_retained_limit() {
 #[test]
 fn product_record_collection_refuses_at_caller_limit() {
     let object = native::ObjectRecord {
-        id: "fcstd:native:object#Assembly".into(),
-        name: "Assembly".into(),
+        identity: crate::native::object_identity::ObjectIdentity::try_new(
+            "fcstd:native:object#Assembly".into(),
+            "Assembly".into(),
+        )
+        .expect("object identity"),
         type_name: "App::Part".into(),
         persistent_id: None,
         view_type: None,
@@ -73,8 +76,11 @@ fn product_record_collection_refuses_at_caller_limit() {
 #[test]
 fn product_native_identity_refuses_at_retained_limit() {
     let object = native::ObjectRecord {
-        id: "fcstd:native:object#Assembly".into(),
-        name: "Assembly".into(),
+        identity: crate::native::object_identity::ObjectIdentity::try_new(
+            "fcstd:native:object#Assembly".into(),
+            "Assembly".into(),
+        )
+        .expect("object identity"),
         type_name: "App::Part".into(),
         persistent_id: None,
         view_type: None,
@@ -88,7 +94,7 @@ fn product_native_identity_refuses_at_retained_limit() {
     let mut policy = DecodePolicy::default();
     policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(
         4 * std::mem::size_of::<native::ProductNodeRecord>()
-            + native::native_id("product", &object.name).len(),
+            + native::native_id("product", object.name()).len(),
     ) - 1;
     let (ctx, _) =
         DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is within policy");

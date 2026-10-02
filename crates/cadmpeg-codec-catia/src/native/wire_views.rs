@@ -76,7 +76,10 @@ impl Serialize for CatiaConsolidatedOwnerPacket {
                 boundary_cycle.as_deref(),
             ),
             CatiaOwnerPacketPayload::Counted { references, tail } => (
-                CatiaOwnerPacketPayloadWireRef::Counted { references, tail },
+                CatiaOwnerPacketPayloadWireRef::Counted {
+                    references,
+                    tail: tail.as_slice(),
+                },
                 &[][..],
                 None,
                 None,

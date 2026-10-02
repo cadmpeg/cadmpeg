@@ -122,7 +122,7 @@ fn assert_compressed_jt_limit(
     let (data, segment) = compressed_jt_fixture();
 
     let container = Container {
-        data: std::borrow::Cow::Borrowed(&data),
+        data: data.as_slice().into(),
         physical_size: cadmpeg_core::decode::u64_from_index(data.len()),
         layout: crate::container::test_modern_layout(6),
         entries: vec![DirEntry {
@@ -137,37 +137,45 @@ fn assert_compressed_jt_limit(
         indexed_section_layouts: std::sync::OnceLock::new(),
         om_section_cache: std::sync::OnceLock::new(),
     };
-    crate::test_support::with_decode_context_over(&data, adjust, |ctx| {
-        let root = cadmpeg_core::decode::View::over_retained(&data);
-
-        let error = super::super::display_jt_compressed_element_sequences(
-            (ctx, root),
-            &container,
-            std::slice::from_ref(&segment),
-        )
-        .unwrap_err();
-        assert!(
-            matches!(&error, cadmpeg_core::CodecError::ResourceLimit(limit)
+    crate::test_support::with_decode_context_over(
+        &data,
+        |policy| {
+            adjust(policy);
+            if dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits {
+                // Admit the bounded-directory pass before the tested payload stage.
+                policy.limits.max_work_units +=
+                    cadmpeg_core::decode::u64_from_index(container.entries.len());
+            }
+        },
+        |ctx| {
+            let error = super::super::display_jt_compressed_element_sequences(
+                ctx,
+                &container,
+                std::slice::from_ref(&segment),
+            )
+            .unwrap_err();
+            assert!(
+                matches!(&error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.dimension == dimension && limit.operation == operation),
-            "{error}"
-        );
+                "{error}"
+            );
 
-        crate::test_support::with_decode_context_over(
-            &data,
-            |_| {},
-            |service| {
-                let root = cadmpeg_core::decode::View::over_retained(&data);
-
-                let (elements, sequences) = super::super::display_jt_compressed_element_sequences(
-                    (service, root),
-                    &container,
-                    &[segment],
-                )
-                .unwrap();
-                assert_eq!((elements.len(), sequences.len()), (1, 1));
-            },
-        );
-    });
+            crate::test_support::with_decode_context_over(
+                &data,
+                |_| {},
+                |service| {
+                    let (elements, sequences) =
+                        super::super::display_jt_compressed_element_sequences(
+                            service,
+                            &container,
+                            &[segment],
+                        )
+                        .unwrap();
+                    assert_eq!((elements.len(), sequences.len()), (1, 1));
+                },
+            );
+        },
+    );
 }
 
 #[test]

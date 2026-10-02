@@ -30,7 +30,7 @@ use cadmpeg_ir::scalar::{
 use cadmpeg_ir::units::{OrthonormalFrame3, UnitVector3};
 
 use crate::framing::{
-    fixed_len, fixed_record_boundary, fixed_record_candidates, skip_sequence_at, FixedRecordFrame,
+    fixed_record_boundary, fixed_record_candidates, skip_sequence_at, FixedRecordFrame,
 };
 use crate::vec3_at::vec3_be_at;
 
@@ -95,12 +95,11 @@ fn analytic_records<T>(
             p += 1;
             continue;
         };
-        let len = fixed_len(kind);
         if !is_analytic_kind(kind) {
             p += 1;
             continue;
         }
-        let frames = fixed_record_candidates(stream, p, kind, len);
+        let frames = fixed_record_candidates(stream, p, kind);
         let mut candidates = [None, None];
         for (slot, frame) in frames.iter().enumerate() {
             if let Some(frame) = frame {
@@ -113,7 +112,7 @@ fn analytic_records<T>(
                 out.push(record);
             }
             p = end;
-        } else if let Some(end) = frames.iter().flatten().map(|frame| frame.end).max() {
+        } else if let Some(end) = frames.iter().flatten().map(|frame| frame.end()).max() {
             // A complete structural frame owns its bytes even when its analytic
             // payload fails validation. Do not rescan those bytes as another
             // carrier; an unresolved or ambiguous frame is skipped atomically.
@@ -151,10 +150,10 @@ fn analytic_candidate(
     kind: NodeKind,
     frame: FixedRecordFrame,
 ) -> Option<AnalyticCandidate> {
-    let record_bytes = stream.get(pos..frame.end)?;
+    let record_bytes = stream.get(pos..frame.end())?;
     let record = match kind {
         NodeKind::Point => {
-            let mut at = pos + 8 + frame.shift;
+            let mut at = pos + 8 + frame.shift();
             skip_sequence_at(stream, &mut at, 4)?;
             let xyz = vec3_be_at(stream, at)?;
             let position = mm_position(xyz)?;
@@ -165,11 +164,11 @@ fn analytic_candidate(
         | NodeKind::Cone
         | NodeKind::Sphere
         | NodeKind::Torus => {
-            decode_surface_record(record_bytes, kind, frame.shift + frame.payload_shift)
+            decode_surface_record(record_bytes, kind, frame.shift() + frame.payload_shift())
                 .map(AnalyticRecord::Surface)?
         }
         NodeKind::Line | NodeKind::Circle | NodeKind::Ellipse => {
-            decode_curve_record(record_bytes, kind, frame.shift + frame.payload_shift)
+            decode_curve_record(record_bytes, kind, frame.shift() + frame.payload_shift())
                 .map(AnalyticRecord::Curve)?
         }
         _ => return None,
@@ -182,13 +181,13 @@ fn select_analytic_candidate(
     candidates: [Option<AnalyticCandidate>; 2],
 ) -> Option<(AnalyticRecord, usize)> {
     match candidates {
-        [Some(first), None] | [None, Some(first)] => Some((first.record, first.frame.end)),
+        [Some(first), None] | [None, Some(first)] => Some((first.record, first.frame.end())),
         [Some(first), Some(second)] => {
-            let first_boundary = fixed_record_boundary(stream, first.frame.end);
-            let second_boundary = fixed_record_boundary(stream, second.frame.end);
+            let first_boundary = fixed_record_boundary(stream, first.frame.end());
+            let second_boundary = fixed_record_boundary(stream, second.frame.end());
             match (first_boundary, second_boundary) {
-                (true, false) => Some((first.record, first.frame.end)),
-                (false, true) => Some((second.record, second.frame.end)),
+                (true, false) => Some((first.record, first.frame.end())),
+                (false, true) => Some((second.record, second.frame.end())),
                 _ => None,
             }
         }
@@ -280,7 +279,7 @@ fn cone(s: &[u8], b: usize) -> Option<SurfaceGeometry> {
             frame,
             radius,
             PositiveReal::ONE,
-            Angle::from_assigned_real(sin_half.abs().atan2(cos_half.abs())),
+            Angle::from_assigned_real(sin_half.atan2(cos_half)),
         ),
     )))
 }

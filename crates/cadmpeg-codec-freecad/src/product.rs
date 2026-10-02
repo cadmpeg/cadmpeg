@@ -51,7 +51,7 @@ pub(crate) fn transfer(
             continue;
         };
         let source = by_owner
-            .get(object.id.as_str())
+            .get(object.id().as_str())
             .map_or(&[][..], Vec::as_slice);
         let mut owned = storage.with_storage(|| {
             ctx.collection_vec(source.len(), "fcstd product selected properties")
@@ -174,8 +174,8 @@ pub(crate) fn transfer(
         };
         ctx.reserve_vec(&mut output, 1, "fcstd product records")?;
         output.push(ProductNodeRecord {
-            id: crate::native::native_id_charged(ctx, "product", &object.name)?,
-            object: ctx.copy_retained_text(&object.id, "fcstd product object")?,
+            id: crate::native::native_id_charged(ctx, "product", object.name())?,
+            object: ctx.copy_retained_text(object.id(), "fcstd product object")?,
             node,
         });
     }
@@ -552,7 +552,7 @@ pub(crate) fn transfer_neutral(
         )
     })?;
     for object in objects {
-        object_by_id.insert(object.id.as_str(), object);
+        object_by_id.insert(object.id().as_str(), object);
     }
     let mut property_owner = HashMap::new();
     storage.with_storage(|| {
@@ -636,7 +636,7 @@ pub(crate) fn transfer_neutral(
             id: definition_id(object)?,
             kind,
             source_name: source_object
-                .map(|object| ctx.copy_retained_text(&object.name, "fcstd product source name"))
+                .map(|object| ctx.copy_retained_text(object.name(), "fcstd product source name"))
                 .transpose()?,
             label: metadata_string(ctx, owned, "Label")?,
             description: metadata_string(ctx, owned, "Description")?,

@@ -137,10 +137,14 @@ mod tests {
         );
         payload.extend_from_slice(&member);
         let error =
-            super::parasolid(&payload).expect_err("declared expansion exceeds service policy");
+            super::parasolid(&payload).expect_err("declared expansion exceeds the local frame cap");
         assert!(matches!(error,
             cadmpeg_core::CodecError::ResourceLimit(limit)
-                if limit.dimension == cadmpeg_core::decode::ResourceDimension::DecompressedBytes
+                if limit.dimension == cadmpeg_core::decode::ResourceDimension::Codec("inflate Parasolid frame")
+                    && limit.operation == "inflate Parasolid frame"
+                    && limit.limit == 512 * 1024 * 1024
+                    && limit.used == 512 * 1024 * 1024
+                    && limit.additional == 1
         ));
     }
 }

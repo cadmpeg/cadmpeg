@@ -352,16 +352,16 @@ fn validation_body_bounds(with_binding: bool) -> crate::native::F3dNative {
     };
     use crate::records::identity::{DesignEntityId, ReferenceRun};
 
-    let binding_id = "f3d:Design/BulkStream.dat:body-binding#1";
+    let binding_id = "f3d:Design/BulkStream.dat:design-body-binding#50";
     let bounds = DesignBodyBounds::try_from(DesignBodyBoundsWire {
-        id: "f3d:Design/BulkStream.dat:body-bounds#1".into(),
+        id: "f3d:Design/BulkStream.dat:design-body-bounds#10".into(),
         entity_suffix: 1,
         entity_byte_offset: 10,
         record_indices: [2, 3, 4],
         record_byte_offsets: [20, 30, 40],
         value_byte_offsets: [21, 31, 41],
         body_binding_ids: if with_binding {
-            vec![binding_id.into()]
+            vec![binding_id.to_owned().try_into().unwrap()]
         } else {
             Default::default()
         },
@@ -522,7 +522,12 @@ fn body_binding_group_member_refuses_collection_limit() {
 #[test]
 fn body_binding_invalid_finding_refuses_collection_limit() {
     let mut native = validation_body_bounds(true);
-    native.design_body_bindings[0].stream = "Other/BulkStream.dat".into();
+    // The binding names a valid body but has no matching native body source.
+    native.design_body_bindings[0].body = Some(
+        cadmpeg_ir::examples::unit_cube().unwrap().model.bodies[0]
+            .id
+            .clone(),
+    );
     let error = body_binding_error(native, 0, u64::MAX);
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -533,7 +538,12 @@ fn body_binding_invalid_finding_refuses_collection_limit() {
 #[test]
 fn body_binding_invalid_entity_refuses_retained_limit() {
     let mut native = validation_body_bounds(true);
-    native.design_body_bindings[0].stream = "Other/BulkStream.dat".into();
+    // The binding names a valid body but has no matching native body source.
+    native.design_body_bindings[0].body = Some(
+        cadmpeg_ir::examples::unit_cube().unwrap().model.bodies[0]
+            .id
+            .clone(),
+    );
     let error = body_binding_error(native, u64::MAX, 0);
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -546,7 +556,7 @@ fn body_binding_incomplete_group_finding_refuses_collection_limit() {
     use crate::records::bodies::{DesignBodyBinding, DesignBodyBindingWire};
     let mut native = validation_body_bounds(true);
     native.design_body_bindings[0] = DesignBodyBinding::try_from(DesignBodyBindingWire {
-        id: "f3d:Design/BulkStream.dat:body-binding#1".into(),
+        id: "f3d:Design/BulkStream.dat:design-body-binding#50".into(),
         stream: "Design/BulkStream.dat".into(),
         pair_count: 2,
         pair_ordinal: 0,

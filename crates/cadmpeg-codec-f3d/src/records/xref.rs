@@ -57,7 +57,7 @@ impl TryFrom<[[f64; 4]; 4]> for XrefPlacementTransform {
     type Error = String;
     fn try_from(rows: [[f64; 4]; 4]) -> Result<Self, Self::Error> {
         if valid_xref_placement_transform(&rows) {
-            Ok(Self(DesignAffineTransform(rows)))
+            Ok(Self(DesignAffineTransform::try_from(rows)?))
         } else {
             Err("transform must be a finite proper rigid affine matrix".into())
         }

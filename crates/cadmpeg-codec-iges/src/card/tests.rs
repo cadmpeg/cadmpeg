@@ -305,7 +305,10 @@ fn malformed_sequence_padding_is_rejected_without_panicking() {
     let mut bytes = point_file();
     bytes[CARD_DATA_COLUMNS + 1..CARD_COLUMNS].copy_from_slice(b"     1 ");
 
-    assert_eq!(IgesCodec.detect(&bytes), Confidence::No);
+    assert_eq!(
+        cadmpeg_test_support::detection::confidence(&IgesCodec, &bytes),
+        Confidence::No
+    );
     assert_eq!(
         IgesCodec
             .inspect(
@@ -481,7 +484,10 @@ fn decode_accepts_carriage_return_only_line_endings() {
         .map(|byte| if byte == b'\n' { b'\r' } else { byte })
         .collect::<Vec<_>>();
 
-    assert_eq!(IgesCodec.detect(&bytes), Confidence::High);
+    assert_eq!(
+        cadmpeg_test_support::detection::confidence(&IgesCodec, &bytes),
+        Confidence::High
+    );
 
     let result = IgesCodec
         .decode(

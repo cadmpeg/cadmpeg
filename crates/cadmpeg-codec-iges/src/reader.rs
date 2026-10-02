@@ -901,8 +901,12 @@ pub(crate) fn decode_with_test_occurrence_limits(
     impl CodecBackend for OccurrenceLimitCodec {
         const FORMAT: FormatId = FormatId::new(crate::dialect::FORMAT);
 
-        fn detect_impl(&self, _prefix: &[u8]) -> Confidence {
-            Confidence::High
+        fn detect_impl(
+            &self,
+            _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+            _prefix: cadmpeg_core::decode::View<'_>,
+        ) -> Result<Confidence, cadmpeg_core::CodecError> {
+            Ok(Confidence::High)
         }
 
         fn inspect_impl(

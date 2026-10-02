@@ -4153,7 +4153,6 @@ mod tests {
                     crate::native::substrate::ParsedStreams::parse(ctx, &scan).unwrap();
                 let model = crate::native::model::NativeModel::extract(
                     ctx,
-                    root,
                     &scan.container,
                     &scan.streams,
                     &mut parsed,
@@ -4205,7 +4204,6 @@ mod tests {
                     crate::native::substrate::ParsedStreams::parse(ctx, &scan).unwrap();
                 let model = crate::native::model::NativeModel::extract(
                     ctx,
-                    root,
                     &scan.container,
                     &scan.streams,
                     &mut parsed,
@@ -4263,7 +4261,6 @@ mod tests {
                     crate::native::substrate::ParsedStreams::parse(ctx, &scan).unwrap();
                 let mut model = crate::native::model::NativeModel::extract(
                     ctx,
-                    root,
                     &scan.container,
                     &scan.streams,
                     &mut parsed,

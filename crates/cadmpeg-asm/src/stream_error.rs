@@ -47,10 +47,48 @@ pub enum StreamFailure {
     /// A valid source length cannot be represented in the destination unit.
     NotImplemented(StreamError),
     /// The active decode policy refused materialization or work.
-    Resource(cadmpeg_core::CodecError),
+    Resource(cadmpeg_core::decode::ResourceLimit),
+    /// A context operation failed outside the stream grammar.
+    Operation(OperationFailure),
+}
+
+/// An operation failure whose codec class is not a resource refusal.
+#[derive(Debug)]
+pub struct OperationFailure(cadmpeg_core::CodecError);
+
+impl TryFrom<cadmpeg_core::CodecError> for OperationFailure {
+    type Error = cadmpeg_core::decode::ResourceLimit;
+
+    fn try_from(error: cadmpeg_core::CodecError) -> Result<Self, Self::Error> {
+        match error {
+            cadmpeg_core::CodecError::ResourceLimit(refusal) => Err(refusal),
+            error => Ok(Self(error)),
+        }
+    }
+}
+
+impl OperationFailure {
+    /// Return the operation's existing codec classification.
+    pub fn into_codec_error(self) -> cadmpeg_core::CodecError {
+        self.0
+    }
+}
+
+impl std::fmt::Display for OperationFailure {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.0.fmt(f)
+    }
 }
 
 impl StreamFailure {
+    /// Classify a context operation without labeling other errors as resources.
+    pub(crate) fn from_operation(error: cadmpeg_core::CodecError) -> Self {
+        match OperationFailure::try_from(error) {
+            Ok(error) => Self::Operation(error),
+            Err(refusal) => Self::Resource(refusal),
+        }
+    }
+
     /// Keep a caller's existing framing classification for syntax errors.
     pub fn into_codec_error(
         self,
@@ -64,7 +102,8 @@ impl StreamFailure {
                 Ok(message) => cadmpeg_core::CodecError::NotImplemented(message),
                 Err(refusal) => refusal,
             },
-            Self::Resource(error) => error,
+            Self::Resource(error) => error.into(),
+            Self::Operation(error) => error.into_codec_error(),
         }
     }
 }
@@ -89,8 +128,8 @@ impl From<StreamError> for StreamFailure {
     }
 }
 
-impl From<cadmpeg_core::CodecError> for StreamFailure {
-    fn from(error: cadmpeg_core::CodecError) -> Self {
+impl From<cadmpeg_core::decode::ResourceLimit> for StreamFailure {
+    fn from(error: cadmpeg_core::decode::ResourceLimit) -> Self {
         Self::Resource(error)
     }
 }
@@ -101,7 +140,8 @@ impl std::fmt::Display for StreamFailure {
             Self::Parse(error) | Self::Malformed(error) | Self::NotImplemented(error) => {
                 error.fmt(f)
             }
-            Self::Resource(error) => error.fmt(f),
+            Self::Resource(error) => cadmpeg_core::CodecError::ResourceLimit(*error).fmt(f),
+            Self::Operation(error) => error.fmt(f),
         }
     }
 }
@@ -110,9 +150,54 @@ impl std::error::Error for StreamFailure {}
 
 #[cfg(test)]
 mod tests {
-    use super::{StreamError, StreamFailure, StreamFormat};
+    use super::{OperationFailure, StreamError, StreamFailure, StreamFormat};
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
+
+    #[test]
+    fn stream_operation_errors_keep_their_codec_class() {
+        crate::test_support::with_service_context(&[], |ctx| {
+            for error in [
+                CodecError::Malformed("malformed operation".into()),
+                CodecError::NotImplemented("unsupported operation".into()),
+                CodecError::Io(std::io::Error::other("I/O operation")),
+            ] {
+                let expected = error.to_string();
+                let failure = StreamFailure::from_operation(error);
+                assert!(matches!(&failure, StreamFailure::Operation(_)));
+                let error = failure.into_codec_error(ctx, |_| panic!("operation is not framing"));
+                assert_eq!(error.to_string(), expected);
+                assert!(matches!(
+                    error,
+                    CodecError::Malformed(_) | CodecError::NotImplemented(_) | CodecError::Io(_)
+                ));
+            }
+        })
+        .expect("service test context");
+    }
+
+    #[test]
+    fn stream_resource_variant_contains_only_the_original_refusal() {
+        crate::test_support::with_service_context(&[], |ctx| {
+            let CodecError::ResourceLimit(refusal) = ctx.refuse_codec_limit("stream refusal", 3, 2)
+            else {
+                panic!("resource-only core refusal");
+            };
+            assert_eq!(
+                OperationFailure::try_from(CodecError::ResourceLimit(refusal)).unwrap_err(),
+                refusal
+            );
+            for failure in [
+                StreamFailure::from(refusal),
+                StreamFailure::from_operation(CodecError::ResourceLimit(refusal)),
+            ] {
+                assert!(matches!(&failure, StreamFailure::Resource(limit) if *limit == refusal));
+                let error = failure.into_codec_error(ctx, |_| panic!("resource is not framing"));
+                assert!(matches!(error, CodecError::ResourceLimit(limit) if limit == refusal));
+            }
+        })
+        .expect("service test context");
+    }
 
     #[test]
     fn unsupported_stream_error_text_refuses_retained_limit() {

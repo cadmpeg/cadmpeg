@@ -485,6 +485,20 @@ fn deltas_admits_a_value_owned_by_a_unique_entity_reference() {
             .iter()
             .map(super::Record::kind)
             .collect::<Vec<_>>(),
+        [81]
+    );
+    let mut owned = stream;
+    let end = owned.len();
+    owned[end - 2..].copy_from_slice(&20_u16.to_be_bytes());
+    let census =
+        crate::test_support::with_decode_context(|ctx| crate::deltas::census::walk(ctx, &owned))
+            .unwrap();
+    assert_eq!(
+        census
+            .records
+            .iter()
+            .map(super::Record::kind)
+            .collect::<Vec<_>>(),
         [82, 81]
     );
 }

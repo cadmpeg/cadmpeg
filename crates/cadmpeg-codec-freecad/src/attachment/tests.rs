@@ -164,8 +164,11 @@ fn attachment_owner_lookup_refuses_on_collection_limit() {
 #[test]
 fn attachment_identity_refuses_at_retained_limit() {
     let object = crate::native::ObjectRecord {
-        id: "fcstd:native:object#Sketch".into(),
-        name: "Sketch".into(),
+        identity: crate::native::object_identity::ObjectIdentity::try_new(
+            "fcstd:native:object#Sketch".into(),
+            "Sketch".into(),
+        )
+        .expect("object identity"),
         type_name: "Sketcher::SketchObject".into(),
         persistent_id: None,
         view_type: None,
@@ -177,7 +180,7 @@ fn attachment_identity_refuses_at_retained_limit() {
     };
     let property = crate::native::PropertyRecord {
         id: "fcstd:native:property#Sketch:MapMode".into(),
-        owner: object.id.clone(),
+        owner: object.id().clone(),
         name: "MapMode".into(),
         type_name: "App::PropertyEnumeration".into(),
         family: crate::native::PropertyFamily::Unknown,

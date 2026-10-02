@@ -1281,7 +1281,10 @@ mod route_tests {
     #[test]
     fn geometry_report_refuses_summary_loss_limit() {
         let scan = crate::test_support::with_service_context(|ctx| {
-            crate::container::scan_bytes(ctx, &[][..])
+            crate::container::scan_bytes(
+                ctx,
+                [crate::container::OUTER_MAGIC.as_slice(), &[0; 8]].concat(),
+            )
         })
         .expect("service resource budget");
         let ir = CadIr::empty();

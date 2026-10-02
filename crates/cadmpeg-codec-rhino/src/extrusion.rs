@@ -991,9 +991,9 @@ fn finish_anonymous(
     warnings: &mut Diagnostics,
 ) -> Result<(), GeometryError> {
     child.skip_remaining()?;
-    let direct = crate::chunks::direct_checksum_ranges(&chunk.body(), checksum.children)?;
+    let direct = crate::chunks::direct_checksum_ranges(ctx, &chunk.body(), checksum.children)?;
     if matches!(
-        crate::chunks::verify_checksum_ranges(data, chunk, &direct)?,
+        crate::chunks::verify_checksum_ranges(ctx, data, chunk, &direct)?,
         ChecksumStatus::Mismatch { .. }
     ) {
         warnings.push_coded_admitted(
@@ -1018,9 +1018,9 @@ fn finish_payload(
     warnings: &mut Diagnostics,
 ) -> Result<(), GeometryError> {
     reader.skip_remaining()?;
-    let direct = crate::chunks::direct_checksum_ranges(&chunk.body(), children)?;
+    let direct = crate::chunks::direct_checksum_ranges(ctx, &chunk.body(), children)?;
     if matches!(
-        crate::chunks::verify_checksum_ranges(data, chunk, &direct)?,
+        crate::chunks::verify_checksum_ranges(ctx, data, chunk, &direct)?,
         ChecksumStatus::Mismatch { .. }
     ) {
         warnings.push_coded_admitted(
@@ -1328,11 +1328,17 @@ pub(crate) mod tests {
             if cache_bytes != 0 {
                 children.push(body.len() - cache_bytes..body.len());
             }
-            let direct = crate::chunks::direct_checksum_ranges(&(0..body.len()), &children)
+            let arena = cadmpeg_core::decode::DecodeArena::new();
+            let ctx = cadmpeg_core::decode::DecodeContext::new(
+                &arena,
+                &cadmpeg_core::decode::DecodePolicy::service(),
+                false,
+            );
+            let direct = crate::chunks::direct_checksum_ranges(&ctx, &(0..body.len()), &children)
                 .expect("valid extrusion children");
             let mut hasher = crc32fast::Hasher::new();
-            for range in direct {
-                hasher.update(&body[range]);
+            for range in &direct {
+                hasher.update(&body[range.expect("admitted fixture checksum traversal")]);
             }
             let crc = hasher.finalize();
             let end = payload.len();
@@ -1980,9 +1986,9 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn optional_mesh_cache_over_document_budget_is_dropped() {
+    fn optional_mesh_cache_over_document_budget_propagates_resource_refusal() {
         let bytes = payload(3, [false, false], Some(one_mesh_cache()));
-        let decoded = decode(
+        let refusal = decode(
             &bytes,
             0..bytes.len(),
             ArchiveVersion::V5,
@@ -1990,10 +1996,11 @@ pub(crate) mod tests {
             MillimeterScale::IDENTITY,
             &mut crate::mesh::MeshBudget::with_limit(0),
         )
-        .expect("extrusion remains usable");
-        assert!(decoded.meshes.is_empty());
-        assert_eq!(decoded.warnings.len(), 1);
-        assert!(decoded.warnings[0].contains("document mesh buffer budget exceeded"));
+        .expect_err("optional cache resource refusal reaches the caller");
+        assert!(matches!(refusal,
+            GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
+                if limit.operation == "Rhino document mesh buffer bytes"
+                    && limit.limit == 0 && limit.used == 0 && limit.additional == 12));
     }
 
     #[test]

@@ -1140,6 +1140,10 @@ fn decode_bitlength<'ctx>(
             cadmpeg_core::decode::u64_from_index(value_count),
             "decode JT bitlength symbols",
         ));
+        propagate_resource!(ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(code_bit_len),
+            "decode JT bitlength code bits",
+        ));
         let (mut values, reservation) =
             propagate_resource!(ctx.temporary_vec(value_count, "nx JT decoded vector"));
         if bits.read(1)? == 0 {

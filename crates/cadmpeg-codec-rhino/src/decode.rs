@@ -990,7 +990,7 @@ impl<'a> DecodeContext<'a> {
                             })
                             .cloned();
                         let mut proxy_transferred = false;
-                        if let Some(extra) = proxy {
+                        if let (Some(extra), Some(fingerprint)) = (proxy, mesh.proxy_fingerprint) {
                             let subd_id = {
                                 let mut copied_storage = self
                                     .expand
@@ -1017,7 +1017,7 @@ impl<'a> DecodeContext<'a> {
                                 self.archive(),
                                 scale,
                                 subd_id,
-                                mesh.proxy_fingerprint,
+                                fingerprint,
                             ) {
                                 Ok(Some(decoded)) => {
                                     proxy_transferred = self.commit_subd_surface(
@@ -7406,8 +7406,12 @@ pub(crate) fn seal_for_test(
     impl CodecBackend for TestBackend {
         const FORMAT: FormatId = FormatId::new(crate::dialect::FORMAT);
 
-        fn detect_impl(&self, _prefix: &[u8]) -> Confidence {
-            Confidence::High
+        fn detect_impl(
+            &self,
+            _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+            _prefix: cadmpeg_core::decode::View<'_>,
+        ) -> Result<Confidence, cadmpeg_core::CodecError> {
+            Ok(Confidence::High)
         }
 
         fn inspect_impl(

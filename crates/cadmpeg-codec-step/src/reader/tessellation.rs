@@ -246,11 +246,7 @@ pub(super) fn decode(
             continue;
         }
         if distinct_placement(placements).is_none() {
-            let distinct_count = placements
-                .iter()
-                .enumerate()
-                .filter(|(index, placement)| !placements[..*index].contains(placement))
-                .count();
+            let distinct_count = distinct_placement_count(placements, ctx)?;
             push_loss(
                 &mut losses,
                 StepLossCode::TessellationPlacementAmbiguous,
@@ -1019,6 +1015,28 @@ impl TessellationItemAssociator<'_, '_, '_> {
         self.active.remove(&id);
         Ok(())
     }
+}
+
+fn distinct_placement_count(
+    placements: &[Transform],
+    ctx: &DecodeContext<'_>,
+) -> Result<usize, CodecError> {
+    let count = u64_from_index(placements.len());
+    // Every prior-placement comparison can read the complete transform.
+    let work = count
+        .checked_mul(count)
+        .and_then(|comparisons| {
+            comparisons.checked_mul(u64_from_index(std::mem::size_of::<Transform>()))
+        })
+        .ok_or_else(|| {
+            ctx.refuse_codec_limit("step_tessellation_distinct_placements", u64::MAX, u64::MAX)
+        })?;
+    ctx.charge_work(work, "step_tessellation_distinct_placements")?;
+    Ok(placements
+        .iter()
+        .enumerate()
+        .filter(|(index, placement)| !placements[..*index].contains(placement))
+        .count())
 }
 
 fn distinct_placement(placements: &[Transform]) -> Option<Transform> {

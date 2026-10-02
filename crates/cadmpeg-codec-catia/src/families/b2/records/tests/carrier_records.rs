@@ -3,6 +3,8 @@
 
 #![allow(clippy::doc_markdown, clippy::unwrap_used)]
 
+const NEAR_ZERO_ARC_SPAN: f64 = 1e-10;
+
 use super::{
     a5_surface_stream, b2_circle_stream, b2_cone_stream, b2_construction_use_stream,
     b2_cylinder_stream, b2_edge_parameter_stream, b2_edge_parameter_stream_for,
@@ -74,7 +76,9 @@ fn b2_circle_parser_reads_arc_length_parameterization() {
     tiny_full[40..48].copy_from_slice(&(std::f64::consts::TAU * tiny).to_le_bytes());
     assert!(crate::families::b2::records::b2_circles(&tiny_full)[0].full_circle());
 
-    tiny_full[40..48].copy_from_slice(&1e-10_f64.to_le_bytes());
+    tiny_full[40..48].copy_from_slice(&NEAR_ZERO_ARC_SPAN.to_le_bytes());
+    assert!(crate::families::b2::records::b2_circles(&tiny_full)[0].full_circle());
+    tiny_full[40..48].copy_from_slice(&1e-4_f64.to_le_bytes());
     assert!(!crate::families::b2::records::b2_circles(&tiny_full)[0].full_circle());
 }
 
@@ -126,7 +130,12 @@ fn b2_cylinder_parser_reads_arc_length_carrier() {
         tiny
     );
 
-    tiny_full[70..78].copy_from_slice(&1e-10_f64.to_le_bytes());
+    tiny_full[70..78].copy_from_slice(&NEAR_ZERO_ARC_SPAN.to_le_bytes());
+    assert_eq!(
+        crate::families::b2::records::b2_cylinders(&tiny_full).len(),
+        1
+    );
+    tiny_full[70..78].copy_from_slice(&1e-4_f64.to_le_bytes());
     assert!(crate::families::b2::records::b2_cylinders(&tiny_full).is_empty());
 }
 
@@ -570,4 +579,21 @@ fn b2_nurbs_curve_parser_rejects_nonfinite_knots_poles_and_weights() {
     let mut infinite_weight = b2_nurbs_curve_stream([1.0, 0.72, 1.31, 0.93]);
     infinite_weight[121..129].copy_from_slice(&f64::INFINITY.to_le_bytes());
     assert!(parsed_b2_nurbs_curves(&infinite_weight).is_empty());
+}
+
+#[test]
+fn cylinder_circumference_tolerance_is_an_absolute_length() {
+    let large_radius = 1.0e9;
+    let outside = [0.0, std::f64::consts::TAU * large_radius + 0.25];
+    assert!(!crate::families::b2::records::circle_range_is_full_turn(
+        large_radius,
+        outside
+    ));
+    assert!(!crate::families::b2::records::circle_range_is_within_full_turn(large_radius, outside));
+    let small_radius = 0.001;
+    let inside = [0.0, std::f64::consts::TAU * small_radius + 0.000_000_5];
+    assert!(crate::families::b2::records::circle_range_is_full_turn(
+        small_radius,
+        inside
+    ));
 }

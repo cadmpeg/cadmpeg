@@ -1195,3 +1195,7 @@ fn container_framing_misses_and_text_copies_refuse_work() {
         |ctx| super::scan_bytes(ctx, bytes.as_slice()),
     );
 }
+
+mod unit_selection;
+
+mod work_admission;

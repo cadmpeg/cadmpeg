@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Native assembly joint payloads and wire admission.
 
+use cadmpeg_ir::ids::Identity;
+
 use super::frame::FiniteFrame;
 use super::LinkTarget;
 use cadmpeg_core::decode::DecodeContext;
@@ -161,9 +163,9 @@ impl JointParameters {
 #[serde(try_from = "JointRecordWire")]
 pub(crate) struct JointRecord {
     /// Stable joint identity.
-    pub(crate) id: String,
+    id: Identity,
     /// Owning application object.
-    pub(crate) object: String,
+    object: Identity,
     /// Grounded object or paired connectors.
     pub(crate) body: JointBody,
     /// Joint scalar, limit, detach, enable, and suppression properties.
@@ -200,6 +202,18 @@ pub(crate) struct JointConnectorRecord {
     pub(crate) offset: FiniteFrame,
 }
 
+fn admit_joint_identities(id: String, object: String) -> Result<(Identity, Identity), String> {
+    let id = Identity::new(id).map_err(|_| "joint id is invalid".to_owned())?;
+    let object = Identity::new(object).map_err(|_| "joint object is invalid".to_owned())?;
+    if !id.as_str().starts_with("fcstd:native:joint#") {
+        return Err("joint id must name an FCStd native joint".to_owned());
+    }
+    if !object.as_str().starts_with("fcstd:native:object#") {
+        return Err("joint object must name an FCStd native object".to_owned());
+    }
+    Ok((id, object))
+}
+
 impl JointRecord {
     pub(crate) fn try_new(
         ctx: &DecodeContext<'_>,
@@ -208,13 +222,31 @@ impl JointRecord {
         body: JointBody,
         parameters: BTreeMap<String, String>,
     ) -> Result<Self, CodecError> {
-        let parameters = JointParameters::from_raw_charged(ctx, parameters, &id)?;
+        // Identity admission scans separators, key bytes, whitespace and namespace.
+        for value in [&id, &object] {
+            let work = cadmpeg_core::decode::u64_from_index(value.len())
+                .checked_mul(4)
+                .ok_or_else(|| {
+                    ctx.refuse_codec_limit("FCStd joint identity admission", u64::MAX, u64::MAX)
+                })?;
+            ctx.charge_work(work, "FCStd joint identity admission")?;
+        }
+        let (id, object) = admit_joint_identities(id, object).map_err(CodecError::Malformed)?;
+        let parameters = JointParameters::from_raw_charged(ctx, parameters, id.as_str())?;
         Ok(Self {
             id,
             object,
             body,
             parameters,
         })
+    }
+
+    pub(crate) fn id(&self) -> &str {
+        self.id.as_str()
+    }
+
+    pub(crate) fn object(&self) -> &str {
+        self.object.as_str()
     }
 
     pub(crate) fn parameters(&self) -> &JointParameters {
@@ -349,8 +381,8 @@ struct JointRecordOut<'a> {
 impl Serialize for JointRecord {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         JointRecordOut {
-            id: &self.id,
-            object: &self.object,
+            id: self.id(),
+            object: self.object(),
             kind: self.kind(),
             references: JointReferencesOut(&self.body),
             placements: JointPlacementsOut(&self.body),
@@ -365,7 +397,8 @@ impl TryFrom<JointRecordWire> for JointRecord {
     type Error = String;
 
     fn try_from(wire: JointRecordWire) -> Result<Self, Self::Error> {
-        let parameters = JointParameters::from_raw(wire.parameters, &wire.id)?;
+        let (id, object) = admit_joint_identities(wire.id, wire.object)?;
+        let parameters = JointParameters::from_raw(wire.parameters, id.as_str())?;
         let body = if wire.kind == "grounded" {
             let [placement] = <[_; 1]>::try_from(wire.placements)
                 .map_err(|_| "grounded joint must carry exactly one placement".to_owned())?;
@@ -419,8 +452,8 @@ impl TryFrom<JointRecordWire> for JointRecord {
             }
         };
         Ok(Self {
-            id: wire.id,
-            object: wire.object,
+            id,
+            object,
             body,
             parameters,
         })
@@ -436,6 +469,63 @@ mod tests {
     use super::{JointBody, JointConnectorRecord, JointRecord, JointRecordWire, PairedJointFamily};
 
     #[test]
+    fn joint_identity_admission_rejects_invalid_joint_and_object_ids() {
+        for (id, object) in [
+            ("", "fcstd:native:object#Joint"),
+            ("fcstd:native:joint#Joint", ""),
+            ("fcstd:native:object#Joint", "fcstd:native:object#Joint"),
+            ("fcstd:native:joint#Joint", "fcstd:native:joint#Joint"),
+            ("fcstd:native:joint#Joint", "fcstd:native:object#has space"),
+        ] {
+            crate::test_support::with_service_context(&[], |ctx| {
+                assert!(matches!(
+                    JointRecord::try_new(
+                        ctx,
+                        id.to_owned(),
+                        object.to_owned(),
+                        JointBody::Grounded {
+                            reference: None,
+                            placement: super::FiniteFrame::default()
+                        },
+                        BTreeMap::new()
+                    ),
+                    Err(cadmpeg_core::CodecError::Malformed(_))
+                ));
+            });
+            let wire = serde_json::json!({"id": id, "object": object, "kind": "grounded", "references": [], "placements": [super::FiniteFrame::default().rows()], "offsets": [], "parameters": {}});
+            assert!(serde_json::from_value::<JointRecord>(wire).is_err());
+        }
+    }
+
+    #[test]
+    fn joint_identity_grammar_scans_refuse_at_small_work_allowance() {
+        crate::test_support::with_service_context(&[], |ctx| {
+            ctx.charge_work(
+                ctx.policy().limits.max_work_units - 60,
+                "reserve joint identity work",
+            )
+            .expect("leave a small allowance");
+            let error = JointRecord::try_new(
+                ctx,
+                "fcstd:native:joint#Joint".to_owned(),
+                "fcstd:native:object#Joint".to_owned(),
+                JointBody::Grounded {
+                    reference: None,
+                    placement: super::FiniteFrame::default(),
+                },
+                BTreeMap::new(),
+            )
+            .expect_err("grammar scans exceed allowance");
+            assert!(
+                matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.operation == "FCStd joint identity admission"
+                    && limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+                    && Some(limit) == ctx.resource_refusal())
+            );
+        });
+    }
+
+    #[test]
     fn checked_joint_parameter_map_refuses_at_caller_limit() {
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let mut policy = cadmpeg_core::decode::DecodePolicy::service();
@@ -444,8 +534,8 @@ mod tests {
             .expect("empty root is within policy");
         let error = JointRecord::try_new(
             &ctx,
-            "joint".into(),
-            "object".into(),
+            "fcstd:native:joint#Joint".into(),
+            "fcstd:native:object#Joint".into(),
             JointBody::Grounded {
                 reference: None,
                 placement: super::FiniteFrame::default(),
@@ -470,8 +560,8 @@ mod tests {
                 .expect("empty root is within policy");
         let message = JointRecord::try_new(
             &admitted,
-            "joint".into(),
-            "object".into(),
+            "fcstd:native:joint#Joint".into(),
+            "fcstd:native:object#Joint".into(),
             JointBody::Grounded {
                 reference: None,
                 placement: super::FiniteFrame::default(),
@@ -482,7 +572,7 @@ mod tests {
         .to_string();
         assert_eq!(
             message,
-            "malformed container: joint joint: joint parameter Angle has an invalid value \"NaN\""
+            "malformed container: joint fcstd:native:joint#Joint: joint parameter Angle has an invalid value \"NaN\""
         );
         let mut policy = cadmpeg_core::decode::DecodePolicy::service();
         policy.limits.max_retained_bytes = 0;
@@ -490,8 +580,8 @@ mod tests {
             .expect("empty root is within policy");
         let error = JointRecord::try_new(
             &ctx,
-            "joint".into(),
-            "object".into(),
+            "fcstd:native:joint#Joint".into(),
+            "fcstd:native:object#Joint".into(),
             JointBody::Grounded {
                 reference: None,
                 placement: super::FiniteFrame::default(),
@@ -516,8 +606,8 @@ mod tests {
                         continue;
                     }
                     let mut wire = JointRecordWire {
-                        id: "joint".into(),
-                        object: "object".into(),
+                        id: "fcstd:native:joint#Joint".into(),
+                        object: "fcstd:native:object#Joint".into(),
                         kind: kind.into(),
                         references: vec![],
                         placements: vec![
@@ -547,7 +637,7 @@ mod tests {
     #[test]
     fn missing_first_reference_keeps_second_wire_position() {
         let identity = cadmpeg_ir::transform::Transform::identity().rows();
-        let wire = serde_json::json!({"id":"joint", "object":"object", "kind":"Fixed",
+        let wire = serde_json::json!({"id":"fcstd:native:joint#Joint", "object":"fcstd:native:object#Joint", "kind":"Fixed",
             "references":[null, {"document":null,"document_attribute":null,"object":"second","subelements":[]}],
             "placements":[identity,identity], "offsets":[identity,identity], "parameters":{}});
         let record = serde_json::from_value::<JointRecord>(wire.clone()).unwrap();
@@ -584,8 +674,8 @@ mod tests {
             .expect("empty root is within policy");
         let record = JointRecord::try_new(
             &ctx,
-            "joint".into(),
-            "object".into(),
+            "fcstd:native:joint#Joint".into(),
+            "fcstd:native:object#Joint".into(),
             JointBody::Pair {
                 kind: PairedJointFamily::new("CustomCoupling".into()).unwrap(),
                 connectors: Box::new([connector.clone(), connector]),
@@ -614,7 +704,7 @@ mod tests {
             "object": "fcstd:native:object#Part", "subelements": ["Face1"]
         });
         let wire = serde_json::json!({
-            "id": "joint", "object": "object", "kind": "grounded",
+            "id": "fcstd:native:joint#Joint", "object": "fcstd:native:object#Joint", "kind": "grounded",
             "references": [reference],
             "placements": [identity],
             "offsets": [],
@@ -636,8 +726,8 @@ mod tests {
             let parameters =
                 serde_json::Map::from_iter([(name.to_owned(), serde_json::json!(value))]);
             let wire = serde_json::json!({
-                "id": "joint",
-                "object": "object",
+                "id": "fcstd:native:joint#Joint",
+                "object": "fcstd:native:object#Joint",
                 "kind": "Fixed",
                 "references": [null, null],
                 "placements": [identity, identity],
@@ -652,8 +742,8 @@ mod tests {
             let parameters =
                 serde_json::Map::from_iter([(name.to_owned(), serde_json::json!(value))]);
             let wire = serde_json::json!({
-                "id": "joint",
-                "object": "object",
+                "id": "fcstd:native:joint#Joint",
+                "object": "fcstd:native:object#Joint",
                 "kind": "Fixed",
                 "references": [null, null],
                 "placements": [identity, identity],
@@ -684,8 +774,8 @@ mod tests {
             ("maybe", false),
         ] {
             let wire = serde_json::json!({
-                "id": "joint",
-                "object": "object",
+                "id": "fcstd:native:joint#Joint",
+                "object": "fcstd:native:object#Joint",
                 "kind": "Fixed",
                 "references": [null, null],
                 "placements": [identity, identity],
@@ -704,8 +794,8 @@ mod tests {
     fn unknown_parameter_names_retain_their_wire_text() {
         let identity = cadmpeg_ir::transform::Transform::identity().rows();
         let wire = serde_json::json!({
-            "id": "joint",
-            "object": "object",
+            "id": "fcstd:native:joint#Joint",
+            "object": "fcstd:native:object#Joint",
             "kind": "Fixed",
             "references": [null, null],
             "placements": [identity, identity],

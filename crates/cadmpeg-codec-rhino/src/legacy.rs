@@ -3079,7 +3079,10 @@ fn evaluate_nurbs(
 
 /// Decodes the V1 flat geometry stream.
 pub(crate) fn decode_v1(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<Decoded, CodecError> {
-    let header = parse_header(data).map_err(|error| malformed(&error))?;
+    let header = parse_header(ctx, data).map_err(|error| match error {
+        FramingError::Resource(limit) => CodecError::ResourceLimit(limit),
+        other => malformed(&other),
+    })?;
     if header.archive_version != ArchiveVersion::V1 {
         return Err(CodecError::Malformed(
             "legacy decoder requires V1".to_string(),
@@ -4649,7 +4652,8 @@ mod tests {
     #[test]
     fn v1_brep_trim_paths_refuse_materialized_limit_before_reserve() {
         let data = legacy_face_archive();
-        let header = super::parse_header(&data).expect("valid V1 header");
+        let header = super::parse_header(&cadmpeg_test_support::service_decode_context(), &data)
+            .expect("valid V1 header");
         let comment = chunk_at(
             &data,
             header.start_offset + crate::layout::file_header::LEN,
@@ -4715,7 +4719,8 @@ mod tests {
     #[test]
     fn v1_brep_group_maps_refuse_materialized_limit_before_insert() {
         let data = legacy_face_archive();
-        let header = super::parse_header(&data).expect("valid V1 header");
+        let header = super::parse_header(&cadmpeg_test_support::service_decode_context(), &data)
+            .expect("valid V1 header");
         let comment = chunk_at(
             &data,
             header.start_offset + crate::layout::file_header::LEN,

@@ -657,10 +657,14 @@ fn bind_complete_record_tables(
     let Some(start) = cadmpeg_asm::asm_header::record_stream_start(bytes) else {
         return Ok(false);
     };
-    let active_limit = cadmpeg_asm::asm_header::solved_record_limit(bytes).unwrap_or(bytes.len());
+    let active_limit =
+        cadmpeg_asm::asm_header::solved_record_limit(ctx, bytes)?.unwrap_or(bytes.len());
     let framed = match cadmpeg_asm::sab::frame(ctx, bytes, start, active_limit, width, None) {
         Ok(records) => records,
-        Err(cadmpeg_asm::stream_error::StreamFailure::Resource(error)) => return Err(error),
+        Err(cadmpeg_asm::stream_error::StreamFailure::Resource(error)) => return Err(error.into()),
+        Err(cadmpeg_asm::stream_error::StreamFailure::Operation(error)) => {
+            return Err(error.into_codec_error())
+        }
         Err(_) => return Ok(false),
     };
     admit_complete_table_binding_budget(
@@ -699,7 +703,12 @@ fn bind_complete_record_tables(
         }
         let mut framed = match cadmpeg_asm::sab::frame(ctx, bytes, offset, limit, width, None) {
             Ok(records) => records,
-            Err(cadmpeg_asm::stream_error::StreamFailure::Resource(error)) => return Err(error),
+            Err(cadmpeg_asm::stream_error::StreamFailure::Resource(error)) => {
+                return Err(error.into())
+            }
+            Err(cadmpeg_asm::stream_error::StreamFailure::Operation(error)) => {
+                return Err(error.into_codec_error())
+            }
             Err(_) => return Ok(false),
         };
         if framed.len() != 1 {
@@ -4655,7 +4664,7 @@ pub(crate) fn bind_scope_histories(
             .map(|candidate| candidate.record_index)
             .min();
         let mut output_bindings = body_bindings.iter().filter(|binding| {
-            crate::ids::same_native_occurrence(&binding.id, &scope.id)
+            crate::ids::same_native_occurrence(binding.id(), &scope.id)
                 && binding.entity_suffix > u64::from(scope.record_index)
                 && next_scope_record_index
                     .is_none_or(|next| binding.entity_suffix < u64::from(next))
@@ -4699,7 +4708,7 @@ pub(crate) fn bind_scope_histories(
         };
         let mut referenced_histories = construction.body_reference_records().filter_map(|suffix| {
             let mut bindings = body_bindings.iter().filter(|binding| {
-                crate::ids::same_native_occurrence(&binding.id, &scope.id)
+                crate::ids::same_native_occurrence(binding.id(), &scope.id)
                     && binding.entity_suffix == u64::from(suffix)
             });
             let binding = bindings.next()?;
@@ -9319,7 +9328,10 @@ fn decode_history_records(
             }
             Ok(decoded)
         }
-        Err(cadmpeg_asm::stream_error::StreamFailure::Resource(error)) => Err(error),
+        Err(cadmpeg_asm::stream_error::StreamFailure::Resource(error)) => Err(error.into()),
+        Err(cadmpeg_asm::stream_error::StreamFailure::Operation(error)) => {
+            Err(error.into_codec_error())
+        }
         Err(error) => {
             let raw_bytes =
                 ctx.copy_retained(&bytes[start..limit], "retain opaque F3D history record")?;

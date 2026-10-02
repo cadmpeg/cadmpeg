@@ -370,8 +370,8 @@ fn transfer_schema_one(
         object_storage.with_storage(|| {
             ctx.insert_hash_map(
                 &mut objects_by_name,
-                object.name.as_str(),
-                object.id.as_str(),
+                object.name().as_str(),
+                object.id().as_str(),
                 "FCStd GUI object names",
             )
         })?;

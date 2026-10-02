@@ -2,8 +2,6 @@
 //! Typed `PmDc` feature records and feature-list terminators.
 use cadmpeg_ir::features::{PlanarProfileRef, ProfileRef};
 
-use crate::pmdc::unique_by;
-
 use std::collections::{BTreeMap, HashMap, HashSet};
 
 use cadmpeg_core::decode::{DecodeContext, View};
@@ -515,7 +513,7 @@ pub(crate) fn inventory(
                 )?;
                 inventory.issues.push(RecordIssue {
                     family: RecordIssueFamily::Feature {
-                        type_id: type_id_string(record.type_id),
+                        type_id: crate::record_identity::RecordTypeId::from_bytes(record.type_id),
                     },
                     segment_token: segment.pair.token.key().clone(),
                     record_ordinal: record.ordinal,
@@ -1066,13 +1064,13 @@ impl FeatureFamily {
 }
 
 struct ProjectionIndex<'a> {
-    properties: HashMap<(&'a str, u32), &'a PmDcFeatureProperty>,
-    parameters: HashMap<(&'a str, u32), &'a crate::design::PmDcParameter>,
+    properties: HashMap<(&'a str, u32), Option<&'a PmDcFeatureProperty>>,
+    parameters: HashMap<(&'a str, u32), Option<&'a crate::design::PmDcParameter>>,
     parameter_values: HashMap<&'a str, &'a ParameterValue>,
-    sketches: HashMap<(&'a str, u32), &'a crate::sketch::PmDcSketch>,
+    sketches: HashMap<(&'a str, u32), Option<&'a crate::sketch::PmDcSketch>>,
     sketch_ids: HashMap<&'a str, cadmpeg_ir::sketches::SketchId>,
-    directions: HashMap<(&'a str, u32), &'a crate::sketch::PmDcDirection>,
-    transforms: HashMap<(&'a str, u32), &'a crate::sketch::PmDcTransform>,
+    directions: HashMap<(&'a str, u32), Option<&'a crate::sketch::PmDcDirection>>,
+    transforms: HashMap<(&'a str, u32), Option<&'a crate::sketch::PmDcTransform>>,
     entity_style_links: HashSet<(&'a str, u32)>,
 }
 
@@ -1112,29 +1110,114 @@ pub(crate) fn project(
         });
     }
 
+    let (unique_properties, _properties_storage) = ctx.unique_index(
+        inventory.properties.iter().map(|record| {
+            (
+                {
+                    (
+                        record.identity.segment_token.as_str(),
+                        record.identity.record_ordinal,
+                    )
+                },
+                record,
+            )
+        }),
+        |key| {
+            cadmpeg_core::decode::u64_from_index(key.0.len())
+                .checked_add(5)
+                .ok_or_else(|| {
+                    ctx.refuse_codec_limit("index Inventor feature properties", 0, u64::MAX)
+                })
+        },
+        "index Inventor feature properties",
+    )?;
+    let (unique_parameters, _parameters_storage) = ctx.unique_index(
+        design.parameters.iter().map(|record| {
+            (
+                {
+                    (
+                        record.identity.segment_token.as_str(),
+                        record.identity.record_ordinal,
+                    )
+                },
+                record,
+            )
+        }),
+        |key| {
+            cadmpeg_core::decode::u64_from_index(key.0.len())
+                .checked_add(5)
+                .ok_or_else(|| {
+                    ctx.refuse_codec_limit("index Inventor feature parameters", 0, u64::MAX)
+                })
+        },
+        "index Inventor feature parameters",
+    )?;
+    let (unique_sketches, _sketches_storage) = ctx.unique_index(
+        sketch.sketches.iter().map(|record| {
+            (
+                {
+                    (
+                        record.identity.segment_token.as_str(),
+                        record.identity.record_ordinal,
+                    )
+                },
+                record,
+            )
+        }),
+        |key| {
+            cadmpeg_core::decode::u64_from_index(key.0.len())
+                .checked_add(5)
+                .ok_or_else(|| {
+                    ctx.refuse_codec_limit("index Inventor feature sketches", 0, u64::MAX)
+                })
+        },
+        "index Inventor feature sketches",
+    )?;
+    let (unique_directions, _directions_storage) = ctx.unique_index(
+        sketch.directions.iter().map(|record| {
+            (
+                {
+                    (
+                        record.identity.segment_token.as_str(),
+                        record.identity.record_ordinal,
+                    )
+                },
+                record,
+            )
+        }),
+        |key| {
+            cadmpeg_core::decode::u64_from_index(key.0.len())
+                .checked_add(5)
+                .ok_or_else(|| {
+                    ctx.refuse_codec_limit("index Inventor feature directions", 0, u64::MAX)
+                })
+        },
+        "index Inventor feature directions",
+    )?;
+    let (unique_transforms, _transforms_storage) = ctx.unique_index(
+        sketch.transforms.iter().map(|record| {
+            (
+                {
+                    (
+                        record.identity.segment_token.as_str(),
+                        record.identity.record_ordinal,
+                    )
+                },
+                record,
+            )
+        }),
+        |key| {
+            cadmpeg_core::decode::u64_from_index(key.0.len())
+                .checked_add(5)
+                .ok_or_else(|| {
+                    ctx.refuse_codec_limit("index Inventor feature transforms", 0, u64::MAX)
+                })
+        },
+        "index Inventor feature transforms",
+    )?;
     let index = ProjectionIndex {
-        properties: unique_by(
-            ctx,
-            &inventory.properties,
-            "index Inventor feature properties",
-            |record| {
-                (
-                    record.identity.segment_token.as_str(),
-                    record.identity.record_ordinal,
-                )
-            },
-        )?,
-        parameters: unique_by(
-            ctx,
-            &design.parameters,
-            "index Inventor feature parameters",
-            |record| {
-                (
-                    record.identity.segment_token.as_str(),
-                    record.identity.record_ordinal,
-                )
-            },
-        )?,
+        properties: unique_properties,
+        parameters: unique_parameters,
         parameter_values: {
             ctx.charge_collection_items(
                 cadmpeg_core::decode::u64_from_index(
@@ -1154,17 +1237,7 @@ pub(crate) fn project(
                 })
                 .collect()
         },
-        sketches: unique_by(
-            ctx,
-            &sketch.sketches,
-            "index Inventor feature sketches",
-            |record| {
-                (
-                    record.identity.segment_token.as_str(),
-                    record.identity.record_ordinal,
-                )
-            },
-        )?,
+        sketches: unique_sketches,
         sketch_ids: {
             let mut ids = HashMap::new();
             for sketch in sketches {
@@ -1177,28 +1250,8 @@ pub(crate) fn project(
             }
             ids
         },
-        directions: unique_by(
-            ctx,
-            &sketch.directions,
-            "index Inventor feature directions",
-            |record| {
-                (
-                    record.identity.segment_token.as_str(),
-                    record.identity.record_ordinal,
-                )
-            },
-        )?,
-        transforms: unique_by(
-            ctx,
-            &sketch.transforms,
-            "index Inventor feature transforms",
-            |record| {
-                (
-                    record.identity.segment_token.as_str(),
-                    record.identity.record_ordinal,
-                )
-            },
-        )?,
+        directions: unique_directions,
+        transforms: unique_transforms,
         entity_style_links: {
             let mut links = HashSet::new();
             for record in &inventory.entity_style_links {
@@ -1214,23 +1267,34 @@ pub(crate) fn project(
     // The label owner is a one-based reference. Keying on the optional record
     // ordinal keeps the null reference out of the ordinal space, so a label
     // with no owner never claims the feature at ordinal 0.
-    let labels = unique_by(
-        ctx,
-        &inventory.labels,
-        "index Inventor feature labels",
-        |label| {
+    let (labels, _labels_storage) = ctx.unique_index(
+        inventory.labels.iter().map(|label| {
             (
-                label.identity.segment_token.as_str(),
-                label.header.owner.record_ordinal(),
+                {
+                    (
+                        label.identity.segment_token.as_str(),
+                        label.header.owner.record_ordinal(),
+                    )
+                },
+                label,
             )
+        }),
+        |key| {
+            cadmpeg_core::decode::u64_from_index(key.0.len())
+                .checked_add(5)
+                .ok_or_else(|| ctx.refuse_codec_limit("index Inventor feature labels", 0, u64::MAX))
         },
+        "index Inventor feature labels",
     )?;
     let mut projected = Vec::new();
     for feature in &inventory.features {
-        let Some(label) = labels.get(&(
-            feature.identity.segment_token.as_str(),
-            Some(feature.identity.record_ordinal),
-        )) else {
+        let Some(label) = labels
+            .get(&(
+                feature.identity.segment_token.as_str(),
+                Some(feature.identity.record_ordinal),
+            ))
+            .and_then(Option::as_ref)
+        else {
             continue;
         };
         let Some(family) = FeatureFamily::from_class_id(label.class_id()) else {
@@ -1359,10 +1423,13 @@ fn project_extrusion(
         return None;
     }
     let sketch_reference = label.participants.references().first()?;
-    let sketch = index.sketches.get(&(
-        source.identity.segment_token.as_str(),
-        sketch_reference.index().checked_sub(1)?,
-    ))?;
+    let sketch = index
+        .sketches
+        .get(&(
+            source.identity.segment_token.as_str(),
+            sketch_reference.index().checked_sub(1)?,
+        ))
+        .and_then(Option::as_ref)?;
     let sketch_native_reservation = ctx.reserve_scoped(
         cadmpeg_core::decode::u64_from_index(sketch.id_len()?),
         "resolve Inventor extrusion sketch native id",
@@ -1723,10 +1790,13 @@ fn project_hole(
         _ => return None,
     };
     let transform_reference = source.properties.references().get(8)?;
-    let transform = index.transforms.get(&(
-        source.identity.segment_token.as_str(),
-        transform_reference.index().checked_sub(1)?,
-    ))?;
+    let transform = index
+        .transforms
+        .get(&(
+            source.identity.segment_token.as_str(),
+            transform_reference.index().checked_sub(1)?,
+        ))
+        .and_then(Option::as_ref)?;
     if transform.matrix.rows()[3]
         .iter()
         .zip([0.0, 0.0, 0.0, 1.0])
@@ -1983,6 +2053,7 @@ fn resolve_property<'a>(
     index
         .properties
         .get(&(token, reference.checked_sub(1)?))
+        .and_then(Option::as_ref)
         .copied()
 }
 
@@ -2043,6 +2114,7 @@ fn resolve_direction<'a>(
             source.identity.segment_token.as_str(),
             reference.index().checked_sub(1)?,
         ))
+        .and_then(Option::as_ref)
         .copied()
 }
 
@@ -2059,7 +2131,10 @@ fn length_parameter(
 }
 
 fn length_reference(token: &str, reference: u32, index: &ProjectionIndex<'_>) -> Option<Length> {
-    let parameter = index.parameters.get(&(token, reference.checked_sub(1)?))?;
+    let parameter = index
+        .parameters
+        .get(&(token, reference.checked_sub(1)?))
+        .and_then(Option::as_ref)?;
     match index.parameter_values.get(parameter.id().as_str())? {
         ParameterValue::Length(value) if value.get() >= 0.0 => Some(*value),
         _ => None,
@@ -2072,10 +2147,13 @@ fn angle_parameter(
     index: &ProjectionIndex<'_>,
 ) -> Option<Angle> {
     let reference = source.properties.references().get(slot)?;
-    let parameter = index.parameters.get(&(
-        source.identity.segment_token.as_str(),
-        reference.index().checked_sub(1)?,
-    ))?;
+    let parameter = index
+        .parameters
+        .get(&(
+            source.identity.segment_token.as_str(),
+            reference.index().checked_sub(1)?,
+        ))
+        .and_then(Option::as_ref)?;
     match index.parameter_values.get(parameter.id().as_str())? {
         ParameterValue::Angle(value) => Some(*value),
         _ => None,
@@ -2754,7 +2832,7 @@ mod tests {
                             record.identity.segment_token.as_str(),
                             record.identity.record_ordinal,
                         ),
-                        record,
+                        Some(record),
                     )
                 })
                 .collect(),
@@ -2766,7 +2844,7 @@ mod tests {
                             record.identity.segment_token.as_str(),
                             record.identity.record_ordinal,
                         ),
-                        record,
+                        Some(record),
                     )
                 })
                 .collect(),
@@ -2784,7 +2862,7 @@ mod tests {
                             record.identity.segment_token.as_str(),
                             record.identity.record_ordinal,
                         ),
-                        record,
+                        Some(record),
                     )
                 })
                 .collect(),
@@ -2805,7 +2883,7 @@ mod tests {
                             record.identity.segment_token.as_str(),
                             record.identity.record_ordinal,
                         ),
-                        record,
+                        Some(record),
                     )
                 })
                 .collect(),
@@ -2817,7 +2895,7 @@ mod tests {
                             record.identity.segment_token.as_str(),
                             record.identity.record_ordinal,
                         ),
-                        record,
+                        Some(record),
                     )
                 })
                 .collect(),

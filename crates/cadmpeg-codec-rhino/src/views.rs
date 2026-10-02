@@ -39,6 +39,7 @@ const VIEW_POSITION: u32 = 0x2000_8b3b;
 const VIEW_ATTRIBUTES: u32 = 0x2000_8c3b;
 const VIEW_VIEWPORT_USERDATA: u32 = 0x2000_8d3b;
 const CLASS_USERDATA: u32 = 0x0002_7ffd;
+const VIEWPORT_USERDATA_CHILD_CAP: usize = 1 << 20;
 
 fn codec_error(error: FramingError) -> CodecError {
     match error {
@@ -1036,16 +1037,17 @@ fn parse_attributes(
     Ok((result, checksum_children))
 }
 
-fn view_child_checksum_warning<I>(
+fn view_child_checksum_warning<I, R>(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     data: &[u8],
     child: &crate::chunks::Chunk,
     direct_ranges: I,
 ) -> Result<Option<String>, FramingError>
 where
-    I: Clone + IntoIterator,
-    I::Item: std::borrow::Borrow<std::ops::Range<usize>>,
+    I: Clone + IntoIterator<Item = Result<R, FramingError>>,
+    R: std::borrow::Borrow<std::ops::Range<usize>>,
 {
-    match verify_checksum_ranges(data, child, direct_ranges)? {
+    match verify_checksum_ranges(ctx, data, child, direct_ranges)? {
         ChecksumStatus::Mismatch { expected, actual } => Ok(Some(format!(
             "CRC mismatch at offset {} for typecode {:#x}: expected {expected:#x}, got {actual:#x}",
             child.header_start, child.typecode
@@ -1055,19 +1057,21 @@ where
 }
 
 fn direct_view_child_checksum_warning(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     data: &[u8],
     child: &crate::chunks::Chunk,
 ) -> Result<Option<String>, FramingError> {
-    view_child_checksum_warning(data, child, std::slice::from_ref(&child.body()))
+    view_child_checksum_warning(ctx, data, child, std::iter::once(Ok(child.body())))
 }
 
 fn view_child_checksum_warning_excluding(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     data: &[u8],
     child: &crate::chunks::Chunk,
     nested_children: &[std::ops::Range<usize>],
 ) -> Result<Option<String>, FramingError> {
-    let direct = direct_checksum_ranges(&child.body(), nested_children)?;
-    view_child_checksum_warning(data, child, &direct)
+    let direct = direct_checksum_ranges(ctx, &child.body(), nested_children)?;
+    view_child_checksum_warning(ctx, data, child, &direct)
 }
 
 fn scan_viewport_userdata(
@@ -1089,11 +1093,14 @@ fn scan_viewport_userdata(
         }
         let start = reader.position();
         let child = chunk_at(data, start, reader.end(), archive, false)?;
-        if children.len() >= 1 << 20 {
-            return Err(FramingError::InvalidLength {
-                offset: start,
-                value: i128::from(cadmpeg_core::decode::u64_from_index(children.len())),
-            });
+        if children.len() >= VIEWPORT_USERDATA_CHILD_CAP {
+            return Err(ctx
+                .refuse_codec_limit(
+                    "Rhino viewport userdata children",
+                    cadmpeg_core::decode::u64_from_index(VIEWPORT_USERDATA_CHILD_CAP),
+                    cadmpeg_core::decode::u64_from_index(VIEWPORT_USERDATA_CHILD_CAP + 1),
+                )
+                .into());
         }
         ctx.reserve_vec(&mut children, 1, "Rhino viewport userdata children")
             .map_err(crate::chunks::FramingError::from)?;
@@ -1190,7 +1197,7 @@ fn parse_view(
             child.typecode,
             VIEW_VIEWPORT | VIEW_CPLANE | VIEW_TARGET | VIEW_POSITION | VIEW_NAME | VIEW_WALLPAPER
         ) {
-            if let Some(warning) = direct_view_child_checksum_warning(data, &child)? {
+            if let Some(warning) = direct_view_child_checksum_warning(ctx, data, &child)? {
                 push_view_loss(
                     ctx,
                     losses,
@@ -1236,7 +1243,7 @@ fn parse_view(
                     parse_trace_image(ctx, data, child.body().clone(), archive, scale, losses)?;
                 let nested_children = file_reference_range.as_slice();
                 if let Some(warning) =
-                    view_child_checksum_warning_excluding(data, &child, nested_children)?
+                    view_child_checksum_warning_excluding(ctx, data, &child, nested_children)?
                 {
                     push_view_loss(
                         ctx,
@@ -1265,7 +1272,7 @@ fn parse_view(
                     parse_wallpaper(ctx, data, child.body().clone(), archive, losses)?;
                 let nested_children = file_reference_range.as_slice();
                 if let Some(warning) =
-                    view_child_checksum_warning_excluding(data, &child, nested_children)?
+                    view_child_checksum_warning_excluding(ctx, data, &child, nested_children)?
                 {
                     push_view_loss(
                         ctx,
@@ -1309,7 +1316,7 @@ fn parse_view(
                 let (attributes, nested_children) =
                     parse_attributes(ctx, data, child.body().clone(), archive, scale)?;
                 if let Some(warning) =
-                    view_child_checksum_warning_excluding(data, &child, &nested_children)?
+                    view_child_checksum_warning_excluding(ctx, data, &child, &nested_children)?
                 {
                     push_view_loss(
                         ctx,
@@ -1338,9 +1345,12 @@ fn parse_view(
                 } else {
                     match scan_viewport_userdata(ctx, data, child.body().clone(), archive, losses) {
                         Ok(scan) => {
-                            if let Some(warning) =
-                                view_child_checksum_warning_excluding(data, &child, &scan.children)?
-                            {
+                            if let Some(warning) = view_child_checksum_warning_excluding(
+                                ctx,
+                                data,
+                                &child,
+                                &scan.children,
+                            )? {
                                 push_view_loss(
                                     ctx,
                                     losses,
@@ -1419,8 +1429,8 @@ fn parse_view(
             "view is missing its end marker",
         ));
     }
-    let direct = direct_checksum_ranges(&record.body(), &checksum_children)?;
-    let checksum_warning = match verify_checksum_ranges(data, record, &direct)? {
+    let direct = direct_checksum_ranges(ctx, &record.body(), &checksum_children)?;
+    let checksum_warning = match verify_checksum_ranges(ctx, data, record, &direct)? {
         ChecksumStatus::Mismatch { expected, actual } => Some(format!(
             "CRC mismatch at offset {} for typecode {:#x}: expected {expected:#x}, got {actual:#x}",
             record.header_start, record.typecode
@@ -2712,6 +2722,39 @@ mod tests {
                 .expect("class end exceeds the collection limit")
         });
         assert_resource(&error, "Rhino viewport userdata children");
+    }
+
+    #[test]
+    fn viewport_userdata_children_ceiling_is_a_resource_refusal() {
+        let archive = ArchiveVersion::V8;
+        let cap = super::VIEWPORT_USERDATA_CHILD_CAP;
+        let child = short_chunk(archive, crate::chunks::TCODE_SHORT | 7, 0);
+        let mut bytes = child.repeat(cap);
+        bytes.extend(short_chunk(archive, super::TCODE_CLASS_END, 0));
+        with_collection_limit(
+            &bytes,
+            u64::try_from(cap + 1).expect("fixture count fits"),
+            |ctx| {
+                let mut losses = Vec::new();
+                let error = super::scan_viewport_userdata(
+                    ctx,
+                    &bytes,
+                    0..bytes.len(),
+                    archive,
+                    &mut losses,
+                )
+                .err()
+                .expect("child ceiling refuses the class-end slot");
+                assert!(
+                    matches!(super::codec_error(error), cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.dimension == cadmpeg_core::decode::ResourceDimension::Codec("Rhino viewport userdata children")
+                    && limit.limit == u64::try_from(cap).expect("fixture count fits")
+                    && limit.used == limit.limit && limit.additional == 1
+                    && Some(limit) == ctx.resource_refusal())
+                );
+                assert!(losses.is_empty());
+            },
+        );
     }
 
     #[test]
