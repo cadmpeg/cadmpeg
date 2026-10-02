@@ -3610,13 +3610,13 @@ fn build_geometry_ir(
     assigned_tessellations.extend(remaining_assignments);
     let mut annotation_builder = AnnotationBuilder::resume(annotations);
     for id in assigned_tessellations {
-        annotation_builder.field_exactness_for_decode(
+        annotation_builder.field_exactness(
             ctx,
             id.as_str(),
             "body",
             Exactness::Derived,
         )?;
-        annotation_builder.field_exactness_for_decode(
+        annotation_builder.field_exactness(
             ctx,
             id.as_str(),
             "faces",

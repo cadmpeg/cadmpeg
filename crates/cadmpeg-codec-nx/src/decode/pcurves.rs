@@ -794,7 +794,7 @@ pub(super) fn complete_tolerant_intersection_pcurves_from_serialized_branches_fo
             }
             edge.set_param_range(Some(cadmpeg_ir::topology::ParameterInterval::from(range)));
             annotations
-                .derived_for_decode(ctx, &edge.id, "param_range")
+                .derived(ctx, &edge.id, "param_range")
                 .map_err(cadmpeg_core::CodecError::from)?;
         }
     }
@@ -1946,7 +1946,7 @@ pub(super) fn complete_exact_boundary_intersection_pcurves_with_budget(
         if let Some(edge) = ir.model.edges.get_mut(*edge_index) {
             edge.set_param_range(Some(cadmpeg_ir::topology::ParameterInterval::from(range)));
             annotations
-                .derived_for_decode(ctx, &edge.id, "param_range")
+                .derived(ctx, &edge.id, "param_range")
                 .map_err(cadmpeg_core::CodecError::from)?;
         }
     }
@@ -4600,7 +4600,7 @@ pub(super) fn attach_tolerant_edge_intersections_with_budget(
         ))
         .map_err(cadmpeg_core::CodecError::malformed)?;
         annotations
-            .derived_for_decode(ctx, &edge_id, "curve")
+            .derived(ctx, &edge_id, "curve")
             .map_err(cadmpeg_core::CodecError::from)?;
         if let Some(node) = graph.get(NodeKind::Edge, xmt) {
             annotations.note_for_decode(
@@ -4619,10 +4619,10 @@ pub(super) fn attach_tolerant_edge_intersections_with_budget(
             )?;
         }
         annotations
-            .derived_for_decode(ctx, &curve_id, "geometry")
+            .derived(ctx, &curve_id, "geometry")
             .map_err(cadmpeg_core::CodecError::from)?;
         annotations
-            .derived_for_decode(ctx, &procedural_id, "definition")
+            .derived(ctx, &procedural_id, "definition")
             .map_err(cadmpeg_core::CodecError::from)?;
         ctx.reserve_vec(&mut ir.model.curves, 1, "nx tolerant edge curves")?;
         ir.model.curves.push(Curve {

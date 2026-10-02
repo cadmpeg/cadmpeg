@@ -4538,7 +4538,7 @@ fn populate_annotations(
                 Some(record.tag.as_str()),
             )?;
             for field in &record.derived_fields {
-                annotations.derived_for_decode(ctx, &record.id, field)?;
+                annotations.derived(ctx, &record.id, field)?;
             }
         }
     }

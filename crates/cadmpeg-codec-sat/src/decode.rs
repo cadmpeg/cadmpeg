@@ -344,7 +344,7 @@ fn build_result(
         )?;
         for field in record.derived_fields {
             annotations
-                .derived_for_decode(ctx, &record.id, field)
+                .derived(ctx, &record.id, field)
                 .map_err(cadmpeg_core::CodecError::from)?;
         }
     }

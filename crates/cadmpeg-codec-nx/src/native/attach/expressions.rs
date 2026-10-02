@@ -219,7 +219,7 @@ pub(in crate::native) fn attach_expression_parameters(
         )?;
         if !source_content.is_empty() {
             annotations
-                .derived_for_decode(ctx, &feature_id, "source_content")
+                .derived(ctx, &feature_id, "source_content")
                 .map_err(cadmpeg_core::CodecError::from)?;
         }
         let feature_bytes = std::mem::size_of::<Feature>();
@@ -315,16 +315,16 @@ pub(in crate::native) fn attach_expression_parameters(
                 Some("Number"),
             )?;
             annotations
-                .derived_for_decode(ctx, id.as_str(), "owner")
+                .derived(ctx, id.as_str(), "owner")
                 .map_err(cadmpeg_core::CodecError::from)?;
             annotations
-                .derived_for_decode(ctx, id.as_str(), "ordinal")
+                .derived(ctx, id.as_str(), "ordinal")
                 .map_err(cadmpeg_core::CodecError::from)?;
             annotations
-                .derived_for_decode(ctx, id.as_str(), "value")
+                .derived(ctx, id.as_str(), "value")
                 .map_err(cadmpeg_core::CodecError::from)?;
             annotations
-                .derived_for_decode(ctx, id.as_str(), "native_ref")
+                .derived(ctx, id.as_str(), "native_ref")
                 .map_err(cadmpeg_core::CodecError::from)?;
             let mut dependencies = Vec::new();
             if ordinal < ordered_count {
@@ -364,7 +364,7 @@ pub(in crate::native) fn attach_expression_parameters(
             }
             if !dependencies.is_empty() {
                 annotations
-                    .derived_for_decode(ctx, id.as_str(), "dependencies")
+                    .derived(ctx, id.as_str(), "dependencies")
                     .map_err(cadmpeg_core::CodecError::from)?;
             }
             let value = expression.value.and_then(|value| match &expression.unit {
@@ -392,7 +392,7 @@ pub(in crate::native) fn attach_expression_parameters(
                 expression.unit.property_name(ctx)?,
             )?;
             annotations
-                .derived_for_decode(ctx, id.as_str(), "properties")
+                .derived(ctx, id.as_str(), "properties")
                 .map_err(cadmpeg_core::CodecError::from)?;
             if let Some(declaration) = expression
                 .declaration
@@ -418,7 +418,7 @@ pub(in crate::native) fn attach_expression_parameters(
                     )?,
                 )?;
                 annotations
-                    .derived_for_decode(ctx, id.as_str(), "properties")
+                    .derived(ctx, id.as_str(), "properties")
                     .map_err(cadmpeg_core::CodecError::from)?;
             }
             for (consumer_ordinal, parameter_use) in uses_by_expression
@@ -443,7 +443,7 @@ pub(in crate::native) fn attach_expression_parameters(
                     )?,
                 )?;
                 annotations
-                    .derived_for_decode(ctx, id.as_str(), "properties")
+                    .derived(ctx, id.as_str(), "properties")
                     .map_err(cadmpeg_core::CodecError::from)?;
             }
             let bytes = std::mem::size_of::<DesignParameter>();
@@ -646,7 +646,7 @@ pub(super) fn attach_block_dimension_parameter_consumers(
                 )?;
             }
             annotations
-                .derived_for_decode(ctx, parameter.id.as_str(), "properties")
+                .derived(ctx, parameter.id.as_str(), "properties")
                 .map_err(cadmpeg_core::CodecError::from)?;
         }
     }

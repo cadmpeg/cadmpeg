@@ -277,7 +277,7 @@ pub(super) fn emit_topology(
                 )?;
                 annotations.exactness_for_decode(ctx, region.as_str(), Exactness::Unknown)?;
             }
-            annotations.derived_for_decode(ctx, region.as_str(), "body")?;
+            annotations.derived(ctx, region.as_str(), "body")?;
             ctx.reserve_vec(&mut ir.model.regions, 1, "nx emitted regions")?;
             ir.model.regions.push(Region {
                 id: region.try_clone_for_decode(ctx, "nx region identity copy")?,
@@ -406,7 +406,7 @@ pub(super) fn emit_topology(
         )?;
         if tolerance.is_some() {
             annotations
-                .derived_for_decode(ctx, &vertex, "tolerance")
+                .derived(ctx, &vertex, "tolerance")
                 .map_err(cadmpeg_core::CodecError::from)?;
         }
         ctx.reserve_vec(&mut ir.model.vertices, 1, "nx emitted vertices")?;
@@ -545,7 +545,7 @@ pub(super) fn emit_topology(
                     cadmpeg_core::decode::u64_from_index(node.pos),
                     Some("PARAMETRIC_SURFACE_CURVE"),
                 )?;
-                annotations.derived_for_decode(ctx, carrier.as_str(), "geometry")?;
+                annotations.derived(ctx, carrier.as_str(), "geometry")?;
                 ctx.reserve_vec(&mut ir.model.curves, 1, "nx parametric edge curves")?;
                 ir.model.curves.push(Curve {
                     id: carrier.try_clone_for_decode(ctx, "nx parametric edge carrier")?,
@@ -661,7 +661,7 @@ pub(super) fn emit_topology(
         annotate_node(ctx, annotations, id.as_str(), source_stream, node, "EDGE")?;
         if decoded_tolerance(fields.tolerance).is_some() {
             annotations
-                .derived_for_decode(ctx, &id, "tolerance")
+                .derived(ctx, &id, "tolerance")
                 .map_err(cadmpeg_core::CodecError::from)?;
         }
         if let (Some(carrier), Some(range)) = (&curve, param_range) {
@@ -757,7 +757,7 @@ pub(super) fn emit_topology(
         annotate_node(ctx, annotations, id.as_str(), source_stream, node, "FACE")?;
         if decoded_tolerance(fields.tolerance).is_some() {
             annotations
-                .derived_for_decode(ctx, &id, "tolerance")
+                .derived(ctx, &id, "tolerance")
                 .map_err(cadmpeg_core::CodecError::from)?;
         }
         ctx.reserve_vec(&mut pending_faces, 1, "nx pending faces")?;
@@ -1141,10 +1141,10 @@ pub(super) fn emit_topology(
                     cadmpeg_core::decode::u64_from_index(node.pos),
                     Some("INTERSECTION_PCURVE"),
                 )?;
-                annotations.derived_for_decode(ctx, pcurve_id.as_str(), "geometry")?;
-                annotations.derived_for_decode(ctx, pcurve_id.as_str(), "parameter_range")?;
+                annotations.derived(ctx, pcurve_id.as_str(), "geometry")?;
+                annotations.derived(ctx, pcurve_id.as_str(), "parameter_range")?;
                 if fit_tolerance.is_some() {
-                    annotations.derived_for_decode(ctx, pcurve_id.as_str(), "fit_tolerance")?;
+                    annotations.derived(ctx, pcurve_id.as_str(), "fit_tolerance")?;
                 }
                 ctx.reserve_vec(&mut ir.model.pcurves, 1, "nx fallback pcurves")?;
                 ir.model.pcurves.push(Pcurve {

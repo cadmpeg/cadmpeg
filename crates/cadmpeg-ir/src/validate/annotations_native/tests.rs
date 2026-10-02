@@ -25,8 +25,8 @@ fn model_entity_wins_when_native_id_collides() {
     let ctx = cadmpeg_test_support::service_decode_context();
     let all_ids = super::BorrowedIdentities::build(&ctx, |add| add(id.as_str())).unwrap();
     let mut builder = crate::AnnotationBuilder::new();
-    builder.derived(&id, "position").unwrap();
-    builder.derived(&id, "native_only").unwrap();
+    builder.derived(&cadmpeg_test_support::service_decode_context(), &id, "position").unwrap();
+    builder.derived(&cadmpeg_test_support::service_decode_context(), &id, "native_only").unwrap();
     let mut findings = Vec::new();
     check_annotations(&ctx, crate::native::view::NativeView::new(&ir, None), &builder.build(), &all_ids, &mut findings).unwrap();
     assert!(!findings.iter().any(|finding| finding.message.contains("`position`")));
@@ -42,7 +42,7 @@ fn annotation_keys_and_field_paths_are_checked() {
     let stream = crate::annotations::StreamHandle::new(crate::stream_name!("test:source"));
     annotations.note("missing", &stream, 0);
     annotations
-        .derived(ir.model.edges[0].id.as_str(), "not_a_serialized_field")
+        .derived(&cadmpeg_test_support::service_decode_context(), ir.model.edges[0].id.as_str(), "not_a_serialized_field")
         .expect("nonempty exactness field");
     source_fidelity.annotations = annotations.build();
     let findings = crate::validate_neutral_with_source_fidelity(&ir, &source_fidelity, Vec::new())

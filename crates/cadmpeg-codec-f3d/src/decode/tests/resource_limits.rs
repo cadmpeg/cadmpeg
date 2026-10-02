@@ -327,7 +327,7 @@ fn annotation_exactness_refuses_collection_limit() {
     let ctx = context(&arena, 0);
     let mut annotations = cadmpeg_ir::annotations::AnnotationBuilder::new();
     let error = annotations
-        .derived_for_decode(&ctx, "f3d:test:entity#one", "definition")
+        .derived(&ctx, "f3d:test:entity#one", "definition")
         .unwrap_err();
     assert!(
         matches!(error, cadmpeg_ir::annotations::AnnotationFieldError::Resource(limit)

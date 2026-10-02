@@ -3434,7 +3434,7 @@ fn annotate_surface_frame(
         ctx.charge_work(1, "scan Parasolid surface frame annotations")?;
         match geometry {
             SolvedSurfaceGeometry::Plane(_) => {
-                annotations.field_exactness_for_decode(
+                annotations.field_exactness(
                     ctx,
                     id,
                     "geometry.u_axis",
@@ -3445,7 +3445,7 @@ fn annotate_surface_frame(
             SolvedSurfaceGeometry::Cylinder(_)
             | SolvedSurfaceGeometry::Cone(_)
             | SolvedSurfaceGeometry::Torus(_) => {
-                annotations.field_exactness_for_decode(
+                annotations.field_exactness(
                     ctx,
                     id,
                     "geometry.ref_direction",
@@ -3454,13 +3454,13 @@ fn annotate_surface_frame(
                 break;
             }
             SolvedSurfaceGeometry::Sphere(_) => {
-                annotations.field_exactness_for_decode(
+                annotations.field_exactness(
                     ctx,
                     id,
                     "geometry.axis",
                     Exactness::Derived,
                 )?;
-                annotations.field_exactness_for_decode(
+                annotations.field_exactness(
                     ctx,
                     id,
                     "geometry.ref_direction",

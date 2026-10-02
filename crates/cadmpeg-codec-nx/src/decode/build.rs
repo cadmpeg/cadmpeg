@@ -369,7 +369,7 @@ pub(super) fn try_decode_geometry(
                 node,
                 "POINT",
             )?;
-            annotations.derived_for_decode(ctx, pid.as_str(), "position")?;
+            annotations.derived(ctx, pid.as_str(), "position")?;
             ctx.reserve_vec(&mut ir.model.points, 1, "nx geometry points")?;
             ir.model.points.push(Point::new(
                 pid.try_clone_for_decode(ctx, "nx geometry point identity")?,
@@ -419,7 +419,7 @@ pub(super) fn try_decode_geometry(
                     )
                 })?),
             )?;
-            annotations.derived_for_decode(ctx, id.as_str(), "geometry")?;
+            annotations.derived(ctx, id.as_str(), "geometry")?;
             ctx.reserve_vec(&mut ir.model.surfaces, 1, "nx geometry surfaces")?;
             ir.model.surfaces.push(Surface {
                 id: id.try_clone_for_decode(ctx, "nx geometry surface identity")?,
@@ -439,7 +439,7 @@ pub(super) fn try_decode_geometry(
                 cadmpeg_core::decode::u64_from_index(surf.pos),
                 Some("B_SPLINE_SURFACE"),
             )?;
-            annotations.derived_for_decode(ctx, id.as_str(), "geometry")?;
+            annotations.derived(ctx, id.as_str(), "geometry")?;
             ctx.reserve_vec(&mut ir.model.surfaces, 1, "nx geometry surfaces")?;
             ir.model.surfaces.push(Surface {
                 id: id.try_clone_for_decode(ctx, "nx NURBS surface identity")?,
@@ -483,7 +483,7 @@ pub(super) fn try_decode_geometry(
                     cadmpeg_core::decode::u64_from_index(offset.pos),
                     Some("OFFSET_SURF"),
                 )?;
-                annotations.derived_for_decode(ctx, surface_id.as_str(), "geometry")?;
+                annotations.derived(ctx, surface_id.as_str(), "geometry")?;
                 ctx.reserve_vec(&mut ir.model.surfaces, 1, "nx offset surfaces")?;
                 ir.model.surfaces.push(Surface {
                     id: surface_id.try_clone_for_decode(ctx, "nx offset surface identity")?,
@@ -519,7 +519,7 @@ pub(super) fn try_decode_geometry(
                 cadmpeg_core::decode::u64_from_index(offset.pos),
                 Some("OFFSET_SURF"),
             )?;
-            annotations.derived_for_decode(ctx, procedural_id.as_str(), "definition")?;
+            annotations.derived(ctx, procedural_id.as_str(), "definition")?;
             let admitted_payload =
                 cadmpeg_ir::geometry::surface_payloads::OffsetSurfaceConstruction::legacy(
                     support,
@@ -567,7 +567,7 @@ pub(super) fn try_decode_geometry(
                 cadmpeg_core::decode::u64_from_index(blend.pos),
                 Some("BLEND_SURF"),
             )?;
-            annotations.derived_for_decode(ctx, surface_id.as_str(), "geometry")?;
+            annotations.derived(ctx, surface_id.as_str(), "geometry")?;
             ctx.reserve_vec(&mut ir.model.surfaces, 1, "nx blend surfaces")?;
             ir.model.surfaces.push(Surface {
                 id: surface_id.try_clone_for_decode(ctx, "nx blend surface identity")?,
@@ -599,7 +599,7 @@ pub(super) fn try_decode_geometry(
                 cadmpeg_core::decode::u64_from_index(blend.pos),
                 Some("BLEND_SURF"),
             )?;
-            annotations.derived_for_decode(ctx, procedural_id.as_str(), "definition")?;
+            annotations.derived(ctx, procedural_id.as_str(), "definition")?;
             let procedural_index = ir.model.procedural_surfaces.len();
 
             let attached = ir.model.add_procedural_surface(
@@ -699,7 +699,7 @@ pub(super) fn try_decode_geometry(
                     )
                 })?),
             )?;
-            annotations.derived_for_decode(ctx, id.as_str(), "geometry")?;
+            annotations.derived(ctx, id.as_str(), "geometry")?;
             ctx.reserve_vec(&mut ir.model.curves, 1, "nx geometry curves")?;
             ir.model.curves.push(Curve {
                 id: id.try_clone_for_decode(ctx, "nx geometry curve identity")?,
@@ -719,7 +719,7 @@ pub(super) fn try_decode_geometry(
                 cadmpeg_core::decode::u64_from_index(crv.pos),
                 Some("B_SPLINE_CURVE"),
             )?;
-            annotations.derived_for_decode(ctx, id.as_str(), "geometry")?;
+            annotations.derived(ctx, id.as_str(), "geometry")?;
             ctx.reserve_vec(&mut ir.model.curves, 1, "nx NURBS curves")?;
             ir.model.curves.push(Curve {
                 id: id.try_clone_for_decode(ctx, "nx NURBS curve identity")?,
@@ -741,7 +741,7 @@ pub(super) fn try_decode_geometry(
                 cadmpeg_core::decode::u64_from_index(pcurve.pos),
                 Some("B_CURVE_2D"),
             )?;
-            annotations.derived_for_decode(ctx, id.as_str(), "geometry")?;
+            annotations.derived(ctx, id.as_str(), "geometry")?;
             ctx.reserve_vec(&mut ir.model.pcurves, 1, "nx NURBS pcurves")?;
             ir.model.pcurves.push(Pcurve {
                 id: id.try_clone_for_decode(ctx, "nx NURBS pcurve identity")?,
@@ -958,7 +958,7 @@ pub(super) fn try_decode_geometry(
                 Some("INTERSECTION"),
             )?;
             if charted.is_some() || uncharted.is_some() {
-                annotations.derived_for_decode(ctx, curve_id.as_str(), "geometry")?;
+                annotations.derived(ctx, curve_id.as_str(), "geometry")?;
             } else {
                 annotations.exactness_for_decode(ctx, curve_id.as_str(), Exactness::Unknown)?;
             }
@@ -1018,7 +1018,7 @@ pub(super) fn try_decode_geometry(
                 Some("INTERSECTION"),
             )?;
             if charted.is_some() || uncharted.is_some() {
-                annotations.derived_for_decode(ctx, procedural_id.as_str(), "definition")?;
+                annotations.derived(ctx, procedural_id.as_str(), "definition")?;
             } else {
                 annotations.exactness_for_decode(
                     ctx,
@@ -1900,7 +1900,7 @@ fn retain_live_unknown_links(
     for unknown in unknowns.iter_mut() {
         unknown.links_mut().retain(|link| ids.contains(link));
         if !unknown.links().is_empty() {
-            annotations.derived_for_decode(ctx, unknown.id().as_str(), "links")?;
+            annotations.derived(ctx, unknown.id().as_str(), "links")?;
         }
     }
     Ok(())
