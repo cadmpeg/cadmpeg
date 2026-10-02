@@ -295,13 +295,14 @@ pub(super) fn oriented_nurbs_range(
         if range[0] > range[1] {
             let sum = domain_start + domain_end;
             curve.reverse_parameterization();
-            curve
-                .edit_knots(|knots| {
-                    for knot in knots {
-                        *knot += sum;
-                    }
-                })
-                .ok()?;
+            match curve.edit_knots(ctx, |knots| {
+                for knot in knots {
+                    *knot += sum;
+                }
+            }) {
+                Err(error) => return Some(Err(error)),
+                Ok(result) => result.ok()?,
+            };
             range = [sum - range[0], sum - range[1]];
         }
         if !range[0].is_finite()

@@ -859,7 +859,7 @@ pub(crate) fn remap_nurbs_domain(
         );
     }
     curve
-        .with_knots(remapped)
+        .with_knots(ctx, remapped)?
         .map_err(|error| GeometryError::malformed(offset, error.to_string()))
 }
 

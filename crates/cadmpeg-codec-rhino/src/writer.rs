@@ -1161,6 +1161,11 @@ fn generated_projected_brep_c2_curve(
     v_axis: cadmpeg_ir::math::Vector3,
 ) -> Result<([u8; 16], Vec<u8>), CodecError> {
     use cadmpeg_ir::topology::Sense;
+    let writer_arena = cadmpeg_core::decode::DecodeArena::new();
+    let writer_policy = cadmpeg_core::decode::DecodePolicy::desktop();
+    let (writer_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &writer_arena, &writer_policy,
+    )?;
 
     Ok(match edge.curve {
         WritableEdgeCurve::Line(_) => {
@@ -1201,11 +1206,11 @@ fn generated_projected_brep_c2_curve(
                 })?] + projected.knots()[projected.pole_count()];
                 projected.reverse_parameterization();
                 projected
-                    .edit_knots(|knots| {
+                    .edit_knots(&writer_ctx, |knots| {
                         for knot in knots {
                             *knot += sum;
                         }
-                    })
+                    })?
                     .map_err(|error| CodecError::NotImplemented(error.to_string()))?;
                 canonicalize_native_curve_knots(&mut projected, edge.curve_id)?;
             }
@@ -1238,7 +1243,7 @@ fn canonicalize_native_curve_knots(
             error => CodecError::NotImplemented(format!("curve {id}: {error}")),
         })?;
     curve
-        .edit_knots(|knots| knots.copy_from_slice(&reconstructed))
+        .edit_knots(&writer_ctx, |knots| knots.copy_from_slice(&reconstructed))?
         .map_err(|error| CodecError::NotImplemented(format!("curve {id}: {error}")))?;
     Ok(())
 }

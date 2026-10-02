@@ -1565,3 +1565,5 @@ mod pairing;
 mod construction;
 
 mod transposition;
+
+mod knot_edits;

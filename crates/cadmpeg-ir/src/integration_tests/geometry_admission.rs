@@ -242,7 +242,7 @@ fn weight_rules_admit_a_signed_nonzero_weight_in_every_nurbs_carrier() {
 fn failed_numeric_edits_preserve_the_whole_carrier() {
     let mut curve = curve();
     let original = curve.clone();
-    assert!(curve.edit_knots(<[f64]>::reverse).is_err());
+    assert!(curve.edit_knots(&cadmpeg_test_support::service_decode_context(), <[f64]>::reverse).expect("knot edit admission").is_err());
     assert!(curve
         .try_map_control_points(|_, point| {
             let mut mapped = point.get();
