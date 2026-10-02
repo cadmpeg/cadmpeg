@@ -966,13 +966,13 @@ pub(crate) fn project_spatial_sketch_design(
                 entity_id,
                 sketch,
                 SpatialSketchGeometry::try_from(SpatialSketchGeometryDefinition::NurbsSurface {
-                    surface: cadmpeg_ir::geometry::nurbs::BsplineSurface::new(
+                    surface: cadmpeg_ir::geometry::nurbs::BsplineSurface::new(ctx,
                         surface.geometry.u_degree.get(),
                         surface.geometry.v_degree.get(),
                         u_knots,
                         v_knots,
                         control_points,
-                    )
+                    )?
                     .map_err(|error| {
                         crate::design::text::malformed_design(
                             ctx,

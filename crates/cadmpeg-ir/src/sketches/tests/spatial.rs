@@ -157,7 +157,7 @@ fn spatial_sketch_geometry_round_trips_and_validates() {
             surface.clone(),
             sketch.clone(),
             SpatialSketchGeometry::try_from(SpatialSketchGeometryDefinition::NurbsSurface {
-                surface: crate::geometry::nurbs::BsplineSurface::new(
+                surface: crate::geometry::nurbs::BsplineSurface::new(&cadmpeg_test_support::service_decode_context(),
                     1,
                     1,
                     vec![0.0, 0.0, 1.0, 1.0],
@@ -166,7 +166,7 @@ fn spatial_sketch_geometry_round_trips_and_validates() {
                         vec![Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 1.0, 0.0)],
                         vec![Point3::new(1.0, 0.0, 0.0), Point3::new(1.0, 1.0, 0.0)],
                     ],
-                )
+                ).expect("fixture B-spline admission")
                 .unwrap(),
             })
             .unwrap(),
@@ -653,7 +653,7 @@ fn spatial_nurbs_rejects_general_curve_context_mismatches() {
     use crate::geometry::nurbs::NurbsCurve;
     use crate::sketches::{SpatialSketchGeometry, SpatialSketchNurbsCurve};
 
-    let negative = NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
+    let negative = NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(),
         1,
         vec![0.0, 0.0, 1.0, 1.0],
         vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
@@ -661,7 +661,7 @@ fn spatial_nurbs_rejects_general_curve_context_mismatches() {
         false,
     ).expect("fixture constructor admission")
     .unwrap();
-    let degree_zero = NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
+    let degree_zero = NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(),
         0,
         vec![0.0, 1.0],
         vec![Point3::new(0.0, 0.0, 0.0)],
@@ -688,7 +688,7 @@ fn spatial_nurbs_preserves_wire_fields_and_checked_point_edits() {
         SpatialSketchGeometry, SpatialSketchGeometryDefinition, SpatialSketchNurbsCurve,
     };
 
-    let curve = NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
+    let curve = NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(),
         1,
         vec![0.0, 0.0, 1.0, 1.0],
         vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
@@ -723,7 +723,7 @@ fn a_refused_spatial_sketch_pole_edit_keeps_the_prior_poles() {
     use crate::geometry::nurbs::{NurbsCurve, NurbsError};
     use crate::sketches::SpatialSketchNurbsCurve;
 
-    let curve = NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
+    let curve = NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(),
         1,
         vec![0.0, 0.0, 1.0, 1.0],
         vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
