@@ -45,6 +45,7 @@ cargo() { :; }
                 if staged == "crates/cadmpeg-codec-step/src/reader.rs":
                     self.assertIn("python3 scripts/check-dialects.py\n", result.stdout)
                     self.assertIn("python3 scripts/check-source-policy.py\n", result.stdout)
+                    self.assertIn("python3 scripts/check-decode-policy.py\n", result.stdout)
 
 
 if __name__ == "__main__":

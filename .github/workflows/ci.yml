@@ -69,6 +69,7 @@ jobs:
           python3 -m unittest -v scripts/test_census_panic_calls.py
           python3 -m unittest -v scripts/test_check_deny_census.py
           python3 scripts/check-source-policy.py
+          python3 scripts/check-decode-policy.py
           python3 scripts/check-deny-census.py
           python3 scripts/census-panic-calls.py --check
 
