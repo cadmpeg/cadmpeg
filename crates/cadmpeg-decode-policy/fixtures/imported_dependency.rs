@@ -75,3 +75,14 @@ pub fn changed_text<T: Into<String>>(message: T, input: T) -> String {
     overwrite(&mut message, input);
     text(message)
 }
+
+impl DecodeContext {
+    fn charge_work(&self, _count: u64) -> Result<(), ()> { Ok(()) }
+}
+pub fn filled<T: Clone>(ctx: &DecodeContext, count: usize, value: T) -> Result<Vec<T>, ()> {
+    let mut values = Vec::new();
+    reserve(ctx, &mut values, count)?;
+    ctx.charge_work(u64::try_from(count).map_err(|_| ())?)?;
+    values.resize(count, value);
+    Ok(values)
+}

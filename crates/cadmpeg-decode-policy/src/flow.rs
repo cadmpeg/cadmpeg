@@ -2,7 +2,7 @@
 use crate::{types, Analysis};
 use rustc_hir::{def::Res, Expr, ExprKind, HirId, MatchSource, Node};
 
-#[derive(Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct ExtentTerm {
     pub(crate) factors: Vec<String>,
     pub(crate) coefficient: u64,
@@ -20,6 +20,8 @@ pub(crate) struct Flow {
     pub(crate) iterations: u64,
     pub(crate) storage: bool,
     pub(crate) storage_extents: Vec<ExtentTerm>,
+    pub(crate) storage_slots: Vec<crate::storage::Slots>,
+    pub(crate) loop_bounds: Vec<Vec<ExtentTerm>>,
     pub(crate) mutated: std::collections::HashSet<String>,
 }
 
@@ -29,6 +31,8 @@ impl Default for Flow {
             work: Vec::new(),
             storage: false,
             storage_extents: Vec::new(),
+            storage_slots: Vec::new(),
+            loop_bounds: Vec::new(),
             iterations: 1,
             mutated: std::collections::HashSet::new(),
         }
@@ -176,6 +180,11 @@ impl<'tcx> Analysis<'_, 'tcx> {
             ExprKind::AddrOf(_, _, inner) | ExprKind::DropTemps(inner) => {
                 return self.extent_terms(inner, seen)
             }
+            ExprKind::Binary(operator, left, right) if operator.node == rustc_hir::BinOpKind::Sub => {
+                let left = self.extent_terms(left, &mut seen.clone())?;
+                let right = self.extent_terms(right, &mut seen.clone())?;
+                return Some(vec![ExtentTerm { factors: vec![format!("difference:{left:?}:{right:?}")], coefficient: 1 }]);
+            }
             ExprKind::Cast(inner, _) => {
                 let source = self.expr_ty(inner);
                 let destination = self.expr_ty(expression);
@@ -202,7 +211,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
                     .and_then(|operand| self.key(operand, &mut Vec::new()))
                     .map(|key| {
                         vec![ExtentTerm {
-                            factors: vec![key],
+                            factors: vec![if name.as_str() == "capacity" { format!("{key}.capacity") } else { key }],
                             coefficient: 1,
                         }]
                     });
@@ -355,6 +364,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
                 self.flow.storage_extents.extend(terms);
             }
         }
+        self.record_slots(expression);
         if !matches!(name.as_str(), "charge_work" | "charge_work_limit") {
             return;
         }
@@ -448,7 +458,8 @@ impl<'tcx> Analysis<'_, 'tcx> {
                             || key.starts_with(&format!("{term}."))
                     })
             });
-            self.flow.storage_extents.retain(|term| !term.factors.iter().any(|factor| factor == &key || factor.starts_with(&format!("{key}.")) || key.starts_with(&format!("{factor}."))));
+            self.flow.storage_extents.retain(|term| !term.factors.iter().any(|factor| factor.contains(&key) || factor.starts_with(&format!("{key}.")) || key.starts_with(&format!("{factor}."))));
+            self.flow.storage_slots.retain(|credit| credit.target != key && !credit.target.starts_with(&format!("{key}.")) && !credit.terms.iter().flat_map(|term| &term.factors).any(|factor| factor.contains(&key)));
             self.flow.mutated.insert(key);
         } else {
             for credit in &mut self.flow.work {

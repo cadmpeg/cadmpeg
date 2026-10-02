@@ -249,6 +249,7 @@ pub(crate) fn check_imported<'tcx>(
             };
             let raw = func.ty(body, tcx);
             if let rustc_middle::ty::FnDef(id, _) = raw.kind() {
+                if tcx.trait_of_assoc(*id).is_some_and(|trait_id| tcx.item_name(trait_id).as_str() == "Serialize") { continue; }
                 let name = tcx.opt_item_name(*id);
                 let dependent = tcx.trait_of_assoc(*id).is_some()
                     || name.is_some_and(|name| matches!(name.as_str(),
@@ -357,6 +358,20 @@ pub(crate) fn check_imported<'tcx>(
                     _ => None,
                 });
             let operation_name = tcx.opt_item_name(resolved.def_id());
+            if operation_name.is_some_and(|name| name.as_str() == "resize") {
+                if let Some(fill) = args.get(2) {
+                    let child = instance.instantiate_mir(tcx, rustc_middle::ty::EarlyBinder::bind(tcx, fill.node.ty(body, tcx)));
+                    let fixed_fill = crate::fixed::mir_operand(tcx, body, &fill.node, &fixed_operands, &mut HashSet::new());
+                    let shape = if fixed_fill { types::Shape::Fixed } else { reporter.clone_shape(child) };
+                    if shape != types::Shape::Fixed {
+                        for rule in ["uncharged_decode_allocation", "uncharged_decode_work"] {
+                            reporter.report(root.span, if shape == types::Shape::Unknown || rule == "uncharged_decode_work" && has_work_charge { "unproven_decode_charge" } else { rule }, &format!("concrete instantiation <{child}> of {} reaches resize child Clone", tcx.def_path_str(root.instance.def_id())));
+                        }
+                    }
+                }
+                continue;
+            }
+
             let array_iterator = raw_receiver.is_some_and(|value| match value.peel_refs().kind() {
                 rustc_middle::ty::Adt(owner, _) => {
                     types::standard(tcx, owner.did())

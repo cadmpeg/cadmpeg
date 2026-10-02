@@ -16,6 +16,7 @@ mod external;
 mod flow;
 mod fixed;
 mod instantiation;
+mod storage;
 mod types;
 mod work;
 
@@ -95,6 +96,7 @@ impl Callbacks for DecodeCallbacks {
                 findings: &mut concrete,
             }
             .visit_body(tcx.hir_body_owned_by(local));
+            self.findings.externals.extend(concrete.externals.iter().cloned());
             if let Some(symbolic) = bodies.get(&local) {
                 resolved.entry(local).or_default().extend(
                     symbolic
@@ -107,7 +109,7 @@ impl Callbacks for DecodeCallbacks {
                     concrete
                         .entries
                         .keys()
-                        .filter(|key| key.4 == "unproven_decode_charge")
+                        .filter(|key| key.4 == "unproven_decode_charge" && symbolic.entries.get(*key) == concrete.entries.get(*key))
                         .cloned(),
                 );
                 for (key, messages) in concrete.entries {
@@ -342,7 +344,11 @@ impl<'tcx> Analysis<'_, 'tcx> {
 impl<'tcx> Visitor<'tcx> for Analysis<'_, 'tcx> {
     fn visit_expr(&mut self, expression: &'tcx Expr<'tcx>) {
         if std::env::var_os("CADMPEG_POLICY_EXTERNALS").is_some() {
-            if let Some((definition, operands)) = self.call(expression) {
+            if let Some((definition, operands)) = self.call(expression).or_else(|| {
+                let definition = self.typeck.type_dependent_def_id(expression.hir_id)?;
+                let receiver = match expression.kind { ExprKind::Binary(_, left, _) | ExprKind::AssignOp(_, left, _) | ExprKind::Index(left, _, _) | ExprKind::Unary(_, left) => left, _ => return None };
+                Some((definition, vec![receiver]))
+            }) {
                 let resolved = self.implementation(expression, definition).unwrap_or(definition);
                 if !types::checked(self.tcx, resolved) && !matches!(self.tcx.def_kind(resolved), rustc_hir::def::DefKind::Ctor(_, _)) {
                     self.findings.externals.insert(external::inventory_row(self.tcx, resolved, operands.first().map(|operand| self.expr_ty(operand))));
