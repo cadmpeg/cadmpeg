@@ -94,3 +94,12 @@ pub fn unchecked_sum(ctx: &DecodeContext, bytes: &[u8], other: &[u8]) -> Result<
     for _byte in other {} // finding: unproven_decode_charge
     Ok(())
 }
+
+pub fn branch_charges(ctx: &DecodeContext, bytes: &[u8]) -> Result<(), ()> {
+    for _branch in [0, 1] {
+        ctx.charge_work(bytes.len() as u64, "branch")?;
+        for _byte in bytes {}
+    }
+    for _byte in bytes {} // finding: uncharged_decode_work
+    Ok(())
+}

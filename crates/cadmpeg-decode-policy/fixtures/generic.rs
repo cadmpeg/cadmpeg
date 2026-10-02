@@ -57,3 +57,12 @@ fn closure_copy<T: Clone>(value: &T) {
 pub fn closed(value: &String) {
     closure_copy(value); // finding: uncharged_decode_allocation, uncharged_decode_work
 }
+
+fn vector_copy<T: Clone>(values: &Vec<T>) -> Vec<T> { values.clone() }
+pub fn unit_vectors(values: &Vec<()>) { let _copy = vector_copy(values); }
+pub fn byte_vectors(values: &Vec<u8>) {
+    let _copy = vector_copy(values); // finding: uncharged_decode_allocation, uncharged_decode_work
+}
+
+fn minimum<T: Ord>(first: T, second: T) -> T { std::cmp::min(first, second) }
+pub fn numbers(value: u32) { let _minimum = minimum(value, value); }

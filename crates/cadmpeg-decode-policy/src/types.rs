@@ -213,3 +213,39 @@ pub(crate) fn work<'tcx>(tcx: TyCtxt<'tcx>, value: Ty<'tcx>, seen: &mut Vec<Ty<'
     seen.truncate(depth);
     shape
 }
+
+pub(crate) fn iteration(tcx: TyCtxt<'_>, value: Ty<'_>) -> Shape {
+    let value = value.peel_refs();
+    if matches!(value.kind(), ty::Array(_, _)) { return Shape::Fixed; }
+        match value.kind() {
+            ty::Str | ty::Slice(_) => Shape::Dynamic,
+            ty::Adt(definition, _) => {
+                let path = tcx.def_path_str(definition.did());
+                let name = tcx.item_name(definition.did());
+                if standard(tcx, definition.did())
+                    && matches!(name.as_str(), "Option" | "Result" | "Once" | "Empty")
+                {
+                    return Shape::Fixed;
+                }
+                if standard(tcx, definition.did())
+                    && path.contains("array::")
+                    && name.as_str() == "IntoIter"
+                {
+                    return Shape::Fixed;
+                }
+                if standard(tcx, definition.did())
+                    && (path.contains("slice::")
+                        || path.contains("str::iter")
+                        || path.contains("collections")
+                        || path.contains("vec::")
+                        || path.contains("range::"))
+                    || name.as_str() == "View"
+                        && tcx.crate_name(definition.did().krate).as_str() == "cadmpeg_core"
+                {
+                    return Shape::Dynamic;
+                }
+                Shape::Unknown
+            }
+            _ => Shape::Unknown,
+        }
+}

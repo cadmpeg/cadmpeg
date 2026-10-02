@@ -108,8 +108,15 @@ impl<'tcx> Analysis<'_, 'tcx> {
             );
             return;
         }
-        if name == "clone" && self.clone_shape(self.expr_ty(expression)) == Shape::Fixed {
-            return;
+        if name == "clone" {
+            match self.clone_shape(self.expr_ty(expression)) {
+                Shape::Fixed => return,
+                Shape::Unknown => {
+                    self.work_report(expression.span, Shape::Unknown, Some(false), "Clone element layout unresolved");
+                    return;
+                }
+                Shape::Dynamic => (),
+            }
         }
         if name == "format" {
             let shape = self.format_shape(&operands);

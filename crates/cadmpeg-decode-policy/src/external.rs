@@ -99,6 +99,11 @@ pub(crate) fn summary(
         {
             (Allocation::None, Work::Fixed)
         }
+        "min" | "max" if path.contains("cmp::") => {
+            if value.is_some_and(|value| matches!(value.kind(), ty::Adt(owner, _)
+                if !types::standard(tcx, owner.did()))) { return None; }
+            (Allocation::None, Work::Comparison)
+        }
         "finish" if path.contains("hash::") => (Allocation::None, Work::Fixed),
         "write_str" if path.contains("fmt::") => (Allocation::None, Work::Argument(1)),
         "debug_struct_field1_finish" if path.contains("fmt::") => {
