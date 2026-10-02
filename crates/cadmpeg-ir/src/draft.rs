@@ -504,7 +504,7 @@ impl ModelDraft<DraftAccounting> {
 #[derive(Debug)]
 enum CommittedIdentity {
     Neutral(IdentitySlot),
-    Native { namespace: usize, arena: usize, record: usize },
+    Native { namespace_hash: u64, arena_hash: u64, record: usize },
     StagedUnknown(usize),
 }
 
@@ -662,15 +662,19 @@ fn index_committed_identities(
         };
     }
     crate::document::arena_registry!(collect_model_identities);
-    for (namespace, records) in base.native.0.values().enumerate() {
-        storage.work(1, "committed native namespace scan")?;
-        for (arena, records) in records.arenas().values().enumerate() {
-            storage.work(1, "committed native arena scan")?;
+    for (namespace, records) in &base.native.0 {
+        ctx.charge_work(u64_from_index(namespace.len()).checked_add(1)
+            .ok_or_else(|| ctx.refuse_codec_limit("hash committed native namespace", u64::MAX - 1, u64::MAX))?, "hash committed native namespace")?;
+        let namespace = identity_hash(namespace);
+        for (arena, records) in records.arenas() {
+            ctx.charge_work(u64_from_index(arena.len()).checked_add(1)
+                .ok_or_else(|| ctx.refuse_codec_limit("hash committed native arena", u64::MAX - 1, u64::MAX))?, "hash committed native arena")?;
+            let arena = identity_hash(arena);
             for (record, value) in records.iter().enumerate() {
                 storage.work(value.id().len(), "committed native identity scan")?;
                 insert_identity(
                     &mut identities, identity_hash(value.id()),
-                    CommittedIdentity::Native { namespace, arena, record },
+                    CommittedIdentity::Native { namespace_hash: namespace, arena_hash: arena, record },
                     &storage, "committed identity slots",
                 )?;
             }
@@ -699,15 +703,24 @@ fn committed_identity_contains(
         let candidate = match owner {
             CommittedIdentity::Neutral(slot) => base.model.identity_at(slot.kind, slot.index),
             CommittedIdentity::StagedUnknown(index) => unknowns.get(*index).map(|record| record.id().as_str()),
-            CommittedIdentity::Native { namespace, arena, record } => {
-                let work = u64_from_index(*namespace).checked_add(u64_from_index(*arena))
-                    .and_then(|work| work.checked_add(3))
-                    .ok_or_else(|| ctx.refuse_codec_limit("borrow committed native identity", u64::MAX - 1, u64::MAX))?;
-                ctx.charge_work(work, "borrow committed native identity")?;
-                base.native.0.values().nth(*namespace)
-                    .and_then(|namespace| namespace.arenas().values().nth(*arena))
-                    .and_then(|records| records.get(*record))
-                    .map(crate::native::NativeRecord::id)
+            CommittedIdentity::Native { namespace_hash, arena_hash, record } => {
+                for (format, native) in &base.native.0 {
+                    ctx.charge_work(u64_from_index(format.len()).checked_add(1)
+                        .ok_or_else(|| ctx.refuse_codec_limit("find committed native namespace", u64::MAX - 1, u64::MAX))?, "find committed native namespace")?;
+                    if identity_hash(format) != *namespace_hash { continue; }
+                    for (name, records) in native.arenas() {
+                        ctx.charge_work(u64_from_index(name.len()).checked_add(1)
+                            .ok_or_else(|| ctx.refuse_codec_limit("find committed native arena", u64::MAX - 1, u64::MAX))?, "find committed native arena")?;
+                        if identity_hash(name) != *arena_hash { continue; }
+                        ctx.charge_work(1, "borrow committed native identity")?;
+                        if let Some(candidate) = records.get(*record) {
+                            if identities_equal(ctx, candidate.id(), identity, "compare committed identities")? {
+                                return Ok(true);
+                            }
+                        }
+                    }
+                }
+                None
             },
         };
         if let Some(candidate) = candidate {
