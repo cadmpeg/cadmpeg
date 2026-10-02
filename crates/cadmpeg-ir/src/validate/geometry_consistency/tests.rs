@@ -41,7 +41,7 @@ fn wide_pcurve_domain_keeps_its_finite_midpoint_seed() {
         },
         metadata: PcurveMetadata::default(),
     };
-    assert!(super::pcurve_parameter_seeds(&pcurve).contains(&(-f64::MAX * 0.25)));
+    assert!(super::pcurve_parameter_seeds(&cadmpeg_test_support::service_decode_context(), &pcurve).unwrap().contains(&(-f64::MAX * 0.25)));
 }
 
 #[test]
@@ -90,7 +90,7 @@ fn large_surface_domain_keeps_its_finite_midpoint_pcurve_seed() {
         geometry: &surface,
     };
     let midpoint = (f64::MAX * 0.75).midpoint(f64::MAX);
-    assert!(pcurve_parameter_seeds_on_surface(&context, &pcurve)
+    assert!(pcurve_parameter_seeds_on_surface(&cadmpeg_test_support::service_decode_context(), &context, &pcurve).unwrap()
         .iter()
         .any(|seed| seed.get() == midpoint));
 }
@@ -654,11 +654,11 @@ fn raw_nurbs_domain_is_not_treated_as_edge_trim() {
         metadata: PcurveMetadata::default(),
     };
     assert_eq!(
-        pcurve_parameter_domain(&pcurve.geometry)
+        pcurve_parameter_domain(&cadmpeg_test_support::service_decode_context(), &pcurve.geometry).unwrap()
             .map(crate::topology::IncreasingParameterInterval::endpoints),
         Some([0.0, 1.0])
     );
-    assert!(pcurve_parameter_ranges(&pcurve, None, None).is_none());
+    assert!(pcurve_parameter_ranges(&cadmpeg_test_support::service_decode_context(), &pcurve, None, None).unwrap().is_none());
 }
 
 #[test]
@@ -681,7 +681,7 @@ fn collapsed_trimmed_pcurve_falls_back_to_its_basis_domain() {
         .unwrap(),
     );
     assert_eq!(
-        pcurve_parameter_domain(&geometry)
+        pcurve_parameter_domain(&cadmpeg_test_support::service_decode_context(), &geometry).unwrap()
             .map(crate::topology::IncreasingParameterInterval::endpoints),
         Some([0.0, 1.0])
     );
@@ -746,7 +746,7 @@ fn line_pcurve_recovers_vertices_from_nurbs_surface_domain_seeds() {
         surface_id: &surface_id,
         geometry: &surface,
     };
-    let seeds = pcurve_parameter_seeds_on_surface(&context, &pcurve);
+    let seeds = pcurve_parameter_seeds_on_surface(&cadmpeg_test_support::service_decode_context(), &context, &pcurve).unwrap();
     assert!(seeds.iter().any(|seed| seed.get() == 0.5));
 
     let ranges = edge_pcurve_parameter_ranges(&cadmpeg_test_support::service_decode_context(),
@@ -1257,12 +1257,15 @@ fn placed_pcurve(placements: usize, leaf: PcurveGeometry) -> Result<PcurveGeomet
 
 #[test]
 fn surface_parameter_domains_stop_at_the_admitted_nesting_depth() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_recursion_depth = cadmpeg_core::decode::u64_from_index(crate::geometry::MAX_GEOMETRY_NESTING + 1);
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let accepted =
         placed_nurbs_surface(crate::geometry::MAX_GEOMETRY_NESTING).expect("admitted nesting");
-    assert!(super::solved_surface_parameter_domains(&accepted).is_some());
+    assert!(super::solved_surface_parameter_domains(&ctx, &accepted).unwrap().is_some());
 
-    // The walk has no depth gate because the carrier one placement deeper
-    // cannot be built: `PlacedSurface::try_new` refuses it.
+    // Constructor admission also rejects a carrier beyond the inline bound.
     assert_eq!(
         placed_nurbs_surface(crate::geometry::MAX_GEOMETRY_NESTING + 1),
         Err("PlacedSurface.basis nests past the admitted inline basis depth")
@@ -1271,6 +1274,10 @@ fn surface_parameter_domains_stop_at_the_admitted_nesting_depth() {
 
 #[test]
 fn pcurve_trim_range_stops_at_the_admitted_nesting_depth() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_recursion_depth = cadmpeg_core::decode::u64_from_index(crate::geometry::MAX_GEOMETRY_NESTING + 1);
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let trimmed = PcurveGeometry::Trimmed(
         crate::geometry::pcurve::TrimmedPcurve::try_new(
             [0.25, 0.75],
@@ -1283,12 +1290,11 @@ fn pcurve_trim_range_stops_at_the_admitted_nesting_depth() {
     let accepted = placed_pcurve(crate::geometry::MAX_GEOMETRY_NESTING - 1, trimmed.clone())
         .expect("admitted nesting");
     assert_eq!(
-        super::pcurve_geometry_trim_range(&accepted),
+        super::pcurve_geometry_trim_range(&ctx, &accepted).unwrap(),
         Some([0.25, 0.75])
     );
 
-    // The walk has no depth gate because the carrier one placement deeper
-    // cannot be built: `PlacedPcurve::try_new` refuses it.
+    // Constructor admission also rejects a carrier beyond the inline bound.
     assert_eq!(
         placed_pcurve(crate::geometry::MAX_GEOMETRY_NESTING, trimmed),
         Err("PlacedPcurve.basis nests past the admitted inline basis depth")
@@ -1420,7 +1426,7 @@ fn the_mapped_pcurve_search_halves_a_step_whose_point_overflows() {
         0.0,
     );
     let seed = crate::scalar::FiniteReal::new(1.0e152).expect("finite seed");
-    let parameter = mapped_pcurve_parameter_near_point(&context, &parabola, target, seed, 1.0e300)
+    let parameter = mapped_pcurve_parameter_near_point(&cadmpeg_test_support::service_decode_context(), &context, &parabola, target, seed, 1.0e300)
         .expect("resource allocation did not fail")
         .expect("the halved step reaches the target")
         .get();
@@ -1464,24 +1470,12 @@ fn the_mapped_pcurve_search_without_a_domain_ends_where_a_step_leaves_the_finite
     );
     let seed = crate::scalar::FiniteReal::new(-1.0e308).expect("finite seed");
     assert_eq!(
-        mapped_pcurve_parameter_near_point(
-            &context,
-            &line,
-            Point3::new(-1.0e308, 0.0, 0.0),
-            seed,
-            1.0
-        )
+        mapped_pcurve_parameter_near_point(&cadmpeg_test_support::service_decode_context(), &context, &line, Point3::new(-1.0e308, 0.0, 0.0), seed, 1.0)
         .expect("resource allocation did not fail"),
         None
     );
     assert_eq!(
-        mapped_pcurve_parameter_near_point(
-            &context,
-            &line,
-            Point3::new(-4.0e307, 0.0, 0.0),
-            seed,
-            1.0
-        )
+        mapped_pcurve_parameter_near_point(&cadmpeg_test_support::service_decode_context(), &context, &line, Point3::new(-4.0e307, 0.0, 0.0), seed, 1.0)
         .expect("resource allocation did not fail")
         .map(crate::scalar::FiniteReal::get),
         Some(-8.0e307)
@@ -1527,14 +1521,78 @@ fn the_mapped_pcurve_search_accepts_a_matching_seed_whose_pcurve_has_no_tangent(
     assert!(crate::eval::pcurve_tangent(&pcurve, 0.5).is_err());
     let seed = crate::scalar::FiniteReal::new(0.5).expect("finite seed");
     assert_eq!(
-        mapped_pcurve_parameter_near_point(
-            &context,
-            &pcurve,
-            Point3::new(3.0, 0.5, 0.0),
-            seed,
-            0.0
-        )
+        mapped_pcurve_parameter_near_point(&cadmpeg_test_support::service_decode_context(), &context, &pcurve, Point3::new(3.0, 0.5, 0.0), seed, 0.0)
         .expect("resource allocation did not fail"),
         Some(seed)
     );
+}
+
+#[test]
+fn solved_surface_parameter_domains_preserves_session_depth_and_work_refusals() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    let geometry = placed_nurbs_surface(2).unwrap();
+    for (dimension, cap, held_frame) in [
+        (ResourceDimension::RecursionDepth, 0, false),
+        (ResourceDimension::RecursionDepth, 2, false),
+        (ResourceDimension::RecursionDepth, 2, true),
+        (ResourceDimension::WorkUnits, 0, false),
+        (ResourceDimension::WorkUnits, 2, false),
+    ] {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        match dimension {
+            ResourceDimension::RecursionDepth => policy.limits.max_recursion_depth = cap,
+            ResourceDimension::WorkUnits => policy.limits.max_work_units = cap,
+            _ => unreachable!(),
+        }
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let guard = held_frame.then(|| ctx.enter_nested_limit("caller frame").unwrap());
+        let limit = super::solved_surface_parameter_domains(&ctx, &geometry).unwrap_err();
+        assert_eq!(limit.dimension, dimension);
+        assert_eq!(limit.limit, cap);
+        assert_eq!(limit.used, cap);
+        assert_eq!(limit.additional, 1);
+        assert_eq!(limit.operation, match dimension {
+            ResourceDimension::RecursionDepth => "surface parameter domain nesting",
+            _ => "surface parameter domain visit",
+        });
+        drop(guard);
+        assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(original)) if original == limit));
+    }
+}
+
+#[test]
+fn pcurve_geometry_trim_range_preserves_session_depth_and_work_refusals() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    let geometry = placed_pcurve(2, nurbs_pcurve_leaf()).unwrap();
+    for (dimension, cap, held_frame) in [
+        (ResourceDimension::RecursionDepth, 0, false),
+        (ResourceDimension::RecursionDepth, 2, false),
+        (ResourceDimension::RecursionDepth, 2, true),
+        (ResourceDimension::WorkUnits, 0, false),
+        (ResourceDimension::WorkUnits, 2, false),
+    ] {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        match dimension {
+            ResourceDimension::RecursionDepth => policy.limits.max_recursion_depth = cap,
+            ResourceDimension::WorkUnits => policy.limits.max_work_units = cap,
+            _ => unreachable!(),
+        }
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let guard = held_frame.then(|| ctx.enter_nested_limit("caller frame").unwrap());
+        let limit = super::pcurve_geometry_trim_range(&ctx, &geometry).unwrap_err();
+        assert_eq!(limit.dimension, dimension);
+        assert_eq!(limit.limit, cap);
+        assert_eq!(limit.used, cap);
+        assert_eq!(limit.additional, 1);
+        assert_eq!(limit.operation, match dimension {
+            ResourceDimension::RecursionDepth => "pcurve trim range nesting",
+            _ => "pcurve trim range visit",
+        });
+        drop(guard);
+        assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(original)) if original == limit));
+    }
 }

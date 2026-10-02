@@ -871,7 +871,7 @@ pub(super) fn check_carrier_reachability(ctx: &cadmpeg_core::decode::DecodeConte
     Ok(())
 }
 
-pub(super) fn check_parameter_domains(ir: &CadIr, findings: &mut Vec<Finding>) {
+pub(super) fn check_parameter_domains(ctx: &cadmpeg_core::decode::DecodeContext<'_>, ir: &CadIr, findings: &mut Vec<Finding>) -> Result<(), cadmpeg_core::CodecError> {
     let curves = ir
         .model
         .curves
@@ -984,7 +984,7 @@ pub(super) fn check_parameter_domains(ir: &CadIr, findings: &mut Vec<Finding>) {
             let geometry = pcurves.get(use_.pcurve.as_str());
             let mut valid = geometry.is_some();
             if let Some(geometry) = geometry {
-                let domain = pcurve_parameter_domain(geometry)
+                let domain = pcurve_parameter_domain(ctx, geometry)?
                     .map(crate::topology::IncreasingParameterInterval::endpoints);
                 match domain {
                     Some([lower, upper]) => {
@@ -992,7 +992,7 @@ pub(super) fn check_parameter_domains(ir: &CadIr, findings: &mut Vec<Finding>) {
                             .into_iter()
                             .all(|value| parameter_in_domain(value, [lower, upper]));
                     }
-                    None if pcurve_requires_bounded_domain(geometry) => {
+                    None if pcurve_requires_bounded_domain(ctx, geometry)? => {
                         valid = false;
                     }
                     None => {}
@@ -1008,6 +1008,7 @@ pub(super) fn check_parameter_domains(ir: &CadIr, findings: &mut Vec<Finding>) {
             }
         }
     }
+    Ok(())
 }
 
 fn parameter_in_domain(value: f64, domain: [f64; 2]) -> bool {
@@ -1034,18 +1035,18 @@ fn parameter_in_domain(value: f64, domain: [f64; 2]) -> bool {
 /// mixture of wrappers exactly as it is reported bare.
 ///
 /// The match is exhaustive, so a new pcurve variant states its answer here.
-/// The recursion is bounded by the carrier: each pcurve nesting constructor
-/// refuses a chain past
-/// [`MAX_GEOMETRY_NESTING`](crate::geometry::MAX_GEOMETRY_NESTING).
-fn pcurve_requires_bounded_domain(geometry: &PcurveGeometry) -> bool {
-    match geometry {
+/// Each carrier visit enters the caller session and admits its work.
+fn pcurve_requires_bounded_domain(ctx: &cadmpeg_core::decode::DecodeContext<'_>, geometry: &PcurveGeometry) -> Result<bool, cadmpeg_core::decode::ResourceLimit> {
+    let _depth = ctx.enter_nested_limit("pcurve bounded domain nesting")?;
+    ctx.charge_work_limit(1, "pcurve bounded domain visit")?;
+    Ok(match geometry {
         PcurveGeometry::Nurbs { .. } | PcurveGeometry::PolarNurbs { .. } => true,
-        PcurveGeometry::Transformed(placed) => pcurve_requires_bounded_domain(placed.basis()),
+        PcurveGeometry::Transformed(placed) => pcurve_requires_bounded_domain(ctx, placed.basis())?,
         PcurveGeometry::Trimmed(trimmed_pcurve) => {
-            pcurve_requires_bounded_domain(trimmed_pcurve.basis())
+            pcurve_requires_bounded_domain(ctx, trimmed_pcurve.basis())?
         }
         PcurveGeometry::Offset(offset_pcurve) => {
-            pcurve_requires_bounded_domain(offset_pcurve.basis())
+            pcurve_requires_bounded_domain(ctx, offset_pcurve.basis())?
         }
         PcurveGeometry::Line(_) => false,
         PcurveGeometry::SphericalGreatCircle(_) => false,
@@ -1056,7 +1057,7 @@ fn pcurve_requires_bounded_domain(geometry: &PcurveGeometry) -> bool {
         PcurveGeometry::Hyperbola(_) => false,
         PcurveGeometry::Hyperbolic(_) => false,
         PcurveGeometry::PolarHarmonic(_) => false,
-    }
+    })
 }
 
 #[cfg(test)]

@@ -37,13 +37,7 @@ fn numerical_audit_mapped_pcurve_search_ignores_knot_units() {
             )
             .unwrap(),
         };
-        let t = mapped_pcurve_parameter_near_point(
-            &context,
-            &p,
-            Point3::new(0.3, 0., 0.),
-            crate::scalar::FiniteReal::ZERO,
-            EPS_POINT,
-        )
+        let t = mapped_pcurve_parameter_near_point(&cadmpeg_test_support::service_decode_context(), &context, &p, Point3::new(0.3, 0., 0.), crate::scalar::FiniteReal::ZERO, EPS_POINT)
         .expect("resource allocation did not fail")
         .unwrap()
         .get();
