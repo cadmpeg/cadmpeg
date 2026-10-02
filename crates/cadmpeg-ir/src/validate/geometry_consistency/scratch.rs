@@ -1,0 +1,61 @@
+// SPDX-License-Identifier: Apache-2.0
+//! Vector storage whose reservation follows its values and consuming iterator.
+
+use cadmpeg_core::decode::{DecodeContext, ScopedReservation};
+use cadmpeg_core::CodecError;
+
+pub(super) struct Scratch<'ctx, T> {
+    values: Vec<T>,
+    ctx: &'ctx DecodeContext<'ctx>,
+    storage: ScopedReservation<'ctx>,
+}
+
+impl<'ctx, T> Scratch<'ctx, T> {
+    pub(super) fn new(ctx: &'ctx DecodeContext<'_>) -> Result<Self, CodecError> {
+        Ok(Self { values: Vec::new(), ctx, storage: ctx.reserve_scoped(0, "geometric parameter scratch")? })
+    }
+
+    pub(super) fn push(&mut self, value: T) -> Result<(), CodecError> {
+        self.ctx.charge_work(1, "geometric parameter scratch copy")?;
+        self.storage.with_storage(|| self.ctx.push_retained_vec(&mut self.values, value, "geometric parameter scratch slots"))
+    }
+
+    pub(super) fn extend(&mut self, values: impl IntoIterator<Item = T>) -> Result<(), CodecError> {
+        for value in values {
+            self.ctx.charge_work(1, "geometric parameter extension scan")?;
+            self.push(value)?;
+        }
+        Ok(())
+    }
+}
+
+impl<T> std::ops::Deref for Scratch<'_, T> {
+    type Target = [T];
+    fn deref(&self) -> &Self::Target { &self.values }
+}
+
+impl<T: std::fmt::Debug> std::fmt::Debug for Scratch<'_, T> {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        std::fmt::Debug::fmt(&self.values, formatter)
+    }
+}
+
+pub(super) struct IntoIter<'ctx, T> {
+    values: std::vec::IntoIter<T>,
+    _storage: ScopedReservation<'ctx>,
+}
+
+impl<T> Iterator for IntoIter<'_, T> {
+    type Item = T;
+    fn next(&mut self) -> Option<T> { self.values.next() }
+    fn size_hint(&self) -> (usize, Option<usize>) { self.values.size_hint() }
+}
+
+impl<'ctx, T> IntoIterator for Scratch<'ctx, T> {
+    type Item = T;
+    type IntoIter = IntoIter<'ctx, T>;
+    fn into_iter(self) -> Self::IntoIter { IntoIter { values: self.values.into_iter(), _storage: self.storage } }
+}
+
+#[cfg(test)]
+mod tests;

@@ -1597,3 +1597,30 @@ fn pcurve_geometry_trim_range_preserves_session_depth_and_work_refusals() {
         assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(original)) if original == limit));
     }
 }
+
+#[test]
+fn pcurve_seed_storage_preserves_caller_refusals() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    let pcurve = Pcurve {
+        id: "test:model:pcurve#seed".try_into().unwrap(),
+        geometry: PcurveGeometry::Line(crate::geometry::pcurve::LinePcurve::try_new(Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)).unwrap()),
+        metadata: PcurveMetadata::default(),
+    };
+    for dimension in [ResourceDimension::MaterializedBytes, ResourceDimension::CollectionItems,
+        ResourceDimension::WorkUnits, ResourceDimension::RecursionDepth] {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        match dimension {
+            ResourceDimension::MaterializedBytes => policy.limits.max_materialized_bytes = 0,
+            ResourceDimension::CollectionItems => policy.limits.max_collection_items = 0,
+            ResourceDimension::WorkUnits => policy.limits.max_work_units = 0,
+            ResourceDimension::RecursionDepth => policy.limits.max_recursion_depth = 0,
+            _ => panic!("test dimension"),
+        }
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let Err(CodecError::ResourceLimit(limit)) = super::pcurve_parameter_seeds(&ctx, &pcurve) else { panic!("seed storage must refuse"); };
+        assert_eq!(limit.dimension, dimension);
+        assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(original)) if original == limit));
+    }
+}
