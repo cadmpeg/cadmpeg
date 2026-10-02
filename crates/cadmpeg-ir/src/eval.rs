@@ -1387,10 +1387,9 @@ pub fn nurbs_surface_closest_parameter_with_budget(
     seed: Option<Point2>,
     budget: &WorkBudget<'_>,
 ) -> Result<Option<FinitePoint2>, ResourceLimit> {
-    Ok(
-        solve_nurbs_surface_parameter(ctx, surface, point, seed, None, budget)?
-            .map(|(parameters, _)| parameters),
-    )
+    let result = solve_nurbs_surface_parameter(ctx, surface, point, seed, None, budget)?;
+    ctx.charge_work_limit(0, "IR surface closest parameter completion")?;
+    Ok(result.map(|(parameters, _)| parameters))
 }
 
 /// Find a bounded local parameter candidate on a finite NURBS surface.
@@ -1567,9 +1566,9 @@ pub fn nurbs_surface_parameter_within_nonnegative_tolerance_with_budget(
     budget: &WorkBudget<'_>,
 ) -> Result<Option<FinitePoint2>, ResourceLimit> {
     let tolerance = tolerance.get();
-    let Some((parameters, distance)) =
-        solve_nurbs_surface_parameter(ctx, surface, point, seed, Some(tolerance), budget)?
-    else {
+    let result = solve_nurbs_surface_parameter(ctx, surface, point, seed, Some(tolerance), budget)?;
+    ctx.charge_work_limit(0, "IR surface tolerance parameter completion")?;
+    let Some((parameters, distance)) = result else {
         return Ok(None);
     };
     Ok((distance.is_finite() && distance <= tolerance).then_some(parameters))
