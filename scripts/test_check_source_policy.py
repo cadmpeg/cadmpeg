@@ -1051,6 +1051,13 @@ class DecodeAllocations(TempSourceCase):
 }""")
         self.assertEqual([f.line for f in self.findings("uncharged_decode_allocation")], list(range(2, 10)))
 
+    def test_iterator_cloning_does_not_hide_owned_child_copies(self):
+        self.write(self.PATH, """fn read(ctx: &DecodeContext<'_>) {
+    ctx.collect_vec(values.iter().cloned(), "copies")?;
+    ctx.collect_vec(values.iter().copied(), "copies")?;
+}""")
+        self.assertEqual([f.line for f in self.findings("uncharged_decode_allocation")], [2])
+
     def test_charged_collections_and_explicit_scalars_are_accepted(self):
         self.write(self.PATH, """fn read(ctx: &DecodeContext<'_>, number: u32) {
     ctx.copy_slice(bytes, "copy")?;
@@ -1117,6 +1124,42 @@ fn renamed(ctx: &Context<'_>) { value.clone(); }
                    "fn read(ctx: &DecodeContext<'_>) { text.to_string(); }")
         self.assertEqual(len(self.findings("uncharged_decode_allocation")), 2)
 
+    def test_bounded_primitive_formats_and_shared_reference_clones(self):
+        self.write(self.PATH, """use std::rc::Rc;
+fn read(ctx: &DecodeContext<'_>, number: u32, width: usize) {
+    format!("bad {number}");
+    format!("bad {}", 42);
+    format!("bad {n}", n = number);
+    format!("bad {}", "fixed");
+    format!("bad {number:width$}");
+    format!("bad {text}");
+    Rc::clone(&shared);
+    std::sync::Arc::clone(&shared);
+    Clone::clone(&owned);
+}
+""")
+        self.assertEqual([f.line for f in self.findings("uncharged_decode_allocation")], [7, 8, 11])
+
+    def test_shared_clone_exclusion_requires_the_standard_type(self):
+        self.write(self.PATH, """struct Rc;
+fn read(ctx: &DecodeContext<'_>) { Rc::clone(&value); }
+""")
+        self.assertEqual([f.line for f in self.findings("uncharged_decode_allocation")], [2])
+
+    def test_fills_require_bounded_clone_ownership(self):
+        self.write(self.PATH, """fn read(ctx: &DecodeContext<'_>, count: usize, number: u32) {
+    ctx.alloc_filled(count, value, "fill")?;
+    ctx.alloc_filled(count, 0u8, "fill")?;
+    ctx.alloc_filled(count, None, "fill")?;
+    ctx.alloc_filled(count, Vec::new(), "fill")?;
+    ctx.alloc_filled(count, String::new(), "fill")?;
+    ctx.alloc_filled(count, number, "fill")?;
+    Iterator::cloned(values);
+    format!("fixed",);
+    format!("bounded {}", 42,);
+}""")
+        self.assertEqual([f.line for f in self.findings("uncharged_decode_allocation")], [2, 8])
+
 
 class DecodeWork(TempSourceCase):
     PATH = "crates/cadmpeg-codec-demo/src/read.rs"
@@ -1173,8 +1216,23 @@ class DecodeWork(TempSourceCase):
     for value in values { if condition { ctx.charge_work(1, "scan")?; } step(); }
     for value in values { ctx.charge_work(0, "scan")?; step(); }
     while cursor.position() < end { ctx.charge_work(1, "scan")?; step(); }
+    for value in values { ctx.charge_work(u64_from_index(value.len()), "scan")?; step(); }
 }""")
-        self.assertEqual([f.line for f in self.findings("uncharged_decode_work")], [2, 3])
+        self.assertEqual([f.line for f in self.findings("uncharged_decode_work")], [2, 3, 5])
+
+    def test_positive_increment_must_be_propagated_and_not_reduced(self):
+        self.write(self.PATH, """fn read(ctx: &DecodeContext<'_>) {
+    for value in values {
+        ctx.charge_work(value.len().checked_add(1).unwrap_or(0), "step")?;
+    }
+    for value in values {
+        ctx.charge_work(value.len().checked_add(1).and_then(|n| n.checked_mul(0)).ok_or_else(error)?, "step")?;
+    }
+    for value in values {
+        ctx.charge_work(value.len().checked_add(1).ok_or_else(error)?, "step")?;
+    }
+}""")
+        self.assertEqual([f.line for f in self.findings("uncharged_decode_work")], [2, 5])
 
     def test_named_decoded_slices_need_comparison_admission(self):
         self.write(self.PATH, """fn read(ctx: &DecodeContext<'_>, left: &[u8], right: &[u8]) {
@@ -1222,6 +1280,80 @@ class DecodeWork(TempSourceCase):
         self.write("crates/cadmpeg-codec-demo/src/writer.rs",
                    "fn write(ctx: &DecodeContext<'_>) { values.iter().any(predicate); }")
         self.assertEqual([f.line for f in self.findings("uncharged_decode_work")], [3])
+
+    def test_fixed_byte_literals_and_count_queries_are_constant_work(self):
+        self.write(self.PATH, """fn read(ctx: &DecodeContext<'_>) {
+    byte == b':';
+    data == b"fixed";
+    count == data.len();
+    data.len() == count;
+    self.input.pos == self.input.src.len();
+    first == second;
+}""")
+        self.assertEqual([f.line for f in self.findings("uncharged_decode_work")], [7])
+
+    def test_scalar_binding_proofs_stay_in_function_and_track_shadowing(self):
+        self.write(self.PATH, """fn previous(ctx: &DecodeContext<'_>, value: usize) { value == other; }
+fn read(ctx: &DecodeContext<'_>) { value == other; }
+fn compare(ctx: &DecodeContext<'_>) {
+    values.map(|&left: &usize, &right: &usize| compare(left, right).then_with(|| left.cmp(&right)));
+    let count: usize = 0;
+    values.map(|count| count.cmp(&other));
+    let count = heap();
+    count == other;
+}""")
+        self.assertEqual([f.line for f in self.findings("uncharged_decode_work")], [2, 6, 8])
+
+    def test_capacity_charge_and_resource_variant_propagation(self):
+        self.write(self.PATH, """fn read(ctx: &DecodeContext<'_>) {
+    ctx.charge_work_limit(u64_from_index(table.capacity()), "scan").map_err(Error::ResourceLimit)?;
+    for value in table.keys() { use_value(value); }
+    for value in values { ctx.charge_work_limit(1, "step").map_err(Error::ResourceLimit)?; step(); }
+    ctx.charge_work_limit(u64_from_index(values.len()), "scan").map_err(|_| Error::Malformed)?;
+    values.iter().any(predicate);
+}""")
+        self.assertEqual([f.line for f in self.findings("uncharged_decode_work")], [6])
+
+    def test_shadowing_invalidates_extent_admission(self):
+        self.write(self.PATH, """fn read(ctx: &DecodeContext<'_>) {
+    ctx.charge_work(u64_from_index(values.len()), "scan")?;
+    let values = other_values;
+    values.iter().any(predicate);
+}""")
+        self.assertEqual([f.line for f in self.findings("uncharged_decode_work")], [4])
+
+    def test_scalar_proof_does_not_escape_its_block_or_closure(self):
+        self.write(self.PATH, """fn read(ctx: &DecodeContext<'_>, value: String, left: String) {
+    { let value: usize = 0; value == count; }
+    value == other;
+    values.map(|left: usize| left);
+    left.cmp(&other);
+    values.map(|left: usize| { left });
+    format!("{left}");
+}""")
+        self.assertEqual([f.line for f in self.findings("uncharged_decode_work")], [3, 5])
+        self.assertEqual([f.line for f in self.findings("uncharged_decode_allocation")], [7])
+
+    def test_checked_increment_only_admits_direct_option_refusal(self):
+        self.write(self.PATH, """fn read(ctx: &DecodeContext<'_>) {
+    for value in values {
+        ctx.charge_work(value.len().checked_add(1).map_or(Some(0), Some).ok_or_else(error)?, "step")?;
+    }
+    for value in values {
+        ctx.charge_work(value.len().checked_add(1).ok_or_else(error).map(|_| 0)?, "step")?;
+    }
+}""")
+        self.assertEqual([f.line for f in self.findings("uncharged_decode_work")], [2, 5])
+
+    def test_context_fields_do_not_leak_between_same_named_types(self):
+        self.write("crates/cadmpeg-codec-demo/src/charged.rs", """struct Reader<'a> { ctx: &'a DecodeContext<'a> }
+impl Reader<'_> { fn read(&self) { values.iter().any(predicate); } }
+""")
+        self.write(self.PATH, """struct Reader { bytes: Vec<u8> }
+impl Reader { fn read(&self) { values.iter().any(predicate); } }
+""")
+        findings = self.findings("uncharged_decode_work")
+        self.assertEqual([(f.path, f.line) for f in findings], [("crates/cadmpeg-codec-demo/src/charged.rs", 2)])
 
 
 class SourcePolicyCommand(TempSourceCase):

@@ -123,9 +123,10 @@ impl ZstdDecoder<'_, '_> {
             return Ok(0);
         }
         loop {
+            self.ctx.charge_work(1, "Zstandard decode iteration")?;
             self.ctx
                 .charge_work(u64_from_index(bytes.len()), "Zstandard decode step")?;
-            let before = self.input.pos;
+            let before: usize = self.input.pos;
             let mut chunk = [0_u8; 16 * 1024];
             let capacity = bytes.len().min(chunk.len());
             let mut output = OutBuffer::around(&mut chunk[..capacity]);

@@ -27,6 +27,7 @@ impl DecodeContext<'_> {
         let mut chunk = [0_u8; 1024];
         let mut offset = 0;
         loop {
+            self.charge_work(1, "DEFLATE probe iteration")?;
             self.charge_work(u64_from_index(chunk.len()), "DEFLATE probe step")?;
             let before_in = decoder.total_in();
             let before_out = decoder.total_out();
@@ -51,7 +52,7 @@ impl DecodeContext<'_> {
             self.charge_work(u64_from_index(produced), "DEFLATE probe copy")?;
             self.reserve_scoped_vec(&mut storage, &mut output, produced, "DEFLATE probe output")?;
             output.extend_from_slice(&chunk[..produced]);
-            if status == Status::StreamEnd {
+            if matches!(status, Status::StreamEnd) {
                 return Ok(Some((output, storage)));
             }
             if consumed == 0 && produced == 0 {

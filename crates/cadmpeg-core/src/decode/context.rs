@@ -306,6 +306,7 @@ impl<'a> DecodeContext<'a> {
         let mut remaining = value;
         let mut length = 0usize;
         loop {
+            self.charge_work(1, operation)?;
             self.charge_work(u64_from_index(remaining.len()), operation)?;
             match std::str::from_utf8(remaining) {
                 Ok(valid) => {
@@ -330,6 +331,7 @@ impl<'a> DecodeContext<'a> {
         self.try_reserve_retained_text(&mut text, length, operation)?;
         let mut remaining = value;
         loop {
+            self.charge_work(1, operation)?;
             self.charge_work(u64_from_index(remaining.len()), operation)?;
             match std::str::from_utf8(remaining) {
                 Ok(valid) => {
@@ -353,18 +355,18 @@ impl<'a> DecodeContext<'a> {
         Ok(text)
     }
 
-    /// Allocates `count` copies of `value` after charging collection items and
-    /// reserving without panicking on allocator refusal.
-    ///
-    /// Prefer this over `vec![value; parsed_count]` for attacker-influenced sizes.
+    /// Allocates `count` fixed-storage copies after admitting work, retained
+    /// storage and collection slots. The fill is Copy or an empty standard
+    /// collection. Owned child copies use `collect_indexed_vec` and charged
+    /// child construction. The source policy checks unresolved fills.
     pub fn alloc_filled<T: Clone>(
         &self,
         count: usize,
         value: T,
         operation: &'static str,
     ) -> Result<Vec<T>, CodecError> {
-        self.charge_collection_items(u64_from_index(count), operation)?;
-        let mut values = Self::admitted_vec(count, operation)?;
+        self.charge_work(u64_from_index(count), operation)?;
+        let mut values = self.collection_vec(count, operation)?;
         values.resize(count, value);
         Ok(values)
     }
@@ -686,6 +688,7 @@ impl<'a> DecodeContext<'a> {
             )
         })?;
         for view in inputs {
+            self.charge_work(1, "concat_views")?;
             self.charge_work(u64_from_index(view.window().len()), "concat_views")?;
             buffer.extend_from_slice(view.window());
         }
