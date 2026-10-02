@@ -11,6 +11,7 @@ extern crate rustc_span;
 
 mod allocation;
 mod callee;
+mod conversion;
 mod extent;
 mod external;
 mod fixed;
@@ -33,6 +34,8 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 #[derive(Default)]
 struct Findings {
     externals: BTreeSet<String>,
+    conversions: HashMap<rustc_hir::HirId, Vec<bool>>,
+    admitted_operations: HashSet<rustc_hir::HirId>,
     entries: BTreeMap<(String, usize, u32, u32, String), BTreeSet<String>>,
 }
 
@@ -100,7 +103,7 @@ impl Callbacks for DecodeCallbacks {
                 typing_owner: instantiation.caller,
                 arguments: Some(instantiation.instance.args),
                 fixed_parameters: instantiation.fixed_parameters.clone(),
-                flow: flow::Flow::default(),
+                flow: flow::Flow::with_parameters(&instantiation.admitted_parameters),
                 findings: &mut concrete,
             }
             .visit_body(tcx.hir_body_owned_by(local));

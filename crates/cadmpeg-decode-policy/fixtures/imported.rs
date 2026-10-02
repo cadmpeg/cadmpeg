@@ -61,3 +61,12 @@ pub fn imported_fills(
     let _owned = cadmpeg_core::filled(ctx, count, text)?; // finding: uncharged_decode_allocation, unproven_decode_charge
     Ok(())
 }
+
+pub fn imported_conversion(ctx: &cadmpeg_core::DecodeContext, text: &str, other: &str) -> Result<(), ()> {
+    ctx.charge_retained(u64::try_from(text.len()).map_err(|_| ())?, "text")?;
+    let _paid = cadmpeg_core::forward_text(text);
+    ctx.charge_retained(u64::try_from(other.len()).map_err(|_| ())?, "wrong")?;
+    let _wrong = cadmpeg_core::forward_text(text); // finding: uncharged_decode_allocation, uncharged_decode_work
+    let _reuse = cadmpeg_core::forward_text(text); // finding: uncharged_decode_allocation, uncharged_decode_work
+    Ok(())
+}

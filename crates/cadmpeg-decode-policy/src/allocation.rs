@@ -43,6 +43,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
     }
 
     pub(crate) fn allocation(&mut self, expression: &'tcx Expr<'tcx>) {
+        if self.admit_conversion(expression) { return; }
         let Some((definition, operands)) = self.call(expression) else {
             return;
         };
