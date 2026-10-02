@@ -14,7 +14,7 @@ use serde::{
     Deserialize, Deserializer, Serialize, Serializer,
 };
 
-use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::decode::{u64_from_index, DecodeContext};
 use cadmpeg_core::dialect::{DialectLayers, DialectMatch, FormatIdentity};
 use cadmpeg_core::CodecError;
 
@@ -61,6 +61,18 @@ pub(crate) struct FeatureRegenerationParents(
 );
 
 impl FeatureRegenerationParents {
+    pub(crate) fn equivalent(&self, other: &Self, ctx: &DecodeContext<'_>) -> Result<bool, CodecError> {
+        let operation = "compare model checkpoint parents";
+        ctx.charge_work(1, operation)?;
+        if self.0.len() != other.0.len() { return Ok(false); }
+        for ((left_child, left_parent), (right_child, right_parent)) in self.0.iter().zip(&other.0) {
+            let bytes = left_child.as_str().len().checked_add(left_parent.as_str().len()).and_then(|bytes| bytes.checked_add(2)).ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
+            ctx.charge_work(u64_from_index(bytes), operation)?;
+            if left_child != right_child || left_parent != right_parent { return Ok(false); }
+        }
+        Ok(true)
+    }
+
     /// Admit the nodes rebuilt when two nonempty parent tables are merged.
     pub(crate) fn reserve_append(
         &self,
@@ -87,15 +99,16 @@ impl FeatureRegenerationParents {
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         operation: &'static str,
     ) -> Result<Self, cadmpeg_core::CodecError> {
+        let _depth = ctx.enter_nested(operation)?;
+        ctx.charge_work(1, operation)?;
         let mut parents = BTreeMap::new();
         for (child, parent) in &self.0 {
-            ctx.charge_work(1, operation)?;
-            ctx.insert_btree_map(
-                &mut parents,
-                child.try_clone_for_decode(ctx, operation)?,
-                parent.try_clone_for_decode(ctx, operation)?,
-                operation,
-            )?;
+            let work = u64_from_index(child.as_str().len()).checked_add(1).and_then(|length| length.checked_mul(u64_from_index(parents.len()).checked_add(1)?)).ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
+            ctx.charge_work(work, operation)?;
+            let child = child.try_clone_for_decode(ctx, operation)?;
+            let parent = parent.try_clone_for_decode(ctx, operation)?;
+            ctx.admit_retained_btree_record::<crate::features::FeatureId, crate::features::FeatureId>(0, operation)?;
+            parents.insert(child, parent);
         }
         Ok(Self(parents))
     }

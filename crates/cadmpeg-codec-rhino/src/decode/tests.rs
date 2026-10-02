@@ -1366,7 +1366,7 @@ fn successful_candidate_keeps_preceding_arena_order_for_instance_checkpoints() {
             )
         };
         context.ir.model.points.push(point("z"));
-        let checkpoint = ModelCheckpoint::capture(&context.ir.model);
+        let checkpoint = ModelCheckpoint::capture(&context.ir.model, expand.ctx()).unwrap();
         context
             .validate_candidate(|candidate, _| {
                 candidate.model.points.push(point("a"));
@@ -1377,13 +1377,13 @@ fn successful_candidate_keeps_preceding_arena_order_for_instance_checkpoints() {
                 .ir
                 .model
                 .points
-                .get(checkpoint.arena_len::<Point>()..)
+                .get(checkpoint.0.arena_len::<Point>()..)
                 .unwrap()[0]
                 .id
                 .as_str(),
             "rhino:test:point#a"
         );
-        checkpoint.discard_appended(&mut context.ir.model);
+        checkpoint.0.discard_appended(&mut context.ir.model, expand.ctx()).unwrap();
         assert_eq!(context.ir.model.points.len(), 1);
         assert_eq!(context.ir.model.points[0].id.as_str(), "rhino:test:point#z");
     });

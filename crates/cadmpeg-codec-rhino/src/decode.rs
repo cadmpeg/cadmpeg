@@ -324,69 +324,33 @@ fn snapshot_instance_links<'a>(
     ctx: &'a cadmpeg_core::decode::DecodeContext<'_>,
     records: &[UnknownRecord],
 ) -> Result<InstanceLinkSnapshot<'a>, cadmpeg_core::CodecError> {
-    const BYTES: &str = "Rhino instance link snapshot bytes";
-    let bytes = records
-        .iter()
-        .flat_map(UnknownRecord::links)
-        .try_fold(0_u64, |total, link| {
-            total.checked_add(u64_from_index(link.len()))
-        })
-        .ok_or({
-            cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit {
-                dimension: cadmpeg_core::decode::ResourceDimension::MaterializedBytes,
-                reason: cadmpeg_core::decode::ResourceFailure::BudgetExceeded,
-                limit: u64::MAX,
-                used: u64::MAX,
-                additional: 1,
-                operation: BYTES,
-            })
-        })?;
-    let reservation = ctx.reserve_scoped(bytes, BYTES)?;
-    let mut links = ctx.collection_vec(records.len(), "Rhino instance link snapshot rows")?;
-    for record in records {
-        let mut row =
-            ctx.collection_vec(record.links().len(), "Rhino instance link snapshot entries")?;
-        for link in record.links() {
-            let copy = cadmpeg_core::decode::DecodeContext::copy_admitted_text(link, BYTES)?;
-            row.push(copy);
+    let captured = ctx.with_scoped_storage("Rhino instance link snapshot bytes", || {
+        let mut links = ctx.retained_vec(records.len(), "Rhino instance link snapshot rows")?;
+        for record in records {
+            ctx.charge_work(1, "Rhino instance link snapshot rows")?;
+            let mut row = ctx.retained_vec(record.links().len(), "Rhino instance link snapshot entries")?;
+            for link in record.links() {
+                row.push(ctx.copy_retained_text(link, "Rhino instance link snapshot bytes")?);
+            }
+            ctx.charge_work(u64_from_index(std::mem::size_of_val(&row)), "move Rhino instance link snapshot row")?;
+            links.push(row);
         }
-        links.push(row);
-    }
-    Ok(InstanceLinkSnapshot {
-        links,
-        _bytes: reservation,
-    })
+        Ok::<_, cadmpeg_core::CodecError>(links)
+    })?;
+    Ok(InstanceLinkSnapshot { links: captured.0, _bytes: captured.1 })
 }
 
 fn snapshot_instance_statuses<'a>(
     ctx: &'a cadmpeg_core::decode::DecodeContext<'_>,
     statuses: &[Option<GeometryOutcome>],
-) -> Result<
-    (
-        Vec<Option<GeometryOutcome>>,
-        cadmpeg_core::decode::ScopedReservation<'a>,
-    ),
-    cadmpeg_core::CodecError,
-> {
-    const BYTES: &str = "Rhino instance status snapshot bytes";
-    let bytes = u64_from_index(statuses.len())
-        .checked_mul(u64_from_index(
-            std::mem::size_of::<Option<GeometryOutcome>>(),
-        ))
-        .ok_or({
-            cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit {
-                dimension: cadmpeg_core::decode::ResourceDimension::MaterializedBytes,
-                reason: cadmpeg_core::decode::ResourceFailure::BudgetExceeded,
-                limit: u64::MAX,
-                used: u64::MAX,
-                additional: 1,
-                operation: BYTES,
-            })
-        })?;
-    let reservation = ctx.reserve_scoped(bytes, BYTES)?;
-    let mut copy = ctx.collection_vec(statuses.len(), "Rhino instance status snapshot")?;
-    copy.extend_from_slice(statuses);
-    Ok((copy, reservation))
+) -> Result<(Vec<Option<GeometryOutcome>>, cadmpeg_core::decode::ScopedReservation<'a>), cadmpeg_core::CodecError> {
+    ctx.with_scoped_storage("Rhino instance status snapshot bytes", || {
+        let mut copy = ctx.retained_vec(statuses.len(), "Rhino instance status snapshot")?;
+        let bytes = statuses.len().checked_mul(std::mem::size_of::<Option<GeometryOutcome>>()).ok_or_else(|| ctx.refuse_codec_limit("copy Rhino instance statuses", u64::MAX - 1, u64::MAX))?;
+        ctx.charge_work(u64_from_index(bytes), "copy Rhino instance statuses")?;
+        copy.extend_from_slice(statuses);
+        Ok(copy)
+    })
 }
 
 const MAX_INSTANCE_REFERENCES: usize = 1 << 20;
@@ -477,11 +441,12 @@ impl ExpansionBudget {
     }
 }
 
-#[derive(Debug, Clone)]
-struct InstanceSelection {
+#[derive(Debug)]
+struct InstanceSelection<'ctx> {
     source_order: usize,
     key: IdentityKey,
     path: Vec<String>,
+    _storage: cadmpeg_core::decode::ScopedReservation<'ctx>,
 }
 
 struct InstanceKey<'a> {
@@ -501,13 +466,13 @@ impl std::fmt::Display for InstanceKey<'_> {
     }
 }
 
-impl InstanceSelection {
-    fn new<'ctx>(
+impl<'ctx> InstanceSelection<'ctx> {
+    fn new(
         ctx: &'ctx cadmpeg_core::decode::DecodeContext<'_>,
         source_order: usize,
         path: &[String],
         member: crate::wire::Uuid,
-    ) -> Result<(Self, cadmpeg_core::decode::ScopedReservation<'ctx>), cadmpeg_core::CodecError>
+    ) -> Result<Self, cadmpeg_core::CodecError>
     {
         ctx.charge_work(
             u64_from_index(path.len()),
@@ -519,16 +484,16 @@ impl InstanceSelection {
                 "Rhino instance selection path copy",
             )?;
         }
-        let (path, mut bytes) = ctx.collect_scoped_texts(
+        let mut copied = ctx.collect_scoped_texts(
             path.iter().map(String::as_str),
             "Rhino instance selection scratch",
         )?;
         let key = ctx.format_scoped_text(
-            &mut bytes,
+            &mut copied.1,
             format_args!(
                 "{}",
                 InstanceKey {
-                    path: &path,
+                    path: &copied.0,
                     member
                 }
             ),
@@ -536,14 +501,7 @@ impl InstanceSelection {
         )?;
         ctx.charge_work(u64_from_index(key.len()), "Rhino instance key validation")?;
         let key = IdentityKey::try_new(key).map_err(cadmpeg_core::CodecError::malformed)?;
-        Ok((
-            Self {
-                source_order,
-                key,
-                path,
-            },
-            bytes,
-        ))
+        Ok(Self { source_order, key, path: copied.0, _storage: copied.1 })
     }
 }
 
@@ -554,7 +512,6 @@ struct InstanceDisplay {
 }
 
 /// Mutable decode state shared by metadata and geometry phases.
-#[derive(Clone)]
 pub(crate) struct DecodeContext<'a> {
     scan: &'a Scan<'a>,
     expand: crate::mesh::MeshExpand<'a>,
@@ -569,7 +526,7 @@ pub(crate) struct DecodeContext<'a> {
     geometry_transferred: bool,
     /// Transactional report buckets produced by semantic decode phases.
     report: ReportBuckets,
-    instance_selection: Option<InstanceSelection>,
+    instance_selection: Option<InstanceSelection<'a>>,
     instance_display: Option<InstanceDisplay>,
     object_candidates: HashMap<crate::wire::Uuid, Vec<usize>>,
     definition_candidates: HashMap<crate::wire::Uuid, usize>,
@@ -2232,21 +2189,20 @@ impl<'a> DecodeContext<'a> {
     }
 
     fn expand_reference(&mut self, source_order: usize) -> Result<bool, cadmpeg_core::CodecError> {
-        let (original_model, _original_model_storage) =
-            ModelCheckpoint::capture_for_decode(&self.ir.model, self.expand.ctx())?;
+        let original_model =
+            ModelCheckpoint::capture(&self.ir.model, self.expand.ctx())?;
         let annotation_checkpoint = self
             .annotations
             .copy_transaction(self.expand.ctx(), "Rhino annotation checkpoint")?;
         let session = self.expand.ctx();
         let original_links = snapshot_instance_links(session, &self.unknowns)?;
-        let (original_statuses, _status_bytes) =
+        let original_statuses =
             snapshot_instance_statuses(session, &self.statuses)?;
         let original_geometry_transferred = self.geometry_transferred;
         let report_checkpoint = self.report.checkpoint();
         let original_selection = self.instance_selection.take();
         let original_display = self.instance_display;
         let original_expansion_budget = self.expansion_budget;
-        let mut stack = Vec::new();
         let initial_path = original_selection
             .as_ref()
             .map_or(&[][..], |selected| selected.path.as_slice());
@@ -2260,13 +2216,14 @@ impl<'a> DecodeContext<'a> {
                 "Rhino initial instance path copy",
             )?;
         }
-        let (mut path, mut scratch) = session.collect_scoped_texts(
+        let mut traversal = session.collect_scoped_texts(
             initial_path.iter().map(String::as_str),
             "Rhino instance traversal scratch",
         )?;
+        let mut stack = Vec::new();
         let parent = Transform::identity();
         let outcome =
-            self.expand_reference_inner(source_order, parent, &mut path, &mut stack, &mut scratch);
+            self.expand_reference_inner(source_order, parent, &mut traversal.0, &mut stack, &mut traversal.1);
         self.instance_selection = original_selection;
         // Mesh buffers stay charged in the session arena even on rollback.
         let rejection_warning = match outcome {
@@ -2295,12 +2252,14 @@ impl<'a> DecodeContext<'a> {
             Err(ReferenceFailure::Semantic(message)) => format!("instance retained: {message}"),
         };
 
-        original_model.discard_appended_for_decode(&mut self.ir.model, self.expand.ctx())?;
+        original_model.0.discard_appended(&mut self.ir.model, self.expand.ctx())?;
         self.annotations = annotation_checkpoint.into_retained()?;
+        original_links._bytes.commit()?;
         for (record, links) in self.unknowns.iter_mut().zip(original_links.links) {
             *record.links_mut() = links;
         }
-        self.statuses = original_statuses;
+        original_statuses.1.commit()?;
+        self.statuses = original_statuses.0;
         self.geometry_transferred = original_geometry_transferred;
         self.report.rollback(report_checkpoint);
         self.instance_display = original_display;
@@ -2451,20 +2410,20 @@ impl<'a> DecodeContext<'a> {
                 links.extend(nested);
                 continue;
             }
-            let (before, _before_storage) =
-                ModelCheckpoint::capture_for_decode(&self.ir.model, self.expand.ctx())?;
-            let (selection, _selection_bytes) =
+            let before =
+                ModelCheckpoint::capture(&self.ir.model, self.expand.ctx())?;
+            let selection =
                 InstanceSelection::new(self.expand.ctx(), member_order, path, member_id)?;
             let previous_selection = self.instance_selection.replace(selection);
             let decoded = self.decode_geometry();
             self.instance_selection = previous_selection;
             decoded?;
-            let (after, _after_storage) =
-                ModelCheckpoint::capture_for_decode(&self.ir.model, self.expand.ctx())?;
-            if before == after {
+            let after =
+                ModelCheckpoint::capture(&self.ir.model, self.expand.ctx())?;
+            if before.0.same_state(&after.0, self.expand.ctx())? {
                 return Err(format!("definition member {member_id} did not decode").into());
             }
-            let transformed = self.transform_new_entities(&before, transform, scratch)?;
+            let transformed = self.transform_new_entities(&before.0, transform, scratch)?;
             self.expand.ctx().charge_work(
                 u64_from_index(transformed.len()),
                 "Rhino instance link moves",
