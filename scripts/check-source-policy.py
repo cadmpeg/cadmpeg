@@ -31,10 +31,6 @@ class Finding:
 
 FROM_ENDIAN = re.compile(r"\bfrom_(?:le|be)_bytes\b")
 MALFORMED_FORMAT = re.compile(r"CodecError::Malformed\s*\(\s*format!", re.MULTILINE)
-INTEGER_CLAMP = re.compile(
-    r"\bunwrap_or(?:_else\s*\(\s*\|_?\|\s*|\s*\(\s*)"
-    r"[ui](?:8|16|32|64|128|size)::(?:MAX|MIN)\s*\)"
-)
 LOSS_NOTE_LIT = re.compile(r"\bLossNote\s*\{")
 LOSS_NOTE_PATH = r"(?:::\s*)?(?:(?:r#)?[^\W\d]\w*\s*::\s*)*(?:r#)?(?P<name>LossNote)"
 LOSS_NOTE_RETURN = re.compile(r"->\s*" + LOSS_NOTE_PATH + r"\s*\{")
@@ -458,6 +454,59 @@ def scan_saturating_arithmetic(path: Path, code: str) -> list[Finding]:
     ) for match in re.finditer(r"\bsaturating_\w+\s*(?:::\s*<[^;{}]*>)?\s*\(", code)]
 
 
+def integer_limit_default(words: list[str]) -> bool:
+    """Recognize a bound expression or a closure returning that bound."""
+    words = list(words)
+    if words[:1] == ["move"]:
+        words = words[1:]
+    if words[:1] == ["|"]:
+        try:
+            words = words[words.index("|", 1) + 1:]
+        except ValueError:
+            return False
+        if words[:1] == ["->"]:
+            if "{" not in words:
+                return False
+            words = words[words.index("{"):]
+    while len(words) >= 2 and words[0] in {"(", "{"}:
+        # Remove only delimiters enclosing the complete expression.
+        tokens, local_pairs, _ = evaluation_tokens(" ".join(words))
+        if local_pairs.get(0) != len(tokens) - 1:
+            break
+        words = words[1:-1]
+    if words[:1] == ["return"]:
+        words = words[1:]
+        if words[-1:] == [";"]:
+            words = words[:-1]
+    bound = "".join(words)
+    primitive = r"(?:::)?(?:(?:std|core)::(?:primitive::)?)?[ui](?:8|16|32|64|128|size)"
+    return re.fullmatch(r"(?:" + primitive + r"|<" + primitive + r">)::(?:MAX|MIN)", bound) is not None
+
+
+def scan_integer_clamps(path: Path, code: str) -> list[Finding]:
+    """Reject integer-bound defaults in Option and Result combinators."""
+    findings = []
+    tokens, pairs, parents = evaluation_tokens(code)
+    words = [token[0] for token in tokens]
+    for index, word in enumerate(words):
+        if word not in {"unwrap_or", "unwrap_or_else", "map_or", "map_or_else"}:
+            continue
+        opening = evaluation_call_open(words, index)
+        if opening is None or opening not in pairs:
+            continue
+        end = pairs[opening]
+        for argument_end in range(opening + 1, end):
+            if words[argument_end] == "," and parents.get(argument_end) == opening:
+                end = argument_end
+                break
+        if integer_limit_default(words[opening + 1:end]):
+            findings.append(Finding(
+                "integer_clamp", relative_path(path), code.count("\n", 0, tokens[index].start()) + 1,
+                "Use an exact conversion or an explicit refusal branch; represent a missing bound as Option instead of an integer limit.",
+            ))
+    return findings
+
+
 WRAPPING_CALL = re.compile(r"\bwrapping_\w+\s*(?:::\s*<[^;{}]*>)?\s*\(")
 WRAPPING_MARKER = re.compile(r"^\s*// wrapping-exception: (\S.*?)\s*$")
 
@@ -551,9 +600,7 @@ def scan_patterns(path: Path, source: str) -> list[Finding]:
     for match in MALFORMED_FORMAT.finditer(code):
         report("formatted_malformed_error", code.count("\n", 0, match.start()) + 1,
                "Use a structured codec error instead of Malformed(format!(...)).")
-    for match in INTEGER_CLAMP.finditer(code):
-        report("integer_clamp", code.count("\n", 0, match.start()) + 1,
-               "Do not clamp to an integer bound. Widen a usize with cadmpeg_core::decode::u64_from_index, or return the refusal.")
+    findings.extend(scan_integer_clamps(path, code))
     declarations = {match.end() for match in NAMED_TOLERANCE_DECL.finditer(code)}
     for match in BARE_TOLERANCE.finditer(code):
         if match.start() not in declarations:

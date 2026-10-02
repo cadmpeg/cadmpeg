@@ -21,10 +21,10 @@ fn scalar_owned_by_feature(
     scalar: &FeatureInputScalar,
     feature: &str,
     start: u64,
-    end: u64,
+    end: Option<u64>,
 ) -> bool {
     scalar.feature_ref.as_deref() == Some(feature)
-        || (scalar.feature_ref.is_none() && scalar.offset > start && scalar.offset < end)
+        || (scalar.feature_ref.is_none() && scalar.offset > start && end.is_none_or(|end| scalar.offset < end))
 }
 
 /// Add unambiguous `ResolvedFeatures` length parameters to a projection copy of history.
@@ -137,7 +137,7 @@ pub(crate) fn enrich_history_parameters<'a>(
             "sort SLDPRT feature starts",
         )?;
         for (index, &(start, history_index, feature_index)) in starts.iter().enumerate() {
-            let end = starts.get(index + 1).map_or(u64::MAX, |next| next.0);
+            let end = starts.get(index + 1).map(|next| next.0);
             let feature = &histories[history_index].features[feature_index];
             let mut owned = BTreeMap::<&str, Vec<&FeatureInputScalar>>::new();
             for scalar in lane
@@ -390,7 +390,7 @@ pub(crate) fn sync_changed_feature_scalars(
         for (index, &(start, feature)) in starts.iter().enumerate() {
             let end = starts
                 .get(index + 1)
-                .map_or(u64::MAX, |(offset, _)| *offset);
+                .map(|(offset, _)| *offset);
             for (name, expression) in &feature.parameters {
                 if !changed.contains(&(feature.id.clone(), name.clone())) {
                     continue;

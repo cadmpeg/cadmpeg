@@ -1272,5 +1272,46 @@ fn f() { count.checked_sub(1); }
         self.assertEqual(self.findings("wrapping_exception"), [])
 
 
+class IntegerLimitDefaults(TempSourceCase):
+    def test_combinators_qualified_types_and_closure_bindings(self) -> None:
+        expressions = [
+            "value.map_or(u64::MAX, identity)",
+            "value.map_or_else(|error| i16::MIN, identity)",
+            "value.unwrap_or_else(|error: Error| usize::MAX)",
+            "value.map_or_else(move || { core::primitive::u32::MAX }, identity)",
+            "value.unwrap_or_else(|error| -> u64 { return <u64>::MAX; })",
+            "value.map_or((::std::primitive::isize::MIN), identity)",
+            "value.map_or_else(|(_, error)| { std::u8::MAX }, identity)",
+            "value.unwrap_or::<u32>(u32::MAX)",
+        ]
+        for expression in expressions:
+            with self.subTest(expression=expression):
+                self.write("crates/demo/src/lib.rs", f"fn f() {{ {expression}; }}")
+                self.assertEqual(len(self.findings("integer_clamp")), 1)
+
+    def test_bounds_in_success_arm_and_nonbound_defaults_are_not_clamps(self) -> None:
+        self.write("crates/demo/src/lib.rs", """fn f() {
+    value.map_or(0, |_| u64::MAX);
+    value.unwrap_or_else(|error| refuse(error, u64::MAX));
+    value.map_or_else(|| limit, identity);
+    value.map_or(Some(NonZeroU32::MIN), identity);
+    value.map_or(native::MAX_RECORDS, identity);
+}
+""")
+        self.assertEqual(self.findings("integer_clamp"), [])
+
+    def test_multiline_closures_report_the_method_line(self) -> None:
+        self.write("crates/demo/src/lib.rs", """fn f() {
+    value.map_or_else(
+        |error| {
+            u64::MAX
+        },
+        identity,
+    );
+}
+""")
+        self.assertEqual([f.line for f in self.findings("integer_clamp")], [2])
+
+
 if __name__ == "__main__":
     unittest.main()

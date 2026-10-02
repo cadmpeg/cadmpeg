@@ -2961,7 +2961,7 @@ impl<'storage> IncidenceComponentSearch<'storage, '_> {
         face: usize,
         point: usize,
         coordinate_domains: Option<&MeshCoordinateRootDomains>,
-        limit: usize,
+        limit: Option<usize>,
         viability: &mut HashMap<MeshEndpointPair, bool>,
     ) -> Result<IncidenceConstraintOptions, CodecError> {
         let mut any_viable = false;
@@ -3002,7 +3002,7 @@ impl<'storage> IncidenceComponentSearch<'storage, '_> {
                         "catia incidence constraint options",
                     )
                 })?;
-                if options.len() == limit {
+                if limit == Some(options.len()) {
                     return Ok(IncidenceConstraintOptions::AtLeastLimit);
                 }
             }
@@ -3080,7 +3080,7 @@ impl<'storage> IncidenceComponentSearch<'storage, '_> {
                 }
                 continue;
             }
-            let limit = best.as_ref().map_or(usize::MAX, |(_, width, _)| *width);
+            let limit = best.as_ref().map(|(_, width, _)| *width);
             let mut options = Vec::new();
             for pair in self.choices[edge].iter().copied() {
                 if viable(edge, pair)? {
@@ -3091,7 +3091,7 @@ impl<'storage> IncidenceComponentSearch<'storage, '_> {
                             "catia_incidence_branch_options",
                         )
                     })?;
-                    if options.len() == limit {
+                    if limit == Some(options.len()) {
                         continue 'edges;
                     }
                 }
@@ -3126,7 +3126,7 @@ impl<'storage> IncidenceComponentSearch<'storage, '_> {
             if self.degree(face, point) != 1 {
                 continue;
             }
-            let limit = constrained.as_ref().map_or(usize::MAX, Vec::len);
+            let limit = constrained.as_ref().map(Vec::len);
             let options =
                 self.constraint_options(face, point, coordinate_domains, limit, &mut viability)?;
             match options {

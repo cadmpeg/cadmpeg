@@ -5019,12 +5019,13 @@ fn entity_value_schema_selections(
             .get(rank + 1)
             .copied()
             .unwrap_or(fields.len());
-        let value_start_offset = fields.get(index + 1).map_or(usize::MAX, value_field_offset);
-        let value_end_offset = fields.get(value_end).map_or(usize::MAX, value_field_offset);
+        let value_start_offset = fields.get(index + 1).map(value_field_offset);
+        let value_end_offset = fields.get(value_end).map(value_field_offset);
         let mut selected_packets = Vec::new();
         for packet in packets.iter().filter(|packet| {
             packet.byte_range().is_some_and(|range| {
-                range.start >= value_start_offset && range.end <= value_end_offset
+                value_start_offset.is_some_and(|start| range.start >= start)
+                    && value_end_offset.is_none_or(|end| range.end <= end)
             })
         }) {
             ctx.push_vec(

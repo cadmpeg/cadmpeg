@@ -73,6 +73,17 @@ arithmetic. The overflow branch propagates the caller context's resource refusal
 in decode code or a typed error elsewhere. Constant expressions must preserve
 the exact value or reject the invalid constant.
 
+## Integer limits
+
+`integer_clamp` rejects integer `MAX` or `MIN` defaults in `unwrap_or`,
+`unwrap_or_else`, `map_or` and `map_or_else`. Qualified primitive paths,
+parenthesized bounds, closure parameter patterns, closure blocks and explicit
+closure return types are included. Use an exact core conversion or `From` when
+the conversion cannot fail on supported targets; use `TryFrom` with a refusal
+branch when it can fail. Missing range endpoints and sort keys use `Option`.
+Limits in successful mapping arms and arguments to refusal functions are not
+default bounds.
+
 ## Wrapping exceptions
 
 Production `wrapping_*` calls fail with `wrapping_arithmetic` unless the file
