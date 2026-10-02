@@ -26,7 +26,11 @@ impl NativeRecordNamespace {
     }
 
     pub(super) fn id(&self, kind: &str, record_index: u32) -> String {
-        format!("{}:{kind}#{}", self.namespace, record_index)
+        self.serialized_id(kind, record_index).to_string()
+    }
+
+    pub(super) fn serialized_id<'a>(&'a self, kind: &'a str, record_index: u32) -> NativeRecordIdentity<'a> {
+        NativeRecordIdentity { namespace: self, kind, record_index }
     }
 
     pub(super) fn from_wire(id: &str, record_index: u32, kind: &str) -> Result<Self, String> {
@@ -41,9 +45,44 @@ impl NativeRecordNamespace {
     }
 }
 
+/// Borrow the identity components until the serializer admits their text.
+pub(super) struct NativeRecordIdentity<'a> {
+    namespace: &'a NativeRecordNamespace,
+    kind: &'a str,
+    record_index: u32,
+}
+
+impl std::fmt::Display for NativeRecordIdentity<'_> {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(formatter, "{}:{}#{}", self.namespace.as_str(), self.kind, self.record_index)
+    }
+}
+
+impl serde::Serialize for NativeRecordIdentity<'_> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.collect_str(self)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use serde::{de::DeserializeOwned, Serialize};
+
+    #[test]
+    fn native_identity_serialization_borrows_its_namespace() {
+        let namespace = super::NativeRecordNamespace::new(crate::asm_format!("f3d"));
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_retained_bytes = 0;
+        policy.limits.max_materialized_bytes = 25;
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let id = namespace.serialized_id("edge-continuity", 1);
+        let projected = cadmpeg_ir::schema::structural::project(&ctx, &id, "project native identity").unwrap();
+        assert_eq!(*projected, serde_value::Value::String("f3d:asm:edge-continuity#1".into()));
+        assert_eq!(id.to_string(), namespace.id("edge-continuity", 1));
+        drop(projected);
+        ctx.finish_session().unwrap();
+    }
 
     fn namespace_controls<T: DeserializeOwned + Serialize>(
         kind: &str,
