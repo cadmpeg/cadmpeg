@@ -49,11 +49,14 @@ impl<'tcx> Analysis<'_, 'tcx> {
         };
         let name = self.tcx.item_name(definition);
         let name = name.as_str();
+        if self.checked_call(expression, definition) && name != "alloc_filled" {
+            return;
+        }
         if name == "default" && types::standard(self.tcx, definition) {
             match self.implementation(expression, definition) {
                 Some(id)
                     if types::standard(self.tcx, id)
-                        || self.local_has_effects(id) == Some(false) => {}
+                        || self.checked_body(id) => {}
                 _ => self.shape_report(
                     expression,
                     Shape::Unknown,
@@ -205,7 +208,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
         if !types::standard(self.tcx, definition) && name != "clone" {
             if types::heap(self.tcx, self.typeck.expr_ty(expression), &mut Vec::new())
                 != Shape::Fixed
-                && self.local_has_effects(definition) != Some(false)
+                && !self.checked_body(definition)
             {
                 self.shape_report(
                     expression,
@@ -278,7 +281,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
                 }) {
                     return;
                 }
-                if self.local_has_effects(definition) != Some(false) {
+                if !self.checked_body(definition) {
                     self.shape_report(
                         expression,
                         Shape::Unknown,
@@ -317,36 +320,6 @@ impl<'tcx> Analysis<'_, 'tcx> {
                 Some(id) if !types::standard(self.tcx, id) => {
                     let parent = self.tcx.parent(id);
                     if !self.tcx.is_automatically_derived(parent) {
-                        // A custom Clone is inspected at its implementation, not
-                        // inferred to allocate from the result's ownership.
-                        if let Some(local) = id.as_local() {
-                            if self.stack.contains(&local) {
-                                self.shape_report(
-                                    expression,
-                                    Shape::Unknown,
-                                    "recursive custom Clone",
-                                );
-                                return;
-                            }
-                            let mut stack = self.stack.clone();
-                            stack.push(local);
-                            let mut child = Analysis {
-                                tcx: self.tcx,
-                                typeck: self.tcx.typeck(local),
-                                owner: local,
-                                summaries: self.summaries,
-                                flow: crate::flow::Flow::default(),
-                                stack,
-                                findings: self.findings,
-                            };
-                            child.visit_body(self.tcx.hir_body_owned_by(local));
-                        } else {
-                            self.shape_report(
-                                expression,
-                                Shape::Unknown,
-                                "custom Clone body unavailable",
-                            );
-                        }
                         return;
                     }
                 }
@@ -379,7 +352,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
         }
         if matches!(name, "from" | "into" | "to_owned") {
             if let Some(custom) = self.custom_trait(expression, definition) {
-                if self.local_has_effects(custom) != Some(false) {
+                if !self.checked_body(custom) {
                     self.shape_report(
                         expression,
                         Shape::Unknown,

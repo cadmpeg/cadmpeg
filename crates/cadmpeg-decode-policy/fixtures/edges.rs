@@ -147,10 +147,10 @@ impl Clone for BorrowedClone<'_> {
 }
 pub fn custom_borrowed(ctx: &DecodeContext, value: &BorrowedClone<'_>) {
     let _ctx = ctx;
-    let _copy = value.clone(); // finding: unproven_decode_charge
+    let _copy = value.clone();
 }
 
-#[derive(PartialEq)]
+#[derive(PartialEq)] // finding: unproven_decode_charge
 pub struct Recursive {
     pub next: Option<Box<Recursive>>,
 }
@@ -170,7 +170,7 @@ pub fn recursive_comparison(
     small: Siblings,
 ) {
     let _ctx = ctx;
-    let _equal = left == right; // finding: unproven_decode_charge
+    let _equal = left == right;
     let _small = small == small;
 }
 
@@ -188,13 +188,13 @@ pub struct CustomRef<'a> {
 }
 impl AsRef<[u8]> for CustomRef<'_> {
     fn as_ref(&self) -> &[u8] {
-        let _scanned = self.bytes.iter().fold(0usize, |n, _| n + 1);
+        let _scanned = self.bytes.iter().fold(0usize, |n, _| n + 1); // finding: uncharged_decode_work
         self.bytes
     }
 }
 pub fn custom_reference(ctx: &DecodeContext, value: &CustomRef<'_>) {
     let _ctx = ctx;
-    let _bytes = value.as_ref(); // finding: unproven_decode_charge
+    let _bytes = value.as_ref();
 }
 
 fn opaque_iterator(bytes: &[u8]) -> impl Iterator<Item = u8> + '_ {

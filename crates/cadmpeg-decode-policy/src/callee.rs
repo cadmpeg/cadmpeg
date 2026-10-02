@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-use crate::{flow, types, Analysis};
-use rustc_hir::intravisit::Visitor;
+use crate::{types, Analysis};
 use rustc_hir::{Expr, ExprKind};
 use rustc_middle::ty::{self, Instance, TypingEnv};
 use rustc_span::def_id::DefId;
@@ -43,31 +42,19 @@ impl<'tcx> Analysis<'_, 'tcx> {
         .map(|instance| instance.def_id())
     }
 
-    pub(crate) fn local_has_effects(&self, definition: DefId) -> Option<bool> {
-        if let Some(value) = self.summaries.borrow().get(&definition) {
-            return Some(*value);
-        }
-        let local = definition.as_local()?;
-        if self.stack.contains(&local) {
-            return None;
-        }
-        let body = self.tcx.hir_maybe_body_owned_by(local)?;
-        let mut findings = crate::Findings::default();
-        let mut stack = self.stack.clone();
-        stack.push(local);
-        let mut analysis = Analysis {
-            tcx: self.tcx,
-            typeck: self.tcx.typeck(local),
-            owner: local,
-            summaries: self.summaries,
-            flow: flow::Flow::default(),
-            stack,
-            findings: &mut findings,
-        };
-        analysis.visit_body(body);
-        let has_effects = !findings.entries.is_empty();
-        self.summaries.borrow_mut().insert(definition, has_effects);
-        Some(has_effects)
+    pub(crate) fn checked_body(&self, definition: DefId) -> bool {
+        types::checked(self.tcx, definition)
+            && match definition.as_local() {
+                Some(local) => crate::production(self.tcx, local)
+                    && self.tcx.hir_maybe_body_owned_by(local).is_some(),
+                None => matches!(self.tcx.def_kind(definition),
+                    rustc_hir::def::DefKind::Fn | rustc_hir::def::DefKind::AssocFn)
+                    && self.tcx.trait_of_assoc(definition).is_none(),
+            }
+    }
+
+    pub(crate) fn checked_call(&self, expression: &'tcx Expr<'tcx>, definition: DefId) -> bool {
+        self.implementation(expression, definition).is_some_and(|id| self.checked_body(id))
     }
 
     pub(crate) fn custom_trait(
@@ -110,11 +97,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
                 implementation = instance.def_id();
             }
         }
-        if !types::standard(self.tcx, implementation)
-            && !self
-                .tcx
-                .is_automatically_derived(self.tcx.parent(implementation))
-        {
+        if !types::standard(self.tcx, implementation) {
             Some(implementation)
         } else {
             None
@@ -129,7 +112,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
             return;
         }
         if let ty::Closure(definition, _) = self.typeck.expr_ty(callee).peel_refs().kind() {
-            if self.local_has_effects(*definition) == Some(false) {
+            if self.checked_body(*definition) {
                 return;
             }
         }
@@ -195,7 +178,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
                     }
                 } else if types::standard(self.tcx, id) {
                     shape
-                } else if self.local_has_effects(id) == Some(false) {
+                } else if self.checked_body(id) {
                     types::Shape::Fixed
                 } else {
                     types::Shape::Unknown

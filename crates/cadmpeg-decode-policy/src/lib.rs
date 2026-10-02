@@ -17,14 +17,13 @@ mod types;
 mod work;
 
 use rustc_driver::{Callbacks, Compilation};
-use rustc_hir::intravisit::{walk_expr, Visitor};
-use rustc_hir::{Body, Expr, ExprKind};
+use rustc_hir::intravisit::Visitor;
+use rustc_hir::{Expr, ExprKind};
 use rustc_interface::interface::Compiler;
 use rustc_middle::ty::{TyCtxt, TypeckResults};
 use rustc_span::def_id::{DefId, LocalDefId};
 use rustc_span::Span;
-use std::cell::RefCell;
-use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet};
 
 #[derive(Default)]
 struct Findings {
@@ -37,39 +36,7 @@ struct DecodeCallbacks {
 
 impl Callbacks for DecodeCallbacks {
     fn after_analysis<'tcx>(&mut self, _compiler: &Compiler, tcx: TyCtxt<'tcx>) -> Compilation {
-        let mut active = HashSet::new();
-        let summaries = RefCell::new(HashMap::new());
-        for owner in tcx.hir_body_owners() {
-            let body = tcx.hir_body_owned_by(owner);
-            let mut scope = ContextScope {
-                tcx,
-                typeck: tcx.typeck(owner),
-                present: false,
-            };
-            scope.visit_body(body);
-            if scope.present {
-                active.insert(owner);
-            }
-        }
-        // Closures retain the enclosing function's context, including closures
-        // whose uncharged expressions do not name that context.
-        for owner in tcx.hir_body_owners() {
-            if tcx.def_kind(owner) != rustc_hir::def::DefKind::Closure {
-                continue;
-            }
-            let mut parent = tcx.parent(owner.to_def_id());
-            while parent.is_local() {
-                if parent.as_local().is_some_and(|id| active.contains(&id)) {
-                    active.insert(owner);
-                    break;
-                }
-                if parent.index == rustc_span::def_id::CRATE_DEF_INDEX {
-                    break;
-                }
-                parent = tcx.parent(parent);
-            }
-        }
-        let mut owners: Vec<_> = active.into_iter().collect();
+        let mut owners: Vec<_> = tcx.hir_body_owners().collect();
         owners.sort_by_key(|owner| owner.local_def_index.as_u32());
         for owner in owners {
             if production(tcx, owner) {
@@ -77,9 +44,7 @@ impl Callbacks for DecodeCallbacks {
                     tcx,
                     typeck: tcx.typeck(owner),
                     owner,
-                    summaries: &summaries,
                     flow: flow::Flow::default(),
-                    stack: vec![owner],
                     findings: &mut self.findings,
                 }
                 .visit_body(tcx.hir_body_owned_by(owner));
@@ -164,34 +129,11 @@ fn production(tcx: TyCtxt<'_>, owner: LocalDefId) -> bool {
         )
 }
 
-struct ContextScope<'tcx> {
-    tcx: TyCtxt<'tcx>,
-    typeck: &'tcx TypeckResults<'tcx>,
-    present: bool,
-}
-
-impl<'tcx> Visitor<'tcx> for ContextScope<'tcx> {
-    fn visit_body(&mut self, body: &Body<'tcx>) {
-        for parameter in body.params {
-            self.present |=
-                types::has_context(self.tcx, self.typeck.pat_ty(parameter.pat), &mut Vec::new());
-        }
-        self.visit_expr(body.value);
-    }
-    fn visit_expr(&mut self, expression: &'tcx Expr<'tcx>) {
-        self.present |=
-            types::has_context(self.tcx, self.typeck.expr_ty(expression), &mut Vec::new());
-        walk_expr(self, expression);
-    }
-}
-
 struct Analysis<'a, 'tcx> {
     tcx: TyCtxt<'tcx>,
     typeck: &'tcx TypeckResults<'tcx>,
     owner: LocalDefId,
-    summaries: &'a RefCell<HashMap<DefId, bool>>,
     flow: flow::Flow,
-    stack: Vec<LocalDefId>,
     findings: &'a mut Findings,
 }
 
