@@ -145,7 +145,9 @@ production bodies reachable from decode roots in
 of `CodecBackend::{detect_impl, inspect_impl, decode_impl}` and
 `Codec::{detect, inspect, decode, decode_with_context}`, and public functions
 whose input types contain `DecodeContext`. Resolved calls, trait targets and
-closures form a call graph across all checked crates. Bodies reached only
+closures form a call graph across all checked crates. Definition hashes join
+local and dependency nodes. The driver collects the complete graph before
+it selects any bodies, including when `--crate` limits findings. Bodies reached only
 from encoding, writing, serialization or tests are outside the scope.
 A writer file name does not exclude a body reached during decoding.
 Binary and test bodies are excluded. Automatically derived
@@ -235,6 +237,10 @@ length and precedes the conversion on every path. The receipt admits that
 conversion once, including its copy. Resolved generic forwarding preserves
 the receipt when the operand reaches exactly one conversion without mutation.
 Unrelated, discarded, conditional and reused receipts do not admit a conversion.
+Conversion summaries reject recursion, control-flow cycles and mutable operand
+aliases. Repeated raw operations require the full loop extent or a charge
+inside each iteration. A backing receipt survives an exact reserve only on
+a path that propagates allocation failure.
 Other infallible raw allocations require their core charged operation.
 
 ### Work

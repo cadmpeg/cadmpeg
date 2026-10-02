@@ -389,7 +389,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
                 .get(1)
                 .and_then(|amount| self.extent_terms(amount, &mut Vec::new()))
             {
-                self.flow.storage_extents.extend(terms);
+                if let Some(terms) = self.scaled_storage_terms(&terms) { self.flow.storage_extents.extend(terms); }
             }
         }
         self.record_slots(expression);
@@ -486,6 +486,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
                             || key.starts_with(&format!("{term}."))
                     })
             });
+            self.flow.storage_parameters.retain(|parameter| parameter != &key && !parameter.starts_with(&format!("{key}.")));
             self.flow.storage_extents.retain(|term| {
                 !term.factors.iter().any(|factor| {
                     factor.contains(&key)
@@ -504,6 +505,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
             });
             self.flow.mutated.insert(key);
         } else {
+            self.flow.storage_parameters.clear();
             self.flow.storage_extents.clear();
             self.flow.storage_slots.clear();
             for credit in &mut self.flow.work {
@@ -532,7 +534,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
         if let Some((definition, operands)) = self.call(expression) {
             let reserved = types::standard(self.tcx, definition)
                 && matches!(self.tcx.item_name(definition).as_str(), "try_reserve_exact" | "reserve_exact");
-            let slots = self.flow.storage_slots.clone();
+            let slots: Vec<_> = self.flow.storage_slots.iter().filter(|credit| credit.reserved).cloned().collect();
             for operand in operands {
                 if matches!(
                     self.expr_ty_adjusted(operand).kind(),
@@ -541,7 +543,11 @@ impl<'tcx> Analysis<'_, 'tcx> {
                     self.invalidate_target(operand);
                 }
             }
-            if reserved { self.flow.storage_slots = slots; }
+            if reserved {
+                for credit in slots {
+                    if !self.flow.storage_slots.contains(&credit) { self.flow.storage_slots.push(credit); }
+                }
+            }
         }
     }
 }

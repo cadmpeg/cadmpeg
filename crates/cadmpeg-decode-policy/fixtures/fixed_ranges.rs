@@ -34,3 +34,8 @@ pub fn mutation(_ctx: &DecodeContext, bytes: &[u8]) {
     slice = bytes;
     let _same = slice == bytes; // finding: uncharged_decode_work
 }
+
+const WIDTH: u32 = 4;
+pub fn narrow_constant(_ctx: &DecodeContext, bytes: &[u8], at: usize) {
+    let _same = &bytes[at..at + WIDTH as usize] == bytes;
+}

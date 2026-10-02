@@ -13,7 +13,7 @@ pub(crate) struct Slots {
 }
 
 impl<'tcx> Analysis<'_, 'tcx> {
-    pub(crate) fn symbolic_storage(&mut self, operands: &[&'tcx Expr<'tcx>], name: &str) -> bool {
+    pub(crate) fn symbolic_storage(&mut self, expression: &'tcx Expr<'tcx>, operands: &[&'tcx Expr<'tcx>], name: &str) -> bool {
         if !matches!(name, "try_reserve_exact" | "reserve_exact") {
             return false;
         }
@@ -67,6 +67,8 @@ impl<'tcx> Analysis<'_, 'tcx> {
             }
         }
         let counts = terms.clone();
+        let Some(scaled) = self.scaled_storage_terms(&terms) else { return false; };
+        terms = scaled;
         let size_factor = format!("size:{element}");
         for term in &mut terms {
             term.factors.push(size_factor.clone());
@@ -87,15 +89,53 @@ impl<'tcx> Analysis<'_, 'tcx> {
             return false;
         }
         self.flow.storage_extents = credits;
-        if let Some(target) = self.key(receiver, &mut Vec::new()) {
+        if name == "reserve_exact" || self.reserve_success(expression) {
+            if let Some(target) = self.key(receiver, &mut Vec::new()) {
             self.flow.storage_slots.push(Slots {
                 target,
                 terms: counts,
                 loop_depth: self.flow.loop_bounds.len(),
                 reserved: true,
             });
+            }
         }
         true
+    }
+
+    pub(crate) fn scaled_storage_terms(&self, terms: &[ExtentTerm]) -> Option<Vec<ExtentTerm>> {
+        let mut required = terms.to_vec();
+        for bounds in &self.flow.loop_bounds {
+            let mut product = Vec::new();
+            for term in &required {
+                for bound in bounds {
+                    let mut factors = term.factors.clone();
+                    factors.extend(bound.factors.clone());
+                    factors.sort();
+                    product.push(ExtentTerm {
+                        factors,
+                        coefficient: term.coefficient.checked_mul(bound.coefficient)?,
+                    });
+                }
+            }
+            required = product;
+        }
+        Some(required)
+    }
+
+    fn reserve_success(&self, expression: &'tcx Expr<'tcx>) -> bool {
+        for (_, node) in self.tcx.hir_parent_iter(expression.hir_id) {
+            match node {
+                Node::Expr(parent) => match parent.kind {
+                    ExprKind::Match(_, _, rustc_hir::MatchSource::TryDesugar(_)) => return true,
+                    ExprKind::DropTemps(_) | ExprKind::AddrOf(_, _, _) => (),
+                    ExprKind::Call(_, _) | ExprKind::MethodCall(_, _, _, _)
+                        if self.call(parent).is_some_and(|(id, _)| types::standard(self.tcx, id) && matches!(self.tcx.item_name(id).as_str(), "map_err" | "branch")) => (),
+                    _ => return false,
+                },
+                _ => return false,
+            }
+        }
+        false
     }
 
     fn allocated_binding(&self, expression: &Expr<'tcx>) -> Option<String> {

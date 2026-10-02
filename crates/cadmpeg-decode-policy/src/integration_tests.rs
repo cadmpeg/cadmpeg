@@ -15,6 +15,9 @@ fn fixture_child() {
         "--out-dir".to_owned(),
         directory,
     ];
+    if let Ok(name) = std::env::var("CADMPEG_POLICY_CRATE_NAME") {
+        args.extend(["--crate-name".to_owned(), name]);
+    }
     if let Ok(dependency) = std::env::var("CADMPEG_POLICY_DEPENDENCY") {
         for dependency in dependency.split(';') {
             args.extend(["--extern".to_owned(), dependency.to_owned()]);
@@ -337,3 +340,43 @@ fn charged_raw_steps() { check_fixture("raw_steps"); }
 
 #[test]
 fn charged_owned_conversions() { check_fixture("conversions"); }
+
+#[test]
+fn cross_crate_decode_reachability() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let output_dir = root.join("target/fixtures/cross_scope");
+    std::fs::create_dir_all(&output_dir).expect("cross-crate fixture directory");
+    let executable = std::env::current_exe().expect("fixture compiler");
+    let dependency = output_dir.join("libcadmpeg_core.rmeta");
+    let run = |source: &str, name: &str, graph: bool, scope: Option<&std::path::Path>| {
+        let mut command = Command::new(&executable);
+        command.args(["--exact", "integration_tests::fixture_child", "--ignored", "--nocapture"])
+            .env("CADMPEG_POLICY_FIXTURE", "1")
+            .env("CADMPEG_POLICY_INPUT", root.join("fixtures").join(source))
+            .env("CADMPEG_POLICY_OUTPUT", &output_dir)
+            .env("CADMPEG_POLICY_CRATE_NAME", name);
+        if graph { command.env("CADMPEG_POLICY_GRAPH", "1"); }
+        if let Some(scope) = scope { command.env("CADMPEG_POLICY_SCOPE", scope); }
+        if name != "cadmpeg_core" {
+            command.env("CADMPEG_POLICY_DEPENDENCY", format!("cadmpeg_core={}", dependency.display()));
+        }
+        command.output().expect("cross-crate compiler")
+    };
+    let dependency_graph = run("reachability_dependency.rs", "cadmpeg_core", true, None);
+    assert!(dependency_graph.status.success(), "{}", String::from_utf8_lossy(&dependency_graph.stderr));
+    let caller_graph = run("reachability_imported.rs", "cadmpeg_codec_fixture", true, None);
+    assert!(caller_graph.status.success(), "{}", String::from_utf8_lossy(&caller_graph.stderr));
+    let graph = output_dir.join("graph.tsv");
+    let scope = output_dir.join("scope.txt");
+    std::fs::write(&graph, [dependency_graph.stdout, caller_graph.stdout].concat()).expect("graph rows");
+    let resolved = Command::new("python3").args(["-c", "import runpy,sys; from pathlib import Path; module=runpy.run_path(sys.argv[1]); reached,_=module['resolve_graph'](Path(sys.argv[2]).read_text()); Path(sys.argv[3]).write_text(''.join(key+'\\n' for key in sorted(reached)))"])
+        .arg(root.join("../../scripts/check-decode-policy.py")).arg(&graph).arg(&scope)
+        .output().expect("global graph resolution");
+    assert!(resolved.status.success(), "{}", String::from_utf8_lossy(&resolved.stderr));
+    let output = run("reachability_dependency.rs", "cadmpeg_core", false, Some(&scope));
+    let findings: Vec<_> = String::from_utf8(output.stdout).expect("cross-crate output").lines()
+        .filter(|line| line.starts_with("uncharged_decode_work\t"))
+        .map(|line| line.split('\t').nth(2).expect("finding line").to_owned()).collect();
+    assert_eq!(findings, ["3", "9"], "{}", String::from_utf8_lossy(&output.stderr));
+    assert_eq!(output.status.code(), Some(1));
+}

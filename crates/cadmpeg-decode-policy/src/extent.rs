@@ -56,9 +56,8 @@ impl<'tcx> Analysis<'_, 'tcx> {
                     .tcx
                     .const_eval_poly(definition)
                     .ok()?
-                    .try_to_scalar()?
-                    .to_u64()
-                    .discard_err(),
+                    .try_to_scalar()
+                    .and_then(|scalar| u64::try_from(scalar.to_bits(scalar.size()).discard_err()?).ok()),
                 _ => self
                     .initializer(expression)
                     .and_then(|init| self.constant_count(init, seen)),

@@ -11,9 +11,12 @@ fn text(tcx: TyCtxt<'_>, value: ty::Ty<'_>) -> bool {
         || matches!(value.peel_refs().kind(), ty::Adt(owner, _) if types::standard(tcx, owner.did()) && tcx.item_name(owner.did()).as_str() == "String")
 }
 
-fn origin<'tcx>(tcx: TyCtxt<'tcx>, body: &Body<'tcx>, operand: &Operand<'tcx>, seen: &mut HashSet<Local>) -> Option<usize> {
+fn origin<'tcx>(body: &Body<'tcx>, operand: &Operand<'tcx>, seen: &mut HashSet<Local>) -> Option<usize> {
     let place = match operand { Operand::Copy(place) | Operand::Move(place) => *place, _ => return None };
     if !place.projection.iter().all(|element| matches!(element, rustc_middle::mir::ProjectionElem::Deref)) || !seen.insert(place.local) { return None; }
+    if body.basic_blocks.iter().any(|block| block.statements.iter().any(|statement|
+        matches!(&statement.kind, StatementKind::Assign(value)
+            if matches!(&value.1, Rvalue::Ref(_, rustc_middle::mir::BorrowKind::Mut { .. }, source) if source.local == place.local)))) { return None; }
     let index = place.local.as_usize();
     if index > 0 && index <= body.arg_count {
         if body.basic_blocks.iter().any(|block| block.statements.iter().any(|statement| matches!(&statement.kind, StatementKind::Assign(value) if value.0.local == place.local))) { return None; }
@@ -26,8 +29,8 @@ fn origin<'tcx>(tcx: TyCtxt<'tcx>, body: &Body<'tcx>, operand: &Operand<'tcx>, s
             let StatementKind::Assign(value) = &statement.kind else { continue; };
             if value.0.local != place.local { continue; }
             let candidate = match &value.1 {
-                Rvalue::Use(source, _) | Rvalue::Cast(_, source, _) => origin(tcx, body, source, &mut seen.clone()),
-                Rvalue::Ref(_, _, source) => origin(tcx, body, &Operand::Copy(*source), &mut seen.clone()),
+                Rvalue::Use(source, _) | Rvalue::Cast(_, source, _) => origin(body, source, &mut seen.clone()),
+                Rvalue::Ref(_, _, source) => origin(body, &Operand::Copy(*source), &mut seen.clone()),
                 _ => None,
             }?;
             if result.is_some_and(|previous| previous != candidate) { return None; }
@@ -40,6 +43,7 @@ fn origin<'tcx>(tcx: TyCtxt<'tcx>, body: &Body<'tcx>, operand: &Operand<'tcx>, s
 pub(crate) fn parameters<'tcx>(tcx: TyCtxt<'tcx>, environment: ty::TypingEnv<'tcx>, instance: Instance<'tcx>, seen: &mut HashSet<Instance<'tcx>>) -> Option<Vec<usize>> {
     if !seen.insert(instance) || seen.len() > tcx.recursion_limit().0 || !tcx.is_mir_available(instance.def_id()) { return None; }
     let body = tcx.instance_mir(instance.def);
+    if cyclic(body) { return None; }
     let mut conversions = Vec::new();
     for block in body.basic_blocks.iter() {
         let TerminatorKind::Call { func, args, destination, .. } = &block.terminator().kind else { continue; };
@@ -56,10 +60,10 @@ pub(crate) fn parameters<'tcx>(tcx: TyCtxt<'tcx>, environment: ty::TypingEnv<'tc
             && matches!(output.kind(), ty::Adt(owner, _) if types::standard(tcx, owner.did()) && tcx.item_name(owner.did()).as_str() == "String")
             && input.is_some_and(|input| text(tcx, input) && (input != output || name.is_some_and(|name| name.as_str() == "to_owned")));
         if raw_copy {
-            conversions.push(origin(tcx, body, &args.first()?.node, &mut HashSet::new())?);
-        } else if crate::production(tcx, resolved.def_id()) && args.iter().any(|arg| origin(tcx, body, &arg.node, &mut HashSet::new()).is_some()) {
+            conversions.push(origin(body, &args.first()?.node, &mut HashSet::new())?);
+        } else if crate::production(tcx, resolved.def_id()) && args.iter().any(|arg| origin(body, &arg.node, &mut HashSet::new()).is_some()) {
             for index in parameters(tcx, environment, resolved, &mut seen.clone())? {
-                conversions.push(origin(tcx, body, &args.get(index)?.node, &mut HashSet::new())?);
+                conversions.push(origin(body, &args.get(index)?.node, &mut HashSet::new())?);
             }
         }
     }
@@ -85,13 +89,13 @@ impl<'tcx> Analysis<'_, 'tcx> {
             let Some(indices) = parameters(self.tcx, self.typing_env(), instance, &mut HashSet::new()) else { return false; };
             indices
         };
-        let mut admitted = vec![false; operands.len()];
+        let mut admitted: Vec<_> = operands.iter().map(|_| false).collect();
         for index in &indices {
             if indices.iter().filter(|other| *other == index).count() != 1 { continue; }
             let Some(operand) = operands.get(*index) else { continue; };
             let Some(key) = self.key(operand, &mut Vec::new()) else { continue; };
             if self.flow.mutated.contains(&key) { continue; }
-            let required = [crate::flow::ExtentTerm { factors: vec![key.clone()], coefficient: self.flow.iterations }];
+            let Some(required) = self.scaled_storage_terms(&[crate::flow::ExtentTerm { factors: vec![key.clone()], coefficient: 1 }]) else { continue; };
             if self.flow.storage_parameters.remove(&key)
                 || text(self.tcx, self.expr_ty(operand)) && storage::consume_terms(&mut self.flow.storage_extents, &required) {
                 admitted[*index] = true;
@@ -106,6 +110,20 @@ impl<'tcx> Analysis<'_, 'tcx> {
     }
 }
 
-pub(crate) fn operand_admitted<'tcx>(tcx: TyCtxt<'tcx>, body: &Body<'tcx>, operand: &Operand<'tcx>, admitted: &[bool]) -> bool {
-    origin(tcx, body, operand, &mut HashSet::new()).is_some_and(|index| admitted.get(index) == Some(&true))
+pub(crate) fn operand_admitted<'tcx>(body: &Body<'tcx>, operand: &Operand<'tcx>, admitted: &[bool]) -> bool {
+    origin(body, operand, &mut HashSet::new()).is_some_and(|index| admitted.get(index) == Some(&true))
+}
+
+fn cyclic(body: &Body<'_>) -> bool {
+    fn visit(body: &Body<'_>, block: rustc_middle::mir::BasicBlock, active: &mut HashSet<rustc_middle::mir::BasicBlock>, done: &mut HashSet<rustc_middle::mir::BasicBlock>) -> bool {
+        if done.contains(&block) { return false; }
+        if !active.insert(block) { return true; }
+        for next in body.basic_blocks[block].terminator().successors() {
+            if visit(body, next, active, done) { return true; }
+        }
+        active.remove(&block);
+        done.insert(block);
+        false
+    }
+    visit(body, rustc_middle::mir::START_BLOCK, &mut HashSet::new(), &mut HashSet::new())
 }

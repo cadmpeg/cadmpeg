@@ -5,18 +5,18 @@ use rustc_hir::intravisit::{walk_expr, Visitor};
 use rustc_hir::{Expr, ExprKind};
 use rustc_middle::ty::{self, TyCtxt};
 use rustc_span::def_id::{DefId, LocalDefId};
-use std::collections::{BTreeSet, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 
 #[derive(Default)]
 pub(crate) struct Graph {
-    roots: BTreeSet<String>,
+    roots: BTreeMap<String, String>,
     edges: BTreeSet<(String, String)>,
 }
 
 impl Graph {
     pub(crate) fn print(&self) {
-        for root in &self.roots {
-            println!("decode_root\t{root}");
+        for (root, name) in &self.roots {
+            println!("decode_root\t{root}\t{name}");
         }
         for (caller, callee) in &self.edges {
             println!("decode_edge\t{caller}\t{callee}");
@@ -33,7 +33,7 @@ impl Graph {
                 }
             }
         }
-        let mut reached = self.roots.clone();
+        let mut reached: BTreeSet<_> = self.roots.keys().cloned().collect();
         loop {
             let mut added = false;
             for (caller, callee) in &self.edges {
@@ -55,7 +55,7 @@ fn codec_input_method(tcx: TyCtxt<'_>, owner: DefId) -> bool {
     }
     let trait_id = tcx.impl_trait_ref(parent).skip_binder().def_id;
     let codec = matches!(tcx.item_name(trait_id).as_str(), "Codec" | "CodecBackend")
-        && (tcx.def_path_str(trait_id).starts_with("cadmpeg_ir::codec::")
+        && (tcx.crate_name(trait_id.krate).as_str() == "cadmpeg_ir" && tcx.item_name(tcx.parent(trait_id)).as_str() == "codec"
             || std::env::var_os("CADMPEG_POLICY_FIXTURE").is_some());
     codec && matches!(tcx.item_name(owner).as_str(),
         "detect_impl" | "inspect_impl" | "decode_impl" | "detect" | "inspect"
@@ -77,7 +77,7 @@ pub(crate) fn collect<'tcx>(tcx: TyCtxt<'tcx>, owners: &[LocalDefId]) -> Graph {
     let mut graph = Graph::default();
     for owner in owners {
         if root(tcx, *owner) {
-            graph.roots.insert(tcx.def_path_str(*owner));
+            graph.roots.insert(key(tcx, owner.to_def_id()), tcx.def_path_str(*owner));
         }
         let derived_operation = types::derived(tcx, owner.to_def_id())
             && tcx.opt_item_name(owner.to_def_id()).is_some_and(|name|
@@ -96,7 +96,7 @@ pub(crate) fn collect<'tcx>(tcx: TyCtxt<'tcx>, owners: &[LocalDefId]) -> Graph {
                 flow: flow::Flow::default(),
                 findings: &mut findings,
             },
-            caller: tcx.def_path_str(*owner),
+            caller: key(tcx, owner.to_def_id()),
             graph: &mut graph,
         }.visit_body(tcx.hir_body_owned_by(*owner));
     }
@@ -112,7 +112,7 @@ struct Calls<'a, 'b, 'tcx> {
 impl Calls<'_, '_, '_> {
     fn edge(&mut self, callee: DefId) {
         if types::checked(self.analysis.tcx, callee) {
-            self.graph.edges.insert((self.caller.clone(), self.analysis.tcx.def_path_str(callee)));
+            self.graph.edges.insert((self.caller.clone(), key(self.analysis.tcx, callee)));
         }
     }
 
@@ -159,4 +159,8 @@ impl<'tcx> Visitor<'tcx> for Calls<'_, '_, 'tcx> {
             walk_expr(self, expression);
         }
     }
+}
+
+pub(crate) fn key(tcx: TyCtxt<'_>, definition: DefId) -> String {
+    format!("{:?}", tcx.def_path_hash(definition))
 }

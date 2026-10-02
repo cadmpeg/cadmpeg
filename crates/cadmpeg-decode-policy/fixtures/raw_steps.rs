@@ -56,3 +56,26 @@ pub fn dropped(ctx: &DecodeContext, count: usize) -> Result<(), ()> {
     output.try_reserve_exact(count).map_err(|_| ())?; // finding: unproven_decode_charge
     Ok(())
 }
+
+pub fn failed_reserve(ctx: &DecodeContext, bytes: &[u8]) -> Result<(), ()> {
+    ctx.charge_work(u64::try_from(bytes.len()).map_err(|_| ())?, "work")?;
+    ctx.charge_retained(u64::try_from(bytes.len()).map_err(|_| ())?, "storage")?;
+    let mut output = Vec::new();
+    let _discarded = output.try_reserve_exact(bytes.len());
+    output.extend_from_slice(bytes); // finding: unproven_decode_charge
+    Ok(())
+}
+
+pub fn repeated_reserve(ctx: &DecodeContext, count: usize, repeats: usize) -> Result<(), ()> {
+    ctx.charge_retained(u64::try_from(count).map_err(|_| ())?, "once")?;
+    for _ in 0..repeats { // finding: uncharged_decode_work
+        let mut output = Vec::<u8>::new();
+        output.try_reserve_exact(count).map_err(|_| ())?; // finding: unproven_decode_charge
+    }
+    for _ in 0..repeats { // finding: uncharged_decode_work
+        ctx.charge_retained(u64::try_from(count).map_err(|_| ())?, "each")?;
+        let mut output = Vec::<u8>::new();
+        output.try_reserve_exact(count).map_err(|_| ())?;
+    }
+    Ok(())
+}

@@ -53,7 +53,7 @@ impl Callbacks for DecodeCallbacks {
             return Compilation::Continue;
         }
         let reachable = graph.reachable();
-        owners.retain(|owner| reachable.contains(&tcx.def_path_str(*owner)));
+        owners.retain(|owner| reachable.contains(&scope::key(tcx, owner.to_def_id())));
         let instantiations = instantiation::collect(tcx, &owners);
         let mut bodies = HashMap::new();
         for owner in owners {

@@ -132,7 +132,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
                     }
                 }
             }
-            if self.symbolic_storage(&operands, name) || self.admitted_slots(&operands, name) {
+            if self.symbolic_storage(expression, &operands, name) || self.admitted_slots(&operands, name) {
                 return;
             }
             if let Some(receiver) = operands.first() {
