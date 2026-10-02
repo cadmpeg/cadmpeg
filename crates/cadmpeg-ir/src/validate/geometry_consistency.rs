@@ -894,6 +894,7 @@ fn mapped_pcurve_parameter_near_point(
         domain.project(ExtendedReal::from_finite(seed))
     });
     for _ in 0..32 {
+        ctx.charge_work_limit(1, "mapped pcurve Newton iteration")?;
         let Some(point) = point_at(parameter)? else {
             return Ok(None);
         };
@@ -916,6 +917,7 @@ fn mapped_pcurve_parameter_near_point(
         };
         let mut candidate_error = mismatch(candidate_point);
         for _ in 0..12 {
+            ctx.charge_work_limit(1, "mapped pcurve backtracking comparison")?;
             if candidate_error <= error {
                 break;
             }
