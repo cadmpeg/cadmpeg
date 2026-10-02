@@ -5923,90 +5923,17 @@ fn append_feature_result_topology(
     members: FeatureResultGroupMembers,
     native_ref: String,
 ) -> Result<(), CodecError> {
-    let member_count = bodies
-        .len()
-        .checked_add(members.faces.len())
-        .and_then(|count| count.checked_add(members.edges.len()))
-        .and_then(|count| count.checked_add(members.vertices.len()))
-        .ok_or_else(|| {
-            ctx.refuse_codec_limit(
-                "NX result topology members",
-                0,
-                cadmpeg_core::decode::u64_from_index(bodies.len()),
-            )
-        })?;
-    let member_storage = member_count
-        .checked_mul(std::mem::size_of::<cadmpeg_core::text::NonBlankString>())
-        .ok_or_else(|| {
-            ctx.refuse_codec_limit(
-                "NX result topology member storage",
-                0,
-                cadmpeg_core::decode::u64_from_index(member_count),
-            )
-        })?;
-    let transient_storage = member_count
-        .checked_mul(
-            std::mem::size_of::<cadmpeg_ir::features::SelectionMember>()
-                + std::mem::size_of::<&cadmpeg_core::text::NonBlankString>() * 4,
-        )
-        .ok_or_else(|| {
-            ctx.refuse_codec_limit(
-                "NX result topology temporary members",
-                0,
-                cadmpeg_core::decode::u64_from_index(member_count),
-            )
-        })?;
-    let retained_bytes = std::mem::size_of::<FeatureResultTopology>()
-        .checked_add(member_storage)
-        .ok_or_else(|| {
-            ctx.refuse_codec_limit(
-                "NX result topology record",
-                0,
-                cadmpeg_core::decode::u64_from_index(member_storage),
-            )
-        })?;
-    ctx.charge_collection_items(
-        cadmpeg_core::decode::u64_from_index(
-            member_count
-                .checked_mul(2)
-                .and_then(|count| count.checked_add(1))
-                .ok_or_else(|| {
-                    ctx.refuse_codec_limit(
-                        "NX result topology collection",
-                        0,
-                        cadmpeg_core::decode::u64_from_index(member_count),
-                    )
-                })?,
-        ),
-        "NX result topology collection",
-    )?;
-    ctx.charge_retained(
-        cadmpeg_core::decode::u64_from_index(retained_bytes),
-        "NX result topology record",
-    )?;
-    let _member_reservation = ctx.reserve_scoped(
-        cadmpeg_core::decode::u64_from_index(transient_storage),
-        "NX result topology temporary members",
-    )?;
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(member_count),
+    let members = cadmpeg_ir::features::FeatureResultMembers::new(
+        bodies, members.faces, members.edges, members.vertices, ctx,
         "NX result topology member validation",
-    )?;
-    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
-        &mut ir.model.feature_result_topologies,
-        1,
-        "allocate NX result topology records",
-    )?;
+    )?.map_err(|error| CodecError::Malformed(error.to_string()))?;
+    ctx.reserve_retained_vec_limit(&mut ir.model.feature_result_topologies, 1, "allocate NX result topology records")?;
     let result = FeatureResultTopology::new(
         result_id,
         output_of.try_clone_for_decode(ctx, "NX decoded IR value copy")?,
-        bodies,
-        members.faces,
-        members.edges,
-        members.vertices,
+        members,
         Some(native_ref),
-    )
-    .map_err(|error| CodecError::Malformed(error.to_string()))?;
+    );
     ir.model.feature_result_topologies.push(result);
     Ok(())
 }

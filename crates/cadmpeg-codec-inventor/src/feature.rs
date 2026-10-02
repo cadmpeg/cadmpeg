@@ -1853,15 +1853,13 @@ fn feature_result(
     if bodies.is_empty() {
         return None;
     }
-    if let Err(error) = ctx.charge_collection_items(
-        cadmpeg_core::decode::u64_from_index(bodies.len()),
-        "precheck distinct Inventor feature result bodies",
+    let members = match cadmpeg_ir::features::FeatureResultMembers::new(
+        bodies, Vec::new(), Vec::new(), Vec::new(), ctx, "precheck distinct Inventor feature result bodies",
     ) {
-        return Some(Err(error));
-    }
-    if bodies.iter().collect::<HashSet<_>>().len() != bodies.len() {
-        return None;
-    }
+        Ok(Ok(members)) => members,
+        Ok(Err(_)) => return None,
+        Err(limit) => return Some(Err(limit.into())),
+    };
     let key_len = source.identity.segment_token.as_str().len()
         + 1
         + match usize::try_from(source.identity.record_ordinal.max(1).ilog10()) {
@@ -1893,24 +1891,6 @@ fn feature_result(
     if let Err(error) = ctx.charge_entities(1, "project Inventor feature result topology") {
         return Some(Err(error));
     }
-    if let Err(error) = ctx.charge_collection_items(
-        cadmpeg_core::decode::u64_from_index(bodies.len()),
-        "materialize Inventor feature result members",
-    ) {
-        return Some(Err(error));
-    }
-    if let Err(error) = ctx.charge_collection_items(
-        cadmpeg_core::decode::u64_from_index(bodies.len()),
-        "sort Inventor feature result members",
-    ) {
-        return Some(Err(error));
-    }
-    if let Err(error) = ctx.charge_collection_items(
-        cadmpeg_core::decode::u64_from_index(bodies.len()),
-        "check distinct Inventor feature result bodies",
-    ) {
-        return Some(Err(error));
-    }
     let mut copied_storage = match ctx.reserve_scoped(0, "compose Inventor feature result key") {
         Ok(storage) => storage,
         Err(error) => return Some(Err(error)),
@@ -1938,13 +1918,9 @@ fn feature_result(
             Ok(value) => value,
             Err(error) => return Some(Err(error)),
         },
-        bodies,
-        Vec::new(),
-        Vec::new(),
-        Vec::new(),
+        members,
         Some(collection.id()),
-    )
-    .ok()?;
+    );
     Some(Ok((feature_id, result)))
 }
 

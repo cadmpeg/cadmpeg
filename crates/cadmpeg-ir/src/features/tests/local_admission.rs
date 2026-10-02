@@ -186,6 +186,52 @@ fn selection_reference_constructors_admit_text_before_validation() {
 }
 
 #[test]
+fn feature_result_members_admit_each_arena_and_release_the_index() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use crate::features::{FeatureResultMemberError, FeatureResultMembers, FeatureResultTopology};
+    for lane in 0..4 {
+        for dimension in [Some(ResourceDimension::MaterializedBytes), Some(ResourceDimension::CollectionItems), Some(ResourceDimension::WorkUnits), None] {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_materialized_bytes = 200;
+            policy.limits.max_collection_items = 2;
+            policy.limits.max_retained_bytes = 0;
+            policy.limits.max_recursion_depth = 0;
+            match dimension {
+                Some(ResourceDimension::MaterializedBytes) => policy.limits.max_materialized_bytes = 0,
+                Some(ResourceDimension::CollectionItems) => policy.limits.max_collection_items = 0,
+                Some(ResourceDimension::WorkUnits) => policy.limits.max_work_units = 0,
+                None => {},
+                Some(_) => unreachable!(),
+            }
+            let arena = DecodeArena::new();
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            let mut lanes = [Vec::new(), Vec::new(), Vec::new(), Vec::new()];
+            lanes[lane] = vec![cadmpeg_core::nonblank_literal!("second"), cadmpeg_core::nonblank_literal!("first")];
+            let [bodies, faces, edges, vertices] = lanes;
+            let result = FeatureResultMembers::new(bodies, faces, edges, vertices, &ctx, "result membership");
+            if let Some(dimension) = dimension {
+                let limit = result.unwrap_err();
+                assert_eq!(limit.dimension, dimension);
+                assert_eq!(limit.operation, "result membership");
+                assert!(matches!(ctx.finish_session(), Err(cadmpeg_core::CodecError::ResourceLimit(original)) if original == limit));
+            } else {
+                let members = result.unwrap().unwrap();
+                let result = FeatureResultTopology::new(crate::ids::FeatureResultTopologyId::mint("test:model:feature-result#one").unwrap(), feature_id("producer"), members, None);
+                assert_eq!([result.bodies(), result.faces(), result.edges(), result.vertices()][lane].iter().map(cadmpeg_core::text::NonBlankString::as_str).collect::<Vec<_>>(), vec!["second", "first"]);
+                let storage = ctx.reserve_scoped_limit(200, "result membership index released").unwrap();
+                drop(storage);
+                ctx.finish_session().unwrap();
+            }
+        }
+        let mut lanes = [Vec::new(), Vec::new(), Vec::new(), Vec::new()];
+        lanes[lane] = vec![cadmpeg_core::nonblank_literal!("same"), cadmpeg_core::nonblank_literal!("same")];
+        let [bodies, faces, edges, vertices] = lanes;
+        let error = FeatureResultMembers::new(bodies, faces, edges, vertices, &cadmpeg_test_support::service_decode_context(), "result membership").unwrap().unwrap_err();
+        assert_eq!(error, [FeatureResultMemberError::RepeatedBody, FeatureResultMemberError::RepeatedFace, FeatureResultMemberError::RepeatedEdge, FeatureResultMemberError::RepeatedVertex][lane]);
+    }
+}
+
+#[test]
 fn local_collection_admission_preserves_order_and_rejects_invalid_membership() {
     let first = feature_id("first");
     let second = feature_id("second");

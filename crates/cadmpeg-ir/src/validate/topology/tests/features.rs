@@ -997,16 +997,10 @@ fn generated_body_selection_must_name_a_declared_producer_result() {
         native_ref: None,
     });
     ir.model.feature_result_topologies.push(
-        FeatureResultTopology::new(
-            FeatureResultTopologyId::mint("synthetic:test:feature-result-topology#producer")
-                .expect("valid identity"),
-            producer.clone(),
-            vec![cadmpeg_core::nonblank_literal!("body#declared")],
-            Vec::new(),
-            Vec::new(),
-            Vec::new(),
-            None,
-        )
+        crate::features::FeatureResultMembers::new(vec![cadmpeg_core::nonblank_literal!("body#declared")], Vec::new(), Vec::new(), Vec::new(), &cadmpeg_test_support::service_decode_context(), "validate feature result members")
+        .expect("result membership admission")
+        .map(|members| FeatureResultTopology::new(FeatureResultTopologyId::mint("synthetic:test:feature-result-topology#producer")
+                .expect("valid identity"), producer.clone(), members, None))
         .unwrap(),
     );
     ir.model.features.push(Feature {

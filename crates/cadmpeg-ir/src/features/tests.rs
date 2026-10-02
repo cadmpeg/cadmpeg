@@ -474,28 +474,16 @@ fn topology_membership_admission() {
     use super::{DistinctMembers, FeatureResultTopology};
     let id = crate::ids::FeatureResultTopologyId::mint("test:model:feature-result#1").unwrap();
     let feature = super::FeatureId::mint("test:test:feature#1").unwrap();
-    assert!(FeatureResultTopology::new(
-        id.clone(),
-        feature.clone(),
-        vec![],
-        vec![],
-        vec![],
-        vec![],
-        None
-    )
+    assert!(crate::features::FeatureResultMembers::new(vec![], vec![], vec![], vec![], &cadmpeg_test_support::service_decode_context(), "validate feature result members")
+        .expect("result membership admission")
+        .map(|members| FeatureResultTopology::new(id.clone(), feature.clone(), members, None))
     .is_err());
-    assert!(FeatureResultTopology::new(
-        id.clone(),
-        feature.clone(),
-        vec![
+    assert!(crate::features::FeatureResultMembers::new(vec![
             cadmpeg_core::nonblank_literal!("a"),
             cadmpeg_core::nonblank_literal!("a"),
-        ],
-        vec![],
-        vec![],
-        vec![],
-        None
-    )
+        ], vec![], vec![], vec![], &cadmpeg_test_support::service_decode_context(), "validate feature result members")
+        .expect("result membership admission")
+        .map(|members| FeatureResultTopology::new(id.clone(), feature.clone(), members, None))
     .is_err());
     // A blank member identity is refused by the member type, so the wire cannot
     // spell one and the constructor cannot be handed one.
