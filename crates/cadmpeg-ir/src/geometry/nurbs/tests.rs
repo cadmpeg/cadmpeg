@@ -603,7 +603,7 @@ fn surface_transposition_preserves_every_pole_and_weight() {
         ).expect("fixture constructor admission")
         .unwrap();
         let original = surface.clone();
-        surface.transpose_parameter_axes();
+        surface.transpose_parameter_axes(&cadmpeg_test_support::service_decode_context()).expect("transpose admission");
         assert_eq!((surface.u_count(), surface.v_count()), (2, 3));
         assert_eq!((surface.u_degree(), surface.v_degree()), (1, 2));
         assert_eq!(surface.u_knots(), original.v_knots());
@@ -616,7 +616,7 @@ fn surface_transposition_preserves_every_pole_and_weight() {
                 assert_eq!(surface.weight(v, u), original.weight(u, v));
             }
         }
-        surface.transpose_parameter_axes();
+        surface.transpose_parameter_axes(&cadmpeg_test_support::service_decode_context()).expect("transpose admission");
         assert_eq!(surface, original);
     }
 }
@@ -1563,3 +1563,5 @@ mod bspline;
 mod pairing;
 
 mod construction;
+
+mod transposition;

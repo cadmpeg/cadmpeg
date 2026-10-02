@@ -734,7 +734,7 @@ fn revolution_nurbs(
     .map_err(GeometryError::from)?
     .map_err(|error| GeometryError::malformed(offset, error.to_string()))?;
     if transposed {
-        result.transpose_parameter_axes();
+        result.transpose_parameter_axes(ctx)?;
     }
     Ok(result)
 }
@@ -974,7 +974,7 @@ pub(crate) fn extrusion_nurbs(
     )?
     .map_err(|error| GeometryError::malformed(offset, error.to_string()))?;
     if transposed {
-        surface.transpose_parameter_axes();
+        surface.transpose_parameter_axes(ctx)?;
     }
     Ok(surface)
 }
