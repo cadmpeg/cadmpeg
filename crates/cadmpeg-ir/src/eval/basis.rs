@@ -7,33 +7,46 @@ use super::{decode, difference_quotient, finite_or_refusal};
 use crate::math::sum::scaled_ratio_products;
 use crate::scalar::{FiniteReal, PositiveReal};
 use cadmpeg_core::convert::f64_from_index;
-use cadmpeg_core::decode::ResourceLimit;
+use cadmpeg_core::decode::{DecodeContext, ResourceLimit};
 
 /// Knot span index of `t` for a clamped B-spline basis, or `None` when the
 /// knot vector cannot support `count` poles of the given degree.
-pub(super) fn bspline_span(knots: &[f64], degree: usize, count: usize, t: f64) -> Option<usize> {
-    if count <= degree || knots.len() < count.checked_add(degree)?.checked_add(1)? {
-        return None;
+pub(super) fn bspline_span(
+    ctx: &DecodeContext<'_>,
+    knots: &[f64],
+    degree: usize,
+    count: usize,
+    t: f64,
+) -> Result<Option<usize>, ResourceLimit> {
+    let Some(required) = count.checked_add(degree).and_then(|size| size.checked_add(1)) else {
+        return Ok(None);
+    };
+    if count <= degree || knots.len() < required {
+        return Ok(None);
     }
     if t >= knots[count] {
-        return Some(count - 1);
+        return Ok(Some(count - 1));
     }
     if t <= knots[degree] {
-        return Some(degree);
+        return Ok(Some(degree));
+    }
+    if count - degree == 1 {
+        return Ok(Some(degree));
     }
     let mut lo = degree;
     let mut hi = count;
     while lo < hi {
+        ctx.charge_work_limit(1, "IR B-spline span search")?;
         let mid = usize::midpoint(lo, hi);
         if t < knots[mid] {
             hi = mid;
         } else if t >= knots[mid + 1] {
             lo = mid + 1;
         } else {
-            return Some(mid);
+            return Ok(Some(mid));
         }
     }
-    Some(lo)
+    Ok(Some(lo))
 }
 
 /// Non-zero basis function values at `t` for the given span (Cox–de Boor).
@@ -52,10 +65,10 @@ pub(super) fn bspline_basis(
             len: support,
         }
     } else {
-        scratch.work(support.checked_mul(support)?, "IR B-spline basis work")?;
+        scratch.work(support, "IR B-spline basis work")?;
         decode::SupportValues::Heap(scratch.filled(support, 0.0, "IR B-spline basis")?)
     };
-    scratch.admit(fill_bspline_basis(knots, degree, span, t, &mut values))??;
+    scratch.admit(fill_bspline_basis(scratch.context, knots, degree, span, t, &mut values))??;
     Some(values)
 }
 
@@ -63,6 +76,7 @@ pub(super) fn bspline_basis(
 /// holds exactly `degree + 1` entries. `None` states a buffer of another
 /// length, or a term that left the finite range.
 pub(super) fn fill_bspline_basis(
+    ctx: &DecodeContext<'_>,
     knots: &[f64],
     degree: usize,
     span: usize,
@@ -73,10 +87,16 @@ pub(super) fn fill_bspline_basis(
         return Ok(None);
     }
     let finite_t = FiniteReal::new(t);
+    if degree > 1 {
+        ctx.charge_work_limit(1, "IR B-spline basis work")?;
+    }
     values[0] = 1.0;
     for j in 1..=degree {
         let mut saved = 0.0;
         for r in 0..j {
+            if degree > 1 {
+                ctx.charge_work_limit(1, "IR B-spline basis work")?;
+            }
             let value = values[r];
             // Each knot distance is admitted where it is formed.
             let right = FiniteReal::new(knots[span + r + 1] - t);
@@ -118,6 +138,9 @@ pub(super) fn fill_bspline_basis(
             };
             values[r] = saved + right_term;
             saved = left_term;
+        }
+        if degree > 1 {
+            ctx.charge_work_limit(1, "IR B-spline basis work")?;
         }
         values[j] = saved;
     }
