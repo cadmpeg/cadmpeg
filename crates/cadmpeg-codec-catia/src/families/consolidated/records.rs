@@ -5,7 +5,7 @@
 //! against typed analytic and NURBS charts.
 
 use crate::math::distance;
-use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::decode::{u64_from_index, DecodeContext, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::eval::nurbs_surface_partials;
 use cadmpeg_ir::features::FinitePoint3;
@@ -2252,6 +2252,10 @@ fn object_stream_vertex_row_ranges_from_records(
     data: &[u8],
     records: &[crate::wire::records::ConsolidatedRecord],
 ) -> Result<Vec<Range<usize>>, CodecError> {
+    let scan_work = u64_from_index(data.len()).checked_mul(4).ok_or_else(|| {
+        ctx.refuse_codec_limit("catia_b5_object_frame_scan", u64::MAX - 1, u64::MAX)
+    })?;
+    ctx.charge_work(scan_work, "catia_b5_object_frame_scan")?;
     let mut ranges = ctx.collect_vec(
         records
             .iter()

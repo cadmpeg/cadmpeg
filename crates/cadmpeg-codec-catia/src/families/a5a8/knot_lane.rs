@@ -54,24 +54,44 @@ impl A8KnotLane {
     pub(super) fn expanded(
         &self,
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    ) -> Result<Option<Vec<f64>>, cadmpeg_core::CodecError> {
+    ) -> Result<Vec<f64>, cadmpeg_core::CodecError> {
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(self.multiplicities.len()),
+            "catia_a8_knot_expansion_scan",
+        )?;
         let count = self.multiplicities.iter().try_fold(0usize, |sum, &value| {
-            sum.checked_add(usize::try_from(value).ok()?)
-        });
-        let Some(count) = count else { return Ok(None) };
+            let repeats = usize::try_from(value).map_err(|_| {
+                ctx.refuse_codec_limit("catia_a8_expanded_knots", u64::MAX - 1, u64::MAX)
+            })?;
+            sum.checked_add(repeats).ok_or_else(|| {
+                ctx.refuse_codec_limit("catia_a8_expanded_knots", u64::MAX - 1, u64::MAX)
+            })
+        })?;
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(count),
+            "catia_a8_knot_expansion_emit",
+        )?;
         let mut expanded = Vec::new();
         ctx.reserve_vec(&mut expanded, count, "catia_a8_expanded_knots")?;
         for (knot, &multiplicity) in self.distinct.iter().zip(&self.multiplicities) {
-            let Some(repeats) = usize::try_from(multiplicity).ok() else {
-                return Ok(None);
-            };
+            let repeats = usize::try_from(multiplicity).map_err(|_| {
+                ctx.refuse_codec_limit("catia_a8_expanded_knots", u64::MAX - 1, u64::MAX)
+            })?;
             expanded.extend(std::iter::repeat_with(|| knot.get()).take(repeats));
         }
-        Ok(Some(expanded))
+        Ok(expanded)
     }
 
-    pub(super) fn pole_count(&self, degree: u32) -> Option<u32> {
-        pole_count(&self.multiplicities, degree)
+    pub(super) fn pole_count(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        degree: u32,
+    ) -> Result<Option<u32>, cadmpeg_core::CodecError> {
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(self.multiplicities.len()),
+            "catia_a8_pole_count_scan",
+        )?;
+        Ok(pole_count(&self.multiplicities, degree))
     }
 }
 
@@ -144,9 +164,13 @@ mod tests {
         assert_eq!(
             crate::test_support::with_service_context(|ctx| lane.expanded(ctx))
                 .expect("service collection budget"),
-            Some(vec![0.0, 0.0, 1.0, 1.0])
+            vec![0.0, 0.0, 1.0, 1.0]
         );
-        assert_eq!(lane.pole_count(1), Some(2));
+        assert_eq!(
+            crate::test_support::with_service_context(|ctx| lane.pole_count(ctx, 1))
+                .expect("service count work"),
+            Some(2)
+        );
     }
 
     #[test]
@@ -160,6 +184,43 @@ mod tests {
         assert!(matches!(limited,
             Err(cadmpeg_core::CodecError::ResourceLimit(error))
                 if error.operation == "catia_a8_expanded_knots"));
+    }
+
+    #[test]
+    fn knot_expansion_scan_refuses_the_callers_work_limit() {
+        let lane = crate::test_support::with_service_context(|ctx| {
+            A8KnotLane::try_new(ctx, finite_lane(&[0.0, 1.0]), vec![2, 2])
+        })
+        .expect("service admission")
+        .expect("valid knot lane");
+        let result = crate::test_support::with_work_limit(1, |ctx| lane.expanded(ctx));
+        assert!(matches!(
+            result,
+            Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+                if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+                    && limit.operation == "catia_a8_knot_expansion_scan"
+        ));
+    }
+
+    #[test]
+    fn knot_expansion_emission_refuses_the_callers_remaining_work() {
+        let lane = crate::test_support::with_service_context(|ctx| {
+            A8KnotLane::try_new(ctx, finite_lane(&[0.0, 1.0]), vec![2, 2])
+        })
+        .expect("service admission")
+        .expect("valid knot lane");
+        let result = crate::test_support::with_work_limit(5, |ctx| lane.expanded(ctx));
+        assert!(matches!(
+            result,
+            Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+                if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+                    && limit.operation == "catia_a8_knot_expansion_emit"
+        ));
+        assert_eq!(
+            crate::test_support::with_work_limit(6, |ctx| lane.expanded(ctx))
+                .expect("scan and emission fit the work limit"),
+            vec![0.0, 0.0, 1.0, 1.0]
+        );
     }
 
     #[test]
