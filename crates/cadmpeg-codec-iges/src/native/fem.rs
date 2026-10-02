@@ -778,9 +778,8 @@ mod tests {
         let directory = [directory_target(1, 134)];
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = 0 + 4 * cadmpeg_core::decode::u64_from_index(
-            std::mem::size_of::<super::NativeFemEntity>(),
-        );
+        policy.limits.max_retained_bytes =
+            4 * cadmpeg_core::decode::u64_from_index(std::mem::size_of::<super::NativeFemEntity>());
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("test context");
         let resolver = ParameterResolver::new(&directory, &ctx).expect("directory index");
         let result = build(&directory, &BTreeMap::new(), &resolver, &ctx);

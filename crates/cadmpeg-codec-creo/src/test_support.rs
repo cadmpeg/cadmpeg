@@ -464,10 +464,10 @@ pub(crate) fn last_refusal_at<T>(
                             policy.limits.max_collection_items = need - 1;
                         }
                         ResourceDimension::RetainedBytes => {
-                            policy.limits.max_retained_bytes = need - 1
+                            policy.limits.max_retained_bytes = need - 1;
                         }
                         ResourceDimension::MaterializedBytes => {
-                            policy.limits.max_materialized_bytes = need - 1
+                            policy.limits.max_materialized_bytes = need - 1;
                         }
                         _ => panic!("unsupported test boundary dimension"),
                     }

@@ -198,12 +198,11 @@ fn assert_spatial_path_refusal(operation: &'static str, retained: bool, profile:
                     policy.limits.max_collection_items = cap;
                 }
                 let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-                let result = if profile {
+                if profile {
                     resolve_entity_selection_profile(&group, &resolution, &ctx).map(|_| ())
                 } else {
                     resolve_entity_selection_path(&group, &resolution, &ctx).map(|_| ())
-                };
-                result
+                }
             },
         );
         assert!(matches!(error, CodecError::ResourceLimit(failure)

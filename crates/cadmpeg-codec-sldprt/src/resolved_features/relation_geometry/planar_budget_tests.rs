@@ -131,7 +131,7 @@ fn planar_relation_projection_refuses_retained_limit() {
         |cap| {
             let mut policy = DecodePolicy::service();
             policy.limits.max_retained_bytes = cap;
-            project_with_policy(policy).map(|_| ())
+            project_with_policy(policy)
         },
     );
     assert!(matches!(error, CodecError::ResourceLimit(limit)
@@ -167,7 +167,7 @@ fn solved_point_projection_refuses_retained_limit() {
         |cap| {
             let mut policy = DecodePolicy::service();
             policy.limits.max_retained_bytes = cap;
-            project_solved_point_with_policy(policy).map(|_| ())
+            project_solved_point_with_policy(policy)
         },
     );
     assert!(matches!(error, CodecError::ResourceLimit(limit)
@@ -203,7 +203,7 @@ fn solved_line_projection_refuses_retained_limit() {
         |cap| {
             let mut policy = DecodePolicy::service();
             policy.limits.max_retained_bytes = cap;
-            project_solved_line_with_policy(policy).map(|_| ())
+            project_solved_line_with_policy(policy)
         },
     );
     assert!(matches!(error, CodecError::ResourceLimit(limit)
@@ -239,7 +239,7 @@ fn relation_point_projection_refuses_retained_limit() {
         |cap| {
             let mut policy = DecodePolicy::service();
             policy.limits.max_retained_bytes = cap;
-            project_relation_point_with_policy(policy).map(|_| ())
+            project_relation_point_with_policy(policy)
         },
     );
     assert!(matches!(error, CodecError::ResourceLimit(limit)

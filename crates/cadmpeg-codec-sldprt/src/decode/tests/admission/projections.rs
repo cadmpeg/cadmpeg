@@ -749,7 +749,7 @@ fn metadata_class_binding_refuses_scoped_limit() {
         cadmpeg_core::decode::ResourceDimension::MaterializedBytes,
         "bind SLDPRT history classes",
         |cap| {
-            let mut options = options.clone();
+            let mut options = options;
             options.policy.limits.max_materialized_bytes = cap;
             SldprtCodec
                 .decode(&mut std::io::Cursor::new(&source), &options)
@@ -775,7 +775,7 @@ fn geometry_class_binding_refuses_scoped_limit() {
         cadmpeg_core::decode::ResourceDimension::MaterializedBytes,
         "bind SLDPRT history classes",
         |cap| {
-            let mut options = options.clone();
+            let mut options = options;
             options.policy.limits.max_materialized_bytes = cap;
             SldprtCodec
                 .decode(&mut std::io::Cursor::new(&source), &options)

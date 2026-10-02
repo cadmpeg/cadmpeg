@@ -714,7 +714,9 @@ fn cyclic_anchor_error_text_refuses_retained_limit() {
                     .map(|_| ())
                     .map_err(|error| match error {
                         ResolveError::Resource(error) => error,
-                        error => panic!("unexpected anchor error: {error:?}"),
+                        error @ ResolveError::Syntax(_) => {
+                            panic!("unexpected anchor error: {error:?}")
+                        }
                     })
             },
         );

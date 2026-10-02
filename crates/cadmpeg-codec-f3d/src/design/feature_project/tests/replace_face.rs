@@ -480,7 +480,6 @@ fn surface_trim_tool_group_id_refuses_retained_limit() {
                     std::slice::from_ref(&body),
                 ))
                 .map(|_| ())
-                .map_err(cadmpeg_core::CodecError::from)
             },
         );
         assert!(

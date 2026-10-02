@@ -77,9 +77,7 @@ fn hole_fallback_face_id_refuses_retained_limit() {
                 let arena = DecodeArena::new();
 
                 let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-                (project_hole(&ctx, &scope, &indexed, &[]))
-                    .map(|_| ())
-                    .map_err(cadmpeg_core::CodecError::from)
+                (project_hole(&ctx, &scope, &indexed, &[])).map(|_| ())
             },
         );
         assert!(

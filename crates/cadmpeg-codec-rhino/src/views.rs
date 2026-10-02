@@ -3624,7 +3624,7 @@ mod tests {
             let (ctx, _) =
                 cadmpeg_core::decode::DecodeContext::from_root_bytes(&data, &arena, &policy)
                     .expect("root bytes admitted");
-            let error = parse_list(
+            parse_list(
                 &ctx,
                 &data,
                 &record,
@@ -3632,8 +3632,7 @@ mod tests {
                 crate::settings::MillimeterScale::IDENTITY,
                 ViewListKind::Named,
             )
-            .expect_err("file-reference path exceeds retained limit");
-            error
+            .expect_err("file-reference path exceeds retained limit")
         };
         let error = run(crate::test_support::retained_limit_at(
             "Rhino file reference full path",

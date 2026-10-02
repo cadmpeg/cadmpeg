@@ -178,8 +178,6 @@ fn validation_sketch_owner_finding_id_refuses_retained_limit() {
                 "f3d:native:sketch#1",
                 "conflicting owner",
             )
-            .map(|_| ())
-            .map_err(cadmpeg_core::CodecError::from)
         },
     ) {
         cadmpeg_core::CodecError::ResourceLimit(limit) => limit.limit,
@@ -290,8 +288,6 @@ fn native_duplicate_configuration_id_refuses_retained_limit() {
             let (decode, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
             let ctx = super::super::Ctx::new(&ir, &native, &decode).unwrap();
             super::super::validate_configurations(&ctx, &mut Vec::new())
-                .map(|_| ())
-                .map_err(cadmpeg_core::CodecError::from)
         },
     ) {
         cadmpeg_core::CodecError::ResourceLimit(limit) => limit.limit,
@@ -436,8 +432,6 @@ fn native_parameter_validator_entity_refuses_retained_limit() {
                 let mut ctx = super::super::Ctx::new(&ir, &native, service_ctx).unwrap();
                 ctx.decode = &decode;
                 super::super::validate_parameters(&ctx, &mut Vec::new())
-                    .map(|_| ())
-                    .map_err(cadmpeg_core::CodecError::from)
             },
         ) {
             cadmpeg_core::CodecError::ResourceLimit(limit) => limit.limit,

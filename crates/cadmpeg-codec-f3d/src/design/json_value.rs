@@ -7,7 +7,7 @@ use serde::de::{DeserializeSeed, MapAccess, SeqAccess, Visitor};
 use serde_json::Value;
 use std::fmt;
 
-/// Bounds serde_json scratch growth by twice the wire width, with its eight-byte minimum.
+/// Bounds `serde_json` scratch growth by twice the wire width, with its eight-byte minimum.
 pub(in crate::design) fn reserve_json_scratch<'ctx>(
     ctx: &'ctx DecodeContext<'_>,
     length: usize,

@@ -558,9 +558,7 @@ pub(crate) fn admit_history_bound_scope_variants(
 ) -> Result<(), CodecError> {
     let (mut admitted, _admitted_storage) =
         ctx.temporary_vec(scopes.len(), "f3d scope admission")?;
-    for _ in 0..scopes.len() {
-        admitted.push(true);
-    }
+    admitted.extend(std::iter::repeat_n(true, scopes.len()));
     let mut group_storage = ctx.reserve_scoped(0, "f3d scope admission groups")?;
     let mut groups = HashMap::<(&str, u32), Vec<usize>>::new();
     for (index, scope) in scopes.iter().enumerate() {

@@ -63,19 +63,19 @@ fn recipe_operand_ids_refuse_retained_limit() {
                 let mut policy = cadmpeg_core::decode::DecodePolicy::service();
                 match ResourceDimension::RetainedBytes {
                     cadmpeg_core::decode::ResourceDimension::RetainedBytes => {
-                        policy.limits.max_retained_bytes = cap
+                        policy.limits.max_retained_bytes = cap;
                     }
                     cadmpeg_core::decode::ResourceDimension::CollectionItems => {
-                        policy.limits.max_collection_items = cap
+                        policy.limits.max_collection_items = cap;
                     }
                     cadmpeg_core::decode::ResourceDimension::MaterializedBytes => {
-                        policy.limits.max_materialized_bytes = cap
+                        policy.limits.max_materialized_bytes = cap;
                     }
                     cadmpeg_core::decode::ResourceDimension::WorkUnits => {
-                        policy.limits.max_work_units = cap
+                        policy.limits.max_work_units = cap;
                     }
                     cadmpeg_core::decode::ResourceDimension::RecursionDepth => {
-                        policy.limits.max_recursion_depth = cap
+                        policy.limits.max_recursion_depth = cap;
                     }
                     dimension => panic!("unsupported refusal dimension: {dimension:?}"),
                 }
@@ -91,7 +91,6 @@ fn recipe_operand_ids_refuse_retained_limit() {
                 ))
                 .transpose())
                 .map(|_| ())
-                .map_err(cadmpeg_core::CodecError::from)
             },
         ) {
             cadmpeg_core::CodecError::ResourceLimit(limit) => limit.limit,
@@ -100,19 +99,19 @@ fn recipe_operand_ids_refuse_retained_limit() {
         policy.limits = cadmpeg_core::decode::DecodePolicy::service().limits;
         match ResourceDimension::RetainedBytes {
             cadmpeg_core::decode::ResourceDimension::RetainedBytes => {
-                policy.limits.max_retained_bytes = refusal_cap
+                policy.limits.max_retained_bytes = refusal_cap;
             }
             cadmpeg_core::decode::ResourceDimension::CollectionItems => {
-                policy.limits.max_collection_items = refusal_cap
+                policy.limits.max_collection_items = refusal_cap;
             }
             cadmpeg_core::decode::ResourceDimension::MaterializedBytes => {
-                policy.limits.max_materialized_bytes = refusal_cap
+                policy.limits.max_materialized_bytes = refusal_cap;
             }
             cadmpeg_core::decode::ResourceDimension::WorkUnits => {
-                policy.limits.max_work_units = refusal_cap
+                policy.limits.max_work_units = refusal_cap;
             }
             cadmpeg_core::decode::ResourceDimension::RecursionDepth => {
-                policy.limits.max_recursion_depth = refusal_cap
+                policy.limits.max_recursion_depth = refusal_cap;
             }
             dimension => panic!("unsupported refusal dimension: {dimension:?}"),
         }
@@ -145,23 +144,21 @@ fn recipe_operand_ids_refuse_retained_limit() {
             let mut policy = cadmpeg_core::decode::DecodePolicy::service();
             match ResourceDimension::RetainedBytes {
                 cadmpeg_core::decode::ResourceDimension::RetainedBytes => {
-                    policy.limits.max_retained_bytes = cap
+                    policy.limits.max_retained_bytes = cap;
                 }
                 cadmpeg_core::decode::ResourceDimension::CollectionItems => {
-                    policy.limits.max_collection_items = cap
+                    policy.limits.max_collection_items = cap;
                 }
                 cadmpeg_core::decode::ResourceDimension::MaterializedBytes => {
-                    policy.limits.max_materialized_bytes = cap
+                    policy.limits.max_materialized_bytes = cap;
                 }
                 cadmpeg_core::decode::ResourceDimension::WorkUnits => {
-                    policy.limits.max_work_units = cap
+                    policy.limits.max_work_units = cap;
                 }
                 dimension => panic!("unsupported refusal dimension: {dimension:?}"),
             }
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-            (ctx.copy_retained_text(&recipe.id, "f3d face operand recipe ID"))
-                .map(|_| ())
-                .map_err(cadmpeg_core::CodecError::from)
+            (ctx.copy_retained_text(&recipe.id, "f3d face operand recipe ID")).map(|_| ())
         },
     ) {
         cadmpeg_core::CodecError::ResourceLimit(limit) => limit.limit,
@@ -170,16 +167,16 @@ fn recipe_operand_ids_refuse_retained_limit() {
     policy.limits = cadmpeg_core::decode::DecodePolicy::service().limits;
     match ResourceDimension::RetainedBytes {
         cadmpeg_core::decode::ResourceDimension::RetainedBytes => {
-            policy.limits.max_retained_bytes = refusal_cap
+            policy.limits.max_retained_bytes = refusal_cap;
         }
         cadmpeg_core::decode::ResourceDimension::CollectionItems => {
-            policy.limits.max_collection_items = refusal_cap
+            policy.limits.max_collection_items = refusal_cap;
         }
         cadmpeg_core::decode::ResourceDimension::MaterializedBytes => {
-            policy.limits.max_materialized_bytes = refusal_cap
+            policy.limits.max_materialized_bytes = refusal_cap;
         }
         cadmpeg_core::decode::ResourceDimension::WorkUnits => {
-            policy.limits.max_work_units = refusal_cap
+            policy.limits.max_work_units = refusal_cap;
         }
         dimension => panic!("unsupported refusal dimension: {dimension:?}"),
     }
@@ -190,23 +187,21 @@ fn recipe_operand_ids_refuse_retained_limit() {
             let mut policy = cadmpeg_core::decode::DecodePolicy::service();
             match ResourceDimension::RetainedBytes {
                 cadmpeg_core::decode::ResourceDimension::RetainedBytes => {
-                    policy.limits.max_retained_bytes = cap
+                    policy.limits.max_retained_bytes = cap;
                 }
                 cadmpeg_core::decode::ResourceDimension::CollectionItems => {
-                    policy.limits.max_collection_items = cap
+                    policy.limits.max_collection_items = cap;
                 }
                 cadmpeg_core::decode::ResourceDimension::MaterializedBytes => {
-                    policy.limits.max_materialized_bytes = cap
+                    policy.limits.max_materialized_bytes = cap;
                 }
                 cadmpeg_core::decode::ResourceDimension::WorkUnits => {
-                    policy.limits.max_work_units = cap
+                    policy.limits.max_work_units = cap;
                 }
                 dimension => panic!("unsupported refusal dimension: {dimension:?}"),
             }
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-            (ctx.copy_retained_text(&recipe.id, "f3d face operand recipe ID"))
-                .map(|_| ())
-                .map_err(cadmpeg_core::CodecError::from)
+            (ctx.copy_retained_text(&recipe.id, "f3d face operand recipe ID")).map(|_| ())
         },
     ) {
         cadmpeg_core::CodecError::ResourceLimit(limit) => limit.limit,
@@ -215,16 +210,16 @@ fn recipe_operand_ids_refuse_retained_limit() {
     policy.limits = cadmpeg_core::decode::DecodePolicy::service().limits;
     match ResourceDimension::RetainedBytes {
         cadmpeg_core::decode::ResourceDimension::RetainedBytes => {
-            policy.limits.max_retained_bytes = refusal_cap
+            policy.limits.max_retained_bytes = refusal_cap;
         }
         cadmpeg_core::decode::ResourceDimension::CollectionItems => {
-            policy.limits.max_collection_items = refusal_cap
+            policy.limits.max_collection_items = refusal_cap;
         }
         cadmpeg_core::decode::ResourceDimension::MaterializedBytes => {
-            policy.limits.max_materialized_bytes = refusal_cap
+            policy.limits.max_materialized_bytes = refusal_cap;
         }
         cadmpeg_core::decode::ResourceDimension::WorkUnits => {
-            policy.limits.max_work_units = refusal_cap
+            policy.limits.max_work_units = refusal_cap;
         }
         dimension => panic!("unsupported refusal dimension: {dimension:?}"),
     }
@@ -235,26 +230,24 @@ fn recipe_operand_ids_refuse_retained_limit() {
             let mut policy = cadmpeg_core::decode::DecodePolicy::service();
             match ResourceDimension::RetainedBytes {
                 cadmpeg_core::decode::ResourceDimension::RetainedBytes => {
-                    policy.limits.max_retained_bytes = cap
+                    policy.limits.max_retained_bytes = cap;
                 }
                 cadmpeg_core::decode::ResourceDimension::CollectionItems => {
-                    policy.limits.max_collection_items = cap
+                    policy.limits.max_collection_items = cap;
                 }
                 cadmpeg_core::decode::ResourceDimension::MaterializedBytes => {
-                    policy.limits.max_materialized_bytes = cap
+                    policy.limits.max_materialized_bytes = cap;
                 }
                 cadmpeg_core::decode::ResourceDimension::WorkUnits => {
-                    policy.limits.max_work_units = cap
+                    policy.limits.max_work_units = cap;
                 }
                 cadmpeg_core::decode::ResourceDimension::RecursionDepth => {
-                    policy.limits.max_recursion_depth = cap
+                    policy.limits.max_recursion_depth = cap;
                 }
                 dimension => panic!("unsupported refusal dimension: {dimension:?}"),
             }
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-            (ctx.copy_retained_text(&recipe.id, "f3d face operand recipe ID"))
-                .map(|_| ())
-                .map_err(cadmpeg_core::CodecError::from)
+            (ctx.copy_retained_text(&recipe.id, "f3d face operand recipe ID")).map(|_| ())
         },
     ) {
         cadmpeg_core::CodecError::ResourceLimit(limit) => limit.limit,
@@ -263,19 +256,19 @@ fn recipe_operand_ids_refuse_retained_limit() {
     policy.limits = cadmpeg_core::decode::DecodePolicy::service().limits;
     match ResourceDimension::RetainedBytes {
         cadmpeg_core::decode::ResourceDimension::RetainedBytes => {
-            policy.limits.max_retained_bytes = refusal_cap
+            policy.limits.max_retained_bytes = refusal_cap;
         }
         cadmpeg_core::decode::ResourceDimension::CollectionItems => {
-            policy.limits.max_collection_items = refusal_cap
+            policy.limits.max_collection_items = refusal_cap;
         }
         cadmpeg_core::decode::ResourceDimension::MaterializedBytes => {
-            policy.limits.max_materialized_bytes = refusal_cap
+            policy.limits.max_materialized_bytes = refusal_cap;
         }
         cadmpeg_core::decode::ResourceDimension::WorkUnits => {
-            policy.limits.max_work_units = refusal_cap
+            policy.limits.max_work_units = refusal_cap;
         }
         cadmpeg_core::decode::ResourceDimension::RecursionDepth => {
-            policy.limits.max_recursion_depth = refusal_cap
+            policy.limits.max_recursion_depth = refusal_cap;
         }
         dimension => panic!("unsupported refusal dimension: {dimension:?}"),
     }
@@ -296,16 +289,16 @@ fn recipe_operand_ids_refuse_retained_limit() {
             let mut policy = cadmpeg_core::decode::DecodePolicy::service();
             match ResourceDimension::RetainedBytes {
                 cadmpeg_core::decode::ResourceDimension::RetainedBytes => {
-                    policy.limits.max_retained_bytes = cap
+                    policy.limits.max_retained_bytes = cap;
                 }
                 cadmpeg_core::decode::ResourceDimension::CollectionItems => {
-                    policy.limits.max_collection_items = cap
+                    policy.limits.max_collection_items = cap;
                 }
                 cadmpeg_core::decode::ResourceDimension::MaterializedBytes => {
-                    policy.limits.max_materialized_bytes = cap
+                    policy.limits.max_materialized_bytes = cap;
                 }
                 cadmpeg_core::decode::ResourceDimension::WorkUnits => {
-                    policy.limits.max_work_units = cap
+                    policy.limits.max_work_units = cap;
                 }
                 dimension => panic!("unsupported refusal dimension: {dimension:?}"),
             }
@@ -318,7 +311,6 @@ fn recipe_operand_ids_refuse_retained_limit() {
                 "f3d face operand ID",
             ))
             .map(|_| ())
-            .map_err(cadmpeg_core::CodecError::from)
         },
     ) {
         cadmpeg_core::CodecError::ResourceLimit(limit) => limit.limit,
@@ -327,16 +319,16 @@ fn recipe_operand_ids_refuse_retained_limit() {
     policy.limits = cadmpeg_core::decode::DecodePolicy::service().limits;
     match ResourceDimension::RetainedBytes {
         cadmpeg_core::decode::ResourceDimension::RetainedBytes => {
-            policy.limits.max_retained_bytes = refusal_cap
+            policy.limits.max_retained_bytes = refusal_cap;
         }
         cadmpeg_core::decode::ResourceDimension::CollectionItems => {
-            policy.limits.max_collection_items = refusal_cap
+            policy.limits.max_collection_items = refusal_cap;
         }
         cadmpeg_core::decode::ResourceDimension::MaterializedBytes => {
-            policy.limits.max_materialized_bytes = refusal_cap
+            policy.limits.max_materialized_bytes = refusal_cap;
         }
         cadmpeg_core::decode::ResourceDimension::WorkUnits => {
-            policy.limits.max_work_units = refusal_cap
+            policy.limits.max_work_units = refusal_cap;
         }
         dimension => panic!("unsupported refusal dimension: {dimension:?}"),
     }
@@ -347,16 +339,16 @@ fn recipe_operand_ids_refuse_retained_limit() {
             let mut policy = cadmpeg_core::decode::DecodePolicy::service();
             match ResourceDimension::RetainedBytes {
                 cadmpeg_core::decode::ResourceDimension::RetainedBytes => {
-                    policy.limits.max_retained_bytes = cap
+                    policy.limits.max_retained_bytes = cap;
                 }
                 cadmpeg_core::decode::ResourceDimension::CollectionItems => {
-                    policy.limits.max_collection_items = cap
+                    policy.limits.max_collection_items = cap;
                 }
                 cadmpeg_core::decode::ResourceDimension::MaterializedBytes => {
-                    policy.limits.max_materialized_bytes = cap
+                    policy.limits.max_materialized_bytes = cap;
                 }
                 cadmpeg_core::decode::ResourceDimension::WorkUnits => {
-                    policy.limits.max_work_units = cap
+                    policy.limits.max_work_units = cap;
                 }
                 dimension => panic!("unsupported refusal dimension: {dimension:?}"),
             }
@@ -369,7 +361,6 @@ fn recipe_operand_ids_refuse_retained_limit() {
                 "f3d face operand ID",
             ))
             .map(|_| ())
-            .map_err(cadmpeg_core::CodecError::from)
         },
     ) {
         cadmpeg_core::CodecError::ResourceLimit(limit) => limit.limit,
@@ -378,16 +369,16 @@ fn recipe_operand_ids_refuse_retained_limit() {
     policy.limits = cadmpeg_core::decode::DecodePolicy::service().limits;
     match ResourceDimension::RetainedBytes {
         cadmpeg_core::decode::ResourceDimension::RetainedBytes => {
-            policy.limits.max_retained_bytes = refusal_cap
+            policy.limits.max_retained_bytes = refusal_cap;
         }
         cadmpeg_core::decode::ResourceDimension::CollectionItems => {
-            policy.limits.max_collection_items = refusal_cap
+            policy.limits.max_collection_items = refusal_cap;
         }
         cadmpeg_core::decode::ResourceDimension::MaterializedBytes => {
-            policy.limits.max_materialized_bytes = refusal_cap
+            policy.limits.max_materialized_bytes = refusal_cap;
         }
         cadmpeg_core::decode::ResourceDimension::WorkUnits => {
-            policy.limits.max_work_units = refusal_cap
+            policy.limits.max_work_units = refusal_cap;
         }
         dimension => panic!("unsupported refusal dimension: {dimension:?}"),
     }
@@ -398,19 +389,19 @@ fn recipe_operand_ids_refuse_retained_limit() {
             let mut policy = cadmpeg_core::decode::DecodePolicy::service();
             match ResourceDimension::RetainedBytes {
                 cadmpeg_core::decode::ResourceDimension::RetainedBytes => {
-                    policy.limits.max_retained_bytes = cap
+                    policy.limits.max_retained_bytes = cap;
                 }
                 cadmpeg_core::decode::ResourceDimension::CollectionItems => {
-                    policy.limits.max_collection_items = cap
+                    policy.limits.max_collection_items = cap;
                 }
                 cadmpeg_core::decode::ResourceDimension::MaterializedBytes => {
-                    policy.limits.max_materialized_bytes = cap
+                    policy.limits.max_materialized_bytes = cap;
                 }
                 cadmpeg_core::decode::ResourceDimension::WorkUnits => {
-                    policy.limits.max_work_units = cap
+                    policy.limits.max_work_units = cap;
                 }
                 cadmpeg_core::decode::ResourceDimension::RecursionDepth => {
-                    policy.limits.max_recursion_depth = cap
+                    policy.limits.max_recursion_depth = cap;
                 }
                 dimension => panic!("unsupported refusal dimension: {dimension:?}"),
             }
@@ -423,7 +414,6 @@ fn recipe_operand_ids_refuse_retained_limit() {
                 "f3d face operand ID",
             ))
             .map(|_| ())
-            .map_err(cadmpeg_core::CodecError::from)
         },
     ) {
         cadmpeg_core::CodecError::ResourceLimit(limit) => limit.limit,
@@ -432,19 +422,19 @@ fn recipe_operand_ids_refuse_retained_limit() {
     policy.limits = cadmpeg_core::decode::DecodePolicy::service().limits;
     match ResourceDimension::RetainedBytes {
         cadmpeg_core::decode::ResourceDimension::RetainedBytes => {
-            policy.limits.max_retained_bytes = refusal_cap
+            policy.limits.max_retained_bytes = refusal_cap;
         }
         cadmpeg_core::decode::ResourceDimension::CollectionItems => {
-            policy.limits.max_collection_items = refusal_cap
+            policy.limits.max_collection_items = refusal_cap;
         }
         cadmpeg_core::decode::ResourceDimension::MaterializedBytes => {
-            policy.limits.max_materialized_bytes = refusal_cap
+            policy.limits.max_materialized_bytes = refusal_cap;
         }
         cadmpeg_core::decode::ResourceDimension::WorkUnits => {
-            policy.limits.max_work_units = refusal_cap
+            policy.limits.max_work_units = refusal_cap;
         }
         cadmpeg_core::decode::ResourceDimension::RecursionDepth => {
-            policy.limits.max_recursion_depth = refusal_cap
+            policy.limits.max_recursion_depth = refusal_cap;
         }
         dimension => panic!("unsupported refusal dimension: {dimension:?}"),
     }

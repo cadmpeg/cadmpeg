@@ -73,8 +73,7 @@ pub(crate) fn project_local_components(
                 };
                 project_occurrence(
                     ctx,
-                    &mut lookup_storage,
-                    &mut components,
+                    (&mut lookup_storage, &mut components),
                     &mut occurrences,
                     &native_by_guid,
                     &root.component_guid,
@@ -94,8 +93,7 @@ pub(crate) fn project_local_components(
         if let Some(operation) = scope.copy_paste_component_operation() {
             project_occurrence(
                 ctx,
-                &mut lookup_storage,
-                &mut components,
+                (&mut lookup_storage, &mut components),
                 &mut occurrences,
                 &native_by_guid,
                 &operation.component_guid,
@@ -104,8 +102,7 @@ pub(crate) fn project_local_components(
             )?;
             project_occurrence(
                 ctx,
-                &mut lookup_storage,
-                &mut components,
+                (&mut lookup_storage, &mut components),
                 &mut occurrences,
                 &native_by_guid,
                 &operation.component_guid,
@@ -116,8 +113,7 @@ pub(crate) fn project_local_components(
         if let Some(construction) = scope.derived_instance_construction() {
             project_occurrence(
                 ctx,
-                &mut lookup_storage,
-                &mut components,
+                (&mut lookup_storage, &mut components),
                 &mut occurrences,
                 &native_by_guid,
                 &construction.component_guid,
@@ -140,8 +136,7 @@ pub(crate) fn project_local_components(
         for occurrence in std::iter::once(seed).chain(generated) {
             project_occurrence(
                 ctx,
-                &mut lookup_storage,
-                &mut components,
+                (&mut lookup_storage, &mut components),
                 &mut occurrences,
                 &native_by_guid,
                 component_guid,
@@ -295,14 +290,17 @@ fn temporary_lowercase_component_key<'a>(
 
 fn project_occurrence(
     ctx: &DecodeContext<'_>,
-    lookup_storage: &mut ScopedReservation<'_>,
-    components: &mut BTreeMap<String, ProductDefinition>,
+    component_storage: (
+        &mut ScopedReservation<'_>,
+        &mut BTreeMap<String, ProductDefinition>,
+    ),
     occurrences: &mut BTreeMap<String, Occurrence>,
     native_by_guid: &BTreeMap<String, Option<&DesignComponentOccurrence>>,
     component_guid: &crate::records::mesh::DesignRelaxedGuidText,
     occurrence_guid: &crate::records::mesh::DesignRelaxedGuidText,
     transform: impl Into<[[f64; 4]; 4]>,
 ) -> Result<(), cadmpeg_core::CodecError> {
+    let (lookup_storage, components) = component_storage;
     let component_id = crate::ids::neutral_component_id(component_guid);
     let transform = neutral_transform(transform)?;
     project_component(ctx, lookup_storage, components, component_guid)?;
@@ -609,15 +607,13 @@ mod tests {
                 let mut lookup_storage = ctx.reserve_scoped(0, "f3d component lookup storage")?;
                 super::project_occurrence(
                     ctx,
-                    &mut lookup_storage,
-                    &mut std::collections::BTreeMap::new(),
+                    (&mut lookup_storage, &mut std::collections::BTreeMap::new()),
                     &mut std::collections::BTreeMap::new(),
                     &native_by_guid,
                     &occurrence.component_guid,
                     &occurrence.occurrence_guid,
                     identity_matrix(),
                 )
-                .map(|_| ())
             },
         );
         assert!(

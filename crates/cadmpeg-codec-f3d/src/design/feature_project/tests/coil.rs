@@ -188,9 +188,7 @@ fn assert_coil_retained_refusal(
                 let arena = DecodeArena::new();
 
                 let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-                (project_coil(&ctx, scope, &owned, groups))
-                    .map(|_| ())
-                    .map_err(cadmpeg_core::CodecError::from)
+                (project_coil(&ctx, scope, &owned, groups)).map(|_| ())
             },
         );
         assert!(

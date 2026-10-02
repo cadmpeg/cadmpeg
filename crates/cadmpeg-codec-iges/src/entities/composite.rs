@@ -2061,14 +2061,17 @@ fn anchor_analytic_nurbs_endpoint_poles(
 
 fn project_native_composite(
     ir: &mut CadIr,
-    index: &mut CompositeIndex,
-    index_storage: &mut cadmpeg_core::decode::ScopedReservation<'_>,
+    index: (
+        &mut CompositeIndex,
+        &mut cadmpeg_core::decode::ScopedReservation<'_>,
+    ),
     entry: &DirectoryEntry,
     child_curves: &[CurveId],
     join_tolerance: f64,
     ctx: &DecodeContext<'_>,
     sequences: &mut super::geometry::SourceSequences,
 ) -> Result<Option<EdgeId>, CodecError> {
+    let (index, index_storage) = index;
     if child_curves
         .iter()
         .any(|curve_id| !index.curve_positions.contains_key(curve_id))
@@ -2239,18 +2242,20 @@ impl fmt::Display for CompositeRefusal {
 
 fn project_degraded_composite(
     ir: &mut CadIr,
-    index: &mut CompositeIndex,
-    index_storage: &mut cadmpeg_core::decode::ScopedReservation<'_>,
+    index: (
+        &mut CompositeIndex,
+        &mut cadmpeg_core::decode::ScopedReservation<'_>,
+    ),
     carrier: CompositeCarrier<'_>,
     reason: impl fmt::Display,
     ctx: &DecodeContext<'_>,
     sequences: &mut super::geometry::SourceSequences,
     losses: &mut Vec<LossNote>,
 ) -> Result<Option<EdgeId>, CodecError> {
+    let (index, index_storage) = index;
     let edge = project_native_composite(
         ir,
-        index,
-        index_storage,
+        (index, index_storage),
         carrier.entry,
         carrier.child_curves,
         carrier.join_tolerance,
@@ -2613,8 +2618,7 @@ fn project_with_type_130_policy(
         if let Some(reason) = child_refusal {
             let edge = project_degraded_composite(
                 ir,
-                &mut index,
-                &mut index_storage,
+                (&mut index, &mut index_storage),
                 carrier,
                 reason,
                 ctx,
@@ -2639,8 +2643,7 @@ fn project_with_type_130_policy(
                 let error = error.non_resource()?;
                 let edge = project_degraded_composite(
                     ir,
-                    &mut index,
-                    &mut index_storage,
+                    (&mut index, &mut index_storage),
                     carrier,
                     // The error names its own cause: a carrier the IR
                     // refuses, or a child that does not raise to the
@@ -2673,8 +2676,7 @@ fn project_with_type_130_policy(
         let Some(ConcatenatedNurbs { nurbs, segments }) = concatenated else {
             let edge = project_degraded_composite(
                 ir,
-                &mut index,
-                &mut index_storage,
+                (&mut index, &mut index_storage),
                 carrier,
                 "child endpoints do not join within the Global minimum resolution",
                 ctx,
@@ -2700,8 +2702,7 @@ fn project_with_type_130_policy(
         else {
             let edge = project_degraded_composite(
                 ir,
-                &mut index,
-                &mut index_storage,
+                (&mut index, &mut index_storage),
                 carrier,
                 "its start cannot be evaluated",
                 ctx,
@@ -2726,8 +2727,7 @@ fn project_with_type_130_policy(
         else {
             let edge = project_degraded_composite(
                 ir,
-                &mut index,
-                &mut index_storage,
+                (&mut index, &mut index_storage),
                 carrier,
                 "its end cannot be evaluated",
                 ctx,

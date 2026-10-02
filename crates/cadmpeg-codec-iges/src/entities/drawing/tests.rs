@@ -74,10 +74,9 @@ fn drawing_entity_loss_refuses_unadmitted_slot_and_message() {
     assert!(losses.is_empty());
 
     let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = (0)
-        + cadmpeg_core::decode::u64_from_index(
-            4 * std::mem::size_of::<cadmpeg_ir::report::loss::LossNote>(),
-        );
+    policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(
+        4 * std::mem::size_of::<cadmpeg_ir::report::loss::LossNote>(),
+    );
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let error = push_drawing_entity_loss(&ctx, &mut losses, &entry, "missing").unwrap_err();
     assert!(

@@ -127,10 +127,9 @@ fn transfer_ledger_refuses_row_and_note_limits() {
 
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = (0)
-        + cadmpeg_core::decode::u64_from_index(
-            4 * std::mem::size_of::<cadmpeg_ir::report::decode::TransferRecord>(),
-        );
+    policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(
+        4 * std::mem::size_of::<cadmpeg_ir::report::decode::TransferRecord>(),
+    );
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(matches!(
         super::record_retained_transfer(&ctx, &mut ledger, "D1".into(), "iges:entity:directory#1".into(), "retained"),
@@ -192,10 +191,9 @@ fn reader_occurrence_loss_refuses_slot_and_message_limits() {
 
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = (0)
-        + cadmpeg_core::decode::u64_from_index(
-            4 * std::mem::size_of::<cadmpeg_ir::report::loss::LossNote>(),
-        );
+    policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(
+        4 * std::mem::size_of::<cadmpeg_ir::report::loss::LossNote>(),
+    );
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(matches!(
         super::push_occurrence_loss(&ctx, &mut losses, IgesLossCode::OccurrenceRootInferenceBlocked,
@@ -244,10 +242,9 @@ fn reader_generic_loss_refuses_slot_and_message_limits() {
 
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = (0)
-        + cadmpeg_core::decode::u64_from_index(
-            4 * std::mem::size_of::<cadmpeg_ir::report::loss::LossNote>(),
-        );
+    policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(
+        4 * std::mem::size_of::<cadmpeg_ir::report::loss::LossNote>(),
+    );
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(matches!(
         super::append_generic_losses(&ctx, &mut losses, &directory, &projection, &attributed, table),

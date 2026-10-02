@@ -61,9 +61,7 @@ fn persistent_reference_id_refuses_retained_limit() {
             let mut policy = DecodePolicy::default();
             policy.limits.max_retained_bytes = cap;
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-            scan_references(&ctx, &bytes)
-                .map(|_| ())
-                .map_err(cadmpeg_core::CodecError::from)
+            scan_references(&ctx, &bytes).map(|_| ())
         },
     ) {
         cadmpeg_core::CodecError::ResourceLimit(limit) => limit.limit,

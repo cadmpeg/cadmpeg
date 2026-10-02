@@ -97,7 +97,7 @@ fn split_line_enrichment_refuses_retained_limit() {
         "retain SLDPRT split-line observation ID",
         |cap| {
             Err::<(), cadmpeg_core::CodecError>(split_line_limit_error(|policy| {
-                policy.limits.max_retained_bytes = cap
+                policy.limits.max_retained_bytes = cap;
             }))
         },
     );

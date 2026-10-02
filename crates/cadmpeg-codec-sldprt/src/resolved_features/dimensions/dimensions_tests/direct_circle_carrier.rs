@@ -300,7 +300,6 @@ fn marker_circle_projection_refuses_retained_limit() {
                 &[],
                 &[lane],
             )
-            .map(|_| ())
         },
     );
     assert!(

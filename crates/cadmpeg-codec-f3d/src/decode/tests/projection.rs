@@ -338,9 +338,7 @@ fn mesh_texture_source_id_refuses_retained_limit() {
             policy.limits.max_retained_bytes = cap;
             let (ctx, _) =
                 cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-            mesh_texture_assignments(&ctx, Some(&[1]), &one_mesh_texture(), 1)
-                .map(|_| ())
-                .map_err(cadmpeg_core::CodecError::from)
+            mesh_texture_assignments(&ctx, Some(&[1]), &one_mesh_texture(), 1).map(|_| ())
         },
     ) {
         cadmpeg_core::CodecError::ResourceLimit(limit) => limit.limit,
@@ -367,9 +365,7 @@ fn mesh_texture_asset_id_refuses_retained_limit() {
             policy.limits.max_retained_bytes = cap;
             let (ctx, _) =
                 cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-            mesh_texture_assignments(&ctx, Some(&[1]), &one_mesh_texture(), 1)
-                .map(|_| ())
-                .map_err(cadmpeg_core::CodecError::from)
+            mesh_texture_assignments(&ctx, Some(&[1]), &one_mesh_texture(), 1).map(|_| ())
         },
     ) {
         cadmpeg_core::CodecError::ResourceLimit(limit) => limit.limit,
@@ -1351,8 +1347,6 @@ fn projection_loss_refuses_retained_limit() {
                 "collect F3D projection losses",
                 "retain F3D projection loss",
             )
-            .map(|_| ())
-            .map_err(cadmpeg_core::CodecError::from)
         },
     ) {
         cadmpeg_core::CodecError::ResourceLimit(limit) => limit.limit,

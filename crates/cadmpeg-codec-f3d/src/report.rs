@@ -260,7 +260,6 @@ mod tests {
                         crate::container::SummaryScope::FullDecode,
                     )
                     .map(|_| ())
-                    .map_err(cadmpeg_core::CodecError::from)
                 },
             ) {
                 cadmpeg_core::CodecError::ResourceLimit(limit) => limit.limit,

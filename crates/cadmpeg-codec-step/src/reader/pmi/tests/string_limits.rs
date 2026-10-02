@@ -128,7 +128,7 @@ fn annotation_text_refuses_retained_limit() {
             let mut visited = BTreeSet::new();
             let mut candidates = BTreeMap::new();
             let mut losses = Vec::<LossNote>::new();
-            (super::super::collect_annotation_text(
+            super::super::collect_annotation_text(
                 1,
                 &exchange,
                 &mut visited,
@@ -136,8 +136,7 @@ fn annotation_text_refuses_retained_limit() {
                 &mut losses,
                 0,
                 &ctx,
-            ))
-            .map(|_| ())
+            )
         },
     );
     assert!(

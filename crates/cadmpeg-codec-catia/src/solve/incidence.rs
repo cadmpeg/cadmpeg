@@ -4237,9 +4237,7 @@ pub(super) fn deferred_boundary_assignment(
     for mesh in 0..domain.cycles.len() {
         let (mut visited, _visited_storage) =
             ctx.temporary_vec(incidence.len(), "catia_deferred_visit")?;
-        for _ in 0..incidence.len() {
-            visited.push(false);
-        }
+        visited.extend(std::iter::repeat_n(false, incidence.len()));
         if !augment_cycle_matching(mesh, &boolean_compatible, &mut visited, &mut matched_mesh) {
             return Ok(None);
         }
@@ -4376,9 +4374,7 @@ fn deferred_boundary_closes(
     for mesh in 0..domain.cycles.len() {
         let (mut visited, _visited_storage) =
             ctx.temporary_vec(incidence.len(), "catia_deferred_close_visit")?;
-        for _ in 0..incidence.len() {
-            visited.push(false);
-        }
+        visited.extend(std::iter::repeat_n(false, incidence.len()));
         if !augment_cycle_matching(mesh, &compatible, &mut visited, &mut matched_mesh) {
             return Ok(false);
         }

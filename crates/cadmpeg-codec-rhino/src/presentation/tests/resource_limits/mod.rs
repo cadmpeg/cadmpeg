@@ -155,9 +155,8 @@ fn disambiguated_group_id_refuses_retained_limit() {
         policy.limits.max_retained_bytes = cap;
         let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
             .expect("empty root admitted");
-        let error = crate::presentation::disambiguate_group_ids(&ctx, &mut duplicate_groups())
-            .expect_err("disambiguated ID exceeds retained limit");
-        error
+        crate::presentation::disambiguate_group_ids(&ctx, &mut duplicate_groups())
+            .expect_err("disambiguated ID exceeds retained limit")
     };
     let error = run(crate::test_support::retained_limit_at(
         "Rhino disambiguated group ID",
@@ -1432,7 +1431,7 @@ fn unstamped_font_loss_text_refuses_retained_limit() {
         let (ctx, _) =
             cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
                 .expect("legacy style root admitted");
-        let error = crate::presentation::parse_text_style(
+        crate::presentation::parse_text_style(
             &ctx,
             &bytes,
             TextStyleParseInput {
@@ -1444,8 +1443,7 @@ fn unstamped_font_loss_text_refuses_retained_limit() {
             },
             &mut Vec::new(),
         )
-        .expect_err("unstamped loss text exceeds retained limit");
-        error
+        .expect_err("unstamped loss text exceeds retained limit")
     };
     let error = run(crate::test_support::retained_limit_at(
         "Rhino text style writer-stamp loss text",
@@ -1556,14 +1554,13 @@ fn texture_file_reference_loss_text_refuses_retained_limit() {
             .expect("empty root admitted");
         let mut diagnostics = Diagnostics::new();
         diagnostics.push("invalid reference");
-        let error = crate::presentation::append_file_reference_diagnostics(
+        crate::presentation::append_file_reference_diagnostics(
             &ctx,
             &mut Vec::new(),
             diagnostics,
             42,
         )
-        .expect_err("loss text exceeds retained limit");
-        error
+        .expect_err("loss text exceeds retained limit")
     };
     let error = run(crate::test_support::retained_limit_at(
         "Rhino texture file-reference loss text",

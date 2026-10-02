@@ -476,7 +476,7 @@ pub(in crate::native) fn feature_point_construction_scalar_lanes(
             ) else {
                 continue;
             };
-            let Some(lane) = crate::om::point_feature_scalar_lane(preceding.bytes, target.bytes)?
+            let Some(lane) = crate::om::point_feature_scalar_lane(preceding.bytes, target.bytes)
             else {
                 continue;
             };

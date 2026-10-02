@@ -135,7 +135,7 @@ fn vertex_recipe_scope_id_refuses_retained_limit() {
     let error = cadmpeg_test_support::refusal::resource_limit_at(
         cadmpeg_core::decode::ResourceDimension::RetainedBytes,
         "copy F3D vertex recipe scope identity",
-        |cap| bind_input_states(u64::MAX, cap).map(|_| ()),
+        |cap| bind_input_states(u64::MAX, cap),
     );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)

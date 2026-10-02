@@ -393,8 +393,6 @@ fn historical_recipe_identity_refuses_retained_limit() {
             let (ctx, _) =
                 cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
             bind_historical_recipe_reference_candidates(&ctx, &mut reference, &topology)
-                .map(|_| ())
-                .map_err(cadmpeg_core::CodecError::from)
         },
     ) {
         cadmpeg_core::CodecError::ResourceLimit(limit) => limit.limit,

@@ -275,7 +275,6 @@ fn history_record_name_copy_refuses_retained_limit() {
                 Default::default(),
             )
             .map(|_| ())
-            .map_err(cadmpeg_core::CodecError::from)
         },
     ) {
         cadmpeg_core::CodecError::ResourceLimit(limit) => limit.limit,
@@ -313,7 +312,6 @@ fn history_token_text_copy_refuses_retained_limit() {
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
             super::super::historical_record_archive(&ctx, &[], &[record], Default::default())
                 .map(|_| ())
-                .map_err(cadmpeg_core::CodecError::from)
         },
     ) {
         cadmpeg_core::CodecError::ResourceLimit(limit) => limit.limit,
