@@ -1939,7 +1939,12 @@ fn append_legacy_brep(
         values
     };
     group_roots.extend_from_slice(&roots);
-    ctx.sort_unstable_by(&mut group_roots, Ord::cmp, |_| 0, "Rhino V1 Brep unique roots sort")?;
+    ctx.sort_unstable_by(
+        &mut group_roots,
+        Ord::cmp,
+        |_| 0,
+        "Rhino V1 Brep unique roots sort",
+    )?;
     group_roots.dedup();
     admit_v1_temporary_items::<(usize, NurbsCurve)>(
         ctx,
@@ -4659,7 +4664,8 @@ mod tests {
     #[test]
     fn v1_brep_trim_paths_refuse_materialized_limit_before_reserve() {
         let data = legacy_face_archive();
-        let header = super::parse_header(&cadmpeg_test_support::service_decode_context(), &data).expect("valid V1 header");
+        let header = super::parse_header(&cadmpeg_test_support::service_decode_context(), &data)
+            .expect("valid V1 header");
         let comment = chunk_at(
             &data,
             header.start_offset + crate::layout::file_header::LEN,
@@ -4725,7 +4731,8 @@ mod tests {
     #[test]
     fn v1_brep_group_maps_refuse_materialized_limit_before_insert() {
         let data = legacy_face_archive();
-        let header = super::parse_header(&cadmpeg_test_support::service_decode_context(), &data).expect("valid V1 header");
+        let header = super::parse_header(&cadmpeg_test_support::service_decode_context(), &data)
+            .expect("valid V1 header");
         let comment = chunk_at(
             &data,
             header.start_offset + crate::layout::file_header::LEN,

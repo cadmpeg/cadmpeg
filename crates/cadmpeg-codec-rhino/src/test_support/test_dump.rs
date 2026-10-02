@@ -940,9 +940,12 @@ pub(crate) fn object_record_with_unknown_trailer(
 }
 
 pub(crate) fn minimal_document(version: &str, tables: &[Vec<u8>]) -> Vec<u8> {
-    let archive = parse_header(&cadmpeg_test_support::service_decode_context(), &header(version))
-        .expect("required invariant")
-        .archive_version;
+    let archive = parse_header(
+        &cadmpeg_test_support::service_decode_context(),
+        &header(version),
+    )
+    .expect("required invariant")
+    .archive_version;
     let mut bytes = header(version);
     bytes.extend(long_chunk(archive, 1, b"comment"));
     for table in tables {

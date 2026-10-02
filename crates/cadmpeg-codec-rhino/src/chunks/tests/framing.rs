@@ -3,7 +3,9 @@
 
 use std::io::Cursor;
 
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, InspectOptions, ResourceDimension};
+use cadmpeg_core::decode::{
+    DecodeArena, DecodeContext, DecodePolicy, InspectOptions, ResourceDimension,
+};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{Codec, Confidence};
 
@@ -71,11 +73,11 @@ fn class_end_checksum_children_ceiling_is_a_resource_refusal() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = u64::try_from(cap + 1).expect("fixture count fits");
-    let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)
-        .expect("root bytes admitted");
-    let error = checksum_children_through_class_end(
-        &ctx, &bytes, 0..bytes.len(), archive, "class stream",
-    ).expect_err("child ceiling refuses the class-end slot");
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("root bytes admitted");
+    let error =
+        checksum_children_through_class_end(&ctx, &bytes, 0..bytes.len(), archive, "class stream")
+            .expect_err("child ceiling refuses the class-end slot");
     assert!(matches!(error, FramingError::Resource(limit)
         if limit.dimension == ResourceDimension::Codec("Rhino class-end checksum children")
             && limit.limit == u64::try_from(cap).expect("fixture count fits")
@@ -93,14 +95,17 @@ fn class_end_checksum_children_accept_the_ceiling() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = u64::try_from(cap).expect("fixture count fits");
-    let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)
-        .expect("root bytes admitted");
-    let ranges = checksum_children_through_class_end(
-        &ctx, &bytes, 0..bytes.len(), archive, "class stream",
-    ).expect("class end is within the child ceiling");
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("root bytes admitted");
+    let ranges =
+        checksum_children_through_class_end(&ctx, &bytes, 0..bytes.len(), archive, "class stream")
+            .expect("class end is within the child ceiling");
     assert_eq!(ranges.len(), cap);
     assert_eq!(ranges.first(), Some(&(0..child.len())));
-    assert_eq!(ranges.last(), Some(&(bytes.len() - child.len()..bytes.len())));
+    assert_eq!(
+        ranges.last(),
+        Some(&(bytes.len() - child.len()..bytes.len()))
+    );
     assert_eq!(ctx.resource_refusal(), None);
 }
 
@@ -143,10 +148,18 @@ fn parses_exact_header_and_scope() {
         ("80", ArchiveVersion::V8),
         ("90", ArchiveVersion::V9),
     ] {
-        let parsed = parse_header(&cadmpeg_test_support::service_decode_context(), &header(text)).expect("valid header");
+        let parsed = parse_header(
+            &cadmpeg_test_support::service_decode_context(),
+            &header(text),
+        )
+        .expect("valid header");
         assert_eq!(parsed.archive_version, expected);
     }
-    assert!(parse_header(&cadmpeg_test_support::service_decode_context(), &header("0")).is_err());
+    assert!(parse_header(
+        &cadmpeg_test_support::service_decode_context(),
+        &header("0")
+    )
+    .is_err());
     let mut invalid = header("50");
     invalid[file_header::ARCHIVE_VERSION] = b'0';
     assert!(matches!(
@@ -159,8 +172,16 @@ fn parses_exact_header_and_scope() {
         parse_header(&cadmpeg_test_support::service_decode_context(), &invalid),
         Err(FramingError::InvalidHeader)
     ));
-    assert!(parse_header(&cadmpeg_test_support::service_decode_context(), &header("1234567")).is_ok());
-    assert!(parse_header(&cadmpeg_test_support::service_decode_context(), &header("12345678")).is_ok());
+    assert!(parse_header(
+        &cadmpeg_test_support::service_decode_context(),
+        &header("1234567")
+    )
+    .is_ok());
+    assert!(parse_header(
+        &cadmpeg_test_support::service_decode_context(),
+        &header("12345678")
+    )
+    .is_ok());
     let mut embedded = vec![0x5a; 127];
     embedded.extend(header("80"));
     assert_eq!(
@@ -182,13 +203,15 @@ fn header_magic_scan_refuses_work_before_search() {
         let mut policy = DecodePolicy::service();
         let scan_work = u64::try_from(bytes.len()).expect("fixture length fits");
         policy.limits.max_work_units = scan_work - 1;
-        let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)
-            .expect("root bytes admitted");
-        assert!(matches!(parse_header(&ctx, &bytes), Err(FramingError::Resource(limit))
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("root bytes admitted");
+        assert!(
+            matches!(parse_header(&ctx, &bytes), Err(FramingError::Resource(limit))
             if limit.dimension == ResourceDimension::WorkUnits
                 && limit.operation == "Rhino header magic scan"
                 && limit.used == 0 && limit.additional == scan_work
-                && Some(limit) == ctx.resource_refusal()));
+                && Some(limit) == ctx.resource_refusal())
+        );
     }
 }
 
@@ -200,16 +223,18 @@ fn header_magic_scan_charges_each_call_to_the_same_context() {
     let mut policy = DecodePolicy::service();
     let scan_work = u64::try_from(bytes.len()).expect("fixture length fits");
     policy.limits.max_work_units = scan_work;
-    let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)
-        .expect("root bytes admitted");
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("root bytes admitted");
     let parsed = parse_header(&ctx, &bytes).expect("one scan fits the allowance");
     assert_eq!(parsed.start_offset, 4096);
     assert_eq!(parsed.archive_version, ArchiveVersion::V8);
-    assert!(matches!(parse_header(&ctx, &bytes), Err(FramingError::Resource(limit))
+    assert!(
+        matches!(parse_header(&ctx, &bytes), Err(FramingError::Resource(limit))
         if limit.dimension == ResourceDimension::WorkUnits
             && limit.operation == "Rhino header magic scan"
             && limit.used == scan_work && limit.additional == scan_work
-            && Some(limit) == ctx.resource_refusal()));
+            && Some(limit) == ctx.resource_refusal())
+    );
 }
 
 #[test]
@@ -220,8 +245,8 @@ fn header_magic_scan_refusal_reaches_container_and_legacy_callers() {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_work_units = 0;
-        let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)
-            .expect("root bytes admitted");
+        let (ctx, root) =
+            DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("root bytes admitted");
         let result = match route {
             "scan" => crate::container::scan(&ctx, &bytes).map(|_| ()),
             "inspect" => crate::container::inspect(&ctx, root).map(|_| ()),
@@ -229,9 +254,12 @@ fn header_magic_scan_refusal_reaches_container_and_legacy_callers() {
             "legacy" => crate::legacy::decode_v1(&ctx, &bytes).map(|_| ()),
             _ => unreachable!("fixed route list"),
         };
-        assert!(matches!(result, Err(CodecError::ResourceLimit(limit))
+        assert!(
+            matches!(result, Err(CodecError::ResourceLimit(limit))
             if limit.operation == "Rhino header magic scan"
-                && Some(limit) == ctx.resource_refusal()), "route: {route}");
+                && Some(limit) == ctx.resource_refusal()),
+            "route: {route}"
+        );
     }
 }
 
