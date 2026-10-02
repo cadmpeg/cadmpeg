@@ -1706,8 +1706,7 @@ fn nurbs_curve_parameter_near_point_with_nonnegative_tolerance(
             };
             boundaries.push(boundary);
         }
-        ctx.charge_work(u64_from_index(boundaries.len()), "IR curve inversion boundary witness scan")?;
-        match nearest_boundary_witness(&boundaries, seed, tolerance, distance)? {
+        match nearest_boundary_witness(ctx, &boundaries, seed, tolerance, distance)? {
             BoundaryWitness::Found(parameter) => return Ok(Some(parameter)),
             BoundaryWitness::Invalid => return Ok(None),
             BoundaryWitness::NoMatch => {}
@@ -1777,9 +1776,8 @@ fn nurbs_curve_parameter_near_point_newton(
 ) -> Result<Option<FiniteReal>, CodecError> {
     let scratch = decode::Scratch::new(ctx);
     let result = (|| {
-        ctx.charge_work(u64_from_index(search.boundaries.len()), "IR curve inversion Newton interval scan")?;
         let window =
-            parameter_interval_containing(search.boundaries, seed).unwrap_or(search.domain);
+            parameter_interval_containing(ctx, search.boundaries, seed)?.unwrap_or(search.domain);
         let mut parameter = window.project(ExtendedReal::from_finite(seed));
         for _ in 0..MODEL_CURVE_PARAMETER_SEARCH_MAX_NEWTON_ITERATIONS {
             ctx.charge_work(1, "IR curve inversion Newton iteration")?;
@@ -2022,6 +2020,7 @@ enum BoundaryWitness {
 
 /// Find the nearest admissible distinct boundary without cloning and sorting knots.
 fn nearest_boundary_witness<F>(
+    ctx: &DecodeContext<'_>,
     boundaries: &[FiniteReal],
     seed: FiniteReal,
     tolerance: f64,
@@ -2030,10 +2029,13 @@ fn nearest_boundary_witness<F>(
 where
     F: FnMut(FiniteReal) -> Result<Option<f64>, ResourceLimit>,
 {
+    ctx.charge_work_limit(0, "IR curve inversion boundary witness scan")?;
     let mut previous_boundary = None;
     let mut nearest = None;
     let mut nearest_seed_distance = f64::INFINITY;
-    for &parameter in boundaries {
+    for parameter in boundaries {
+        ctx.charge_work_limit(1, "IR curve inversion boundary witness scan")?;
+        let parameter = *parameter;
         if previous_boundary == Some(parameter) {
             continue;
         }
@@ -2054,14 +2056,19 @@ where
 }
 
 fn parameter_interval_containing(
+    ctx: &DecodeContext<'_>,
     boundaries: &[FiniteReal],
     parameter: FiniteReal,
-) -> Option<ParameterInterval> {
-    boundaries.windows(2).find_map(|pair| {
-        IncreasingParameterInterval::between(pair[0], pair[1])
+) -> Result<Option<ParameterInterval>, ResourceLimit> {
+    ctx.charge_work_limit(0, "IR curve inversion Newton interval scan")?;
+    for pair in boundaries.windows(2) {
+        ctx.charge_work_limit(1, "IR curve inversion Newton interval scan")?;
+        if let Some(interval) = IncreasingParameterInterval::between(pair[0], pair[1])
             .filter(|_| parameter >= pair[0] && parameter <= pair[1])
             .map(ParameterInterval::from)
-    })
+        { return Ok(Some(interval)); }
+    }
+    Ok(None)
 }
 
 /// Map a NURBS parameter onto its evaluable knot branch.

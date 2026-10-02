@@ -42,10 +42,89 @@ fn bounded_nurbs_boundary_witness_preserves_seed_priority() {
     let seed = crate::scalar::FiniteReal::new(1.4).expect("finite seed");
 
     assert_eq!(
-        super::super::nearest_boundary_witness(&boundaries, seed, 0.0, |_| Ok(Some(0.0)))
+        super::super::nearest_boundary_witness(&cadmpeg_test_support::service_decode_context(), &boundaries, seed, 0.0, |_| Ok(Some(0.0)))
             .expect("resource allocation did not fail"),
         super::super::BoundaryWitness::Found(crate::scalar::FiniteReal::ONE)
     );
+}
+
+#[test]
+fn boundary_witness_admits_each_visit_before_evaluation() {
+    use std::cell::Cell;
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    use crate::scalar::FiniteReal;
+    let boundaries = [FiniteReal::ZERO, FiniteReal::ONE, FiniteReal::from_index(2).unwrap()];
+    let seed = FiniteReal::new(1.4).unwrap();
+    for allowance in 0..=3 {
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = allowance;
+        policy.limits.max_materialized_bytes = 0;
+        policy.limits.max_retained_bytes = 0;
+        policy.limits.max_collection_items = 0;
+        policy.limits.max_recursion_depth = 0;
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let calls = Cell::new(0);
+        let result = super::super::nearest_boundary_witness(&ctx, &boundaries, seed, 0.0, |_| { calls.set(calls.get() + 1); Ok(Some(0.0)) });
+        assert_eq!(calls.get(), allowance.min(2));
+        if allowance < 3 {
+            let original = result.unwrap_err();
+            assert_eq!(original.dimension, ResourceDimension::WorkUnits);
+            assert_eq!(original.operation, "IR curve inversion boundary witness scan");
+            assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(limit)) if limit == original));
+        } else {
+            assert_eq!(result.unwrap(), super::super::BoundaryWitness::Found(FiniteReal::ONE));
+            ctx.finish_session().unwrap();
+        }
+    }
+}
+
+#[test]
+fn parameter_interval_scan_admits_only_visited_pairs() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    use crate::scalar::FiniteReal;
+    let boundaries = [0, 1, 1, 2, 3].map(|value| FiniteReal::from_index(value).unwrap());
+    for allowance in 0..=3 {
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = allowance;
+        policy.limits.max_materialized_bytes = 0;
+        policy.limits.max_retained_bytes = 0;
+        policy.limits.max_collection_items = 0;
+        policy.limits.max_recursion_depth = 0;
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let result = super::super::parameter_interval_containing(&ctx, &boundaries, FiniteReal::new(1.5).unwrap());
+        if allowance < 3 {
+            let original = result.unwrap_err();
+            assert_eq!(original.dimension, ResourceDimension::WorkUnits);
+            assert_eq!(original.operation, "IR curve inversion Newton interval scan");
+            assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(limit)) if limit == original));
+        } else {
+            assert_eq!(result.unwrap().unwrap().endpoints(), [1.0, 2.0]);
+            ctx.finish_session().unwrap();
+        }
+    }
+}
+
+#[test]
+fn boundary_scans_stop_at_invalid_witness_and_preserve_fused_empty_refusals() {
+    use std::cell::Cell;
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    use cadmpeg_core::CodecError;
+    use crate::scalar::FiniteReal;
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 1;
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let calls = Cell::new(0);
+    assert_eq!(super::super::nearest_boundary_witness(&ctx, &[FiniteReal::ZERO, FiniteReal::ONE], FiniteReal::HALF, 0.0, |_| { calls.set(calls.get() + 1); Ok(None) }).unwrap(), super::super::BoundaryWitness::Invalid);
+    assert_eq!(calls.get(), 1);
+    let original = ctx.charge_work_limit(1, "original empty boundary refusal").unwrap_err();
+    assert_eq!(super::super::nearest_boundary_witness(&ctx, &[], FiniteReal::ZERO, 0.0, |_| -> Result<Option<f64>, _> { panic!("empty boundary has no evaluation") }).unwrap_err(), original);
+    assert_eq!(super::super::parameter_interval_containing(&ctx, &[], FiniteReal::ZERO).unwrap_err(), original);
+    assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(limit)) if limit == original));
 }
 
 #[test]
