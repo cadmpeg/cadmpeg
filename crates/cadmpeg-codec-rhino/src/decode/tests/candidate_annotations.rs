@@ -41,3 +41,62 @@ fn candidate_annotation_copy_preserves_materialized_refusal() {
         assert_eq!(context.annotations, original);
     });
 }
+
+#[test]
+fn candidate_native_projection_preserves_materialized_refusal() {
+    let scan = scan_with_objects(&[super::object_record(
+        super::ArchiveVersion::V5, 1, super::POINT_CLASS,
+    )]);
+    with_transaction_limits(&scan, u64::MAX, None, Some(0), |expand| {
+        let mut context = DecodeContext::new(&scan, expand).unwrap();
+        let before = context.ir.clone();
+        let result = context.validate_candidate::<()>(|_, _| ());
+        let Err(CandidateError::Codec(CodecError::ResourceLimit(limit))) = result else {
+            panic!("native projection refusal must reach the candidate unchanged");
+        };
+        assert_eq!(limit.dimension, cadmpeg_core::decode::ResourceDimension::MaterializedBytes);
+        assert_eq!(context.ir, before);
+        assert!(matches!(expand.ctx().charge_work(0, "test native projection fuse"), Err(CodecError::ResourceLimit(sticky)) if sticky == limit));
+    });
+}
+
+fn admission_findings() -> cadmpeg_ir::report::check::ValidationReport {
+    use cadmpeg_ir::report::{check::{Check, Finding}, Severity};
+    cadmpeg_ir::report::check::ValidationReport {
+        entity_counts: Default::default(),
+        findings: vec![
+            Finding { check: Check::Annotations, severity: Severity::Warning, message: "skip warning".into(), entity: None },
+            Finding { check: Check::Identity, severity: Severity::Error, message: "invalid identity".into(), entity: Some("rhino:test:point#1".into()) },
+            Finding { check: Check::NativeLinks, severity: Severity::Blocking, message: "unresolved link".into(), entity: None },
+            Finding { check: Check::ArenaOrder, severity: Severity::Error, message: "unsorted arena".into(), entity: None },
+            Finding { check: Check::Counts, severity: Severity::Error, message: "fourth finding".into(), entity: None },
+        ],
+        losses: Vec::new(),
+    }
+}
+
+#[test]
+fn candidate_validation_message_preserves_order_and_three_error_limit() {
+    let report = admission_findings();
+    let text = super::super::validation_findings(&cadmpeg_test_support::service_decode_context(), &report).unwrap();
+    assert_eq!(text, "identity (rhino:test:point#1): invalid identity; native_links: unresolved link; arena_order: unsorted arena");
+}
+
+#[test]
+fn candidate_validation_message_preserves_resource_refusals() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    let report = admission_findings();
+    for dimension in [ResourceDimension::WorkUnits, ResourceDimension::RetainedBytes] {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        match dimension {
+            ResourceDimension::WorkUnits => policy.limits.max_work_units = 0,
+            ResourceDimension::RetainedBytes => policy.limits.max_retained_bytes = 0,
+            _ => panic!("test dimension"),
+        }
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let Err(CodecError::ResourceLimit(limit)) = super::super::validation_findings(&ctx, &report) else { panic!("finding construction must refuse"); };
+        assert_eq!(limit.dimension, dimension);
+        assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit));
+    }
+}

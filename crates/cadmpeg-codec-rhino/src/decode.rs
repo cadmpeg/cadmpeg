@@ -726,27 +726,29 @@ impl<'a> DecodeContext<'a> {
         let entity_count = candidate.model.entity_count();
         let mut budget = self.expansion_budget;
         let session = self.expand.ctx();
-        let (value, annotations) = with_native_unknowns(self.expand.ctx(), &mut self.ir, &self.unknowns, |ir| {
-            ir.try_append(candidate.model, candidate.native, |combined| {
+        let appended = with_native_unknowns(session, &mut self.ir, &self.unknowns, |ir| {
+            ir.try_append(session, candidate.model, candidate.native, |combined| {
                 let validation = cadmpeg_ir::admit_with_annotations(
                     session,
                     combined,
                     annotations.annotations(),
                     cadmpeg_ir::RHINO_DRAFT_CHECKS,
                     Vec::new(),
-                )
-                .map_err(|limit| CandidateError::Codec(limit.into()))?;
+                )?;
                 if !validation.is_ok() {
-                    return Err(CandidateError::Validation(validation_findings(&validation)));
+                    return Ok(Err(CandidateError::Validation(validation_findings(session, &validation)?)));
                 }
                 budget.entities(session, entity_count)?;
-                session
-                    .charge_entities(u64_from_index(entity_count), "rhino_instance_entities")
-                    .map_err(CandidateError::Codec)?;
-                Ok((value, annotations.into_retained()?))
+                session.charge_entities(u64_from_index(entity_count), "rhino_instance_entities")?;
+                Ok(Ok((value, annotations.into_retained()?)))
             })
-        })
-        .map_err(|error| CandidateError::Admission(error.to_string()))??;
+        });
+        let appended = match appended {
+            Ok(result) => result,
+            Err(cadmpeg_ir::native::NativeConvertError::Resource(error)) => return Err(CandidateError::Codec(error)),
+            Err(error) => return Err(CandidateError::Admission(session.format_retained(format_args!("{error}"), "Rhino native admission message")?)),
+        };
+        let (value, annotations) = appended??;
         self.annotations = annotations;
         self.expansion_budget = budget;
         Ok(value)
@@ -2243,9 +2245,10 @@ impl<'a> DecodeContext<'a> {
                     return Ok(true);
                 }
                 let findings = match validation {
-                    Ok(Ok(report)) => validation_findings(&report),
+                    Ok(Ok(report)) => validation_findings(session, &report)?,
                     Ok(Err(error)) => return Err(error),
-                    Err(error) => error.to_string(),
+                    Err(cadmpeg_ir::native::NativeConvertError::Resource(error)) => return Err(error),
+                    Err(error) => session.format_retained(format_args!("{error}"), "Rhino native admission message")?,
                 };
                 format!("instance expansion rejected atomically by IR admission: {findings}")
             }
@@ -4215,8 +4218,10 @@ impl<'a> DecodeContext<'a> {
                     draft.commit(ir, &mut self.annotations, self.expand.ctx())
                 });
                 let committed = match result {
-                    Ok(result) => result?.map_err(|error| error.to_string()),
-                    Err(error) => Err(error.to_string()),
+                    Ok(Ok(Ok(()))) => Ok(()),
+                    Ok(Ok(Err(error))) => Err(self.expand.ctx().format_retained(format_args!("{error}"), "Rhino draft admission message")?),
+                    Ok(Err(error)) | Err(cadmpeg_ir::native::NativeConvertError::Resource(error)) => return Err(error),
+                    Err(error) => Err(self.expand.ctx().format_retained(format_args!("{error}"), "Rhino native admission message")?),
                 };
                 if let Err(error) = committed {
                     self.scan_warning(
@@ -4396,20 +4401,32 @@ fn append_link_to_record(
     Ok(true)
 }
 
-fn validation_findings(report: &cadmpeg_ir::report::check::ValidationReport) -> String {
-    report
-        .findings
-        .iter()
-        .filter(|finding| finding.severity >= Severity::Error)
-        .take(3)
-        .map(|finding| {
-            finding.entity.as_ref().map_or_else(
-                || format!("{}: {}", finding.check, finding.message),
-                |entity| format!("{} ({entity}): {}", finding.check, finding.message),
-            )
-        })
-        .collect::<Vec<_>>()
-        .join("; ")
+struct ValidationFindings<'a>([Option<&'a cadmpeg_ir::report::check::Finding>; 3]);
+
+impl std::fmt::Display for ValidationFindings<'_> {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        for (position, finding) in self.0.iter().flatten().enumerate() {
+            if position != 0 { formatter.write_str("; ")?; }
+            match &finding.entity {
+                Some(entity) => write!(formatter, "{} ({entity}): {}", finding.check, finding.message)?,
+                None => write!(formatter, "{}: {}", finding.check, finding.message)?,
+            }
+        }
+        Ok(())
+    }
+}
+
+fn validation_findings(ctx: &cadmpeg_core::decode::DecodeContext<'_>, report: &cadmpeg_ir::report::check::ValidationReport) -> Result<String, cadmpeg_core::CodecError> {
+    let mut selected = [None; 3];
+    let mut count = 0;
+    for finding in &report.findings {
+        ctx.charge_work(1, "Rhino admission finding scan")?;
+        if finding.severity < Severity::Error { continue; }
+        selected[count] = Some(finding);
+        count += 1;
+        if count == selected.len() { break; }
+    }
+    ctx.format_retained(format_args!("{}", ValidationFindings(selected)), "Rhino admission finding message")
 }
 
 fn annotate_derived(
