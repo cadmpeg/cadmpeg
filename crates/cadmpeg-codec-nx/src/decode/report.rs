@@ -653,16 +653,19 @@ pub(crate) fn append_design_intent_losses(
         )?;
     }
 
+    let mut lookup_storage = ctx.reserve_scoped(0, "NX report feature lookup")?;
     let mut incomplete_feature_output_families = BTreeMap::<&str, usize>::new();
     let mut incomplete_feature_construction_families = BTreeMap::<&str, usize>::new();
     let mut generated_body_outputs = BTreeSet::new();
     for state in &ir.model.feature_result_topologies {
         if !state.bodies().is_empty() {
-            ctx.insert_btree_set(
-                &mut generated_body_outputs,
-                &state.output_of,
-                "nx report generated body outputs",
-            )?;
+            lookup_storage.with_storage(|| {
+                ctx.insert_btree_set(
+                    &mut generated_body_outputs,
+                    &state.output_of,
+                    "nx report generated body outputs",
+                )
+            })?;
         }
     }
     for feature in &ir.model.features {
@@ -697,11 +700,13 @@ pub(crate) fn append_design_intent_losses(
                                 && generated_body_outputs.contains(&feature.id))
                     })
             {
-                ctx.admit_btree_entry(
-                    &incomplete_feature_output_families,
-                    &family,
-                    "nx report incomplete output families",
-                )?;
+                lookup_storage.with_storage(|| {
+                    ctx.admit_btree_entry(
+                        &incomplete_feature_output_families,
+                        &family,
+                        "nx report incomplete output families",
+                    )
+                })?;
                 match incomplete_feature_output_families.entry(family) {
                     std::collections::btree_map::Entry::Occupied(mut entry) => {
                         *entry.get_mut() += 1;
@@ -918,11 +923,13 @@ pub(crate) fn append_design_intent_losses(
             }
             _ => continue,
         };
-        ctx.admit_btree_entry(
-            &incomplete_feature_construction_families,
-            &family,
-            "nx report incomplete construction families",
-        )?;
+        lookup_storage.with_storage(|| {
+            ctx.admit_btree_entry(
+                &incomplete_feature_construction_families,
+                &family,
+                "nx report incomplete construction families",
+            )
+        })?;
         match incomplete_feature_construction_families.entry(family) {
             std::collections::btree_map::Entry::Occupied(mut entry) => *entry.get_mut() += 1,
             std::collections::btree_map::Entry::Vacant(entry) => {
@@ -1012,11 +1019,13 @@ pub(crate) fn append_design_intent_losses(
             ..
         }) = feature.evaluation.definition()
         {
-            ctx.insert_btree_set(
-                &mut active_sketch_ids,
-                sketch.try_clone_for_decode(ctx, "nx report active sketch identity")?,
-                "nx report active sketch identities",
-            )?;
+            lookup_storage.with_storage(|| {
+                ctx.insert_btree_set(
+                    &mut active_sketch_ids,
+                    sketch.try_clone_for_decode(ctx, "nx report active sketch identity")?,
+                    "nx report active sketch identities",
+                )
+            })?;
         }
     }
     let sketch_in_active_scope = |sketch: &cadmpeg_ir::sketches::SketchId| {
