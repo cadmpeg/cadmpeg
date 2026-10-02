@@ -308,9 +308,10 @@ fn resolve_source_curve_parameter_scales(
 ) -> Result<BTreeMap<u64, FiniteReal>, CodecError> {
     let mut scales = BTreeMap::new();
     for &id in exchange.records().keys() {
-        if let Some(scale) =
-            source_curve_parameter_scale(id, exchange, unit_scales, &mut BTreeSet::new(), ctx)?
-        {
+        let mut active_storage = ctx.reserve_scoped(0, "step source curve traversal storage")?;
+        if let Some(scale) = active_storage.with_storage(|| {
+            source_curve_parameter_scale(id, exchange, unit_scales, &mut BTreeSet::new(), ctx)
+        })? {
             ctx.insert_btree_map(&mut scales, id, scale, "step_source_curve_parameter_scales")?;
         }
     }
@@ -5823,6 +5824,7 @@ fn procedural_surface_parameter_scales(
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<[f64; 2]>, CodecError> {
     let _depth = ctx.enter_nested("step_surface_parameter_scale_walk")?;
+    let mut active_storage = ctx.reserve_scoped(0, "step surface scale traversal storage")?;
     let mut active = BTreeSet::new();
     let mut surface_id = surface_id;
     let mut geometry = geometry;
@@ -5830,12 +5832,15 @@ fn procedural_surface_parameter_scales(
         if active.contains(surface_id) {
             return Ok(None);
         }
-        let key = ctx.format_retained(
-            format_args!("{}", surface_id.as_str()),
-            "step_surface_scale_active_id",
-        )?;
+        let key = active_storage.with_storage(|| {
+            ctx.format_retained(
+                format_args!("{}", surface_id.as_str()),
+                "step_surface_scale_active_id",
+            )
+        })?;
         let key = geometry_or_none!(SurfaceId::mint(key).ok());
-        ctx.insert_btree_set(&mut active, key, "step_surface_scale_active")?;
+        active_storage
+            .with_storage(|| ctx.insert_btree_set(&mut active, key, "step_surface_scale_active"))?;
         let Some(solved) = geometry.solved() else {
             return Ok(None);
         };

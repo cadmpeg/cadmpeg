@@ -354,24 +354,31 @@ fn product_string_text_refuses_retained_limit() {
     )
     .expect("valid product exchange");
     let arena = DecodeArena::new();
-    let refused = (0..512).any(|limit| {
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = limit;
-        let (ctx, _) = DecodeContext::from_root_bytes(PRODUCT_STRING_LIMIT_SOURCE, &arena, &policy)
-            .expect("root fits retained policy");
-        matches!(
-            crate::reader::decode_exchange(
-                PRODUCT_STRING_LIMIT_SOURCE,
-                exchange.clone(),
-                &diagnostics,
-                &ctx,
-                crate::reader::Packaging::Bare,
-            ),
-            Err(CodecError::ResourceLimit(refusal))
+    let refused = {
+        let error = cadmpeg_test_support::refusal::resource_limit_at(
+            ResourceDimension::RetainedBytes,
+            "step_string_text",
+            |limit| {
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_retained_bytes = limit;
+                let (ctx, _) =
+                    DecodeContext::from_root_bytes(PRODUCT_STRING_LIMIT_SOURCE, &arena, &policy)
+                        .expect("root fits retained policy");
+
+                (crate::reader::decode_exchange(
+                    PRODUCT_STRING_LIMIT_SOURCE,
+                    exchange.clone(),
+                    &diagnostics,
+                    &ctx,
+                    crate::reader::Packaging::Bare,
+                ))
+                .map(|_| ())
+            },
+        );
+        matches!(Err::<(), CodecError>(error), Err(CodecError::ResourceLimit(refusal))
                 if refusal.dimension == ResourceDimension::RetainedBytes
-                    && refusal.operation == "step_string_text"
-        )
-    });
+                    && refusal.operation == "step_string_text")
+    };
     assert!(refused, "no retained limit refused a product string");
 }
 

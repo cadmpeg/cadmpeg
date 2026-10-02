@@ -108,7 +108,7 @@ fn uri_base_member_refuses_temporary_byte_limit() {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
     policy.limits.max_materialized_bytes =
-        u64::try_from(ROOT_NAME.len() - 1).expect("member length fits u64");
+        u64::try_from(ROOT_NAME.len() - 1).expect("member and component slots fit u64");
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(b"", &arena, &policy)
         .expect("test context");
     let error = resolve_uri_for_test(&ctx, ROOT_NAME, "#target")
@@ -117,7 +117,7 @@ fn uri_base_member_refuses_temporary_byte_limit() {
         error,
         cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes
-                && limit.operation == "step_zip_uri_member_temp"
+                && limit.operation == "step_zip_uri_member"
     ));
 }
 
@@ -125,7 +125,8 @@ fn uri_base_member_refuses_temporary_byte_limit() {
 fn root_reference_note_refuses_retained_byte_limit() {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_retained_bytes = 4 + cadmpeg_core::decode::u64_from_index(4 * std::mem::size_of::<String>());
+    policy.limits.max_retained_bytes =
+        4 + cadmpeg_core::decode::u64_from_index(4 * std::mem::size_of::<String>());
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(b"", &arena, &policy)
         .expect("test context");
     let mut notes = Vec::new();

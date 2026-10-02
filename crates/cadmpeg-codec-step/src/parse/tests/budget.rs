@@ -539,19 +539,25 @@ parser_vector_limit_test!(
 
 #[test]
 fn complex_partial_diagnostic_text_refuses_retained_limit() {
-    let refused = (0..=8192).any(|limit| {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = limit;
-        let (ctx, _) = DecodeContext::from_root_bytes(COMPLEX_VECTOR_SOURCE, &arena, &policy)
-            .expect("input fits retained policy");
-        matches!(
-            crate::parse::parse_with_context(COMPLEX_VECTOR_SOURCE, &ctx),
-            Err(CodecError::ResourceLimit(refusal))
+    let refused = {
+        let error = cadmpeg_test_support::refusal::resource_limit_at(
+            ResourceDimension::RetainedBytes,
+            "step_parse_complex_partial_diagnostic_text",
+            |limit| {
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_retained_bytes = limit;
+                let (ctx, _) =
+                    DecodeContext::from_root_bytes(COMPLEX_VECTOR_SOURCE, &arena, &policy)
+                        .expect("input fits retained policy");
+
+                (crate::parse::parse_with_context(COMPLEX_VECTOR_SOURCE, &ctx)).map(|_| ())
+            },
+        );
+        matches!(Err::<(), CodecError>(error), Err(CodecError::ResourceLimit(refusal))
                 if refusal.dimension == ResourceDimension::RetainedBytes
-                    && refusal.operation == "step_parse_complex_partial_diagnostic_text"
-        )
-    });
+                    && refusal.operation == "step_parse_complex_partial_diagnostic_text")
+    };
     assert!(
         refused,
         "complex partial diagnostic text must reach the parser caller"
@@ -587,7 +593,8 @@ fn anchor_list_slots_are_admitted_before_vector_allocation() {
     let (ctx, _) = DecodeContext::from_root_bytes(b"anchor", &arena, &service)
         .expect("root fits service profile");
     assert_eq!(
-        AnchorResolver::new(&anchors, &ctx).expect("empty resolver scope fits")
+        AnchorResolver::new(&anchors, &ctx)
+            .expect("empty resolver scope fits")
             .resolve_root(&value)
             .expect("service admits list"),
         value
@@ -596,7 +603,8 @@ fn anchor_list_slots_are_admitted_before_vector_allocation() {
     limited.limits.max_collection_items = 8;
     let (ctx, _) = DecodeContext::from_root_bytes(b"anchor", &arena, &limited)
         .expect("root fits selected profile");
-    let error = AnchorResolver::new(&anchors, &ctx).expect("empty resolver scope fits")
+    let error = AnchorResolver::new(&anchors, &ctx)
+        .expect("empty resolver scope fits")
         .resolve_root(&value)
         .expect_err("one list node plus eight slots exceed eight items");
     assert!(
@@ -616,7 +624,8 @@ fn anchor_memo_entry_is_admitted_before_the_clone() {
     let (ctx, _) = DecodeContext::from_root_bytes(b"anchor", &arena, &service)
         .expect("root fits service profile");
     assert_eq!(
-        AnchorResolver::new(&anchors, &ctx).expect("empty resolver scope fits")
+        AnchorResolver::new(&anchors, &ctx)
+            .expect("empty resolver scope fits")
             .resolve_root(&value)
             .expect("service admits memo"),
         anchors["a"]
@@ -625,7 +634,8 @@ fn anchor_memo_entry_is_admitted_before_the_clone() {
     limited.limits.max_collection_items = 9;
     let (ctx, _) = DecodeContext::from_root_bytes(b"anchor", &arena, &limited)
         .expect("root fits selected profile");
-    let error = AnchorResolver::new(&anchors, &ctx).expect("empty resolver scope fits")
+    let error = AnchorResolver::new(&anchors, &ctx)
+        .expect("empty resolver scope fits")
         .resolve_root(&value)
         .expect_err("memo entry exceeds nine prior admitted items");
     assert!(
@@ -642,7 +652,8 @@ fn anchor_typed_wrapper_is_charged_before_its_clone() {
     let (ctx, _) = DecodeContext::from_root_bytes(b"anchor", &arena, &service)
         .expect("root fits service profile");
     assert_eq!(
-        AnchorResolver::new(&anchors, &ctx).expect("empty resolver scope fits")
+        AnchorResolver::new(&anchors, &ctx)
+            .expect("empty resolver scope fits")
             .resolve_root(&value)
             .expect("service admits typed value"),
         value
@@ -652,7 +663,8 @@ fn anchor_typed_wrapper_is_charged_before_its_clone() {
         cadmpeg_core::decode::u64_from_index(std::mem::size_of::<Value>());
     let (ctx, _) = DecodeContext::from_root_bytes(b"anchor", &arena, &limited)
         .expect("root fits selected profile");
-    let error = AnchorResolver::new(&anchors, &ctx).expect("empty resolver scope fits")
+    let error = AnchorResolver::new(&anchors, &ctx)
+        .expect("empty resolver scope fits")
         .resolve_root(&value)
         .expect_err("typed wrapper exceeds the leaf's retained bytes");
     assert!(
@@ -669,7 +681,8 @@ fn anchor_reference_stack_refuses_collection_limit() {
     policy.limits.max_collection_items = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(b"anchor", &arena, &policy)
         .expect("root fits selected profile");
-    let error = AnchorResolver::new(&anchors, &ctx).expect("empty resolver scope fits")
+    let error = AnchorResolver::new(&anchors, &ctx)
+        .expect("empty resolver scope fits")
         .resolve_root(&value)
         .expect_err("reference stack needs one item");
     assert!(matches!(
@@ -685,19 +698,30 @@ fn cyclic_anchor_error_text_refuses_retained_limit() {
     let anchors = BTreeMap::from([("a".into(), Value::Resource("a".into()))]);
     let value = Value::Resource("a".into());
     let arena = DecodeArena::new();
-    let refused = (0..=1024).any(|limit| {
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = limit;
-        let (ctx, _) = DecodeContext::from_root_bytes(b"anchor", &arena, &policy)
-            .expect("root fits retained policy");
-        let mut resolver = AnchorResolver::new(&anchors, &ctx).expect("empty resolver scope fits");
-        matches!(
-            resolver.resolve_root(&value),
-            Err(ResolveError::Resource(CodecError::ResourceLimit(refusal)))
+    let refused = {
+        let error = cadmpeg_test_support::refusal::resource_limit_at(
+            ResourceDimension::RetainedBytes,
+            "step_cyclic_anchor_error_text",
+            |limit| {
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_retained_bytes = limit;
+                let (ctx, _) = DecodeContext::from_root_bytes(b"anchor", &arena, &policy)
+                    .expect("root fits retained policy");
+                let mut resolver =
+                    AnchorResolver::new(&anchors, &ctx).expect("empty resolver scope fits");
+
+                (resolver.resolve_root(&value))
+                    .map(|_| ())
+                    .map_err(|error| match error {
+                        ResolveError::Resource(error) => error,
+                        error => panic!("unexpected anchor error: {error:?}"),
+                    })
+            },
+        );
+        matches!(Err::<(), ResolveError>(ResolveError::Resource(error)), Err(ResolveError::Resource(CodecError::ResourceLimit(refusal)))
                 if refusal.dimension == ResourceDimension::RetainedBytes
-                    && refusal.operation == "step_cyclic_anchor_error_text"
-        )
-    });
+                    && refusal.operation == "step_cyclic_anchor_error_text")
+    };
     assert!(
         refused,
         "cyclic anchor error text must reach the resolver caller"
@@ -713,7 +737,8 @@ fn anchor_reference_stack_refuses_retained_limit() {
     policy.limits.max_materialized_bytes = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(b"anchor", &arena, &policy)
         .expect("root fits selected profile");
-    let error = AnchorResolver::new(&anchors, &ctx).expect("empty resolver scope fits")
+    let error = AnchorResolver::new(&anchors, &ctx)
+        .expect("empty resolver scope fits")
         .resolve_root(&value)
         .expect_err("reference stack needs scoped pointer storage");
     assert!(matches!(
@@ -790,9 +815,11 @@ fn reference_stack_refuses_retained_limit() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     let binding_bytes = 11 * (std::mem::size_of::<ReferenceName>() + std::mem::size_of::<&str>())
-        + 16 * std::mem::size_of::<usize>() + 2 * std::mem::align_of::<usize>();
+        + 16 * std::mem::size_of::<usize>()
+        + 2 * std::mem::align_of::<usize>();
     let stack_bytes = 4 * std::mem::size_of::<ReferenceName>();
-    policy.limits.max_materialized_bytes = u64::try_from(binding_bytes + stack_bytes - 1).expect("small storage");
+    policy.limits.max_materialized_bytes =
+        u64::try_from(binding_bytes + stack_bytes - 1).expect("small storage");
     let (ctx, _) = DecodeContext::from_root_bytes(b"reference", &arena, &policy)
         .expect("root fits selected profile");
     let error = ReferenceResolver::new(&references, &anchors, &ctx)
@@ -898,7 +925,8 @@ fn parser_propagates_binary_lexeme_resource_refusal() {
     let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('test','2026-07-14T00:00:00',('cadmpeg'),('cadmpeg'),'cadmpeg-step','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=ITEM(\"0A1F2\");ENDSEC;END-ISO-10303-21;";
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_materialized_bytes = 4 + cadmpeg_core::decode::u64_from_index(4 * std::mem::size_of::<String>() + "AP242".len());
+    policy.limits.max_materialized_bytes =
+        4 + cadmpeg_core::decode::u64_from_index(4 * std::mem::size_of::<String>() + "AP242".len());
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(source, &arena, &policy)
         .expect("root fits the test policy");
     let error = crate::parse::parse_with_context(source, &ctx)

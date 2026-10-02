@@ -38,9 +38,18 @@ fn anchor_local_depth_refuses_as_resource() {
     policy.limits.max_recursion_depth = 1024;
     with_policy_context(b"", &policy, |_, ctx| {
         let anchors = BTreeMap::new();
-        let mut stack_storage = ctx.reserve_scoped(0, "test anchor stack").expect("empty stack scope fits");
-        let error = AnchorResolver::new(&anchors, ctx).expect("empty resolver scope fits")
-            .resolve(&Value::Integer(1), &mut Vec::new(), &mut stack_storage, 10, 256)
+        let mut stack_storage = ctx
+            .reserve_scoped(0, "test anchor stack")
+            .expect("empty stack scope fits");
+        let error = AnchorResolver::new(&anchors, ctx)
+            .expect("empty resolver scope fits")
+            .resolve(
+                &Value::Integer(1),
+                &mut Vec::new(),
+                &mut stack_storage,
+                10,
+                256,
+            )
             .expect_err("local ceiling refuses");
         assert_local_refusal(error, "step_anchor_depth_limit");
     });

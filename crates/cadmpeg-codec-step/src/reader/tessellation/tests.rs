@@ -120,18 +120,18 @@ fn tessellation_loss_note_bytes_are_admitted_before_formatting() {
 fn tessellation_mesh_key_is_admitted_before_identity_composition() {
     let service = DecodePolicy::service();
     decode_tessellation_under_policy(ONE_TRIANGLE, service).expect("service admits mesh identity");
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_materialized_bytes = u64::try_from(
-        3 * std::mem::size_of::<Point3>()
-            + std::mem::size_of::<(u64, Vec<Point3>)>()
-            + 3 * std::mem::size_of::<u32>()
-            + 3 * std::mem::size_of::<Point3>()
-            + 2 * std::mem::size_of::<[u32; 3]>()
-            + 3 * std::mem::size_of::<cadmpeg_ir::features::FinitePoint3>(),
-    )
-    .expect("pre-key materialized byte count fits u64");
-    let error = decode_tessellation_under_policy(ONE_TRIANGLE, policy)
-        .expect_err("identity key exceeds the temporary byte limit");
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::MaterializedBytes,
+        "step_tessellation_mesh_key",
+        |cap| {
+            let mut policy = service;
+            policy.limits.max_materialized_bytes = cap;
+            let arena = DecodeArena::new();
+            let (ctx, _) =
+                DecodeContext::from_root_bytes(b"", &arena, &policy).expect("owner context");
+            super::admitted_mesh_id(2, &ctx).map(|_| ())
+        },
+    );
     assert!(
         matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::MaterializedBytes && limit.operation == "step_tessellation_mesh_key")
     );
@@ -141,10 +141,15 @@ fn tessellation_mesh_key_is_admitted_before_identity_composition() {
 fn tessellation_mesh_id_is_charged_before_retention() {
     let service = DecodePolicy::service();
     decode_tessellation_under_policy(ONE_TRIANGLE, service).expect("service admits mesh identity");
-    let mut policy = service;
-    policy.limits.max_retained_bytes = 72 + 24 - 1;
-    let error = decode_tessellation_under_policy(ONE_TRIANGLE, policy)
-        .expect_err("mesh identity exceeds the retained byte limit");
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::RetainedBytes,
+        "step_tessellation_mesh_id",
+        |cap| {
+            let mut policy = service;
+            policy.limits.max_retained_bytes = cap;
+            decode_tessellation_under_policy(ONE_TRIANGLE, policy)
+        },
+    );
     assert!(
         matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::RetainedBytes && limit.operation == "step_tessellation_mesh_id")
     );
@@ -158,15 +163,18 @@ fn tessellation_surface_id_is_reserved_before_lookup() {
     let service = DecodePolicy::service();
     decode_tessellation_under_policy(records, service)
         .expect("service admits the complex face surface lookup");
-    let mut policy = service;
-    let prior_bytes = 3 * std::mem::size_of::<Point3>()
-        + std::mem::size_of::<(u64, Vec<Point3>)>()
-        + 3 * std::mem::size_of::<Point3>()
-        + std::mem::size_of::<[u32; 3]>();
-    let lookup_bytes = "step:data:surface#".len() + 2 * 20;
-    policy.limits.max_materialized_bytes = u64::try_from(prior_bytes + lookup_bytes - 1).unwrap();
-    let error = decode_tessellation_under_policy(records, policy)
-        .expect_err("surface lookup identity exceeds the temporary byte limit");
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::MaterializedBytes,
+        "step_tessellation_surface_id",
+        |cap| {
+            let mut policy = service;
+            policy.limits.max_materialized_bytes = cap;
+            let arena = DecodeArena::new();
+            let (ctx, _) =
+                DecodeContext::from_root_bytes(b"", &arena, &policy).expect("owner context");
+            super::admitted_surface_id(10_000_000_000_000_000_000, &ctx).map(|_| ())
+        },
+    );
     assert!(
         matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::MaterializedBytes && limit.operation == "step_tessellation_surface_id")
     );
@@ -492,15 +500,15 @@ fn tessellation_coordinate_rows_reserve_temporary_bytes_before_collection() {
 fn tessellation_triangle_rows_reserve_temporary_bytes_before_collection() {
     let service = DecodePolicy::service();
     decode_tessellation_under_policy(ONE_TRIANGLE, service).expect("service admits triangle rows");
-    let mut limited = service;
-    limited.limits.max_materialized_bytes = u64_from_index(
-        3 * std::mem::size_of::<Point3>()
-            + std::mem::size_of::<(u64, Vec<Point3>)>()
-            + std::mem::size_of::<[u32; 3]>()
-            - 1,
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::MaterializedBytes,
+        "step_tessellation_triangle_rows",
+        |cap| {
+            let mut policy = service;
+            policy.limits.max_materialized_bytes = cap;
+            decode_tessellation_under_policy(ONE_TRIANGLE, policy)
+        },
     );
-    let error = decode_tessellation_under_policy(ONE_TRIANGLE, limited)
-        .expect_err("triangle row bytes exceed the selected temporary allowance");
     assert!(
         matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::MaterializedBytes && limit.operation == "step_tessellation_triangle_rows")
     );
@@ -511,15 +519,15 @@ fn tessellation_container_items_reserve_temporary_bytes_before_collection() {
     let service = DecodePolicy::service();
     decode_tessellation_under_policy(ONE_TRIANGLE_IN_CONTAINER, service)
         .expect("service admits one container item");
-    let mut limited = service;
-    limited.limits.max_materialized_bytes = u64_from_index(
-        3 * std::mem::size_of::<Point3>()
-            + std::mem::size_of::<(u64, Vec<Point3>)>()
-            + std::mem::size_of::<u64>()
-            - 1,
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::MaterializedBytes,
+        "step_tessellation_container_items",
+        |cap| {
+            let mut policy = service;
+            policy.limits.max_materialized_bytes = cap;
+            decode_tessellation_under_policy(ONE_TRIANGLE_IN_CONTAINER, policy)
+        },
     );
-    let error = decode_tessellation_under_policy(ONE_TRIANGLE_IN_CONTAINER, limited)
-        .expect_err("one container item exceeds the temporary byte allowance");
     assert!(
         matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::MaterializedBytes && limit.operation == "step_tessellation_container_items")
     );
@@ -655,10 +663,15 @@ fn tessellation_mesh_entity_is_admitted_before_creation() {
 fn tessellation_ir_mesh_charges_retained_bytes_before_creation() {
     let service = DecodePolicy::service();
     decode_tessellation_under_policy(ONE_TRIANGLE, service).expect("service admits mesh bytes");
-    let mut limited = service;
-    limited.limits.max_retained_bytes = 71;
-    let error = decode_tessellation_under_policy(ONE_TRIANGLE, limited)
-        .expect_err("72 retained vertex bytes exceed a 71-byte allowance");
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::RetainedBytes,
+        "step_tessellation_ir_mesh",
+        |cap| {
+            let mut policy = service;
+            policy.limits.max_retained_bytes = cap;
+            decode_tessellation_under_policy(ONE_TRIANGLE, policy)
+        },
+    );
     assert!(
         matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::RetainedBytes && limit.operation == "step_tessellation_ir_mesh")
     );
@@ -668,10 +681,15 @@ fn tessellation_ir_mesh_charges_retained_bytes_before_creation() {
 fn tessellation_local_triangles_commit_retained_bytes_before_push() {
     let service = DecodePolicy::service();
     decode_tessellation_under_policy(ONE_TRIANGLE, service).expect("service admits triangle bytes");
-    let mut limited = service;
-    limited.limits.max_retained_bytes = 107;
-    let error = decode_tessellation_under_policy(ONE_TRIANGLE, limited)
-        .expect_err("triangle bytes exceed the allowance after retained vertices and mesh id");
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::RetainedBytes,
+        "step_tessellation_local_triangles",
+        |cap| {
+            let mut policy = service;
+            policy.limits.max_retained_bytes = cap;
+            decode_tessellation_under_policy(ONE_TRIANGLE, policy)
+        },
+    );
     assert!(
         matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::RetainedBytes && limit.operation == "step_tessellation_local_triangles")
     );
@@ -682,10 +700,15 @@ fn tessellation_pn_triangles_commit_retained_bytes_before_push() {
     let service = DecodePolicy::service();
     decode_tessellation_under_policy(ONE_TRIANGLE_WITH_PNINDEX, service)
         .expect("service admits PN triangle bytes");
-    let mut limited = service;
-    limited.limits.max_retained_bytes = 107;
-    let error = decode_tessellation_under_policy(ONE_TRIANGLE_WITH_PNINDEX, limited)
-        .expect_err("PN triangle bytes exceed the allowance after retained vertices and mesh id");
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::RetainedBytes,
+        "step_tessellation_pn_triangles",
+        |cap| {
+            let mut policy = service;
+            policy.limits.max_retained_bytes = cap;
+            decode_tessellation_under_policy(ONE_TRIANGLE_WITH_PNINDEX, policy)
+        },
+    );
     assert!(
         matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::RetainedBytes && limit.operation == "step_tessellation_pn_triangles")
     );
@@ -760,19 +783,24 @@ fn tessellation_normal_replication_reserves_temporary_bytes_before_allocation() 
     let service = DecodePolicy::service();
     decode_tessellation_under_policy(records, service)
         .expect("service admits three replicated normals");
-    let mut limited = service;
-    limited.limits.max_materialized_bytes = u64_from_index(
-        3 * std::mem::size_of::<Point3>()
-            + std::mem::size_of::<(u64, Vec<Point3>)>()
-            + 3 * std::mem::size_of::<u32>()
-            + 3 * std::mem::size_of::<Point3>()
-            + std::mem::size_of::<[u32; 3]>()
-            + std::mem::size_of::<Vector3>()
-            + 3 * std::mem::size_of::<Vector3>()
-            - 1,
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::MaterializedBytes,
+        "step_tessellation_normal_replication",
+        |cap| {
+            let mut policy = service;
+            policy.limits.max_materialized_bytes = cap;
+            let arena = DecodeArena::new();
+            let (ctx, _) =
+                DecodeContext::from_root_bytes(b"", &arena, &policy).expect("owner context");
+            super::replicated_normals(
+                3,
+                cadmpeg_ir::features::FiniteVector3::new(Vector3::new(0.0, 0.0, 1.0))
+                    .expect("finite normal"),
+                &ctx,
+            )
+            .map(|_| ())
+        },
     );
-    let error = decode_tessellation_under_policy(records, limited)
-        .expect_err("replicated normals exceed the selected temporary allowance");
     assert!(
         matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::MaterializedBytes && limit.operation == "step_tessellation_normal_replication")
     );

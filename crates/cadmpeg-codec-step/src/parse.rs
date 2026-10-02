@@ -756,16 +756,21 @@ impl Parser<'_, '_, '_> {
             self.budget
                 .push_vec(&mut self.diagnostics, diagnostic, "step_parse_diagnostics")?;
         }
-        let (schema_names_for_matching, _schema_names_storage) = self.budget.with_scoped_storage(
-            "step schema matching storage",
-            || schema_names_for_matching(&header_admission.schema_identifiers, self.budget),
-        )?;
-        let (header_data_references, _header_reference_storage) = match self.budget.with_scoped_storage("step header reference storage", || validate_header_sections(
-            implementation_level,
-            &header,
-            &schema_names_for_matching,
-            self.budget,
-        )) {
+        let (schema_names_for_matching, _schema_names_storage) = self
+            .budget
+            .with_scoped_storage("step schema matching storage", || {
+                schema_names_for_matching(&header_admission.schema_identifiers, self.budget)
+            })?;
+        let (header_data_references, _header_reference_storage) = match self
+            .budget
+            .with_scoped_storage("step header reference storage", || {
+                validate_header_sections(
+                    implementation_level,
+                    &header,
+                    &schema_names_for_matching,
+                    self.budget,
+                )
+            }) {
             Ok(references) => references,
             Err(ValidationError::Invalid(message)) => return self.err(message),
             Err(ValidationError::Resource(error)) => return Err(ParseError::Resource(error)),
@@ -804,8 +809,10 @@ impl Parser<'_, '_, '_> {
                         return self.err("invalid anchor tag item");
                     }
                     self.punct(&TokenKind::RBrace)?;
-                    self.budget.reserve_capacity(&mut tags, 1, "step_anchor_tag_storage")?;
-                    self.budget.charge_collection_items(1, "step_parse_anchor_tags")?;
+                    self.budget
+                        .reserve_capacity(&mut tags, 1, "step_anchor_tag_storage")?;
+                    self.budget
+                        .charge_collection_items(1, "step_parse_anchor_tags")?;
                     tags.push(AnchorTag { name, value });
                 }
                 tags.shrink_to_fit();
@@ -822,7 +829,9 @@ impl Parser<'_, '_, '_> {
             self.punct(&TokenKind::Semicolon)?;
         }
         let mut reference_entries = Vec::new();
-        let mut external_storage = self.budget.reserve_scoped(0, "step external identity lookup")?;
+        let mut external_storage = self
+            .budget
+            .reserve_scoped(0, "step external identity lookup")?;
         let mut external_reference_ids = BTreeSet::new();
         let mut external_value_reference_ids = BTreeSet::new();
         if self.peek_name("REFERENCE") {
@@ -848,8 +857,10 @@ impl Parser<'_, '_, '_> {
                 if same_kind.contains(&id) {
                     return self.err("duplicate reference name");
                 }
-                external_storage.with_storage(|| self.budget
-                    .insert_btree_set(same_kind, id, "step_parse_external_reference_ids"))?;
+                external_storage.with_storage(|| {
+                    self.budget
+                        .insert_btree_set(same_kind, id, "step_parse_external_reference_ids")
+                })?;
                 if other_kind.contains(&id) {
                     return self.err("duplicate external occurrence integer");
                 }
@@ -888,13 +899,15 @@ impl Parser<'_, '_, '_> {
                     return self.err("2;1 forbids DATA section parameters");
                 }
                 let parameters = self.parameter_nesting(Self::parameters_inner)?;
-                if let Err(message) = data_name_storage.with_storage(|| valid_data_parameters(
-                    &parameters,
-                    &schema_names_for_matching,
-                    implementation_level,
-                    &mut data_section_names,
-                    self.budget,
-                )) {
+                if let Err(message) = data_name_storage.with_storage(|| {
+                    valid_data_parameters(
+                        &parameters,
+                        &schema_names_for_matching,
+                        implementation_level,
+                        &mut data_section_names,
+                        self.budget,
+                    )
+                }) {
                     match message {
                         ValidationError::Invalid(message) => return self.err(message),
                         ValidationError::Resource(error) => {
@@ -917,8 +930,12 @@ impl Parser<'_, '_, '_> {
                 if records.contains_key(&id) {
                     return self.err("duplicate instance name");
                 }
-                self.budget.admit_btree_node_storage::<u64, RawRecord>(records.len(), "step_parse_record_table_storage")?;
-                self.budget.charge_collection_items(1, "step_parse_record_table_items")?;
+                self.budget.admit_btree_node_storage::<u64, RawRecord>(
+                    records.len(),
+                    "step_parse_record_table_storage",
+                )?;
+                self.budget
+                    .charge_collection_items(1, "step_parse_record_table_items")?;
                 records.insert(id, record);
                 self.budget
                     .push_vec(&mut ids, id, "step_parse_section_ids")?;
@@ -992,13 +1009,26 @@ impl Parser<'_, '_, '_> {
             return self.err("external value instance collides with a DATA instance");
         }
         if !anchors.is_empty() {
-            let mut binding_storage = self.budget.reserve_scoped(0, "step_anchor_binding_storage")?;
+            let mut binding_storage = self
+                .budget
+                .reserve_scoped(0, "step_anchor_binding_storage")?;
             let mut anchor_bindings = BTreeMap::new();
             for anchor in &anchors {
                 binding_storage.with_storage(|| {
-                    let name = self.budget.copy_retained_text(&anchor.name, "step_anchor_binding_name_copy")?;
-                    let value = try_clone_value(&anchor.value, self.budget, "step_anchor_binding_value_copy")?;
-                    self.budget.insert_btree_map(&mut anchor_bindings, name, value, "step_anchor_binding_items")?;
+                    let name = self
+                        .budget
+                        .copy_retained_text(&anchor.name, "step_anchor_binding_name_copy")?;
+                    let value = try_clone_value(
+                        &anchor.value,
+                        self.budget,
+                        "step_anchor_binding_value_copy",
+                    )?;
+                    self.budget.insert_btree_map(
+                        &mut anchor_bindings,
+                        name,
+                        value,
+                        "step_anchor_binding_items",
+                    )?;
                     Ok::<(), CodecError>(())
                 })?;
             }
@@ -1077,7 +1107,9 @@ impl Parser<'_, '_, '_> {
         for anchor in &anchors {
             refs.clear();
             value_refs.clear();
-            reference_storage.with_storage(|| references(&anchor.value, &mut refs, &mut value_refs, self.budget))?;
+            reference_storage.with_storage(|| {
+                references(&anchor.value, &mut refs, &mut value_refs, self.budget)
+            })?;
             if refs
                 .iter()
                 .any(|id| !records.contains_key(id) && !external_reference_ids.contains(id))
@@ -1093,7 +1125,9 @@ impl Parser<'_, '_, '_> {
             for tag in &anchor.tags {
                 refs.clear();
                 value_refs.clear();
-                reference_storage.with_storage(|| references(&tag.value, &mut refs, &mut value_refs, self.budget))?;
+                reference_storage.with_storage(|| {
+                    references(&tag.value, &mut refs, &mut value_refs, self.budget)
+                })?;
                 if refs
                     .iter()
                     .any(|id| !records.contains_key(id) && !external_reference_ids.contains(id))
@@ -1113,7 +1147,9 @@ impl Parser<'_, '_, '_> {
             value_refs.clear();
             for partial in &record.partials {
                 for value in &partial.parameters {
-                    reference_storage.with_storage(|| references(value, &mut refs, &mut value_refs, self.budget))?;
+                    reference_storage.with_storage(|| {
+                        references(value, &mut refs, &mut value_refs, self.budget)
+                    })?;
                 }
             }
             if refs
@@ -1198,11 +1234,13 @@ impl Parser<'_, '_, '_> {
             let mut name_storage = self.budget.reserve_scoped(0, "step partial name lookup")?;
             let mut canonical_names = Vec::new();
             for part in &parts {
-                name_storage.with_storage(|| self.budget.push_vec(
-                    &mut canonical_names,
-                    part.name.as_str(),
-                    "step_parse_canonical_partial_names",
-                ))?;
+                name_storage.with_storage(|| {
+                    self.budget.push_vec(
+                        &mut canonical_names,
+                        part.name.as_str(),
+                        "step_parse_canonical_partial_names",
+                    )
+                })?;
             }
             self.budget.sort_unstable_by(
                 &mut canonical_names,
@@ -2137,7 +2175,10 @@ fn schema_identifier_matches(
     budget: &DecodeContext<'_>,
 ) -> Result<bool, CodecError> {
     let trimmed = schema_name.trim();
-    let (mut schema_name, _storage) = budget.with_scoped_storage("step_schema_name_matching", || budget.copy_retained_text(trimmed, "step_schema_name_matching"))?;
+    let (mut schema_name, _storage) = budget
+        .with_scoped_storage("step_schema_name_matching", || {
+            budget.copy_retained_text(trimmed, "step_schema_name_matching")
+        })?;
     schema_name.make_ascii_uppercase();
     Ok(schema_identifiers.iter().any(|identifier| {
         let identifier = identifier.trim();
@@ -2210,11 +2251,7 @@ fn schema_names_for_matching(
         let source = identifier.text();
         let mut name = budget.copy_retained_text(source, "step_schema_matching_name")?;
         name.make_ascii_uppercase();
-        budget.push_vec(
-            &mut names,
-            name,
-            "step_schema_matching_names",
-        )?;
+        budget.push_vec(&mut names, name, "step_schema_matching_names")?;
     }
     Ok(names)
 }
@@ -2308,7 +2345,10 @@ impl<'a, 'ctx, 'arena> AnchorResolver<'a, 'ctx, 'arena> {
     const MAX_EXPANDED_NODES: usize = 1_000_000;
     const MAX_REFERENCE_DEPTH: usize = 256;
 
-    fn new(anchors: &'a BTreeMap<String, Value>, budget: &'ctx DecodeContext<'arena>) -> Result<Self, ResolveError> {
+    fn new(
+        anchors: &'a BTreeMap<String, Value>,
+        budget: &'ctx DecodeContext<'arena>,
+    ) -> Result<Self, ResolveError> {
         Ok(Self {
             storage: budget.reserve_scoped(0, "step_anchor_resolver_storage")?,
             anchors,
@@ -2319,10 +2359,17 @@ impl<'a, 'ctx, 'arena> AnchorResolver<'a, 'ctx, 'arena> {
     }
 
     fn resolve_root(&mut self, value: &Value) -> Result<Value, ResolveError> {
-        let mut stack_storage = self.budget.reserve_scoped(0, "step_anchor_reference_stack_storage")?;
+        let mut stack_storage = self
+            .budget
+            .reserve_scoped(0, "step_anchor_reference_stack_storage")?;
         let mut stack = Vec::new();
-        let (value, _, expanded_nodes) =
-            self.resolve(value, &mut stack, &mut stack_storage, self.remaining_nodes, 0)?;
+        let (value, _, expanded_nodes) = self.resolve(
+            value,
+            &mut stack,
+            &mut stack_storage,
+            self.remaining_nodes,
+            0,
+        )?;
         self.remaining_nodes = self
             .remaining_nodes
             .checked_sub(expanded_nodes)
@@ -2398,10 +2445,17 @@ impl<'a, 'ctx, 'arena> AnchorResolver<'a, 'ctx, 'arena> {
                 }
                 value_node_count(source, Self::MAX_EXPANDED_NODES, self.budget)?;
 
-                stack_storage.with_storage(|| {
-                    self.budget.charge_collection_items(1, "step_anchor_reference_stack")?;
-                    self.budget.reserve_capacity(stack, 1, "step_anchor_reference_stack_storage")
-                }).map_err(ResolveError::Resource)?;
+                stack_storage
+                    .with_storage(|| {
+                        self.budget
+                            .charge_collection_items(1, "step_anchor_reference_stack")?;
+                        self.budget.reserve_capacity(
+                            stack,
+                            1,
+                            "step_anchor_reference_stack_storage",
+                        )
+                    })
+                    .map_err(ResolveError::Resource)?;
                 stack.push(name);
                 let resolved = self.resolve(source, stack, stack_storage, budget, depth + 1);
                 stack.pop();
@@ -2410,13 +2464,27 @@ impl<'a, 'ctx, 'arena> AnchorResolver<'a, 'ctx, 'arena> {
                     return Err(self.node_limit_error());
                 }
                 self.charge_nodes(nodes)?;
-                self.storage.with_storage(|| {
-                    self.budget.admit_btree_entry(&self.memo, &name, "step_anchor_memo_entry")?;
-                    self.memo.insert(name, (
-                        try_clone_value(&value, self.budget, "step_anchor_memo_value_copy")?, nodes,
-                    ));
-                    Ok::<(), CodecError>(())
-                }).map_err(ResolveError::Resource)?;
+                self.storage
+                    .with_storage(|| {
+                        self.budget.admit_btree_entry(
+                            &self.memo,
+                            &name,
+                            "step_anchor_memo_entry",
+                        )?;
+                        self.memo.insert(
+                            name,
+                            (
+                                try_clone_value(
+                                    &value,
+                                    self.budget,
+                                    "step_anchor_memo_value_copy",
+                                )?,
+                                nodes,
+                            ),
+                        );
+                        Ok::<(), CodecError>(())
+                    })
+                    .map_err(ResolveError::Resource)?;
                 return Ok((value, nodes, nodes));
             }
         }
@@ -2505,9 +2573,14 @@ impl<'a, 'ctx, 'arena> ReferenceResolver<'a, 'ctx, 'arena> {
         let mut storage = budget.reserve_scoped(0, "step_reference_binding_storage")?;
         let mut bindings = BTreeMap::new();
         for reference in references {
-            storage.with_storage(|| budget.insert_btree_map(
-                &mut bindings, reference.name, reference.uri.as_str(), "step_reference_binding_items",
-            ))?;
+            storage.with_storage(|| {
+                budget.insert_btree_map(
+                    &mut bindings,
+                    reference.name,
+                    reference.uri.as_str(),
+                    "step_reference_binding_items",
+                )
+            })?;
         }
         Ok(Self {
             storage,
@@ -2626,10 +2699,14 @@ impl<'a, 'ctx, 'arena> ReferenceResolver<'a, 'ctx, 'arena> {
             };
         };
 
-        self.storage.with_storage(|| {
-            self.budget.charge_collection_items(1, "step_reference_stack")?;
-            self.budget.reserve_capacity(&mut self.stack, 1, "step_reference_stack_storage")
-        }).map_err(ResolveError::Resource)?;
+        self.storage
+            .with_storage(|| {
+                self.budget
+                    .charge_collection_items(1, "step_reference_stack")?;
+                self.budget
+                    .reserve_capacity(&mut self.stack, 1, "step_reference_stack_storage")
+            })
+            .map_err(ResolveError::Resource)?;
         self.stack.push(key);
         let resolved = self.resolve_value(anchor, depth + 1);
         self.stack.pop();
@@ -2674,9 +2751,15 @@ fn resolve_local_references(
     let mut anchor_bindings = BTreeMap::new();
     for anchor in anchors.iter() {
         snapshot_storage.with_storage(|| {
-            let name = budget.copy_retained_text(&anchor.name, "step_reference_anchor_name_copy")?;
+            let name =
+                budget.copy_retained_text(&anchor.name, "step_reference_anchor_name_copy")?;
             let value = try_clone_value(&anchor.value, budget, "step_reference_anchor_value_copy")?;
-            budget.insert_btree_map(&mut anchor_bindings, name, value, "step_reference_anchor_copies")?;
+            budget.insert_btree_map(
+                &mut anchor_bindings,
+                name,
+                value,
+                "step_reference_anchor_copies",
+            )?;
             Ok::<(), CodecError>(())
         })?;
     }

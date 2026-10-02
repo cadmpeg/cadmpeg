@@ -31,36 +31,33 @@ pub(super) fn decode(
     ctx: &DecodeContext<'_>,
 ) -> Result<StageOutcome<()>, CodecError> {
     let mut admitted_meshes = u64_from_index(ir.model.tessellations.len());
-    let mut coordinates = BTreeMap::new();
     let mut coordinate_map_bytes = ctx.reserve_scoped(0, "step_tessellation_coordinate_lists")?;
+    let mut coordinates = BTreeMap::new();
     for (&id, record) in exchange.records() {
         if !has_entity(record, "COORDINATES_LIST") {
             continue;
         }
         let scale = geometry.units.length([id]).get();
         if let Some(vertices) = coordinate_rows(record, scale, ctx)? {
-            coordinate_map_bytes.grow(bytes_for::<(u64, Vec<FinitePoint3>)>(
-                1,
-                ctx,
-                "step_tessellation_coordinate_lists",
-            )?)?;
-            ctx.insert_btree_map(
-                &mut coordinates,
-                id,
-                vertices,
-                "step_tessellation_coordinate_lists",
-            )?;
+            coordinate_map_bytes.with_storage(|| {
+                ctx.insert_btree_map(
+                    &mut coordinates,
+                    id,
+                    vertices,
+                    "step_tessellation_coordinate_lists",
+                )
+            })?;
         }
     }
     let mut typed = HashSet::new();
     let mut losses = Vec::new();
+    let mut reservations = AssociationReservations::new(ctx)?;
     let mut item_bodies = BTreeMap::<u64, BTreeSet<BodyId>>::new();
     let mut item_placements = BTreeMap::<u64, Vec<Transform>>::new();
     let mut unresolved_placements = BTreeSet::new();
     let mut declared_items = BTreeSet::new();
     let mut unresolved_containers = BTreeSet::new();
     let mut body_context_items = BTreeSet::new();
-    let mut reservations = AssociationReservations::new(ctx)?;
     for (&id, record) in exchange.records() {
         let Some(kind) = entity_kind(record, &["TESSELLATED_SOLID", "TESSELLATED_SHELL"]) else {
             continue;
@@ -92,15 +89,23 @@ pub(super) fn decode(
                 "step_tessellation_unresolved_containers",
             )?;
         }
-        let mut body_candidate_bytes = { ctx.charge_collection_items(u64_from_index(candidates.len()), "step_tessellation_body_candidates")?; ctx.reserve_scoped(0, "step_tessellation_body_candidates") }?;
-            let body_candidates = body_candidate_bytes.with_storage(|| collect_result_checked(
-            ctx,
-            candidates.len(),
-            "step_tessellation_body_candidates",
-            candidates
-                .iter()
-                .map(|body| body.try_clone_for_decode(ctx, "step_tessellation_body_candidates")),
-        ))?;
+        let mut body_candidate_bytes = {
+            ctx.charge_collection_items(
+                u64_from_index(candidates.len()),
+                "step_tessellation_body_candidates",
+            )?;
+            ctx.reserve_scoped(0, "step_tessellation_body_candidates")
+        }?;
+        let body_candidates = body_candidate_bytes.with_storage(|| {
+            collect_result_checked(
+                ctx,
+                candidates.len(),
+                "step_tessellation_body_candidates",
+                candidates.iter().map(|body| {
+                    body.try_clone_for_decode(ctx, "step_tessellation_body_candidates")
+                }),
+            )
+        })?;
         let mut associator = TessellationItemAssociator {
             bodies: &body_candidates,
             exchange,
@@ -122,6 +127,8 @@ pub(super) fn decode(
         }
         ctx.insert_hash_set(&mut typed, id, "step_tessellation_claims")?;
     }
+    let mut representation_storage =
+        ctx.reserve_scoped(0, "step tessellation representation storage")?;
     let mut representation_cache = BTreeMap::new();
     let (product_representations, product_representation_bytes) =
         product_linked_representations(exchange, ctx)?;
@@ -135,14 +142,16 @@ pub(super) fn decode(
         else {
             continue;
         };
-        let bodies = super::topology::representation_bodies(
-            id,
-            exchange,
-            topology,
-            &mut representation_cache,
-            &mut BTreeSet::new(),
-            ctx,
-        )?;
+        let bodies = representation_storage.with_storage(|| {
+            super::topology::representation_bodies(
+                id,
+                exchange,
+                topology,
+                &mut representation_cache,
+                &mut BTreeSet::new(),
+                ctx,
+            )
+        })?;
         let product_linked = product_representations.contains(&id)
             || items
                 .iter()
@@ -358,51 +367,73 @@ pub(super) fn decode(
                 )?;
                 continue;
             }
-            let mut coordinate_indices = BTreeSet::new();
             let mut coordinate_index_bytes =
                 ctx.reserve_scoped(0, "step_tessellation_coordinate_indices")?;
+            let mut coordinate_indices = BTreeSet::new();
             for &index in triangles.iter().flatten() {
                 if !coordinate_indices.contains(&index) {
-                    coordinate_index_bytes.grow(bytes_for::<u32>(
-                        1,
-                        ctx,
-                        "step_tessellation_coordinate_indices",
-                    )?)?;
-                    ctx.insert_btree_set(
-                        &mut coordinate_indices,
-                        index,
-                        "step_tessellation_coordinate_indices",
-                    )?;
+                    coordinate_index_bytes.with_storage(|| {
+                        ctx.insert_btree_set(
+                            &mut coordinate_indices,
+                            index,
+                            "step_tessellation_coordinate_indices",
+                        )
+                    })?;
                 }
             }
             let mut local_index_bytes = ctx.reserve_scoped(0, "step_tessellation_local_index")?;
             let mut local_index = BTreeMap::new();
             for (local, global) in coordinate_indices.iter().enumerate() {
-                let local = u32::try_from(local).map_err(|_| ctx.refuse_codec_limit(
-                    "step_tessellation_local_index_width", u64::from(u32::MAX), u64_from_index(local),
-                ))?;
-                local_index_bytes.with_storage(|| ctx.insert_btree_map(
-                    &mut local_index, *global, local, "step_tessellation_local_index",
-                ))?;
+                let local = u32::try_from(local).map_err(|_| {
+                    ctx.refuse_codec_limit(
+                        "step_tessellation_local_index_width",
+                        u64::from(u32::MAX),
+                        u64_from_index(local),
+                    )
+                })?;
+                local_index_bytes.with_storage(|| {
+                    ctx.insert_btree_map(
+                        &mut local_index,
+                        *global,
+                        local,
+                        "step_tessellation_local_index",
+                    )
+                })?;
             }
-            let mut local_vertex_bytes = { ctx.charge_collection_items(u64_from_index(coordinate_indices.len()), "step_tessellation_local_vertices")?; ctx.reserve_scoped(0, "step_tessellation_local_vertices") }?;
-            let local_vertices = local_vertex_bytes.with_storage(|| collect_checked(
-                ctx,
-                coordinate_indices.len(),
-                "step_tessellation_local_vertices",
-                coordinate_indices
-                    .iter()
-                    .map(|index| vertices[cadmpeg_core::decode::index_from_u32(*index) - 1]),
-            ))?;
-            let mut local_triangle_bytes = {ctx.charge_collection_items(u64_from_index(triangles.len()), "step_tessellation_local_triangles")?; ctx.reserve_scoped(0, "step_tessellation_local_triangles")} ?;
-            let local_triangles = local_triangle_bytes.with_storage(|| collect_checked(
-                ctx,
-                triangles.len(),
-                "step_tessellation_local_triangles",
-                triangles
-                    .iter()
-                    .map(|triangle| triangle.map(|index| local_index[&index])),
-            ))?;
+            let mut local_vertex_bytes = {
+                ctx.charge_collection_items(
+                    u64_from_index(coordinate_indices.len()),
+                    "step_tessellation_local_vertices",
+                )?;
+                ctx.reserve_scoped(0, "step_tessellation_local_vertices")
+            }?;
+            let local_vertices = local_vertex_bytes.with_storage(|| {
+                collect_checked(
+                    ctx,
+                    coordinate_indices.len(),
+                    "step_tessellation_local_vertices",
+                    coordinate_indices
+                        .iter()
+                        .map(|index| vertices[cadmpeg_core::decode::index_from_u32(*index) - 1]),
+                )
+            })?;
+            let mut local_triangle_bytes = {
+                ctx.charge_collection_items(
+                    u64_from_index(triangles.len()),
+                    "step_tessellation_local_triangles",
+                )?;
+                ctx.reserve_scoped(0, "step_tessellation_local_triangles")
+            }?;
+            let local_triangles = local_triangle_bytes.with_storage(|| {
+                collect_checked(
+                    ctx,
+                    triangles.len(),
+                    "step_tessellation_local_triangles",
+                    triangles
+                        .iter()
+                        .map(|triangle| triangle.map(|index| local_index[&index])),
+                )
+            })?;
             (
                 local_vertices,
                 local_triangles,
@@ -425,25 +456,41 @@ pub(super) fn decode(
                 )?;
                 continue;
             }
-            let mut local_vertex_bytes = { ctx.charge_collection_items(u64_from_index(pnindex.len()), "step_tessellation_pn_vertices")?; ctx.reserve_scoped(0, "step_tessellation_pn_vertices") }?;
-            let mut local_triangle_bytes = {ctx.charge_collection_items(u64_from_index(triangles.len()), "step_tessellation_pn_triangles")?; ctx.reserve_scoped(0, "step_tessellation_pn_triangles")} ?;
-            (
-                local_vertex_bytes.with_storage(|| collect_checked(
-                    ctx,
-                    pnindex.len(),
+            let mut local_vertex_bytes = {
+                ctx.charge_collection_items(
+                    u64_from_index(pnindex.len()),
                     "step_tessellation_pn_vertices",
-                    pnindex
-                        .iter()
-                        .map(|index| vertices[cadmpeg_core::decode::index_from_u32(*index) - 1]),
-                ))?,
-                local_triangle_bytes.with_storage(|| collect_checked(
-                    ctx,
-                    triangles.len(),
+                )?;
+                ctx.reserve_scoped(0, "step_tessellation_pn_vertices")
+            }?;
+            let mut local_triangle_bytes = {
+                ctx.charge_collection_items(
+                    u64_from_index(triangles.len()),
                     "step_tessellation_pn_triangles",
-                    triangles
-                        .iter()
-                        .map(|triangle| triangle.map(|index| index - 1)),
-                ))?,
+                )?;
+                ctx.reserve_scoped(0, "step_tessellation_pn_triangles")
+            }?;
+            (
+                local_vertex_bytes.with_storage(|| {
+                    collect_checked(
+                        ctx,
+                        pnindex.len(),
+                        "step_tessellation_pn_vertices",
+                        pnindex.iter().map(|index| {
+                            vertices[cadmpeg_core::decode::index_from_u32(*index) - 1]
+                        }),
+                    )
+                })?,
+                local_triangle_bytes.with_storage(|| {
+                    collect_checked(
+                        ctx,
+                        triangles.len(),
+                        "step_tessellation_pn_triangles",
+                        triangles
+                            .iter()
+                            .map(|triangle| triangle.map(|index| index - 1)),
+                    )
+                })?,
                 CoordinateAddressing::PnIndex,
                 local_vertex_bytes,
                 local_triangle_bytes,
@@ -477,35 +524,38 @@ pub(super) fn decode(
         let mut normals = match source_normals.len() {
             0 => None,
             1 => {
-                _replicated_normal_bytes = Some(ctx.reserve_scoped(
-                    bytes_for::<FiniteVector3>(
-                        local_vertices.len(),
-                        ctx,
-                        "step_tessellation_normal_replication",
-                    )?,
-                    "step_tessellation_normal_replication",
-                )?);
-                Some(ctx.alloc_filled(
-                    local_vertices.len(),
-                    source_normals[0],
-                    "step_tessellation_normal_replication",
-                )?)
+                let (replicated, storage) =
+                    replicated_normals(local_vertices.len(), source_normals[0], ctx)?;
+                _replicated_normal_bytes = Some(storage);
+                Some(replicated)
             }
             count if count == local_vertices.len() => Some(source_normals),
             count => match &addressing {
                 CoordinateAddressing::TriangleIndices(coordinate_indices)
                     if count == vertices.len() =>
                 {
-                    _projected_normal_bytes =
-                        Some({ ctx.charge_collection_items(u64_from_index(coordinate_indices.len()), "step_tessellation_projected_normals")?; ctx.reserve_scoped(0, "step_tessellation_projected_normals") }?);
-                    Some(match &mut _projected_normal_bytes { Some(storage) => storage.with_storage(|| collect_checked(
-                        ctx,
-                        coordinate_indices.len(),
-                        "step_tessellation_projected_normals",
-                        coordinate_indices.iter().map(|index| {
-                            source_normals[cadmpeg_core::decode::index_from_u32(*index) - 1]
+                    _projected_normal_bytes = Some({
+                        ctx.charge_collection_items(
+                            u64_from_index(coordinate_indices.len()),
+                            "step_tessellation_projected_normals",
+                        )?;
+                        ctx.reserve_scoped(0, "step_tessellation_projected_normals")
+                    }?);
+                    Some(match &mut _projected_normal_bytes {
+                        Some(storage) => storage.with_storage(|| {
+                            collect_checked(
+                                ctx,
+                                coordinate_indices.len(),
+                                "step_tessellation_projected_normals",
+                                coordinate_indices.iter().map(|index| {
+                                    source_normals[cadmpeg_core::decode::index_from_u32(*index) - 1]
+                                }),
+                            )
                         }),
-                    )), None => Err(ctx.refuse_codec_limit("step_tessellation_projected_normals", 0, 1)), }?)
+                        None => {
+                            Err(ctx.refuse_codec_limit("step_tessellation_projected_normals", 0, 1))
+                        }
+                    }?)
                 }
                 CoordinateAddressing::PnIndex | CoordinateAddressing::TriangleIndices(_) => {
                     push_loss(
@@ -527,34 +577,58 @@ pub(super) fn decode(
             if let Some(placement) =
                 distinct_placement(item_placements.get(&id).map_or(&[], Vec::as_slice))
             {
-                _placed_vertex_bytes = Some({ ctx.charge_collection_items(u64_from_index(local_vertices.len()), "step_tessellation_placed_vertices")?; ctx.reserve_scoped(0, "step_tessellation_placed_vertices") }?);
+                _placed_vertex_bytes = Some({
+                    ctx.charge_collection_items(
+                        u64_from_index(local_vertices.len()),
+                        "step_tessellation_placed_vertices",
+                    )?;
+                    ctx.reserve_scoped(0, "step_tessellation_placed_vertices")
+                }?);
                 let placed_count = local_vertices.len();
-                local_vertices = match &mut _placed_vertex_bytes { Some(storage) => storage.with_storage(|| collect_optional_checked(
-                    ctx,
-                    placed_count,
-                    "step_tessellation_placed_vertices",
-                    local_vertices
-                        .into_iter()
-                        .map(|vertex| placement.apply_point(vertex.get())),
-                )), None => Err(ctx.refuse_codec_limit("step_tessellation_placed_vertices", 0, 1)), }?
+                local_vertices = match &mut _placed_vertex_bytes {
+                    Some(storage) => storage.with_storage(|| {
+                        collect_optional_checked(
+                            ctx,
+                            placed_count,
+                            "step_tessellation_placed_vertices",
+                            local_vertices
+                                .into_iter()
+                                .map(|vertex| placement.apply_point(vertex.get())),
+                        )
+                    }),
+                    None => Err(ctx.refuse_codec_limit("step_tessellation_placed_vertices", 0, 1)),
+                }?
                 .ok_or_else(|| {
                     CodecError::malformed(format!(
                         "{kind} #{id} placed tessellation vertex contains a non-finite coordinate"
                     ))
                 })?;
                 if let Some(source_normals) = normals.take() {
-                    _placed_normal_bytes = Some({ ctx.charge_collection_items(u64_from_index(source_normals.len()), "step_tessellation_placed_normals")?; ctx.reserve_scoped(0, "step_tessellation_placed_normals") }?);
+                    _placed_normal_bytes = Some({
+                        ctx.charge_collection_items(
+                            u64_from_index(source_normals.len()),
+                            "step_tessellation_placed_normals",
+                        )?;
+                        ctx.reserve_scoped(0, "step_tessellation_placed_normals")
+                    }?);
                     let normal_count = source_normals.len();
-                    match match &mut _placed_normal_bytes { Some(storage) => storage.with_storage(|| collect_optional_checked(
-                        ctx,
-                        normal_count,
-                        "step_tessellation_placed_normals",
-                        source_normals.into_iter().map(|normal| {
-                            placement
-                                .apply_normal(normal.get())
-                                .map(FiniteVector3::from)
+                    match match &mut _placed_normal_bytes {
+                        Some(storage) => storage.with_storage(|| {
+                            collect_optional_checked(
+                                ctx,
+                                normal_count,
+                                "step_tessellation_placed_normals",
+                                source_normals.into_iter().map(|normal| {
+                                    placement
+                                        .apply_normal(normal.get())
+                                        .map(FiniteVector3::from)
+                                }),
+                            )
                         }),
-                    )), None => Err(ctx.refuse_codec_limit("step_tessellation_placed_normals", 0, 1)), }? {
+                        None => {
+                            Err(ctx.refuse_codec_limit("step_tessellation_placed_normals", 0, 1))
+                        }
+                    }? {
                         Some(transformed) => normals = Some(transformed),
                         None => {
                             push_loss(
@@ -776,6 +850,7 @@ enum AssociationMode {
 }
 
 struct AssociationReservations<'a> {
+    active: ScopedReservation<'a>,
     declared: ScopedReservation<'a>,
     unresolved_containers: ScopedReservation<'a>,
     unresolved_placements: ScopedReservation<'a>,
@@ -787,6 +862,7 @@ struct AssociationReservations<'a> {
 impl<'a> AssociationReservations<'a> {
     fn new(ctx: &'a DecodeContext<'_>) -> Result<Self, CodecError> {
         Ok(Self {
+            active: ctx.reserve_scoped(0, "step_tessellation_active_items")?,
             declared: ctx.reserve_scoped(0, "step_tessellation_declared_items")?,
             unresolved_containers: ctx
                 .reserve_scoped(0, "step_tessellation_unresolved_containers")?,
@@ -822,12 +898,10 @@ impl TessellationItemAssociator<'_, '_, '_> {
         if self.active.contains(&id) {
             return Ok(());
         }
-        let _active_bytes = self.ctx.reserve_scoped(
-            bytes_for::<u64>(1, self.ctx, "step_tessellation_active_items")?,
-            "step_tessellation_active_items",
-        )?;
-        self.ctx
-            .insert_btree_set(&mut self.active, id, "step_tessellation_active_items")?;
+        self.reservations.active.with_storage(|| {
+            self.ctx
+                .insert_btree_set(&mut self.active, id, "step_tessellation_active_items")
+        })?;
         let Some(record) = self.exchange.records().get(&id) else {
             self.active.remove(&id);
             return Ok(());
@@ -1002,28 +1076,19 @@ fn associate_bodies(
     bytes: &mut ScopedReservation<'_>,
 ) -> Result<(), CodecError> {
     if !associations.contains_key(&item) {
-        ctx.admit_btree_entry(associations, &item, "step_tessellation_item_body_entries")?;
-        bytes.grow(bytes_for::<(u64, BTreeSet<BodyId>)>(
-            1,
-            ctx,
-            "step_tessellation_item_body_entries",
-        )?)?;
+        bytes.with_storage(|| {
+            ctx.admit_btree_entry(associations, &item, "step_tessellation_item_body_entries")
+        })?;
     }
     let associated = associations.entry(item).or_default();
     for body in bodies {
         if !associated.contains(body) {
-            let body_bytes = bytes_for::<BodyId>(1, ctx, "step_tessellation_item_body_links")?
-                .checked_add(u64_from_index(body.as_str().len()))
-                .ok_or_else(|| {
-                    ctx.refuse_codec_limit(
-                        "step_tessellation_item_body_links",
-                        u64::MAX - 1,
-                        u64::MAX,
-                    )
-                })?;
-            bytes.grow(body_bytes)?;
-            let copy = body.try_clone_for_decode(ctx, "step_tessellation_item_body_links")?;
-            ctx.insert_btree_set(associated, copy, "step_tessellation_item_body_links")?;
+            let copy = bytes.with_storage(|| {
+                body.try_clone_for_decode(ctx, "step_tessellation_item_body_links")
+            })?;
+            bytes.with_storage(|| {
+                ctx.insert_btree_set(associated, copy, "step_tessellation_item_body_links")
+            })?;
         }
     }
     Ok(())
@@ -1037,12 +1102,9 @@ fn push_placement(
     bytes: &mut ScopedReservation<'_>,
 ) -> Result<(), CodecError> {
     if !placements.contains_key(&item) {
-        ctx.admit_btree_entry(placements, &item, "step_tessellation_placement_entries")?;
-        bytes.grow(bytes_for::<(u64, Vec<Transform>)>(
-            1,
-            ctx,
-            "step_tessellation_placement_entries",
-        )?)?;
+        bytes.with_storage(|| {
+            ctx.admit_btree_entry(placements, &item, "step_tessellation_placement_entries")
+        })?;
     }
 
     let values = placements.entry(item).or_default();
@@ -1060,16 +1122,13 @@ fn insert_relationship(
     bytes: &mut ScopedReservation<'_>,
 ) -> Result<(), CodecError> {
     if !relationships.contains_key(&source) {
-        ctx.admit_btree_entry(
-            relationships,
-            &source,
-            "step_tessellation_relationship_nodes",
-        )?;
-        bytes.grow(bytes_for::<(u64, BTreeSet<u64>)>(
-            1,
-            ctx,
-            "step_tessellation_relationship_nodes",
-        )?)?;
+        bytes.with_storage(|| {
+            ctx.admit_btree_entry(
+                relationships,
+                &source,
+                "step_tessellation_relationship_nodes",
+            )
+        })?;
     }
     let targets = relationships.entry(source).or_default();
     ctx.insert_scoped_btree_value(
@@ -1174,15 +1233,22 @@ fn product_linked_representations<'a>(
             &mut relationship_bytes,
         )?;
     }
-    let mut pending_bytes =
-        {ctx.charge_collection_items(u64_from_index(linked.len()), "step_tessellation_product_pending")?; ctx.reserve_scoped(0,"step_tessellation_product_pending")}?;
+    let mut pending_bytes = {
+        ctx.charge_collection_items(
+            u64_from_index(linked.len()),
+            "step_tessellation_product_pending",
+        )?;
+        ctx.reserve_scoped(0, "step_tessellation_product_pending")
+    }?;
     let mut pending = Vec::new();
 
-    pending_bytes.with_storage(|| ctx.reserve_capacity(
-        &mut pending,
-        linked.len(),
-        "step_tessellation_product_pending",
-    ))?;
+    pending_bytes.with_storage(|| {
+        ctx.reserve_capacity(
+            &mut pending,
+            linked.len(),
+            "step_tessellation_product_pending",
+        )
+    })?;
     pending.extend(linked.iter().copied());
     while let Some(representation) = pending.pop() {
         for &related in relationships.get(&representation).into_iter().flatten() {
@@ -1243,14 +1309,21 @@ fn admitted_representation_items<'a>(
         .iter()
         .filter(|value| value.reference().is_some())
         .count();
-    let mut bytes =
-        { ctx.charge_collection_items(u64_from_index(count), "step_tessellation_representation_items")?; ctx.reserve_scoped(0, "step_tessellation_representation_items") }?;
-    let items = bytes.with_storage(|| collect_checked(
-        ctx,
-        count,
-        "step_tessellation_representation_items",
-        values.iter().filter_map(ValueExt::reference),
-    ))?;
+    let mut bytes = {
+        ctx.charge_collection_items(
+            u64_from_index(count),
+            "step_tessellation_representation_items",
+        )?;
+        ctx.reserve_scoped(0, "step_tessellation_representation_items")
+    }?;
+    let items = bytes.with_storage(|| {
+        collect_checked(
+            ctx,
+            count,
+            "step_tessellation_representation_items",
+            values.iter().filter_map(ValueExt::reference),
+        )
+    })?;
     Ok(Some((items, bytes)))
 }
 
@@ -1286,9 +1359,10 @@ fn linked_bodies<'a>(
             if let Some(bodies) = bodies {
                 for body in bodies {
                     bytes.with_storage(|| {
-                    let body = body.try_clone_for_decode(ctx, "step_tessellation_linked_bodies")?;
-                    ctx.insert_btree_set(&mut linked, body, "step_tessellation_linked_bodies")
-                })?;
+                        let body =
+                            body.try_clone_for_decode(ctx, "step_tessellation_linked_bodies")?;
+                        ctx.insert_btree_set(&mut linked, body, "step_tessellation_linked_bodies")
+                    })?;
                 }
             }
             Ok((linked, bytes))
@@ -1307,16 +1381,22 @@ fn index_list<'a>(
     let Some(values) = value.and_then(ValueExt::list) else {
         return Ok(None);
     };
-    let mut bytes = { ctx.charge_collection_items(u64_from_index(values.len()), "step_tessellation_pnindex")?; ctx.reserve_scoped(0, "step_tessellation_pnindex") }?;
-    Ok(bytes.with_storage(|| collect_optional_checked(
-        ctx,
-        values.len(),
-        "step_tessellation_pnindex",
-        values
-            .iter()
-            .map(|value| u32::try_from(value.integer()?).ok()),
-    ))?
-    .map(|indices| (indices, bytes)))
+    let mut bytes = {
+        ctx.charge_collection_items(u64_from_index(values.len()), "step_tessellation_pnindex")?;
+        ctx.reserve_scoped(0, "step_tessellation_pnindex")
+    }?;
+    Ok(bytes
+        .with_storage(|| {
+            collect_optional_checked(
+                ctx,
+                values.len(),
+                "step_tessellation_pnindex",
+                values
+                    .iter()
+                    .map(|value| u32::try_from(value.integer()?).ok()),
+            )
+        })?
+        .map(|indices| (indices, bytes)))
 }
 
 fn container_item_ids<'a>(
@@ -1325,21 +1405,28 @@ fn container_item_ids<'a>(
     id: u64,
     ctx: &'a DecodeContext<'_>,
 ) -> Result<(Vec<u64>, ScopedReservation<'a>), CodecError> {
-    let mut bytes =
-        { ctx.charge_collection_items(u64_from_index(items.len()), "step_tessellation_container_items")?; ctx.reserve_scoped(0, "step_tessellation_container_items") }?;
-    let ids = bytes.with_storage(|| collect_result_checked(
-        ctx,
-        items.len(),
-        "step_tessellation_container_items",
-        items.iter().enumerate().map(|(index, item)| {
-            item.reference().ok_or_else(|| {
-                CodecError::malformed(format_args!(
-                    "{kind} #{id} item {} is not a reference",
-                    index + 1
-                ))
-            })
-        }),
-    ))?;
+    let mut bytes = {
+        ctx.charge_collection_items(
+            u64_from_index(items.len()),
+            "step_tessellation_container_items",
+        )?;
+        ctx.reserve_scoped(0, "step_tessellation_container_items")
+    }?;
+    let ids = bytes.with_storage(|| {
+        collect_result_checked(
+            ctx,
+            items.len(),
+            "step_tessellation_container_items",
+            items.iter().enumerate().map(|(index, item)| {
+                item.reference().ok_or_else(|| {
+                    CodecError::malformed(format_args!(
+                        "{kind} #{id} item {} is not a reference",
+                        index + 1
+                    ))
+                })
+            }),
+        )
+    })?;
     Ok((ids, bytes))
 }
 
@@ -1577,25 +1664,34 @@ fn coordinate_rows<'a>(
         .flat_map(|partial| partial.parameters.iter())
         .filter_map(ValueExt::list)
     {
-        let mut bytes = { ctx.charge_collection_items(u64_from_index(rows.len()), "step_tessellation_coordinate_rows")?; ctx.reserve_scoped(0, "step_tessellation_coordinate_rows") }?;
-        let vertices = bytes.with_storage(|| collect_optional_checked(
-            ctx,
-            rows.len(),
-            "step_tessellation_coordinate_rows",
-            rows.iter().map(|row| {
-                let values = row.list()?;
-                if values.len() != 3 {
-                    return None;
-                }
-                let point = Point3::new(
-                    values[0].number()? * scale,
-                    values[1].number()? * scale,
-                    values[2].number()? * scale,
-                );
-                FinitePoint3::new(point)
-            }),
-        ))?
-        .filter(|vertices| !vertices.is_empty());
+        let mut bytes = {
+            ctx.charge_collection_items(
+                u64_from_index(rows.len()),
+                "step_tessellation_coordinate_rows",
+            )?;
+            ctx.reserve_scoped(0, "step_tessellation_coordinate_rows")
+        }?;
+        let vertices = bytes
+            .with_storage(|| {
+                collect_optional_checked(
+                    ctx,
+                    rows.len(),
+                    "step_tessellation_coordinate_rows",
+                    rows.iter().map(|row| {
+                        let values = row.list()?;
+                        if values.len() != 3 {
+                            return None;
+                        }
+                        let point = Point3::new(
+                            values[0].number()? * scale,
+                            values[1].number()? * scale,
+                            values[2].number()? * scale,
+                        );
+                        FinitePoint3::new(point)
+                    }),
+                )
+            })?
+            .filter(|vertices| !vertices.is_empty());
         if let Some(vertices) = vertices {
             return Ok(Some((vertices, bytes)));
         }
@@ -1610,25 +1706,33 @@ fn triangle_rows<'a>(
     let Some(rows) = value.list() else {
         return Ok(None);
     };
-    let mut bytes =
-        {ctx.charge_collection_items(u64_from_index(rows.len()), "step_tessellation_triangle_rows")?; ctx.reserve_scoped(0, "step_tessellation_triangle_rows")} ?;
-    Ok(bytes.with_storage(|| collect_optional_checked(
-        ctx,
-        rows.len(),
-        "step_tessellation_triangle_rows",
-        rows.iter().map(|row| {
-            let values = row.list()?;
-            if values.len() != 3 {
-                return None;
-            }
-            Some([
-                u32::try_from(values[0].integer()?).ok()?,
-                u32::try_from(values[1].integer()?).ok()?,
-                u32::try_from(values[2].integer()?).ok()?,
-            ])
-        }),
-    ))?
-    .map(|triangles| AdmittedTriangles { triangles, bytes }))
+    let mut bytes = {
+        ctx.charge_collection_items(
+            u64_from_index(rows.len()),
+            "step_tessellation_triangle_rows",
+        )?;
+        ctx.reserve_scoped(0, "step_tessellation_triangle_rows")
+    }?;
+    Ok(bytes
+        .with_storage(|| {
+            collect_optional_checked(
+                ctx,
+                rows.len(),
+                "step_tessellation_triangle_rows",
+                rows.iter().map(|row| {
+                    let values = row.list()?;
+                    if values.len() != 3 {
+                        return None;
+                    }
+                    Some([
+                        u32::try_from(values[0].integer()?).ok()?,
+                        u32::try_from(values[1].integer()?).ok()?,
+                        u32::try_from(values[2].integer()?).ok()?,
+                    ])
+                }),
+            )
+        })?
+        .map(|triangles| AdmittedTriangles { triangles, bytes }))
 }
 
 fn complex_triangles<'a>(
@@ -1648,14 +1752,22 @@ fn complex_triangles<'a>(
         .ok_or_else(|| {
             ctx.refuse_codec_limit("step_complex_triangle_count", u64::MAX - 1, u64::MAX)
         })?;
-    let mut bytes = {ctx.charge_collection_items(u64_from_index(triangle_count), "step_complex_tessellation_triangles")?; ctx.reserve_scoped(0,"step_complex_tessellation_triangles")}?;
+    let mut bytes = {
+        ctx.charge_collection_items(
+            u64_from_index(triangle_count),
+            "step_complex_tessellation_triangles",
+        )?;
+        ctx.reserve_scoped(0, "step_complex_tessellation_triangles")
+    }?;
     let mut triangles = Vec::new();
 
-    bytes.with_storage(|| ctx.reserve_capacity(
-        &mut triangles,
-        triangle_count,
-        "step_complex_tessellation_triangles",
-    ))?;
+    bytes.with_storage(|| {
+        ctx.reserve_capacity(
+            &mut triangles,
+            triangle_count,
+            "step_complex_tessellation_triangles",
+        )
+    })?;
     for strip in strips {
         for index in 0..strip.len() - 2 {
             triangles.push(if index % 2 == 0 {
@@ -1687,38 +1799,58 @@ fn index_rows<'a>(
             ctx.reserve_scoped(0, "step_complex_tessellation_indices")?,
         ));
     };
-    let mut row_bytes =
-        { ctx.charge_collection_items(u64_from_index(rows.len()), "step_complex_tessellation_rows")?; ctx.reserve_scoped(0, "step_complex_tessellation_rows") }?;
+    let mut row_bytes = {
+        ctx.charge_collection_items(u64_from_index(rows.len()), "step_complex_tessellation_rows")?;
+        ctx.reserve_scoped(0, "step_complex_tessellation_rows")
+    }?;
     let mut index_bytes = ctx.reserve_scoped(0, "step_complex_tessellation_indices")?;
-    let indices = row_bytes.with_storage(|| collect_result_checked(
-        ctx,
-        rows.len(),
-        "step_complex_tessellation_rows",
-        rows.iter().enumerate().map(|(row_index, row)| {
-            let invalid = || {
-                CodecError::malformed(format_args!(
-                    "{kind} #{id} {lane} row {} is invalid",
-                    row_index + 1
-                ))
-            };
-            let Some(values) = row.list().filter(|values| values.len() >= 3) else {
-                return Err(invalid());
-            };
-            ctx.charge_collection_items(
-                u64_from_index(values.len()),
-                "step_complex_tessellation_indices",
-            )?;
-            index_bytes.with_storage(|| collect_result_checked(
-                ctx,
-                values.len(),
-                "step_complex_tessellation_indices",
-                values.iter().map(|value| {
-                    u32::try_from(value.integer().ok_or_else(invalid)?).map_err(|_| invalid())
-                }),
-            ))
-        }),
-    ))?;
+    let indices = row_bytes.with_storage(|| {
+        collect_result_checked(
+            ctx,
+            rows.len(),
+            "step_complex_tessellation_rows",
+            rows.iter().enumerate().map(|(row_index, row)| {
+                let invalid = || {
+                    CodecError::malformed(format_args!(
+                        "{kind} #{id} {lane} row {} is invalid",
+                        row_index + 1
+                    ))
+                };
+                let Some(values) = row.list().filter(|values| values.len() >= 3) else {
+                    return Err(invalid());
+                };
+                ctx.charge_collection_items(
+                    u64_from_index(values.len()),
+                    "step_complex_tessellation_indices",
+                )?;
+                index_bytes.with_storage(|| {
+                    collect_result_checked(
+                        ctx,
+                        values.len(),
+                        "step_complex_tessellation_indices",
+                        values.iter().map(|value| {
+                            u32::try_from(value.integer().ok_or_else(invalid)?)
+                                .map_err(|_| invalid())
+                        }),
+                    )
+                })
+            }),
+        )
+    })?;
     Ok((indices, row_bytes, index_bytes))
+}
+
+fn replicated_normals<'a>(
+    count: usize,
+    normal: FiniteVector3,
+    ctx: &'a DecodeContext<'_>,
+) -> Result<(Vec<FiniteVector3>, ScopedReservation<'a>), CodecError> {
+    let storage = ctx.reserve_scoped(
+        bytes_for::<FiniteVector3>(count, ctx, "step_tessellation_normal_replication")?,
+        "step_tessellation_normal_replication",
+    )?;
+    let normals = ctx.alloc_filled(count, normal, "step_tessellation_normal_replication")?;
+    Ok((normals, storage))
 }
 
 fn normal_rows<'a>(
@@ -1728,25 +1860,31 @@ fn normal_rows<'a>(
     let Some(rows) = value.and_then(ValueExt::list) else {
         return Ok(None);
     };
-    let mut bytes = { ctx.charge_collection_items(u64_from_index(rows.len()), "step_tessellation_normal_rows")?; ctx.reserve_scoped(0, "step_tessellation_normal_rows") }?;
-    Ok(bytes.with_storage(|| collect_optional_checked(
-        ctx,
-        rows.len(),
-        "step_tessellation_normal_rows",
-        rows.iter().map(|row| {
-            let values = row.list()?;
-            if values.len() != 3 {
-                return None;
-            }
-            let normal = Vector3::new(
-                values[0].number()?,
-                values[1].number()?,
-                values[2].number()?,
-            );
-            super::geometry::normalize(normal).map(FiniteVector3::from)
-        }),
-    ))?
-    .map(|normals| (normals, bytes)))
+    let mut bytes = {
+        ctx.charge_collection_items(u64_from_index(rows.len()), "step_tessellation_normal_rows")?;
+        ctx.reserve_scoped(0, "step_tessellation_normal_rows")
+    }?;
+    Ok(bytes
+        .with_storage(|| {
+            collect_optional_checked(
+                ctx,
+                rows.len(),
+                "step_tessellation_normal_rows",
+                rows.iter().map(|row| {
+                    let values = row.list()?;
+                    if values.len() != 3 {
+                        return None;
+                    }
+                    let normal = Vector3::new(
+                        values[0].number()?,
+                        values[1].number()?,
+                        values[2].number()?,
+                    );
+                    super::geometry::normalize(normal).map(FiniteVector3::from)
+                }),
+            )
+        })?
+        .map(|normals| (normals, bytes)))
 }
 #[cfg(test)]
 pub(crate) mod tests;

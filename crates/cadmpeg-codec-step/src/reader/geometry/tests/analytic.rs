@@ -37,18 +37,24 @@ fn apll_point_name_refuses_retained_limit() {
     let (exchange, _) =
         crate::test_support::with_service_context(SOURCE, crate::parse::parse_inner)
             .expect("valid APLL exchange");
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = 1;
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(SOURCE, &arena, &policy).expect("root fits retained policy");
-    let mut ir = cadmpeg_ir::document::CadIr::empty();
-    assert!(matches!(
-        super::super::decode(&exchange, &mut ir, &ctx),
-        Err(CodecError::ResourceLimit(refusal))
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::RetainedBytes,
+        "step_string_text",
+        |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_retained_bytes = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(SOURCE, &arena, &policy)
+                .expect("root fits retained policy");
+            let mut ir = cadmpeg_ir::document::CadIr::empty();
+            (super::super::decode(&exchange, &mut ir, &ctx)).map(|_| ())
+        },
+    );
+    assert!(
+        matches!(Err::<(), CodecError>(error), Err(CodecError::ResourceLimit(refusal))
             if refusal.dimension == ResourceDimension::RetainedBytes
-                && refusal.operation == "step_string_text"
-    ));
+                && refusal.operation == "step_string_text")
+    );
 }
 
 #[test]
@@ -60,18 +66,24 @@ fn tessellated_curve_name_refuses_retained_limit() {
     let (exchange, _) =
         crate::test_support::with_service_context(SOURCE, crate::parse::parse_inner)
             .expect("valid tessellation exchange");
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = 1;
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(SOURCE, &arena, &policy).expect("root fits retained policy");
-    let mut ir = cadmpeg_ir::document::CadIr::empty();
-    assert!(matches!(
-        super::super::decode(&exchange, &mut ir, &ctx),
-        Err(CodecError::ResourceLimit(refusal))
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::RetainedBytes,
+        "step_string_text",
+        |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_retained_bytes = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(SOURCE, &arena, &policy)
+                .expect("root fits retained policy");
+            let mut ir = cadmpeg_ir::document::CadIr::empty();
+            (super::super::decode(&exchange, &mut ir, &ctx)).map(|_| ())
+        },
+    );
+    assert!(
+        matches!(Err::<(), CodecError>(error), Err(CodecError::ResourceLimit(refusal))
             if refusal.dimension == ResourceDimension::RetainedBytes
-                && refusal.operation == "step_string_text"
-    ));
+                && refusal.operation == "step_string_text")
+    );
 }
 
 fn assert_association_name_refuses(
