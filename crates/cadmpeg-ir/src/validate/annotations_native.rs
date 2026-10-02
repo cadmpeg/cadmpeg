@@ -63,7 +63,7 @@ pub(super) fn check_annotations<'ir>(
     let wanted = BorrowedIdentities::build(ctx, |add| {
         for (id, note) in annotations.exactness() {
             ctx.charge_work(1, "annotated entity selection")?;
-            if !note.fields().is_empty() { add(id)?; }
+            if !note.fields().is_empty() { add(id, ())?; }
         }
         Ok(())
     })?;
@@ -166,12 +166,12 @@ pub(super) fn check_native_links(
 ) -> Result<(), CodecError> {
     let ir = view.ir;
     let all_targets = BorrowedIdentities::build(ctx, |add| {
-        for id in all_ids.identities() { add(id)?; }
+        for id in all_ids.identities() { add(id, ())?; }
         Ok(())
     })?;
     let native_ids = BorrowedIdentities::build(ctx, |add| {
         view.visit(|work| ctx.charge_work(u64_from_index(work), "native identity arena scan"), |_, _, records| {
-            for record in records.records() { add(record.id())?; }
+            for record in records.records() { add(record.id(), ())?; }
             Ok(())
         })
     })?;

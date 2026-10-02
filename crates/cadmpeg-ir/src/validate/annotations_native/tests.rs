@@ -23,7 +23,7 @@ fn model_entity_wins_when_native_id_collides() {
     );
     ir.native.0.insert("collision".into(), namespace);
     let ctx = cadmpeg_test_support::service_decode_context();
-    let all_ids = super::BorrowedIdentities::build(&ctx, |add| add(id.as_str())).unwrap();
+    let all_ids = super::BorrowedIdentities::build(&ctx, |add| add(id.as_str(), ())).unwrap();
     let mut builder = crate::AnnotationBuilder::new();
     builder.derived(&cadmpeg_test_support::service_decode_context(), &id, "position").unwrap();
     builder.derived(&cadmpeg_test_support::service_decode_context(), &id, "native_only").unwrap();
