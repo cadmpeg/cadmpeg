@@ -809,31 +809,59 @@ impl LoopRing {
         if coedges.is_empty() {
             return Ok(Err(LoopRingError("loop ring must contain a coedge")));
         }
-        let (mut members, _storage) =
-            ctx.temporary_set_limit(coedges.len(), "loop ring members")?;
+        // Drop the temporary vector before its reservation on every return path.
+        let (storage, mut members) = {
+            let mut values = Vec::new();
+            let reservation = ctx.reserve_temporary_vec(&mut values, coedges.len(), "loop ring members")?;
+            (reservation, values)
+        };
         for coedge in &coedges {
-            ctx.charge_work_limit(u64_from_index(coedge.as_str().len()), "loop ring members")?;
             ctx.charge_work_limit(1, "loop ring members")?;
-            if !members.insert(coedge) {
-                return Ok(Err(LoopRingError("loop ring coedges must be distinct")));
-            }
+            let position = match Self::coedge_position(ctx, &members, coedge, "loop ring members")? {
+                Ok(_) => return Ok(Err(LoopRingError("loop ring coedges must be distinct"))),
+                Err(position) => position,
+            };
+            ctx.charge_work_limit(u64_from_index(members.len() - position), "loop ring members")?;
+            ctx.charge_work_limit(1, "loop ring members")?;
+            members.insert(position, coedge);
         }
         for vertex_use in &vertex_uses {
-            ctx.charge_work_limit(
-                u64_from_index(vertex_use.after.as_str().len()),
-                "loop ring anchors",
-            )?;
             ctx.charge_work_limit(1, "loop ring anchors")?;
-            if !members.contains(&vertex_use.after) {
+            if Self::coedge_position(ctx, &members, &vertex_use.after, "loop ring anchors")?.is_err() {
                 return Ok(Err(LoopRingError(
                     "loop ring vertex-use after must name a coedge in the ring",
                 )));
             }
         }
+        drop(members);
+        drop(storage);
         Ok(Ok(Self {
             coedges,
             vertex_uses,
         }))
+    }
+
+    fn coedge_position(
+        ctx: &DecodeContext<'_>,
+        members: &[&CoedgeId],
+        coedge: &CoedgeId,
+        operation: &'static str,
+    ) -> Result<Result<usize, usize>, cadmpeg_core::decode::ResourceLimit> {
+        let mut low = 0;
+        let mut high = members.len();
+        while low < high {
+            ctx.charge_work_limit(1, operation)?;
+            let middle = low + (high - low) / 2;
+            let candidate = members[middle].as_str();
+            let query = coedge.as_str();
+            ctx.charge_work_limit(u64_from_index(candidate.len().min(query.len())), operation)?;
+            match candidate.cmp(query) {
+                std::cmp::Ordering::Less => low = middle + 1,
+                std::cmp::Ordering::Greater => high = middle,
+                std::cmp::Ordering::Equal => return Ok(Ok(middle)),
+            }
+        }
+        Ok(Err(low))
     }
 
     /// Coedges in source traversal order.
@@ -2041,6 +2069,50 @@ mod tests {
         assert_eq!(ring.coedges(), &[first, second]);
         assert_eq!(ring.vertex_uses(), vertex_uses);
         drop(ctx.reserve_scoped(256, "ring index released").unwrap());
+        ctx.finish_session().unwrap();
+    }
+
+    #[test]
+    fn loop_ring_membership_checks_complete_text_and_keeps_source_order() {
+        let ctx = cadmpeg_test_support::service_decode_context();
+        let first = super::CoedgeId::mint("test:model:coedge#prefix-long").unwrap();
+        let second = super::CoedgeId::mint("test:model:coedge#prefix").unwrap();
+        let third = super::CoedgeId::mint("test:model:coedge#alpha").unwrap();
+        let vertex_uses = vec![AnchoredVertexUse {
+            vertex: "test:model:vertex#0".try_into().unwrap(), after: second.clone(), pcurves: vec![],
+        }];
+        let ring = LoopRing::new(&ctx, vec![first.clone(), second.clone(), third.clone()], vertex_uses.clone()).unwrap().unwrap();
+        assert_eq!(ring.coedges(), &[first.clone(), second.clone(), third.clone()]);
+        assert_eq!(ring.vertex_uses(), vertex_uses);
+        assert_eq!(LoopRing::new(&ctx, vec![first, second.clone(), third, second], vec![]).unwrap().unwrap_err().to_string(), "loop ring coedges must be distinct");
+        let foreign = super::CoedgeId::mint("test:model:coedge#prefix-longer").unwrap();
+        let invalid = LoopRing::new(&ctx, ring.coedges().to_vec(), vec![AnchoredVertexUse {
+            vertex: "test:model:vertex#0".try_into().unwrap(), after: foreign, pcurves: vec![],
+        }]).unwrap().unwrap_err();
+        assert_eq!(invalid.to_string(), "loop ring vertex-use after must name a coedge in the ring");
+        ctx.finish_session().unwrap();
+    }
+
+    #[test]
+    fn loop_ring_lookup_preserves_first_and_later_comparison_refusals() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        let first = super::CoedgeId::mint("test:model:coedge#0").unwrap();
+        let second = super::CoedgeId::mint("test:model:coedge#1").unwrap();
+        let members = [&first, &second];
+        for cap in [0, 1, u64::try_from(first.as_str().len()).unwrap() + 1] {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            let limit = LoopRing::coedge_position(&ctx, &members, &first, "loop ring comparison test").unwrap_err();
+            assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+            assert_eq!(limit.operation, "loop ring comparison test");
+            assert!(matches!(ctx.finish_session(), Err(cadmpeg_core::CodecError::ResourceLimit(original)) if original == limit));
+        }
+        let ctx = cadmpeg_test_support::service_decode_context();
+        assert_eq!(LoopRing::coedge_position(&ctx, &members, &first, "loop ring comparison test").unwrap(), Ok(0));
+        let absent = super::CoedgeId::mint("test:model:coedge#2").unwrap();
+        assert_eq!(LoopRing::coedge_position(&ctx, &members, &absent, "loop ring comparison test").unwrap(), Err(2));
         ctx.finish_session().unwrap();
     }
 
