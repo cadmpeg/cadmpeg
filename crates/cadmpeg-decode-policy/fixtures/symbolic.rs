@@ -120,3 +120,11 @@ fn computed_delta<T>(ctx: &DecodeContext, values: &mut Vec<T>, requested: usize,
     values.try_reserve_exact(capacity - values.len()).map_err(|_| ())?;
     Ok(())
 }
+
+fn duplicate_terms<T>(ctx: &DecodeContext, values: &mut Vec<T>, count: usize) -> Result<(), ()> {
+    let bytes = count.checked_mul(std::mem::size_of::<T>()).ok_or(())?;
+    ctx.charge_retained(u64::try_from(bytes).map_err(|_| ())?, "one extent")?;
+    let doubled = count.checked_add(count).ok_or(())?;
+    values.try_reserve_exact(doubled).map_err(|_| ())?; // finding: unproven_decode_charge
+    Ok(())
+}

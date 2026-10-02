@@ -257,3 +257,7 @@ pub(crate) fn derived(tcx: TyCtxt<'_>, definition: rustc_span::def_id::DefId) ->
     let parent = tcx.parent(definition);
     generated || matches!(tcx.def_kind(parent), rustc_hir::def::DefKind::Impl { .. }) && tcx.is_automatically_derived(parent)
 }
+
+pub(crate) fn serde_serialize(tcx: TyCtxt<'_>, trait_id: rustc_span::def_id::DefId) -> bool {
+    !trait_id.is_local() && matches!(tcx.crate_name(trait_id.krate).as_str(), "serde" | "serde_core") && tcx.item_name(trait_id).as_str() == "Serialize"
+}
