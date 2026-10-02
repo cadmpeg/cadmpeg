@@ -43,7 +43,7 @@ impl<T> std::ops::DerefMut for SupportValues<T> {
 
 /// Scratch admission shared by one evaluation and its recursive calls.
 pub(super) struct Scratch<'ctx, 'arena> {
-    context: &'ctx DecodeContext<'arena>,
+    pub(super) context: &'ctx DecodeContext<'arena>,
     storage: RefCell<Option<ScopedReservation<'ctx>>>,
     refusal: RefCell<Option<ResourceLimit>>,
 }
@@ -317,6 +317,7 @@ impl<'curve, 'ctx> NurbsPointEvaluator<'curve, 'ctx> {
                 let mut basis = Vec::new();
                 let storage =
                     ctx.reserve_temporary_vec(&mut basis, support, "IR B-spline basis")?;
+                ctx.charge_work_limit(u64_from_index(support), "IR B-spline basis work")?;
                 basis.extend(std::iter::repeat_n(0.0, support));
                 (SupportValues::Heap(basis), Some(storage))
             }
@@ -336,9 +337,6 @@ impl<'curve, 'ctx> NurbsPointEvaluator<'curve, 'ctx> {
     ) -> Result<Result<FinitePoint3, EvaluationFailure<Point3>>, ResourceLimit> {
         let _depth = if matches!(&self.basis, SupportValues::Heap(_)) {
             let depth = ctx.enter_nested_limit("geometry evaluation nesting")?;
-            for _ in 0..self.basis.len() {
-                ctx.charge_work_limit(u64_from_index(self.basis.len()), "IR B-spline basis work")?;
-            }
             Some(depth)
         } else {
             None
@@ -347,14 +345,16 @@ impl<'curve, 'ctx> NurbsPointEvaluator<'curve, 'ctx> {
         let result = (|| {
             let parameter = FiniteReal::new(parameter).ok_or(EvaluationFailure::NoValue)?;
             let span = super::basis::bspline_span(
+                ctx,
                 self.curve.knots(),
                 degree,
                 self.curve.pole_count(),
                 parameter.get(),
-            )
+            ).map_err(EvaluationFailure::ResourceLimit)?
             .ok_or(EvaluationFailure::NoValue)?;
             let unreached = EvaluationFailure::NonFinite(super::UNREACHED_POINT);
             super::basis::fill_bspline_basis(
+                ctx,
                 self.curve.knots(),
                 degree,
                 span,

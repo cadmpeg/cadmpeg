@@ -1472,6 +1472,7 @@ pub fn nurbs_curve_point_at(
 /// Evaluate a NURBS curve with a caller-owned basis buffer of `degree + 1`
 /// values. The caller admits the buffer before creating it.
 pub fn nurbs_curve_point_at_with_basis(
+    ctx: &DecodeContext<'_>,
     curve: &NurbsCurve,
     t: f64,
     basis: &mut [f64],
@@ -1482,9 +1483,9 @@ pub fn nurbs_curve_point_at_with_basis(
         return Err(EvaluationFailure::NoValue);
     }
     let at = FiniteReal::new(t).ok_or(EvaluationFailure::NoValue)?;
-    let span = basis::bspline_span(curve.knots(), degree, poles.count(), at.get())
+    let span = basis::bspline_span(ctx, curve.knots(), degree, poles.count(), at.get())?
         .ok_or(EvaluationFailure::NoValue)?;
-    fill_bspline_basis(curve.knots(), degree, span, at.get(), basis)?
+    fill_bspline_basis(ctx, curve.knots(), degree, span, at.get(), basis)?
         .ok_or(EvaluationFailure::NonFinite(UNREACHED_POINT))?;
     nurbs_curve_point_from_basis(
         basis,
@@ -1528,7 +1529,7 @@ fn nurbs_curve_point_unsettled(
     let no_value = EvaluationFailure::NoValue;
     let unreached = EvaluationFailure::NonFinite(UNREACHED_POINT);
     let degree = usize::try_from(degree).map_err(|_| no_value)?;
-    let span = basis::bspline_span(knots, degree, count, t).ok_or(no_value)?;
+    let span = scratch.admit(basis::bspline_span(scratch.context, knots, degree, count, t)).flatten().ok_or(no_value)?;
     // At a finite parameter over finite knots, the basis is absent or not
     // finite only where one of its terms left the finite range.
     let basis = basis::bspline_basis(scratch, knots, degree, span, t).ok_or(unreached)?;
@@ -2244,7 +2245,7 @@ fn nurbs_pcurve_differential_unsettled(
     let t = t.get();
     let unreached = EvaluationFailure::NonFinite(Point2::new(f64::NAN, f64::NAN));
     let degree = usize::try_from(degree).map_err(|_| EvaluationFailure::NoValue)?;
-    let span = basis::bspline_span(knots, degree, count, t).ok_or(EvaluationFailure::NoValue)?;
+    let span = scratch.admit(basis::bspline_span(scratch.context, knots, degree, count, t)).flatten().ok_or(EvaluationFailure::NoValue)?;
     // At a finite parameter over finite knots, the basis is absent or not
     // finite only where one of its terms left the finite range.
     let basis = basis::bspline_basis(scratch, knots, degree, span, t).ok_or(unreached)?;
@@ -2700,8 +2701,8 @@ fn nurbs_surface_local_unsettled<'a>(
     )
     .ok_or(no_value)?
     .get();
-    let u_span = basis::bspline_span(surface.u_knots(), u_degree, u_count, u_at).ok_or(no_value)?;
-    let v_span = basis::bspline_span(surface.v_knots(), v_degree, v_count, v_at).ok_or(no_value)?;
+    let u_span = scratch.admit(basis::bspline_span(scratch.context, surface.u_knots(), u_degree, u_count, u_at)).flatten().ok_or(no_value)?;
+    let v_span = scratch.admit(basis::bspline_span(scratch.context, surface.v_knots(), v_degree, v_count, v_at)).flatten().ok_or(no_value)?;
     // At a finite parameter over finite knots, the basis is absent or not
     // finite only where one of its terms left the finite range.
     let u_basis = basis::bspline_basis(scratch, surface.u_knots(), u_degree, u_span, u_at)
@@ -2898,7 +2899,7 @@ pub fn nurbs_surface_isocurve(
         };
         let fixed_parameter = fixed_parameter.get();
         let Some(fixed_span) =
-            basis::bspline_span(fixed_knots, fixed_degree, fixed_count, fixed_parameter)
+            basis::bspline_span(&ctx, fixed_knots, fixed_degree, fixed_count, fixed_parameter)?
         else {
             return Ok(None);
         };
@@ -3713,7 +3714,7 @@ fn nurbs_curve_derivative_unsettled(
     let non_finite = EvaluationFailure::NonFinite(());
     let second = order == CurveDerivative::Second;
     let degree = usize::try_from(degree).map_err(|_| no_value)?;
-    let span = basis::bspline_span(knots, degree, control_points.len(), t).ok_or(no_value)?;
+    let span = scratch.admit(basis::bspline_span(scratch.context, knots, degree, control_points.len(), t)).flatten().ok_or(no_value)?;
     let basis = basis::bspline_basis(scratch, knots, degree, span, t).ok_or(non_finite)?;
     if !basis.iter().all(|value| value.is_finite()) {
         return Err(non_finite);

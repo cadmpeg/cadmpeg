@@ -464,8 +464,8 @@ fn exact_orientation(
         .checked_add(1)
         .ok_or_else(|| error(offset, "extrusion profile degree is too large"))?;
     let mut basis = ctx.alloc_filled(basis_count, 0.0, "Rhino extrusion profile basis")?;
-    let start = evaluate_profile_point(&curve, domain[0], offset, &mut basis)?;
-    let end = evaluate_profile_point(&curve, domain[1], offset, &mut basis)?;
+    let start = evaluate_profile_point(ctx, &curve, domain[0], offset, &mut basis)?;
+    let end = evaluate_profile_point(ctx, &curve, domain[1], offset, &mut basis)?;
     let sample_parameter = |start: f64, end: f64, fraction: f64, ordinary: f64| {
         if ordinary.is_finite() {
             Ok(ordinary)
@@ -481,12 +481,14 @@ fn exact_orientation(
         }
         let span = domain[1] - domain[0];
         let one_third = evaluate_profile_point(
+            ctx,
             &curve,
             sample_parameter(domain[0], domain[1], 1.0 / 3.0, domain[0] + span / 3.0)?,
             offset,
             &mut basis,
         )?;
         let two_thirds = evaluate_profile_point(
+            ctx,
             &curve,
             sample_parameter(
                 domain[0],
@@ -554,12 +556,12 @@ fn exact_orientation(
                 fraction,
                 span_start + fraction * (span_end - span_start),
             )?;
-            let current = evaluate_profile_point(&curve, parameter, offset, &mut basis)?;
+            let current = evaluate_profile_point(ctx, &curve, parameter, offset, &mut basis)?;
             twice_area += (previous.x - current.x) * (previous.y + current.y);
             previous = current;
         }
     }
-    let final_point = evaluate_profile_point(&curve, domain[1], offset, &mut basis)?;
+    let final_point = evaluate_profile_point(ctx, &curve, domain[1], offset, &mut basis)?;
     twice_area += (previous.x - final_point.x) * (previous.y + final_point.y);
     if !twice_area.is_finite() {
         return Err(error(offset, "extrusion profile orientation is invalid"));
@@ -591,12 +593,13 @@ fn source_periodic(curve: &NurbsCurve) -> bool {
 }
 
 fn evaluate_profile_point(
+    ctx: &DecodeContext<'_>,
     curve: &NurbsCurve,
     parameter: f64,
     offset: usize,
     basis: &mut [f64],
 ) -> Result<Point3, GeometryError> {
-    nurbs_curve_point_at_with_basis(curve, parameter, basis)
+    nurbs_curve_point_at_with_basis(ctx, curve, parameter, basis)
         .map(cadmpeg_ir::features::FinitePoint3::get)
         .map_err(|failure| match failure {
             cadmpeg_ir::eval::EvaluationFailure::ResourceLimit(limit) => {
