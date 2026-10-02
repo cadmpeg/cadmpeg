@@ -585,7 +585,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
     fn restore_loop(&mut self, mut saved: crate::flow::Flow) {
         saved.mutated.extend(self.flow.mutated.iter().cloned());
         saved.work.retain(|credit| {
-            !credit.extents.iter().any(|term| {
+            !credit.extents.iter().flat_map(|term| &term.factors).any(|term| {
                 saved
                     .mutated
                     .iter()
@@ -641,11 +641,19 @@ impl<'tcx> Analysis<'_, 'tcx> {
                             prefix
                         };
                         self.work_report(header, shape, effective, "for loop");
-                        let saved = self.flow.clone();
-                        self.flow.work.clear();
+                        let mut saved = self.flow.clone();
+                        let repetitions = self.constant_count(input, &mut Vec::new());
+                        if shape == Shape::Fixed {
+                            if let Some(count) = repetitions.filter(|count| *count > 0) {
+                                if let Some(iterations) = self.flow.iterations.checked_mul(count) {
+                                    self.flow.iterations = iterations;
+                                } else { self.flow.work.clear(); }
+                            } else { self.flow.work.clear(); }
+                        } else { self.flow.work.clear(); }
                         if let Some(body) = user_body {
                             self.visit_expr(body);
                         }
+                        if shape == Shape::Fixed { saved.work = self.flow.work.clone(); }
                         self.restore_loop(saved);
                         return;
                     }

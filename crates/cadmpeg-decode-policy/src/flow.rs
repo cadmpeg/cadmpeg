@@ -3,16 +3,30 @@ use crate::{types, Analysis};
 use rustc_hir::{def::Res, Expr, ExprKind, HirId, MatchSource, Node};
 
 #[derive(Clone, PartialEq, Eq)]
+pub(crate) struct ExtentTerm {
+    pub(crate) factors: Vec<String>,
+    pub(crate) coefficient: u64,
+}
+
+#[derive(Clone, PartialEq, Eq)]
 pub(crate) struct Credit {
-    pub(crate) extents: Vec<String>,
+    pub(crate) extents: Vec<ExtentTerm>,
     pub(crate) opaque: bool,
 }
 
-#[derive(Clone, Default)]
+#[derive(Clone)]
 pub(crate) struct Flow {
     pub(crate) work: Vec<Credit>,
+    pub(crate) iterations: u64,
     pub(crate) storage: bool,
     pub(crate) mutated: std::collections::HashSet<String>,
+}
+
+impl Default for Flow {
+    fn default() -> Self {
+        Self { work: Vec::new(), storage: false, iterations: 1,
+            mutated: std::collections::HashSet::new() }
+    }
 }
 
 impl<'tcx> Analysis<'_, 'tcx> {
@@ -30,7 +44,8 @@ impl<'tcx> Analysis<'_, 'tcx> {
             | ExprKind::DropTemps(inner)
             | ExprKind::Unary(_, inner) => self.key(inner, seen),
             ExprKind::Path(ref path) => match self.typeck.qpath_res(path, expression.hir_id) {
-                Res::Local(id) => Some(format!("local:{id:?}")),
+                Res::Local(id) => self.initializer(expression).and_then(|init| self.key(init, seen))
+                    .or_else(|| Some(format!("local:{id:?}"))),
                 Res::Def(_, id) => Some(format!("definition:{id:?}")),
                 _ => None,
             },
@@ -52,20 +67,38 @@ impl<'tcx> Analysis<'_, 'tcx> {
                         {
                             let terms = self.extent_terms(end, &mut Vec::new())?;
                             if let [term] = terms.as_slice() {
-                                return Some(term.clone());
+                                if term.coefficient == 1 {
+                                    if let [factor] = term.factors.as_slice() { return Some(factor.clone()); }
+                                }
                             }
                         }
                     }
                 }
                 None
             }
-            ExprKind::Field(base, field) => self
-                .key(base, seen)
-                .map(|key| format!("{key}.{}", field.name)),
-            ExprKind::Index(base, _, _) => self.key(base, seen).map(|key| format!("{key}.window")),
+            ExprKind::Field(base, field) => {
+                let split = self.initializer(base).unwrap_or(base);
+                if self.call(split).is_some_and(|(id, _)| types::standard(self.tcx, id)
+                    && self.tcx.item_name(id).as_str() == "split_at") {
+                    self.key(split, seen)
+                } else { self.key(base, seen).map(|key| format!("{key}.{}", field.name)) }
+            },
+            ExprKind::Index(base, index, _) => {
+                let value = self.expr_ty(index).peel_refs();
+                if matches!(value.kind(), rustc_middle::ty::Adt(owner, _) if types::standard(self.tcx, owner.did()) && self.tcx.item_name(owner.did()).as_str().starts_with("Range")) {
+                    self.key(base, seen)
+                } else { self.key(base, seen).map(|key| format!("{key}.window")) }
+            },
             _ => {
                 let (definition, operands) = self.call(expression)?;
                 let name = self.tcx.item_name(definition);
+                if types::standard(self.tcx, definition) && name.as_str() == "get" {
+                    let range = operands.get(1).is_some_and(|operand|
+                        matches!(self.expr_ty(operand).kind(), rustc_middle::ty::Adt(owner, _)
+                            if types::standard(self.tcx, owner.did()) && self.tcx.item_name(owner.did()).as_str().starts_with("Range")));
+                    if range { return operands.first().and_then(|operand| self.key(operand, seen)); }
+                    return None;
+                }
                 if types::standard(self.tcx, definition)
                     && matches!(
                         name.as_str(),
@@ -80,6 +113,12 @@ impl<'tcx> Analysis<'_, 'tcx> {
                             | "filter"
                             | "take"
                             | "skip"
+                            | "step_by"
+                            | "filter_map"
+                            | "windows"
+                            | "chunks"
+                            | "chunks_exact"
+                            | "split_at"
                     )
                     || (types::standard(self.tcx, definition)
                         || self.tcx.crate_name(definition.krate).as_str() == "cadmpeg_core")
@@ -97,11 +136,14 @@ impl<'tcx> Analysis<'_, 'tcx> {
         &self,
         expression: &'tcx Expr<'tcx>,
         seen: &mut Vec<HirId>,
-    ) -> Option<Vec<String>> {
+    ) -> Option<Vec<ExtentTerm>> {
         if seen.contains(&expression.hir_id) {
             return None;
         }
         seen.push(expression.hir_id);
+        if let Some(count) = self.constant_count(expression, &mut Vec::new()) {
+            return Some(vec![ExtentTerm { factors: Vec::new(), coefficient: count }]);
+        }
         match expression.kind {
             ExprKind::AddrOf(_, _, inner) | ExprKind::DropTemps(inner) => {
                 return self.extent_terms(inner, seen)
@@ -119,8 +161,8 @@ impl<'tcx> Analysis<'_, 'tcx> {
             ExprKind::Binary(operator, left, right)
                 if operator.node == rustc_hir::BinOpKind::Add =>
             {
-                let mut terms = self.extent_terms(left, seen)?;
-                terms.extend(self.extent_terms(right, seen)?);
+                let mut terms = self.extent_terms(left, &mut seen.clone())?;
+                terms.extend(self.extent_terms(right, &mut seen.clone())?);
                 return Some(terms);
             }
             ExprKind::Match(scrutinee, _, MatchSource::TryDesugar(_)) => {
@@ -137,25 +179,40 @@ impl<'tcx> Analysis<'_, 'tcx> {
                 return operands
                     .first()
                     .and_then(|operand| self.key(operand, &mut Vec::new()))
-                    .map(|key| vec![key]);
+                    .map(|key| vec![ExtentTerm { factors: vec![key], coefficient: 1 }]);
             }
             if (name.as_str() == "u64_from_index" && self.tcx.crate_name(definition.krate).as_str() == "cadmpeg_core")
-                || (types::standard(self.tcx, definition) && matches!(name.as_str(), "ok_or" | "ok_or_else"))
+                || (types::standard(self.tcx, definition) && matches!(name.as_str(), "ok_or" | "ok_or_else" | "map_err" | "try_from" | "try_into"))
                 || (types::standard(self.tcx, definition) && name.as_str() == "from" && operands.first().is_some_and(|operand| matches!((self.expr_ty(operand).kind(), self.expr_ty(expression).kind()), (rustc_middle::ty::Uint(left), rustc_middle::ty::Uint(right)) if left.bit_width().or(Some(self.tcx.data_layout.pointer_size().bits())).zip(right.bit_width().or(Some(self.tcx.data_layout.pointer_size().bits()))).is_some_and(|(left, right)| left <= right)))) {
                 return operands
                     .first()
                     .and_then(|operand| self.extent_terms(operand, seen));
             }
-            if name.as_str() == "checked_add" {
-                let mut terms = self.extent_terms(operands.first()?, seen)?;
-                terms.extend(self.extent_terms(operands.get(1)?, seen)?);
+            if types::standard(self.tcx, definition) && name.as_str() == "checked_add" {
+                let mut terms = self.extent_terms(operands.first()?, &mut seen.clone())?;
+                terms.extend(self.extent_terms(operands.get(1)?, &mut seen.clone())?);
                 return Some(terms);
+            }
+            if types::standard(self.tcx, definition) && name.as_str() == "checked_mul" {
+                let left = self.extent_terms(operands.first()?, &mut seen.clone())?;
+                let right = self.extent_terms(operands.get(1)?, &mut seen.clone())?;
+                let mut product = Vec::new();
+                for left in left {
+                    for right in &right {
+                        let mut factors = left.factors.clone();
+                        factors.extend(right.factors.iter().cloned());
+                        factors.sort();
+                        product.push(ExtentTerm { factors,
+                            coefficient: left.coefficient.checked_mul(right.coefficient)? });
+                    }
+                }
+                return Some(product);
             }
         }
         if let Some(init) = self.initializer(expression) {
             return self.extent_terms(init, seen);
         }
-        self.key(expression, &mut Vec::new()).map(|key| vec![key])
+        self.key(expression, &mut Vec::new()).map(|key| vec![ExtentTerm { factors: vec![key], coefficient: 1 }])
     }
 
     pub(crate) fn propagated(&self, expression: &'tcx Expr<'tcx>) -> bool {
@@ -283,29 +340,41 @@ impl<'tcx> Analysis<'_, 'tcx> {
         }
     }
 
+    fn dominated_keys(&self, expression: &'tcx Expr<'tcx>, seen: &mut Vec<HirId>) -> Vec<String> {
+        if seen.contains(&expression.hir_id) { return Vec::new(); }
+        seen.push(expression.hir_id);
+        if let Some(init) = self.initializer(expression) {
+            return self.dominated_keys(init, seen);
+        }
+        if let Some((definition, operands)) = self.call(expression) {
+            if types::standard(self.tcx, definition) && self.tcx.item_name(definition).as_str() == "zip" {
+                return operands.iter().flat_map(|operand| self.dominated_keys(operand, &mut seen.clone())).collect();
+            }
+        }
+        self.key(expression, &mut Vec::new()).into_iter().collect()
+    }
+
     pub(crate) fn take_credit(&mut self, operands: &[&'tcx Expr<'tcx>]) -> Option<bool> {
-        let extents: Vec<_> = operands
-            .iter()
-            .filter_map(|operand| self.key(operand, &mut Vec::new()))
-            .collect();
-        if let Some(index) = self.flow.work.iter().position(|credit| {
-            !credit.opaque
-                && !extents.is_empty()
-                && credit.extents.iter().all(|term| extents.contains(term))
-        }) {
-            self.flow.work.remove(index);
-            return Some(true);
+        let keys: Vec<_> = operands.iter().flat_map(|operand|
+            self.dominated_keys(operand, &mut Vec::new())).collect();
+        for credit in &mut self.flow.work {
+            if credit.opaque { continue; }
+            if let Some(index) = credit.extents.iter().position(|term|
+                term.coefficient >= self.flow.iterations && term.factors.len() == 1
+                    && keys.contains(&term.factors[0])) {
+                credit.extents[index].coefficient -= self.flow.iterations;
+                credit.extents.retain(|term| term.coefficient != 0);
+                self.flow.work.retain(|credit| !credit.extents.is_empty() || credit.opaque);
+                return Some(true);
+            }
         }
-        if self.flow.work.iter().any(|credit| credit.opaque) {
-            return None;
-        }
-        Some(false)
+        if self.flow.work.iter().any(|credit| credit.opaque) { None } else { Some(false) }
     }
 
     pub(crate) fn invalidate_target(&mut self, expression: &'tcx Expr<'tcx>) {
         if let Some(key) = self.key(expression, &mut Vec::new()) {
             self.flow.work.retain(|credit| {
-                !credit.extents.iter().any(|term| {
+                !credit.extents.iter().flat_map(|term| &term.factors).any(|term| {
                     term == &key
                         || term.starts_with(&format!("{key}."))
                         || key.starts_with(&format!("{term}."))
