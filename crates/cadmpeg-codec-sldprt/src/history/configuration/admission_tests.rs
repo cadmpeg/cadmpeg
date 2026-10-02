@@ -850,20 +850,20 @@ fn profile_termination_operands() -> (
                     feature: owner,
                     local_id: "generated vertex".to_string().try_into().unwrap(),
                 },
-                "vertex native".into(),
-            )
+                "vertex native".into(), &cadmpeg_test_support::service_decode_context(),
+            ).expect("selection reference admission")
             .unwrap(),
         },
         LinearTermination::ToVertex {
             vertex: VertexSelection::historical(
                 state,
                 HistoricalVertexId::mint("synthetic:test:id#historical-vertex").unwrap(),
-                "historical vertex".into(),
-            )
+                "historical vertex".into(), &cadmpeg_test_support::service_decode_context(),
+            ).expect("selection reference admission")
             .unwrap(),
         },
         LinearTermination::ToVertex {
-            vertex: VertexSelection::native("native vertex".into()).unwrap(),
+            vertex: VertexSelection::native("native vertex".into(), &cadmpeg_test_support::service_decode_context(),).expect("selection reference admission").unwrap(),
         },
     ];
     (planar, terminations)

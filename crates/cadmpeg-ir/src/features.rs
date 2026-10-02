@@ -6332,33 +6332,21 @@ impl<'a, T> IntoIterator for &'a mut NonEmptyMembers<T> {
 }
 
 impl VertexSelection {
-    /// Admits a generated vertex and its native reference.
-    pub fn generated(
-        vertex: GeneratedVertexRef,
-        native: String,
-    ) -> Result<Self, BodySelectionError> {
-        Ok(Self::Generated {
-            vertex,
-            native: native.try_into()?,
-        })
+    /// Admit a generated vertex and its native reference.
+    pub fn generated(vertex: GeneratedVertexRef, native: String, ctx: &cadmpeg_core::decode::DecodeContext<'_>)
+        -> Result<Result<Self, BodySelectionError>, cadmpeg_core::decode::ResourceLimit> {
+        Ok(SelectionReference::new(native, ctx)?.map(|native| Self::Generated { vertex, native }))
     }
-
-    /// Admits a historical vertex and its native reference.
-    pub fn historical(
-        state: FeatureInputTopologyId,
-        vertex: HistoricalVertexId,
-        native: String,
-    ) -> Result<Self, BodySelectionError> {
-        Ok(Self::Historical {
-            state,
-            vertex,
-            native: NonBlankString::new(native).ok_or(BodySelectionError::BlankNativeMember)?,
-        })
+    /// Admit a historical vertex and its native reference.
+    pub fn historical(state: FeatureInputTopologyId, vertex: HistoricalVertexId, native: String, ctx: &cadmpeg_core::decode::DecodeContext<'_>)
+        -> Result<Result<Self, BodySelectionError>, cadmpeg_core::decode::ResourceLimit> {
+        ctx.charge_work_limit(cadmpeg_core::decode::u64_from_index(native.len()), "validate historical vertex native reference")?;
+        Ok(NonBlankString::new(native).ok_or(BodySelectionError::BlankNativeMember).map(|native| Self::Historical { state, vertex, native }))
     }
-
-    /// Admits a native vertex reference.
-    pub fn native(native: String) -> Result<Self, BodySelectionError> {
-        Ok(Self::Native(native.try_into()?))
+    /// Admit a native vertex reference.
+    pub fn native(native: String, ctx: &cadmpeg_core::decode::DecodeContext<'_>)
+        -> Result<Result<Self, BodySelectionError>, cadmpeg_core::decode::ResourceLimit> {
+        Ok(SelectionReference::new(native, ctx)?.map(Self::Native))
     }
 }
 
@@ -6437,15 +6425,11 @@ impl EdgeSelection {
     }
 
     /// Admits generated members and their native reference.
-    pub fn generated(
-        edges: Vec<GeneratedEdgeRef>,
-        native: String,
-    ) -> Result<Self, BodySelectionError> {
-        Ok(Self::Generated {
-            edges: edges.try_into()?,
-            native: native.try_into()?,
-        })
-    }
+    pub fn generated(edges: Vec<GeneratedEdgeRef>, native: String, ctx: &cadmpeg_core::decode::DecodeContext<'_>)
+    -> Result<Result<Self, BodySelectionError>, cadmpeg_core::decode::ResourceLimit> {
+    let edges = match edges.try_into() { Ok(members) => members, Err(error) => return Ok(Err(error)) };
+    Ok(SelectionReference::new(native, ctx)?.map(|native| Self::Generated { edges, native }))
+}
 }
 
 impl FaceSelection {
@@ -6523,44 +6507,34 @@ impl FaceSelection {
     }
 
     /// Admits generated members and their native reference.
-    pub fn generated(
-        faces: Vec<GeneratedFaceRef>,
-        native: String,
-    ) -> Result<Self, BodySelectionError> {
-        Ok(Self::Generated {
-            faces: faces.try_into()?,
-            native: native.try_into()?,
-        })
-    }
+    pub fn generated(faces: Vec<GeneratedFaceRef>, native: String, ctx: &cadmpeg_core::decode::DecodeContext<'_>)
+    -> Result<Result<Self, BodySelectionError>, cadmpeg_core::decode::ResourceLimit> {
+    let faces = match faces.try_into() { Ok(members) => members, Err(error) => return Ok(Err(error)) };
+    Ok(SelectionReference::new(native, ctx)?.map(|native| Self::Generated { faces, native }))
+}
 }
 
 impl GeneratedEdgeRef {
-    /// Admits a feature-local persistent identity.
-    pub fn new(feature: FeatureId, local_id: String) -> Result<Self, BodySelectionError> {
-        Ok(Self {
-            feature,
-            local_id: local_id.try_into()?,
-        })
+    /// Admit a feature-local persistent identity through the caller context.
+    pub fn new(feature: FeatureId, local_id: String, ctx: &cadmpeg_core::decode::DecodeContext<'_>)
+        -> Result<Result<Self, BodySelectionError>, cadmpeg_core::decode::ResourceLimit> {
+        Ok(SelectionReference::new(local_id, ctx)?.map(|local_id| Self { feature, local_id }))
     }
 }
 
 impl GeneratedFaceRef {
-    /// Admits a feature-local persistent identity.
-    pub fn new(feature: FeatureId, local_id: String) -> Result<Self, BodySelectionError> {
-        Ok(Self {
-            feature,
-            local_id: local_id.try_into()?,
-        })
+    /// Admit a feature-local persistent identity through the caller context.
+    pub fn new(feature: FeatureId, local_id: String, ctx: &cadmpeg_core::decode::DecodeContext<'_>)
+        -> Result<Result<Self, BodySelectionError>, cadmpeg_core::decode::ResourceLimit> {
+        Ok(SelectionReference::new(local_id, ctx)?.map(|local_id| Self { feature, local_id }))
     }
 }
 
 impl GeneratedVertexRef {
-    /// Admits a feature-local persistent identity.
-    pub fn new(feature: FeatureId, local_id: String) -> Result<Self, BodySelectionError> {
-        Ok(Self {
-            feature,
-            local_id: local_id.try_into()?,
-        })
+    /// Admit a feature-local persistent identity through the caller context.
+    pub fn new(feature: FeatureId, local_id: String, ctx: &cadmpeg_core::decode::DecodeContext<'_>)
+        -> Result<Result<Self, BodySelectionError>, cadmpeg_core::decode::ResourceLimit> {
+        Ok(SelectionReference::new(local_id, ctx)?.map(|local_id| Self { feature, local_id }))
     }
 }
 
@@ -6581,6 +6555,13 @@ impl TryFrom<String> for SelectionReference {
 }
 
 impl SelectionReference {
+    /// Admit validation of a persistent reference with the caller context.
+    pub fn new(value: String, ctx: &cadmpeg_core::decode::DecodeContext<'_>)
+        -> Result<Result<Self, BodySelectionError>, cadmpeg_core::decode::ResourceLimit> {
+        ctx.charge_work_limit(cadmpeg_core::decode::u64_from_index(value.len()), "validate persistent selection reference")?;
+        Ok(Self::try_from(value))
+    }
+
     /// The retained reference text.
     pub fn as_str(&self) -> &str {
         &self.0
@@ -7192,12 +7173,10 @@ pub struct GeneratedBodyRef {
 }
 
 impl GeneratedBodyRef {
-    /// A feature-local body identity with a nonblank local name.
-    pub fn new(feature: FeatureId, local_id: String) -> Result<Self, BodySelectionError> {
-        Ok(Self {
-            feature,
-            local_id: local_id.try_into()?,
-        })
+    /// Admit a feature-local persistent identity through the caller context.
+    pub fn new(feature: FeatureId, local_id: String, ctx: &cadmpeg_core::decode::DecodeContext<'_>)
+        -> Result<Result<Self, BodySelectionError>, cadmpeg_core::decode::ResourceLimit> {
+        Ok(SelectionReference::new(local_id, ctx)?.map(|local_id| Self { feature, local_id }))
     }
 }
 
@@ -9126,15 +9105,11 @@ impl PlanarProfileRef {
         }))
     }
     /// Admits generated profile curves and their native reference.
-    pub fn generated(
-        curves: Vec<GeneratedCurveRef>,
-        native: String,
-    ) -> Result<Self, BodySelectionError> {
-        Ok(Self::Generated {
-            curves: curves.try_into()?,
-            native: native.try_into()?,
-        })
-    }
+    pub fn generated(curves: Vec<GeneratedCurveRef>, native: String, ctx: &cadmpeg_core::decode::DecodeContext<'_>)
+    -> Result<Result<Self, BodySelectionError>, cadmpeg_core::decode::ResourceLimit> {
+    let curves = match curves.try_into() { Ok(members) => members, Err(error) => return Ok(Err(error)) };
+    Ok(SelectionReference::new(native, ctx)?.map(|native| Self::Generated { curves, native }))
+}
 }
 
 impl ProfileRef {
@@ -9249,12 +9224,10 @@ impl PathRef {
 }
 
 impl GeneratedCurveRef {
-    /// Admits a feature-local persistent curve identity.
-    pub fn new(feature: FeatureId, local_id: String) -> Result<Self, BodySelectionError> {
-        Ok(Self {
-            feature,
-            local_id: local_id.try_into()?,
-        })
+    /// Admit a feature-local persistent identity through the caller context.
+    pub fn new(feature: FeatureId, local_id: String, ctx: &cadmpeg_core::decode::DecodeContext<'_>)
+        -> Result<Result<Self, BodySelectionError>, cadmpeg_core::decode::ResourceLimit> {
+        Ok(SelectionReference::new(local_id, ctx)?.map(|local_id| Self { feature, local_id }))
     }
 }
 

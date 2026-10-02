@@ -134,8 +134,8 @@ pub(in super::super) fn feature_edge_selection(
         Ok(Some(
             EdgeSelection::generated(
                 edges,
-                ctx.copy_retained_text(&native, "creo generated edge selection native")?,
-            )
+                ctx.copy_retained_text(&native, "creo generated edge selection native")?, ctx,
+            )?
             .unwrap_or(EdgeSelection::Native(native)),
         ))
     } else {
@@ -199,7 +199,7 @@ pub(in super::super) fn generated_curve_edge_refs(
             format_args!("curve#{curve_id}"),
             "creo generated curve local IDs",
         )?;
-        let Some(edge) = GeneratedEdgeRef::new(feature, local_id).ok() else {
+        let Some(edge) = GeneratedEdgeRef::new(feature, local_id, ctx,)?.ok() else {
             return Ok(None);
         };
         ctx.reserve_vec(&mut generated, 1, "creo generated curve edge references")?;

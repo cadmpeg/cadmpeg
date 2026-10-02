@@ -1423,13 +1423,13 @@ pub(crate) fn project_surface_sweep_profiles(
                         ),
                         OPERATION,
                     )?;
-                    let Ok(curve) = GeneratedCurveRef::new(feature_id, local_id) else {
+                    let Ok(curve) = GeneratedCurveRef::new(feature_id, local_id, ctx,)? else {
                         continue;
                     };
                     let mut curves = Vec::new();
                     ctx.reserve_vec(&mut curves, 1, OPERATION)?;
                     curves.push(curve);
-                    let Ok(profile) = PlanarProfileRef::generated(curves, native) else {
+                    let Ok(profile) = PlanarProfileRef::generated(curves, native, ctx,)? else {
                         continue;
                     };
                     ctx.reserve_vec(&mut generated, 1, OPERATION)?;
@@ -1714,7 +1714,7 @@ pub(crate) fn project_compact_combine_paths(
             let owner = copy_termination_feature_id(ctx, id, OPERATION)?;
             let body_owner = copy_termination_feature_id(ctx, id, OPERATION)?;
             let local_id = component_local_ids(ctx, &components, OPERATION)?;
-            let Ok(body) = GeneratedBodyRef::new(body_owner, local_id) else {
+            let Ok(body) = GeneratedBodyRef::new(body_owner, local_id, ctx,)? else {
                 return Ok(None);
             };
             let mut bodies = Vec::new();

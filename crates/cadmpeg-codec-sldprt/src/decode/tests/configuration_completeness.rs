@@ -26,11 +26,11 @@ fn complete_parting_line_draft_does_not_require_an_outward_flag() {
     let faces = FaceSelection::generated(
         vec![cadmpeg_ir::features::GeneratedFaceRef::new(
             FeatureId::mint("synthetic:test:id#producer").expect("identity grammar"),
-            "1".into(),
-        )
+            "1".into(), &cadmpeg_test_support::service_decode_context(),
+        ).expect("selection reference admission")
         .unwrap()],
-        "native".into(),
-    )
+        "native".into(), &cadmpeg_test_support::service_decode_context(),
+    ).expect("selection reference admission")
     .unwrap();
     let mut ir = CadIr::empty();
     ir.model.features.push(Feature {
@@ -86,11 +86,11 @@ fn complete_parting_line_draft_does_not_require_an_outward_flag() {
             plane: FaceSelection::generated(
                 vec![cadmpeg_ir::features::GeneratedFaceRef::new(
                     FeatureId::mint("synthetic:test:id#producer").expect("identity grammar"),
-                    "2".into(),
-                )
+                    "2".into(), &cadmpeg_test_support::service_decode_context(),
+                ).expect("selection reference admission")
                 .unwrap()],
-                "native".into(),
-            )
+                "native".into(), &cadmpeg_test_support::service_decode_context(),
+            ).expect("selection reference admission")
             .unwrap(),
             pull: Some(cadmpeg_ir::features::DraftPull {
                 direction: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(
