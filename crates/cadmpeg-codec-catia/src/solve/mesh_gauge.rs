@@ -1281,6 +1281,22 @@ fn canonicalize_mesh_edge_row_gauges(
                     Ok(group) => group,
                     Err(error) => return Some(Err(error)),
                 };
+            if let Err(error) = ctx.charge_work(
+                u64_from_index(ordered.len()),
+                "catia_mesh_edge_gauge_ordered_key_bytes",
+            ) {
+                return Some(Err(error));
+            }
+            for &edge in &ordered {
+                if std::mem::size_of_val(&endpoint_keys[edge])
+                    .checked_add(std::mem::size_of_val(usage[edge].as_slice()))
+                    .is_none()
+                {
+                    return Some(Err(ctx.refuse_codec_limit(
+                        "catia_mesh_edge_gauge_ordered_sort", u64::MAX - 1, u64::MAX,
+                    )));
+                }
+            }
             if let Err(error) = ctx.sort_unstable_by(
                 &mut ordered,
                 |left, right| {
@@ -1289,7 +1305,8 @@ fn canonicalize_mesh_edge_row_gauges(
                         .then_with(|| usage[*left].cmp(&usage[*right]))
                         .then_with(|| left.cmp(right))
                 },
-                |item| usage[*item].len(),
+                |item| std::mem::size_of_val(&endpoint_keys[*item])
+                    + std::mem::size_of_val(usage[*item].as_slice()),
                 "catia_mesh_edge_gauge_ordered_sort",
             ) {
                 return Some(Err(error));
@@ -1342,6 +1359,58 @@ fn canonicalize_mesh_edge_row_gauges(
         Some(Ok(topology))
     })()
     .transpose()
+}
+
+#[test]
+fn mesh_edge_gauge_ordered_sort_refuses_usage_tuple_bytes() {
+    use crate::families::standard::topology::{BoundaryDraft, FaceTopologyDraft};
+    let topology = StandardTopologyDraft {
+        faces: vec![FaceTopologyDraft {
+            boundaries: vec![BoundaryDraft {
+                coedges: NonEmptyMembers::<CoedgeUse>::try_from(vec![
+                    CoedgeUse {
+                        edge_row: 0,
+                        reversed: false,
+                        start_vertex: 0,
+                        end_vertex: 1,
+                    },
+                    CoedgeUse {
+                        edge_row: 1,
+                        reversed: false,
+                        start_vertex: 1,
+                        end_vertex: 0,
+                    },
+                ])
+                .expect("two coedges are nonempty"),
+            }],
+        }],
+        edge_rows: vec![
+            EdgeRow::new(1, vec![0, 1], EdgeBoundaryLayout::CompleteBoundaryRun)
+                .expect("admitted edge row"),
+            EdgeRow::new(1, vec![1, 0], EdgeBoundaryLayout::CompleteBoundaryRun)
+                .expect("admitted edge row"),
+        ],
+        vertex_points: vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]],
+        logical_vertex_count: 2,
+    };
+    let edge_faces = [];
+    let edge_geometry = [MeshEdgeGeometry::Line; 2];
+    let edge_candidates = [vec![[0, 1]], vec![[0, 1]]];
+    let edge_identity_evidence = [false; 2];
+    let gauge = MeshCandidateGauge {
+        edge_rows: &topology.edge_rows,
+        edge_faces: &edge_faces,
+        edge_geometry: &edge_geometry,
+        edge_candidates: &edge_candidates,
+        edge_identity_evidence: &edge_identity_evidence,
+        coordinate_gauge: None,
+    };
+    let result = crate::test_support::with_work_limit(5_000, |ctx| {
+        canonicalize_mesh_edge_row_gauges(ctx, topology.clone(), gauge, None)
+    });
+    assert!(matches!(result, Err(CodecError::ResourceLimit(limit))
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+            && limit.operation == "catia_mesh_edge_gauge_ordered_sort"));
 }
 
 #[test]
