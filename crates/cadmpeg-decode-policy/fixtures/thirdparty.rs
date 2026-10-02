@@ -10,3 +10,12 @@ pub fn access(node: roxmltree::Node<'_, '_>, name: &str, value: &serde_json::Val
     let _text = value.as_str();
     let _field = value.get(name); // finding: uncharged_decode_work
 }
+
+pub fn constructors(text: &str, bytes: &[u8]) {
+    let _text_reader = serde_json::Deserializer::from_str(text);
+    let _byte_reader = serde_json::Deserializer::from_slice(bytes);
+}
+
+pub fn parse_bytes(bytes: &[u8]) {
+    let _json = serde_json::from_slice::<serde_json::Value>(bytes); // finding: uncharged_decode_allocation, uncharged_decode_work
+}

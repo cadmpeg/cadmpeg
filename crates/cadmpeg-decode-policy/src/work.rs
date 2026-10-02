@@ -117,7 +117,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
             return;
         }
         if name == "from_elem" && operands.first().is_some_and(|operand| matches!(self.expr_ty(operand).kind(), rustc_middle::ty::Tuple(fields) if fields.is_empty())) { return; }
-        if matches!(name, "from_elem" | "repeat") {
+        if summary.work == external::Work::Repeat {
             let count = operands.get(1);
             let fixed_count = count.is_some_and(|count| self.constant(count, &mut Vec::new()));
             let shape = if count.is_some_and(|count| self.zero_extent(count)) {
