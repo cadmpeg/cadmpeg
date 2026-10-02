@@ -46,20 +46,15 @@ pub trait ArenaEntity: private::Sealed + EntitySchema + Sized {
 }
 
 /// Registry-complete arena lengths captured at a model transaction boundary.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug)]
 pub struct ModelCheckpoint {
     lengths: [usize; EntityKind::ALL.len()],
     feature_parents: crate::document::FeatureRegenerationParents,
 }
 
 impl ModelCheckpoint {
-    /// Captures every neutral arena length.
-    pub fn capture(model: &Model) -> Self {
-        Self::with_parents(model, model.feature_regeneration_parents.clone())
-    }
-
     /// Capture a decoded model with a live reservation for the copied parent table.
-    pub fn capture_for_decode<'ctx>(
+    pub fn capture<'ctx>(
         model: &Model,
         ctx: &'ctx DecodeContext<'_>,
     ) -> Result<(Self, ScopedReservation<'ctx>), CodecError> {
@@ -105,12 +100,8 @@ impl ModelCheckpoint {
     /// This is an append-only checkpoint, not a snapshot of existing entities.
     /// Between capture and discard, callers must not remove, reorder, or modify
     /// entities that preceded the checkpoint.
-    pub fn discard_appended(&self, model: &mut Model) {
-        self.restore(model, self.feature_parents.clone());
-    }
-
-    /// Restore decoded parent relations after admitting their owned copies.
-    pub fn discard_appended_for_decode(
+    /// Parent-table copies and arena truncation use the caller's context.
+    pub fn discard_appended(
         &self,
         model: &mut Model,
         ctx: &DecodeContext<'_>,
@@ -118,8 +109,22 @@ impl ModelCheckpoint {
         let parents = self
             .feature_parents
             .try_clone_for_decode(ctx, "model checkpoint restored parents")?;
+        macro_rules! admit_truncation {
+            ($($field:ident: $ty:ty, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?;)*) => {$(
+                let removed = model.$field.len().checked_sub(self.length::<$ty>()).ok_or_else(|| CodecError::malformed("checkpoint cannot restore removed entities"))?;
+                ctx.charge_work(u64_from_index(removed), "discard checkpoint appends")?;
+            )*};
+        }
+        crate::document::arena_registry!(admit_truncation);
         self.restore(model, parents);
         Ok(())
+    }
+
+    /// Compare captured state after admitting the parent-table comparisons.
+    pub fn same_state(&self, other: &Self, ctx: &DecodeContext<'_>) -> Result<bool, CodecError> {
+        ctx.charge_work(u64_from_index(self.lengths.len()), "compare model checkpoint lengths")?;
+        if self.lengths != other.lengths { return Ok(false); }
+        self.feature_parents.equivalent(&other.feature_parents, ctx)
     }
 
     fn restore(&self, model: &mut Model, parents: crate::document::FeatureRegenerationParents) {
@@ -382,11 +387,11 @@ impl<A> ModelDraft<A> {
         contains: impl Fn(&str) -> Result<bool, CodecError>,
         ctx: &DecodeContext<'_>,
     ) -> Result<Result<(), DraftError>, CodecError> {
-        let (identity_index, _storage) = ctx
+        let indexed = ctx
             .with_scoped_storage("draft identity storage", || {
                 index_model_identities(&self.model, ctx)
             })?;
-        let identity_index = match identity_index {
+        let identity_index = match &indexed.0 {
             Ok(index) => index,
             Err(identity) => {
                 return Ok(Err(DraftError::IdentityCollision(
@@ -415,7 +420,7 @@ impl<A> ModelDraft<A> {
                         if missing.is_some() {
                             return Ok(());
                         }
-                        if !contains(target)? && !identity_index_contains(&self.model, &identity_index, target, ctx)? {
+                        if !contains(target)? && !identity_index_contains(&self.model, identity_index, target, ctx)? {
                             missing = Some(ctx.copy_retained_text(target, "draft missing reference")?);
                         }
                         Ok(())
@@ -749,6 +754,7 @@ impl CommitState<'_> {
 #[cfg(test)]
 mod tests {
     mod accounting;
+    mod checkpoints;
     mod feature_parents;
     mod native_identity_slots;
 
@@ -890,7 +896,9 @@ mod tests {
         let mut model = crate::document::Model::default();
         model.points.push(point("test:checkpoint:point#existing"));
         let original = model.clone();
-        let checkpoint = ModelCheckpoint::capture(&model);
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+        let checkpoint = ModelCheckpoint::capture(&model, &ctx).unwrap();
         model.assets.push(Asset {
             id: "test:checkpoint:asset#new".try_into().unwrap(),
             name: None,
@@ -923,7 +931,7 @@ mod tests {
                 "test:checkpoint:feature#parent".try_into().unwrap(),
             )
             .unwrap();
-        checkpoint.discard_appended(&mut model);
+        checkpoint.0.discard_appended(&mut model, &ctx).unwrap();
         assert_eq!(model, original);
     }
 
