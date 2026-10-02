@@ -2501,7 +2501,7 @@ fn try_decode_brep(
         // Keep only the selected source's bridge sequence namespace. Alternate
         // configuration sites are qualified into the model but do not own the
         // active SWIFT CadIdentifier lane.
-        merge_brep(&mut decoded, alternate)?;
+        merge_brep(ctx, &mut decoded, alternate)?;
     }
     let report = build_geometry_report(
         ctx,
@@ -2576,41 +2576,41 @@ fn bind_opaque_geometry(
     Ok(())
 }
 
-fn append_brep_arena<T>(target: &mut Vec<T>, source: &mut Vec<T>) -> Result<(), CodecError> {
-    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
-        target,
-        source.len(),
-        "merge SLDPRT B-rep arena",
-    )?;
+fn append_brep_arena<T>(ctx: &DecodeContext<'_>, target: &mut Vec<T>, source: &mut Vec<T>) -> Result<(), CodecError> {
+    let work = source.len().checked_mul(std::mem::size_of::<T>())
+        .ok_or_else(|| ctx.refuse_codec_limit("merge SLDPRT B-rep arena moves", u64::MAX - 1, u64::MAX))?;
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(work), "merge SLDPRT B-rep arena moves")?;
+    ctx.reserve_retained_vec(target, source.len(), "merge SLDPRT B-rep arena")?;
     target.append(source);
     Ok(())
 }
 
-fn merge_brep(target: &mut Brep, mut source: Brep) -> Result<(), CodecError> {
+fn merge_brep(ctx: &DecodeContext<'_>, target: &mut Brep, mut source: Brep) -> Result<(), CodecError> {
     // Sequence links are source-local and belong only to the selected SWIFT
     // source. Alternate configuration sequences must not enter its namespace.
-    target.annotations.append(source.annotations)?;
-    append_brep_arena(&mut target.bodies, &mut source.bodies)?;
-    append_brep_arena(&mut target.regions, &mut source.regions)?;
-    append_brep_arena(&mut target.shells, &mut source.shells)?;
-    append_brep_arena(&mut target.faces, &mut source.faces)?;
-    append_brep_arena(&mut target.loops, &mut source.loops)?;
-    append_brep_arena(&mut target.coedges, &mut source.coedges)?;
-    append_brep_arena(&mut target.edges, &mut source.edges)?;
-    append_brep_arena(&mut target.vertices, &mut source.vertices)?;
-    append_brep_arena(&mut target.points, &mut source.points)?;
-    append_brep_arena(&mut target.surfaces, &mut source.surfaces)?;
+    target.annotations.append(ctx, source.annotations, "merge SLDPRT annotation identities")?.map_err(CodecError::from)?;
+    append_brep_arena(ctx, &mut target.bodies, &mut source.bodies)?;
+    append_brep_arena(ctx, &mut target.regions, &mut source.regions)?;
+    append_brep_arena(ctx, &mut target.shells, &mut source.shells)?;
+    append_brep_arena(ctx, &mut target.faces, &mut source.faces)?;
+    append_brep_arena(ctx, &mut target.loops, &mut source.loops)?;
+    append_brep_arena(ctx, &mut target.coedges, &mut source.coedges)?;
+    append_brep_arena(ctx, &mut target.edges, &mut source.edges)?;
+    append_brep_arena(ctx, &mut target.vertices, &mut source.vertices)?;
+    append_brep_arena(ctx, &mut target.points, &mut source.points)?;
+    append_brep_arena(ctx, &mut target.surfaces, &mut source.surfaces)?;
     append_brep_arena(
+        ctx,
         &mut target.procedural_surfaces,
         &mut source.procedural_surfaces,
     )?;
-    append_brep_arena(&mut target.curves, &mut source.curves)?;
-    append_brep_arena(&mut target.pcurves, &mut source.pcurves)?;
-    append_brep_arena(&mut target.unknowns, &mut source.unknowns)?;
-    append_brep_arena(&mut target.face_colors, &mut source.face_colors)?;
-    append_brep_arena(&mut target.face_atoms, &mut source.face_atoms)?;
-    append_brep_arena(&mut target.body_modifiers, &mut source.body_modifiers)?;
-    append_brep_arena(&mut target.losses, &mut source.losses)?;
+    append_brep_arena(ctx, &mut target.curves, &mut source.curves)?;
+    append_brep_arena(ctx, &mut target.pcurves, &mut source.pcurves)?;
+    append_brep_arena(ctx, &mut target.unknowns, &mut source.unknowns)?;
+    append_brep_arena(ctx, &mut target.face_colors, &mut source.face_colors)?;
+    append_brep_arena(ctx, &mut target.face_atoms, &mut source.face_atoms)?;
+    append_brep_arena(ctx, &mut target.body_modifiers, &mut source.body_modifiers)?;
+    append_brep_arena(ctx, &mut target.losses, &mut source.losses)?;
     target.stats.unknown_surface_faces += source.stats.unknown_surface_faces;
     target.stats.unknown_procedural_supports += source.stats.unknown_procedural_supports;
     target.stats.unknown_curve_edges += source.stats.unknown_curve_edges;

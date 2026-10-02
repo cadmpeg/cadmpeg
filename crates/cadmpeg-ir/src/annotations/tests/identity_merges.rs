@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-use crate::annotations::{AnnotationBuilder, AnnotationIdentityError, StreamHandle};
+use crate::annotations::{AnnotationBuilder, AnnotationIdentityCollision, StreamHandle};
 use crate::provenance::Exactness;
 
 #[test]
@@ -12,11 +12,13 @@ fn remapping_refuses_collisions_across_tables_without_mutation() {
     builder.exactness("test:model:point#exactness", Exactness::Inferred);
     let mut annotations = builder.build();
     let before = annotations.clone();
+    let ctx = cadmpeg_test_support::service_decode_context();
     let error = annotations
-        .map_ids(|_| "test:model:point#merged".into())
+        .map_ids(&ctx, |_| ctx.copy_retained_text("test:model:point#merged", "test remapped identity"), "remap annotation identities")
+        .unwrap()
         .unwrap_err();
     assert!(
-        matches!(error, AnnotationIdentityError::Collision(error) if error.id == "test:model:point#merged")
+        matches!(error, AnnotationIdentityCollision { id } if id == "test:model:point#merged")
     );
     assert_eq!(annotations, before);
 }
@@ -31,11 +33,13 @@ fn remapping_calls_once_per_identity_and_preserves_each_annotation() {
     let mut annotations = builder.build();
     let before = annotations.clone();
     let mut calls = Vec::new();
+    let ctx = cadmpeg_test_support::service_decode_context();
     annotations
-        .map_ids(|id| {
+        .map_ids(&ctx, |id| {
             calls.push(id.to_owned());
-            format!("{id}-mapped")
-        })
+            ctx.format_retained(format_args!("{id}-mapped"), "test remapped identity")
+        }, "remap annotation identities")
+        .unwrap()
         .unwrap();
     assert_eq!(calls, ["test:model:point#a", "test:model:point#b"]);
     for (id, note) in &before.provenance {
@@ -69,9 +73,9 @@ fn appending_refuses_shared_identities_in_either_table_without_mutation() {
             (left.build(), right.build())
         };
         let before = target.clone();
-        let error = target.append(incoming).unwrap_err();
+        let error = target.append(&cadmpeg_test_support::service_decode_context(), incoming, "append annotation identities").unwrap().unwrap_err();
         assert!(
-            matches!(error, AnnotationIdentityError::Collision(error) if error.id == "test:model:point#shared")
+            matches!(error, AnnotationIdentityCollision { id } if id == "test:model:point#shared")
         );
         assert_eq!(target, before);
     }
@@ -88,7 +92,7 @@ fn appending_disjoint_annotations_preserves_both_tables() {
     let mut target = left.build();
     let incoming = right.build();
     let original = target.clone();
-    target.append(incoming.clone()).unwrap();
+    target.append(&cadmpeg_test_support::service_decode_context(), incoming.clone(), "append annotation identities").unwrap().unwrap();
     assert_eq!(target.provenance.len(), 2);
     assert_eq!(target.exactness(), incoming.exactness());
     for (id, note) in original.provenance.iter().chain(&incoming.provenance) {
@@ -110,7 +114,7 @@ fn charged_remapping_preserves_collision_text_and_tables() {
         cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let error = cadmpeg_core::CodecError::from(
         annotations
-            .map_ids_for_decode(&ctx, |_| Ok("merged".into()), "test_annotation_remap")
+            .map_ids(&ctx, |_| Ok("merged".into()), "test_annotation_remap")
             .unwrap()
             .unwrap_err(),
     );
@@ -119,4 +123,19 @@ fn charged_remapping_preserves_collision_text_and_tables() {
         if message == "annotation identity collision at merged")
     );
     assert_eq!(annotations, before);
+}
+
+#[test]
+fn empty_annotation_append_returns_an_existing_session_refusal() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    use cadmpeg_core::CodecError;
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let CodecError::ResourceLimit(first) = ctx.charge_work(1, "existing annotation refusal").unwrap_err() else { panic!("work must refuse"); };
+    let mut annotations = crate::annotations::Annotations::default();
+    assert!(matches!(annotations.append(&ctx, Default::default(), "empty annotation append"), Err(CodecError::ResourceLimit(original)) if original == first));
+    assert_eq!(annotations, Default::default());
+    assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(original)) if original == first));
 }

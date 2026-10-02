@@ -83,36 +83,6 @@ impl From<AnnotationIdentityCollision> for cadmpeg_core::CodecError {
     }
 }
 
-/// Failure to admit annotation identity changes.
-#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-pub enum AnnotationIdentityError {
-    /// Two identities would name one annotation.
-    #[error("{0}")]
-    Collision(AnnotationIdentityCollision),
-    /// The budget or allocator refused admission.
-    #[error("decode resource limit: {0:?}")]
-    Resource(ResourceLimit),
-    /// The remapping callback refused an identity.
-    #[error("{0}")]
-    Callback(String),
-}
-
-impl From<ResourceLimit> for AnnotationIdentityError {
-    fn from(limit: ResourceLimit) -> Self {
-        Self::Resource(limit)
-    }
-}
-
-impl From<AnnotationIdentityError> for CodecError {
-    fn from(error: AnnotationIdentityError) -> Self {
-        match error {
-            AnnotationIdentityError::Collision(error) => error.into(),
-            AnnotationIdentityError::Resource(limit) => limit.into(),
-            AnnotationIdentityError::Callback(message) => Self::Malformed(message),
-        }
-    }
-}
-
 /// Failure to admit field exactness.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
 pub enum AnnotationFieldError {
@@ -961,6 +931,30 @@ fn admit_identity_work(
     ctx.charge_work(work, operation)
 }
 
+/// Admit rebuilding two disjoint nonempty maps before their entries move.
+pub(crate) fn admit_btree_append<K: Ord, V>(
+    ctx: &DecodeContext<'_>,
+    left: &BTreeMap<K, V>,
+    right: &BTreeMap<K, V>,
+    key_len: impl Fn(&K) -> usize,
+    operation: &'static str,
+) -> Result<(), CodecError> {
+    if left.is_empty() || right.is_empty() { return Ok(()); }
+    let mut longest = 0;
+    for key in left.keys().chain(right.keys()) {
+        ctx.charge_work(1, operation)?;
+        longest = longest.max(key_len(key));
+        ctx.admit_retained_btree_record::<K, V>(0, operation)?;
+    }
+    let work = left.len().checked_add(right.len())
+        .and_then(|count| longest.checked_add(1)
+            .and_then(|bytes| bytes.checked_mul(3))
+            .and_then(|bytes| bytes.checked_add(std::mem::size_of::<(K, V)>()))
+            .and_then(|bytes| count.checked_mul(bytes)))
+        .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
+    ctx.charge_work(u64_from_index(work), operation)
+}
+
 impl Annotations {
     /// Copy annotation tables while holding their temporary storage reservation.
     pub fn copy_transaction<'ctx>(
@@ -1005,27 +999,11 @@ impl Annotations {
         Ok(AnnotationTransaction { annotations, storage })
     }
 
-    /// Remap both tables together. A collision leaves both tables unchanged.
-    /// The callback runs once for each distinct source identity.
-    pub fn map_ids(
-        &mut self,
-        mut map: impl FnMut(&str) -> String,
-    ) -> Result<(), AnnotationIdentityError> {
-        let arena = DecodeArena::new();
-        let policy = DecodePolicy::default();
-        let (ctx, _) = DecodeContext::from_root_bytes_limit(&[], &arena, &policy)?;
-        match self.map_ids_for_decode(&ctx, |id| Ok(map(id)), "remap annotation identities") {
-            Ok(result) => result.map_err(AnnotationIdentityError::Collision),
-            Err(CodecError::ResourceLimit(limit)) => Err(limit.into()),
-            Err(error) => Err(AnnotationIdentityError::Callback(error.to_string())),
-        }
-    }
-
     /// Remap both tables while charging temporary indices and retained keys.
     /// The callback returns each target identity with its retained bytes
     /// already charged; a target stored in both tables is copied and charged
     /// once more. A collision leaves both tables unchanged.
-    pub fn map_ids_for_decode(
+    pub fn map_ids(
         &mut self,
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         mut map: impl FnMut(&str) -> Result<String, cadmpeg_core::CodecError>,
@@ -1102,26 +1080,14 @@ impl Annotations {
             .len()
     }
 
-    /// Append annotations with disjoint identities without a decode context.
-    /// A collision leaves this annotation set unchanged.
-    pub fn append(&mut self, other: Self) -> Result<(), AnnotationIdentityError> {
-        let arena = DecodeArena::new();
-        let policy = DecodePolicy::default();
-        let (ctx, _) = DecodeContext::from_root_bytes_limit(&[], &arena, &policy)?;
-        match self.append_for_decode(&ctx, other, "append annotation identities") {
-            Ok(result) => result.map_err(AnnotationIdentityError::Collision),
-            Err(CodecError::ResourceLimit(limit)) => Err(limit.into()),
-            Err(error) => Err(AnnotationIdentityError::Callback(error.to_string())),
-        }
-    }
-
     /// Append disjoint tables after charging their destination nodes.
-    pub fn append_for_decode(
+    pub fn append(
         &mut self,
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         mut other: Self,
         operation: &'static str,
     ) -> Result<Result<(), AnnotationIdentityCollision>, cadmpeg_core::CodecError> {
+        ctx.charge_work(0, operation)?;
         for id in other.provenance.keys().chain(other.exactness.keys()) {
             admit_identity_work(ctx, self.provenance.len(), id.len(), operation)?;
             admit_identity_work(ctx, self.exactness.len(), id.len(), operation)?;
@@ -1131,16 +1097,8 @@ impl Annotations {
                 }));
             }
         }
-        if !self.provenance.is_empty() && !other.provenance.is_empty() {
-            for _entry in self.provenance.iter().chain(other.provenance.iter()) {
-                ctx.admit_retained_btree_record::<String, AnnotationProvenance>(0, operation)?;
-            }
-        }
-        if !self.exactness.is_empty() && !other.exactness.is_empty() {
-            for _entry in self.exactness.iter().chain(other.exactness.iter()) {
-                ctx.admit_retained_btree_record::<String, ExactnessNote>(0, operation)?;
-            }
-        }
+        admit_btree_append(ctx, &self.provenance, &other.provenance, String::len, operation)?;
+        admit_btree_append(ctx, &self.exactness, &other.exactness, String::len, operation)?;
         self.provenance.append(&mut other.provenance);
         self.exactness.append(&mut other.exactness);
         Ok(Ok(()))
@@ -1255,7 +1213,7 @@ mod tests {
             policy.limits.max_retained_bytes = retained_limit;
             let (ctx, _) =
                 DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-            let outcome = annotations.map_ids_for_decode(
+            let outcome = annotations.map_ids(
                 &ctx,
                 |_| ctx.copy_retained_text(MAPPED, "test_annotation_target"),
                 "test_annotation_remap",
@@ -1289,7 +1247,7 @@ mod tests {
             policy.limits.max_collection_items = limit;
             let (ctx, _) =
                 DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-            let result = target.append_for_decode(&ctx, builder.build(), "test_annotation_append");
+            let result = target.append(&ctx, builder.build(), "test_annotation_append");
             (result, target)
         };
         let (result, target) = run(0);
@@ -1314,7 +1272,7 @@ mod tests {
         policy.limits.max_collection_items = 1;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let error = target
-            .append_for_decode(&ctx, source.build(), "append nonempty annotation maps")
+            .append(&ctx, source.build(), "append nonempty annotation maps")
             .unwrap_err();
         assert!(
             matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::CollectionItems)
