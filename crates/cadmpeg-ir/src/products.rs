@@ -272,7 +272,7 @@ pub enum LinkMember {
 }
 
 /// `FreeCAD` `App::Link`-specific occurrence state.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[cfg_attr(feature = "schema", schemars(with = "LinkStateWire"))]
 #[serde(try_from = "LinkStateWire", into = "LinkStateWire")]
@@ -335,35 +335,6 @@ impl TryFrom<LinkStateWire> for LinkState {
             }
         }
         Ok(state)
-    }
-}
-
-impl From<LinkState> for LinkStateWire {
-    fn from(state: LinkState) -> Self {
-        Self {
-            members: state
-                .linked_subelements
-                .into_iter()
-                .map(|subelement| LinkMember::LinkedSubelement { subelement })
-                .chain(
-                    state
-                        .element_component
-                        .map(|component| LinkMember::ElementComponent { component }),
-                )
-                .chain(
-                    state
-                        .claim_child
-                        .map(|claim| LinkMember::ClaimChild { claim }),
-                )
-                .chain(
-                    state
-                        .copy_on_change
-                        .map(|copy_on_change| LinkMember::CopyOnChange {
-                            state: copy_on_change,
-                        }),
-                )
-                .collect(),
-        }
     }
 }
 
@@ -1644,3 +1615,5 @@ cadmpeg_core::named_optional_field!(deserialize_distance, FiniteReal, "distance"
 cadmpeg_core::named_optional_field!(deserialize_distance2, FiniteReal, "distance2");
 
 mod identity_rewrite;
+
+mod serialization;

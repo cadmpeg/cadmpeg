@@ -247,7 +247,7 @@ pub struct DatumReference {
 }
 
 /// Ordered datum references with consistent precedence compartments.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(try_from = "Vec<DatumReference>", into = "Vec<DatumReference>")]
 pub struct DatumReferences(Vec<DatumReference>);
@@ -345,7 +345,7 @@ pub enum DimensionTolerance {
 }
 
 /// One admitted dimensional characteristic and its compatible quantities.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(try_from = "PmiDimensionWire", into = "PmiDimensionWire")]
 pub struct PmiDimension {
     kind: DimensionKind,
@@ -490,16 +490,6 @@ impl PmiDimension {
         };
         self.tolerance = Some(merged);
         Ok(true)
-    }
-}
-
-impl From<PmiDimension> for PmiDimensionWire {
-    fn from(value: PmiDimension) -> Self {
-        Self {
-            dimension: value.kind,
-            nominal: value.nominal,
-            tolerance: value.tolerance,
-        }
     }
 }
 
@@ -1171,3 +1161,5 @@ cadmpeg_core::named_optional_field!(deserialize_name, String, "name");
 cadmpeg_core::named_optional_field!(deserialize_visible, bool, "visible");
 
 mod identity_rewrite;
+
+mod serialization;

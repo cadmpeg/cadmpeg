@@ -897,7 +897,7 @@ struct TessellationChannelWire {
 }
 
 /// One indexed triangle mesh decoded from a source display or facet stream.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(try_from = "TessellationWire", into = "TessellationWire")]
 pub struct Tessellation {
     /// Stable source-derived identifier.
@@ -955,7 +955,7 @@ pub struct TessellationTextureAssignment {
 }
 
 /// One descriptor from the source tessellation table.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(try_from = "TessellationChannelWire", into = "TessellationChannelWire")]
 pub struct TessellationChannel {
     addressing: ChannelAddressing,
@@ -1488,6 +1488,7 @@ impl TessellationChannel {
     }
 }
 
+#[cfg(test)]
 impl From<Tessellation> for TessellationWire {
     fn from(tessellation: Tessellation) -> Self {
         Self {
@@ -1519,18 +1520,6 @@ impl TryFrom<TessellationWire> for Tessellation {
         mesh = mesh.with_feature_edges(wire.feature_edges)?;
         mesh = mesh.with_triangle_groups(wire.triangle_groups)?;
         mesh.with_texture_assignments(wire.texture_assignments)
-    }
-}
-
-impl From<TessellationChannel> for TessellationChannelWire {
-    fn from(channel: TessellationChannel) -> Self {
-        Self {
-            addressing: channel.addressing,
-            item_size: channel.item_size,
-            kind: channel.kind,
-            flags: channel.flags,
-            data: channel.data,
-        }
     }
 }
 
@@ -1592,3 +1581,5 @@ cadmpeg_core::named_optional_field!(
 cadmpeg_core::named_optional_field!(deserialize_source_id, String, "source_id");
 
 mod identity_rewrite;
+
+mod serialization;

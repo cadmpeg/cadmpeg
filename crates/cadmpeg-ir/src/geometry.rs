@@ -1024,21 +1024,6 @@ impl TryFrom<CompoundCurveConstructionWire> for CompoundCurveConstruction {
     }
 }
 
-impl Serialize for CompoundCurveConstruction {
-    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        CompoundCurveConstructionWire {
-            parameters: FiniteReal::raw_lane(&self.parameters),
-            components: self
-                .components
-                .iter()
-                .map(CompoundComponent::to_raw)
-                .collect(),
-            cache: self.cache,
-        }
-        .serialize(serializer)
-    }
-}
-
 impl CompoundCurveConstruction {
     /// Admit at least one component and finite leading and component parameters.
     pub fn try_new(
@@ -3129,7 +3114,7 @@ impl TSplineSubtransform {
 }
 
 /// Complete native `t_spl_sur` wrapper.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(
     try_from = "TSplineSurfaceConstructionWire",
@@ -3252,22 +3237,6 @@ struct TSplineSurfaceConstructionWire {
     /// scope, and the trailing integer.
     #[serde(default, skip_serializing_if = "CacheContract::is_bare_legacy")]
     cache: CacheContract<RevisionSurfaceForm>,
-}
-
-impl From<TSplineSurfaceConstruction> for TSplineSurfaceConstructionWire {
-    fn from(construction: TSplineSurfaceConstruction) -> Self {
-        Self {
-            parameter_ranges: construction
-                .parameter_ranges()
-                .map(crate::topology::ParameterInterval::endpoints),
-            type_code: construction.type_code,
-            subtransform: construction.subtransform,
-            trailing_value: construction.trailing_value,
-            discontinuities: FiniteReal::raw_lanes(&construction.discontinuities),
-            discontinuity_flag: construction.discontinuity_flag,
-            cache: construction.cache.view_form(RevisionSurfaceForm::to_raw),
-        }
-    }
 }
 
 impl TryFrom<TSplineSurfaceConstructionWire> for TSplineSurfaceConstruction {
@@ -8643,3 +8612,5 @@ cadmpeg_core::named_optional_field!(deserialize_native_kind, String, "native_kin
 cadmpeg_core::named_optional_field!(deserialize_record_bounds, RecordBounds, "record_bounds");
 
 mod identity_rewrite;
+
+mod serialization;
