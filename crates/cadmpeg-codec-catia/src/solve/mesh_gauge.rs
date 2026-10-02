@@ -59,45 +59,77 @@ fn canonicalize_topology_boundary_gauges(
         })
     }
 
-    fn rotate_to_minimum(coedges: &mut NonEmptyMembers<CoedgeUse>) {
+    fn rotate_to_minimum(
+        ctx: &DecodeContext<'_>,
+        coedges: &mut NonEmptyMembers<CoedgeUse>,
+        operation: &'static str,
+    ) -> Result<(), CodecError> {
         let len = coedges.len();
         let cycle = coedges.as_slice();
+        let comparison_work = u64_from_index(std::mem::size_of_val(cycle))
+            .checked_mul(2)
+            .and_then(|work| work.checked_add(1))
+            .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
         let key = |start: usize| {
-            (0..len).map(move |offset| {
-                let coedge = cycle[(start + offset) % len];
-                (
-                    coedge.edge_row,
-                    coedge.reversed,
-                    coedge.start_vertex,
-                    coedge.end_vertex,
-                )
-            })
+            signature(cycle)
+                .skip(start)
+                .chain(signature(cycle).take(start))
         };
-        let best = (1..len).fold(0, |best, start| {
+        let mut best = 0;
+        for start in 1..len {
+            ctx.charge_work(comparison_work, operation)?;
             if key(start).lt(key(best)) {
-                start
-            } else {
-                best
+                best = start;
             }
-        });
-        coedges.rotate_left(best);
+        }
+        if best != 0 {
+            ctx.charge_work(u64_from_index(len), "catia_mesh_gauge_cycle_rotation")?;
+            coedges.rotate_left(best);
+        }
+        Ok(())
     }
 
+    ctx.charge_work(u64_from_index(topology.faces.len()), "catia_mesh_gauge_faces")?;
     for face in &mut topology.faces {
+        ctx.charge_work(
+            u64_from_index(face.boundaries.len()),
+            "catia_mesh_gauge_boundaries",
+        )?;
         for boundary in &mut face.boundaries {
-            rotate_to_minimum(&mut boundary.coedges);
+            rotate_to_minimum(
+                ctx,
+                &mut boundary.coedges,
+                "catia_mesh_gauge_forward_cycle_compare",
+            )?;
             let reversed = ctx.copy_retained_slice(
                 boundary.coedges.as_slice(),
                 "catia_mesh_gauge_reversed_coedges",
             )?;
             let mut reversed = NonEmptyMembers::<CoedgeUse>::try_from(reversed)
                 .map_err(cadmpeg_core::CodecError::malformed)?;
+            ctx.charge_work(u64_from_index(reversed.len()), "catia_mesh_gauge_cycle_reverse")?;
             reversed.reverse();
+            ctx.charge_work(u64_from_index(reversed.len()), "catia_mesh_gauge_cycle_orient")?;
             for coedge in &mut reversed {
                 coedge.reversed = !coedge.reversed;
                 std::mem::swap(&mut coedge.start_vertex, &mut coedge.end_vertex);
             }
-            rotate_to_minimum(&mut reversed);
+            rotate_to_minimum(
+                ctx,
+                &mut reversed,
+                "catia_mesh_gauge_reversed_cycle_compare",
+            )?;
+            let comparison_work = u64_from_index(std::mem::size_of_val(reversed.as_slice()))
+                .checked_mul(2)
+                .and_then(|work| work.checked_add(1))
+                .ok_or_else(|| {
+                    ctx.refuse_codec_limit(
+                        "catia_mesh_gauge_direction_compare",
+                        u64::MAX - 1,
+                        u64::MAX,
+                    )
+                })?;
+            ctx.charge_work(comparison_work, "catia_mesh_gauge_direction_compare")?;
             if signature(&reversed)
                 .cmp(signature(&boundary.coedges))
                 .is_lt()
@@ -105,20 +137,12 @@ fn canonicalize_topology_boundary_gauges(
                 boundary.coedges = reversed;
             }
         }
-        for index in 1..face.boundaries.len() {
-            let mut position = index;
-            while position > 0 {
-                ctx.charge_work(1, "catia_mesh_gauge_boundary_order")?;
-                if signature(&face.boundaries[position].coedges)
-                    .cmp(signature(&face.boundaries[position - 1].coedges))
-                    .is_ge()
-                {
-                    break;
-                }
-                face.boundaries.swap(position, position - 1);
-                position -= 1;
-            }
-        }
+        ctx.stable_sort_by(
+            &mut face.boundaries,
+            |left, right| signature(&left.coedges).cmp(signature(&right.coedges)),
+            |boundary| std::mem::size_of_val(boundary.coedges.as_slice()),
+            "catia_mesh_gauge_boundary_order",
+        )?;
     }
     Ok(())
 }
@@ -154,6 +178,128 @@ fn mesh_gauge_reversed_coedges_refuse_before_copy() {
         Err(CodecError::ResourceLimit(limit))
             if limit.operation == "catia_mesh_gauge_reversed_coedges"
     ));
+}
+
+#[cfg(test)]
+mod boundary_tests {
+    use super::{canonicalize_topology_boundary_gauges, CoedgeUse, StandardTopologyDraft};
+    use crate::families::standard::topology::{BoundaryDraft, FaceTopologyDraft};
+    use cadmpeg_core::decode::ResourceDimension;
+    use cadmpeg_core::CodecError;
+    use cadmpeg_ir::features::NonEmptyMembers;
+
+    fn coedge(edge_row: usize, reversed: bool) -> CoedgeUse {
+        CoedgeUse {
+            edge_row,
+            reversed,
+            start_vertex: 0,
+            end_vertex: 0,
+        }
+    }
+
+    fn topology(boundaries: Vec<Vec<CoedgeUse>>) -> StandardTopologyDraft {
+        StandardTopologyDraft {
+            faces: vec![FaceTopologyDraft {
+                boundaries: boundaries
+                    .into_iter()
+                    .map(|coedges| BoundaryDraft {
+                        coedges: NonEmptyMembers::try_from(coedges).expect("nonempty test cycle"),
+                    })
+                    .collect(),
+            }],
+            edge_rows: Vec::new(),
+            vertex_points: Vec::new(),
+            logical_vertex_count: 0,
+        }
+    }
+
+    #[test]
+    fn mesh_gauge_equal_forward_cycle_keys_refuse_before_comparison() {
+        let mut candidate = topology(vec![vec![coedge(0, false); 32]]);
+        let expected = candidate.clone();
+        let result = crate::test_support::with_work_limit(32, |ctx| {
+            canonicalize_topology_boundary_gauges(ctx, &mut candidate)
+        });
+        assert!(matches!(
+            result,
+            Err(CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::WorkUnits
+                    && limit.operation == "catia_mesh_gauge_forward_cycle_compare"
+        ));
+        assert_eq!(candidate, expected);
+    }
+
+    #[test]
+    fn mesh_gauge_equal_reversed_cycle_keys_refuse_before_comparison() {
+        let mut candidate = topology(vec![vec![coedge(0, false); 2]]);
+        let result = crate::test_support::with_work_limit(200, |ctx| {
+            canonicalize_topology_boundary_gauges(ctx, &mut candidate)
+        });
+        assert!(matches!(
+            result,
+            Err(CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::WorkUnits
+                    && limit.operation == "catia_mesh_gauge_reversed_cycle_compare"
+        ));
+    }
+
+    #[test]
+    fn mesh_gauge_direction_signature_refuses_before_comparison() {
+        let mut candidate = topology(vec![vec![coedge(0, false)]]);
+        let result = crate::test_support::with_work_limit(64, |ctx| {
+            canonicalize_topology_boundary_gauges(ctx, &mut candidate)
+        });
+        assert!(matches!(
+            result,
+            Err(CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::WorkUnits
+                    && limit.operation == "catia_mesh_gauge_direction_compare"
+        ));
+    }
+
+    #[test]
+    fn mesh_gauge_boundary_sort_refuses_long_signature_bytes() {
+        let mut candidate = topology(vec![
+            vec![coedge(1, false); 16],
+            vec![coedge(0, false); 16],
+        ]);
+        let result = crate::test_support::with_work_limit(70_000, |ctx| {
+            canonicalize_topology_boundary_gauges(ctx, &mut candidate)
+        });
+        assert!(matches!(
+            result,
+            Err(CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::WorkUnits
+                    && limit.operation == "catia_mesh_gauge_boundary_order"
+        ));
+        let mut short = topology(vec![vec![coedge(1, false)], vec![coedge(0, false)]]);
+        crate::test_support::with_work_limit(70_000, |ctx| {
+            canonicalize_topology_boundary_gauges(ctx, &mut short)
+        })
+        .expect("short boundary signatures fit the same work limit");
+        assert_eq!(short, topology(vec![vec![coedge(0, false)], vec![coedge(1, false)]]));
+    }
+
+    #[test]
+    fn mesh_gauge_admitted_cycles_keep_canonical_rotation_direction_and_order() {
+        let mut candidate = topology(vec![
+            vec![coedge(2, false), coedge(0, false), coedge(1, false)],
+            vec![coedge(1, true), coedge(0, true)],
+            vec![coedge(3, false); 32],
+        ]);
+        crate::test_support::with_service_context(|ctx| {
+            canonicalize_topology_boundary_gauges(ctx, &mut candidate)
+        })
+        .expect("service work limit admits the cycles");
+        assert_eq!(
+            candidate,
+            topology(vec![
+                vec![coedge(0, false), coedge(1, false)],
+                vec![coedge(0, false), coedge(1, false), coedge(2, false)],
+                vec![coedge(3, false); 32],
+            ])
+        );
+    }
 }
 
 fn normalized_endpoint_options(
