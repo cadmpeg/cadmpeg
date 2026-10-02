@@ -930,10 +930,11 @@ pub(crate) fn checksum_children_through_class_end(
         let start = reader.position();
         let child = chunk_at(data, start, reader.end(), archive, false)?;
         if children.len() >= CHECKSUM_CHILD_CAP {
-            return Err(FramingError::InvalidLength {
-                offset: start,
-                value: i128::from(cadmpeg_core::decode::u64_from_index(children.len())),
-            });
+            return Err(ctx.refuse_codec_limit(
+                "Rhino class-end checksum children",
+                cadmpeg_core::decode::u64_from_index(CHECKSUM_CHILD_CAP),
+                cadmpeg_core::decode::u64_from_index(CHECKSUM_CHILD_CAP + 1),
+            ).into());
         }
         ctx.reserve_vec(&mut children, 1, "Rhino class-end checksum children")
             .map_err(crate::chunks::FramingError::from)?;
