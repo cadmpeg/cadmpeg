@@ -16,6 +16,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--crate", action="append", default=[], help="select a decode crate")
     parser.add_argument("--output", type=Path, help="write sorted TSV findings or external operation inventory")
+    parser.add_argument("--external-output", type=Path, help="also save the resolved operation inventory during a findings run")
     parser.add_argument("--list-externals", action="store_true", help="list resolved external operations with allocation and named work costs")
     args = parser.parse_args()
     toolchain = tomllib.loads((TOOL / "rust-toolchain.toml").read_text())["toolchain"]
@@ -52,10 +53,13 @@ def main():
         return clean.returncode
     env["RUSTC_WORKSPACE_WRAPPER"] = str(TOOL / "target/debug/cadmpeg-decode-policy")
     env["CADMPEG_POLICY_COLLECT"] = "1"
-    if args.list_externals:
+    if args.list_externals or args.external_output:
         env["CADMPEG_POLICY_EXTERNALS"] = "1"
     result = subprocess.run(["cargo", f"+{pin}", "check", "-q", "--keep-going", "--lib", "--target-dir", str(target), *selection], cwd=ROOT, env=env, text=True, capture_output=True)
     sys.stderr.write(result.stderr)
+    if args.external_output:
+        externals = sorted(set(line for line in result.stdout.splitlines() if line.startswith("external_operation\t")))
+        args.external_output.write_text("".join(line + "\n" for line in externals))
     prefixes = ("external_operation\t",) if args.list_externals else ("uncharged_decode_allocation\t", "uncharged_decode_work\t", "unproven_decode_charge\t")
     findings = sorted(set(line for line in result.stdout.splitlines() if line.startswith(prefixes)))
     content = "".join(line + "\n" for line in findings)

@@ -156,7 +156,11 @@ symbolic storage and work proofs in the owning body. A propagated storage
 charge of the operand count times `size_of::<T>()` admits that count of
 slots for every element type. Each byte charge is consumed once; branch
 joins retain only charges present on every path, and mutation invalidates
-operand evidence. Concrete instantiations judge costs that run through
+operand evidence. Typed core collection admission carries the target and
+count. Raw slot growth consumes the matching admission; an aggregate count
+is scaled across its bounded loop. Exact vector growth compares the charged
+capacity delta with the requested capacity delta. Copy bounds prove fixed
+per-element work without a concrete element size. Concrete instantiations judge costs that run through
 uncharged type-parameter traits, including Clone, comparison, hash and
 conversion. Their defects are reported at the instantiating call, with the
 concrete type. Checked dependency generics use compiler MIR to resolve their
@@ -177,7 +181,8 @@ operand, including the receiver at zero. `Input(N)` denotes result or
 internal allocation bounded by that operand. Type-dependent Clone,
 conversion and result summaries use the concrete type. `None` and `Fixed`
 have no input-sized allocation and no input-sized work. A missing entry
-prints `MISSING` and fails inventory mode. Compiler errors also fail it.
+prints `MISSING` and fails inventory mode. Compiler errors also fail it. `--external-output FILE` also saves the
+inventory during a findings run.
 
 ### Allocation
 
@@ -188,6 +193,10 @@ own such values. Borrowed values and types with no heap storage do not
 allocate when copied. The rule checks standard allocating constructors,
 `format!`, `to_string`, `to_owned`, `to_vec`, heap `collect`, `vec!`, `From`
 and `Into`, derived or standard heap `Clone`, and collection growth.
+Literal text, static string constants, and values constructed only from
+fixed operands have fixed extents. These facts cross local and imported
+generic calls, including nested error constructors. Mutation invalidates
+them. Runtime repetition counts remain variable.
 `Vec::new`, `String::new` and empty collection constructors allocate no
 storage. Moving an owned value does not allocate. A fresh owned vector iterator
 collected into the same vector type reuses its buffer without a scan.
