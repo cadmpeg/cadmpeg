@@ -1094,11 +1094,13 @@ fn scan_viewport_userdata(
         let start = reader.position();
         let child = chunk_at(data, start, reader.end(), archive, false)?;
         if children.len() >= VIEWPORT_USERDATA_CHILD_CAP {
-            return Err(ctx.refuse_codec_limit(
-                "Rhino viewport userdata children",
-                cadmpeg_core::decode::u64_from_index(VIEWPORT_USERDATA_CHILD_CAP),
-                cadmpeg_core::decode::u64_from_index(VIEWPORT_USERDATA_CHILD_CAP + 1),
-            ).into());
+            return Err(ctx
+                .refuse_codec_limit(
+                    "Rhino viewport userdata children",
+                    cadmpeg_core::decode::u64_from_index(VIEWPORT_USERDATA_CHILD_CAP),
+                    cadmpeg_core::decode::u64_from_index(VIEWPORT_USERDATA_CHILD_CAP + 1),
+                )
+                .into());
         }
         ctx.reserve_vec(&mut children, 1, "Rhino viewport userdata children")
             .map_err(crate::chunks::FramingError::from)?;
@@ -2638,18 +2640,30 @@ mod tests {
         let child = short_chunk(archive, crate::chunks::TCODE_SHORT | 7, 0);
         let mut bytes = child.repeat(cap);
         bytes.extend(short_chunk(archive, super::TCODE_CLASS_END, 0));
-        with_collection_limit(&bytes, u64::try_from(cap + 1).expect("fixture count fits"), |ctx| {
-            let mut losses = Vec::new();
-            let error = super::scan_viewport_userdata(
-                ctx, &bytes, 0..bytes.len(), archive, &mut losses,
-            ).err().expect("child ceiling refuses the class-end slot");
-            assert!(matches!(super::codec_error(error), cadmpeg_core::CodecError::ResourceLimit(limit)
+        with_collection_limit(
+            &bytes,
+            u64::try_from(cap + 1).expect("fixture count fits"),
+            |ctx| {
+                let mut losses = Vec::new();
+                let error = super::scan_viewport_userdata(
+                    ctx,
+                    &bytes,
+                    0..bytes.len(),
+                    archive,
+                    &mut losses,
+                )
+                .err()
+                .expect("child ceiling refuses the class-end slot");
+                assert!(
+                    matches!(super::codec_error(error), cadmpeg_core::CodecError::ResourceLimit(limit)
                 if limit.dimension == cadmpeg_core::decode::ResourceDimension::Codec("Rhino viewport userdata children")
                     && limit.limit == u64::try_from(cap).expect("fixture count fits")
                     && limit.used == limit.limit && limit.additional == 1
-                    && Some(limit) == ctx.resource_refusal()));
-            assert!(losses.is_empty());
-        });
+                    && Some(limit) == ctx.resource_refusal())
+                );
+                assert!(losses.is_empty());
+            },
+        );
     }
 
     #[test]
