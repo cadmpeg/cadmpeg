@@ -158,13 +158,13 @@ fn rational_arc_refuses_collection_limit_before_control_net() {
 #[test]
 fn reparameterized_nurbs_knots_refuse_collection_limit_below_need() {
     let curve = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-        NurbsCurve::from_lanes(
+        NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
             1,
             vec![10.0, 10.0, 20.0, 20.0],
             vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
             None,
             false,
-        )
+        ).expect("fixture constructor admission")
         .expect("valid curve"),
     ));
     let target = crate::test_support::test_b5::increasing([0.0, 2.0]);
@@ -223,13 +223,13 @@ fn referenced_surface_ids(
 
 #[test]
 fn affine_curve_ranges_reparameterize_without_changing_geometry() {
-    let nurbs = NurbsCurve::from_lanes(
+    let nurbs = NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
         1,
         vec![10.0, 10.0, 20.0, 20.0],
         vec![Point3::new(1.0, 2.0, 3.0), Point3::new(4.0, 5.0, 6.0)],
         None,
         false,
-    )
+    ).expect("fixture constructor admission")
     .expect("valid affine curve");
     let CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(translated)) = curve_on_parameter_range(
         CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs.clone())),
@@ -305,13 +305,13 @@ fn affine_curve_ranges_reparameterize_without_changing_geometry() {
             &mut crate::nurbs::LaneRefusals::new(),
         ),
         Some(CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-            NurbsCurve::from_lanes(
+            NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
                 1,
                 vec![0.0, 0.0, 2.0, 2.0],
                 vec![Point3::new(20.0, 0.0, 0.0), Point3::new(30.0, 0.0, 0.0)],
                 None,
                 false,
-            )
+            ).expect("fixture constructor admission")
             .expect("valid NurbsCurve fixture")
         )))
     );
@@ -319,13 +319,13 @@ fn affine_curve_ranges_reparameterize_without_changing_geometry() {
 
 #[test]
 fn wide_affine_nurbs_range_maps_finite_exterior_knots() {
-    let curve = NurbsCurve::from_lanes(
+    let curve = NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
         1,
         vec![-0.01, 0.0, 1.0, 1.01],
         vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
         None,
         false,
-    )
+    ).expect("fixture constructor admission")
     .expect("finite NURBS with exterior knots");
     let CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(mapped)) = curve_on_parameter_range(
         CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)),
@@ -347,13 +347,13 @@ fn wide_affine_nurbs_range_maps_finite_exterior_knots() {
 #[test]
 fn tiny_affine_nurbs_range_maps_when_scale_ratio_overflows() {
     let tiny = f64::MIN_POSITIVE / 4.0;
-    let curve = NurbsCurve::from_lanes(
+    let curve = NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
         1,
         vec![0.0, 0.0, tiny, tiny],
         vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
         None,
         false,
-    )
+    ).expect("fixture constructor admission")
     .expect("finite NURBS with a tiny domain");
     let CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(mapped)) = curve_on_parameter_range(
         CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)),
@@ -1358,13 +1358,13 @@ fn exact_revolution_builders_reject_unbounded_subdivision_counts() {
         &mut crate::nurbs::LaneRefusals::new(),
     )
     .is_none());
-    let profile = NurbsCurve::from_lanes(
+    let profile = NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
         1,
         vec![0.0, 0.0, 1.0, 1.0],
         vec![Point3::new(1.0, 0.0, 0.0), Point3::new(1.0, 0.0, 1.0)],
         None,
         false,
-    )
+    ).expect("fixture constructor admission")
     .expect("valid revolution profile");
     assert!(
         crate::test_support::with_service_context(|ctx| revolve_nurbs(
@@ -1381,13 +1381,13 @@ fn exact_revolution_builders_reject_unbounded_subdivision_counts() {
     );
     let mut wide_knots = vec![0.0; 123];
     wide_knots.extend([1.0, 1.0]);
-    let wide_profile = NurbsCurve::from_lanes(
+    let wide_profile = NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
         1,
         wide_knots,
         vec![Point3::new(1.0, 0.0, 0.0); 123],
         None,
         false,
-    )
+    ).expect("fixture constructor admission")
     .expect("valid wide revolution profile");
     assert!(
         crate::test_support::with_service_context(|ctx| revolve_nurbs(

@@ -140,7 +140,7 @@ fn nurbs_surface_local_inverse_returns_a_forward_checked_candidate() {
 
 #[test]
 fn nurbs_surface_inverse_handles_rational_internal_spans() {
-    let surface = NurbsSurface::from_lanes(
+    let surface = NurbsSurface::from_lanes(&cadmpeg_test_support::service_decode_context(), 
         NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 0.5, 1.0, 1.0], false),
         NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
         NurbsSurfaceLanes::new(
@@ -153,7 +153,7 @@ fn nurbs_surface_inverse_handles_rational_internal_spans() {
                 .map(|values| values.chunks(2_usize).map(<[_]>::to_vec).collect()),
         ),
         false,
-    )
+    ).expect("fixture constructor admission")
     .unwrap();
     let point = nurbs_surface_point(&surface, 0.75, 0.4).expect("surface point");
     let parameters = nurbs_surface_parameter_within_tolerance(&surface, point.get(), None, 1.0e-10).expect("resource allocation did not fail")

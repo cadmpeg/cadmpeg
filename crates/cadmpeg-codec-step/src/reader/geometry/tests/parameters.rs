@@ -259,7 +259,7 @@ fn parameter_inference_edge_curve_refuses_retained_limit() {
 
 #[test]
 fn periodic_nurbs_surface_parameter_periods_keep_usize_counts() {
-    let surface = NurbsSurface::from_lanes(
+    let surface = NurbsSurface::from_lanes(&cadmpeg_test_support::service_decode_context(), 
         NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 2.0, 2.0], true),
         NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], true),
         NurbsSurfaceLanes::new(
@@ -271,7 +271,7 @@ fn periodic_nurbs_surface_parameter_periods_keep_usize_counts() {
             None,
         ),
         false,
-    )
+    ).expect("fixture constructor admission")
     .expect("periodic NURBS surface");
     assert_eq!(
         nurbs_surface_parameter_domain(1, surface.u_knots(), surface.u_count()),
@@ -286,13 +286,13 @@ fn periodic_nurbs_surface_parameter_periods_keep_usize_counts() {
 #[test]
 fn periodic_curve_trim_shifts_a_wide_finite_seam_endpoint() {
     let max = f64::MAX;
-    let curve = NurbsCurve::from_lanes(
+    let curve = NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
         1,
         vec![-max, -max, max, max],
         vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
         None,
         true,
-    )
+    ).expect("fixture constructor admission")
     .expect("wide periodic curve");
     let geometry = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve));
     assert_eq!(
@@ -304,13 +304,13 @@ fn periodic_curve_trim_shifts_a_wide_finite_seam_endpoint() {
 #[test]
 fn periodic_edge_range_keeps_a_finite_sweep_across_a_wide_seam() {
     let max = f64::MAX;
-    let curve = NurbsCurve::from_lanes(
+    let curve = NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
         1,
         vec![-max, -max, max, max],
         vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
         None,
         true,
-    )
+    ).expect("fixture constructor admission")
     .expect("wide periodic curve");
     let start = FiniteReal::new(max * 0.5).expect("finite start");
     let end = FiniteReal::new(-max).expect("finite end");
@@ -406,7 +406,7 @@ fn periodic_edge_range_reduces_finite_endpoints_separately_when_difference_overf
 
 #[test]
 fn nonperiodic_nurbs_endpoint_seed_selects_the_terminal_branch() {
-    let nurbs = NurbsCurve::from_lanes(
+    let nurbs = NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
         3,
         vec![0.0, 0.0, 0.0, 0.0, 0.5, 0.5, 0.5, 1.0, 1.0, 1.0, 1.0],
         vec![
@@ -420,7 +420,7 @@ fn nonperiodic_nurbs_endpoint_seed_selects_the_terminal_branch() {
         ],
         None,
         false,
-    )
+    ).expect("fixture constructor admission")
     .unwrap();
     let geometry = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs.clone()));
     let start_point = nurbs_curve_point_at(&nurbs, 0.0).expect("start point");
@@ -1122,7 +1122,7 @@ fn numerical_followup_periodic_edge_preserves_small_domain_phase() {
     use cadmpeg_ir::geometry::{nurbs::NurbsCurve, SolvedCurveGeometry};
     use cadmpeg_ir::math::Point3;
     for d in [1e-12, 1.0, 1e12] {
-        let curve = NurbsCurve::from_lanes(
+        let curve = NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
             1,
             vec![-0.25 * d, 0., 0.25 * d, 0.5 * d, 0.75 * d, d, 1.25 * d],
             vec![
@@ -1134,7 +1134,7 @@ fn numerical_followup_periodic_edge_preserves_small_domain_phase() {
             ],
             None,
             true,
-        )
+        ).expect("fixture constructor admission")
         .unwrap();
         let [start, end] =
             [0.8 * d, 0.9 * d].map(|value| FiniteReal::new(value).expect("finite parameter"));

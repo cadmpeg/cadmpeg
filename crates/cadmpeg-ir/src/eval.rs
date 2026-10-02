@@ -3095,7 +3095,7 @@ pub fn nurbs_surface_isocurve(
         } else {
             None
         };
-        match NurbsCurve::from_lanes(degree, admitted_knots, control_points, weights, periodic) {
+        match NurbsCurve::from_lanes(&ctx, degree, admitted_knots, control_points, weights, periodic).map_err(crate::geometry::nurbs::NurbsError::from).and_then(|curve| curve) {
             Ok(curve) => Ok(Some(curve)),
             Err(crate::geometry::nurbs::NurbsError::ResourceLimit(limit)) => Err(limit),
             Err(_) => Ok(None),

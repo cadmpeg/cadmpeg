@@ -653,21 +653,21 @@ fn spatial_nurbs_rejects_general_curve_context_mismatches() {
     use crate::geometry::nurbs::NurbsCurve;
     use crate::sketches::{SpatialSketchGeometry, SpatialSketchNurbsCurve};
 
-    let negative = NurbsCurve::from_lanes(
+    let negative = NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
         1,
         vec![0.0, 0.0, 1.0, 1.0],
         vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
         Some(vec![-1.0, -1.0]),
         false,
-    )
+    ).expect("fixture constructor admission")
     .unwrap();
-    let degree_zero = NurbsCurve::from_lanes(
+    let degree_zero = NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
         0,
         vec![0.0, 1.0],
         vec![Point3::new(0.0, 0.0, 0.0)],
         None,
         false,
-    )
+    ).expect("fixture constructor admission")
     .unwrap();
     for (curve, field) in [(negative, "weights"), (degree_zero, "degree")] {
         assert!(SpatialSketchNurbsCurve::try_from(curve.clone())
@@ -688,13 +688,13 @@ fn spatial_nurbs_preserves_wire_fields_and_checked_point_edits() {
         SpatialSketchGeometry, SpatialSketchGeometryDefinition, SpatialSketchNurbsCurve,
     };
 
-    let curve = NurbsCurve::from_lanes(
+    let curve = NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
         1,
         vec![0.0, 0.0, 1.0, 1.0],
         vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
         Some(vec![1.0, 2.0]),
         false,
-    )
+    ).expect("fixture constructor admission")
     .unwrap();
     let wire = serde_json::json!({"kind": "nurbs", "curve": &curve});
     let mut curve = SpatialSketchNurbsCurve::try_from(curve).unwrap();
@@ -723,13 +723,13 @@ fn a_refused_spatial_sketch_pole_edit_keeps_the_prior_poles() {
     use crate::geometry::nurbs::{NurbsCurve, NurbsError};
     use crate::sketches::SpatialSketchNurbsCurve;
 
-    let curve = NurbsCurve::from_lanes(
+    let curve = NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
         1,
         vec![0.0, 0.0, 1.0, 1.0],
         vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
         Some(vec![1.0, 2.0]),
         false,
-    )
+    ).expect("fixture constructor admission")
     .unwrap();
     let mut curve = SpatialSketchNurbsCurve::try_from(curve).unwrap();
     let before = curve.clone();

@@ -814,7 +814,7 @@ pub(crate) fn project_spatial_sketch_design(
                             ctx.collect_vec(poles.weights(), "f3d spatial sketch nurbs weights")
                         })
                         .transpose()?;
-                    let curve3d = cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes_for_decode(
+                    let curve3d = cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
                         ctx,
                         geometry.degree(),
                         geometry.knots_copy(ctx)?,

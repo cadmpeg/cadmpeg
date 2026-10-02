@@ -397,13 +397,13 @@ fn decode_enforces_type128_closure_flags_in_iges_4_and_5_0() {
 #[test]
 fn rational_boundary_comparison_accepts_projectively_scaled_curves() {
     crate::test_support::with_service_context(&[], |decode_ctx| {
-        let first = NurbsCurve::from_lanes(
+        let first = NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
             1,
             vec![0.0, 0.0, 1.0, 1.0],
             vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 1.0, 0.0)],
             Some(vec![1.0, 1.0]),
             false,
-        )
+        ).expect("fixture constructor admission")
         .expect("valid rational boundary");
         let mut scaled = first.clone();
         let scaled_poles = cadmpeg_ir::geometry::nurbs::NurbsPoles3::from_lanes(
@@ -508,13 +508,13 @@ fn decode_applies_rational_surface_weight_declaration_in_iges_4_and_5_0() {
 #[test]
 fn a_ruled_weight_lane_shorter_than_its_pole_lane_reaches_the_codec_error() {
     crate::test_support::with_service_context(&[], |decode_ctx| {
-        let rail = NurbsCurve::from_lanes(
+        let rail = NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
             1,
             vec![0.0, 0.0, 1.0, 1.0],
             vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
             None,
             false,
-        )
+        ).expect("fixture constructor admission")
         .expect("valid rail");
         let weight = cadmpeg_ir::scalar::NonZeroReal::try_from(0.5).expect("nonzero weight");
         let error = super::super::same_basis_ruled_surface(&rail, &rail, &[weight], decode_ctx)
@@ -564,28 +564,28 @@ fn numerical_followup_closure_uses_every_span_control_and_weight_scale() {
             .collect::<Vec<_>>();
         let mut second = first.clone();
         second[5].y = 4.;
-        let a = NurbsCurve::from_lanes(2, knots.clone(), first, None, false).unwrap();
-        let b = NurbsCurve::from_lanes(2, knots, second, None, false).unwrap();
+        let a = NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 2, knots.clone(), first, None, false).expect("fixture constructor admission").unwrap();
+        let b = NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 2, knots, second, None, false).expect("fixture constructor admission").unwrap();
         assert_eq!(
             homogeneous_curve_boundary_matches(decode_ctx, &a, &b, [0., 2.], 0.).unwrap(),
             Some(false)
         );
         for weight in [1., 1e-200, 1e200] {
-            let a = NurbsCurve::from_lanes(
+            let a = NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
                 1,
                 vec![0., 0., 1., 1.],
                 vec![Point3::new(0., 0., 0.), Point3::new(1., 0., 0.)],
                 Some(vec![weight; 2]),
                 false,
-            )
+            ).expect("fixture constructor admission")
             .unwrap();
-            let b = NurbsCurve::from_lanes(
+            let b = NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
                 1,
                 vec![0., 0., 1., 1.],
                 vec![Point3::new(0., 2., 0.), Point3::new(1., 2., 0.)],
                 Some(vec![weight; 2]),
                 false,
-            )
+            ).expect("fixture constructor admission")
             .unwrap();
             assert_eq!(
                 homogeneous_curve_boundary_matches(decode_ctx, &a, &b, [0., 1.], 0.001).unwrap(),
@@ -605,17 +605,17 @@ fn numerical_followup_ruled_rails_align_across_overflowing_knot_domains() {
         use cadmpeg_ir::geometry::nurbs::NurbsCurve;
         use cadmpeg_ir::math::Point3;
         let line = |domain: [f64; 2], y| {
-            NurbsCurve::from_lanes(
+            NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
                 1,
                 vec![domain[0], domain[0], domain[1], domain[1]],
                 vec![Point3::new(0., y, 0.), Point3::new(1., y, 0.)],
                 None,
                 false,
-            )
+            ).expect("fixture constructor admission")
             .unwrap()
         };
         let first = line([-1e308, 1e308], 0.);
-        let second = NurbsCurve::from_lanes(
+        let second = NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
             1,
             vec![0., 0., 0.5, 1., 1.],
             vec![
@@ -625,7 +625,7 @@ fn numerical_followup_ruled_rails_align_across_overflowing_knot_domains() {
             ],
             None,
             false,
-        )
+        ).expect("fixture constructor admission")
         .unwrap();
         let pairs = super::super::aligned_homogeneous_spans(decode_ctx, &first, &second)
             .unwrap()

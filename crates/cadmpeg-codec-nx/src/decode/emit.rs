@@ -2425,13 +2425,13 @@ mod tests {
             let curve =
                 CurveId::mint("test:model:entity#synthetic:curve").expect("identity grammar");
             let geometry = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-                cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
+                cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
                     1,
                     vec![0.0, 0.0, 1.0, 1.0],
                     vec![Point3::new(1.0, 2.0, 3.0), Point3::new(5.0, 7.0, 9.0)],
                     None,
                     false,
-                )
+                ).expect("fixture constructor admission")
                 .expect("valid test curve"),
             ));
             let geometry_budget = GeometryWorkBudget::from_context(

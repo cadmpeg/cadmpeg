@@ -8,7 +8,7 @@ use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDim
 use cadmpeg_core::CodecError;
 
 fn curve() -> NurbsCurve {
-    NurbsCurve::from_lanes(
+    NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
         2,
         vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
         vec![
@@ -18,7 +18,7 @@ fn curve() -> NurbsCurve {
         ],
         None,
         false,
-    )
+    ).expect("fixture constructor admission")
     .expect("finite line spline")
 }
 
@@ -85,7 +85,7 @@ fn admitted_curve_tangent_refuses_point_copy() {
 fn admitted_surface_point_refuses_both_axis_bases() {
     use crate::geometry::nurbs::{NurbsSurface, NurbsSurfaceAxis, NurbsSurfaceLanes};
     use crate::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
-    let surface = NurbsSurface::from_lanes(
+    let surface = NurbsSurface::from_lanes(&cadmpeg_test_support::service_decode_context(), 
         NurbsSurfaceAxis::new(2, vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0], false),
         NurbsSurfaceAxis::new(2, vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0], false),
         NurbsSurfaceLanes::new(
@@ -99,7 +99,7 @@ fn admitted_surface_point_refuses_both_axis_bases() {
             None,
         ),
         false,
-    )
+    ).expect("fixture constructor admission")
     .expect("finite plane spline");
     let geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface));
     for cap in [2, 5] {
@@ -250,13 +250,13 @@ fn reusable_nurbs_evaluator_keeps_constant_and_linear_spans_inline() {
                     )
                 })
                 .collect();
-            let curve = NurbsCurve::from_lanes(
+            let curve = NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
                 degree,
                 knots,
                 points,
                 rational.then(|| vec![1.0; count]),
                 false,
-            )
+            ).expect("fixture constructor admission")
             .expect("fixed span");
             let mut policy = DecodePolicy::service();
             policy.limits.max_collection_items = 0;
@@ -288,7 +288,7 @@ fn reusable_nurbs_evaluator_keeps_constant_and_linear_spans_inline() {
 fn admitted_curve_tangent_refuses_rational_weight_copy() {
     let curve = curve();
     let geometry = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-        NurbsCurve::from_lanes(
+        NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
             curve.degree(),
             curve.knots().to_vec(),
             curve
@@ -298,7 +298,7 @@ fn admitted_curve_tangent_refuses_rational_weight_copy() {
                 .collect(),
             Some(vec![1.0; 3]),
             false,
-        )
+        ).expect("fixture constructor admission")
         .expect("rational curve"),
     ));
     let mut policy = DecodePolicy::service();

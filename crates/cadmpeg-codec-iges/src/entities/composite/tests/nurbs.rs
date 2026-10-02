@@ -24,13 +24,13 @@ use cadmpeg_ir::CadIr;
 fn degree_elevation_preserves_nonzero_declared_interval_endpoints() {
     crate::test_support::with_service_context(&[], |decode_ctx| {
         let interval = [-29.063_334_917_342_4, 2.000_000_000_000_02];
-        let mut curve = NurbsCurve::from_lanes(
+        let mut curve = NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
             1,
             vec![interval[0], interval[0], interval[1], interval[1]],
             vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
             None,
             false,
-        )
+        ).expect("fixture constructor admission")
         .expect("valid line");
 
         elevate_nurbs_to_degree(decode_ctx, &mut curve, interval, 3, None)
@@ -177,16 +177,16 @@ fn bounded_analytic_carrier_uses_admitted_source_endpoint_witnesses() {
 fn a_child_that_does_not_elevate_states_its_own_cause() {
     crate::test_support::with_service_context(&[], |decode_ctx| {
         // Child A: degree 1 with non-clamped knots.
-        let first = NurbsCurve::from_lanes(
+        let first = NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
             1,
             vec![0.0, 0.5, 1.0, 1.5],
             vec![Point3::new(0.0, 0.0, 0.0), Point3::new(3.0, 0.0, 0.0)],
             None,
             false,
-        )
+        ).expect("fixture constructor admission")
         .expect("valid child");
         // Child B: degree 2, clamped, starting at child A's last control point.
-        let second = NurbsCurve::from_lanes(
+        let second = NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
             2,
             vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
             vec![
@@ -196,7 +196,7 @@ fn a_child_that_does_not_elevate_states_its_own_cause() {
             ],
             None,
             false,
-        )
+        ).expect("fixture constructor admission")
         .expect("valid child");
 
         let error = concatenate_nurbs(
@@ -218,13 +218,13 @@ fn a_child_that_does_not_elevate_states_its_own_cause() {
 fn audit_regression_join_rescales_weights_without_overflowing_ratio() {
     crate::test_support::with_service_context(&[], |decode_ctx| {
         let segment = |x, weight| {
-            NurbsCurve::from_lanes(
+            NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
                 1,
                 vec![0., 0., 1., 1.],
                 vec![Point3::new(x, 0., 0.), Point3::new(x + 1., 0., 0.)],
                 Some(vec![weight, weight]),
                 false,
-            )
+            ).expect("fixture constructor admission")
             .unwrap()
         };
         let joined = concatenate_nurbs(

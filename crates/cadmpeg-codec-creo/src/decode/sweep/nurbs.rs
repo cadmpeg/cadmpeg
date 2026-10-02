@@ -352,7 +352,7 @@ pub(in super::super) fn saved_spline_nurbs(
         "creo saved spline controls",
     )?;
     converted_controls.extend(control_points.into_iter().map(Point3::from));
-    match NurbsCurve::from_lanes_for_decode(ctx, 3, knots, converted_controls, None, false)? {
+    match NurbsCurve::from_lanes(ctx, 3, knots, converted_controls, None, false)? {
         Ok(curve) => Ok(Some(curve)),
         Err(error) => {
             refusal.note_checked(
@@ -627,7 +627,7 @@ pub(in super::super) fn interpolation_spline_surface(
         row.extend_from_slice(points);
         pole_rows.push(row);
     }
-    match NurbsSurface::from_lanes_for_decode(
+    match NurbsSurface::from_lanes(
         ctx,
         cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(3, u_knots, false),
         cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(3, v_knots, false),
@@ -1287,7 +1287,7 @@ pub(in super::super) fn placed_tabulated_cylinder_directrix(
     let mut knots = Vec::new();
     ctx.reserve_vec(&mut knots, 8, "creo tabulated-cylinder directrix knots")?;
     knots.extend([0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0]);
-    match NurbsCurve::from_lanes_for_decode(ctx, 3, knots, controls, None, false)? {
+    match NurbsCurve::from_lanes(ctx, 3, knots, controls, None, false)? {
         Ok(curve) => Ok(Some((curve, sweep))),
         Err(error) => {
             refusal.note_checked(
@@ -1696,13 +1696,13 @@ mod tests {
 
     #[test]
     fn translating_nurbs_rejects_nonfinite_poles() {
-        let curve = NurbsCurve::from_lanes(
+        let curve = NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
             1,
             vec![0.0, 0.0, 1.0, 1.0],
             vec![Point3::new(f64::MAX, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
             None,
             false,
-        )
+        ).expect("fixture constructor admission")
         .expect("finite NURBS fixture");
 
         assert!(crate::decode::with_test_decode_ctx(|ctx| {
@@ -1715,13 +1715,13 @@ mod tests {
 
     #[test]
     fn placed_section_nurbs_refuses_knot_and_pole_limits() {
-        let curve = NurbsCurve::from_lanes(
+        let curve = NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
             1,
             vec![0.0, 0.0, 1.0, 1.0],
             vec![Point3::new(1.0, 2.0, 0.0), Point3::new(3.0, 4.0, 0.0)],
             None,
             false,
-        )
+        ).expect("fixture constructor admission")
         .expect("finite curve");
         let transform = crate::placement::FeatureSectionTransform::new(
             1,
@@ -1751,13 +1751,13 @@ mod tests {
 
     #[test]
     fn translated_nurbs_refuses_knot_and_pole_limits() {
-        let curve = NurbsCurve::from_lanes(
+        let curve = NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
             1,
             vec![0.0, 0.0, 1.0, 1.0],
             vec![Point3::new(1.0, 2.0, 0.0), Point3::new(3.0, 4.0, 0.0)],
             None,
             false,
-        )
+        ).expect("fixture constructor admission")
         .expect("finite curve");
         for limit in [0, 4] {
             let error = with_collection_limit(limit, |ctx| {
@@ -1782,13 +1782,13 @@ mod tests {
     }
 
     fn extruded_nurbs_refusal_at_limit(limit: u64) -> cadmpeg_core::CodecError {
-        let curve = NurbsCurve::from_lanes(
+        let curve = NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
             1,
             vec![0.0, 0.0, 1.0, 1.0],
             vec![Point3::new(1.0, 2.0, 0.0), Point3::new(3.0, 4.0, 0.0)],
             Some(vec![1.0, 0.5]),
             false,
-        )
+        ).expect("fixture constructor admission")
         .expect("rational directrix");
         with_collection_limit(limit, |ctx| {
             extruded_nurbs_surface(
@@ -2027,7 +2027,7 @@ mod tests {
 
     #[test]
     fn two_refused_extruded_carriers_state_two_records_each_naming_its_carrier() {
-        let directrix = NurbsCurve::from_lanes(
+        let directrix = NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
             1,
             vec![0.0, 0.0, 1.0, 1.0],
             vec![
@@ -2036,7 +2036,7 @@ mod tests {
             ],
             None,
             false,
-        )
+        ).expect("fixture constructor admission")
         .expect("valid directrix");
         let mut refusal = crate::lane_refusal::LaneRefusals::new();
         let (first, second) = with_collection_limit(u64::MAX, |ctx| {

@@ -398,13 +398,13 @@ mod tests {
                 )
                 .expect("test solver allocation succeeds");
                 assert!((distance - 0.25).abs() <= 4.0 * f64::EPSILON);
-                let curve = NurbsCurve::from_lanes(
+                let curve = NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
                     1,
                     vec![0.0, 0.0, 1.0, 1.0],
                     vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
                     Some(vec![weight; 2]),
                     false,
-                )
+                ).expect("fixture constructor admission")
                 .unwrap();
                 let parameter = super::closest_nurbs_curve_parameter_with_budget(
                     &curve,
@@ -427,13 +427,13 @@ mod tests {
         use cadmpeg_core::decode::ResourceDimension;
         use cadmpeg_ir::geometry::nurbs::NurbsCurve;
 
-        let curve = NurbsCurve::from_lanes(
+        let curve = NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
             1,
             vec![0.0, 0.0, 1.0, 1.0],
             vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
             Some(vec![1.0, 1.0]),
             false,
-        )
+        ).expect("fixture constructor admission")
         .expect("valid rational curve");
 
         crate::test_support::with_decode_context_over(
@@ -461,13 +461,13 @@ mod tests {
         use cadmpeg_core::decode::ResourceDimension;
         use cadmpeg_ir::geometry::nurbs::NurbsCurve;
 
-        let curve = NurbsCurve::from_lanes(
+        let curve = NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
             1,
             vec![0.0, 0.0, 1.0, 1.0],
             vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
             None,
             false,
-        )
+        ).expect("fixture constructor admission")
         .expect("valid polynomial curve");
 
         crate::test_support::with_decode_context_over(
@@ -495,13 +495,13 @@ mod tests {
         use cadmpeg_core::decode::ResourceDimension;
         use cadmpeg_ir::geometry::nurbs::NurbsCurve;
 
-        let curve = NurbsCurve::from_lanes(
+        let curve = NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
             1,
             vec![0.0, 0.0, 1.0, 1.0],
             vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
             None,
             false,
-        )
+        ).expect("fixture constructor admission")
         .expect("valid polynomial curve");
 
         crate::test_support::with_decode_context_over(
@@ -528,13 +528,13 @@ mod tests {
         use cadmpeg_core::decode::ResourceDimension;
         use cadmpeg_ir::geometry::nurbs::NurbsCurve;
 
-        let curve = NurbsCurve::from_lanes(
+        let curve = NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
             1,
             vec![0.0, 0.0, 1.0, 1.0],
             vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
             None,
             false,
-        )
+        ).expect("fixture constructor admission")
         .expect("valid polynomial curve");
 
         crate::test_support::with_decode_context(|ctx| {

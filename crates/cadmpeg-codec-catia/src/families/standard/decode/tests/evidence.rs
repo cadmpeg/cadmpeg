@@ -784,7 +784,7 @@ fn shared_nurbs_boundary_filters_identity_free_endpoint_pairs() {
             [Point3::new(offset, 0.0, 0.0), Point3::new(offset, 1.0, 0.0)]
         };
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
-            NurbsSurface::from_lanes(
+            NurbsSurface::from_lanes(&cadmpeg_test_support::service_decode_context(), 
                 cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
                     1,
                     vec![0.0, 0.0, 1.0, 1.0],
@@ -814,7 +814,7 @@ fn shared_nurbs_boundary_filters_identity_free_endpoint_pairs() {
                     None,
                 ),
                 false,
-            )
+            ).expect("fixture constructor admission")
             .expect("valid bilinear NURBS"),
         ))
     };
@@ -1420,13 +1420,13 @@ fn limit_curve_point_binding_rejects_separated_occurrences_with_unequal_residual
             .map(|index| Point3::new(-1.0 + 0.4 * f64::from(index) + offset, 0.0, 0.0))
             .collect::<Vec<_>>()
     };
-    let curve = NurbsCurve::from_lanes(
+    let curve = NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
         5,
         [vec![0.0; 6], vec![0.5; 6], vec![1.0; 6]].concat(),
         [line_span(0.0), line_span(1e-3)].concat(),
         None,
         false,
-    )
+    ).expect("fixture constructor admission")
     .expect("valid degree-5 NURBS");
 
     assert_eq!(
@@ -1478,7 +1478,7 @@ fn limit_curve_binding_retains_correlated_edge_candidates() {
         faces: [0, 0],
         geometry: StandardCurveGeometry::Bspline,
     };
-    let limit_curve = NurbsCurve::from_lanes(
+    let limit_curve = NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
         5,
         vec![0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0],
         (0..6)
@@ -1486,7 +1486,7 @@ fn limit_curve_binding_retains_correlated_edge_candidates() {
             .collect(),
         None,
         false,
-    )
+    ).expect("fixture constructor admission")
     .expect("valid degree-5 NURBS");
     let bindings = [(surface_id.clone(), false, 0)];
     let surface_indices = HashMap::from([(surface_id, 0)]);
@@ -1621,13 +1621,13 @@ fn standard_edge_limit_curve_copy_refuses_collection_limit() {
         faces: [0, 0],
         geometry: StandardCurveGeometry::Bspline,
     };
-    let limit_curve = NurbsCurve::from_lanes(
+    let limit_curve = NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
         1,
         vec![0.0, 0.0, 1.0, 1.0],
         vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
         None,
         false,
-    )
+    ).expect("fixture constructor admission")
     .expect("valid linear NURBS");
     let mut limited_ir = ir.clone();
     let limited = crate::test_support::with_collection_limit(0, |ctx| {

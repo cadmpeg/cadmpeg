@@ -50,7 +50,7 @@ fn shared_extrusion_generator_curve(
 
 #[test]
 fn extrusion_nurbs_boundary_requires_one_plane_supported_control_edge() {
-    let surface = NurbsSurface::from_lanes(
+    let surface = NurbsSurface::from_lanes(&cadmpeg_test_support::service_decode_context(), 
         NurbsSurfaceAxis::new(3, vec![0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0], false),
         NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
         NurbsSurfaceLanes::new(
@@ -69,7 +69,7 @@ fn extrusion_nurbs_boundary_requires_one_plane_supported_control_edge() {
                 .map(|values| values.chunks(2_usize).map(<[_]>::to_vec).collect()),
         ),
         false,
-    )
+    ).expect("fixture constructor admission")
     .expect("valid extrusion surface");
     let boundary = nurbs_plane_boundary_curve(
         &surface,
@@ -176,7 +176,7 @@ fn extrusion_nurbs_boundary_requires_one_plane_supported_control_edge() {
 
 #[test]
 fn shared_extrusion_generator_requires_equivalent_boundaries_and_separated_nets() {
-    let first = NurbsSurface::from_lanes(
+    let first = NurbsSurface::from_lanes(&cadmpeg_test_support::service_decode_context(), 
         NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
         NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
         NurbsSurfaceLanes::new(
@@ -188,9 +188,9 @@ fn shared_extrusion_generator_requires_equivalent_boundaries_and_separated_nets(
                 .map(|values| values.chunks(2_usize).map(<[_]>::to_vec).collect()),
         ),
         false,
-    )
+    ).expect("fixture constructor admission")
     .expect("valid first extrusion surface");
-    let second = NurbsSurface::from_lanes(
+    let second = NurbsSurface::from_lanes(&cadmpeg_test_support::service_decode_context(), 
         NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
         NurbsSurfaceAxis::new(1, vec![4.0, 4.0, 8.0, 8.0], false),
         NurbsSurfaceLanes::new(
@@ -202,7 +202,7 @@ fn shared_extrusion_generator_requires_equivalent_boundaries_and_separated_nets(
                 .map(|values| values.chunks(2_usize).map(<[_]>::to_vec).collect()),
         ),
         false,
-    )
+    ).expect("fixture constructor admission")
     .expect("valid second extrusion surface");
     let shared = shared_extrusion_generator_curve(
         &first,
@@ -364,7 +364,7 @@ fn shared_extrusion_generator_requires_equivalent_boundaries_and_separated_nets(
 
 #[test]
 fn cubic_extrusion_plane_generator_requires_one_directrix_root() {
-    let surface = NurbsSurface::from_lanes(
+    let surface = NurbsSurface::from_lanes(&cadmpeg_test_support::service_decode_context(), 
         NurbsSurfaceAxis::new(3, vec![0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0], false),
         NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
         NurbsSurfaceLanes::new(
@@ -379,7 +379,7 @@ fn cubic_extrusion_plane_generator_requires_one_directrix_root() {
                 .map(|values| values.chunks(2_usize).map(<[_]>::to_vec).collect()),
         ),
         false,
-    )
+    ).expect("fixture constructor admission")
     .expect("valid cubic extrusion surface");
     let generator = with_decode_ctx(|ctx| {
         cubic_extrusion_plane_generator_curve(

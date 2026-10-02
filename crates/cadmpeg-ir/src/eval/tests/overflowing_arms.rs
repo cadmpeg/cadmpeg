@@ -400,7 +400,7 @@ fn nurbs_pcurve_tangents_whose_derivative_quotient_overflows_report_the_tangent_
 /// The bilinear NURBS surface over the unit square with poles at `x = 0` and
 /// `x = xs[1]`; at `u = 2` its `x` coordinate is `2 xs[1]`.
 fn bilinear_nurbs(u_knots: [f64; 4], x: f64) -> NurbsSurface {
-    NurbsSurface::from_lanes(
+    NurbsSurface::from_lanes(&cadmpeg_test_support::service_decode_context(), 
         NurbsSurfaceAxis::new(1, u_knots.to_vec(), false),
         NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
         NurbsSurfaceLanes::new(
@@ -411,7 +411,7 @@ fn bilinear_nurbs(u_knots: [f64; 4], x: f64) -> NurbsSurface {
             None,
         ),
         false,
-    )
+    ).expect("fixture constructor admission")
     .expect("bilinear NURBS surface fixture")
 }
 
@@ -936,7 +936,7 @@ fn a_difference_quotient_over_an_empty_domain_has_no_value_and_one_that_overflow
 /// edge and its `u` partial `2e10` along `x`, and its second `u` partial of
 /// order `1e-190 / 1e-400` overflows.
 fn narrow_quadratic_nurbs() -> NurbsSurface {
-    NurbsSurface::from_lanes(
+    NurbsSurface::from_lanes(&cadmpeg_test_support::service_decode_context(), 
         NurbsSurfaceAxis::new(2, vec![0.0, 0.0, 0.0, 1.0e-200, 1.0e-200, 1.0e-200], false),
         NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
         NurbsSurfaceLanes::new(
@@ -946,7 +946,7 @@ fn narrow_quadratic_nurbs() -> NurbsSurface {
             None,
         ),
         false,
-    )
+    ).expect("fixture constructor admission")
     .expect("quadratic NURBS surface fixture")
 }
 
@@ -1162,7 +1162,7 @@ fn an_offset_surface_whose_support_partial_overflows_reaches_no_coordinate() {
 #[test]
 fn offset_surface_uses_normal_of_finite_partials_with_overflowing_cross() {
     let support = solved(SolvedSurfaceGeometry::Nurbs(
-        NurbsSurface::from_lanes(
+        NurbsSurface::from_lanes(&cadmpeg_test_support::service_decode_context(), 
             NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
             NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
             NurbsSurfaceLanes::new(
@@ -1176,7 +1176,7 @@ fn offset_surface_uses_normal_of_finite_partials_with_overflowing_cross() {
                 None,
             ),
             false,
-        )
+        ).expect("fixture constructor admission")
         .expect("wide partials NURBS"),
     ));
     let (ir, offset) = procedural_surface_model(support, |support| {

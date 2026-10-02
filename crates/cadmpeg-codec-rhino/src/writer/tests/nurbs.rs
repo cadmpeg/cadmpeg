@@ -25,7 +25,7 @@ fn nonclamped_nurbs_edge_uses_evaluated_endpoints() {
     edge.carrier = cadmpeg_ir::topology::EdgeCarrier::new(edge.curve().cloned(), Some([1.0, 3.0]))
         .expect("edge range");
     let geometry = cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-        cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
+        cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
             2,
             vec![0.0, 0.0, 1.0, 2.0, 3.0, 3.0, 3.0],
             vec![
@@ -36,7 +36,7 @@ fn nonclamped_nurbs_edge_uses_evaluated_endpoints() {
             ],
             None,
             false,
-        )
+        ).expect("fixture constructor admission")
         .expect("valid nonclamped NURBS"),
     ));
     let evaluated_start = cadmpeg_ir::eval::curve_point(&geometry, 1.0).expect("start point");
@@ -61,7 +61,7 @@ fn shared_rational_nurbs_edge_round_trips_c3_and_reversed_c2() {
         cadmpeg_ir::topology::EdgeCarrier::new(edge.curve().cloned(), Some([2.0, 5.0])).unwrap();
     ir.model.curves[1].geometry =
         cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-            cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
+            cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
                 2,
                 vec![2.0, 2.0, 2.0, 5.0, 5.0, 5.0],
                 vec![
@@ -71,7 +71,7 @@ fn shared_rational_nurbs_edge_round_trips_c3_and_reversed_c2() {
                 ],
                 Some(vec![1.0, 0.75, 1.0]),
                 false,
-            )
+            ).expect("fixture constructor admission")
             .expect("valid shared edge"),
         ));
     let expected = ir.model.curves[1].geometry.clone();
@@ -145,7 +145,7 @@ fn explicit_nurbs_pcurves_round_trip_owned_geometry_and_tolerance() {
     .unwrap();
     ir.model.curves[1].geometry =
         cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-            cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
+            cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
                 2,
                 vec![2.0, 2.0, 2.0, 5.0, 5.0, 5.0],
                 vec![
@@ -155,7 +155,7 @@ fn explicit_nurbs_pcurves_round_trip_owned_geometry_and_tolerance() {
                 ],
                 Some(vec![1.0, 0.75, 1.0]),
                 false,
-            )
+            ).expect("fixture constructor admission")
             .expect("valid explicit edge"),
         ));
     for (coedge, reversed) in [(1_usize, false), (7, true)] {
@@ -591,7 +591,7 @@ fn generally_trimmed_nurbs_face_round_trips_outer_loop_and_hole() {
     ];
     ir.model.curves[0].geometry =
         cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-            cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
+            cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
                 2,
                 vec![
                     domain[0], domain[0], domain[0], domain[1], domain[1], domain[1],
@@ -599,7 +599,7 @@ fn generally_trimmed_nurbs_face_round_trips_outer_loop_and_hole() {
                 poles.to_vec(),
                 Some(vec![1.0, 0.8, 1.0]),
                 false,
-            )
+            ).expect("fixture constructor admission")
             .expect("valid trimmed edge"),
         ));
     ir.model.pcurves[0].geometry = cadmpeg_ir::geometry::pcurve::PcurveGeometry::Nurbs {
@@ -712,7 +712,7 @@ fn the_nurbs_surface_pole_lane_is_the_admitted_count() {
         Point3::new(3.0, 2.0, 1.0),
         Point3::new(0.0, 2.0, 0.0),
     ];
-    let surface = NurbsSurface::from_lanes(
+    let surface = NurbsSurface::from_lanes(&cadmpeg_test_support::service_decode_context(), 
         NurbsSurfaceAxis::new(1, vec![2.0, 2.0, 5.0, 5.0], false),
         NurbsSurfaceAxis::new(1, vec![7.0, 7.0, 11.0, 11.0], false),
         NurbsSurfaceLanes::new(
@@ -720,7 +720,7 @@ fn the_nurbs_surface_pole_lane_is_the_admitted_count() {
             None,
         ),
         false,
-    )
+    ).expect("fixture constructor admission")
     .expect("valid patch surface");
 
     let pole_count =
@@ -747,14 +747,14 @@ fn admitted_degree_zero_nurbs_are_writer_limits() {
     };
 
     let point = Point3::new(0.0, 0.0, 0.0);
-    let curve = NurbsCurve::from_lanes(0, vec![0.0, 1.0], vec![point], None, false)
+    let curve = NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 0, vec![0.0, 1.0], vec![point], None, false).expect("fixture constructor admission")
         .expect("degree-zero curves are admitted by the IR");
-    let surface = NurbsSurface::from_lanes(
+    let surface = NurbsSurface::from_lanes(&cadmpeg_test_support::service_decode_context(), 
         NurbsSurfaceAxis::new(0, vec![0.0, 1.0], false),
         NurbsSurfaceAxis::new(0, vec![0.0, 1.0], false),
         NurbsSurfaceLanes::new(vec![vec![point]], None),
         false,
-    )
+    ).expect("fixture constructor admission")
     .expect("degree-zero surfaces are admitted by the IR");
 
     let curve_error = super::super::check_nurbs_curve("curve-1", &curve)
@@ -784,7 +784,7 @@ fn reversed_trim_reflects_interior_knots_without_domain_sum_overflow() {
     use cadmpeg_ir::math::Point2;
     let domain = [1e308, 1.4e308];
     let knots = vec![domain[0], domain[0], 1.2e308, domain[1], domain[1]];
-    let curve = NurbsCurve::from_lanes(
+    let curve = NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
         1,
         knots.clone(),
         vec![
@@ -794,7 +794,7 @@ fn reversed_trim_reflects_interior_knots_without_domain_sum_overflow() {
         ],
         None,
         false,
-    )
+    ).expect("fixture constructor admission")
     .unwrap();
     let uv = vec![
         Point2::new(1.0, 0.0),
@@ -815,7 +815,7 @@ fn reversed_trim_reflects_interior_knots_without_domain_sum_overflow() {
             ),
         ),
     };
-    let surface = NurbsSurface::from_lanes(
+    let surface = NurbsSurface::from_lanes(&cadmpeg_test_support::service_decode_context(), 
         NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
         NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
         NurbsSurfaceLanes::new(
@@ -826,7 +826,7 @@ fn reversed_trim_reflects_interior_knots_without_domain_sum_overflow() {
             None,
         ),
         false,
-    )
+    ).expect("fixture constructor admission")
     .unwrap();
     let source = cadmpeg_ir::examples::unit_cube().unwrap();
     let edge = WritableEdge {
@@ -868,13 +868,13 @@ fn numerical_ranges_trim_sampling_avoids_wide_domain_subtraction() {
     use cadmpeg_ir::math::Point2;
     let domain = [-1e308, 1e308];
     let knots = vec![domain[0], domain[0], domain[1], domain[1]];
-    let curve = NurbsCurve::from_lanes(
+    let curve = NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
         1,
         knots.clone(),
         vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
         None,
         false,
-    )
+    ).expect("fixture constructor admission")
     .unwrap();
     let uv = vec![Point2::new(1.0, 0.0), Point2::new(0.0, 0.0)];
     let pcurve = Pcurve {
@@ -891,7 +891,7 @@ fn numerical_ranges_trim_sampling_avoids_wide_domain_subtraction() {
             ),
         ),
     };
-    let surface = NurbsSurface::from_lanes(
+    let surface = NurbsSurface::from_lanes(&cadmpeg_test_support::service_decode_context(), 
         NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
         NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
         NurbsSurfaceLanes::new(
@@ -902,7 +902,7 @@ fn numerical_ranges_trim_sampling_avoids_wide_domain_subtraction() {
             None,
         ),
         false,
-    )
+    ).expect("fixture constructor admission")
     .unwrap();
     let source = cadmpeg_ir::examples::unit_cube().unwrap();
     let edge = WritableEdge {

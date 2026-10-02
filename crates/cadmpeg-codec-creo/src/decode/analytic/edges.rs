@@ -765,13 +765,13 @@ mod tests {
 
     #[test]
     fn reversing_nurbs_rejects_overflow_without_mutating_the_carrier() {
-        let original = NurbsCurve::from_lanes(
+        let original = NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
             1,
             vec![0.0, 0.0, 1.0, 1.0],
             vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
             None,
             false,
-        )
+        ).expect("fixture constructor admission")
         .expect("finite NURBS fixture");
         let mut reversed = original.clone();
 

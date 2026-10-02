@@ -4003,7 +4003,7 @@ mod nurbs_write_tests {
             &cadmpeg_core::decode::DecodePolicy::service(),
         )
         .unwrap();
-        let surface = NurbsSurface::from_lanes(
+        let surface = NurbsSurface::from_lanes(&cadmpeg_test_support::service_decode_context(), 
             cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(9, vec![0.0; 20], false),
             cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(1, vec![0.0; 4], false),
             cadmpeg_ir::geometry::nurbs::NurbsSurfaceLanes::new(
@@ -4014,7 +4014,7 @@ mod nurbs_write_tests {
                 None,
             ),
             false,
-        )
+        ).expect("fixture constructor admission")
         .expect("valid high-degree surface");
 
         let mut bytes = Vec::new();
@@ -4047,7 +4047,7 @@ mod nurbs_write_tests {
             &cadmpeg_core::decode::DecodePolicy::service(),
         )
         .unwrap();
-        let surface = NurbsSurface::from_lanes(
+        let surface = NurbsSurface::from_lanes(&cadmpeg_test_support::service_decode_context(), 
             cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
                 2,
                 vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
@@ -4066,7 +4066,7 @@ mod nurbs_write_tests {
                 None,
             ),
             false,
-        )
+        ).expect("fixture constructor admission")
         .expect("valid asymmetric surface");
 
         let mut bytes = Vec::new();

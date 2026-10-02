@@ -648,7 +648,7 @@ fn e5_nurbs_pcurve_evaluates_on_nurbs_surface() {
         pos: 0,
         record_id: 7,
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
-            NurbsSurface::from_lanes(
+            NurbsSurface::from_lanes(&cadmpeg_test_support::service_decode_context(), 
                 cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
                     1,
                     vec![0.0, 0.0, 1.0, 1.0],
@@ -667,7 +667,7 @@ fn e5_nurbs_pcurve_evaluates_on_nurbs_surface() {
                     None,
                 ),
                 false,
-            )
+            ).expect("fixture constructor admission")
             .expect("valid planar NURBS surface"),
         )),
         uv_scale: finite_pair([1.0, 1.0]),

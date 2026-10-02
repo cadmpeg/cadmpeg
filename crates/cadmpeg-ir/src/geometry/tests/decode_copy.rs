@@ -263,13 +263,13 @@ fn pcurve_coordinate_scale_uses_no_collection_items() {
 
 #[test]
 fn solved_nurbs_copy_admits_knots_and_poles() {
-    let curve = NurbsCurve::from_lanes(
+    let curve = NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
         1,
         vec![0.0, 0.0, 1.0, 1.0],
         vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
         None,
         false,
-    )
+    ).expect("fixture constructor admission")
     .expect("test setup");
     let geometry = SolvedCurveGeometry::Nurbs(curve);
     for (cap, operation) in [

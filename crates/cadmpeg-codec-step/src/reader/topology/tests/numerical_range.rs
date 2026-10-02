@@ -96,7 +96,7 @@ fn periodic_surface_selection_keeps_quarter_seeds_across_a_wide_domain() {
     let max = f64::MAX;
     let mut ir = cadmpeg_ir::CadIr::empty();
     let id = SurfaceId::mint("test:audit:surface#wide-periodic").expect("surface id");
-    let surface = cadmpeg_ir::geometry::nurbs::NurbsSurface::from_lanes(
+    let surface = cadmpeg_ir::geometry::nurbs::NurbsSurface::from_lanes(&cadmpeg_test_support::service_decode_context(), 
         cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(1, vec![-max, -max, max, max], true),
         cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
         cadmpeg_ir::geometry::nurbs::NurbsSurfaceLanes::new(
@@ -107,7 +107,7 @@ fn periodic_surface_selection_keeps_quarter_seeds_across_a_wide_domain() {
             None,
         ),
         false,
-    )
+    ).expect("fixture constructor admission")
     .expect("wide periodic surface");
     ir.model.surfaces.push(cadmpeg_ir::geometry::Surface {
         id: id.clone(),
@@ -260,7 +260,7 @@ fn pcurve_locus_finds_an_interior_curve_branch_near_the_float_limit() {
     ir.model.curves.push(cadmpeg_ir::geometry::Curve {
         id: curve_id.clone(),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-            cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(1, knots, controls, None, false)
+            cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 1, knots, controls, None, false).expect("fixture constructor admission")
                 .expect("finite many-span curve"),
         )),
         source_object: None,

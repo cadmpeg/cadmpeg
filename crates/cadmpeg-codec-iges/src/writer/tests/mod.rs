@@ -1218,13 +1218,13 @@ fn unrepresentable_conic_coefficients_are_not_implemented() {
 
 #[test]
 fn negative_nurbs_weights_are_not_implemented() {
-    let curve = cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
+    let curve = cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
         1,
         vec![0.0, 0.0, 1.0, 1.0],
         vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
         Some(vec![1.0, -1.0]),
         false,
-    )
+    ).expect("fixture constructor admission")
     .expect("the IR admits finite nonzero signed NURBS weights");
     assert!(matches!(
         curve_entity(
@@ -1242,7 +1242,7 @@ fn negative_nurbs_weights_are_not_implemented() {
 
     let axis =
         || cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false);
-    let surface = cadmpeg_ir::geometry::nurbs::NurbsSurface::from_lanes(
+    let surface = cadmpeg_ir::geometry::nurbs::NurbsSurface::from_lanes(&cadmpeg_test_support::service_decode_context(), 
         axis(),
         axis(),
         cadmpeg_ir::geometry::nurbs::NurbsSurfaceLanes::new(
@@ -1253,7 +1253,7 @@ fn negative_nurbs_weights_are_not_implemented() {
             Some(vec![vec![1.0, 1.0], vec![1.0, -1.0]]),
         ),
         false,
-    )
+    ).expect("fixture constructor admission")
     .expect("the IR admits finite nonzero signed NURBS weights");
     assert!(matches!(
         surface_entities(
@@ -1270,7 +1270,7 @@ fn negative_nurbs_weights_are_not_implemented() {
 fn empty_nurbs_surface_domain_is_not_implemented() {
     let axis =
         || cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 0.0, 0.0], false);
-    let surface = cadmpeg_ir::geometry::nurbs::NurbsSurface::from_lanes(
+    let surface = cadmpeg_ir::geometry::nurbs::NurbsSurface::from_lanes(&cadmpeg_test_support::service_decode_context(), 
         axis(),
         axis(),
         cadmpeg_ir::geometry::nurbs::NurbsSurfaceLanes::new(
@@ -1281,7 +1281,7 @@ fn empty_nurbs_surface_domain_is_not_implemented() {
             None,
         ),
         false,
-    )
+    ).expect("fixture constructor admission")
     .expect("the IR admits a nondecreasing knot vector with an empty active domain");
     assert!(matches!(
         surface_entities(

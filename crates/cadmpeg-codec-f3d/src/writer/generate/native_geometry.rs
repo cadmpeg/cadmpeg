@@ -4563,6 +4563,9 @@ fn native_increasing_interval_curve(
     match geometry {
         SolvedCurveGeometry::Nurbs(curve) => Ok(curve.clone()),
         SolvedCurveGeometry::Line(line_curve) => {
+            let arena = cadmpeg_core::decode::DecodeArena::new();
+            let policy = cadmpeg_core::decode::DecodePolicy::default();
+            let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)?;
             let origin = line_curve.origin().get();
             let direction = *line_curve.direction().as_raw();
             let point = |parameter: f64| {
@@ -4572,7 +4575,7 @@ fn native_increasing_interval_curve(
                     origin.z + parameter * direction.z,
                 )
             };
-            NurbsCurve::from_lanes(
+            NurbsCurve::from_lanes(&ctx, 
                 1,
                 vec![
                     parameter_range[0],
@@ -4583,7 +4586,7 @@ fn native_increasing_interval_curve(
                 vec![point(parameter_range[0]), point(parameter_range[1])],
                 None,
                 false,
-            )
+            )?
             .map_err(|error| CodecError::NotImplemented(error.to_string()))
         }
         SolvedCurveGeometry::Circle(circle_curve) => {
@@ -4698,7 +4701,7 @@ fn native_conic_interval_curve(
             knots.extend([end, end, end]);
         }
     }
-    NurbsCurve::from_lanes(2, knots, control_points, Some(weights), false)
+    NurbsCurve::from_lanes(&ctx, 2, knots, control_points, Some(weights), false)?
         .map_err(|error| CodecError::NotImplemented(error.to_string()))
 }
 

@@ -23,7 +23,7 @@ fn spine_model(count: u32) -> (CadIr, CurveId) {
     policy.limits.max_collection_items =
         cadmpeg_core::decode::u64_from_index(knots.len() + points.len());
     let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
-    let nurbs = NurbsCurve::from_lanes_for_decode(&ctx, 1, knots, points, None, false)
+    let nurbs = NurbsCurve::from_lanes(&ctx, 1, knots, points, None, false)
         .expect("service storage")
         .expect("clamped linear test spine");
     let mut ir = CadIr::empty();

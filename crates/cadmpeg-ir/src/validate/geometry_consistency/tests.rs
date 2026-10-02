@@ -47,7 +47,7 @@ fn wide_pcurve_domain_keeps_its_finite_midpoint_seed() {
 #[test]
 fn large_surface_domain_keeps_its_finite_midpoint_pcurve_seed() {
     let surface = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
-        NurbsSurface::from_lanes(
+        NurbsSurface::from_lanes(&cadmpeg_test_support::service_decode_context(), 
             crate::geometry::nurbs::NurbsSurfaceAxis::new(
                 1,
                 vec![f64::MAX * 0.75, f64::MAX * 0.75, f64::MAX, f64::MAX],
@@ -62,7 +62,7 @@ fn large_surface_domain_keeps_its_finite_midpoint_pcurve_seed() {
                 None,
             ),
             false,
-        )
+        ).expect("fixture constructor admission")
         .unwrap(),
     ));
     let surface_id = SurfaceId::mint("test:model:surface#large-domain").unwrap();
@@ -693,7 +693,7 @@ fn line_pcurve_recovers_vertices_from_nurbs_surface_domain_seeds() {
     // seed at t=0 therefore cannot start Newton recovery; the finite
     // surface domain supplies an interior seed on the same branch.
     let surface = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
-        NurbsSurface::from_lanes(
+        NurbsSurface::from_lanes(&cadmpeg_test_support::service_decode_context(), 
             crate::geometry::nurbs::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
             crate::geometry::nurbs::NurbsSurfaceAxis::new(
                 2,
@@ -716,7 +716,7 @@ fn line_pcurve_recovers_vertices_from_nurbs_surface_domain_seeds() {
                 None,
             ),
             false,
-        )
+        ).expect("fixture constructor admission")
         .unwrap(),
     ));
     let surface_id =
@@ -1205,7 +1205,7 @@ fn pcurve_surface_mismatch_is_flagged() {
 /// domain at every depth the bound admits and nothing past it.
 fn nurbs_surface_leaf() -> SolvedSurfaceGeometry {
     SolvedSurfaceGeometry::Nurbs(
-        NurbsSurface::from_lanes(
+        NurbsSurface::from_lanes(&cadmpeg_test_support::service_decode_context(), 
             crate::geometry::nurbs::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
             crate::geometry::nurbs::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
             crate::geometry::nurbs::NurbsSurfaceLanes::new(
@@ -1216,7 +1216,7 @@ fn nurbs_surface_leaf() -> SolvedSurfaceGeometry {
                 None,
             ),
             false,
-        )
+        ).expect("fixture constructor admission")
         .unwrap(),
     )
 }

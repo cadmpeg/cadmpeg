@@ -824,7 +824,7 @@ fn rectangular_nurbs_patch() -> CadIr {
     ];
     let mut ir = polygon_sheet(&points);
     ir.model.surfaces[0].geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
-        NurbsSurface::from_lanes(
+        NurbsSurface::from_lanes(&cadmpeg_test_support::service_decode_context(), 
             cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(1, vec![2.0, 2.0, 5.0, 5.0], false),
             cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
                 1,
@@ -837,7 +837,7 @@ fn rectangular_nurbs_patch() -> CadIr {
                     .map(|values| values.chunks(2_usize).map(<[_]>::to_vec).collect()),
             ),
             false,
-        )
+        ).expect("fixture constructor admission")
         .expect("valid patch surface"),
     ));
     let edge_data = [
@@ -879,13 +879,13 @@ fn rectangular_nurbs_patch() -> CadIr {
         )
         .unwrap();
         ir.model.curves[index].geometry = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-            NurbsCurve::from_lanes(
+            NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
                 1,
                 vec![domain[0], domain[0], domain[1], domain[1]],
                 control_points,
                 Some(weights),
                 false,
-            )
+            ).expect("fixture constructor admission")
             .expect("valid patch edge"),
         ));
         let id: cadmpeg_ir::ids::PcurveId = format!("cadir:model:pcurve#patch.{index}")
@@ -930,7 +930,7 @@ fn mixed_plane_nurbs_sheet() -> CadIr {
         Point3::new(0.0, 1.0, 0.0),
     ];
     ir.model.surfaces[0].geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
-        NurbsSurface::from_lanes(
+        NurbsSurface::from_lanes(&cadmpeg_test_support::service_decode_context(), 
             cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(1, vec![2.0, 2.0, 5.0, 5.0], false),
             cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
                 1,
@@ -943,7 +943,7 @@ fn mixed_plane_nurbs_sheet() -> CadIr {
                     .map(|values| values.chunks(2_usize).map(<[_]>::to_vec).collect()),
             ),
             false,
-        )
+        ).expect("fixture constructor admission")
         .expect("valid mixed surface"),
     ));
     let edge_data = [
@@ -985,13 +985,13 @@ fn mixed_plane_nurbs_sheet() -> CadIr {
         )
         .unwrap();
         ir.model.curves[index].geometry = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-            NurbsCurve::from_lanes(
+            NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
                 1,
                 vec![domain[0], domain[0], domain[1], domain[1]],
                 control_points,
                 Some(weights),
                 false,
-            )
+            ).expect("fixture constructor admission")
             .expect("valid mixed edge"),
         ));
         let id: cadmpeg_ir::ids::PcurveId = format!("cadir:model:pcurve#mixed.{index}")
@@ -1029,7 +1029,7 @@ fn make_planar_nurbs_trimmed_face(ir: &mut CadIr) {
     };
 
     ir.model.surfaces[0].geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
-        NurbsSurface::from_lanes(
+        NurbsSurface::from_lanes(&cadmpeg_test_support::service_decode_context(), 
             cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 4.0, 4.0], false),
             cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 4.0, 4.0], false),
             cadmpeg_ir::geometry::nurbs::NurbsSurfaceLanes::new(
@@ -1040,7 +1040,7 @@ fn make_planar_nurbs_trimmed_face(ir: &mut CadIr) {
                 None,
             ),
             false,
-        )
+        ).expect("fixture constructor admission")
         .expect("valid planar patch"),
     ));
     for index in 0..ir.model.coedges.len() {

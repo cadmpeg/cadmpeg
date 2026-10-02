@@ -8,7 +8,7 @@ use cadmpeg_ir::math::Point3;
 
 fn line(periodic: bool) -> CurveGeometry {
     CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-        NurbsCurve::from_lanes(
+        NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
             2,
             vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
             vec![
@@ -18,7 +18,7 @@ fn line(periodic: bool) -> CurveGeometry {
             ],
             None,
             periodic,
-        )
+        ).expect("fixture constructor admission")
         .expect("finite spline"),
     ))
 }
@@ -112,13 +112,13 @@ fn periodic_range_recovery_propagates_evaluator_refusal() {
 #[test]
 fn degree_one_parameter_search_propagates_evaluator_refusal() {
     let geometry = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-        NurbsCurve::from_lanes(
+        NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
             1,
             vec![0.0, 0.0, 1.0, 1.0],
             vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
             None,
             false,
-        )
+        ).expect("fixture constructor admission")
         .expect("linear spline"),
     ));
     let CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)) = &geometry else {

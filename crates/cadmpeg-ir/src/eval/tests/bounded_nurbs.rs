@@ -53,8 +53,8 @@ fn bounded_curve_search_preserves_caller_refusals_and_uses_scoped_storage() {
     use crate::geometry::nurbs::NurbsCurve;
     use crate::math::Point3;
     use crate::scalar::FiniteReal;
-    let curve = NurbsCurve::from_lanes(1, vec![0.0, 0.0, 1.0, 1.0],
-        vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)], None, false).unwrap();
+    let curve = NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 1, vec![0.0, 0.0, 1.0, 1.0],
+        vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)], None, false).expect("fixture constructor admission").unwrap();
     let boundaries = [FiniteReal::ZERO, FiniteReal::ONE];
     for dimension in [ResourceDimension::MaterializedBytes, ResourceDimension::CollectionItems,
         ResourceDimension::WorkUnits, ResourceDimension::RecursionDepth] {

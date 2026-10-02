@@ -14,7 +14,7 @@ use crate::validate::validate_neutral;
 
 #[test]
 fn periodic_nurbs_parameters_preserve_phase_and_wrap_for_evaluation() {
-    let nurbs = crate::geometry::nurbs::NurbsCurve::from_lanes(
+    let nurbs = crate::geometry::nurbs::NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
         1,
         vec![0.0, 0.0, 1.0, 2.0, 2.0],
         vec![
@@ -24,7 +24,7 @@ fn periodic_nurbs_parameters_preserve_phase_and_wrap_for_evaluation() {
         ],
         None,
         true,
-    )
+    ).expect("fixture constructor admission")
     .unwrap();
     let geometry = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs.clone()));
     assert_eq!(
@@ -96,7 +96,7 @@ fn periodic_nurbs_parameters_preserve_phase_and_wrap_for_evaluation() {
 fn rational_quadratic_arc_evaluates_on_the_circle() {
     // Quarter circle of radius 5 as a rational quadratic Bezier.
     let weight = 0.5_f64.sqrt();
-    let curve = crate::geometry::nurbs::NurbsCurve::from_lanes(
+    let curve = crate::geometry::nurbs::NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
         2,
         vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
         vec![
@@ -106,7 +106,7 @@ fn rational_quadratic_arc_evaluates_on_the_circle() {
         ],
         Some(vec![1.0, weight, 1.0]),
         false,
-    )
+    ).expect("fixture constructor admission")
     .unwrap();
     let point = crate::eval::nurbs_curve_point_at(&curve, 0.5).unwrap();
     let radius = (point.x * point.x + point.y * point.y).sqrt();
@@ -115,13 +115,13 @@ fn rational_quadratic_arc_evaluates_on_the_circle() {
 
 #[test]
 fn point_evaluation_borrows_only_indexed_nurbs_and_polyline_rows() {
-    let curve = crate::geometry::nurbs::NurbsCurve::from_lanes(
+    let curve = crate::geometry::nurbs::NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
         1,
         vec![0.0, 0.0, 1.0, 1.0],
         vec![Point3::new(0.0, 0.0, 0.0), Point3::new(2.0, 0.0, 0.0)],
         Some(vec![1.0, 2.0]),
         false,
-    )
+    ).expect("fixture constructor admission")
     .unwrap();
     assert_eq!(
         curve

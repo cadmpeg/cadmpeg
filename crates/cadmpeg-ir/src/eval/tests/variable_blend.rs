@@ -955,7 +955,7 @@ fn variable_blend_function_uses_its_first_coordinate_as_radius() {
 fn steep_plane_support() -> SurfaceGeometry {
     let ramp_end = f64::from_bits(3.0_f64.to_bits() + 1);
     SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
-        crate::geometry::nurbs::NurbsSurface::from_lanes(
+        crate::geometry::nurbs::NurbsSurface::from_lanes(&cadmpeg_test_support::service_decode_context(), 
             crate::geometry::nurbs::NurbsSurfaceAxis::new(
                 1,
                 vec![0.0, 0.0, 3.0, ramp_end, ramp_end],
@@ -969,7 +969,7 @@ fn steep_plane_support() -> SurfaceGeometry {
                 None,
             ),
             false,
-        )
+        ).expect("fixture constructor admission")
         .expect("steep plane fixture"),
     ))
 }

@@ -248,7 +248,7 @@ mod tests {
 
     #[test]
     fn nurbs_translation_start_limit_refuses_before_grid_creation() {
-        let surface = cadmpeg_ir::geometry::nurbs::NurbsSurface::from_lanes(
+        let surface = cadmpeg_ir::geometry::nurbs::NurbsSurface::from_lanes(&cadmpeg_test_support::service_decode_context(), 
             cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
             cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
             cadmpeg_ir::geometry::nurbs::NurbsSurfaceLanes::new(
@@ -265,7 +265,7 @@ mod tests {
                 None,
             ),
             false,
-        )
+        ).expect("fixture constructor admission")
         .expect("valid translation surface");
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
@@ -400,7 +400,7 @@ mod tests {
         use cadmpeg_ir::geometry::{nurbs, SolvedSurfaceGeometry, Surface, SurfaceGeometry};
         use cadmpeg_ir::ids::SurfaceId;
         use cadmpeg_ir::math::{Point3, Vector3};
-        let nurbs = nurbs::NurbsSurface::from_lanes(
+        let nurbs = nurbs::NurbsSurface::from_lanes(&cadmpeg_test_support::service_decode_context(), 
             nurbs::NurbsSurfaceAxis::new(2, vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0], false),
             nurbs::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
             nurbs::NurbsSurfaceLanes::new(
@@ -412,7 +412,7 @@ mod tests {
                 None,
             ),
             false,
-        )
+        ).expect("fixture constructor admission")
         .expect("valid translation surface");
         let mut scan = crate::container::scan_bytes_ok(Vec::new());
         for (id, kind) in [

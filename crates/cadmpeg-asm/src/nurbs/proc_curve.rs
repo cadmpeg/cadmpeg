@@ -3972,13 +3972,13 @@ mod cache_form_tests {
 
     /// A degree-one solved curve whose parameter domain is `[0, 1]`.
     fn solved_curve() -> NurbsCurve {
-        NurbsCurve::from_lanes(
+        NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
             1,
             vec![0.0, 0.0, 1.0, 1.0],
             vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
             None,
             false,
-        )
+        ).expect("fixture constructor admission")
         .unwrap()
     }
 

@@ -1021,7 +1021,7 @@ fn tolerant_nurbs_boundary_establishes_both_intersection_charts() {
             Surface {
                 id: nurbs.clone(),
                 geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
-                    NurbsSurface::from_lanes(
+                    NurbsSurface::from_lanes(&cadmpeg_test_support::service_decode_context(), 
                         cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
                             1,
                             vec![0.0, 0.0, 1.0, 1.0],
@@ -1040,7 +1040,7 @@ fn tolerant_nurbs_boundary_establishes_both_intersection_charts() {
                             None,
                         ),
                         false,
-                    )
+                    ).expect("fixture constructor admission")
                     .expect("valid boundary surface"),
                 )),
                 source_object: None,
@@ -1066,13 +1066,13 @@ fn tolerant_nurbs_boundary_establishes_both_intersection_charts() {
         ir.model.curves.push(Curve {
             id: curve.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-                cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
+                cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
                     1,
                     vec![0.0, 0.0, 1.0, 1.0],
                     vec![Point3::new(0.0, 0.0, 0.0), Point3::new(10.0, 0.0, 0.0)],
                     None,
                     false,
-                )
+                ).expect("fixture constructor admission")
                 .unwrap(),
             )),
             source_object: None,
@@ -1267,13 +1267,13 @@ fn exact_boundary_completion_preserves_existing_cache_fit_tolerance() {
         ir.model.curves.push(Curve {
             id: curve.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-                cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
+                cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
                     1,
                     vec![0.0, 0.0, 1.0, 1.0],
                     vec![Point3::new(0.0, 0.0, 0.0), Point3::new(10.0, 0.0, 0.0)],
                     None,
                     false,
-                )
+                ).expect("fixture constructor admission")
                 .unwrap(),
             )),
             source_object: None,

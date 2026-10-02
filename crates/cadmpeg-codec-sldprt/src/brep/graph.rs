@@ -6226,7 +6226,7 @@ fn clamp_nurbs_curve_to_domain(
         return Ok(None);
     };
     Ok(Some(
-        cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes_for_decode(
+        cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
             ctx,
             curve.degree(),
             segment_knots,
@@ -7997,13 +7997,13 @@ mod tests {
         control_points: Vec<cadmpeg_ir::math::Point3>,
         weights: Option<Vec<f64>>,
     ) -> cadmpeg_ir::geometry::nurbs::NurbsCurve {
-        cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
+        cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
             degree,
             knots,
             control_points,
             weights,
             false,
-        )
+        ).expect("fixture constructor admission")
         .expect("valid test NURBS curve")
     }
 
@@ -8019,7 +8019,7 @@ mod tests {
         control_points: &[cadmpeg_ir::math::Point3],
         weights: Option<Vec<f64>>,
     ) -> cadmpeg_ir::geometry::nurbs::NurbsSurface {
-        cadmpeg_ir::geometry::nurbs::NurbsSurface::from_lanes(
+        cadmpeg_ir::geometry::nurbs::NurbsSurface::from_lanes(&cadmpeg_test_support::service_decode_context(), 
             cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(u_degree, u_knots, false),
             cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(v_degree, v_knots, false),
             cadmpeg_ir::geometry::nurbs::NurbsSurfaceLanes::new(
@@ -8035,7 +8035,7 @@ mod tests {
                 }),
             ),
             false,
-        )
+        ).expect("fixture constructor admission")
         .expect("valid test NURBS surface")
     }
 

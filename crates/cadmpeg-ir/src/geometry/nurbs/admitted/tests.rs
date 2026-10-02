@@ -17,7 +17,7 @@ fn with_limit<T>(cap: u64, f: impl FnOnce(&DecodeContext<'_>) -> T) -> T {
 fn raw_curve_constructor_refuses_pairing_and_admission() {
     for (cap, operation) in [(1, "IR NURBS paired poles"), (3, "IR NURBS admitted poles")] {
         let result = with_limit(cap, |ctx| {
-            NurbsCurve::from_lanes_for_decode(
+            NurbsCurve::from_lanes(
                 ctx,
                 1,
                 vec![0.0, 0.0, 1.0, 1.0],
@@ -31,15 +31,15 @@ fn raw_curve_constructor_refuses_pairing_and_admission() {
         );
     }
     let points = vec![Point3::new(0.0, 0.0, 0.0); 2];
-    let expected = NurbsCurve::from_lanes(
+    let expected = NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
         1,
         vec![0.0, 0.0, 1.0, 1.0],
         points.clone(),
         Some(vec![1.0; 2]),
         false,
-    );
+    ).expect("fixture constructor admission");
     assert_eq!(
-        with_limit(4, |ctx| NurbsCurve::from_lanes_for_decode(
+        with_limit(4, |ctx| NurbsCurve::from_lanes(
             ctx,
             1,
             vec![0.0, 0.0, 1.0, 1.0],
@@ -55,7 +55,7 @@ fn raw_curve_constructor_refuses_pairing_and_admission() {
 #[test]
 fn raw_surface_constructor_refuses_each_nested_collection() {
     let make = |ctx: &DecodeContext<'_>| {
-        NurbsSurface::from_lanes_for_decode(
+        NurbsSurface::from_lanes(
             ctx,
             NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
             NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
@@ -80,7 +80,7 @@ fn raw_surface_constructor_refuses_each_nested_collection() {
             matches!(with_limit(cap, make), Err(CodecError::ResourceLimit(resource)) if resource.operation == operation)
         );
     }
-    let expected = NurbsSurface::from_lanes(
+    let expected = NurbsSurface::from_lanes(&cadmpeg_test_support::service_decode_context(), 
         NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
         NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
         NurbsSurfaceLanes::new(
@@ -88,7 +88,7 @@ fn raw_surface_constructor_refuses_each_nested_collection() {
             Some(vec![vec![1.0; 2]; 2]),
         ),
         false,
-    );
+    ).expect("fixture constructor admission");
     assert_eq!(with_limit(12, make).expect("exact cap"), expected);
 }
 
@@ -132,13 +132,13 @@ fn raw_constructor_refusal_text_is_admitted_and_keeps_order() {
             None,
         ),
     ] {
-        let expected = NurbsCurve::from_lanes(
+        let expected = NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
             degree,
             knots.clone(),
             points.clone(),
             weights.clone(),
             false,
-        )
+        ).expect("fixture constructor admission")
         .expect_err("invalid lanes")
         .to_string();
         let arena = DecodeArena::new();
@@ -146,11 +146,11 @@ fn raw_constructor_refusal_text_is_admitted_and_keeps_order() {
         policy.limits.max_retained_bytes = 0;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
         assert!(
-            matches!(NurbsCurve::from_lanes_for_decode(&ctx, degree, knots.clone(), points.clone(), weights.clone(), false),
+            matches!(NurbsCurve::from_lanes(&ctx, degree, knots.clone(), points.clone(), weights.clone(), false),
             Err(CodecError::ResourceLimit(resource)) if resource.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes)
         );
         let actual = with_limit(u64::MAX, |ctx| {
-            NurbsCurve::from_lanes_for_decode(ctx, degree, knots, points, weights, false)
+            NurbsCurve::from_lanes(ctx, degree, knots, points, weights, false)
         })
         .expect("service refusal text")
         .expect_err("same geometry refusal")
@@ -169,7 +169,7 @@ fn raw_curve_constructor_retains_converted_poles_and_scopes_pairing() {
     policy.limits.max_retained_bytes = u64::try_from(output_bytes).unwrap();
     policy.limits.max_materialized_bytes = u64::try_from(temporary_bytes).unwrap();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let curve = NurbsCurve::from_lanes_for_decode(
+    let curve = NurbsCurve::from_lanes(
         &ctx,
         1,
         vec![0.0, 0.0, 1.0, 1.0],
@@ -200,7 +200,7 @@ fn admitted_curve_constructor_keeps_polynomial_pole_storage() {
     let points = vec![crate::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0)).unwrap(); 2];
     let address = points.as_ptr();
     let curve =
-        NurbsCurve::from_lanes_for_decode(&ctx, 1, vec![0.0, 0.0, 1.0, 1.0], points, None, false)
+        NurbsCurve::from_lanes(&ctx, 1, vec![0.0, 0.0, 1.0, 1.0], points, None, false)
             .unwrap()
             .unwrap();
     let super::super::NurbsPoles3::Polynomial { points } = curve.into_parts().2 else {

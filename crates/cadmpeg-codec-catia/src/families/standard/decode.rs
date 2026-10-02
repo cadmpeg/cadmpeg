@@ -607,7 +607,7 @@ mod consolidated_revolution_binding_tests {
         ir.model.curves.push(Curve {
             id: curve_id.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-                NurbsCurve::from_lanes(
+                NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
                     2,
                     vec![
                         -f64::MAX,
@@ -624,7 +624,7 @@ mod consolidated_revolution_binding_tests {
                     ],
                     None,
                     false,
-                )
+                ).expect("fixture constructor admission")
                 .expect("finite wide curve"),
             )),
             source_object: None,
@@ -10290,7 +10290,7 @@ mod circle_axis_tests {
         use cadmpeg_ir::geometry::nurbs::{NurbsSurface, NurbsSurfaceAxis, NurbsSurfaceLanes};
         let u = NurbsSurfaceAxis::new(1, vec![0., 0., 1e-10, 1e-10], false);
         let v = NurbsSurfaceAxis::new(1, vec![0., 0., 1., 1.], false);
-        let surface = NurbsSurface::from_lanes(
+        let surface = NurbsSurface::from_lanes(&cadmpeg_test_support::service_decode_context(), 
             u,
             v,
             NurbsSurfaceLanes::new(
@@ -10301,7 +10301,7 @@ mod circle_axis_tests {
                 None,
             ),
             false,
-        )
+        ).expect("fixture constructor admission")
         .expect("anisotropic nurbs surface");
         let residual = super::surface_membership::nurbs_surface_witness_distance(
             &surface,

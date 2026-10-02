@@ -247,12 +247,12 @@ mod carrier_resource_tests {
     #[test]
     fn nurbs_surface_carrier_refuses_collection_limit_below_copy_need() {
         let surface = B5Surface::Nurbs(
-            NurbsSurface::from_lanes(
+            NurbsSurface::from_lanes(&cadmpeg_test_support::service_decode_context(), 
                 NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
                 NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
                 NurbsSurfaceLanes::new(vec![vec![Point3::new(0.0, 0.0, 0.0); 2]; 2], None),
                 false,
-            )
+            ).expect("fixture constructor admission")
             .expect("valid bilinear surface"),
         );
         let refused =
@@ -335,7 +335,7 @@ fn profile_nurbs(
             point, direction, ..
         } => crate::nurbs::note_refusal(
             ctx,
-            cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes_for_decode(
+            cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
                 ctx,
                 1,
                 ctx.collect_vec(
@@ -471,7 +471,7 @@ pub(super) fn rational_arc(
     }
     crate::nurbs::note_refusal(
         ctx,
-        cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes_for_decode(
+        cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
             ctx,
             2,
             knots,
@@ -656,7 +656,7 @@ pub(super) fn revolve_nurbs(
         };
         let surface = match crate::nurbs::note_refusal(
             ctx,
-            match cadmpeg_ir::geometry::nurbs::NurbsSurface::from_lanes_for_decode(
+            match cadmpeg_ir::geometry::nurbs::NurbsSurface::from_lanes(
                 ctx,
                 cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
                     profile.degree(),
@@ -1287,13 +1287,13 @@ mod tests {
         use cadmpeg_ir::geometry::nurbs::NurbsCurve;
         use cadmpeg_ir::math::Point3;
 
-        let profile = NurbsCurve::from_lanes(
+        let profile = NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
             1,
             vec![0.0, 0.0, 1.0, 1.0],
             vec![Point3::new(1.0, 0.0, 0.0), Point3::new(1.0, 0.0, 1.0)],
             None,
             false,
-        )
+        ).expect("fixture constructor admission")
         .expect("valid revolution profile");
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
@@ -1321,13 +1321,13 @@ mod tests {
         use cadmpeg_ir::geometry::nurbs::NurbsCurve;
         use cadmpeg_ir::math::Point3;
 
-        let profile = NurbsCurve::from_lanes(
+        let profile = NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
             1,
             vec![0.0, 0.0, 1.0, 1.0],
             vec![Point3::new(1.0, 0.0, 0.0), Point3::new(1.0, 0.0, 1.0)],
             None,
             false,
-        )
+        ).expect("fixture constructor admission")
         .expect("valid revolution profile");
         let run = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
             revolve_nurbs(

@@ -1618,13 +1618,13 @@ mod tests {
 
     #[test]
     fn zero_entity_wire_nurbs_copy_refuses_collection_limit() {
-        let nurbs = NurbsCurve::from_lanes(
+        let nurbs = NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
             1,
             vec![0.0, 0.0, 1.0, 1.0],
             vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
             None,
             false,
-        )
+        ).expect("fixture constructor admission")
         .expect("valid linear NURBS");
         let geometry = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs));
         let limited = crate::test_support::with_collection_limit(0, |ctx| {
@@ -1648,13 +1648,13 @@ mod tests {
         ir.model.curves.push(Curve {
             id: CurveId::mint("catia:test:nurbs#0".to_string()).expect("identity grammar"),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-                NurbsCurve::from_lanes(
+                NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
                     1,
                     vec![0.0, 0.0, 1.0, 1.0],
                     vec![first, corner],
                     None,
                     false,
-                )
+                ).expect("fixture constructor admission")
                 .expect("valid linear NURBS"),
             )),
             source_object: None,

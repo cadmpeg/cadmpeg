@@ -45,13 +45,13 @@ fn curves() -> Vec<CurveGeometry> {
             self_intersect: Some(false),
         }),
         CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-            NurbsCurve::from_lanes(
+            NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
                 1,
                 vec![0., 0., 1., 1.],
                 vec![Point3::new(0., 0., 0.), Point3::new(1., 0., 0.)],
                 Some(vec![1., 2.]),
                 false,
-            )
+            ).expect("fixture constructor admission")
             .unwrap(),
         )),
     ];
