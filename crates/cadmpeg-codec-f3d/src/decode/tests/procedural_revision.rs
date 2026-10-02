@@ -1142,7 +1142,7 @@ fn generated_f3d_rewrites_nurbs_surface_control_grid() {
                     "control_points contains a non-finite point".into(),
                 )
             })
-        })
+        }, &cadmpeg_test_support::service_decode_context()).expect("pole edit admission")
         .unwrap();
     edit::replace(&mut nurbs, |previous| {
         let mut knots = previous.u_knots().to_vec();

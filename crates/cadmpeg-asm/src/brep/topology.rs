@@ -466,23 +466,24 @@ pub(super) fn walk_reachable_topology(
                                 }.transpose()?;
                                 let edge =
                                     ce.ref_at(6).and_then(|edge| by_index.get(&edge)).copied();
-                                let decoded = decoded.and_then(|(mut decoded, native_chart)| {
+                                let decoded = decoded.map(|(mut decoded, native_chart)| -> Result<_, cadmpeg_core::CodecError> {
                                     if native_chart {
                                         if let Some(surface) = face
                                             .ref_at(7)
                                             .and_then(|surface| by_index.get(&surface))
                                         {
-                                            nurbs::proc_curve::normalize_pcurve_for_surface_record(
+                                            let Some(()) = nurbs::proc_curve::normalize_pcurve_for_surface_record(
+                                                ctx,
                                                 surface.head(),
                                                 &surface.tokens,
                                                 &mut decoded,
-                                            )?;
+                                            ).transpose()? else { return Ok(None); };
                                         }
                                     }
-                                    pcurve_ranges_on_domain(&decoded, edge)
+                                    Ok(pcurve_ranges_on_domain(&decoded, edge)
                                         .and_then(|ranges| ranges.into_iter().next())
-                                        .map(|range| (decoded, range))
-                                });
+                                        .map(|range| (decoded, range)))
+                                }).transpose()?.flatten();
                                 if let Some((decoded, parameter_range)) = decoded {
                                     ctx.insert_hash_map(
                                         pcurve_geo,

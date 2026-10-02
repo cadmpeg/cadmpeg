@@ -8,7 +8,7 @@ use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::draft::{DraftAccounting, ModelCheckpoint, ModelDraft};
 use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::geometry::{
-    nurbs::{NurbsCurve, NurbsError},
+    nurbs::NurbsCurve,
     pcurve::{Pcurve, PcurveGeometry, PcurveNurbs, PcurveNurbsPoles, WeightedPole2},
     Curve, CurveGeometry, ProceduralCurve, ProceduralCurveDefinition, ProceduralSurface,
     ProceduralSurfaceDefinition, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface,
@@ -2476,7 +2476,7 @@ impl<'a> DecodeContext<'a> {
                     "Rhino instance surface cache copy",
                 )?);
             }
-            transform_surface(surface, transform)?;
+            transform_surface(ctx, surface, transform)?;
             ctx.reserve_scoped_vec(scratch, &mut links, 1, "Rhino transformed instance links")?;
             let id = ctx.format_scoped_text(
                 scratch,
@@ -5974,18 +5974,14 @@ fn scale_plane_pcurves(
             continue;
         }
         if let PcurveGeometry::Nurbs { nurbs } = &mut pcurve.geometry {
-            nurbs
-                .try_map_control_points(|_, pole| {
-                    let pole = pole.get();
-                    cadmpeg_ir::units::FinitePoint2::new(cadmpeg_ir::math::Point2::new(
-                        pole.u * scale.value(),
-                        pole.v * scale.value(),
-                    ))
-                    .ok_or_else(|| {
-                        NurbsError::Structure("control_points contains a non-finite point".into())
-                    })
-                })
-                .map_err(|error| crate::curves::GeometryError::unpositioned(error.to_string()))?;
+            if let Err(message) = nurbs.try_map_control_points(|_, pole| {
+                let pole = pole.get();
+                cadmpeg_ir::units::FinitePoint2::new(cadmpeg_ir::math::Point2::new(
+                    pole.u * scale.value(), pole.v * scale.value(),
+                )).ok_or("control_points contains a non-finite point")
+            }, ctx)? {
+                return Err(crate::curves::GeometryError::unpositioned(ctx.copy_retained_text(message, "Rhino pole mapping refusal")?));
+            }
         }
     }
     Ok(())
@@ -6982,16 +6978,11 @@ fn transform_curve(
     );
     curve.geometry = match geometry {
         CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(mut nurbs)) => {
-            nurbs
-                .try_map_control_points(|_, pole| {
-                    transform.apply_point(pole.get()).ok_or_else(|| {
-                        NurbsError::EditRefused(
-                            "instance control point transform produced a non-finite coordinate"
-                                .to_string(),
-                        )
-                    })
-                })
-                .map_err(|error| error.to_string())?;
+            if let Err(message) = nurbs.try_map_control_points(|_, pole| {
+                transform.apply_point(pole.get()).ok_or("instance control point transform produced a non-finite coordinate")
+            }, ctx)? {
+                return Err(ReferenceFailure::Semantic(ctx.copy_retained_text(message, "Rhino pole mapping refusal")?));
+            }
             CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs))
         }
         CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) => {
@@ -7006,16 +6997,11 @@ fn transform_curve(
                         "analytic instance curve conversion failed: {other}"
                     )),
                 })?;
-            nurbs
-                .try_map_control_points(|_, pole| {
-                    transform.apply_point(pole.get()).ok_or_else(|| {
-                        NurbsError::EditRefused(
-                            "instance control point transform produced a non-finite coordinate"
-                                .to_string(),
-                        )
-                    })
-                })
-                .map_err(|error| error.to_string())?;
+            if let Err(message) = nurbs.try_map_control_points(|_, pole| {
+                transform.apply_point(pole.get()).ok_or("instance control point transform produced a non-finite coordinate")
+            }, ctx)? {
+                return Err(ReferenceFailure::Semantic(ctx.copy_retained_text(message, "Rhino pole mapping refusal")?));
+            }
             CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs))
         }
         CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve)) => {
@@ -7071,23 +7057,18 @@ fn transform_curve(
     Ok(())
 }
 
-fn transform_surface(surface: &mut Surface, transform: Transform) -> Result<(), String> {
+fn transform_surface(ctx: &cadmpeg_core::decode::DecodeContext<'_>, surface: &mut Surface, transform: Transform) -> Result<(), ReferenceFailure> {
     let geometry = std::mem::replace(
         &mut surface.geometry,
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
     );
     surface.geometry = match geometry {
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(mut nurbs)) => {
-            nurbs
-                .try_map_control_points(|_, pole| {
-                    transform.apply_point(pole.get()).ok_or_else(|| {
-                        NurbsError::EditRefused(
-                            "instance control point transform produced a non-finite coordinate"
-                                .to_string(),
-                        )
-                    })
-                })
-                .map_err(|error| error.to_string())?;
+            if let Err(message) = nurbs.try_map_control_points(|_, pole| {
+                transform.apply_point(pole.get()).ok_or("instance control point transform produced a non-finite coordinate")
+            }, ctx)? {
+                return Err(ReferenceFailure::Semantic(ctx.copy_retained_text(message, "Rhino pole mapping refusal")?));
+            }
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(nurbs))
         }
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)) => {
@@ -7121,25 +7102,25 @@ fn transform_surface(surface: &mut Surface, transform: Transform) -> Result<(), 
                 projected.z - dot * normal.z,
             );
             let length = PositiveReal::new(value.norm())
-                .ok_or("instance plane transform collapsed its frame")?;
+                .ok_or_else(|| "instance plane transform collapsed its frame".to_string())?;
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                 cadmpeg_ir::geometry::analytic::PlaneSurface::new(
                     origin,
                     UnitVector3::normalized_with_admitted_length(value, length)
                         .and_then(|u_axis| OrthonormalFrame3::from_units(unit_normal, u_axis))
-                        .ok_or("PlaneSurface.normal/u_axis must form an orthonormal frame")?,
+                        .ok_or_else(|| "PlaneSurface.normal/u_axis must form an orthonormal frame".to_string())?,
                 ),
             ))
         }
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record }) => {
             surface.geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record });
-            return Err("unknown free surface cannot be transformed exactly".to_string());
+            return Err("unknown free surface cannot be transformed exactly".to_string().into());
         }
         other => {
             surface.geometry = other;
             return Err(
                 "analytic surface family has no exact general-affine instance conversion"
-                    .to_string(),
+                    .to_string().into(),
             );
         }
     };

@@ -1819,7 +1819,11 @@ impl PcurveNurbs {
     pub fn try_map_control_points_in_place<E>(
         &mut self,
         mut map: impl FnMut(FinitePoint2) -> Result<FinitePoint2, E>,
-    ) -> Result<(), E> {
+        ctx: &DecodeContext<'_>,
+    ) -> Result<Result<(), E>, CodecError> {
+        let count = cadmpeg_core::decode::u64_from_index(self.poles.count());
+        ctx.charge_work(count, "IR pcurve in-place pole edit")?;
+        Ok((|| {
         match &mut self.poles {
             PcurveNurbsPoles::Polynomial { points } => {
                 for point in points {
@@ -1833,6 +1837,7 @@ impl PcurveNurbs {
             }
         }
         Ok(())
+            })())
     }
 
     /// Scale every pole position in place, charging one unit of work per pole.
@@ -2029,7 +2034,12 @@ impl PcurveNurbs {
     pub fn try_map_control_points<E>(
         &mut self,
         map: impl Fn(usize, FinitePoint2) -> Result<FinitePoint2, E>,
-    ) -> Result<(), E> {
+        ctx: &DecodeContext<'_>,
+    ) -> Result<Result<(), E>, CodecError> {
+        let count = cadmpeg_core::decode::u64_from_index(self.poles.count());
+        ctx.charge_work(count, "IR pole edit validation")?;
+        ctx.charge_work(count, "IR pole edit mutation")?;
+        Ok((|| {
         match &self.poles {
             PcurveNurbsPoles::Polynomial { points } => {
                 for (index, point) in points.iter().copied().enumerate() {
@@ -2055,6 +2065,7 @@ impl PcurveNurbs {
             }
         }
         Ok(())
+            })())
     }
 
     /// Rational weights in pole order.

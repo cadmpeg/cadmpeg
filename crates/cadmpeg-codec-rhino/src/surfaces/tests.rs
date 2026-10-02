@@ -1268,7 +1268,7 @@ fn extrusion_tensor_preserves_rational_profile_knots_weights_and_transpose() {
                 "control_points contains a non-finite point".into(),
             )
         })
-    })
+    }, &cadmpeg_test_support::service_decode_context()).expect("pole edit admission")
     .expect("valid test curve edit");
     let plain = super::extrusion_nurbs(
         &cadmpeg_test_support::service_decode_context(),

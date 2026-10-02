@@ -660,7 +660,7 @@ fn decode_transfers_embedded_tolerant_coedge_use_curves() {
                     "control_points contains a non-finite point".into(),
                 )
             })
-        })
+        }, &cadmpeg_test_support::service_decode_context()).expect("pole edit admission")
         .unwrap();
     let expected = nurbs.clone();
     let mut preserved = Vec::new();

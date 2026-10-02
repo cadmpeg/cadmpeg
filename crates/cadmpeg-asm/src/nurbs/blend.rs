@@ -699,18 +699,17 @@ fn blend_value_name<'a>(cur: &mut Cur<'a>) -> Option<&'a str> {
     cur.take_ident()
 }
 
-fn radius_function_geometry(mut function: PcurveNurbs) -> Option<PcurveGeometry> {
-    function
-        .try_map_control_points(|_, point| {
+fn radius_function_geometry(ctx: &cadmpeg_core::decode::DecodeContext<'_>, mut function: PcurveNurbs) -> Option<Result<PcurveGeometry, cadmpeg_core::CodecError>> {
+    propagate_resource!(function.try_map_control_points(|_, point| {
             let point = point.get();
             cadmpeg_ir::units::FinitePoint2::new(cadmpeg_ir::math::Point2::new(
                 point.u * LEN_TO_MM,
                 point.v,
             ))
             .ok_or(())
-        })
+        }, ctx))
         .ok()?;
-    Some(PcurveGeometry::Nurbs { nurbs: function })
+    Some(Ok(PcurveGeometry::Nurbs { nurbs: function }))
 }
 
 fn variable_blend_value(
@@ -772,7 +771,7 @@ fn variable_blend_value(
                 discriminator,
                 parameter,
                 radius,
-                function: radius_function_geometry(function)?,
+                function: propagate_resource!(radius_function_geometry(ctx, function)?),
                 terminal,
             }
         }
@@ -836,7 +835,7 @@ fn variable_blend_value(
                 discriminator,
                 parameter,
                 radius,
-                function: radius_function_geometry(function)?,
+                function: propagate_resource!(radius_function_geometry(ctx, function)?),
                 enum_count,
                 enum_tagged,
                 points,

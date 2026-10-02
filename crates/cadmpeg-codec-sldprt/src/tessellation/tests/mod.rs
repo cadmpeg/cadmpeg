@@ -401,7 +401,7 @@ fn flat_test_nurbs_surface() -> NurbsSurface {
                     "control_points contains a non-finite point".into(),
                 )
             })
-        })
+        }, &cadmpeg_test_support::service_decode_context()).expect("pole edit admission")
         .unwrap();
     surface
 }

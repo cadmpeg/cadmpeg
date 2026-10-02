@@ -221,7 +221,7 @@ fn counted_offset_accepts_fitted_nurbs_with_exact_endpoint_frames() {
                         point.u += 0.01;
                     }
                     cadmpeg_ir::units::FinitePoint2::new(point).ok_or(())
-                })
+                }, &cadmpeg_test_support::service_decode_context()).expect("pole edit admission")
                 .unwrap();
         };
         definition.try_into()

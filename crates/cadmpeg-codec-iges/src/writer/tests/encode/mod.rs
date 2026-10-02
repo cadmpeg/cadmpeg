@@ -1270,7 +1270,7 @@ fn encode_rejects_a_bounded_sheet_with_disagreeing_pcurve_endpoints() {
                     point.u += 0.25;
                 }
                 cadmpeg_ir::units::FinitePoint2::new(point).ok_or(())
-            })
+            }, &cadmpeg_test_support::service_decode_context()).expect("pole edit admission")
             .unwrap();
     }
 

@@ -1198,7 +1198,7 @@ fn generated_projected_brep_c2_curve(
                             "control_points contains a non-finite point".into(),
                         )
                     })
-                })
+                }, &writer_ctx)?
                 .map_err(|error| CodecError::NotImplemented(error.to_string()))?;
             if sense == Sense::Reversed {
                 let sum = projected.knots()[usize::try_from(projected.degree()).map_err(|_| {

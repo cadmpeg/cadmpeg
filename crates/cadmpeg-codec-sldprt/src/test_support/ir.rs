@@ -91,7 +91,7 @@ pub(crate) fn translate_model_x(ir: &mut cadmpeg_ir::document::CadIr, dx: f64) {
                                 "control_points contains a non-finite point".into(),
                             )
                         })
-                    })
+                    }, &cadmpeg_test_support::service_decode_context()).expect("pole edit admission")
                     .unwrap();
             }
             CurveGeometry::Solved(SolvedCurveGeometry::Polyline(polyline)) => {
@@ -201,7 +201,7 @@ pub(crate) fn translate_model_x(ir: &mut cadmpeg_ir::document::CadIr, dx: f64) {
                                 "control_points contains a non-finite point".into(),
                             )
                         })
-                    })
+                    }, &cadmpeg_test_support::service_decode_context()).expect("pole edit admission")
                     .unwrap();
             }
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Polygonal(surface)) => {

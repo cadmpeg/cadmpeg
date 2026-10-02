@@ -137,7 +137,7 @@ fn a_refused_pcurve_pole_edit_keeps_the_prior_poles() {
         Err(crate::geometry::nurbs::NurbsError::EditRefused(
             "caller refused this pole".into(),
         ))
-    });
+    }, &cadmpeg_test_support::service_decode_context()).expect("pole edit admission");
     assert_eq!(
         refusal,
         Err(crate::geometry::nurbs::NurbsError::EditRefused(
@@ -166,7 +166,7 @@ fn in_place_pcurve_pole_scale_refuses_atomically() {
             let raw = point.get();
             FinitePoint2::new(Point2::new(raw.u * 2.0, raw.v * 2.0))
                 .ok_or_else(|| NurbsError::Structure("non-finite control point".into()))
-        })
+        }, &cadmpeg_test_support::service_decode_context()).expect("pole edit admission")
         .expect_err("second pole overflows");
     assert!(matches!(error, NurbsError::Structure(_)));
     assert_eq!(nurbs, original);
@@ -192,7 +192,7 @@ fn polynomial_pcurve_map_updates_all_poles_and_refuses_last_atomically() {
             FinitePoint2::new(Point2::new(point.get().u + 5.0, point.get().v))
                 .ok_or("non-finite point")
         }
-    });
+    }, &cadmpeg_test_support::service_decode_context()).expect("pole edit admission");
     assert_eq!(refusal, Err("last pole"));
     assert_eq!(curve, original);
     curve
@@ -202,7 +202,7 @@ fn polynomial_pcurve_map_updates_all_poles_and_refuses_last_atomically() {
                 point.get().v * 2.0,
             ))
             .ok_or("non-finite point")
-        })
+        }, &cadmpeg_test_support::service_decode_context()).expect("pole edit admission")
         .unwrap();
     assert_eq!(
         curve.control_points(),
@@ -225,7 +225,7 @@ fn rational_pcurve_map_updates_all_poles_keeps_weights_and_refuses_last_atomical
             FinitePoint2::new(Point2::new(point.get().u + 5.0, point.get().v))
                 .ok_or("non-finite point")
         }
-    });
+    }, &cadmpeg_test_support::service_decode_context()).expect("pole edit admission");
     assert_eq!(refusal, Err("last pole"));
     assert_eq!(curve, original);
     curve
@@ -235,7 +235,7 @@ fn rational_pcurve_map_updates_all_poles_keeps_weights_and_refuses_last_atomical
                 point.get().v * 2.0,
             ))
             .ok_or("non-finite point")
-        })
+        }, &cadmpeg_test_support::service_decode_context()).expect("pole edit admission")
         .unwrap();
     assert_eq!(
         curve.control_points(),

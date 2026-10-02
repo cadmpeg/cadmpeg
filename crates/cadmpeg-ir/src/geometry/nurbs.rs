@@ -817,7 +817,12 @@ impl BsplineSurface {
     pub fn try_map_control_points<E>(
         &mut self,
         map: impl Fn(usize, FinitePoint3) -> Result<FinitePoint3, E>,
-    ) -> Result<(), E> {
+        ctx: &DecodeContext<'_>,
+    ) -> Result<Result<(), E>, CodecError> {
+        let count = cadmpeg_core::decode::u64_from_index(self.control_points.len()).checked_mul(cadmpeg_core::decode::u64_from_index(self.control_points.first().map_or(0, Vec::len))).ok_or_else(|| ctx.refuse_codec_limit("IR pole edit work", u64::MAX - 1, u64::MAX))?;
+        ctx.charge_work(count, "IR pole edit validation")?;
+        ctx.charge_work(count, "IR pole edit mutation")?;
+        Ok((|| {
         for (index, point) in self.control_points.iter().flatten().copied().enumerate() {
             map(index, point)?;
         }
@@ -825,6 +830,7 @@ impl BsplineSurface {
             *point = map(index, *point)?;
         }
         Ok(())
+            })())
     }
 }
 
@@ -1358,7 +1364,12 @@ impl NurbsSurface {
     pub fn try_map_control_points<E>(
         &mut self,
         map: impl Fn(usize, FinitePoint3) -> Result<FinitePoint3, E>,
-    ) -> Result<(), E> {
+        ctx: &DecodeContext<'_>,
+    ) -> Result<Result<(), E>, CodecError> {
+        let count = cadmpeg_core::decode::u64_from_index(self.u_count()).checked_mul(cadmpeg_core::decode::u64_from_index(self.v_count())).ok_or_else(|| ctx.refuse_codec_limit("IR pole edit work", u64::MAX - 1, u64::MAX))?;
+        ctx.charge_work(count, "IR pole edit validation")?;
+        ctx.charge_work(count, "IR pole edit mutation")?;
+        Ok((|| {
         match &self.poles {
             NurbsPoleGrid::Polynomial { rows } => {
                 for (index, point) in rows.iter().flatten().copied().enumerate() {
@@ -1384,6 +1395,7 @@ impl NurbsSurface {
             }
         }
         Ok(())
+            })())
     }
 
     /// Rational weight rows in control-grid order.
@@ -1687,7 +1699,12 @@ impl NurbsCurve {
     pub fn try_map_control_points<E>(
         &mut self,
         map: impl Fn(usize, FinitePoint3) -> Result<FinitePoint3, E>,
-    ) -> Result<(), E> {
+        ctx: &DecodeContext<'_>,
+    ) -> Result<Result<(), E>, CodecError> {
+        let count = cadmpeg_core::decode::u64_from_index(self.poles.count());
+        ctx.charge_work(count, "IR pole edit validation")?;
+        ctx.charge_work(count, "IR pole edit mutation")?;
+        Ok((|| {
         match &self.poles {
             NurbsPoles3::Polynomial { points } => {
                 for (index, point) in points.iter().copied().enumerate() {
@@ -1713,6 +1730,7 @@ impl NurbsCurve {
             }
         }
         Ok(())
+            })())
     }
 
     /// Rational weights in pole order.

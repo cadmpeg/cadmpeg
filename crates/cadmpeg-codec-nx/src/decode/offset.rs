@@ -3017,7 +3017,7 @@ mod tests {
                             "control_points contains a non-finite point".into(),
                         )
                     })
-                })
+                }, &cadmpeg_test_support::service_decode_context()).expect("pole edit admission")
                 .expect("finite offset-support test pole edit");
             let support = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(support));
             let candidate = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(candidate));
@@ -3241,7 +3241,7 @@ mod tests {
                             "control_points contains a non-finite point".into(),
                         )
                     })
-                })
+                }, &cadmpeg_test_support::service_decode_context()).expect("pole edit admission")
                 .expect("finite translated support");
             let index = cadmpeg_ir::index::ModelIndex::new_model_only(&near_zero);
             let target = Point3::new(3., 0.25, 1e-200);

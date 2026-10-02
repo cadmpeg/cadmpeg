@@ -306,7 +306,7 @@ fn fitted_nurbs_offsets_validate_from_clamped_endpoint_frames() {
                             point.v,
                         ))
                         .ok_or(())
-                    })
+                    }, &cadmpeg_test_support::service_decode_context()).expect("pole edit admission")
                     .unwrap();
             };
             definition.try_into()

@@ -659,34 +659,33 @@ pub(crate) fn decode_embedded_curve_2d(
             "embedded plane-space object is not a curve",
         ));
     };
-    scale_decoded_curve(&mut curve, scale, start)?;
+    scale_decoded_curve(ctx, &mut curve, scale, start)?;
     curve.warnings_mut().prepend(wrapper_warnings);
     Ok(curve)
 }
 
 fn scale_decoded_curve(
+    ctx: &DecodeContext<'_>,
     curve: &mut DecodedCurve,
     scale: MillimeterScale,
     offset: usize,
 ) -> Result<(), GeometryError> {
+    ctx.charge_work(1, "Rhino plane-space curve scaling visit")?;
     match curve {
         DecodedCurve::Compound { children, .. } => {
+            let _depth = ctx.enter_nested("Rhino plane-space curve scaling nesting")?;
             for (_, child) in children {
-                scale_decoded_curve(child, scale, offset)?;
+                scale_decoded_curve(ctx, child, scale, offset)?;
             }
             return Ok(());
         }
         DecodedCurve::Leaf { geometry, .. } => match geometry {
             CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)) => {
-                nurbs
-                    .try_map_control_points(|_, point| {
-                        point.scaled(scale.positive()).ok_or_else(|| {
-                            cadmpeg_ir::geometry::nurbs::NurbsError::EditRefused(
-                                "scaled plane-space curve is invalid".to_string(),
-                            )
-                        })
-                    })
-                    .map_err(|error| GeometryError::malformed(offset, error.to_string()))?;
+                if let Err(message) = nurbs.try_map_control_points(|_, point| {
+                    point.scaled(scale.positive()).ok_or("scaled plane-space curve is invalid")
+                }, ctx)? {
+                    return Err(GeometryError::malformed(offset, ctx.copy_retained_text(message, "Rhino pole mapping refusal")?));
+                }
             }
             CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) => {
                 let radius = circle_curve.radius().get();
@@ -3026,6 +3025,38 @@ mod tests {
     }
 
     #[test]
+    fn plane_space_curve_scaling_preserves_work_and_depth_refusals() {
+        let original = NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 1,
+            vec![0., 0., 1., 1.], vec![Point3::new(1., 2., 3.); 2], None, false)
+            .expect("admission").expect("curve");
+        let leaf = || DecodedCurve::leaf(CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(original.clone())), Diagnostics::new());
+        for cap in 0..5 {
+            let arena = cadmpeg_core::decode::DecodeArena::new();
+            let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+            policy.limits.max_work_units = cap;
+            let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+            let mut decoded = leaf();
+            let Err(GeometryError::Codec(CodecError::ResourceLimit(limit))) = scale_decoded_curve(&ctx, &mut decoded, crate::test_support::millimeter_scale(2.), 17) else { panic!("work refusal must escape geometry fallback"); };
+            assert_eq!(decoded.reported_geometry(), &CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(original.clone())));
+            assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit));
+        }
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_recursion_depth = 0;
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+        let mut decoded = DecodedCurve::Compound {
+            children: vec![(FiniteReal::ZERO, leaf())],
+            end_parameter: FiniteReal::ONE,
+            warnings: Diagnostics::new(),
+        };
+        let Err(GeometryError::Codec(CodecError::ResourceLimit(limit))) = scale_decoded_curve(&ctx, &mut decoded, crate::test_support::millimeter_scale(2.), 17) else { panic!("session depth refusal must escape"); };
+        assert_eq!(limit.dimension, cadmpeg_core::decode::ResourceDimension::RecursionDepth);
+        let DecodedCurve::Compound { children, .. } = decoded else { panic!("compound retained"); };
+        assert_eq!(children[0].1.reported_geometry(), &CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(original)));
+        assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit));
+    }
+
+    #[test]
     fn plane_space_nurbs_scaling_rejects_coordinate_overflow() {
         let curve = NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
             1,
@@ -3040,6 +3071,7 @@ mod tests {
             Diagnostics::new(),
         );
         let error = scale_decoded_curve(
+            &cadmpeg_test_support::service_decode_context(),
             &mut decoded,
             crate::test_support::millimeter_scale(f64::MAX),
             17,
@@ -3070,7 +3102,7 @@ mod tests {
             CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle)),
             Diagnostics::new(),
         );
-        scale_decoded_curve(&mut decoded, crate::test_support::millimeter_scale(2.0), 17)
+        scale_decoded_curve(&cadmpeg_test_support::service_decode_context(), &mut decoded, crate::test_support::millimeter_scale(2.0), 17)
             .expect("scaled circle");
         let DecodedCurve::Leaf {
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle)),
@@ -3092,7 +3124,7 @@ mod tests {
             CurveGeometry::Solved(SolvedCurveGeometry::Line(line)),
             Diagnostics::new(),
         );
-        scale_decoded_curve(&mut decoded, crate::test_support::millimeter_scale(2.0), 17)
+        scale_decoded_curve(&cadmpeg_test_support::service_decode_context(), &mut decoded, crate::test_support::millimeter_scale(2.0), 17)
             .expect("scaled line");
         let DecodedCurve::Leaf {
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(line)),
@@ -3113,7 +3145,7 @@ mod tests {
             CurveGeometry::Solved(SolvedCurveGeometry::Degenerate(curve)),
             Diagnostics::new(),
         );
-        scale_decoded_curve(&mut decoded, crate::test_support::millimeter_scale(2.0), 17)
+        scale_decoded_curve(&cadmpeg_test_support::service_decode_context(), &mut decoded, crate::test_support::millimeter_scale(2.0), 17)
             .expect("scaled degenerate curve");
         let DecodedCurve::Leaf {
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Degenerate(curve)),

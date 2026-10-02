@@ -203,7 +203,7 @@ fn exact_circle_extrusion_reduces_to_cylinder_only_along_normal() {
                     "control_points contains a non-finite point".into(),
                 )
             })
-        })
+        }, &cadmpeg_test_support::service_decode_context()).expect("pole edit admission")
         .unwrap();
     assert!(rational_four_arc_circle(&resource_ctx, &approximate).is_none());
 }
@@ -325,7 +325,7 @@ fn exact_circle_recognition_is_projective_and_degree_invariant() {
                     "control_points contains a non-finite point".into(),
                 )
             })
-        })
+        }, &cadmpeg_test_support::service_decode_context()).expect("pole edit admission")
         .unwrap();
     assert!(rational_four_arc_circle(&resource_ctx, &elevated).is_none());
 }
@@ -419,7 +419,7 @@ fn constant_circular_plane_plane_blend_reduces_to_tangent_cylinder() {
                     "control_points contains a non-finite point".into(),
                 )
             })
-        })
+        }, &cadmpeg_test_support::service_decode_context()).expect("pole edit admission")
         .unwrap();
     assert!(analytic_procedural_surface(&resource_ctx, &definition).is_none());
 }
@@ -445,7 +445,7 @@ fn constant_circular_plane_cylinder_blend_reduces_to_tangent_torus() {
                     "control_points contains a non-finite point".into(),
                 )
             })
-        })
+        }, &cadmpeg_test_support::service_decode_context()).expect("pole edit admission")
         .unwrap();
     let mut definition = nurbs::proc_surface::DecodedProceduralSurfaceDefinition::Blend {
         supports: Box::new([

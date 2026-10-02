@@ -3264,7 +3264,7 @@ fn transform_sketch_block_geometry(
             if copied
                 .try_map_control_points_in_place(|pole| {
                     point(pole.get()).and_then(FinitePoint2::new).ok_or(())
-                })
+                }, ctx)?
                 .is_err()
             {
                 return Ok(None);

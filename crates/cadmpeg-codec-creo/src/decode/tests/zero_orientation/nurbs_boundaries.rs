@@ -141,7 +141,7 @@ fn extrusion_nurbs_boundary_requires_one_plane_supported_control_edge() {
                     "control_points contains a non-finite point".into(),
                 )
             })
-        })
+        }, &cadmpeg_test_support::service_decode_context()).expect("pole edit admission")
         .expect("finite fixture geometry preserves NURBS invariants");
     assert!(nurbs_plane_boundary_curve(
         &coplanar,
@@ -165,7 +165,7 @@ fn extrusion_nurbs_boundary_requires_one_plane_supported_control_edge() {
                     "control_points contains a non-finite point".into(),
                 )
             })
-        })
+        }, &cadmpeg_test_support::service_decode_context()).expect("pole edit admission")
         .expect("finite fixture geometry preserves NURBS invariants");
     let mut zero_weights = coplanar.pole_grid().weights().expect("rational fixture");
     zero_weights[0][0] = 0.0;

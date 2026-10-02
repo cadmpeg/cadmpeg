@@ -56,7 +56,7 @@ fn analytic_uv_completion_replaces_a_sentinel_contaminated_support_lane() {
                                 } else {
                                     Ok(point)
                                 }
-                            })
+                            }, &cadmpeg_test_support::service_decode_context()).expect("pole edit admission")
                             .unwrap();
                     };
                     cadmpeg_ir::geometry::IntcurveSupportContext::try_new(
@@ -151,7 +151,7 @@ fn analytic_uv_completion_replaces_a_finite_mismatched_support_lane() {
                                     point.v,
                                 ))
                                 .ok_or(())
-                            })
+                            }, &cadmpeg_test_support::service_decode_context()).expect("pole edit admission")
                             .unwrap();
                     };
                     cadmpeg_ir::geometry::IntcurveSupportContext::try_new(

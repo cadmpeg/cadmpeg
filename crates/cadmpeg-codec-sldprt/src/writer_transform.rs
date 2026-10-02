@@ -265,6 +265,10 @@ fn transform_surface(
     geometry: &mut SurfaceGeometry,
     transform: Transform,
 ) -> Result<(), CodecError> {
+    let writer_arena = cadmpeg_core::decode::DecodeArena::new();
+    let writer_policy = cadmpeg_core::decode::DecodePolicy::desktop();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &writer_arena, &writer_policy)?;
+
     match geometry {
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)) => {
             let origin = placed_point(transform, plane_surface.origin())?;
@@ -336,7 +340,7 @@ fn transform_surface(
                     transform
                         .apply_point(point.get())
                         .ok_or_else(|| NurbsError::EditRefused(NON_FINITE_POINT.to_string()))
-                })
+                }, &ctx)?
                 .map_err(|error| match error {
                     NurbsError::EditRefused(message) => CodecError::NotImplemented(message),
                     error => {
@@ -376,6 +380,10 @@ fn transform_surface(
 }
 
 fn transform_curve(geometry: &mut CurveGeometry, transform: Transform) -> Result<(), CodecError> {
+    let writer_arena = cadmpeg_core::decode::DecodeArena::new();
+    let writer_policy = cadmpeg_core::decode::DecodePolicy::desktop();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &writer_arena, &writer_policy)?;
+
     match geometry {
         CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve)) => {
             let origin = placed_point(transform, line_curve.origin())?;
@@ -420,7 +428,7 @@ fn transform_curve(geometry: &mut CurveGeometry, transform: Transform) -> Result
                     transform
                         .apply_point(point.get())
                         .ok_or_else(|| NurbsError::EditRefused(NON_FINITE_POINT.to_string()))
-                })
+                }, &ctx)?
                 .map_err(|error| match error {
                     NurbsError::EditRefused(message) => CodecError::NotImplemented(message),
                     error => {

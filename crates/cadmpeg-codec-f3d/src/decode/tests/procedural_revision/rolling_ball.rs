@@ -390,7 +390,7 @@ fn generated_f3d_rewrites_rolling_ball_support_cache() {
                     "control_points contains a non-finite point".into(),
                 )
             })
-        })
+        }, &cadmpeg_test_support::service_decode_context()).expect("pole edit admission")
         .unwrap();
     edit::replace(nurbs, |previous| {
         let mut knots = previous.u_knots().to_vec();

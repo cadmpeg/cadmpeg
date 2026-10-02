@@ -2088,7 +2088,7 @@ pub(super) fn project(
             directrix
         } else {
             match directrix
-                .try_map_control_points(|_, point| transform.apply_point(point.get()).ok_or(()))
+                .try_map_control_points(|_, point| transform.apply_point(point.get()).ok_or(()), ctx)?
             {
                 Ok(()) => directrix,
                 Err(()) => {
@@ -2743,7 +2743,7 @@ pub(super) fn project(
             // here rather than carried past the untransformed one.
             let mut placed_generatrix = generatrix;
             let Ok(()) = placed_generatrix
-                .try_map_control_points(|_, point| transform.apply_point(point.get()).ok_or(()))
+                .try_map_control_points(|_, point| transform.apply_point(point.get()).ok_or(()), ctx)?
             else {
                 super::push_attributed_loss(
                     ctx,
