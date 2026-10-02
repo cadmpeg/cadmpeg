@@ -76,7 +76,7 @@ pub fn chunks(data: &[u8]) {
             }
         }
     }
-    let Ok(header) = chunks::parse_header(data) else {
+    let Ok(header) = chunks::parse_header(&ctx, data) else {
         return;
     };
     let mut offset = header.start_offset + file_header::LEN;

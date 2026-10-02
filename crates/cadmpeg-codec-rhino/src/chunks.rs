@@ -199,9 +199,16 @@ impl fmt::Display for FramingError {
 impl std::error::Error for FramingError {}
 
 /// Parses the exact 32-byte file header.
-pub(crate) fn parse_header(bytes: &[u8]) -> Result<Header, FramingError> {
+pub(crate) fn parse_header(
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+) -> Result<Header, FramingError> {
     const MAX_HEADER_SEARCH: usize = 33_554_432 + MAGIC.len();
     let search_end = bytes.len().min(MAX_HEADER_SEARCH);
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(search_end),
+        "Rhino header magic scan",
+    )?;
     let start_offset = bytes[..search_end]
         .windows(MAGIC.len())
         .position(|window| window == MAGIC)

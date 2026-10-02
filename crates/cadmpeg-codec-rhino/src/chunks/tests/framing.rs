@@ -3,7 +3,7 @@
 
 use std::io::Cursor;
 
-use cadmpeg_core::decode::InspectOptions;
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, InspectOptions, ResourceDimension};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{Codec, Confidence};
 
@@ -100,32 +100,96 @@ fn parses_exact_header_and_scope() {
         ("80", ArchiveVersion::V8),
         ("90", ArchiveVersion::V9),
     ] {
-        let parsed = parse_header(&header(text)).expect("valid header");
+        let parsed = parse_header(&cadmpeg_test_support::service_decode_context(), &header(text)).expect("valid header");
         assert_eq!(parsed.archive_version, expected);
     }
-    assert!(parse_header(&header("0")).is_err());
+    assert!(parse_header(&cadmpeg_test_support::service_decode_context(), &header("0")).is_err());
     let mut invalid = header("50");
     invalid[file_header::ARCHIVE_VERSION] = b'0';
     assert!(matches!(
-        parse_header(&invalid),
+        parse_header(&cadmpeg_test_support::service_decode_context(), &invalid),
         Err(FramingError::InvalidHeader)
     ));
     invalid = header("50");
     invalid[31] = b' ';
     assert!(matches!(
-        parse_header(&invalid),
+        parse_header(&cadmpeg_test_support::service_decode_context(), &invalid),
         Err(FramingError::InvalidHeader)
     ));
-    assert!(parse_header(&header("1234567")).is_ok());
-    assert!(parse_header(&header("12345678")).is_ok());
+    assert!(parse_header(&cadmpeg_test_support::service_decode_context(), &header("1234567")).is_ok());
+    assert!(parse_header(&cadmpeg_test_support::service_decode_context(), &header("12345678")).is_ok());
     let mut embedded = vec![0x5a; 127];
     embedded.extend(header("80"));
     assert_eq!(
-        parse_header(&embedded)
+        parse_header(&cadmpeg_test_support::service_decode_context(), &embedded)
             .expect("embedded archive")
             .start_offset,
         127
     );
+}
+
+#[test]
+fn header_magic_scan_refuses_work_before_search() {
+    for with_magic in [false, true] {
+        let mut bytes = vec![0x5a; 4096];
+        if with_magic {
+            bytes.extend(header("80"));
+        }
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        let scan_work = u64::try_from(bytes.len()).expect("fixture length fits");
+        policy.limits.max_work_units = scan_work - 1;
+        let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+            .expect("root bytes admitted");
+        assert!(matches!(parse_header(&ctx, &bytes), Err(FramingError::Resource(limit))
+            if limit.dimension == ResourceDimension::WorkUnits
+                && limit.operation == "Rhino header magic scan"
+                && limit.used == 0 && limit.additional == scan_work
+                && Some(limit) == ctx.resource_refusal()));
+    }
+}
+
+#[test]
+fn header_magic_scan_charges_each_call_to_the_same_context() {
+    let mut bytes = vec![0x5a; 4096];
+    bytes.extend(header("80"));
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    let scan_work = u64::try_from(bytes.len()).expect("fixture length fits");
+    policy.limits.max_work_units = scan_work;
+    let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+        .expect("root bytes admitted");
+    let parsed = parse_header(&ctx, &bytes).expect("one scan fits the allowance");
+    assert_eq!(parsed.start_offset, 4096);
+    assert_eq!(parsed.archive_version, ArchiveVersion::V8);
+    assert!(matches!(parse_header(&ctx, &bytes), Err(FramingError::Resource(limit))
+        if limit.dimension == ResourceDimension::WorkUnits
+            && limit.operation == "Rhino header magic scan"
+            && limit.used == scan_work && limit.additional == scan_work
+            && Some(limit) == ctx.resource_refusal()));
+}
+
+#[test]
+fn header_magic_scan_refusal_reaches_container_and_legacy_callers() {
+    let mut bytes = vec![0x5a; 4096];
+    bytes.extend(header("1"));
+    for route in ["scan", "inspect", "decode", "legacy"] {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+            .expect("root bytes admitted");
+        let result = match route {
+            "scan" => crate::container::scan(&ctx, &bytes).map(|_| ()),
+            "inspect" => crate::container::inspect(&ctx, root).map(|_| ()),
+            "decode" => crate::container::decode(&ctx, root).map(|_| ()),
+            "legacy" => crate::legacy::decode_v1(&ctx, &bytes).map(|_| ()),
+            _ => unreachable!("fixed route list"),
+        };
+        assert!(matches!(result, Err(CodecError::ResourceLimit(limit))
+            if limit.operation == "Rhino header magic scan"
+                && Some(limit) == ctx.resource_refusal()), "route: {route}");
+    }
 }
 
 #[test]

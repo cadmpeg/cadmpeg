@@ -1035,7 +1035,7 @@ fn scan_with_record_limit<'a>(
     data: &'a [u8],
     record_limit: usize,
 ) -> Result<Scan<'a>, CodecError> {
-    let header = parse_header(data).map_err(framing_error)?;
+    let header = parse_header(ctx, data).map_err(framing_error)?;
     let archive = header.archive_version;
     let archive_start = header.start_offset;
     let comment_offset = archive_start + file_header::LEN;
@@ -1704,7 +1704,7 @@ pub(crate) fn inspect(
     root: View<'_>,
 ) -> Result<ContainerSummary, CodecError> {
     let data = acquire(root);
-    let header = parse_header(data).map_err(framing_error)?;
+    let header = parse_header(ctx, data).map_err(framing_error)?;
     if !header.archive_version.is_chunked() {
         // The properties table is not read on this path, so no openNURBS
         // writer-version stamp is declared.
@@ -1734,7 +1734,7 @@ pub(crate) fn inspect(
 /// Decode a Rhino stream according to the supported container depth.
 pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded, CodecError> {
     let data = acquire(root);
-    let header = parse_header(data).map_err(framing_error)?;
+    let header = parse_header(ctx, data).map_err(framing_error)?;
     if header.archive_version == ArchiveVersion::V1 {
         return crate::legacy::decode_v1(ctx, data);
     }
