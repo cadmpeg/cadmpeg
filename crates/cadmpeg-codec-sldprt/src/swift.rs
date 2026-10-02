@@ -2860,8 +2860,8 @@ fn deviation(
 }
 
 const PRIMARY_DATUM_PRECEDENCE: NonZeroU32 = NonZeroU32::MIN;
-const SECONDARY_DATUM_PRECEDENCE: NonZeroU32 = NonZeroU32::MIN.saturating_add(1);
-const TERTIARY_DATUM_PRECEDENCE: NonZeroU32 = NonZeroU32::MIN.saturating_add(2);
+const SECONDARY_DATUM_PRECEDENCE: Option<NonZeroU32> = NonZeroU32::new(2);
+const TERTIARY_DATUM_PRECEDENCE: Option<NonZeroU32> = NonZeroU32::new(3);
 
 fn datum_references(
     ctx: &DecodeContext<'_>,
@@ -2870,10 +2870,13 @@ fn datum_references(
 ) -> Result<Vec<DatumReference>, CodecError> {
     let mut result = Vec::new();
     for (name, precedence) in [
-        ("PrimaryDatums", PRIMARY_DATUM_PRECEDENCE),
+        ("PrimaryDatums", Some(PRIMARY_DATUM_PRECEDENCE)),
         ("SecondaryDatums", SECONDARY_DATUM_PRECEDENCE),
         ("TertiaryDatums", TERTIARY_DATUM_PRECEDENCE),
     ] {
+        let precedence = precedence.ok_or_else(|| {
+            CodecError::InvalidInput("SWIFT datum precedence must be nonzero".into())
+        })?;
         let Some(collection) = unique_related(entity, name) else {
             continue;
         };
