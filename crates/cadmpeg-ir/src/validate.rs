@@ -33,6 +33,7 @@ mod pmi;
 mod presentation;
 mod products;
 mod referential_integrity;
+mod scratch;
 mod semantic_annotations;
 mod sketches;
 mod spreadsheets;
