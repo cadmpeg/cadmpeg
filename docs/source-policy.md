@@ -168,8 +168,13 @@ comparisons and decoded slice equality require propagated work admission.
 Unresolved scan types use the same forms. Fixed literal ranges, arrays, byte comparisons against literals and scalar
 count queries stay outside the rule. A scalar `min` or `max` with an argument is constant time.
 
-A loop starts its body with `ctx.charge_work(..., operation)?` or the
-resource-only `charge_work_limit` form. A direct
+A loop admits each iteration before its first effect on every control-flow
+path. Admission can be `ctx.charge_work(..., operation)?`, the resource-only
+`charge_work_limit` form, a charged `DecodeContext` operation such as
+`push_vec`, `insert_btree_map` or `copy_retained_text`, or a call that passes
+the caller context and propagates refusal with `?`. The checker resolves
+charged context methods through the core method call graph. A charge on only
+one branch does not admit a loop. A direct
 `.map_err(Error::ResourceLimit)?` preserves the resource payload and is also
 admitted; closures and other error constructors are not admitted. A positive literal or a checked positive increment followed directly by
 `ok_or` or `ok_or_else` and `?` charges the iteration. Input-dependent body work has a separate charge. A scan can instead use a charge in the same block before it
