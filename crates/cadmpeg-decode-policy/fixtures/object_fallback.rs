@@ -12,23 +12,22 @@ impl Work for Worker {
         }
     }
 }
-struct Family {
-    decode: fn(&[u8]),
+fn uncalled_object() {
+    let _object: Box<dyn Work> = Box::new(Worker);
 }
-static DECODERS: [Family; 1] = [Family {
-    decode: table_target,
-}];
-fn table_target(bytes: &[u8]) {
+static ADDRESSES: [fn(&[u8]); 1] = [deferred];
+fn deferred(bytes: &[u8]) {
     for byte in bytes {
         // finding: uncharged_decode_work
         std::hint::black_box(byte);
     }
 }
-pub fn decode(ctx: &DecodeContext, bytes: &[u8]) {
-    let _ctx = ctx;
-    (DECODERS[0].decode)(bytes); // finding: unproven_decode_charge
-    let worker: Box<dyn Work> = Box::new(Worker);
+fn lifetime<'a: 'static>(worker: &'a dyn Work, bytes: &[u8]) {
     worker.work(bytes); // finding: unproven_decode_charge
+}
+pub fn decode(ctx: &DecodeContext, worker: &'static dyn Work, bytes: &[u8]) {
+    let _ctx = ctx;
+    lifetime(worker, bytes);
 }
 fn encode(bytes: &[u8]) {
     for byte in bytes {

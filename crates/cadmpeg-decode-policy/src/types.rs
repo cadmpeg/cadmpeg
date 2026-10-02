@@ -274,10 +274,12 @@ pub(crate) fn serde_serialize(tcx: TyCtxt<'_>, trait_id: rustc_span::def_id::Def
         && tcx.item_name(trait_id).as_str() == "Serialize"
 }
 
-
 pub(crate) fn serialization_body(tcx: TyCtxt<'_>, mut owner: rustc_span::def_id::DefId) -> bool {
     while let Some(parent) = tcx.opt_parent(owner) {
-        if matches!(tcx.def_kind(parent), rustc_hir::def::DefKind::Impl { of_trait: true }) {
+        if matches!(
+            tcx.def_kind(parent),
+            rustc_hir::def::DefKind::Impl { of_trait: true }
+        ) {
             return serde_serialize(tcx, tcx.impl_trait_ref(parent).skip_binder().def_id);
         }
         owner = parent;
