@@ -38,7 +38,7 @@ fn admitted_pcurve_point_replacement_preserves_weights_and_rejects_short_lanes()
 
     let mut curve = pcurve();
     let prior = curve.clone();
-    assert!(!curve.replace_admitted_control_points(&[]));
+    assert!(!curve.replace_admitted_control_points(&[], &cadmpeg_test_support::service_decode_context()).expect("pole replacement admission"));
     assert_eq!(curve, prior);
     let mut positions = Vec::new();
     let mut index = 0;
@@ -54,9 +54,53 @@ fn admitted_pcurve_point_replacement_preserves_weights_and_rejects_short_lanes()
         index += 1;
     }
     let weights = curve.weights();
-    assert!(curve.replace_admitted_control_points(&positions));
+    assert!(curve.replace_admitted_control_points(&positions, &cadmpeg_test_support::service_decode_context()).expect("pole replacement admission"));
     assert_eq!(curve.control_points(), positions);
     assert_eq!(curve.weights(), weights);
+}
+
+#[test]
+fn pcurve_pole_replacement_refuses_before_mutation_and_needs_no_storage() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    use crate::units::FinitePoint2;
+
+    let setup = cadmpeg_test_support::service_decode_context();
+    let polynomial = PcurveNurbs::from_lanes(&setup, 1, vec![0., 0., 1., 1.],
+        vec![Point2::new(1., 2.), Point2::new(3., 4.)], None, false)
+        .expect("admission").expect("polynomial curve");
+    let positions = [FinitePoint2::new(Point2::new(5., 6.)).unwrap(),
+        FinitePoint2::new(Point2::new(7., 8.)).unwrap()];
+    for original in [pcurve(), polynomial] {
+        for cap in 0..2 {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+            let mut edited = original.clone();
+            let Err(CodecError::ResourceLimit(limit)) = edited.replace_admitted_control_points(&positions, &ctx)
+                else { panic!("replacement requires work"); };
+            assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+            assert_eq!(limit.operation, "IR pcurve pole replacement");
+            assert_eq!(edited, original);
+            assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit));
+        }
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 2;
+        policy.limits.max_retained_bytes = 0;
+        policy.limits.max_materialized_bytes = 0;
+        policy.limits.max_collection_items = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+        let mut edited = original.clone();
+        assert!(!edited.replace_admitted_control_points(&[], &ctx).expect("wrong lane costs no work"));
+        assert_eq!(edited, original);
+        assert!(edited.replace_admitted_control_points(&positions, &ctx).expect("exact work"));
+        assert_eq!(edited.control_points(), positions);
+        assert_eq!(edited.weights(), original.weights());
+        assert_eq!(edited.knots(), original.knots());
+        ctx.finish_session().expect("exact work and zero storage");
+    }
 }
 
 #[test]

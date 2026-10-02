@@ -2833,19 +2833,21 @@ pub(super) fn normalize_pcurve_parameters(
             );
         }
         PcurveGeometry::Nurbs { nurbs } => {
+            let mut storage = ctx.reserve_scoped(0, "nx normalized pcurve controls")?;
             let mut converted = Vec::new();
-            let mut ordinal = 0_usize;
-            while let Some(point) = nurbs.pole_rows().point_at(ordinal) {
+            let count = nurbs.pole_rows().count();
+            ctx.reserve_scoped_vec(&mut storage, &mut converted, count, "nx normalized pcurve controls")?;
+            for ordinal in 0..count {
+                ctx.charge_work(1, "nx normalized pcurve control conversion")?;
+                let Some(point) = nurbs.pole_rows().point_at(ordinal) else {
+                    return Ok(None);
+                };
                 let Some(position) = surface_parameters(surface, [point.u, point.v]) else {
                     return Ok(None);
                 };
-                ctx.reserve_vec(&mut converted, 1, "nx normalized pcurve controls")?;
                 converted.push(position);
-                ordinal = ordinal.checked_add(1).ok_or_else(|| {
-                    ctx.refuse_codec_limit("nx normalized pcurve controls", 0, u64::MAX)
-                })?;
             }
-            if !nurbs.replace_admitted_control_points(&converted) {
+            if !nurbs.replace_admitted_control_points(&converted, ctx)? {
                 return Ok(None);
             }
         }
@@ -2874,6 +2876,69 @@ mod tests {
     use cadmpeg_ir::math::Point2;
     use cadmpeg_ir::math::Point3;
     use cadmpeg_ir::scalar::NonNegativeLength;
+
+    #[test]
+    fn pcurve_parameter_normalization_preserves_refusals_and_releases_scratch() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        use cadmpeg_core::CodecError;
+        use cadmpeg_ir::geometry::pcurve::{PcurveGeometry, PcurveNurbs};
+        use cadmpeg_ir::geometry::analytic::PlaneSurface;
+        use cadmpeg_ir::math::Vector3;
+
+        let setup = cadmpeg_test_support::service_decode_context();
+        let original = PcurveGeometry::Nurbs { nurbs: PcurveNurbs::from_lanes(&setup,
+            1, vec![0., 0., 1., 1.], vec![Point2::new(1., 2.), Point2::new(3., 4.)],
+            Some(vec![2., 1.]), false).expect("admission").expect("curve") };
+        let surface = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+            PlaneSurface::try_new(Point3::new(0., 0., 0.), Vector3::new(0., 0., 1.),
+                Vector3::new(1., 0., 0.)).expect("plane")));
+        for dimension in [ResourceDimension::MaterializedBytes, ResourceDimension::CollectionItems] {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            if dimension == ResourceDimension::MaterializedBytes {
+                policy.limits.max_materialized_bytes = 0;
+            } else {
+                policy.limits.max_collection_items = 1;
+            }
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+            let mut edited = original.clone();
+            let Err(CodecError::ResourceLimit(limit)) = super::normalize_pcurve_parameters(&ctx, &mut edited, &surface)
+                else { panic!("normalization requires scoped storage"); };
+            assert_eq!(limit.dimension, dimension);
+            assert_eq!(edited, original);
+            assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit));
+        }
+        for cap in 0..4 {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+            let mut edited = original.clone();
+            let Err(CodecError::ResourceLimit(limit)) = super::normalize_pcurve_parameters(&ctx, &mut edited, &surface)
+                else { panic!("normalization requires both passes"); };
+            assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+            assert_eq!(limit.operation, if cap < 2 { "nx normalized pcurve control conversion" }
+                else { "IR pcurve pole replacement" });
+            assert_eq!(edited, original);
+            assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit));
+        }
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 4;
+        policy.limits.max_retained_bytes = 0;
+        policy.limits.max_materialized_bytes = 4096;
+        policy.limits.max_collection_items = 2;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+        let mut edited = original.clone();
+        assert_eq!(super::normalize_pcurve_parameters(&ctx, &mut edited, &surface).expect("exact work"), Some(()));
+        let PcurveGeometry::Nurbs { nurbs } = edited else { panic!("NURBS carrier"); };
+        assert_eq!(nurbs.control_points(), vec![cadmpeg_ir::units::FinitePoint2::new(Point2::new(1000., 2000.)).unwrap(),
+            cadmpeg_ir::units::FinitePoint2::new(Point2::new(3000., 4000.)).unwrap()]);
+        assert_eq!(nurbs.pole_rows().weights(), Some(vec![2., 1.]));
+        let reuse = ctx.reserve_scoped(4096, "normalization scratch reuse").expect("scratch released");
+        drop(reuse);
+        ctx.finish_session().expect("exact work and temporary storage");
+    }
 
     #[test]
     fn coarse_surface_search_samples_a_wide_finite_nurbs_domain() {
