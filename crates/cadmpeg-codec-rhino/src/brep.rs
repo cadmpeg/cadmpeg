@@ -2486,7 +2486,8 @@ fn read_regions(
     reader.skip(chunk.next_offset() - reader.position())?;
     match parsed {
         Ok((sides, regions, nested, inline_region_loaded)) => {
-            let direct = crate::chunks::direct_checksum_ranges(ctx, &chunk.body(), nested.as_slice())?;
+            let direct =
+                crate::chunks::direct_checksum_ranges(ctx, &chunk.body(), nested.as_slice())?;
             if matches!(
                 verify_checksum_ranges(ctx, bytes, &chunk, &direct)?,
                 ChecksumStatus::Mismatch { .. }
