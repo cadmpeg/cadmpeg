@@ -7150,14 +7150,15 @@ fn exact_counted_offset(
             .map(|_| ()));
         let source = entities.get(&source_record_index)?;
         let result = entities.get(&result_record_index)?;
-        let distance = sketch_curve_offset(&source.geometry, &result.geometry).or_else(|| {
-            cadmpeg_ir::eval::fitted_nurbs_offset_frame_distance(
+        let distance = match sketch_curve_offset(&source.geometry, &result.geometry) {
+            Some(distance) => distance,
+            None => resource!(cadmpeg_ir::eval::fitted_nurbs_offset_frame_distance(
+                ctx,
                 &source.geometry,
                 &result.geometry,
                 linear_tolerance,
-            )
-            .map(cadmpeg_ir::scalar::FiniteReal::get)
-        })?;
+            ).map_err(CodecError::from)).map(cadmpeg_ir::scalar::FiniteReal::get)?,
+        };
         if distance.abs() <= EPS_DIMENSIONS_EXACT_COUNTED_OFFSET_E9 {
             return None;
         }

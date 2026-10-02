@@ -179,3 +179,18 @@ fn spatial_sketch_owner_comparison_preserves_refusal_and_absence_semantics() {
     assert_eq!(limit.operation, "compare spatial sketch owner");
     assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(original)) if original == limit));
 }
+
+#[test]
+fn sketch_offset_predicate_preserves_fitted_frame_refusal() {
+    let geometry = crate::sketches::SketchGeometry::nurbs(crate::geometry::pcurve::PcurveNurbs::from_lanes(
+        1, vec![0.0, 0.0, 1.0, 1.0], vec![crate::math::Point2::new(0.0, 0.0), crate::math::Point2::new(1.0, 0.0)], None, false,
+    ).unwrap());
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let Err(CodecError::ResourceLimit(limit)) = super::super::sketch_curve_offset_matches(&ctx, &geometry, &geometry, 0.0, 0.0) else { panic!("offset predicate must preserve refusal"); };
+    assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+    assert_eq!(limit.operation, "sketch NURBS endpoint knot scan");
+    assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(original)) if original == limit));
+}

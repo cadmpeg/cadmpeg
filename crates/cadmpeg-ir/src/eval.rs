@@ -2240,27 +2240,28 @@ pub fn nurbs_pcurve_uv(
 /// the boundary-frame invariant of a fitted offset relation; it does not assert
 /// pointwise equality between independently fitted interior parameterizations.
 pub fn fitted_nurbs_offset_frame_distance(
+    ctx: &DecodeContext<'_>,
     source: &crate::sketches::SketchGeometry,
     result: &crate::sketches::SketchGeometry,
     linear_tolerance: f64,
-) -> Option<FiniteReal> {
+) -> Result<Option<FiniteReal>, ResourceLimit> {
     use crate::sketches::SketchGeometryDefinition;
 
     if !linear_tolerance.is_finite() || linear_tolerance < 0.0 {
-        return None;
+        return Ok(None);
     }
     let (
         SketchGeometryDefinition::Nurbs { curve: source },
         SketchGeometryDefinition::Nurbs { curve: result },
     ) = (source.definition(), result.definition())
     else {
-        return None;
+        return Ok(None);
     };
     if source.periodic() || result.periodic() {
-        return None;
+        return Ok(None);
     }
-    let source_frames = clamped_nurbs_pcurve_endpoint_frames(source)?;
-    let result_frames = clamped_nurbs_pcurve_endpoint_frames(result)?;
+    let Some(source_frames) = clamped_nurbs_pcurve_endpoint_frames(ctx, source)? else { return Ok(None); };
+    let Some(result_frames) = clamped_nurbs_pcurve_endpoint_frames(ctx, result)? else { return Ok(None); };
     let same = fitted_nurbs_offset_candidate(source_frames, result_frames, linear_tolerance);
     let reversed = fitted_nurbs_offset_candidate(
         source_frames,
@@ -2276,10 +2277,10 @@ pub fn fitted_nurbs_offset_frame_distance(
         ],
         linear_tolerance,
     );
-    match (same, reversed) {
+    Ok(match (same, reversed) {
         (Some(distance), None) | (None, Some(distance)) => Some(distance),
         _ => None,
-    }
+    })
 }
 
 struct PcurveDifferential {
