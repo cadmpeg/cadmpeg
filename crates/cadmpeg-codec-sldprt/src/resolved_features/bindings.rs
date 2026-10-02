@@ -1407,18 +1407,14 @@ pub(crate) fn bind_scalar_operands(
         )?;
         for (index, &(start, feature_id)) in starts.iter().enumerate() {
             let end = starts.get(index + 1).map(|next| next.0);
-            for entity in lane
-                .sketch_entities
-                .iter_mut()
-                .filter(|entity| entity.offset() > start && end.is_none_or(|end| entity.offset() < end))
-            {
+            for entity in lane.sketch_entities.iter_mut().filter(|entity| {
+                entity.offset() > start && end.is_none_or(|end| entity.offset() < end)
+            }) {
                 entity.feature_ref = Some(copy_binding_text(ctx, feature_id)?);
             }
-            for reference in lane
-                .references
-                .iter_mut()
-                .filter(|reference| reference.offset > start && end.is_none_or(|end| reference.offset < end))
-            {
+            for reference in lane.references.iter_mut().filter(|reference| {
+                reference.offset > start && end.is_none_or(|end| reference.offset < end)
+            }) {
                 reference.feature_ref = Some(copy_binding_text(ctx, feature_id)?);
             }
             for scalar in lane
@@ -1620,7 +1616,9 @@ fn represented_sketch_features(
             }
             let end = objects.get(index + 1).map(|next| next.0);
             if lane.sketch_entities.iter().any(|entity| {
-                entity.offset() > start && end.is_none_or(|end| entity.offset() < end) && entity.coordinates_m.is_some()
+                entity.offset() > start
+                    && end.is_none_or(|end| entity.offset() < end)
+                    && entity.coordinates_m.is_some()
             }) {
                 ctx.reserve_set(&mut represented, 1, SCALAR_BINDING_INDEX)?;
                 represented.insert(copy_binding_text(ctx, &feature.id)?);

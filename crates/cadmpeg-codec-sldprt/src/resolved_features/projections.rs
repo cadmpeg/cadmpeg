@@ -323,8 +323,10 @@ pub(crate) fn bind_parameter_scalars<'a>(
                     ctx.charge_work(1, OPERATION)?;
                     let owned = match scalar.feature_ref.as_deref() {
                         Some(owner) => owner == native_feature.id,
-                        None => start.is_some_and(|start| scalar.offset > start)
-                            && end.is_none_or(|end| scalar.offset < end),
+                        None => {
+                            start.is_some_and(|start| scalar.offset > start)
+                                && end.is_none_or(|end| scalar.offset < end)
+                        }
                     };
                     if !owned {
                         continue;

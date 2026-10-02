@@ -417,7 +417,8 @@ pub(crate) fn take_reference_charged(
 ) -> Result<Option<Reference<String, String>>, CodecError> {
     let Some(reference) = parse_reference(bytes, at, |length, operation| {
         ctx.charge_work(u64_from_index(length), operation)
-    })? else {
+    })?
+    else {
         return Ok(None);
     };
     let copy_guid = |guid: Option<&str>| -> Result<Option<String>, CodecError> {
@@ -479,17 +480,16 @@ fn parse_reference<'a, E>(
         admit(raw.len(), "decode F3D reference UTF-16")?;
         Ok(Utf16View::new(raw).map(|text| (text, end)))
     };
-    let ascii =
-        |at, bounds: RangeInclusive<usize>| -> Result<Option<(&'a str, usize)>, E> {
-            let Some((raw, end)) = lp_u32_bytes_at(bytes, at) else {
-                return Ok(None);
-            };
-            if !RangeInclusive::contains(&bounds, &raw.len()) {
-                return Ok(None);
-            }
-            admit(raw.len(), "decode F3D reference ASCII")?;
-            Ok(std::str::from_utf8(raw).ok().map(|text| (text, end)))
+    let ascii = |at, bounds: RangeInclusive<usize>| -> Result<Option<(&'a str, usize)>, E> {
+        let Some((raw, end)) = lp_u32_bytes_at(bytes, at) else {
+            return Ok(None);
         };
+        if !RangeInclusive::contains(&bounds, &raw.len()) {
+            return Ok(None);
+        }
+        admit(raw.len(), "decode F3D reference ASCII")?;
+        Ok(std::str::from_utf8(raw).ok().map(|text| (text, end)))
+    };
     let mut cursor = *at;
     let present = some!(bytes.get(cursor)).to_owned();
     cursor += 1;
@@ -785,5 +785,4 @@ mod tests {
             assert_eq!(at, 0);
         });
     }
-
 }

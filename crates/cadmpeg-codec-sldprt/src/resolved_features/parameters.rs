@@ -24,7 +24,9 @@ fn scalar_owned_by_feature(
     end: Option<u64>,
 ) -> bool {
     scalar.feature_ref.as_deref() == Some(feature)
-        || (scalar.feature_ref.is_none() && scalar.offset > start && end.is_none_or(|end| scalar.offset < end))
+        || (scalar.feature_ref.is_none()
+            && scalar.offset > start
+            && end.is_none_or(|end| scalar.offset < end))
 }
 
 /// Add unambiguous `ResolvedFeatures` length parameters to a projection copy of history.
@@ -388,9 +390,7 @@ pub(crate) fn sync_changed_feature_scalars(
         )?;
         let mut updates = Vec::<(usize, f64)>::new();
         for (index, &(start, feature)) in starts.iter().enumerate() {
-            let end = starts
-                .get(index + 1)
-                .map(|(offset, _)| *offset);
+            let end = starts.get(index + 1).map(|(offset, _)| *offset);
             for (name, expression) in &feature.parameters {
                 if !changed.contains(&(feature.id.clone(), name.clone())) {
                     continue;

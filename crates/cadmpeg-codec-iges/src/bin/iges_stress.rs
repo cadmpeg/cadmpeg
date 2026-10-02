@@ -153,7 +153,9 @@ impl Lcg {
     }
 
     fn below(&mut self, bound: u64) -> Result<u64, &'static str> {
-        self.next()?.checked_rem(bound).ok_or("random bound is zero")
+        self.next()?
+            .checked_rem(bound)
+            .ok_or("random bound is zero")
     }
 }
 

@@ -392,14 +392,14 @@ fn patch_configuration_parameter_scalars(
             else {
                 continue;
             };
-            let end = starts
-                .get(position + 1)
-                .map(|(offset, _)| *offset);
+            let end = starts.get(position + 1).map(|(offset, _)| *offset);
             let candidates = lane
                 .scalars
                 .iter()
                 .enumerate()
-                .filter(|(_, scalar)| scalar.offset > *start && end.is_none_or(|end| scalar.offset < end))
+                .filter(|(_, scalar)| {
+                    scalar.offset > *start && end.is_none_or(|end| scalar.offset < end)
+                })
                 .filter(|(_, scalar)| {
                     names.get(scalar.name.as_str()) == Some(&parameter.name.as_str())
                 })

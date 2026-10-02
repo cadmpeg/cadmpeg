@@ -63,13 +63,18 @@ impl DecodeContext<'_> {
     ) -> Result<(), CodecError> {
         let max = self.policy().limits.max_input_bytes;
         loop {
-            let remaining = max.checked_sub(u64_from_index(bytes.len()))
+            let remaining = max
+                .checked_sub(u64_from_index(bytes.len()))
                 .ok_or_else(|| self.refuse_input_limit(0, "complete input prefix"))?;
             let count = if remaining >= u64_from_index(INPUT_CHUNK) {
                 INPUT_CHUNK
             } else {
                 usize::try_from(remaining).map_err(|_| {
-                    self.refuse_codec_limit("address input chunk", u64_from_index(INPUT_CHUNK), remaining)
+                    self.refuse_codec_limit(
+                        "address input chunk",
+                        u64_from_index(INPUT_CHUNK),
+                        remaining,
+                    )
                 })?
             };
             let length = bytes.len().checked_add(count).ok_or_else(|| {
@@ -142,7 +147,8 @@ mod tests {
         let source = vec![b'x'; 9000];
         let mut reader = Cursor::new(&source);
         let mut bytes = ctx.read_input_prefix(&mut reader, 7).expect("prefix");
-        ctx.complete_input(&mut reader, &mut bytes).expect("complete input");
+        ctx.complete_input(&mut reader, &mut bytes)
+            .expect("complete input");
         assert_eq!(bytes, source);
         assert_eq!(ctx.budget.input_bytes(), 9000);
     }
@@ -154,10 +160,11 @@ mod tests {
         policy.limits.max_input_bytes = 2;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
         let mut bytes = Vec::new();
-        assert!(matches!(ctx.complete_input(&mut Cursor::new(b"abc"), &mut bytes),
+        assert!(
+            matches!(ctx.complete_input(&mut Cursor::new(b"abc"), &mut bytes),
             Err(CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::InputBytes
-                && limit.used == 2 && limit.additional == 1));
+                && limit.used == 2 && limit.additional == 1)
+        );
         assert_eq!(bytes, b"ab");
     }
-
 }

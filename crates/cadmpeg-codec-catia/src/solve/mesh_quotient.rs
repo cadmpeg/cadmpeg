@@ -117,8 +117,7 @@ const MAX_FACE_DOMAIN_ASSIGNMENTS: usize = 4_096;
 pub(crate) const MAX_MESH_CONSTRAINT_OPERATIONS: usize = 1_000_000;
 /// The relation walk and its endpoint materialization proof are independent
 /// bounded phases and each uses the complete mesh-constraint allowance.
-pub(crate) const MAX_MESH_TOPOLOGY_OPERATIONS: usize =
-    MAX_MESH_CONSTRAINT_OPERATIONS * 2;
+pub(crate) const MAX_MESH_TOPOLOGY_OPERATIONS: usize = MAX_MESH_CONSTRAINT_OPERATIONS * 2;
 pub(super) type MeshQuotientGaugeState<'storage> = (MeshQuotient<'storage>, HashSet<usize>);
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

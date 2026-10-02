@@ -1780,8 +1780,11 @@ pub(crate) fn project_compact_combine_paths(
         ctx.sort_unstable_by(
             &mut ordered,
             |(left_order, left_ordinal, _), (right_order, right_ordinal, _)| {
-                (left_order.is_none(), left_order, left_ordinal)
-                    .cmp(&(right_order.is_none(), right_order, right_ordinal))
+                (left_order.is_none(), left_order, left_ordinal).cmp(&(
+                    right_order.is_none(),
+                    right_order,
+                    right_ordinal,
+                ))
             },
             |_| 0,
             OPERATION,
