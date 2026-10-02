@@ -116,6 +116,36 @@ pub fn admit_with_native_unknowns(
     allowed: &[Check],
     losses: Vec<LossNote>,
 ) -> Result<Result<ValidationReport, crate::native::NativeConvertError>, CodecError> {
+    let order = match native_unknown_order(ctx, records)? {
+        Ok(order) => order,
+        Err(error) => return Ok(Err(error)),
+    };
+    let index = crate::index::ModelIndex::with_native_unknowns(ir, format, records, &order.positions, ctx)?;
+    let mut report = super::validate_model_with_index(ctx, ir, losses, &index)?;
+    if let Some(annotations) = annotations {
+        super::validate_annotations(ctx, &index, annotations, std::iter::empty(), &mut report.findings)?;
+    }
+    Ok(Ok(filter_checks(ctx, report, allowed)?))
+}
+
+/// Check source-product link grammar and distinct identities without validating the model.
+/// Raw images and link text remain borrowed throughout the scoped identity sort.
+pub fn validate_native_unknowns(
+    ctx: &DecodeContext<'_>,
+    records: &[crate::unknown::UnknownRecord],
+) -> Result<Result<(), crate::native::NativeConvertError>, CodecError> {
+    Ok(native_unknown_order(ctx, records)?.map(|_| ()))
+}
+
+struct NativeUnknownOrder<'ctx> {
+    positions: Vec<usize>,
+    _storage: cadmpeg_core::decode::ScopedReservation<'ctx>,
+}
+
+fn native_unknown_order<'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
+    records: &[crate::unknown::UnknownRecord],
+) -> Result<Result<NativeUnknownOrder<'ctx>, crate::native::NativeConvertError>, CodecError> {
     for record in records {
         ctx.charge_work(1, "source product record scan")?;
         for (position, link) in record.links().iter().enumerate() {
@@ -147,12 +177,7 @@ pub fn admit_with_native_unknowns(
             return Ok(Err(crate::native::NativeConvertError::InvalidCollection(message)));
         }
     }
-    let index = crate::index::ModelIndex::with_native_unknowns(ir, format, records, &order.0, ctx)?;
-    let mut report = super::validate_model_with_index(ctx, ir, losses, &index)?;
-    if let Some(annotations) = annotations {
-        super::validate_annotations(ctx, &index, annotations, std::iter::empty(), &mut report.findings)?;
-    }
-    Ok(Ok(filter_checks(ctx, report, allowed)?))
+    Ok(Ok(NativeUnknownOrder { positions: order.0, _storage: order.1 }))
 }
 
 #[cfg(test)]

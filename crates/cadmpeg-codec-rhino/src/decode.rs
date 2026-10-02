@@ -25,7 +25,7 @@ use cadmpeg_ir::topology::{
 };
 use cadmpeg_ir::transform::Transform;
 use cadmpeg_ir::units::{FinitePoint2, OrthonormalFrame3, UnitVector3};
-use cadmpeg_ir::unknown::{NativeUnknownRecord, UnknownRecord};
+use cadmpeg_ir::unknown::UnknownRecord;
 use cadmpeg_ir::AnnotationBuilder;
 use cadmpeg_ir::SourceProvenance;
 use cadmpeg_ir::{Exactness, SourceObjectAssociation};
@@ -148,46 +148,6 @@ use crate::settings::MillimeterScale;
 pub(crate) const RETAINED_RECORD_CAP: usize = 16 * 1024 * 1024;
 /// Maximum bytes retained across all Rhino object records in one document.
 pub(crate) const RETAINED_DOCUMENT_CAP: usize = 256 * 1024 * 1024;
-
-/// Makes the session's retained-record graph visible during one admission.
-/// The projection is removed or restored before returning, so final source
-/// attachment remains the sole owner of committed unknown product records.
-fn with_native_unknowns<T>(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    ir: &mut CadIr,
-    unknowns: &[UnknownRecord],
-    apply: impl FnOnce(&mut CadIr) -> T,
-) -> Result<T, cadmpeg_ir::native::NativeConvertError> {
-    let products = unknowns
-        .iter()
-        .map(NativeUnknownRecord::try_from)
-        .collect::<Result<Vec<_>, _>>()?;
-    let namespace_existed = ir.native.namespace("rhino").is_some();
-    let previous = ir
-        .native
-        .namespace("rhino")
-        .and_then(|namespace| namespace.arenas().get("unknowns"))
-        .cloned();
-    ir.set_native_unknowns_from(ctx, "rhino", products)?;
-    let value = apply(ir);
-    match previous {
-        Some(records) => {
-            ir.native
-                .namespace_mut("rhino")
-                .arenas_mut()
-                .insert("unknowns".into(), records);
-        }
-        None => {
-            if let Some(namespace) = ir.native.0.get_mut("rhino") {
-                namespace.arenas_mut().remove("unknowns");
-                if !namespace_existed && namespace.arenas().is_empty() {
-                    ir.native.0.remove("rhino");
-                }
-            }
-        }
-    }
-    Ok(value)
-}
 
 #[derive(Debug)]
 enum CandidateError {
@@ -515,9 +475,8 @@ struct InstanceDisplay {
 pub(crate) struct DecodeContext<'a> {
     scan: &'a Scan<'a>,
     expand: crate::mesh::MeshExpand<'a>,
-    ir: CadIr,
+    session: cadmpeg_ir::draft::CommitSession<'a, CadIr>,
     annotations: cadmpeg_ir::Annotations,
-    unknowns: Vec<UnknownRecord>,
     opaque_records: Vec<UnknownRecord>,
     statuses: Vec<Option<GeometryOutcome>>,
     retained_bytes: usize,
@@ -572,9 +531,8 @@ impl<'a> DecodeContext<'a> {
         let mut context = Self {
             scan,
             expand,
-            ir,
+            session: cadmpeg_ir::draft::CommitSession::new(ir, session, Some("rhino"))?,
             annotations: cadmpeg_ir::Annotations::default(),
-            unknowns: Vec::new(),
             opaque_records: Vec::new(),
             statuses: Vec::new(),
             retained_bytes: 0,
@@ -605,7 +563,7 @@ impl<'a> DecodeContext<'a> {
         document: usize,
     ) -> Result<(), cadmpeg_core::CodecError> {
         self.retention_limits = [record, document];
-        self.unknowns.clear();
+        self.session.replace_unknowns(Vec::new())?;
         self.opaque_records.clear();
         self.statuses.clear();
         self.retained_bytes = 0;
@@ -646,17 +604,17 @@ impl<'a> DecodeContext<'a> {
     /// Looks up the retained unknown record for a source-order object.
     #[cfg(test)]
     fn unknown(&self, source_order: usize) -> Option<&UnknownRecord> {
-        self.unknowns.get(source_order)
+        self.session.unknowns().get(source_order)
     }
 
     #[cfg(test)]
-    fn unknown_mut(&mut self, source_order: usize) -> Option<&mut UnknownRecord> {
-        self.unknowns.get_mut(source_order)
+    fn unknown_links_mut(&mut self, source_order: usize) -> Option<&mut Vec<String>> {
+        self.session.unknown_links_mut(source_order).map(|(_, links)| links)
     }
 
     #[cfg(test)]
     fn unknown_count(&self) -> usize {
-        self.unknowns.len()
+        self.session.unknowns().len()
     }
 
     /// Appends a later geometry-phase link to an object record.
@@ -665,41 +623,24 @@ impl<'a> DecodeContext<'a> {
         source_order: usize,
         link: &str,
     ) -> Result<bool, cadmpeg_core::CodecError> {
-        let Some(record) = self.unknowns.get_mut(source_order) else {
+        let Some((id, links)) = self.session.unknown_links_mut(source_order) else {
             return Ok(false);
         };
-        if link == record.id().as_str() {
-            return Ok(false);
-        }
-        if record
-            .links()
-            .binary_search_by(|existing| existing.as_str().cmp(link))
-            .is_ok()
-        {
-            return Ok(true);
-        }
-        let copy = self
-            .expand
-            .ctx()
-            .copy_retained_text(link, "Rhino unknown record link copy")?;
-        append_link_to_record(self.expand.ctx(), record, copy)
+        append_link_to_record(self.expand.ctx(), id, links, link)
     }
 
     fn append_links(
         &mut self,
         source_order: usize,
-        links: &[String],
+        incoming: &[String],
     ) -> Result<bool, cadmpeg_core::CodecError> {
-        let Some(record) = self.unknowns.get_mut(source_order) else {
+        let Some((id, links)) = self.session.unknown_links_mut(source_order) else {
             return Ok(false);
         };
         let ctx = self.expand.ctx();
-        for link in links {
-            if link.as_str() == record.id().as_str() || record.links().binary_search(link).is_ok() {
-                continue;
-            }
-            let copy = ctx.copy_retained_text(link, "Rhino unknown record link copy")?;
-            append_link_to_record(ctx, record, copy)?;
+        for link in incoming {
+            ctx.charge_work(1, "Rhino incoming source link scan")?;
+            append_link_to_record(ctx, id, links, link)?;
         }
         Ok(true)
     }
@@ -726,28 +667,21 @@ impl<'a> DecodeContext<'a> {
         let entity_count = candidate.model.entity_count();
         let mut budget = self.expansion_budget;
         let session = self.expand.ctx();
-        let appended = with_native_unknowns(session, &mut self.ir, &self.unknowns, |ir| {
-            ir.try_append(session, candidate.model, candidate.native, |combined| {
-                let validation = cadmpeg_ir::admit_with_annotations(
-                    session,
-                    combined,
-                    annotations.annotations(),
-                    cadmpeg_ir::RHINO_DRAFT_CHECKS,
-                    Vec::new(),
-                )?;
-                if !validation.is_ok() {
-                    return Ok(Err(CandidateError::Validation(validation_findings(session, &validation)?)));
-                }
-                budget.entities(session, entity_count)?;
-                session.charge_entities(u64_from_index(entity_count), "rhino_instance_entities")?;
-                Ok(Ok((value, annotations.into_retained()?)))
-            })
+        let appended = self.session.try_append(candidate.model, candidate.native, |combined, unknowns| {
+            let validation = match cadmpeg_ir::validate::admit::admit_with_native_unknowns(
+                session, combined, ("rhino", unknowns), Some(annotations.annotations()),
+                cadmpeg_ir::RHINO_DRAFT_CHECKS, Vec::new(),
+            )? {
+                Ok(report) => report,
+                Err(error) => return Ok(Err(CandidateError::Admission(session.format_retained(format_args!("{error}"), "Rhino native admission message")?))),
+            };
+            if !validation.is_ok() {
+                return Ok(Err(CandidateError::Validation(validation_findings(session, &validation)?)));
+            }
+            budget.entities(session, entity_count)?;
+            session.charge_entities(u64_from_index(entity_count), "rhino_instance_entities")?;
+            Ok(Ok((value, annotations.into_retained()?)))
         });
-        let appended = match appended {
-            Ok(result) => result,
-            Err(cadmpeg_ir::native::NativeConvertError::Resource(error)) => return Err(CandidateError::Codec(error)),
-            Err(error) => return Err(CandidateError::Admission(session.format_retained(format_args!("{error}"), "Rhino native admission message")?)),
-        };
         let (value, annotations) = appended??;
         self.annotations = annotations;
         self.expansion_budget = budget;
@@ -757,12 +691,12 @@ impl<'a> DecodeContext<'a> {
     /// Returns mutable IR for the current decode transaction.
     #[cfg(test)]
     fn ir_mut(&mut self) -> &mut CadIr {
-        &mut self.ir
+        self.session.document_mut().expect("test document mutation")
     }
 
     #[cfg(test)]
     fn reject_duplicate_entity_candidate(&mut self) -> String {
-        self.ir.model.points.push(Point::new(
+        self.session.document_mut().expect("test document mutation").model.points.push(Point::new(
             "rhino:test:point#duplicate"
                 .try_into()
                 .expect("valid identity"),
@@ -1158,11 +1092,11 @@ impl<'a> DecodeContext<'a> {
                     // `SemanticAnnotation::order` must be globally unique and
                     // is a `u32`. The arena length is the dense next index and
                     // rolls back with the arena, unlike a standalone counter.
-                    let Ok(order) = u32::try_from(self.ir.model.semantic_annotations.len()) else {
+                    let Ok(order) = u32::try_from(self.session.document().model.semantic_annotations.len()) else {
                         self.scan_warning(source_order, format_args!("dimension retained because the annotation arena exceeds u32 ordinals"))?;
                         continue;
                     };
-                    let object = self.unknowns[source_order].id().as_str();
+                    let object = self.session.unknowns()[source_order].id().as_str();
                     let (annotation, unresolved) = match crate::dimensions::project(
                         self.expand.ctx(),
                         &dimension,
@@ -1414,7 +1348,7 @@ impl<'a> DecodeContext<'a> {
                     parameters,
                 }),
             ),
-            native_ref: Some(self.unknowns[source_order].id().to_string()),
+            native_ref: Some(self.expand.ctx().copy_retained_text(self.session.unknowns()[source_order].id().as_str(), "Rhino source native reference copy")?),
         };
         let hatch_loops = hatch.loops;
         let session = self.expand.ctx();
@@ -1658,7 +1592,7 @@ impl<'a> DecodeContext<'a> {
                     parameters,
                 }),
             ),
-            native_ref: Some(self.unknowns[source_order].id().to_string()),
+            native_ref: Some(self.expand.ctx().copy_retained_text(self.session.unknowns()[source_order].id().as_str(), "Rhino source native reference copy")?),
         };
         let session = self.expand.ctx();
         let result = self.validate_candidate_fallible(|candidate, candidate_annotations| {
@@ -1812,7 +1746,7 @@ impl<'a> DecodeContext<'a> {
                     parameters,
                 }),
             ),
-            native_ref: Some(self.unknowns[source_order].id().to_string()),
+            native_ref: Some(self.expand.ctx().copy_retained_text(self.session.unknowns()[source_order].id().as_str(), "Rhino source native reference copy")?),
         };
         match self
             .validate_candidate(|candidate, _annotations| candidate.model.features.push(feature))
@@ -1878,7 +1812,7 @@ impl<'a> DecodeContext<'a> {
             &morph,
             key.as_str(),
             (!identity.name.is_empty()).then(|| identity.name.clone()),
-            self.unknowns[source_order].id().to_string(),
+            self.expand.ctx().copy_retained_text(self.session.unknowns()[source_order].id().as_str(), "Rhino source native reference copy")?,
             |id| self.resolve_object_record(source_order, "morph captive", id),
         ) {
             Ok(feature) => feature,
@@ -2019,7 +1953,7 @@ impl<'a> DecodeContext<'a> {
                     parameters,
                 }),
             ),
-            native_ref: Some(self.unknowns[source_order].id().to_string()),
+            native_ref: Some(self.expand.ctx().copy_retained_text(self.session.unknowns()[source_order].id().as_str(), "Rhino source native reference copy")?),
         };
         let parameter_curve = construction.parameter_curve;
         let model_curve = construction.model_curve;
@@ -2193,12 +2127,12 @@ impl<'a> DecodeContext<'a> {
 
     fn expand_reference(&mut self, source_order: usize) -> Result<bool, cadmpeg_core::CodecError> {
         let original_model =
-            ModelCheckpoint::capture(&self.ir.model, self.expand.ctx())?;
+            ModelCheckpoint::capture(&self.session.document().model, self.expand.ctx())?;
         let annotation_checkpoint = self
             .annotations
             .copy_transaction(self.expand.ctx(), "Rhino annotation checkpoint")?;
         let session = self.expand.ctx();
-        let original_links = snapshot_instance_links(session, &self.unknowns)?;
+        let original_links = snapshot_instance_links(session, self.session.unknowns())?;
         let original_statuses =
             snapshot_instance_statuses(session, &self.statuses)?;
         let original_geometry_transferred = self.geometry_transferred;
@@ -2231,9 +2165,10 @@ impl<'a> DecodeContext<'a> {
         // Mesh buffers stay charged in the session arena even on rollback.
         let rejection_warning = match outcome {
             Ok(links) => {
-                let validation = with_native_unknowns(self.expand.ctx(), &mut self.ir, &self.unknowns, |ir| {
-                    cadmpeg_ir::admit(session, ir, cadmpeg_ir::RHINO_INSTANCE_CHECKS, Vec::new())
-                });
+                let validation = cadmpeg_ir::validate::admit::admit_with_native_unknowns(
+                    session, self.session.document(), ("rhino", self.session.unknowns()),
+                    None, cadmpeg_ir::RHINO_INSTANCE_CHECKS, Vec::new(),
+                );
                 if validation.as_ref().is_ok_and(|result| {
                     result
                         .as_ref()
@@ -2246,21 +2181,21 @@ impl<'a> DecodeContext<'a> {
                 }
                 let findings = match validation {
                     Ok(Ok(report)) => validation_findings(session, &report)?,
-                    Ok(Err(error)) => return Err(error),
-                    Err(cadmpeg_ir::native::NativeConvertError::Resource(error)) => return Err(error),
-                    Err(error) => session.format_retained(format_args!("{error}"), "Rhino native admission message")?,
+                    Ok(Err(error)) => session.format_retained(format_args!("{error}"), "Rhino native admission message")?,
+                    Err(error) => return Err(error),
                 };
-                format!("instance expansion rejected atomically by IR admission: {findings}")
+                session.format_retained(format_args!("instance expansion rejected atomically by IR admission: {findings}"), "Rhino instance rejection message")?
             }
             Err(ReferenceFailure::Codec(error)) => return Err(error),
-            Err(ReferenceFailure::Semantic(message)) => format!("instance retained: {message}"),
+            Err(ReferenceFailure::Semantic(message)) => session.format_retained(format_args!("instance retained: {message}"), "Rhino instance rejection message")?,
         };
 
-        original_model.0.discard_appended(&mut self.ir.model, self.expand.ctx())?;
+        original_model.0.discard_appended(&mut self.session.document_mut()?.model, self.expand.ctx())?;
         self.annotations = annotation_checkpoint.into_retained()?;
         original_links._bytes.commit()?;
-        for (record, links) in self.unknowns.iter_mut().zip(original_links.links) {
-            *record.links_mut() = links;
+        for (position, links) in original_links.links.into_iter().enumerate() {
+            let (_, target) = self.session.unknown_links_mut(position).ok_or_else(|| cadmpeg_core::CodecError::malformed("Rhino source record disappeared during instance expansion"))?;
+            *target = links;
         }
         original_statuses.1.commit()?;
         self.statuses = original_statuses.0;
@@ -2415,7 +2350,7 @@ impl<'a> DecodeContext<'a> {
                 continue;
             }
             let before =
-                ModelCheckpoint::capture(&self.ir.model, self.expand.ctx())?;
+                ModelCheckpoint::capture(&self.session.document().model, self.expand.ctx())?;
             let selection =
                 InstanceSelection::new(self.expand.ctx(), member_order, path, member_id)?;
             let previous_selection = self.instance_selection.replace(selection);
@@ -2423,7 +2358,7 @@ impl<'a> DecodeContext<'a> {
             self.instance_selection = previous_selection;
             decoded?;
             let after =
-                ModelCheckpoint::capture(&self.ir.model, self.expand.ctx())?;
+                ModelCheckpoint::capture(&self.session.document().model, self.expand.ctx())?;
             if before.0.same_state(&after.0, self.expand.ctx())? {
                 return Err(format!("definition member {member_id} did not decode").into());
             }
@@ -2453,10 +2388,11 @@ impl<'a> DecodeContext<'a> {
         scratch: &mut cadmpeg_core::decode::ScopedReservation<'_>,
     ) -> Result<Vec<String>, ReferenceFailure> {
         let ctx = self.expand.ctx();
+        let ir = self.session.document_mut()?;
         let mut links = Vec::new();
         let mut derived_ids = Vec::new();
         for body in before
-            .added_mut::<Body>(&mut self.ir.model)
+            .added_mut::<Body>(&mut ir.model)
             .ok_or_else(|| "instance decode removed existing bodies".to_string())?
         {
             ctx.reserve_scoped_vec(scratch, &mut links, 1, "Rhino transformed instance links")?;
@@ -2480,7 +2416,7 @@ impl<'a> DecodeContext<'a> {
             derived_ids.push(id);
         }
         for point in before
-            .added_mut::<Point>(&mut self.ir.model)
+            .added_mut::<Point>(&mut ir.model)
             .ok_or_else(|| "instance decode removed existing points".to_string())?
         {
             let placed = placed_finite_point(transform, point.position())?;
@@ -2499,7 +2435,7 @@ impl<'a> DecodeContext<'a> {
             derived_ids.push(id);
         }
         for curve in before
-            .added_mut::<Curve>(&mut self.ir.model)
+            .added_mut::<Curve>(&mut ir.model)
             .ok_or_else(|| "instance decode removed existing curves".to_string())?
         {
             if let Some(cache) = curve.geometry.solved_cache() {
@@ -2531,7 +2467,7 @@ impl<'a> DecodeContext<'a> {
             derived_ids.push(id);
         }
         for surface in before
-            .added_mut::<Surface>(&mut self.ir.model)
+            .added_mut::<Surface>(&mut ir.model)
             .ok_or_else(|| "instance decode removed existing surfaces".to_string())?
         {
             if let Some(cache) = surface.geometry.solved_cache() {
@@ -2562,7 +2498,7 @@ impl<'a> DecodeContext<'a> {
             derived_ids.push(id);
         }
         for mesh in before
-            .added_mut::<Tessellation>(&mut self.ir.model)
+            .added_mut::<Tessellation>(&mut ir.model)
             .ok_or_else(|| "instance decode removed existing tessellations".to_string())?
         {
             mesh.edit_vertices(|vertex| {
@@ -2614,7 +2550,7 @@ impl<'a> DecodeContext<'a> {
             derived_ids.push(id);
         }
         for subd in before
-            .added_mut::<cadmpeg_ir::SubdSurface>(&mut self.ir.model)
+            .added_mut::<cadmpeg_ir::SubdSurface>(&mut ir.model)
             .ok_or_else(|| "instance decode removed existing subdivision surfaces".to_string())?
         {
             subd.cage
@@ -2654,22 +2590,22 @@ impl<'a> DecodeContext<'a> {
         }
         let procedural_curve_start = before.arena_len::<ProceduralCurve>();
         let procedural_surface_start = before.arena_len::<ProceduralSurface>();
-        if self.ir.model.procedural_curves.len() > procedural_curve_start
-            || self.ir.model.procedural_surfaces.len() > procedural_surface_start
+        if ir.model.procedural_curves.len() > procedural_curve_start
+            || ir.model.procedural_surfaces.len() > procedural_surface_start
         {
             let mut annotations = AnnotationBuilder::resume(std::mem::take(&mut self.annotations));
-            for procedure in &self.ir.model.procedural_curves[procedural_curve_start..] {
+            for procedure in &ir.model.procedural_curves[procedural_curve_start..] {
                 annotations.remove_entity_str(procedure.id.as_str());
             }
-            for procedure in &self.ir.model.procedural_surfaces[procedural_surface_start..] {
+            for procedure in &ir.model.procedural_surfaces[procedural_surface_start..] {
                 annotations.remove_entity_str(procedure.id.as_str());
             }
             self.annotations = annotations.build();
-            self.ir
+            ir
                 .model
                 .procedural_curves
                 .truncate(procedural_curve_start);
-            self.ir
+            ir
                 .model
                 .procedural_surfaces
                 .truncate(procedural_surface_start);
@@ -2888,14 +2824,14 @@ impl<'a> DecodeContext<'a> {
         append_report_losses(
             ctx,
             &mut self.report.typed_losses,
-            crate::annotations::install(ctx, self.scan, &mut self.ir)?,
+            crate::annotations::install(ctx, self.scan, self.session.document_mut()?)?,
         )?;
-        let document_data = crate::document_data::install(ctx, self.scan, &mut self.ir)?;
+        let document_data = crate::document_data::install(ctx, self.scan, self.session.document_mut()?)?;
         append_report_losses(ctx, &mut self.report.typed_losses, document_data.losses)?;
         for source in document_data.opaque_records {
             self.retain_opaque_record(&source)?;
         }
-        let presentation = crate::presentation::install(ctx, self.scan, &mut self.ir)?;
+        let presentation = crate::presentation::install(ctx, self.scan, self.session.document_mut()?)?;
         append_report_losses(ctx, &mut self.report.typed_losses, presentation.losses)?;
         for source in presentation.opaque_records {
             self.retain_opaque_record(&source)?;
@@ -2903,14 +2839,14 @@ impl<'a> DecodeContext<'a> {
         append_report_losses(
             ctx,
             &mut self.report.typed_losses,
-            crate::product::install(ctx, self.scan, &mut self.ir)?,
+            crate::product::install(ctx, self.scan, self.session.document_mut()?)?,
         )?;
-        let views = crate::views::install(ctx, self.scan, &mut self.ir)?;
+        let views = crate::views::install(ctx, self.scan, self.session.document_mut()?)?;
         append_report_losses(ctx, &mut self.report.typed_losses, views.losses)?;
         for source in views.opaque_records {
             self.retain_opaque_record(&source)?;
         }
-        self.ir.finalize(ctx)?;
+        self.session.document_mut()?.finalize(ctx)?;
         let mut losses: Vec<LossNote> = Vec::new();
         let outcomes = self.class_outcomes(ctx)?;
         let decoded = outcomes
@@ -3072,7 +3008,7 @@ impl<'a> DecodeContext<'a> {
             losses.push(loss);
         }
         let byte_records = self
-            .unknowns
+            .session.unknowns()
             .iter()
             .filter(|record| record.data().is_some())
             .count()
@@ -3085,7 +3021,7 @@ impl<'a> DecodeContext<'a> {
             ctx.format_retained(format_args!(
                 "decoded {decoded}/{total} Rhino object records; retained metadata/digests for {} \
                  records and complete bytes for {byte_records}; document cap {} bytes, per-record cap {} bytes",
-                self.unknowns.len(),
+                self.session.unknowns().len(),
                 RETAINED_DOCUMENT_CAP,
                 RETAINED_RECORD_CAP
             ), "Rhino final decode note")?
@@ -3095,7 +3031,7 @@ impl<'a> DecodeContext<'a> {
                 "decoded {decoded}/{total} Rhino object records; retained metadata/digests for {} \
                  object records and {} opaque records, with complete bytes for {byte_records}; \
                  document cap {} bytes, per-record cap {} bytes",
-                self.unknowns.len(),
+                self.session.unknowns().len(),
                 self.opaque_records.len(),
                 RETAINED_DOCUMENT_CAP,
                 RETAINED_RECORD_CAP
@@ -3106,7 +3042,8 @@ impl<'a> DecodeContext<'a> {
         let mut notes = ctx.collection_vec(1, "Rhino final decode notes")?;
         notes.push(note);
         let mut source_fidelity = cadmpeg_ir::SourceFidelity::with_annotations(self.annotations);
-        source_fidelity.attach_native_unknown_records(&mut self.ir, "rhino", self.unknowns, ctx)?;
+        let (mut ir, unknowns) = self.session.into_parts();
+        source_fidelity.attach_native_unknown_records(&mut ir, "rhino", unknowns, ctx)?;
         source_fidelity.retain_unknown_records("rhino", self.opaque_records)?;
         let primary = crate::container::dialect_match(self.scan);
         // Charged from the admission the source records, so the document-level
@@ -3116,7 +3053,7 @@ impl<'a> DecodeContext<'a> {
             losses.push(loss);
         }
         let attributes = full_source_attributes(self.expand.ctx(), self.scan)?;
-        self.ir.source = Some(crate::container::source_meta(
+        ir.source = Some(crate::container::source_meta(
             self.expand.ctx(),
             primary,
             crate::container::SourceMetaDetail::Full {
@@ -3125,7 +3062,7 @@ impl<'a> DecodeContext<'a> {
             },
         )?);
         Ok(Decoded {
-            ir: self.ir,
+            ir,
             body: DecodeBody {
                 transfer: cadmpeg_ir::report::decode::DecodeTransfer::full(
                     self.geometry_transferred,
@@ -3140,10 +3077,9 @@ impl<'a> DecodeContext<'a> {
     }
 
     fn retain_object_records(&mut self) -> Result<(), cadmpeg_core::CodecError> {
-        self.expand.ctx().reserve_vec(
-            &mut self.unknowns,
-            self.scan.objects.len(),
-            "Rhino object unknown records",
+        let mut records = Vec::new();
+        self.expand.ctx().reserve_retained_vec(
+            &mut records, self.scan.objects.len(), "Rhino object unknown records",
         )?;
         self.expand.ctx().reserve_vec(
             &mut self.statuses,
@@ -3156,11 +3092,12 @@ impl<'a> DecodeContext<'a> {
             let degraded = object.is_degraded();
             let id = Self::mint_unknown_id(source_order);
             let record = self.source_record(id, range)?;
-            self.unknowns.push(record);
+            self.expand.ctx().charge_work(1, "Rhino source record transfer")?;
+            records.push(record);
             self.statuses
                 .push(degraded.then_some(GeometryOutcome::Failed));
         }
-        Ok(())
+        self.session.replace_unknowns(records)
     }
 
     fn retain_opaque_records(&mut self) -> Result<(), cadmpeg_core::CodecError> {
@@ -3348,7 +3285,7 @@ impl<'a> DecodeContext<'a> {
         };
         let association = self.source_association(identity)?;
         let Some(unknown) = self
-            .unknowns
+            .session.unknowns()
             .get(source_order)
             .map(|record| {
                 record
@@ -3412,27 +3349,27 @@ impl<'a> DecodeContext<'a> {
                         ))
                     })
                 }?;
-                self.ir.model.points.push(Point::new(
+                self.session.document_mut()?.model.points.push(Point::new(
                     point_id.try_clone_for_decode(ctx, "Rhino typed identity copy")?,
                     position,
                     Some(association.try_clone_for_decode(ctx, "Rhino source association copy")?),
                 ));
-                self.ir.model.vertices.push(Vertex {
+                self.session.document_mut()?.model.vertices.push(Vertex {
                     id: vertex_id.try_clone_for_decode(ctx, "Rhino typed identity copy")?,
                     point: point_id.try_clone_for_decode(ctx, "Rhino typed identity copy")?,
                     tolerance: None,
                 });
-                self.ir.model.shells.push(Shell::with_free_vertex(
+                self.session.document_mut()?.model.shells.push(Shell::with_free_vertex(
                     shell_id.try_clone_for_decode(ctx, "Rhino typed identity copy")?,
                     region_id.try_clone_for_decode(ctx, "Rhino typed identity copy")?,
                     vertex_id.try_clone_for_decode(ctx, "Rhino typed identity copy")?,
                 ));
-                self.ir.model.regions.push(Region {
+                self.session.document_mut()?.model.regions.push(Region {
                     id: region_id.try_clone_for_decode(ctx, "Rhino typed identity copy")?,
                     body: body_id.try_clone_for_decode(ctx, "Rhino typed identity copy")?,
                     shells: vec![shell_id.try_clone_for_decode(ctx, "Rhino typed identity copy")?],
                 });
-                self.ir.model.bodies.push(body(
+                self.session.document_mut()?.model.bodies.push(body(
                     identity,
                     body_id.try_clone_for_decode(ctx, "Rhino typed identity copy")?,
                     vec![region_id.try_clone_for_decode(ctx, "Rhino typed identity copy")?],
@@ -3531,7 +3468,7 @@ impl<'a> DecodeContext<'a> {
                         &cadmpeg_ir::identity_namespace!("rhino", "object", "vertex"),
                         vertex_key,
                     );
-                    self.ir.model.points.push(Point::new(
+                    self.session.document_mut()?.model.points.push(Point::new(
                         point_id.try_clone_for_decode(ctx, "Rhino typed identity copy")?,
                         position,
                         Some(
@@ -3539,15 +3476,14 @@ impl<'a> DecodeContext<'a> {
                                 .try_clone_for_decode(ctx, "Rhino source association copy")?,
                         ),
                     ));
-                    self.ir.model.vertices.push(Vertex {
+                    self.session.document_mut()?.model.vertices.push(Vertex {
                         id: vertex_id.try_clone_for_decode(ctx, "Rhino typed identity copy")?,
                         point: point_id,
                         tolerance: None,
                     });
                     vertices.push(vertex_id);
                 }
-                self.ir.model.shells.push(
-                    match Shell::new(
+                let shell = match Shell::new(
                         shell_id.try_clone_for_decode(ctx, "Rhino typed identity copy")?,
                         region_id.try_clone_for_decode(ctx, "Rhino typed identity copy")?,
                         Vec::new(),
@@ -3559,14 +3495,14 @@ impl<'a> DecodeContext<'a> {
                             self.scan_warning(source_order, format_args!("{error}"))?;
                             return Ok(false);
                         }
-                    },
-                );
-                self.ir.model.regions.push(Region {
+                    };
+                self.session.document_mut()?.model.shells.push(shell);
+                self.session.document_mut()?.model.regions.push(Region {
                     id: region_id.try_clone_for_decode(ctx, "Rhino typed identity copy")?,
                     body: body_id.try_clone_for_decode(ctx, "Rhino typed identity copy")?,
                     shells: vec![shell_id],
                 });
-                self.ir.model.bodies.push(body(
+                self.session.document_mut()?.model.bodies.push(body(
                     identity,
                     body_id.try_clone_for_decode(ctx, "Rhino typed identity copy")?,
                     vec![region_id],
@@ -3574,7 +3510,7 @@ impl<'a> DecodeContext<'a> {
                 ));
                 let point_prefix = format!("rhino:object:point#{key}.");
                 for point in self
-                    .ir
+                    .session.document()
                     .model
                     .points
                     .iter()
@@ -3641,7 +3577,7 @@ impl<'a> DecodeContext<'a> {
                             ))
                         })
                     }?;
-                    self.ir.model.surfaces.push(Surface {
+                    self.session.document_mut()?.model.surfaces.push(Surface {
                         id: surface_id.try_clone_for_decode(ctx, "Rhino typed identity copy")?,
                         geometry: geometry.into_geometry(),
                         source_object: Some(
@@ -3689,7 +3625,7 @@ impl<'a> DecodeContext<'a> {
     ) -> Result<bool, cadmpeg_core::CodecError> {
         let ctx = self.expand.ctx();
         let Some(unknown) = self
-            .unknowns
+            .session.unknowns()
             .get(source_order)
             .map(|record| {
                 record
@@ -3799,7 +3735,7 @@ impl<'a> DecodeContext<'a> {
             return Ok(false);
         };
         let Some(unknown) = self
-            .unknowns
+            .session.unknowns()
             .get(source_order)
             .map(|record| {
                 record
@@ -3941,7 +3877,7 @@ impl<'a> DecodeContext<'a> {
             return Ok(());
         };
         let Some(unknown) = self
-            .unknowns
+            .session.unknowns()
             .get(source_order)
             .map(|record| {
                 record
@@ -4052,7 +3988,7 @@ impl<'a> DecodeContext<'a> {
         let id = mesh.tessellation.id.to_string();
         let mut tessellation = mesh.tessellation;
         tessellation.source_object = Some(self.source_association(identity)?);
-        self.ir.model.tessellations.push(tessellation);
+        self.session.document_mut()?.model.tessellations.push(tessellation);
         set_exactness(
             self.expand.ctx(),
             &mut self.annotations,
@@ -4165,7 +4101,7 @@ impl<'a> DecodeContext<'a> {
         let Some(key) = self.checked_object_key(identity, source_order)? else {
             return Ok(());
         };
-        let unknown = self.unknowns[source_order]
+        let unknown = self.session.unknowns()[source_order]
             .id()
             .try_clone_for_decode(self.expand.ctx(), "Rhino unknown identity copy")?;
         let staged = match &parsed {
@@ -4214,13 +4150,11 @@ impl<'a> DecodeContext<'a> {
                 let entity_count = draft.entity_count();
                 let mut budget = self.expansion_budget;
                 budget.entities(self.expand.ctx(), entity_count)?;
-                let result = with_native_unknowns(self.expand.ctx(), &mut self.ir, &self.unknowns, |ir| {
-                    draft.commit(ir, &mut self.annotations, self.expand.ctx())
-                });
-                let committed = match result {
-                    Ok(Ok(Ok(()))) => Ok(()),
-                    Ok(Ok(Err(error))) => Err(self.expand.ctx().format_retained(format_args!("{error}"), "Rhino draft admission message")?),
-                    Ok(Err(error)) | Err(cadmpeg_ir::native::NativeConvertError::Resource(error)) => return Err(error),
+                let committed = match cadmpeg_ir::validate::admit::validate_native_unknowns(self.expand.ctx(), self.session.unknowns())? {
+                    Ok(()) => match self.session.commit(draft, &mut self.annotations)? {
+                        Ok(()) => Ok(()),
+                        Err(error) => Err(self.expand.ctx().format_retained(format_args!("{error}"), "Rhino draft admission message")?),
+                    },
                     Err(error) => Err(self.expand.ctx().format_retained(format_args!("{error}"), "Rhino native admission message")?),
                 };
                 if let Err(error) = committed {
@@ -4388,16 +4322,29 @@ fn append_record_links(ir: &mut CadIr, unknown: &UnknownId, links: &[String]) {
 
 fn append_link_to_record(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    record: &mut UnknownRecord,
-    link: String,
+    id: &str,
+    links: &mut Vec<String>,
+    link: &str,
 ) -> Result<bool, cadmpeg_core::CodecError> {
-    if link == record.id().as_str() {
-        return Ok(false);
+    ctx.charge_work(u64_from_index(id.len().min(link.len())).checked_add(1).ok_or_else(|| ctx.refuse_codec_limit("Rhino source link comparison", u64::MAX - 1, u64::MAX))?, "Rhino source link comparison")?;
+    if link == id { return Ok(false); }
+    let mut first = 0;
+    let mut end = links.len();
+    while first < end {
+        let middle = first + (end - first) / 2;
+        let existing = &links[middle];
+        ctx.charge_work(u64_from_index(existing.len().min(link.len())).checked_add(1).ok_or_else(|| ctx.refuse_codec_limit("Rhino source link comparison", u64::MAX - 1, u64::MAX))?, "Rhino source link comparison")?;
+        match existing.as_str().cmp(link) {
+            std::cmp::Ordering::Equal => return Ok(true),
+            std::cmp::Ordering::Less => first = middle + 1,
+            std::cmp::Ordering::Greater => end = middle,
+        }
     }
-    if let Err(index) = record.links().binary_search(&link) {
-        ctx.reserve_vec(record.links_mut(), 1, "Rhino unknown record links")?;
-        record.links_mut().insert(index, link);
-    }
+    let moved = (links.len() - first).checked_mul(std::mem::size_of::<String>()).ok_or_else(|| ctx.refuse_codec_limit("Rhino source link moves", u64::MAX - 1, u64::MAX))?;
+    ctx.charge_work(u64_from_index(moved), "Rhino source link moves")?;
+    ctx.reserve_retained_vec(links, 1, "Rhino unknown record links")?;
+    let copy = ctx.copy_retained_text(link, "Rhino unknown record link copy")?;
+    links.insert(first, copy);
     Ok(true)
 }
 

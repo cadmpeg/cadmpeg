@@ -177,7 +177,7 @@ fn owned_source_session_clears_cached_source_positions() {
     let second = "test:source:unknown#second";
     session.push_unknown(crate::UnknownRecord::retained(first.try_into().unwrap(), 0, vec![1], Vec::new())).unwrap();
     assert!(session.contains(first).unwrap());
-    session.clear_unknowns().unwrap();
+    session.replace_unknowns(Vec::new()).unwrap();
     session.push_unknown(crate::UnknownRecord::retained(second.try_into().unwrap(), 1, vec![2], Vec::new())).unwrap();
     assert!(!session.contains(first).unwrap());
     assert!(session.contains(second).unwrap());

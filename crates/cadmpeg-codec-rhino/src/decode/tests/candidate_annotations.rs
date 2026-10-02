@@ -49,13 +49,13 @@ fn candidate_native_projection_preserves_materialized_refusal() {
     )]);
     with_transaction_limits(&scan, u64::MAX, None, Some(0), |expand| {
         let mut context = DecodeContext::new(&scan, expand).unwrap();
-        let before = context.ir.clone();
+        let before = context.session.document().clone();
         let result = context.validate_candidate::<()>(|_, _| ());
         let Err(CandidateError::Codec(CodecError::ResourceLimit(limit))) = result else {
             panic!("native projection refusal must reach the candidate unchanged");
         };
         assert_eq!(limit.dimension, cadmpeg_core::decode::ResourceDimension::MaterializedBytes);
-        assert_eq!(context.ir, before);
+        assert_eq!(context.session.document(), &before);
         assert!(matches!(expand.ctx().charge_work(0, "test native projection fuse"), Err(CodecError::ResourceLimit(sticky)) if sticky == limit));
     });
 }
@@ -99,4 +99,53 @@ fn candidate_validation_message_preserves_resource_refusals() {
         assert_eq!(limit.dimension, dimension);
         assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit));
     }
+}
+
+#[test]
+fn candidate_session_reuses_source_identity_and_borrows_retained_image() {
+    let scan = scan_with_objects(&[super::object_record(super::ArchiveVersion::V5, 1, super::POINT_CLASS)]);
+    super::with_expand(&scan, |expand| {
+        let mut context = DecodeContext::new(&scan, expand).unwrap();
+        let id = context.session.unknowns()[0].id().as_str().to_owned();
+        let image = context.session.unknowns()[0].data().unwrap().as_ptr();
+        assert!(context.session.contains(&id).unwrap());
+        for _ in 0..2 {
+            context.validate_candidate(|_, _| ()).unwrap();
+            assert!(context.session.contains(&id).unwrap());
+            assert_eq!(context.session.unknowns()[0].data().unwrap().as_ptr(), image);
+            assert!(context.session.document().native_unknowns("rhino").unwrap().is_empty());
+        }
+        let decoded = context.commit().unwrap();
+        assert_eq!(decoded.ir.native_unknowns("rhino").unwrap().len(), 1);
+        assert_eq!(decoded.source_fidelity.retained_records().len(), 1);
+    });
+}
+
+#[test]
+fn candidate_source_link_grammar_failure_preserves_admission_classification() {
+    let scan = scan_with_objects(&[super::object_record(super::ArchiveVersion::V5, 1, super::POINT_CLASS)]);
+    super::with_expand(&scan, |expand| {
+        let mut context = DecodeContext::new(&scan, expand).unwrap();
+        context.session.unknown_links_mut(0).unwrap().1.push("invalid".into());
+        let before = context.session.document().clone();
+        let Err(CandidateError::Admission(message)) = context.validate_candidate(|_, _| ()) else { panic!("source link grammar remains an admission failure"); };
+        let expected = cadmpeg_ir::NativeUnknownRecord::try_from(&context.session.unknowns()[0]).unwrap_err();
+        assert_eq!(message, expected.to_string());
+        assert_eq!(context.session.document(), &before);
+    });
+}
+
+#[test]
+fn source_link_insertion_preserves_work_refusal_before_mutation() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut links = vec!["test:model:point#later".to_owned()];
+    let before = links.clone();
+    let Err(CodecError::ResourceLimit(limit)) = super::super::append_link_to_record(&ctx, "test:source:unknown#owner", &mut links, "test:model:point#earlier") else { panic!("comparison work must refuse"); };
+    assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+    assert_eq!(links, before);
+    assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit));
 }
