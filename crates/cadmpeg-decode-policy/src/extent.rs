@@ -41,16 +41,15 @@ impl<'tcx> Analysis<'_, 'tcx> {
             }
             ExprKind::Struct(_, fields, _) if matches!(self.expr_ty(expression).kind(), ty::Adt(owner, _) if types::standard(self.tcx, owner.did()) && self.tcx.item_name(owner.did()).as_str() == "Range") =>
             {
-                let start = fields
-                    .iter()
-                    .find(|field| field.ident.name.as_str() == "start")?
-                    .expr;
-                let end = fields
-                    .iter()
-                    .find(|field| field.ident.name.as_str() == "end")?
-                    .expr;
-                self.constant_count(end, &mut seen.clone())?
-                    .checked_sub(self.constant_count(start, &mut seen.clone())?)
+                self.range_width(fields, seen)
+            }
+            ExprKind::Struct(_, fields, _) if matches!(self.expr_ty(expression).kind(), ty::Adt(owner, _) if types::standard(self.tcx, owner.did()) && self.tcx.item_name(owner.did()).as_str() == "RangeTo") => {
+                self.constant_count(fields.first()?.expr, seen)
+            }
+            ExprKind::Index(_, range, _) if matches!(self.expr_ty(range).kind(), ty::Adt(owner, _) if types::standard(self.tcx, owner.did()) && matches!(self.tcx.item_name(owner.did()).as_str(), "Range" | "RangeTo")) => self.constant_count(range, seen),
+            ExprKind::Match(scrutinee, _, rustc_hir::MatchSource::TryDesugar(_)) => {
+                let (_, operands) = self.call(scrutinee)?;
+                self.constant_count(operands.first()?, seen)
             }
             ExprKind::Path(ref path) => match self.typeck.qpath_res(path, expression.hir_id) {
                 Res::Def(rustc_hir::def::DefKind::Const { .. }, definition) => self
@@ -69,15 +68,44 @@ impl<'tcx> Analysis<'_, 'tcx> {
                 if types::standard(self.tcx, id)
                     && matches!(
                         self.tcx.item_name(id).as_str(),
-                        "len" | "iter" | "into_iter"
+                        "len" | "iter" | "into_iter" | "unwrap" | "expect" | "as_ref" | "as_bytes" | "as_slice" | "Some"
                     )
                 {
                     self.constant_count(operands.first()?, seen)
+                } else if types::standard(self.tcx, id) && self.tcx.item_name(id).as_str() == "get"
+                    && operands.get(1).is_some_and(|range| matches!(self.expr_ty(range).kind(), ty::Adt(owner, _) if types::standard(self.tcx, owner.did()) && matches!(self.tcx.item_name(owner.did()).as_str(), "Range" | "RangeTo"))) {
+                    self.constant_count(operands.get(1)?, seen)
                 } else {
                     None
                 }
             }
         }
+    }
+
+    fn range_width(&self, fields: &'tcx [rustc_hir::ExprField<'tcx>], seen: &mut Vec<rustc_hir::HirId>) -> Option<u64> {
+        let start = fields.iter().find(|field| field.ident.name.as_str() == "start")?.expr;
+        let end = fields.iter().find(|field| field.ident.name.as_str() == "end")?.expr;
+        if let (Some(start), Some(end)) = (self.constant_count(start, &mut seen.clone()), self.constant_count(end, &mut seen.clone())) {
+            return end.checked_sub(start);
+        }
+        let ExprKind::Binary(operator, base, width) = end.kind else { return None; };
+        if operator.node != rustc_hir::BinOpKind::Add { return None; }
+        let key = self.key(start, &mut Vec::new())?;
+        if self.key(base, &mut Vec::new()).as_ref() != Some(&key) { return None; }
+        self.constant_count(width, seen)
+    }
+
+    pub(crate) fn bounded_work(&self, expression: &'tcx Expr<'tcx>) -> bool {
+        fn fixed_children<'a>(tcx: rustc_middle::ty::TyCtxt<'a>, value: ty::Ty<'a>) -> bool {
+            match value.peel_refs().kind() {
+                ty::Str => true,
+                ty::Slice(element) | ty::Array(element, _) => types::work(tcx, *element, &mut Vec::new()) == Shape::Fixed,
+                ty::Adt(owner, args) if types::standard(tcx, owner.did()) && tcx.item_name(owner.did()).as_str() == "Option" => args.types().all(|value| fixed_children(tcx, value)),
+                _ => false,
+            }
+        }
+        self.constant_count(expression, &mut Vec::new()).is_some()
+            && fixed_children(self.tcx, self.expr_ty(expression))
     }
 
     pub(crate) fn vector_collection_reuse(
@@ -312,7 +340,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
             }
             _ => false,
         };
-        if constant_container && self.constant(expression, &mut Vec::new()) {
+        if self.bounded_work(expression) || constant_container && self.constant(expression, &mut Vec::new()) {
             return Shape::Fixed;
         }
 

@@ -59,7 +59,8 @@ impl<'tcx> Analysis<'_, 'tcx> {
                     }
                 }
                 let bounded =
-                    self.constant(left, &mut Vec::new()) || self.constant(right, &mut Vec::new());
+                    self.constant(left, &mut Vec::new()) || self.constant(right, &mut Vec::new())
+                        || self.bounded_work(left) || self.bounded_work(right);
                 if !bounded {
                     let mut paid = self.take_credit(&[left, right]);
                     if paid == Some(true)
@@ -379,7 +380,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
         } else if consumers {
             self.iteration(receiver, &mut Vec::new())
         } else {
-            if self.constant(extent, &mut Vec::new()) {
+            if self.constant(extent, &mut Vec::new()) || self.bounded_work(extent) {
                 Shape::Fixed
             } else {
                 types::work(self.tcx, self.expr_ty(extent), &mut Vec::new())
@@ -393,7 +394,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
             "starts_with" | "ends_with" | "eq" | "cmp" | "partial_cmp"
         ) && operands
             .get(1)
-            .is_some_and(|operand| self.constant(operand, &mut Vec::new()))
+            .is_some_and(|operand| self.constant(operand, &mut Vec::new()) || self.bounded_work(operand))
         {
             return;
         }

@@ -235,7 +235,11 @@ charge does not admit an infallible raw allocation in a caller.
 comparisons, searches, hashes and copies without work admission. Slices,
 strings, vectors, maps, sets and `View` have variable extents. Scalars,
 fixed-size Copy values, arrays and constant-bounded ranges have fixed
-extents. Fixed array slots do not admit variable-size child comparisons.
+extents. Constant-width indexing and range `get` preserve fixed extent,
+including `at..at + N`. `first_chunk::<N>` and the first half of
+`split_first_chunk::<N>` have fixed extent. Optional fixed slices retain this
+bound through `?` and standard option access. Fixed extent does not admit
+variable-size child comparisons, copies or hashes. Fixed array slots do not admit variable-size child comparisons.
 A `take` bound does not make an input-sized source fixed. A slice iterator's
 `count` and integer or character range `count` use metadata or bounded
 arithmetic. Filling a unit-element vector sets its length without a scan.

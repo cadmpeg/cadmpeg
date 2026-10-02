@@ -11,7 +11,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
     }
 
     pub(crate) fn fixed_value(&self, expression: &'tcx Expr<'tcx>) -> bool {
-        if self.constant(expression, &mut Vec::new()) {
+        if self.constant(expression, &mut Vec::new()) || self.bounded_work(expression) {
             return true;
         }
         match expression.kind {
