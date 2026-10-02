@@ -1461,6 +1461,16 @@ fn read(ctx: &DecodeContext<'_>, kind: Kind) {
 }""")
         self.assertEqual([f.line for f in self.findings("uncharged_decode_work")], [7, 8, 9, 10])
 
+    def test_iteration_charge_does_not_pay_skipped_input_or_repeated_conditions(self):
+        self.write(self.PATH, """fn read(ctx: &DecodeContext<'_>) {
+    for value in values.iter().filter(predicate) { ctx.charge_work(1, "yield")?; use_value(value); }
+    ctx.charge_work(u64_from_index(values.len()), "source")?;
+    for value in values.iter().filter(predicate) { use_value(value); }
+    ctx.charge_work(u64_from_index(text.len()), "search")?;
+    while text.contains(needle) { ctx.charge_work(1, "yield")?; step(); }
+}""")
+        self.assertEqual([f.line for f in self.findings("uncharged_decode_work")], [2, 6])
+
     def test_unadmitted_loops_and_iterator_searches(self):
         self.write(self.PATH, """fn read(ctx: &DecodeContext<'_>) {
     for value in values { use_value(value); }

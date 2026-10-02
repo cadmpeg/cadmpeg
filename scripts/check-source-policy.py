@@ -2401,6 +2401,13 @@ def decode_paid_prefix(words, pairs, start, stop, receivers, methods):
 def decode_extent(expression):
     """Normalize direct collection iteration and counted ranges to their extent."""
     expression = expression.lstrip("&")
+    tokens, pairs, _ = evaluation_tokens(expression)
+    words = [token[0] for token in tokens]
+    if words[-1:] == [")"] and pairs.get(len(words) - 1) is not None:
+        opening = pairs[len(words) - 1]
+        if (opening >= 2 and words[opening - 2] == "."
+                and words[opening - 1] in {"map", "filter", "filter_map", "inspect", "skip", "step_by", "skip_while", "take_while", "take"}):
+            return decode_extent(expression[:tokens[opening - 2].start()])
     expression = re.sub(r"\[[^\[\]]*\.\.[^\[\]]*\]$", "", expression)
     if ".." in expression:
         expression = expression.split("..", 1)[1].lstrip("=")
@@ -2450,7 +2457,7 @@ def decode_repeated_scopes(words, pairs, body, end):
             while opening < end and words[opening] not in {"{", ";"}:
                 opening = pairs[opening] + 1 if opening in pairs and words[opening] in "([" else opening + 1
             if opening in pairs and words[opening] == "{":
-                scopes.append((opening, pairs[opening]))
+                scopes.append((index, pairs[opening]))
         elif word == "|" and words[index - 1] in {"(", "=", ",", "move", "=>"}:
             closing = index + 1
             while closing < end and words[closing] != "|":
@@ -2955,6 +2962,11 @@ def scan_decode_work(sources: dict[Path, str]) -> list[Finding]:
             if loop_body is not None:
                 admitted = decode_paid_prefix(words, pairs, loop_body + 1,
                                               pairs[loop_body], receivers, methods)
+                # Skipped source items run before the yielded iteration's charge.
+                if any(words[index - 1:index] == ["."] and words[index] in {
+                        "filter", "filter_map", "skip", "step_by", "skip_while", "take_while", "flatten", "flat_map"
+                } for index in range(i + 1, loop_body)):
+                    admitted = False
             if not admitted:
                 for charge, amount in charges.items():
                     if charge in consumed or not decode_charge_dominates(words, parents, repeated, charge, i):
