@@ -26,8 +26,7 @@ use cadmpeg_core::CodecError;
 
 use super::pcurve_parameter_domain;
 use super::identities::BorrowedIdentities;
-mod scratch;
-use scratch::Scratch;
+use super::scratch::Scratch;
 
 /// A curve point as the checks measure it: the finite point, or the point an
 /// evaluation outside the finite range reached, whose mismatch is then the
