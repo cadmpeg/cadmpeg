@@ -1114,7 +1114,7 @@ fn homogeneous_curve_boundary_matches(
             return Ok(None);
         }
         let Some(within_resolution) =
-            boundaries_within_resolution(&first_span.controls, &second_span.controls, resolution)?
+            boundaries_within_resolution(ctx, &first_span.controls, &second_span.controls, resolution)?
         else {
             return Ok(None);
         };

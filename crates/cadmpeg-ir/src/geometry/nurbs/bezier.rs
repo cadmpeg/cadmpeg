@@ -5,7 +5,7 @@ use super::scratch;
 use super::PoleValue;
 use crate::features::FinitePoint3;
 use crate::math::sum::ExactSignedSum;
-use cadmpeg_core::decode::ResourceLimit;
+use cadmpeg_core::decode::{u64_from_index, DecodeContext, ResourceLimit};
 
 /// One nonempty knot span and its homogeneous Bezier control polygon.
 #[derive(Clone, Debug)]
@@ -204,92 +204,134 @@ pub fn homogeneous_spans_with_charge<const DIMENSION: usize, E: From<ResourceLim
 /// Bernstein cross-products are compared before converting their scale back
 /// to `f64`, so a nonzero difference cannot disappear through underflow.
 pub fn boundaries_within_resolution(
+    ctx: &DecodeContext<'_>,
     first: &[[f64; 4]],
     second: &[[f64; 4]],
     resolution: f64,
 ) -> Result<Option<bool>, ResourceLimit> {
-    Ok((|| {
-        if first.is_empty()
-            || first.len() != second.len()
-            || !resolution.is_finite()
-            || resolution < 0.0
-            || first
-                .iter()
-                .chain(second)
-                .any(|point| point.iter().any(|v| !v.is_finite()) || point[3] <= 0.0)
-        {
-            return None;
-        }
-        let degree = first.len() - 1;
-        let product_degree = degree.checked_mul(2)?;
-        let binomial = |n: usize, k: usize| {
-            let k = k.min(n - k);
-            (1..=k).try_fold(1.0, |value, factor| {
-                Some(
-                    value * cadmpeg_core::convert::f64_from_index(n - k + factor)?
-                        / cadmpeg_core::convert::f64_from_index(factor)?,
-                )
-            })
+    macro_rules! value {
+        ($expression:expr) => {
+            match $expression {
+                Some(value) => value,
+                None => return Ok(None),
+            }
         };
-        let first_weight = first
-            .iter()
-            .map(|control| control[3])
-            .fold(f64::INFINITY, f64::min);
-        let second_weight = second
-            .iter()
-            .map(|control| control[3])
-            .fold(f64::INFINITY, f64::min);
-        let mut threshold = ExactSignedSum::default();
-        threshold.add_factors([
-            resolution,
-            first_weight,
-            second_weight,
-            1.0 / 3.0_f64.sqrt(),
-        ]);
-        let threshold = threshold.finish();
-        for index in 0..=product_degree {
-            let mut cross = [ExactSignedSum::default(); 3];
-            // `index` runs to twice the degree, and each factor keeps its own degree.
-            // The pair `(first_index, second_index)` contributes when the two indices
-            // sum to `index` and both stay inside the control net: a larger
-            // `first_index` than `index` has no partner, and a smaller one than
-            // `index - degree` asks for a second index past the end.
-            for (first_index, first_control) in first.iter().enumerate() {
-                let Some(second_index) = index.checked_sub(first_index) else {
-                    break;
-                };
-                let Some(second_control) = second.get(second_index) else {
-                    continue;
-                };
-                let coefficient = binomial(degree, first_index)? * binomial(degree, second_index)?
-                    / binomial(product_degree, index)?;
-                if !coefficient.is_finite() {
-                    return None;
-                }
-                for (axis, component) in cross.iter_mut().enumerate() {
-                    component.add_factors([coefficient, first_control[axis], second_control[3]]);
-                    component.add_factors([-coefficient, second_control[axis], first_control[3]]);
-                }
+    }
+    if first.is_empty()
+        || first.len() != second.len()
+        || !resolution.is_finite()
+        || resolution < 0.0
+    {
+        return Ok(None);
+    }
+    for control in first.iter().chain(second) {
+        ctx.charge_work_limit(1, "IR Bezier boundary finite control visit")?;
+        if control.iter().any(|value| !value.is_finite()) || control[3] <= 0.0 {
+            return Ok(None);
+        }
+    }
+    let degree = first.len() - 1;
+    let product_degree = value!(degree.checked_mul(2));
+    let binomial = |n: usize, k: usize| -> Result<Option<f64>, ResourceLimit> {
+        let k = k.min(n - k);
+        ctx.charge_work_limit(u64_from_index(k), "IR Bezier boundary binomial factors")?;
+        Ok((1..=k).try_fold(1.0, |value, factor| {
+            Some(
+                value * cadmpeg_core::convert::f64_from_index(n - k + factor)?
+                    / cadmpeg_core::convert::f64_from_index(factor)?,
+            )
+        }))
+    };
+    let mut first_weight = f64::INFINITY;
+    for control in first {
+        ctx.charge_work_limit(1, "IR Bezier boundary first weight visit")?;
+        first_weight = first_weight.min(control[3]);
+    }
+    let mut second_weight = f64::INFINITY;
+    for control in second {
+        ctx.charge_work_limit(1, "IR Bezier boundary second weight visit")?;
+        second_weight = second_weight.min(control[3]);
+    }
+    let mut threshold = ExactSignedSum::default();
+    threshold.add_factors([
+        resolution,
+        first_weight,
+        second_weight,
+        1.0 / 3.0_f64.sqrt(),
+    ]);
+    let threshold = threshold.finish();
+    for index in 0..=product_degree {
+        ctx.charge_work_limit(1, "IR Bezier boundary product coefficient")?;
+        let mut cross = [ExactSignedSum::default(); 3];
+        // A control pair contributes when its indices sum to the product index.
+        for (first_index, first_control) in first.iter().enumerate() {
+            ctx.charge_work_limit(1, "IR Bezier boundary control pair")?;
+            let Some(second_index) = index.checked_sub(first_index) else {
+                break;
+            };
+            let Some(second_control) = second.get(second_index) else {
+                continue;
+            };
+            let coefficient = value!(binomial(degree, first_index)?)
+                * value!(binomial(degree, second_index)?)
+                / value!(binomial(product_degree, index)?);
+            if !coefficient.is_finite() {
+                return Ok(None);
             }
-            for component in cross {
-                if let Some(value) = component.finish() {
-                    let Some(limit) = threshold else {
-                        return Some(false);
-                    };
-                    let exponent = value.exponent().max(limit.exponent());
-                    if value.rescale(exponent)?.abs() > limit.rescale(exponent)?.abs() {
-                        return Some(false);
-                    }
+            for (axis, component) in cross.iter_mut().enumerate() {
+                component.add_factors([coefficient, first_control[axis], second_control[3]]);
+                component.add_factors([-coefficient, second_control[axis], first_control[3]]);
+            }
+        }
+        for component in cross {
+            if let Some(value) = component.finish() {
+                let Some(limit) = threshold else {
+                    return Ok(Some(false));
+                };
+                let exponent = value.exponent().max(limit.exponent());
+                if value!(value.rescale(exponent)).abs() > value!(limit.rescale(exponent)).abs() {
+                    return Ok(Some(false));
                 }
             }
         }
-        Some(true)
-    })())
+    }
+    Ok(Some(true))
 }
 
 #[cfg(test)]
 mod tests {
     use super::{boundaries_within_resolution, homogeneous_spans};
+    #[test]
+    fn boundary_certificate_preserves_every_caller_work_refusal() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        use cadmpeg_core::CodecError;
+        let controls = [[0.0, 0.0, 0.0, 1.0], [1.0, 0.0, 0.0, 1.0]];
+        // Four finite visits, four weight visits, three coefficients, six pair
+        // visits and two binomial factors for the middle coefficient.
+        const WORK: u64 = 19;
+        for cap in 0..WORK {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = cap;
+            let arena = DecodeArena::new();
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+            let limit = boundaries_within_resolution(&ctx, &controls, &controls, 0.0)
+                .expect_err("each certificate visit needs caller work");
+            assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+            assert_eq!(limit.limit, cap);
+            assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit));
+        }
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = WORK;
+        policy.limits.max_retained_bytes = 0;
+        policy.limits.max_materialized_bytes = 0;
+        policy.limits.max_collection_items = 0;
+        policy.limits.max_recursion_depth = 0;
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+        assert_eq!(boundaries_within_resolution(&ctx, &controls, &controls, 0.0), Ok(Some(true)));
+        ctx.finish_session().expect("exact work without storage or nesting");
+    }
+
     #[test]
     fn numerical_followup_bezier_spans_preserve_unclamped_and_discontinuous_curves() {
         let spans = homogeneous_spans(
@@ -323,8 +365,8 @@ mod tests {
         for w in [1.0, 1e-200, 1e200] {
             let a = [[0., 0., 0., w], [w, 0., 0., w]];
             let b = [[0., 2.0 * w, 0., w], [w, 2.0 * w, 0., w]];
-            assert_eq!(boundaries_within_resolution(&a, &b, 0.001), Ok(Some(false)));
-            assert_eq!(boundaries_within_resolution(&a, &a, 0.0), Ok(Some(true)));
+            assert_eq!(boundaries_within_resolution(&cadmpeg_test_support::service_decode_context(), &a, &b, 0.001), Ok(Some(false)));
+            assert_eq!(boundaries_within_resolution(&cadmpeg_test_support::service_decode_context(), &a, &a, 0.0), Ok(Some(true)));
         }
     }
 
