@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Concrete generic edges, including checked dependency MIR.
-use super::{indirect, key, objects, Graph};
+use super::{indirect, key, objects, EdgeKind, Graph};
 use crate::types;
 use rustc_middle::mir::visit::Visitor;
 use rustc_middle::mir::{self, Body, Location, Operand, Rvalue};
@@ -22,8 +22,9 @@ pub(super) fn enqueue<'tcx>(
     caller: &str,
     instance: Instance<'tcx>,
     environment: ty::TypingEnv<'tcx>,
-    depth: usize,
+    route: (usize, EdgeKind),
 ) {
+    let (depth, kind) = route;
     let id = instance.def_id();
     if !types::checked(tcx, id)
         || types::serialization_body(tcx, id)
@@ -31,7 +32,7 @@ pub(super) fn enqueue<'tcx>(
     {
         return;
     }
-    graph.edges.insert((caller.to_owned(), key(tcx, id)));
+    graph.edges.insert((caller.to_owned(), key(tcx, id), kind));
     if instance.args.has_non_region_param() {
         graph
             .symbolic_edges
@@ -131,7 +132,7 @@ impl<'tcx> Edges<'_, 'tcx> {
             &self.concrete.caller,
             instance,
             self.concrete.environment,
-            self.concrete.depth + 1,
+            (self.concrete.depth + 1, if address { EdgeKind::FunctionAddress } else { EdgeKind::GenericInstantiation }),
         );
     }
 }
@@ -206,7 +207,7 @@ impl<'tcx> Visitor<'tcx> for Edges<'_, 'tcx> {
                                 &self.concrete.caller,
                                 Instance::new_raw(*id, args),
                                 self.concrete.environment,
-                                self.concrete.depth + 1,
+                                (self.concrete.depth + 1, EdgeKind::FunctionAddress),
                             );
                         }
                     }

@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 """Run the pinned compiler's decode allocation and work checks."""
 import argparse
+from collections import deque
 import os
 from pathlib import Path
 import subprocess
@@ -12,64 +13,141 @@ ROOT = Path(__file__).resolve().parent.parent
 TOOL = ROOT / "crates/cadmpeg-decode-policy"
 
 
-def resolve_graph(source):
-    reached = set()
-    roots = {}
-    edges = {}
-    addresses = {}
-    pointer_calls = []
-    trait_calls = []
-    method_impls = {}
-    symbolic = set()
-    symbolic_edges = {}
-    objects = []
-    object_calls = []
-    for row in source.splitlines():
-        fields = row.split("\t")
-        if len(fields) == 3 and fields[0] == "decode_root":
-            reached.add(fields[1])
-            roots[fields[1]] = fields[2]
-        elif len(fields) == 3 and fields[0] == "decode_edge":
-            edges.setdefault(fields[1], set()).add(fields[2])
-        elif len(fields) == 2 and fields[0] == "decode_symbolic_root":
-            symbolic.add(fields[1])
-        elif len(fields) == 3 and fields[0] == "decode_symbolic_edge":
-            symbolic_edges.setdefault(fields[1], set()).add(fields[2])
-        elif len(fields) == 3 and fields[0] == "decode_address":
-            addresses.setdefault(fields[1], set()).add(fields[2])
-        elif len(fields) == 3 and fields[0] == "decode_pointer_call":
-            pointer_calls.append(fields[1:])
-        elif len(fields) == 3 and fields[0] == "decode_trait_call":
-            trait_calls.append(fields[1:])
-        elif len(fields) == 3 and fields[0] == "decode_method_impl":
-            method_impls.setdefault(fields[1], set()).add(fields[2])
-        elif len(fields) == 4 and fields[0] == "decode_object":
-            objects.append(fields[1:])
-        elif len(fields) == 3 and fields[0] == "decode_object_call":
-            object_calls.append(fields[1:])
-    while True:
-        before = (len(reached), len(symbolic))
-        for caller, targets in edges.items():
-            if caller in reached:
-                reached.update(targets)
-        for caller, targets in symbolic_edges.items():
-            if caller in symbolic:
-                symbolic.update(targets)
-                reached.update(targets)
-        called = {method for caller, method in object_calls if caller in reached}
-        for caller, method, target in objects:
-            if caller in reached and method in called:
-                reached.add(target)
+class DecodeGraph:
+    """Resolve guarded object edges and typed indirect edges in one joined graph."""
+
+    def __init__(self, source):
+        self.roots = {}
+        self.bodies = {}
+        self.ends = {}
+        self.nodes = {}
+        self.edges = {}
+        self.addresses = {}
+        self.pointer_calls = []
+        self.trait_calls = []
+        self.method_impls = {}
+        self.symbolic_roots = set()
+        self.symbolic_edges = {}
+        self.objects = []
+        self.object_calls = []
+        for row in source.splitlines():
+            fields = row.split("\t")
+            tag = fields[0]
+            if len(fields) == 7 and tag == "decode_body":
+                self.bodies[fields[1]] = fields[2:]
+            elif len(fields) == 3 and tag == "decode_body_span":
+                self.ends[fields[1]] = int(fields[2])
+            elif len(fields) == 3 and tag == "decode_node":
+                self.nodes[fields[1]] = fields[2]
+            elif len(fields) == 3 and tag == "decode_root":
+                self.roots[fields[1]] = fields[2]
+            elif len(fields) == 4 and tag == "decode_edge":
+                self.edges.setdefault(fields[1], set()).add((fields[2], fields[3]))
+            elif len(fields) == 2 and tag == "decode_symbolic_root":
+                self.symbolic_roots.add(fields[1])
+            elif len(fields) == 3 and tag == "decode_symbolic_edge":
+                self.symbolic_edges.setdefault(fields[1], set()).add(fields[2])
+            elif len(fields) == 3 and tag == "decode_address":
+                self.addresses.setdefault(fields[1], set()).add(fields[2])
+            elif len(fields) == 3 and tag == "decode_pointer_call":
+                self.pointer_calls.append(fields[1:])
+            elif len(fields) == 3 and tag == "decode_trait_call":
+                self.trait_calls.append(fields[1:])
+            elif len(fields) == 3 and tag == "decode_method_impl":
+                self.method_impls.setdefault(fields[1], set()).add(fields[2])
+            elif len(fields) == 4 and tag == "decode_object":
+                self.objects.append(fields[1:])
+            elif len(fields) == 3 and tag == "decode_object_call":
+                self.object_calls.append(fields[1:])
+
+    def resolve(self):
+        reached = set(self.roots)
+        symbolic = self.symbolic_roots.copy()
+        edges = {caller: targets.copy() for caller, targets in self.edges.items()}
+        while True:
+            before = (len(reached), len(symbolic))
+            for caller, targets in self.symbolic_edges.items():
                 if caller in symbolic:
-                    symbolic.add(target)
-        for caller, signature in pointer_calls:
-            if caller in reached:
-                reached.update(addresses.get(signature, ()))
-        for caller, method in trait_calls:
-            if caller in reached:
-                reached.update(method_impls.get(method, ()))
-        if before == (len(reached), len(symbolic)):
-            return reached, roots
+                    symbolic.update(targets)
+                    reached.update(targets)
+                    edges.setdefault(caller, set()).update((target, "generic instantiation") for target in targets)
+            called = {}
+            for caller, method in self.object_calls:
+                if caller in reached:
+                    called.setdefault(method, set()).add(caller)
+            for caller, method, target in self.objects:
+                if caller in reached and method in called:
+                    reached.add(target)
+                    for call in called[method]:
+                        edges.setdefault(call, set()).add((target, "trait-object call"))
+                    if caller in symbolic:
+                        symbolic.add(target)
+            for caller, signature in self.pointer_calls:
+                if caller in reached:
+                    targets = self.addresses.get(signature, ())
+                    reached.update(targets)
+                    edges.setdefault(caller, set()).update((target, "unresolved-indirect candidate") for target in targets)
+            for caller, method in self.trait_calls:
+                if caller in reached:
+                    targets = self.method_impls.get(method, ())
+                    reached.update(targets)
+                    edges.setdefault(caller, set()).update((target, "unresolved-indirect candidate") for target in targets)
+            for caller, targets in edges.items():
+                if caller in reached:
+                    reached.update(target for target, _ in targets)
+            if before == (len(reached), len(symbolic)):
+                return reached, edges
+
+    def select(self, selector):
+        path, separator, line = selector.rpartition(":")
+        if separator and line.isdecimal():
+            line = int(line)
+            candidates = [key for key, body in self.bodies.items() if body[0] == path and int(body[1]) <= line <= self.ends.get(key, int(body[1]))]
+            if candidates:
+                shortest = min(self.ends.get(key, int(self.bodies[key][1])) - int(self.bodies[key][1]) for key in candidates)
+                candidates = [key for key in candidates if self.ends.get(key, int(self.bodies[key][1])) - int(self.bodies[key][1]) == shortest]
+        else:
+            candidates = [key for key, body in self.bodies.items() if body[2] == selector or body[2].endswith("::" + selector)]
+        if not candidates:
+            raise ValueError(f"no body named {selector}")
+        if len(candidates) != 1:
+            raise ValueError(f"ambiguous body {selector}: " + "; ".join(self.location(key) for key in candidates))
+        return candidates[0]
+
+    def location(self, key):
+        if key in self.bodies:
+            body = self.bodies[key]
+            return f"{body[2]} ({body[0]}:{body[1]})"
+        return self.nodes.get(key, self.roots.get(key, key))
+
+    def explain(self, selector):
+        target = self.select(selector)
+        reached, edges = self.resolve()
+        if target not in reached:
+            return f"decode_path\t{self.location(target)}\tunreachable\n"
+        predecessors = {key: None for key in sorted(self.roots)}
+        pending = deque(predecessors)
+        while pending and target not in predecessors:
+            caller = pending.popleft()
+            for callee, kind in sorted(edges.get(caller, ())):
+                if callee not in predecessors:
+                    predecessors[callee] = (caller, kind)
+                    pending.append(callee)
+        path = []
+        current = target
+        while predecessors[current] is not None:
+            caller, kind = predecessors[current]
+            path.append((caller, current, kind))
+            current = caller
+        rows = [f"decode_path_root\t{self.location(current)}"]
+        rows.extend(f"decode_path_edge\t{kind}\t{self.location(caller)}\t{self.location(callee)}" for caller, callee, kind in reversed(path))
+        return "\n".join(rows) + "\n"
+
+
+def resolve_graph(source):
+    graph = DecodeGraph(source)
+    reached, _ = graph.resolve()
+    return reached, graph.roots
 
 
 def unreachable_bodies(source, reached):
@@ -90,7 +168,18 @@ def main():
     parser.add_argument("--list-externals", action="store_true", help="list resolved external operations with allocation and named work costs")
     parser.add_argument("--list-unreachable", action="store_true", help="list excluded production bodies with path, line, name and reason")
     parser.add_argument("--unreachable-output", type=Path, help="also save excluded production bodies during a findings run")
+    parser.add_argument("--explain-body", help="print one shortest decode path to a definition name or PATH:LINE")
+    parser.add_argument("--graph-output", type=Path, help="save compiler graph rows")
+    parser.add_argument("--graph-input", type=Path, help="explain a body using saved compiler graph rows")
     args = parser.parse_args()
+    if args.graph_input:
+        if not args.explain_body:
+            parser.error("--graph-input requires --explain-body")
+        try:
+            sys.stdout.write(DecodeGraph(args.graph_input.read_text()).explain(args.explain_body))
+        except ValueError as error:
+            parser.error(str(error))
+        return 0
     toolchain = tomllib.loads((TOOL / "rust-toolchain.toml").read_text())["toolchain"]
     pin = toolchain["channel"]
     installed = subprocess.run(["rustup", "component", "list", "--toolchain", pin, "--installed"], cwd=ROOT, text=True, capture_output=True)
@@ -135,6 +224,14 @@ def main():
     sys.stderr.write(graph.stderr)
     if graph.returncode:
         return graph.returncode
+    if args.graph_output:
+        args.graph_output.write_text(graph.stdout)
+    if args.explain_body:
+        try:
+            sys.stdout.write(DecodeGraph(graph.stdout).explain(args.explain_body))
+        except ValueError as error:
+            parser.error(str(error))
+        return 0
     reached, roots = resolve_graph(graph.stdout)
     scope = target / "decode-scope.txt"
     scope.write_text("".join(name + "\n" for name in sorted(reached)))

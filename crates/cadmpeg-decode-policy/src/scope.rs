@@ -12,10 +12,30 @@ use rustc_middle::ty::{self, TyCtxt, TypeVisitableExt};
 use rustc_span::def_id::{DefId, LocalDefId};
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub(super) enum EdgeKind {
+    DirectCall,
+    FunctionAddress,
+    TraitObjectCall,
+    GenericInstantiation,
+}
+
+impl EdgeKind {
+    fn label(self) -> &'static str {
+        match self {
+            Self::DirectCall => "direct call",
+            Self::FunctionAddress => "function address",
+            Self::TraitObjectCall => "trait-object call",
+            Self::GenericInstantiation => "generic instantiation",
+        }
+    }
+}
+
 #[derive(Default)]
 pub(crate) struct Graph {
     roots: BTreeMap<String, String>,
-    edges: BTreeSet<(String, String)>,
+    edges: BTreeSet<(String, String, EdgeKind)>,
+    nodes: BTreeMap<String, String>,
     addresses: BTreeSet<(String, String)>,
     pointer_calls: BTreeSet<(String, String)>,
     trait_calls: BTreeSet<(String, String)>,
@@ -34,12 +54,16 @@ impl Graph {
                 "decode_body\t{id}\t{}\t{}\t{}\t{}\t{}",
                 body.path, body.line, body.name, body.reason, body.eligible
             );
+            println!("decode_body_span\t{id}\t{}", body.end);
+        }
+        for (id, name) in &self.nodes {
+            println!("decode_node\t{id}\t{name}");
         }
         for (root, name) in &self.roots {
             println!("decode_root\t{root}\t{name}");
         }
-        for (caller, callee) in &self.edges {
-            println!("decode_edge\t{caller}\t{callee}");
+        for (caller, callee, kind) in &self.edges {
+            println!("decode_edge\t{caller}\t{callee}\t{}", kind.label());
         }
         for root in &self.symbolic_roots {
             println!("decode_symbolic_root\t{root}");
@@ -92,7 +116,7 @@ impl Graph {
         let mut symbolic = self.symbolic_roots.clone();
         loop {
             let mut added = false;
-            for (caller, callee) in &self.edges {
+            for (caller, callee, _) in &self.edges {
                 if reached.contains(caller) {
                     added |= reached.insert(callee.clone());
                 }
@@ -253,10 +277,14 @@ struct Calls<'a, 'b, 'tcx> {
 
 impl<'tcx> Calls<'_, '_, 'tcx> {
     fn edge(&mut self, callee: DefId) {
+        self.edge_kind(callee, EdgeKind::DirectCall);
+    }
+
+    fn edge_kind(&mut self, callee: DefId, kind: EdgeKind) {
         if types::checked(self.analysis.tcx, callee) {
             self.graph
                 .edges
-                .insert((self.caller.clone(), key(self.analysis.tcx, callee)));
+                .insert((self.caller.clone(), key(self.analysis.tcx, callee), kind));
         }
     }
 
@@ -287,7 +315,7 @@ impl<'tcx> Calls<'_, '_, 'tcx> {
         if object {
             self.graph.object_calls.insert((self.caller.clone(), key(self.analysis.tcx, definition)));
         }
-        self.edge(definition);
+        self.edge_kind(definition, if object { EdgeKind::TraitObjectCall } else { EdgeKind::GenericInstantiation });
         self.graph
             .symbolic_edges
             .insert((self.caller.clone(), key(self.analysis.tcx, definition)));
@@ -351,7 +379,7 @@ impl<'tcx> Visitor<'tcx> for Calls<'_, '_, 'tcx> {
                     &self.caller,
                     instance,
                     self.analysis.typing_env(),
-                    0,
+                    (0, EdgeKind::DirectCall),
                 );
             }
         }
@@ -374,7 +402,7 @@ impl<'tcx> Visitor<'tcx> for Calls<'_, '_, 'tcx> {
                     &self.caller,
                     instance,
                     self.analysis.typing_env(),
-                    0,
+                    (0, EdgeKind::FunctionAddress),
                 );
             }
         }
@@ -390,7 +418,7 @@ impl<'tcx> Visitor<'tcx> for Calls<'_, '_, 'tcx> {
             }
         }
         if let ty::Closure(id, _) = self.analysis.expr_ty(expression).peel_refs().kind() {
-            self.edge(*id);
+            self.edge_kind(*id, EdgeKind::FunctionAddress);
         }
         if let Some((id, _)) = self.analysis.call(expression) {
             self.method(expression, id, self.analysis.implementation(expression, id));
@@ -407,7 +435,7 @@ impl<'tcx> Visitor<'tcx> for Calls<'_, '_, 'tcx> {
                 self.edge(custom);
             }
         } else if let ty::FnDef(id, _) = self.analysis.expr_ty(expression).kind() {
-            self.edge(*id);
+            self.edge_kind(*id, if self.direct_callee { EdgeKind::DirectCall } else { EdgeKind::FunctionAddress });
         }
         if let ExprKind::Call(callee, arguments) = expression.kind {
             let direct = self.direct_callee;

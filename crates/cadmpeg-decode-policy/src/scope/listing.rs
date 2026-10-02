@@ -8,6 +8,7 @@ use rustc_span::def_id::LocalDefId;
 pub(super) struct Body {
     pub(super) path: String,
     pub(super) line: usize,
+    pub(super) end: usize,
     pub(super) name: String,
     pub(super) reason: &'static str,
     pub(super) eligible: bool,
@@ -63,6 +64,7 @@ pub(super) fn body(tcx: TyCtxt<'_>, owner: LocalDefId) -> Option<Body> {
     Some(Body {
         path,
         line: position.line,
+        end: tcx.sess.source_map().lookup_char_pos(tcx.hir_body_owned_by(owner).value.span.hi()).line,
         name: tcx.def_path_str(owner),
         reason,
         eligible,

@@ -177,6 +177,7 @@ fn check_fixture(name: &str) {
                     | "object_fallback"
                     | "method_scope"
                     | "pointer_scope"
+                    | "path_scope"
                     | "symbolic_scope"
                     | "fixed_ranges"
                     | "raw_steps"
@@ -591,4 +592,48 @@ fn called_object_methods_only() {
 #[test]
 fn type_compatible_indirect_candidates() {
     check_fixture("pointer_scope");
+}
+
+#[test]
+fn shortest_decode_paths() {
+    check_fixture("path_scope");
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let output_dir = root.join("target/fixtures/path_graph");
+    std::fs::create_dir_all(&output_dir).expect("path graph directory");
+    let output = Command::new(std::env::current_exe().expect("fixture executable"))
+        .args(["--exact", "integration_tests::fixture_child", "--ignored", "--nocapture"])
+        .env("CADMPEG_POLICY_FIXTURE", "1")
+        .env("CADMPEG_POLICY_GRAPH", "1")
+        .env("CADMPEG_POLICY_INPUT", root.join("fixtures/path_scope.rs"))
+        .env("CADMPEG_POLICY_OUTPUT", &output_dir)
+        .output().expect("path graph compiler");
+    assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+    let graph = output_dir.join("graph.tsv");
+    std::fs::write(&graph, output.stdout).expect("path graph rows");
+    let explain = |name: &str| {
+        let output = Command::new("python3")
+            .arg(root.join("../../scripts/check-decode-policy.py"))
+            .arg("--graph-input").arg(&graph)
+            .arg("--explain-body").arg(name)
+            .output().expect("path mode");
+        assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+        String::from_utf8(output.stdout).expect("path UTF-8")
+    };
+    let direct = explain("leaf");
+    assert_eq!(direct.lines().filter(|line| line.starts_with("decode_path_edge\t")).count(), 2, "{direct}");
+    assert!(direct.contains("direct call"), "{direct}");
+    assert!(direct.contains("short ("), "{direct}");
+    assert!(!direct.contains("long ("), "{direct}");
+    let address = explain("addressed");
+    assert!(address.contains("function address"), "{address}");
+    let fallback = explain("fallback");
+    assert!(fallback.contains("unresolved-indirect candidate"), "{fallback}");
+    let object = explain("<Inner as Work>::work");
+    assert!(object.contains("trait-object call"), "{object}");
+    assert!(object.contains("generic instantiation"), "{object}");
+    let excluded = explain("encode");
+    assert!(excluded.ends_with("\tunreachable\n"), "{excluded}");
+    let source = std::fs::read_to_string(root.join("fixtures/path_scope.rs")).expect("path fixture source");
+    let line = source.lines().position(|line| line.contains("for byte in bytes")).expect("leaf loop") + 1;
+    assert_eq!(direct, explain(&format!("fixtures/path_scope.rs:{line}")));
 }
