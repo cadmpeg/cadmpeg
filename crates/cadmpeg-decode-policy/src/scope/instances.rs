@@ -32,7 +32,12 @@ pub(super) fn enqueue<'tcx>(
         return;
     }
     graph.edges.insert((caller.to_owned(), key(tcx, id)));
-    if instance.args.has_non_region_param() || instance.args.has_escaping_bound_vars() {
+    if instance.args.has_non_region_param() {
+        graph.symbolic_edges.insert((caller.to_owned(), key(tcx, id)));
+        return;
+    }
+    if instance.args.has_escaping_bound_vars() {
+        graph.uncertain.insert(caller.to_owned());
         return;
     }
     if instance

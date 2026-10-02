@@ -64,9 +64,7 @@ pub(super) fn targets<'tcx>(
                                     ));
                                 }
                             }
-                            if tcx.is_mir_available(item.def_id) {
-                                instances.push(Instance::new_raw(item.def_id, args));
-                            }
+                            instances.push(Instance::new_raw(item.def_id, args));
                         }
                     }
                 }

@@ -154,7 +154,10 @@ Concrete object coercions through references, Box, Arc and nested pointer types
 reach every method of the concrete implementation and its supertraits, including
 default and Self: Sized methods. Concrete generic instances resolve parameter
 calls through local and dependency MIR before body selection. Their targets are
-attached to the originating caller. An unresolved indirect call retains
+attached to the originating caller. Unconstrained generic decode roots carry
+symbolic type arguments through helper chains and reach each possible checked
+trait implementation. Concrete encoder instances do not activate those symbolic
+edges. An unresolved indirect call retains
 `unproven_decode_charge` and reaches all function addresses and object-coerced
 implementations in the checked crates. This fallback can reach a target whose
 address was created by an encoder. Definition hashes join

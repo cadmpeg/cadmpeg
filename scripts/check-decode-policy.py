@@ -18,6 +18,8 @@ def resolve_graph(source):
     edges = {}
     uncertain = set()
     addresses = set()
+    symbolic = set()
+    symbolic_edges = {}
     for row in source.splitlines():
         fields = row.split("\t")
         if len(fields) == 3 and fields[0] == "decode_root":
@@ -25,10 +27,22 @@ def resolve_graph(source):
             roots[fields[1]] = fields[2]
         elif len(fields) == 3 and fields[0] == "decode_edge":
             edges.setdefault(fields[1], set()).add(fields[2])
+        elif len(fields) == 2 and fields[0] == "decode_symbolic_root":
+            symbolic.add(fields[1])
+        elif len(fields) == 3 and fields[0] == "decode_symbolic_edge":
+            symbolic_edges.setdefault(fields[1], set()).add(fields[2])
         elif len(fields) == 2 and fields[0] == "decode_uncertain":
             uncertain.add(fields[1])
         elif len(fields) == 2 and fields[0] == "decode_address":
             addresses.add(fields[1])
+    pending_symbolic = list(symbolic)
+    while pending_symbolic:
+        caller = pending_symbolic.pop()
+        for callee in symbolic_edges.get(caller, ()):
+            edges.setdefault(caller, set()).add(callee)
+            if callee not in symbolic:
+                symbolic.add(callee)
+                pending_symbolic.append(callee)
     for caller in uncertain:
         edges.setdefault(caller, set()).update(addresses)
     pending = list(reached)

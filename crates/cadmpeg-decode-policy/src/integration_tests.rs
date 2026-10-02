@@ -175,6 +175,7 @@ fn check_fixture(name: &str) {
                     | "generic_scope"
                     | "fallback"
                     | "object_fallback"
+                    | "symbolic_scope"
                     | "fixed_ranges"
                     | "raw_steps"
                     | "conversions"
@@ -570,8 +571,12 @@ fn excluded_body_listing() {
     }
 }
 
-
 #[test]
 fn lifetime_object_fallback() {
     check_fixture("object_fallback");
+}
+
+#[test]
+fn unconstrained_generic_root_reachability() {
+    check_fixture("symbolic_scope");
 }
