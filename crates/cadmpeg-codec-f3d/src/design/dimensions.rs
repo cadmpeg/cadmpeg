@@ -6911,6 +6911,7 @@ pub(super) fn point_lies_on_sketch_geometry(
         let (control_points, weights) =
             crate::design::geometry::nurbs_pcurve_evaluator_lanes(curve, ctx)?;
         return cadmpeg_ir::eval::nurbs_pcurve_contains_point(
+            ctx,
             curve.degree(),
             curve.knots(),
             &control_points,

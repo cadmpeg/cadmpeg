@@ -14,7 +14,7 @@ use crate::validate::validate_neutral;
 
 #[test]
 fn periodic_nurbs_parameters_preserve_phase_and_wrap_for_evaluation() {
-    let nurbs = crate::geometry::nurbs::NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
+    let nurbs = crate::geometry::nurbs::NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(),
         1,
         vec![0.0, 0.0, 1.0, 2.0, 2.0],
         vec![
@@ -73,7 +73,7 @@ fn periodic_nurbs_parameters_preserve_phase_and_wrap_for_evaluation() {
     {
         let replacement = false;
         edit::replace(nurbs, |previous| {
-            crate::geometry::nurbs::NurbsCurve::new(&cadmpeg_test_support::service_decode_context(), 
+            crate::geometry::nurbs::NurbsCurve::new(&cadmpeg_test_support::service_decode_context(),
                 previous.degree(),
                 previous.knots().to_vec(),
                 previous.pole_rows().clone(),
@@ -96,7 +96,7 @@ fn periodic_nurbs_parameters_preserve_phase_and_wrap_for_evaluation() {
 fn rational_quadratic_arc_evaluates_on_the_circle() {
     // Quarter circle of radius 5 as a rational quadratic Bezier.
     let weight = 0.5_f64.sqrt();
-    let curve = crate::geometry::nurbs::NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
+    let curve = crate::geometry::nurbs::NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(),
         2,
         vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
         vec![
@@ -115,7 +115,7 @@ fn rational_quadratic_arc_evaluates_on_the_circle() {
 
 #[test]
 fn point_evaluation_borrows_only_indexed_nurbs_and_polyline_rows() {
-    let curve = crate::geometry::nurbs::NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
+    let curve = crate::geometry::nurbs::NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(),
         1,
         vec![0.0, 0.0, 1.0, 1.0],
         vec![Point3::new(0.0, 0.0, 0.0), Point3::new(2.0, 0.0, 0.0)],
@@ -177,7 +177,7 @@ fn rational_pcurve_membership_finds_interior_points_without_sampling() {
     let interior =
         crate::eval::nurbs_pcurve_uv(2, &knots, &controls, Some(&weights), 0.375).unwrap();
     assert_eq!(
-        crate::eval::nurbs_pcurve_contains_point(
+        crate::eval::nurbs_pcurve_contains_point(&cadmpeg_test_support::service_decode_context(),
             2,
             &knots,
             &controls,
@@ -189,7 +189,7 @@ fn rational_pcurve_membership_finds_interior_points_without_sampling() {
         Some(true)
     );
     assert_eq!(
-        crate::eval::nurbs_pcurve_contains_point(
+        crate::eval::nurbs_pcurve_contains_point(&cadmpeg_test_support::service_decode_context(),
             2,
             &knots,
             &controls,
@@ -698,7 +698,7 @@ fn a_subset_whose_support_parameter_overflows_reports_the_support_evaluation() {
     // The u range runs down from 1e308 while its sense runs up, so the
     // support parameter at the far end of the span is 2e308.
     ir.model
-        .add_procedural_surface(None, 
+        .add_procedural_surface(None,
             &subset_id,
             procedural_surface! {
                 id: subset_construction,

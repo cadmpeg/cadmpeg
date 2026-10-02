@@ -1103,7 +1103,7 @@ fn reverse_pcurve_over_range(
             )) else {
                 return Ok(None);
             };
-            let reversed = PcurveNurbs::from_lanes(ctx, 
+            let reversed = PcurveNurbs::from_lanes(ctx,
                 2,
                 vec![start, start, start, end, end, end],
                 vec![first, middle, last],
@@ -2110,7 +2110,7 @@ fn exact_boundary_pcurve_with_index(
         ) {
             Ok(line) => PcurveGeometry::Line(line),
             Err(_) => {
-                let Ok(nurbs) = (match PcurveNurbs::from_lanes(geometry_budget.charges, 
+                let Ok(nurbs) = (match PcurveNurbs::from_lanes(geometry_budget.charges,
                     1,
                     vec![range[0], range[0], range[1], range[1]],
                     vec![first, second],
@@ -2173,7 +2173,7 @@ fn exact_boundary_pcurve_with_index(
                 {
                     return Ok(None);
                 }
-                let Ok(nurbs) = (match PcurveNurbs::from_lanes(geometry_budget.charges, 
+                let Ok(nurbs) = (match PcurveNurbs::from_lanes(geometry_budget.charges,
                     1,
                     vec![range[0], range[0], range[1], range[1]],
                     vec![first, second],
@@ -2318,7 +2318,7 @@ fn exact_boundary_pcurve_with_index(
                 match cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(origin, direction) {
                     Ok(line) => PcurveGeometry::Line(line),
                     Err(_) => {
-                        let Ok(nurbs) = (match PcurveNurbs::from_lanes(geometry_budget.charges, 
+                        let Ok(nurbs) = (match PcurveNurbs::from_lanes(geometry_budget.charges,
                             1,
                             vec![range[0], range[0], range[1], range[1]],
                             controls.to_vec(),
@@ -3192,7 +3192,7 @@ fn boundary_curve_speed_bound_with_index(
             let Some(isocurve) = nurbs_surface_isocurve(nurbs, fixed_axis, fixed_parameter)? else {
                 return Ok(None);
             };
-            let Some(bound) = nurbs_curve_speed_bound(&isocurve) else {
+            let Some(bound) = nurbs_curve_speed_bound(geometry_budget.charges, &isocurve)? else {
                 return Ok(None);
             };
             let bound = bound.get() * varying_scale.abs();
@@ -3549,7 +3549,7 @@ fn transfer_intersection_pcurve_with_budget<'a>(
         sample_parameters.push(sample.0);
         control_points.push(sample.1);
     }
-    let nurbs = PcurveNurbs::from_lanes(geometry_budget.charges, 
+    let nurbs = PcurveNurbs::from_lanes(geometry_budget.charges,
         1,
         linear_knots(&sample_parameters, geometry_budget)?,
         control_points,
@@ -5101,7 +5101,7 @@ mod tests {
             source_object: None,
         });
         ir.model
-            .add_procedural_curve(None, 
+            .add_procedural_curve(None,
                 &curve,
                 ProceduralCurve::new(
                     procedural_id,

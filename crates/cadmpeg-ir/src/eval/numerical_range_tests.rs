@@ -11,7 +11,7 @@ use crate::geometry::{
 use crate::ids::{CurveId, ProceduralSurfaceId, SurfaceId};
 
 fn bilinear(domain: [f64; 2], scale: f64) -> NurbsSurface {
-    NurbsSurface::from_lanes(&cadmpeg_test_support::service_decode_context(), 
+    NurbsSurface::from_lanes(&cadmpeg_test_support::service_decode_context(),
         NurbsSurfaceAxis::new(1, vec![domain[0], domain[0], domain[1], domain[1]], false),
         NurbsSurfaceAxis::new(1, vec![0., 0., 1., 1.], false),
         NurbsSurfaceLanes::new(
@@ -38,7 +38,7 @@ fn fixture(scale: f64) -> (crate::CadIr, SurfaceId) {
         Curve {
             id: profile_id.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-                NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
+                NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(),
                     1,
                     vec![0.0, 0.0, 1.0, 1.0],
                     vec![Point3::new(1.0, 0.0, 0.0), Point3::new(2.0, 0.0, 0.0)],
@@ -52,7 +52,7 @@ fn fixture(scale: f64) -> (crate::CadIr, SurfaceId) {
         Curve {
             id: spine_id.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-                NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
+                NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(),
                     1,
                     vec![0.0, 0.0, 1.0, 1.0],
                     vec![Point3::new(4.0, 5.0, 6.0), Point3::new(4.0, 5.0, 7.0)],
@@ -225,7 +225,7 @@ fn numerical_0922_sweep_evaluation_ignores_profile_units() {
 #[test]
 fn numerical_0922b_finite_chord_bound() {
     for s in [1., 1e200] {
-        let surf = NurbsSurface::from_lanes(&cadmpeg_test_support::service_decode_context(), 
+        let surf = NurbsSurface::from_lanes(&cadmpeg_test_support::service_decode_context(),
             NurbsSurfaceAxis::new(1, vec![0., 0., 1., 1.], false),
             NurbsSurfaceAxis::new(1, vec![0., 0., 1., 1.], false),
             NurbsSurfaceLanes::new(
@@ -255,7 +255,7 @@ fn numerical_audit_membership_and_inverse_keep_wide_knot_domains() {
         let knots = [a, a, b, b];
         let points = [Point2::new(0., 0.), Point2::new(1., 0.)];
         assert_eq!(
-            nurbs_pcurve_contains_point(
+            nurbs_pcurve_contains_point(&cadmpeg_test_support::service_decode_context(),
                 1,
                 &knots,
                 &points,
@@ -266,7 +266,7 @@ fn numerical_audit_membership_and_inverse_keep_wide_knot_domains() {
             Some(true)
         );
         assert_eq!(
-            nurbs_pcurve_contains_point(
+            nurbs_pcurve_contains_point(&cadmpeg_test_support::service_decode_context(),
                 1,
                 &knots,
                 &points,
