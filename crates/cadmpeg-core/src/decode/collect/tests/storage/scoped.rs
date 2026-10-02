@@ -31,9 +31,8 @@ fn scoped_storage_cases<T>(
         let arena = DecodeArena::new();
         policy.limits.max_materialized_bytes = bytes - 1;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("test context");
-        let error = match build(&ctx, count) {
-            Ok(_) => panic!("one below the scoped charge must refuse"),
-            Err(error) => error,
+        let Err(error) = build(&ctx, count) else {
+            panic!("one below the scoped charge must refuse");
         };
         assert!(matches!(error, CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::MaterializedBytes && ctx.resource_refusal() == Some(limit)));
