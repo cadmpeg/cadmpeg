@@ -682,10 +682,12 @@ pub(super) fn project(
         knots.extend([breakpoints[segment_count]; 4]);
         let mut raw_knots = ctx.collection_vec(knots.len(), "iges spline curve admitted knots")?;
         raw_knots.extend(knots.into_iter().map(FiniteReal::get));
-        let nurbs = match KnotVector::new(ctx, raw_knots)?.and_then(|knots| {
-            NurbsPoles3::from_checked_lanes(control_points, None)
-                .and_then(|poles| NurbsCurve::new(3, knots, poles, false))
-        }) {
+        let construction = match KnotVector::new(ctx, raw_knots)? {
+            Err(error) => Err(error),
+            Ok(knots) => NurbsPoles3::from_checked_lanes(ctx, control_points, None)?
+                .and_then(|poles| NurbsCurve::new(3, knots, poles, false)),
+        };
+        let nurbs = match construction {
             Ok(nurbs) => nurbs,
             Err(error) => {
                 super::push_entity_loss(
@@ -1079,16 +1081,17 @@ pub(super) fn project(
         raw_v_knots.extend(v_knots.into_iter().map(FiniteReal::get));
         let construction = match KnotVector::new(ctx, raw_u_knots)? {
             Err(error) => Err(error),
-            Ok(u_knots) => KnotVector::new(ctx, raw_v_knots)?.and_then(|v_knots| {
-                NurbsPoleGrid::from_checked_lanes(rows, None).and_then(|poles| {
+            Ok(u_knots) => match KnotVector::new(ctx, raw_v_knots)? {
+                Err(error) => Err(error),
+                Ok(v_knots) => NurbsPoleGrid::from_checked_lanes(ctx, rows, None)?.and_then(|poles| {
                     NurbsSurface::new(
                         NurbsSurfaceAxis::new(3, u_knots, false),
                         NurbsSurfaceAxis::new(3, v_knots, false),
                         poles,
                         false,
                     )
-                })
-            }),
+                }),
+            },
         };
         let nurbs = match construction {
             Ok(nurbs) => nurbs,

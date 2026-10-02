@@ -5347,7 +5347,7 @@ fn nurbs_curve(
             "step_nurbs_curve_control_points",
         )?;
     }
-    let curve = NurbsPoles3::from_lanes(control_points, definition.weights).and_then(|poles| {
+    let curve = NurbsPoles3::from_lanes(ctx, control_points, definition.weights)?.and_then(|poles| {
         NurbsCurve::new(
             definition.degree,
             definition.knots,
@@ -6370,7 +6370,7 @@ fn nurbs_surface(
     } else {
         None
     };
-    let surface = NurbsPoleGrid::from_lanes(control_points, weights).and_then(|poles| {
+    let surface = NurbsPoleGrid::from_lanes(ctx, control_points, weights)?.and_then(|poles| {
         NurbsSurface::new(
             NurbsSurfaceAxis::new(u_degree, u_knots, u_periodic),
             NurbsSurfaceAxis::new(v_degree, v_knots, v_periodic),

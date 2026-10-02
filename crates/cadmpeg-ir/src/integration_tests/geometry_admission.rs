@@ -107,14 +107,14 @@ fn curve_weights(
     curve: &NurbsCurve,
     weights: Vec<f64>,
 ) -> Result<NurbsPoles3, crate::geometry::nurbs::NurbsError> {
-    NurbsPoles3::from_lanes(curve.pole_rows().raw_points(), Some(weights))
+    NurbsPoles3::from_lanes(&cadmpeg_test_support::service_decode_context(), curve.pole_rows().raw_points(), Some(weights)).expect("fixture pole pairing admission")
 }
 
 fn surface_weights(
     surface: &NurbsSurface,
     weights: Vec<Vec<f64>>,
 ) -> Result<NurbsPoleGrid, crate::geometry::nurbs::NurbsError> {
-    NurbsPoleGrid::from_lanes(surface.pole_grid().raw_points(), Some(weights))
+    NurbsPoleGrid::from_lanes(&cadmpeg_test_support::service_decode_context(), surface.pole_grid().raw_points(), Some(weights)).expect("fixture pole pairing admission")
 }
 
 fn pcurve_weights(

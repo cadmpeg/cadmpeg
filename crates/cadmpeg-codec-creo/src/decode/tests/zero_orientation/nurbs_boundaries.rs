@@ -170,7 +170,7 @@ fn extrusion_nurbs_boundary_requires_one_plane_supported_control_edge() {
     let mut zero_weights = coplanar.pole_grid().weights().expect("rational fixture");
     zero_weights[0][0] = 0.0;
     assert!(
-        NurbsPoleGrid::from_lanes(coplanar.pole_grid().raw_points(), Some(zero_weights)).is_err()
+        NurbsPoleGrid::from_lanes(&cadmpeg_test_support::service_decode_context(), coplanar.pole_grid().raw_points(), Some(zero_weights)).expect("fixture pole pairing admission").is_err()
     );
 }
 
@@ -233,7 +233,7 @@ fn shared_extrusion_generator_requires_equivalent_boundaries_and_separated_nets(
         rows[1].swap(0, 1);
     }
     {
-        let replacement = NurbsPoleGrid::from_lanes(reversed_grid, reversed_weights)
+        let replacement = NurbsPoleGrid::from_lanes(&cadmpeg_test_support::service_decode_context(), reversed_grid, reversed_weights).expect("fixture pole pairing admission")
             .expect("finite fixture geometry preserves NURBS invariants");
         edit::replace(&mut reversed, |previous| {
             NurbsSurface::new(
@@ -268,7 +268,7 @@ fn shared_extrusion_generator_requires_equivalent_boundaries_and_separated_nets(
     same_side_grid[1][1] = Point3::new(-2.0, 0.0, 1.0);
     let same_side_weights = same_side.pole_grid().weights();
     {
-        let replacement = NurbsPoleGrid::from_lanes(same_side_grid, same_side_weights)
+        let replacement = NurbsPoleGrid::from_lanes(&cadmpeg_test_support::service_decode_context(), same_side_grid, same_side_weights).expect("fixture pole pairing admission")
             .expect("finite fixture geometry preserves NURBS invariants");
         edit::replace(&mut same_side, |previous| {
             NurbsSurface::new(
@@ -332,7 +332,7 @@ fn shared_extrusion_generator_requires_equivalent_boundaries_and_separated_nets(
     different_grid[0][1].x = 0.1;
     let different_weights = different_boundary.pole_grid().weights();
     {
-        let replacement = NurbsPoleGrid::from_lanes(different_grid, different_weights)
+        let replacement = NurbsPoleGrid::from_lanes(&cadmpeg_test_support::service_decode_context(), different_grid, different_weights).expect("fixture pole pairing admission")
             .expect("finite fixture geometry preserves NURBS invariants");
         edit::replace(&mut different_boundary, |previous| {
             NurbsSurface::new(

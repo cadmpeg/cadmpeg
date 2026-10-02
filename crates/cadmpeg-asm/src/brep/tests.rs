@@ -282,10 +282,10 @@ fn exact_circle_recognition_is_projective_and_degree_invariant() {
             .collect()
     });
     {
-        let replacement = cadmpeg_ir::geometry::nurbs::NurbsPoles3::from_lanes(
+        let replacement = cadmpeg_ir::geometry::nurbs::NurbsPoles3::from_lanes(&cadmpeg_test_support::service_decode_context(), 
             scaled.pole_rows().raw_points(),
             scaled_weights,
-        )
+        ).expect("fixture pole pairing admission")
         .expect("scaled weights are finite and non-zero");
         edit::replace(&mut scaled, |previous| {
             cadmpeg_ir::geometry::nurbs::NurbsCurve::new(

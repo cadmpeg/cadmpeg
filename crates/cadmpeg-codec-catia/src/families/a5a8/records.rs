@@ -1654,7 +1654,7 @@ fn a8_surface_from_external_grid(
         .transpose()?;
     crate::nurbs::note_refusal(
         ctx,
-        cadmpeg_ir::geometry::nurbs::NurbsPoleGrid::from_checked_lanes(control_points, weights)
+        cadmpeg_ir::geometry::nurbs::NurbsPoleGrid::from_checked_lanes(ctx, control_points, weights)?
             .and_then(|poles| {
                 NurbsSurface::new(
                     cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
@@ -2009,7 +2009,7 @@ fn a5_surface(
         .transpose()?;
     crate::nurbs::note_refusal(
         ctx,
-        cadmpeg_ir::geometry::nurbs::NurbsPoleGrid::from_checked_lanes(control_points, weights)
+        cadmpeg_ir::geometry::nurbs::NurbsPoleGrid::from_checked_lanes(ctx, control_points, weights)?
             .and_then(|poles| {
                 NurbsSurface::new(
                     cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(u_degree, u_knots, false),
@@ -2323,7 +2323,7 @@ fn a8_surface_from_parsed(
         .transpose()?;
     crate::nurbs::note_refusal(
         ctx,
-        cadmpeg_ir::geometry::nurbs::NurbsPoleGrid::from_checked_lanes(control_points, weights)
+        cadmpeg_ir::geometry::nurbs::NurbsPoleGrid::from_checked_lanes(ctx, control_points, weights)?
             .and_then(|poles| {
                 NurbsSurface::new(
                     cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(u_degree, u_knots, false),

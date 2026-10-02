@@ -1263,10 +1263,10 @@ fn generated_f3d_rewrites_rational_nurbs_surface_weights() {
     if let Some(rows) = &mut weight_rows {
         rows[0][1] = 0.65;
     }
-    let poles = cadmpeg_ir::geometry::nurbs::NurbsPoleGrid::from_lanes(
+    let poles = cadmpeg_ir::geometry::nurbs::NurbsPoleGrid::from_lanes(&cadmpeg_test_support::service_decode_context(), 
         nurbs.pole_grid().raw_points(),
         weight_rows,
-    );
+    ).expect("fixture pole pairing admission");
     {
         let replacement = poles.unwrap();
         edit::replace(&mut nurbs, |previous| {

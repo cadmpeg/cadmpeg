@@ -187,10 +187,10 @@ impl<P> PcurveNurbsPoles<P> {
         let Some(weights) = weights else {
             return Ok(Self::Polynomial { points });
         };
-        require_weight_lane("pcurve poles", points.len(), weights.len())?;
+        require_weight_lane(&StandardNurbsAdmission, "pcurve poles", points.len(), weights.len())?;
         Ok(Self::Rational {
             points: weighted_poles_2(points, weights, |index, weight| {
-                admit_weight("pcurve poles", index, weight)
+                admit_weight(&StandardNurbsAdmission, "pcurve poles", index, weight)
             })?,
         })
     }
@@ -203,10 +203,10 @@ impl<P> PcurveNurbsPoles<P> {
         let Some(weights) = weights else {
             return Ok(Self::Polynomial { points });
         };
-        require_weight_lane("pcurve poles", points.len(), weights.len())?;
+        require_weight_lane(&StandardNurbsAdmission, "pcurve poles", points.len(), weights.len())?;
         Ok(Self::Rational {
             points: weighted_poles_2(points, weights, |index, weight| {
-                admit_finite_weight("pcurve poles", index, weight)
+                admit_finite_weight(&StandardNurbsAdmission, "pcurve poles", index, weight)
             })?,
         })
     }
@@ -225,7 +225,7 @@ impl<P> PcurveNurbsPoles<P> {
         let Some(weights) = weights else {
             return Ok(Self::Polynomial { points });
         };
-        require_weight_lane("pcurve poles", points.len(), weights.len())?;
+        require_weight_lane(&StandardNurbsAdmission, "pcurve poles", points.len(), weights.len())?;
         Ok(Self::Rational {
             points: weighted_poles_2(points, weights, |_, weight| Ok(weight))?,
         })
@@ -1623,7 +1623,7 @@ impl<P, S> PolarNurbsPoles<P, S> {
         let Some(weights) = weights else {
             return Ok(Self::Polynomial { poles });
         };
-        require_weight_lane("polar poles", poles.len(), weights.len())?;
+        require_weight_lane(&StandardNurbsAdmission, "polar poles", poles.len(), weights.len())?;
         let mut output = Vec::new();
         super::nurbs::scratch::reserve_exact(
             &mut output,
@@ -1634,7 +1634,7 @@ impl<P, S> PolarNurbsPoles<P, S> {
             output.push(WeightedPolarNurbsPole {
                 radial: pole.radial,
                 axial: pole.axial,
-                weight: admit_weight("polar poles", index, weight)?,
+                weight: admit_weight(&StandardNurbsAdmission, "polar poles", index, weight)?,
             });
         }
         Ok(Self::Rational { poles: output })
@@ -1654,7 +1654,7 @@ impl<P, S> PolarNurbsPoles<P, S> {
         let Some(weights) = weights else {
             return Ok(Self::Polynomial { poles });
         };
-        require_weight_lane("polar poles", poles.len(), weights.len())?;
+        require_weight_lane(&StandardNurbsAdmission, "polar poles", poles.len(), weights.len())?;
         let mut output = Vec::new();
         super::nurbs::scratch::reserve_exact(
             &mut output,
@@ -2120,13 +2120,8 @@ impl PcurveNurbs {
             .into_iter()
             .map(|point| lift(point.get()))
             .collect();
-        NurbsCurve::from_checked_lanes(
-            self.degree,
-            self.knots.clone(),
-            points,
-            self.weights(),
-            self.periodic,
-        )
+        let poles = super::nurbs::pair_curve_lanes(&StandardNurbsAdmission, points, self.weights(), &mut None, |_, weight| Ok(weight))?;
+        NurbsCurve::new(self.degree, self.knots.clone(), poles, self.periodic)
     }
 
     /// Curve degree.

@@ -2712,7 +2712,7 @@ pub(crate) fn project_geometry(
             Some(values)
         };
         let nurbs =
-            match NurbsPoles3::from_checked_lanes(control_points, weights).and_then(|poles| {
+            match NurbsPoles3::from_checked_lanes(ctx, control_points, weights)?.and_then(|poles| {
                 // IGES PROP4 is informational; neutral evaluation uses the
                 // serialized active carrier without periodic parameter wrapping.
                 NurbsCurve::new(degree, knots, poles, false)

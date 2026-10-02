@@ -320,11 +320,11 @@ pub(super) fn swept_nurbs(
         ctx,
         n,
         count,
-        if weight_rows.is_some() { 2 } else { 1 },
+        1,
         "admit swept surface poles",
     )?;
     let knots = profile_knots(ctx, profile)?;
-    match cadmpeg_ir::geometry::nurbs::NurbsPoleGrid::from_checked_lanes(control_rows, weight_rows)
+    match cadmpeg_ir::geometry::nurbs::NurbsPoleGrid::from_checked_lanes(ctx, control_rows, weight_rows)?
         .and_then(|poles| {
             NurbsSurface::new(
                 cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(

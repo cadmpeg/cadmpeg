@@ -821,13 +821,13 @@ fn finite_nurbs_lanes_match_raw_curve_surface_and_pcurve_routes() {
             .collect()
     };
     assert_eq!(
-        NurbsCurve::from_finite_lanes(
+        NurbsCurve::from_finite_lanes(&cadmpeg_test_support::service_decode_context(), 
             1,
             finite_knots(),
             finite_points(),
             Some(finite_weights()),
             false
-        ),
+        ).expect("fixture pole pairing admission"),
         NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(),
             1,
             knots.clone(),
@@ -837,25 +837,25 @@ fn finite_nurbs_lanes_match_raw_curve_surface_and_pcurve_routes() {
         ).expect("fixture constructor admission"),
     );
     assert_eq!(
-        NurbsCurve::from_finite_lanes(
+        NurbsCurve::from_finite_lanes(&cadmpeg_test_support::service_decode_context(), 
             1,
             finite_knots(),
             finite_points(),
             Some(vec![FiniteReal::ZERO]),
             false
-        ),
+        ).expect("fixture pole pairing admission"),
         NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 1, knots.clone(), points.clone(), Some(vec![0.0]), false).expect("fixture constructor admission"),
     );
     let grid = vec![points.clone(), points.clone()];
     let finite_grid = || vec![finite_points(), finite_points()];
     let finite_weight_grid = || vec![finite_weights(), finite_weights()];
     assert_eq!(
-        NurbsSurface::from_finite_lanes(
+        NurbsSurface::from_finite_lanes(&cadmpeg_test_support::service_decode_context(), 
             NurbsSurfaceAxis::new(1, finite_knots(), false),
             NurbsSurfaceAxis::new(1, finite_knots(), false),
             NurbsSurfaceLanes::new(finite_grid(), Some(finite_weight_grid())),
             false,
-        ),
+        ).expect("fixture pole pairing admission"),
         NurbsSurface::from_lanes(&cadmpeg_test_support::service_decode_context(),
             NurbsSurfaceAxis::new(1, knots.clone(), false),
             NurbsSurfaceAxis::new(1, knots.clone(), false),
@@ -926,24 +926,24 @@ fn nurbs_stores_hold_admitted_poles_and_take_admitted_lanes() {
     );
     assert_eq!(held.to_raw().points(), curve.pole_rows().raw_points());
     assert_eq!(
-        NurbsCurve::from_checked_lanes(
+        NurbsCurve::from_checked_lanes(&cadmpeg_test_support::service_decode_context(), 
             1,
             curve.knots().clone(),
             curve.control_points(),
             curve.weights(),
             true,
-        ),
+        ).expect("fixture pole pairing admission"),
         Ok(curve.clone())
     );
     let weight = NonZeroReal::new(1.0).unwrap();
     assert_eq!(
-        NurbsCurve::from_checked_lanes(
+        NurbsCurve::from_checked_lanes(&cadmpeg_test_support::service_decode_context(), 
             1,
             curve.knots().clone(),
             curve.control_points(),
             Some(vec![weight]),
             true,
-        ),
+        ).expect("fixture pole pairing admission"),
         Err(NurbsError::WeightLaneLength {
             field: "poles".to_owned(),
             poles: 2,
@@ -955,23 +955,23 @@ fn nurbs_stores_hold_admitted_poles_and_take_admitted_lanes() {
         NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 1, vec![0.0, 0.0, 1.0, 1.0], non_finite.clone(), None, false).expect("fixture constructor admission")
             .unwrap_err();
     assert_eq!(
-        NurbsCurve::from_checked_lanes(
+        NurbsCurve::from_checked_lanes(&cadmpeg_test_support::service_decode_context(), 
             1,
             super::KnotVector::new(&cadmpeg_test_support::service_decode_context(), vec![0.0, 0.0, 1.0, 1.0]).expect("fixture knot admission").unwrap(),
             non_finite,
             None,
             false,
-        ),
+        ).expect("fixture pole pairing admission"),
         Err(raw_refusal)
     );
     assert_eq!(
-        NurbsCurve::from_checked_lanes(
+        NurbsCurve::from_checked_lanes(&cadmpeg_test_support::service_decode_context(), 
             4,
             super::KnotVector::new(&cadmpeg_test_support::service_decode_context(), vec![0.0, 0.0, 1.0, 1.0]).expect("fixture knot admission").unwrap(),
             vec![Point3::new(f64::NAN, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
             None,
             false,
-        ),
+        ).expect("fixture pole pairing admission"),
         Err(NurbsError::Structure(
             "control_points must contain more than degree 4 poles, found 2".into()
         ))
@@ -1004,12 +1004,12 @@ fn nurbs_stores_hold_admitted_poles_and_take_admitted_lanes() {
         Ok(surface.clone())
     );
     assert_eq!(
-        crate::geometry::nurbs::NurbsSurface::from_checked_lanes(
+        crate::geometry::nurbs::NurbsSurface::from_checked_lanes(&cadmpeg_test_support::service_decode_context(), 
             NurbsSurfaceAxis::new(1, surface.u_knots().clone(), true),
             NurbsSurfaceAxis::new(1, surface.v_knots().clone(), false),
             NurbsSurfaceLanes::new(surface.control_grid(), surface.weights()),
             true,
-        ),
+        ).expect("fixture pole pairing admission"),
         Ok(surface.clone())
     );
     assert_eq!(
@@ -1194,10 +1194,10 @@ fn standard_weighted_pole_pairing_preserves_order_and_first_refusal() {
             WeightedPole3 { point: 11, weight: NonZeroReal::new(3.0).expect("weight") },
         ],
     };
-    assert_eq!(NurbsPoles3::from_lanes(points.clone(), Some(weights.clone())).expect("raw"), expected);
-    assert_eq!(NurbsPoles3::from_finite_lanes(points.clone(), Some(weights.into_iter()
-        .map(|weight| FiniteReal::new(weight).expect("finite weight")).collect())).expect("finite"), expected);
-    assert_eq!(NurbsPoles3::from_lanes(points, Some(vec![1.0, 0.0, f64::NAN])),
+    assert_eq!(NurbsPoles3::from_lanes(&cadmpeg_test_support::service_decode_context(), points.clone(), Some(weights.clone())).expect("fixture pole pairing admission").expect("raw"), expected);
+    assert_eq!(NurbsPoles3::from_finite_lanes(&cadmpeg_test_support::service_decode_context(), points.clone(), Some(weights.into_iter()
+        .map(|weight| FiniteReal::new(weight).expect("finite weight")).collect())).expect("fixture pole pairing admission").expect("finite"), expected);
+    assert_eq!(NurbsPoles3::from_lanes(&cadmpeg_test_support::service_decode_context(), points, Some(vec![1.0, 0.0, f64::NAN])).expect("fixture pole pairing admission"),
         Err(NurbsError::UnusableWeight { field: "poles".to_owned(), index: 1, weight: 0.0 }));
     let wire = serde_json::to_value(&expected).expect("wire");
     assert_eq!(serde_json::from_value::<NurbsPoles3<u32>>(wire).expect("standard reconstruction"), expected);
@@ -1559,3 +1559,5 @@ fn knot_constructors_share_work_keep_storage_and_preserve_refusal() {
 }
 
 mod bspline;
+
+mod pairing;

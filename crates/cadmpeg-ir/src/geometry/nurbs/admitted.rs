@@ -3,10 +3,9 @@
 
 use super::{
     KnotVector, NurbsCurve, NurbsError, NurbsPoleGrid, NurbsPoles3, NurbsSurface, NurbsSurfaceAxis,
-    NurbsSurfaceLanes, PoleValue, WeightedPole3,
+    NurbsSurfaceLanes, PoleValue,
 };
 use crate::features::FinitePoint3;
-use crate::scalar::NonZeroReal;
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 
@@ -43,57 +42,6 @@ fn structure(
     Ok(NurbsError::Structure(ctx.format_retained(message, "IR NURBS refusal text")?).into())
 }
 
-fn weight_lane(
-    ctx: &DecodeContext<'_>,
-    field: &str,
-    poles: usize,
-    weights: usize,
-) -> Result<(), ConstructionError> {
-    if poles != weights {
-        return Err(NurbsError::WeightLaneLength {
-            field: ctx.copy_retained_text(field, "IR NURBS refusal field")?,
-            poles,
-            weights,
-        }
-        .into());
-    }
-    Ok(())
-}
-
-fn admitted_weight(
-    ctx: &DecodeContext<'_>,
-    field: &str,
-    index: usize,
-    weight: f64,
-) -> Result<NonZeroReal, ConstructionError> {
-    if let Some(weight) = NonZeroReal::new(weight) {
-        return Ok(weight);
-    }
-    Err(NurbsError::UnusableWeight {
-        field: ctx.copy_retained_text(field, "IR NURBS refusal field")?,
-        index,
-        weight,
-    }
-    .into())
-}
-
-fn pair<P>(
-    ctx: &DecodeContext<'_>,
-    points: Vec<P>,
-    weights: Vec<f64>,
-    field: &str,
-    storage: &mut Option<cadmpeg_core::decode::ScopedReservation<'_>>,
-) -> Result<Vec<WeightedPole3<P>>, ConstructionError> {
-    weight_lane(ctx, field, points.len(), weights.len())?;
-    super::weighted_poles(
-        points,
-        weights,
-        |output| Ok(super::reserve_pole_storage(ctx, output, storage, "IR NURBS paired poles")?),
-        || Ok(ctx.charge_work(1, "IR NURBS paired poles")?),
-        |index, weight| admitted_weight(ctx, field, index, weight),
-    )
-}
-
 impl super::NurbsAdmission for DecodeContext<'_> {
     type Error = ConstructionError;
 
@@ -104,6 +52,18 @@ impl super::NurbsAdmission for DecodeContext<'_> {
         convert: impl FnMut(I) -> Result<T, Self::Error>,
     ) -> Result<Vec<T>, Self::Error> {
         self.try_collect_retained_with(values, operation, convert)
+    }
+
+    fn reserve<T>(&self, values: &mut Vec<T>, storage: &mut Option<cadmpeg_core::decode::ScopedReservation<'_>>, operation: &'static str) -> Result<(), Self::Error> {
+        if let Some(storage) = storage {
+            self.reserve_scoped_vec(storage, values, 1, operation).map_err(Into::into)
+        } else {
+            self.reserve_retained_vec(values, 1, operation).map_err(Into::into)
+        }
+    }
+
+    fn copy_field(&self, field: &str) -> Result<String, Self::Error> {
+        self.copy_retained_text(field, "IR NURBS refusal field").map_err(Into::into)
     }
 
     fn work(&self, count: u64, operation: &'static str) -> Result<(), Self::Error> {
@@ -132,14 +92,8 @@ impl NurbsCurve {
             } else {
                 None
             };
-            let poles = match weights {
-                Some(weights) => NurbsPoles3::Rational {
-                    points: pair(ctx, control_points, weights, "poles", &mut pair_storage)?,
-                },
-                None => NurbsPoles3::Polynomial {
-                    points: control_points,
-                },
-            };
+            let poles = super::pair_curve_lanes(ctx, control_points, weights, &mut pair_storage,
+                |index, weight| super::admit_weight(ctx, "poles", index, weight))?;
             super::require_curve_cardinality(ctx, degree, knots.len(), poles.count(), "control_points")?;
             let poles = P::admit_curve_poles(poles, |poles| super::map_curve_poles(ctx, poles))?;
             super::require_nondecreasing_knots(ctx, &knots, "")?;
@@ -184,31 +138,8 @@ impl NurbsSurface {
             } else {
                 None
             };
-            let poles = if let Some(weights) = weights {
-                weight_lane(ctx, "pole grid", control_points.len(), weights.len())?;
-                let mut rows = Vec::new();
-                for (points, weights) in control_points.into_iter().zip(weights) {
-                    ctx.charge_work(1, "IR NURBS paired grid rows")?;
-                    super::reserve_pole_storage(
-                        ctx,
-                        &mut rows,
-                        &mut pair_storage,
-                        "IR NURBS paired grid rows",
-                    )?;
-                    rows.push(pair(
-                        ctx,
-                        points,
-                        weights,
-                        "pole grid row",
-                        &mut pair_storage,
-                    )?);
-                }
-                NurbsPoleGrid::Rational { rows }
-            } else {
-                NurbsPoleGrid::Polynomial {
-                    rows: control_points,
-                }
-            };
+            let poles = super::pair_grid_lanes(ctx, control_points, weights, &mut pair_storage,
+                |index, weight| super::admit_weight(ctx, "pole grid row", index, weight))?;
             super::require_surface_shape(ctx, u.degree, u.knots.len(), v.degree, v.knots.len(), &poles)?;
             let poles = P::admit_surface_poles(poles, |grid| super::map_surface_poles(ctx, grid))?;
 

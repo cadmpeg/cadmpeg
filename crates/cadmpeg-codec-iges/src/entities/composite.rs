@@ -867,13 +867,13 @@ fn trim_nurbs_to_interval(
             Ok::<_, CodecError>(converted)
         })
         .transpose()?;
-    Ok(Some(NurbsCurve::from_checked_lanes(
+    Ok(Some(NurbsCurve::from_checked_lanes(ctx, 
         curve.degree(),
         trimmed_knots,
         control_points,
         weights,
         false,
-    )?))
+    )??))
 }
 
 type TrimmedLanes = (Vec<FinitePoint3>, Option<Vec<PositiveReal>>, Vec<f64>);
@@ -1418,7 +1418,7 @@ fn elevate_nurbs_to_degree(
             .map_err(DegreeElevationError::Allocation)?;
         ctx.reserve_vec(&mut pieces, 1, "iges composite elevated span")
             .map_err(DegreeElevationError::Allocation)?;
-        let piece = NurbsCurve::from_checked_lanes(
+        let piece = NurbsCurve::from_checked_lanes(ctx, 
             u32::try_from(target_degree).map_err(|_| DegreeElevationError::TargetDegree {
                 degree: stated_target,
                 bound: MAX_COMPOSITE_DEGREE,
@@ -1427,7 +1427,7 @@ fn elevate_nurbs_to_degree(
             control_points,
             weights,
             false,
-        )?;
+        ).map_err(DegreeElevationError::Allocation)??;
         pieces.push((piece, [start, end], ()));
     }
     let Some(concatenated) = concatenate_nurbs(ctx, pieces, join_tolerance)? else {
