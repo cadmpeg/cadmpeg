@@ -1239,7 +1239,7 @@ fn historical_points_on_profile_boundaries_are_ambiguous() {
 
 #[test]
 fn historical_selection_preserves_first_member_region_order() {
-    let region = |outer| SketchProfileRegion::loops(outer, Vec::new()).unwrap();
+    let region = |outer| SketchProfileRegion::loops(outer, Vec::new(), &cadmpeg_test_support::service_decode_context()).expect("fixture loop-region admission").unwrap();
     assert_eq!(
         crate::test_support::with_decode_context(|decode_ctx| {
             crate::design::profile_select::ordered_unique_profile_selections(
@@ -1326,14 +1326,14 @@ fn multiple_extrude_profile_groups_merge_only_exact_same_kind_selections() {
         cadmpeg_ir::features::ProfileRef::Planar(
             cadmpeg_ir::features::PlanarProfileRef::sketch_regions(
                 sketch.clone(),
-                vec![SketchProfileRegion::loops(4, vec![5]).unwrap()],
+                vec![SketchProfileRegion::loops(4, vec![5], &cadmpeg_test_support::service_decode_context()).expect("fixture loop-region admission").unwrap()],
             )
             .unwrap(),
         ),
         cadmpeg_ir::features::ProfileRef::Planar(
             cadmpeg_ir::features::PlanarProfileRef::sketch_regions(
                 sketch.clone(),
-                vec![SketchProfileRegion::loops(2, Vec::new()).unwrap()],
+                vec![SketchProfileRegion::loops(2, Vec::new(), &cadmpeg_test_support::service_decode_context()).expect("fixture loop-region admission").unwrap()],
             )
             .unwrap(),
         ),
@@ -1349,8 +1349,8 @@ fn multiple_extrude_profile_groups_merge_only_exact_same_kind_selections() {
             cadmpeg_ir::features::PlanarProfileRef::sketch_regions(
                 sketch.clone(),
                 vec![
-                    SketchProfileRegion::loops(4, vec![5]).unwrap(),
-                    SketchProfileRegion::loops(2, Vec::new()).unwrap(),
+                    SketchProfileRegion::loops(4, vec![5], &cadmpeg_test_support::service_decode_context()).expect("fixture loop-region admission").unwrap(),
+                    SketchProfileRegion::loops(2, Vec::new(), &cadmpeg_test_support::service_decode_context()).expect("fixture loop-region admission").unwrap(),
                 ]
             )
             .unwrap()
@@ -1927,7 +1927,7 @@ fn transition_profile_prefers_consistent_side_loops_and_combines_cap_boundaries(
         None
     );
     let region = crate::design::profile_select::ResolvedProfileSelection::Regions(vec![
-        SketchProfileRegion::loops(0, vec![1]).unwrap(),
+        SketchProfileRegion::loops(0, vec![1], &cadmpeg_test_support::service_decode_context()).expect("fixture loop-region admission").unwrap(),
     ]);
     assert_eq!(
         transition_selection(vec![
@@ -1956,7 +1956,7 @@ fn transition_profile_prefers_consistent_side_loops_and_combines_cap_boundaries(
         transition_selection(vec![Some(region)]),
         Some(
             crate::design::profile_select::ResolvedProfileSelection::Regions(vec![
-                SketchProfileRegion::loops(0, vec![1]).unwrap(),
+                SketchProfileRegion::loops(0, vec![1], &cadmpeg_test_support::service_decode_context()).expect("fixture loop-region admission").unwrap(),
             ])
         )
     );

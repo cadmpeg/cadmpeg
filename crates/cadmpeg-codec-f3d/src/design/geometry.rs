@@ -1622,7 +1622,7 @@ pub(super) fn region_containing_points(
             let hole = geometric!(u32::try_from(*hole).ok());
             ctx.push_vec(&mut converted_holes, hole, "f3d profile hole index")?;
         }
-        return Ok(SketchProfileRegion::loops_for_decode(
+        return Ok(SketchProfileRegion::loops(
             geometric!(u32::try_from(*outer).ok()),
             converted_holes,
             ctx,
@@ -1660,7 +1660,7 @@ pub(super) fn region_containing_points(
         let hole = geometric!(u32::try_from(hole).ok());
         ctx.push_vec(&mut converted_holes, hole, "f3d profile hole index")?;
     }
-    Ok(SketchProfileRegion::loops_for_decode(
+    Ok(SketchProfileRegion::loops(
         geometric!(u32::try_from(outer).ok()),
         converted_holes,
         ctx,

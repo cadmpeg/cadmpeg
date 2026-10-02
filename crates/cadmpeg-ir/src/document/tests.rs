@@ -272,8 +272,7 @@ fn feature_parent_wire_is_derived_from_its_single_owner() {
                 role: FeatureTreeNodeRole::History,
                 children: crate::features::TreeChildren::new(
                     vec![child_id.clone()],
-                    Some(child_id.clone()),
-                )
+                    Some(child_id.clone()), &cadmpeg_test_support::service_decode_context())
                 .unwrap(),
             }),
         ),
@@ -413,7 +412,7 @@ fn feature_parent_wire_rejects_disagreement_with_tree_children() {
                 evaluation: crate::features::FeatureEvaluation::from_definition(
                     FeatureDefinition::Operation(FeatureOperation::TreeNode {
                         role: FeatureTreeNodeRole::History,
-                        children: crate::features::TreeChildren::new(vec![child_id.clone()], None)
+                        children: crate::features::TreeChildren::new(vec![child_id.clone()], None, &cadmpeg_test_support::service_decode_context())
                             .unwrap(),
                     }),
                 ),

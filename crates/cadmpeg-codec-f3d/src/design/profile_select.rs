@@ -1332,7 +1332,7 @@ fn copy_profile_region(
             for hole in loops.holes().iter().copied() {
                 ctx.push_vec(&mut holes, hole, "f3d merged region hole")?;
             }
-            SketchProfileRegion::loops_for_decode(loops.outer(), holes, ctx)?
+            SketchProfileRegion::loops(loops.outer(), holes, ctx)?
                 .map_err(CodecError::malformed)
         }
         SketchProfileRegion::Trimmed {
@@ -2181,7 +2181,7 @@ fn transition_inserted_profile_selection(
             "f3d inserted transition region hole",
         )?;
     }
-    let Some(region) = SketchProfileRegion::loops_for_decode(outer, owned_holes, ctx)?.ok() else {
+    let Some(region) = SketchProfileRegion::loops(outer, owned_holes, ctx)?.ok() else {
         return Ok(None);
     };
     let mut output = Vec::new();
@@ -2548,7 +2548,7 @@ fn region_with_boundary_selection_members(
             "f3d historical boundary region hole",
         )?;
     }
-    let Some(region) = SketchProfileRegion::loops_for_decode(loops.outer(), owned_holes, ctx)?.ok()
+    let Some(region) = SketchProfileRegion::loops(loops.outer(), owned_holes, ctx)?.ok()
     else {
         return Ok(None);
     };

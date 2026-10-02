@@ -771,7 +771,7 @@ fn profile_termination_operands() -> (
         PlanarProfileRef::SketchRegions {
             sketch: sketch.clone(),
             regions: vec![
-                SketchProfileRegion::loops(0, vec![1, 3]).unwrap(),
+                SketchProfileRegion::loops(0, vec![1, 3], &cadmpeg_test_support::service_decode_context()).expect("fixture loop-region admission").unwrap(),
                 SketchProfileRegion::trimmed(
                     vec![boundary.clone()],
                     vec![vec![boundary.clone()], vec![boundary]],

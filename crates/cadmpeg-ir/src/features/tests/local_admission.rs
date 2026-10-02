@@ -48,14 +48,14 @@ fn local_collection_admission_preserves_order_and_rejects_invalid_membership() {
         serde_json::to_value(&planes).unwrap(),
         serde_json::json!([second, first])
     );
-    assert!(TreeChildren::new(vec![first.clone(), first.clone()], None).is_err());
-    assert!(TreeChildren::new(vec![first.clone()], Some(second.clone())).is_err());
-    let mut children = TreeChildren::new(vec![first.clone()], Some(first)).unwrap();
+    assert!(TreeChildren::new(vec![first.clone(), first.clone()], None, &cadmpeg_test_support::service_decode_context()).is_err());
+    assert!(TreeChildren::new(vec![first.clone()], Some(second.clone()), &cadmpeg_test_support::service_decode_context()).is_err());
+    let mut children = TreeChildren::new(vec![first.clone()], Some(first), &cadmpeg_test_support::service_decode_context()).unwrap();
     let before = children.clone();
     assert!({
         let active = Some(second.clone());
         edit::replace(&mut children, |previous| {
-            crate::features::TreeChildren::new(previous.to_vec(), active)
+            crate::features::TreeChildren::new(previous.to_vec(), active, &cadmpeg_test_support::service_decode_context())
         })
     }
     .is_err());
@@ -66,7 +66,7 @@ fn local_collection_admission_preserves_order_and_rejects_invalid_membership() {
     {
         let active = Some(second);
         edit::replace(&mut children, |previous| {
-            crate::features::TreeChildren::new(previous.to_vec(), active)
+            crate::features::TreeChildren::new(previous.to_vec(), active, &cadmpeg_test_support::service_decode_context())
         })
     }
     .unwrap();
@@ -494,4 +494,30 @@ fn selection_operand_parts_move_retained_storage() {
     };
     assert_eq!(targets.as_ptr(), targets_pointer);
     assert_eq!(replacements.as_ptr(), replacements_pointer);
+}
+
+#[test]
+fn tree_child_admission_preserves_first_and_later_active_comparison_refusals() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension, u64_from_index};
+    use crate::features::FeatureCollectionError;
+    let first = feature_id("left");
+    let second = feature_id("next");
+    for cap in [0, 1, u64_from_index(first.as_str().len()) + 1, u64_from_index(first.as_str().len()) + 2] {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = cap;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let Err(FeatureCollectionError::Resource(limit)) = TreeChildren::new(
+            vec![first.clone(), second.clone()], Some(second.clone()), &ctx,
+        ) else { panic!("active child lookup must refuse"); };
+        assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+        assert_eq!(limit.operation, "validate active tree child");
+        assert!(matches!(ctx.finish_session(), Err(cadmpeg_core::CodecError::ResourceLimit(original)) if original == limit));
+    }
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let children = TreeChildren::new(vec![second.clone(), first.clone()], Some(first.clone()), &ctx).unwrap();
+    assert_eq!(&children[..], &[second.clone(), first.clone()]);
+    assert_eq!(children.active_child(), &Some(first.clone()));
+    assert_eq!(TreeChildren::new(vec![first], Some(second), &ctx).unwrap_err(), FeatureCollectionError::Invalid("active_child must belong to children"));
+    ctx.finish_session().unwrap();
 }

@@ -2737,20 +2737,8 @@ struct TreeChildrenWire {
 }
 
 impl TreeChildren {
-    /// Admit distinct children and an active identity from those children.
-    pub fn new(
-        children: Vec<FeatureId>,
-        active_child: Option<FeatureId>,
-    ) -> Result<Self, FeatureCollectionError> {
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let policy = cadmpeg_core::decode::DecodePolicy::default();
-        let (ctx, _) =
-            cadmpeg_core::decode::DecodeContext::from_root_bytes_limit(&[], &arena, &policy)?;
-        Self::new_for_decode(children, active_child, &ctx)
-    }
-
     /// Admit distinct children and an active member through the decode budget.
-    pub fn new_for_decode(
+    pub fn new(
         children: Vec<FeatureId>,
         active_child: Option<FeatureId>,
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
@@ -2759,6 +2747,9 @@ impl TreeChildren {
             let mut present = false;
             for child in &children {
                 ctx.charge_work_limit(1, "validate active tree child")?;
+                if child.as_str().len() == active.as_str().len() {
+                    ctx.charge_work_limit(cadmpeg_core::decode::u64_from_index(child.as_str().len()), "validate active tree child")?;
+                }
                 if child == active {
                     present = true;
                     break;
@@ -8449,17 +8440,8 @@ struct SketchProfileLoopsWire {
 }
 
 impl SketchProfileLoops {
-    /// Admits an outer loop and distinct hole loops that exclude it.
-    pub fn new(outer: u32, holes: Vec<u32>) -> Result<Self, FeatureCollectionError> {
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let policy = cadmpeg_core::decode::DecodePolicy::default();
-        let (ctx, _) =
-            cadmpeg_core::decode::DecodeContext::from_root_bytes_limit(&[], &arena, &policy)?;
-        Self::new_for_decode(outer, holes, &ctx)?.map_err(FeatureCollectionError::Invalid)
-    }
-
     /// Admit a whole-loop region with a scoped uniqueness index.
-    pub fn new_for_decode(
+    pub fn new(
         outer: u32,
         holes: Vec<u32>,
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
@@ -8524,22 +8506,13 @@ pub enum SketchProfileRegion {
 }
 
 impl SketchProfileRegion {
-    /// Admits a whole-loop region with distinct holes that exclude the exterior loop.
-    pub fn loops(outer: u32, holes: Vec<u32>) -> Result<Self, FeatureCollectionError> {
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let policy = cadmpeg_core::decode::DecodePolicy::default();
-        let (ctx, _) =
-            cadmpeg_core::decode::DecodeContext::from_root_bytes_limit(&[], &arena, &policy)?;
-        Self::loops_for_decode(outer, holes, &ctx)?.map_err(FeatureCollectionError::Invalid)
-    }
-
     /// Admit whole-loop regions with the decode context.
-    pub fn loops_for_decode(
+    pub fn loops(
         outer: u32,
         holes: Vec<u32>,
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ) -> Result<Result<Self, &'static str>, cadmpeg_core::decode::ResourceLimit> {
-        Ok(SketchProfileLoops::new_for_decode(outer, holes, ctx)?
+        Ok(SketchProfileLoops::new(outer, holes, ctx)?
             .map(|loops| Self::Loops { loops }))
     }
 
