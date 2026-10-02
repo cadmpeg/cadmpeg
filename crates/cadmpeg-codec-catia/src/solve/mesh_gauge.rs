@@ -89,7 +89,10 @@ fn canonicalize_topology_boundary_gauges(
         Ok(())
     }
 
-    ctx.charge_work(u64_from_index(topology.faces.len()), "catia_mesh_gauge_faces")?;
+    ctx.charge_work(
+        u64_from_index(topology.faces.len()),
+        "catia_mesh_gauge_faces",
+    )?;
     for face in &mut topology.faces {
         ctx.charge_work(
             u64_from_index(face.boundaries.len()),
@@ -107,9 +110,15 @@ fn canonicalize_topology_boundary_gauges(
             )?;
             let mut reversed = NonEmptyMembers::<CoedgeUse>::try_from(reversed)
                 .map_err(cadmpeg_core::CodecError::malformed)?;
-            ctx.charge_work(u64_from_index(reversed.len()), "catia_mesh_gauge_cycle_reverse")?;
+            ctx.charge_work(
+                u64_from_index(reversed.len()),
+                "catia_mesh_gauge_cycle_reverse",
+            )?;
             reversed.reverse();
-            ctx.charge_work(u64_from_index(reversed.len()), "catia_mesh_gauge_cycle_orient")?;
+            ctx.charge_work(
+                u64_from_index(reversed.len()),
+                "catia_mesh_gauge_cycle_orient",
+            )?;
             for coedge in &mut reversed {
                 coedge.reversed = !coedge.reversed;
                 std::mem::swap(&mut coedge.start_vertex, &mut coedge.end_vertex);
@@ -259,10 +268,7 @@ mod boundary_tests {
 
     #[test]
     fn mesh_gauge_boundary_sort_refuses_long_signature_bytes() {
-        let mut candidate = topology(vec![
-            vec![coedge(1, false); 16],
-            vec![coedge(0, false); 16],
-        ]);
+        let mut candidate = topology(vec![vec![coedge(1, false); 16], vec![coedge(0, false); 16]]);
         let result = crate::test_support::with_work_limit(70_000, |ctx| {
             canonicalize_topology_boundary_gauges(ctx, &mut candidate)
         });
@@ -277,7 +283,10 @@ mod boundary_tests {
             canonicalize_topology_boundary_gauges(ctx, &mut short)
         })
         .expect("short boundary signatures fit the same work limit");
-        assert_eq!(short, topology(vec![vec![coedge(0, false)], vec![coedge(1, false)]]));
+        assert_eq!(
+            short,
+            topology(vec![vec![coedge(0, false)], vec![coedge(1, false)]])
+        );
     }
 
     #[test]
