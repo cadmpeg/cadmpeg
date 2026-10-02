@@ -1041,13 +1041,14 @@ fn c2_nurbs_preserves_periodic_parameterization() {
 
 #[test]
 fn periodic_rule_matches_native_tolerance_and_rejects_clamping() {
-    assert!(!periodic_knots(&[0.0, 0.0, 0.0, 1.0, 2.0, 3.0, 3.0], 3, 6));
-    assert!(periodic_knots(&[0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0], 3, 6));
-    assert!(!periodic_knots(&[0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 7.0], 3, 6));
-    assert!(!periodic_knots(&[0.0, 1.0, 2.0, 3.0], 2, 4));
+    assert!(!periodic_knots(&cadmpeg_test_support::service_decode_context(), &[0.0, 0.0, 0.0, 1.0, 2.0, 3.0, 3.0], 3, 6).expect("periodic admission"));
+    assert!(periodic_knots(&cadmpeg_test_support::service_decode_context(), &[0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0], 3, 6).expect("periodic admission"));
+    assert!(!periodic_knots(&cadmpeg_test_support::service_decode_context(), &[0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 7.0], 3, 6).expect("periodic admission"));
+    assert!(!periodic_knots(&cadmpeg_test_support::service_decode_context(), &[0.0, 1.0, 2.0, 3.0], 2, 4).expect("periodic admission"));
     let mut near = [0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0];
-    near[6] += 1.0e-8;
-    assert!(periodic_knots(&near, 3, 6));
+    const EPS_PERIODIC_PERTURBATION: f64 = 1.0e-8;
+    near[6] += EPS_PERIODIC_PERTURBATION;
+    assert!(periodic_knots(&cadmpeg_test_support::service_decode_context(), &near, 3, 6).expect("periodic admission"));
 }
 
 #[test]
@@ -1770,10 +1771,11 @@ fn plane_parameter_maps_preserve_extreme_finite_domains() {
 #[test]
 fn large_nonperiodic_knot_gaps_remain_nonperiodic() {
     assert!(!super::periodic_knots(
+        &cadmpeg_test_support::service_decode_context(),
         &[-1e308, -1e308, -9e307, 9e307, 1e308, 1e308],
         3,
         5
-    ));
+    ).expect("periodic admission"));
 }
 
 #[test]
