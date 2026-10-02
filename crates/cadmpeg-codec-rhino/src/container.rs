@@ -325,7 +325,7 @@ fn checksum_warning(
                 | TCODE_TEXTURE_MAPPING_RECORD
                 | TCODE_HISTORY_RECORD
         ) {
-        crate::chunks::verify_checksum_ranges(ctx, data, &chunk, &[])
+        crate::chunks::verify_checksum_ranges(ctx, data, &chunk, std::iter::empty::<Result<std::ops::Range<usize>, FramingError>>())
     } else if matches!(
         typecode,
         TCODE_NAMED_PLANES | TCODE_NAMED_VIEWS | TCODE_VIEWS
@@ -338,7 +338,7 @@ fn checksum_warning(
                 return Ok(Some(checksum_children_warning(typecode, offset, &error)));
             }
         };
-        let direct = direct_checksum_ranges(&chunk.body(), &children).map_err(framing_error)?;
+        let direct = direct_checksum_ranges(ctx, &chunk.body(), &children).map_err(framing_error)?;
         verify_checksum_ranges(ctx, data, &chunk, &direct)
     } else if matches!(
         typecode,
@@ -351,7 +351,7 @@ fn checksum_warning(
                 return Ok(Some(checksum_children_warning(typecode, offset, &error)));
             }
         };
-        let direct = direct_checksum_ranges(&chunk.body(), &children).map_err(framing_error)?;
+        let direct = direct_checksum_ranges(ctx, &chunk.body(), &children).map_err(framing_error)?;
         verify_checksum_ranges(ctx, data, &chunk, &direct)
     } else if typecode == TCODE_RENDER_SETTINGS {
         let children = match render_settings_checksum_children(ctx, data, &chunk, archive) {
@@ -361,7 +361,7 @@ fn checksum_warning(
                 return Ok(Some(checksum_children_warning(typecode, offset, &error)));
             }
         };
-        let direct = direct_checksum_ranges(&chunk.body(), &children).map_err(framing_error)?;
+        let direct = direct_checksum_ranges(ctx, &chunk.body(), &children).map_err(framing_error)?;
         verify_checksum_ranges(ctx, data, &chunk, &direct)
     } else if typecode == TCODE_SETTINGS_ATTRIBUTES {
         let children = match settings_attributes_checksum_children(ctx, data, &chunk, archive) {
@@ -371,7 +371,7 @@ fn checksum_warning(
                 return Ok(Some(checksum_children_warning(typecode, offset, &error)));
             }
         };
-        let direct = direct_checksum_ranges(&chunk.body(), &children).map_err(framing_error)?;
+        let direct = direct_checksum_ranges(ctx, &chunk.body(), &children).map_err(framing_error)?;
         verify_checksum_ranges(ctx, data, &chunk, &direct)
     } else if typecode == TCODE_PLUGIN_LIST {
         let children = match plugin_list_checksum_children(ctx, data, &chunk, archive) {
@@ -381,7 +381,7 @@ fn checksum_warning(
                 return Ok(Some(checksum_children_warning(typecode, offset, &error)));
             }
         };
-        let direct = direct_checksum_ranges(&chunk.body(), &children).map_err(framing_error)?;
+        let direct = direct_checksum_ranges(ctx, &chunk.body(), &children).map_err(framing_error)?;
         verify_checksum_ranges(ctx, data, &chunk, &direct)
     } else if typecode == TCODE_RENDER_USERDATA {
         let children = match checksum_children_through_class_end(
@@ -397,7 +397,7 @@ fn checksum_warning(
                 return Ok(Some(checksum_children_warning(typecode, offset, &error)));
             }
         };
-        let direct = direct_checksum_ranges(&chunk.body(), &children).map_err(framing_error)?;
+        let direct = direct_checksum_ranges(ctx, &chunk.body(), &children).map_err(framing_error)?;
         verify_checksum_ranges(ctx, data, &chunk, &direct)
     } else if typecode == TCODE_COMPRESSED_PREVIEW {
         let children = match compressed_preview_checksum_children(ctx, data, &chunk, archive) {
@@ -407,7 +407,7 @@ fn checksum_warning(
                 return Ok(Some(checksum_children_warning(typecode, offset, &error)));
             }
         };
-        let direct = direct_checksum_ranges(&chunk.body(), &children).map_err(framing_error)?;
+        let direct = direct_checksum_ranges(ctx, &chunk.body(), &children).map_err(framing_error)?;
         verify_checksum_ranges(ctx, data, &chunk, &direct)
     } else if typecode == TCODE_USER_TABLE_UUID {
         let children = match user_table_uuid_checksum_children(ctx, data, &chunk, archive) {
@@ -417,7 +417,7 @@ fn checksum_warning(
                 return Ok(Some(checksum_children_warning(typecode, offset, &error)));
             }
         };
-        let direct = direct_checksum_ranges(&chunk.body(), &children).map_err(framing_error)?;
+        let direct = direct_checksum_ranges(ctx, &chunk.body(), &children).map_err(framing_error)?;
         verify_checksum_ranges(ctx, data, &chunk, &direct)
     } else {
         verify_checksum(ctx, data, &chunk)

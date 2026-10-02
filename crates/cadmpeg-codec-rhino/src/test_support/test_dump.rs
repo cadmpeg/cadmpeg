@@ -41,11 +41,15 @@ pub(crate) fn crc_chunk_excluding(
     body: &[u8],
     children: &[std::ops::Range<usize>],
 ) -> Vec<u8> {
-    let direct = crate::chunks::direct_checksum_ranges(&(0..body.len()), children)
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let ctx = cadmpeg_core::decode::DecodeContext::new(
+        &arena, &cadmpeg_core::decode::DecodePolicy::service(), false,
+    );
+    let direct = crate::chunks::direct_checksum_ranges(&ctx, &(0..body.len()), children)
         .expect("valid test child ranges");
     let mut hasher = crc32fast::Hasher::new();
-    for range in direct {
-        hasher.update(&body[range]);
+    for range in &direct {
+        hasher.update(&body[range.expect("admitted fixture checksum traversal")]);
     }
     let mut payload = body.to_vec();
     payload.extend(hasher.finalize().to_le_bytes());

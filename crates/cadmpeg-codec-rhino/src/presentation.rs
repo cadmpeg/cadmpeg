@@ -2038,7 +2038,7 @@ fn parse_light_record_attributes(
         let child = attributes
             .as_ref()
             .and_then(|value| value.rendering_range.clone());
-        let direct = direct_checksum_ranges(&item.body(), child.as_slice())?;
+        let direct = direct_checksum_ranges(ctx, &item.body(), child.as_slice())?;
         if let ChecksumStatus::Mismatch { expected, actual } =
             verify_checksum_ranges(ctx, data, item, &direct)?
         {

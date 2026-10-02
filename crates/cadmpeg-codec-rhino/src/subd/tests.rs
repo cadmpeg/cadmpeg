@@ -231,11 +231,15 @@ fn anonymous(body: &[u8]) -> Vec<u8> {
 }
 
 fn anonymous_mixed(body: &[u8], children: &[Range<usize>]) -> Vec<u8> {
-    let direct = crate::chunks::direct_checksum_ranges(&(0..body.len()), children)
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let ctx = cadmpeg_core::decode::DecodeContext::new(
+        &arena, &cadmpeg_core::decode::DecodePolicy::service(), false,
+    );
+    let direct = crate::chunks::direct_checksum_ranges(&ctx, &(0..body.len()), children)
         .expect("valid SubD fixture children");
     let mut hasher = crc32fast::Hasher::new();
-    for range in direct {
-        hasher.update(&body[range]);
+    for range in &direct {
+        hasher.update(&body[range.expect("admitted fixture checksum traversal")]);
     }
     let mut bytes = ANONYMOUS.to_le_bytes().to_vec();
     bytes.extend_from_slice(
