@@ -6,7 +6,7 @@ use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
 use std::sync::OnceLock;
 
-use cadmpeg_core::decode::{u64_from_index, DecodeContext, ResourceLimit, ScopedReservation};
+use cadmpeg_core::decode::{u64_from_index, DecodeContext, DepthGuard, ResourceLimit, ScopedReservation};
 
 use crate::appearance::Appearance;
 use crate::document::CadIr;
@@ -34,6 +34,7 @@ type IdentityIndex = HashMap<u64, IdentityEntry>;
 /// Allocation policy for infallible public indexes and fallible decode indexes.
 pub(crate) trait IndexStorage {
     type Error;
+    fn enter_nested(&self, operation: &'static str) -> Result<Option<DepthGuard<'_>>, Self::Error>;
     fn map<K: Eq + Hash, V>(
         &self,
         count: usize,
@@ -81,6 +82,7 @@ pub(crate) struct PublicStorage;
 
 impl IndexStorage for PublicStorage {
     type Error = std::convert::Infallible;
+    fn enter_nested(&self, _operation: &'static str) -> Result<Option<DepthGuard<'_>>, Self::Error> { Ok(None) }
     fn map<K: Eq + Hash, V>(
         &self,
         count: usize,
@@ -124,6 +126,9 @@ pub(crate) struct DecodeStorage<'ctx, 'arena>(pub(crate) &'ctx DecodeContext<'ar
 
 impl IndexStorage for DecodeStorage<'_, '_> {
     type Error = ResourceLimit;
+    fn enter_nested(&self, operation: &'static str) -> Result<Option<DepthGuard<'_>>, Self::Error> {
+        self.0.enter_nested_limit(operation).map(Some)
+    }
     fn map<K: Eq + Hash, V>(
         &self,
         count: usize,

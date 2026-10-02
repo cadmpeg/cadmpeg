@@ -5,7 +5,7 @@ use std::collections::{HashMap, HashSet};
 
 use super::record_finding;
 use crate::document::CadIr;
-use crate::products::{AssemblyGraph, OccurrenceParent, OperandContainer, PrototypeReference};
+use crate::products::{OccurrenceParent, OperandContainer, PrototypeReference};
 use crate::report::check::{Check, Finding};
 
 pub(super) fn check_products(ctx: &cadmpeg_core::decode::DecodeContext<'_>, ir: &CadIr, findings: &mut Vec<Finding>) -> Result<(), cadmpeg_core::CodecError> {
@@ -38,7 +38,7 @@ pub(super) fn check_products(ctx: &cadmpeg_core::decode::DecodeContext<'_>, ir: 
         }
     }
 
-    if AssemblyGraph::new(&ir.model.occurrences).is_err() {
+    if !crate::products::assembly_graph::validate(ctx, &ir.model.occurrences)? {
         record_finding(ctx, findings, Check::ReferentialIntegrity, crate::report::Severity::Error, Some("model:assembly"), format_args!("{}", "invalid occurrence parent graph"))?;
     }
     let mut sibling_ordinals = HashSet::new();
