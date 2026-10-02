@@ -151,14 +151,15 @@ all reachable implementations have checked bodies. Generic helper calls use
 concrete instantiations collected from the checked bodies. Type-dependent
 allocation and work defects are reported at the instantiating call, with the
 concrete type. Checked dependency generics use compiler MIR to resolve their
-trait calls. The driver encodes MIR in check metadata for this resolution. Trait-object and function-pointer calls require proof.
+operation calls. Local and imported bodies use the same exclusions. The driver encodes MIR in check metadata for this resolution. Trait-object and function-pointer calls require proof.
 
 `src/external.rs` in the checker defines the external operation summaries.
 Each summary states allocation behavior and fixed work, receiver work,
 argument or key work, iterator work, or comparison work. The allocation and
 work rules evaluate these extents against operand types and prior admission.
-An external operation missing from this table uses the third rule, including
-calls with scalar operands or no operands.
+Summaries distinguish fixed moves and constructors from input-sized
+operations with the same name. An external operation missing from this table
+uses the third rule, including calls with scalar operands or no operands.
 
 ### Allocation
 

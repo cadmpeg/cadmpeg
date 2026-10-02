@@ -142,6 +142,12 @@ pub(crate) fn check_imported<'tcx>(
         let body = tcx.instance_mir(instance.def);
         let has_context = body.local_decls.iter().any(|local|
             types::has_context(tcx, local.ty, &mut Vec::new()));
+        let has_work_charge = body.basic_blocks.iter().any(|block| {
+            let rustc_middle::mir::TerminatorKind::Call { func, .. } = &block.terminator().kind else { return false; };
+            matches!(func.ty(body, tcx).kind(), rustc_middle::ty::FnDef(id, _)
+                if tcx.crate_name(id.krate).as_str() == "cadmpeg_core"
+                    && tcx.opt_item_name(*id).is_some_and(|name| matches!(name.as_str(), "charge_work" | "charge_work_limit")))
+        });
         for block in body.basic_blocks.iter() {
             let rustc_middle::mir::TerminatorKind::Call {
                 func,
@@ -237,7 +243,8 @@ pub(crate) fn check_imported<'tcx>(
             let count = count_index.and_then(|index| args.get(index)).and_then(|operand|
                 match &operand.node {
                     rustc_middle::mir::Operand::Constant(value) =>
-                        value.const_.try_eval_bits(tcx, reporter.typing_env()),
+                        instance.instantiate_mir(tcx, rustc_middle::ty::EarlyBinder::bind(tcx, value.const_))
+                            .try_eval_bits(tcx, reporter.typing_env()),
                     _ => None,
                 });
             let allocation_shape = |output: rustc_middle::ty::Ty<'tcx>, receiver: rustc_middle::ty::Ty<'tcx>, concrete: bool| {
@@ -282,7 +289,10 @@ pub(crate) fn check_imported<'tcx>(
                 (work, symbolic_work, "uncharged_decode_work"),
             ] {
                 if shape != types::Shape::Fixed && symbolic != types::Shape::Dynamic {
-                    let shape = if has_context { types::Shape::Unknown } else { shape };
+                    let uncertain_admission = (rule == "uncharged_decode_allocation"
+                        && summary.allocation == external::Allocation::Growth && has_context)
+                        || (rule == "uncharged_decode_work" && has_work_charge);
+                    let shape = if uncertain_admission { types::Shape::Unknown } else { shape };
                     reporter.report(
                         root.span,
                         if shape == crate::types::Shape::Unknown {
