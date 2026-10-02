@@ -2031,15 +2031,16 @@ pub(crate) fn mesh_candidates_equivalent_with_gauge(
     )
 }
 
-pub(super) fn mesh_candidates_equivalent_with_context(
+/// Compares two search candidates for identity, charging the bytes the
+/// comparison reads from both before it runs.
+pub(super) fn mesh_candidates_identical_with_context(
     ctx: &DecodeContext<'_>,
     left: &(StandardTopologyDraft, Vec<usize>),
     right: &(StandardTopologyDraft, Vec<usize>),
-    gauge: Option<MeshCandidateGauge<'_>>,
 ) -> Result<bool, CodecError> {
-    let mut identity_bytes = [0_u64; 2];
-    for (bytes, candidate) in identity_bytes.iter_mut().zip([left, right]) {
-        *bytes = topology_key_bytes(ctx, &candidate.0, "catia_gauge_candidate_key_scan")?
+    let mut bytes = [0_u64; 2];
+    for (candidate_bytes, candidate) in bytes.iter_mut().zip([left, right]) {
+        *candidate_bytes = topology_key_bytes(ctx, &candidate.0, "catia_gauge_candidate_key_scan")?
             .checked_add(u64_from_index(std::mem::size_of_val(
                 candidate.1.as_slice(),
             )))
@@ -2053,13 +2054,19 @@ pub(super) fn mesh_candidates_equivalent_with_context(
     }
     charge_gauge_comparison(
         ctx,
-        identity_bytes[0],
-        identity_bytes[1],
+        bytes[0],
+        bytes[1],
         "catia_gauge_candidate_identity_compare",
     )?;
-    if left == right {
-        return Ok(true);
-    }
+    Ok(left == right)
+}
+
+pub(super) fn mesh_candidates_equivalent_with_context(
+    ctx: &DecodeContext<'_>,
+    left: &(StandardTopologyDraft, Vec<usize>),
+    right: &(StandardTopologyDraft, Vec<usize>),
+    gauge: Option<MeshCandidateGauge<'_>>,
+) -> Result<bool, CodecError> {
     charge_gauge_comparison(
         ctx,
         u64_from_index(std::mem::size_of_val(left.0.vertex_points.as_slice())),

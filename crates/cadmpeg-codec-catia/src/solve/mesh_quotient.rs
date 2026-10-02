@@ -46,7 +46,8 @@ fn required_component_roots(roots: NonZeroUsize, merge_capacity: usize) -> usize
 use super::mesh_gauge::{
     build_mesh_coordinate_gauge, canonicalize_complete_endpoint_pairs,
     canonicalize_endpoint_relation_state, canonicalize_mesh_candidate_for_output,
-    mesh_candidates_equivalent_with_context, MeshCandidateGauge, MeshEdgeGeometry,
+    mesh_candidates_equivalent_with_context, mesh_candidates_identical_with_context,
+    MeshCandidateGauge, MeshEdgeGeometry,
 };
 use crate::families::standard::fbb::{largest_fbb_run, parse_edge_tables, parse_vertex_table};
 #[cfg(test)]
