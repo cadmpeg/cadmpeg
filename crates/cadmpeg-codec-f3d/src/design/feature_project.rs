@@ -2197,8 +2197,8 @@ fn project_work_plane(
             family: UnresolvedFamily::DatumPlane,
         }));
     };
-    let Some(points) =
-        cadmpeg_ir::features::ThreePointSelection::try_from(Box::new([first, second, third])).ok()
+    let Ok(points) =
+        cadmpeg_ir::features::ThreePointSelection::new(Box::new([first, second, third]), ctx)?
     else {
         return Ok(FeatureDefinition::Operation(FeatureOperation::Unresolved {
             family: UnresolvedFamily::DatumPlane,

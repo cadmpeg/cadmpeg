@@ -469,6 +469,71 @@ fn historical_body_overlap_spans_direct_and_paired_member_selections() {
 }
 
 #[test]
+fn three_point_constructor_admits_each_target_and_state_comparison() {
+    use cadmpeg_core::decode::{u64_from_index, DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use crate::features::GeneratedVertexRef;
+    let producer = feature_id("producer");
+    let state = FeatureInputTopologyId::mint("test:model:feature-input#state").unwrap();
+    let historical = HistoricalVertexId::mint("test:model:historical-vertex#a").unwrap();
+    for kind in 0..3 {
+        let work = match kind {
+            0 => 9,
+            1 => 3 + 3 * (u64_from_index(producer.as_str().len()) + 3),
+            2 => 3 + 5 * (u64_from_index(state.as_str().len()) + 1) + 3 * (u64_from_index(historical.as_str().len()) + 1),
+            _ => unreachable!(),
+        };
+        for allowance in 0..=work {
+            let points = Box::new(["a", "b", "c"].map(|local| match kind {
+                0 => VertexSelection::native(local.to_owned(), &cadmpeg_test_support::service_decode_context()).unwrap().unwrap(),
+                1 => VertexSelection::generated(GeneratedVertexRef { feature: producer.clone(), local_id: local.to_owned().try_into().unwrap() }, "native".into(), &cadmpeg_test_support::service_decode_context()).unwrap().unwrap(),
+                2 => VertexSelection::historical(state.clone(), HistoricalVertexId::mint(format!("test:model:historical-vertex#{local}")).unwrap(), "native".into(), &cadmpeg_test_support::service_decode_context()).unwrap().unwrap(),
+                _ => unreachable!(),
+            }));
+            let pointer = points.as_ptr();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = allowance;
+            policy.limits.max_materialized_bytes = 0;
+            policy.limits.max_retained_bytes = 0;
+            policy.limits.max_collection_items = 0;
+            policy.limits.max_recursion_depth = 0;
+            let arena = DecodeArena::new();
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            let result = ThreePointSelection::new(points, &ctx);
+            if allowance < work {
+                let limit = result.unwrap_err();
+                assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+                assert!(matches!(ctx.finish_session(), Err(cadmpeg_core::CodecError::ResourceLimit(original)) if original == limit));
+            } else {
+                let points = result.unwrap().unwrap();
+                assert_eq!(points.as_ptr(), pointer);
+                ctx.finish_session().unwrap();
+            }
+        }
+    }
+}
+
+#[test]
+fn three_point_constructor_stops_at_a_duplicate_and_preserves_fused_refusals() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 5;
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let selection = |text: String| VertexSelection::native(text, &cadmpeg_test_support::service_decode_context()).unwrap().unwrap();
+    let result = ThreePointSelection::new(Box::new([selection("same".into()), selection("same".into()), selection("long".repeat(1000))]), &ctx).unwrap();
+    assert_eq!(result.unwrap_err(), "points must select three distinct vertex targets");
+    ctx.finish_session().unwrap();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let original = ctx.charge_work_limit(1, "original three point refusal").unwrap_err();
+    let points = Box::new([VertexSelection::Unresolved, VertexSelection::Unresolved, VertexSelection::Unresolved]);
+    assert_eq!(ThreePointSelection::new(points, &ctx).unwrap_err(), original);
+    assert!(matches!(ctx.finish_session(), Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit == original));
+}
+
+#[test]
 fn three_point_admission_compares_targets_and_historical_states() {
     let state = FeatureInputTopologyId::mint("test:model:feature-input#first").unwrap();
     let other = FeatureInputTopologyId::mint("test:model:feature-input#second").unwrap();
@@ -480,23 +545,23 @@ fn three_point_admission_compares_targets_and_historical_states() {
         ).expect("selection reference admission")
         .unwrap()
     };
-    assert!(ThreePointSelection::try_from(Box::new([
+    assert!(ThreePointSelection::new(Box::new([
         vertex(&state, "a", "one"),
         vertex(&state, "a", "two"),
         vertex(&state, "b", "three"),
-    ]))
+    ]), &cadmpeg_test_support::service_decode_context()).expect("three point admission")
     .is_err());
-    assert!(ThreePointSelection::try_from(Box::new([
+    assert!(ThreePointSelection::new(Box::new([
         vertex(&state, "a", "one"),
         vertex(&state, "b", "two"),
         vertex(&other, "c", "three"),
-    ]))
+    ]), &cadmpeg_test_support::service_decode_context()).expect("three point admission")
     .is_err());
-    let mixed = ThreePointSelection::try_from(Box::new([
+    let mixed = ThreePointSelection::new(Box::new([
         vertex(&state, "a", "one"),
         VertexSelection::native("two".into(), &cadmpeg_test_support::service_decode_context(),).expect("selection reference admission").unwrap(),
         VertexSelection::Unresolved,
-    ]))
+    ]), &cadmpeg_test_support::service_decode_context()).expect("three point admission")
     .unwrap();
     assert_eq!(
         serde_json::from_value::<ThreePointSelection>(serde_json::to_value(&mixed).unwrap())
