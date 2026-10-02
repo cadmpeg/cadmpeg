@@ -2005,14 +2005,19 @@ impl PcurveNurbs {
     /// Replace every admitted pole position when the supplied lane has the same cardinality.
     ///
     /// The check precedes mutation. Pole weights and knots stay in place.
-    pub fn replace_admitted_control_points(&mut self, positions: &[FinitePoint2]) -> bool {
+    pub fn replace_admitted_control_points(
+        &mut self,
+        positions: &[FinitePoint2],
+        ctx: &DecodeContext<'_>,
+    ) -> Result<bool, CodecError> {
         let count = match &self.poles {
             PcurveNurbsPoles::Polynomial { points } => points.len(),
             PcurveNurbsPoles::Rational { points } => points.len(),
         };
         if positions.len() != count {
-            return false;
+            return Ok(false);
         }
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(count), "IR pcurve pole replacement")?;
         match &mut self.poles {
             PcurveNurbsPoles::Polynomial { points } => {
                 for (point, position) in points.iter_mut().zip(positions) {
@@ -2025,7 +2030,7 @@ impl PcurveNurbs {
                 }
             }
         }
-        true
+        Ok(true)
     }
 
     /// Map pole positions in order after every result passes admission.
