@@ -1065,6 +1065,13 @@ class DecodeAllocations(TempSourceCase):
 }""")
         self.assertEqual(self.findings("uncharged_decode_allocation"), [])
 
+    def test_escaped_braces_do_not_hide_captured_input(self):
+        self.write(self.PATH, """fn read(ctx: &DecodeContext<'_>) {
+    format!("{{{text}}}");
+    format!("{{{{ fixed }}}}");
+}""")
+        self.assertEqual([f.line for f in self.findings("uncharged_decode_allocation")], [2])
+
     def test_separate_storage_charge_does_not_admit_raw_allocation(self):
         self.write(self.PATH, """fn read(ctx: &DecodeContext<'_>, text: &str) {
     ctx.charge_retained(text.len(), "text")?;
@@ -1186,6 +1193,14 @@ class DecodeWork(TempSourceCase):
     first == 0;
 }""")
         self.assertEqual([f.line for f in self.findings("uncharged_decode_work")], [2])
+
+    def test_collection_growth_invalidates_extent_admission(self):
+        self.write(self.PATH, """fn read(ctx: &DecodeContext<'_>) {
+    ctx.charge_work(u64_from_index(values.len()), "scan")?;
+    change(&mut values);
+    values.iter().any(predicate);
+}""")
+        self.assertEqual([f.line for f in self.findings("uncharged_decode_work")], [4])
 
     def test_inner_scans_need_their_own_charge(self):
         self.write(self.PATH, """fn read(ctx: &DecodeContext<'_>) {
