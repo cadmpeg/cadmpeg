@@ -26,15 +26,29 @@ impl A8KnotLane {
         &self.multiplicities
     }
 
-    pub(super) fn try_new(distinct: Vec<FiniteReal>, multiplicities: Vec<u32>) -> Option<Self> {
-        (distinct.len() == multiplicities.len()
+    pub(super) fn try_new(
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        distinct: Vec<FiniteReal>,
+        multiplicities: Vec<u32>,
+    ) -> Result<Option<Self>, cadmpeg_core::CodecError> {
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(distinct.len()),
+            "catia_a8_knot_order_admission",
+        )?;
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(multiplicities.len()),
+            "catia_a8_multiplicity_admission",
+        )?;
+        Ok((!distinct.is_empty()
+            && distinct.len() == multiplicities.len()
+            && multiplicities.iter().all(|&value| value > 0)
             && distinct
                 .windows(2)
                 .all(|pair| pair[0].get() < pair[1].get()))
         .then_some(Self {
             distinct,
             multiplicities,
-        })
+        }))
     }
 
     pub(super) fn expanded(
@@ -68,12 +82,65 @@ mod tests {
 
     #[test]
     fn knot_lane_admission_requires_aligned_increasing_values() {
-        assert!(A8KnotLane::try_new(finite_lane(&[0.0, 1.0]), vec![2]).is_none());
-        assert!(A8KnotLane::try_new(finite_lane(&[0.0]), vec![2, 2]).is_none());
-        assert!(A8KnotLane::try_new(finite_lane(&[1.0, 0.0]), vec![2, 2]).is_none());
-        assert!(A8KnotLane::try_new(finite_lane(&[0.0, 0.0]), vec![2, 2]).is_none());
-        let lane = A8KnotLane::try_new(finite_lane(&[0.0, 1.0]), vec![2, 2])
-            .expect("aligned increasing knot lane");
+        assert!(
+            crate::test_support::with_service_context(|ctx| A8KnotLane::try_new(
+                ctx,
+                vec![],
+                vec![]
+            ))
+            .expect("service admission")
+            .is_none()
+        );
+        assert!(
+            crate::test_support::with_service_context(|ctx| A8KnotLane::try_new(
+                ctx,
+                finite_lane(&[0.0, 1.0]),
+                vec![0, 2]
+            ))
+            .expect("service admission")
+            .is_none()
+        );
+        assert!(
+            crate::test_support::with_service_context(|ctx| A8KnotLane::try_new(
+                ctx,
+                finite_lane(&[0.0, 1.0]),
+                vec![2]
+            ))
+            .expect("service admission")
+            .is_none()
+        );
+        assert!(
+            crate::test_support::with_service_context(|ctx| A8KnotLane::try_new(
+                ctx,
+                finite_lane(&[0.0]),
+                vec![2, 2]
+            ))
+            .expect("service admission")
+            .is_none()
+        );
+        assert!(
+            crate::test_support::with_service_context(|ctx| A8KnotLane::try_new(
+                ctx,
+                finite_lane(&[1.0, 0.0]),
+                vec![2, 2]
+            ))
+            .expect("service admission")
+            .is_none()
+        );
+        assert!(
+            crate::test_support::with_service_context(|ctx| A8KnotLane::try_new(
+                ctx,
+                finite_lane(&[0.0, 0.0]),
+                vec![2, 2]
+            ))
+            .expect("service admission")
+            .is_none()
+        );
+        let lane = crate::test_support::with_service_context(|ctx| {
+            A8KnotLane::try_new(ctx, finite_lane(&[0.0, 1.0]), vec![2, 2])
+        })
+        .expect("service admission")
+        .expect("aligned increasing knot lane");
         assert_eq!(
             crate::test_support::with_service_context(|ctx| lane.expanded(ctx))
                 .expect("service collection budget"),
@@ -84,8 +151,11 @@ mod tests {
 
     #[test]
     fn knot_expansion_refuses_collection_limit_before_reservation() {
-        let lane =
-            A8KnotLane::try_new(finite_lane(&[0.0, 1.0]), vec![2, 2]).expect("valid knot lane");
+        let lane = crate::test_support::with_service_context(|ctx| {
+            A8KnotLane::try_new(ctx, finite_lane(&[0.0, 1.0]), vec![2, 2])
+        })
+        .expect("service admission")
+        .expect("valid knot lane");
         let limited = crate::test_support::with_collection_limit(3, |ctx| lane.expanded(ctx));
         assert!(matches!(limited,
             Err(cadmpeg_core::CodecError::ResourceLimit(error))
@@ -94,8 +164,11 @@ mod tests {
 
     #[test]
     fn copied_knot_lane_refuses_each_caller_collection_limit() {
-        let lane =
-            A8KnotLane::try_new(finite_lane(&[0.0, 1.0]), vec![2, 2]).expect("valid knot lane");
+        let lane = crate::test_support::with_service_context(|ctx| {
+            A8KnotLane::try_new(ctx, finite_lane(&[0.0, 1.0]), vec![2, 2])
+        })
+        .expect("service admission")
+        .expect("valid knot lane");
         for (limit, operation) in [
             (1, "catia_a8_copied_distinct_knots"),
             (2, "catia_a8_copied_multiplicities"),
@@ -112,5 +185,15 @@ mod tests {
                 .expect("service budget"),
             lane
         );
+    }
+    #[test]
+    fn knot_lane_admission_refuses_the_callers_work_limit() {
+        let result = crate::test_support::with_work_limit(0, |ctx| {
+            A8KnotLane::try_new(ctx, finite_lane(&[0.0, 1.0]), vec![1, 1])
+        });
+        assert!(matches!(
+            result,
+            Err(cadmpeg_core::CodecError::ResourceLimit(_))
+        ));
     }
 }

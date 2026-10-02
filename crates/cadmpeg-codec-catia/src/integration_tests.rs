@@ -242,7 +242,7 @@ fn e5_pipeline_uses_the_coherent_record_stream_over_the_nested_spine() {
     })
     .expect("service resource budget");
     assert_eq!(scan.variant, Variant::E5Stream);
-    assert!(crate::container::e5_record_stream(&scan.data).is_some());
+    assert!(scan.e5_record_range.is_some());
 
     let result = decode(bytes);
     assert!(result.report().geometry_transferred());

@@ -1379,7 +1379,7 @@ pub(super) fn close_coordinate_roots_with_incidence<'storage>(
 
     let mut roots = Vec::new();
     for node in 0..quotient.union.len() {
-        if quotient.union.find(node) == node {
+        if quotient.union.find(ctx, node)? == node {
             ctx.push_vec(&mut roots, node, "catia_coordinate_closure_roots")?;
         }
     }
@@ -1418,10 +1418,10 @@ pub(super) fn close_coordinate_roots_with_incidence<'storage>(
     }
     let mut edges = Vec::new();
     for edge in 0..edge_candidates.len() {
-        let Some(&left) = root_indices.get(&quotient.union.find(edge * 2)) else {
+        let Some(&left) = root_indices.get(&quotient.union.find(ctx, edge * 2)?) else {
             return Ok(None);
         };
-        let Some(&right) = root_indices.get(&quotient.union.find(edge * 2 + 1)) else {
+        let Some(&right) = root_indices.get(&quotient.union.find(ctx, edge * 2 + 1)?) else {
             return Ok(None);
         };
         ctx.push_vec(&mut edges, [left, right], "catia_coordinate_closure_edges")?;
@@ -1461,7 +1461,7 @@ pub(super) fn close_coordinate_roots_with_incidence<'storage>(
     let mut dependency =
         UnionFind::charged(ctx, roots.len(), "catia_coordinate_closure_dependency")?;
     for [left, right] in &edges {
-        dependency.union(*left, *right);
+        dependency.union(ctx, *left, *right)?;
     }
     let mut root_by_point = HashMap::new();
     for (root, domain) in domains.iter().enumerate() {
@@ -1472,13 +1472,13 @@ pub(super) fn close_coordinate_roots_with_incidence<'storage>(
                 root,
                 "catia_coordinate_closure_point_roots",
             )? {
-                dependency.union(previous, root);
+                dependency.union(ctx, previous, root)?;
             }
         }
     }
     let mut components = HashMap::<usize, Vec<usize>>::new();
     for root in 0..roots.len() {
-        let component = dependency.find(root);
+        let component = dependency.find(ctx, root)?;
         if !components.contains_key(&component) {
             ctx.insert_hash_map(
                 &mut components,
