@@ -127,7 +127,27 @@ pub fn admit_with_native_unknowns(
             }
         }
     }
-    let index = crate::index::ModelIndex::with_native_unknowns(ir, format, records, ctx)?;
+    let order = ctx.with_scoped_storage("source product identity order", || {
+        let mut order = Vec::new();
+        for (position, _) in records.iter().enumerate() {
+            ctx.charge_work(1, "source product position scan")?;
+            ctx.push_retained_vec(&mut order, position, "source product identity slots")?;
+        }
+        ctx.sort_unstable_by(&mut order, |left, right| records[*left].id().as_str().cmp(records[*right].id().as_str()),
+            |position| records[*position].id().as_str().len(), "source product identity order")?;
+        Ok::<_, CodecError>(order)
+    })?;
+    for pair in order.0.windows(2) {
+        let first = records[pair[0]].id().as_str();
+        let second = records[pair[1]].id().as_str();
+        ctx.charge_work(1, "source product identity duplicate scan")?;
+        ctx.charge_work(u64_from_index(first.len().min(second.len())), "source product identity duplicate comparison")?;
+        if first == second {
+            let message = ctx.format_retained(format_args!("duplicate native unknown record {first}"), "native unknown identity collision")?;
+            return Ok(Err(crate::native::NativeConvertError::InvalidCollection(message)));
+        }
+    }
+    let index = crate::index::ModelIndex::with_native_unknowns(ir, format, records, &order.0, ctx)?;
     let mut report = super::validate_model_with_index(ctx, ir, losses, &index)?;
     if let Some(annotations) = annotations {
         super::validate_annotations(ctx, &index, annotations, std::iter::empty(), &mut report.findings)?;
