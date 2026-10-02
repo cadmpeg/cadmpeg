@@ -363,25 +363,15 @@ impl<'curve, 'ctx> NurbsPointEvaluator<'curve, 'ctx> {
             )
             .map_err(EvaluationFailure::ResourceLimit)?
             .ok_or(unreached)?;
-            if !self.basis.iter().all(|value| value.is_finite()) {
-                return Err(unreached);
-            }
             let poles = self.curve.pole_rows();
-            let base = super::Homogeneous::sum(self.basis.iter().copied().enumerate().map(
-                |(local, basis)| {
-                    let index = span - degree + local;
-                    Some((
-                        [basis, 1.0],
-                        poles.weight_at(index).unwrap_or(1.0),
-                        poles.point_at(index)?,
-                    ))
-                },
+            let scratch = Scratch::new(ctx);
+            scratch.settle(super::nurbs_curve_point_from_basis(
+                &scratch,
+                &self.basis,
+                span,
+                |index| poles.point_at(index),
+                |index| poles.weight_at(index),
             ))
-            .ok_or(EvaluationFailure::NoValue)?;
-            let [x, y, z] =
-                super::finite_lanes(base.project(base, &[]).ok_or(EvaluationFailure::NoValue)?)
-                    .map_err(|[x, y, z]| EvaluationFailure::NonFinite(Point3::new(x, y, z)))?;
-            Ok(FinitePoint3::from_coordinates(x, y, z))
         })();
         outer_refusal(result)
     }

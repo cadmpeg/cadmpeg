@@ -1487,12 +1487,14 @@ pub fn nurbs_curve_point_at_with_basis(
         .ok_or(EvaluationFailure::NoValue)?;
     fill_bspline_basis(ctx, curve.knots(), degree, span, at.get(), basis)?
         .ok_or(EvaluationFailure::NonFinite(UNREACHED_POINT))?;
-    nurbs_curve_point_from_basis(
+    let scratch = decode::Scratch::new(ctx);
+    scratch.settle(nurbs_curve_point_from_basis(
+        &scratch,
         basis,
         span,
         |index| poles.point_at(index),
         |index| poles.weight_at(index),
-    )
+    ))
 }
 
 /// The point at `t` of a possibly-rational B-spline over `count` poles that
@@ -1533,10 +1535,11 @@ fn nurbs_curve_point_unsettled(
     // At a finite parameter over finite knots, the basis is absent or not
     // finite only where one of its terms left the finite range.
     let basis = basis::bspline_basis(scratch, knots, degree, span, t).ok_or(unreached)?;
-    nurbs_curve_point_from_basis(&basis, span, pole, weight)
+    nurbs_curve_point_from_basis(scratch, &basis, span, pole, weight)
 }
 
 fn nurbs_curve_point_from_basis(
+    scratch: &decode::Scratch<'_, '_>,
     basis: &[f64],
     span: usize,
     pole: impl Fn(usize) -> Option<FinitePoint3>,
@@ -1551,7 +1554,7 @@ fn nurbs_curve_point_from_basis(
         .checked_add(1)
         .and_then(|value| value.checked_sub(basis.len()))
         .ok_or(no_value)?;
-    let base = homogeneous_curve_sum(basis, pole, weight, first).ok_or(no_value)?;
+    let base = homogeneous_curve_sum(scratch, basis, pole, weight, first).ok_or(no_value)?;
     let [x, y, z] = finite_lanes(base.project(base, &[]).ok_or(no_value)?)
         .map_err(|[x, y, z]| EvaluationFailure::NonFinite(Point3::new(x, y, z)))?;
     Ok(FinitePoint3::from_coordinates(x, y, z))
@@ -1560,18 +1563,19 @@ fn nurbs_curve_point_from_basis(
 /// The homogeneous sum of `poles`, the first of which is global pole `first`,
 /// blended by `values`.
 fn homogeneous_curve_sum(
+    scratch: &decode::Scratch<'_, '_>,
     values: &[f64],
     pole: impl Fn(usize) -> Option<FinitePoint3>,
     weight: impl Fn(usize) -> Option<f64>,
     first: usize,
 ) -> Option<Homogeneous> {
-    Homogeneous::sum(values.iter().copied().enumerate().map(|(local, basis)| {
+    scratch.admit(Homogeneous::sum(scratch, values.iter().copied().enumerate().map(|(local, basis)| {
         Some((
             [basis, 1.0],
             weight(first + local).unwrap_or(1.0),
             pole(first + local)?,
         ))
-    }))
+    })))?
 }
 
 /// Effective knot domain of a structurally evaluable NURBS curve.
@@ -2254,6 +2258,7 @@ fn nurbs_pcurve_differential_unsettled(
     }
     let sum = |values: &[f64]| {
         homogeneous_curve_sum(
+            scratch,
             values,
             &pole,
             |index| weights.and_then(|weights| weights.get(index).copied()),
@@ -2537,13 +2542,15 @@ struct NurbsSurfaceFirstPartials {
 /// by `u_values` along `u` and `v_values` along `v`. A missing pole and a
 /// value that is not finite leave no sum.
 fn nurbs_local_sum(
+    scratch: &decode::Scratch<'_, '_>,
     surface: &NurbsSurface,
     [u_degree, v_degree]: [usize; 2],
     [u_span, v_span]: [usize; 2],
     u_values: &[f64],
     v_values: &[f64],
 ) -> Option<Homogeneous> {
-    Homogeneous::sum(
+    scratch.admit(Homogeneous::sum(
+        scratch,
         u_values
             .iter()
             .copied()
@@ -2562,14 +2569,14 @@ fn nurbs_local_sum(
                         ))
                     })
             }),
-    )
+    ))?
 }
 
 impl NurbsSurfaceLocal<'_> {
     /// The homogeneous sum of the local poles blended by `u_values` along
     /// `u` and `v_values` along `v`.
-    fn sum(&self, u_values: &[f64], v_values: &[f64]) -> Option<Homogeneous> {
-        nurbs_local_sum(self.surface, self.degrees, self.spans, u_values, v_values)
+    fn sum(&self, scratch: &decode::Scratch<'_, '_>, u_values: &[f64], v_values: &[f64]) -> Option<Homogeneous> {
+        nurbs_local_sum(scratch, self.surface, self.degrees, self.spans, u_values, v_values)
     }
 
     /// The first partials, or why they have none. At the finite point over
@@ -2595,8 +2602,8 @@ impl NurbsSurfaceLocal<'_> {
                 .ok_or_else(|| scratch.failure(non_finite))
             };
             let bases = [derivative(0)?, derivative(1)?];
-            let u = self.sum(&bases[0], &self.bases[1]).ok_or(non_finite)?;
-            let v = self.sum(&self.bases[0], &bases[1]).ok_or(non_finite)?;
+            let u = self.sum(scratch, &bases[0], &self.bases[1]).ok_or(non_finite)?;
+            let v = self.sum(scratch, &self.bases[0], &bases[1]).ok_or(non_finite)?;
             let lane = |sum: Homogeneous| {
                 finite_lanes(
                     sum.project(self.base, &[(sum, self.point)])
@@ -2637,11 +2644,11 @@ impl NurbsSurfaceLocal<'_> {
             let [u_second, v_second] = [second(0)?, second(1)?];
             let [u, v] = first.sums;
             let [du, dv] = first.lanes;
-            let uu = self.sum(&u_second, &self.bases[1]).ok_or(non_finite)?;
+            let uu = self.sum(scratch, &u_second, &self.bases[1]).ok_or(non_finite)?;
             let uv = self
-                .sum(&first.bases[0], &first.bases[1])
+                .sum(scratch, &first.bases[0], &first.bases[1])
                 .ok_or(non_finite)?;
-            let vv = self.sum(&self.bases[0], &v_second).ok_or(non_finite)?;
+            let vv = self.sum(scratch, &self.bases[0], &v_second).ok_or(non_finite)?;
             let lane = |sum: Homogeneous, corrections: &[(Homogeneous, [FiniteReal; 3])]| {
                 finite_lanes(sum.project(self.base, corrections).ok_or(non_finite)?)
                     .map_err(|_| non_finite)
@@ -2718,7 +2725,7 @@ fn nurbs_surface_local_unsettled<'a>(
     }
     let degrees = [u_degree, v_degree];
     let spans = [u_span, v_span];
-    let base = nurbs_local_sum(surface, degrees, spans, &u_basis, &v_basis).ok_or(no_value)?;
+    let base = nurbs_local_sum(scratch, surface, degrees, spans, &u_basis, &v_basis).ok_or(no_value)?;
     let point = finite_lanes(base.project(base, &[]).ok_or(no_value)?)
         .map_err(|[x, y, z]| EvaluationFailure::NonFinite(Point3::new(x, y, z)))?;
     Ok(NurbsSurfaceLocal {
@@ -2928,7 +2935,7 @@ pub fn nurbs_surface_isocurve(
         let mut sums = Vec::new();
         scratch::reserve_exact(&mut sums, varying_count, "IR surface isoline sums")?;
         for varying in 0..varying_count {
-            let Some(sum) = Homogeneous::sum(fixed_basis.iter().copied().enumerate().map(
+            let Some(sum) = Homogeneous::sum(&scratch, fixed_basis.iter().copied().enumerate().map(
                 |(local, basis)| {
                     let fixed = fixed_span - fixed_degree + local;
                     let (pole_u, pole_v) = match fixed_axis {
@@ -2941,7 +2948,7 @@ pub fn nurbs_surface_isocurve(
                         surface.pole(pole_u, pole_v)?,
                     ))
                 },
-            )) else {
+            ))? else {
                 return Ok(None);
             };
             let Some(projected) = sum.project(sum, &[]) else {
@@ -3760,6 +3767,7 @@ fn nurbs_curve_derivative_unsettled(
     // finite.
     let sum = |values: &[f64]| {
         homogeneous_curve_sum(
+            scratch,
             values,
             |index| control_points.get(index).copied(),
             |index| weights.and_then(|weights| weights.get(index).copied()),
