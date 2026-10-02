@@ -6016,7 +6016,7 @@ fn section_shape_definition(
         BodySelection::Native(ctx.copy_retained_text(&base.id, "fcstd section base identity")?);
     let tool =
         BodySelection::Native(ctx.copy_retained_text(&tool.id, "fcstd section tool identity")?);
-    cadmpeg_ir::features::SectionOperands::new(base, tool)
+    cadmpeg_ir::features::SectionOperands::new(base, tool, ctx,)?
         .ok()
         .map(|operands| -> Result<_, CodecError> {
             Ok(FeatureDefinition::Operation(
@@ -6702,7 +6702,7 @@ fn boolean_definition(
             )?),
         )
     };
-    let Some(operands) = cadmpeg_ir::features::CombineOperands::new(target, tools).ok() else {
+    let Some(operands) = cadmpeg_ir::features::CombineOperands::new(target, tools, ctx,)?.ok() else {
         return Ok(None);
     };
     Ok(Some(FeatureDefinition::Operation(

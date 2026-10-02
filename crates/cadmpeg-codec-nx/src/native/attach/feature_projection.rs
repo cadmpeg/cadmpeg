@@ -518,7 +518,7 @@ pub(super) fn blend_feature_definition(
             let (second_faces, _) = support_face_projection(ctx, ir, &sides.second, second_native)?;
             match (&first_faces, &second_faces) {
                 (FaceSelection::Resolved { .. }, FaceSelection::Resolved { .. }) => {
-                    cadmpeg_ir::features::FaceBlendOperands::new(first_faces, second_faces)
+                    cadmpeg_ir::features::FaceBlendOperands::new(first_faces, second_faces, ctx,)?
                         .ok()
                         .map(|operands| {
                             radius
@@ -542,8 +542,8 @@ pub(super) fn blend_feature_definition(
     };
     let Some(unresolved_operands) = cadmpeg_ir::features::FaceBlendOperands::new(
         FaceSelection::Unresolved,
-        FaceSelection::Unresolved,
-    )
+        FaceSelection::Unresolved, ctx,
+    )?
     .ok() else {
         return Ok(None);
     };
@@ -1567,16 +1567,19 @@ pub(super) fn new_body_boolean_op(evidence: &NewBodyEvidence<'_>) -> BooleanOp {
 }
 
 pub(super) fn body_writing_unresolved_feature_definition(
+    ctx: &DecodeContext<'_>,
     kind: &str,
     source_properties: &BTreeMap<String, String>,
-) -> Option<FeatureDefinition> {
-    if !source_properties
-        .keys()
-        .any(|key| key.starts_with("body_write."))
-    {
-        return None;
+) -> Result<Option<FeatureDefinition>, CodecError> {
+    let mut body_write = false;
+    for key in source_properties.keys() {
+        ctx.charge_work(1, "NX body-writing property visit")?;
+        if key.len() < "body_write.".len() { continue; }
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index("body_write.".len()), "NX body-writing property prefix")?;
+        if key.starts_with("body_write.") { body_write = true; break; }
     }
-    match kind {
+    if !body_write { return Ok(None); }
+    Ok(match kind {
         "BREP" => Some(FeatureDefinition::Operation(FeatureOperation::Unresolved {
             family: UnresolvedFamily::Brep,
         })),
@@ -1598,9 +1601,9 @@ pub(super) fn body_writing_unresolved_feature_definition(
         "FACE_BLEND" => Some(FeatureDefinition::Operation(FeatureOperation::FaceBlend {
             operands: cadmpeg_ir::features::FaceBlendOperands::new(
                 FaceSelection::Unresolved,
-                FaceSelection::Unresolved,
-            )
-            .ok()?,
+                FaceSelection::Unresolved, ctx,
+            )?
+            .map_err(CodecError::malformed)?,
 
             radius: RadiusSpec::Unresolved { form: None },
         })),
@@ -1625,7 +1628,7 @@ pub(super) fn body_writing_unresolved_feature_definition(
             family: UnresolvedFamily::DetailedThread,
         })),
         _ => None,
-    }
+    })
 }
 
 #[cfg(test)]
@@ -1636,7 +1639,7 @@ pub(super) fn non_boolean_feature_definition(
     block_placement: Option<Transform>,
     hole_diameter: Option<Length>,
 ) -> FeatureDefinition {
-    non_boolean_feature_definition_with_parameters(
+    non_boolean_feature_definition_with_parameters(&cadmpeg_test_support::service_decode_context(), 
         kind,
         payload_strings,
         block_dimensions,
@@ -1702,6 +1705,7 @@ pub(super) struct CounterboreDimensions {
 }
 
 pub(super) fn non_boolean_feature_definition_with_parameters(
+    ctx: &DecodeContext<'_>,
     kind: &str,
     payload_strings: &[&str],
     block_dimensions: Option<[f64; 3]>,
@@ -1735,8 +1739,8 @@ pub(super) fn non_boolean_feature_definition_with_parameters(
         return Ok(FeatureDefinition::Operation(FeatureOperation::Combine {
             operands: cadmpeg_ir::features::CombineOperands::new(
                 BodySelection::Unresolved,
-                BodySelection::Unresolved,
-            )
+                BodySelection::Unresolved, ctx,
+            )?
             .map_err(cadmpeg_core::CodecError::malformed)?,
 
             op,
@@ -2012,8 +2016,8 @@ pub(super) fn non_boolean_feature_definition_with_parameters(
         "FACE_BLEND" => FeatureDefinition::Operation(FeatureOperation::FaceBlend {
             operands: cadmpeg_ir::features::FaceBlendOperands::new(
                 FaceSelection::Unresolved,
-                FaceSelection::Unresolved,
-            )
+                FaceSelection::Unresolved, ctx,
+            )?
             .map_err(cadmpeg_core::CodecError::malformed)?,
 
             radius: RadiusSpec::Unresolved { form: None },
@@ -2027,8 +2031,8 @@ pub(super) fn non_boolean_feature_definition_with_parameters(
         "TRIM BODY" => FeatureDefinition::Operation(FeatureOperation::TrimBodies {
             operands: cadmpeg_ir::features::TrimBodyOperands::new(
                 BodySelection::Unresolved,
-                BodySelection::Unresolved,
-            )
+                BodySelection::Unresolved, ctx,
+            )?
             .map_err(cadmpeg_core::CodecError::malformed)?,
 
             keep: BodyTrimSide::Unresolved,
@@ -2056,8 +2060,8 @@ pub(super) fn non_boolean_feature_definition_with_parameters(
             FeatureDefinition::Operation(FeatureOperation::SectionShape {
                 operands: cadmpeg_ir::features::SectionOperands::new(
                     BodySelection::Unresolved,
-                    BodySelection::Unresolved,
-                )
+                    BodySelection::Unresolved, ctx,
+                )?
                 .map_err(cadmpeg_core::CodecError::malformed)?,
 
                 approximate: None,

@@ -279,7 +279,7 @@ fn nx_blind_hole_projection_requires_a_unique_cap_and_entry_direction() {
                 },
             )])
         );
-        let definition = non_boolean_feature_definition_with_parameters(
+        let definition = non_boolean_feature_definition_with_parameters(&cadmpeg_test_support::service_decode_context(), 
             "SIMPLE HOLE",
             &["Hole_GeneralHole_Simple_Blind"],
             None,
@@ -723,7 +723,7 @@ fn nx_counterbore_projection_requires_a_coaxial_pair_and_shoulder_and_refuses_al
                 },
             )])
         );
-        let definition = non_boolean_feature_definition_with_parameters(
+        let definition = non_boolean_feature_definition_with_parameters(&cadmpeg_test_support::service_decode_context(), 
             "CBORE_HOLE",
             &["Hole_GeneralHole_Counterbored_Through"],
             None,

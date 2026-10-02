@@ -182,8 +182,8 @@ fn design_completeness_audits_direct_body_and_shape_families() {
                 BodySelection::Bodies(
                     cadmpeg_ir::features::DistinctMembers::try_from(vec![other_body.clone()], &cadmpeg_test_support::service_decode_context())
                         .expect("distinct bodies"),
-                ),
-            )
+                ), &cadmpeg_test_support::service_decode_context(),
+            ).expect("operand admission")
             .unwrap(),
 
             keep: cadmpeg_ir::features::BodyTrimSide::Unresolved,
@@ -207,8 +207,8 @@ fn design_completeness_audits_direct_body_and_shape_families() {
         FeatureDefinition::Operation(FeatureOperation::SectionShape {
             operands: cadmpeg_ir::features::SectionOperands::new(
                 BodySelection::Bodies(cadmpeg_ir::features::DistinctMembers::try_from(vec![body], &cadmpeg_test_support::service_decode_context()).expect("distinct bodies")),
-                BodySelection::Bodies(cadmpeg_ir::features::DistinctMembers::try_from(vec![other_body], &cadmpeg_test_support::service_decode_context()).expect("distinct bodies")),
-            )
+                BodySelection::Bodies(cadmpeg_ir::features::DistinctMembers::try_from(vec![other_body], &cadmpeg_test_support::service_decode_context()).expect("distinct bodies")), &cadmpeg_test_support::service_decode_context(),
+            ).expect("operand admission")
             .unwrap(),
 
             approximate: None,
@@ -304,8 +304,8 @@ fn design_completeness_audits_typed_construction_families() {
                 FaceSelection::Faces(vec![cadmpeg_ir::ids::FaceId::mint(
                     "test:model:entity#other-face",
                 )
-                .expect("identity grammar")]),
-            )
+                .expect("identity grammar")]), &cadmpeg_test_support::service_decode_context(),
+            ).expect("operand admission")
             .unwrap(),
 
             radius: RadiusSpec::Unresolved {

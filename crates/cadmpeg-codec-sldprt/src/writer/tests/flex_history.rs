@@ -1098,8 +1098,8 @@ fn encoder_writes_source_less_native_features() {
                         .expect("distinct bodies"),
                     native: "body-a".into(),
                 },
-                BodySelection::Native("body-b,body-c".into()),
-            )
+                BodySelection::Native("body-b,body-c".into()), &cadmpeg_test_support::service_decode_context(),
+            ).expect("operand admission")
             .unwrap(),
 
             op: cadmpeg_ir::features::BooleanKind::Join,

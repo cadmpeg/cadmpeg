@@ -10,9 +10,9 @@ fn nx_body_writing_thread_labels_retain_distinct_unresolved_families() {
     let mut source_properties = BTreeMap::new();
     source_properties.insert("body_write.0".to_string(), "witness".to_string());
 
-    let threads = body_writing_unresolved_feature_definition("THREADS", &source_properties);
+    let threads = body_writing_unresolved_feature_definition(&cadmpeg_test_support::service_decode_context(), "THREADS", &source_properties).expect("body-writing projection admission");
     let detailed =
-        body_writing_unresolved_feature_definition("DETAILED_THREAD", &source_properties);
+        body_writing_unresolved_feature_definition(&cadmpeg_test_support::service_decode_context(), "DETAILED_THREAD", &source_properties).expect("body-writing projection admission");
 
     assert_eq!(
         threads,
@@ -33,11 +33,11 @@ fn nx_non_body_writing_thread_labels_remain_unresolved_for_semantic_review() {
     let source_properties = BTreeMap::new();
 
     assert_eq!(
-        body_writing_unresolved_feature_definition("THREADS", &source_properties),
+        body_writing_unresolved_feature_definition(&cadmpeg_test_support::service_decode_context(), "THREADS", &source_properties).expect("body-writing projection admission"),
         None
     );
     assert_eq!(
-        body_writing_unresolved_feature_definition("DETAILED_THREAD", &source_properties),
+        body_writing_unresolved_feature_definition(&cadmpeg_test_support::service_decode_context(), "DETAILED_THREAD", &source_properties).expect("body-writing projection admission"),
         None
     );
 }

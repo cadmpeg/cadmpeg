@@ -418,8 +418,8 @@ fn combine_scope_projects_ordered_target_tools_and_retention() {
                         ]
                         .try_into()
                         .unwrap()
-                    )
-                )
+                    ), &cadmpeg_test_support::service_decode_context(),
+                ).expect("operand admission")
                 .unwrap(),
 
                 op: cadmpeg_ir::features::BooleanKind::Join,

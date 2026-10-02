@@ -5465,7 +5465,7 @@ fn attach_feature_operations(
                 sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch)),
             })
         } else {
-            let mut definition = if let Some(definition) = non_modeling_history_definition(
+            let history_definition = non_modeling_history_definition(
                 &label.value,
                 &label.objects.values(),
                 &outputs,
@@ -5477,10 +5477,12 @@ fn attach_feature_operations(
                     .map_or(0, Vec::len),
                 operation_payload_string_records.len(),
                 &source_properties,
-            )
-            .or_else(|| {
-                body_writing_unresolved_feature_definition(&label.value, &source_properties)
-            }) {
+            );
+            let fallback_definition = match history_definition {
+                Some(definition) => Some(definition),
+                None => body_writing_unresolved_feature_definition(ctx, &label.value, &source_properties)?,
+            };
+            let mut definition = if let Some(definition) = fallback_definition {
                 definition
             } else {
                 let mut placements = Vec::new();
@@ -5505,7 +5507,7 @@ fn attach_feature_operations(
                             .push(placement.try_clone_for_decode(ctx, "NX decoded IR value copy")?);
                     }
                 }
-                non_boolean_feature_definition_with_parameters(
+                non_boolean_feature_definition_with_parameters(ctx, 
                     &label.value,
                     &operation_payload_strings,
                     block_dimension_values,
@@ -8903,7 +8905,7 @@ pub(super) fn boolean_feature_definition(
         }
     };
     Ok(FeatureDefinition::Operation(FeatureOperation::Combine {
-        operands: cadmpeg_ir::features::CombineOperands::new(target, tools)
+        operands: cadmpeg_ir::features::CombineOperands::new(target, tools, ctx,)?
             .map_err(cadmpeg_core::CodecError::malformed)?,
 
         op: match operation.kind {
@@ -9147,7 +9149,7 @@ fn offset_store_trim_body_feature_definition(
             "NX feature projection text",
         )?,
     )?;
-    let Ok(operands) = cadmpeg_ir::features::TrimBodyOperands::new(target, tools) else {
+    let Ok(operands) = cadmpeg_ir::features::TrimBodyOperands::new(target, tools, ctx,)? else {
         return Ok(None);
     };
     Ok(Some(FeatureDefinition::Operation(
@@ -9296,8 +9298,8 @@ fn trim_body_feature_definition(
                     native_target,
                 )?
                 .into_selection(ctx)?,
-                BodySelection::Unresolved,
-            )
+                BodySelection::Unresolved, ctx,
+            )?
             .map_err(cadmpeg_core::CodecError::malformed)?,
 
             keep: BodyTrimSide::Unresolved,
@@ -9324,8 +9326,8 @@ fn trim_body_feature_definition(
         return Ok(FeatureDefinition::Operation(FeatureOperation::TrimBodies {
             operands: cadmpeg_ir::features::TrimBodyOperands::new(
                 BodySelection::Native(native_target),
-                BodySelection::Native(native_tools),
-            )
+                BodySelection::Native(native_tools), ctx,
+            )?
             .map_err(cadmpeg_core::CodecError::malformed)?,
 
             keep: BodyTrimSide::Unresolved,
@@ -9349,7 +9351,7 @@ fn trim_body_feature_definition(
         )?,
     )?;
     Ok(FeatureDefinition::Operation(FeatureOperation::TrimBodies {
-        operands: cadmpeg_ir::features::TrimBodyOperands::new(targets, tools)
+        operands: cadmpeg_ir::features::TrimBodyOperands::new(targets, tools, ctx,)?
             .map_err(cadmpeg_core::CodecError::malformed)?,
 
         keep: BodyTrimSide::Unresolved,

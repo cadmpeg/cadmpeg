@@ -5,7 +5,7 @@ mod admission;
 use admission::{RadiusAdmission, StandardAdmission};
 
 use super::{EdgeSelection, FaceSelection};
-use super::selection_overlap::{face_selections_overlap, standard_result};
+use super::selection_overlap::{face_selections_overlap, standard_result, OverlapAdmission};
 use crate::scalar::{
     FiniteReal, Fraction, InteriorAngle, Length, NonNegativeLength, PositiveLength,
 };
@@ -131,7 +131,18 @@ impl FullRoundFilletGroup {
         center_faces: FaceSelection,
         side_one_faces: FullRoundSideSelection,
         side_two_faces: FullRoundSideSelection,
-    ) -> Result<Self, &'static str> {
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<Result<Self, &'static str>, cadmpeg_core::decode::ResourceLimit> {
+        Self::build(ctx, center_faces, side_one_faces, side_two_faces)
+    }
+
+    fn build<S: OverlapAdmission>(
+        admission: &S,
+        center_faces: FaceSelection,
+        side_one_faces: FullRoundSideSelection,
+        side_two_faces: FullRoundSideSelection,
+    ) -> Result<Result<Self, &'static str>, S::Error> {
+        admission.work(0)?;
         fn explicit(side: &FullRoundSideSelection) -> Option<&FaceSelection> {
             match side {
                 FullRoundSideSelection::Explicit(faces) => Some(faces),
@@ -140,21 +151,20 @@ impl FullRoundFilletGroup {
         }
         let first = explicit(&side_one_faces);
         let second = explicit(&side_two_faces);
-        if first.is_some_and(|faces| standard_result(face_selections_overlap(&super::selection_overlap::StandardAdmission, &center_faces, faces)))
-            || second.is_some_and(|faces| standard_result(face_selections_overlap(&super::selection_overlap::StandardAdmission, &center_faces, faces)))
-            || first
-                .zip(second)
-                .is_some_and(|(first, second)| standard_result(face_selections_overlap(&super::selection_overlap::StandardAdmission, first, second)))
-        {
-            return Err(
-                "center_faces, side_one_faces and side_two_faces must be pairwise disjoint",
-            );
+        for pair in [Some(&center_faces).zip(first), Some(&center_faces).zip(second), first.zip(second)] {
+            if let Some((first, second)) = pair {
+                if face_selections_overlap(admission, first, second)? {
+                    return Ok(Err(
+                        "center_faces, side_one_faces and side_two_faces must be pairwise disjoint",
+                    ));
+                }
+            }
         }
-        Ok(Self {
+        Ok(Ok(Self {
             center: center_faces,
             side_one: side_one_faces,
             side_two: side_two_faces,
-        })
+        }))
     }
 
     /// Return the center-face selection.
@@ -176,7 +186,9 @@ impl FullRoundFilletGroup {
 impl<'de> Deserialize<'de> for FullRoundFilletGroup {
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         let wire = FullRoundFilletGroupWire::deserialize(deserializer)?;
-        Self::new(wire.center, wire.side_one, wire.side_two).map_err(serde::de::Error::custom)
+        standard_result(Self::build(
+            &super::selection_overlap::StandardAdmission, wire.center, wire.side_one, wire.side_two,
+        )).map_err(serde::de::Error::custom)
     }
 }
 

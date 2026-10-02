@@ -80,8 +80,8 @@ fn face_operand_and_full_round_owners_reject_each_overlap() {
     let center = face("center");
     let first = face("first");
     let second = face("second");
-    assert!(FaceBlendOperands::new(center.clone(), center.clone()).is_err());
-    assert!(ReplaceFaceOperands::new(center.clone(), center.clone()).is_err());
+    assert!(FaceBlendOperands::new(center.clone(), center.clone(), &cadmpeg_test_support::service_decode_context(),).expect("operand admission").is_err());
+    assert!(ReplaceFaceOperands::new(center.clone(), center.clone(), &cadmpeg_test_support::service_decode_context(),).expect("operand admission").is_err());
     for (one, two) in [
         (center.clone(), second.clone()),
         (first.clone(), center.clone()),
@@ -90,21 +90,21 @@ fn face_operand_and_full_round_owners_reject_each_overlap() {
         assert!(FullRoundFilletGroup::new(
             center.clone(),
             FullRoundSideSelection::Explicit(one),
-            FullRoundSideSelection::Explicit(two)
-        )
+            FullRoundSideSelection::Explicit(two), &cadmpeg_test_support::service_decode_context(),
+        ).expect("operand admission")
         .is_err());
     }
     assert!(FullRoundFilletGroup::new(
         center.clone(),
         FullRoundSideSelection::Explicit(first),
-        FullRoundSideSelection::Explicit(second.clone())
-    )
+        FullRoundSideSelection::Explicit(second.clone()), &cadmpeg_test_support::service_decode_context(),
+    ).expect("operand admission")
     .is_ok());
     assert!(FullRoundFilletGroup::new(
         center.clone(),
         FullRoundSideSelection::Explicit(center),
-        FullRoundSideSelection::Explicit(second)
-    )
+        FullRoundSideSelection::Explicit(second), &cadmpeg_test_support::service_decode_context(),
+    ).expect("operand admission")
     .is_err());
     assert!(SewBodySelection::try_from(BodySelection::NativeSet(
         vec!["single".into()].try_into().unwrap()

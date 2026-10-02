@@ -430,8 +430,8 @@ fn full_round_fillet_with_automatic_sides_is_complete() {
                             native: "native:center-group".into(),
                         },
                         FullRoundSideSelection::Automatic,
-                        FullRoundSideSelection::Automatic,
-                    )
+                        FullRoundSideSelection::Automatic, &cadmpeg_test_support::service_decode_context(),
+                    ).expect("operand admission")
                     .unwrap(),
                 ]
                 .try_into()

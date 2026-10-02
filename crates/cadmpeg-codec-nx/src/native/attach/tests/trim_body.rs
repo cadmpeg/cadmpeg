@@ -30,8 +30,8 @@ fn nx_trim_body_rejects_mixed_store_and_target_alias_tools() {
             operands: cadmpeg_ir::features::TrimBodyOperands::new(
                 BodySelection::local(vec![body.1.clone()], "nx:om-object-index#114".to_string())
                     .unwrap(),
-                BodySelection::Unresolved,
-            )
+                BodySelection::Unresolved, &cadmpeg_test_support::service_decode_context(),
+            ).expect("operand admission")
             .unwrap(),
 
             keep: BodyTrimSide::Unresolved,
@@ -65,8 +65,8 @@ fn nx_trim_body_rejects_mixed_store_and_target_alias_tools() {
                 operands: cadmpeg_ir::features::TrimBodyOperands::new(
                     BodySelection::local(vec![body.1], "nx:om-object-index#114".to_string())
                         .unwrap(),
-                    BodySelection::Unresolved
-                )
+                    BodySelection::Unresolved, &cadmpeg_test_support::service_decode_context(),
+                ).expect("operand admission")
                 .unwrap(),
 
                 keep: BodyTrimSide::Unresolved,

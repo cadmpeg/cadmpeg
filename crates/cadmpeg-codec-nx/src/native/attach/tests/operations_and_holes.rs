@@ -139,8 +139,8 @@ fn nx_boolean_keeps_body_namespace_proofs_atomic() {
         FeatureDefinition::Operation(FeatureOperation::Combine {
             operands: cadmpeg_ir::features::CombineOperands::new(
                 BodySelection::Native("nx:om-object-index#94".to_string()),
-                BodySelection::Native("nx:om-object-indices#122".to_string())
-            )
+                BodySelection::Native("nx:om-object-indices#122".to_string()), &cadmpeg_test_support::service_decode_context(),
+            ).expect("operand admission")
             .unwrap(),
 
             op: BooleanKind::Cut,
@@ -161,8 +161,8 @@ fn nx_boolean_keeps_body_namespace_proofs_atomic() {
         FeatureDefinition::Operation(FeatureOperation::Combine {
             operands: cadmpeg_ir::features::CombineOperands::new(
                 BodySelection::Native("nx:om-object-index#94".to_string()),
-                BodySelection::Native("nx:om-object-indices#122".to_string())
-            )
+                BodySelection::Native("nx:om-object-indices#122".to_string()), &cadmpeg_test_support::service_decode_context(),
+            ).expect("operand admission")
             .unwrap(),
 
             op: BooleanKind::Cut,
@@ -196,8 +196,8 @@ fn nx_boolean_keeps_body_namespace_proofs_atomic() {
                     vec!["nx:om-data-blocks-3:block#122".to_string()],
                     "nx:om-object-indices#122".to_string()
                 )
-                .unwrap()
-            )
+                .unwrap(), &cadmpeg_test_support::service_decode_context(),
+            ).expect("operand admission")
             .unwrap(),
 
             op: BooleanKind::Cut,
@@ -232,8 +232,8 @@ fn nx_boolean_keeps_body_namespace_proofs_atomic() {
         FeatureDefinition::Operation(FeatureOperation::Combine {
             operands: cadmpeg_ir::features::CombineOperands::new(
                 BodySelection::Native("nx:om-object-index#401".to_string()),
-                BodySelection::Native("nx:om-object-indices#402,403".to_string())
-            )
+                BodySelection::Native("nx:om-object-indices#402,403".to_string()), &cadmpeg_test_support::service_decode_context(),
+            ).expect("operand admission")
             .unwrap(),
 
             op: BooleanKind::Join,
@@ -505,8 +505,8 @@ fn nx_trim_body_retains_exact_input_store_target_and_tools() {
                     vec!["nx:om-data-blocks-2:block#113".to_string()],
                     "nx:om-object-indices#113".to_string()
                 )
-                .unwrap()
-            )
+                .unwrap(), &cadmpeg_test_support::service_decode_context(),
+            ).expect("operand admission")
             .unwrap(),
 
             keep: BodyTrimSide::Unresolved,
@@ -528,8 +528,8 @@ fn nx_trim_body_retains_exact_input_store_target_and_tools() {
                     "nx:om-object-index#114".to_string()
                 )
                 .unwrap(),
-                BodySelection::Unresolved
-            )
+                BodySelection::Unresolved, &cadmpeg_test_support::service_decode_context(),
+            ).expect("operand admission")
             .unwrap(),
 
             keep: BodyTrimSide::Unresolved,
@@ -572,8 +572,8 @@ fn nx_trim_body_projects_distinct_target_and_ordered_tools() {
                     vec!["nx:om-body-object#20".to_string()],
                     "nx:om-object-indices#20".to_string()
                 )
-                .unwrap()
-            )
+                .unwrap(), &cadmpeg_test_support::service_decode_context(),
+            ).expect("operand admission")
             .unwrap(),
 
             keep: BodyTrimSide::Unresolved,
@@ -604,8 +604,8 @@ fn nx_trim_body_projects_distinct_target_and_ordered_tools() {
                         .expect("identity grammar")], &cadmpeg_test_support::service_decode_context())
                     .expect("distinct bodies"),
                     native: "nx:om-object-indices#20".to_string(),
-                }
-            )
+                }, &cadmpeg_test_support::service_decode_context(),
+            ).expect("operand admission")
             .unwrap(),
 
             keep: BodyTrimSide::Unresolved,
@@ -620,8 +620,8 @@ fn nx_trim_body_projects_distinct_target_and_ordered_tools() {
                     "nx:om-object-index#10".to_string()
                 )
                 .unwrap(),
-                BodySelection::Unresolved
-            )
+                BodySelection::Unresolved, &cadmpeg_test_support::service_decode_context(),
+            ).expect("operand admission")
             .unwrap(),
 
             keep: BodyTrimSide::Unresolved,
@@ -1096,8 +1096,8 @@ fn nx_mainstream_operation_labels_project_typed_unresolved_definitions() {
             FeatureDefinition::Operation(FeatureOperation::Combine {
                 operands: cadmpeg_ir::features::CombineOperands::new(
                     BodySelection::Unresolved,
-                    BodySelection::Unresolved
-                )
+                    BodySelection::Unresolved, &cadmpeg_test_support::service_decode_context(),
+                ).expect("operand admission")
                 .unwrap(),
 
                 op,
@@ -1235,8 +1235,8 @@ fn nx_mainstream_operation_labels_project_typed_unresolved_definitions() {
         FeatureDefinition::Operation(FeatureOperation::TrimBodies {
             operands: cadmpeg_ir::features::TrimBodyOperands::new(
                 BodySelection::Unresolved,
-                BodySelection::Unresolved
-            )
+                BodySelection::Unresolved, &cadmpeg_test_support::service_decode_context(),
+            ).expect("operand admission")
             .unwrap(),
 
             keep: BodyTrimSide::Unresolved,

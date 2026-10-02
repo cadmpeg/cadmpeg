@@ -98,8 +98,8 @@ fn combine_projection_error(policy: DecodePolicy) -> cadmpeg_core::CodecError {
             FeatureDefinition::Operation(FeatureOperation::Combine {
                 operands: CombineOperands::new(
                     BodySelection::Unresolved,
-                    BodySelection::Unresolved,
-                )
+                    BodySelection::Unresolved, &cadmpeg_test_support::service_decode_context(),
+                ).expect("operand admission")
                 .unwrap(),
                 op: BooleanKind::Join,
                 keep_tools: false,

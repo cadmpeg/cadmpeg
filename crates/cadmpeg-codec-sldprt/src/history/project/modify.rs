@@ -304,8 +304,8 @@ pub(super) fn project_combine(
         property_text(ctx, feature, "Target")?
             .map_or(BodySelection::Unresolved, BodySelection::Native),
         property_text(ctx, feature, "Tools")?
-            .map_or(BodySelection::Unresolved, BodySelection::Native),
-    )
+            .map_or(BodySelection::Unresolved, BodySelection::Native), ctx,
+    )?
     .ok();
     Ok(operands.map(|operands| {
         FeatureDefinition::Operation(FeatureOperation::Combine {
@@ -415,8 +415,8 @@ pub(super) fn project_replace_face(
     };
     Ok(cadmpeg_ir::features::ReplaceFaceOperands::new(
         FaceSelection::Native(faces),
-        FaceSelection::Native(replacement),
-    )
+        FaceSelection::Native(replacement), ctx,
+    )?
     .ok()
     .map(|operands| FeatureDefinition::Operation(FeatureOperation::ReplaceFace { operands })))
 }

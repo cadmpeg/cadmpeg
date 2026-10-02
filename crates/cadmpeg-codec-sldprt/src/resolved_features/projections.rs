@@ -1871,8 +1871,8 @@ pub(crate) fn project_compact_surface_selections(
                                     ),
                                     cadmpeg_ir::features::edge_treatments::FullRoundSideSelection::Explicit(
                                         side_two_faces,
-                                    ),
-                                )
+                                    ), ctx,
+                                )?
                                 .map_err(cadmpeg_core::CodecError::malformed)?,
                             ),
                         });
