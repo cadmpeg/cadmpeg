@@ -2999,7 +2999,7 @@ pub(crate) fn bind_sketch_feature_geometry(
                             ),
                             "f3d extrude spatial selection ref",
                         )?;
-                        *profile = match ProfileRef::spatial_sketch_selection_for_decode(
+                        *profile = match ProfileRef::spatial_sketch_selection(
                             sketch_id,
                             vec![selection],
                             ctx,
@@ -3025,7 +3025,7 @@ pub(crate) fn bind_sketch_feature_geometry(
                             "f3d extrude spatial profile index",
                         )?;
                     }
-                    *profile = match ProfileRef::spatial_sketch_profiles_for_decode(
+                    *profile = match ProfileRef::spatial_sketch_profiles(
                         spatial
                             .id
                             .try_clone_for_decode(ctx, "f3d extrude spatial sketch id")?,

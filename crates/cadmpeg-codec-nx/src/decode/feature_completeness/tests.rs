@@ -580,14 +580,14 @@ fn nx_selection_completeness_requires_nonempty_unique_identities() {
     assert!(planar_profile_ref_is_incomplete(
         &PlanarProfileRef::sketch_selection(
             cadmpeg_ir::sketches::SketchId::mint("test:test:sketch#0").unwrap(),
-            vec!["nx:sketch-selection#0".into()]
-        )
+            vec!["nx:sketch-selection#0".into()], &cadmpeg_test_support::service_decode_context(),
+        ).expect("profile membership admission")
         .unwrap()
     ));
     assert!(PlanarProfileRef::sketch_profiles(
         cadmpeg_ir::sketches::SketchId::mint("test:test:sketch#0").unwrap(),
-        Vec::new()
-    )
+        Vec::new(), &cadmpeg_test_support::service_decode_context(),
+    ).expect("profile membership admission")
     .is_err());
     assert!(path_ref_is_incomplete(&PathRef::Curves(Vec::new())));
     assert!(path_ref_is_incomplete(

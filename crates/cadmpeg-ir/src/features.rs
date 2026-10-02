@@ -9080,20 +9080,10 @@ impl PlanarProfileRef {
             regions: regions.try_into()?,
         })
     }
-    /// Admits distinct profile indices in one planar sketch.
-    pub fn sketch_profiles(
-        sketch: crate::sketches::SketchId,
-        profiles: Vec<u32>,
-    ) -> Result<Self, BodySelectionError> {
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let policy = cadmpeg_core::decode::DecodePolicy::default();
-        let (ctx, _) =
-            cadmpeg_core::decode::DecodeContext::from_root_bytes_limit(&[], &arena, &policy)?;
-        Self::sketch_profiles_for_decode(sketch, profiles, &ctx)?
-    }
+
 
     /// Admit members with a scoped uniqueness index.
-    pub fn sketch_profiles_for_decode(
+    pub fn sketch_profiles(
         sketch: crate::sketches::SketchId,
         profiles: Vec<u32>,
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
@@ -9108,20 +9098,10 @@ impl PlanarProfileRef {
         };
         Ok(Ok(Self::SketchProfiles { sketch, profiles }))
     }
-    /// Admits distinct profile entities in one sketch.
-    pub fn sketch_entities(
-        sketch: crate::sketches::SketchId,
-        entities: Vec<crate::sketches::SketchEntityId>,
-    ) -> Result<Self, BodySelectionError> {
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let policy = cadmpeg_core::decode::DecodePolicy::default();
-        let (ctx, _) =
-            cadmpeg_core::decode::DecodeContext::from_root_bytes_limit(&[], &arena, &policy)?;
-        Self::sketch_entities_for_decode(sketch, entities, &ctx)?
-    }
+
 
     /// Admit members with a scoped uniqueness index.
-    pub fn sketch_entities_for_decode(
+    pub fn sketch_entities(
         sketch: crate::sketches::SketchId,
         entities: Vec<crate::sketches::SketchEntityId>,
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
@@ -9136,20 +9116,10 @@ impl PlanarProfileRef {
         };
         Ok(Ok(Self::SketchEntities { sketch, entities }))
     }
-    /// Admits native profile selections in one sketch.
-    pub fn sketch_selection(
-        sketch: crate::sketches::SketchId,
-        selections: Vec<String>,
-    ) -> Result<Self, BodySelectionError> {
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let policy = cadmpeg_core::decode::DecodePolicy::default();
-        let (ctx, _) =
-            cadmpeg_core::decode::DecodeContext::from_root_bytes_limit(&[], &arena, &policy)?;
-        Self::sketch_selection_for_decode(sketch, selections, &ctx)?
-    }
+
 
     /// Admit members with a scoped uniqueness index.
-    pub fn sketch_selection_for_decode(
+    pub fn sketch_selection(
         sketch: crate::sketches::SketchId,
         selections: Vec<String>,
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
@@ -9207,20 +9177,10 @@ impl PlanarProfileRef {
 }
 
 impl ProfileRef {
-    /// Admits distinct profile indices in one spatial sketch.
-    pub fn spatial_sketch_profiles(
-        sketch: crate::sketches::SpatialSketchId,
-        profiles: Vec<u32>,
-    ) -> Result<Self, BodySelectionError> {
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let policy = cadmpeg_core::decode::DecodePolicy::default();
-        let (ctx, _) =
-            cadmpeg_core::decode::DecodeContext::from_root_bytes_limit(&[], &arena, &policy)?;
-        Self::spatial_sketch_profiles_for_decode(sketch, profiles, &ctx)?
-    }
+
 
     /// Admit members with a scoped uniqueness index.
-    pub fn spatial_sketch_profiles_for_decode(
+    pub fn spatial_sketch_profiles(
         sketch: crate::sketches::SpatialSketchId,
         profiles: Vec<u32>,
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
@@ -9235,20 +9195,10 @@ impl ProfileRef {
         };
         Ok(Ok(Self::SpatialSketchProfiles { sketch, profiles }))
     }
-    /// Admits native profile selections in one spatial sketch.
-    pub fn spatial_sketch_selection(
-        sketch: crate::sketches::SpatialSketchId,
-        selections: Vec<String>,
-    ) -> Result<Self, BodySelectionError> {
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let policy = cadmpeg_core::decode::DecodePolicy::default();
-        let (ctx, _) =
-            cadmpeg_core::decode::DecodeContext::from_root_bytes_limit(&[], &arena, &policy)?;
-        Self::spatial_sketch_selection_for_decode(sketch, selections, &ctx)?
-    }
+
 
     /// Admit members with a scoped uniqueness index.
-    pub fn spatial_sketch_selection_for_decode(
+    pub fn spatial_sketch_selection(
         sketch: crate::sketches::SpatialSketchId,
         selections: Vec<String>,
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
@@ -9266,20 +9216,10 @@ impl ProfileRef {
 }
 
 impl PathRef {
-    /// Admits distinct path curves in one planar sketch.
-    pub fn sketch_curves(
-        sketch: crate::sketches::SketchId,
-        curves: Vec<crate::sketches::SketchEntityId>,
-    ) -> Result<Self, BodySelectionError> {
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let policy = cadmpeg_core::decode::DecodePolicy::default();
-        let (ctx, _) =
-            cadmpeg_core::decode::DecodeContext::from_root_bytes_limit(&[], &arena, &policy)?;
-        Self::sketch_curves_for_decode(sketch, curves, &ctx)?
-    }
+
 
     /// Admit members with a scoped uniqueness index.
-    pub fn sketch_curves_for_decode(
+    pub fn sketch_curves(
         sketch: crate::sketches::SketchId,
         curves: Vec<crate::sketches::SketchEntityId>,
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
@@ -9295,20 +9235,10 @@ impl PathRef {
         Ok(Ok(Self::SketchCurves { sketch, curves }))
     }
 
-    /// Admits distinct path curves in one spatial sketch.
-    pub fn spatial_sketch_curves(
-        sketch: crate::sketches::SpatialSketchId,
-        curves: Vec<crate::sketches::SpatialSketchEntityId>,
-    ) -> Result<Self, BodySelectionError> {
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let policy = cadmpeg_core::decode::DecodePolicy::default();
-        let (ctx, _) =
-            cadmpeg_core::decode::DecodeContext::from_root_bytes_limit(&[], &arena, &policy)?;
-        Self::spatial_sketch_curves_for_decode(sketch, curves, &ctx)?
-    }
+
 
     /// Admit members with a scoped uniqueness index.
-    pub fn spatial_sketch_curves_for_decode(
+    pub fn spatial_sketch_curves(
         sketch: crate::sketches::SpatialSketchId,
         curves: Vec<crate::sketches::SpatialSketchEntityId>,
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
