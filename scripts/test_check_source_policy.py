@@ -1663,6 +1663,83 @@ impl Reader { fn read(&self) { values.iter().any(predicate); } }
         self.assertEqual([(f.path, f.line) for f in findings], [("crates/cadmpeg-codec-demo/src/charged.rs", 2)])
 
 
+    def test_primitive_checked_results_and_match_arms_have_fixed_comparisons(self):
+        self.write(self.PATH, """fn read(ctx: &DecodeContext<'_>, values: &[u8], count: usize) {
+    let required = values.len().checked_add(count).ok_or_else(error)?;
+    let minimum = match std::mem::size_of::<u64>() { 1 => 8, 2..=1024 => 4, _ => 1 };
+    required.max(minimum);
+    values.capacity().checked_mul(2).ok_or_else(error)?.max(required).max(minimum);
+    std::mem::align_of::<u64>().max(std::mem::align_of::<usize>());
+    let heap = match count { 0 => first, _ => second };
+    heap.min(other);
+}""")
+        self.assertEqual([f.line for f in self.findings("uncharged_decode_work")], [8])
+
+    def test_declared_accessor_and_field_types_prove_scalar_work(self):
+        self.write(self.PATH, """struct Limits { ceiling: u64 }
+struct Policy { limits: Limits }
+struct Reader<'a> { ctx: &'a DecodeContext<'a>, policy: Policy }
+impl Reader<'_> {
+    fn policy(&self) -> &Policy { &self.policy }
+    fn written(&self) -> u64 { 0 }
+    fn read(&self, wanted: u64) {
+        self.policy().limits.ceiling.min(wanted);
+        self.written() != wanted;
+    }
+}""")
+        self.assertEqual(self.findings("uncharged_decode_work"), [])
+
+    def test_accessor_types_stay_with_their_owner(self):
+        self.write(self.PATH, """struct Fixed<'a> { ctx: &'a DecodeContext<'a> }
+struct Heap<'a> { ctx: &'a DecodeContext<'a> }
+impl Fixed<'_> { fn value(&self) -> usize { 0 } }
+impl Heap<'_> {
+    fn value(&self) -> String { text }
+    fn read(&self, other: String) { self.value().min(other); }
+}
+fn read(ctx: &DecodeContext<'_>, heap: Heap<'_>, other: String) {
+    heap.value() == other;
+    heap.value().min(other);
+}""")
+        self.assertEqual([f.line for f in self.findings("uncharged_decode_work")], [6, 9, 10])
+
+    def test_multiline_field_initializers_keep_their_declared_type(self):
+        self.write(self.PATH, """struct Reader<'a> { ctx: &'a DecodeContext<'a>, limit: u64, text: String }
+impl Reader<'_> {
+    fn read(&self, other: String) {
+        let limit = self
+            .limit;
+        limit.min(upper);
+        let text = self
+            .text;
+        text.min(other);
+    }
+}""")
+        self.assertEqual([f.line for f in self.findings("uncharged_decode_work")], [9])
+
+    def test_runtime_range_index_has_scalar_comparison_work(self):
+        self.write(self.PATH, """fn read(ctx: &DecodeContext<'_>, values: &[usize]) {
+    for index in 0..values.len() {
+        ctx.charge_work(1, "step")?;
+        while destinations[index] != index { ctx.charge_work(1, "swap")?; swap(); }
+    }
+    index == unknown;
+    for index in texts { ctx.charge_work(1, "step")?; index == other; }
+}""")
+        self.assertEqual([f.line for f in self.findings("uncharged_decode_work")], [6, 7])
+
+    def test_fixed_array_return_does_not_exempt_heap_child_comparisons(self):
+        self.write(self.PATH, """struct Reader<'a> { ctx: &'a DecodeContext<'a> }
+impl Reader<'_> {
+    fn names(&self) -> [String; 4] { make_names() }
+    fn read(&self) {
+        for text in self.names() { text == other; }
+        self.names().cmp(&other);
+    }
+}""")
+        self.assertEqual([f.line for f in self.findings("uncharged_decode_work")], [5, 6])
+
+
 class SourcePolicyCommand(TempSourceCase):
     def run_check(self, *args: str) -> tuple[int, str]:
         output = io.StringIO()

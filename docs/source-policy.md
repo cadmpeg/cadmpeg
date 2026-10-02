@@ -112,7 +112,8 @@ Other conditions remain production, including `cfg(not(test))` and
 `cfg(any(feature = "examples", test))`. Comments and literals are masked
 before test-item boundaries and vector repeats are scanned.
 
-The checker recognizes source forms, not Rust types or data flow. It does not
+The checker recognizes source forms, type annotations and direct local extents.
+It does not perform Rust type checking or general data-flow analysis. It does not
 prove numerical correctness, memory safety, loss fidelity, or test ownership.
 Compiler checks, runtime validation, tests, and review remain necessary.
 Policy changes edit the relevant rule and its tests; there is no global budget
@@ -173,7 +174,11 @@ elements have fixed comparison work. Explicit primitive types and structural
 count but still require charged child comparisons. A range with a runtime
 bound and an input-sized iterator with `take` remain input-sized. Fixed byte
 comparisons against literals and scalar count queries stay outside the rule.
-A scalar `min` or `max` with an argument is constant time.
+A primitive scalar `min` or `max` with an argument has fixed comparison work.
+Declared field and method result types stay attached to their record owner.
+Primitive checked results, primitive match-arm results, standard size and
+alignment queries, and numeric range indices also prove scalar comparison
+work. A runtime range still needs iteration admission.
 
 A loop admits each iteration before its first effect on every control-flow
 path. Admission can be `ctx.charge_work(..., operation)?`, the resource-only
@@ -183,8 +188,10 @@ the caller context and propagates refusal with `?`. The checker resolves
 charged context methods through the core method call graph. A charge on only
 one branch does not admit a loop. A direct
 `.map_err(Error::ResourceLimit)?` preserves the resource payload and is also
-admitted; closures and other error constructors are not admitted. A positive literal or a checked positive increment followed directly by
-`ok_or` or `ok_or_else` and `?` charges the iteration. Input-dependent body work has a separate charge. A scan can instead use a dominating charge before it
+admitted; closures and other error constructors are not admitted. A positive
+literal or a checked positive increment followed directly by `ok_or` or
+`ok_or_else` and `?` charges the iteration. Input-dependent body work has a
+separate charge. A scan can instead use a dominating charge before it
 with its exact extent, `u64_from_index(values.len())`, or the capacity of a
 hash table whose buckets are scanned. A simple local extent
 alias is accepted. Comparison and search operands can use the same admission,
@@ -195,6 +202,9 @@ admits one scan. Conditional, later, dropped,
 zero, unrelated and reused charges do not admit it. Nested scans need their
 own charge. Bodies and predicates with further input-dependent work charge
 that work separately.
+Loop conditions are repeated work. A charge outside the loop does not admit
+their searches. Filtering, skipping and flattening can visit source items
+before a yielded iteration starts; a body charge does not admit those visits.
 
 Use `ctx.position_by(values, fallible_predicate, operation)?` for a search
 and `ctx.equal_bytes(left, right, operation)?` for decoded byte equality.
