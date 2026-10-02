@@ -635,7 +635,7 @@ fn auxiliary_edit_retains_opaque_partition_payload() {
         let source_fidelity = decoded.source_fidelity_mut();
         let mut annotations =
             cadmpeg_ir::AnnotationBuilder::resume(std::mem::take(&mut source_fidelity.annotations));
-        annotations.retain_exactness(|_| false);
+        annotations.retain_exactness(&cadmpeg_test_support::service_decode_context(), |_| Ok(false)).unwrap();
         source_fidelity.annotations = annotations.build();
     }
     assert_eq!(

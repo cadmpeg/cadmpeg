@@ -480,10 +480,11 @@ impl<Storage: AnnotationStorage> AnnotationBuilder<Storage> {
         Ok(self)
     }
 
-    /// Retain exactness selected by identity.
-    pub fn retain_exactness(&mut self, keep: impl FnMut(&str) -> bool) -> &mut Self {
-        self.state.retain_exactness(keep);
-        self
+    /// Admit decisions before retaining exactness selected by identity.
+    pub fn retain_exactness(&mut self, ctx: &DecodeContext<'_>, keep: impl FnMut(&str) -> Result<bool, CodecError>) -> Result<&mut Self, CodecError> {
+        self.update(|state| retain_identity_entries(ctx, &mut state.annotations.exactness, keep,
+            "annotation exactness decisions", "annotation exactness predicate scan", "annotation exactness retention scan"))?;
+        Ok(self)
     }
 
     /// Remove annotations for one entity.
@@ -812,12 +813,6 @@ impl AnnotationState {
         }
     }
 
-    /// Retain exactness annotations selected by identity.
-    fn retain_exactness(&mut self, mut keep: impl FnMut(&str) -> bool) -> &mut Self {
-        self.annotations.exactness.retain(|id, _| keep(id));
-        self
-    }
-
     /// Remove all annotations for an entity that was removed from the model.
     fn remove_entity(&mut self, id: impl Display) {
         let id = id.to_string();
@@ -851,6 +846,26 @@ fn admit_identity_work(
         .and_then(|work| work.checked_add(1))
         .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
     ctx.charge_work(work, operation)
+}
+
+/// Complete all fallible decisions before changing an identity-keyed map.
+pub(crate) fn retain_identity_entries<V>(
+    ctx: &DecodeContext<'_>, entries: &mut BTreeMap<String, V>,
+    mut keep: impl FnMut(&str) -> Result<bool, CodecError>,
+    decisions_operation: &'static str, predicate_operation: &'static str, retention_operation: &'static str,
+) -> Result<(), CodecError> {
+    let count = entries.len();
+    let mut decisions = ctx.with_scoped_storage(decisions_operation, || {
+        ctx.retained_vec(count, decisions_operation)
+    })?;
+    for identity in entries.keys() {
+        ctx.charge_work(1, predicate_operation)?;
+        decisions.0.push(keep(identity)?);
+    }
+    ctx.charge_work(u64_from_index(count), retention_operation)?;
+    let mut decisions_iter = decisions.0.iter();
+    entries.retain(|_, _| decisions_iter.next() == Some(&true));
+    Ok(())
 }
 
 /// Admit rebuilding two disjoint nonempty maps before their entries move.
@@ -919,6 +934,12 @@ impl Annotations {
             )?;
         }
         Ok(AnnotationTransaction { annotations, storage })
+    }
+
+    /// Complete admitted provenance decisions before changing its table.
+    pub fn retain_provenance(&mut self, ctx: &DecodeContext<'_>, keep: impl FnMut(&str) -> Result<bool, CodecError>) -> Result<(), CodecError> {
+        retain_identity_entries(ctx, &mut self.provenance, keep,
+            "annotation provenance decisions", "annotation provenance predicate scan", "annotation provenance retention scan")
     }
 
     /// Remap both tables while charging temporary indices and retained keys.
@@ -1318,6 +1339,7 @@ mod tests {
     }
 
     mod identity_merges;
+    mod retention;
 
     use std::collections::BTreeMap;
 

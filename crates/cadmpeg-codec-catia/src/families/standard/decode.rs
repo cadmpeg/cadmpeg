@@ -2091,11 +2091,13 @@ fn merge_standard_population_annotations(
 ) -> Result<Result<(), cadmpeg_ir::annotations::AnnotationIdentityCollision>, CodecError> {
     // Only standard-owned entities survive retain_standard_population_model.
     // The first population retains the shared payload and other carriers.
-    source
-        .provenance
-        .retain(|id, _| id.starts_with("catia:standard:"));
+    let mut keep = |id: &str| {
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(id.len().min("catia:standard:".len())), "filter standard annotation identity")?;
+        Ok(id.starts_with("catia:standard:"))
+    };
+    source.retain_provenance(ctx, &mut keep)?;
     let mut annotations = AnnotationBuilder::resume(source);
-    annotations.retain_exactness(|id| id.starts_with("catia:standard:"));
+    annotations.retain_exactness(ctx, keep)?;
     source = annotations.build();
     if let Err(collision) = source.map_ids(
         ctx,

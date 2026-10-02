@@ -487,21 +487,10 @@ impl ModelDraft<DraftAccounting> {
     pub fn retain_exactness(
         &mut self,
         ctx: &DecodeContext<'_>,
-        mut keep: impl FnMut(&str) -> Result<bool, CodecError>,
+        keep: impl FnMut(&str) -> Result<bool, CodecError>,
     ) -> Result<(), CodecError> {
-        let count = self.accounting.exactness.len();
-        let decisions = ctx.with_scoped_storage("draft exactness decisions", || {
-            let mut decisions = ctx.retained_vec(count, "draft exactness decisions")?;
-            for identity in self.accounting.exactness.keys() {
-                ctx.charge_work(1, "draft exactness predicate scan")?;
-                decisions.push(keep(identity)?);
-            }
-            Ok::<_, CodecError>(decisions)
-        })?;
-        ctx.charge_work(u64_from_index(count), "draft exactness retention scan")?;
-        let mut decisions_iter = decisions.0.iter();
-        self.accounting.exactness.retain(|_, _| decisions_iter.next() == Some(&true));
-        Ok(())
+        crate::annotations::retain_identity_entries(ctx, &mut self.accounting.exactness, keep,
+            "draft exactness decisions", "draft exactness predicate scan", "draft exactness retention scan")
     }
 
     /// Commit decoded entities and transfer their owned exactness entries.

@@ -1848,9 +1848,15 @@ fn retain_live_annotations(
             "nx live annotation identities",
         )?;
     }
-    annotations.provenance.retain(|id, _| ids.contains(id));
+    let mut keep = |id: &str| {
+        let work = ids.len().checked_add(1).and_then(|count| id.len().checked_add(1).and_then(|bytes| count.checked_mul(bytes)))
+            .ok_or_else(|| ctx.refuse_codec_limit("nx annotation identity lookup", u64::MAX - 1, u64::MAX))?;
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(work), "nx annotation identity lookup")?;
+        Ok(ids.contains(id))
+    };
+    annotations.retain_provenance(ctx, &mut keep)?;
     let mut builder = AnnotationBuilder::resume(std::mem::take(annotations));
-    builder.retain_exactness(|id| ids.contains(id));
+    builder.retain_exactness(ctx, keep)?;
     *annotations = builder.build();
     Ok(())
 }
