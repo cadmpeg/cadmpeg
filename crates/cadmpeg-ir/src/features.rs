@@ -107,6 +107,7 @@ macro_rules! clone_enum_for_decode {
 
 mod body_selection;
 mod decode_clone;
+mod selection_overlap;
 pub(crate) mod member_work;
 
 pub mod edge_treatments;
@@ -2570,7 +2571,7 @@ selection_operands!(
     FaceSelection,
     first_faces,
     second_faces,
-    |first, second| !face_selections_overlap(first, second)
+    |first, second| !selection_overlap::standard_result(selection_overlap::face_selections_overlap(&selection_overlap::StandardAdmission, first, second))
 );
 selection_operands!(
     ReplaceFaceOperands,
@@ -2578,7 +2579,7 @@ selection_operands!(
     FaceSelection,
     targets,
     replacements,
-    |first, second| !face_selections_overlap(first, second),
+    |first, second| !selection_overlap::standard_result(selection_overlap::face_selections_overlap(&selection_overlap::StandardAdmission, first, second)),
     try_edit
 );
 selection_operands!(
@@ -2587,7 +2588,7 @@ selection_operands!(
     BodySelection,
     first,
     second,
-    |first, second| !body_selections_overlap(first, second)
+    |first, second| !selection_overlap::standard_result(selection_overlap::body_selections_overlap(&selection_overlap::StandardAdmission, first, second))
 );
 selection_operands!(
     CombineOperands,
@@ -2596,7 +2597,7 @@ selection_operands!(
     target,
     tools,
     |first, second| known_body_count(first).is_none_or(|count| count == 1)
-        && !body_selections_overlap(first, second),
+        && !selection_overlap::standard_result(selection_overlap::body_selections_overlap(&selection_overlap::StandardAdmission, first, second)),
     try_edit
 );
 selection_operands!(
@@ -2605,7 +2606,7 @@ selection_operands!(
     BodySelection,
     targets,
     tools,
-    |first, second| !body_selections_overlap(first, second)
+    |first, second| !selection_overlap::standard_result(selection_overlap::body_selections_overlap(&selection_overlap::StandardAdmission, first, second))
 );
 
 impl CombineOperands {
@@ -2619,101 +2620,6 @@ impl ReplaceFaceOperands {
     /// Move both selections out of this admitted pair.
     pub fn into_parts(self) -> (FaceSelection, FaceSelection) {
         (self.targets, self.replacements)
-    }
-}
-
-fn face_selections_overlap(first: &FaceSelection, second: &FaceSelection) -> bool {
-    fn direct(selection: &FaceSelection) -> Option<&[crate::ids::FaceId]> {
-        match selection {
-            FaceSelection::Faces(faces) | FaceSelection::Resolved { faces, .. } => {
-                Some(faces.as_slice())
-            }
-            _ => None,
-        }
-    }
-    fn historical(
-        selection: &FaceSelection,
-    ) -> Option<(
-        &crate::ids::FeatureInputTopologyId,
-        &[crate::ids::HistoricalFaceId],
-    )> {
-        match selection {
-            FaceSelection::Historical { state, faces, .. } => Some((state, faces.as_slice())),
-            FaceSelection::HistoricalPartial { state, faces, .. } => {
-                Some((state, faces.as_slice()))
-            }
-            _ => None,
-        }
-    }
-    if let Some((first, second)) = direct(first).zip(direct(second)) {
-        return first.iter().any(|face| second.contains(face));
-    }
-    if let Some(((first_state, first), (second_state, second))) =
-        historical(first).zip(historical(second))
-    {
-        return first_state == second_state && first.iter().any(|face| second.contains(face));
-    }
-    match (first, second) {
-        (
-            FaceSelection::Generated { faces: first, .. },
-            FaceSelection::Generated { faces: second, .. },
-        ) => first.iter().any(|face| second.contains(face)),
-        _ => false,
-    }
-}
-
-fn body_selections_overlap(first: &BodySelection, second: &BodySelection) -> bool {
-    fn any_direct(
-        selection: &BodySelection,
-        predicate: impl FnMut(&crate::ids::BodyId) -> bool,
-    ) -> Option<bool> {
-        match selection {
-            BodySelection::Bodies(bodies) | BodySelection::Resolved { bodies, .. } => {
-                Some(bodies.iter().any(predicate))
-            }
-            BodySelection::ResolvedSet { members } => Some(members.bodies().any(predicate)),
-            _ => None,
-        }
-    }
-    fn historical_state(selection: &BodySelection) -> Option<&crate::ids::FeatureInputTopologyId> {
-        match selection {
-            BodySelection::Historical { state, .. }
-            | BodySelection::HistoricalSet { state, .. } => Some(state),
-            _ => None,
-        }
-    }
-    fn any_historical(
-        selection: &BodySelection,
-        predicate: impl FnMut(&crate::ids::HistoricalBodyId) -> bool,
-    ) -> bool {
-        match selection {
-            BodySelection::Historical { bodies, .. } => bodies.iter().any(predicate),
-            BodySelection::HistoricalSet { members, .. } => members.bodies().any(predicate),
-            _ => false,
-        }
-    }
-    if let Some(overlap) = any_direct(first, |body| {
-        any_direct(second, |candidate| body == candidate) == Some(true)
-    }) {
-        return overlap;
-    }
-    if let Some((first_state, second_state)) = historical_state(first).zip(historical_state(second))
-    {
-        return first_state == second_state
-            && any_historical(first, |body| {
-                any_historical(second, |candidate| body == candidate)
-            });
-    }
-    match (first, second) {
-        (
-            BodySelection::Generated { bodies: first, .. },
-            BodySelection::Generated { bodies: second, .. },
-        ) => first.iter().any(|body| second.contains(body)),
-        (
-            BodySelection::Local { bodies: first, .. },
-            BodySelection::Local { bodies: second, .. },
-        ) => first.iter().any(|body| second.contains(body)),
-        _ => false,
     }
 }
 
