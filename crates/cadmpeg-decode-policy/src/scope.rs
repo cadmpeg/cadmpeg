@@ -175,9 +175,13 @@ pub(crate) fn collect<'tcx>(tcx: TyCtxt<'tcx>, owners: &[LocalDefId]) -> Graph {
         if !crate::production(tcx, owner.to_def_id()) && !derived_operation && !initializer {
             continue;
         }
-        if let Some(method) = tcx.opt_associated_item(owner.to_def_id())
-            .and_then(|item| item.trait_item_def_id()) {
-            graph.symbolic_edges.insert((key(tcx, method), key(tcx, owner.to_def_id())));
+        if let Some(method) = tcx
+            .opt_associated_item(owner.to_def_id())
+            .and_then(|item| item.trait_item_def_id())
+        {
+            graph
+                .symbolic_edges
+                .insert((key(tcx, method), key(tcx, owner.to_def_id())));
         }
         let mut findings = Findings::default();
         Calls {
@@ -219,8 +223,8 @@ impl<'tcx> Calls<'_, '_, 'tcx> {
     }
 
     fn coercion(&mut self, source: ty::Ty<'tcx>, target: ty::Ty<'tcx>) {
-        let deferred = source.has_non_region_param()
-            && !root(self.analysis.tcx, self.analysis.typing_owner);
+        let deferred =
+            source.has_non_region_param() && !root(self.analysis.tcx, self.analysis.typing_owner);
         let mut instances = Vec::new();
         if !objects::targets(
             self.analysis.tcx,
@@ -228,13 +232,17 @@ impl<'tcx> Calls<'_, '_, 'tcx> {
             source,
             target,
             &mut instances,
-        ) && !deferred {
+        ) && !deferred
+        {
             self.graph.uncertain.insert(self.caller.clone());
         }
         for instance in instances {
             if deferred {
                 if types::checked(self.analysis.tcx, instance.def_id()) {
-                    self.graph.symbolic_edges.insert((self.caller.clone(), key(self.analysis.tcx, instance.def_id())));
+                    self.graph.symbolic_edges.insert((
+                        self.caller.clone(),
+                        key(self.analysis.tcx, instance.def_id()),
+                    ));
                 }
                 continue;
             }
@@ -265,10 +273,13 @@ impl<'tcx> Calls<'_, '_, 'tcx> {
             return;
         };
         self.edge(definition);
-        self.graph.symbolic_edges.insert((self.caller.clone(), key(self.analysis.tcx, definition)));
-        let deferred = ty::GenericArgs::identity_for_item(self.analysis.tcx, self.analysis.typing_owner)
-            .has_non_region_param()
-            && !root(self.analysis.tcx, self.analysis.typing_owner);
+        self.graph
+            .symbolic_edges
+            .insert((self.caller.clone(), key(self.analysis.tcx, definition)));
+        let deferred =
+            ty::GenericArgs::identity_for_item(self.analysis.tcx, self.analysis.typing_owner)
+                .has_non_region_param()
+                && !root(self.analysis.tcx, self.analysis.typing_owner);
         if deferred {
             return;
         }
