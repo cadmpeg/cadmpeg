@@ -21,10 +21,7 @@ pub(super) fn targets<'tcx>(
             };
             let mut resolved = true;
             for bound in rustc_type_ir::elaborate::supertraits(tcx, principal.with_self_ty(tcx, source)) {
-                let Some(trait_ref) = bound.no_bound_vars() else {
-                    resolved = false;
-                    continue;
-                };
+                let trait_ref = tcx.instantiate_bound_regions_with_erased(bound);
                 for item in tcx.associated_items(trait_ref.def_id).in_definition_order() {
                     if !matches!(tcx.def_kind(item.def_id), rustc_hir::def::DefKind::AssocFn) {
                         continue;

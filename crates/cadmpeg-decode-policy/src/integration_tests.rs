@@ -173,6 +173,7 @@ fn check_fixture(name: &str) {
                     | "addresses"
                     | "objects"
                     | "generic_scope"
+                    | "fallback"
                     | "fixed_ranges"
                     | "raw_steps"
                     | "conversions"
@@ -435,10 +436,10 @@ fn cross_crate_decode_reachability() {
     let loop_lines: Vec<_> = source
         .lines()
         .enumerate()
-        .filter(|(_, line)| line.contains("for byte in bytes"))
+        .filter(|(_, line)| line.contains("// reached-loop"))
         .map(|(index, _)| (index + 1).to_string())
         .collect();
-    let expected = [loop_lines[0].as_str(), loop_lines[2].as_str()];
+    let expected = loop_lines;
     assert_eq!(
         findings,
         expected,
@@ -446,6 +447,15 @@ fn cross_crate_decode_reachability() {
         String::from_utf8_lossy(&output.stderr)
     );
     assert_eq!(output.status.code(), Some(1));
+    let caller = run("reachability_imported.rs", "cadmpeg_codec_fixture", false, Some(&scope));
+    let actual = String::from_utf8(caller.stdout).expect("caller diagnostics");
+    let source = std::fs::read_to_string(root.join("fixtures/reachability_imported.rs")).expect("caller source");
+    let loops: Vec<_> = source.lines().enumerate().filter(|(_, line)| line.contains("// reached-loop"))
+        .map(|(index, _)| (index + 1).to_string()).collect();
+    let findings: Vec<_> = actual.lines().filter(|line| line.starts_with("uncharged_decode_work\t"))
+        .map(|line| line.split('\t').nth(2).expect("caller finding line").to_owned()).collect();
+    assert_eq!(findings, loops, "{actual}; {}", String::from_utf8_lossy(&caller.stderr));
+    assert_eq!(caller.status.code(), Some(1));
 }
 
 #[test]
@@ -466,4 +476,36 @@ fn object_coercion_reachability() {
 #[test]
 fn concrete_generic_reachability() {
     check_fixture("generic_scope");
+}
+
+#[test]
+fn unresolved_indirect_fallback() {
+    check_fixture("fallback");
+}
+
+#[test]
+fn excluded_body_listing() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let output_dir = root.join("target/fixtures/listing");
+    std::fs::create_dir_all(&output_dir).expect("listing directory");
+    let output = Command::new(std::env::current_exe().expect("fixture executable"))
+        .args(["--exact", "integration_tests::fixture_child", "--ignored", "--nocapture"])
+        .env("CADMPEG_POLICY_FIXTURE", "1")
+        .env("CADMPEG_POLICY_UNREACHABLE", "1")
+        .env("CADMPEG_POLICY_INPUT", root.join("fixtures/reachability.rs"))
+        .env("CADMPEG_POLICY_OUTPUT", output_dir)
+        .output().expect("listing compiler");
+    assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+    let actual = String::from_utf8(output.stdout).expect("listing UTF-8");
+    let rows: Vec<_> = actual.lines().filter(|line| line.starts_with("unreachable_decode_body\t")).collect();
+    assert_eq!(rows.len(), 3, "{actual}");
+    for (name, reason) in [("<Backend as CodecBackend>::encode", "encoder-only"),
+        ("encoder_helper", "no path from a decode entry point"),
+        ("unrelated", "no path from a decode entry point")] {
+        assert!(rows.iter().any(|row| {
+            let fields: Vec<_> = row.split('\t').collect();
+            fields.len() == 5 && fields[1].ends_with("fixtures/reachability.rs")
+                && fields[2].parse::<usize>().is_ok() && fields[3].ends_with(name) && fields[4] == reason
+        }), "missing {name}: {actual}");
+    }
 }

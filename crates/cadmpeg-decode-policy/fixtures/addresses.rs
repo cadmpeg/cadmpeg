@@ -22,6 +22,8 @@ fn accept(_callback: fn(&[u8])) {}
 pub fn decode(ctx: &DecodeContext, bytes: &[u8]) {
     let _ctx = ctx;
     let _table = &DECODERS;
+    let _inline: fn(&[u8]) = const { inline_target };
+    let _method: fn(&Worker, &[u8]) = <Worker as Work>::work;
     let _family = Family { decode: local_target };
     let _array: [fn(&[u8]); 1] = [local_target];
     accept(argument_target);
@@ -36,3 +38,18 @@ fn encoder_target(bytes: &[u8]) {
     for byte in bytes { std::hint::black_box(byte); }
 }
 fn encode() { let _table = &ENCODERS; }
+
+fn inline_target(bytes: &[u8]) {
+    for byte in bytes { // finding: uncharged_decode_work
+        std::hint::black_box(byte);
+    }
+}
+trait Work { fn work(&self, bytes: &[u8]); }
+struct Worker;
+impl Work for Worker {
+    fn work(&self, bytes: &[u8]) {
+        for byte in bytes { // finding: uncharged_decode_work
+            std::hint::black_box(byte);
+        }
+    }
+}

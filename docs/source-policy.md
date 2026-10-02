@@ -145,11 +145,30 @@ production bodies reachable from decode roots in
 `DecodeContext` cannot admit input-sized storage or work. Roots are implementations
 of `CodecBackend::{detect_impl, inspect_impl, decode_impl}` and
 `Codec::{detect, inspect, decode, decode_with_context}`, and public functions
-whose input types contain `DecodeContext`. Resolved calls, trait targets and
-closures form a call graph across all checked crates. Definition hashes join
+whose input types contain `DecodeContext`. Resolved calls, function addresses,
+static and const initializers, trait targets
+and closures form a call graph across all checked crates. A read of a static or
+const reaches its initializer and the function addresses that initializer stores.
+A reachable function address reaches its body even without a direct call.
+Concrete object coercions through references, Box, Arc and nested pointer types
+reach every method of the concrete implementation and its supertraits, including
+default and Self: Sized methods. Concrete generic instances resolve parameter
+calls through local and dependency MIR before body selection. Their targets are
+attached to the originating caller. An unresolved indirect call retains
+`unproven_decode_charge` and reaches all function addresses and object-coerced
+implementations in the checked crates. This fallback can reach a target whose
+address was created by an encoder. Definition hashes join
 local and dependency nodes. The driver collects the complete graph before
 it selects any bodies, including when `--crate` limits findings. Bodies reached only
 from encoding, writing, serialization or tests are outside the scope.
+Run `python3 scripts/check-decode-policy.py --list-unreachable --output FILE`
+to list excluded bodies as TSV: record kind, path, line, definition name and
+reason. `--unreachable-output FILE` saves the same listing during a findings run.
+The listing includes hand-written serialization bodies and compiled test bodies;
+a cfg-disabled body has no compiler definition. Reasons are encoder-only,
+writer-only, serialization-only, test-only or no path from a decode entry point.
+The first two classify excluded body names or source modules; a source-module
+name cannot exclude a reachable production body.
 A writer file name does not exclude a body reached during decoding.
 Binary and test bodies are excluded. Automatically derived
 bodies, including serde derives and their generated helpers, are excluded.
