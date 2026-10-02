@@ -1519,6 +1519,7 @@ fn phase5_freeze_shared_admissibility_fixtures() {
     let annotations = cadmpeg_ir::Annotations::default();
 
     assert!(cadmpeg_ir::admit_with_annotations(
+        &cadmpeg_test_support::service_decode_context(),
         &accepted,
         &annotations,
         cadmpeg_ir::RHINO_DRAFT_CHECKS,
@@ -1527,12 +1528,13 @@ fn phase5_freeze_shared_admissibility_fixtures() {
     .expect("resource allocation did not fail")
     .is_ok());
     assert!(
-        cadmpeg_ir::admit(&accepted, cadmpeg_ir::RHINO_INSTANCE_CHECKS, Vec::new())
+        cadmpeg_ir::admit(&cadmpeg_test_support::service_decode_context(), &accepted, cadmpeg_ir::RHINO_INSTANCE_CHECKS, Vec::new())
             .expect("resource allocation did not fail")
             .is_ok()
     );
 
     assert!(!cadmpeg_ir::admit_with_annotations(
+        &cadmpeg_test_support::service_decode_context(),
         &rejected,
         &annotations,
         cadmpeg_ir::RHINO_DRAFT_CHECKS,
@@ -1541,7 +1543,7 @@ fn phase5_freeze_shared_admissibility_fixtures() {
     .expect("resource allocation did not fail")
     .is_ok());
     assert!(
-        !cadmpeg_ir::admit(&rejected, cadmpeg_ir::RHINO_INSTANCE_CHECKS, Vec::new())
+        !cadmpeg_ir::admit(&cadmpeg_test_support::service_decode_context(), &rejected, cadmpeg_ir::RHINO_INSTANCE_CHECKS, Vec::new())
             .expect("resource allocation did not fail")
             .is_ok()
     );

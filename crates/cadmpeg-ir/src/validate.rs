@@ -8,7 +8,7 @@
 //! positions). It does not evaluate interior surface membership or solid
 //! closure.
 
-use std::collections::{BTreeMap, HashSet};
+use std::collections::BTreeMap;
 
 use crate::document::{CadIr, CensusKey};
 use crate::report::{
@@ -129,26 +129,27 @@ pub fn entity_census(ir: &CadIr) -> BTreeMap<CensusKey, usize> {
 }
 
 /// Validate `ir` and copy `losses` into the returned report unchanged.
-fn validate_model(ir: &CadIr, losses: Vec<LossNote>) -> Result<ValidationReport, CodecError> {
-    let index = crate::index::ModelIndex::new(ir);
-    validate_model_with_index(ir, losses, &index)
+fn validate_model(ctx: &DecodeContext<'_>, ir: &CadIr, losses: Vec<LossNote>) -> Result<ValidationReport, CodecError> {
+    let index = crate::index::ModelIndex::new_for_decode(ir, ctx)?;
+    validate_model_with_index(ctx, ir, losses, &index)
 }
 
 fn validate_model_with_index(
+    ctx: &DecodeContext<'_>,
     ir: &CadIr,
     losses: Vec<LossNote>,
     ids: &crate::index::ModelIndex<'_>,
 ) -> Result<ValidationReport, CodecError> {
+    let _depth = ctx.enter_nested("IR neutral validation")?;
+    ctx.charge_work(1, "IR neutral validation")?;
     let mut findings = Vec::new();
 
     // The identity walk enumerates every entity id in the product document;
     // native links resolve against that set.
     check_identity_and_order(ir, &mut findings);
     check_tolerances(ir, &mut findings);
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::default())?;
-    check_references(&ctx, ir, ids, &mut findings)?;
-    check_evaluation_cycles(&ctx, ir, ids, &mut findings)?;
+    check_references(ctx, ir, ids, &mut findings)?;
+    check_evaluation_cycles(ctx, ir, ids, &mut findings)?;
     check_pmi(ir, &mut findings);
     check_coedge_pairing(ir, &mut findings);
     check_shell_connectivity(ir, &mut findings);
@@ -157,7 +158,7 @@ fn validate_model_with_index(
     check_native_links(ir, ids, &mut findings);
     check_parameter_domains(ir, &mut findings);
     check_edge_endpoint_consistency(ir, &mut findings)?;
-    check_pcurve_surface_consistency(&ctx, ir, &mut findings)?;
+    check_pcurve_surface_consistency(ctx, ir, &mut findings)?;
     check_procedural_support_consistency(ir, &mut findings)?;
     check_topology_tolerances(ir, &mut findings);
     check_tessellations(ir, &mut findings);
@@ -176,64 +177,84 @@ fn validate_model_with_index(
     })
 }
 
-/// Validates a model while treating staged retained-record identities as native entities.
+/// Validate an application-owned document under the explicit standalone policy.
+fn standalone_validation(
+    validate: impl FnOnce(&DecodeContext<'_>) -> Result<ValidationReport, CodecError>,
+) -> Result<ValidationReport, CodecError> {
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::default())?;
+    let report = validate(&ctx)?;
+    ctx.finish_session()?;
+    Ok(report)
+}
+
+fn validate_annotations<'a>(
+    ctx: &DecodeContext<'_>,
+    ir: &'a CadIr,
+    ids: &crate::index::ModelIndex<'a>,
+    annotations: &crate::annotations::Annotations,
+    additional: impl IntoIterator<Item = &'a str>,
+    findings: &mut Vec<Finding>,
+) -> Result<(), CodecError> {
+    let all_ids = ctx.with_scoped_storage("annotation identity storage", || {
+        ctx.collect_string_set(ids.identities().chain(additional), "annotation identities")
+    })?;
+    check_annotations(ir, annotations, &all_ids.0, findings);
+    ctx.charge_work(0, "IR annotation validation")
+}
+
+fn validate_model_with_annotations(
+    ctx: &DecodeContext<'_>,
+    ir: &CadIr,
+    annotations: &crate::annotations::Annotations,
+    losses: Vec<LossNote>,
+) -> Result<ValidationReport, CodecError> {
+    let index = crate::index::ModelIndex::new_for_decode(ir, ctx)?;
+    let mut report = validate_model_with_index(ctx, ir, losses, &index)?;
+    validate_annotations(ctx, ir, &index, annotations, std::iter::empty(), &mut report.findings)?;
+    Ok(report)
+}
+
+/// Validate while treating staged retained-record identities as native entities.
 pub fn validate_neutral_with_additional_native_identities<'a>(
     ir: &'a CadIr,
     additional: impl IntoIterator<Item = &'a str>,
     losses: Vec<LossNote>,
 ) -> Result<ValidationReport, CodecError> {
-    let index = crate::index::ModelIndex::with_additional_native_identities(ir, additional);
-    validate_model_with_index(ir, losses, &index)
+    standalone_validation(|ctx| {
+        let index = crate::index::ModelIndex::with_additional_native_identities(ir, additional, ctx)?;
+        validate_model_with_index(ctx, ir, losses, &index)
+    })
 }
 
-/// Validate one neutral product model.
-pub fn validate_neutral(
-    ir: &CadIr,
-    losses: Vec<LossNote>,
-) -> Result<ValidationReport, CodecError> {
-    validate_model(ir, losses)
+/// Validate one neutral product model under the standalone application policy.
+pub fn validate_neutral(ir: &CadIr, losses: Vec<LossNote>) -> Result<ValidationReport, CodecError> {
+    standalone_validation(|ctx| validate_model(ctx, ir, losses))
 }
 
-/// Validate one neutral product model together with borrowed annotations.
+/// Validate an application-owned model together with borrowed annotations.
 pub fn validate_neutral_with_annotations(
     ir: &CadIr,
     annotations: &crate::annotations::Annotations,
     losses: Vec<LossNote>,
 ) -> Result<ValidationReport, CodecError> {
-    let mut report = validate_model(ir, losses)?;
-    let all_ids = crate::index::ModelIndex::new(ir)
-        .identities()
-        .map(str::to_owned)
-        .collect::<HashSet<_>>();
-    check_annotations(ir, annotations, &all_ids, &mut report.findings);
-    Ok(report)
+    standalone_validation(|ctx| validate_model_with_annotations(ctx, ir, annotations, losses))
 }
 
-/// Validate a neutral product model together with its decode-time source sidecar.
+/// Validate an application-owned model together with its decode-time source sidecar.
 pub fn validate_neutral_with_source_fidelity(
     ir: &CadIr,
     source_fidelity: &SourceFidelity,
     losses: Vec<LossNote>,
 ) -> Result<ValidationReport, CodecError> {
-    let mut report = validate_model(ir, losses)?;
-    let index = crate::index::ModelIndex::new(ir);
-    let mut all_ids = index
-        .identities()
-        .map(str::to_owned)
-        .collect::<HashSet<_>>();
-    all_ids.extend(
-        source_fidelity
-            .retained_records()
-            .keys()
-            .map(|id| id.as_str().to_owned()),
-    );
-    check_annotations(
-        ir,
-        &source_fidelity.annotations,
-        &all_ids,
-        &mut report.findings,
-    );
-    Ok(report)
+    standalone_validation(|ctx| {
+        let index = crate::index::ModelIndex::new_for_decode(ir, ctx)?;
+        let mut report = validate_model_with_index(ctx, ir, losses, &index)?;
+        validate_annotations(ctx, ir, &index, &source_fidelity.annotations,
+            source_fidelity.retained_records().keys().map(|id| id.as_str()),
+            &mut report.findings)?;
+        Ok(report)
+    })
 }
 
 #[cfg(test)]

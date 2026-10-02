@@ -16,7 +16,7 @@ fn model_admission_refuses_a_malformed_curve_surface_reference_cycle() {
     assert!(report.findings.iter().any(|finding| {
         finding.check == Check::ReferentialIntegrity && finding.message == expected
     }));
-    assert!(!admit::admit(&ir, admit::DRAFT_CORE_CHECKS, Vec::new())
+    assert!(!admit::admit(&cadmpeg_test_support::service_decode_context(), &ir, admit::DRAFT_CORE_CHECKS, Vec::new())
         .expect("resource allocation did not fail")
         .is_ok());
     assert!(matches!(

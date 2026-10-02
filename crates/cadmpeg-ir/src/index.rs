@@ -360,19 +360,19 @@ macro_rules! define_model_index {
         impl<'a> ModelIndex<'a> {
             /// Build all decode lookups under a live temporary reservation.
             pub fn new_for_decode<'ctx>(ir: &'a CadIr, ctx: &'ctx DecodeContext<'_>) -> Result<DecodeModelIndex<'ctx, 'a>, ResourceLimit> {
-                Self::new_with_sources_for_decode(ir, true, ctx)
+                Self::new_with_sources_for_decode(ir, true, std::iter::empty(), ctx)
             }
 
             /// Build model-only decode lookups under a live temporary reservation.
             pub fn new_model_only_for_decode<'ctx>(ir: &'a CadIr, ctx: &'ctx DecodeContext<'_>) -> Result<DecodeModelIndex<'ctx, 'a>, ResourceLimit> {
-                Self::new_with_sources_for_decode(ir, false, ctx)
+                Self::new_with_sources_for_decode(ir, false, std::iter::empty(), ctx)
             }
 
-            fn new_with_sources_for_decode<'ctx>(ir: &'a CadIr, include_native: bool, ctx: &'ctx DecodeContext<'_>) -> Result<DecodeModelIndex<'ctx, 'a>, ResourceLimit> {
+            fn new_with_sources_for_decode<'ctx>(ir: &'a CadIr, include_native: bool, additional: impl IntoIterator<Item = &'a str>, ctx: &'ctx DecodeContext<'_>) -> Result<DecodeModelIndex<'ctx, 'a>, ResourceLimit> {
                 let mut reservation = ctx.reserve_scoped_limit(0, "model lookup storage")?;
                 let index = reservation.with_storage_limit(|| {
                     let storage = DecodeStorage(ctx);
-                    let mut index = Self::with_identity_sources(ir, include_native, std::iter::empty(), &storage)?;
+                    let mut index = Self::with_identity_sources(ir, include_native, additional, &storage)?;
                     $(index.$lookup = OnceLock::from(build_identity_index(&ir.model.$lookup, &storage)?);)*
                     Ok::<_, ResourceLimit>(index)
                 })?;
@@ -394,12 +394,13 @@ macro_rules! define_model_index {
                 public_result(Self::with_identity_sources(ir, false, std::iter::empty(), &PublicStorage))
             }
 
-            /// Builds the index with native identities staged outside the document.
-            pub fn with_additional_native_identities(
+            /// Build scoped decode lookups with native identities staged outside the document.
+            pub fn with_additional_native_identities<'ctx>(
                 ir: &'a CadIr,
                 additional: impl IntoIterator<Item = &'a str>,
-            ) -> Self {
-                public_result(Self::with_identity_sources(ir, true, additional, &PublicStorage))
+                ctx: &'ctx DecodeContext<'_>,
+            ) -> Result<DecodeModelIndex<'ctx, 'a>, ResourceLimit> {
+                Self::new_with_sources_for_decode(ir, true, additional, ctx)
             }
 
             fn with_identity_sources<S: IndexStorage>(

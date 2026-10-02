@@ -11,6 +11,7 @@ use crate::report::{
     check::{Check, ValidationReport},
     loss::LossNote,
 };
+use cadmpeg_core::decode::{u64_from_index, DecodeContext};
 use cadmpeg_core::CodecError;
 
 /// Expand [`DRAFT_CORE_CHECKS`], optionally appending extra [`Check`] variants.
@@ -66,43 +67,43 @@ pub const CATIA_ADMISSION_CHECKS: &[Check] = DRAFT_CORE_CHECKS;
 /// this set requires additional reject-fixture coverage.
 pub const SLDPRT_EXPORT_PRECONDITION_CHECKS: &[Check] = DRAFT_CORE_CHECKS;
 
-/// Drop findings whose [`Check`] is outside `allowed`.
-pub fn filter_checks(mut report: ValidationReport, allowed: &[Check]) -> ValidationReport {
-    report
-        .findings
-        .retain(|finding| allowed.contains(&finding.check));
-    report
+/// Drop findings whose [`Check`] is outside `allowed`, after admitting the scan.
+pub fn filter_checks(ctx: &DecodeContext<'_>, mut report: ValidationReport, allowed: &[Check]) -> Result<ValidationReport, CodecError> {
+    let work = allowed.len().checked_add(std::mem::size_of::<crate::report::check::Finding>())
+        .and_then(|units| units.checked_add(1))
+        .and_then(|units| units.checked_mul(report.findings.len()))
+        .ok_or_else(|| ctx.refuse_codec_limit("filter admission checks", u64::MAX - 1, u64::MAX))?;
+    ctx.charge_work(u64_from_index(work), "filter admission checks")?;
+    report.findings.retain(|finding| allowed.contains(&finding.check));
+    Ok(report)
 }
 
-/// Run full neutral validation, then retain only findings in `allowed`.
-pub fn admit(ir: &CadIr, allowed: &[Check], losses: Vec<LossNote>) -> Result<ValidationReport, CodecError> {
-    Ok(filter_checks(super::validate_neutral(ir, losses)?, allowed))
+/// Validate under the caller's live session, then retain findings in `allowed`.
+pub fn admit(ctx: &DecodeContext<'_>, ir: &CadIr, allowed: &[Check], losses: Vec<LossNote>) -> Result<ValidationReport, CodecError> {
+    filter_checks(ctx, super::validate_model(ctx, ir, losses)?, allowed)
 }
 
-/// Admit with borrowed annotations, retaining only findings in `allowed`.
+/// Admit with borrowed annotations under the caller's live session.
 pub fn admit_with_annotations(
+    ctx: &DecodeContext<'_>,
     ir: &CadIr,
     annotations: &Annotations,
     allowed: &[Check],
     losses: Vec<LossNote>,
 ) -> Result<ValidationReport, CodecError> {
-    Ok(filter_checks(
-        super::validate_neutral_with_annotations(ir, annotations, losses)?,
-        allowed,
-    ))
+    filter_checks(ctx, super::validate_model_with_annotations(ctx, ir, annotations, losses)?, allowed)
 }
 
-/// Admit while treating staged native identities as resolvable.
+/// Admit while treating staged native identities as resolvable in scoped indexes.
 pub fn admit_with_additional_native_identities<'a>(
+    ctx: &DecodeContext<'_>,
     ir: &'a CadIr,
     additional: impl IntoIterator<Item = &'a str>,
     allowed: &[Check],
     losses: Vec<LossNote>,
 ) -> Result<ValidationReport, CodecError> {
-    Ok(filter_checks(
-        super::validate_neutral_with_additional_native_identities(ir, additional, losses)?,
-        allowed,
-    ))
+    let index = crate::index::ModelIndex::with_additional_native_identities(ir, additional, ctx)?;
+    filter_checks(ctx, super::validate_model_with_index(ctx, ir, losses, &index)?, allowed)
 }
 
 #[cfg(test)]
@@ -124,25 +125,92 @@ mod tests {
     }
 
     #[test]
+    fn admission_routes_preserve_live_work_and_depth_refusals() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        use cadmpeg_core::CodecError;
+        let ir = crate::CadIr::empty();
+        let annotations = crate::annotations::Annotations::default();
+        for dimension in [ResourceDimension::WorkUnits, ResourceDimension::RecursionDepth] {
+            for route in 0..3 {
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::service();
+                match dimension {
+                    ResourceDimension::WorkUnits => policy.limits.max_work_units = 0,
+                    ResourceDimension::RecursionDepth => policy.limits.max_recursion_depth = 0,
+                    _ => panic!("test dimension"),
+                }
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+                let result = match route {
+                    0 => admit(&ctx, &ir, DRAFT_CORE_CHECKS, Vec::new()),
+                    1 => super::admit_with_annotations(&ctx, &ir, &annotations, RHINO_DRAFT_CHECKS, Vec::new()),
+                    _ => super::admit_with_additional_native_identities(&ctx, &ir, std::iter::empty(), DRAFT_CORE_CHECKS, Vec::new()),
+                };
+                let Err(CodecError::ResourceLimit(limit)) = result else { panic!("live session must refuse admission"); };
+                assert_eq!(limit.dimension, dimension);
+                assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit));
+            }
+        }
+    }
+
+    #[test]
+    fn admission_additional_identity_index_uses_scoped_storage() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        use cadmpeg_core::CodecError;
+        let ir = crate::CadIr::empty();
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_materialized_bytes = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let result = super::admit_with_additional_native_identities(&ctx, &ir, ["test:native:unknown#record"], DRAFT_CORE_CHECKS, Vec::new());
+        let Err(CodecError::ResourceLimit(limit)) = result else { panic!("scoped index must be refused"); };
+        assert_eq!(limit.dimension, ResourceDimension::MaterializedBytes);
+        assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit));
+    }
+
+    #[test]
+    fn admission_filter_admits_findings_scan_before_retaining() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        use cadmpeg_core::CodecError;
+        let report = crate::report::check::ValidationReport {
+            entity_counts: std::collections::BTreeMap::new(),
+            findings: vec![crate::report::check::Finding {
+                check: Check::Identity,
+                severity: crate::report::Severity::Error,
+                message: "duplicate identity".into(),
+                entity: Some("test:model:point#duplicate".into()),
+            }],
+            losses: Vec::new(),
+        };
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let Err(CodecError::ResourceLimit(limit)) = super::filter_checks(&ctx, report, &[Check::Identity]) else { panic!("finding scan must be refused"); };
+        assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+        assert_eq!(limit.operation, "filter admission checks");
+        assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit));
+    }
+
+    #[test]
     fn draft_core_agrees_with_full_on_freeze_fixtures() {
         let accepted = fixture(accepted_empty());
         assert!(super::super::validate_neutral(&accepted, Vec::new()).expect("resource allocation did not fail").is_ok());
-        assert!(admit(&accepted, DRAFT_CORE_CHECKS, Vec::new()).expect("resource allocation did not fail").is_ok());
+        assert!(admit(&cadmpeg_test_support::service_decode_context(), &accepted, DRAFT_CORE_CHECKS, Vec::new()).expect("resource allocation did not fail").is_ok());
 
         let missing_point = fixture(rejected_missing_point("test:model").expect("valid identity"));
         assert!(!super::super::validate_neutral(&missing_point, Vec::new()).expect("resource allocation did not fail").is_ok());
-        assert!(!admit(&missing_point, DRAFT_CORE_CHECKS, Vec::new()).expect("resource allocation did not fail").is_ok());
+        assert!(!admit(&cadmpeg_test_support::service_decode_context(), &missing_point, DRAFT_CORE_CHECKS, Vec::new()).expect("resource allocation did not fail").is_ok());
 
         let missing_region =
             fixture(rejected_missing_region("test:model").expect("valid identity"));
         assert!(!super::super::validate_neutral(&missing_region, Vec::new()).expect("resource allocation did not fail").is_ok());
-        assert!(!admit(&missing_region, DRAFT_CORE_CHECKS, Vec::new()).expect("resource allocation did not fail").is_ok());
+        assert!(!admit(&cadmpeg_test_support::service_decode_context(), &missing_region, DRAFT_CORE_CHECKS, Vec::new()).expect("resource allocation did not fail").is_ok());
     }
 
     #[test]
     fn filter_checks_drops_out_of_set_findings() {
         let ir = fixture(rejected_missing_point("test:model").expect("valid identity"));
-        let filtered = admit(&ir, &[Check::Identity], Vec::new()).expect("resource allocation did not fail");
+        let filtered = admit(&cadmpeg_test_support::service_decode_context(), &ir, &[Check::Identity], Vec::new()).expect("resource allocation did not fail");
         assert!(
             filtered.is_ok(),
             "referential_integrity must not reject under Identity-only set: {filtered:?}"
@@ -194,8 +262,8 @@ mod tests {
             CATIA_ADMISSION_CHECKS,
             SLDPRT_EXPORT_PRECONDITION_CHECKS,
         ] {
-            assert!(admit(&accepted, allowed, Vec::new()).expect("resource allocation did not fail").is_ok());
-            assert!(!admit(&rejected, allowed, Vec::new()).expect("resource allocation did not fail").is_ok());
+            assert!(admit(&cadmpeg_test_support::service_decode_context(), &accepted, allowed, Vec::new()).expect("resource allocation did not fail").is_ok());
+            assert!(!admit(&cadmpeg_test_support::service_decode_context(), &rejected, allowed, Vec::new()).expect("resource allocation did not fail").is_ok());
         }
     }
 }

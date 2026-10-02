@@ -729,6 +729,7 @@ impl<'a> DecodeContext<'a> {
         let (value, annotations) = with_native_unknowns(self.expand.ctx(), &mut self.ir, &self.unknowns, |ir| {
             ir.try_append(candidate.model, candidate.native, |combined| {
                 let validation = cadmpeg_ir::admit_with_annotations(
+                    session,
                     combined,
                     annotations.annotations(),
                     cadmpeg_ir::RHINO_DRAFT_CHECKS,
@@ -2229,7 +2230,7 @@ impl<'a> DecodeContext<'a> {
         let rejection_warning = match outcome {
             Ok(links) => {
                 let validation = with_native_unknowns(self.expand.ctx(), &mut self.ir, &self.unknowns, |ir| {
-                    cadmpeg_ir::admit(ir, cadmpeg_ir::RHINO_INSTANCE_CHECKS, Vec::new())
+                    cadmpeg_ir::admit(session, ir, cadmpeg_ir::RHINO_INSTANCE_CHECKS, Vec::new())
                 });
                 if validation.as_ref().is_ok_and(|result| {
                     result
