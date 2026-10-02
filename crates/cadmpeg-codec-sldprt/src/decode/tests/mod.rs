@@ -18,6 +18,7 @@ mod feature_degradation;
 mod feature_snapshots;
 mod geometry_report;
 mod metadata_fallback;
+mod merges;
 mod nurbs_surfaces;
 mod partition_merge;
 mod pcurves;

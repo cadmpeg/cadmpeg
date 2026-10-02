@@ -354,8 +354,11 @@ impl SourceFidelity {
         mut other: Self,
     ) -> Result<(), cadmpeg_core::CodecError> {
         for id in other.retained_records.keys() {
+            let work = id.as_str().len().checked_add(1)
+                .and_then(|bytes| self.retained_records.len().checked_add(1).and_then(|count| bytes.checked_mul(count)))
+                .ok_or_else(|| ctx.refuse_codec_limit("check appended source records", u64::MAX - 1, u64::MAX))?;
             ctx.charge_work(
-                cadmpeg_core::decode::u64_from_index(id.as_str().len()),
+                cadmpeg_core::decode::u64_from_index(work),
                 "check appended source records",
             )?;
             if self.retained_records.contains_key(id) {
@@ -365,24 +368,10 @@ impl SourceFidelity {
                 )?));
             }
         }
-        if !self.retained_records.is_empty() && !other.retained_records.is_empty() {
-            for _entry in self
-                .retained_records
-                .iter()
-                .chain(other.retained_records.iter())
-            {
-                ctx.charge_collection_items(1, "append source records")?;
-                ctx.charge_retained(
-                    cadmpeg_core::decode::u64_from_index(std::mem::size_of::<(
-                        UnknownId,
-                        RetainedSourceRecord,
-                    )>()),
-                    "append source records",
-                )?;
-            }
-        }
+        crate::annotations::admit_btree_append(ctx, &self.retained_records, &other.retained_records,
+            |id| id.as_str().len(), "append source records")?;
         self.annotations
-            .append_for_decode(ctx, other.annotations, "append source provenance")?
+            .append(ctx, other.annotations, "append source provenance")?
             .map_err(cadmpeg_core::CodecError::from)?;
         self.retained_records.append(&mut other.retained_records);
         Ok(())

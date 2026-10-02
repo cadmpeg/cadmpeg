@@ -2097,7 +2097,7 @@ fn merge_standard_population_annotations(
     let mut annotations = AnnotationBuilder::resume(source);
     annotations.retain_exactness(|id| id.starts_with("catia:standard:"));
     source = annotations.build();
-    if let Err(collision) = source.map_ids_for_decode(
+    if let Err(collision) = source.map_ids(
         ctx,
         |id| match id.strip_prefix("catia:standard:") {
             Some(rest) => ctx.format_retained(
@@ -2110,7 +2110,7 @@ fn merge_standard_population_annotations(
     )? {
         return Ok(Err(collision));
     }
-    target.append_for_decode(ctx, source, "catia_standard_population_annotation_append")
+    target.append(ctx, source, "catia_standard_population_annotation_append")
 }
 
 fn try_decode_standard_populations(

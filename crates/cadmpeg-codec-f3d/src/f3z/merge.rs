@@ -381,7 +381,7 @@ fn rescope_fidelity(
 ) -> Result<SourceFidelity, CodecError> {
     let (mut annotations, records) = source.into_parts();
     annotations
-        .map_ids_for_decode(
+        .map_ids(
             ctx,
             |id| match rescope_charged(ctx, id, occurrence)? {
                 Some(id) => Ok(id),

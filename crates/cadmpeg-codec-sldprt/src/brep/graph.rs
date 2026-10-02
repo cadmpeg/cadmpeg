@@ -382,7 +382,7 @@ impl Brep {
             }
         }
         self.annotations
-            .map_ids_for_decode(ctx, qualify, "qualify SLDPRT annotation identities")?
+            .map_ids(ctx, qualify, "qualify SLDPRT annotation identities")?
             .map_err(cadmpeg_core::CodecError::from)?;
 
         Ok(())
