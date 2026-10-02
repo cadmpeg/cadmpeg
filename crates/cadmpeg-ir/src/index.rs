@@ -355,7 +355,7 @@ macro_rules! define_model_index {
             identities: HashMap<&'a str, ()>,
             include_native: bool,
             additional_native_identities: Vec<&'a str>,
-            native_unknowns: Option<(&'a str, &'a [crate::unknown::UnknownRecord])>,
+            native_unknowns: Option<(&'a str, &'a [crate::unknown::UnknownRecord], &'a [usize])>,
         }
 
         impl<'a> ModelIndex<'a> {
@@ -369,7 +369,7 @@ macro_rules! define_model_index {
                 Self::new_with_sources_for_decode(ir, false, std::iter::empty(), None, ctx)
             }
 
-            fn new_with_sources_for_decode<'ctx>(ir: &'a CadIr, include_native: bool, additional: impl IntoIterator<Item = &'a str>, native_unknowns: Option<(&'a str, &'a [crate::unknown::UnknownRecord])>, ctx: &'ctx DecodeContext<'_>) -> Result<DecodeModelIndex<'ctx, 'a>, ResourceLimit> {
+            fn new_with_sources_for_decode<'ctx>(ir: &'a CadIr, include_native: bool, additional: impl IntoIterator<Item = &'a str>, native_unknowns: Option<(&'a str, &'a [crate::unknown::UnknownRecord], &'a [usize])>, ctx: &'ctx DecodeContext<'_>) -> Result<DecodeModelIndex<'ctx, 'a>, ResourceLimit> {
                 let mut reservation = ctx.reserve_scoped_limit(0, "model lookup storage")?;
                 let index = reservation.with_storage_limit(|| {
                     let storage = DecodeStorage(ctx);
@@ -409,9 +409,10 @@ macro_rules! define_model_index {
                 ir: &'a CadIr,
                 format: &'a str,
                 records: &'a [crate::unknown::UnknownRecord],
+                order: &'a [usize],
                 ctx: &'ctx DecodeContext<'_>,
             ) -> Result<DecodeModelIndex<'ctx, 'a>, ResourceLimit> {
-                Self::new_with_sources_for_decode(ir, true, std::iter::empty(), Some((format, records)), ctx)
+                Self::new_with_sources_for_decode(ir, true, std::iter::empty(), Some((format, records, order)), ctx)
             }
 
             pub(crate) fn native_view(&self) -> crate::native::view::NativeView<'a> {
@@ -422,7 +423,7 @@ macro_rules! define_model_index {
                 ir: &'a CadIr,
                 include_native: bool,
                 additional: impl IntoIterator<Item = &'a str>,
-                native_unknowns: Option<(&'a str, &'a [crate::unknown::UnknownRecord])>,
+                native_unknowns: Option<(&'a str, &'a [crate::unknown::UnknownRecord], &'a [usize])>,
                 storage: &S,
             ) -> Result<Self, S::Error> {
                 let mut procedural_surface_by_surface =
