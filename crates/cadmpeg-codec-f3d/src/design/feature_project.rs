@@ -5514,9 +5514,10 @@ fn variable_fillet_law(
     {
         return Ok(None);
     }
+    let mut sample_storage = ctx.reserve_scoped(0, "f3d variable Fillet radius point")?;
     let mut points = Vec::new();
-    ctx.push_vec(
-        &mut points,
+    ctx.push_scoped_vec(
+        &mut sample_storage, &mut points,
         VariableRadius {
             parameter: 0.0,
             radius: start,
@@ -5524,18 +5525,19 @@ fn variable_fillet_law(
         "f3d variable Fillet radius point",
     )?;
     for ((_, radius), (_, parameter)) in middle_radii.into_iter().zip(middle_parameters) {
+        ctx.charge_work(1, "f3d variable Fillet radius conversion")?;
         let Some(radius) = design_length(radius) else {
             return Ok(None);
         };
         let parameter = parameter.evaluated_value().get();
-        ctx.push_vec(
-            &mut points,
+        ctx.push_scoped_vec(
+            &mut sample_storage, &mut points,
             VariableRadius { parameter, radius },
             "f3d variable Fillet radius point",
         )?;
     }
-    ctx.push_vec(
-        &mut points,
+    ctx.push_scoped_vec(
+        &mut sample_storage, &mut points,
         VariableRadius {
             parameter: 1.0,
             radius: end,
@@ -5543,7 +5545,7 @@ fn variable_fillet_law(
         "f3d variable Fillet radius point",
     )?;
     Ok(
-        cadmpeg_ir::features::edge_treatments::VariableRadii::new(points)
+        cadmpeg_ir::features::edge_treatments::VariableRadii::new(points, ctx)?
             .ok()
             .map(|points| (points, tangency_weight)),
     )

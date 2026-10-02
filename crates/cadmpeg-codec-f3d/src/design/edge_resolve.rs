@@ -2885,25 +2885,27 @@ pub(super) fn project_fixed_fillet_with_corners(
                 end,
                 intermediate,
             } => {
+                let mut sample_storage = ctx.reserve_scoped(0, "f3d fixed fillet radius point")?;
                 let mut points = Vec::new();
                 let Some(start_radius) = Length::new(start.value.get() * 10.0) else { return Ok(None); };
-                ctx.push_vec(&mut points, VariableRadius {
+                ctx.push_scoped_vec(&mut sample_storage, &mut points, VariableRadius {
                     parameter: 0.0,
                     radius: start_radius,
                 }, "f3d fixed fillet radius point")?;
                 for row in intermediate {
+                    ctx.charge_work(1, "f3d fixed fillet radius conversion")?;
                     let Some(radius) = Length::new(row.radius.value.get() * 10.0) else { return Ok(None); };
-                    ctx.push_vec(&mut points, VariableRadius {
+                    ctx.push_scoped_vec(&mut sample_storage, &mut points, VariableRadius {
                         parameter: row.parameter.value.get(),
                         radius,
                     }, "f3d fixed fillet radius point")?;
                 }
                 let Some(end_radius) = Length::new(end.value.get() * 10.0) else { return Ok(None); };
-                ctx.push_vec(&mut points, VariableRadius {
+                ctx.push_scoped_vec(&mut sample_storage, &mut points, VariableRadius {
                     parameter: 1.0,
                     radius: end_radius,
                 }, "f3d fixed fillet radius point")?;
-                let Some(points) = cadmpeg_ir::features::edge_treatments::VariableRadii::new(points).ok() else { return Ok(None); };
+                let Some(points) = cadmpeg_ir::features::edge_treatments::VariableRadii::new(points, ctx)?.ok() else { return Ok(None); };
                 Some(RadiusSpec::Variable {
                     points,
                 })
