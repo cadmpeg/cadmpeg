@@ -28,6 +28,7 @@ mod geometry_consistency;
 mod geometry_payloads;
 mod identity_order;
 mod identities;
+mod orders;
 mod pmi;
 mod presentation;
 mod products;
@@ -163,9 +164,13 @@ fn validate_model_with_index(
     check_sketches(ctx, ir, &mut findings)?;
     check_spreadsheets(ctx, ir, &mut findings)?;
     check_products(ctx, ir, &mut findings)?;
-    check_presentation(ctx, ir, ids, &mut findings)?;
-    check_drawings(ir, ids, &mut findings);
-    check_semantic_annotations(ir, ids, &mut findings);
+    let presentation_ids = identities::BorrowedIdentities::build(ctx, |add| {
+        for id in ids.identities() { add(id, ())?; }
+        Ok(())
+    })?;
+    check_presentation(ctx, ir, &presentation_ids, &mut findings)?;
+    check_drawings(ctx, ir, &presentation_ids, &mut findings)?;
+    check_semantic_annotations(ctx, ir, &presentation_ids, &mut findings)?;
     check_typed_references(ir, ids, &mut findings);
 
     Ok(ValidationReport {
