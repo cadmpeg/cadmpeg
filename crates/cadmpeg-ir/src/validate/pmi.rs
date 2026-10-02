@@ -3,12 +3,12 @@
 
 use std::collections::{HashMap, HashSet};
 
-use super::error_finding;
+use super::record_finding;
 use crate::document::CadIr;
 use crate::pmi::{PmiDefinition, PmiTarget};
 use crate::report::check::{Check, Finding};
 
-pub(super) fn check_pmi(ir: &CadIr, findings: &mut Vec<Finding>) {
+pub(super) fn check_pmi(ctx: &cadmpeg_core::decode::DecodeContext<'_>, ir: &CadIr, findings: &mut Vec<Finding>) -> Result<(), cadmpeg_core::CodecError> {
     let ids = ir
         .model
         .pmi
@@ -83,12 +83,7 @@ pub(super) fn check_pmi(ir: &CadIr, findings: &mut Vec<Finding>) {
                 PmiTarget::ShapeAspect { .. } => true,
             };
             if !resolved {
-                error_finding(
-                    findings,
-                    Check::Pmi,
-                    annotation.id.as_str(),
-                    "unresolved PMI target",
-                );
+                record_finding(ctx, findings, Check::Pmi, crate::report::Severity::Error, Some(annotation.id.as_str()), format_args!("{}", "unresolved PMI target"))?;
             }
         }
         match &annotation.definition {
@@ -98,12 +93,7 @@ pub(super) fn check_pmi(ir: &CadIr, findings: &mut Vec<Finding>) {
                         definitions.get(reference.datum.as_str()),
                         Some(PmiDefinition::Datum { .. })
                     ) {
-                        error_finding(
-                            findings,
-                            Check::Pmi,
-                            annotation.id.as_str(),
-                            "unresolved datum reference",
-                        );
+                        record_finding(ctx, findings, Check::Pmi, crate::report::Severity::Error, Some(annotation.id.as_str()), format_args!("{}", "unresolved datum reference"))?;
                     }
                 }
             }
@@ -114,27 +104,18 @@ pub(super) fn check_pmi(ir: &CadIr, findings: &mut Vec<Finding>) {
                         Some(PmiDefinition::DatumSystem { .. })
                     )
                 }) {
-                    error_finding(
-                        findings,
-                        Check::Pmi,
-                        annotation.id.as_str(),
-                        "unresolved datum system",
-                    );
+                    record_finding(ctx, findings, Check::Pmi, crate::report::Severity::Error, Some(annotation.id.as_str()), format_args!("{}", "unresolved datum system"))?;
                 }
             }
             PmiDefinition::Dimension(_) => {}
             PmiDefinition::Presentation { semantics, .. } => {
                 if semantics.iter().any(|id| !ids.contains(id.as_str())) {
-                    error_finding(
-                        findings,
-                        Check::Pmi,
-                        annotation.id.as_str(),
-                        "unresolved semantic annotation",
-                    );
+                    record_finding(ctx, findings, Check::Pmi, crate::report::Severity::Error, Some(annotation.id.as_str()), format_args!("{}", "unresolved semantic annotation"))?;
                 }
             }
             PmiDefinition::Datum { .. } => {}
             PmiDefinition::DatumTarget { .. } => {}
         }
     }
+    Ok(())
 }

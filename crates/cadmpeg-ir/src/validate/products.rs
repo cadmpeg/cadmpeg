@@ -3,12 +3,12 @@
 
 use std::collections::{HashMap, HashSet};
 
-use super::error_finding;
+use super::record_finding;
 use crate::document::CadIr;
 use crate::products::{AssemblyGraph, OccurrenceParent, OperandContainer, PrototypeReference};
 use crate::report::check::{Check, Finding};
 
-pub(super) fn check_products(ir: &CadIr, findings: &mut Vec<Finding>) {
+pub(super) fn check_products(ctx: &cadmpeg_core::decode::DecodeContext<'_>, ir: &CadIr, findings: &mut Vec<Finding>) -> Result<(), cadmpeg_core::CodecError> {
     let definitions = ir
         .model
         .product_definitions
@@ -34,22 +34,12 @@ pub(super) fn check_products(ir: &CadIr, findings: &mut Vec<Finding>) {
             .iter()
             .any(|body| !bodies.contains(body.as_str()))
         {
-            error_finding(
-                findings,
-                Check::ReferentialIntegrity,
-                definition.id.as_str(),
-                "invalid product body reference",
-            );
+            record_finding(ctx, findings, Check::ReferentialIntegrity, crate::report::Severity::Error, Some(definition.id.as_str()), format_args!("{}", "invalid product body reference"))?;
         }
     }
 
     if AssemblyGraph::new(&ir.model.occurrences).is_err() {
-        error_finding(
-            findings,
-            Check::ReferentialIntegrity,
-            "model:assembly",
-            "invalid occurrence parent graph",
-        );
+        record_finding(ctx, findings, Check::ReferentialIntegrity, crate::report::Severity::Error, Some("model:assembly"), format_args!("{}", "invalid occurrence parent graph"))?;
     }
     let mut sibling_ordinals = HashSet::new();
     for occurrence in &ir.model.occurrences {
@@ -89,12 +79,7 @@ pub(super) fn check_products(ir: &CadIr, findings: &mut Vec<Finding>) {
             element_valid && copy_targets_valid
         });
         if !valid_prototype || !valid_parent || !ordinal_unique || !auxiliary_definitions {
-            error_finding(
-                findings,
-                Check::ReferentialIntegrity,
-                occurrence.id.as_str(),
-                "invalid occurrence reference, ordinal, or affine transform",
-            );
+            record_finding(ctx, findings, Check::ReferentialIntegrity, crate::report::Severity::Error, Some(occurrence.id.as_str()), format_args!("{}", "invalid occurrence reference, ordinal, or affine transform"))?;
         }
     }
 
@@ -109,14 +94,10 @@ pub(super) fn check_products(ir: &CadIr, findings: &mut Vec<Finding>) {
                     OperandContainer::Root {} | OperandContainer::External { .. } => true,
                 });
         if !operands_valid {
-            error_finding(
-                findings,
-                Check::ReferentialIntegrity,
-                joint.id.as_str(),
-                "invalid assembly joint operands, frames, or limits",
-            );
+            record_finding(ctx, findings, Check::ReferentialIntegrity, crate::report::Severity::Error, Some(joint.id.as_str()), format_args!("{}", "invalid assembly joint operands, frames, or limits"))?;
         }
     }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -161,7 +142,7 @@ mod tests {
         ));
 
         let mut findings = Vec::new();
-        check_products(&ir, &mut findings);
+        check_products(&cadmpeg_test_support::service_decode_context(), &ir, &mut findings).unwrap();
         assert!(findings.is_empty(), "{findings:?}");
 
         let occurrence =

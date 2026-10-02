@@ -88,20 +88,17 @@ pub(super) fn check_annotations<'ir>(
     })?;
     for id in annotations.provenance.keys() {
         if !all_ids.contains(ctx, id)? {
-            super::record_finding(ctx, findings, Check::Annotations, Severity::Error, id,
-                format_args!("provenance key does not resolve to an entity"))?;
+            super::record_finding(ctx, findings, Check::Annotations, Severity::Error, Some(id), format_args!("provenance key does not resolve to an entity"))?;
         }
     }
     for (id, note) in annotations.exactness() {
         if !all_ids.contains(ctx, id)? {
-            super::record_finding(ctx, findings, Check::Annotations, Severity::Error, id,
-                format_args!("exactness key does not resolve to an entity"))?;
+            super::record_finding(ctx, findings, Check::Annotations, Severity::Error, Some(id), format_args!("exactness key does not resolve to an entity"))?;
             continue;
         }
         if note.fields().is_empty() { continue; }
         let Some(position) = entity_position(ctx, &entities, id)? else {
-            super::record_finding(ctx, findings, Check::Annotations, Severity::Warning, id,
-                format_args!("entity could not be serialized to validate its exactness field paths"))?;
+            super::record_finding(ctx, findings, Check::Annotations, Severity::Warning, Some(id), format_args!("entity could not be serialized to validate its exactness field paths"))?;
             continue;
         };
         for path in note.fields().keys() {
@@ -113,8 +110,7 @@ pub(super) fn check_annotations<'ir>(
                 },
             };
             if !resolves {
-                super::record_finding(ctx, findings, Check::Annotations, Severity::Warning, id,
-                    format_args!("exactness field path `{path}` does not resolve"))?;
+                super::record_finding(ctx, findings, Check::Annotations, Severity::Warning, Some(id), format_args!("exactness field path `{path}` does not resolve"))?;
             }
         }
     }
@@ -183,7 +179,7 @@ pub(super) fn check_native_links(
         ctx.charge_work(1, "native reference owner scan")?;
         if let Some(target) = &feature.native_ref {
             if !native_ids.contains(ctx, target.as_str())? {
-                super::record_finding(ctx, findings, Check::NativeLinks, Severity::Error, feature.id.as_str(), format_args!("native_ref `{target}` does not resolve"))?;
+                super::record_finding(ctx, findings, Check::NativeLinks, Severity::Error, Some(feature.id.as_str()), format_args!("native_ref `{target}` does not resolve"))?;
             }
         }
         if let crate::features::FeatureDefinition::Operation(
@@ -194,7 +190,7 @@ pub(super) fn check_native_links(
         ) = feature.evaluation.definition()
         {
             if !native_ids.contains(ctx, target.as_str())? {
-                super::record_finding(ctx, findings, Check::NativeLinks, Severity::Error, feature.id.as_str(), format_args!("helix axis native_ref `{target}` does not resolve"))?;
+                super::record_finding(ctx, findings, Check::NativeLinks, Severity::Error, Some(feature.id.as_str()), format_args!("helix axis native_ref `{target}` does not resolve"))?;
             }
         }
     }
@@ -202,12 +198,12 @@ pub(super) fn check_native_links(
         ctx.charge_work(1, "native reference owner scan")?;
         if let Some(target) = &parameter.native_ref {
             if !native_ids.contains(ctx, target.as_str())? {
-                super::record_finding(ctx, findings, Check::NativeLinks, Severity::Error, parameter.id.as_str(), format_args!("native_ref `{target}` does not resolve"))?;
+                super::record_finding(ctx, findings, Check::NativeLinks, Severity::Error, Some(parameter.id.as_str()), format_args!("native_ref `{target}` does not resolve"))?;
             }
         }
         if let Some(semantic) = &parameter.pmi {
             if !native_ids.contains(ctx, semantic.native_ref.as_str())? {
-                super::record_finding(ctx, findings, Check::NativeLinks, Severity::Error, parameter.id.as_str(), format_args!("PMI native_ref `{}` does not resolve", semantic.native_ref))?;
+                super::record_finding(ctx, findings, Check::NativeLinks, Severity::Error, Some(parameter.id.as_str()), format_args!("PMI native_ref `{}` does not resolve", semantic.native_ref))?;
             }
         }
     }
@@ -215,7 +211,7 @@ pub(super) fn check_native_links(
         ctx.charge_work(1, "native reference owner scan")?;
         if let Some(target) = &configuration.native_ref {
             if !native_ids.contains(ctx, target.as_str())? {
-                super::record_finding(ctx, findings, Check::NativeLinks, Severity::Error, configuration.id.as_str(), format_args!("native_ref `{target}` does not resolve"))?;
+                super::record_finding(ctx, findings, Check::NativeLinks, Severity::Error, Some(configuration.id.as_str()), format_args!("native_ref `{target}` does not resolve"))?;
             }
         }
     }
@@ -223,7 +219,7 @@ pub(super) fn check_native_links(
         ctx.charge_work(1, "native reference owner scan")?;
         if let Some(target) = &sketch.native_ref {
             if !native_ids.contains(ctx, target.as_str())? {
-                super::record_finding(ctx, findings, Check::NativeLinks, Severity::Error, sketch.id.as_str(), format_args!("native_ref `{target}` does not resolve"))?;
+                super::record_finding(ctx, findings, Check::NativeLinks, Severity::Error, Some(sketch.id.as_str()), format_args!("native_ref `{target}` does not resolve"))?;
             }
         }
     }
@@ -231,7 +227,7 @@ pub(super) fn check_native_links(
         ctx.charge_work(1, "native reference owner scan")?;
         if let Some(target) = &sketch.native_ref {
             if !native_ids.contains(ctx, target.as_str())? {
-                super::record_finding(ctx, findings, Check::NativeLinks, Severity::Error, sketch.id.as_str(), format_args!("native_ref `{target}` does not resolve"))?;
+                super::record_finding(ctx, findings, Check::NativeLinks, Severity::Error, Some(sketch.id.as_str()), format_args!("native_ref `{target}` does not resolve"))?;
             }
         }
     }
@@ -239,7 +235,7 @@ pub(super) fn check_native_links(
         ctx.charge_work(1, "native reference owner scan")?;
         if let Some(target) = &constraint.native_ref {
             if !native_ids.contains(ctx, target.as_str())? {
-                super::record_finding(ctx, findings, Check::NativeLinks, Severity::Error, constraint.id.as_str(), format_args!("native_ref `{target}` does not resolve"))?;
+                super::record_finding(ctx, findings, Check::NativeLinks, Severity::Error, Some(constraint.id.as_str()), format_args!("native_ref `{target}` does not resolve"))?;
             }
         }
         if let crate::sketches::SketchConstraintDefinitionInput::Native { operands, .. } =
@@ -249,7 +245,7 @@ pub(super) fn check_native_links(
                 ctx.charge_work(1, "native operand scan")?;
                 if let Some(target) = &operand.native_ref {
                     if !native_ids.contains(ctx, target.as_str())? {
-                        super::record_finding(ctx, findings, Check::NativeLinks, Severity::Error, constraint.id.as_str(), format_args!("operand native_ref `{target}` does not resolve"))?;
+                        super::record_finding(ctx, findings, Check::NativeLinks, Severity::Error, Some(constraint.id.as_str()), format_args!("operand native_ref `{target}` does not resolve"))?;
                     }
                 }
             }
@@ -259,7 +255,7 @@ pub(super) fn check_native_links(
         ctx.charge_work(1, "native reference owner scan")?;
         if let Some(target) = &constraint.native_ref {
             if !native_ids.contains(ctx, target.as_str())? {
-                super::record_finding(ctx, findings, Check::NativeLinks, Severity::Error, constraint.id.as_str(), format_args!("native_ref `{target}` does not resolve"))?;
+                super::record_finding(ctx, findings, Check::NativeLinks, Severity::Error, Some(constraint.id.as_str()), format_args!("native_ref `{target}` does not resolve"))?;
             }
         }
         if let crate::sketches::SpatialSketchConstraintDefinitionInput::Native {
@@ -270,7 +266,7 @@ pub(super) fn check_native_links(
                 ctx.charge_work(1, "native operand scan")?;
                 if let Some(target) = &operand.native_ref {
                     if !native_ids.contains(ctx, target.as_str())? {
-                        super::record_finding(ctx, findings, Check::NativeLinks, Severity::Error, constraint.id.as_str(), format_args!("operand native_ref `{target}` does not resolve"))?;
+                        super::record_finding(ctx, findings, Check::NativeLinks, Severity::Error, Some(constraint.id.as_str()), format_args!("operand native_ref `{target}` does not resolve"))?;
                     }
                 }
             }
@@ -287,7 +283,7 @@ pub(super) fn check_native_links(
                     for target in entity.links(ctx)? {
                         let target = target?;
                         if !all_targets.contains(ctx, target)? {
-                            super::record_finding(ctx, findings, Check::NativeLinks, Severity::Error, entity.id(), format_args!("native-record link `{target}` does not resolve"))?;
+                            super::record_finding(ctx, findings, Check::NativeLinks, Severity::Error, Some(entity.id()), format_args!("native-record link `{target}` does not resolve"))?;
                         }
                     }
                     continue;
@@ -305,19 +301,19 @@ pub(super) fn check_native_links(
                     continue;
                 }
                 let serde_json::Value::Array(links) = value else {
-                    super::record_finding(ctx, findings, Check::NativeLinks, Severity::Error, record.id(), format_args!("{}", "native-record links must be an array of identities"))?;
+                    super::record_finding(ctx, findings, Check::NativeLinks, Severity::Error, Some(record.id()), format_args!("{}", "native-record links must be an array of identities"))?;
                     continue;
                 };
                 for (index, link) in links.iter().enumerate() {
                     ctx.charge_work(1, "native link scan")?;
                     let Some(target) = link.as_str() else {
-                        super::record_finding(ctx, findings, Check::NativeLinks, Severity::Error, record.id(), format_args!(
+                        super::record_finding(ctx, findings, Check::NativeLinks, Severity::Error, Some(record.id()), format_args!(
                                 "native-record link {index} must be an identity string"
                             ))?;
                         continue;
                     };
                     if !all_targets.contains(ctx, target)? {
-                        super::record_finding(ctx, findings, Check::NativeLinks, Severity::Error, record.id(), format_args!("native-record link `{target}` does not resolve"))?;
+                        super::record_finding(ctx, findings, Check::NativeLinks, Severity::Error, Some(record.id()), format_args!("native-record link `{target}` does not resolve"))?;
                     }
                 }
             }
