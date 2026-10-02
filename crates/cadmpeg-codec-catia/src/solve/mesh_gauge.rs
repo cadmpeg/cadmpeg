@@ -2354,6 +2354,16 @@ fn map_endpoint_relation_state(
             };
             ctx.push_vec(&mut choices, mapped, "catia_relation_mapped_choices")?;
         }
+        ctx.charge_work(u64_from_index(choices.len()), "catia_relation_choice_key_bytes")?;
+        for selection in &choices {
+            if let MeshEndpointRelationSelection::Enumerated { assignments, edge_pairs } = selection {
+                std::mem::size_of_val(assignments.as_slice())
+                    .checked_add(std::mem::size_of_val(edge_pairs.as_slice()))
+                    .ok_or_else(|| ctx.refuse_codec_limit(
+                        "catia_relation_mapped_choices_sort", u64::MAX - 1, u64::MAX,
+                    ))?;
+            }
+        }
         ctx.sort_unstable_by(
             &mut choices,
             Ord::cmp,
@@ -2361,7 +2371,8 @@ fn map_endpoint_relation_state(
                 MeshEndpointRelationSelection::Enumerated {
                     assignments,
                     edge_pairs,
-                } => assignments.len().saturating_add(edge_pairs.len()),
+                } => std::mem::size_of_val(assignments.as_slice())
+                    + std::mem::size_of_val(edge_pairs.as_slice()),
                 MeshEndpointRelationSelection::Deferred => 0,
             },
             "catia_relation_mapped_choices_sort",
@@ -2476,7 +2487,7 @@ fn relation_row_gauge_mapping(
         ctx.sort_unstable_by(
             &mut ordered,
             Ord::cmp,
-            |item| item.0.len(),
+            |item| std::mem::size_of_val(item.0.as_slice()),
             "catia_relation_ordered_rows_sort",
         )?;
         for (target, (_, source)) in targets.into_iter().zip(ordered) {
@@ -2902,3 +2913,6 @@ fn mesh_candidate_canonicalization_propagates_collection_refusals() {
         if limit.dimension == ResourceDimension::CollectionItems
             && limit.operation == "catia_mesh_vertex_seen"));
 }
+
+#[cfg(test)]
+mod work_tests;
