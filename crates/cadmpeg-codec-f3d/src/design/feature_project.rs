@@ -5537,6 +5537,8 @@ fn variable_fillet_law(
     )>,
     CodecError,
 > {
+    let mut scratch_storage = ctx.reserve_scoped(0, "F3D variable Fillet scratch")?;
+
     use cadmpeg_ir::features::edge_treatments::VariableRadius;
 
     let unique_parameter = |kind: &str| {
@@ -5567,16 +5569,20 @@ fn variable_fillet_law(
     let mut middle_parameters = Vec::new();
     for (ordinal, parameter) in parameters {
         match parameter.source_kind() {
-            "MidRadius" => ctx.push_vec(
-                &mut middle_radii,
-                (*ordinal, *parameter),
-                "f3d variable Fillet middle radii",
-            )?,
-            "MidParams" => ctx.push_vec(
-                &mut middle_parameters,
-                (*ordinal, *parameter),
-                "f3d variable Fillet middle parameters",
-            )?,
+            "MidRadius" => scratch_storage.with_storage(|| {
+                ctx.push_vec(
+                    &mut middle_radii,
+                    (*ordinal, *parameter),
+                    "f3d variable Fillet middle radii",
+                )
+            })?,
+            "MidParams" => scratch_storage.with_storage(|| {
+                ctx.push_vec(
+                    &mut middle_parameters,
+                    (*ordinal, *parameter),
+                    "f3d variable Fillet middle parameters",
+                )
+            })?,
             _ => {}
         }
     }
@@ -5768,41 +5774,43 @@ fn project_chamfer(
         "sort f3d design feature_project 11",
     )?;
     let group_count = edge_groups.len();
-    let ordered_parameters =
+    let mut ordered_parameters =
         |matches_kind: &dyn Fn(&str) -> bool| -> Result<Vec<&DesignParameter>, CodecError> {
-            let mut matches = Vec::new();
-            for parameter in parameters
-                .iter()
-                .filter(|(_, parameter)| matches_kind(parameter.source_kind()))
-                .copied()
-            {
-                ctx.push_vec(
-                    &mut matches,
-                    parameter,
-                    "f3d chamfer ordered parameter entries",
+            scratch_storage.with_storage(|| {
+                let mut matches = Vec::new();
+                for parameter in parameters
+                    .iter()
+                    .filter(|(_, parameter)| matches_kind(parameter.source_kind()))
+                    .copied()
+                {
+                    ctx.push_vec(
+                        &mut matches,
+                        parameter,
+                        "f3d chamfer ordered parameter entries",
+                    )?;
+                }
+                ctx.stable_sort_by(
+                    &mut matches[..],
+                    |left, right| {
+                        let left_key = {
+                            let (ordinal, _) = left;
+                            *ordinal
+                        };
+                        let right_key = {
+                            let (ordinal, _) = right;
+                            *ordinal
+                        };
+                        left_key.cmp(&right_key)
+                    },
+                    |_| 0,
+                    "sort f3d design feature_project 12",
                 )?;
-            }
-            ctx.stable_sort_by(
-                &mut matches[..],
-                |left, right| {
-                    let left_key = {
-                        let (ordinal, _) = left;
-                        *ordinal
-                    };
-                    let right_key = {
-                        let (ordinal, _) = right;
-                        *ordinal
-                    };
-                    left_key.cmp(&right_key)
-                },
-                |_| 0,
-                "sort f3d design feature_project 12",
-            )?;
-            let mut out = Vec::new();
-            for (_, parameter) in matches {
-                ctx.push_vec(&mut out, parameter, "f3d chamfer ordered parameter output")?;
-            }
-            Ok(out)
+                let mut out = Vec::new();
+                for (_, parameter) in matches {
+                    ctx.push_vec(&mut out, parameter, "f3d chamfer ordered parameter output")?;
+                }
+                Ok(out)
+            })
         };
     let distances = ordered_parameters(&|kind| kind == "Distance")?;
     let first_distances = ordered_parameters(&|kind| kind == "Distance 1")?;
@@ -5888,7 +5896,8 @@ fn project_chamfer(
                 .map(|(distance, angle)| ChamferSpec::DistanceAngle { distance, angle }),
         };
         let spec = or_none!(spec);
-        ctx.push_vec(&mut candidates, spec, "f3d chamfer specifications")?;
+        scratch_storage
+            .with_storage(|| ctx.push_vec(&mut candidates, spec, "f3d chamfer specifications"))?;
     }
     let mut groups = Vec::new();
     for (spec, group) in candidates.into_iter().zip(edge_groups) {
@@ -7835,11 +7844,13 @@ fn project_surface_patch(
     let mut unoccupied = Vec::new();
     for (ordinal, occupied) in occupied.iter().enumerate() {
         if !occupied {
-            ctx.push_vec(
-                &mut unoccupied,
-                ordinal,
-                "f3d surface-patch unoccupied references",
-            )?;
+            scratch_storage.with_storage(|| {
+                ctx.push_vec(
+                    &mut unoccupied,
+                    ordinal,
+                    "f3d surface-patch unoccupied references",
+                )
+            })?;
         }
     }
     let endpoint_unoccupied = unoccupied.as_slice() == [0]
