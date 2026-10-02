@@ -171,6 +171,7 @@ fn check_fixture(name: &str) {
                     | "reachability"
                     | "indirect"
                     | "addresses"
+                    | "objects"
                     | "fixed_ranges"
                     | "raw_steps"
                     | "conversions"
@@ -454,4 +455,9 @@ fn static_pointer_and_object_reachability() {
 #[test]
 fn address_taken_reachability() {
     check_fixture("addresses");
+}
+
+#[test]
+fn object_coercion_reachability() {
+    check_fixture("objects");
 }

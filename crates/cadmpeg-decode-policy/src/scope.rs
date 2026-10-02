@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Decode roots and resolved production call reachability.
+mod objects;
+
 use crate::{flow, types, Analysis, Findings};
 use rustc_hir::intravisit::{walk_expr, Visitor};
 use rustc_hir::{def::Res, Expr, ExprKind};
@@ -153,12 +155,25 @@ struct Calls<'a, 'b, 'tcx> {
     direct_callee: bool,
 }
 
-impl Calls<'_, '_, '_> {
+impl<'tcx> Calls<'_, '_, 'tcx> {
     fn edge(&mut self, callee: DefId) {
         if types::checked(self.analysis.tcx, callee) {
             self.graph
                 .edges
                 .insert((self.caller.clone(), key(self.analysis.tcx, callee)));
+        }
+    }
+
+    fn coercion(&mut self, source: ty::Ty<'tcx>, target: ty::Ty<'tcx>) {
+        let mut instances = Vec::new();
+        if !objects::targets(self.analysis.tcx, self.analysis.typing_env(), source, target, &mut instances) {
+            self.graph.uncertain.insert(self.caller.clone());
+        }
+        for instance in instances {
+            self.edge(instance.def_id());
+            if types::checked(self.analysis.tcx, instance.def_id()) {
+                self.graph.addresses.insert(key(self.analysis.tcx, instance.def_id()));
+            }
         }
     }
 
@@ -195,6 +210,17 @@ impl<'tcx> Visitor<'tcx> for Calls<'_, '_, 'tcx> {
                     self.edge(id);
                 }
             }
+        }
+        let mut source = self.analysis.expr_ty(expression);
+        for adjustment in self.analysis.typeck.expr_adjustments(expression) {
+            let target = self.analysis.substitute(adjustment.target);
+            if matches!(adjustment.kind, ty::adjustment::Adjust::Pointer(ty::adjustment::PointerCoercion::Unsize)) {
+                self.coercion(source, target);
+            }
+            source = target;
+        }
+        if let ExprKind::Cast(operand, _) = expression.kind {
+            self.coercion(self.analysis.expr_ty_adjusted(operand), self.analysis.expr_ty(expression));
         }
         let value = self.analysis.expr_ty(expression);
         if !self.direct_callee {
