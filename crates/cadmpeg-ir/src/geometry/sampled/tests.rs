@@ -76,7 +76,7 @@ fn sampled_carriers_admit_finite_numeric_payloads_and_preserve_failed_edits() {
         ],
         vec![[0, 1, 2]],
         0.0,
-    )
+     &cadmpeg_test_support::service_decode_context()).expect("polygonal construction admission")
     .unwrap();
     let original = surface.clone();
     assert!(surface
@@ -138,7 +138,7 @@ fn a_refused_polygonal_vertex_edit_keeps_the_prior_vertices() {
         ],
         vec![[0, 1, 2]],
         0.0,
-    )
+     &cadmpeg_test_support::service_decode_context()).expect("polygonal construction admission")
     .unwrap();
     let original = surface.clone();
     assert!(surface
@@ -163,7 +163,7 @@ fn sampled_carriers_hold_their_admitted_chordal_deflection_and_vertices() {
         Point3::new(1.0, 0.0, 0.0),
         Point3::new(0.0, 1.0, 0.0),
     ];
-    let mut surface = PolygonalSurface::new(vertices.clone(), vec![[0, 1, 2]], 0.25).unwrap();
+    let mut surface = PolygonalSurface::new(vertices.clone(), vec![[0, 1, 2]], 0.25, &cadmpeg_test_support::service_decode_context()).expect("polygonal construction admission").unwrap();
     assert_eq!(
         surface.chordal_deflection(),
         NonNegativeReal::new(0.25).unwrap()
@@ -225,9 +225,9 @@ fn scaled_deflection_constructors_preserve_output_and_refusal_order() {
             vec![[0, 1, 2]],
             deflection,
             scale
-        )
+        , &cadmpeg_test_support::service_decode_context()).expect("polygonal construction admission")
         .unwrap(),
-        PolygonalSurface::new(vertices.clone(), vec![[0, 1, 2]], 0.5).unwrap()
+        PolygonalSurface::new(vertices.clone(), vec![[0, 1, 2]], 0.5, &cadmpeg_test_support::service_decode_context()).expect("polygonal construction admission").unwrap()
     );
     let samples = PolylineSamples::Unparameterized {
         points: vertices[..2].to_vec().try_into().unwrap(),
@@ -253,11 +253,11 @@ fn scaled_deflection_constructors_preserve_output_and_refusal_order() {
         vec![[0, 1, 2]],
         deflection,
         overflow,
-    )
+     &cadmpeg_test_support::service_decode_context()).expect("polygonal construction admission")
     .unwrap_err();
     assert!(error.to_string().contains("at least three vertices"));
     let error =
-        PolygonalSurface::from_scaled_deflection(vertices, vec![[0, 1, 2]], deflection, overflow)
+        PolygonalSurface::from_scaled_deflection(vertices, vec![[0, 1, 2]], deflection, overflow, &cadmpeg_test_support::service_decode_context()).expect("polygonal construction admission")
             .unwrap_err();
     assert!(error
         .to_string()
@@ -288,9 +288,9 @@ fn admitted_polygonal_surface_path_preserves_geometry_and_layout_refusal() {
             vec![[0, 1, 2]],
             deflection,
             scale,
-        )
+         &cadmpeg_test_support::service_decode_context()).expect("polygonal construction admission")
         .unwrap(),
-        PolygonalSurface::from_scaled_deflection(vertices, vec![[0, 1, 2]], deflection, scale)
+        PolygonalSurface::from_scaled_deflection(vertices, vec![[0, 1, 2]], deflection, scale, &cadmpeg_test_support::service_decode_context()).expect("polygonal construction admission")
             .unwrap()
     );
     let overflow = PositiveReal::new(f64::MAX).unwrap();
@@ -300,7 +300,7 @@ fn admitted_polygonal_surface_path_preserves_geometry_and_layout_refusal() {
         vec![[0, 1, 3]],
         deflection,
         overflow,
-    )
+     &cadmpeg_test_support::service_decode_context()).expect("polygonal construction admission")
     .unwrap_err()
     .to_string()
     .contains("out-of-range triangle index"));
@@ -309,7 +309,7 @@ fn admitted_polygonal_surface_path_preserves_geometry_and_layout_refusal() {
         vec![[0, 1, 2]],
         deflection,
         overflow,
-    )
+     &cadmpeg_test_support::service_decode_context()).expect("polygonal construction admission")
     .unwrap_err()
     .to_string()
     .contains("chordal_deflection must be finite and non-negative"));
@@ -480,3 +480,5 @@ fn checked_polyline_samples_keep_parameter_order_and_deflection_rules() {
         "chordal_deflection must be finite and non-negative"
     );
 }
+
+mod construction;

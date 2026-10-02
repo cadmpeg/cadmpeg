@@ -303,7 +303,7 @@ fn a_scaled_polygonal_surface_keeps_its_triangles_and_refuses_only_overflow() {
                 ],
                 vec![[0, 1, 2]],
                 deflection,
-            )
+             &cadmpeg_test_support::service_decode_context()).expect("polygonal construction admission")
             .expect("a polygonal fixture"),
         )
     };
@@ -318,7 +318,7 @@ fn a_scaled_polygonal_surface_keeps_its_triangles_and_refuses_only_overflow() {
                 ],
                 vec![[0, 1, 2]],
                 0.0,
-            )
+             &cadmpeg_test_support::service_decode_context()).expect("polygonal construction admission")
             .expect("a polygonal fixture"),
         ))
     );
@@ -499,7 +499,7 @@ fn owned_sample_scaling_refuses_work_and_retained_text_without_row_copies() {
                 ],
                 vec![[0, 1, 2]],
                 deflection,
-            )
+             &cadmpeg_test_support::service_decode_context()).expect("polygonal construction admission")
             .expect("polygonal"),
         )
     };

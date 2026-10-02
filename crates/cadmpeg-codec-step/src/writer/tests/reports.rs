@@ -1424,7 +1424,7 @@ fn unsupported_nested_and_polygonal_carriers_are_skipped_without_panicking() {
             ],
             vec![[0, 1, 2]],
             0.1,
-        )
+         &cadmpeg_test_support::service_decode_context()).expect("polygonal construction admission")
         .expect("valid polygonal surface"),
     ));
     let report = write_step(
