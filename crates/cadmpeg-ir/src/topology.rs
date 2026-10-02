@@ -1122,6 +1122,13 @@ impl crate::geometry::nurbs::NurbsCurve {
     }
 }
 
+/// Active finite knot intervals with their live temporary reservation.
+#[derive(Debug)]
+pub(crate) struct ActiveKnotSpans<'ctx> {
+    pub(crate) spans: Vec<IncreasingParameterInterval>,
+    _storage: cadmpeg_core::decode::ScopedReservation<'ctx>,
+}
+
 impl crate::geometry::nurbs::KnotVector {
     /// Knots `first` and `last` as an interval, absent past the last knot or
     /// when `first` follows `last`. The vector admits finite non-decreasing
@@ -1135,27 +1142,26 @@ impl crate::geometry::nurbs::KnotVector {
 
     /// The intervals between consecutive distinct knots among knots
     /// `first..=last`, in increasing order.
-    pub(crate) fn active_spans(
+    pub(crate) fn active_spans<'ctx>(
         &self,
+        ctx: &'ctx DecodeContext<'_>,
         first: usize,
         last: usize,
-    ) -> Result<Option<Vec<IncreasingParameterInterval>>, cadmpeg_core::decode::ResourceLimit> {
+    ) -> Result<Option<ActiveKnotSpans<'ctx>>, cadmpeg_core::decode::ResourceLimit> {
         let Some(knots) = self.get(first..=last) else {
             return Ok(None);
         };
+        let mut storage = ctx.reserve_scoped_limit(0, "IR active knot spans")?;
         let mut spans = Vec::new();
-        crate::geometry::nurbs::scratch::reserve_exact(
-            &mut spans,
-            knots.len(),
-            "IR active knot spans",
-        )?;
-        spans.extend(
-            knots
-                .windows(2)
-                .filter(|pair| pair[0] < pair[1])
-                .map(|pair| IncreasingParameterInterval([pair[0], pair[1]])),
-        );
-        Ok(Some(spans))
+        for pair in knots.windows(2) {
+            ctx.charge_work_limit(1, "IR active knot span visit")?;
+            if pair[0] < pair[1] {
+                ctx.reserve_scoped_vec_limit(&mut storage, &mut spans, 1, "IR active knot spans")?;
+                ctx.charge_work_limit(1, "IR active knot span copy")?;
+                spans.push(IncreasingParameterInterval([pair[0], pair[1]]));
+            }
+        }
+        Ok(Some(ActiveKnotSpans { spans, _storage: storage }))
     }
 }
 
@@ -1573,6 +1579,66 @@ mod tests {
     }
 
     #[test]
+    fn active_knot_spans_preserve_refusals_and_hold_scoped_storage() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        use cadmpeg_core::CodecError;
+        let knots = crate::geometry::nurbs::KnotVector::new(
+            &cadmpeg_test_support::service_decode_context(), vec![0.0, 0.0, 1.0, 1.0, 2.5, 4.0])
+            .expect("knot admission").expect("nondecreasing");
+        // Five adjacent-pair visits and three increasing-interval copies.
+        for cap in 0..8 {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = cap;
+            let arena = DecodeArena::new();
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+            let limit = knots.active_spans(&ctx, 0, 5).expect_err("all span work needs admission");
+            assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+            assert_eq!(limit.limit, cap);
+            assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit));
+        }
+        for dimension in [ResourceDimension::MaterializedBytes, ResourceDimension::CollectionItems] {
+            let mut policy = DecodePolicy::service();
+            match dimension {
+                ResourceDimension::MaterializedBytes => policy.limits.max_materialized_bytes = 0,
+                ResourceDimension::CollectionItems => policy.limits.max_collection_items = 0,
+                _ => unreachable!("tested storage dimensions"),
+            }
+            let arena = DecodeArena::new();
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+            let limit = knots.active_spans(&ctx, 0, 5).expect_err("span storage admission");
+            assert_eq!(limit.dimension, dimension);
+            assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit));
+        }
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 8;
+        policy.limits.max_retained_bytes = 0;
+        policy.limits.max_materialized_bytes = 64;
+        policy.limits.max_collection_items = 3;
+        policy.limits.max_recursion_depth = 0;
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+        let output = knots.active_spans(&ctx, 0, 5).expect("exact work").expect("valid range");
+        assert_eq!(output.spans.iter().copied().map(super::IncreasingParameterInterval::endpoints)
+            .collect::<Vec<_>>(), [[0.0, 1.0], [1.0, 2.5], [2.5, 4.0]]);
+        drop(output);
+        let reuse = ctx.reserve_scoped_limit(64, "test active spans released").expect("all bytes reusable");
+        drop(reuse);
+        ctx.finish_session().expect("scoped output with exact slots");
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 1;
+        policy.limits.max_retained_bytes = 0;
+        policy.limits.max_materialized_bytes = 0;
+        policy.limits.max_collection_items = 0;
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+        assert!(knots.active_spans(&ctx, 0, 6).expect("invalid range is constant-time").is_none());
+        let empty = knots.active_spans(&ctx, 2, 3).expect("one repeated interval").expect("valid range");
+        assert!(empty.spans.is_empty());
+        drop(empty);
+        ctx.finish_session().expect("empty output allocates no storage");
+    }
+
+    #[test]
     fn knot_spans_read_finite_intervals_between_knots() {
         let knots = crate::geometry::nurbs::KnotVector::new(&cadmpeg_test_support::service_decode_context(), vec![0.0, 0.0, 1.0, 1.0, 2.5, 4.0]).expect("fixture knot admission")
             .expect("non-decreasing knots");
@@ -1583,14 +1649,14 @@ mod tests {
         assert!(knots.span(4, 1).is_none());
         assert!(knots.span(1, 6).is_none());
         assert_eq!(
-            knots.active_spans(0, 5).unwrap().map(|spans| spans
+            knots.active_spans(&cadmpeg_test_support::service_decode_context(), 0, 5).unwrap().map(|spans| spans.spans
                 .into_iter()
                 .map(super::IncreasingParameterInterval::endpoints)
                 .collect::<Vec<_>>()),
             Some(vec![[0.0, 1.0], [1.0, 2.5], [2.5, 4.0]])
         );
-        assert_eq!(knots.active_spans(2, 3).unwrap(), Some(Vec::new()));
-        assert!(knots.active_spans(0, 6).unwrap().is_none());
+        assert_eq!(knots.active_spans(&cadmpeg_test_support::service_decode_context(), 2, 3).unwrap().map(|spans| spans.spans), Some(Vec::new()));
+        assert!(knots.active_spans(&cadmpeg_test_support::service_decode_context(), 0, 6).unwrap().is_none());
         assert_eq!(
             knots.finite_knot(4).map(crate::scalar::FiniteReal::get),
             Some(2.5)

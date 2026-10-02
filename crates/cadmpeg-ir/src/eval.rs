@@ -329,13 +329,7 @@ fn rational_surface_patches_with_budget<'session>(
     let Some(patch_control_count) = (u_degree + 1).checked_mul(v_degree + 1) else {
         return Ok(None);
     };
-    let Some(work) = control_count
-        .checked_add(surface.u_knots().len())
-        .and_then(|count| count.checked_add(surface.v_knots().len()))
-    else {
-        return Ok(None);
-    };
-    if !budget.charge_by(work) {
+    if !budget.charge_by(control_count) {
         return Ok(None);
     }
     if u_degree >= u_count || v_degree >= v_count {
@@ -375,10 +369,10 @@ fn rational_surface_patches_with_budget<'session>(
     };
     // The Bezier spans of every row and column share the knots, so their
     // domains are the intervals between consecutive distinct active knots.
-    let Some(u_domains) = surface.u_knots().active_spans(u_degree, u_count)? else {
+    let Some(u_domains) = surface.u_knots().active_spans(ctx, u_degree, u_count)? else {
         return Ok(None);
     };
-    let Some(v_domains) = surface.v_knots().active_spans(v_degree, v_count)? else {
+    let Some(v_domains) = surface.v_knots().active_spans(ctx, v_degree, v_count)? else {
         return Ok(None);
     };
     let mut u_spans_by_v = Vec::new();
@@ -394,16 +388,16 @@ fn rational_surface_patches_with_budget<'session>(
     }
     if u_spans_by_v
         .iter()
-        .any(|spans| spans.spans.len() != u_domains.len())
+        .any(|spans| spans.spans.len() != u_domains.spans.len())
     {
         return Ok(None);
     }
     let mut patches = Vec::new();
-    let Some(patch_count) = u_domains.len().checked_mul(v_domains.len()) else {
+    let Some(patch_count) = u_domains.spans.len().checked_mul(v_domains.spans.len()) else {
         return Ok(None);
     };
     scratch::reserve_exact(&mut patches, patch_count, "IR surface patches")?;
-    for (u_span, &u_domain) in u_domains.iter().enumerate() {
+    for (u_span, &u_domain) in u_domains.spans.iter().enumerate() {
         let mut v_spans_by_u = Vec::new();
         scratch::reserve_exact(&mut v_spans_by_u, u_degree + 1, "IR surface v spans")?;
         for u_control in 0..=u_degree {
@@ -417,11 +411,11 @@ fn rational_surface_patches_with_budget<'session>(
         }
         if v_spans_by_u
             .iter()
-            .any(|spans| spans.spans.len() != v_domains.len())
+            .any(|spans| spans.spans.len() != v_domains.spans.len())
         {
             return Ok(None);
         }
-        for (v_span, &v_domain) in v_domains.iter().enumerate() {
+        for (v_span, &v_domain) in v_domains.spans.iter().enumerate() {
             if !budget.charge_by(patch_control_count) {
                 return Ok(None);
             }
