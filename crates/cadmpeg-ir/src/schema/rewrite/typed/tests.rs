@@ -50,3 +50,32 @@ fn typed_rewrite_preserves_refusal_before_sequence_recursion() {
     drop(map);
     assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(original)) if original == limit));
 }
+
+#[test]
+fn typed_text_rewrite_only_changes_owned_identity_text() {
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    let replacements = std::collections::BTreeMap::from([("test:model:point#one".to_owned(), "test:occurrence:point#one".to_owned())]);
+    let mut map = IdentityMap::new(&ctx, "test text identities", |source: &str| ctx.copy_retained_text(source, "test unchanged identity")).unwrap().with_text_replacements(&replacements);
+    let text = vec!["test:model:point#one".to_owned(), "test:model:point#external".to_owned(), "literal".to_owned()].rewrite_identities(&ctx, &mut map).unwrap();
+    assert_eq!(text, ["test:occurrence:point#one", "test:model:point#external", "literal"]);
+    drop(map);
+    ctx.finish_session().unwrap();
+}
+
+#[test]
+fn typed_text_rewrite_preserves_its_first_refusal() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let replacements = std::collections::BTreeMap::from([("test:model:point#one".to_owned(), "test:occurrence:point#one".to_owned())]);
+    let mut map = IdentityMap::new(&ctx, "test text identities", |source: &str| ctx.copy_retained_text(source, "test identity")).unwrap().with_text_replacements(&replacements);
+    let CodecError::ResourceLimit(first) = "test:model:point#one".to_owned().rewrite_identities(&ctx, &mut map).unwrap_err() else { panic!("text replacement must refuse"); };
+    assert_eq!(first.dimension, ResourceDimension::RetainedBytes);
+    assert_eq!(first.additional, "test:occurrence:point#one".len() as u64);
+    assert!(matches!("ordinary text".to_owned().rewrite_identities(&ctx, &mut map), Err(CodecError::ResourceLimit(limit)) if limit == first));
+    assert!(matches!(map.finish(&ctx), Err(CodecError::ResourceLimit(limit)) if limit == first));
+    drop(map);
+    assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(limit)) if limit == first));
+}

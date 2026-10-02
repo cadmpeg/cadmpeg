@@ -41,13 +41,14 @@ pub trait RewriteIdentities: Sized {
 #[derive(Debug)]
 pub struct IdentityMap<'ctx, F> {
     map: F,
+    text_replacements: Option<&'ctx BTreeMap<String, String>>,
     targets: BTreeMap<String, String>,
     occupied: BTreeSet<String>,
-    storage: ScopedReservation<'ctx>,
     longest: usize,
     operation: &'static str,
     refused: Option<String>,
     resource_refusal: Option<ResourceLimit>,
+    storage: ScopedReservation<'ctx>,
 }
 
 impl<'ctx, F: FnMut(&str) -> Result<String, CodecError>> IdentityMap<'ctx, F> {
@@ -55,6 +56,7 @@ impl<'ctx, F: FnMut(&str) -> Result<String, CodecError>> IdentityMap<'ctx, F> {
     pub fn new(ctx: &'ctx DecodeContext<'_>, operation: &'static str, map: F) -> Result<Self, CodecError> {
         Ok(Self {
             map,
+            text_replacements: None,
             targets: BTreeMap::new(),
             occupied: BTreeSet::new(),
             storage: ctx.reserve_scoped(0, operation)?,
@@ -63,6 +65,30 @@ impl<'ctx, F: FnMut(&str) -> Result<String, CodecError>> IdentityMap<'ctx, F> {
             refused: None,
             resource_refusal: None,
         })
+    }
+
+    /// Also rewrite ordinary text that exactly names an owned source identity.
+    pub fn with_text_replacements(mut self, replacements: &'ctx BTreeMap<String, String>) -> Self {
+        self.text_replacements = Some(replacements);
+        self
+    }
+
+    fn text(&mut self, ctx: &DecodeContext<'_>, source: String) -> Result<String, CodecError> {
+        let result = (|| {
+            if let Some(limit) = self.resource_refusal { return Err(CodecError::ResourceLimit(limit)); }
+            ctx.charge_work(1, self.operation)?;
+            let Some(replacements) = self.text_replacements else { return Ok(source); };
+            let comparisons = u64_from_index(source.len()).checked_add(1).and_then(|length| length.checked_mul(u64_from_index(replacements.len()).checked_add(1)?)).ok_or_else(|| ctx.refuse_codec_limit(self.operation, u64::MAX - 1, u64::MAX))?;
+            ctx.charge_work(comparisons, self.operation)?;
+            match replacements.get(&source) {
+                Some(target) => ctx.copy_retained_text(target, self.operation),
+                None => Ok(source),
+            }
+        })();
+        if let Err(CodecError::ResourceLimit(limit)) = &result {
+            if self.resource_refusal.is_none() { self.resource_refusal = Some(*limit); }
+        }
+        result
     }
 
     fn refuse<T>(&mut self, ctx: &DecodeContext<'_>, message: std::fmt::Arguments<'_>) -> Result<T, CodecError> {
@@ -178,9 +204,8 @@ impl RewriteIdentities for String {
     fn visit_identity_references(&self, ctx: &DecodeContext<'_>, _visitor: &mut dyn FnMut(&str) -> Result<(), CodecError>) -> Result<(), CodecError> {
         ctx.charge_work(1, "walk typed reference scalar")
     }
-    fn rewrite_identities<F: FnMut(&str) -> Result<String, CodecError>>(self, ctx: &DecodeContext<'_>, _map: &mut IdentityMap<'_, F>) -> Result<Self, CodecError> {
-        ctx.charge_work(1, "identity rewrite text node")?;
-        Ok(self)
+    fn rewrite_identities<F: FnMut(&str) -> Result<String, CodecError>>(self, ctx: &DecodeContext<'_>, map: &mut IdentityMap<'_, F>) -> Result<Self, CodecError> {
+        map.text(ctx, self)
     }
 }
 
@@ -285,9 +310,10 @@ impl RewriteIdentities for cadmpeg_core::text::NonBlankString {
     fn visit_identity_references(&self, ctx: &DecodeContext<'_>, _visitor: &mut dyn FnMut(&str) -> Result<(), CodecError>) -> Result<(), CodecError> {
         ctx.charge_work(1, "walk typed reference scalar")
     }
-    fn rewrite_identities<F: FnMut(&str) -> Result<String, CodecError>>(self, ctx: &DecodeContext<'_>, _map: &mut IdentityMap<'_, F>) -> Result<Self, CodecError> {
-        ctx.charge_work(1, "rewrite nonblank text node")?;
-        Ok(self)
+    fn rewrite_identities<F: FnMut(&str) -> Result<String, CodecError>>(self, ctx: &DecodeContext<'_>, map: &mut IdentityMap<'_, F>) -> Result<Self, CodecError> {
+        let text = map.text(ctx, self.into_string())?;
+        ctx.charge_work(u64_from_index(text.len()), "rewrite nonblank text")?;
+        Self::new(text).ok_or_else(|| CodecError::malformed("rewritten text must be nonblank"))
     }
 }
 rewrite_scalars!(std::num::NonZeroI64, std::num::NonZeroU32);
