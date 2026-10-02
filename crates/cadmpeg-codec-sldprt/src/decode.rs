@@ -5392,11 +5392,12 @@ fn stamp_local_digests(ctx: &DecodeContext<'_>, ir: &mut CadIr) -> Result<(), Co
             .iter()
             .any(|appearance| appearance.schema.as_deref() == Some("moVisualProperties_c"));
     if has_swobjects_semantics {
-        if let (Ok(swobjects_hash), Ok(material_hash)) = (
-            crate::writer::swobjects_local_sha256(ir),
-            crate::writer::swobjects_material_local_sha256(ir),
+        match (
+            crate::writer::swobjects_local_sha256(ctx, ir),
+            crate::writer::swobjects_material_local_sha256(ctx, ir),
         ) {
-            let identity_hash = crate::writer::swobjects_metadata_identity_local_sha256(ir)?;
+            (Ok(swobjects_hash), Ok(material_hash)) => {
+            let identity_hash = crate::writer::swobjects_metadata_identity_local_sha256(ctx, ir)?;
             if let Some(source) = &mut ir.source {
                 source.attributes.insert(
                     cadmpeg_core::nonblank_const!(crate::writer::SWOBJECTS_LOCAL_DIGEST_ATTRIBUTE),
@@ -5415,6 +5416,9 @@ fn stamp_local_digests(ctx: &DecodeContext<'_>, ir: &mut CadIr) -> Result<(), Co
                     identity_hash,
                 );
             }
+            }
+            (Err(error @ CodecError::ResourceLimit(_)), _) | (_, Err(error @ CodecError::ResourceLimit(_))) => return Err(error),
+            _ => {},
         }
     }
     if !ir.model.pmi.is_empty() {
@@ -5472,7 +5476,9 @@ pub(crate) fn brep_local_sha256(ir: &CadIr) -> Result<String, CodecError> {
     partition
         .appearance_bindings
         .clone_from(&ir.model.appearance_bindings);
-    Ok(brep_partition_sha256(ir.tolerances, partition)?.0)
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &cadmpeg_core::decode::DecodePolicy::desktop())?;
+    brep_partition_sha256(&ctx, ir.tolerances, partition).0
 }
 
 /// [`brep_local_sha256`] without the deep clone, for the decode stamp path.
@@ -5550,7 +5556,7 @@ fn brep_local_sha256_in_place(
     partition.procedural_curves = take(&mut ir.model.procedural_curves);
     partition.appearances = appearance_partition.take_kept();
     partition.appearance_bindings = binding_partition.take_kept();
-    let (hash, mut partition) = brep_partition_sha256(ir.tolerances, partition)?;
+    let (hash, mut partition) = brep_partition_sha256(ctx, ir.tolerances, partition);
     ir.model.bodies = take(&mut partition.bodies);
     for (body, (name, color)) in ir.model.bodies.iter_mut().zip(saved_body_display) {
         body.name = name;
@@ -5572,7 +5578,7 @@ fn brep_local_sha256_in_place(
     ir.model.appearances = appearance_partition.restore(take(&mut partition.appearances))?;
     ir.model.appearance_bindings =
         binding_partition.restore(take(&mut partition.appearance_bindings))?;
-    Ok(hash)
+    hash
 }
 
 #[cfg(test)]
@@ -5647,6 +5653,28 @@ mod digest_tests {
         let original = ir.model.bodies[0].clone();
         brep_local_sha256_in_place(&ctx, &mut ir).unwrap();
         assert_eq!(ir.model.bodies[0], original);
+    }
+
+    #[test]
+    fn digest_hash_refusal_restores_the_moved_model() {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_recursion_depth = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(b"digest", &arena, &policy).unwrap();
+        let mut ir = named_body_document();
+        ir.model.appearances.push(appearance("synthetic:test:id#face-appearance"));
+        ir.model.appearance_bindings.push(binding(
+            "synthetic:test:id#face-binding",
+            AppearanceTarget::Face(FaceId::mint("synthetic:test:id#digest-face").unwrap()),
+            "synthetic:test:id#face-appearance",
+        ));
+        let original = ir.clone();
+        let CodecError::ResourceLimit(limit) = brep_local_sha256_in_place(&ctx, &mut ir).unwrap_err() else {
+            panic!("digest must refuse recursion");
+        };
+        assert_eq!(limit.dimension, cadmpeg_core::decode::ResourceDimension::RecursionDepth);
+        assert_eq!(ir, original);
+        assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(first)) if first == limit));
     }
 
     #[test]
@@ -5725,9 +5753,10 @@ mod digest_tests {
 /// its arenas back; only `bodies` (display fields stripped), `appearances`,
 /// and `appearance_bindings` (both filtered to face bindings) are mutated.
 fn brep_partition_sha256(
+    ctx: &DecodeContext<'_>,
     tolerances: cadmpeg_ir::units::Tolerances,
     model: cadmpeg_ir::document::Model,
-) -> Result<(String, cadmpeg_ir::document::Model), CodecError> {
+) -> (Result<String, CodecError>, cadmpeg_ir::document::Model) {
     use cadmpeg_ir::appearance::AppearanceTarget;
 
     let mut normalized = CadIr::empty();
@@ -5747,10 +5776,10 @@ fn brep_partition_sha256(
             .iter()
             .any(|binding| binding.appearance == appearance.id)
     });
-    Ok((
-        cadmpeg_ir::hash::canonical_json_sha256(&normalized)?,
+    (
+        cadmpeg_ir::hash::canonical_json_sha256(ctx, &normalized, "hash SLDPRT BREP partition").map_err(Into::into),
         normalized.model,
-    ))
+    )
 }
 
 /// Machine-local `document_local_sha256` for the SLDPRT write-path edit oracle.
