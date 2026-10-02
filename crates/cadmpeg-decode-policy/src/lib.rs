@@ -80,8 +80,10 @@ fn production(tcx: TyCtxt<'_>, owner: LocalDefId) -> bool {
     if !matches!(tcx.def_kind(owner), rustc_hir::def::DefKind::Fn | rustc_hir::def::DefKind::AssocFn | rustc_hir::def::DefKind::Closure) { return false; }
     let path = tcx.sess.source_map().lookup_char_pos(tcx.def_span(owner).source_callsite().lo()).file.name.prefer_local_unconditionally().to_string();
     let parts: Vec<&str> = path.split('/').collect();
-    if parts.iter().any(|part| matches!(*part, "tests" | "test_support" | "golden_tests" | "integration_tests" | "benches" | "bin" | "writer" | "encode" | "write")) { return false; }
-    if parts.last().is_some_and(|name| name.contains("test") || name.starts_with("writer") || matches!(*name, "zip_write.rs" | "export.rs" | "sketch_write.rs" | "write_generate.rs" | "write_prepare.rs")) { return false; }
+    if parts.iter().any(|part| matches!(*part, "tests" | "test_support" | "golden_tests" | "integration_tests" | "benches" | "bin" | "writer")) { return false; }
+    if parts.windows(2).any(|pair| pair[0] == "history" && matches!(pair[1], "encode" | "write")) { return false; }
+    if parts.last().is_some_and(|name| name.contains("test") || name.starts_with("writer") || matches!(*name, "zip_write.rs" | "export.rs")) { return false; }
+    if parts.windows(2).any(|pair| pair[0] == "resolved_features" && matches!(pair[1], "sketch_write.rs" | "write_generate.rs" | "write_prepare.rs")) { return false; }
     let symbol = tcx.crate_name(rustc_span::def_id::LOCAL_CRATE);
     let crate_name = symbol.as_str();
     std::env::var_os("CADMPEG_POLICY_FIXTURE").is_some() || crate_name.starts_with("cadmpeg_codec_") || matches!(crate_name, "cadmpeg_core" | "cadmpeg_ir" | "cadmpeg_container" | "cadmpeg_asm" | "cadmpeg_parasolid" | "cadmpeg_protein")

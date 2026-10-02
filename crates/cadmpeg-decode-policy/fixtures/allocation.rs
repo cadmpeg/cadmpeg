@@ -29,6 +29,7 @@ pub fn constant_formats(ctx: &DecodeContext) {
     let _literal = format!("value: {}", "fixed");
 }
 
+#[rustfmt::skip]
 pub fn same_line(ctx: &DecodeContext, text: &str) {
     let _ctx = ctx;
     let _a = text.to_string(); let _b = text.to_string(); // finding: uncharged_decode_allocation, uncharged_decode_allocation

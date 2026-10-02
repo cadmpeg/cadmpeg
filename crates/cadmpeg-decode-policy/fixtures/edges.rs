@@ -32,3 +32,22 @@ pub fn wrong_dimension(ctx: &DecodeContext, bytes: &[u8]) -> Result<(), ()> {
     }
     Ok(())
 }
+
+pub fn pointer_conversion(ctx: &DecodeContext, bytes: &mut [u8]) {
+    let _ctx = ctx;
+    let _pointer = std::ptr::NonNull::from(bytes);
+}
+pub fn unknown_range(ctx: &DecodeContext, count: usize) -> Result<(), ()> {
+    ctx.charge_work((count / 2) as u64, "uncertain extent")?;
+    for _ in 0..count {} // finding: unproven_decode_charge
+    Ok(())
+}
+pub fn shared_copy(ctx: &DecodeContext, text: &str) {
+    let _ctx = ctx;
+    let _shared: std::rc::Rc<str> = text.into(); // finding: uncharged_decode_allocation, uncharged_decode_work
+}
+unsafe extern "C" { fn opaque_work(count: usize); }
+pub fn opaque_scalar(ctx: &DecodeContext, count: usize) {
+    let _ctx = ctx;
+    unsafe { opaque_work(count); } // finding: unproven_decode_charge
+}
