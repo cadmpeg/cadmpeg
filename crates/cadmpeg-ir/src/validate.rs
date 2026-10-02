@@ -192,7 +192,7 @@ fn validate_annotations<'a>(
     findings: &mut Vec<Finding>,
 ) -> Result<(), CodecError> {
     let all_ids = identities::BorrowedIdentities::build(ctx, |add| {
-        for id in ids.identities().chain(additional) { add(id)?; }
+        for id in ids.identities().chain(additional) { add(id, ())?; }
         Ok(())
     })?;
     check_annotations(ctx, ids.native_view(), annotations, &all_ids, findings)
