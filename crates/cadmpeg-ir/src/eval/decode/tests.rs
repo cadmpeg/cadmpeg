@@ -411,6 +411,107 @@ fn admitted_polar_pcurve_refuses_weight_copy() {
 }
 
 #[test]
+fn scratch_fill_admits_each_clone_before_it_runs() {
+    use std::cell::Cell;
+    use std::rc::Rc;
+    struct Counted {
+        value: u8,
+        clones: Rc<Cell<u64>>,
+    }
+    impl Clone for Counted {
+        fn clone(&self) -> Self {
+            self.clones.set(self.clones.get() + 1);
+            Self { value: self.value, clones: Rc::clone(&self.clones) }
+        }
+    }
+    for allowance in 0..=3 {
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = allowance;
+        policy.limits.max_materialized_bytes = 200;
+        policy.limits.max_collection_items = 3;
+        policy.limits.max_retained_bytes = 0;
+        policy.limits.max_recursion_depth = 0;
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let scratch = super::Scratch::new(&ctx);
+        let clones = Rc::new(Cell::new(0));
+        let result = scratch.filled(3, Counted { value: 7, clones: Rc::clone(&clones) }, "scratch fill storage", "scratch fill clones");
+        assert_eq!(clones.get(), allowance);
+        if allowance < 3 {
+            assert!(result.is_none());
+            let original = scratch.refused().unwrap();
+            assert_eq!(original.dimension, ResourceDimension::WorkUnits);
+            assert_eq!(original.operation, "scratch fill clones");
+            drop(scratch);
+            assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(limit)) if limit == original));
+        } else {
+            let result = result.unwrap();
+            assert_eq!(result.iter().map(|value| value.value).collect::<Vec<_>>(), vec![7, 7, 7]);
+            drop(result);
+            drop(scratch);
+            let storage = ctx.reserve_scoped_limit(200, "fill storage released").unwrap();
+            drop(storage);
+            ctx.finish_session().unwrap();
+        }
+    }
+}
+
+#[test]
+fn scratch_collect_admits_each_iterator_read_before_it_runs() {
+    use std::cell::Cell;
+    for allowance in 0..=3 {
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = allowance;
+        policy.limits.max_materialized_bytes = 200;
+        policy.limits.max_collection_items = 3;
+        policy.limits.max_retained_bytes = 0;
+        policy.limits.max_recursion_depth = 0;
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let scratch = super::Scratch::new(&ctx);
+        let reads = Cell::new(0);
+        let result = scratch.collect((0..3).map(|value| { reads.set(reads.get() + 1); Some(value) }), "scratch collect storage", "scratch collect reads");
+        assert_eq!(reads.get(), allowance);
+        if allowance < 3 {
+            assert!(result.is_none());
+            let original = scratch.refused().unwrap();
+            assert_eq!(original.dimension, ResourceDimension::WorkUnits);
+            assert_eq!(original.operation, "scratch collect reads");
+            drop(scratch);
+            assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(limit)) if limit == original));
+        } else {
+            assert_eq!(result.unwrap(), vec![0, 1, 2]);
+            drop(scratch);
+            let storage = ctx.reserve_scoped_limit(200, "collect storage released").unwrap();
+            drop(storage);
+            ctx.finish_session().unwrap();
+        }
+    }
+}
+
+#[test]
+fn scratch_collect_stops_at_absence_and_observes_a_fused_empty_session() {
+    use std::cell::Cell;
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 2;
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let scratch = super::Scratch::new(&ctx);
+    let reads = Cell::new(0);
+    let result = scratch.collect((0..3).map(|value| { reads.set(reads.get() + 1); (value != 1).then_some(value) }), "scratch absent storage", "scratch absent reads");
+    assert_eq!(result, None);
+    assert_eq!(reads.get(), 2);
+    assert_eq!(scratch.refused(), None);
+    drop(scratch);
+    let original = ctx.charge_work_limit(1, "original empty scratch refusal").unwrap_err();
+    let scratch = super::Scratch::new(&ctx);
+    assert_eq!(scratch.collect(std::iter::empty::<Option<u8>>(), "empty storage", "empty reads"), None);
+    assert_eq!(scratch.refused(), Some(original));
+    drop(scratch);
+    assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(limit)) if limit == original));
+}
+
+#[test]
 fn uncharged_scratch_reports_an_allocation_refusal_instead_of_no_value() {
     use crate::eval::EvaluationFailure;
     use cadmpeg_core::decode::ResourceFailure;
@@ -420,7 +521,7 @@ fn uncharged_scratch_reports_an_allocation_refusal_instead_of_no_value() {
         DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).expect("root");
     let scratch = super::Scratch::new(&ctx);
     assert!(scratch
-        .filled(usize::MAX, 0_u8, "IR test scratch")
+        .filled(usize::MAX, 0_u8, "IR test scratch", "IR test scratch work")
         .is_none());
     let refusal = scratch
         .refused()
