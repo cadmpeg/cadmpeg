@@ -149,6 +149,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
                     }
                     return None;
                 }
+                if matches!(name.as_str(), "charge_collection_items" | "charge_collection_items_limit" | "charge_retained" | "charge_retained_limit" | "reserve_scoped" | "reserve_scoped_limit") { return Some(false); }
                 if matches!(name.as_str(), "push_vec" | "insert_btree_map" | "insert_btree_set" | "copy_retained_text" | "copy_retained_text_limit" | "push_back" | "push_front" | "push_hash_group") && (self.tcx.crate_name(definition.krate).as_str() == "cadmpeg_core" || std::env::var_os("CADMPEG_POLICY_FIXTURE").is_some()) { return Some(true); }
                 None
             }
