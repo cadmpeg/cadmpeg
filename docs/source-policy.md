@@ -194,7 +194,9 @@ literal or a checked positive increment followed directly by `ok_or` or
 separate charge. A scan can instead use a dominating charge before it
 with its exact extent, `u64_from_index(values.len())`, or the capacity of a
 hash table whose buckets are scanned. A simple local extent
-alias is accepted. Comparison and search operands can use the same admission,
+alias is accepted when its source extent remains unchanged from capture to
+scan. Growth through a projected field or a mutable borrow invalidates that
+proof. Comparison and search operands can use the same admission,
 including additive operand lengths and propagated `checked_add` sums. A charge
 can dominate a scan in a conditional child block. It cannot pay for repeated
 scans inside a loop or deferred closure from outside that scope. Each charge
