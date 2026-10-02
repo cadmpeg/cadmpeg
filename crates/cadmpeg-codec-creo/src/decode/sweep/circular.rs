@@ -348,7 +348,7 @@ pub(in super::super) fn transfer_resolved_circular_extrusion_breps(
                 face: cap_face
                     .try_clone_for_decode(ctx, "creo circular extrusion identity copy")?,
                 boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
-                    cadmpeg_ir::topology::LoopRing::new_for_decode(
+                    cadmpeg_ir::topology::LoopRing::new(
                         ctx,
                         circular_item(
                             ctx,
@@ -455,7 +455,7 @@ pub(in super::super) fn transfer_resolved_circular_extrusion_breps(
                 face: side_face
                     .try_clone_for_decode(ctx, "creo circular extrusion identity copy")?,
                 boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
-                    cadmpeg_ir::topology::LoopRing::new_for_decode(
+                    cadmpeg_ir::topology::LoopRing::new(
                         ctx,
                         circular_item(
                             ctx,

@@ -2502,7 +2502,7 @@ fn append_legacy_brep(
                 });
                 global_trim += 1;
             }
-            let ring = cadmpeg_ir::topology::LoopRing::new_for_decode(ctx, coedge_ids, Vec::new())
+            let ring = cadmpeg_ir::topology::LoopRing::new(ctx, coedge_ids, Vec::new())
                 .map_err(cadmpeg_core::CodecError::from)?
                 .map_err(|error| CodecError::Malformed(error.to_string()))?;
             model.loops.push(Loop {

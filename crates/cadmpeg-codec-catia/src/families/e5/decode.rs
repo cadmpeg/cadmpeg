@@ -2673,7 +2673,7 @@ fn emit_e5_faces_loops_coedges(
                 )?;
             }
             let Ok(ring) =
-                cadmpeg_ir::topology::LoopRing::new_for_decode(ctx, coedge_ids, vertex_uses)
+                cadmpeg_ir::topology::LoopRing::new(ctx, coedge_ids, vertex_uses)
                     .map_err(cadmpeg_core::CodecError::from)?
             else {
                 return Ok(false);

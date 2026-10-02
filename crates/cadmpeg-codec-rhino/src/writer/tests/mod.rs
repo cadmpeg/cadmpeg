@@ -173,7 +173,7 @@ fn polygon_sheet(points: &[Point3]) -> CadIr {
         id: loop_id.clone(),
         face,
         boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
-            cadmpeg_ir::topology::LoopRing::new(coedge_ids.clone(), Vec::new())
+            cadmpeg_ir::topology::LoopRing::new(&cadmpeg_test_support::service_decode_context(), coedge_ids.clone(), Vec::new()).expect("fixture ring admission")
                 .expect("valid loop ring"),
         ),
     });
@@ -293,7 +293,7 @@ fn add_polygon_hole(ir: &mut CadIr, points: &[Point3]) {
         id: loop_id.clone(),
         face,
         boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
-            cadmpeg_ir::topology::LoopRing::new(coedge_ids.clone(), Vec::new())
+            cadmpeg_ir::topology::LoopRing::new(&cadmpeg_test_support::service_decode_context(), coedge_ids.clone(), Vec::new()).expect("fixture ring admission")
                 .expect("valid loop ring"),
         ),
     });
@@ -474,7 +474,7 @@ fn adjacent_quad_sheet() -> CadIr {
         id: loop_ids[0].clone(),
         face: face_ids[0].clone(),
         boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
-            cadmpeg_ir::topology::LoopRing::new(coedge_ids[0..4].to_vec(), Vec::new())
+            cadmpeg_ir::topology::LoopRing::new(&cadmpeg_test_support::service_decode_context(), coedge_ids[0..4].to_vec(), Vec::new()).expect("fixture ring admission")
                 .expect("valid loop ring"),
         ),
     });
@@ -482,7 +482,7 @@ fn adjacent_quad_sheet() -> CadIr {
         id: loop_ids[1].clone(),
         face: face_ids[1].clone(),
         boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
-            cadmpeg_ir::topology::LoopRing::new(coedge_ids[4..8].to_vec(), Vec::new())
+            cadmpeg_ir::topology::LoopRing::new(&cadmpeg_test_support::service_decode_context(), coedge_ids[4..8].to_vec(), Vec::new()).expect("fixture ring admission")
                 .expect("valid loop ring"),
         ),
     });
@@ -761,10 +761,10 @@ fn planar_tetrahedron() -> CadIr {
             id: loop_ids[face].clone(),
             face: face_ids[face].clone(),
             boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
-                cadmpeg_ir::topology::LoopRing::new(
+                cadmpeg_ir::topology::LoopRing::new(&cadmpeg_test_support::service_decode_context(),
                     coedge_ids[start..start + 3].to_vec(),
                     Vec::new(),
-                )
+                ).expect("fixture ring admission")
                 .expect("valid loop ring"),
             ),
         });

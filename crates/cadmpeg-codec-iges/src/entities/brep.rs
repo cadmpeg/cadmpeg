@@ -1564,7 +1564,7 @@ pub(super) fn project(
                             valid = false;
                             break;
                         };
-                        let Ok(ring) = cadmpeg_ir::topology::LoopRing::new_for_decode(
+                        let Ok(ring) = cadmpeg_ir::topology::LoopRing::new(
                             ctx,
                             coedge_ids,
                             vertex_uses,

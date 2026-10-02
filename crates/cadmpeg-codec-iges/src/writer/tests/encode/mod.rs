@@ -1011,7 +1011,7 @@ fn encode_regenerates_a_single_face_trimmed_sheet() {
         id: loop_id.clone(),
         face: face_id.clone(),
         boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
-            cadmpeg_ir::topology::LoopRing::new(coedge_ids.clone(), Vec::new())
+            cadmpeg_ir::topology::LoopRing::new(&cadmpeg_test_support::service_decode_context(), coedge_ids.clone(), Vec::new()).expect("fixture ring admission")
                 .expect("valid loop ring"),
         ),
     });
@@ -1053,7 +1053,7 @@ fn encode_regenerates_a_single_face_trimmed_sheet() {
     ];
     let vertex_uses = ir.model.loops[0].anchored_vertex_uses().to_vec();
     ir.model.loops[0]
-        .replace_ring(reversed_order.to_vec(), vertex_uses)
+        .replace_ring(&cadmpeg_test_support::service_decode_context(), reversed_order.to_vec(), vertex_uses)
         .expect("reversed loop ring remains valid");
     for coedge_id in &reversed_order {
         let coedge = ir

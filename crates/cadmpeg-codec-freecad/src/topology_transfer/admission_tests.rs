@@ -113,7 +113,7 @@ fn tessellation_faces_refuse_at_collection_limit() {
 
 #[test]
 fn face_ring_diagnostic_refuses_at_matching_retained_limit() {
-    let error = cadmpeg_ir::topology::LoopRing::new(Vec::new(), Vec::new())
+    let error = cadmpeg_ir::topology::LoopRing::new(&cadmpeg_test_support::service_decode_context(), Vec::new(), Vec::new()).expect("fixture ring admission")
         .expect_err("empty ring is invalid");
     assert_retained_refusal_at(&[], "FreeCAD face ring diagnostic", |ctx| {
         Err::<(), _>(crate::resource::malformed_charged(

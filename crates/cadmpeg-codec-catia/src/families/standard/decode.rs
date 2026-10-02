@@ -676,7 +676,7 @@ mod consolidated_revolution_binding_tests {
             id: loop_id.clone(),
             face: face_id,
             boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
-                cadmpeg_ir::topology::LoopRing::new(vec![coedge_id.clone()], Vec::new())
+                cadmpeg_ir::topology::LoopRing::new(&cadmpeg_test_support::service_decode_context(), vec![coedge_id.clone()], Vec::new()).expect("fixture ring admission")
                     .expect("one-edge loop"),
             ),
         });
@@ -801,7 +801,7 @@ mod consolidated_revolution_binding_tests {
                 id: loop_id.clone(),
                 face,
                 boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
-                    cadmpeg_ir::topology::LoopRing::new(vec![coedge.clone()], Vec::new())
+                    cadmpeg_ir::topology::LoopRing::new(&cadmpeg_test_support::service_decode_context(), vec![coedge.clone()], Vec::new()).expect("fixture ring admission")
                         .expect("valid loop ring"),
                 ),
             });
@@ -7471,7 +7471,7 @@ fn emit_standard_topology(
                 )?;
                 ctx.push_vec(&mut coedges, coedge, "catia_standard_ring_members")?;
             }
-            let ring = cadmpeg_ir::topology::LoopRing::new_for_decode(ctx, coedges, vertex_uses)
+            let ring = cadmpeg_ir::topology::LoopRing::new(ctx, coedges, vertex_uses)
                 .map_err(cadmpeg_core::CodecError::from)?
                 .map_err(CodecError::malformed)?;
             let coedge_ids = ring.coedges();

@@ -1036,7 +1036,7 @@ pub(super) fn transfer_closed_face_topology(
                     "vertex_uses",
                     "catia_annotation_field"
                 ));
-                let ring = admitted!(cadmpeg_ir::topology::LoopRing::new_for_decode(
+                let ring = admitted!(cadmpeg_ir::topology::LoopRing::new(
                     admission.context(),
                     admitted!(admission.context().try_collect_vec(
                         coedge_ids.iter().map(|id| id.try_clone_for_decode(

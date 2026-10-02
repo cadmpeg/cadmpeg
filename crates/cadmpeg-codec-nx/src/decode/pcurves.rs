@@ -5169,10 +5169,10 @@ mod tests {
                 id: loop_id,
                 face: face_id,
                 boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
-                    cadmpeg_ir::topology::LoopRing::new(
+                    cadmpeg_ir::topology::LoopRing::new(&cadmpeg_test_support::service_decode_context(),
                         vec![CoedgeId::mint("nx:s0:fin#0").expect("identity grammar")],
                         Vec::new(),
-                    )
+                    ).expect("fixture ring admission")
                     .expect("valid loop ring"),
                 ),
             });

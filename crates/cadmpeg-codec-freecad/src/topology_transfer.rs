@@ -1343,7 +1343,7 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
                 id: loop_id.try_clone_for_decode(self.ctx, "FreeCAD loop record identity")?,
                 face: face_id.try_clone_for_decode(self.ctx, "FreeCAD loop face identity")?,
                 boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
-                    cadmpeg_ir::topology::LoopRing::new_for_decode(
+                    cadmpeg_ir::topology::LoopRing::new(
                         self.ctx,
                         coedge_ids,
                         Vec::new(),

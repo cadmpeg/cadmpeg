@@ -1442,10 +1442,10 @@ fn historical_topology_retains_ordered_ownership_and_incidence() {
         id: LoopId::mint(id(5)).expect("identity grammar"),
         face: FaceId::mint(id(4)).expect("identity grammar"),
         boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
-            cadmpeg_ir::topology::LoopRing::new(
+            cadmpeg_ir::topology::LoopRing::new(&cadmpeg_test_support::service_decode_context(),
                 vec![CoedgeId::mint(id(6)).expect("identity grammar")],
                 Vec::new(),
-            )
+            ).expect("fixture ring admission")
             .expect("valid loop ring"),
         ),
     });

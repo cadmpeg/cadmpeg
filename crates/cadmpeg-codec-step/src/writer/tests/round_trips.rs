@@ -1522,7 +1522,7 @@ fn writer_orders_edge_loop_coedges_by_oriented_endpoints() {
     coedges.swap(0, 1);
     let vertex_uses = loop_.anchored_vertex_uses().to_vec();
     loop_
-        .replace_ring(coedges, vertex_uses)
+        .replace_ring(&cadmpeg_test_support::service_decode_context(), coedges, vertex_uses)
         .expect("reordered loop ring remains valid");
 
     let mut bytes = Vec::new();

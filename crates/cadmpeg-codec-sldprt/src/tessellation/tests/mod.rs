@@ -295,7 +295,7 @@ fn add_face(
         id: loop_id.clone(),
         face: face_id.clone(),
         boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
-            cadmpeg_ir::topology::LoopRing::new(coedge_ids, Vec::new()).expect("valid loop ring"),
+            cadmpeg_ir::topology::LoopRing::new(&cadmpeg_test_support::service_decode_context(), coedge_ids, Vec::new()).expect("fixture ring admission").expect("valid loop ring"),
         ),
     });
     model.faces.push(Face {
@@ -551,7 +551,7 @@ fn add_cylindrical_patch_face(
         id: loop_id.clone(),
         face: face_id.clone(),
         boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
-            cadmpeg_ir::topology::LoopRing::new(coedge_ids, Vec::new()).expect("valid loop ring"),
+            cadmpeg_ir::topology::LoopRing::new(&cadmpeg_test_support::service_decode_context(), coedge_ids, Vec::new()).expect("fixture ring admission").expect("valid loop ring"),
         ),
     });
     model.faces.push(Face {
