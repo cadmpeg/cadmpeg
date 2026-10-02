@@ -26,15 +26,14 @@ struct DecodeText<'a>(&'a str);
 impl serde::Serialize for DecodeText<'_> {
     fn serialize<S: serde::Serializer>(&self, _serializer: S) -> Result<S::Ok, S::Error> {
         for byte in self.0.as_bytes() {
-            // finding: uncharged_decode_work
             std::hint::black_box(byte);
         }
-        Err(serde::ser::Error::custom("fixed")) // finding: unproven_decode_charge
+        Err(serde::ser::Error::custom("fixed"))
     }
 }
 pub fn decode_serialization<S: serde::Serializer>(ctx: &DecodeContext, text: &str, serializer: S) {
     let _context = ctx;
-    let _record = serde::Serialize::serialize(&DecodeText(text), serializer);
+    let _record = serde::Serialize::serialize(&DecodeText(text), serializer); // finding: unproven_decode_charge
 }
 
 struct WriteText<'a>(&'a str);
