@@ -45,17 +45,49 @@ def main():
             parser.error("--crate must name a decode crate")
         packages = args.crate
     target = ROOT / "target/decode-policy"
-    selection = [argument for name in packages for argument in ("-p", name)]
     # This target belongs to the checker. Remove its decode package
     # artifacts so cargo runs the driver on unchanged source too.
-    clean = subprocess.run(["cargo", f"+{pin}", "clean", "-q", "--target-dir", str(target), *[argument for name in decode_packages for argument in ("-p", name)]], cwd=ROOT, env=env)
-    if clean.returncode:
-        return clean.returncode
+    def clean_packages():
+        return subprocess.run(["cargo", f"+{pin}", "clean", "-q", "--target-dir", str(target), *[argument for name in decode_packages for argument in ("-p", name)]], cwd=ROOT, env=env).returncode
+
+    def compile_packages(names):
+        return subprocess.run(["cargo", f"+{pin}", "check", "-q", "--keep-going", "--lib", "--target-dir", str(target), *[argument for name in names for argument in ("-p", name)]], cwd=ROOT, env=env, text=True, capture_output=True)
+
+    clean = clean_packages()
+    if clean:
+        return clean
     env["RUSTC_WORKSPACE_WRAPPER"] = str(TOOL / "target/debug/cadmpeg-decode-policy")
     env["CADMPEG_POLICY_COLLECT"] = "1"
+    env["CADMPEG_POLICY_GRAPH"] = "1"
+    graph = compile_packages(decode_packages)
+    sys.stderr.write(graph.stderr)
+    if graph.returncode:
+        return graph.returncode
+    reached = set()
+    edges = {}
+    for row in graph.stdout.splitlines():
+        fields = row.split("\t")
+        if len(fields) == 2 and fields[0] == "decode_root":
+            reached.add(fields[1])
+        elif len(fields) == 3 and fields[0] == "decode_edge":
+            edges.setdefault(fields[1], set()).add(fields[2])
+    pending = list(reached)
+    while pending:
+        for callee in edges.get(pending.pop(), ()):
+            if callee not in reached:
+                reached.add(callee)
+                pending.append(callee)
+    scope = target / "decode-scope.txt"
+    scope.write_text("".join(name + "\n" for name in sorted(reached)))
+    (target / "decode-roots.txt").write_text("".join(row.split("\t")[1] + "\n" for row in sorted(set(graph.stdout.splitlines())) if row.startswith("decode_root\t")))
+    del env["CADMPEG_POLICY_GRAPH"]
+    env["CADMPEG_POLICY_SCOPE"] = str(scope)
+    clean = clean_packages()
+    if clean:
+        return clean
     if args.list_externals or args.external_output:
         env["CADMPEG_POLICY_EXTERNALS"] = "1"
-    result = subprocess.run(["cargo", f"+{pin}", "check", "-q", "--keep-going", "--lib", "--target-dir", str(target), *selection], cwd=ROOT, env=env, text=True, capture_output=True)
+    result = compile_packages(packages)
     sys.stderr.write(result.stderr)
     if args.external_output:
         externals = sorted(set(line for line in result.stdout.splitlines() if line.startswith("external_operation\t")))

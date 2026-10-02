@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
-pub fn decode(text: &String, number: u32, bytes: &[u8]) {
+pub fn decode(_ctx: &cadmpeg_core::DecodeContext, text: &String, number: u32, bytes: &[u8]) {
     let _length = cadmpeg_core::fixed(bytes);
     let _minimum = cadmpeg_core::minimum(number, number);
-    cadmpeg_core::writer::writer(&cadmpeg_core::writer::DecodeContext, text); // finding: unproven_decode_charge
+    cadmpeg_core::writer::writer(text);
     let _callback = cadmpeg_core::with(|| bytes.len());
     let _fixed = cadmpeg_core::copy(&number);
     let _default = cadmpeg_core::Fixed::fixed(&number);
@@ -14,18 +14,18 @@ pub fn decode(text: &String, number: u32, bytes: &[u8]) {
     let _text = cadmpeg_core::copy(text); // finding: uncharged_decode_allocation, uncharged_decode_work
 }
 
-pub fn grow(values: &mut Vec<u8>, value: u8) {
+pub fn grow(_ctx: &cadmpeg_core::DecodeContext, values: &mut Vec<u8>, value: u8) {
     cadmpeg_core::grow(values, value);
 }
 
-pub fn unit_vectors(values: &Vec<()>) {
+pub fn unit_vectors(_ctx: &cadmpeg_core::DecodeContext, values: &Vec<()>) {
     let _copy = cadmpeg_core::vector_copy(values);
 }
-pub fn byte_vectors(values: &Vec<u8>) {
+pub fn byte_vectors(_ctx: &cadmpeg_core::DecodeContext, values: &Vec<u8>) {
     let _copy = cadmpeg_core::vector_copy(values); // finding: uncharged_decode_allocation, uncharged_decode_work
 }
 
-pub fn moved_arrays(first: [String; 4], second: [String; 4]) {
+pub fn moved_arrays(_ctx: &cadmpeg_core::DecodeContext, first: [String; 4], second: [String; 4]) {
     let _first = cadmpeg_core::array_move(first);
     let _second = cadmpeg_core::array_collect(second);
 }
@@ -41,14 +41,14 @@ pub fn imported_charged(
     Ok(())
 }
 
-pub fn fixed_messages(input: &str) {
+pub fn fixed_messages(_ctx: &cadmpeg_core::DecodeContext, input: &str) {
     let _fixed = cadmpeg_core::text("fixed");
     let fixed = "fixed".to_owned();
     let _forward = cadmpeg_core::forward_text(fixed);
     let _input = cadmpeg_core::text(input); // finding: uncharged_decode_allocation, uncharged_decode_work
 }
 
-pub fn imported_mutation(input: &str) {
+pub fn imported_mutation(_ctx: &cadmpeg_core::DecodeContext, input: &str) {
     let _text = cadmpeg_core::changed_text("fixed", input); // finding: uncharged_decode_allocation, uncharged_decode_work
 }
 

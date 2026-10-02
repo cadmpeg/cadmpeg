@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
-pub fn fixed(bytes: &[u8], value: usize) {
+pub fn fixed(_ctx: &DecodeContext, bytes: &[u8], value: usize) {
     let _length = bytes.len();
     let _windows = bytes.windows(4);
     let _sum = value.checked_add(1);
 }
-pub fn linear(bytes: &[u8]) {
+pub fn linear(_ctx: &DecodeContext, bytes: &[u8]) {
     let _copy = bytes.to_vec(); // finding: uncharged_decode_allocation, uncharged_decode_work
     let _valid = std::str::from_utf8(bytes); // finding: uncharged_decode_work
 }
-pub fn missing() {
+pub fn missing(_ctx: &DecodeContext) {
     let _thread = std::thread::current(); // finding: unproven_decode_charge
 }
 
@@ -24,24 +24,24 @@ pub fn named_operand(ctx: &DecodeContext, destination: &mut String, text: &str) 
     Ok(())
 }
 
-pub fn moving(mut value: Option<String>, replacement: String, repeated: String) {
+pub fn moving(_ctx: &DecodeContext, mut value: Option<String>, replacement: String, repeated: String) {
     let _old = value.replace(replacement);
     let _taken = value.take();
     let _iterator = std::iter::repeat(repeated);
 }
-pub fn lossy(bytes: &[u8]) {
+pub fn lossy(_ctx: &DecodeContext, bytes: &[u8]) {
     let _text = String::from_utf8_lossy(bytes); // finding: unproven_decode_charge, uncharged_decode_work
 }
 
-pub fn repeating(text: &str, count: usize) {
+pub fn repeating(_ctx: &DecodeContext, text: &str, count: usize) {
     let _copy = text.repeat(count); // finding: uncharged_decode_allocation, uncharged_decode_work
 }
 
-pub fn missing_constructor(name: &str) {
+pub fn missing_constructor(_ctx: &DecodeContext, name: &str) {
     let _command = std::process::Command::new(name); // finding: unproven_decode_charge
 }
 
-pub fn scalar_and_metadata(value: f64, number: u64, bytes: &[u8], text: &str) {
+pub fn scalar_and_metadata(_ctx: &DecodeContext, value: f64, number: u64, bytes: &[u8], text: &str) {
     let _abs = value.abs();
     let _sin = value.sin();
     let _bits = value.to_bits();
@@ -56,7 +56,7 @@ pub fn scalar_and_metadata(value: f64, number: u64, bytes: &[u8], text: &str) {
     let _mapped = Some(number).map_or_else(|| 0, |n| n + 1);
 }
 
-pub fn reference_operators(value: &f64, number: &u64, flag: &bool) {
+pub fn reference_operators(_ctx: &DecodeContext, value: &f64, number: &u64, flag: &bool) {
     let _sum = value + value;
     let _product = value * value;
     let _bits = number & number;

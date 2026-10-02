@@ -14,7 +14,7 @@ pub fn owned(ctx: DecodeContext, text: &str) {
 }
 pub fn locals(text: &str) {
     let _ctx = DecodeContext;
-    let _copy = text.to_owned(); // finding: uncharged_decode_allocation
+    let _copy = text.to_owned();
 }
 pub fn closures(ctx: &DecodeContext, text: &str) {
     let _ctx = ctx;
@@ -25,7 +25,7 @@ pub fn closures(ctx: &DecodeContext, text: &str) {
     independent(text);
 }
 pub fn independent(text: &str) {
-    let _copy = text.to_owned(); // finding: uncharged_decode_allocation
+    let _copy = text.to_owned();
 }
 #[cfg(test)]
 fn test_only(ctx: &DecodeContext, text: &str) {

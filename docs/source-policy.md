@@ -137,16 +137,22 @@ production libraries. Its target directory is
 so Cargo cannot omit findings for unchanged source.
 
 The compiler resolves expressions, receiver types, associated trait calls,
-record fields and closure owners. The allocation and work rules inspect every
-production function, method, trait implementation and closure in
+record fields and closure owners. The allocation and work rules inspect
+production bodies reachable from decode roots in
 `cadmpeg-core`, `cadmpeg-ir`, `cadmpeg-codec-*`, `cadmpeg-container`,
 `cadmpeg-asm`, `cadmpeg-parasolid` and `cadmpeg-protein`. A body without a
-`DecodeContext` cannot admit input-sized storage or work. Writer, encoder,
-binary and test exclusions apply to body selection. Automatically derived
+`DecodeContext` cannot admit input-sized storage or work. Roots are implementations
+of `CodecBackend::{detect_impl, inspect_impl, decode_impl}` and
+`Codec::{detect, inspect, decode, decode_with_context}`, and public functions
+whose input types contain `DecodeContext`. Resolved calls, trait targets and
+closures form a call graph across all checked crates. Bodies reached only
+from encoding, writing, serialization or tests are outside the scope.
+A writer file name does not exclude a body reached during decoding.
+Binary and test bodies are excluded. Automatically derived
 bodies, including serde derives and their generated helpers, are excluded.
 A decode call into a derived implementation is judged at the call using the
 concrete field costs. Hand-written implementations retain their own
-obligations. Serialize implementation bodies remain under writer exclusion.
+obligations. Serialize implementation bodies are excluded; their calls retain external costs.
 
 A resolved call to a checked body is proved at the caller. Its body owns the
 admission obligation. Resolution uses the caller's compiler typing environment.
