@@ -6,6 +6,8 @@ use std::io::Read;
 use super::{u64_from_index, DecodeContext, ResourceDimension, ResourceFailure};
 use crate::CodecError;
 
+const INPUT_CHUNK: usize = 8192;
+
 impl DecodeContext<'_> {
     /// Reads at most `length` bytes and admits each copied byte before growth.
     /// Input storage is governed by the input-byte dimension.
@@ -26,7 +28,7 @@ impl DecodeContext<'_> {
         bytes: &mut Vec<u8>,
         length: usize,
     ) -> Result<(), CodecError> {
-        let mut chunk = [0_u8; 8192];
+        let mut chunk = [0_u8; INPUT_CHUNK];
         while bytes.len() < length {
             let count = (length - bytes.len()).min(chunk.len());
             self.charge_work(u64_from_index(count), "read input prefix")?;
@@ -60,7 +62,6 @@ impl DecodeContext<'_> {
         bytes: &mut Vec<u8>,
     ) -> Result<(), CodecError> {
         let max = self.policy().limits.max_input_bytes;
-        const INPUT_CHUNK: usize = 8192;
         loop {
             let remaining = max.checked_sub(u64_from_index(bytes.len()))
                 .ok_or_else(|| self.refuse_input_limit(0, "complete input prefix"))?;
