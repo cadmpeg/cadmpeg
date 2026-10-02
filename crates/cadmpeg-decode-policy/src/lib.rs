@@ -10,6 +10,7 @@ extern crate rustc_span;
 
 mod allocation;
 mod types;
+mod extent;
 
 use std::collections::{BTreeSet, HashSet};
 use rustc_driver::{Callbacks, Compilation};

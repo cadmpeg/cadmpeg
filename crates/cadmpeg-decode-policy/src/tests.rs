@@ -36,3 +36,6 @@ fn check_fixture(name: &str) {
 
 #[test]
 fn typed_allocation_shapes() { check_fixture("allocation"); }
+
+#[test]
+fn typed_collection_shapes() { check_fixture("collections"); }
