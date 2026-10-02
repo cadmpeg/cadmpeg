@@ -89,6 +89,11 @@ pub fn symbolic_nested<T: SymbolicWork>(worker: &T, bytes: &[u8]) {
 }
 pub trait SymbolicObject {
     fn work(&self, bytes: &[u8]);
+    fn encode(&self, bytes: &[u8]) {
+        for byte in bytes {
+            std::hint::black_box(byte);
+        }
+    }
 }
 pub fn symbolic_object<T: SymbolicObject + 'static>(worker: T) {
     let _object: Box<dyn SymbolicObject> = Box::new(worker);

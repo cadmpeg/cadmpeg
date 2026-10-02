@@ -178,6 +178,9 @@ fn check_fixture(name: &str) {
                     | "method_scope"
                     | "pointer_scope"
                     | "path_scope"
+                    | "coerced_addresses"
+                    | "recursive_objects"
+                    | "unresolved_objects"
                     | "symbolic_scope"
                     | "fixed_ranges"
                     | "raw_steps"
@@ -636,4 +639,19 @@ fn shortest_decode_paths() {
     let source = std::fs::read_to_string(root.join("fixtures/path_scope.rs")).expect("path fixture source");
     let line = source.lines().position(|line| line.contains("for byte in bytes")).expect("leaf loop") + 1;
     assert_eq!(direct, explain(&format!("fixtures/path_scope.rs:{line}")));
+}
+
+#[test]
+fn coerced_function_and_method_addresses() {
+    check_fixture("coerced_addresses");
+}
+
+#[test]
+fn recursive_object_instances() {
+    check_fixture("recursive_objects");
+}
+
+#[test]
+fn unresolved_object_generic_and_closure_candidates() {
+    check_fixture("unresolved_objects");
 }

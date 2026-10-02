@@ -43,6 +43,7 @@ pub(crate) struct Graph {
     objects: BTreeSet<(String, String, String)>,
     object_calls: BTreeSet<(String, String)>,
     symbolic_roots: BTreeSet<String>,
+    symbolic_instances: BTreeSet<String>,
     symbolic_edges: BTreeSet<(String, String)>,
     bodies: BTreeMap<String, listing::Body>,
 }
@@ -67,6 +68,9 @@ impl Graph {
         }
         for root in &self.symbolic_roots {
             println!("decode_symbolic_root\t{root}");
+        }
+        for instance in &self.symbolic_instances {
+            println!("decode_symbolic_instance\t{instance}");
         }
         for (caller, callee) in &self.symbolic_edges {
             println!("decode_symbolic_edge\t{caller}\t{callee}");
@@ -116,6 +120,11 @@ impl Graph {
         let mut symbolic = self.symbolic_roots.clone();
         loop {
             let mut added = false;
+            for instance in &self.symbolic_instances {
+                if reached.contains(instance) {
+                    added |= symbolic.insert(instance.clone());
+                }
+            }
             for (caller, callee, _) in &self.edges {
                 if reached.contains(caller) {
                     added |= reached.insert(callee.clone());
@@ -369,6 +378,7 @@ impl<'tcx> Visitor<'tcx> for Calls<'_, '_, 'tcx> {
                 self.analysis.expr_ty_adjusted(operand),
                 self.analysis.expr_ty(expression),
             );
+            indirect::address(self.analysis.tcx, self.graph, self.analysis.typing_env(), &self.caller, self.analysis.expr_ty(operand), self.analysis.expr_ty(expression));
         }
         if let Some((id, _)) = self.analysis.call(expression) {
             if let Some(instance) = self.analysis.resolved_instance(expression, id) {
@@ -407,7 +417,7 @@ impl<'tcx> Visitor<'tcx> for Calls<'_, '_, 'tcx> {
             }
         }
         if !self.direct_callee && reference.is_some() {
-            indirect::address(self.analysis.tcx, self.graph, self.analysis.typing_env(), value);
+            indirect::address(self.analysis.tcx, self.graph, self.analysis.typing_env(), &self.caller, value, self.analysis.expr_ty_adjusted(expression));
         }
         if let ExprKind::Call(callee, _) = expression.kind {
             let value = self.analysis.expr_ty(callee);

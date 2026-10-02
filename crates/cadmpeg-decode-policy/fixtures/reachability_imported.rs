@@ -66,7 +66,13 @@ impl cadmpeg_core::SymbolicWork for SymbolicWorker {
 impl cadmpeg_core::SymbolicObject for SymbolicWorker {
     fn work(&self, bytes: &[u8]) {
         for byte in bytes {
+            // reached-loop
             std::hint::black_box(byte);
         }
     }
+}
+
+pub fn decode_dynamic(ctx: &DecodeContext, worker: &dyn cadmpeg_core::SymbolicObject, bytes: &[u8]) {
+    let _ctx = ctx;
+    worker.work(bytes);
 }
