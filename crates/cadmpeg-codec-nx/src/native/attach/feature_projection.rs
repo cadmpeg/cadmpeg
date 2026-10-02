@@ -1092,7 +1092,7 @@ pub(in crate::native) fn feature_source_content(
         )?;
         content.push(FeatureSourceContent::Text(owned));
     }
-    cadmpeg_ir::features::FeatureContent::try_from_for_decode(
+    cadmpeg_ir::features::FeatureContent::new(
         content,
         ctx,
         "NX feature source content validation",

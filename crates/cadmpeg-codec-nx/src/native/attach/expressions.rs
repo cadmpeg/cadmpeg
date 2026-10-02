@@ -212,7 +212,7 @@ pub(in crate::native) fn attach_expression_parameters(
             )?;
             source_content.push(FeatureSourceContent::Parameter(parameter));
         }
-        let source_content = cadmpeg_ir::features::FeatureContent::try_from_for_decode(
+        let source_content = cadmpeg_ir::features::FeatureContent::new(
             source_content,
             ctx,
             "NX expression feature content validation",

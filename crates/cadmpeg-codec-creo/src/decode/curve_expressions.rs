@@ -1124,7 +1124,7 @@ pub(super) fn transfer_curve_expression_features(
                 source_properties: BTreeMap::new(),
                 source_tag: Some(source_tag),
                 source_text: Some(curve_expression_source_text(ctx, &record.lines)?),
-                source_content: cadmpeg_ir::features::FeatureContent::try_from_for_decode(
+                source_content: cadmpeg_ir::features::FeatureContent::new(
                     source_content,
                     ctx,
                     "validate Creo feature source content",

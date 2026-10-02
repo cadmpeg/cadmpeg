@@ -22,7 +22,7 @@ impl BodySelection {
         native: String,
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ) -> Result<Result<Self, BodySelectionError>, cadmpeg_core::decode::ResourceLimit> {
-        let bodies = NativeSelections::try_from_for_decode(
+        let bodies = NativeSelections::new(
             bodies,
             ctx,
             "validate distinct decoded native selections",
@@ -47,7 +47,7 @@ impl BodySelection {
         native: String,
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ) -> Result<Result<Self, BodySelectionError>, cadmpeg_core::decode::ResourceLimit> {
-        let bodies = match SelectionMembers::try_from_for_decode(
+        let bodies = match SelectionMembers::new(
             bodies,
             ctx,
             "validate BodySelection historical members",
@@ -88,7 +88,7 @@ impl BodySelection {
         native: String,
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ) -> Result<Result<Self, BodySelectionError>, cadmpeg_core::decode::ResourceLimit> {
-        let bodies = match SelectionMembers::try_from_for_decode(
+        let bodies = match SelectionMembers::new(
             bodies,
             ctx,
             "validate BodySelection generated members",

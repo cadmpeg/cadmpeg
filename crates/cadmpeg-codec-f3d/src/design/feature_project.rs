@@ -2248,7 +2248,7 @@ pub(super) fn project_combine(
                 "f3d Combine tool selection",
             )?;
         }
-        let members = cadmpeg_ir::features::NativeSelections::try_from_for_decode(
+        let members = cadmpeg_ir::features::NativeSelections::new(
             selected,
             ctx,
             "f3d Combine tool uniqueness",
@@ -6604,7 +6604,7 @@ fn resolved_surface_patch_path(
                     }
                 }
             }
-            let members = cadmpeg_ir::features::SelectionMembers::try_from_for_decode(
+            let members = cadmpeg_ir::features::SelectionMembers::new(
                 edges,
                 ctx,
                 "f3d surface patch historical uniqueness",
