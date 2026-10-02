@@ -1118,7 +1118,6 @@ fn scale_refusal(
     scale: PositiveReal,
 ) -> CodecError {
     match refusal {
-        ScaleRefusal::Resource(limit) => CodecError::ResourceLimit(limit),
         ScaleRefusal::Field(message) => malformed_refusal(ctx, message),
         ScaleRefusal::ControlPoints(error) => malformed_refusal(
             ctx,
