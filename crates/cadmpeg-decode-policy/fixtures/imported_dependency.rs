@@ -18,3 +18,8 @@ pub mod writer;
 
 pub trait Fixed { fn fixed(&self) -> usize { 1 } }
 impl Fixed for u32 {}
+
+pub struct DecodeContext;
+pub fn context_copy<T: Clone>(_ctx: &DecodeContext, value: &T) -> T { value.clone() }
+
+pub fn constant_capacity<T, const N: usize>() -> Vec<T> { Vec::with_capacity(N) }
