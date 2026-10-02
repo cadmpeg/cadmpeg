@@ -77,19 +77,6 @@ fn admitted_weight(
     .into())
 }
 
-fn finite_point<P: PoleValue<T>, T>(
-    ctx: &DecodeContext<'_>,
-    point: P,
-) -> Result<T, ConstructionError> {
-    if let Some(point) = point.admit() {
-        return Ok(point);
-    }
-    Err(structure(
-        ctx,
-        format_args!("control_points contains a non-finite point"),
-    )?)
-}
-
 fn length(
     ctx: &DecodeContext<'_>,
     field: &str,
@@ -229,17 +216,6 @@ fn admitted_knots(
     Ok(KnotVector(knots))
 }
 
-fn collect<T, I>(
-    ctx: &DecodeContext<'_>,
-    values: I,
-    operation: &'static str,
-) -> Result<Vec<T>, ConstructionError>
-where
-    I: IntoIterator<Item = Result<T, ConstructionError>>,
-{
-    ctx.try_collect_retained_with(values, operation, |value| value)
-}
-
 fn pair<P>(
     ctx: &DecodeContext<'_>,
     points: Vec<P>,
@@ -257,31 +233,22 @@ fn pair<P>(
     )
 }
 
-pub(super) fn admit<P: PoleValue<T>, T>(
-    ctx: &DecodeContext<'_>,
-    poles: NurbsPoles3<P>,
-) -> Result<NurbsPoles3<T>, ConstructionError> {
-    Ok(match poles {
-        NurbsPoles3::Polynomial { points } => NurbsPoles3::Polynomial {
-            points: collect(
-                ctx,
-                points.into_iter().map(|point| finite_point(ctx, point)),
-                "IR NURBS admitted poles",
-            )?,
-        },
-        NurbsPoles3::Rational { points } => NurbsPoles3::Rational {
-            points: collect(
-                ctx,
-                points.into_iter().map(|pole| {
-                    Ok(WeightedPole3 {
-                        point: finite_point(ctx, pole.point)?,
-                        weight: pole.weight,
-                    })
-                }),
-                "IR NURBS admitted poles",
-            )?,
-        },
-    })
+impl super::PoleStorage for DecodeContext<'_> {
+    type Error = ConstructionError;
+
+    fn collect<I, T>(
+        &self,
+        values: Vec<I>,
+        operation: &'static str,
+        convert: impl FnMut(I) -> Result<T, Self::Error>,
+    ) -> Result<Vec<T>, Self::Error> {
+        self.try_collect_retained_with(values, operation, convert)
+    }
+
+    fn invalid_point(&self) -> Result<Self::Error, Self::Error> {
+        structure(self, format_args!("control_points contains a non-finite point"))
+            .map_err(Into::into)
+    }
 }
 
 impl NurbsCurve {
@@ -310,7 +277,7 @@ impl NurbsCurve {
                 },
             };
             curve_cardinality(ctx, degree, knots.len(), poles.count())?;
-            let poles = P::admit_curve_poles_for_decode(ctx, poles)?;
+            let poles = P::admit_curve_poles(poles, |poles| super::map_curve_poles(ctx, poles))?;
             let knots = admitted_knots(ctx, knots, "")?;
             Ok(Self {
                 degree,
@@ -377,7 +344,7 @@ impl NurbsSurface {
                 }
             };
             surface_structure(ctx, &u, &v, &poles)?;
-            let poles = P::admit_surface_poles_for_decode(ctx, poles)?;
+            let poles = P::admit_surface_poles(poles, |grid| super::map_surface_poles(ctx, grid))?;
 
             let u_knots = admitted_knots(ctx, u.knots, "u_")?;
             let v_knots = admitted_knots(ctx, v.knots, "v_")?;
@@ -450,51 +417,3 @@ impl NurbsSurface {
 #[cfg(test)]
 mod tests;
 
-pub(super) fn admit_grid<P: PoleValue<T>, T>(
-    ctx: &DecodeContext<'_>,
-    poles: NurbsPoleGrid<P>,
-) -> Result<NurbsPoleGrid<T>, ConstructionError> {
-    Ok(match poles {
-        NurbsPoleGrid::Polynomial { rows } => {
-            let mut output = Vec::new();
-            for points in rows {
-                ctx.reserve_retained_vec(&mut output, 1, "IR NURBS admitted grid rows")?;
-                let points = collect(
-                    ctx,
-                    points.into_iter().map(|point| finite_point(ctx, point)),
-                    "IR NURBS admitted poles",
-                )?;
-                output.push(points);
-            }
-            NurbsPoleGrid::Polynomial { rows: output }
-        }
-        NurbsPoleGrid::Rational { rows } => {
-            let mut output = Vec::new();
-            for points in rows {
-                ctx.reserve_retained_vec(&mut output, 1, "IR NURBS admitted grid rows")?;
-                let points = collect(
-                    ctx,
-                    points.into_iter().map(|pole| {
-                        Ok(WeightedPole3 {
-                            point: finite_point(ctx, pole.point)?,
-                            weight: pole.weight,
-                        })
-                    }),
-                    "IR NURBS admitted poles",
-                )?;
-                output.push(points);
-            }
-            NurbsPoleGrid::Rational { rows: output }
-        }
-    })
-}
-
-pub(super) fn construction_result<T>(
-    result: Result<T, ConstructionError>,
-) -> Result<T, NurbsError> {
-    match result {
-        Ok(value) => Ok(value),
-        Err(ConstructionError::Resource(error)) => Err(NurbsError::from(error)),
-        Err(ConstructionError::Geometry(error)) => Err(error),
-    }
-}

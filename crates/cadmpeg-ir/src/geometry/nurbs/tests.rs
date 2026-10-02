@@ -1101,17 +1101,22 @@ fn nurbs_stores_hold_admitted_poles_and_take_admitted_lanes() {
 fn context_free_pole_reconstruction_does_not_enter_a_decode_constructor() {
     use super::{NurbsCurve, NurbsError, NurbsPoleGrid, NurbsPoles3, NurbsSurfaceAxis, PoleValue};
     use crate::features::FinitePoint3;
-    use cadmpeg_core::decode::DecodeContext;
 
     #[derive(Clone, Copy)]
     struct Pole(Point3);
     impl PoleValue<FinitePoint3> for Pole {
         fn admit(self) -> Option<FinitePoint3> { FinitePoint3::new(self.0) }
-        fn admit_curve_poles_for_decode(_ctx: &DecodeContext<'_>, _poles: NurbsPoles3<Self>) -> Result<NurbsPoles3<FinitePoint3>, NurbsError> {
-            panic!("context-free curve reconstruction must not start a decode session")
+        fn admit_curve_poles<E>(poles: NurbsPoles3<Self>, convert: impl FnOnce(NurbsPoles3<Self>) -> Result<NurbsPoles3<FinitePoint3>, E>) -> Result<NurbsPoles3<FinitePoint3>, E> {
+            if std::any::type_name::<E>() != std::any::type_name::<NurbsError>() {
+                panic!("context-free curve reconstruction must not start a decode session");
+            }
+            convert(poles)
         }
-        fn admit_surface_poles_for_decode(_ctx: &DecodeContext<'_>, _grid: NurbsPoleGrid<Self>) -> Result<NurbsPoleGrid<FinitePoint3>, NurbsError> {
-            panic!("context-free surface reconstruction must not start a decode session")
+        fn admit_surface_poles<E>(grid: NurbsPoleGrid<Self>, convert: impl FnOnce(NurbsPoleGrid<Self>) -> Result<NurbsPoleGrid<FinitePoint3>, E>) -> Result<NurbsPoleGrid<FinitePoint3>, E> {
+            if std::any::type_name::<E>() != std::any::type_name::<NurbsError>() {
+                panic!("context-free surface reconstruction must not start a decode session");
+            }
+            convert(grid)
         }
     }
     let points = vec![Pole(Point3::new(0.0, 0.0, 0.0)), Pole(Point3::new(1.0, 0.0, 0.0))];
@@ -1234,4 +1239,129 @@ fn raw_lane_constructors_share_caller_work_and_keep_refusal() {
     assert_eq!(limit.additional, 4);
     assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit));
     assert_eq!(curve.knots().as_slice(), &[0.0, 0.0, 1.0, 1.0]);
+}
+
+#[test]
+fn shared_pole_conversion_refuses_before_visits_and_keeps_order() {
+    use super::{NurbsPoleGrid, NurbsPoles3, PoleValue, WeightedPole3};
+    use crate::features::FinitePoint3;
+    use crate::scalar::NonZeroReal;
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    use std::cell::Cell;
+
+    #[derive(Clone, Copy)]
+    struct Pole<'a>(&'a Cell<usize>, Point3);
+    impl PoleValue<FinitePoint3> for Pole<'_> {
+        fn admit(self) -> Option<FinitePoint3> {
+            self.0.set(self.0.get() + 1);
+            FinitePoint3::new(self.1)
+        }
+    }
+
+    for shape in 0..4 {
+        let grid = shape >= 2;
+        let mut cases = vec![
+            (ResourceDimension::RetainedBytes, 0, 0),
+            (ResourceDimension::CollectionItems, 0, 0),
+            (ResourceDimension::MaterializedBytes, 0, 0),
+            (ResourceDimension::WorkUnits, 0, 0),
+            (ResourceDimension::WorkUnits, 1, if grid { 0 } else { 1 }),
+        ];
+        if grid {
+            cases.extend([
+                (ResourceDimension::WorkUnits, 2, 1),
+                (ResourceDimension::WorkUnits, 3, 2),
+                (ResourceDimension::WorkUnits, 4, 2),
+                (ResourceDimension::WorkUnits, 5, 3),
+            ]);
+        }
+        for (dimension, cap, completed) in cases {
+            let visits = Cell::new(0);
+            let points = vec![Pole(&visits, Point3::new(2.0, 3.0, 5.0)); 2];
+            let weighted = || points.iter().copied().map(|point| WeightedPole3 {
+                point,
+                weight: NonZeroReal::new(3.0).expect("weight"),
+            }).collect::<Vec<_>>();
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            match dimension {
+                ResourceDimension::RetainedBytes => policy.limits.max_retained_bytes = cap,
+                ResourceDimension::CollectionItems => policy.limits.max_collection_items = cap,
+                ResourceDimension::MaterializedBytes => policy.limits.max_materialized_bytes = cap,
+                ResourceDimension::WorkUnits => policy.limits.max_work_units = cap,
+                _ => unreachable!(),
+            }
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+            let mut storage = ctx.reserve_scoped(0, "pole conversion scope").expect("empty scope");
+            let mut convert = || match shape {
+                0 => super::map_curve_poles(&ctx, NurbsPoles3::Polynomial { points: points.clone() }).map(|_| ()),
+                1 => super::map_curve_poles(&ctx, NurbsPoles3::Rational { points: weighted() }).map(|_| ()),
+                2 => super::map_surface_poles(&ctx, NurbsPoleGrid::Polynomial { rows: vec![points.clone(); 2] }).map(|_| ()),
+                3 => super::map_surface_poles(&ctx, NurbsPoleGrid::Rational { rows: vec![weighted(); 2] }).map(|_| ()),
+                _ => unreachable!(),
+            };
+            let result = if dimension == ResourceDimension::MaterializedBytes {
+                storage.with_storage(&mut convert)
+            } else {
+                convert()
+            };
+            let Err(super::admitted::ConstructionError::Resource(CodecError::ResourceLimit(limit))) = result else {
+                panic!("storage and work refusal must precede conversion");
+            };
+            assert_eq!(visits.get(), completed);
+            assert_eq!(limit.dimension, dimension);
+            let operation = if grid && (dimension != ResourceDimension::WorkUnits || cap == 0 || cap == 3) {
+                "IR NURBS admitted grid rows"
+            } else {
+                "IR NURBS admitted poles"
+            };
+            assert_eq!(limit.operation, operation);
+            drop(storage);
+            assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit));
+        }
+    }
+}
+
+#[test]
+fn admitted_pole_conversion_keeps_all_four_owned_storage_shapes() {
+    use super::{NurbsPoleGrid, NurbsPoles3, PoleValue, WeightedPole3};
+    use crate::features::FinitePoint3;
+    use crate::scalar::NonZeroReal;
+    use cadmpeg_core::CodecError;
+
+    let point = FinitePoint3::new(Point3::new(2.0, 3.0, 5.0)).expect("finite point");
+    let points = vec![point; 2];
+    let pointer = points.as_ptr();
+    let NurbsPoles3::Polynomial { points } = FinitePoint3::admit_curve_poles::<CodecError>(
+        NurbsPoles3::Polynomial { points }, |_| panic!("admitted polynomial lane must move"),
+    ).expect("move") else { panic!("polynomial"); };
+    assert_eq!(points.as_ptr(), pointer);
+
+    let points = vec![WeightedPole3 { point, weight: NonZeroReal::new(3.0).expect("weight") }; 2];
+    let pointer = points.as_ptr();
+    let NurbsPoles3::Rational { points } = FinitePoint3::admit_curve_poles::<CodecError>(
+        NurbsPoles3::Rational { points }, |_| panic!("admitted rational lane must move"),
+    ).expect("move") else { panic!("rational"); };
+    assert_eq!(points.as_ptr(), pointer);
+    assert_eq!(points[0].weight.get(), 3.0);
+
+    let rows = vec![vec![point; 2]; 2];
+    let pointer = rows.as_ptr();
+    let first = rows[0].as_ptr();
+    let NurbsPoleGrid::Polynomial { rows } = FinitePoint3::admit_surface_poles::<CodecError>(
+        NurbsPoleGrid::Polynomial { rows }, |_| panic!("admitted polynomial grid must move"),
+    ).expect("move") else { panic!("polynomial grid"); };
+    assert_eq!(rows.as_ptr(), pointer);
+    assert_eq!(rows[0].as_ptr(), first);
+
+    let rows = vec![points; 2];
+    let pointer = rows.as_ptr();
+    let first = rows[0].as_ptr();
+    let NurbsPoleGrid::Rational { rows } = FinitePoint3::admit_surface_poles::<CodecError>(
+        NurbsPoleGrid::Rational { rows }, |_| panic!("admitted rational grid must move"),
+    ).expect("move") else { panic!("rational grid"); };
+    assert_eq!(rows.as_ptr(), pointer);
+    assert_eq!(rows[0].as_ptr(), first);
+    assert_eq!(rows[1][1].weight.get(), 3.0);
 }

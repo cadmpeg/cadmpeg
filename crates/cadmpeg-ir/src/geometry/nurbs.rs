@@ -204,52 +204,22 @@ pub trait PoleValue<T>: Copy {
     /// The admitted value, absent when a raw value is not finite.
     fn admit(self) -> Option<T>;
 
-    /// Admit a curve pole lane, retaining its storage when the poles are admitted.
-    fn admit_curve_poles(poles: NurbsPoles3<Self>) -> Result<NurbsPoles3<T>, NurbsError> {
-        Ok(match poles {
-            NurbsPoles3::Polynomial { points } => NurbsPoles3::Polynomial {
-                points: reconstruct_poles(points.into_iter(), |point| point.admit().ok_or_else(non_finite_control_point))?,
-            },
-            NurbsPoles3::Rational { points } => NurbsPoles3::Rational {
-                points: reconstruct_poles(points.into_iter(), |pole| Ok(WeightedPole3 {
-                    point: pole.point.admit().ok_or_else(non_finite_control_point)?,
-                    weight: pole.weight,
-                }))?,
-            },
-        })
-    }
-    /// Admit pole storage with the caller's resource context.
-    fn admit_curve_poles_for_decode(
-        ctx: &DecodeContext<'_>,
+    /// Admit a curve lane through its explicit conversion policy.
+    /// An implementation may keep storage whose positions are already admitted.
+    fn admit_curve_poles<E>(
         poles: NurbsPoles3<Self>,
-    ) -> Result<NurbsPoles3<T>, NurbsError> {
-        admitted::construction_result(admitted::admit(ctx, poles))
+        convert: impl FnOnce(NurbsPoles3<Self>) -> Result<NurbsPoles3<T>, E>,
+    ) -> Result<NurbsPoles3<T>, E> {
+        convert(poles)
     }
 
-    /// Admit a surface pole grid, retaining its rows when the poles are admitted.
-    fn admit_surface_poles(grid: NurbsPoleGrid<Self>) -> Result<NurbsPoleGrid<T>, NurbsError> {
-        Ok(match grid {
-            NurbsPoleGrid::Polynomial { rows } => NurbsPoleGrid::Polynomial {
-                rows: reconstruct_poles(rows.into_iter(), |row| {
-                    reconstruct_poles(row.into_iter(), |point| point.admit().ok_or_else(non_finite_control_point))
-                })?,
-            },
-            NurbsPoleGrid::Rational { rows } => NurbsPoleGrid::Rational {
-                rows: reconstruct_poles(rows.into_iter(), |row| {
-                    reconstruct_poles(row.into_iter(), |pole| Ok(WeightedPole3 {
-                        point: pole.point.admit().ok_or_else(non_finite_control_point)?,
-                        weight: pole.weight,
-                    }))
-                })?,
-            },
-        })
-    }
-    /// Admit pole storage with the caller's resource context.
-    fn admit_surface_poles_for_decode(
-        ctx: &DecodeContext<'_>,
+    /// Admit a surface grid through its explicit conversion policy.
+    /// An implementation may keep storage whose positions are already admitted.
+    fn admit_surface_poles<E>(
         grid: NurbsPoleGrid<Self>,
-    ) -> Result<NurbsPoleGrid<T>, NurbsError> {
-        admitted::construction_result(admitted::admit_grid(ctx, grid))
+        convert: impl FnOnce(NurbsPoleGrid<Self>) -> Result<NurbsPoleGrid<T>, E>,
+    ) -> Result<NurbsPoleGrid<T>, E> {
+        convert(grid)
     }
 }
 
@@ -265,40 +235,105 @@ impl PoleValue<FinitePoint3> for FinitePoint3 {
         Some(self)
     }
 
-    fn admit_curve_poles(poles: NurbsPoles3<Self>) -> Result<NurbsPoles3<FinitePoint3>, NurbsError> {
-        Ok(poles)
-    }
-
-    fn admit_surface_poles(grid: NurbsPoleGrid<Self>) -> Result<NurbsPoleGrid<FinitePoint3>, NurbsError> {
-        Ok(grid)
-    }
-
-    fn admit_curve_poles_for_decode(
-        _ctx: &DecodeContext<'_>,
+    fn admit_curve_poles<E>(
         poles: NurbsPoles3<Self>,
-    ) -> Result<NurbsPoles3<FinitePoint3>, NurbsError> {
+        _convert: impl FnOnce(NurbsPoles3<Self>) -> Result<NurbsPoles3<FinitePoint3>, E>,
+    ) -> Result<NurbsPoles3<FinitePoint3>, E> {
         Ok(poles)
     }
 
-    fn admit_surface_poles_for_decode(
-        _ctx: &DecodeContext<'_>,
+    fn admit_surface_poles<E>(
         grid: NurbsPoleGrid<Self>,
-    ) -> Result<NurbsPoleGrid<FinitePoint3>, NurbsError> {
+        _convert: impl FnOnce(NurbsPoleGrid<Self>) -> Result<NurbsPoleGrid<FinitePoint3>, E>,
+    ) -> Result<NurbsPoleGrid<FinitePoint3>, E> {
         Ok(grid)
     }
 }
 
-/// Reconstruct a pole lane without starting a decode session.
-fn reconstruct_poles<T, U>(
-    values: impl ExactSizeIterator<Item = T>,
-    mut admit: impl FnMut(T) -> Result<U, NurbsError>,
-) -> Result<Vec<U>, NurbsError> {
-    let mut output = Vec::new();
-    scratch::reserve_exact(&mut output, values.len(), "reconstruct NURBS poles")?;
-    for value in values {
-        output.push(admit(value)?);
+/// Storage and diagnostic policy for one pole conversion algorithm.
+trait PoleStorage {
+    type Error;
+
+    fn collect<I, T>(
+        &self,
+        values: Vec<I>,
+        operation: &'static str,
+        convert: impl FnMut(I) -> Result<T, Self::Error>,
+    ) -> Result<Vec<T>, Self::Error>;
+
+    fn invalid_point(&self) -> Result<Self::Error, Self::Error>;
+}
+
+struct StandardPoleStorage;
+
+impl PoleStorage for StandardPoleStorage {
+    type Error = NurbsError;
+
+    fn collect<I, T>(
+        &self,
+        values: Vec<I>,
+        _operation: &'static str,
+        mut convert: impl FnMut(I) -> Result<T, Self::Error>,
+    ) -> Result<Vec<T>, Self::Error> {
+        let mut output = Vec::new();
+        scratch::reserve_exact(&mut output, values.len(), "reconstruct NURBS poles")?;
+        for value in values {
+            output.push(convert(value)?);
+        }
+        Ok(output)
     }
-    Ok(output)
+
+    fn invalid_point(&self) -> Result<Self::Error, Self::Error> {
+        Ok(non_finite_control_point())
+    }
+}
+
+fn map_pole<P: PoleValue<T>, T, S: PoleStorage>(
+    storage: &S,
+    point: P,
+) -> Result<T, S::Error> {
+    match point.admit() {
+        Some(point) => Ok(point),
+        None => Err(storage.invalid_point()?),
+    }
+}
+
+fn map_curve_poles<P: PoleValue<T>, T, S: PoleStorage>(
+    storage: &S,
+    poles: NurbsPoles3<P>,
+) -> Result<NurbsPoles3<T>, S::Error> {
+    Ok(match poles {
+        NurbsPoles3::Polynomial { points } => NurbsPoles3::Polynomial {
+            points: storage.collect(points, "IR NURBS admitted poles", |point| map_pole(storage, point))?,
+        },
+        NurbsPoles3::Rational { points } => NurbsPoles3::Rational {
+            points: storage.collect(points, "IR NURBS admitted poles", |pole| Ok(WeightedPole3 {
+                point: map_pole(storage, pole.point)?,
+                weight: pole.weight,
+            }))?,
+        },
+    })
+}
+
+fn map_surface_poles<P: PoleValue<T>, T, S: PoleStorage>(
+    storage: &S,
+    grid: NurbsPoleGrid<P>,
+) -> Result<NurbsPoleGrid<T>, S::Error> {
+    Ok(match grid {
+        NurbsPoleGrid::Polynomial { rows } => NurbsPoleGrid::Polynomial {
+            rows: storage.collect(rows, "IR NURBS admitted grid rows", |row| {
+                storage.collect(row, "IR NURBS admitted poles", |point| map_pole(storage, point))
+            })?,
+        },
+        NurbsPoleGrid::Rational { rows } => NurbsPoleGrid::Rational {
+            rows: storage.collect(rows, "IR NURBS admitted grid rows", |row| {
+                storage.collect(row, "IR NURBS admitted poles", |pole| Ok(WeightedPole3 {
+                    point: map_pole(storage, pole.point)?,
+                    weight: pole.weight,
+                }))
+            })?,
+        },
+    })
 }
 
 /// Pair each pole with its weight through the caller's storage and work policy.
@@ -341,7 +376,7 @@ impl<P: PoleValue<FinitePoint3>> NurbsPoles3<P> {
     ///
     /// Refuses a pole position with a non-finite coordinate.
     fn admit(self) -> Result<NurbsPoles3<FinitePoint3>, NurbsError> {
-        P::admit_curve_poles(self)
+        P::admit_curve_poles(self, |poles| map_curve_poles(&StandardPoleStorage, poles))
     }
 }
 
@@ -566,7 +601,7 @@ impl<P: PoleValue<FinitePoint3>> NurbsPoleGrid<P> {
     ///
     /// Refuses a pole position with a non-finite coordinate.
     fn admit(self) -> Result<NurbsPoleGrid<FinitePoint3>, NurbsError> {
-        P::admit_surface_poles(self)
+        P::admit_surface_poles(self, |grid| map_surface_poles(&StandardPoleStorage, grid))
     }
 }
 
