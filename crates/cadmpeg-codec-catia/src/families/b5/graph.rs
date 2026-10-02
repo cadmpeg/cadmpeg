@@ -2003,6 +2003,9 @@ pub(in crate::families) fn edge_vertex_references(
 ) -> Result<BTreeMap<u32, [u32; 2]>, CodecError> {
     let mut edges = BTreeMap::new();
     let mut ambiguous = HashSet::new();
+    let scan_work = u64_from_index(bytes.len()).checked_mul(4).ok_or_else(||
+        ctx.refuse_codec_limit("catia_b5_object_frame_scan", u64::MAX - 1, u64::MAX))?;
+    ctx.charge_work(scan_work, "catia_b5_object_frame_scan")?;
     for frame in object_stream_frames(bytes) {
         if frame.family != 0xb5 || frame.class != 0x5e {
             continue;
@@ -6245,6 +6248,9 @@ pub(in crate::families) fn collect_object_stream_frames(
     ctx: &DecodeContext<'_>,
     bytes: &[u8],
 ) -> Result<Vec<ObjectFrame>, CodecError> {
+    let scan_work = u64_from_index(bytes.len()).checked_mul(4).ok_or_else(||
+        ctx.refuse_codec_limit("catia_b5_object_frame_scan", u64::MAX - 1, u64::MAX))?;
+    ctx.charge_work(scan_work, "catia_b5_object_frame_scan")?;
     ctx.collect_vec(object_stream_frames(bytes), "catia_b5_object_frames")
 }
 
@@ -6299,6 +6305,9 @@ fn topology_root_run_ranges(
 ) -> Result<Vec<Range<usize>>, CodecError> {
     let mut roots = Vec::new();
     for range in object_stream_run_ranges(ctx, bytes)? {
+        let scan_work = u64_from_index(range.len()).checked_mul(4).ok_or_else(||
+                ctx.refuse_codec_limit("catia_b5_object_frame_scan", u64::MAX - 1, u64::MAX))?;
+        ctx.charge_work(scan_work, "catia_b5_object_frame_scan")?;
         if object_stream_frames(&bytes[range.clone()]).any(is_topology_root_frame) {
             ctx.push_vec(&mut roots, range, "catia_b5_topology_run_ranges")?;
         }
@@ -6322,6 +6331,9 @@ pub(in crate::families) fn object_stream_populations(
     let mut claimed_isolated_ids = HashSet::new();
     for range in &topology_runs {
         let mut root_ids = HashSet::new();
+        let scan_work = u64_from_index(range.len()).checked_mul(4).ok_or_else(||
+                ctx.refuse_codec_limit("catia_b5_object_frame_scan", u64::MAX - 1, u64::MAX))?;
+        ctx.charge_work(scan_work, "catia_b5_object_frame_scan")?;
         for frame in object_stream_frames(&stream[range.clone()]) {
             ctx.insert_hash_set(
                 &mut root_ids,
@@ -6330,6 +6342,9 @@ pub(in crate::families) fn object_stream_populations(
             )?;
         }
         let population = owned_object_stream_population(ctx, stream, range.clone())?;
+        let scan_work = u64_from_index(population.len()).checked_mul(4).ok_or_else(||
+                ctx.refuse_codec_limit("catia_b5_object_frame_scan", u64::MAX - 1, u64::MAX))?;
+        ctx.charge_work(scan_work, "catia_b5_object_frame_scan")?;
         for frame in object_stream_frames(&population) {
             if !root_ids.contains(&frame.object_id) {
                 ctx.insert_hash_set(
@@ -7462,3 +7477,22 @@ fn uncounted_references(
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod nested_frame_work_tests {
+    use cadmpeg_core::CodecError;
+
+#[test]
+fn nested_a8_frame_scanning_refuses_caller_work_before_collection() {
+    let bytes = crate::test_support::test_b5::a8_elided_surface_stream_with_native_vertex_chain();
+    let result = crate::test_support::with_work_limit(0, |ctx| {
+        crate::families::b5::graph::collect_object_stream_frames(ctx, &bytes)
+    });
+    assert!(matches!(result, Err(CodecError::ResourceLimit(limit))
+        if limit.operation == "catia_b5_object_frame_scan"));
+    assert!(!crate::test_support::with_service_context(|ctx| {
+        crate::families::b5::graph::collect_object_stream_frames(ctx, &bytes)
+    }).expect("service frame scan").is_empty());
+}
+
+}
