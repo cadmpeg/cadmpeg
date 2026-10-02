@@ -165,7 +165,10 @@ joins retain only charges present on every path, and mutation invalidates
 operand evidence. Typed core collection admission carries the target and
 count. Raw slot growth consumes the matching admission; an aggregate count
 is scaled across its bounded loop. Exact vector growth compares the charged
-capacity delta with the requested capacity delta. Copy bounds prove fixed
+capacity delta with the requested capacity delta. Concrete slot sizes reduce
+to byte coefficients. A propagated byte charge admits an equal or dominated
+raw exact reserve once. The admitted reserve carries backing slots to its
+subsequent insertion or copy; owned child construction remains separate. Copy bounds prove fixed
 per-element work without a concrete element size. Concrete instantiations judge costs that run through
 uncharged type-parameter traits, including Clone, comparison, hash and
 conversion. Their defects are reported at the instantiating call, with the
