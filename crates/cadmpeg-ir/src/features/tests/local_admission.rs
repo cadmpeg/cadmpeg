@@ -10,6 +10,30 @@ use crate::features::{
 use crate::ids::{BodyId, FeatureInputTopologyId, HistoricalVertexId};
 
 #[test]
+fn invalid_membership_constructors_preserve_an_existing_refusal() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceLimit};
+    use crate::features::{BodySelectionError, EdgeSelection, FaceSelection,
+        FeatureCollectionError, NativeSelections};
+
+    fn refusal<T>(result: Result<Result<T, BodySelectionError>, ResourceLimit>) -> ResourceLimit {
+        result.err().expect("original resource refusal")
+    }
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let original = ctx.charge_work_limit(1, "original membership refusal").unwrap_err();
+    assert_eq!(refusal(SelectionMembers::<BodyId>::new(Vec::new(), &ctx, "empty selection")), original);
+    assert_eq!(refusal(NativeSelections::new(Vec::new(), &ctx, "empty native selection")), original);
+    assert_eq!(refusal(BodyMembers::<BodyId>::try_from_rows(Vec::new(), &ctx)), original);
+    assert_eq!(refusal(EdgeSelection::generated(Vec::new(), String::new(), &ctx)), original);
+    assert_eq!(refusal(FaceSelection::generated(Vec::new(), String::new(), &ctx)), original);
+    assert_eq!(refusal(PlanarProfileRef::generated(Vec::new(), String::new(), &ctx)), original);
+    assert_eq!(TreeChildren::new(Vec::new(), Some(feature_id("missing")), &ctx).unwrap_err(), FeatureCollectionError::Resource(original));
+    assert!(matches!(ctx.finish_session(), Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit == original));
+}
+
+#[test]
 fn membership_constructors_preserve_refusals_and_release_scoped_indexes() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
