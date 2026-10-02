@@ -2235,7 +2235,13 @@ def decode_charged_methods(sources):
         for index, name, _, owner in evaluation_signatures(tokens, pairs, parents):
             if owner != "DecodeContext":
                 continue
-            opening = evaluation_call_open(words, index + 1)
+            opening = index + 2
+            if words[opening:opening + 1] == ["<"]:
+                depth = 1
+                opening += 1
+                while opening < len(words) and depth:
+                    depth += (words[opening] == "<") - (words[opening] == ">")
+                    opening += 1
             if opening not in pairs:
                 continue
             body = pairs[opening] + 1
@@ -2281,7 +2287,7 @@ def decode_charged_call(words, pairs, index, receivers, methods):
         if words[index] not in methods:
             return False
         arguments = list(decode_call_arguments(words, pairs, opening))
-        if words[index] in DECODE_BUDGET_OPERATIONS and arguments:
+        if words[index] in DECODE_BUDGET_OPERATIONS - {"enter_nested"} and arguments:
             first = "".join(words[slice(*arguments[0])])
             return decode_positive_step(first)
         return True
@@ -2295,13 +2301,14 @@ def decode_paid_prefix(words, pairs, start, stop, receivers, methods):
     Binding a value and reading its fixed metadata have no input-sized effect.
     A call's arguments run before the call. A closure's body runs separately.
     """
-    pure_calls = {"len", "capacity", "position", "u64_from_index"}
+    pure_calls = {"len", "capacity", "position", "u64_from_index", "as_str", "as_bytes"}
     cursor = start
+    statement = start
     while cursor < stop:
         word = words[cursor]
         if word in {"return", "break", "continue", "for", "while", "loop"}:
             return False
-        if word == "if":
+        if word in {"if", "match"}:
             branch = cursor + 1
             while branch < stop and words[branch] != "{":
                 branch = pairs[branch] + 1 if branch in pairs and words[branch] in "([" else branch + 1
@@ -2313,13 +2320,43 @@ def decode_paid_prefix(words, pairs, start, stop, receivers, methods):
             if condition is False:
                 return False
             following = pairs[branch] + 1
-            if words[following:following + 1] != ["else"]:
+            if word == "if":
+                paths = [decode_paid_prefix(words, pairs, branch + 1, pairs[branch], receivers, methods)]
+                if words[following:following + 1] == ["else"]:
+                    alternative = following + 1
+                    alternative_stop = pairs.get(alternative, stop) if words[alternative] == "{" else stop
+                    alternative_start = alternative + 1 if words[alternative] == "{" else alternative
+                    paths.append(decode_paid_prefix(words, pairs, alternative_start, alternative_stop, receivers, methods))
+                    following = alternative_stop + 1
+                else:
+                    paths.append(None)
+            else:
+                paths = []
+                arm = branch + 1
+                while arm < pairs[branch]:
+                    arrow = arm
+                    while arrow < pairs[branch] and words[arrow] != "=>":
+                        # Guards have their own effects and cannot be skipped.
+                        if words[arrow] == "if":
+                            return False
+                        arrow = pairs[arrow] + 1 if arrow in pairs and words[arrow] in "([{" else arrow + 1
+                    if arrow == pairs[branch]:
+                        return False
+                    arm_end = arrow + 1
+                    while arm_end < pairs[branch] and words[arm_end] != ",":
+                        if words[arm_end] == "{" and arm_end == arrow + 1:
+                            arm_end = pairs[arm_end] + 1
+                            break
+                        arm_end = pairs[arm_end] + 1 if arm_end in pairs and words[arm_end] in "([{" else arm_end + 1
+                    paths.append(decode_paid_prefix(words, pairs, arrow + 1, arm_end, receivers, methods))
+                    arm = arm_end + (words[arm_end:arm_end + 1] == [","])
+            if any(path is False for path in paths):
                 return False
-            alternative = following + 1
-            alternative_stop = pairs.get(alternative, stop) if words[alternative] == "{" else stop
-            alternative_start = alternative + 1 if words[alternative] == "{" else alternative
-            return (decode_paid_prefix(words, pairs, branch + 1, pairs[branch], receivers, methods)
-                    and decode_paid_prefix(words, pairs, alternative_start, alternative_stop, receivers, methods))
+            if paths and all(path is True for path in paths):
+                return True
+            cursor = following
+            statement = cursor
+            continue
         if word == "{":
             return decode_paid_prefix(words, pairs, cursor + 1, pairs[cursor], receivers, methods)
         opening = evaluation_call_open(words, cursor) if re.fullmatch(r"[A-Za-z_]\w*", word) else None
@@ -2328,13 +2365,14 @@ def decode_paid_prefix(words, pairs, start, stop, receivers, methods):
                 if word in DECODE_BUDGET_OPERATIONS:
                     return True
                 # An eager uncharged argument must not be hidden by its parent.
-                for child in range(opening + 1, pairs[opening]):
-                    if words[child] in {"|", "{"}:
-                        return False
-                    child_open = evaluation_call_open(words, child)
-                    if child_open in pairs and words[child] not in pure_calls:
-                        if not decode_charged_call(words, pairs, child, receivers, methods):
-                            return False
+                for first, last in decode_call_arguments(words, pairs, opening):
+                    if words[first:first + 1] == ["|"] or words[first:first + 2] == ["move", "|"]:
+                        continue
+                    for child in range(first, last):
+                        child_open = evaluation_call_open(words, child)
+                        if child_open in pairs and words[child] not in pure_calls:
+                            if not decode_charged_call(words, pairs, child, receivers, methods):
+                                return False
                 return True
             if word not in pure_calls:
                 return False
@@ -2342,8 +2380,12 @@ def decode_paid_prefix(words, pairs, start, stop, receivers, methods):
             continue
         # Assignment to existing state is an effect; a local binding is not.
         if (word == "=" and words[cursor - 1:cursor] not in [["="], ["!"], ["<"], [">"]]
-                and words[cursor + 1:cursor + 2] != ["="] and "let" not in words[start:cursor]):
+                and words[cursor + 1:cursor + 2] != ["="] and "let" not in words[statement:cursor]):
             return False
+        if word in {"|", "&"} and words[cursor + 1:cursor + 2] == [word]:
+            return False
+        if word == ";":
+            statement = cursor + 1
         cursor += 1
     return None
 

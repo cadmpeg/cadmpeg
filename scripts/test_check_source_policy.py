@@ -1167,8 +1167,8 @@ class DecodeWork(TempSourceCase):
     def charged_operations(self):
         self.write("crates/cadmpeg-core/src/decode/collect.rs", """impl DecodeContext<'_> {
     fn reserve_vec(&self) { self.charge_collection_items(1, "slot")?; }
-    fn push_vec(&self) { self.reserve_vec()?; }
-    fn insert_btree_map(&self) { self.charge_collection_items(1, "node")?; }
+    fn push_vec<T>(&self) { self.reserve_vec()?; }
+    fn insert_btree_map<K, V>(&self) { self.charge_collection_items(1, "node")?; }
     fn copy_retained_text(&self) { self.charge_retained(1, "text")?; }
 }""")
 
@@ -1209,6 +1209,37 @@ class DecodeWork(TempSourceCase):
     }
 }""")
         self.assertEqual([f.line for f in self.findings("uncharged_decode_work")], [4, 5])
+
+    def test_loop_match_and_local_bindings_preserve_admission_paths(self):
+        self.charged_operations()
+        self.write(self.PATH, """fn read(ctx: &DecodeContext<'_>) {
+    for value in values {
+        let item = value;
+        match tag {
+            A => ctx.push_vec(&mut out, item, "slot")?,
+            B => { ctx.copy_retained_text(item.as_str(), "text")?; }
+        }
+    }
+    for value in values {
+        if flag { ctx.push_vec(&mut out, value, "slot")?; }
+        ctx.push_vec(&mut out, value, "slot")?;
+    }
+    for value in values {
+        match tag { A => ctx.push_vec(&mut out, value, "slot")?, B => use_value(value) }
+    }
+    for value in values { ctx.push_vec(&mut out, expensive(value), "slot")?; }
+    for value in values { if expensive(flag) { ctx.push_vec(&mut out, value, "slot")?; } else { ctx.push_vec(&mut out, value, "slot")?; } }
+    for value in values { let item = value; state = item; ctx.push_vec(&mut out, item, "slot")?; }
+}""")
+        self.assertEqual([f.line for f in self.findings("uncharged_decode_work")], [13, 16, 17, 18])
+
+    def test_charged_closure_call_leaves_child_work_reported(self):
+        self.write(self.PATH, """fn read(ctx: &DecodeContext<'_>) {
+    for value in values {
+        parse_item(value, ctx, || others.iter().any(predicate))?;
+    }
+}""")
+        self.assertEqual([f.line for f in self.findings("uncharged_decode_work")], [3])
 
     def test_unadmitted_loops_and_iterator_searches(self):
         self.write(self.PATH, """fn read(ctx: &DecodeContext<'_>) {
