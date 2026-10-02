@@ -2037,6 +2037,29 @@ pub(super) fn mesh_candidates_equivalent_with_context(
     right: &(StandardTopologyDraft, Vec<usize>),
     gauge: Option<MeshCandidateGauge<'_>>,
 ) -> Result<bool, CodecError> {
+    let mut identity_bytes = [0_u64; 2];
+    for (bytes, candidate) in identity_bytes.iter_mut().zip([left, right]) {
+        *bytes = topology_key_bytes(ctx, &candidate.0, "catia_gauge_candidate_key_scan")?
+            .checked_add(u64_from_index(std::mem::size_of_val(
+                candidate.1.as_slice(),
+            )))
+            .ok_or_else(|| {
+                ctx.refuse_codec_limit(
+                    "catia_gauge_candidate_identity_compare",
+                    u64::MAX - 1,
+                    u64::MAX,
+                )
+            })?;
+    }
+    charge_gauge_comparison(
+        ctx,
+        identity_bytes[0],
+        identity_bytes[1],
+        "catia_gauge_candidate_identity_compare",
+    )?;
+    if left == right {
+        return Ok(true);
+    }
     charge_gauge_comparison(
         ctx,
         u64_from_index(std::mem::size_of_val(left.0.vertex_points.as_slice())),
