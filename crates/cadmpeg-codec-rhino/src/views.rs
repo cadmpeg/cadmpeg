@@ -1852,8 +1852,8 @@ mod tests {
 
     use super::{
         legacy_clipping_depth, parse_attributes, parse_cplane, parse_list, parse_trace_image,
-        parse_viewport, parse_wallpaper, parse_window_position, ViewAttributes, ViewListKind,
-        Viewport, NAMED_CPLANES, UNSET_POSITIVE_FLOAT,
+        parse_viewport, parse_wallpaper, parse_window_position, ViewListKind, Viewport,
+        NAMED_CPLANES, UNSET_POSITIVE_FLOAT,
     };
     use crate::chunks::{ArchiveVersion, FramingError};
     use crate::container::Record;
