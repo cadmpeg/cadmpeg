@@ -22,7 +22,7 @@ fn rational_patch_rejects_out_of_domain_endpoint_instead_of_moving_it() {
     };
     let start = FinitePoint2::new(Point2::new(-0.5, 0.0)).unwrap();
     let end = FinitePoint2::new(Point2::new(0.5, 1.0)).unwrap();
-    assert!(rational_patch_parameter_segment(&patch, start, end)
+    assert!(rational_patch_parameter_segment(&cadmpeg_test_support::service_decode_context(), &patch, start, end)
         .expect("resource allocation did not fail")
         .is_none());
 }

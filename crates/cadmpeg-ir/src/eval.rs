@@ -21,6 +21,7 @@ use crate::features::{FinitePoint3, FiniteVector3};
 use crate::geometry::nurbs::bezier::{homogeneous_spans, positive_controls};
 use crate::geometry::nurbs::bounds::speed_bound_by;
 use crate::geometry::nurbs::scratch;
+use crate::geometry::nurbs::scoped::ScopedRows;
 use crate::geometry::{
     nurbs::{NurbsCurve, NurbsSurface, SurfaceParameterAxis},
     pcurve::PcurveGeometry,
@@ -483,11 +484,12 @@ fn rational_surface_residual_patches<'session>(
 }
 
 /// Each temporary row and output control is bounded by the admitted patch control count.
-fn rational_patch_parameter_segment(
+fn rational_patch_parameter_segment<'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
     patch: &RationalBezierSurfacePatch<'_>,
     start: FinitePoint2,
     end: FinitePoint2,
-) -> Result<Option<Vec<[f64; 4]>>, ResourceLimit> {
+) -> Result<Option<ScopedRows<'ctx, [f64; 4]>>, ResourceLimit> {
     let normalize = |value: FiniteReal, domain: IncreasingParameterInterval| {
         let [lower, upper] = domain.finite_endpoints();
         match value.segment_position(lower, upper) {
@@ -505,28 +507,32 @@ fn rational_patch_parameter_segment(
     else {
         return Ok(None);
     };
+    let _u_line_storage;
     let mut u_lines = Vec::new();
-    scratch::reserve_exact(
+    _u_line_storage = ctx.reserve_temporary_vec(
         &mut u_lines,
         patch.v_degree + 1,
         "IR rational surface u lines",
     )?;
     for v in 0..=patch.v_degree {
+        let _control_storage;
         let mut controls = Vec::new();
-        scratch::reserve_exact(
+        _control_storage = ctx.reserve_temporary_vec(
             &mut controls,
             patch.u_degree + 1,
             "IR rational surface u row",
         )?;
+        ctx.charge_work_limit(u64_from_index(patch.u_degree + 1), "IR rational surface u row copy")?;
         controls.extend((0..=patch.u_degree).map(|u| patch.controls[u * (patch.v_degree + 1) + v]));
-        let Some(line) = bezier::restrict_homogeneous_bezier(&controls, u_range.0, u_range.1)?
+        let Some(line) = bezier::restrict_homogeneous_bezier(ctx, &controls, u_range.0, u_range.1)?
         else {
             return Ok(None);
         };
         u_lines.push(line);
     }
+    let _restricted_storage;
     let mut restricted = Vec::new();
-    scratch::reserve_exact(
+    _restricted_storage = ctx.reserve_temporary_vec(
         &mut restricted,
         patch.u_degree + 1,
         "IR rational surface restricted rows",
@@ -535,14 +541,16 @@ fn rational_patch_parameter_segment(
         return Ok(None);
     };
     for (u, _) in first_line.iter().enumerate().take(patch.u_degree + 1) {
+        let _control_storage;
         let mut controls = Vec::new();
-        scratch::reserve_exact(
+        _control_storage = ctx.reserve_temporary_vec(
             &mut controls,
             patch.v_degree + 1,
             "IR rational surface v row",
         )?;
+        ctx.charge_work_limit(u64_from_index(u_lines.len()), "IR rational surface v row copy")?;
         controls.extend(u_lines.iter().map(|row| row[u]));
-        let Some(line) = bezier::restrict_homogeneous_bezier(&controls, v_range.0, v_range.1)?
+        let Some(line) = bezier::restrict_homogeneous_bezier(ctx, &controls, v_range.0, v_range.1)?
         else {
             return Ok(None);
         };
@@ -552,14 +560,19 @@ fn rational_patch_parameter_segment(
     let Some(count) = degree.checked_add(1) else {
         return Ok(None);
     };
-    let mut diagonal = scratch::filled(count, [0.0; 4], "IR rational surface diagonal")?;
+    let diagonal_storage;
+    let mut diagonal = Vec::new();
+    diagonal_storage = ctx.reserve_temporary_vec(&mut diagonal, count, "IR rational surface diagonal")?;
+    ctx.charge_work_limit(u64_from_index(count), "IR rational surface diagonal fill")?;
+    diagonal.resize(count, [0.0; 4]);
     for (u, row) in restricted.iter().enumerate() {
         for (v, control) in row.iter().enumerate() {
+            ctx.charge_work_limit(1, "IR rational surface diagonal coefficient")?;
             let index = u + v;
             let (Some(u_factor), Some(v_factor), Some(denominator)) = (
-                bezier::binomial_coefficient(patch.u_degree, u),
-                bezier::binomial_coefficient(patch.v_degree, v),
-                bezier::binomial_coefficient(degree, index),
+                bezier::binomial_coefficient(ctx, patch.u_degree, u)?,
+                bezier::binomial_coefficient(ctx, patch.v_degree, v)?,
+                bezier::binomial_coefficient(ctx, degree, index)?,
             ) else {
                 return Ok(None);
             };
@@ -569,11 +582,11 @@ fn rational_patch_parameter_segment(
             }
         }
     }
-    Ok(diagonal
-        .iter()
-        .flatten()
-        .all(|value| value.is_finite())
-        .then_some(diagonal))
+    for value in diagonal.iter().flatten() {
+        ctx.charge_work_limit(1, "IR rational surface diagonal finite scan")?;
+        if !value.is_finite() { return Ok(None); }
+    }
+    Ok(Some(ScopedRows::new(diagonal, diagonal_storage)))
 }
 
 /// Conservatively bound the separation between a NURBS surface image of a
@@ -687,16 +700,16 @@ pub fn nurbs_surface_parameter_segment_chord_bound_with_budget(
         let Some(end) = parameter_point(range[1]) else {
             return Ok(None);
         };
-        let Some(controls) = rational_patch_parameter_segment(patch, start, end)? else {
+        let Some(controls) = rational_patch_parameter_segment(ctx, patch, start, end)? else {
             return Ok(None);
         };
         let Some(piece_bound) = bezier::rational_curve_chord_bound(
-            &controls,
+            ctx, &controls,
             [
                 bezier::point_on_chord(chord, range[0]),
                 bezier::point_on_chord(chord, range[1]),
             ],
-        ) else {
+        )? else {
             return Ok(None);
         };
         bound = bound.max(piece_bound);
@@ -750,6 +763,7 @@ fn rational_patch_distance_bounds_with_budget(
 }
 
 fn split_rational_surface_patch<'session>(
+    ctx: &DecodeContext<'_>,
     patch: &RationalBezierSurfacePatch<'session>,
     split_u: bool,
     budget: &WorkBudget<'session>,
@@ -785,14 +799,14 @@ fn split_rational_surface_patch<'session>(
                 &patch.controls[line * (patch.v_degree + 1)..(line + 1) * (patch.v_degree + 1)],
             );
         }
-        let Some(split) = bezier::split_homogeneous_bezier_midpoint(&controls)? else {
+        let Some(split) = bezier::split_homogeneous_bezier_midpoint(ctx, &controls)? else {
             return Ok(None);
         };
-        let (first, second) = split.into_polygons();
+        let (first, second) = split.into_polygons(ctx)?;
         first_lines.push(first);
         second_lines.push(second);
     }
-    let assemble = |lines: Vec<Vec<[f64; 4]>>| -> Result<(Vec<[f64; 4]>, WorkScratch<'session>), ResourceLimit> {
+    let assemble = |lines: Vec<ScopedRows<'_, [f64; 4]>>| -> Result<(Vec<[f64; 4]>, WorkScratch<'session>), ResourceLimit> {
         let bytes = patch.controls.len().checked_mul(std::mem::size_of::<[f64; 4]>())
             .ok_or_else(|| scratch::allocation_refusal(patch.controls.len(), "IR assembled patch bytes"))?;
         let reservation = budget.reserve_scratch(u64_from_index(bytes), "IR assembled surface patch controls")?;
@@ -808,7 +822,7 @@ fn split_rational_surface_patch<'session>(
                 (0..=patch.u_degree).flat_map(|u| (0..=patch.v_degree).map(move |v| lines[v][u])),
             );
         } else {
-            controls.extend(lines.into_iter().flatten());
+            controls.extend(lines.iter().flat_map(|line| line.iter().copied()));
         }
         Ok((controls, reservation))
     };
@@ -1205,7 +1219,7 @@ fn complete_nurbs_surface_starts<'session>(
             })
             .fold(0.0_f64, f64::max);
         let Some(children) =
-            split_rational_surface_patch(&patch, u_variation >= v_variation, budget)?
+            split_rational_surface_patch(ctx, &patch, u_variation >= v_variation, budget)?
         else {
             return Ok(None);
         };

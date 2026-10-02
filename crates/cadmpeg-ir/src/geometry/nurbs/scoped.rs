@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Immutable NURBS scratch rows with their live storage reservation.
 
-use cadmpeg_core::decode::ScopedReservation;
+use cadmpeg_core::decode::{u64_from_index, DecodeContext, ResourceLimit, ScopedReservation};
 use std::ops::Deref;
 
 /// Temporary rows whose storage remains reserved until the rows are dropped.
@@ -14,6 +14,16 @@ pub struct ScopedRows<'ctx, T> {
 impl<'ctx, T> ScopedRows<'ctx, T> {
     pub(crate) fn new(rows: Vec<T>, storage: ScopedReservation<'ctx>) -> Self {
         Self { rows, _storage: storage }
+    }
+
+    pub(crate) fn reverse(
+        &mut self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<(), ResourceLimit> {
+        ctx.charge_work_limit(u64_from_index(self.rows.len()), operation)?;
+        self.rows.reverse();
+        Ok(())
     }
 
     #[cfg(test)]
