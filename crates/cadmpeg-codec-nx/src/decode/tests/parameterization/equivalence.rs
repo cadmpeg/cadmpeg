@@ -77,7 +77,7 @@ fn equivalent_offset_supports_share_a_complete_parameter_lane() {
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
         source_object: None,
     });
-    let _attached = ir.model.add_procedural_curve(
+    let _attached = ir.model.add_procedural_curve(None, 
         &carrier,
         ProceduralCurve::new(
             ProceduralCurveId::mint("test:model:entity#intersection").expect("identity grammar"),

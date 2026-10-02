@@ -813,7 +813,7 @@ fn completed_intersection_support_lane_attaches_after_topology_emission() {
             .iter()
             .find(|candidate| candidate.id == edge)
             .and_then(|edge| edge.tolerance);
-        let _attached = ir.model.add_procedural_curve(
+        let _attached = ir.model.add_procedural_curve(None, 
             &curve,
             cadmpeg_ir::geometry::ProceduralCurve::new(
                 cadmpeg_ir::ids::ProceduralCurveId::mint("nx:test:intersection#0")
@@ -1172,7 +1172,7 @@ fn support_uv_completion_uses_a_finite_serialized_lane_as_a_nurbs_seed() {
             )),
             source_object: None,
         });
-        let _attached = ir.model.add_procedural_curve(
+        let _attached = ir.model.add_procedural_curve(None, 
             &curve_id,
             ProceduralCurve::new(
                 procedural_id.clone(),
@@ -1356,7 +1356,7 @@ fn coupled_uv_completion_fills_both_missing_procedural_lanes_from_the_chart() {
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
             source_object: None,
         });
-        let _attached = ir.model.add_procedural_curve(
+        let _attached = ir.model.add_procedural_curve(None, 
             &carrier,
             ProceduralCurve::new(
                 procedural_id.clone(),

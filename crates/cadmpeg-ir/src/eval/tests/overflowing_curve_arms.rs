@@ -200,7 +200,7 @@ fn procedural_curve_model(
         source_object: None,
     });
     ir.model
-        .add_procedural_curve(&owner, ProceduralCurve::new(construction, definition(&ids)))
+        .add_procedural_curve(None, &owner, ProceduralCurve::new(construction, definition(&ids))).unwrap()
         .expect("procedural curve fixture");
     (ir, owner)
 }

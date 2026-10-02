@@ -449,13 +449,15 @@ macro_rules! declare_model {
                 for wire in procedural_surfaces {
                     let (owner, procedural) = wire.into_parts();
                     model
-                        .add_procedural_surface(&owner, procedural)
+                        .add_procedural_surface(None, &owner, procedural)
+                        .map_err(serde::de::Error::custom)?
                         .map_err(serde::de::Error::custom)?;
                 }
                 for wire in procedural_curves {
                     let (owner, procedural) = wire.into_parts();
                     model
-                        .add_procedural_curve(&owner, procedural)
+                        .add_procedural_curve(None, &owner, procedural)
+                        .map_err(serde::de::Error::custom)?
                         .map_err(serde::de::Error::custom)?;
                 }
                 Ok(model)
@@ -1125,27 +1127,6 @@ impl From<CodecError> for FeatureRegenerationError {
     }
 }
 
-/// Refusal while attaching or admitting a procedural construction.
-#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-pub enum ProceduralAttachmentError {
-    /// The construction failed its carrier invariant.
-    #[error(transparent)]
-    Invalid(ProceduralCarrierError),
-    /// The operation exceeded its resource limit.
-    #[error("resource refusal: {0:?}")]
-    Resource(cadmpeg_core::decode::ResourceLimit),
-}
-
-impl From<CodecError> for ProceduralAttachmentError {
-    fn from(error: CodecError) -> Self {
-        match error {
-            CodecError::ResourceLimit(error) => Self::Resource(error),
-            CodecError::Malformed(message) => Self::Invalid(ProceduralCarrierError::new(message)),
-            error => Self::Invalid(ProceduralCarrierError::new(error.to_string())),
-        }
-    }
-}
-
 /// Failure to attach a procedural construction to its sole carrier.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 #[error("{message}")]
@@ -1157,6 +1138,38 @@ impl ProceduralCarrierError {
     fn new(message: impl Into<String>) -> Self {
         Self {
             message: message.into(),
+        }
+    }
+}
+
+/// Storage and work policy for model attachment and serde reconstruction.
+struct AttachmentAdmission<'ctx, 'arena>(Option<&'ctx DecodeContext<'arena>>);
+
+impl AttachmentAdmission<'_, '_> {
+    fn work(&self, count: usize, operation: &'static str) -> Result<(), CodecError> {
+        match self.0 {
+            Some(ctx) => ctx.charge_work(u64_from_index(count), operation),
+            None => Ok(()),
+        }
+    }
+
+    fn equal(&self, left: &str, right: &str, operation: &'static str) -> Result<bool, CodecError> {
+        self.work(1, operation)?;
+        self.work(left.len().min(right.len()), operation)?;
+        Ok(left == right)
+    }
+
+    fn text(&self, args: fmt::Arguments<'_>, operation: &'static str) -> Result<String, CodecError> {
+        match self.0 {
+            Some(ctx) => ctx.format_retained(args, operation),
+            None => Ok(args.to_string()),
+        }
+    }
+
+    fn reserve<T>(&self, values: &mut Vec<T>, count: usize, operation: &'static str) -> Result<(), CodecError> {
+        match self.0 {
+            Some(ctx) => ctx.reserve_retained_vec(values, count, operation),
+            None => { values.reserve(count); Ok(()) }
         }
     }
 }
@@ -1187,33 +1200,19 @@ impl Model {
         owners.next().is_none().then_some(owner)
     }
 
-    /// Attaches one procedural surface construction to its carrier.
-    // Attachment accepts the owner ID and its construction at the same ownership boundary.
+    /// Attach a procedural surface under the supplied decode context.
+    /// `None` selects standard allocation for context-free reconstruction.
     pub fn add_procedural_surface(
         &mut self,
-        owner: &SurfaceId,
-        procedural: ProceduralSurface,
-    ) -> Result<(), ProceduralAttachmentError> {
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let policy = cadmpeg_core::decode::DecodePolicy::default();
-        let (ctx, _) = DecodeContext::from_root_bytes_limit(&[], &arena, &policy)
-            .map_err(ProceduralAttachmentError::Resource)?;
-        self.add_procedural_surface_for_decode(&ctx, owner, procedural)
-            .map_err(ProceduralAttachmentError::from)?
-            .map_err(ProceduralAttachmentError::Invalid)
-    }
-
-    /// Attach a procedural surface using the caller's retained-byte budget.
-    pub fn add_procedural_surface_for_decode(
-        &mut self,
-        ctx: &DecodeContext<'_>,
+        ctx: Option<&DecodeContext<'_>>,
         owner: &SurfaceId,
         procedural: ProceduralSurface,
     ) -> Result<Result<(), ProceduralCarrierError>, CodecError> {
+        let admission = AttachmentAdmission(ctx);
         for existing in &self.procedural_surfaces {
-            ctx.charge_work(1, "scan procedural surface constructions")?;
-            if existing.id == procedural.id {
-                return Ok(Err(ProceduralCarrierError::new(ctx.format_retained(
+            admission.work(1, "scan procedural surface constructions")?;
+            if admission.equal(existing.id.as_str(), procedural.id.as_str(), "compare procedural surface constructions")? {
+                return Ok(Err(ProceduralCarrierError::new(admission.text(
                     format_args!(
                         "procedural surface construction {} already exists",
                         procedural.id
@@ -1224,14 +1223,18 @@ impl Model {
         }
         let mut owner_index = None;
         for (index, carrier) in self.surfaces.iter().enumerate() {
-            ctx.charge_work(1, "scan procedural surface carriers")?;
-            if &carrier.id == owner && owner_index.is_none() {
+            admission.work(1, "scan procedural surface carriers")?;
+            let is_owner = admission.equal(carrier.id.as_str(), owner.as_str(), "compare procedural surface owners")?;
+            if owner_index.is_none() && is_owner {
                 owner_index = Some(index);
             }
-            if &carrier.id != owner
-                && carrier.geometry.procedural_construction() == Some(&procedural.id)
+            if !is_owner
+                && match carrier.geometry.procedural_construction() {
+                    Some(construction) => admission.equal(construction.as_str(), procedural.id.as_str(), "compare procedural surface constructions")?,
+                    None => false,
+                }
             {
-                return Ok(Err(ProceduralCarrierError::new(ctx.format_retained(
+                return Ok(Err(ProceduralCarrierError::new(admission.text(
                     format_args!(
                         "procedural surface construction {} already owns surface {}",
                         procedural.id, carrier.id
@@ -1241,7 +1244,7 @@ impl Model {
             }
         }
         let Some(surface) = owner_index.and_then(|index| self.surfaces.get_mut(index)) else {
-            return Ok(Err(ProceduralCarrierError::new(ctx.format_retained(
+            return Ok(Err(ProceduralCarrierError::new(admission.text(
                 format_args!(
                     "procedural surface {} references missing surface {owner}",
                     procedural.id
@@ -1253,23 +1256,23 @@ impl Model {
             SurfaceGeometry::Procedural {
                 construction,
                 cache: None,
-            } if *construction == procedural.id => {
+            } if admission.equal(construction.as_str(), procedural.id.as_str(), "compare procedural surface constructions")? => {
                 if procedural.cache_fit_tolerance().is_some() {
-                    return Ok(Err(ProceduralCarrierError::new(ctx.format_retained(
+                    return Ok(Err(ProceduralCarrierError::new(admission.text(
                         format_args!(
                         "direct procedural surface {owner} cannot carry a solved-cache tolerance"
                     ),
                         "procedural surface refusal",
                     )?)));
                 }
-                ctx.reserve_retained_vec(
+                admission.reserve(
                     &mut self.procedural_surfaces,
                     1,
                     "store procedural surface constructions",
                 )?;
             }
             SurfaceGeometry::Procedural { construction, .. } => {
-                return Ok(Err(ProceduralCarrierError::new(ctx.format_retained(
+                return Ok(Err(ProceduralCarrierError::new(admission.text(
                     format_args!(
                     "surface {owner} is already owned by procedural construction {construction}"
                 ),
@@ -1277,10 +1280,11 @@ impl Model {
                 )?)));
             }
             SurfaceGeometry::Solved(_) => {
-                let construction = procedural
-                    .id
-                    .try_clone_for_decode(ctx, "procedural surface owner identity")?;
-                ctx.reserve_retained_vec(
+                let construction = match ctx {
+                    Some(ctx) => procedural.id.try_clone_for_decode(ctx, "procedural surface owner identity")?,
+                    None => procedural.id.clone(),
+                };
+                admission.reserve(
                     &mut self.procedural_surfaces,
                     1,
                     "store procedural surface constructions",
@@ -1305,33 +1309,19 @@ impl Model {
         Ok(Ok(()))
     }
 
-    /// Attaches one procedural curve construction to its carrier.
-    // Attachment accepts the owner ID and its construction at the same ownership boundary.
+    /// Attach a procedural curve under the supplied decode context.
+    /// `None` selects standard allocation for context-free reconstruction.
     pub fn add_procedural_curve(
         &mut self,
-        owner: &CurveId,
-        procedural: ProceduralCurve,
-    ) -> Result<(), ProceduralAttachmentError> {
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let policy = cadmpeg_core::decode::DecodePolicy::default();
-        let (ctx, _) = DecodeContext::from_root_bytes_limit(&[], &arena, &policy)
-            .map_err(ProceduralAttachmentError::Resource)?;
-        self.add_procedural_curve_for_decode(&ctx, owner, procedural)
-            .map_err(ProceduralAttachmentError::from)?
-            .map_err(ProceduralAttachmentError::Invalid)
-    }
-
-    /// Attach a procedural curve using the caller's retained-byte budget.
-    pub fn add_procedural_curve_for_decode(
-        &mut self,
-        ctx: &DecodeContext<'_>,
+        ctx: Option<&DecodeContext<'_>>,
         owner: &CurveId,
         procedural: ProceduralCurve,
     ) -> Result<Result<(), ProceduralCarrierError>, CodecError> {
+        let admission = AttachmentAdmission(ctx);
         for existing in &self.procedural_curves {
-            ctx.charge_work(1, "scan procedural curve constructions")?;
-            if existing.id == procedural.id {
-                return Ok(Err(ProceduralCarrierError::new(ctx.format_retained(
+            admission.work(1, "scan procedural curve constructions")?;
+            if admission.equal(existing.id.as_str(), procedural.id.as_str(), "compare procedural curve constructions")? {
+                return Ok(Err(ProceduralCarrierError::new(admission.text(
                     format_args!(
                         "procedural curve construction {} already exists",
                         procedural.id
@@ -1342,14 +1332,18 @@ impl Model {
         }
         let mut owner_index = None;
         for (index, carrier) in self.curves.iter().enumerate() {
-            ctx.charge_work(1, "scan procedural curve carriers")?;
-            if &carrier.id == owner && owner_index.is_none() {
+            admission.work(1, "scan procedural curve carriers")?;
+            let is_owner = admission.equal(carrier.id.as_str(), owner.as_str(), "compare procedural curve owners")?;
+            if owner_index.is_none() && is_owner {
                 owner_index = Some(index);
             }
-            if &carrier.id != owner
-                && carrier.geometry.procedural_construction() == Some(&procedural.id)
+            if !is_owner
+                && match carrier.geometry.procedural_construction() {
+                    Some(construction) => admission.equal(construction.as_str(), procedural.id.as_str(), "compare procedural curve constructions")?,
+                    None => false,
+                }
             {
-                return Ok(Err(ProceduralCarrierError::new(ctx.format_retained(
+                return Ok(Err(ProceduralCarrierError::new(admission.text(
                     format_args!(
                         "procedural curve construction {} already owns curve {}",
                         procedural.id, carrier.id
@@ -1359,7 +1353,7 @@ impl Model {
             }
         }
         let Some(curve) = owner_index.and_then(|index| self.curves.get_mut(index)) else {
-            return Ok(Err(ProceduralCarrierError::new(ctx.format_retained(
+            return Ok(Err(ProceduralCarrierError::new(admission.text(
                 format_args!(
                     "procedural curve {} references missing curve {owner}",
                     procedural.id
@@ -1371,23 +1365,23 @@ impl Model {
             CurveGeometry::Procedural {
                 construction,
                 cache: None,
-            } if *construction == procedural.id => {
+            } if admission.equal(construction.as_str(), procedural.id.as_str(), "compare procedural curve constructions")? => {
                 if procedural.cache_fit_tolerance().is_some() {
-                    return Ok(Err(ProceduralCarrierError::new(ctx.format_retained(
+                    return Ok(Err(ProceduralCarrierError::new(admission.text(
                         format_args!(
                             "direct procedural curve {owner} cannot carry a solved-cache tolerance"
                         ),
                         "procedural curve refusal",
                     )?)));
                 }
-                ctx.reserve_retained_vec(
+                admission.reserve(
                     &mut self.procedural_curves,
                     1,
                     "store procedural curve constructions",
                 )?;
             }
             CurveGeometry::Procedural { construction, .. } => {
-                return Ok(Err(ProceduralCarrierError::new(ctx.format_retained(
+                return Ok(Err(ProceduralCarrierError::new(admission.text(
                     format_args!(
                         "curve {owner} is already owned by procedural construction {construction}"
                     ),
@@ -1395,10 +1389,11 @@ impl Model {
                 )?)));
             }
             CurveGeometry::Solved(_) => {
-                let construction = procedural
-                    .id
-                    .try_clone_for_decode(ctx, "ir_procedural_curve_construction_id")?;
-                ctx.reserve_retained_vec(
+                let construction = match ctx {
+                    Some(ctx) => procedural.id.try_clone_for_decode(ctx, "ir_procedural_curve_construction_id")?,
+                    None => procedural.id.clone(),
+                };
+                admission.reserve(
                     &mut self.procedural_curves,
                     1,
                     "store procedural curve constructions",

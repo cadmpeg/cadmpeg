@@ -205,7 +205,7 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
                 ),
             },
         );
-        ir.model.add_procedural_curve(&spine, procedural).unwrap();
+        ir.model.add_procedural_curve(None, &spine, procedural).unwrap().unwrap();
         assert_eq!(
             crate::decode::support_uv::blend_spine_cache_fit_tolerance(&ir, &surface, 0.25),
             1.0
@@ -469,7 +469,7 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
             source_object: None,
         });
-        let _attached = ir.model.add_procedural_curve(
+        let _attached = ir.model.add_procedural_curve(None, 
             &boundary_curve,
             ProceduralCurve::new(
                 ProceduralCurveId::mint("test:model:entity#synthetic:blend-boundary")

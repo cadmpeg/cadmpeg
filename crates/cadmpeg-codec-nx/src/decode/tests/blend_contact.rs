@@ -1167,7 +1167,7 @@ fn reverse_blend_contact_transfers_a_boundary_sample_to_its_support() {
                 source_object: None,
             },
         ]);
-        let _attached = ir.model.add_procedural_surface(
+        let _attached = ir.model.add_procedural_surface(None, 
             &support_offset,
             ProceduralSurface::new(
                 support_offset_construction.clone(),
@@ -1228,7 +1228,7 @@ fn reverse_blend_contact_transfers_a_boundary_sample_to_its_support() {
             vec![Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)],
             None,
         );
-        let _attached = ir.model.add_procedural_curve(
+        let _attached = ir.model.add_procedural_curve(None, 
             &spine,
             ProceduralCurve::new(
                 spine_procedural,

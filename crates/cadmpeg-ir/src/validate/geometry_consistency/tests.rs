@@ -198,7 +198,7 @@ fn mapped_surface_curve_with_pcurve(pcurve: PcurveGeometry, mapping: [f64; 2]) -
        },
        cache_fit_tolerance: None,
     };
-    ir.model.add_procedural_curve(&curve, construction).unwrap();
+    ir.model.add_procedural_curve(None, &curve, construction).unwrap().unwrap();
     ir
 }
 
@@ -523,10 +523,10 @@ fn trimmed_surface_pcurve_uses_the_local_parameterization_for_validation() {
         record_bounds: None,
     };
     ir.model
-        .add_procedural_surface(
+        .add_procedural_surface(None, 
             &SurfaceId::mint("test:model:surface#surface").expect("valid identity"),
             construction,
-        )
+        ).unwrap()
         .unwrap();
     ir.model.points[0].set_position(
         crate::features::FinitePoint3::new(Point3::new(1.0, 2.0, 0.0))
@@ -940,7 +940,7 @@ fn edge_endpoint_mismatch_is_flagged() {
         },
         cache_fit_tolerance: Some(0.99),
     };
-    ir.model.add_procedural_curve(&curve, procedural).unwrap();
+    ir.model.add_procedural_curve(None, &curve, procedural).unwrap().unwrap();
     let report = validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail");
     assert!(
         report
@@ -1101,7 +1101,7 @@ fn pcurve_surface_mismatch_is_flagged() {
     };
     procedural
         .model
-        .add_procedural_surface(&surface, construction)
+        .add_procedural_surface(None, &surface, construction).unwrap()
         .unwrap();
     let procedural_report =
         validate_neutral(&procedural, Vec::new()).expect("resource allocation did not fail");

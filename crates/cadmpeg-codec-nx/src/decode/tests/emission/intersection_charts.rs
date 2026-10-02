@@ -728,7 +728,7 @@ fn blend_contact_transfer_fixture(
     } else {
         other_support.clone()
     };
-    let _attached = ir.model.add_procedural_curve(
+    let _attached = ir.model.add_procedural_curve(None, 
         &spine,
         ProceduralCurve::new(
             ProceduralCurveId::mint("test:model:entity#synthetic:blend-contact-spine-construction")
@@ -822,7 +822,7 @@ fn blend_contact_transfer_fixture(
                 ),
             },
         );
-        ir.model.add_procedural_curve(&curve, procedural).unwrap();
+        ir.model.add_procedural_curve(None, &curve, procedural).unwrap().unwrap();
     }
     ir
 }
@@ -930,7 +930,7 @@ fn blend_boundary_chart_uses_the_solved_curve_when_the_source_blend_is_unevaluab
             )),
             source_object: None,
         });
-        let _attached = ir.model.add_procedural_curve(
+        let _attached = ir.model.add_procedural_curve(None, 
             &curve,
             ProceduralCurve::new(
                 construction,
@@ -1077,7 +1077,7 @@ fn tolerant_nurbs_boundary_establishes_both_intersection_charts() {
             )),
             source_object: None,
         });
-        let _attached = ir.model.add_procedural_curve(
+        let _attached = ir.model.add_procedural_curve(None, 
             &curve,
             ProceduralCurve::new(
                 construction,
@@ -1351,7 +1351,7 @@ fn exact_boundary_completion_preserves_existing_cache_fit_tolerance() {
                 ),
             },
         );
-        ir.model.add_procedural_curve(&curve, procedural).unwrap();
+        ir.model.add_procedural_curve(None, &curve, procedural).unwrap().unwrap();
 
         crate::decode::pcurves::complete_exact_boundary_intersection_pcurves(
             geometry_ctx,

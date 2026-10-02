@@ -1652,7 +1652,7 @@ mod route_tests {
             source_object: None,
         });
         ir.model
-            .add_procedural_curve(
+            .add_procedural_curve(None, 
                 &curve_id,
                 ProceduralCurve::new(
                     ProceduralCurveId::mint("catia:test:procedural-curve#0")
@@ -1663,7 +1663,7 @@ mod route_tests {
                         cache: None,
                     },
                 ),
-            )
+            ).unwrap()
             .unwrap();
         let unknowns = [UnknownRecord::retained(
             record_id,
@@ -1703,7 +1703,7 @@ mod route_tests {
         assert_eq!(unresolved_carrier_counts(&ir), (1, 2));
 
         ir.model
-            .add_procedural_curve(
+            .add_procedural_curve(None, 
                 &curve_id,
                 ProceduralCurve::new(
                     ProceduralCurveId::mint(
@@ -1719,10 +1719,10 @@ mod route_tests {
                         cache: None,
                     },
                 ),
-            )
+            ).unwrap()
             .expect("attach construction to its fixture carrier");
         ir.model
-            .add_procedural_surface(
+            .add_procedural_surface(None, 
                 &surface_id,
                 ProceduralSurface::new(
                     ProceduralSurfaceId::mint(
@@ -1738,10 +1738,10 @@ mod route_tests {
                     },
                     None,
                 ),
-            )
+            ).unwrap()
             .expect("attach construction to its fixture carrier");
         ir.model
-            .add_procedural_surface(
+            .add_procedural_surface(None, 
                 &offset_id,
                 cadmpeg_ir::geometry::surface_payloads::OffsetSurfaceConstruction::try_new(
                     surface_id,
@@ -1765,7 +1765,7 @@ mod route_tests {
                     )
                 })
                 .expect("valid ProceduralSurface fixture"),
-            )
+            ).unwrap()
             .expect("attach construction to its fixture carrier");
         assert_eq!(unresolved_carrier_counts(&ir), (1, 2));
 

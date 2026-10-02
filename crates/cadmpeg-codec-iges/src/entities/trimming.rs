@@ -3043,8 +3043,8 @@ pub(super) fn project(
             };
 
             ctx.charge_entities(1, "iges_geometry_trimming")?;
-            let _attached = candidate.model_mut().add_procedural_surface_for_decode(
-                ctx,
+            let _attached = candidate.model_mut().add_procedural_surface(
+                Some(ctx),
                 &derived_surface_id.try_clone_for_decode(ctx, "iges trimming identity copy")?,
                 ProceduralSurface::new(
                     crate::ids::procedural_surface_admitted(

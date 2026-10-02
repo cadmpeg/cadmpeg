@@ -540,8 +540,8 @@ pub(super) fn try_decode_geometry(
             }
             let procedural = ProceduralSurface::new(procedural_id, definition, None);
 
-            let _attached = ir.model.add_procedural_surface_for_decode(
-                ctx,
+            let _attached = ir.model.add_procedural_surface(
+                Some(ctx),
                 &surface_id.try_clone_for_decode(ctx, "nx offset construction owner")?,
                 procedural,
             )?;
@@ -602,8 +602,8 @@ pub(super) fn try_decode_geometry(
             annotations.derived_for_decode(ctx, procedural_id.as_str(), "definition")?;
             let procedural_index = ir.model.procedural_surfaces.len();
 
-            let attached = ir.model.add_procedural_surface_for_decode(
-                ctx,
+            let attached = ir.model.add_procedural_surface(
+                Some(ctx),
                 &surface_id.try_clone_for_decode(ctx, "nx blend construction owner")?,
                 ProceduralSurface::new(
                     procedural_id,
@@ -1104,8 +1104,8 @@ pub(super) fn try_decode_geometry(
             }
             let procedural = ProceduralCurve::new(procedural_id, definition);
 
-            let _attached = ir.model.add_procedural_curve_for_decode(
-                ctx,
+            let _attached = ir.model.add_procedural_curve(
+                Some(ctx),
                 &curve_id.try_clone_for_decode(ctx, "nx intersection owner identity")?,
                 procedural,
             )?;

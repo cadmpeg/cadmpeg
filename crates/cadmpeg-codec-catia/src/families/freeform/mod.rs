@@ -1943,8 +1943,8 @@ pub(super) fn append_freeform_surface_pools(
             Exactness::ByteExact,
         )?;
         admission.charge()?;
-        let _attached = ir.model.add_procedural_surface_for_decode(
-            admission.context(),
+        let _attached = ir.model.add_procedural_surface(
+            Some(admission.context()),
             &surface_id,
             ProceduralSurface::new(
                 procedural_id,
@@ -2722,7 +2722,7 @@ fn append_resolved_consolidated_surface_curves(
                             admission.context(),
                             "catia_freeform_offset_procedural_owner_id",
                         )?;
-                        let _attached = ir.model.add_procedural_surface_for_decode(admission.context(), &procedural_owner_id, ProceduralSurface::new(
+                        let _attached = ir.model.add_procedural_surface(Some(admission.context()), &procedural_owner_id, ProceduralSurface::new(
                                 procedural_id,
                                 ProceduralSurfaceDefinition::Offset(
                                     cadmpeg_ir::geometry::surface_payloads::OffsetSurfaceConstruction::legacy(
@@ -3574,8 +3574,8 @@ fn append_resolved_consolidated_surface_curves(
                 "catia_annotation_field",
             )?;
             admission.charge()?;
-            let _attached = ir.model.add_procedural_curve_for_decode(
-                admission.context(),
+            let _attached = ir.model.add_procedural_curve(
+                Some(admission.context()),
                 &curve_id,
                 ProceduralCurve::new(procedural_id, definition),
             )?;
@@ -5316,7 +5316,7 @@ mod tests {
                 use_curve: None,
             });
         }
-        let _attached = ir.model.add_procedural_curve(
+        let _attached = ir.model.add_procedural_curve(None, 
             &curve_id,
             ProceduralCurve::new(
                 ProceduralCurveId::mint(
@@ -5672,7 +5672,7 @@ mod tests {
                 source_object: None,
             });
         }
-        let _attached = ir.model.add_procedural_curve(
+        let _attached = ir.model.add_procedural_curve(None, 
             &curve_id,
             ProceduralCurve::new(
                 ProceduralCurveId::mint(

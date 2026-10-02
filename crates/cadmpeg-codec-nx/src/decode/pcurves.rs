@@ -4637,7 +4637,7 @@ pub(super) fn attach_tolerant_edge_intersections_with_budget(
 
         let _attached = ir
             .model
-            .add_procedural_curve_for_decode(ctx, &curve_id, procedural)?;
+            .add_procedural_curve(Some(ctx), &curve_id, procedural)?;
     }
     Ok(())
 }
@@ -5101,7 +5101,7 @@ mod tests {
             source_object: None,
         });
         ir.model
-            .add_procedural_curve(
+            .add_procedural_curve(None, 
                 &curve,
                 ProceduralCurve::new(
                     procedural_id,
@@ -5125,7 +5125,7 @@ mod tests {
                         cache: None,
                     },
                 ),
-            )
+            ).unwrap()
             .unwrap();
         ir.model.coedges.push(Coedge {
             id: coedge_id,
