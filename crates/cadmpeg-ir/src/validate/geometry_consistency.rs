@@ -27,6 +27,8 @@ use cadmpeg_core::decode::{DecodeContext, ResourceLimit};
 use cadmpeg_core::CodecError;
 
 use super::pcurve_parameter_domain;
+mod scratch;
+use scratch::Scratch;
 
 /// A curve point as the checks measure it: the finite point, or the point an
 /// evaluation outside the finite range reached, whose mismatch is then the
@@ -967,14 +969,15 @@ fn unique(values: impl IntoIterator<Item = FiniteReal>) -> Vec<FiniteReal> {
     unique
 }
 
-fn pcurve_parameter_seeds(ctx: &DecodeContext<'_>, pcurve: &crate::geometry::pcurve::Pcurve) -> Result<Vec<f64>, ResourceLimit> {
-    let mut seeds = vec![0.0];
+fn pcurve_parameter_seeds<'ctx>(ctx: &'ctx DecodeContext<'_>, pcurve: &crate::geometry::pcurve::Pcurve) -> Result<Scratch<'ctx, f64>, CodecError> {
+    let mut seeds = Scratch::new(ctx)?;
+    seeds.push(0.0)?;
     if let Some(range) = pcurve.parameter_range() {
-        seeds.extend(range.get());
+        seeds.extend(range.get())?;
     }
     if let Some(domain) = pcurve_parameter_domain(ctx, &pcurve.geometry)? {
         let [start, end] = domain.endpoints();
-        seeds.extend([start, start.midpoint(end), end]);
+        seeds.extend([start, start.midpoint(end), end])?;
     }
     Ok(seeds)
 }
@@ -983,7 +986,7 @@ fn pcurve_parameter_seeds_on_surface(
     ctx: &DecodeContext<'_>,
     context: &SurfacePcurveContext<'_, '_>,
     pcurve: &crate::geometry::pcurve::Pcurve,
-) -> Result<Vec<FiniteReal>, ResourceLimit> {
+) -> Result<Vec<FiniteReal>, CodecError> {
     let mut seeds = pcurve_parameter_seeds(ctx, pcurve)?;
     let Some((origin, direction)) = pcurve.geometry.line_parameters() else {
         return Ok(unique_finite(seeds));
@@ -997,12 +1000,12 @@ fn pcurve_parameter_seeds_on_surface(
     };
     for boundary in [u_lower, u_lower.midpoint(u_upper), u_upper] {
         if direction.u != 0.0 {
-            seeds.push((boundary - origin.u) / direction.u);
+            seeds.push((boundary - origin.u) / direction.u)?;
         }
     }
     for boundary in [v_lower, v_lower.midpoint(v_upper), v_upper] {
         if direction.v != 0.0 {
-            seeds.push((boundary - origin.v) / direction.v);
+            seeds.push((boundary - origin.v) / direction.v)?;
         }
     }
     Ok(unique_finite(seeds))
