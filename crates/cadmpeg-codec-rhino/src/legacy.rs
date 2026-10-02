@@ -830,11 +830,6 @@ fn legacy_spline(
         }
     }
     if rational != 0 {
-        admit_v1_values::<cadmpeg_ir::geometry::nurbs::WeightedPole3<Point3>>(
-            ctx,
-            cv_count,
-            "Rhino V1 spline weighted poles",
-        )?;
         admit_v1_values::<cadmpeg_ir::geometry::nurbs::WeightedPole3<FinitePoint3>>(
             ctx,
             cv_count,
@@ -843,14 +838,14 @@ fn legacy_spline(
     } else {
         admit_v1_values::<FinitePoint3>(ctx, cv_count, "Rhino V1 spline admitted poles")?;
     }
-    NurbsCurve::from_checked_lanes(
+    NurbsCurve::from_checked_lanes(ctx, 
         u32::try_from(order - 1)
             .map_err(|_| CodecError::Malformed("V1 spline degree overflow".to_string()))?,
         knots,
         control_points,
         weights,
         closed == 2,
-    )
+    )?
     .map_err(|error| CodecError::Malformed(error.to_string()))
 }
 
@@ -1633,31 +1628,8 @@ fn legacy_surface(
     if weights.is_some() {
         admit_v1_values::<Vec<NonZeroReal>>(ctx, counts[0], "Rhino V1 surface weight rows")?;
         admit_v1_values::<NonZeroReal>(ctx, pole_count, "Rhino V1 surface weight grid")?;
-        admit_v1_values::<Vec<cadmpeg_ir::geometry::nurbs::WeightedPole3<Point3>>>(
-            ctx,
-            counts[0],
-            "Rhino V1 surface weighted rows",
-        )?;
-        admit_v1_values::<cadmpeg_ir::geometry::nurbs::WeightedPole3<Point3>>(
-            ctx,
-            pole_count,
-            "Rhino V1 surface weighted poles",
-        )?;
-        admit_v1_values::<Vec<cadmpeg_ir::geometry::nurbs::WeightedPole3<FinitePoint3>>>(
-            ctx,
-            counts[0],
-            "Rhino V1 surface admitted rows",
-        )?;
-        admit_v1_values::<cadmpeg_ir::geometry::nurbs::WeightedPole3<FinitePoint3>>(
-            ctx,
-            pole_count,
-            "Rhino V1 surface admitted poles",
-        )?;
-    } else {
-        admit_v1_values::<Vec<FinitePoint3>>(ctx, counts[0], "Rhino V1 surface admitted rows")?;
-        admit_v1_values::<FinitePoint3>(ctx, pole_count, "Rhino V1 surface admitted poles")?;
     }
-    NurbsSurface::from_checked_lanes(
+    NurbsSurface::from_checked_lanes(ctx, 
         NurbsSurfaceAxis::new(
             u32::try_from(orders[0] - 1)
                 .map_err(|_| CodecError::Malformed("V1 surface degree overflow".to_string()))?,
@@ -1675,7 +1647,7 @@ fn legacy_surface(
             weights.map(|values| values.chunks(row_len).map(<[_]>::to_vec).collect()),
         ),
         false,
-    )
+    )?
     .map_err(|error| CodecError::Malformed(error.to_string()))
 }
 

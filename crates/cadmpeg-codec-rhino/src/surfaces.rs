@@ -857,12 +857,12 @@ fn sum_nurbs(
         .try_clone_for_decode(ctx, "Rhino sum surface V knots")
         .map_err(crate::curves::GeometryError::from)?;
     admit_nurbs_pole_conversion(ctx, product_count, rational)?;
-    NurbsSurface::from_checked_lanes(
+    NurbsSurface::from_checked_lanes(ctx, 
         NurbsSurfaceAxis::new(first.degree(), u_knots, first.periodic()),
         NurbsSurfaceAxis::new(second.degree(), v_knots, second.periodic()),
         NurbsSurfaceLanes::new(point_rows, weight_rows),
         false,
-    )
+    )?
     .map_err(|error| GeometryError::malformed(offset, error.to_string()))
 }
 
@@ -925,14 +925,6 @@ fn admit_nurbs_pole_conversion(
     rational: bool,
 ) -> Result<(), GeometryError> {
     let count = cadmpeg_core::decode::u64_from_index(pole_count);
-    let item_count = if rational {
-        count.checked_mul(2)
-    } else {
-        Some(count)
-    }
-    .ok_or_else(|| {
-        GeometryError::not_implemented("Rhino surface pole count exceeds address space")
-    })?;
     let bytes_per_pole = std::mem::size_of::<FinitePoint3>()
         .checked_add(if rational {
             std::mem::size_of::<NonZeroReal>()
@@ -947,7 +939,7 @@ fn admit_nurbs_pole_conversion(
         .ok_or_else(|| {
             GeometryError::not_implemented("Rhino surface pole bytes exceed address space")
         })?;
-    ctx.charge_collection_items(item_count, "Rhino surface admitted poles")?;
+    ctx.charge_collection_items(count, "Rhino surface admitted poles")?;
     ctx.charge_retained(bytes, "Rhino surface admitted poles")?;
     Ok(())
 }
@@ -1149,8 +1141,7 @@ fn read_nurbs_curve_inner(
     let periodic = periodic_knots_checked(&knots, order, cv_count);
     let full_knots = reconstruct_checked_knots(ctx, &knots, order, cv_count)?;
     reader.skip_remaining()?;
-    admit_nurbs_pole_conversion(ctx, stored_cv_count, rational != 0)?;
-    let poles = NurbsPoles3::from_checked_lanes(control_points, weights)
+    let poles = NurbsPoles3::from_checked_lanes(ctx, control_points, weights)?
         .map_err(|error| GeometryError::malformed(reader.position(), error.to_string()))?;
     NurbsCurve::new(
         u32::try_from(order - 1).map_err(|_| error(reader.position(), "NURBS order overflow"))?,
@@ -1256,8 +1247,7 @@ pub(crate) fn read_nurbs_surface_prefix(
         .as_deref()
         .map(|values| copy_rows(ctx, values, row_len, "Rhino NURBS surface weight grid"))
         .transpose()?;
-    admit_nurbs_pole_conversion(ctx, stored_cv_count, rational != 0)?;
-    let poles = NurbsPoleGrid::from_checked_lanes(point_rows, weight_rows)
+    let poles = NurbsPoleGrid::from_checked_lanes(ctx, point_rows, weight_rows)?
         .map_err(|error| GeometryError::malformed(reader.position(), error.to_string()))?;
     NurbsSurface::new(
         NurbsSurfaceAxis::new(

@@ -391,7 +391,7 @@ fn nurbs_curve_copy_refuses_at_caller_limit() {
     ];
     let points = vec![FinitePoint3::ZERO, FinitePoint3::ZERO];
     let nurbs =
-        cadmpeg_ir::geometry::nurbs::NurbsCurve::from_finite_lanes(1, knots, points, None, false)
+        cadmpeg_ir::geometry::nurbs::NurbsCurve::from_finite_lanes(&cadmpeg_test_support::service_decode_context(), 1, knots, points, None, false).expect("fixture pole pairing admission")
             .expect("valid curve lanes");
     let result = with_collection_limit(&[], 5, |ctx| {
         nurbs.try_clone_for_decode(ctx, "FreeCAD NURBS curve copy")
@@ -410,12 +410,12 @@ fn nurbs_surface_copy_refuses_at_caller_limit() {
         FiniteReal::ONE,
     ];
     let axis = || NurbsSurfaceAxis::new(1, knots.clone(), false);
-    let nurbs = NurbsSurface::from_finite_lanes(
+    let nurbs = NurbsSurface::from_finite_lanes(&cadmpeg_test_support::service_decode_context(), 
         axis(),
         axis(),
         NurbsSurfaceLanes::new(vec![vec![FinitePoint3::ZERO; 2]; 2], None),
         false,
-    )
+    ).expect("fixture pole pairing admission")
     .expect("valid surface lanes");
     let result = with_collection_limit(&[], 13, |ctx| {
         nurbs.try_clone_for_decode(ctx, "FreeCAD NURBS surface copy")

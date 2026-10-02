@@ -272,7 +272,7 @@ impl PoleValue<FinitePoint3> for FinitePoint3 {
 
 /// Explicit storage, work and diagnostic policy for NURBS admission.
 pub(super) trait NurbsAdmission {
-    type Error;
+    type Error: From<NurbsError>;
 
     fn collect<I, T>(
         &self,
@@ -280,6 +280,10 @@ pub(super) trait NurbsAdmission {
         operation: &'static str,
         convert: impl FnMut(I) -> Result<T, Self::Error>,
     ) -> Result<Vec<T>, Self::Error>;
+
+    fn reserve<T>(&self, values: &mut Vec<T>, storage: &mut Option<cadmpeg_core::decode::ScopedReservation<'_>>, operation: &'static str) -> Result<(), Self::Error>;
+
+    fn copy_field(&self, field: &str) -> Result<String, Self::Error>;
 
     fn work(&self, count: u64, operation: &'static str) -> Result<(), Self::Error>;
 
@@ -304,6 +308,14 @@ impl NurbsAdmission for StandardNurbsAdmission {
             output.push(convert(value)?);
         }
         Ok(output)
+    }
+
+    fn reserve<T>(&self, values: &mut Vec<T>, _storage: &mut Option<cadmpeg_core::decode::ScopedReservation<'_>>, operation: &'static str) -> Result<(), Self::Error> {
+        values.try_reserve(1).map_err(|_| scratch::allocation_refusal(1, operation).into())
+    }
+
+    fn copy_field(&self, field: &str) -> Result<String, Self::Error> {
+        Ok(field.to_owned())
     }
 
     fn work(&self, _count: u64, _operation: &'static str) -> Result<(), Self::Error> {
@@ -383,19 +395,6 @@ fn weighted_poles<P, W, E>(
     Ok(output)
 }
 
-fn reserve_pole_storage<T>(
-    ctx: &DecodeContext<'_>,
-    values: &mut Vec<T>,
-    storage: &mut Option<cadmpeg_core::decode::ScopedReservation<'_>>,
-    operation: &'static str,
-) -> Result<(), CodecError> {
-    if let Some(storage) = storage {
-        ctx.reserve_scoped_vec(storage, values, 1, operation)
-    } else {
-        ctx.reserve_retained_vec(values, 1, operation)
-    }
-}
-
 impl<P: PoleValue<FinitePoint3>> NurbsPoles3<P> {
     /// The poles with admitted positions.
     ///
@@ -436,36 +435,13 @@ impl<P> NurbsPoles3<P> {
     ///
     /// Refuses a weight lane that does not cover the poles, naming both counts,
     /// and a weight that is zero or non-finite, naming its index.
-    pub fn from_lanes(points: Vec<P>, weights: Option<Vec<f64>>) -> Result<Self, NurbsError> {
-        let Some(weights) = weights else {
-            return Ok(Self::Polynomial { points });
-        };
-        require_weight_lane("poles", points.len(), weights.len())?;
-        Ok(Self::Rational {
-            points: weighted_poles(points, weights,
-                |output| output.try_reserve(1).map_err(|_| NurbsError::from(scratch::allocation_refusal(1, "IR weighted poles"))),
-                || Ok(()), |index, weight| {
-                admit_weight("poles", index, weight)
-            })?,
-        })
+    pub fn from_lanes(ctx: &DecodeContext<'_>, points: Vec<P>, weights: Option<Vec<f64>>) -> Result<Result<Self, NurbsError>, CodecError> {
+        admitted::finish(pair_curve_lanes(ctx, points, weights, &mut None, |index, weight| admit_weight(ctx, "poles", index, weight)))
     }
 
     /// Pair poles with finite weights, checking only lane length and nonzero weights.
-    pub fn from_finite_lanes(
-        points: Vec<P>,
-        weights: Option<Vec<FiniteReal>>,
-    ) -> Result<Self, NurbsError> {
-        let Some(weights) = weights else {
-            return Ok(Self::Polynomial { points });
-        };
-        require_weight_lane("poles", points.len(), weights.len())?;
-        Ok(Self::Rational {
-            points: weighted_poles(points, weights,
-                |output| output.try_reserve(1).map_err(|_| NurbsError::from(scratch::allocation_refusal(1, "IR weighted poles"))),
-                || Ok(()), |index, weight| {
-                admit_finite_weight("poles", index, weight)
-            })?,
-        })
+    pub fn from_finite_lanes(ctx: &DecodeContext<'_>, points: Vec<P>, weights: Option<Vec<FiniteReal>>) -> Result<Result<Self, NurbsError>, CodecError> {
+        admitted::finish(pair_curve_lanes(ctx, points, weights, &mut None, |index, weight| admit_finite_weight(ctx, "poles", index, weight)))
     }
 
     /// Pair a pole lane with an admitted weight lane. The weight type states
@@ -475,19 +451,8 @@ impl<P> NurbsPoles3<P> {
     ///
     /// Refuses a weight lane that does not cover the poles, naming both
     /// counts.
-    pub fn from_checked_lanes(
-        points: Vec<P>,
-        weights: Option<Vec<NonZeroReal>>,
-    ) -> Result<Self, NurbsError> {
-        let Some(weights) = weights else {
-            return Ok(Self::Polynomial { points });
-        };
-        require_weight_lane("poles", points.len(), weights.len())?;
-        Ok(Self::Rational {
-            points: weighted_poles(points, weights,
-                |output| output.try_reserve(1).map_err(|_| NurbsError::from(scratch::allocation_refusal(1, "IR weighted poles"))),
-                || Ok(()), |_, weight| Ok(weight))?,
-        })
+    pub fn from_checked_lanes(ctx: &DecodeContext<'_>, points: Vec<P>, weights: Option<Vec<NonZeroReal>>) -> Result<Result<Self, NurbsError>, CodecError> {
+        admitted::finish(pair_curve_lanes(ctx, points, weights, &mut None, |_, weight| Ok(weight)))
     }
 
     /// Count poles.
@@ -602,23 +567,39 @@ pub enum NurbsPoleGrid<P = Point3> {
     },
 }
 
-/// Pair each row of a pole grid with its weight row, refusing a weight grid
-/// that does not cover the pole grid, row count or row width.
-fn weighted_rows<P, W>(
+pub(super) fn pair_curve_lanes<P, W, S: NurbsAdmission>(
+    admission: &S,
+    points: Vec<P>,
+    weights: Option<Vec<W>>,
+    storage: &mut Option<cadmpeg_core::decode::ScopedReservation<'_>>,
+    mut weight: impl FnMut(usize, W) -> Result<NonZeroReal, S::Error>,
+) -> Result<NurbsPoles3<P>, S::Error> {
+    let Some(weights) = weights else { return Ok(NurbsPoles3::Polynomial { points }); };
+    require_weight_lane(admission, "poles", points.len(), weights.len())?;
+    Ok(NurbsPoles3::Rational { points: weighted_poles(points, weights,
+        |values| admission.reserve(values, storage, "IR NURBS paired poles"),
+        || admission.work(1, "IR NURBS paired poles"), &mut weight)? })
+}
+
+fn pair_grid_lanes<P, W, S: NurbsAdmission>(
+    admission: &S,
     rows: Vec<Vec<P>>,
-    weights: Vec<Vec<W>>,
-    mut weight: impl FnMut(usize, W) -> Result<NonZeroReal, NurbsError>,
-) -> Result<Vec<Vec<WeightedPole3<P>>>, NurbsError> {
-    require_weight_lane("pole grid", rows.len(), weights.len())?;
+    weights: Option<Vec<Vec<W>>>,
+    storage: &mut Option<cadmpeg_core::decode::ScopedReservation<'_>>,
+    mut weight: impl FnMut(usize, W) -> Result<NonZeroReal, S::Error>,
+) -> Result<NurbsPoleGrid<P>, S::Error> {
+    let Some(weights) = weights else { return Ok(NurbsPoleGrid::Polynomial { rows }); };
+    require_weight_lane(admission, "pole grid", rows.len(), weights.len())?;
     let mut output = Vec::new();
-    scratch::reserve_exact(&mut output, rows.len(), "IR weighted pole rows")?;
-    for (row, weight_row) in rows.into_iter().zip(weights) {
-        require_weight_lane("pole grid row", row.len(), weight_row.len())?;
-        output.push(weighted_poles(row, weight_row,
-            |output| output.try_reserve(1).map_err(|_| NurbsError::from(scratch::allocation_refusal(1, "IR weighted poles"))),
-            || Ok(()), &mut weight)?);
+    for (row, weights) in rows.into_iter().zip(weights) {
+        admission.work(1, "IR NURBS paired grid rows")?;
+        admission.reserve(&mut output, storage, "IR NURBS paired grid rows")?;
+        require_weight_lane(admission, "pole grid row", row.len(), weights.len())?;
+        output.push(weighted_poles(row, weights,
+            |values| admission.reserve(values, storage, "IR NURBS paired poles"),
+            || admission.work(1, "IR NURBS paired poles"), &mut weight)?);
     }
-    Ok(output)
+    Ok(NurbsPoleGrid::Rational { rows: output })
 }
 
 impl<P: PoleValue<FinitePoint3>> NurbsPoleGrid<P> {
@@ -662,33 +643,13 @@ impl<P> NurbsPoleGrid<P> {
     /// Refuses a weight grid that does not cover the pole grid, row count or
     /// row width, naming both counts, and a weight that is zero or non-finite,
     /// naming its index within its row.
-    pub fn from_lanes(
-        rows: Vec<Vec<P>>,
-        weights: Option<Vec<Vec<f64>>>,
-    ) -> Result<Self, NurbsError> {
-        let Some(weights) = weights else {
-            return Ok(Self::Polynomial { rows });
-        };
-        Ok(Self::Rational {
-            rows: weighted_rows(rows, weights, |index, weight| {
-                admit_weight("pole grid row", index, weight)
-            })?,
-        })
+    pub fn from_lanes(ctx: &DecodeContext<'_>, rows: Vec<Vec<P>>, weights: Option<Vec<Vec<f64>>>) -> Result<Result<Self, NurbsError>, CodecError> {
+        admitted::finish(pair_grid_lanes(ctx, rows, weights, &mut None, |index, weight| admit_weight(ctx, "pole grid row", index, weight)))
     }
 
     /// Pair a pole grid with finite weights, checking grid shape and nonzero weights.
-    pub fn from_finite_lanes(
-        rows: Vec<Vec<P>>,
-        weights: Option<Vec<Vec<FiniteReal>>>,
-    ) -> Result<Self, NurbsError> {
-        let Some(weights) = weights else {
-            return Ok(Self::Polynomial { rows });
-        };
-        Ok(Self::Rational {
-            rows: weighted_rows(rows, weights, |index, weight| {
-                admit_finite_weight("pole grid row", index, weight)
-            })?,
-        })
+    pub fn from_finite_lanes(ctx: &DecodeContext<'_>, rows: Vec<Vec<P>>, weights: Option<Vec<Vec<FiniteReal>>>) -> Result<Result<Self, NurbsError>, CodecError> {
+        admitted::finish(pair_grid_lanes(ctx, rows, weights, &mut None, |index, weight| admit_finite_weight(ctx, "pole grid row", index, weight)))
     }
 
     /// Pair a pole grid with an admitted weight grid. The weight type states
@@ -698,16 +659,8 @@ impl<P> NurbsPoleGrid<P> {
     ///
     /// Refuses a weight grid that does not cover the pole grid, row count or
     /// row width, naming both counts.
-    pub fn from_checked_lanes(
-        rows: Vec<Vec<P>>,
-        weights: Option<Vec<Vec<NonZeroReal>>>,
-    ) -> Result<Self, NurbsError> {
-        let Some(weights) = weights else {
-            return Ok(Self::Polynomial { rows });
-        };
-        Ok(Self::Rational {
-            rows: weighted_rows(rows, weights, |_, weight| Ok(weight))?,
-        })
+    pub fn from_checked_lanes(ctx: &DecodeContext<'_>, rows: Vec<Vec<P>>, weights: Option<Vec<Vec<NonZeroReal>>>) -> Result<Result<Self, NurbsError>, CodecError> {
+        admitted::finish(pair_grid_lanes(ctx, rows, weights, &mut None, |_, weight| Ok(weight)))
     }
 
     /// Number of grid rows, the pole count along u.
@@ -1052,46 +1005,43 @@ fn require_length<S: NurbsAdmission>(
 }
 
 /// A weight lane covers the pole lane it belongs to.
-pub(super) fn require_weight_lane(
+pub(super) fn require_weight_lane<S: NurbsAdmission>(
+    admission: &S,
     field: &str,
     poles: usize,
     weights: usize,
-) -> Result<(), NurbsError> {
+) -> Result<(), S::Error> {
     if poles == weights {
         Ok(())
     } else {
         Err(NurbsError::WeightLaneLength {
-            field: field.to_owned(),
+            field: admission.copy_field(field)?,
             poles,
             weights,
-        })
+        }.into())
     }
 }
 
 /// Admit one weight a source states, naming its index within its lane.
-pub(super) fn admit_weight(
+pub(super) fn admit_weight<S: NurbsAdmission>(
+    admission: &S,
     field: &str,
     index: usize,
     weight: f64,
-) -> Result<NonZeroReal, NurbsError> {
-    NonZeroReal::new(weight).ok_or_else(|| NurbsError::UnusableWeight {
-        field: field.to_owned(),
-        index,
-        weight,
-    })
+) -> Result<NonZeroReal, S::Error> {
+    if let Some(admitted) = NonZeroReal::new(weight) { return Ok(admitted); }
+    Err(NurbsError::UnusableWeight { field: admission.copy_field(field)?, index, weight }.into())
 }
 
 /// Check the nonzero condition of a weight whose finiteness is already admitted.
-pub(super) fn admit_finite_weight(
+pub(super) fn admit_finite_weight<S: NurbsAdmission>(
+    admission: &S,
     field: &str,
     index: usize,
     weight: FiniteReal,
-) -> Result<NonZeroReal, NurbsError> {
-    NonZeroReal::from_finite(weight).ok_or_else(|| NurbsError::UnusableWeight {
-        field: field.to_owned(),
-        index,
-        weight: weight.get(),
-    })
+) -> Result<NonZeroReal, S::Error> {
+    if let Some(admitted) = NonZeroReal::from_finite(weight) { return Ok(admitted); }
+    Err(NurbsError::UnusableWeight { field: admission.copy_field(field)?, index, weight: weight.get() }.into())
 }
 
 fn require_finite_scalars<S: NurbsAdmission>(
@@ -1365,17 +1315,21 @@ impl NurbsSurface {
     /// Build from finite knots, poles, and weights. Only relationships and
     /// the nonzero weight condition are checked.
     pub fn from_finite_lanes(
+        ctx: &DecodeContext<'_>,
         u: NurbsSurfaceAxis<Vec<FiniteReal>>,
         v: NurbsSurfaceAxis<Vec<FiniteReal>>,
         lanes: NurbsSurfaceLanes<FinitePoint3, FiniteReal>,
         normal_reversed: bool,
-    ) -> Result<Self, NurbsError> {
+    ) -> Result<Result<Self, NurbsError>, CodecError> {
+        admitted::finish((|| {
+        let mut storage = None;
         let NurbsSurfaceLanes {
             control_points,
             weights,
         } = lanes;
-        let poles = NurbsPoleGrid::from_finite_lanes(control_points, weights)?;
-        Self::new(u, v, poles, normal_reversed)
+        let poles = pair_grid_lanes(ctx, control_points, weights, &mut storage, |index, weight| admit_finite_weight(ctx, "pole grid row", index, weight))?;
+        Ok(Self::new(u, v, poles, normal_reversed)?)
+        })())
     }
 
     /// Build a NURBS surface from knot axes, a pole grid and an admitted weight grid.
@@ -1387,17 +1341,21 @@ impl NurbsSurface {
     /// cardinalities, a non-finite raw pole coordinate, or a non-finite or
     /// decreasing raw knot.
     pub fn from_checked_lanes<P: PoleValue<FinitePoint3>, U: KnotValue, V: KnotValue>(
+        ctx: &DecodeContext<'_>,
         u: NurbsSurfaceAxis<U>,
         v: NurbsSurfaceAxis<V>,
         lanes: NurbsSurfaceLanes<P, NonZeroReal>,
         normal_reversed: bool,
-    ) -> Result<Self, NurbsError> {
+    ) -> Result<Result<Self, NurbsError>, CodecError> {
+        admitted::finish((|| {
+        let mut storage = if lanes.weights.is_some() && !P::RETAINS_POLE_STORAGE { Some(ctx.reserve_scoped(0, "IR NURBS paired grid rows")?) } else { None };
         let NurbsSurfaceLanes {
             control_points,
             weights,
         } = lanes;
-        let poles = NurbsPoleGrid::from_checked_lanes(control_points, weights)?;
-        Self::new(u, v, poles, normal_reversed)
+        let poles = pair_grid_lanes(ctx, control_points, weights, &mut storage, |_, weight| Ok(weight))?;
+        Ok(Self::new(u, v, poles, normal_reversed)?)
+        })())
     }
 
     /// Control grid rows, with the surface's rational form and admitted
@@ -1727,14 +1685,18 @@ impl NurbsCurve {
     /// Build from finite knots, poles, and weights. Only relationships and
     /// the nonzero weight condition are checked.
     pub fn from_finite_lanes(
+        ctx: &DecodeContext<'_>,
         degree: u32,
         knots: Vec<FiniteReal>,
         control_points: Vec<FinitePoint3>,
         weights: Option<Vec<FiniteReal>>,
         periodic: bool,
-    ) -> Result<Self, NurbsError> {
-        let poles = NurbsPoles3::from_finite_lanes(control_points, weights)?;
-        Self::new(degree, knots, poles, periodic)
+    ) -> Result<Result<Self, NurbsError>, CodecError> {
+        admitted::finish((|| {
+        let mut storage = None;
+        let poles = pair_curve_lanes(ctx, control_points, weights, &mut storage, |index, weight| admit_finite_weight(ctx, "poles", index, weight))?;
+        Ok(Self::new(degree, knots, poles, periodic)?)
+        })())
     }
 
     /// Build a NURBS curve from knots, a pole lane and an admitted weight lane.
@@ -1745,14 +1707,18 @@ impl NurbsCurve {
     /// Refuses a weight lane that does not cover the poles, a pole count
     /// inconsistent with the degree, or a non-finite or decreasing raw knot.
     pub fn from_checked_lanes<P: PoleValue<FinitePoint3>, K: KnotValue>(
+        ctx: &DecodeContext<'_>,
         degree: u32,
         knots: K,
         control_points: Vec<P>,
         weights: Option<Vec<NonZeroReal>>,
         periodic: bool,
-    ) -> Result<Self, NurbsError> {
-        let poles = NurbsPoles3::from_checked_lanes(control_points, weights)?;
-        Self::new(degree, knots, poles, periodic)
+    ) -> Result<Result<Self, NurbsError>, CodecError> {
+        admitted::finish((|| {
+        let mut storage = if weights.is_some() && !P::RETAINS_POLE_STORAGE { Some(ctx.reserve_scoped(0, "IR NURBS paired poles")?) } else { None };
+        let poles = pair_curve_lanes(ctx, control_points, weights, &mut storage, |_, weight| Ok(weight))?;
+        Ok(Self::new(degree, knots, poles, periodic)?)
+        })())
     }
 
     /// Poles in parameter order, with the curve's rational form and admitted

@@ -406,10 +406,10 @@ fn rational_boundary_comparison_accepts_projectively_scaled_curves() {
         ).expect("fixture constructor admission")
         .expect("valid rational boundary");
         let mut scaled = first.clone();
-        let scaled_poles = cadmpeg_ir::geometry::nurbs::NurbsPoles3::from_lanes(
+        let scaled_poles = cadmpeg_ir::geometry::nurbs::NurbsPoles3::from_lanes(&cadmpeg_test_support::service_decode_context(), 
             scaled.pole_rows().raw_points(),
             Some(vec![2.0; scaled.pole_count()]),
-        )
+        ).expect("fixture pole pairing admission")
         .unwrap();
         {
             let replacement = scaled_poles;

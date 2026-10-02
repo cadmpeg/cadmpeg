@@ -2428,7 +2428,7 @@ fn parse_b2_nurbs_curve(
     knots.extend(std::iter::repeat_with(|| knot_end).take(control_count));
     crate::nurbs::note_refusal(
         ctx,
-        cadmpeg_ir::geometry::nurbs::NurbsPoles3::from_checked_lanes(control_points, Some(weights))
+        cadmpeg_ir::geometry::nurbs::NurbsPoles3::from_checked_lanes(ctx, control_points, Some(weights))?
             .and_then(|poles| NurbsCurve::new(degree, knots, poles, false)),
         refusal,
         format_args!("b2 NURBS curve record at byte {}", frame.pos),

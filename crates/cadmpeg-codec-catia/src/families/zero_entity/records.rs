@@ -2118,10 +2118,6 @@ fn zero_entity_lift_pcurve(
                 "catia_zero_lifted_pcurve_weights",
             )?;
             weights.extend(source.iter().map(|pole| pole.weight));
-            ctx.charge_collection_items(
-                u64_from_index(source.len()),
-                "catia_zero_lifted_rational_poles",
-            )?;
             Some(weights)
         }
     };
@@ -2134,7 +2130,7 @@ fn zero_entity_lift_pcurve(
     )?;
     crate::nurbs::note_refusal(
         ctx,
-        NurbsCurve::from_checked_lanes(nurbs.degree(), knots, points, weights, nurbs.periodic()),
+        NurbsCurve::from_checked_lanes(ctx, nurbs.degree(), knots, points, weights, nurbs.periodic())?,
         refusal,
         format_args!("zero-entity planar edge curve lifted from its pcurve: {record}"),
     )

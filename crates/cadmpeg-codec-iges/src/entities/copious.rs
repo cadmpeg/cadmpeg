@@ -622,10 +622,11 @@ pub(super) fn project(
             .ok_or_else(|| CodecError::malformed("copious-data curve: knots must be finite"))?;
         let mut raw_knots = ctx.collection_vec(knots.len(), "iges copious admitted knots")?;
         raw_knots.extend(knots.into_iter().map(FiniteReal::get));
-        let nurbs = KnotVector::new(ctx, raw_knots)?.and_then(|knots| {
-            NurbsPoles3::from_checked_lanes(positions, None)
-                .and_then(|poles| NurbsCurve::new(1, knots, poles, false))
-        });
+        let nurbs = match KnotVector::new(ctx, raw_knots)? {
+            Err(error) => Err(error),
+            Ok(knots) => NurbsPoles3::from_checked_lanes(ctx, positions, None)?
+                .and_then(|poles| NurbsCurve::new(1, knots, poles, false)),
+        };
         ctx.reserve_vec(&mut ir.model.curves, 1, "iges copious neutral curves")?;
         ctx.charge_entities(1, "iges_geometry_copious")?;
         ir.model.curves.push(Curve {
