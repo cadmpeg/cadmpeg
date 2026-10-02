@@ -61,6 +61,14 @@ impl<'ctx, 'ir, T> BorrowedIdentities<'ctx, 'ir, T> {
         Ok(None)
     }
 
+    /// Remove the last matching slot after admitting element movement.
+    pub(super) fn remove(&mut self, id: &str) -> Result<Option<T>, CodecError> {
+        let (_, _, found, _) = self.position(self.ctx, id)?;
+        let Some(found) = found else { return Ok(None); };
+        self.ctx.charge_work(u64_from_index(self.values.len() - found - 1), "remove validation identity slot")?;
+        Ok(Some(self.values.remove(found).2))
+    }
+
     fn insert_at(&mut self, hash: u64, low: usize, id: &'ir str, value: T) -> Result<(), CodecError> {
         self.ctx.charge_work(u64_from_index(self.values.len() - low), "move validation identity slots")?;
         self.storage.with_storage(|| self.ctx.reserve_retained_vec(&mut self.values, 1, "borrowed validation identity slots"))?;
@@ -263,6 +271,18 @@ mod tests {
         assert_eq!(index.match_count(&ctx, "test:model:point#new").unwrap(), 1);
         assert_eq!(index.match_count(&ctx, "test:model:point#missing").unwrap(), 0);
         assert_eq!(index.len(), 3);
+    }
+
+    #[test]
+    fn borrowed_identity_remove_keeps_last_duplicate_and_absence_semantics() {
+        let ctx = cadmpeg_test_support::service_decode_context();
+        let id = "test:model:point#same";
+        let mut index = super::BorrowedIdentities::build(&ctx, |add| { add(id, 1)?; add(id, 2) }).unwrap();
+        assert_eq!(index.remove(id).unwrap(), Some(2));
+        assert_eq!(index.get(&ctx, id).unwrap(), Some(&1));
+        assert_eq!(index.remove(id).unwrap(), Some(1));
+        assert_eq!(index.remove(id).unwrap(), None);
+        assert_eq!(index.len(), 0);
     }
 
 }
