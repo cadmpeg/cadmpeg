@@ -592,12 +592,13 @@ impl<'ctx, D: BorrowMut<CadIr>> CommitSession<'ctx, D> {
         self.state.unknowns.get_mut(index).map(crate::unknown::UnknownRecord::id_and_links_mut)
     }
 
-    /// Remove source records and invalidate their cached positions.
-    pub fn clear_unknowns(&mut self) -> Result<(), CodecError> {
+    /// Move an owned source population into the session and invalidate cached positions.
+    pub fn replace_unknowns(&mut self, records: Vec<crate::unknown::UnknownRecord>) -> Result<(), CodecError> {
         let storage = self.ctx.reserve_scoped(0, "committed identity storage")?;
+        self.ctx.charge_work(u64_from_index(self.state.unknowns.len()), "replace source record scan")?;
         self.state.identities = None;
         self.storage = storage;
-        self.state.unknowns.clear();
+        self.state.unknowns = records;
         Ok(())
     }
 
