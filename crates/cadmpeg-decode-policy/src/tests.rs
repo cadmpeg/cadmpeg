@@ -25,10 +25,11 @@ fn check_fixture(name: &str) {
     let mut findings = Vec::new();
     for line in actual.lines() {
         let fields: Vec<_> = line.split('\t').collect();
-        if fields.len() == 4 && (name == "work" || fields[0] != "uncharged_decode_work") { findings.push((fields[2].parse::<usize>().expect("line number"), fields[0].to_owned())); }
+        if fields.len() == 4 && (name.starts_with("work") || fields[0] != "uncharged_decode_work") { findings.push((fields[2].parse::<usize>().expect("line number"), fields[0].to_owned())); }
     }
     let source = std::fs::read_to_string(path).expect("fixture source");
-    let expected: Vec<_> = source.lines().enumerate().filter_map(|(index, line)| line.split_once("// finding: ").map(|(_, rule)| (index + 1, rule.trim().to_owned()))).collect();
+    let mut expected: Vec<_> = source.lines().enumerate().flat_map(|(index, line)| line.split_once("// finding: ").into_iter().flat_map(move |(_, rules)| rules.split(", ").map(move |rule| (index + 1, rule.trim().to_owned())))).collect();
+    expected.sort();
     findings.sort();
     assert_eq!(findings, expected, "stdout: {actual}\nstderr: {}", String::from_utf8_lossy(&output.stderr));
     assert_eq!(output.status.code(), Some(i32::from(!expected.is_empty())), "{}", String::from_utf8_lossy(&output.stderr));
@@ -42,3 +43,12 @@ fn typed_collection_shapes() { check_fixture("collections"); }
 
 #[test]
 fn typed_work_shapes() { check_fixture("work"); }
+
+#[test]
+fn unresolved_shapes() { check_fixture("unknown"); }
+
+#[test]
+fn context_scope() { check_fixture("scope"); }
+
+#[test]
+fn writer_exclusion() { check_fixture("writer"); }

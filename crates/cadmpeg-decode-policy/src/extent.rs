@@ -8,6 +8,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
     pub(crate) fn initializer(&self, expression: &Expr<'tcx>) -> Option<&'tcx Expr<'tcx>> {
         let ExprKind::Path(ref path) = expression.kind else { return None; };
         let Res::Local(id) = self.typeck.qpath_res(path, expression.hir_id) else { return None; };
+        if self.flow.mutated.contains(&format!("local:{id:?}")) { return None; }
         for (_, node) in self.tcx.hir_parent_iter(id) {
             match node {
                 Node::LetStmt(local) => return local.init,
