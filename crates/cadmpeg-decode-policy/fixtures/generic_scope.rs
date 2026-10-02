@@ -38,6 +38,7 @@ pub fn decode(ctx: &DecodeContext, bytes: &[u8]) {
     associated::<Provider>(bytes);
     let _pointer = generic_pointer::<PointerWorker>();
     let _object = generic_object(ObjectWorker);
+    let _constant = generic_constant::<ConstantProvider>();
 }
 fn encode(bytes: &[u8]) { nested(&Encoder, bytes); }
 
@@ -59,3 +60,13 @@ impl Work for ObjectWorker {
 }
 fn generic_pointer<T: Work>() -> fn(&T, &[u8]) { T::work }
 fn generic_object<T: Work + 'static>(worker: T) -> Box<dyn Work> { Box::new(worker) }
+
+trait Constant { const CALLBACK: fn(&[u8]); }
+struct ConstantProvider;
+impl Constant for ConstantProvider { const CALLBACK: fn(&[u8]) = constant_target; }
+fn generic_constant<T: Constant>() -> fn(&[u8]) { T::CALLBACK }
+fn constant_target(bytes: &[u8]) {
+    for byte in bytes { // finding: uncharged_decode_work
+        std::hint::black_box(byte);
+    }
+}

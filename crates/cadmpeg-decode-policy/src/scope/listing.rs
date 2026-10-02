@@ -3,7 +3,7 @@
 use crate::types;
 use rustc_hir::def::DefKind;
 use rustc_middle::ty::TyCtxt;
-use rustc_span::def_id::{DefId, LocalDefId};
+use rustc_span::def_id::LocalDefId;
 
 pub(super) struct Body {
     pub(super) path: String,
@@ -11,16 +11,6 @@ pub(super) struct Body {
     pub(super) name: String,
     pub(super) reason: &'static str,
     pub(super) eligible: bool,
-}
-
-fn serialization(tcx: TyCtxt<'_>, mut id: DefId) -> bool {
-    while let Some(parent) = tcx.opt_parent(id) {
-        if matches!(tcx.def_kind(parent), DefKind::Impl { of_trait: true }) {
-            return types::serde_serialize(tcx, tcx.impl_trait_ref(parent).skip_binder().def_id);
-        }
-        id = parent;
-    }
-    false
 }
 
 pub(super) fn body(tcx: TyCtxt<'_>, owner: LocalDefId) -> Option<Body> {
@@ -34,7 +24,7 @@ pub(super) fn body(tcx: TyCtxt<'_>, owner: LocalDefId) -> Option<Body> {
         std::path::Path::new(&path).strip_prefix(root).ok().map(|path| path.display().to_string())
     }).unwrap_or(path);
     let eligible = crate::production(tcx, owner.to_def_id());
-    let reason = if serialization(tcx, owner.to_def_id()) {
+    let reason = if types::serialization_body(tcx, owner.to_def_id()) {
         "serialization-only"
     } else if !eligible {
         "test-only"

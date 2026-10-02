@@ -25,7 +25,8 @@ pub(super) fn enqueue<'tcx>(
     depth: usize,
 ) {
     let id = instance.def_id();
-    if !types::checked(tcx, id) || matches!(instance.def, ty::InstanceKind::Virtual(..)) {
+    if !types::checked(tcx, id) || types::serialization_body(tcx, id)
+        || matches!(instance.def, ty::InstanceKind::Virtual(..)) {
         return;
     }
     graph.edges.insert((caller.to_owned(), key(tcx, id)));
@@ -93,6 +94,17 @@ impl<'tcx> Visitor<'tcx> for Edges<'_, 'tcx> {
                     self.target(*id, args, !direct_call);
                 } else {
                     self.graph.uncertain.insert(self.concrete.caller.clone());
+                }
+            }
+        }
+        if let Operand::Constant(constant) = operand {
+            if let mir::Const::Unevaluated(value, _) = constant.const_ {
+                let args = self.concrete.instance.try_instantiate_mir_and_normalize_erasing_regions(
+                    self.tcx, self.concrete.environment, ty::EarlyBinder::bind(self.tcx, value.args),
+                );
+                match args {
+                    Ok(args) => self.target(value.def, args, false),
+                    Err(_) => { self.graph.uncertain.insert(self.concrete.caller.clone()); }
                 }
             }
         }
