@@ -41,7 +41,7 @@ fn identity_validation_borrows_long_identities_and_releases_group_storage() {
     policy.limits.max_materialized_bytes = 4096;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let mut findings = Vec::new();
-    super::check_identity_and_order(&ctx, &ir, &mut findings).unwrap();
+    super::check_identity_and_order(&ctx, crate::native::view::NativeView::new(&ir, None), &mut findings).unwrap();
     assert!(findings.is_empty());
     let reservation = ctx.reserve_scoped(4096, "identity scope released").unwrap();
     drop(reservation);
@@ -65,7 +65,7 @@ fn identity_validation_preserves_original_refusals_before_scans_and_findings() {
         }
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let mut findings = Vec::new();
-        let Err(CodecError::ResourceLimit(limit)) = super::check_identity_and_order(&ctx, &ir, &mut findings) else { panic!("identity validation must refuse"); };
+        let Err(CodecError::ResourceLimit(limit)) = super::check_identity_and_order(&ctx, crate::native::view::NativeView::new(&ir, None), &mut findings) else { panic!("identity validation must refuse"); };
         assert_eq!(limit.dimension, dimension);
         assert!(findings.is_empty());
         assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit));
@@ -88,7 +88,7 @@ fn native_order_groups_preserve_combined_name_and_finding_order() {
     }
     let ctx = cadmpeg_test_support::service_decode_context();
     let mut findings = Vec::new();
-    super::check_identity_and_order(&ctx, &ir, &mut findings).unwrap();
+    super::check_identity_and_order(&ctx, crate::native::view::NativeView::new(&ir, None), &mut findings).unwrap();
     assert_eq!(findings.iter().map(|finding| (finding.check, finding.entity.as_deref(), finding.message.as_str())).collect::<Vec<_>>(), vec![
         (Check::ArenaOrder, Some("test:native:record#5"), "arena `native.a.b.a` is not strictly sorted by id"),
         (Check::ArenaOrder, Some("test:native:record#1"), "arena `native.a.z` is not strictly sorted by id"),

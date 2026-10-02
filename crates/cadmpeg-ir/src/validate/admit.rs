@@ -106,6 +106,38 @@ pub fn admit_with_additional_native_identities<'a>(
     filter_checks(ctx, super::validate_model_with_index(ctx, ir, losses, &index)?, allowed)
 }
 
+/// Admit source records through a borrowed replacement of one native unknown arena.
+/// Resource refusals remain outside source-product validation failures.
+pub fn admit_with_native_unknowns(
+    ctx: &DecodeContext<'_>,
+    ir: &CadIr,
+    (format, records): (&str, &[crate::unknown::UnknownRecord]),
+    annotations: Option<&Annotations>,
+    allowed: &[Check],
+    losses: Vec<LossNote>,
+) -> Result<Result<ValidationReport, crate::native::NativeConvertError>, CodecError> {
+    for record in records {
+        ctx.charge_work(1, "source product record scan")?;
+        for (position, link) in record.links().iter().enumerate() {
+            for _ in 0..4 { ctx.charge_work(u64_from_index(link.len()), "source product link grammar")?; }
+            ctx.charge_work(1, "source product link grammar")?;
+            if !crate::ids::is_valid_identity(link) {
+                let message = ctx.format_retained(format_args!("native unknown {} link {position}: identity is invalid: {link:?}", record.id()), "source product link error")?;
+                return Ok(Err(crate::native::NativeConvertError::InvalidCollection(message)));
+            }
+        }
+    }
+    let index = crate::index::ModelIndex::with_native_unknowns(ir, format, records, ctx)?;
+    let mut report = super::validate_model_with_index(ctx, ir, losses, &index)?;
+    if let Some(annotations) = annotations {
+        super::validate_annotations(ctx, &index, annotations, std::iter::empty(), &mut report.findings)?;
+    }
+    Ok(Ok(filter_checks(ctx, report, allowed)?))
+}
+
+#[cfg(test)]
+mod native_unknown_tests;
+
 #[cfg(test)]
 mod tests {
     use super::{
