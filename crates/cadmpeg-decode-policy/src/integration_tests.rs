@@ -21,7 +21,10 @@ fn fixture_child() {
         }
         if let Ok(directory) = std::env::var("CADMPEG_POLICY_DEPENDENCY_DIR") {
             for directory in std::env::split_paths(&directory) {
-                args.extend(["-L".to_owned(), format!("dependency={}", directory.display())]);
+                args.extend([
+                    "-L".to_owned(),
+                    format!("dependency={}", directory.display()),
+                ]);
             }
         }
     }
@@ -37,37 +40,65 @@ fn check_fixture(name: &str) {
     if name == "imported" {
         let dependency = output_dir.join("libcadmpeg_core.rmeta");
         let status = Command::new("rustc")
-            .args(["+nightly-2026-09-08", "--crate-name=cadmpeg_core", "--crate-type=lib", "--edition=2021", "--emit=metadata", "-Zalways-encode-mir"])
+            .args([
+                "+nightly-2026-09-08",
+                "--crate-name=cadmpeg_core",
+                "--crate-type=lib",
+                "--edition=2021",
+                "--emit=metadata",
+                "-Zalways-encode-mir",
+            ])
             .arg(root.join("fixtures/imported_dependency.rs"))
-            .arg("-o").arg(&dependency).status().expect("dependency compiler");
+            .arg("-o")
+            .arg(&dependency)
+            .status()
+            .expect("dependency compiler");
         assert!(status.success());
-        command.env("CADMPEG_POLICY_DEPENDENCY", format!("cadmpeg_core={}", dependency.display()));
+        command.env(
+            "CADMPEG_POLICY_DEPENDENCY",
+            format!("cadmpeg_core={}", dependency.display()),
+        );
     }
     if name == "thirdparty" {
         let executable = std::env::current_exe().expect("test executable");
-        let target = executable.ancestors().find(|path| path.file_name().is_some_and(|name| name == "debug"))
+        let target = executable
+            .ancestors()
+            .find(|path| path.file_name().is_some_and(|name| name == "debug"))
             .expect("debug artifact directory");
         let mut directories = vec![target.join("deps")];
         for package in std::fs::read_dir(target.join("build")).expect("package artifacts") {
-            for fingerprint in std::fs::read_dir(package.expect("package entry").path()).expect("package fingerprints") {
+            for fingerprint in std::fs::read_dir(package.expect("package entry").path())
+                .expect("package fingerprints")
+            {
                 let directory = fingerprint.expect("fingerprint entry").path().join("out");
-                if directory.is_dir() { directories.push(directory); }
+                if directory.is_dir() {
+                    directories.push(directory);
+                }
             }
         }
         let mut dependencies = Vec::new();
         for name in ["roxmltree", "serde_json"] {
             let prefix = format!("lib{name}-");
-            let library = directories.iter().filter(|directory| directory.is_dir())
+            let library = directories
+                .iter()
+                .filter(|directory| directory.is_dir())
                 .flat_map(|directory| std::fs::read_dir(directory).expect("dependency listing"))
                 .map(|entry| entry.expect("dependency entry").path())
-                .find(|path| path.file_name().is_some_and(|file|
-                    file.to_string_lossy().starts_with(&prefix))
-                    && path.extension().is_some_and(|extension| extension == "rmeta"))
+                .find(|path| {
+                    path.file_name()
+                        .is_some_and(|file| file.to_string_lossy().starts_with(&prefix))
+                        && path
+                            .extension()
+                            .is_some_and(|extension| extension == "rmeta")
+                })
                 .expect("fixture dependency library");
             dependencies.push(format!("{name}={}", library.display()));
         }
         command.env("CADMPEG_POLICY_DEPENDENCY", dependencies.join(";"));
-        command.env("CADMPEG_POLICY_DEPENDENCY_DIR", std::env::join_paths(directories).expect("dependency paths"));
+        command.env(
+            "CADMPEG_POLICY_DEPENDENCY_DIR",
+            std::env::join_paths(directories).expect("dependency paths"),
+        );
     }
     let output = command
         .args([
@@ -83,14 +114,29 @@ fn check_fixture(name: &str) {
         .expect("fixture compiler");
     let actual = String::from_utf8(output.stdout).expect("diagnostics UTF-8");
     if matches!(name, "generic" | "imported") {
-        assert!(actual.lines().any(|line| line.starts_with("uncharged_decode_allocation\t")
-            && line.contains("concrete instantiation") && line.contains("String")), "{actual}");
+        assert!(
+            actual
+                .lines()
+                .any(|line| line.starts_with("uncharged_decode_allocation\t")
+                    && line.contains("concrete instantiation")
+                    && line.contains("String")),
+            "{actual}"
+        );
     }
     let mut findings = Vec::new();
     for line in actual.lines() {
         let fields: Vec<_> = line.split('\t').collect();
         if fields.len() == 4
-            && (if matches!(name, "edges" | "modular" | "external" | "generic" | "imported" | "dominance" | "thirdparty") {
+            && (if matches!(
+                name,
+                "edges"
+                    | "modular"
+                    | "external"
+                    | "generic"
+                    | "imported"
+                    | "dominance"
+                    | "thirdparty"
+            ) {
                 true
             } else if name.starts_with("work") {
                 fields[0] != "uncharged_decode_allocation"

@@ -13,22 +13,30 @@ impl<'tcx> Analysis<'_, 'tcx> {
             },
             _ => self.substitute(self.typeck.node_args(expression.hir_id)),
         };
-        self.tcx.try_normalize_erasing_regions(self.typing_env(),
-            ty::Unnormalized::new_wip(arguments)).ok()
+        self.tcx
+            .try_normalize_erasing_regions(self.typing_env(), ty::Unnormalized::new_wip(arguments))
+            .ok()
     }
 
-    pub(crate) fn resolved_instance(&self, expression: &'tcx Expr<'tcx>, definition: DefId)
-        -> Option<Instance<'tcx>> {
+    pub(crate) fn resolved_instance(
+        &self,
+        expression: &'tcx Expr<'tcx>,
+        definition: DefId,
+    ) -> Option<Instance<'tcx>> {
         let args = self.call_arguments(expression)?;
         if args.len() != self.tcx.generics_of(definition).count() {
             return None;
         }
-        Instance::try_resolve(self.tcx, self.typing_env(),
-            definition, args).ok().flatten()
+        Instance::try_resolve(self.tcx, self.typing_env(), definition, args)
+            .ok()
+            .flatten()
     }
 
-    pub(crate) fn implementation(&self, expression: &'tcx Expr<'tcx>, definition: DefId)
-        -> Option<DefId> {
+    pub(crate) fn implementation(
+        &self,
+        expression: &'tcx Expr<'tcx>,
+        definition: DefId,
+    ) -> Option<DefId> {
         let instance = self.resolved_instance(expression, definition)?;
         if matches!(instance.def, ty::InstanceKind::Virtual(_, _)) {
             None
@@ -40,32 +48,53 @@ impl<'tcx> Analysis<'_, 'tcx> {
     pub(crate) fn checked_body(&self, definition: DefId) -> bool {
         types::checked(self.tcx, definition)
             && match definition.as_local() {
-                Some(local) => crate::production(self.tcx, local)
-                    && self.tcx.hir_maybe_body_owned_by(local).is_some(),
-                None => matches!(self.tcx.def_kind(definition),
-                    rustc_hir::def::DefKind::Fn | rustc_hir::def::DefKind::AssocFn | rustc_hir::def::DefKind::Closure)
-                    && self.tcx.trait_of_assoc(definition).is_none(),
+                Some(local) => {
+                    crate::production(self.tcx, local)
+                        && self.tcx.hir_maybe_body_owned_by(local).is_some()
+                }
+                None => {
+                    matches!(
+                        self.tcx.def_kind(definition),
+                        rustc_hir::def::DefKind::Fn
+                            | rustc_hir::def::DefKind::AssocFn
+                            | rustc_hir::def::DefKind::Closure
+                    ) && self.tcx.trait_of_assoc(definition).is_none()
+                }
             }
     }
 
     pub(crate) fn checked_call(&self, expression: &'tcx Expr<'tcx>, definition: DefId) -> bool {
-        if self.implementation(expression, definition).is_some_and(|id| self.checked_body(id)) {
+        if self
+            .implementation(expression, definition)
+            .is_some_and(|id| self.checked_body(id))
+        {
             return true;
         }
-        if self.call_arguments(expression).is_some_and(|arguments|
-            arguments.types().any(|value| matches!(value.peel_refs().kind(), ty::Dynamic(..)))) {
+        if self.call_arguments(expression).is_some_and(|arguments| {
+            arguments
+                .types()
+                .any(|value| matches!(value.peel_refs().kind(), ty::Dynamic(..)))
+        }) {
             return false;
         }
-        let Some(trait_id) = self.tcx.trait_of_assoc(definition) else { return false; };
+        let Some(trait_id) = self.tcx.trait_of_assoc(definition) else {
+            return false;
+        };
         if !trait_id.is_local() || self.tcx.visibility(trait_id).is_public() {
             return false;
         }
         let mut implementations = self.tcx.all_impls(trait_id).peekable();
-        implementations.peek().is_some() && implementations.all(|id| {
-            self.tcx.associated_items(id).in_definition_order()
-                .find(|item| item.name() == self.tcx.item_name(definition))
-                .map_or_else(|| self.checked_body(definition), |item| self.checked_body(item.def_id))
-        })
+        implementations.peek().is_some()
+            && implementations.all(|id| {
+                self.tcx
+                    .associated_items(id)
+                    .in_definition_order()
+                    .find(|item| item.name() == self.tcx.item_name(definition))
+                    .map_or_else(
+                        || self.checked_body(definition),
+                        |item| self.checked_body(item.def_id),
+                    )
+            })
     }
 
     pub(crate) fn custom_trait(
@@ -103,8 +132,10 @@ impl<'tcx> Analysis<'_, 'tcx> {
                 self.tcx,
                 self.typing_env(),
                 definition,
-                match self.tcx.try_normalize_erasing_regions(self.typing_env(),
-                    ty::Unnormalized::new_wip(self.tcx.mk_args(&peeled))) {
+                match self.tcx.try_normalize_erasing_regions(
+                    self.typing_env(),
+                    ty::Unnormalized::new_wip(self.tcx.mk_args(&peeled)),
+                ) {
                     Ok(arguments) => arguments,
                     Err(_) => return None,
                 },
@@ -145,10 +176,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
             .find(|item| item.name() == rustc_span::sym::Item)?;
         let projection = ty::Ty::new_projection(self.tcx, ty::IsRigid::No, item.def_id, [value]);
         self.tcx
-            .try_normalize_erasing_regions(
-                self.typing_env(),
-                ty::Unnormalized::new_wip(projection),
-            )
+            .try_normalize_erasing_regions(self.typing_env(), ty::Unnormalized::new_wip(projection))
             .ok()
     }
 }
@@ -170,16 +198,13 @@ impl<'tcx> Analysis<'_, 'tcx> {
         else {
             return types::Shape::Unknown;
         };
-        let Ok(args) = self.tcx.try_normalize_erasing_regions(self.typing_env(),
-            ty::Unnormalized::new_wip(self.tcx.mk_args(&[value.into()]))) else {
+        let Ok(args) = self.tcx.try_normalize_erasing_regions(
+            self.typing_env(),
+            ty::Unnormalized::new_wip(self.tcx.mk_args(&[value.into()])),
+        ) else {
             return types::Shape::Unknown;
         };
-        match Instance::try_resolve(
-            self.tcx,
-            self.typing_env(),
-            method.def_id,
-            args,
-        ) {
+        match Instance::try_resolve(self.tcx, self.typing_env(), method.def_id, args) {
             Ok(Some(instance)) => {
                 let id = instance.def_id();
                 if self.tcx.is_automatically_derived(self.tcx.parent(id)) {

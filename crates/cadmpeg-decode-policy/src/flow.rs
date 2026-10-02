@@ -24,8 +24,12 @@ pub(crate) struct Flow {
 
 impl Default for Flow {
     fn default() -> Self {
-        Self { work: Vec::new(), storage: false, iterations: 1,
-            mutated: std::collections::HashSet::new() }
+        Self {
+            work: Vec::new(),
+            storage: false,
+            iterations: 1,
+            mutated: std::collections::HashSet::new(),
+        }
     }
 }
 
@@ -44,14 +48,15 @@ impl<'tcx> Analysis<'_, 'tcx> {
             | ExprKind::DropTemps(inner)
             | ExprKind::Unary(_, inner) => self.key(inner, seen),
             ExprKind::Path(ref path) => match self.typeck.qpath_res(path, expression.hir_id) {
-                Res::Local(id) => self.initializer(expression).and_then(|init| self.key(init, seen))
+                Res::Local(id) => self
+                    .initializer(expression)
+                    .and_then(|init| self.key(init, seen))
                     .or_else(|| Some(format!("local:{id:?}"))),
                 Res::Def(_, id) => Some(format!("definition:{id:?}")),
                 _ => None,
             },
             ExprKind::Struct(_, fields, _) => {
-                if let rustc_middle::ty::Adt(definition, _) = self.expr_ty(expression).kind()
-                {
+                if let rustc_middle::ty::Adt(definition, _) = self.expr_ty(expression).kind() {
                     if types::standard(self.tcx, definition.did())
                         && self.tcx.item_name(definition.did()).as_str() == "Range"
                     {
@@ -68,7 +73,9 @@ impl<'tcx> Analysis<'_, 'tcx> {
                             let terms = self.extent_terms(end, &mut Vec::new())?;
                             if let [term] = terms.as_slice() {
                                 if term.coefficient == 1 {
-                                    if let [factor] = term.factors.as_slice() { return Some(factor.clone()); }
+                                    if let [factor] = term.factors.as_slice() {
+                                        return Some(factor.clone());
+                                    }
                                 }
                             }
                         }
@@ -78,17 +85,24 @@ impl<'tcx> Analysis<'_, 'tcx> {
             }
             ExprKind::Field(base, field) => {
                 let split = self.initializer(base).unwrap_or(base);
-                if self.call(split).is_some_and(|(id, _)| types::standard(self.tcx, id)
-                    && self.tcx.item_name(id).as_str() == "split_at") {
+                if self.call(split).is_some_and(|(id, _)| {
+                    types::standard(self.tcx, id) && self.tcx.item_name(id).as_str() == "split_at"
+                }) {
                     self.key(split, seen)
-                } else { self.key(base, seen).map(|key| format!("{key}.{}", field.name)) }
-            },
+                } else {
+                    self.key(base, seen)
+                        .map(|key| format!("{key}.{}", field.name))
+                }
+            }
             ExprKind::Index(base, index, _) => {
                 let value = self.expr_ty(index).peel_refs();
-                if matches!(value.kind(), rustc_middle::ty::Adt(owner, _) if types::standard(self.tcx, owner.did()) && self.tcx.item_name(owner.did()).as_str().starts_with("Range")) {
+                if matches!(value.kind(), rustc_middle::ty::Adt(owner, _) if types::standard(self.tcx, owner.did()) && self.tcx.item_name(owner.did()).as_str().starts_with("Range"))
+                {
                     self.key(base, seen)
-                } else { self.key(base, seen).map(|key| format!("{key}.window")) }
-            },
+                } else {
+                    self.key(base, seen).map(|key| format!("{key}.window"))
+                }
+            }
             _ => {
                 let (definition, operands) = self.call(expression)?;
                 let name = self.tcx.item_name(definition);
@@ -96,7 +110,9 @@ impl<'tcx> Analysis<'_, 'tcx> {
                     let range = operands.get(1).is_some_and(|operand|
                         matches!(self.expr_ty(operand).kind(), rustc_middle::ty::Adt(owner, _)
                             if types::standard(self.tcx, owner.did()) && self.tcx.item_name(owner.did()).as_str().starts_with("Range")));
-                    if range { return operands.first().and_then(|operand| self.key(operand, seen)); }
+                    if range {
+                        return operands.first().and_then(|operand| self.key(operand, seen));
+                    }
                     return None;
                 }
                 if types::standard(self.tcx, definition)
@@ -142,7 +158,10 @@ impl<'tcx> Analysis<'_, 'tcx> {
         }
         seen.push(expression.hir_id);
         if let Some(count) = self.constant_count(expression, &mut Vec::new()) {
-            return Some(vec![ExtentTerm { factors: Vec::new(), coefficient: count }]);
+            return Some(vec![ExtentTerm {
+                factors: Vec::new(),
+                coefficient: count,
+            }]);
         }
         match expression.kind {
             ExprKind::AddrOf(_, _, inner) | ExprKind::DropTemps(inner) => {
@@ -179,7 +198,12 @@ impl<'tcx> Analysis<'_, 'tcx> {
                 return operands
                     .first()
                     .and_then(|operand| self.key(operand, &mut Vec::new()))
-                    .map(|key| vec![ExtentTerm { factors: vec![key], coefficient: 1 }]);
+                    .map(|key| {
+                        vec![ExtentTerm {
+                            factors: vec![key],
+                            coefficient: 1,
+                        }]
+                    });
             }
             if (name.as_str() == "u64_from_index" && self.tcx.crate_name(definition.krate).as_str() == "cadmpeg_core")
                 || (types::standard(self.tcx, definition) && matches!(name.as_str(), "ok_or" | "ok_or_else" | "map_err" | "try_from" | "try_into"))
@@ -202,8 +226,10 @@ impl<'tcx> Analysis<'_, 'tcx> {
                         let mut factors = left.factors.clone();
                         factors.extend(right.factors.iter().cloned());
                         factors.sort();
-                        product.push(ExtentTerm { factors,
-                            coefficient: left.coefficient.checked_mul(right.coefficient)? });
+                        product.push(ExtentTerm {
+                            factors,
+                            coefficient: left.coefficient.checked_mul(right.coefficient)?,
+                        });
                     }
                 }
                 return Some(product);
@@ -212,7 +238,12 @@ impl<'tcx> Analysis<'_, 'tcx> {
         if let Some(init) = self.initializer(expression) {
             return self.extent_terms(init, seen);
         }
-        self.key(expression, &mut Vec::new()).map(|key| vec![ExtentTerm { factors: vec![key], coefficient: 1 }])
+        self.key(expression, &mut Vec::new()).map(|key| {
+            vec![ExtentTerm {
+                factors: vec![key],
+                coefficient: 1,
+            }]
+        })
     }
 
     pub(crate) fn propagated(&self, expression: &'tcx Expr<'tcx>) -> bool {
@@ -341,44 +372,67 @@ impl<'tcx> Analysis<'_, 'tcx> {
     }
 
     fn dominated_keys(&self, expression: &'tcx Expr<'tcx>, seen: &mut Vec<HirId>) -> Vec<String> {
-        if seen.contains(&expression.hir_id) { return Vec::new(); }
+        if seen.contains(&expression.hir_id) {
+            return Vec::new();
+        }
         seen.push(expression.hir_id);
         if let Some(init) = self.initializer(expression) {
             return self.dominated_keys(init, seen);
         }
         if let Some((definition, operands)) = self.call(expression) {
-            if types::standard(self.tcx, definition) && self.tcx.item_name(definition).as_str() == "zip" {
-                return operands.iter().flat_map(|operand| self.dominated_keys(operand, &mut seen.clone())).collect();
+            if types::standard(self.tcx, definition)
+                && self.tcx.item_name(definition).as_str() == "zip"
+            {
+                return operands
+                    .iter()
+                    .flat_map(|operand| self.dominated_keys(operand, &mut seen.clone()))
+                    .collect();
             }
         }
         self.key(expression, &mut Vec::new()).into_iter().collect()
     }
 
     pub(crate) fn take_credit(&mut self, operands: &[&'tcx Expr<'tcx>]) -> Option<bool> {
-        let keys: Vec<_> = operands.iter().flat_map(|operand|
-            self.dominated_keys(operand, &mut Vec::new())).collect();
+        let keys: Vec<_> = operands
+            .iter()
+            .flat_map(|operand| self.dominated_keys(operand, &mut Vec::new()))
+            .collect();
         for credit in &mut self.flow.work {
-            if credit.opaque { continue; }
-            if let Some(index) = credit.extents.iter().position(|term|
-                term.coefficient >= self.flow.iterations && term.factors.len() == 1
-                    && keys.contains(&term.factors[0])) {
+            if credit.opaque {
+                continue;
+            }
+            if let Some(index) = credit.extents.iter().position(|term| {
+                term.coefficient >= self.flow.iterations
+                    && term.factors.len() == 1
+                    && keys.contains(&term.factors[0])
+            }) {
                 credit.extents[index].coefficient -= self.flow.iterations;
                 credit.extents.retain(|term| term.coefficient != 0);
-                self.flow.work.retain(|credit| !credit.extents.is_empty() || credit.opaque);
+                self.flow
+                    .work
+                    .retain(|credit| !credit.extents.is_empty() || credit.opaque);
                 return Some(true);
             }
         }
-        if self.flow.work.iter().any(|credit| credit.opaque) { None } else { Some(false) }
+        if self.flow.work.iter().any(|credit| credit.opaque) {
+            None
+        } else {
+            Some(false)
+        }
     }
 
     pub(crate) fn invalidate_target(&mut self, expression: &'tcx Expr<'tcx>) {
         if let Some(key) = self.key(expression, &mut Vec::new()) {
             self.flow.work.retain(|credit| {
-                !credit.extents.iter().flat_map(|term| &term.factors).any(|term| {
-                    term == &key
-                        || term.starts_with(&format!("{key}."))
-                        || key.starts_with(&format!("{term}."))
-                })
+                !credit
+                    .extents
+                    .iter()
+                    .flat_map(|term| &term.factors)
+                    .any(|term| {
+                        term == &key
+                            || term.starts_with(&format!("{key}."))
+                            || key.starts_with(&format!("{term}."))
+                    })
             });
             self.flow.mutated.insert(key);
         } else {
@@ -387,8 +441,11 @@ impl<'tcx> Analysis<'_, 'tcx> {
             }
         }
         let mut binding = expression;
-        while let ExprKind::AddrOf(_, _, inner) | ExprKind::DropTemps(inner)
-            | ExprKind::Field(inner, _) | ExprKind::Index(inner, _, _) = binding.kind {
+        while let ExprKind::AddrOf(_, _, inner)
+        | ExprKind::DropTemps(inner)
+        | ExprKind::Field(inner, _)
+        | ExprKind::Index(inner, _, _) = binding.kind
+        {
             binding = inner;
         }
         if let ExprKind::Path(ref path) = binding.kind {

@@ -16,7 +16,9 @@ pub fn transitive(value: &Vec<u8>) {
 }
 pub struct Empty;
 impl Clone for Empty {
-    fn clone(&self) -> Self { Self }
+    fn clone(&self) -> Self {
+        Self
+    }
 }
 pub fn checked(value: &Empty) {
     let _copy = copy(value);
@@ -24,7 +26,9 @@ pub fn checked(value: &Empty) {
 pub fn unresolved<T: Clone>(value: &T) {
     let _copy = value.clone(); // finding: unproven_decode_charge
 }
-pub trait Read { fn read(&self); }
+pub trait Read {
+    fn read(&self);
+}
 pub fn object(value: &dyn Read) {
     value.read(); // finding: unproven_decode_charge
 }
@@ -32,8 +36,12 @@ pub fn pointer(value: fn()) {
     value(); // finding: unproven_decode_charge
 }
 
-trait Local { fn visit(&self); }
-impl Local for Empty { fn visit(&self) {} }
+trait Local {
+    fn visit(&self);
+}
+impl Local for Empty {
+    fn visit(&self) {}
+}
 fn bounded<T: Local>(value: &T) {
     value.visit();
 }

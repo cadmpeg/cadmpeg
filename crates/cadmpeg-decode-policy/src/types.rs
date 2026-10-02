@@ -28,8 +28,15 @@ pub(crate) fn standard(tcx: TyCtxt<'_>, definition: rustc_span::def_id::DefId) -
 pub(crate) fn checked(tcx: TyCtxt<'_>, definition: rustc_span::def_id::DefId) -> bool {
     let name = tcx.crate_name(definition.krate);
     name.as_str().starts_with("cadmpeg_codec_")
-        || matches!(name.as_str(), "cadmpeg_core" | "cadmpeg_ir" | "cadmpeg_container"
-            | "cadmpeg_asm" | "cadmpeg_parasolid" | "cadmpeg_protein")
+        || matches!(
+            name.as_str(),
+            "cadmpeg_core"
+                | "cadmpeg_ir"
+                | "cadmpeg_container"
+                | "cadmpeg_asm"
+                | "cadmpeg_parasolid"
+                | "cadmpeg_protein"
+        )
         || definition.is_local() && std::env::var_os("CADMPEG_POLICY_FIXTURE").is_some()
 }
 
