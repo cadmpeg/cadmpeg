@@ -165,6 +165,7 @@ fn check_fixture(name: &str) {
                 name,
                 "edges"
                     | "reachability"
+                    | "fixed_ranges"
                     | "modular"
                     | "external"
                     | "generic"
@@ -325,3 +326,6 @@ fn fixed_text_value_proof() {
 fn decode_reachability() {
     check_fixture("reachability");
 }
+
+#[test]
+fn constant_width_subslices() { check_fixture("fixed_ranges"); }
