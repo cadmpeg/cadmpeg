@@ -2025,18 +2025,9 @@ fn check_feature_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelInde
         EdgeSelection, FeatureDefinition, FeatureOperation, PathRef, PlanarProfileRef, ScaleCenter,
     };
 
-    if let Err(error) = crate::document::validate_feature_parents(&[&ir.model]) {
-        findings.push(Finding {
-            check: Check::ReferentialIntegrity,
-            severity: Severity::Error,
-            message: error.to_string(),
-            entity: match error {
-                crate::document::FeatureParentValidationError::Invalid(error) => {
-                    Some(error.owner.into_string())
-                }
-                _ => None,
-            },
-        });
+    if let Err(error) = crate::document::feature_parents::validate(Some(ctx), &[&ir.model])? {
+        super::record_finding(ctx, findings, Check::ReferentialIntegrity, Severity::Error,
+            error.owner().as_str(), format_args!("{error}"))?;
     }
 
     let mut configuration_ordinals = HashSet::new();
