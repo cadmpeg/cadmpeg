@@ -2465,7 +2465,7 @@ fn exact_boundary_curve_breaks<'a>(
             let Some(degree) = usize::try_from(nurbs.degree()).ok() else {
                 return Ok(None);
             };
-            let count = nurbs.control_points().len();
+            let count = nurbs.pole_rows().count();
             if degree > count {
                 return Ok(None);
             }
@@ -2951,7 +2951,7 @@ fn boundary_curve_affine_breaks_with_index<'a>(
                     Err(limit) => return Some(Err(limit)),
                 };
                 let degree = usize::try_from(isocurve.degree()).ok()?;
-                let count = isocurve.control_points().len();
+                let count = isocurve.pole_rows().count();
                 let mut storage = match geometry_budget.charges.reserve_scoped_limit(0, "nx affine pcurve breaks") { Ok(storage) => storage, Err(limit) => return Some(Err(limit)), };
                 let mut breaks = Vec::new();
                 for parameter in isocurve.knots().get(degree..=count)? {
@@ -3031,7 +3031,7 @@ fn boundary_curve_affine_breaks_with_index<'a>(
                     Err(limit) => return Some(Err(limit)),
                 };
                 let degree = usize::try_from(isocurve.degree()).ok()?;
-                let count = isocurve.control_points().len();
+                let count = isocurve.pole_rows().count();
                 let (mut breaks, mut storage) = match geometry_budget
                     .charges
                     .copy_temporary_slice(

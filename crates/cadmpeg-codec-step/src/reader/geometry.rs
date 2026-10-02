@@ -5745,10 +5745,10 @@ fn pcurve_periodic_domain(geometry: &PcurveGeometry) -> Option<[f64; 2]> {
         PcurveGeometry::Nurbs { nurbs } if nurbs.periodic() => pcurve_nurbs_parameter_domain(
             nurbs.degree(),
             nurbs.knots(),
-            nurbs.control_points().len(),
+            nurbs.pole_rows().count(),
         ),
         PcurveGeometry::PolarNurbs { nurbs } if nurbs.periodic() => {
-            pcurve_nurbs_parameter_domain(nurbs.degree(), nurbs.knots(), nurbs.poles().len())
+            pcurve_nurbs_parameter_domain(nurbs.degree(), nurbs.knots(), nurbs.pole_rows().count())
         }
         PcurveGeometry::Offset(offset_pcurve) => {
             let basis = offset_pcurve.basis();

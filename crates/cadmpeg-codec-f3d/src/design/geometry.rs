@@ -690,7 +690,7 @@ fn arrangement_arc_nurbs_meet_only_at_endpoint(
     let endpoint = if first_shared {
         0
     } else {
-        curve.control_points().len() - 1
+        curve.pole_rows().count() - 1
     };
     let normal = Point2::new(shared.u - center.u, shared.v - center.v);
     let support = |point: Point2| normal.u * (point.u - shared.u) + normal.v * (point.v - shared.v);
@@ -1357,7 +1357,7 @@ fn sketch_geometry_parameter_range(
         } => Some([start.get(), end.get()]),
         SketchGeometryDefinition::Nurbs { curve } if !curve.periodic() => Some([
             curve.knots()[index_from_u32(curve.degree())],
-            curve.knots()[curve.control_points().len()],
+            curve.knots()[curve.pole_rows().count()],
         ]),
         _ => None,
     }

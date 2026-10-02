@@ -5361,11 +5361,11 @@ fn pcurve_selection_parameter_domain(geometry: &PcurveGeometry) -> Option<[f64; 
         PcurveGeometry::Nurbs { nurbs } => nurbs_pcurve_parameter_domain(
             nurbs.degree(),
             nurbs.knots(),
-            nurbs.control_points().len(),
+            nurbs.pole_rows().count(),
         )
         .map(cadmpeg_ir::topology::IncreasingParameterInterval::endpoints),
         PcurveGeometry::PolarNurbs { nurbs } => {
-            nurbs_pcurve_parameter_domain(nurbs.degree(), nurbs.knots(), nurbs.poles().len())
+            nurbs_pcurve_parameter_domain(nurbs.degree(), nurbs.knots(), nurbs.pole_rows().count())
                 .map(cadmpeg_ir::topology::IncreasingParameterInterval::endpoints)
         }
         PcurveGeometry::Trimmed(trimmed_pcurve) => {

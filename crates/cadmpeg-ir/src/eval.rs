@@ -7205,7 +7205,7 @@ fn straight_sweep_path_origin(
             Ok(line_curve.origin().get())
         }
         CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs))
-            if nurbs.degree() == 1 && nurbs.control_points().len() == 2 && !nurbs.periodic() =>
+            if nurbs.degree() == 1 && nurbs.pole_rows().count() == 2 && !nurbs.periodic() =>
         {
             let [start, _] = nurbs_curve_parameter_domain(nurbs)
                 .ok_or(EvaluationFailure::NoValue)?
