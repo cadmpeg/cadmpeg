@@ -51,7 +51,7 @@ pub struct Identity(String);
 
 impl serde::Serialize for Identity {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        crate::schema::serialize_reference_id(self.as_str(), serializer)
+        serializer.serialize_str(self.as_str())
     }
 }
 
@@ -969,7 +969,7 @@ macro_rules! id_type {
             where
                 S: serde::Serializer,
             {
-                $crate::schema::serialize_reference_id(self.0.as_str(), serializer)
+                serializer.serialize_str(self.0.as_str())
             }
         }
 

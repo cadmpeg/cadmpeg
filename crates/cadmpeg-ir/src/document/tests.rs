@@ -190,24 +190,22 @@ fn entity_schema_registry_covers_arenas_and_unit_cube_references_resolve() {
     let mut ids = std::collections::HashSet::new();
     collect_ids(&serde_json::to_value(&ir.model).unwrap(), &mut ids);
     let mut missing = Vec::new();
-    let mut visit = |reference: crate::schema::Reference| {
-        if !ids.contains(&reference.target) {
-            missing.push(reference.target);
-        }
+    let mut visit = |reference: &str| -> Result<(), cadmpeg_core::CodecError> {
+        if !ids.contains(reference) { missing.push(reference.to_owned()); }
+        Ok(())
     };
+    let ctx = cadmpeg_test_support::service_decode_context();
     macro_rules! visit_arenas {
         ($($field:ident: $ty:ty, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?;)*) => {
             $(for entity in &ir.model.$field {
-                crate::schema::EntitySchema::visit_references(entity, &mut visit)
+                crate::schema::EntitySchema::visit_references(entity, &ctx, &mut visit)
                     .expect("every entity states its typed references");
             })*
         };
     }
     super::arena_registry!(visit_arenas);
     for parent in ir.model.feature_regeneration_parents.0.values() {
-        visit(crate::schema::Reference {
-            target: parent.as_str().to_owned(),
-        });
+        visit(parent.as_str()).unwrap();
     }
     assert!(missing.is_empty(), "unresolved references: {missing:?}");
 }

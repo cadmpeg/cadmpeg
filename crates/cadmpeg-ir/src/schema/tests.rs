@@ -29,12 +29,13 @@ fn typed_reference_walk_ignores_id_shaped_plain_strings() {
     let mut references = Vec::new();
     crate::schema::EntitySchema::visit_references(
         &ir.model.product_definitions[0],
-        &mut |reference| references.push(reference.target),
+        &cadmpeg_test_support::service_decode_context(),
+        &mut |reference| { references.push(reference.to_owned()); Ok(()) },
     )
     .expect("every entity states its typed references");
     assert_eq!(references, vec![target.as_str().to_owned()]);
     let mut borrowed_references = Vec::new();
-    crate::schema::EntitySchema::visit_reference_ids(
+    crate::schema::EntitySchema::visit_references(
         &ir.model.product_definitions[0],
         &cadmpeg_test_support::service_decode_context(),
         &mut |reference| { borrowed_references.push(reference.to_owned()); Ok(()) },
@@ -109,21 +110,21 @@ fn typed_reference_walk_treats_historical_members_as_state_local() {
 
     let mut state_references = Vec::new();
     state
-        .visit_references(&mut |reference| state_references.push(reference.target))
+        .visit_references(&cadmpeg_test_support::service_decode_context(), &mut |reference| { state_references.push(reference.to_owned()); Ok(()) })
         .expect("state states its typed references");
     assert_eq!(state_references, vec![feature_id.as_str().to_owned()]);
     let ctx = cadmpeg_test_support::service_decode_context();
     let mut borrowed_state_references = Vec::new();
-    state.visit_reference_ids(&ctx, &mut |target| { borrowed_state_references.push(target.to_owned()); Ok(()) }).unwrap();
+    state.visit_references(&ctx, &mut |target| { borrowed_state_references.push(target.to_owned()); Ok(()) }).unwrap();
     assert_eq!(borrowed_state_references, state_references);
 
     let mut feature_references = Vec::new();
     feature
-        .visit_references(&mut |reference| feature_references.push(reference.target))
+        .visit_references(&cadmpeg_test_support::service_decode_context(), &mut |reference| { feature_references.push(reference.to_owned()); Ok(()) })
         .expect("feature states its typed references");
     assert_eq!(feature_references, vec![state_id.as_str()]);
     let mut borrowed_feature_references = Vec::new();
-    feature.visit_reference_ids(&ctx, &mut |target| { borrowed_feature_references.push(target.to_owned()); Ok(()) }).unwrap();
+    feature.visit_references(&ctx, &mut |target| { borrowed_feature_references.push(target.to_owned()); Ok(()) }).unwrap();
     assert_eq!(borrowed_feature_references, feature_references);
 
     let mut ir = CadIr::empty();
@@ -178,7 +179,7 @@ fn borrowed_reference_walk_refuses_work_and_depth_without_allocating_output() {
         if dimension == ResourceDimension::WorkUnits { policy.limits.max_work_units = 0; }
         else { policy.limits.max_recursion_depth = 0; }
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let error = entity.visit_reference_ids(&ctx, &mut |_| Ok(())).unwrap_err();
+        let error = entity.visit_references(&ctx, &mut |_| Ok(())).unwrap_err();
         let CodecError::ResourceLimit(limit) = error else { panic!("borrowed walk refusal must remain a resource error"); };
         assert_eq!(limit.dimension, dimension);
         assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(original)) if original == limit));
@@ -190,7 +191,7 @@ fn borrowed_reference_walk_refuses_work_and_depth_without_allocating_output() {
     policy.limits.max_collection_items = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let mut seen = 0;
-    entity.visit_reference_ids(&ctx, &mut |target| {
+    entity.visit_references(&ctx, &mut |target| {
         assert_eq!(target, "test:model:body#target");
         seen += 1;
         Ok(())
@@ -211,7 +212,7 @@ fn borrowed_reference_walk_preserves_callback_allocator_refusal() {
     };
     let ctx = cadmpeg_test_support::service_decode_context();
     let limit = ResourceLimit::allocation_failed(ResourceDimension::MaterializedBytes, 4096, 64, "borrowed reference callback");
-    let error = entity.visit_reference_ids(&ctx, &mut |_| Err(CodecError::ResourceLimit(limit))).unwrap_err();
+    let error = entity.visit_references(&ctx, &mut |_| Err(CodecError::ResourceLimit(limit))).unwrap_err();
     assert!(matches!(error, CodecError::ResourceLimit(original) if original == limit));
 }
 
