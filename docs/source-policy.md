@@ -155,8 +155,8 @@ Binary and test bodies are excluded. Automatically derived
 bodies, including serde derives and their generated helpers, are excluded.
 A decode call into a derived implementation is judged at the call using the
 concrete field costs. Hand-written implementations retain their own
-obligations. Hand-written Serialize bodies reached by decode retain their
-obligations; serialization alone does not make them roots.
+obligations. Serialize implementation bodies are excluded; their calls retain
+external costs.
 
 A resolved call to a checked body is proved at the caller. Its body owns the
 admission obligation. Resolution uses the caller's compiler typing environment.

@@ -325,6 +325,12 @@ pub(crate) fn check_imported<'tcx>(
             };
             let raw = func.ty(body, tcx);
             if let rustc_middle::ty::FnDef(id, _) = raw.kind() {
+                if tcx
+                    .trait_of_assoc(*id)
+                    .is_some_and(|trait_id| types::serde_serialize(tcx, trait_id))
+                {
+                    continue;
+                }
                 let name = tcx.opt_item_name(*id);
                 let dependent = tcx.trait_of_assoc(*id).is_some()
                     || name.is_some_and(|name| {
