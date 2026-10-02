@@ -660,25 +660,29 @@ pub(super) fn check_pcurve_surface_consistency(
         .unwrap_or_default();
         let declared = if coedge.pcurves.len() == 1 {
             pcurve_parameter_ranges(
+                ctx,
                 first,
                 first_use
                     .parameter_range
                     .map(crate::geometry::DirectedParameterRange::endpoints),
                 edge.param_range().map(crate::units::FiniteVector::get),
-            )
+            )?
         } else {
-            match (
-                first_use
-                    .parameter_range
-                    .map(crate::geometry::DirectedParameterRange::endpoints)
-                    .or(first.parameter_range().map(crate::units::FiniteVector::get))
-                    .or_else(|| pcurve_parameter_extremes(first)),
-                last_use
-                    .parameter_range
-                    .map(crate::geometry::DirectedParameterRange::endpoints)
-                    .or(last.parameter_range().map(crate::units::FiniteVector::get))
-                    .or_else(|| pcurve_parameter_extremes(last)),
-            ) {
+            let first_range = first_use.parameter_range
+                .map(crate::geometry::DirectedParameterRange::endpoints)
+                .or(first.parameter_range().map(crate::units::FiniteVector::get));
+            let first_range = match first_range {
+                Some(range) => Some(range),
+                None => pcurve_parameter_extremes(ctx, first)?,
+            };
+            let last_range = last_use.parameter_range
+                .map(crate::geometry::DirectedParameterRange::endpoints)
+                .or(last.parameter_range().map(crate::units::FiniteVector::get));
+            let last_range = match last_range {
+                Some(range) => Some(range),
+                None => pcurve_parameter_extremes(ctx, last)?,
+            };
+            match (first_range, last_range) {
                 (Some([t0, _]), Some([_, t1])) => Some(vec![[t0, t1]]),
                 _ => None,
             }
@@ -748,10 +752,11 @@ pub(super) fn check_pcurve_surface_consistency(
 /// Such an interval is recovered independently from the shared 3D curve by
 /// `edge_pcurve_parameter_ranges`.
 fn pcurve_parameter_ranges(
+    ctx: &DecodeContext<'_>,
     pcurve: &crate::geometry::pcurve::Pcurve,
     pcurve_range: Option<[f64; 2]>,
     edge_range: Option<[f64; 2]>,
-) -> Option<Vec<[f64; 2]>> {
+) -> Result<Option<Vec<[f64; 2]>>, ResourceLimit> {
     let mut ranges = Vec::new();
     if let Some(range) = pcurve_range.or(pcurve
         .parameter_range()
@@ -762,13 +767,13 @@ fn pcurve_parameter_ranges(
     if let Some([start, end]) = edge_range {
         ranges.extend([[start, end], [-start, -end]]);
     }
-    ranges.extend(pcurve_parameter_extremes(pcurve));
+    ranges.extend(pcurve_parameter_extremes(ctx, pcurve)?);
     if !ranges.is_empty() {
-        if let Some(domain) = pcurve_parameter_domain(&pcurve.geometry) {
+        if let Some(domain) = pcurve_parameter_domain(ctx, &pcurve.geometry)? {
             ranges.push(domain.endpoints());
         }
     }
-    (!ranges.is_empty()).then_some(ranges)
+    Ok((!ranges.is_empty()).then_some(ranges))
 }
 
 struct SurfacePcurveContext<'index, 'model> {
@@ -798,18 +803,18 @@ fn edge_pcurve_parameter_ranges(
     tolerance: f64,
 ) -> Result<Option<Vec<[f64; 2]>>, CodecError> {
     let mut start_parameters = Vec::new();
-    for seed in pcurve_parameter_seeds_on_surface(context, first) {
+    for seed in pcurve_parameter_seeds_on_surface(ctx, context, first)? {
         if let Some(parameter) =
-            mapped_pcurve_parameter_near_point(context, &first.geometry, start, seed, tolerance)?
+            mapped_pcurve_parameter_near_point(ctx, context, &first.geometry, start, seed, tolerance)?
         {
             start_parameters.push(parameter);
         }
     }
     let start_parameters = unique(start_parameters);
     let mut end_parameters = Vec::new();
-    for seed in pcurve_parameter_seeds_on_surface(context, last) {
+    for seed in pcurve_parameter_seeds_on_surface(ctx, context, last)? {
         if let Some(parameter) =
-            mapped_pcurve_parameter_near_point(context, &last.geometry, end, seed, tolerance)?
+            mapped_pcurve_parameter_near_point(ctx, context, &last.geometry, end, seed, tolerance)?
         {
             end_parameters.push(parameter);
         }
@@ -843,9 +848,9 @@ fn edge_pcurve_parameter_ranges(
     ) {
         return Ok(None);
     }
-    let seeds = pcurve_parameter_seeds_on_surface(context, first)
+    let seeds = pcurve_parameter_seeds_on_surface(ctx, context, first)?
         .into_iter()
-        .chain(pcurve_parameter_seeds_on_surface(context, last))
+        .chain(pcurve_parameter_seeds_on_surface(ctx, context, last)?)
         .collect::<Vec<_>>();
     let start_parameters = seeds
         .iter()
@@ -874,6 +879,7 @@ fn edge_pcurve_parameter_ranges(
 /// partials; a short backtracking search keeps the iteration on the selected
 /// branch of a periodic or rational carrier.
 fn mapped_pcurve_parameter_near_point(
+    ctx: &DecodeContext<'_>,
     context: &SurfacePcurveContext<'_, '_>,
     pcurve_geometry: &PcurveGeometry,
     target: Point3,
@@ -883,7 +889,7 @@ fn mapped_pcurve_parameter_near_point(
     if !tolerance.is_finite() || tolerance < 0.0 {
         return Ok(None);
     }
-    let domain = pcurve_parameter_domain(pcurve_geometry).map(ParameterInterval::from);
+    let domain = pcurve_parameter_domain(ctx, pcurve_geometry)?.map(ParameterInterval::from);
     // A step projects onto the pcurve domain. Without a domain, a step past
     // the finite range reaches no pcurve point at a finite distance, so the
     // search ends there.
@@ -991,28 +997,33 @@ fn unique(values: impl IntoIterator<Item = FiniteReal>) -> Vec<FiniteReal> {
     unique
 }
 
-fn pcurve_parameter_seeds(pcurve: &crate::geometry::pcurve::Pcurve) -> Vec<f64> {
+fn pcurve_parameter_seeds(ctx: &DecodeContext<'_>, pcurve: &crate::geometry::pcurve::Pcurve) -> Result<Vec<f64>, ResourceLimit> {
     let mut seeds = vec![0.0];
     if let Some(range) = pcurve.parameter_range() {
         seeds.extend(range.get());
     }
-    if let Some(domain) = pcurve_parameter_domain(&pcurve.geometry) {
+    if let Some(domain) = pcurve_parameter_domain(ctx, &pcurve.geometry)? {
         let [start, end] = domain.endpoints();
         seeds.extend([start, start.midpoint(end), end]);
     }
-    seeds
+    Ok(seeds)
 }
 
 fn pcurve_parameter_seeds_on_surface(
+    ctx: &DecodeContext<'_>,
     context: &SurfacePcurveContext<'_, '_>,
     pcurve: &crate::geometry::pcurve::Pcurve,
-) -> Vec<FiniteReal> {
-    let mut seeds = pcurve_parameter_seeds(pcurve);
+) -> Result<Vec<FiniteReal>, ResourceLimit> {
+    let mut seeds = pcurve_parameter_seeds(ctx, pcurve)?;
     let Some((origin, direction)) = pcurve.geometry.line_parameters() else {
-        return unique_finite(seeds);
+        return Ok(unique_finite(seeds));
     };
-    let Some([[u_lower, u_upper], [v_lower, v_upper]]) = surface_parameter_domains(context) else {
-        return unique_finite(seeds);
+    let domains = match context.geometry.solved() {
+        Some(geometry) => solved_surface_parameter_domains(ctx, geometry)?,
+        None => None,
+    };
+    let Some([[u_lower, u_upper], [v_lower, v_upper]]) = domains else {
+        return Ok(unique_finite(seeds));
     };
     for boundary in [u_lower, u_lower.midpoint(u_upper), u_upper] {
         if direction.u != 0.0 {
@@ -1024,27 +1035,26 @@ fn pcurve_parameter_seeds_on_surface(
             seeds.push((boundary - origin.v) / direction.v);
         }
     }
-    unique_finite(seeds)
+    Ok(unique_finite(seeds))
 }
 
-fn surface_parameter_domains(context: &SurfacePcurveContext<'_, '_>) -> Option<[[f64; 2]; 2]> {
-    solved_surface_parameter_domains(context.geometry.solved()?)
-}
-
-fn solved_surface_parameter_domains(geometry: &SolvedSurfaceGeometry) -> Option<[[f64; 2]; 2]> {
-    match geometry {
+fn solved_surface_parameter_domains(ctx: &DecodeContext<'_>, geometry: &SolvedSurfaceGeometry) -> Result<Option<[[f64; 2]; 2]>, ResourceLimit> {
+    let _depth = ctx.enter_nested_limit("surface parameter domain nesting")?;
+    ctx.charge_work_limit(1, "surface parameter domain visit")?;
+    Ok(match geometry {
         SolvedSurfaceGeometry::Nurbs(surface) => {
             let u_count = surface.u_count();
             let v_count = surface.v_count();
-            Some([
-                nurbs_pcurve_parameter_domain(surface.u_degree(), surface.u_knots(), u_count)?
-                    .endpoints(),
-                nurbs_pcurve_parameter_domain(surface.v_degree(), surface.v_knots(), v_count)?
-                    .endpoints(),
-            ])
+            match (
+                nurbs_pcurve_parameter_domain(surface.u_degree(), surface.u_knots(), u_count),
+                nurbs_pcurve_parameter_domain(surface.v_degree(), surface.v_knots(), v_count),
+            ) {
+                (Some(u), Some(v)) => Some([u.endpoints(), v.endpoints()]),
+                _ => None,
+            }
         }
         SolvedSurfaceGeometry::Transformed(placed) => {
-            solved_surface_parameter_domains(placed.basis())
+            solved_surface_parameter_domains(ctx, placed.basis())?
         }
         SolvedSurfaceGeometry::Plane(_)
         | SolvedSurfaceGeometry::Cylinder(_)
@@ -1053,30 +1063,32 @@ fn solved_surface_parameter_domains(geometry: &SolvedSurfaceGeometry) -> Option<
         | SolvedSurfaceGeometry::Torus(_)
         | SolvedSurfaceGeometry::Polygonal(_)
         | SolvedSurfaceGeometry::Unknown { .. } => None,
-    }
+    })
 }
 
 /// Explicit trim metadata, if the pcurve carrier itself supplies it. A raw
 /// NURBS knot domain is deliberately excluded: it bounds the carrier, not the
 /// edge occurrence.
-fn pcurve_parameter_extremes(pcurve: &crate::geometry::pcurve::Pcurve) -> Option<[f64; 2]> {
-    pcurve
-        .parameter_range()
-        .map(crate::units::FiniteVector::get)
-        .or_else(|| pcurve_geometry_trim_range(&pcurve.geometry))
+fn pcurve_parameter_extremes(ctx: &DecodeContext<'_>, pcurve: &crate::geometry::pcurve::Pcurve) -> Result<Option<[f64; 2]>, ResourceLimit> {
+    match pcurve.parameter_range().map(crate::units::FiniteVector::get) {
+        Some(range) => Ok(Some(range)),
+        None => pcurve_geometry_trim_range(ctx, &pcurve.geometry),
+    }
 }
 
-fn pcurve_geometry_trim_range(geometry: &PcurveGeometry) -> Option<[f64; 2]> {
-    match geometry {
+fn pcurve_geometry_trim_range(ctx: &DecodeContext<'_>, geometry: &PcurveGeometry) -> Result<Option<[f64; 2]>, ResourceLimit> {
+    let _depth = ctx.enter_nested_limit("pcurve trim range nesting")?;
+    ctx.charge_work_limit(1, "pcurve trim range visit")?;
+    Ok(match geometry {
         PcurveGeometry::Trimmed(trimmed_pcurve) => {
             let parameter_range = trimmed_pcurve.parameter_range();
             Some(parameter_range.endpoints())
         }
         PcurveGeometry::Offset(offset_pcurve) => {
             let basis = offset_pcurve.basis();
-            pcurve_geometry_trim_range(basis)
+            pcurve_geometry_trim_range(ctx, basis)?
         }
-        PcurveGeometry::Transformed(placed) => pcurve_geometry_trim_range(placed.basis()),
+        PcurveGeometry::Transformed(placed) => pcurve_geometry_trim_range(ctx, placed.basis())?,
         PcurveGeometry::Line(_) => None,
         PcurveGeometry::Circle(_) => None,
         PcurveGeometry::Ellipse(_) => None,
@@ -1088,7 +1100,7 @@ fn pcurve_geometry_trim_range(geometry: &PcurveGeometry) -> Option<[f64; 2]> {
         PcurveGeometry::PolarNurbs { .. } => None,
         PcurveGeometry::Nurbs { .. } => None,
         PcurveGeometry::SphericalGreatCircle(_) => None,
-    }
+    })
 }
 
 #[cfg(test)]

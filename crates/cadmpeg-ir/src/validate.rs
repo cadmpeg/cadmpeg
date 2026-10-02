@@ -71,15 +71,15 @@ use topology::{
 /// Both the carrier-parameterization pass and the geometric-consistency pass
 /// ask this question of the same carrier, so they ask it of one function.
 ///
-/// The recursion is bounded by the carrier: each pcurve nesting constructor
-/// refuses a chain past
-/// [`MAX_GEOMETRY_NESTING`](crate::geometry::MAX_GEOMETRY_NESTING).
+/// Each carrier visit enters the caller session and admits its work.
 fn pcurve_parameter_domain(
+    ctx: &DecodeContext<'_>,
     geometry: &crate::geometry::pcurve::PcurveGeometry,
-) -> Option<crate::topology::IncreasingParameterInterval> {
+) -> Result<Option<crate::topology::IncreasingParameterInterval>, cadmpeg_core::decode::ResourceLimit> {
     use crate::geometry::pcurve::PcurveGeometry;
-
-    match geometry {
+    let _depth = ctx.enter_nested_limit("pcurve parameter domain nesting")?;
+    ctx.charge_work_limit(1, "pcurve parameter domain visit")?;
+    Ok(match geometry {
         PcurveGeometry::Nurbs { nurbs } => crate::eval::nurbs_pcurve_parameter_domain(
             nurbs.degree(),
             nurbs.knots(),
@@ -92,11 +92,13 @@ fn pcurve_parameter_domain(
         ),
         PcurveGeometry::Trimmed(trimmed_pcurve) => {
             let [start, end] = trimmed_pcurve.parameter_range().finite_endpoints();
-            crate::topology::IncreasingParameterInterval::between(start, end)
-                .or_else(|| pcurve_parameter_domain(trimmed_pcurve.basis()))
+            match crate::topology::IncreasingParameterInterval::between(start, end) {
+                Some(domain) => Some(domain),
+                None => pcurve_parameter_domain(ctx, trimmed_pcurve.basis())?,
+            }
         }
-        PcurveGeometry::Offset(offset_pcurve) => pcurve_parameter_domain(offset_pcurve.basis()),
-        PcurveGeometry::Transformed(placed) => pcurve_parameter_domain(placed.basis()),
+        PcurveGeometry::Offset(offset_pcurve) => pcurve_parameter_domain(ctx, offset_pcurve.basis())?,
+        PcurveGeometry::Transformed(placed) => pcurve_parameter_domain(ctx, placed.basis())?,
         PcurveGeometry::Line(_)
         | PcurveGeometry::Circle(_)
         | PcurveGeometry::Ellipse(_)
@@ -106,7 +108,7 @@ fn pcurve_parameter_domain(
         | PcurveGeometry::Hyperbolic(_)
         | PcurveGeometry::PolarHarmonic(_)
         | PcurveGeometry::SphericalGreatCircle(_) => None,
-    }
+    })
 }
 
 fn record_finding(
@@ -152,7 +154,7 @@ fn validate_model_with_index(
     check_wire_topology(ir, &mut findings);
     check_carrier_reachability(ctx, ids.native_view(), &mut findings)?;
     check_native_links(ctx, ids.native_view(), ids, &mut findings)?;
-    check_parameter_domains(ir, &mut findings);
+    check_parameter_domains(ctx, ir, &mut findings)?;
     check_edge_endpoint_consistency(ir, &mut findings)?;
     check_pcurve_surface_consistency(ctx, ir, &mut findings)?;
     check_procedural_support_consistency(ir, &mut findings)?;
@@ -348,14 +350,53 @@ mod tests {
         Ok(geometry)
     }
 
+
+    #[test]
+    fn pcurve_parameter_domain_preserves_session_depth_and_work_refusals() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        use cadmpeg_core::CodecError;
+        let geometry = placed_pcurve(2).unwrap();
+        for (dimension, cap, held_frame) in [
+            (ResourceDimension::RecursionDepth, 0, false),
+            (ResourceDimension::RecursionDepth, 2, false),
+            (ResourceDimension::RecursionDepth, 2, true),
+            (ResourceDimension::WorkUnits, 0, false),
+            (ResourceDimension::WorkUnits, 2, false),
+        ] {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            match dimension {
+                ResourceDimension::RecursionDepth => policy.limits.max_recursion_depth = cap,
+                ResourceDimension::WorkUnits => policy.limits.max_work_units = cap,
+                _ => unreachable!(),
+            }
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            let guard = held_frame.then(|| ctx.enter_nested_limit("caller frame").unwrap());
+            let limit = pcurve_parameter_domain(&ctx, &geometry).unwrap_err();
+            assert_eq!(limit.dimension, dimension);
+            assert_eq!(limit.limit, cap);
+            assert_eq!(limit.used, cap);
+            assert_eq!(limit.additional, 1);
+            assert_eq!(limit.operation, match dimension {
+                ResourceDimension::RecursionDepth => "pcurve parameter domain nesting",
+                _ => "pcurve parameter domain visit",
+            });
+            drop(guard);
+            assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(original)) if original == limit));
+        }
+    }
+
     #[test]
     fn pcurve_parameter_domain_stops_at_the_admitted_nesting_depth() {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_recursion_depth = cadmpeg_core::decode::u64_from_index(crate::geometry::MAX_GEOMETRY_NESTING + 1);
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let accepted =
             placed_pcurve(crate::geometry::MAX_GEOMETRY_NESTING).expect("admitted nesting");
-        assert!(pcurve_parameter_domain(&accepted).is_some());
+        assert!(pcurve_parameter_domain(&ctx, &accepted).unwrap().is_some());
 
-        // The walk has no depth gate because the carrier one placement deeper
-        // cannot be built: `PlacedPcurve::try_new` refuses it.
+        // Constructor admission also rejects a carrier beyond the inline bound.
         assert_eq!(
             placed_pcurve(crate::geometry::MAX_GEOMETRY_NESTING + 1),
             Err("PlacedPcurve.basis nests past the admitted inline basis depth")

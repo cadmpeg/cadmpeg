@@ -228,11 +228,14 @@ fn placed_pcurve(placements: usize) -> Result<PcurveGeometry, &'static str> {
 
 #[test]
 fn pcurve_bounded_domain_requirement_stops_at_the_admitted_nesting_depth() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_recursion_depth = cadmpeg_core::decode::u64_from_index(crate::geometry::MAX_GEOMETRY_NESTING + 1);
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let accepted = placed_pcurve(crate::geometry::MAX_GEOMETRY_NESTING).expect("admitted nesting");
-    assert!(super::pcurve_requires_bounded_domain(&accepted));
+    assert!(super::pcurve_requires_bounded_domain(&ctx, &accepted).unwrap());
 
-    // The walk has no depth gate because the carrier one placement deeper
-    // cannot be built: `PlacedPcurve::try_new` refuses it.
+    // Constructor admission also rejects a carrier beyond the inline bound.
     assert_eq!(
         placed_pcurve(crate::geometry::MAX_GEOMETRY_NESTING + 1),
         Err("PlacedPcurve.basis nests past the admitted inline basis depth")
@@ -398,5 +401,40 @@ fn numerical_audit_parameter_domain_roundoff_is_relative_to_width() {
         assert!(super::parameter_in_domain(0., [0., d]));
         assert!(super::parameter_in_domain(d, [0., d]));
         assert!(!super::parameter_in_domain(2. * d, [0., d]));
+    }
+}
+
+#[test]
+fn pcurve_requires_bounded_domain_preserves_session_depth_and_work_refusals() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    let geometry = placed_pcurve(2).unwrap();
+    for (dimension, cap, held_frame) in [
+        (ResourceDimension::RecursionDepth, 0, false),
+        (ResourceDimension::RecursionDepth, 2, false),
+        (ResourceDimension::RecursionDepth, 2, true),
+        (ResourceDimension::WorkUnits, 0, false),
+        (ResourceDimension::WorkUnits, 2, false),
+    ] {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        match dimension {
+            ResourceDimension::RecursionDepth => policy.limits.max_recursion_depth = cap,
+            ResourceDimension::WorkUnits => policy.limits.max_work_units = cap,
+            _ => unreachable!(),
+        }
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let guard = held_frame.then(|| ctx.enter_nested_limit("caller frame").unwrap());
+        let limit = super::pcurve_requires_bounded_domain(&ctx, &geometry).unwrap_err();
+        assert_eq!(limit.dimension, dimension);
+        assert_eq!(limit.limit, cap);
+        assert_eq!(limit.used, cap);
+        assert_eq!(limit.additional, 1);
+        assert_eq!(limit.operation, match dimension {
+            ResourceDimension::RecursionDepth => "pcurve bounded domain nesting",
+            _ => "pcurve bounded domain visit",
+        });
+        drop(guard);
+        assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(original)) if original == limit));
     }
 }
