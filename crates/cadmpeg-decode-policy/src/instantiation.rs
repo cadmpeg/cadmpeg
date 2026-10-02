@@ -68,7 +68,7 @@ impl<'tcx> Visitor<'tcx> for Collector<'_, '_, 'tcx> {
             })
             .or_else(|| {
                 self.analysis.call(expression).map(|(definition, _)| definition)
-                    .or_else(|| self.analysis.typeck.type_dependent_def_id(expression.hir_id))
+                    .or_else(|| matches!(expression.kind, ExprKind::Binary(..) | ExprKind::Unary(..) | ExprKind::Index(..) | ExprKind::AssignOp(..)).then(|| self.analysis.typeck.type_dependent_def_id(expression.hir_id)).flatten())
                     .and_then(|definition| self.analysis.resolved_instance(expression, definition))
             });
         if let Some(instance) = instance {
