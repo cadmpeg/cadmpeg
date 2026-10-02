@@ -214,7 +214,7 @@ pub(super) fn emit_topology(
                 cadmpeg_core::decode::u64_from_index(shell.pos),
                 Some("UNRESOLVED_BODY_REFERENCE"),
             )?;
-            annotations.exactness_for_decode(ctx, id.as_str(), Exactness::Unknown)?;
+            annotations.exactness(ctx, id.as_str(), Exactness::Unknown)?;
         }
         ctx.insert_btree_map(
             &mut bodies,
@@ -275,7 +275,7 @@ pub(super) fn emit_topology(
                     cadmpeg_core::decode::u64_from_index(node.pos),
                     Some("UNRESOLVED_REGION_REFERENCE"),
                 )?;
-                annotations.exactness_for_decode(ctx, region.as_str(), Exactness::Unknown)?;
+                annotations.exactness(ctx, region.as_str(), Exactness::Unknown)?;
             }
             annotations.derived(ctx, region.as_str(), "body")?;
             ctx.reserve_vec(&mut ir.model.regions, 1, "nx emitted regions")?;
@@ -1381,7 +1381,7 @@ pub(super) fn retain_unresolved_topology_carriers(
             cadmpeg_core::decode::u64_from_index(face.pos),
             Some("UNRESOLVED_SURFACE_REFERENCE"),
         )?;
-        annotations.exactness_for_decode(ctx, id.as_str(), Exactness::Unknown)?;
+        annotations.exactness(ctx, id.as_str(), Exactness::Unknown)?;
         ctx.reserve_vec(&mut ir.model.surfaces, 1, "nx unresolved surfaces")?;
         ir.model.surfaces.push(Surface {
             id: id.try_clone_for_decode(ctx, "nx unresolved surface identity")?,
@@ -1415,7 +1415,7 @@ pub(super) fn retain_unresolved_topology_carriers(
             cadmpeg_core::decode::u64_from_index(edge.pos),
             Some("UNRESOLVED_CURVE_REFERENCE"),
         )?;
-        annotations.exactness_for_decode(ctx, id.as_str(), Exactness::Unknown)?;
+        annotations.exactness(ctx, id.as_str(), Exactness::Unknown)?;
         ctx.reserve_vec(&mut ir.model.curves, 1, "nx unresolved curves")?;
         ir.model.curves.push(Curve {
             id: id.try_clone_for_decode(ctx, "nx unresolved curve identity")?,
@@ -1546,7 +1546,7 @@ fn synthesize_closed_edge_vertex_with_curve_index_and_budget(
         cadmpeg_core::decode::u64_from_index(edge.pos),
         Some("CLOSED_EDGE_POINT"),
     )?;
-    annotations.exactness_for_decode(ctx, point.as_str(), Exactness::Inferred)?;
+    annotations.exactness(ctx, point.as_str(), Exactness::Inferred)?;
     annotations.note_for_decode(
         ctx,
         vertex.as_str(),
@@ -1554,7 +1554,7 @@ fn synthesize_closed_edge_vertex_with_curve_index_and_budget(
         cadmpeg_core::decode::u64_from_index(edge.pos),
         Some("CLOSED_EDGE_VERTEX"),
     )?;
-    annotations.exactness_for_decode(ctx, vertex.as_str(), Exactness::Inferred)?;
+    annotations.exactness(ctx, vertex.as_str(), Exactness::Inferred)?;
     ctx.reserve_vec(&mut ir.model.points, 1, "nx closed edge points")?;
     ir.model.points.push(Point::new(
         point.try_clone_for_decode(ctx, "nx closed edge point identity")?,

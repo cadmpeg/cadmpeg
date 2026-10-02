@@ -404,18 +404,6 @@ impl AnnotationBuilder {
         self.state.note_owned(id, stream, offset)
     }
 
-    /// Set entity-level exactness through context-free construction.
-    pub fn exactness(&mut self, id: impl Display, exactness: Exactness) -> &mut Self {
-        self.state.exactness(id, exactness);
-        self
-    }
-
-    /// Set exactness with an already owned identity.
-    pub fn exactness_owned(&mut self, id: String, exactness: Exactness) -> &mut Self {
-        self.state.exactness_owned(id, exactness);
-        self
-    }
-
     /// Finish a builder whose storage is retained.
     pub fn build(self) -> Annotations { self.state.build() }
 }
@@ -452,14 +440,14 @@ impl<Storage: AnnotationStorage> AnnotationBuilder<Storage> {
     }
 
     /// Set entity exactness under the caller's context.
-    pub fn exactness_for_decode(&mut self, ctx: &DecodeContext<'_>, id: impl Display, exactness: Exactness) -> Result<&mut Self, CodecError> {
-        self.update(|state| state.exactness_for_decode(ctx, id, exactness).map(|_| ()))?;
+    pub fn exactness(&mut self, ctx: &DecodeContext<'_>, id: impl Display, exactness: Exactness) -> Result<&mut Self, CodecError> {
+        self.update(|state| state.exactness(ctx, id, exactness).map(|_| ()))?;
         Ok(self)
     }
 
     /// Set exactness with an already admitted identity.
-    pub fn exactness_owned_for_decode(&mut self, ctx: &DecodeContext<'_>, id: String, exactness: Exactness) -> Result<&mut Self, CodecError> {
-        self.update(|state| state.exactness_owned_for_decode(ctx, id, exactness).map(|_| ()))?;
+    pub fn exactness_owned(&mut self, ctx: &DecodeContext<'_>, id: String, exactness: Exactness) -> Result<&mut Self, CodecError> {
+        self.update(|state| state.exactness_owned(ctx, id, exactness).map(|_| ()))?;
         Ok(self)
     }
 
@@ -538,7 +526,7 @@ impl AnnotationState {
             .map_err(|_| CodecError::malformed("annotation stream name is empty"))?;
         let stream = StreamHandle::new_for_decode(ctx, stream, "annotation stream handles")?;
         self.note_for_decode(ctx, &id, &stream, offset, Some(tag))?;
-        self.exactness_for_decode(ctx, &id, exactness)?;
+        self.exactness(ctx, &id, exactness)?;
         Ok(())
     }
 
@@ -617,40 +605,8 @@ impl AnnotationState {
         ProvenanceNote { provenance }
     }
 
-    /// Set entity-level exactness. Byte-exact entries are removed to preserve
-    /// the table's sparse absent-means-byte-exact representation.
-    fn exactness(&mut self, id: impl Display, exactness: Exactness) -> &mut Self {
-        self.exactness_owned(id.to_string(), exactness)
-    }
-
-    /// Set entity exactness with an already admitted identity.
-    fn exactness_owned(&mut self, id: String, exactness: Exactness) -> &mut Self {
-        if let Some(note) = self.annotations.exactness.get_mut(&id) {
-            note.fields_mut().retain(|_, value| *value != exactness);
-            let fields = std::mem::take(note.fields_mut());
-            *note = match Inexactness::try_from(exactness) {
-                Ok(entity) => ExactnessNote::Entity { entity, fields },
-                Err(_) => ExactnessNote::Fields {
-                    fields: NonEmptyMap(fields),
-                },
-            };
-            if exactness == Exactness::ByteExact && note.fields().is_empty() {
-                self.annotations.exactness.remove(&id);
-            }
-        } else if let Ok(entity) = Inexactness::try_from(exactness) {
-            self.annotations.exactness.insert(
-                id,
-                ExactnessNote::Entity {
-                    entity,
-                    fields: BTreeMap::new(),
-                },
-            );
-        }
-        self
-    }
-
     /// Set entity exactness after admitting any new retained record.
-    fn exactness_for_decode(
+    fn exactness(
         &mut self,
         ctx: &DecodeContext<'_>,
         id: impl Display,
@@ -674,11 +630,11 @@ impl AnnotationState {
             } else {
                 id
             };
-        self.exactness_owned_for_decode(ctx, id, exactness)
+        self.exactness_owned(ctx, id, exactness)
     }
 
     /// Move an admitted identity into an exactness entry after destination admission.
-    fn exactness_owned_for_decode(
+    fn exactness_owned(
         &mut self,
         ctx: &DecodeContext<'_>,
         id: String,
@@ -700,7 +656,28 @@ impl AnnotationState {
             ctx.admit_retained_btree_record::<String, ExactnessNote>(0, "collect source exactness entities",
             )?;
         }
-        Ok(self.exactness_owned(id, exactness))
+        if let Some(note) = self.annotations.exactness.get_mut(&id) {
+            note.fields_mut().retain(|_, value| *value != exactness);
+            let fields = std::mem::take(note.fields_mut());
+            *note = match Inexactness::try_from(exactness) {
+                Ok(entity) => ExactnessNote::Entity { entity, fields },
+                Err(_) => ExactnessNote::Fields {
+                    fields: NonEmptyMap(fields),
+                },
+            };
+            if exactness == Exactness::ByteExact && note.fields().is_empty() {
+                self.annotations.exactness.remove(&id);
+            }
+        } else if let Ok(entity) = Inexactness::try_from(exactness) {
+            self.annotations.exactness.insert(
+                id,
+                ExactnessNote::Entity {
+                    entity,
+                    fields: BTreeMap::new(),
+                },
+            );
+        }
+        Ok(self)
     }
 
     /// Set field exactness after admitting retained keys and records.
@@ -1137,7 +1114,7 @@ mod tests {
             super::StreamName::try_from(stream.to_string()).expect("nonempty stream"),
         );
         original.note(id, &handle, 42).tag(tag);
-        original.exactness(id, super::Exactness::Derived);
+        original.exactness(&cadmpeg_test_support::service_decode_context(), id, super::Exactness::Derived).unwrap();
         assert_eq!(admitted.build(), original.build());
     }
 
@@ -1148,7 +1125,7 @@ mod tests {
             let mut builder = super::AnnotationBuilder::new();
             let stream = super::StreamHandle::new(crate::stream_name!("test"));
             builder.note("test:point#0", &stream, 0);
-            builder.exactness("test:point#0", super::Exactness::Inferred);
+            builder.exactness(&cadmpeg_test_support::service_decode_context(), "test:point#0", super::Exactness::Inferred).unwrap();
             let mut annotations = builder.build();
             let arena = DecodeArena::new();
             let mut policy = DecodePolicy::service();
@@ -1226,24 +1203,24 @@ mod tests {
     #[test]
     fn exactness_update_and_removal_allocate_no_retained_records() {
         let mut builder = super::AnnotationBuilder::new();
-        builder.exactness("test:point#0", super::Exactness::Derived);
+        builder.exactness(&cadmpeg_test_support::service_decode_context(), "test:point#0", super::Exactness::Derived).unwrap();
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_collection_items = 0;
         policy.limits.max_retained_bytes = 0;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         builder
-            .exactness_for_decode(&ctx, "test:point#0", super::Exactness::Inferred)
+            .exactness(&ctx, "test:point#0", super::Exactness::Inferred)
             .unwrap();
         assert_eq!(
             builder.state.annotations.exactness["test:point#0"].entity(),
             super::Exactness::Inferred
         );
         builder
-            .exactness_for_decode(&ctx, "test:point#0", super::Exactness::ByteExact)
+            .exactness(&ctx, "test:point#0", super::Exactness::ByteExact)
             .unwrap();
         builder
-            .exactness_for_decode(&ctx, "test:point#missing", super::Exactness::ByteExact)
+            .exactness(&ctx, "test:point#missing", super::Exactness::ByteExact)
             .unwrap();
         assert!(builder.state.annotations.exactness.is_empty());
     }
@@ -1339,6 +1316,7 @@ mod tests {
     }
 
     mod identity_merges;
+    mod entity_exactness;
     mod retention;
 
     use std::collections::BTreeMap;
@@ -1396,11 +1374,11 @@ mod tests {
         let mut owned = AnnotationBuilder::new();
         for (offset, exactness) in [(7, Exactness::Derived), (11, Exactness::ByteExact)] {
             formatted.note("entity", &stream, offset).tag("tag");
-            formatted.exactness("entity", exactness);
+            formatted.exactness(&cadmpeg_test_support::service_decode_context(), "entity", exactness).unwrap();
             owned
                 .note_owned(String::from("entity"), &stream, offset)
                 .tag("tag");
-            owned.exactness_owned(String::from("entity"), exactness);
+            owned.exactness_owned(&cadmpeg_test_support::service_decode_context(), String::from("entity"), exactness).unwrap();
         }
         let owned = owned.build();
         assert_eq!(owned, formatted.build());
@@ -1529,8 +1507,8 @@ mod tests {
                 Exactness::ByteExact,
             ] {
                 if entity_first {
-                    borrowed.exactness("test:point#1", exactness);
-                    owned.exactness_owned("test:point#1".to_string(), exactness);
+                    borrowed.exactness(&cadmpeg_test_support::service_decode_context(), "test:point#1", exactness).unwrap();
+                    owned.exactness_owned(&cadmpeg_test_support::service_decode_context(), "test:point#1".to_string(), exactness).unwrap();
                 }
                 borrowed
                     .field_exactness(&cadmpeg_test_support::service_decode_context(), "test:point#1", "position.x", exactness)
@@ -1563,7 +1541,7 @@ mod tests {
         builder
             .derived(&cadmpeg_test_support::service_decode_context(), "f3d:edge#0", "param_range")
             .expect("nonempty exactness field")
-            .exactness("f3d:edge#0", Exactness::Inferred);
+            .exactness(&cadmpeg_test_support::service_decode_context(), "f3d:edge#0", Exactness::Inferred).unwrap();
         builder
             .field_exactness(&cadmpeg_test_support::service_decode_context(), "f3d:edge#0", "param_range", Exactness::ByteExact)
             .expect("nonempty exactness field");
@@ -1580,7 +1558,7 @@ mod tests {
             }
         );
 
-        builder.exactness("f3d:edge#0", Exactness::ByteExact);
+        builder.exactness(&cadmpeg_test_support::service_decode_context(), "f3d:edge#0", Exactness::ByteExact).unwrap();
         assert!(builder.state.annotations.exactness.is_empty());
     }
 
@@ -1617,13 +1595,13 @@ mod tests {
         for entity_first in [false, true] {
             let mut builder = AnnotationBuilder::new();
             if entity_first {
-                builder.exactness("nx:model:surface#1", Exactness::Derived);
+                builder.exactness(&cadmpeg_test_support::service_decode_context(), "nx:model:surface#1", Exactness::Derived).unwrap();
             }
             builder
                 .derived(&cadmpeg_test_support::service_decode_context(), "nx:model:surface#1", "geometry")
                 .expect("nonempty exactness field");
             if !entity_first {
-                builder.exactness("nx:model:surface#1", Exactness::Derived);
+                builder.exactness(&cadmpeg_test_support::service_decode_context(), "nx:model:surface#1", Exactness::Derived).unwrap();
             }
             assert_eq!(
                 serde_json::to_value(&builder.state.annotations.exactness["nx:model:surface#1"]).unwrap(),
@@ -1661,7 +1639,7 @@ mod tests {
     fn exactness_field_admission_rejects_empty_keys_without_mutation() {
         let id = "test:model:point#0";
         let mut builder = AnnotationBuilder::new();
-        builder.exactness(id, Exactness::Inferred);
+        builder.exactness(&cadmpeg_test_support::service_decode_context(), id, Exactness::Inferred).unwrap();
         builder.derived(&cadmpeg_test_support::service_decode_context(), id, "position.x").expect("nonempty path");
         let before = serde_json::to_value(&builder.state.annotations).expect("serialize annotations");
         for exactness in [
@@ -1715,7 +1693,7 @@ mod tests {
         for scope in ["entity", "fields"] {
             let mut builder = AnnotationBuilder::new();
             if scope == "entity" {
-                builder.exactness(id, Exactness::Inferred);
+                builder.exactness(&cadmpeg_test_support::service_decode_context(), id, Exactness::Inferred).unwrap();
             }
             builder.derived(&cadmpeg_test_support::service_decode_context(), id, "position").expect("nonempty field");
             let report = crate::report::decode::DecodeReport::unclassified(

@@ -1079,7 +1079,7 @@ fn ensure_surface_support(
                     .iter()
                     .any(|candidate| candidate.id == surface)
             {
-                annotations.exactness_for_decode(sink.ctx, surface.as_str(), Exactness::Unknown)?;
+                annotations.exactness(sink.ctx, surface.as_str(), Exactness::Unknown)?;
                 sink.out.stats.unknown_procedural_supports += 1;
                 admit_brep_entity(sink.ctx)?;
                 sink.ctx.reserve_vec(
@@ -2109,7 +2109,7 @@ fn decode_graph(
                 0,
                 Some("derived_closed_circle_seam"),
             )?;
-            annotations.exactness_for_decode(ctx, point_id.as_str(), Exactness::Derived)?;
+            annotations.exactness(ctx, point_id.as_str(), Exactness::Derived)?;
             annotations.note_for_decode(
                 ctx,
                 vertex_id.as_str(),
@@ -2117,7 +2117,7 @@ fn decode_graph(
                 0,
                 Some("derived_closed_circle_seam"),
             )?;
-            annotations.exactness_for_decode(ctx, vertex_id.as_str(), Exactness::Derived)?;
+            annotations.exactness(ctx, vertex_id.as_str(), Exactness::Derived)?;
             let finite_position = cadmpeg_ir::features::FinitePoint3::new(position)
                 .ok_or(Point::NON_FINITE_POSITION)
                 .map_err(cadmpeg_core::CodecError::malformed)?;
@@ -2208,7 +2208,7 @@ fn decode_graph(
                                 u64_from_index(offset),
                                 Some("surface_intersection"),
                             )?;
-                            annotations.exactness_for_decode(
+                            annotations.exactness(
                                 ctx,
                                 id_curve(curve_attr).as_str(),
                                 Exactness::Derived,
@@ -2231,7 +2231,7 @@ fn decode_graph(
                             u64_from_index(offset),
                             Some("unknown_curve"),
                         )?;
-                        annotations.exactness_for_decode(
+                        annotations.exactness(
                             ctx,
                             id_curve(curve_attr).as_str(),
                             Exactness::Unknown,
@@ -2402,7 +2402,7 @@ fn decode_graph(
                                 }
                             }),
                         )?;
-                        annotations.exactness_for_decode(ctx, id.as_str(), Exactness::Derived)?;
+                        annotations.exactness(ctx, id.as_str(), Exactness::Derived)?;
                         admit_brep_entity(ctx)?;
                         ctx.reserve_vec(
                             &mut out.pcurves,
@@ -2848,7 +2848,7 @@ fn decode_graph(
                         Some(tag),
                     )?;
                     if let Some(exactness) = exactness {
-                        annotations.exactness_for_decode(
+                        annotations.exactness(
                             ctx,
                             id_surf(f.bridge_attr).as_str(),
                             exactness,
@@ -2870,7 +2870,7 @@ fn decode_graph(
                         u64_from_index(surf_off),
                         Some("unknown_surface"),
                     )?;
-                    annotations.exactness_for_decode(
+                    annotations.exactness(
                         ctx,
                         id_surf(f.bridge_attr).as_str(),
                         Exactness::Unknown,
@@ -3008,7 +3008,7 @@ fn decode_graph(
                     u64_from_index(offset),
                     Some(tag),
                 )?;
-                annotations.exactness_for_decode(ctx, id, exactness)?;
+                annotations.exactness(ctx, id, exactness)?;
                 Ok(())
             };
         annotate_group(
@@ -3207,7 +3207,7 @@ fn decode_graph(
                 curve.geometry,
                 CurveGeometry::Solved(SolvedCurveGeometry::Unknown { .. })
             ) {
-                annotations.exactness_for_decode(ctx, curve.id.as_str(), Exactness::Unknown)?;
+                annotations.exactness(ctx, curve.id.as_str(), Exactness::Unknown)?;
             }
         }
     }
@@ -3700,7 +3700,7 @@ fn derive_planar_pcurves(
             0,
             Some("derived_planar_pcurve"),
         )?;
-        annotations.exactness_for_decode(ctx, id.as_str(), Exactness::Derived)?;
+        annotations.exactness(ctx, id.as_str(), Exactness::Derived)?;
         admit_brep_entity(ctx)?;
         ctx.reserve_vec(&mut out.pcurves, 1, "collect derived Parasolid pcurves")?;
         out.pcurves.push(pcurve);
@@ -4142,7 +4142,7 @@ fn derive_cylindrical_pcurves(
             0,
             Some("derived_cylindrical_pcurve"),
         )?;
-        annotations.exactness_for_decode(ctx, id.as_str(), Exactness::Derived)?;
+        annotations.exactness(ctx, id.as_str(), Exactness::Derived)?;
         admit_brep_entity(ctx)?;
         ctx.reserve_vec(&mut out.pcurves, 1, "collect derived Parasolid pcurves")?;
         out.pcurves.push(pcurve);
@@ -4721,7 +4721,7 @@ fn derive_revolved_circle_pcurves(
             0,
             Some("derived_revolved_circle_pcurve"),
         )?;
-        annotations.exactness_for_decode(ctx, id.as_str(), Exactness::Derived)?;
+        annotations.exactness(ctx, id.as_str(), Exactness::Derived)?;
         admit_brep_entity(ctx)?;
         ctx.reserve_vec(&mut out.pcurves, 1, "collect derived Parasolid pcurves")?;
         out.pcurves.push(pcurve);
@@ -4963,7 +4963,7 @@ fn derive_spherical_pcurves(
             0,
             Some("derived_spherical_pcurve"),
         )?;
-        annotations.exactness_for_decode(ctx, id.as_str(), Exactness::Derived)?;
+        annotations.exactness(ctx, id.as_str(), Exactness::Derived)?;
         admit_brep_entity(ctx)?;
         ctx.reserve_vec(&mut out.pcurves, 1, "collect derived Parasolid pcurves")?;
         out.pcurves.push(pcurve);
@@ -5194,7 +5194,7 @@ fn derive_nurbs_isoparametric_pcurves(
                 "derived_nurbs_isoparametric_pcurve"
             }),
         )?;
-        annotations.exactness_for_decode(ctx, id.as_str(), Exactness::Derived)?;
+        annotations.exactness(ctx, id.as_str(), Exactness::Derived)?;
         admit_brep_entity(ctx)?;
         ctx.reserve_vec(&mut out.pcurves, 1, "collect derived Parasolid pcurves")?;
         out.pcurves.push(pcurve);
@@ -7234,7 +7234,7 @@ fn synthesize_cylinder_seams(
                 0,
                 Some("derived_periodic_seam"),
             )?;
-            annotations.exactness_for_decode(ctx, id, Exactness::Derived)?;
+            annotations.exactness(ctx, id, Exactness::Derived)?;
         }
         admit_brep_entity(ctx)?;
         ctx.reserve_vec(&mut out.curves, 1, "collect Parasolid cylinder seam curves")?;
@@ -7491,7 +7491,7 @@ fn synthesize_sphere_seams(
             0,
             Some("derived_sphere_seam"),
         )?;
-        annotations.exactness_for_decode(ctx, curve_id.as_str(), Exactness::Derived)?;
+        annotations.exactness(ctx, curve_id.as_str(), Exactness::Derived)?;
         admit_brep_entity(ctx)?;
         ctx.reserve_vec(
             &mut out.curves,
@@ -7731,7 +7731,7 @@ fn synthesize_sphere_seams(
                         0,
                         Some("derived_sphere_seam"),
                     )?;
-                    annotations.exactness_for_decode(ctx, id, Exactness::Derived)?;
+                    annotations.exactness(ctx, id, Exactness::Derived)?;
                 }
                 admit_brep_entity(ctx)?;
                 ctx.reserve_vec(&mut out.points, 1, "collect Parasolid sphere seam points")?;
@@ -7761,7 +7761,7 @@ fn synthesize_sphere_seams(
             pcurve_id.as_str(),
         ] {
             annotations.note_for_decode(ctx, id, source_stream, 0, Some("derived_sphere_seam"))?;
-            annotations.exactness_for_decode(ctx, id, Exactness::Derived)?;
+            annotations.exactness(ctx, id, Exactness::Derived)?;
         }
         admit_brep_entity(ctx)?;
         ctx.reserve_vec(&mut out.curves, 1, "collect Parasolid sphere seam curves")?;

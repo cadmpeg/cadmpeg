@@ -184,7 +184,7 @@ pub(in crate::native) fn attach_expression_parameters(
             first_offset,
             Some("hostglobalvariables"),
         )?;
-        annotations.exactness_for_decode(ctx, &feature_id, Exactness::Derived)?;
+        annotations.exactness(ctx, &feature_id, Exactness::Derived)?;
         let mut source_content = Vec::new();
         for expression in &expressions {
             let bytes = std::mem::size_of::<FeatureSourceContent>()
