@@ -66,12 +66,31 @@ Use repeatable `--crate NAME` arguments to restrict reported findings to named c
   `if __name__ == "__main__":` block fails: discovery imports the module and
   never runs that block.
 
+## Numeric casts
+
+Workspace Clippy lints deny `as_conversions`, `cast_possible_truncation`,
+`cast_possible_wrap`, `cast_sign_loss`, `cast_precision_loss` and `cast_lossless`.
+Numeric casts occur only in `cadmpeg-core/src/convert.rs`, under its one module
+expectation. Each conversion checks exactness or the finite target range. All
+other conversions use the core functions, `From`, or `TryFrom` with an explicit
+refusal branch.
+
 ## Checked arithmetic
 
 Production `saturating_*` calls fail with `saturating_arithmetic`. Use checked
 arithmetic. The overflow branch propagates the caller context's resource refusal
 in decode code or a typed error elsewhere. Constant expressions must preserve
 the exact value or reject the invalid constant.
+
+## Decode context parameters
+
+`optional_decode_context` rejects production function parameters with type
+`Option<&DecodeContext<...>>`. Qualified paths, explicit borrow lifetimes,
+mutable borrows, trait methods and function-pointer parameters are included.
+The decode path passes its caller context. Context-free reconstruction and
+writers take no context. Fields, local bindings and returned values are not
+function parameters and stay outside this rule. The checker recognizes the
+named type in source and does not resolve type aliases.
 
 ## Lint suppressions
 
