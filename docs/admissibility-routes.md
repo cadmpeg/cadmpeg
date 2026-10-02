@@ -95,4 +95,4 @@ source image, which holds every quarantined card.
 1. `validate_neutral` (or `validate_neutral_with_source_fidelity`)
 2. plus every registered native validator whose namespace is present
 
-Encoders count rows with `CadIr::census` / `entity_census`, not validation.
+Encoders count rows with `CadIr::census`, not validation.

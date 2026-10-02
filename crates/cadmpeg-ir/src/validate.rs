@@ -8,9 +8,7 @@
 //! positions). It does not evaluate interior surface membership or solid
 //! closure.
 
-use std::collections::BTreeMap;
-
-use crate::document::{CadIr, CensusKey};
+use crate::document::CadIr;
 use crate::report::{
     check::{Check, Finding, ValidationReport},
     loss::LossNote,
@@ -136,38 +134,6 @@ fn record_finding(
     Ok(())
 }
 
-/// Count the records represented by the IR arenas without running validation.
-///
-/// Prefer [`CadIr::census`](crate::CadIr::census); this alias remains for
-/// existing `cadmpeg_ir::entity_census` call sites.
-pub fn entity_census(ir: &CadIr) -> BTreeMap<CensusKey, usize> {
-    crate::document::entity_census(ir)
-}
-
-macro_rules! define_validation_census {
-    ($( $field:ident: $element:ty, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?; )*) => {
-        fn validation_census(ctx: &DecodeContext<'_>, view: crate::native::view::NativeView<'_>) -> Result<BTreeMap<CensusKey, usize>, CodecError> {
-            let mut counts = BTreeMap::new();
-            $(ctx.insert_btree_map(&mut counts, CensusKey::model(crate::document::ArenaName::registered(stringify!($field))), view.ir.model.$field.len(), "validation model census slots")?;)*
-            ctx.charge_work(cadmpeg_core::decode::u64_from_index(view.ir.model.surfaces.len()), "validation surface census scan")?;
-            let unknown_surfaces = view.ir.model.surfaces.iter().filter(|surface| matches!(surface.geometry,
-                crate::geometry::SurfaceGeometry::Solved(crate::geometry::SolvedSurfaceGeometry::Unknown { .. }))).count();
-            ctx.insert_btree_map(&mut counts, CensusKey::surfaces_unknown_geometry(), unknown_surfaces, "validation surface census slot")?;
-            view.visit(|work| ctx.charge_work(cadmpeg_core::decode::u64_from_index(work), "validation native census scan"), |format, arena, records| {
-                if records.len() == 0 { return Ok(()); }
-                let key = ctx.format_retained(format_args!("native.{format}.{arena}"), "validation native census key")?;
-                let work = key.len().checked_add(1).and_then(|bytes| counts.len().checked_add(1).and_then(|count| bytes.checked_mul(count)))
-                    .ok_or_else(|| ctx.refuse_codec_limit("validation census key comparisons", u64::MAX - 1, u64::MAX))?;
-                ctx.charge_work(cadmpeg_core::decode::u64_from_index(work), "validation census key comparisons")?;
-                ctx.insert_btree_map(&mut counts, CensusKey::from_wire(key), records.len(), "validation native census slots")?;
-                Ok(())
-            })?;
-            Ok(counts)
-        }
-    };
-}
-crate::document::arena_registry!(define_validation_census);
-
 /// Validate `ir` and copy `losses` into the returned report unchanged.
 fn validate_model(ctx: &DecodeContext<'_>, ir: &CadIr, losses: Vec<LossNote>) -> Result<ValidationReport, CodecError> {
     let index = crate::index::ModelIndex::new_for_decode(ir, ctx)?;
@@ -211,7 +177,7 @@ fn validate_model_with_index(
     check_typed_references(ir, ids, &mut findings);
 
     Ok(ValidationReport {
-        entity_counts: validation_census(ctx, ids.native_view())?,
+        entity_counts: crate::document::census::count(ctx, ids.native_view())?,
         findings,
         losses,
     })

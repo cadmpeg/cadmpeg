@@ -27,7 +27,7 @@ use crate::features::{
 };
 use crate::geometry::{
     pcurve::Pcurve, Curve, CurveGeometry, ProceduralCurve, ProceduralCurveRow, ProceduralSurface,
-    ProceduralSurfaceRow, SolvedSurfaceGeometry, Surface, SurfaceGeometry,
+    ProceduralSurfaceRow, Surface, SurfaceGeometry,
 };
 use crate::hash::finite_json::CanonicalJsonError;
 use crate::ids::{CurveId, ProceduralCurveId, ProceduralSurfaceId, SurfaceId};
@@ -47,6 +47,7 @@ use crate::units::{CanonicalUnitsWire, Tolerances};
 use crate::unknown::NativeUnknownRecord;
 use cadmpeg_core::text::NonBlankString;
 
+pub(crate) mod census;
 pub(crate) mod feature_parents;
 
 struct UnknownProjection<T>(T);
@@ -1848,44 +1849,8 @@ impl CadIr {
 
     /// Count arena rows and native loss tallies without running validation.
     pub fn census(&self) -> BTreeMap<CensusKey, usize> {
-        entity_census(self)
+        crate::index::public_result(census::count(&census::StandardStorage, crate::native::view::NativeView::new(self, None)))
     }
-}
-
-macro_rules! define_registered_entity_census {
-    ($( $field:ident: $element:ty, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?; )*) => {
-        fn registered_entity_census(ir: &CadIr) -> BTreeMap<CensusKey, usize> {
-            BTreeMap::from([
-                $((CensusKey::model(ArenaName::registered(stringify!($field))), ir.model.$field.len())),*
-            ])
-        }
-    };
-}
-arena_registry!(define_registered_entity_census);
-
-/// Count the records represented by the IR arenas without running validation.
-pub fn entity_census(ir: &CadIr) -> BTreeMap<CensusKey, usize> {
-    let mut counts = registered_entity_census(ir);
-    counts.insert(
-        CensusKey::surfaces_unknown_geometry(),
-        ir.model
-            .surfaces
-            .iter()
-            .filter(|surface| {
-                matches!(
-                    surface.geometry,
-                    crate::geometry::SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { .. })
-                )
-            })
-            .count(),
-    );
-    for loss in ir.native.loss_counts() {
-        counts.insert(
-            CensusKey::native(&loss.format, &loss.kind),
-            loss.count.get(),
-        );
-    }
-    counts
 }
 
 /// Source-container metadata preserved for reporting.
