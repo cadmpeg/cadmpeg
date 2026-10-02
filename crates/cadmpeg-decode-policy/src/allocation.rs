@@ -6,7 +6,8 @@ use crate::{types, Analysis};
 use types::Shape;
 
 impl<'tcx> Analysis<'_, 'tcx> {
-    pub(crate) fn fixed_value(&self, expression: &Expr<'tcx>) -> bool {
+    pub(crate) fn fixed_value(&self, expression: &'tcx Expr<'tcx>) -> bool {
+        if self.constant(expression, &mut Vec::new()) { return true; }
         match expression.kind {
             ExprKind::Lit(_) => true,
             ExprKind::AddrOf(_, _, inner) | ExprKind::DropTemps(inner) => self.fixed_value(inner),
@@ -24,7 +25,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
         let Some((definition, operands)) = self.call(expression) else { return; };
         let name = self.tcx.item_name(definition);
         let name = name.as_str();
-        if types::standard(self.tcx, definition) && matches!(name, "new" | "default" | "must_use" | "box_assume_init_into_vec_unsafe" | "branch" | "from_residual" | "from_output") { return; }
+        if types::standard(self.tcx, definition) && matches!(name, "new" | "new_uninit" | "default" | "must_use" | "write_box_via_move" | "box_assume_init_into_vec_unsafe" | "branch" | "from_residual" | "from_output" | "iter" | "iter_mut" | "into_iter" | "map" | "filter" | "filter_map" | "skip" | "take" | "enumerate" | "rev" | "zip" | "chain" | "peekable" | "fuse" | "copied" | "inspect" | "flat_map" | "flatten" | "step_by" | "skip_while" | "take_while") { return; }
         let context_call = operands.first().is_some_and(|operand| types::has_context(self.tcx, self.typeck.expr_ty(operand), &mut Vec::new()));
         if context_call {
             if name == "alloc_filled" {
@@ -75,6 +76,17 @@ impl<'tcx> Analysis<'_, 'tcx> {
             return;
         }
         if matches!(name, "to_string" | "to_owned" | "clone") && operands.first().is_some_and(|operand| self.fixed_value(operand)) { return; }
+        if matches!(name, "from" | "into" | "to_owned") {
+            if let Some(custom) = self.custom_trait(expression, definition) {
+                if self.local_has_effects(custom) != Some(false) { self.shape_report(expression, Shape::Unknown, "custom conversion allocator reachability"); }
+                return;
+            }
+            if self.implementation(expression, definition).is_none() { self.shape_report(expression, Shape::Unknown, "conversion implementation unresolved"); return; }
+        }
+        if name == "to_string" && operands.first().is_some_and(|operand| match self.typeck.expr_ty(operand).peel_refs().kind() { ty::Str => false, ty::Adt(definition, _) => !types::standard(self.tcx, definition.did()), _ => true }) {
+            self.shape_report(expression, Shape::Unknown, "Display output extent unresolved");
+            return;
+        }
         if types::standard(self.tcx, definition) {
             if matches!(name, "collect" | "from_iter" | "to_vec") {
                 let shape = operands.first().map_or(Shape::Unknown, |operand| self.iteration(operand, &mut Vec::new()));
@@ -151,7 +163,7 @@ impl<'tcx> Visitor<'tcx> for FormatShape<'_, '_, 'tcx> {
                             _ => types::heap(self.analysis.tcx, value, &mut Vec::new()),
                         };
                         self.shape = self.shape.join(if shape == Shape::Fixed { Shape::Unknown } else { shape });
-                    } else if name.as_str() == "from_usize" && !matches!(operand.kind, ExprKind::Lit(_)) {
+                    } else if name.as_str() == "from_usize" && !self.analysis.constant(operand, &mut Vec::new()) {
                         self.shape = self.shape.join(Shape::Unknown);
                     }
                 }

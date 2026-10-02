@@ -26,6 +26,19 @@ impl<'tcx> Analysis<'_, 'tcx> {
                 Res::Def(_, id) => Some(format!("definition:{id:?}")),
                 _ => None,
             },
+            ExprKind::Struct(_, fields, _) => {
+                if let rustc_middle::ty::Adt(definition, _) = self.typeck.expr_ty(expression).kind() {
+                    if types::standard(self.tcx, definition.did()) && self.tcx.item_name(definition.did()).as_str() == "Range" {
+                        let start = fields.iter().find(|field| field.ident.name.as_str() == "start")?.expr;
+                        let end = fields.iter().find(|field| field.ident.name.as_str() == "end")?.expr;
+                        if matches!(start.kind, ExprKind::Lit(literal) if matches!(literal.node, rustc_ast::LitKind::Int(value, _) if value.get() == 0)) {
+                            let terms = self.extent_terms(end, &mut Vec::new())?;
+                            if let [term] = terms.as_slice() { return Some(term.clone()); }
+                        }
+                    }
+                }
+                None
+            }
             ExprKind::Field(base, field) => self.key(base, seen).map(|key| format!("{key}.{}", field.name)),
             ExprKind::Index(base, _, _) => self.key(base, seen).map(|key| format!("{key}.window")),
             _ => {
@@ -42,7 +55,13 @@ impl<'tcx> Analysis<'_, 'tcx> {
         if seen.contains(&expression.hir_id) { return None; }
         seen.push(expression.hir_id);
         match expression.kind {
-            ExprKind::AddrOf(_, _, inner) | ExprKind::DropTemps(inner) | ExprKind::Cast(inner, _) => return self.extent_terms(inner, seen),
+            ExprKind::AddrOf(_, _, inner) | ExprKind::DropTemps(inner) => return self.extent_terms(inner, seen),
+            ExprKind::Cast(inner, _) => {
+                let source = self.typeck.expr_ty(inner);
+                let destination = self.typeck.expr_ty(expression);
+                if source == destination || matches!((source.kind(), destination.kind()), (rustc_middle::ty::Uint(left), rustc_middle::ty::Uint(right)) if left.bit_width().or(Some(self.tcx.data_layout.pointer_size().bits())).zip(right.bit_width().or(Some(self.tcx.data_layout.pointer_size().bits()))).is_some_and(|(left, right)| left <= right)) { return self.extent_terms(inner, seen); }
+                return None;
+            }
             ExprKind::Binary(operator, left, right) if operator.node == rustc_hir::BinOpKind::Add => {
                 let mut terms = self.extent_terms(left, seen)?;
                 terms.extend(self.extent_terms(right, seen)?);
@@ -112,9 +131,10 @@ impl<'tcx> Analysis<'_, 'tcx> {
         let Some((definition, operands)) = self.call(expression) else { return; };
         let name = self.tcx.item_name(definition);
         if !self.context_operation(expression) || !self.propagated(expression) { return; }
-        if matches!(name.as_str(), "charge_retained" | "charge_retained_limit" | "reserve_scoped" | "reserve_scoped_limit" | "reserve_vec" | "reserve_vec_limit" | "collection_vec" | "vector_storage" | "reserve_capacity" | "try_reserve_retained_text") { self.flow.storage = true; }
+        if matches!(name.as_str(), "charge_retained" | "charge_retained_limit" | "reserve_scoped" | "reserve_scoped_limit" | "reserve_vec" | "reserve_vec_limit" | "collection_vec" | "vector_storage" | "reserve_capacity" | "try_reserve_retained_text" | "reserve_set" | "reserve_map" | "reserve_scoped_vec" | "reserve_scoped_vec_limit" | "reserve_temporary_vec" | "charge_hash_growth" | "admit_btree_entry" | "admit_btree_node_storage" | "admit_retained_btree_record" | "charge_input") { self.flow.storage = true; }
         if !matches!(name.as_str(), "charge_work" | "charge_work_limit") { return; }
         if let Some(amount) = operands.get(1) {
+            if matches!(amount.kind, ExprKind::Lit(literal) if matches!(literal.node, rustc_ast::LitKind::Int(value, _) if value.get() == 0)) { return; }
             let terms = self.extent_terms(amount, &mut Vec::new());
             self.flow.work.push(Credit { opaque: terms.is_none(), extents: terms.unwrap_or_default() });
         }
@@ -137,7 +157,6 @@ impl<'tcx> Analysis<'_, 'tcx> {
         } else {
             for credit in &mut self.flow.work { credit.opaque = true; }
         }
-        self.flow.storage = false;
     }
 
     pub(crate) fn mutation(&mut self, expression: &'tcx Expr<'tcx>) {

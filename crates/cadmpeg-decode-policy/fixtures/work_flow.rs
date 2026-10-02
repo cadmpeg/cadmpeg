@@ -26,3 +26,22 @@ pub fn decode(ctx: &DecodeContext, values: &mut Vec<u8>, bytes: &[u8], flag: boo
     }
     Ok(())
 }
+
+pub fn ranges(ctx: &DecodeContext, bytes: &[u8], count: usize) -> Result<(), ()> {
+    ctx.charge_work(count as u64, "range")?;
+    for _index in 0..count {}
+    ctx.charge_work(bytes.len() as u64, "indexed range")?;
+    for _index in 0..bytes.len() {}
+    for _index in 0..=4 {}
+    let fixed = [1u8, 2, 3];
+    for _index in 0..fixed.len() {}
+    Ok(())
+}
+
+pub fn numeric_word(ctx: &DecodeContext, mut word: u64) {
+    let _ctx = ctx;
+    let mut digits = 1;
+    while word >= 10 { digits += 1; word /= 10; }
+    while word != 0 { word >>= 1; }
+    std::hint::black_box(digits);
+}
