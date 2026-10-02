@@ -13,6 +13,8 @@ use crate::math::{Point3, Vector3};
 use crate::scalar::PositiveReal;
 use crate::transform::Transform;
 
+const SCALE_TO_TINY_LENGTH: f64 = 1.0e-10;
+
 fn scale(value: f64) -> PositiveReal {
     PositiveReal::new(value).expect("a positive scale fixture")
 }
@@ -46,7 +48,7 @@ fn radii_that_round_to_one_value_keep_the_ellipse_order() {
     let minor = 1.9_f64;
     let major = f64::from_bits(minor.to_bits() + 1);
     let scaled = ellipse(major, minor)
-        .scaled(scale(25.4))
+        .scaled(&cadmpeg_test_support::service_decode_context(), scale(25.4)).expect("fixture scaling admission")
         .expect("the scaled radii keep their order");
     assert_eq!(scaled_radii(&scaled), [48.26, 48.26]);
 
@@ -56,7 +58,7 @@ fn radii_that_round_to_one_value_keep_the_ellipse_order() {
             let major = f64::from_bits(minor.to_bits() + 1);
             let [scaled_major, scaled_minor] = scaled_radii(
                 &ellipse(major, minor)
-                    .scaled(scale(scale_value))
+                    .scaled(&cadmpeg_test_support::service_decode_context(), scale(scale_value)).expect("fixture scaling admission")
                     .expect("a positive scale keeps the order of two admitted radii"),
             );
             assert!(scaled_minor <= scaled_major);
@@ -97,7 +99,7 @@ fn a_scaled_ellipse_refuses_each_field_with_its_own_text_in_order() {
     ];
     for (geometry, scale_value, text) in cases {
         assert_eq!(
-            geometry.scaled(scale(scale_value)),
+            geometry.scaled(&cadmpeg_test_support::service_decode_context(), scale(scale_value)).expect("fixture scaling admission"),
             Err(ScaleRefusal::Field(text))
         );
     }
@@ -132,7 +134,12 @@ fn a_scaled_placement_chain_keeps_its_nesting_depth() {
                 .expect("the chain is within the bound"),
         );
     }
-    let scaled = chain.scaled(scale(25.4)).expect("finite scaled chain");
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_recursion_depth = u64::try_from(MAX_GEOMETRY_NESTING).expect("fixture depth");
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("root");
+    let scaled = chain.scaled(&ctx, scale(25.4)).expect("fixture scaling admission").expect("finite scaled chain");
     assert_eq!(scaled.nesting_depth(), MAX_GEOMETRY_NESTING);
     assert!(PlacedSurface::try_new(Box::new(scaled.clone()), translation).is_err());
 
@@ -168,7 +175,7 @@ fn a_scaled_placement_refuses_its_basis_before_its_translation() {
         PlacedSurface::try_new(Box::new(plane()), overflowing).expect("a placement fixture"),
     );
     assert_eq!(
-        translation_only.scaled(scale(2.0)),
+        translation_only.scaled(&cadmpeg_test_support::service_decode_context(), scale(2.0)).expect("fixture scaling admission"),
         Err(ScaleRefusal::Translation)
     );
 
@@ -184,7 +191,7 @@ fn a_scaled_placement_refuses_its_basis_before_its_translation() {
         PlacedSurface::try_new(Box::new(far_plane), overflowing).expect("a placement fixture"),
     );
     assert_eq!(
-        both.scaled(scale(2.0)),
+        both.scaled(&cadmpeg_test_support::service_decode_context(), scale(2.0)).expect("fixture scaling admission"),
         Err(ScaleRefusal::Field("PlaneSurface.origin must be finite"))
     );
 }
@@ -207,14 +214,14 @@ fn a_scaled_cone_keeps_a_zero_radius_and_refuses_only_overflow() {
         )
     };
     let SolvedSurfaceGeometry::Cone(scaled) = cone(0.0)
-        .scaled(scale(1.0e-10))
+        .scaled(&cadmpeg_test_support::service_decode_context(), scale(SCALE_TO_TINY_LENGTH)).expect("fixture scaling admission")
         .expect("a zero radius stays admitted")
     else {
         panic!("a scaled cone stays a cone");
     };
     assert_eq!(scaled.radius().get(), 0.0);
     assert_eq!(
-        cone(f64::MAX).scaled(scale(2.0)),
+        cone(f64::MAX).scaled(&cadmpeg_test_support::service_decode_context(), scale(2.0)).expect("fixture scaling admission"),
         Err(ScaleRefusal::Field(
             "ConeSurface.radius must be nonnegative and finite"
         ))
@@ -247,7 +254,7 @@ fn a_scaled_polyline_keeps_its_parameters_and_refuses_only_overflow() {
         )
     };
     let SolvedCurveGeometry::Polyline(scaled) = polyline(1.0, 0.0)
-        .scaled(scale(25.4))
+        .scaled(&cadmpeg_test_support::service_decode_context(), scale(25.4)).expect("fixture scaling admission")
         .expect("finite scaled samples")
     else {
         panic!("a scaled polyline stays a polyline");
@@ -273,11 +280,11 @@ fn a_scaled_polyline_keeps_its_parameters_and_refuses_only_overflow() {
         )))
     };
     assert_eq!(
-        polyline(f64::MAX, f64::MAX).scaled(scale(2.0)),
+        polyline(f64::MAX, f64::MAX).scaled(&cadmpeg_test_support::service_decode_context(), scale(2.0)).expect("fixture scaling admission"),
         refusal("points must be finite")
     );
     assert_eq!(
-        polyline(1.0, f64::MAX).scaled(scale(2.0)),
+        polyline(1.0, f64::MAX).scaled(&cadmpeg_test_support::service_decode_context(), scale(2.0)).expect("fixture scaling admission"),
         refusal("chordal_deflection must be finite and non-negative")
     );
 }
@@ -301,7 +308,7 @@ fn a_scaled_polygonal_surface_keeps_its_triangles_and_refuses_only_overflow() {
         )
     };
     assert_eq!(
-        surface(1.0, 0.0).scaled(scale(25.4)),
+        surface(1.0, 0.0).scaled(&cadmpeg_test_support::service_decode_context(), scale(25.4)).expect("fixture scaling admission"),
         Ok(SolvedSurfaceGeometry::Polygonal(
             PolygonalSurface::new(
                 vec![
@@ -321,11 +328,11 @@ fn a_scaled_polygonal_surface_keeps_its_triangles_and_refuses_only_overflow() {
         )))
     };
     assert_eq!(
-        surface(f64::MAX, f64::MAX).scaled(scale(2.0)),
+        surface(f64::MAX, f64::MAX).scaled(&cadmpeg_test_support::service_decode_context(), scale(2.0)).expect("fixture scaling admission"),
         refusal("vertices must be finite")
     );
     assert_eq!(
-        surface(1.0, f64::MAX).scaled(scale(2.0)),
+        surface(1.0, f64::MAX).scaled(&cadmpeg_test_support::service_decode_context(), scale(2.0)).expect("fixture scaling admission"),
         refusal("chordal_deflection must be finite and non-negative")
     );
 }
@@ -392,7 +399,7 @@ fn owned_nurbs_scaling_refuses_each_pole_work_and_reuses_lanes() {
             with_scaling_limits(3, 0, u64::MAX, |ctx| scaling_curve(1.0, rational)
                 .scaled_owned(ctx, scale(2.0)))
             .expect("admitted"),
-            scaling_curve(1.0, rational).scaled(scale(2.0))
+            scaling_curve(1.0, rational).scaled(&cadmpeg_test_support::service_decode_context(), scale(2.0)).expect("fixture scaling admission")
         );
         for cap in 1..5 {
             let result = with_scaling_limits(cap, u64::MAX, u64::MAX, |ctx| {
@@ -407,7 +414,7 @@ fn owned_nurbs_scaling_refuses_each_pole_work_and_reuses_lanes() {
             with_scaling_limits(5, 0, u64::MAX, |ctx| scaling_surface(1.0, rational)
                 .scaled_owned(ctx, scale(2.0)))
             .expect("admitted"),
-            scaling_surface(1.0, rational).scaled(scale(2.0))
+            scaling_surface(1.0, rational).scaled(&cadmpeg_test_support::service_decode_context(), scale(2.0)).expect("fixture scaling admission")
         );
         for retained in [0, 40] {
             assert!(matches!(with_scaling_limits(u64::MAX, retained, u64::MAX,
@@ -421,7 +428,7 @@ fn owned_nurbs_scaling_refuses_each_pole_work_and_reuses_lanes() {
             )
             .scaled_owned(ctx, scale(2.0)))
             .expect("admitted refusal"),
-            scaling_surface(f64::MAX, rational).scaled(scale(2.0))
+            scaling_surface(f64::MAX, rational).scaled(&cadmpeg_test_support::service_decode_context(), scale(2.0)).expect("fixture scaling admission")
         );
     }
 }
@@ -468,7 +475,7 @@ fn owned_sample_scaling_refuses_work_and_retained_text_without_row_copies() {
             with_scaling_limits(3, 0, u64::MAX, |ctx| curve(1.0, 0.0)
                 .scaled_owned(ctx, scale(2.0)))
             .expect("admitted"),
-            curve(1.0, 0.0).scaled(scale(2.0))
+            curve(1.0, 0.0).scaled(&cadmpeg_test_support::service_decode_context(), scale(2.0)).expect("fixture scaling admission")
         );
         for (x, deflection) in [(f64::MAX, f64::MAX), (1.0, f64::MAX)] {
             assert!(matches!(with_scaling_limits(u64::MAX, 0, u64::MAX,
@@ -478,7 +485,7 @@ fn owned_sample_scaling_refuses_work_and_retained_text_without_row_copies() {
                 with_scaling_limits(u64::MAX, u64::MAX, u64::MAX, |ctx| curve(x, deflection)
                     .scaled_owned(ctx, scale(2.0)))
                 .expect("admitted refusal"),
-                curve(x, deflection).scaled(scale(2.0))
+                curve(x, deflection).scaled(&cadmpeg_test_support::service_decode_context(), scale(2.0)).expect("fixture scaling admission")
             );
         }
     }
@@ -505,7 +512,7 @@ fn owned_sample_scaling_refuses_work_and_retained_text_without_row_copies() {
         with_scaling_limits(4, 0, u64::MAX, |ctx| surface(1.0, 0.0)
             .scaled_owned(ctx, scale(2.0)))
         .expect("admitted"),
-        surface(1.0, 0.0).scaled(scale(2.0))
+        surface(1.0, 0.0).scaled(&cadmpeg_test_support::service_decode_context(), scale(2.0)).expect("fixture scaling admission")
     );
     for (x, deflection) in [(f64::MAX, f64::MAX), (1.0, f64::MAX)] {
         assert!(matches!(with_scaling_limits(u64::MAX, 0, u64::MAX,
@@ -515,7 +522,7 @@ fn owned_sample_scaling_refuses_work_and_retained_text_without_row_copies() {
             with_scaling_limits(u64::MAX, u64::MAX, u64::MAX, |ctx| surface(x, deflection)
                 .scaled_owned(ctx, scale(2.0)))
             .expect("admitted refusal"),
-            surface(x, deflection).scaled(scale(2.0))
+            surface(x, deflection).scaled(&cadmpeg_test_support::service_decode_context(), scale(2.0)).expect("fixture scaling admission")
         );
     }
 }
@@ -536,6 +543,100 @@ fn owned_placement_scaling_refuses_nesting_and_geometry_work() {
     assert_eq!(
         with_scaling_limits(2, 0, 1, |ctx| surface().scaled_owned(ctx, scale(2.0)))
             .expect("admitted"),
-        surface().scaled(scale(2.0))
+        surface().scaled(&cadmpeg_test_support::service_decode_context(), scale(2.0)).expect("fixture scaling admission")
     );
+}
+
+#[test]
+fn borrowed_scaling_preserves_caller_refusals_and_source_carriers() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    for dimension in [ResourceDimension::RetainedBytes, ResourceDimension::CollectionItems,
+        ResourceDimension::WorkUnits, ResourceDimension::MaterializedBytes] {
+        for surface in [false, true] {
+            let curve = scaling_curve(1.0, true);
+            let patch = scaling_surface(1.0, true);
+            let original_curve = curve.clone();
+            let original_patch = patch.clone();
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            match dimension {
+                ResourceDimension::RetainedBytes => policy.limits.max_retained_bytes = 0,
+                ResourceDimension::CollectionItems => policy.limits.max_collection_items = 0,
+                ResourceDimension::WorkUnits => policy.limits.max_work_units = 0,
+                ResourceDimension::MaterializedBytes => policy.limits.max_materialized_bytes = 0,
+                _ => panic!("fixture dimension"),
+            }
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+            let mut storage = ctx.reserve_scoped(0, "borrowed scaling scope").expect("empty scope");
+            let run = || if surface {
+                patch.scaled(&ctx, scale(2.0)).map(|_| ())
+            } else {
+                curve.scaled(&ctx, scale(2.0)).map(|_| ())
+            };
+            let result = if dimension == ResourceDimension::MaterializedBytes {
+                storage.with_storage(run)
+            } else {
+                run()
+            };
+            let Err(CodecError::ResourceLimit(limit)) = result else {
+                panic!("caller limit must refuse the copy");
+            };
+            assert_eq!(limit.dimension, dimension);
+            assert_eq!(limit.operation, "IR scaled carrier copy");
+            assert_eq!(curve, original_curve);
+            assert_eq!(patch, original_patch);
+            drop(storage);
+            assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit));
+        }
+    }
+    for cap in [0, 1] {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = cap;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+        let source = ellipse(2.0, 1.0);
+        let original = source.clone();
+        let Err(CodecError::ResourceLimit(limit)) = source.scaled(&ctx, scale(2.0)) else {
+            panic!("copy and scale each admit their own walk");
+        };
+        assert_eq!(limit.operation, if cap == 0 { "IR scaled carrier copy" } else { "IR geometry unit scaling work" });
+        assert_eq!(source, original);
+        assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit));
+    }
+}
+
+#[test]
+fn borrowed_scaling_admits_nested_copies_and_matches_owned_scaling() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let source = SolvedSurfaceGeometry::Transformed(
+        PlacedSurface::try_new(Box::new(plane()), Transform::identity()).expect("placement"),
+    );
+    let original = source.clone();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_recursion_depth = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+    let Err(CodecError::ResourceLimit(limit)) = source.scaled(&ctx, scale(2.0)) else {
+        panic!("the borrowed placement enters the caller depth account");
+    };
+    assert_eq!(limit.dimension, ResourceDimension::RecursionDepth);
+    assert_eq!(limit.operation, "IR scaled carrier copy");
+    assert_eq!(source, original);
+    assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit));
+    let ctx = cadmpeg_test_support::service_decode_context();
+    assert_eq!(source.scaled(&ctx, scale(2.0)).expect("copy"),
+        source.clone().scaled_owned(&ctx, scale(2.0)).expect("owned"));
+    for rational in [false, true] {
+        let curve = scaling_curve(1.0, rational);
+        let surface = scaling_surface(1.0, rational);
+        assert_eq!(curve.scaled(&ctx, scale(25.4)).expect("curve copy"),
+            curve.clone().scaled_owned(&ctx, scale(25.4)).expect("owned curve"));
+        assert_eq!(surface.scaled(&ctx, scale(25.4)).expect("surface copy"),
+            surface.clone().scaled_owned(&ctx, scale(25.4)).expect("owned surface"));
+    }
+    ctx.finish_session().expect("shared scaling session");
 }
