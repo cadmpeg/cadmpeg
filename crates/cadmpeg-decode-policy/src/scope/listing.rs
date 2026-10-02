@@ -64,7 +64,7 @@ pub(super) fn body(tcx: TyCtxt<'_>, owner: LocalDefId) -> Option<Body> {
     Some(Body {
         path,
         line: position.line,
-        end: tcx.sess.source_map().lookup_char_pos(tcx.hir_body_owned_by(owner).value.span.hi()).line,
+        end: tcx.sess.source_map().lookup_char_pos(tcx.hir_body_owned_by(owner).value.span.source_callsite().hi()).line,
         name: tcx.def_path_str(owner),
         reason,
         eligible,

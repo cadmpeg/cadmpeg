@@ -27,6 +27,7 @@ class DecodeGraph:
         self.trait_calls = []
         self.method_impls = {}
         self.symbolic_roots = set()
+        self.symbolic_instances = set()
         self.symbolic_edges = {}
         self.objects = []
         self.object_calls = []
@@ -45,6 +46,8 @@ class DecodeGraph:
                 self.edges.setdefault(fields[1], set()).add((fields[2], fields[3]))
             elif len(fields) == 2 and tag == "decode_symbolic_root":
                 self.symbolic_roots.add(fields[1])
+            elif len(fields) == 2 and tag == "decode_symbolic_instance":
+                self.symbolic_instances.add(fields[1])
             elif len(fields) == 3 and tag == "decode_symbolic_edge":
                 self.symbolic_edges.setdefault(fields[1], set()).add(fields[2])
             elif len(fields) == 3 and tag == "decode_address":
@@ -66,6 +69,7 @@ class DecodeGraph:
         edges = {caller: targets.copy() for caller, targets in self.edges.items()}
         while True:
             before = (len(reached), len(symbolic))
+            symbolic.update(self.symbolic_instances & reached)
             for caller, targets in self.symbolic_edges.items():
                 if caller in symbolic:
                     symbolic.update(targets)

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Lifetime-erased callable signatures for indirect candidates.
-use super::{key, Graph};
+use super::{key, EdgeKind, Graph};
 use crate::types;
 use rustc_middle::ty::{self, Ty, TyCtxt};
 
@@ -33,15 +33,33 @@ pub(super) fn address<'tcx>(
     tcx: TyCtxt<'tcx>,
     graph: &mut Graph,
     environment: ty::TypingEnv<'tcx>,
+    caller: &str,
     value: Ty<'tcx>,
+    stored: Ty<'tcx>,
 ) {
-    let id = match value.peel_refs().kind() {
-        ty::FnDef(id, _) | ty::Closure(id, _) => *id,
+    let target = match value.peel_refs().kind() {
+        ty::FnDef(id, args) => {
+            let instance = args.no_bound_vars().and_then(|args| ty::Instance::try_resolve(tcx, environment, *id, args).ok().flatten());
+            match instance {
+                Some(instance) if matches!(instance.def, ty::InstanceKind::Virtual(..)) => {
+                    let target = format!("virtual:{}:{:?}", key(tcx, *id), instance.args);
+                    graph.nodes.insert(target.clone(), format!("trait-object function address {}", tcx.def_path_str(*id)));
+                    graph.edges.insert((caller.to_owned(), target.clone(), EdgeKind::FunctionAddress));
+                    graph.trait_calls.insert((target.clone(), key(tcx, *id)));
+                    graph.object_calls.insert((target.clone(), key(tcx, *id)));
+                    target
+                }
+                Some(instance) if types::checked(tcx, instance.def_id()) => key(tcx, instance.def_id()),
+                None if types::checked(tcx, *id) => key(tcx, *id),
+                _ => return,
+            }
+        }
+        ty::Closure(id, _) if types::checked(tcx, *id) => key(tcx, *id),
         _ => return,
     };
-    if types::checked(tcx, id) {
+    for value in [value, stored] {
         if let Some(signature) = signature(tcx, environment, value) {
-            graph.addresses.insert((signature, key(tcx, id)));
+            graph.addresses.insert((signature, target.clone()));
         }
     }
 }

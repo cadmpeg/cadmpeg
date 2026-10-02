@@ -112,6 +112,10 @@ impl<'tcx> Edges<'_, 'tcx> {
                 instance
             }
             _ => {
+                if address {
+                    let value = Ty::new_fn_def(self.tcx, id, ty::Binder::dummy(args));
+                    indirect::address(self.tcx, self.graph, self.concrete.environment, &self.concrete.caller, value, value);
+                }
                 if self.tcx.trait_of_assoc(id).is_some() {
                     let method = key(self.tcx, id);
                     self.graph.trait_calls.insert((self.concrete.caller.clone(), method.clone()));
@@ -123,7 +127,8 @@ impl<'tcx> Edges<'_, 'tcx> {
             }
         };
         if address {
-            indirect::address(self.tcx, self.graph, self.concrete.environment, Ty::new_fn_def(self.tcx, instance.def_id(), ty::Binder::dummy(instance.args)));
+            let value = Ty::new_fn_def(self.tcx, instance.def_id(), ty::Binder::dummy(instance.args));
+            indirect::address(self.tcx, self.graph, self.concrete.environment, &self.concrete.caller, value, value);
         }
         enqueue(
             self.tcx,
@@ -194,12 +199,19 @@ impl<'tcx> Visitor<'tcx> for Edges<'_, 'tcx> {
                     }
                 }
             }
+            Rvalue::Cast(_, operand, target) => {
+                if let (Some(source), Some(target)) = (self.value(operand.ty(self.body, self.tcx)), self.value(*target)) {
+                    if matches!(target.kind(), ty::FnPtr(..)) {
+                        indirect::address(self.tcx, self.graph, self.concrete.environment, &self.concrete.caller, source, target);
+                    }
+                }
+            }
             Rvalue::Aggregate(kind, _) => {
                 if let mir::AggregateKind::Closure(id, args) = **kind {
                     let value = Ty::new_closure(self.tcx, id, args);
                     if let Some(value) = self.value(value) {
                         if let ty::Closure(id, args) = value.kind() {
-                            indirect::address(self.tcx, self.graph, self.concrete.environment, value);
+                            indirect::address(self.tcx, self.graph, self.concrete.environment, &self.concrete.caller, value, value);
                             enqueue(
                                 self.tcx,
                                 self.graph,

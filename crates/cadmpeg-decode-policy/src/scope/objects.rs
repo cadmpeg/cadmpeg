@@ -3,7 +3,7 @@
 use super::{instances, key, EdgeKind, Graph};
 use crate::types;
 use rustc_span::def_id::DefId;
-use rustc_middle::ty::{self, Instance, Ty, TyCtxt};
+use rustc_middle::ty::{self, Instance, Ty, TyCtxt, TypeVisitableExt};
 
 pub(super) fn targets<'tcx>(
     tcx: TyCtxt<'tcx>,
@@ -98,8 +98,12 @@ pub(super) fn register<'tcx>(
     if !types::checked(tcx, concrete.instance.def_id()) {
         return;
     }
-    let target = format!("object:{}:{}:{}:{:?}", concrete.caller, key(tcx, method), key(tcx, concrete.instance.def_id()), concrete.instance.args);
+    let target = format!("object:{}:{}:{:?}", key(tcx, method), key(tcx, concrete.instance.def_id()), concrete.instance.args);
     graph.nodes.insert(target.clone(), format!("trait-object instance {} {:?}", tcx.def_path_str(concrete.instance.def_id()), concrete.instance.args));
+    graph.method_impls.insert((key(tcx, method), target.clone()));
+    if concrete.instance.args.has_non_region_param() {
+        graph.symbolic_instances.insert(target.clone());
+    }
     graph.objects.insert((concrete.caller, key(tcx, method), target.clone()));
     instances::enqueue(tcx, graph, pending, &target, concrete.instance, concrete.environment, (concrete.depth, EdgeKind::TraitObjectCall));
 }
