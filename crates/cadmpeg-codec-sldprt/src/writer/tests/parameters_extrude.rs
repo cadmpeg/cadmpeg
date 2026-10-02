@@ -1570,7 +1570,7 @@ fn semantic_writer_round_trips_variable_radius_fillet() {
             .collect::<Vec<_>>();
         samples[1].parameter = 0.4;
         samples[1].radius = Length::new(5.0).unwrap();
-        *points = cadmpeg_ir::features::edge_treatments::VariableRadii::new(samples).unwrap();
+        *points = cadmpeg_ir::features::edge_treatments::VariableRadii::new(samples, &cadmpeg_test_support::service_decode_context()).expect("radius construction admission").unwrap();
         updated_ir_edit_evaluation.set_definition(updated_ir_edit_definition);
     }
 

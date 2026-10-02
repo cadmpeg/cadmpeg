@@ -57,6 +57,7 @@ pub(super) fn project_fillet(
         }) {
         RadiusSpec::Constant { radius }
     } else {
+        let mut point_storage = ctx.reserve_scoped(0, "collect SLDPRT variable fillet radii")?;
         let mut points = Vec::new();
         let mut valid = true;
         for (name, radius) in &feature.parameters {
@@ -91,7 +92,7 @@ pub(super) fn project_fillet(
                 valid = false;
                 break;
             };
-            ctx.reserve_vec(&mut points, 1, "collect SLDPRT variable fillet radii")?;
+            ctx.reserve_scoped_vec(&mut point_storage, &mut points, 1, "collect SLDPRT variable fillet radii")?;
             points.push((index, point));
         }
         ctx.sort_unstable_by(
@@ -113,8 +114,9 @@ pub(super) fn project_fillet(
                 points.len(),
                 "collect SLDPRT variable fillet controls",
             )?;
+            ctx.charge_work(cadmpeg_core::decode::u64_from_index(points.len()), "collect SLDPRT variable fillet controls")?;
             radii.extend(points.into_iter().map(|(_, point)| point));
-            cadmpeg_ir::features::edge_treatments::VariableRadii::from_parts(radii).ok()
+            cadmpeg_ir::features::edge_treatments::VariableRadii::from_parts(radii, ctx)?.ok()
         } else {
             None
         };

@@ -1170,21 +1170,17 @@ fn variable_fillet_radius_groups<'a>(
                 |_| 0,
                 OPERATION,
             )?;
-            let points = ordered_parameters
-                .into_iter()
-                .enumerate()
-                .map(|(parameter, (_, radius))| {
-                    Some(VariableRadius {
-                        parameter: f64_from_index(parameter)?,
-                        radius: Length::from(radius),
-                    })
-                })
-                .collect::<Option<Vec<_>>>();
-            let Some(points) = points else {
-                return Ok(None);
-            };
+            let mut sample_storage = ctx.reserve_scoped(0, "SLDPRT variable radius source samples")?;
+            let mut points = Vec::new();
+            for (parameter, (_, radius)) in ordered_parameters.into_iter().enumerate() {
+                ctx.charge_work(1, "SLDPRT variable radius source conversion")?;
+                let Some(parameter) = f64_from_index(parameter) else { return Ok(None); };
+                ctx.push_scoped_vec(&mut sample_storage, &mut points, VariableRadius {
+                    parameter, radius: Length::from(radius),
+                }, "SLDPRT variable radius source samples")?;
+            }
             let Some(points) =
-                cadmpeg_ir::features::edge_treatments::VariableRadii::new(points).ok()
+                cadmpeg_ir::features::edge_treatments::VariableRadii::new(points, ctx)?.ok()
             else {
                 return Ok(None);
             };
@@ -1351,20 +1347,16 @@ fn variable_fillet_radius_groups<'a>(
             |_| 0,
             OPERATION,
         )?;
-        let points = ordered_parameters
-            .into_iter()
-            .enumerate()
-            .map(|(parameter, (_, radius))| {
-                Some(VariableRadius {
-                    parameter: f64_from_index(parameter)?,
-                    radius: Length::from(radius),
-                })
-            })
-            .collect::<Option<Vec<_>>>();
-        let Some(points) = points else {
-            return Ok(None);
-        };
-        let Some(points) = cadmpeg_ir::features::edge_treatments::VariableRadii::new(points).ok()
+        let mut sample_storage = ctx.reserve_scoped(0, "SLDPRT variable radius source samples")?;
+        let mut points = Vec::new();
+        for (parameter, (_, radius)) in ordered_parameters.into_iter().enumerate() {
+            ctx.charge_work(1, "SLDPRT variable radius source conversion")?;
+            let Some(parameter) = f64_from_index(parameter) else { return Ok(None); };
+            ctx.push_scoped_vec(&mut sample_storage, &mut points, VariableRadius {
+                parameter, radius: Length::from(radius),
+            }, "SLDPRT variable radius source samples")?;
+        }
+        let Some(points) = cadmpeg_ir::features::edge_treatments::VariableRadii::new(points, ctx)?.ok()
         else {
             return Ok(None);
         };
@@ -1465,7 +1457,8 @@ fn variable_fillet_radius_groups<'a>(
     let mut result = Vec::new();
     ctx.reserve_vec(&mut result, groups.len(), OPERATION)?;
     for ((first, second), selections) in groups {
-        let Some(points) = cadmpeg_ir::features::edge_treatments::VariableRadii::new(vec![
+        let mut sample_storage = ctx.reserve_scoped(0, "SLDPRT variable radius source samples")?;
+        let raw_points = sample_storage.with_storage(|| ctx.collect_retained_vec([
             VariableRadius {
                 parameter: 0.0,
                 radius: Length::from(first),
@@ -1474,8 +1467,8 @@ fn variable_fillet_radius_groups<'a>(
                 parameter: 1.0,
                 radius: Length::from(second),
             },
-        ])
-        .ok() else {
+        ], "SLDPRT variable radius source samples"))?;
+        let Some(points) = cadmpeg_ir::features::edge_treatments::VariableRadii::new(raw_points, ctx)?.ok() else {
             return Ok(None);
         };
         result.push(RadiusSelectionGroup(

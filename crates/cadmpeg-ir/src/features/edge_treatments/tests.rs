@@ -25,10 +25,10 @@ fn variable_radius_law_admits_ordered_nonnegative_samples() {
         vec![point(0.0, 0.0), point(1.0, 0.0)],
         vec![point(f64::NAN, 1.0), point(1.0, 2.0)],
     ] {
-        assert!(VariableRadii::new(points).is_err());
+        assert!(VariableRadii::new(points, &cadmpeg_test_support::service_decode_context()).expect("radius construction admission").is_err());
     }
     let points = vec![point(0.2, 0.0), point(0.4, 2.0), point(0.8, 0.0)];
-    let admitted = VariableRadii::new(points.clone()).unwrap();
+    let admitted = VariableRadii::new(points.clone(), &cadmpeg_test_support::service_decode_context()).expect("radius construction admission").unwrap();
     assert_eq!(
         admitted
             .as_slice()
@@ -104,7 +104,7 @@ fn edge_treatment_wire_preserves_resolved_and_unresolved_forms() {
 #[test]
 fn variable_radii_hold_admitted_samples_and_take_admitted_parts() {
     use crate::scalar::{Fraction, NonNegativeLength};
-    let admitted = VariableRadii::new(vec![point(0.0, 0.0), point(1.0, 2.0)]).unwrap();
+    let admitted = VariableRadii::new(vec![point(0.0, 0.0), point(1.0, 2.0)], &cadmpeg_test_support::service_decode_context()).expect("radius construction admission").unwrap();
     assert_eq!(
         admitted.as_slice()[1].parameter,
         Fraction::new(1.0).unwrap()
@@ -118,7 +118,7 @@ fn variable_radii_hold_admitted_samples_and_take_admitted_parts() {
         radius: NonNegativeLength::new(radius).unwrap(),
     };
     assert_eq!(
-        VariableRadii::from_parts(vec![sample(0.0, 0.0), sample(1.0, 2.0)]).unwrap(),
+        VariableRadii::from_parts(vec![sample(0.0, 0.0), sample(1.0, 2.0)], &cadmpeg_test_support::service_decode_context()).expect("radius construction admission").unwrap(),
         admitted
     );
     for points in [
@@ -126,7 +126,7 @@ fn variable_radii_hold_admitted_samples_and_take_admitted_parts() {
         vec![sample(0.0, 0.0), sample(1.0, 0.0)],
         vec![sample(1.0, 1.0), sample(0.5, 2.0)],
     ] {
-        assert!(VariableRadii::from_parts(points).is_err());
+        assert!(VariableRadii::from_parts(points, &cadmpeg_test_support::service_decode_context()).expect("radius construction admission").is_err());
     }
 }
 
@@ -135,7 +135,7 @@ fn variable_radii_hold_admitted_samples_and_take_admitted_parts() {
 #[test]
 fn a_radius_map_keeps_the_parameters_and_tests_one_positive_radius() {
     use crate::scalar::{NonNegativeLength, PositiveReal};
-    let law = VariableRadii::new(vec![point(0.0, 0.0), point(0.5, 1.0e-320), point(1.0, 2.0)])
+    let law = VariableRadii::new(vec![point(0.0, 0.0), point(0.5, 1.0e-320), point(1.0, 2.0)], &cadmpeg_test_support::service_decode_context()).expect("radius construction admission")
         .expect("an admitted law");
     const SMALL_RADIUS_SCALE: f64 = 1.0e-10;
     let scale = |value: f64| PositiveReal::new(value).expect("a positive scale");
@@ -155,7 +155,7 @@ fn a_radius_map_keeps_the_parameters_and_tests_one_positive_radius() {
     );
 
     let tiny =
-        VariableRadii::new(vec![point(0.0, 0.0), point(1.0, 1.0e-320)]).expect("an admitted law");
+        VariableRadii::new(vec![point(0.0, 0.0), point(1.0, 1.0e-320)], &cadmpeg_test_support::service_decode_context()).expect("radius construction admission").expect("an admitted law");
     assert!(matches!(
         tiny.try_map_radii(&cadmpeg_test_support::service_decode_context(), scaled(SMALL_RADIUS_SCALE)).expect("radius map admission"),
         Err(super::VariableRadiiMapError::Admission(_))
@@ -169,7 +169,7 @@ fn a_radius_map_keeps_the_parameters_and_tests_one_positive_radius() {
 #[test]
 fn owned_variable_radius_scaling_refuses_each_sample_work_without_allocation() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-    let law = || VariableRadii::new(vec![point(0.0, 1.0), point(1.0, 2.0)]).expect("law");
+    let law = || VariableRadii::new(vec![point(0.0, 1.0), point(1.0, 2.0)], &cadmpeg_test_support::service_decode_context()).expect("radius construction admission").expect("law");
     for cap in [0, 1] {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
@@ -208,7 +208,7 @@ fn owned_variable_radius_scaling_refuses_each_sample_work_without_allocation() {
 #[test]
 fn radius_mapping_uses_the_original_context_before_each_callback() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    let law = || VariableRadii::new(vec![point(0.0, 1.0), point(0.5, 2.0), point(1.0, 3.0)]).expect("law");
+    let law = || VariableRadii::new(vec![point(0.0, 1.0), point(0.5, 2.0), point(1.0, 3.0)], &cadmpeg_test_support::service_decode_context()).expect("radius construction admission").expect("law");
     for cap in 0..3 {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
@@ -235,3 +235,5 @@ fn radius_mapping_uses_the_original_context_before_each_callback() {
     assert_eq!(mapped.as_slice().as_ptr(), address);
     ctx.finish_session().expect("no sample copy or second scan");
 }
+
+mod construction;
