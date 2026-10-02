@@ -223,13 +223,13 @@ mod tests {
     }
 
     fn nurbs_carriers() -> CarrierIndex {
-        let curve = NurbsCurve::from_lanes(
+        let curve = NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
             1,
             vec![0.0, 0.0, 0.005, 0.005],
             vec![Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 5.0, 0.0)],
             None,
             false,
-        )
+        ).expect("fixture constructor admission")
         .expect("valid NURBS fixture");
         let mut carriers = CarrierIndex::default();
         let arena = DecodeArena::new();
@@ -311,7 +311,7 @@ mod tests {
         let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
         assert_eq!(scan(&ctx, &bytes, &carriers).unwrap().len(), 1);
 
-        let quadratic = NurbsCurve::from_lanes_for_decode(
+        let quadratic = NurbsCurve::from_lanes(
             &cadmpeg_test_support::service_decode_context(),
             2,
             vec![0.0, 0.0, 0.0, 0.005, 0.005, 0.005],
@@ -410,13 +410,13 @@ mod tests {
 
     #[test]
     fn evaluates_rational_nurbs_in_homogeneous_coordinates() {
-        let curve = NurbsCurve::from_lanes(
+        let curve = NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
             1,
             vec![0.0, 0.0, 1.0, 1.0],
             vec![Point3::new(0.0, 0.0, 0.0), Point3::new(10.0, 0.0, 0.0)],
             Some(vec![1.0, 2.0]),
             false,
-        )
+        ).expect("fixture constructor admission")
         .expect("valid rational test NURBS");
         let point = point_at(
             &cadmpeg_test_support::service_decode_context(),
@@ -432,13 +432,13 @@ mod tests {
     fn numerical_audit_subset_uses_shared_nurbs_evaluation() {
         for (d, w) in [(1., 1.), (1e-16, 1.), (1., 1e-20)] {
             let curve = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-                NurbsCurve::from_lanes(
+                NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
                     1,
                     vec![0., 0., d, d],
                     vec![Point3::new(0., 0., 0.), Point3::new(1., 0., 0.)],
                     Some(vec![w, w]),
                     false,
-                )
+                ).expect("fixture constructor admission")
                 .unwrap(),
             ));
             assert_eq!(

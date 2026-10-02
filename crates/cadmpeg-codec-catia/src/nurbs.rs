@@ -754,7 +754,7 @@ pub(crate) fn circular_helix_cache(
     let mut controls = Vec::new();
     ctx.reserve_vec(&mut controls, sample_count, "catia_helix_controls")?;
     controls.extend(samples.into_iter().map(|(_, point)| point));
-    let curve = match cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes_for_decode(
+    let curve = match cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
         ctx, 1, knots, controls, None, false,
     )? {
         Ok(curve) => curve,
@@ -1071,13 +1071,13 @@ mod tests {
     #[allow(clippy::unwrap_used)]
     fn canonical_nurbs_range_clamps_rounding_at_the_domain_boundary() {
         let geometry = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-            NurbsCurve::from_lanes(
+            NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
                 1,
                 vec![0.0, 0.0, 1.0, 1.0],
                 vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
                 None,
                 false,
-            )
+            ).expect("fixture constructor admission")
             .unwrap(),
         ));
 
@@ -1242,13 +1242,13 @@ mod tests {
     #[allow(clippy::unwrap_used)]
     fn reversed_nurbs_preserves_active_subrange() {
         let geometry = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-            NurbsCurve::from_lanes(
+            NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
                 1,
                 vec![0.0, 0.0, 1.0, 1.0],
                 vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
                 None,
                 false,
-            )
+            ).expect("fixture constructor admission")
             .unwrap(),
         ));
         let range = [0.2, 0.8];
@@ -1328,7 +1328,7 @@ mod tests {
     #[allow(clippy::unwrap_used)]
     fn surface_isocurve_preserves_tiny_weights_and_knot_domain() {
         let tiny = 1e-200;
-        let surface = NurbsSurface::from_lanes(
+        let surface = NurbsSurface::from_lanes(&cadmpeg_test_support::service_decode_context(), 
             cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
                 1,
                 vec![0.0, 0.0, tiny, tiny],
@@ -1344,7 +1344,7 @@ mod tests {
                     .map(|values| values.chunks(2_usize).map(<[_]>::to_vec).collect()),
             ),
             false,
-        )
+        ).expect("fixture constructor admission")
         .unwrap();
         let curve = cadmpeg_ir::eval::nurbs_surface_isocurve(
             &surface,
@@ -1365,7 +1365,7 @@ mod tests {
     #[allow(clippy::unwrap_used)]
     fn surface_isocurve_rejects_nonfinite_output() {
         let surface = |control_points: Vec<Point3>, weights: Option<Vec<f64>>| {
-            NurbsSurface::from_lanes(
+            NurbsSurface::from_lanes(&cadmpeg_test_support::service_decode_context(), 
                 cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
                     1,
                     vec![0.0, 0.0, 1.0, 1.0],
@@ -1381,7 +1381,7 @@ mod tests {
                     weights.map(|values| values.chunks(2).map(<[_]>::to_vec).collect()),
                 ),
                 false,
-            )
+            ).expect("fixture constructor admission")
             .unwrap()
         };
         assert!(cadmpeg_ir::eval::nurbs_surface_isocurve(

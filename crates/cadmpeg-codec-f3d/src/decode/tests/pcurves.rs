@@ -423,7 +423,7 @@ fn generated_deformable_curves_decode_and_write_source_less() {
             .find(|curve| curve.id == source)
             .expect("deformable source carrier")
             .geometry = cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-            cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
+            cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
                 1,
                 vec![0.0, 0.0, 1.0, 1.0],
                 vec![
@@ -432,7 +432,7 @@ fn generated_deformable_curves_decode_and_write_source_less() {
                 ],
                 None,
                 false,
-            )
+            ).expect("fixture constructor admission")
             .unwrap(),
         ));
         let mut encoded = Vec::new();
@@ -663,13 +663,13 @@ fn generated_f3d_rewrites_topology_bound_nurbs_curve() {
     let mut control_points = nurbs.pole_rows().raw_points();
     control_points[1].x = 14.0;
     control_points[1].z = -3.0;
-    nurbs = cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
+    nurbs = cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
         1,
         vec![-1.0, -1.0, 2.0, 2.0, 2.0],
         control_points,
         nurbs.pole_rows().weights(),
         nurbs.periodic(),
-    )
+    ).expect("fixture constructor admission")
     .unwrap();
     *cache = SolvedCurveGeometry::Nurbs(nurbs.clone());
     let expected = curve.clone();

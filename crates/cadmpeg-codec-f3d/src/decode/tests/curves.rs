@@ -524,7 +524,7 @@ fn generated_vector_offset_curve_decodes_and_writes_source_less() {
         .find(|curve| curve.id == source_id)
         .expect("vector-offset source carrier")
         .geometry = cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-        cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
+        cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
             1,
             vec![-2.0, -2.0, 5.0, 5.0],
             vec![
@@ -533,7 +533,7 @@ fn generated_vector_offset_curve_decodes_and_writes_source_less() {
             ],
             None,
             false,
-        )
+        ).expect("fixture constructor admission")
         .unwrap(),
     ));
     let mut encoded = Vec::new();
@@ -678,7 +678,7 @@ fn generated_subset_curve_decodes_edits_and_writes_source_less() {
         .find(|curve| curve.id == source_id)
         .expect("subset source carrier")
         .geometry = cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-        cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
+        cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
             1,
             vec![-1.5, -1.5, 3.5, 3.5],
             vec![
@@ -687,7 +687,7 @@ fn generated_subset_curve_decodes_edits_and_writes_source_less() {
             ],
             None,
             false,
-        )
+        ).expect("fixture constructor admission")
         .unwrap(),
     ));
     let mut encoded = Vec::new();
@@ -723,7 +723,7 @@ fn generated_subset_curve_decodes_edits_and_writes_source_less() {
     assert_eq!(
         source_curve.geometry,
         cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-            cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
+            cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
                 1,
                 vec![-1.5, -1.5, 3.5, 3.5],
                 vec![
@@ -732,7 +732,7 @@ fn generated_subset_curve_decodes_edits_and_writes_source_less() {
                 ],
                 None,
                 false,
-            )
+            ).expect("fixture constructor admission")
             .expect("valid subset source curve")
         ))
     );

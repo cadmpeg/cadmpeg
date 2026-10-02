@@ -38,13 +38,13 @@ mod carrier_copy;
 mod local_limits;
 
 fn line_nurbs(start: f64, end: f64, rational: bool) -> NurbsCurve {
-    NurbsCurve::from_lanes(
+    NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
         1,
         vec![start, start, end, end],
         vec![Point3::new(start, 0.0, 0.0), Point3::new(end, 0.0, 0.0)],
         rational.then(|| vec![2.0, 1.0]),
         false,
-    )
+    ).expect("fixture constructor admission")
     .expect("valid test line")
 }
 
@@ -1070,7 +1070,7 @@ fn recursive_c2_polycurve_preserves_nested_parent_parameterization() {
 
 #[test]
 fn unequal_degree_c2_polycurve_elevates_lower_degree() {
-    let quadratic = NurbsCurve::from_lanes(
+    let quadratic = NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
         2,
         vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
         vec![
@@ -1080,7 +1080,7 @@ fn unequal_degree_c2_polycurve_elevates_lower_degree() {
         ],
         Some(vec![1.0, 0.5, 1.0]),
         false,
-    )
+    ).expect("fixture constructor admission")
     .expect("valid quadratic");
     let compound = crate::curves::DecodedCurve::Compound {
         children: vec![
@@ -1108,14 +1108,14 @@ fn unequal_degree_c2_polycurve_elevates_lower_degree() {
 
 fn cap_boundary(points: &[Point3]) -> crate::extrusion::ExtrusionBoundary {
     let knots = vec![0.0, 0.0, 1.0, 2.0, 3.0, 4.0, 4.0];
-    let start = NurbsCurve::from_lanes(1, knots.clone(), points.to_vec(), None, false)
+    let start = NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 1, knots.clone(), points.to_vec(), None, false).expect("fixture constructor admission")
         .expect("valid cap start");
     let end_points = points
         .iter()
         .map(|point| Point3::new(point.x, point.y, point.z + 5.0))
         .collect::<Vec<_>>();
     let end =
-        NurbsCurve::from_lanes(1, knots.clone(), end_points, None, false).expect("valid cap end");
+        NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 1, knots.clone(), end_points, None, false).expect("fixture constructor admission").expect("valid cap end");
     let pcurve_points = points
         .iter()
         .map(|point| Point2::new(point.x, point.y))

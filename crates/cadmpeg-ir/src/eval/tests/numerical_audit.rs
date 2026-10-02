@@ -24,7 +24,7 @@ fn numerical_audit_inverse_point_uses_scale_safe_affine_inverse() {
 fn bilinear_surface(weights: Vec<Vec<f64>>, x: [f64; 2]) -> crate::geometry::nurbs::NurbsSurface {
     use crate::geometry::nurbs::{NurbsSurface, NurbsSurfaceAxis, NurbsSurfaceLanes};
     let axis = NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false);
-    NurbsSurface::from_lanes(
+    NurbsSurface::from_lanes(&cadmpeg_test_support::service_decode_context(), 
         axis.clone(),
         axis,
         NurbsSurfaceLanes::new(
@@ -35,7 +35,7 @@ fn bilinear_surface(weights: Vec<Vec<f64>>, x: [f64; 2]) -> crate::geometry::nur
             Some(weights),
         ),
         false,
-    )
+    ).expect("fixture constructor admission")
     .unwrap()
 }
 
@@ -52,13 +52,13 @@ fn numerical_audit_rational_points_and_derivatives_ignore_common_weight_scale() 
             let poles = [Point3::new(2.0, 0.0, 0.0), Point3::new(4.0, 0.0, 0.0)];
             let knots = [0.0, 0.0, 1.0, 1.0];
             let weights = [weight; 2];
-            let curve = crate::geometry::nurbs::NurbsCurve::from_lanes(
+            let curve = crate::geometry::nurbs::NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
                 1,
                 knots.to_vec(),
                 poles.to_vec(),
                 Some(weights.to_vec()),
                 false,
-            )
+            ).expect("fixture constructor admission")
             .unwrap();
             assert_eq!(
                 nurbs_curve_point_at(&curve, 0.5)
@@ -140,13 +140,13 @@ fn numerical_audit_tiny_knot_spans_and_wide_periodic_offsets_stay_finite() {
     use super::super::{nurbs_curve_point_at, periodic_parameter};
     let tiny = 1.0e-310;
     let parameter = tiny * 0.5;
-    let curve = crate::geometry::nurbs::NurbsCurve::from_lanes(
+    let curve = crate::geometry::nurbs::NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
         1,
         vec![0.0, 0.0, tiny, tiny],
         vec![Point3::new(2.0, 0.0, 0.0), Point3::new(4.0, 0.0, 0.0)],
         None,
         false,
-    )
+    ).expect("fixture constructor admission")
     .unwrap();
     let point = nurbs_curve_point_at(&curve, parameter).unwrap();
     // The subnormal parameter can round away from the mathematical midpoint.
@@ -180,13 +180,13 @@ fn numerical_audit_affine_evaluation_keeps_cancelled_products() {
     let curve = CurveGeometry::Solved(SolvedCurveGeometry::Transformed(
         crate::geometry::PlacedCurve::try_new(
             Box::new(SolvedCurveGeometry::Nurbs(
-                crate::geometry::nurbs::NurbsCurve::from_lanes(
+                crate::geometry::nurbs::NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
                     1,
                     vec![0.0, 0.0, 1.0, 1.0],
                     vec![Point3::new(0.0, 0.0, 0.0), Point3::new(2.0, 2.0, 3.0)],
                     None,
                     false,
-                )
+                ).expect("fixture constructor admission")
                 .unwrap(),
             )),
             transform,
@@ -392,7 +392,7 @@ fn numerical_audit_polyline_interpolation_spans_the_finite_range() {
 fn audit_regression_surface_inversion_accepts_large_parameter_origins() {
     use crate::geometry::nurbs::{NurbsSurface, NurbsSurfaceAxis, NurbsSurfaceLanes};
     let axis = NurbsSurfaceAxis::new(1, vec![1e308, 1e308, 1.1e308, 1.1e308], false);
-    let surface = NurbsSurface::from_lanes(
+    let surface = NurbsSurface::from_lanes(&cadmpeg_test_support::service_decode_context(), 
         axis.clone(),
         axis,
         NurbsSurfaceLanes::new(
@@ -403,7 +403,7 @@ fn audit_regression_surface_inversion_accepts_large_parameter_origins() {
             None,
         ),
         false,
-    )
+    ).expect("fixture constructor admission")
     .unwrap();
     let target = Point3::new(0.5, 0.5, 0.);
     let uv = crate::eval::nurbs_surface_closest_parameter_with_budget(
@@ -558,13 +558,13 @@ fn numerical_audit_small_nurbs_span_keeps_finite_curve_derivatives() {
     use crate::math::Vector3;
     let width = 1e-310;
     let line = SolvedCurveGeometry::Nurbs(
-        NurbsCurve::from_lanes(
+        NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
             1,
             vec![0.0, 0.0, width, width],
             vec![Point3::new(0.0, 0.0, 0.0), Point3::new(width, 0.0, 0.0)],
             None,
             false,
-        )
+        ).expect("fixture constructor admission")
         .unwrap(),
     );
     assert_eq!(
@@ -581,7 +581,7 @@ fn numerical_audit_small_nurbs_span_keeps_finite_curve_derivatives() {
     let width = 1e-155;
     let square = width * width;
     let quadratic = SolvedCurveGeometry::Nurbs(
-        NurbsCurve::from_lanes(
+        NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
             2,
             vec![0.0, 0.0, 0.0, width, width, width],
             vec![
@@ -591,7 +591,7 @@ fn numerical_audit_small_nurbs_span_keeps_finite_curve_derivatives() {
             ],
             None,
             false,
-        )
+        ).expect("fixture constructor admission")
         .unwrap(),
     );
     let second = super::super::curve_second_derivative_solved(&quadratic, width / 2.0).unwrap();
@@ -609,13 +609,13 @@ fn numerical_audit_rational_linear_nurbs_keeps_subnormal_pole_derivatives() {
     let width = 1e-310;
     let pole = f64::from_bits(1);
     let curve = SolvedCurveGeometry::Nurbs(
-        NurbsCurve::from_lanes(
+        NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
             1,
             vec![0.0, 0.0, width, width],
             vec![Point3::new(0.0, 0.0, 0.0), Point3::new(pole, 0.0, 0.0)],
             Some(vec![1.0, 2.0]),
             false,
-        )
+        ).expect("fixture constructor admission")
         .unwrap(),
     );
     let parameter = width / 2.0;

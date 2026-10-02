@@ -1288,32 +1288,6 @@ impl NurbsSurface {
         self.poles.v_count()
     }
 
-    /// Build a NURBS surface from a source's pole grid and weight grid.
-    ///
-    /// A source that states poles and weights as two grids pairs them here,
-    /// once, at the decode boundary; the surface itself carries pole rows.
-    ///
-    /// # Errors
-    ///
-    /// Refuses lanes the carrier cannot state: a weight grid that does not
-    /// cover its pole grid, an unusable weight, a knot count that does not
-    /// follow from the degree and the pole count, or a non-finite coordinate.
-    pub fn from_lanes<P: PoleValue<FinitePoint3>>(
-        u: NurbsSurfaceAxis,
-        v: NurbsSurfaceAxis,
-        lanes: NurbsSurfaceLanes<P>,
-        normal_reversed: bool,
-    ) -> Result<Self, NurbsError> {
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let (ctx, _) = DecodeContext::from_root_bytes(
-            &[],
-            &arena,
-            &cadmpeg_core::decode::DecodePolicy::default(),
-        )
-        .map_err(NurbsError::from)?;
-        Self::from_lanes_for_decode(&ctx, u, v, lanes, normal_reversed).map_err(NurbsError::from)?
-    }
-
     /// Build from finite knots, poles, and weights. Only relationships and
     /// the nonzero weight condition are checked.
     pub fn from_finite_lanes(
@@ -1673,28 +1647,6 @@ impl NurbsCurve {
         )?;
         self.knots = KnotVector::new(knots)?;
         Ok(self)
-    }
-
-    /// Build a NURBS curve from a source's pole lane and weight lane.
-    ///
-    /// A source that states poles and weights as two arrays pairs them here,
-    /// once, at the decode boundary; the curve itself carries pole rows.
-    pub fn from_lanes<P: PoleValue<FinitePoint3>>(
-        degree: u32,
-        knots: Vec<f64>,
-        control_points: Vec<P>,
-        weights: Option<Vec<f64>>,
-        periodic: bool,
-    ) -> Result<Self, NurbsError> {
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let (ctx, _) = DecodeContext::from_root_bytes(
-            &[],
-            &arena,
-            &cadmpeg_core::decode::DecodePolicy::default(),
-        )
-        .map_err(NurbsError::from)?;
-        Self::from_lanes_for_decode(&ctx, degree, knots, control_points, weights, periodic)
-            .map_err(NurbsError::from)?
     }
 
     /// Build from finite knots, poles, and weights. Only relationships and

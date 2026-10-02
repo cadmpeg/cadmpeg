@@ -736,7 +736,7 @@ mod tests {
         let nurbs = |degree: u32| Curve {
             id: CurveId::mint("synthetic:tolerance:curve#nurbs").expect("valid identity"),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-                NurbsCurve::from_lanes(
+                NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
                     degree,
                     if degree == 1 {
                         vec![0.0, 0.0, 0.5, 1.0, 1.0]
@@ -750,7 +750,7 @@ mod tests {
                     ],
                     None,
                     false,
-                )
+                ).expect("fixture constructor admission")
                 .expect("test fixture invariant"),
             )),
             source_object: None,

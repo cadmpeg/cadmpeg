@@ -182,13 +182,13 @@ fn periodic_nurbs_rejects_an_edge_wider_than_its_large_finite_period() {
         .find(|curve| curve.id == curve_id)
         .unwrap()
         .geometry = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-        crate::geometry::nurbs::NurbsCurve::from_lanes(
+        crate::geometry::nurbs::NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
             1,
             vec![0.0, 0.0, f64::MAX, f64::MAX],
             vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
             None,
             true,
-        )
+        ).expect("fixture constructor admission")
         .unwrap(),
     ));
     ir.model.edges[0].carrier =

@@ -484,15 +484,15 @@ fn ruled_homogeneous_carriers_refuse_copied_poles_weights_and_controls() {
 #[test]
 fn aligned_ruled_spans_refuse_nested_split_and_partition_storage() {
     crate::test_support::with_service_context(&[], |decode_ctx| {
-        let first = NurbsCurve::from_lanes(
+        let first = NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
             1,
             vec![0.0, 0.0, 1.0, 1.0],
             vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
             None,
             false,
-        )
+        ).expect("fixture constructor admission")
         .unwrap();
-        let second = NurbsCurve::from_lanes(
+        let second = NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
             1,
             vec![0.0, 0.0, 0.5, 1.0, 1.0],
             vec![
@@ -502,7 +502,7 @@ fn aligned_ruled_spans_refuse_nested_split_and_partition_storage() {
             ],
             None,
             false,
-        )
+        ).expect("fixture constructor admission")
         .unwrap();
         let spans = super::aligned_homogeneous_spans(decode_ctx, &first, &second)
             .unwrap()
@@ -558,13 +558,13 @@ fn aligned_ruled_spans_refuse_nested_split_and_partition_storage() {
 #[test]
 fn unclamped_ruled_span_extraction_refuses_knot_insertion_storage() {
     crate::test_support::with_service_context(&[], |decode_ctx| {
-        let curve = NurbsCurve::from_lanes(
+        let curve = NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
             1,
             vec![-1.0, 0.0, 1.0, 2.0],
             vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
             None,
             false,
-        )
+        ).expect("fixture constructor admission")
         .unwrap();
         let expected = super::homogeneous_bezier_spans(decode_ctx, &curve)
             .unwrap()
@@ -618,13 +618,13 @@ fn unclamped_ruled_span_extraction_refuses_knot_insertion_storage() {
 #[test]
 fn same_basis_ruled_surface_refuses_nested_weight_rows() {
     crate::test_support::with_service_context(&[], |decode_ctx| {
-        let rail = NurbsCurve::from_lanes(
+        let rail = NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
             1,
             vec![0.0, 0.0, 1.0, 1.0],
             vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
             None,
             false,
-        )
+        ).expect("fixture constructor admission")
         .unwrap();
         let weight = cadmpeg_ir::scalar::NonZeroReal::try_from(0.5).unwrap();
         let weights = [weight, weight];
@@ -939,15 +939,15 @@ fn decode_reconciles_rational_ruled_rail_denominators_exactly() {
 #[test]
 fn homogeneous_ruled_carrier_aligns_relative_parameter_partitions_and_refuses_weight_limit() {
     crate::test_support::with_service_context(&[], |decode_ctx| {
-        let first = NurbsCurve::from_lanes(
+        let first = NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
             1,
             vec![0.0, 0.0, 1.0, 1.0],
             vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
             None,
             false,
-        )
+        ).expect("fixture constructor admission")
         .expect("valid first rail");
-        let second = NurbsCurve::from_lanes(
+        let second = NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
             2,
             vec![0.0, 0.0, 0.0, 2.0, 2.0, 2.0],
             vec![
@@ -957,7 +957,7 @@ fn homogeneous_ruled_carrier_aligns_relative_parameter_partitions_and_refuses_we
             ],
             Some(vec![1.0, 0.5, 1.0]),
             false,
-        )
+        ).expect("fixture constructor admission")
         .expect("valid second rail");
         let surface = super::ruled_surface_carrier(&first, &second, decode_ctx)
             .expect("ruled lanes pair")
@@ -995,7 +995,7 @@ fn homogeneous_ruled_carrier_aligns_relative_parameter_partitions_and_refuses_we
 #[test]
 fn homogeneous_ruled_carrier_splits_mismatched_knot_partitions() {
     crate::test_support::with_service_context(&[], |decode_ctx| {
-        let first = NurbsCurve::from_lanes(
+        let first = NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
             1,
             vec![0.0, 0.0, 0.5, 1.0, 1.0],
             vec![
@@ -1005,15 +1005,15 @@ fn homogeneous_ruled_carrier_splits_mismatched_knot_partitions() {
             ],
             None,
             false,
-        )
+        ).expect("fixture constructor admission")
         .expect("valid first rail");
-        let second = NurbsCurve::from_lanes(
+        let second = NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
             1,
             vec![0.0, 0.0, 1.0, 1.0],
             vec![Point3::new(0.0, 1.0, 0.0), Point3::new(1.0, 1.0, 0.0)],
             Some(vec![1.0, 0.5]),
             false,
-        )
+        ).expect("fixture constructor admission")
         .expect("valid second rail");
         let surface = super::ruled_surface_carrier(&first, &second, decode_ctx)
             .expect("ruled lanes pair")

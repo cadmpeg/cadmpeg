@@ -1340,13 +1340,13 @@ fn generated_f3d_rewrites_extrusion_directrix_control_points() {
     let mut control_points = nurbs.pole_rows().raw_points();
     control_points[1].y = 12.5;
     control_points[1].z = -2.0;
-    *nurbs = cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
+    *nurbs = cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
         1,
         vec![-2.0, -2.0, 3.0, 3.0, 3.0],
         control_points,
         nurbs.pole_rows().weights(),
         true,
-    )
+    ).expect("fixture constructor admission")
     .unwrap();
     let expected = nurbs.clone();
 

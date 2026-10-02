@@ -75,13 +75,13 @@ fn law_sweep_maps_wide_profile_interval_into_finite_nurbs_domain() {
     ir.model.curves.push(Curve {
         id: profile.clone(),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-            NurbsCurve::from_lanes(
+            NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
                 1,
                 vec![0.0, 0.0, 1.0, 1.0],
                 vec![Point3::new(1.0, 0.0, 0.0), Point3::new(2.0, 0.0, 0.0)],
                 None,
                 false,
-            )
+            ).expect("fixture constructor admission")
             .unwrap(),
         )),
         source_object: None,
@@ -202,13 +202,13 @@ fn law_sweep_evaluation_applies_profile_scale_and_current_cache() {
         Curve {
             id: profile_id.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-                NurbsCurve::from_lanes(
+                NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
                     1,
                     vec![0.0, 0.0, 1.0, 1.0],
                     vec![Point3::new(1.0, 0.0, 0.0), Point3::new(2.0, 0.0, 0.0)],
                     None,
                     false,
-                )
+                ).expect("fixture constructor admission")
                 .unwrap(),
             )),
             source_object: None,
@@ -216,13 +216,13 @@ fn law_sweep_evaluation_applies_profile_scale_and_current_cache() {
         Curve {
             id: spine_id.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-                NurbsCurve::from_lanes(
+                NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
                     1,
                     vec![0.0, 0.0, 1.0, 1.0],
                     vec![Point3::new(4.0, 5.0, 6.0), Point3::new(4.0, 5.0, 7.0)],
                     None,
                     false,
-                )
+                ).expect("fixture constructor admission")
                 .unwrap(),
             )),
             source_object: None,

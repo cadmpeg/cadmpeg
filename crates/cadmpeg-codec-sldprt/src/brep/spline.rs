@@ -976,7 +976,7 @@ pub(crate) fn scan_curve_carriers(
         if knots.len() != expected {
             continue;
         }
-        let nurbs = match cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes_for_decode(
+        let nurbs = match cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
             ctx,
             descriptor.degree,
             knots,
@@ -1328,7 +1328,7 @@ pub(crate) fn scan_surface_carriers(
         } else {
             None
         };
-        let nurbs = match cadmpeg_ir::geometry::nurbs::NurbsSurface::from_lanes_for_decode(
+        let nurbs = match cadmpeg_ir::geometry::nurbs::NurbsSurface::from_lanes(
             ctx,
             cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
                 descriptor.u_degree,

@@ -24,13 +24,13 @@ fn construction_rejects_invalid_knots_and_non_finite_poles() {
     for invalid in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
         let mut knots = curve().knots().to_vec();
         knots[1] = invalid;
-        assert!(NurbsCurve::from_lanes(
+        assert!(NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
             1,
             knots.clone(),
             curve().pole_rows().raw_points(),
             None,
             false
-        )
+        ).expect("fixture constructor admission")
         .is_err());
         assert!(PcurveNurbs::from_lanes(
             1,
@@ -57,7 +57,7 @@ fn construction_rejects_invalid_knots_and_non_finite_poles() {
 
         let mut points = curve().pole_rows().raw_points();
         points[1].z = invalid;
-        assert!(NurbsCurve::from_lanes(1, curve().knots().to_vec(), points, None, false).is_err());
+        assert!(NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 1, curve().knots().to_vec(), points, None, false).expect("fixture constructor admission").is_err());
         assert!(PcurveNurbs::from_lanes(
             1,
             pcurve().knots().to_vec(),
@@ -84,12 +84,12 @@ fn construction_rejects_invalid_knots_and_non_finite_poles() {
         let source = surface();
         let mut points = source.pole_grid().raw_points();
         points[0][1].x = invalid;
-        assert!(NurbsSurface::from_lanes(
+        assert!(NurbsSurface::from_lanes(&cadmpeg_test_support::service_decode_context(), 
             crate::geometry::nurbs::NurbsSurfaceAxis::new(1, source.u_knots().to_vec(), false),
             crate::geometry::nurbs::NurbsSurfaceAxis::new(1, source.v_knots().to_vec(), false),
             crate::geometry::nurbs::NurbsSurfaceLanes::new(points, None),
             false
-        )
+        ).expect("fixture constructor admission")
         .is_err());
     }
 

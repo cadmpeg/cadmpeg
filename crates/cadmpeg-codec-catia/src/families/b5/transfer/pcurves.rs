@@ -464,7 +464,7 @@ pub(super) fn lifted_curve_geometry(
             })
             .transpose()?;
         return Ok(
-            cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes_for_decode(
+            cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
                 ctx,
                 pcurve.degree,
                 knots,

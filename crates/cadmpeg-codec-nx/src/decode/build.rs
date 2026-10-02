@@ -967,7 +967,7 @@ pub(super) fn try_decode_geometry(
                 id: curve_id.try_clone_for_decode(ctx, "nx intersection curve identity")?,
                 geometry: if let Some(charted) = charted {
                     CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-                        cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes_for_decode(
+                        cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
                             ctx,
                             1,
                             linear_knots(

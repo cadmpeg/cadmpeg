@@ -74,7 +74,7 @@ fn procedural_surface_attachment_moves_the_solved_knot_storage() {
     let surface_id = SurfaceId::mint("test:model:surface#move-cache").unwrap();
     let procedural_id =
         ProceduralSurfaceId::mint("test:model:surface-construction#move-cache").unwrap();
-    let carrier = NurbsSurface::from_lanes(
+    let carrier = NurbsSurface::from_lanes(&cadmpeg_test_support::service_decode_context(), 
         NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
         NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
         NurbsSurfaceLanes::new(
@@ -85,7 +85,7 @@ fn procedural_surface_attachment_moves_the_solved_knot_storage() {
             None,
         ),
         false,
-    )
+    ).expect("fixture constructor admission")
     .unwrap();
     let original_knot_storage = carrier.u_knots().as_ptr();
     let mut model = Model::default();
@@ -119,13 +119,13 @@ fn procedural_curve_attachment_moves_the_solved_knot_storage() {
     let curve_id = CurveId::mint("test:model:curve#move-cache").unwrap();
     let procedural_id =
         ProceduralCurveId::mint("test:model:curve-construction#move-cache").unwrap();
-    let carrier = NurbsCurve::from_lanes(
+    let carrier = NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
         1,
         vec![0.0, 0.0, 1.0, 1.0],
         vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
         None,
         false,
-    )
+    ).expect("fixture constructor admission")
     .unwrap();
     let original_knot_storage = carrier.knots().as_ptr();
     let mut model = Model::default();

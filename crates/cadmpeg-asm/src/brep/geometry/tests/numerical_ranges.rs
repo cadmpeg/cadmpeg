@@ -45,7 +45,7 @@ fn circle(radius: f64, z: f64, distortion: f64) -> NurbsCurve {
     .map(|[x, y]| Point3::new(radius * x, radius * y, z))
     .collect::<Vec<_>>();
     points[1].x += distortion;
-    NurbsCurve::from_lanes(
+    NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
         2,
         vec![0., 0., 0., 1., 1., 2., 2., 3., 3., 4., 4., 4.],
         points,
@@ -61,7 +61,7 @@ fn circle(radius: f64, z: f64, distortion: f64) -> NurbsCurve {
                 .collect(),
         ),
         false,
-    )
+    ).expect("fixture constructor admission")
     .unwrap()
 }
 #[test]

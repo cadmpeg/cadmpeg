@@ -25,7 +25,7 @@ fn numerical_audit_trim_domain_check_ignores_surface_knot_units() {
         tolerance: None,
     };
     for d in [1., 1e-16] {
-        let surface = NurbsSurface::from_lanes(
+        let surface = NurbsSurface::from_lanes(&cadmpeg_test_support::service_decode_context(), 
             NurbsSurfaceAxis::new(1, vec![0., 0., d, d], false),
             NurbsSurfaceAxis::new(1, vec![0., 0., 1., 1.], false),
             NurbsSurfaceLanes::new(
@@ -36,16 +36,16 @@ fn numerical_audit_trim_domain_check_ignores_surface_knot_units() {
                 None,
             ),
             false,
-        )
+        ).expect("fixture constructor admission")
         .unwrap();
         for x in [0.5, 2.] {
-            let curve = NurbsCurve::from_lanes(
+            let curve = NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
                 1,
                 vec![0., 0., 1., 1.],
                 vec![Point3::new(x, 0., 0.), Point3::new(x, 1., 0.)],
                 None,
                 false,
-            )
+            ).expect("fixture constructor admission")
             .unwrap();
             let uv = vec![Point2::new(x * d, 0.), Point2::new(x * d, 1.)];
             let p = Pcurve {
@@ -99,13 +99,13 @@ fn numerical_audit_trim_domain_check_ignores_surface_knot_units() {
 
 /// The refusal of a trim over the unit NURBS square whose pcurve is `geometry`.
 fn trim_error(geometry: PcurveGeometry) -> String {
-    let curve = NurbsCurve::from_lanes(
+    let curve = NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
         1,
         vec![0., 0., 1., 1.],
         vec![Point3::new(0.5, 0., 0.), Point3::new(0.5, 1., 0.)],
         None,
         false,
-    )
+    ).expect("fixture constructor admission")
     .unwrap();
     trim_refusal(geometry, &curve, [0., 1.])
 }
@@ -113,7 +113,7 @@ fn trim_error(geometry: PcurveGeometry) -> String {
 /// The refusal of a trim over the unit NURBS square whose pcurve is
 /// `geometry` and whose edge runs along `curve` over `domain`.
 fn trim_refusal(geometry: PcurveGeometry, curve: &NurbsCurve, domain: [f64; 2]) -> String {
-    let surface = NurbsSurface::from_lanes(
+    let surface = NurbsSurface::from_lanes(&cadmpeg_test_support::service_decode_context(), 
         NurbsSurfaceAxis::new(1, vec![0., 0., 1., 1.], false),
         NurbsSurfaceAxis::new(1, vec![0., 0., 1., 1.], false),
         NurbsSurfaceLanes::new(
@@ -124,7 +124,7 @@ fn trim_refusal(geometry: PcurveGeometry, curve: &NurbsCurve, domain: [f64; 2]) 
             None,
         ),
         false,
-    )
+    ).expect("fixture constructor admission")
     .unwrap();
     trim_refusal_on(&surface, geometry, curve, domain)
 }
@@ -221,13 +221,13 @@ fn a_trim_edge_curve_whose_point_overflows_misses_its_pcurve_by_the_distance_it_
     // At t = 1/2 the homogeneous weight of (1, -1 + 2^-40) is 2^-41, so the
     // projected second pole row reaches y = -inf; the pcurve maps the same
     // parameter to (1/2, 1/2, 0), infinitely far from the edge point.
-    let curve = NurbsCurve::from_lanes(
+    let curve = NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
         1,
         vec![0., 0., 1., 1.],
         vec![Point3::new(0.5, 0., 0.), Point3::new(0.5, 1.0e300, 0.)],
         Some(vec![1., -1. + 2f64.powi(-40)]),
         false,
-    )
+    ).expect("fixture constructor admission")
     .unwrap();
     let error = trim_refusal(
         PcurveGeometry::Line(
@@ -254,7 +254,7 @@ fn a_trim_surface_whose_point_overflows_misses_the_edge_by_the_distance_it_reach
     // surface point at u = 1/2 reaches x = -inf from the poles at x = 1e300;
     // the edge line runs along u = 1/2, infinitely far away.
     let weight = -1. + 2f64.powi(-40);
-    let surface = NurbsSurface::from_lanes(
+    let surface = NurbsSurface::from_lanes(&cadmpeg_test_support::service_decode_context(), 
         NurbsSurfaceAxis::new(1, vec![0., 0., 1., 1.], false),
         NurbsSurfaceAxis::new(1, vec![0., 0., 1., 1.], false),
         NurbsSurfaceLanes::new(
@@ -265,15 +265,15 @@ fn a_trim_surface_whose_point_overflows_misses_the_edge_by_the_distance_it_reach
             Some(vec![vec![1., 1.], vec![weight, weight]]),
         ),
         false,
-    )
+    ).expect("fixture constructor admission")
     .unwrap();
-    let curve = NurbsCurve::from_lanes(
+    let curve = NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
         1,
         vec![0., 0., 1., 1.],
         vec![Point3::new(0.5, 0., 0.), Point3::new(0.5, 1., 0.)],
         None,
         false,
-    )
+    ).expect("fixture constructor admission")
     .unwrap();
     let error = trim_refusal_on(
         &surface,

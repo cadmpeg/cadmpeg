@@ -20,13 +20,13 @@ fn pole_count_refuses_unrepresentable_degree_successor() {
 
 #[test]
 fn reversed_nurbs_copies_refuse_low_collection_and_retained_limits() {
-    let curve = NurbsCurve::from_lanes(
+    let curve = NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
         1,
         vec![0.0, 0.0, 1.0, 1.0],
         vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
         None,
         false,
-    )
+    ).expect("fixture constructor admission")
     .expect("linear model curve");
     let retained = crate::test_support::with_retained_limit(0, |ctx| {
         reverse_nurbs_curve(ctx, &curve, [0.0, 1.0])
@@ -98,13 +98,13 @@ fn reversal_preserves_large_parameter_offsets_and_endpoint_values() {
     for range in [[1e16, 1e16 + 2.0], [1e308, 1.1e308], [-1.1e308, -1e308]] {
         let [lower, upper] = range;
         let knots = vec![lower, lower, upper, upper];
-        let source = NurbsCurve::from_lanes(
+        let source = NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
             1,
             knots.clone(),
             vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
             None,
             false,
-        )
+        ).expect("fixture constructor admission")
         .expect("linear model curve");
         let reversed = crate::test_support::with_service_context(|ctx| {
             reverse_nurbs_curve(ctx, &source, range)
@@ -164,13 +164,13 @@ fn wide_finite_nurbs_ranges_reverse_and_normalize_without_a_finite_width() {
     let range = [-f64::MAX, f64::MAX];
     let knots = vec![range[0], range[0], range[1], range[1]];
     let curve = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-        NurbsCurve::from_lanes(
+        NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
             1,
             knots.clone(),
             vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
             None,
             false,
-        )
+        ).expect("fixture constructor admission")
         .expect("wide finite curve"),
     ));
     let pcurve = PcurveGeometry::Nurbs {
@@ -290,12 +290,12 @@ fn line_pcurve_reversal_does_not_need_a_finite_endpoint_sum() {
 }
 
 fn bilinear_surface(points: Vec<Vec<Point3>>, weights: Vec<Vec<f64>>) -> NurbsSurface {
-    NurbsSurface::from_lanes(
+    NurbsSurface::from_lanes(&cadmpeg_test_support::service_decode_context(), 
         NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
         NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
         NurbsSurfaceLanes::new(points, Some(weights)),
         false,
-    )
+    ).expect("fixture constructor admission")
     .expect("bilinear surface")
 }
 

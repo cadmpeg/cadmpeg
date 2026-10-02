@@ -86,7 +86,7 @@ fn generated_source_less_face_writes_nurbs_surface_carrier() {
     source_less.source = None;
     source_less.set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[]).unwrap();
     let expected = SolvedSurfaceGeometry::Nurbs(
-        NurbsSurface::from_lanes(
+        NurbsSurface::from_lanes(&cadmpeg_test_support::service_decode_context(), 
             cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(1, vec![-1.0, -1.0, 2.0, 2.0], true),
             cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
                 1,
@@ -107,7 +107,7 @@ fn generated_source_less_face_writes_nurbs_surface_carrier() {
                 None,
             ),
             false,
-        )
+        ).expect("fixture constructor admission")
         .expect("valid source-less surface"),
     );
     source_less.model.surfaces[0].geometry = SurfaceGeometry::Solved(expected.clone());
@@ -141,7 +141,7 @@ fn generated_source_less_face_writes_rational_nurbs_surface_carrier() {
     source_less.source = None;
     source_less.set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[]).unwrap();
     let expected = SolvedSurfaceGeometry::Nurbs(
-        NurbsSurface::from_lanes(
+        NurbsSurface::from_lanes(&cadmpeg_test_support::service_decode_context(), 
             cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
             cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], true),
             cadmpeg_ir::geometry::nurbs::NurbsSurfaceLanes::new(
@@ -159,7 +159,7 @@ fn generated_source_less_face_writes_rational_nurbs_surface_carrier() {
                     .map(|values| values.chunks(2_usize).map(<[_]>::to_vec).collect()),
             ),
             false,
-        )
+        ).expect("fixture constructor admission")
         .expect("valid source-less rational surface"),
     );
     source_less.model.surfaces[0].geometry = SurfaceGeometry::Solved(expected.clone());
@@ -195,7 +195,7 @@ fn generated_source_less_face_writes_rational_nurbs_edge_curve() {
     source_less.set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[]).unwrap();
     let curve_id = CurveId::mint("generated:test:nurbs_curve#0").expect("identity grammar");
     let expected = SolvedCurveGeometry::Nurbs(
-        NurbsCurve::from_lanes(
+        NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
             2,
             vec![-1.0, -1.0, -1.0, 2.0, 2.0, 2.0],
             vec![
@@ -205,7 +205,7 @@ fn generated_source_less_face_writes_rational_nurbs_edge_curve() {
             ],
             Some(vec![1.0, 0.6, 1.0]),
             true,
-        )
+        ).expect("fixture constructor admission")
         .expect("valid source-less rational curve"),
     );
     source_less.model.curves.push(Curve {
@@ -630,7 +630,7 @@ fn generated_source_less_multi_face_writes_nurbs_carriers_and_pcurve() {
     source_less.set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[]).unwrap();
 
     let expected_surface = SolvedSurfaceGeometry::Nurbs(
-        NurbsSurface::from_lanes(
+        NurbsSurface::from_lanes(&cadmpeg_test_support::service_decode_context(), 
             cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
             cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], true),
             cadmpeg_ir::geometry::nurbs::NurbsSurfaceLanes::new(
@@ -648,13 +648,13 @@ fn generated_source_less_multi_face_writes_nurbs_carriers_and_pcurve() {
                     .map(|values| values.chunks(2_usize).map(<[_]>::to_vec).collect()),
             ),
             false,
-        )
+        ).expect("fixture constructor admission")
         .expect("valid shared rational surface"),
     );
     source_less.model.surfaces[1].geometry = SurfaceGeometry::Solved(expected_surface.clone());
     let curve_id = CurveId::mint("generated:test:shared_nurbs#0").expect("identity grammar");
     let expected_curve = SolvedCurveGeometry::Nurbs(
-        NurbsCurve::from_lanes(
+        NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
             2,
             vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
             vec![
@@ -664,7 +664,7 @@ fn generated_source_less_multi_face_writes_nurbs_carriers_and_pcurve() {
             ],
             Some(vec![1.0, 0.7, 1.0]),
             false,
-        )
+        ).expect("fixture constructor admission")
         .expect("valid shared rational curve"),
     );
     source_less.model.curves.push(Curve {
@@ -998,7 +998,7 @@ fn generated_source_less_writes_translational_extrusion_definition() {
         .find(|curve| curve.id == directrix_id)
         .expect("extrusion directrix")
         .geometry = cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-        cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
+        cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
             1,
             vec![0.25, 0.25, 0.75, 0.75],
             vec![
@@ -1007,7 +1007,7 @@ fn generated_source_less_writes_translational_extrusion_definition() {
             ],
             None,
             false,
-        )
+        ).expect("fixture constructor admission")
         .unwrap(),
     ));
 
@@ -1504,7 +1504,7 @@ fn generated_source_less_writes_rolling_ball_blend_definition() {
         .find(|curve| curve.id == spine)
         .expect("rolling-ball spine carrier")
         .geometry = cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-        cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
+        cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
             1,
             vec![0.0, 0.0, 1.0, 1.0],
             vec![
@@ -1513,7 +1513,7 @@ fn generated_source_less_writes_rolling_ball_blend_definition() {
             ],
             None,
             false,
-        )
+        ).expect("fixture constructor admission")
         .unwrap(),
     ));
     let expected = source_less.model.procedural_surfaces[0].clone();

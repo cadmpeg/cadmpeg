@@ -237,7 +237,7 @@ fn standard_endpoint_filter_propagates_arc_collection_refusal() {
 }
 
 fn unit_square_surface() -> NurbsSurface {
-    NurbsSurface::from_lanes(
+    NurbsSurface::from_lanes(&cadmpeg_test_support::service_decode_context(), 
         cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
         cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
         cadmpeg_ir::geometry::nurbs::NurbsSurfaceLanes::new(
@@ -248,7 +248,7 @@ fn unit_square_surface() -> NurbsSurface {
             None,
         ),
         false,
-    )
+    ).expect("fixture constructor admission")
     .expect("valid unit-square surface")
 }
 

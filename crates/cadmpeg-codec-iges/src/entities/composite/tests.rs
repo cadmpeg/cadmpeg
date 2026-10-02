@@ -528,7 +528,7 @@ fn test_nurbs(
     control_points: Vec<Point3>,
     weights: Option<Vec<f64>>,
 ) -> NurbsCurve {
-    NurbsCurve::from_lanes(degree, knots, control_points, weights, false).expect("valid test NURBS")
+    NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), degree, knots, control_points, weights, false).expect("fixture constructor admission").expect("valid test NURBS")
 }
 
 #[test]

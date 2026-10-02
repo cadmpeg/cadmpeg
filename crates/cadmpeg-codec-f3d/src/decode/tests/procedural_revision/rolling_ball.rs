@@ -155,7 +155,7 @@ fn generated_solved_plane_plane_blend_decodes_as_analytic_cylinder() {
         .find(|curve| curve.id == spine_id)
         .expect("rolling-ball spine")
         .geometry = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-        NurbsCurve::from_lanes(
+        NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
             2,
             vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
             vec![
@@ -165,7 +165,7 @@ fn generated_solved_plane_plane_blend_decodes_as_analytic_cylinder() {
             ],
             None,
             false,
-        )
+        ).expect("fixture constructor admission")
         .unwrap(),
     ));
 
@@ -322,13 +322,13 @@ fn generated_f3d_rewrites_rolling_ball_spine_cache() {
     let mut control_points = nurbs.pole_rows().raw_points();
     control_points[1].x = 8.0;
     control_points[1].y = -6.0;
-    *nurbs = cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
+    *nurbs = cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
         1,
         vec![-1.0, -1.0, 2.0, 2.0, 2.0],
         control_points,
         nurbs.pole_rows().weights(),
         nurbs.periodic(),
-    )
+    ).expect("fixture constructor admission")
     .unwrap();
     let expected = curve.clone();
 

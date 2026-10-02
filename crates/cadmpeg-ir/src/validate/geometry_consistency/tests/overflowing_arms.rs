@@ -379,7 +379,7 @@ fn make_steep_circular_blend(ir: &mut crate::document::CadIr, surface: &crate::i
         Surface {
             id: first.clone(),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
-                crate::geometry::nurbs::NurbsSurface::from_lanes(
+                crate::geometry::nurbs::NurbsSurface::from_lanes(&cadmpeg_test_support::service_decode_context(), 
                     crate::geometry::nurbs::NurbsSurfaceAxis::new(
                         1,
                         vec![0.0, 0.0, 3.0, ramp_end, ramp_end],
@@ -397,7 +397,7 @@ fn make_steep_circular_blend(ir: &mut crate::document::CadIr, surface: &crate::i
                         None,
                     ),
                     false,
-                )
+                ).expect("fixture constructor admission")
                 .unwrap(),
             )),
             source_object: None,

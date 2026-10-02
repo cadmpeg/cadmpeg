@@ -52,12 +52,12 @@ fn carrier_model() -> cadmpeg_ir::CadIr {
             vec![Point3::new(1.0, 0.0, 0.0), Point3::new(1.0, 1.0, 0.0)],
         ];
         let weights = rational.then(|| vec![vec![1.0, 2.0], vec![3.0, 4.0]]);
-        let geometry = NurbsSurface::from_lanes(
+        let geometry = NurbsSurface::from_lanes(&cadmpeg_test_support::service_decode_context(), 
             axis(),
             axis(),
             NurbsSurfaceLanes::new(poles, weights),
             false,
-        )
+        ).expect("fixture constructor admission")
         .unwrap();
         ir.model.surfaces.push(Surface {
             id: cadmpeg_ir::ids::SurfaceId::mint(format!("synthetic:test:id#nurbs-{rational}"))

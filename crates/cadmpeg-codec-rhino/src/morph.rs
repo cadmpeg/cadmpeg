@@ -1058,7 +1058,7 @@ mod tests {
 
     #[test]
     fn morph_projection_refuses_property_and_captive_limits() {
-        let curve = super::NurbsCurve::from_lanes(
+        let curve = super::NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
             1,
             vec![0.0, 0.0, 1.0, 1.0],
             vec![
@@ -1067,7 +1067,7 @@ mod tests {
             ],
             None,
             false,
-        )
+        ).expect("fixture constructor admission")
         .expect("valid test curve");
         let morph = super::Morph {
             source_range: 0..1,

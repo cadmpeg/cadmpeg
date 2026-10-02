@@ -1408,13 +1408,13 @@ fn nonplanar_saved_spline_places_as_model_curve() {
         5,
     )
     .expect("valid section frame");
-    let local = NurbsCurve::from_lanes(
+    let local = NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
         1,
         vec![0.0, 0.0, 1.0, 1.0],
         vec![Point3::new(1.0, 2.0, 3.0), Point3::new(4.0, 5.0, 6.0)],
         None,
         false,
-    )
+    ).expect("fixture constructor admission")
     .expect("valid local NURBS");
 
     let placed =
@@ -1442,13 +1442,13 @@ fn transferred_geometry_is_derived_from_ir_arenas() {
 
 #[test]
 fn full_revolution_uses_exact_quadratic_circle_poles() {
-    let directrix = NurbsCurve::from_lanes(
+    let directrix = NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
         1,
         vec![0.0, 0.0, 1.0, 1.0],
         vec![Point3::new(2.0, 0.0, 0.0), Point3::new(2.0, 0.0, 1.0)],
         None,
         false,
-    )
+    ).expect("fixture constructor admission")
     .expect("valid revolution directrix");
     let surface = crate::decode::with_test_decode_ctx(|ctx| {
         revolved_nurbs_surface(

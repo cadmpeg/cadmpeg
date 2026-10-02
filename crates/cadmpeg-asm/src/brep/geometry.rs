@@ -1316,7 +1316,7 @@ mod tests {
     fn numerical_seventh_analytic_spine_rejects_relative_curvature_at_small_scale() {
         for scale in [1.0, SMALL_CURVED_SPINE_EXTENT, 1.0e100] {
             let spine = |height| {
-                cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
+                cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
                     2,
                     vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
                     vec![
@@ -1326,7 +1326,7 @@ mod tests {
                     ],
                     None,
                     false,
-                )
+                ).expect("fixture constructor admission")
                 .unwrap()
             };
             assert!(super::linear_nurbs_spine(&spine(0.4)).is_none());
@@ -1371,7 +1371,7 @@ mod tests {
                     }
                 })
                 .collect();
-            let circle = NurbsCurve::from_lanes(2, knots, poles, Some(weights), false).unwrap();
+            let circle = NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 2, knots, poles, Some(weights), false).expect("fixture constructor admission").unwrap();
             let (_, _, _, radius) = super::rational_four_arc_circle(&resource_ctx, &circle)
                 .transpose()
                 .expect("resource allocation")
@@ -1395,13 +1395,13 @@ mod tests {
         )
         .expect("test decode context");
         let id = CurveId::mint("sat:audit:curve#domain").unwrap();
-        let curve = NurbsCurve::from_lanes(
+        let curve = NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
             1,
             vec![0., 0., 1e-12, 1e-12],
             vec![Point3::new(0., 0., 0.), Point3::new(1., 0., 0.)],
             None,
             false,
-        )
+        ).expect("fixture constructor admission")
         .unwrap();
         let edge = Edge {
             id: EdgeId::mint("sat:audit:edge#domain").unwrap(),

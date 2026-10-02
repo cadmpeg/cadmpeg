@@ -287,7 +287,7 @@ pub(super) fn admit<P: PoleValue<T>, T>(
 impl NurbsCurve {
     /// Construct raw lanes with caller admission before pole pairing and conversion.
     /// Resource refusal is separate from the geometry refusal, whose order is unchanged.
-    pub fn from_lanes_for_decode<P: PoleValue<FinitePoint3>>(
+    pub fn from_lanes<P: PoleValue<FinitePoint3>>(
         ctx: &DecodeContext<'_>,
         degree: u32,
         knots: Vec<f64>,
@@ -335,7 +335,7 @@ impl super::BsplineSurface {
 impl NurbsSurface {
     /// Construct raw grids with caller admission before every outer and inner allocation.
     /// Resource refusal is separate from the geometry refusal, whose order is unchanged.
-    pub fn from_lanes_for_decode<P: PoleValue<FinitePoint3>>(
+    pub fn from_lanes<P: PoleValue<FinitePoint3>>(
         ctx: &DecodeContext<'_>,
         u: NurbsSurfaceAxis,
         v: NurbsSurfaceAxis,

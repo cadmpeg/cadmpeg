@@ -590,7 +590,7 @@ fn encode_regenerates_planar_and_nurbs_surfaces() {
         Surface {
             id: SurfaceId::mint("test:model:surface#nurbs").expect("identity grammar"),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
-                NurbsSurface::from_lanes(
+                NurbsSurface::from_lanes(&cadmpeg_test_support::service_decode_context(), 
                     cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
                         1,
                         vec![0.0, 0.0, 1.0, 1.0],
@@ -609,7 +609,7 @@ fn encode_regenerates_planar_and_nurbs_surfaces() {
                         None,
                     ),
                     false,
-                )
+                ).expect("fixture constructor admission")
                 .expect("valid test NURBS surface"),
             )),
             source_object: None,

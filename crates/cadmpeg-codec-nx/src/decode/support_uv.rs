@@ -3161,7 +3161,7 @@ mod tests {
         crate::test_support::with_decode_context(|geometry_ctx| {
             let surface_id = SurfaceId::mint("test:model:entity#synthetic:coarse-nurbs-support")
                 .expect("identity grammar");
-            let nurbs = cadmpeg_ir::geometry::nurbs::NurbsSurface::from_lanes(
+            let nurbs = cadmpeg_ir::geometry::nurbs::NurbsSurface::from_lanes(&cadmpeg_test_support::service_decode_context(), 
                 cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
                     1,
                     vec![0.0, 0.0, 1.0, 1.0],
@@ -3180,7 +3180,7 @@ mod tests {
                     None,
                 ),
                 false,
-            )
+            ).expect("fixture constructor admission")
             .expect("valid test surface");
             let geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(nurbs.clone()));
             let mut ir = CadIr::empty();

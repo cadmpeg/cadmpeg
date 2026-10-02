@@ -1428,7 +1428,7 @@ pub(crate) mod tests {
         let count = points.len();
         DecodedCurve::leaf(
             CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-                NurbsCurve::from_lanes(
+                NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
                     1,
                     (0..count + 2)
                         .map(|value| {
@@ -1439,7 +1439,7 @@ pub(crate) mod tests {
                     points,
                     None,
                     false,
-                )
+                ).expect("fixture constructor admission")
                 .expect("valid polygon curve"),
             )),
             Diagnostics::new(),
@@ -1487,13 +1487,13 @@ pub(crate) mod tests {
         }
         DecodedCurve::leaf(
             CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-                NurbsCurve::from_lanes(
+                NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
                     2,
                     vec![0.0, 0.0, 0.0, 1.0, 1.0, 2.0, 2.0, 3.0, 3.0, 4.0, 4.0, 4.0],
                     points,
                     Some(weights),
                     false,
-                )
+                ).expect("fixture constructor admission")
                 .expect("valid circle curve"),
             )),
             Diagnostics::new(),
@@ -1897,13 +1897,13 @@ pub(crate) mod tests {
 
     #[test]
     fn extrusion_cap_weights_refuse_collection_limit() {
-        let curve = NurbsCurve::from_lanes(
+        let curve = NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
             1,
             vec![0.0, 0.0, 1.0, 1.0],
             vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
             Some(vec![1.0, 0.5]),
             false,
-        )
+        ).expect("fixture constructor admission")
         .expect("valid rational cap profile");
         let frame = cap_frame(
             Vector3::new(1.0, 0.0, 0.0),

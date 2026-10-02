@@ -22,7 +22,7 @@ fn spline_extrusion_preserves_directrix_basis_and_weights() {
     let policy = cadmpeg_core::decode::DecodePolicy::default();
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
         .expect("test decode context");
-    let directrix = NurbsCurve::from_lanes(
+    let directrix = NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
         2,
         vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
         vec![
@@ -32,7 +32,7 @@ fn spline_extrusion_preserves_directrix_basis_and_weights() {
         ],
         Some(vec![1.0, 0.5, 1.0]),
         false,
-    )
+    ).expect("fixture constructor admission")
     .expect("valid directrix");
     let surface = extruded_nurbs_surface(
         &ctx,

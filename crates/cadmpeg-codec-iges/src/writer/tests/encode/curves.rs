@@ -59,7 +59,7 @@ fn encode_emits_the_typed_ellipse_form_for_v5_0() {
 
 #[test]
 fn transformed_nurbs_overflow_is_refused_without_changing_the_source() {
-    let nurbs = NurbsCurve::from_lanes(
+    let nurbs = NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
         1,
         vec![0.0, 0.0, 1.0, 1.0],
         vec![
@@ -68,7 +68,7 @@ fn transformed_nurbs_overflow_is_refused_without_changing_the_source() {
         ],
         None,
         false,
-    )
+    ).expect("fixture constructor admission")
     .unwrap();
     let transform = cadmpeg_ir::transform::Transform::affine([
         [1.0, 0.0, 0.0, f64::MAX],

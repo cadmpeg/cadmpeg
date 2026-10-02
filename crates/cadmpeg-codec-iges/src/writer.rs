@@ -3770,13 +3770,13 @@ fn oriented_curve_entity(
         }
         CurveGeometry::Solved(SolvedCurveGeometry::Polyline(polyline)) => {
             let values = polyline_parameters(polyline)?;
-            let original = NurbsCurve::from_lanes(
+            let original = NurbsCurve::from_lanes(ctx, 
                 1,
                 polyline_knots(&values),
                 polyline.points().collect(),
                 None,
                 false,
-            )
+            )?
             .map_err(|error| CodecError::malformed(format_args!("polyline: {error}")))?;
             let (reversed, range) = reverse_nurbs(&original, span.range)?;
             let reversed_span = CurveSpan {
@@ -6636,13 +6636,13 @@ fn curve_entity(
         SolvedCurveGeometry::Nurbs(nurbs) => encode_nurbs(ctx, nurbs, range, "NURBS"),
         SolvedCurveGeometry::Polyline(polyline) => {
             let values = polyline_parameters(polyline)?;
-            let nurbs = NurbsCurve::from_lanes(
+            let nurbs = NurbsCurve::from_lanes(ctx, 
                 1,
                 polyline_knots(&values),
                 polyline.points().collect(),
                 None,
                 false,
-            )
+            )?
             .map_err(|error| CodecError::malformed(format_args!("polyline: {error}")))?;
             encode_nurbs(ctx, &nurbs, range, "POLYLINE")
         }

@@ -590,7 +590,7 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
         };
         *cache = Some(
             cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-                cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
+                cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
                     1,
                     vec![0.0, 0.0, 10.0, 10.0],
                     vec![
@@ -599,7 +599,7 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
                     ],
                     None,
                     false,
-                )
+                ).expect("fixture constructor admission")
                 .unwrap(),
             ))
             .solved()

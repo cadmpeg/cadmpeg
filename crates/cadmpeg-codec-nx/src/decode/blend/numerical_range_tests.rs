@@ -144,7 +144,7 @@ fn numerical_0922_far_ellipse_query_keeps_inverse() {
 fn numerical_0922b_unclamped_curve_inverse() {
     crate::test_support::with_decode_context(|geometry_ctx| {
         for knots in [vec![0., 0., 0., 1., 1., 1.], vec![-2., -1., 0., 1., 2., 3.]] {
-            let curve = NurbsCurve::from_lanes(
+            let curve = NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
                 2,
                 knots,
                 vec![
@@ -154,7 +154,7 @@ fn numerical_0922b_unclamped_curve_inverse() {
                 ],
                 None,
                 false,
-            )
+            ).expect("fixture constructor admission")
             .unwrap();
             let target = cadmpeg_ir::eval::nurbs_curve_point_at(&curve, 0.).unwrap();
             let budget = GeometryWorkBudget::from_context(
@@ -178,7 +178,7 @@ fn numerical_0922b_unclamped_curve_inverse() {
 fn numerical_0922b_small_domain_inverse() {
     crate::test_support::with_decode_context(|geometry_ctx| {
         for d in [1., 1e-16] {
-            let curve = NurbsCurve::from_lanes(
+            let curve = NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
                 2,
                 vec![0., 0., 0., d, d, d],
                 vec![
@@ -188,7 +188,7 @@ fn numerical_0922b_small_domain_inverse() {
                 ],
                 None,
                 false,
-            )
+            ).expect("fixture constructor admission")
             .unwrap();
             let target = cadmpeg_ir::eval::nurbs_curve_point_at(&curve, 0.75 * d).unwrap();
             let budget = GeometryWorkBudget::from_context(
@@ -211,7 +211,7 @@ fn numerical_0922b_small_domain_inverse() {
 #[test]
 fn numerical_0922b_discontinuous_curve_inverse() {
     crate::test_support::with_decode_context(|geometry_ctx| {
-        let curve = NurbsCurve::from_lanes(
+        let curve = NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
             2,
             vec![0., 0., 0., 0.5, 0.5, 0.5, 1., 1., 1.],
             vec![0., 1., 2., 10., 11., 12.]
@@ -220,7 +220,7 @@ fn numerical_0922b_discontinuous_curve_inverse() {
                 .collect(),
             None,
             false,
-        )
+        ).expect("fixture constructor admission")
         .unwrap();
         let target = Point3::new(11., 0., 0.);
         let p = closest_nurbs_curve_parameter_with_budget(
@@ -243,13 +243,13 @@ fn numerical_0922b_discontinuous_curve_inverse() {
 fn numerical_0922b_common_weight_inverse() {
     crate::test_support::with_decode_context(|geometry_ctx| {
         for w in [1., 1e200] {
-            let curve = NurbsCurve::from_lanes(
+            let curve = NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
                 1,
                 vec![0., 0., 1., 1.],
                 vec![Point3::new(0., 0., 0.), Point3::new(1e200, 0., 0.)],
                 Some(vec![w, w]),
                 false,
-            )
+            ).expect("fixture constructor admission")
             .unwrap();
             let budget = GeometryWorkBudget::from_context(
                 geometry_ctx,
@@ -295,13 +295,13 @@ fn numerical_audit_pcurve_newton_converges_on_small_chart() {
 fn numerical_audit_inverse_and_grid_keep_wide_finite_chart() {
     crate::test_support::with_decode_context(|geometry_ctx| {
         for [a, b] in [[0., 1.], [-1e308, 1e308]] {
-            let curve = NurbsCurve::from_lanes(
+            let curve = NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
                 1,
                 vec![a, a, b, b],
                 vec![Point3::new(0., 0., 0.), Point3::new(1., 0., 0.)],
                 None,
                 false,
-            )
+            ).expect("fixture constructor admission")
             .unwrap();
             let t = closest_nurbs_curve_parameter_with_budget(
                 &curve,

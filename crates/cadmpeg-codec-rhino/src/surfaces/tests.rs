@@ -38,21 +38,21 @@ fn with_collection_limit<R>(
 
 fn simple_extrusion_curves() -> (NurbsCurve, NurbsCurve) {
     let knots = vec![0.0, 0.0, 1.0, 1.0];
-    let start = NurbsCurve::from_lanes(
+    let start = NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
         1,
         knots.clone(),
         vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
         None,
         false,
-    )
+    ).expect("fixture constructor admission")
     .expect("valid start profile");
-    let end = NurbsCurve::from_lanes(
+    let end = NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
         1,
         knots,
         vec![Point3::new(0.0, 0.0, 1.0), Point3::new(1.0, 0.0, 1.0)],
         None,
         false,
-    )
+    ).expect("fixture constructor admission")
     .expect("valid end profile");
     (start, end)
 }
@@ -665,13 +665,13 @@ fn plane_payload(version: u8, bad_frame: bool, bad_range: bool) -> Vec<u8> {
 }
 
 fn test_curve(points: Vec<Point3>, weights: Option<Vec<f64>>, domain: [f64; 2]) -> NurbsCurve {
-    NurbsCurve::from_lanes(
+    NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
         1,
         vec![domain[0], domain[0], domain[1], domain[1]],
         points,
         weights,
         false,
-    )
+    ).expect("fixture constructor admission")
     .expect("valid test curve")
 }
 
@@ -1178,7 +1178,7 @@ fn sum_surface_preserves_asymmetric_domains_and_u_major_order() {
         None,
         [2.0, 5.0],
     );
-    let second = NurbsCurve::from_lanes(
+    let second = NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
         2,
         vec![7.0, 7.0, 7.0, 9.0, 9.0, 9.0],
         vec![
@@ -1188,7 +1188,7 @@ fn sum_surface_preserves_asymmetric_domains_and_u_major_order() {
         ],
         None,
         false,
-    )
+    ).expect("fixture constructor admission")
     .expect("valid test curve");
     let surface =
         sum_nurbs(&first, &second, Vector3::new(0.5, 1.5, 2.5), 0).expect("required invariant");
@@ -1246,7 +1246,7 @@ fn sum_surface_multiplies_each_rational_weight_pair() {
 
 #[test]
 fn extrusion_tensor_preserves_rational_profile_knots_weights_and_transpose() {
-    let start = NurbsCurve::from_lanes(
+    let start = NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
         2,
         vec![2.0, 2.0, 2.0, 5.0, 5.0, 5.0],
         vec![
@@ -1256,7 +1256,7 @@ fn extrusion_tensor_preserves_rational_profile_knots_weights_and_transpose() {
         ],
         Some(vec![1.0, 0.5, 1.0]),
         false,
-    )
+    ).expect("fixture constructor admission")
     .expect("valid test curve");
     let mut end = start.clone();
     end.try_map_control_points(|_, point| {

@@ -1607,7 +1607,7 @@ fn curve_on_parameter_range(
             if source_per_target != 1.0 {
                 return crate::nurbs::note_refusal(
                     ctx,
-                    cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes_for_decode(
+                    cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
                         ctx,
                         1,
                         ctx.collect_vec(

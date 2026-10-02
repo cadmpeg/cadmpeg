@@ -7,7 +7,7 @@ use cadmpeg_ir::math::Point3;
 
 #[test]
 fn profile_sampling_propagates_evaluator_refusal() {
-    let nurbs = NurbsCurve::from_lanes(
+    let nurbs = NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
         2,
         vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
         vec![
@@ -17,7 +17,7 @@ fn profile_sampling_propagates_evaluator_refusal() {
         ],
         None,
         false,
-    )
+    ).expect("fixture constructor admission")
     .expect("line spline");
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();

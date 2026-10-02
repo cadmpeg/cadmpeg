@@ -41,7 +41,7 @@ fn line_entity(id: &SketchEntityId, sketch: &SketchId, end: [f64; 2]) -> SketchE
 
 #[test]
 fn borrowed_nurbs_profile_sampler_keeps_line_endpoints() {
-    let nurbs = cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
+    let nurbs = cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
         1,
         vec![0.0, 0.0, 1.0, 1.0],
         vec![
@@ -50,7 +50,7 @@ fn borrowed_nurbs_profile_sampler_keeps_line_endpoints() {
         ],
         None,
         false,
-    )
+    ).expect("fixture constructor admission")
     .expect("linear NURBS fixture");
     assert_eq!(
         crate::decode::with_test_decode_ctx(|ctx| super::nurbs_profile_polyline(ctx, &nurbs, 0.01)
@@ -61,7 +61,7 @@ fn borrowed_nurbs_profile_sampler_keeps_line_endpoints() {
 }
 
 fn linear_profile_curve() -> cadmpeg_ir::geometry::nurbs::NurbsCurve {
-    cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
+    cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
         1,
         vec![0.0, 0.0, 1.0, 1.0],
         vec![
@@ -70,7 +70,7 @@ fn linear_profile_curve() -> cadmpeg_ir::geometry::nurbs::NurbsCurve {
         ],
         None,
         false,
-    )
+    ).expect("fixture constructor admission")
     .expect("linear NURBS fixture")
 }
 
@@ -1065,7 +1065,7 @@ fn resolved_profile_nurbs_copy_refuses_knots_and_poles_separately() {
 
 #[test]
 fn nurbs_profile_local_depth_ceiling_refuses() {
-    let curve = cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
+    let curve = cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
         2,
         vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
         vec![
@@ -1075,7 +1075,7 @@ fn nurbs_profile_local_depth_ceiling_refuses() {
         ],
         None,
         false,
-    )
+    ).expect("fixture constructor admission")
     .expect("curved fixture");
     crate::decode::with_test_decode_ctx(|ctx| {
         let mut evaluator =

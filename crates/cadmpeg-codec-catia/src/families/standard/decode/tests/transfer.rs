@@ -186,13 +186,13 @@ fn standard_initial_carrier_identity_refuses_retained_limit() {
 
 #[test]
 fn standard_revolution_procedure_copy_refuses_retained_limit() {
-    let directrix = cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
+    let directrix = cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
         1,
         vec![0.0, 0.0, 1.0, 1.0],
         vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
         None,
         false,
-    )
+    ).expect("fixture constructor admission")
     .expect("valid directrix");
     let procedure = super::super::StandardSurfaceProcedure::Revolution(Box::new(
         crate::families::b5::transfer::ResolvedRevolutionSurface {

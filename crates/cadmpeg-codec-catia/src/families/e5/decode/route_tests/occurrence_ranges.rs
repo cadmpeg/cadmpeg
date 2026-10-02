@@ -46,13 +46,13 @@ fn occurrence_context_refuses_before_retained_surface_copy() {
 #[test]
 fn e5_boundary_nurbs_cache_refuses_before_copy() {
     let curve = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-        NurbsCurve::from_lanes(
+        NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
             1,
             vec![0.0, 0.0, 1.0, 1.0],
             vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
             None,
             false,
-        )
+        ).expect("fixture constructor admission")
         .expect("valid linear NURBS"),
     ));
     let refused = crate::test_support::with_collection_limit(0, |ctx| {
@@ -233,13 +233,13 @@ fn occurrence_intersection_cache_requires_one_admitted_exact_carrier() {
         .expect("valid LineCurve fixture"),
     ));
     let nurbs = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-        NurbsCurve::from_lanes(
+        NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
             1,
             vec![0.0, 0.0, 1.0, 1.0],
             vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
             None,
             false,
-        )
+        ).expect("fixture constructor admission")
         .expect("valid linear NURBS"),
     ));
     let mut sides = vec![
@@ -358,13 +358,13 @@ fn quintic_jet_reproduces_endpoint_second_order_data() {
 fn reversing_nurbs_preserves_tiny_knot_domain() {
     let tiny = 1e-200;
     let curve = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-        NurbsCurve::from_lanes(
+        NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
             1,
             vec![tiny, tiny, 2.0 * tiny, 2.0 * tiny],
             vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
             None,
             false,
-        )
+        ).expect("fixture constructor admission")
         .expect("valid tiny-domain NURBS"),
     ));
     let (reversed, range) = crate::test_support::with_service_context(|ctx| {

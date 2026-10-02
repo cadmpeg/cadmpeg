@@ -89,7 +89,7 @@ fn bounded_plane_identity_copies_refuse_before_retaining_text() {
 
 #[test]
 fn plane_nurbs_boundary_points_refuse_collection_limit() {
-    let nurbs = NurbsCurve::from_lanes(
+    let nurbs = NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
         1,
         vec![0.0, 0.0, 1.0, 2.0, 3.0, 4.0, 4.0],
         vec![
@@ -101,7 +101,7 @@ fn plane_nurbs_boundary_points_refuse_collection_limit() {
         ],
         None,
         false,
-    )
+    ).expect("fixture constructor admission")
     .unwrap();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();

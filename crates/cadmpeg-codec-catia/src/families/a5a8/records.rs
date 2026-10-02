@@ -627,7 +627,7 @@ pub(in crate::families) fn rolling_ball_limit_curve(
     );
     crate::nurbs::note_refusal(
         ctx,
-        cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes_for_decode(
+        cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
             ctx,
             A5FreeformCurve::DEGREE,
             knots,
@@ -836,7 +836,7 @@ fn parse_a5_nurbs_curve(
     }
     crate::nurbs::note_refusal(
         ctx,
-        cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes_for_decode(
+        cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
             ctx,
             degree,
             knots,

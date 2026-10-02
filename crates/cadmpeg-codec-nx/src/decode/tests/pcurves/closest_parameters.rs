@@ -98,13 +98,13 @@ fn rational_spine_closest_search_resolves_close_global_branches() {
         .zip(weights)
         .map(|(numerator, weight)| Point3::new(numerator / weight, 0.0, 0.0))
         .collect();
-        let curve = NurbsCurve::from_lanes(
+        let curve = NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
             4,
             vec![0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0, 1.0],
             control_points,
             Some(weights.to_vec()),
             false,
-        )
+        ).expect("fixture constructor admission")
         .unwrap();
         let point = Point3::new(0.0, 1.0e-4, 0.0);
 
@@ -166,7 +166,7 @@ fn periodic_nurbs_inversion_lifts_the_continuation_phase() {
             )
             .unwrap(),
         };
-        let curve = NurbsCurve::from_lanes(
+        let curve = NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
             1,
             knots,
             vec![
@@ -176,7 +176,7 @@ fn periodic_nurbs_inversion_lifts_the_continuation_phase() {
             ],
             None,
             true,
-        )
+        ).expect("fixture constructor admission")
         .unwrap();
 
         assert_eq!(

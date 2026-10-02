@@ -502,7 +502,7 @@ fn generated_revolution_spline_surfaces_decode_and_write_source_less() {
             .find(|curve| curve.id == directrix)
             .expect("revolution directrix")
             .geometry = cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-            cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
+            cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
                 1,
                 vec![0.0, 0.0, 1.0, 1.0],
                 vec![
@@ -511,7 +511,7 @@ fn generated_revolution_spline_surfaces_decode_and_write_source_less() {
                 ],
                 None,
                 false,
-            )
+            ).expect("fixture constructor admission")
             .unwrap(),
         ));
         let mut encoded = Vec::new();
@@ -768,7 +768,7 @@ fn generated_taper_surface_family_decodes_and_writes_source_less() {
             .find(|curve| curve.id == reference)
             .expect("taper reference curve")
             .geometry = cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-            cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
+            cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
                 1,
                 vec![0.0, 0.0, 1.0, 1.0],
                 vec![
@@ -777,7 +777,7 @@ fn generated_taper_surface_family_decodes_and_writes_source_less() {
                 ],
                 None,
                 false,
-            )
+            ).expect("fixture constructor admission")
             .unwrap(),
         ));
         let mut encoded = Vec::new();
@@ -893,7 +893,7 @@ fn generated_loft_surface_decodes_full_nested_graph() {
             .find(|curve| curve.id == line_profile)
             .expect("loft line profile")
             .geometry = cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-            cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
+            cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
                 1,
                 vec![-1.0, -1.0, 2.0, 2.0],
                 vec![
@@ -902,7 +902,7 @@ fn generated_loft_surface_decodes_full_nested_graph() {
                 ],
                 None,
                 false,
-            )
+            ).expect("fixture constructor admission")
             .unwrap(),
         ));
         let mut encoded = Vec::new();
