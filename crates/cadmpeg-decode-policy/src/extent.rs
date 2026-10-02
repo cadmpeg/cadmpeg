@@ -6,6 +6,12 @@ use types::Shape;
 
 impl<'tcx> Analysis<'_, 'tcx> {
     pub(crate) fn initializer(&self, expression: &Expr<'tcx>) -> Option<&'tcx Expr<'tcx>> {
+        if let ExprKind::Field(base, field) = expression.kind {
+            let index = field.name.as_str().parse::<usize>().ok()?;
+            let tuple = self.initializer(base)?;
+            if let ExprKind::Tup(values) = tuple.kind { return values.get(index); }
+            return None;
+        }
         let ExprKind::Path(ref path) = expression.kind else { return None; };
         let Res::Local(id) = self.typeck.qpath_res(path, expression.hir_id) else { return None; };
         if self.flow.mutated.contains(&format!("local:{id:?}")) { return None; }
@@ -19,13 +25,27 @@ impl<'tcx> Analysis<'_, 'tcx> {
         None
     }
 
-    pub(crate) fn constant(&self, expression: &Expr<'tcx>, seen: &mut Vec<rustc_hir::HirId>) -> bool {
+    pub(crate) fn constant(&self, expression: &'tcx Expr<'tcx>, seen: &mut Vec<rustc_hir::HirId>) -> bool {
         if seen.contains(&expression.hir_id) { return false; }
         seen.push(expression.hir_id);
         match expression.kind {
             ExprKind::Lit(_) => true,
             ExprKind::AddrOf(_, _, inner) | ExprKind::Unary(_, inner) | ExprKind::Cast(inner, _) | ExprKind::DropTemps(inner) => self.constant(inner, seen),
             ExprKind::Binary(_, left, right) => self.constant(left, seen) && self.constant(right, seen),
+            ExprKind::Array(values) | ExprKind::Tup(values) => values.iter().all(|value| self.constant(value, seen)),
+            ExprKind::Repeat(value, _) => self.constant(value, seen),
+            ExprKind::Call(_, _) | ExprKind::MethodCall(_, _, _, _) => {
+                let Some((definition, operands)) = self.call(expression) else { return false; };
+                if matches!(self.tcx.def_kind(definition), rustc_hir::def::DefKind::Ctor(_, _)) { return operands.iter().all(|operand| self.constant(operand, seen)); }
+                if !types::standard(self.tcx, definition) { return false; }
+                match self.tcx.item_name(definition).as_str() {
+                    "len" => operands.first().is_some_and(|operand| matches!(self.typeck.expr_ty(operand).peel_refs().kind(), ty::Array(_, _)) || self.constant(operand, seen)),
+                    "size_of" | "align_of" => true,
+                    "new" | "default" => operands.is_empty(),
+                    _ => false,
+                }
+            }
+            ExprKind::Field(_, _) => self.initializer(expression).is_some_and(|init| self.constant(init, seen)),
             ExprKind::Path(ref path) => match self.typeck.qpath_res(path, expression.hir_id) {
                 Res::Def(rustc_hir::def::DefKind::Const { .. } | rustc_hir::def::DefKind::AssocConst { .. }, _) => true,
                 _ => self.initializer(expression).is_some_and(|init| self.constant(init, seen)),
@@ -51,6 +71,11 @@ impl<'tcx> Analysis<'_, 'tcx> {
         }
         if let Some((definition, operands)) = self.call(expression) {
             let name = self.tcx.item_name(definition);
+            if name.as_str() == "new" && types::standard(self.tcx, definition) {
+                if let ty::Adt(result, _) = self.typeck.expr_ty(expression).kind() {
+                    if self.tcx.item_name(result.did()).as_str() == "RangeInclusive" { return if operands.iter().all(|operand| self.constant(operand, &mut Vec::new())) { Shape::Fixed } else { Shape::Dynamic }; }
+                }
+            }
             if types::standard(self.tcx, definition) && matches!(name.as_str(), "iter" | "iter_mut" | "into_iter" | "enumerate" | "rev" | "copied" | "cloned" | "map" | "filter" | "filter_map" | "take" | "skip" | "step_by" | "take_while" | "skip_while" | "inspect" | "chain" | "zip" | "flatten" | "flat_map") {
                 let shape = operands.first().map_or(Shape::Unknown, |operand| self.iteration(operand, seen));
                 if matches!(name.as_str(), "flatten" | "flat_map") { return if shape == Shape::Fixed { Shape::Unknown } else { shape }; }

@@ -7,7 +7,7 @@ use types::Shape;
 
 impl<'tcx> Analysis<'_, 'tcx> {
     fn work_report(&mut self, span: Span, shape: Shape, paid: Option<bool>, name: &str) {
-        if shape == Shape::Fixed || paid == Some(true) { return; }
+        if shape == Shape::Fixed || shape == Shape::Dynamic && paid == Some(true) { return; }
         if shape == Shape::Unknown || paid.is_none() {
             self.report(span, "unproven_decode_charge", &format!("{name}: iteration extent, callee, or charge coverage is unresolved; use concrete operands, a core charged operation or an explicit extent charge"));
         } else {
@@ -57,9 +57,32 @@ impl<'tcx> Analysis<'_, 'tcx> {
             }
             if name == "clone" && types::heap(self.tcx, self.typeck.expr_ty(expression), &mut Vec::new()) == Shape::Fixed { return; }
         }
+        if matches!(name, "from_elem" | "repeat") {
+            let count = operands.get(1);
+            let shape = if count.is_some_and(|count| self.constant(count, &mut Vec::new())) { Shape::Fixed } else { Shape::Dynamic };
+            self.work_report(expression.span, shape, Some(false), name);
+            return;
+        }
+        if matches!(name, "from" | "into" | "into_owned") {
+            if self.typeck.expr_ty(expression) == operands.first().map_or(self.typeck.expr_ty(expression), |operand| self.typeck.expr_ty(operand)) { return; }
+            if let Some(receiver) = operands.first() {
+                if matches!(self.typeck.expr_ty(receiver).peel_refs().kind(), rustc_middle::ty::Str | rustc_middle::ty::Slice(_)) {
+                    let paid = self.take_credit(&operands);
+                    self.work_report(expression.span, if self.constant(receiver, &mut Vec::new()) { Shape::Fixed } else { Shape::Dynamic }, paid, name);
+                    return;
+                }
+            }
+        }
         let consumers = matches!(name, "any" | "all" | "position" | "rposition" | "find" | "rfind" | "find_map" | "min" | "max" | "min_by" | "max_by" | "min_by_key" | "max_by_key" | "fold" | "try_fold" | "reduce" | "sum" | "product" | "count" | "for_each" | "try_for_each" | "collect" | "from_iter");
         let scans = matches!(name, "contains" | "contains_key" | "get" | "get_mut" | "starts_with" | "ends_with" | "eq" | "cmp" | "partial_cmp" | "hash" | "copy_from_slice" | "copy_within" | "extend_from_slice" | "split_at" | "trim" | "trim_start" | "trim_end" | "replace" | "replacen" | "to_lowercase" | "to_uppercase" | "is_ascii" | "from_utf8" | "from_utf8_lossy" | "to_vec" | "clone" | "to_owned" | "to_string" | "sort" | "sort_by" | "sort_by_key" | "sort_unstable" | "sort_unstable_by" | "sort_unstable_by_key" | "binary_search" | "binary_search_by" | "binary_search_by_key" | "retain" | "drain" | "clear" | "truncate" | "resize" | "append" | "extend" | "insert" | "remove" | "join" | "concat");
-        if !consumers && !scans { return; }
+        if !consumers && !scans {
+            let path = self.tcx.def_path_str(definition);
+            let fixed_call = matches!(name, "len" | "capacity" | "is_empty" | "as_str" | "as_bytes" | "as_slice" | "as_mut_slice" | "as_ref" | "as_mut" | "borrow" | "borrow_mut" | "deref" | "deref_mut" | "new" | "new_uninit" | "default" | "with_capacity" | "with_capacity_in" | "iter" | "iter_mut" | "into_iter" | "map" | "filter" | "filter_map" | "skip" | "take" | "enumerate" | "rev" | "zip" | "chain" | "peekable" | "fuse" | "copied" | "cloned" | "inspect" | "flat_map" | "flatten" | "step_by" | "skip_while" | "take_while" | "branch" | "from_output" | "from_residual" | "ok_or" | "ok_or_else" | "map_err" | "must_use" | "write_box_via_move" | "box_assume_init_into_vec_unsafe" | "size_of" | "align_of" | "push" | "push_back" | "push_front" | "reserve" | "reserve_exact" | "try_reserve" | "try_reserve_exact" | "unwrap_or" | "unwrap_or_else" | "is_some" | "is_none" | "is_ok" | "is_err") || matches!(self.tcx.def_kind(definition), rustc_hir::def::DefKind::Ctor(_, _)) || path.contains("fmt::") || path.contains("fmt::rt");
+            if !fixed_call && operands.iter().any(|operand| types::work(self.tcx, self.typeck.expr_ty(operand), &mut Vec::new()) != Shape::Fixed) {
+                self.work_report(expression.span, Shape::Unknown, Some(false), "standard callee work not summarized");
+            }
+            return;
+        }
         let Some(receiver) = operands.first() else { return; };
         let value = self.typeck.expr_ty(receiver).peel_refs();
         if matches!(name, "get" | "get_mut" | "split_at") && matches!(value.kind(), rustc_middle::ty::Slice(_) | rustc_middle::ty::Array(_, _)) { return; }
@@ -124,6 +147,43 @@ impl<'tcx> Analysis<'_, 'tcx> {
         match block.expr { Some(value) => self.prefix_paid(value), None => Some(false) }
     }
 
+    fn fixed_scalar_loop(&self, block: &'tcx rustc_hir::Block<'tcx>) -> bool {
+        let Some(value) = block.expr else { return false; };
+        let ExprKind::If(condition, body, _) = value.kind else { return false; };
+        let condition = match condition.kind { ExprKind::DropTemps(inner) => inner, _ => condition };
+        let ExprKind::Binary(operator, variable, bound) = condition.kind else { return false; };
+        if !matches!(self.typeck.expr_ty(variable).kind(), rustc_middle::ty::Uint(_)) { return false; }
+        let ExprKind::Lit(literal) = bound.kind else { return false; };
+        let rustc_ast::LitKind::Int(bound, _) = literal.node else { return false; };
+        if !matches!(operator.node, BinOpKind::Gt | BinOpKind::Ge) && !(operator.node == BinOpKind::Ne && bound.get() == 0) { return false; }
+        if operator.node == BinOpKind::Ge && bound.get() == 0 { return false; }
+        let ExprKind::Block(body, _) = body.kind else { return false; };
+        let Some(variable_key) = self.key(variable, &mut Vec::new()) else { return false; };
+        let mut shrinking = false;
+        for statement in body.stmts {
+            let expression = match statement.kind { StmtKind::Semi(value) | StmtKind::Expr(value) => value, StmtKind::Let(local) => match local.init { Some(value) => value, None => continue }, StmtKind::Item(_) => continue };
+            if let ExprKind::AssignOp(operation, target, step) = expression.kind {
+                if self.key(target, &mut Vec::new()).as_ref() == Some(&variable_key) {
+                    let ExprKind::Lit(literal) = step.kind else { return false; };
+                    let rustc_ast::LitKind::Int(step, _) = literal.node else { return false; };
+                    if operation.node == rustc_ast::AssignOpKind::DivAssign && step.get() > 1 || operation.node == rustc_ast::AssignOpKind::ShrAssign && step.get() > 0 { shrinking = true; continue; }
+                    return false;
+                }
+            }
+            let mut guard = ShrinkGuard { analysis: self, variable: &variable_key, valid: true };
+            guard.visit_expr(expression);
+            if !guard.valid { return false; }
+        }
+        shrinking
+    }
+
+    fn restore_loop(&mut self, mut saved: crate::flow::Flow) {
+        saved.mutated.extend(self.flow.mutated.iter().cloned());
+        saved.work.retain(|credit| !credit.extents.iter().any(|term| saved.mutated.iter().any(|key| term == key || term.starts_with(&format!("{key}.")))));
+        saved.storage |= self.flow.storage;
+        self.flow = saved;
+    }
+
     pub(crate) fn visit_work_expression(&mut self, expression: &'tcx Expr<'tcx>) {
         if let ExprKind::Match(source, arms, MatchSource::ForLoopDesugar) = expression.kind {
             if let [arm] = arms {
@@ -146,7 +206,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
                             let saved = self.flow.clone();
                             self.flow.work.clear();
                             if let Some(body) = user_body { self.visit_expr(body); }
-                            self.flow = saved;
+                            self.restore_loop(saved);
                             return;
                         }
                     }
@@ -154,14 +214,29 @@ impl<'tcx> Analysis<'_, 'tcx> {
             }
         }
         match expression.kind {
+            ExprKind::Closure(closure) => {
+                let owner = closure.def_id;
+                let mut stack = self.stack.clone();
+                stack.push(owner);
+                Analysis { tcx: self.tcx, typeck: self.tcx.typeck(owner), owner, summaries: self.summaries, flow: crate::flow::Flow::default(), stack, findings: self.findings }.visit_body(self.tcx.hir_body(closure.body));
+                return;
+            }
             ExprKind::Loop(block, _, source, header) => {
-                let paid = self.prefix_block(block);
-                let shape = if source == LoopSource::ForLoop { Shape::Unknown } else { Shape::Dynamic };
+                let paid = if source == LoopSource::While {
+                    match block.expr {
+                        Some(value) => match value.kind {
+                            ExprKind::If(_, body, _) => self.prefix_paid(body),
+                            _ => self.prefix_block(block),
+                        },
+                        None => self.prefix_block(block),
+                    }
+                } else { self.prefix_block(block) };
+                let shape = if source == LoopSource::While && self.fixed_scalar_loop(block) { Shape::Fixed } else if source == LoopSource::ForLoop { Shape::Unknown } else { Shape::Dynamic };
                 self.work_report(header, shape, paid, "loop");
                 let saved = self.flow.clone();
                 self.flow.work.clear();
                 self.visit_block(block);
-                self.flow = saved;
+                self.restore_loop(saved);
                 return;
             }
             ExprKind::If(condition, yes, no) => {
@@ -172,7 +247,8 @@ impl<'tcx> Analysis<'_, 'tcx> {
                 self.flow = before;
                 if let Some(no) = no { self.visit_expr(no); }
                 self.flow.work.retain(|credit| after_yes.work.contains(credit));
-                self.flow.storage &= after_yes.storage;
+                self.flow.storage |= after_yes.storage;
+                self.flow.mutated.extend(after_yes.mutated);
                 return;
             }
             ExprKind::Match(scrutinee, arms, source) if !matches!(source, MatchSource::TryDesugar(_)) => {
@@ -184,7 +260,8 @@ impl<'tcx> Analysis<'_, 'tcx> {
                     if let Some(guard) = arm.guard { self.visit_expr(guard); }
                     self.visit_expr(arm.body);
                     merged.work.retain(|credit| self.flow.work.contains(credit));
-                    merged.storage &= self.flow.storage;
+                    merged.storage |= self.flow.storage;
+                    merged.mutated.extend(self.flow.mutated.iter().cloned());
                 }
                 self.flow = merged;
                 return;
@@ -193,7 +270,26 @@ impl<'tcx> Analysis<'_, 'tcx> {
         }
         self.work(expression);
         walk_expr(self, expression);
-        self.record_charge(expression);
         self.mutation(expression);
+        self.record_charge(expression);
+    }
+}
+
+struct ShrinkGuard<'a, 'b, 'tcx> {
+    analysis: &'a Analysis<'b, 'tcx>,
+    variable: &'a str,
+    valid: bool,
+}
+
+impl<'tcx> Visitor<'tcx> for ShrinkGuard<'_, '_, 'tcx> {
+    fn visit_expr(&mut self, expression: &'tcx Expr<'tcx>) {
+        match expression.kind {
+            ExprKind::Assign(target, _, _) | ExprKind::AssignOp(_, target, _) | ExprKind::AddrOf(_, rustc_hir::Mutability::Mut, target) => {
+                if self.analysis.key(target, &mut Vec::new()).as_deref() == Some(self.variable) { self.valid = false; }
+            }
+            ExprKind::Continue(_) | ExprKind::Loop(_, _, _, _) => self.valid = false,
+            _ => (),
+        }
+        walk_expr(self, expression);
     }
 }

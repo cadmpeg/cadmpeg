@@ -20,3 +20,11 @@ pub fn decode(ctx: &DecodeContext, text: &str, owned: &Owned, custom: &Custom, n
     let _bounded = format!("value: {number:?}");
     let _constant = "literal".to_owned();
 }
+
+const NAME: &str = "fixed";
+pub fn constant_formats(ctx: &DecodeContext) {
+    let _ctx = ctx;
+    let _value = format!("name: {NAME}");
+    let _text = NAME.to_owned();
+    let _literal = format!("value: {}", "fixed");
+}

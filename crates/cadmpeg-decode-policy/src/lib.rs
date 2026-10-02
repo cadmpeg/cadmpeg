@@ -61,7 +61,9 @@ impl Callbacks for DecodeCallbacks {
                 parent = tcx.parent(parent);
             }
         }
-        for owner in active {
+        let mut owners: Vec<_> = active.into_iter().collect();
+        owners.sort_by_key(|owner| owner.local_def_index.as_u32());
+        for owner in owners {
             if production(tcx, owner) {
                 Analysis { tcx, typeck: tcx.typeck(owner), owner, summaries: &summaries, flow: flow::Flow::default(), stack: vec![owner], findings: &mut self.findings }
                     .visit_body(tcx.hir_body_owned_by(owner));
