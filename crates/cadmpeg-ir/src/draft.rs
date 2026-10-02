@@ -505,6 +505,7 @@ impl ModelDraft<DraftAccounting> {
 enum CommittedIdentity {
     Neutral(IdentitySlot),
     Native { namespace: usize, arena: usize, record: usize },
+    StagedUnknown(usize),
 }
 
 type CommittedIdentityIndex = HashMap<u64, Vec<CommittedIdentity>>;
@@ -544,6 +545,7 @@ pub struct CommitSession<'ctx, D: BorrowMut<CadIr>> {
 #[derive(Debug)]
 struct CommitState<D: BorrowMut<CadIr>> {
     base: D,
+    unknowns: Vec<crate::unknown::UnknownRecord>,
     identities: Option<CommittedIdentityIndex>,
 }
 
@@ -551,7 +553,7 @@ impl<'ctx, D: BorrowMut<CadIr>> CommitSession<'ctx, D> {
     /// Hold the document and caller's context without scanning identity arenas.
     pub fn new(base: D, ctx: &'ctx DecodeContext<'ctx>) -> Result<Self, CodecError> {
         Ok(Self {
-            state: CommitState { base, identities: None },
+            state: CommitState { base, unknowns: Vec::new(), identities: None },
             ctx,
             storage: ctx.reserve_scoped(0, "committed identity storage")?,
         })
@@ -570,13 +572,38 @@ impl<'ctx, D: BorrowMut<CadIr>> CommitSession<'ctx, D> {
         Ok(self.state.base.borrow_mut())
     }
 
-    /// Release the identity cache and return the document owner or exclusive borrow.
-    pub fn into_document(self) -> D {
+    /// Release the cache and transfer the document and staged source records.
+    pub fn into_parts(self) -> (D, Vec<crate::unknown::UnknownRecord>) {
         let Self { state, ctx: _, storage } = self;
-        let CommitState { base, identities } = state;
+        let CommitState { base, unknowns, identities } = state;
         drop(identities);
         drop(storage);
-        base
+        (base, unknowns)
+    }
+
+    /// Borrow staged source records without constructing native product records.
+    pub fn unknowns(&self) -> &[crate::unknown::UnknownRecord] {
+        &self.state.unknowns
+    }
+
+    /// Mutate outgoing links while keeping cached identity positions stable.
+    pub fn unknown_links_mut(&mut self, index: usize) -> Option<&mut Vec<String>> {
+        self.state.unknowns.get_mut(index).map(crate::unknown::UnknownRecord::links_mut)
+    }
+
+    /// Admit a moved source record and extend a previously built identity cache.
+    pub fn push_unknown(&mut self, record: crate::unknown::UnknownRecord) -> Result<(), CodecError> {
+        self.ctx.reserve_retained_vec(&mut self.state.unknowns, 1, "staged unknown record slots")?;
+        if let Some(index) = &mut self.state.identities {
+            self.ctx.charge_work(u64_from_index(record.id().as_str().len()), "hash staged unknown identity")?;
+            self.storage.with_storage_limit(|| {
+                insert_identity(index, identity_hash(record.id().as_str()),
+                    CommittedIdentity::StagedUnknown(self.state.unknowns.len()),
+                    &DecodeStorage(self.ctx), "committed identity slots")
+            })?;
+        }
+        self.state.unknowns.push(record);
+        Ok(())
     }
 
     /// Validate and commit one model draft under this session's context.
@@ -621,6 +648,7 @@ impl<'ctx, D: BorrowMut<CadIr>> CommitSession<'ctx, D> {
 
 fn index_committed_identities(
     base: &CadIr,
+    unknowns: &[crate::unknown::UnknownRecord],
     ctx: &DecodeContext<'_>,
 ) -> Result<CommittedIdentityIndex, CodecError> {
     let storage = DecodeStorage(ctx);
@@ -648,11 +676,17 @@ fn index_committed_identities(
             }
         }
     }
+    for (index, record) in unknowns.iter().enumerate() {
+        storage.work(record.id().as_str().len(), "committed unknown identity scan")?;
+        insert_identity(&mut identities, identity_hash(record.id().as_str()),
+            CommittedIdentity::StagedUnknown(index), &storage, "committed identity slots")?;
+    }
     Ok(identities)
 }
 
 fn committed_identity_contains(
     base: &CadIr,
+    unknowns: &[crate::unknown::UnknownRecord],
     identities: &CommittedIdentityIndex,
     identity: &str,
     ctx: &DecodeContext<'_>,
@@ -664,6 +698,7 @@ fn committed_identity_contains(
         ctx.charge_work(1, "committed identity collision scan")?;
         let candidate = match owner {
             CommittedIdentity::Neutral(slot) => base.model.identity_at(slot.kind, slot.index),
+            CommittedIdentity::StagedUnknown(index) => unknowns.get(*index).map(|record| record.id().as_str()),
             CommittedIdentity::Native { namespace, arena, record } => {
                 let work = u64_from_index(*namespace).checked_add(u64_from_index(*arena))
                     .and_then(|work| work.checked_add(3))
@@ -693,14 +728,14 @@ impl<D: BorrowMut<CadIr>> CommitState<D> {
     ) -> Result<bool, CodecError> {
         storage.with_storage(|| self.ensure_identities(ctx))?;
         match &self.identities {
-            Some(index) => committed_identity_contains(self.base.borrow(), index, identity, ctx),
+            Some(index) => committed_identity_contains(self.base.borrow(), &self.unknowns, index, identity, ctx),
             None => Err(CodecError::malformed("committed identity index is absent")),
         }
     }
 
     fn ensure_identities(&mut self, ctx: &DecodeContext<'_>) -> Result<(), CodecError> {
         if self.identities.is_none() {
-            self.identities = Some(index_committed_identities(self.base.borrow(), ctx)?);
+            self.identities = Some(index_committed_identities(self.base.borrow(), &self.unknowns, ctx)?);
         }
         Ok(())
     }
@@ -724,7 +759,7 @@ impl<D: BorrowMut<CadIr>> CommitState<D> {
             .ok_or_else(|| CodecError::Malformed("committed identity index is absent".into()))?;
         if let Err(error) = draft.validate_with_contains(
             &base.model,
-            |identity| committed_identity_contains(base, identities, identity, ctx),
+            |identity| committed_identity_contains(base, &self.unknowns, identities, identity, ctx),
             ctx,
         )? {
             return Ok(Err(error));
@@ -832,7 +867,7 @@ mod tests {
             let hash = crate::index::identity_hash(target);
             let error = if committed {
                 let index = std::collections::HashMap::from([(hash, vec![super::CommittedIdentity::Neutral(slot)])]);
-                super::committed_identity_contains(&ir, &index, target, &ctx).unwrap_err()
+                super::committed_identity_contains(&ir, &[], &index, target, &ctx).unwrap_err()
             } else {
                 let index = std::collections::HashMap::from([(hash, vec![slot])]);
                 super::identity_index_contains(&ir.model, &index, target, &ctx).unwrap_err()

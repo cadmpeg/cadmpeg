@@ -18,7 +18,7 @@ fn owned_commit_session_reuses_borrowed_identity_storage_until_extraction() {
     let mut session = CommitSession::new(ir, &ctx).unwrap();
     assert!(session.contains(&identity).unwrap());
     assert!(session.contains(&identity).unwrap());
-    let ir = session.into_document();
+    let ir = session.into_parts().0;
     assert_eq!(ir.model.points[0].id.as_str(), identity);
     let reservation = ctx.reserve_scoped(4096, "owned cache released").unwrap();
     drop(reservation);
@@ -37,7 +37,7 @@ fn owned_commit_session_preserves_cross_candidate_references_and_rejections() {
     session.commit_model(super::vertex_draft(vertex, point)).unwrap().unwrap();
     assert!(session.contains(point).unwrap());
     assert!(session.contains(vertex).unwrap());
-    let ir = session.into_document();
+    let ir = session.into_parts().0;
     assert_eq!(ir.model.points.len(), 1);
     assert_eq!(ir.model.vertices.len(), 1);
     assert_eq!(ir.model.vertices[0].point.as_str(), point);
@@ -61,8 +61,87 @@ fn owned_commit_session_invalidates_positions_before_document_mutation() {
     session.document_mut().unwrap().model.points.remove(0);
     assert!(session.contains(first).unwrap());
     assert!(!session.contains(second).unwrap());
-    let ir = session.into_document();
+    let ir = session.into_parts().0;
     assert_eq!(ir.model.points.len(), 1);
     assert_eq!(ir.model.points[0].id.as_str(), first);
     ctx.finish_session().unwrap();
+}
+
+#[test]
+fn staged_unknown_cache_moves_source_facts_and_extends_only_new_slots() {
+    let first_id = format!("test:source:unknown#{}", "a".repeat(16384));
+    let second_id = format!("test:source:unknown#{}", "b".repeat(16384));
+    let image = vec![7; 65536];
+    let image_pointer = image.as_ptr();
+    let first = crate::unknown::UnknownRecord::retained(first_id.as_str().try_into().unwrap(), 17, image, Vec::new());
+    let second = crate::unknown::UnknownRecord::unavailable(second_id.as_str().try_into().unwrap(), 29, 31, "source-digest", Vec::new());
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 4096;
+    policy.limits.max_materialized_bytes = 4096;
+    // Each moved record has one slot, one cache key, and one cache position.
+    policy.limits.max_collection_items = 6;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut session = CommitSession::new(CadIr::empty(), &ctx).unwrap();
+    session.push_unknown(first).unwrap();
+    assert!(session.contains(&first_id).unwrap());
+    session.push_unknown(second).unwrap();
+    assert!(session.contains(&first_id).unwrap());
+    assert!(session.contains(&second_id).unwrap());
+    session.unknown_links_mut(0).unwrap().push("test:model:point#later".into());
+    assert!(session.contains(&first_id).unwrap());
+    assert!(session.contains(&second_id).unwrap());
+    let (ir, records) = session.into_parts();
+    assert!(ir.model.points.is_empty());
+    assert_eq!(records.len(), 2);
+    assert_eq!(records[0].id().as_str(), first_id);
+    assert_eq!(records[0].offset(), 17);
+    assert_eq!(records[0].data().unwrap().as_ptr(), image_pointer);
+    assert_eq!(records[0].links(), ["test:model:point#later"]);
+    assert_eq!(records[1].id().as_str(), second_id);
+    assert_eq!(records[1].offset(), 29);
+    let reservation = ctx.reserve_scoped(4096, "staged unknown cache released").unwrap();
+    drop(reservation);
+    ctx.finish_session().unwrap();
+}
+
+#[test]
+fn staged_unknown_cache_resolves_draft_references_and_rejects_identity_collisions() {
+    let target = "test:source:unknown#native";
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let mut session = CommitSession::new(CadIr::empty(), &ctx).unwrap();
+    session.push_unknown(crate::unknown::UnknownRecord::retained(target.try_into().unwrap(), 0, Vec::new(), Vec::new())).unwrap();
+    assert!(session.contains(target).unwrap());
+    assert!(session.commit_model(super::point_draft(target)).unwrap().is_err());
+    session.commit_model(super::vertex_draft("test:model:vertex#first", target)).unwrap().unwrap();
+    session.commit_model(super::vertex_draft("test:model:vertex#second", target)).unwrap().unwrap();
+    let (ir, records) = session.into_parts();
+    assert_eq!(ir.model.vertices.len(), 2);
+    assert!(ir.model.points.is_empty());
+    assert_eq!(records.len(), 1);
+    assert_eq!(ir.model.vertices[0].point.as_str(), target);
+    assert_eq!(ir.model.vertices[1].point.as_str(), target);
+    ctx.finish_session().unwrap();
+}
+
+#[test]
+fn staged_unknown_append_refusal_preserves_source_and_cached_positions() {
+    use cadmpeg_core::decode::ResourceDimension;
+    use cadmpeg_core::CodecError;
+    let first = "test:source:unknown#first";
+    let second = "test:source:unknown#second";
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 3;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut session = CommitSession::new(CadIr::empty(), &ctx).unwrap();
+    session.push_unknown(crate::unknown::UnknownRecord::retained(first.try_into().unwrap(), 0, Vec::new(), Vec::new())).unwrap();
+    assert!(session.contains(first).unwrap());
+    let Err(CodecError::ResourceLimit(limit)) = session.push_unknown(crate::unknown::UnknownRecord::retained(second.try_into().unwrap(), 0, Vec::new(), Vec::new())) else { panic!("next record slot must refuse"); };
+    assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
+    assert!(matches!(session.contains(first), Err(CodecError::ResourceLimit(sticky)) if sticky == limit));
+    assert_eq!(session.unknowns().len(), 1);
+    let (_, records) = session.into_parts();
+    assert_eq!(records[0].id().as_str(), first);
+    assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit));
 }
