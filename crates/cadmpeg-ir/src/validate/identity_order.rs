@@ -21,8 +21,7 @@ fn push_identity<'a>(
         .ok_or_else(|| ctx.refuse_codec_limit("validate identity grammar", u64::MAX - 1, u64::MAX))?;
     ctx.charge_work(u64_from_index(grammar_work), "validate identity grammar")?;
     if !crate::ids::is_valid_identity(id) {
-        super::record_finding(ctx, findings, Check::Identity, Severity::Error, id,
-            format_args!("entity id does not match `<format>:<scope>:<kind>#<key>`"))?;
+        super::record_finding(ctx, findings, Check::Identity, Severity::Error, Some(id), format_args!("entity id does not match `<format>:<scope>:<kind>#<key>`"))?;
     }
     let work = id.len().checked_add(1)
         .and_then(|bytes| seen.0.len().checked_add(1).and_then(|count| bytes.checked_mul(count)))
@@ -31,8 +30,7 @@ fn push_identity<'a>(
     ctx.charge_work(u64_from_index(work), "index validation identities")?;
     let inserted = seen.1.with_storage(|| ctx.insert_hash_set(&mut seen.0, id, "validation identity slots"))?;
     if !inserted {
-        super::record_finding(ctx, findings, Check::Identity, Severity::Error, id,
-            format_args!("entity id is not globally unique"))?;
+        super::record_finding(ctx, findings, Check::Identity, Severity::Error, Some(id), format_args!("entity id is not globally unique"))?;
     }
     Ok(())
 }
@@ -49,8 +47,7 @@ fn check_order<'a>(
             .ok_or_else(|| ctx.refuse_codec_limit("compare validation arena order", u64::MAX - 1, u64::MAX))?,
             "compare validation arena order")?;
         if previous.is_some_and(|value| value >= id) {
-            super::record_finding(ctx, findings, Check::ArenaOrder, Severity::Error, id,
-                format_args!("arena `{arena}` is not strictly sorted by id"))?;
+            super::record_finding(ctx, findings, Check::ArenaOrder, Severity::Error, Some(id), format_args!("arena `{arena}` is not strictly sorted by id"))?;
             return Ok(());
         }
         previous = Some(id);

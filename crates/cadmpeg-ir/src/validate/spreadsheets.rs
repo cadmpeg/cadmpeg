@@ -3,10 +3,10 @@
 
 use std::collections::{HashMap, HashSet};
 
-use super::{error_finding, CadIr, Finding};
+use super::{record_finding, CadIr, Finding};
 use crate::report::check::Check;
 
-pub(super) fn check_spreadsheets(ir: &CadIr, findings: &mut Vec<Finding>) {
+pub(super) fn check_spreadsheets(ctx: &cadmpeg_core::decode::DecodeContext<'_>, ir: &CadIr, findings: &mut Vec<Finding>) -> Result<(), cadmpeg_core::CodecError> {
     let features = ir
         .model
         .features
@@ -21,31 +21,17 @@ pub(super) fn check_spreadsheets(ir: &CadIr, findings: &mut Vec<Finding>) {
         .collect::<HashMap<_, _>>();
     for sheet in &ir.model.spreadsheets {
         if !features.contains(&sheet.feature) {
-            error_finding(
-                findings,
-                Check::ReferentialIntegrity,
-                sheet.id.as_str(),
-                "spreadsheet feature does not resolve",
-            );
+            record_finding(ctx, findings, Check::ReferentialIntegrity, crate::report::Severity::Error, Some(sheet.id.as_str()), format_args!("{}", "spreadsheet feature does not resolve"))?;
         }
         for cell in sheet.cells() {
             let Some(parameter) = parameters.get(&cell.parameter) else {
-                error_finding(
-                    findings,
-                    Check::ReferentialIntegrity,
-                    sheet.id.as_str(),
-                    "spreadsheet cell does not resolve",
-                );
+                record_finding(ctx, findings, Check::ReferentialIntegrity, crate::report::Severity::Error, Some(sheet.id.as_str()), format_args!("{}", "spreadsheet cell does not resolve"))?;
                 continue;
             };
             if parameter.owner.as_ref() != Some(&sheet.feature) {
-                error_finding(
-                    findings,
-                    Check::ReferentialIntegrity,
-                    sheet.id.as_str(),
-                    "spreadsheet cell has a different owner",
-                );
+                record_finding(ctx, findings, Check::ReferentialIntegrity, crate::report::Severity::Error, Some(sheet.id.as_str()), format_args!("{}", "spreadsheet cell has a different owner"))?;
             }
         }
     }
+    Ok(())
 }

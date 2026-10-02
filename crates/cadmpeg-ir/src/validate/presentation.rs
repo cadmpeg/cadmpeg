@@ -3,7 +3,7 @@
 
 use std::collections::HashSet;
 
-use super::error_finding;
+use super::record_finding;
 use crate::document::CadIr;
 use crate::presentation::PresentationItem;
 use crate::report::{
@@ -12,12 +12,13 @@ use crate::report::{
 };
 
 pub(super) fn check_presentation(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ir: &CadIr,
     all_ids: &crate::index::ModelIndex<'_>,
     findings: &mut Vec<Finding>,
-) {
+) -> Result<(), cadmpeg_core::CodecError> {
     if ir.model.presentation_documents.len() > 1 {
-        invalid_state(findings, None, "multiple document presentation records");
+        record_finding(ctx, findings, Check::ReferentialIntegrity, Severity::Error, None, format_args!("{}", "multiple document presentation records"))?;
     }
     for document in &ir.model.presentation_documents {
         let native_valid = document
@@ -30,11 +31,7 @@ pub(super) fn check_presentation(
             .flat_map(|state| &state.assets)
             .all(|asset| all_ids.contains(asset));
         if !native_valid || !assets_valid {
-            invalid_state(
-                findings,
-                Some(document.id.as_str().to_owned()),
-                "invalid document presentation state",
-            );
+            record_finding(ctx, findings, Check::ReferentialIntegrity, Severity::Error, Some(document.id.as_str()), format_args!("{}", "invalid document presentation state"))?;
         }
     }
 
@@ -49,11 +46,7 @@ pub(super) fn check_presentation(
                 .as_ref()
                 .is_none_or(|native| all_ids.contains(native));
         if !references_valid || !orders.insert(view.order) {
-            invalid_state(
-                findings,
-                Some(view.id.as_str().to_owned()),
-                "invalid view presentation reference, order, or size",
-            );
+            record_finding(ctx, findings, Check::ReferentialIntegrity, Severity::Error, Some(view.id.as_str()), format_args!("{}", "invalid view presentation reference, order, or size"))?;
         }
     }
 
@@ -89,26 +82,13 @@ pub(super) fn check_presentation(
                 PresentationItem::Source { .. } => true,
             };
             if !resolved {
-                error_finding(
-                    findings,
-                    Check::Presentation,
-                    layer.id.as_str(),
-                    "unresolved presentation-layer item",
-                );
+                record_finding(ctx, findings, Check::Presentation, crate::report::Severity::Error, Some(layer.id.as_str()), format_args!("{}", "unresolved presentation-layer item"))?;
             }
         }
     }
+    Ok(())
 }
 
 fn ids<'a, T>(items: &'a [T], id: impl Fn(&'a T) -> &'a str) -> HashSet<&'a str> {
     items.iter().map(id).collect()
-}
-
-fn invalid_state(findings: &mut Vec<Finding>, entity: Option<String>, message: &str) {
-    findings.push(Finding {
-        check: Check::ReferentialIntegrity,
-        severity: Severity::Error,
-        message: message.into(),
-        entity,
-    });
 }

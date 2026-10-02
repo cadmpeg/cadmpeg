@@ -866,7 +866,7 @@ pub(super) fn check_carrier_reachability(ctx: &cadmpeg_core::decode::DecodeConte
                 .map(|entity| ("point", entity.id.as_str())),
         )
     {
-        super::record_finding(ctx, findings, Check::CarrierReachability, Severity::Error, id, format_args!("orphan {kind} carrier"))?;
+        super::record_finding(ctx, findings, Check::CarrierReachability, Severity::Error, Some(id), format_args!("orphan {kind} carrier"))?;
     }
     Ok(())
 }

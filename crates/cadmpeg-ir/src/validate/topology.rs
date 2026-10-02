@@ -2026,8 +2026,7 @@ fn check_feature_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelInde
     };
 
     if let Err(error) = crate::document::feature_parents::validate(Some(ctx), &[&ir.model])? {
-        super::record_finding(ctx, findings, Check::ReferentialIntegrity, Severity::Error,
-            error.owner().as_str(), format_args!("{error}"))?;
+        super::record_finding(ctx, findings, Check::ReferentialIntegrity, Severity::Error, Some(error.owner().as_str()), format_args!("{error}"))?;
     }
 
     let mut configuration_ordinals = HashSet::new();

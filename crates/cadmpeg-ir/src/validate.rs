@@ -109,28 +109,18 @@ fn pcurve_parameter_domain(
     }
 }
 
-/// Record an error finding of `check` against one entity.
-fn error_finding(findings: &mut Vec<Finding>, check: Check, entity: &str, message: &str) {
-    findings.push(Finding {
-        check,
-        severity: Severity::Error,
-        message: message.into(),
-        entity: Some(entity.into()),
-    });
-}
-
 fn record_finding(
     ctx: &DecodeContext<'_>,
     findings: &mut Vec<Finding>,
     check: Check,
     severity: Severity,
-    entity: &str,
+    entity: Option<&str>,
     message: std::fmt::Arguments<'_>,
 ) -> Result<(), CodecError> {
     ctx.reserve_retained_vec(findings, 1, "validation finding storage")?;
     let message = ctx.format_retained(message, "validation finding message")?;
-    let entity = ctx.copy_retained_text(entity, "validation finding identity")?;
-    findings.push(Finding { check, severity, message, entity: Some(entity) });
+    let entity = entity.map(|id| ctx.copy_retained_text(id, "validation finding identity")).transpose()?;
+    findings.push(Finding { check, severity, message, entity });
     Ok(())
 }
 
@@ -156,7 +146,7 @@ fn validate_model_with_index(
     check_tolerances(ir, &mut findings);
     check_references(ctx, ir, ids, &mut findings)?;
     check_evaluation_cycles(ctx, ir, ids, &mut findings)?;
-    check_pmi(ir, &mut findings);
+    check_pmi(ctx, ir, &mut findings)?;
     check_coedge_pairing(ir, &mut findings);
     check_shell_connectivity(ir, &mut findings);
     check_wire_topology(ir, &mut findings);
@@ -168,10 +158,10 @@ fn validate_model_with_index(
     check_procedural_support_consistency(ir, &mut findings)?;
     check_topology_tolerances(ir, &mut findings);
     check_tessellations(ir, &mut findings);
-    check_sketches(ir, &mut findings)?;
-    check_spreadsheets(ir, &mut findings);
-    check_products(ir, &mut findings);
-    check_presentation(ir, ids, &mut findings);
+    check_sketches(ctx, ir, &mut findings)?;
+    check_spreadsheets(ctx, ir, &mut findings)?;
+    check_products(ctx, ir, &mut findings)?;
+    check_presentation(ctx, ir, ids, &mut findings)?;
     check_drawings(ir, ids, &mut findings);
     check_semantic_annotations(ir, ids, &mut findings);
     check_typed_references(ir, ids, &mut findings);
@@ -275,6 +265,61 @@ mod tests {
     use crate::sketches::{Sketch, SketchId};
     use crate::CadIr;
     use std::collections::BTreeMap;
+
+    #[test]
+    fn validation_finding_preserves_the_original_storage_refusal() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        use cadmpeg_core::CodecError;
+        for entity in [None, Some("test:model:point#missing")] {
+            for dimension in [ResourceDimension::RetainedBytes, ResourceDimension::CollectionItems,
+                ResourceDimension::WorkUnits, ResourceDimension::MaterializedBytes] {
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::service();
+                match dimension {
+                    ResourceDimension::RetainedBytes => policy.limits.max_retained_bytes = 0,
+                    ResourceDimension::CollectionItems => policy.limits.max_collection_items = 0,
+                    ResourceDimension::WorkUnits => policy.limits.max_work_units = 0,
+                    ResourceDimension::MaterializedBytes => policy.limits.max_materialized_bytes = 0,
+                    _ => unreachable!(),
+                }
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+                let mut findings = Vec::new();
+                let mut create = || super::record_finding(&ctx, &mut findings,
+                    crate::report::check::Check::ReferentialIntegrity, crate::report::Severity::Error,
+                    entity, format_args!("unresolved reference"));
+                let result = if dimension == ResourceDimension::MaterializedBytes {
+                    ctx.with_scoped_storage("temporary validation findings", create).map(|_| ())
+                } else { create() };
+                let Err(CodecError::ResourceLimit(limit)) = result else { panic!("finding must refuse"); };
+                assert_eq!(limit.dimension, dimension);
+                assert_eq!(limit.operation, match dimension {
+                    ResourceDimension::WorkUnits => "validation finding message",
+                    _ => "validation finding storage",
+                });
+                assert!(findings.is_empty());
+                assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(original)) if original == limit));
+            }
+        }
+    }
+
+    #[test]
+    fn validation_finding_keeps_absent_identity_and_formatted_message() {
+        let ctx = cadmpeg_test_support::service_decode_context();
+        let mut findings = Vec::new();
+        for entity in [None, Some("test:model:point#missing")] {
+            super::record_finding(&ctx, &mut findings, crate::report::check::Check::ReferentialIntegrity,
+                crate::report::Severity::Error, entity, format_args!("unresolved reference {}", 7)).unwrap();
+        }
+        assert_eq!(findings.len(), 2);
+        assert_eq!(findings[0].entity, None);
+        assert_eq!(findings[1].entity.as_deref(), Some("test:model:point#missing"));
+        for finding in findings {
+            assert_eq!(finding.check, crate::report::check::Check::ReferentialIntegrity);
+            assert_eq!(finding.severity, crate::report::Severity::Error);
+            assert_eq!(finding.message, "unresolved reference 7");
+        }
+        ctx.finish_session().unwrap();
+    }
 
     fn nurbs_pcurve_leaf() -> PcurveGeometry {
         PcurveGeometry::Nurbs {
