@@ -11,7 +11,7 @@ impl DecodeContext {
         vec![value; n]
     } // finding: unproven_decode_charge
 }
-#[derive(Clone)]
+#[derive(Clone)] // finding: uncharged_decode_allocation
 pub struct Record {
     pub values: Vec<u8>,
 }
@@ -31,7 +31,7 @@ pub fn decode(
     let _d = String::from(text); // finding: uncharged_decode_allocation
     let _e: Box<[u8]> = bytes.into(); // finding: uncharged_decode_allocation
     let _f = vec![0; n]; // finding: uncharged_decode_allocation
-    let _g = record.clone(); // finding: uncharged_decode_allocation
+    let _g = record.clone();
     let _h: HashSet<_> = bytes.iter().copied().collect(); // finding: uncharged_decode_allocation
     let _i: BTreeSet<_> = bytes.iter().copied().collect(); // finding: uncharged_decode_allocation
     let _j: HashMap<_, _> = bytes.iter().map(|b| (*b, *b)).collect(); // finding: uncharged_decode_allocation
@@ -53,7 +53,7 @@ pub fn decode(
     let _filled = ctx.alloc_filled(n, 0u8);
     let _none = ctx.alloc_filled(n, None::<String>);
     let _empty_child = ctx.alloc_filled(n, Vec::<String>::new());
-    let child = record.clone(); // finding: uncharged_decode_allocation
+    let child = record.clone();
     let _child = ctx.alloc_filled(n, child); // finding: uncharged_decode_allocation
     let _ref = Rc::clone(&shared);
     let _arc = atomic.clone();

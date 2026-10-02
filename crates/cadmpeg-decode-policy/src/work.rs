@@ -34,8 +34,11 @@ impl<'tcx> Analysis<'_, 'tcx> {
                 // Comparing a dynamic sequence with a fixed-size operand reads
                 // at most that operand's fixed extent.
                 if let Some(definition) = self.typeck.type_dependent_def_id(expression.hir_id) {
+                    if self.checked_call(expression, definition) {
+                        return;
+                    }
                     if let Some(custom) = self.custom_trait(expression, definition) {
-                        if self.local_has_effects(custom) != Some(false) {
+                        if !self.checked_body(custom) {
                             self.work_report(
                                 expression.span,
                                 Shape::Unknown,
@@ -70,9 +73,12 @@ impl<'tcx> Analysis<'_, 'tcx> {
         ) {
             return;
         }
+        if self.checked_call(expression, definition) {
+            return;
+        }
         if self.context_operation(expression) {
             if !self.trusted_context_callee(expression)
-                && self.local_has_effects(definition) != Some(false)
+                && !self.checked_body(definition)
             {
                 self.work_report(
                     expression.span,
@@ -88,7 +94,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
             let known_index_conversion = self.tcx.crate_name(definition.krate).as_str()
                 == "cadmpeg_core"
                 && name.as_str() == "u64_from_index";
-            if !known_index_conversion && self.local_has_effects(definition) != Some(false) {
+            if !known_index_conversion && !self.checked_body(definition) {
                 let paid = self.take_credit(&operands);
                 self.work_report(
                     expression.span,
@@ -102,7 +108,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
         let name = name.as_str();
         if self.tcx.trait_of_assoc(definition).is_some() {
             if let Some(custom) = self.custom_trait(expression, definition) {
-                if self.local_has_effects(custom) != Some(false) {
+                if !self.checked_body(custom) {
                     self.work_report(
                         expression.span,
                         Shape::Unknown,
@@ -838,22 +844,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
             }
         }
         match expression.kind {
-            ExprKind::Closure(closure) => {
-                let owner = closure.def_id;
-                let mut stack = self.stack.clone();
-                stack.push(owner);
-                Analysis {
-                    tcx: self.tcx,
-                    typeck: self.tcx.typeck(owner),
-                    owner,
-                    summaries: self.summaries,
-                    flow: crate::flow::Flow::default(),
-                    stack,
-                    findings: self.findings,
-                }
-                .visit_body(self.tcx.hir_body(closure.body));
-                return;
-            }
+            ExprKind::Closure(_) => return,
             ExprKind::Loop(block, _, source, header) => {
                 let paid = if source == LoopSource::While {
                     match block.expr {

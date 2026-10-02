@@ -20,12 +20,12 @@ pub fn closures(ctx: &DecodeContext, text: &str) {
     let _ctx = ctx;
     let _later = || text.to_owned(); // finding: uncharged_decode_allocation
     fn independent(text: &str) {
-        let _copy = text.to_owned();
+        let _copy = text.to_owned(); // finding: uncharged_decode_allocation
     }
-    independent(text); // finding: unproven_decode_charge
+    independent(text);
 }
 pub fn independent(text: &str) {
-    let _copy = text.to_owned();
+    let _copy = text.to_owned(); // finding: uncharged_decode_allocation
 }
 #[cfg(test)]
 fn test_only(ctx: &DecodeContext, text: &str) {
