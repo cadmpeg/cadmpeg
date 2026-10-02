@@ -2,6 +2,7 @@
 #![feature(rustc_private)]
 //! Type-aware decode allocation and work admission checks.
 
+extern crate rustc_ast;
 extern crate rustc_driver;
 extern crate rustc_hir;
 extern crate rustc_interface;
@@ -11,6 +12,8 @@ extern crate rustc_span;
 mod allocation;
 mod types;
 mod extent;
+mod flow;
+mod work;
 
 use std::collections::{BTreeSet, HashSet};
 use rustc_driver::{Callbacks, Compilation};
@@ -52,7 +55,7 @@ impl Callbacks for DecodeCallbacks {
         }
         for owner in active {
             if production(tcx, owner) {
-                Analysis { tcx, typeck: tcx.typeck(owner), owner, findings: &mut self.findings }
+                Analysis { tcx, typeck: tcx.typeck(owner), owner, flow: flow::Flow::default(), stack: vec![owner], findings: &mut self.findings }
                     .visit_body(tcx.hir_body_owned_by(owner));
             }
         }
@@ -95,6 +98,8 @@ struct Analysis<'a, 'tcx> {
     tcx: TyCtxt<'tcx>,
     typeck: &'tcx TypeckResults<'tcx>,
     owner: LocalDefId,
+    flow: flow::Flow,
+    stack: Vec<LocalDefId>,
     findings: &'a mut BTreeSet<String>,
 }
 
@@ -134,7 +139,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
 impl<'tcx> Visitor<'tcx> for Analysis<'_, 'tcx> {
     fn visit_expr(&mut self, expression: &'tcx Expr<'tcx>) {
         self.allocation(expression);
-        walk_expr(self, expression);
+        self.visit_work_expression(expression);
     }
 }
 
