@@ -138,3 +138,38 @@ fn empty_annotation_append_returns_an_existing_session_refusal() {
     assert_eq!(annotations, Default::default());
     assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(original)) if original == first));
 }
+
+#[test]
+fn annotation_remap_destination_refusal_preserves_both_source_tables() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    for shared in [false, true] {
+        let setup = cadmpeg_test_support::service_decode_context();
+        let stream = StreamHandle::new(&setup, crate::stream_name!("source"), "source handle").unwrap();
+        let mut builder = AnnotationBuilder::new();
+        builder.note(&setup, "a", &stream, 7, Some("first")).unwrap();
+        builder.note(&setup, "b", &stream, 9, Some("second")).unwrap();
+        if shared { builder.exactness(&setup, "a", Exactness::Inferred).unwrap(); }
+        let mut annotations = builder.build();
+        let before = annotations.clone();
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        // Both callback keys and the first provenance node fit. A shared key
+        // also fits its required copy; the next destination node does not.
+        let retained = 2 * "mapped-a".len() + usize::from(shared) * "mapped-a".len()
+            + std::mem::size_of::<(String, crate::provenance::AnnotationProvenance)>();
+        policy.limits.max_retained_bytes = u64::try_from(retained).unwrap();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let mut calls = Vec::new();
+        let result = annotations.map_ids(&ctx, |id| {
+            calls.push(id.to_owned());
+            ctx.format_retained(format_args!("mapped-{id}"), "mapped identity")
+        }, "remap destinations");
+        let Err(CodecError::ResourceLimit(limit)) = result else { panic!("a later destination node must refuse"); };
+        assert_eq!(calls, ["a", "b"]);
+        assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
+        assert_eq!(limit.operation, "remap destinations");
+        assert_eq!(annotations, before);
+        assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(original)) if original == limit));
+    }
+}
