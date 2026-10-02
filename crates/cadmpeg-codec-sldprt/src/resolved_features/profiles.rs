@@ -155,7 +155,7 @@ pub(crate) fn bind_sketch_profiles(
             else {
                 continue;
             };
-            let end = starts.get(index + 1).map_or(u64::MAX, |next| next.0);
+            let end = starts.get(index + 1).map(|next| next.0);
             for sketch in sketches.iter() {
                 let work = u64_from_index(sketch.native_ref.as_ref().map_or(0, String::len))
                     .checked_add(u64_from_index(lane.id.len()))
@@ -169,7 +169,7 @@ pub(crate) fn bind_sketch_profiles(
                     && annotations
                         .provenance
                         .get(sketch.id.as_str())
-                        .is_some_and(|source| source.offset > start && source.offset < end)
+                        .is_some_and(|source| source.offset > start && end.is_none_or(|end| source.offset < end))
             });
             let Some(sketch) = enclosed.next() else {
                 continue;
