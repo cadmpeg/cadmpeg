@@ -1916,6 +1916,118 @@ def scan_decode_sorts(sources: dict[Path, str]) -> list[Finding]:
     return findings
 
 
+DECODE_RESOURCE_CRATE = re.compile(
+    r"cadmpeg-(?:core|ir|codec-[a-z0-9]+|container|asm|parasolid|protein)"
+)
+
+
+def decode_context_functions(sources):
+    """Yield production function scopes holding the caller's decode context.
+
+    Nested functions have independent bindings. Closures retain their enclosing
+    bindings. Context fields resolve across files of the same crate.
+    """
+    parsed = []
+    fields = {}
+    for path, source in sources.items():
+        relative = relative_path(path)
+        parts = Path(relative).parts
+        if (not is_production_rs(path) or len(parts) < 3
+                or not DECODE_RESOURCE_CRATE.fullmatch(parts[1])
+                or ENCODE_SORT_PATH.fullmatch(relative)):
+            continue
+        code, _ = production_source(source)
+        tokens, pairs, parents = evaluation_tokens(code)
+        words = [token[0] for token in tokens]
+        parsed.append((path, source, code, tokens, pairs, parents, words))
+        for i, word in enumerate(words):
+            if word != "struct" or i + 1 >= len(words):
+                continue
+            opening = i + 2
+            while opening < len(words) and words[opening] not in {"{", ";", "("}:
+                opening += 1
+            if opening in pairs and words[opening] == "{":
+                fields.setdefault((parts[1], words[i + 1]), set()).update(
+                    DECODE_CONTEXT_BINDING.findall(
+                        code[tokens[opening].end():tokens[pairs[opening]].start()]))
+    for path, source, code, tokens, pairs, parents, words in parsed:
+        functions = []
+        for index, name, _, owner in evaluation_signatures(tokens, pairs, parents):
+            opening = index + 2
+            if words[opening] == "<":
+                depth = 1
+                opening += 1
+                while opening < len(words) and depth:
+                    depth += (words[opening] == "<") - (words[opening] == ">")
+                    opening += 1
+            body = pairs[opening] + 1
+            while body < len(words) and words[body] not in {"{", ";"}:
+                body = pairs[body] + 1 if words[body] in "([" and body in pairs else body + 1
+            if body in pairs and words[body] == "{":
+                functions.append((index, body, pairs[body], name, owner))
+        for index, body, end, name, owner in functions:
+            excluded = [(child, child_end) for child, _, child_end, _, _ in functions
+                        if body < child < end]
+            active = {i for i in range(index, end + 1)
+                      if not any(start <= i <= stop for start, stop in excluded)}
+            scope = "".join(code[tokens[i].start():tokens[i].end()] + " "
+                            for i in sorted(active))
+            bindings = set(DECODE_CONTEXT_BINDING.findall(scope))
+            bindings.update(re.findall(
+                r"\blet\s+(?:mut\s+)?([A-Za-z_]\w*)\s*=\s*&?\s*DecodeContext\b", scope))
+            if owner == "DecodeContext":
+                bindings.add("self")
+            context_fields = fields.get((Path(relative_path(path)).parts[1], owner), set())
+            receivers = bindings | {"self." + field for field in context_fields}
+            if not receivers:
+                continue
+            yield path, source, code, tokens, pairs, parents, words, body, end, active, receivers
+
+
+def decode_fixed_text(source, code, start, end):
+    """A literal with no runtime operand has a fixed allocation size."""
+    raw = source[start:end].strip()
+    return not code[start:end].strip() and bool(re.fullmatch(
+        r'(?:r\#*".*"\#*|"(?:[^"\\]|\\.)*")', raw, re.DOTALL))
+
+
+def scan_decode_allocations(sources: dict[Path, str]) -> list[Finding]:
+    """Require charged text construction; unresolved operands are not exemptions."""
+    findings = []
+    for (path, source, code, tokens, pairs, parents, words, body, end,
+         active, receivers) in decode_context_functions(sources):
+        for i in sorted(active):
+            word = words[i]
+            if i <= body:
+                continue
+            if word == "format" and words[i + 1:i + 3] == ["!", "("]:
+                opening = i + 2
+                if opening not in pairs:
+                    continue
+                first = tokens[opening].end()
+                last = tokens[pairs[opening]].start()
+                raw = source[first:last].strip()
+                if decode_fixed_text(source, code, first, last) and not re.search(r"(?<!\{)\{(?!\{)", raw):
+                    continue
+                replacement = "ctx.format_retained(format_args!(...), operation)?"
+            elif (word in {"to_string", "to_owned"} and i > 1
+                  and words[i - 1] == "." and words[i + 1:i + 3] == ["(", ")"]):
+                # Literals are masked to spaces. Their receiver is the gap after
+                # the preceding token; a named receiver remains unresolved.
+                previous = tokens[i - 2].end()
+                if decode_fixed_text(source, code, previous, tokens[i - 1].start()):
+                    continue
+                replacement = "ctx.copy_retained_text(text, operation)? (or ctx.format_retained for Display)"
+            else:
+                continue
+            findings.append(Finding(
+                "uncharged_decode_allocation", relative_path(path),
+                code.count("\n", 0, tokens[i].start()) + 1,
+                f"{word} creates unadmitted owned text; use {replacement}. "
+                "Raw text construction is not admitted by a separate charge."))
+    return findings
+
+
 def check_source() -> list[Finding]:
     sources = {
         path.resolve(): path.read_text(encoding="utf-8", errors="replace")
@@ -1926,6 +2038,7 @@ def check_source() -> list[Finding]:
         if is_production_rs(path):
             findings.extend(scan_patterns(path, source))
     findings.extend(scan_decode_sorts(sources))
+    findings.extend(scan_decode_allocations(sources))
     findings.extend(scan_evaluation_refusals(sources))
     findings.extend(scan_wire_mirror_docs(sources))
     findings.extend(scan_module_visibility(sources))

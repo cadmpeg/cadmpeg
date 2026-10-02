@@ -1016,6 +1016,63 @@ fn read<T: Copy>(ctx: &DecodeContext<'_>) {
         self.assertEqual([item.line for item in self.findings("uncharged_decode_sort")], [3])
 
 
+class DecodeAllocations(TempSourceCase):
+    PATH = "crates/cadmpeg-codec-demo/src/read.rs"
+
+    def test_raw_text_allocations_are_reported(self):
+        self.write(self.PATH, """fn read(ctx: &DecodeContext<'_>, text: &str) {
+    format!("name: {text}");
+    text.to_string();
+    text.to_owned();
+}""")
+        self.assertEqual([f.line for f in self.findings("uncharged_decode_allocation")], [2, 3, 4])
+
+    def test_charged_forms_and_fixed_text_are_accepted(self):
+        self.write(self.PATH, """fn read(ctx: &DecodeContext<'_>, text: &str) {
+    ctx.format_retained(format_args!("name: {text}"), "name")?;
+    ctx.copy_retained_text(text, "name")?;
+    ctx.copy_retained_text_limit(text, "name")?;
+    format!("fixed {{ braces }}");
+    "fixed".to_string();
+    r#"fixed"#.to_owned();
+}""")
+        self.assertEqual(self.findings("uncharged_decode_allocation"), [])
+
+    def test_separate_storage_charge_does_not_admit_raw_allocation(self):
+        self.write(self.PATH, """fn read(ctx: &DecodeContext<'_>, text: &str) {
+    ctx.charge_retained(text.len(), "text")?;
+    text.to_owned();
+}""")
+        self.assertEqual(len(self.findings("uncharged_decode_allocation")), 1)
+
+    def test_context_fields_and_nested_functions(self):
+        self.write("crates/cadmpeg-codec-demo/src/types.rs",
+                   "struct Reader<'a> { ctx: &'a DecodeContext<'a> }")
+        self.write(self.PATH, """impl Reader<'_> {
+    fn read(&self) { text.to_owned(); }
+}
+fn read(ctx: &DecodeContext<'_>) {
+    fn independent() { text.to_owned(); }
+    values.map(|text| text.to_string());
+}""")
+        self.assertEqual([f.line for f in self.findings("uncharged_decode_allocation")], [2, 6])
+
+    def test_scope_excludes_tests_writers_and_other_crates(self):
+        snippet = "fn read(ctx: &DecodeContext<'_>) { text.to_owned(); }"
+        for path in ("crates/demo/src/read.rs", "crates/cadmpeg-codec-demo/src/writer.rs",
+                     "crates/cadmpeg-core/src/decode/tests.rs"):
+            self.write(path, snippet)
+        self.write(self.PATH, "#[cfg(test)] " + snippet)
+        self.assertEqual(self.findings("uncharged_decode_allocation"), [])
+
+    def test_core_context_methods_and_ir_decode_are_in_scope(self):
+        self.write("crates/cadmpeg-core/src/decode/context.rs",
+                   "impl DecodeContext<'_> { fn read(&self) { text.to_owned(); } }")
+        self.write("crates/cadmpeg-ir/src/decode.rs",
+                   "fn read(ctx: &DecodeContext<'_>) { text.to_string(); }")
+        self.assertEqual(len(self.findings("uncharged_decode_allocation")), 2)
+
+
 class SourcePolicyCommand(TempSourceCase):
     def run_check(self, *args: str) -> tuple[int, str]:
         output = io.StringIO()
