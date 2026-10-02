@@ -119,11 +119,13 @@ impl<'tcx> Analysis<'_, 'tcx> {
         if allocation == Some(external::Allocation::Growth) {
             if self.symbolic_storage(&operands, name) { return; }
             if let Some(receiver) = operands.first() {
-                let shape = types::heap(
-                    self.tcx,
-                    self.expr_ty_adjusted(receiver).peel_refs(),
-                    &mut Vec::new(),
-                );
+                let receiver_type = self.expr_ty_adjusted(receiver).peel_refs();
+                let shape = if matches!(receiver_type.kind(), ty::Adt(owner, _) if types::standard(self.tcx, owner.did()) && matches!(self.tcx.item_name(owner.did()).as_str(), "Vec" | "VecDeque" | "BinaryHeap")) {
+                    match types::heap(self.tcx, receiver_type, &mut Vec::new()) {
+                        Shape::Unknown => Shape::Dynamic,
+                        shape => shape,
+                    }
+                } else { types::heap(self.tcx, receiver_type, &mut Vec::new()) };
                 self.shape_report(
                     expression,
                     if shape == Shape::Dynamic
