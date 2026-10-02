@@ -46,3 +46,34 @@ fn relation_row_sort_refuses_endpoint_signature_bytes() {
         relation_row_gauge_mapping(ctx, &state, gauge, &[0, 1])
     }).expect("service work allowance"), Some(vec![0, 1]));
 }
+
+#[test]
+fn coordinate_gauge_refuses_unsearched_eight_point_class() {
+    let rows = [EdgeRow::new(1, vec![0, 1], EdgeBoundaryLayout::CompleteBoundaryRun)
+        .expect("nonempty handles")];
+    let candidates = [(0..8).flat_map(|left| (left + 1..8).map(move |right| [left, right]))
+        .collect::<Vec<_>>()];
+    let result = crate::test_support::with_service_context(|ctx| {
+        super::build_mesh_coordinate_gauge(ctx, 8, &rows, &[[0, 1]], &[MeshEdgeGeometry::Line],
+            &candidates, &[false])
+    });
+    assert!(matches!(result, Err(CodecError::ResourceLimit(limit))
+        if limit.operation == "catia_gauge_permutation_limit"));
+}
+
+#[test]
+fn coordinate_permutation_search_refuses_caller_work_before_enumeration() {
+    let result = crate::test_support::with_work_limit(0, |ctx| {
+        super::enumerate_coordinate_permutations(ctx, &[0, 1], 0, &mut vec![],
+            &mut [false; 2], &mut vec![])
+    });
+    assert!(matches!(result, Err(CodecError::ResourceLimit(limit))
+        if limit.dimension == ResourceDimension::WorkUnits
+            && limit.operation == "catia_gauge_permutation_search"));
+    let mut output = vec![];
+    crate::test_support::with_service_context(|ctx| {
+        super::enumerate_coordinate_permutations(ctx, &[0, 1], 0, &mut vec![],
+            &mut [false; 2], &mut output)
+    }).expect("two permutations fit service work");
+    assert_eq!(output, vec![vec![0, 1], vec![1, 0]]);
+}
