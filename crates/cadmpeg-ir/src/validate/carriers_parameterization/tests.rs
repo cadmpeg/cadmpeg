@@ -438,3 +438,39 @@ fn pcurve_requires_bounded_domain_preserves_session_depth_and_work_refusals() {
         assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(original)) if original == limit));
     }
 }
+
+#[test]
+fn parameter_domain_indexes_preserve_resource_refusals_and_release_storage() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    let mut ir = unit_cube().unwrap();
+    ir.model.edges.clear();
+    ir.model.coedges.clear();
+    for dimension in [ResourceDimension::MaterializedBytes, ResourceDimension::CollectionItems,
+        ResourceDimension::WorkUnits] {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        match dimension {
+            ResourceDimension::MaterializedBytes => policy.limits.max_materialized_bytes = 0,
+            ResourceDimension::CollectionItems => policy.limits.max_collection_items = 0,
+            ResourceDimension::WorkUnits => policy.limits.max_work_units = 0,
+            _ => unreachable!(),
+        }
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let mut findings = Vec::new();
+        let Err(CodecError::ResourceLimit(limit)) = super::check_parameter_domains(&ctx, &ir, &mut findings) else { panic!("domain index must refuse"); };
+        assert_eq!(limit.dimension, dimension);
+        assert!(findings.is_empty());
+        assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(original)) if original == limit));
+    }
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    policy.limits.max_materialized_bytes = 8192;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut findings = Vec::new();
+    super::check_parameter_domains(&ctx, &ir, &mut findings).unwrap();
+    assert!(findings.is_empty());
+    drop(ctx.reserve_scoped(8192, "domain indexes released").unwrap());
+    ctx.finish_session().unwrap();
+}

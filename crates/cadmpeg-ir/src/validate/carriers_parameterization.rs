@@ -872,18 +872,21 @@ pub(super) fn check_carrier_reachability(ctx: &cadmpeg_core::decode::DecodeConte
 }
 
 pub(super) fn check_parameter_domains(ctx: &cadmpeg_core::decode::DecodeContext<'_>, ir: &CadIr, findings: &mut Vec<Finding>) -> Result<(), cadmpeg_core::CodecError> {
-    let curves = ir
-        .model
-        .curves
-        .iter()
-        .map(|curve| (curve.id.as_str(), &curve.geometry))
-        .collect::<HashMap<_, _>>();
+    let curves = super::identities::BorrowedIdentities::build(ctx, |add| {
+        for curve in &ir.model.curves { add(curve.id.as_str(), &curve.geometry)?; }
+        Ok(())
+    })?;
     for edge in &ir.model.edges {
+        ctx.charge_work(1, "parameter-domain edge scan")?;
         let Some([start, end]) = edge.param_range().map(crate::units::FiniteVector::get) else {
             continue;
         };
         let mut valid = true;
-        if let Some(curve) = edge.curve().and_then(|id| curves.get(id.as_str())) {
+        let curve = match edge.curve() {
+            Some(id) => curves.get(ctx, id.as_str())?.copied(),
+            None => None,
+        };
+        if let Some(curve) = curve {
             let tau = std::f64::consts::TAU;
             match curve {
                 CurveGeometry::Solved(
@@ -907,7 +910,7 @@ pub(super) fn check_parameter_domains(ctx: &cadmpeg_core::decode::DecodeContext<
                             let [lower, upper] = domain.endpoints();
                             if nurbs.periodic() {
                                 let period = upper - lower;
-                                let tolerance = 1.0e-9_f64.max(
+                                let tolerance = EPS_CARRIERS_PARAMETERIZATION_CHECK_PARAMETER_DOMAINS_E9.max(
                                     period.abs()
                                         * EPS_CARRIERS_PARAMETERIZATION_CHECK_PARAMETER_DOMAINS_E9,
                                 );
@@ -939,24 +942,18 @@ pub(super) fn check_parameter_domains(ctx: &cadmpeg_core::decode::DecodeContext<
             }
         }
         if !valid {
-            findings.push(Finding {
-                check: Check::ParameterDomain,
-                severity: Severity::Error,
-                message: "edge parameter range is outside its canonical carrier domain".into(),
-                entity: Some(edge.id.as_str().to_owned()),
-            });
+            super::record_finding(ctx, findings, Check::ParameterDomain, Severity::Error, Some(edge.id.as_str()), format_args!("edge parameter range is outside its canonical carrier domain"))?;
         }
     }
-    let pcurves = ir
-        .model
-        .pcurves
-        .iter()
-        .map(|pcurve| (pcurve.id.as_str(), &pcurve.geometry))
-        .collect::<HashMap<_, _>>();
+    let pcurves = super::identities::BorrowedIdentities::build(ctx, |add| {
+        for pcurve in &ir.model.pcurves { add(pcurve.id.as_str(), &pcurve.geometry)?; }
+        Ok(())
+    })?;
     for coedge in &ir.model.coedges {
+        ctx.charge_work(1, "parameter-domain coedge scan")?;
         if let Some(use_curve) = &coedge.use_curve {
             let [start, end] = use_curve.parameter_range.endpoints();
-            let geometry = curves.get(use_curve.curve.as_str());
+            let geometry = curves.get(ctx, use_curve.curve.as_str())?.copied();
             let mut valid = geometry.is_some();
             if let Some(CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs))) = geometry {
                 valid &= crate::eval::nurbs_curve_parameter_domain(nurbs)
@@ -966,22 +963,18 @@ pub(super) fn check_parameter_domains(ctx: &cadmpeg_core::decode::DecodeContext<
                     });
             }
             if !valid {
-                findings.push(Finding {
-                    check: Check::ParameterDomain,
-                    severity: Severity::Error,
-                    message: "coedge use-curve range is outside its carrier domain".into(),
-                    entity: Some(coedge.id.as_str().to_owned()),
-                });
+                super::record_finding(ctx, findings, Check::ParameterDomain, Severity::Error, Some(coedge.id.as_str()), format_args!("coedge use-curve range is outside its carrier domain"))?;
             }
         }
         for use_ in &coedge.pcurves {
+            ctx.charge_work(1, "parameter-domain pcurve use scan")?;
             let Some([start, end]) = use_
                 .parameter_range
                 .map(crate::geometry::DirectedParameterRange::endpoints)
             else {
                 continue;
             };
-            let geometry = pcurves.get(use_.pcurve.as_str());
+            let geometry = pcurves.get(ctx, use_.pcurve.as_str())?.copied();
             let mut valid = geometry.is_some();
             if let Some(geometry) = geometry {
                 let domain = pcurve_parameter_domain(ctx, geometry)?
@@ -999,12 +992,7 @@ pub(super) fn check_parameter_domains(ctx: &cadmpeg_core::decode::DecodeContext<
                 }
             }
             if !valid {
-                findings.push(Finding {
-                    check: Check::ParameterDomain,
-                    severity: Severity::Error,
-                    message: "coedge pcurve range is outside its carrier domain".into(),
-                    entity: Some(coedge.id.as_str().to_owned()),
-                });
+                super::record_finding(ctx, findings, Check::ParameterDomain, Severity::Error, Some(coedge.id.as_str()), format_args!("coedge pcurve range is outside its carrier domain"))?;
             }
         }
     }
