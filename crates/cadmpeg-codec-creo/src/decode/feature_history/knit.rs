@@ -594,14 +594,9 @@ pub(in super::super) fn feature_result_topology(
     if faces.is_empty() && edges.is_empty() {
         return Ok(None);
     }
-    for values in [&faces, &edges] {
-        for (index, _) in values.iter().enumerate() {
-            ctx.charge_work(
-                cadmpeg_core::decode::u64_from_index(index),
-                "creo feature result member distinctness",
-            )?;
-        }
-    }
+    let Ok(members) = cadmpeg_ir::features::FeatureResultMembers::new(
+        Vec::new(), faces, edges, Vec::new(), ctx, "creo feature result member distinctness",
+    )? else { return Ok(None); };
     let id = FeatureResultTopologyId::mint(ctx.format_retained(
         format_args!("creo:model:feature-result-topology#{feature_id}"),
         "creo feature result topology ID",
@@ -612,7 +607,7 @@ pub(in super::super) fn feature_result_topology(
         "creo feature result owner ID",
     )?)
     .map_err(|_| CodecError::Malformed("constructed result owner ID is invalid".into()))?;
-    Ok(FeatureResultTopology::new(id, output_of, Vec::new(), faces, edges, Vec::new(), None).ok())
+    Ok(Some(FeatureResultTopology::new(id, output_of, members, None)))
 }
 
 pub(in super::super) fn generated_surface_face_refs(

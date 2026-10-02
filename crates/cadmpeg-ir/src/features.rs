@@ -1813,12 +1813,8 @@ impl FeatureReadWire {
 
 /// Read one feature outside any model.
 ///
-/// The model route does not use this: it reads `FeatureRowWire` and splits
-/// the row with `into_parts`. The reader is
-/// [`crate::document::Model::extend_rewritten`], whose `EntityRewrite::rewrite`
-/// bound round-trips every arena entity through serde; the catia standard
-/// population scope and the f3d occurrence scope both rescope a `Feature` that
-/// way.
+/// The model route reads `FeatureRowWire` and splits the row with `into_parts`.
+/// Standalone reconstruction reads the same feature fields without a parent edge.
 impl<'de> Deserialize<'de> for Feature {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
@@ -1915,7 +1911,7 @@ pub enum SelectionMember {
     try_from = "NonEmptyMembers<SelectionMember>",
     into = "Vec<SelectionMember>"
 )]
-struct FeatureResultMembers {
+pub struct FeatureResultMembers {
     bodies: Vec<NonBlankString>,
     faces: Vec<NonBlankString>,
     edges: Vec<NonBlankString>,
@@ -1953,24 +1949,44 @@ impl TryFrom<NonEmptyMembers<SelectionMember>> for FeatureResultMembers {
             vertices: Vec::new(),
         };
         for member in members {
-            match member {
-                SelectionMember::Body { id } => sorted.bodies.push(id),
-                SelectionMember::Face { id } => sorted.faces.push(id),
-                SelectionMember::Edge { id } => sorted.edges.push(id),
-                SelectionMember::Vertex { id } => sorted.vertices.push(id),
-            }
+            let (target, id) = match member {
+                SelectionMember::Body { id } => (&mut sorted.bodies, id),
+                SelectionMember::Face { id } => (&mut sorted.faces, id),
+                SelectionMember::Edge { id } => (&mut sorted.edges, id),
+                SelectionMember::Vertex { id } => (&mut sorted.vertices, id),
+            };
+            target.try_reserve(1).map_err(|_| BodySelectionError::Allocation)?;
+            target.push(id);
         }
-        for (error, members) in [
-            (FeatureResultMemberError::RepeatedBody, &sorted.bodies),
-            (FeatureResultMemberError::RepeatedFace, &sorted.faces),
-            (FeatureResultMemberError::RepeatedEdge, &sorted.edges),
-            (FeatureResultMemberError::RepeatedVertex, &sorted.vertices),
+        sorted.validate(&membership::StandardAdmission)
+            .map_err(|_| FeatureResultMemberError::Members(BodySelectionError::Allocation))?
+    }
+}
+
+impl FeatureResultMembers {
+    /// Admit distinct local members in each arena, retaining their source order.
+    pub fn new(bodies: Vec<NonBlankString>, faces: Vec<NonBlankString>,
+        edges: Vec<NonBlankString>, vertices: Vec<NonBlankString>,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>, operation: &'static str)
+        -> Result<Result<Self, FeatureResultMemberError>, cadmpeg_core::decode::ResourceLimit> {
+        Self { bodies, faces, edges, vertices }.validate(&membership::DecodeAdmission { ctx, operation })
+    }
+
+    fn validate<'ctx, S: membership::Admission<'ctx>>(self, admission: &S)
+        -> Result<Result<Self, FeatureResultMemberError>, S::Error> {
+        admission.work(0)?;
+        if self.bodies.is_empty() && self.faces.is_empty() && self.edges.is_empty() && self.vertices.is_empty() {
+            return Ok(Err(BodySelectionError::Empty.into()));
+        }
+        for (error, values) in [
+            (FeatureResultMemberError::RepeatedBody, &self.bodies),
+            (FeatureResultMemberError::RepeatedFace, &self.faces),
+            (FeatureResultMemberError::RepeatedEdge, &self.edges),
+            (FeatureResultMemberError::RepeatedVertex, &self.vertices),
         ] {
-            if members.iter().collect::<HashSet<_>>().len() != members.len() {
-                return Err(error);
-            }
+            if !membership::distinct(admission, values, values.len(), |_| true)? { return Ok(Err(error)); }
         }
-        Ok(sorted)
+        Ok(Ok(self))
     }
 }
 
@@ -2001,49 +2017,10 @@ pub struct FeatureResultTopology {
 }
 
 impl FeatureResultTopology {
-    /// A nonempty result with distinct local identities in each arena.
-    pub fn new(
-        id: FeatureResultTopologyId,
-        output_of: FeatureId,
-        bodies: Vec<NonBlankString>,
-        faces: Vec<NonBlankString>,
-        edges: Vec<NonBlankString>,
-        vertices: Vec<NonBlankString>,
-        native_ref: Option<String>,
-    ) -> Result<Self, FeatureResultMemberError> {
-        let members = FeatureResultMembers {
-            bodies,
-            faces,
-            edges,
-            vertices,
-        };
-        if members.bodies.is_empty()
-            && members.faces.is_empty()
-            && members.edges.is_empty()
-            && members.vertices.is_empty()
-        {
-            return Err(BodySelectionError::Empty.into());
-        }
-        for (error, values) in [
-            (FeatureResultMemberError::RepeatedBody, &members.bodies),
-            (FeatureResultMemberError::RepeatedFace, &members.faces),
-            (FeatureResultMemberError::RepeatedEdge, &members.edges),
-            (FeatureResultMemberError::RepeatedVertex, &members.vertices),
-        ] {
-            if values
-                .iter()
-                .enumerate()
-                .any(|(index, value)| values[..index].contains(value))
-            {
-                return Err(error);
-            }
-        }
-        Ok(Self {
-            id,
-            output_of,
-            members,
-            native_ref,
-        })
+    /// Construct a result record from checked local members.
+    pub fn new(id: FeatureResultTopologyId, output_of: FeatureId,
+        members: FeatureResultMembers, native_ref: Option<String>) -> Self {
+        Self { id, output_of, members, native_ref }
     }
 
     /// Feature-local body identities.

@@ -990,15 +990,9 @@ fn feature_result_topology_round_trips_without_current_model_bodies() {
     use crate::features::{FeatureId, FeatureResultTopology};
     use crate::ids::FeatureResultTopologyId;
 
-    let state = FeatureResultTopology::new(
-        FeatureResultTopologyId::mint("synthetic:history-result:state#0").expect("valid identity"),
-        FeatureId::mint("synthetic:model:feature#0").expect("identity grammar"),
-        vec![cadmpeg_core::nonblank_literal!("body:17")],
-        vec![cadmpeg_core::nonblank_literal!("face:3")],
-        vec![cadmpeg_core::nonblank_literal!("edge:5")],
-        vec![cadmpeg_core::nonblank_literal!("vertex:8")],
-        Some("native:result#0".into()),
-    )
+    let state = crate::features::FeatureResultMembers::new(vec![cadmpeg_core::nonblank_literal!("body:17")], vec![cadmpeg_core::nonblank_literal!("face:3")], vec![cadmpeg_core::nonblank_literal!("edge:5")], vec![cadmpeg_core::nonblank_literal!("vertex:8")], &cadmpeg_test_support::service_decode_context(), "validate feature result members")
+        .expect("result membership admission")
+        .map(|members| FeatureResultTopology::new(FeatureResultTopologyId::mint("synthetic:history-result:state#0").expect("valid identity"), FeatureId::mint("synthetic:model:feature#0").expect("identity grammar"), members, Some("native:result#0".into())))
     .unwrap();
     let json = serde_json::to_string(&state).unwrap();
     assert_eq!(

@@ -901,16 +901,10 @@ fn nx_extrude_completeness_requires_direction_start_and_solid_state() {
     assert!(losses[0].message.contains("extrude (1)"));
 
     ir.model.feature_result_topologies.push(
-        FeatureResultTopology::new(
-            FeatureResultTopologyId::mint("test:model:feature-result#extrude")
-                .expect("identity grammar"),
-            ir.model.features[0].id.clone(),
-            vec![cadmpeg_core::nonblank_literal!("test:feature-local-body#0")],
-            Vec::new(),
-            Vec::new(),
-            Vec::new(),
-            Some("test:native-body-writer#0".into()),
-        )
+        cadmpeg_ir::features::FeatureResultMembers::new(vec![cadmpeg_core::nonblank_literal!("test:feature-local-body#0")], Vec::new(), Vec::new(), Vec::new(), &cadmpeg_test_support::service_decode_context(), "validate feature result members")
+        .expect("result membership admission")
+        .map(|members| FeatureResultTopology::new(FeatureResultTopologyId::mint("test:model:feature-result#extrude")
+                .expect("identity grammar"), ir.model.features[0].id.clone(), members, Some("test:native-body-writer#0".into())))
         .unwrap(),
     );
     losses.clear();
