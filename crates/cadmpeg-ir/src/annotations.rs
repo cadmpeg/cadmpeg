@@ -962,15 +962,6 @@ fn admit_identity_work(
 }
 
 impl Annotations {
-    /// Copy a speculative annotation set under the active decode budget.
-    pub fn try_clone_for_decode(
-        &self,
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-        operation: &'static str,
-    ) -> Result<Self, cadmpeg_core::CodecError> {
-        self.copy_transaction(ctx, operation)?.into_retained()
-    }
-
     /// Copy annotation tables while holding their temporary storage reservation.
     pub fn copy_transaction<'ctx>(
         &self,
