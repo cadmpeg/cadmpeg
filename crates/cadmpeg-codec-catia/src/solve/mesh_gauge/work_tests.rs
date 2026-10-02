@@ -77,3 +77,67 @@ fn coordinate_permutation_search_refuses_caller_work_before_enumeration() {
     }).expect("two permutations fit service work");
     assert_eq!(output, vec![vec![0, 1], vec![1, 0]]);
 }
+
+#[test]
+fn gauge_signature_lookup_refuses_repeated_long_equal_keys() {
+    let signatures = vec![vec![0usize; 128]; 2];
+    let result = crate::test_support::with_work_limit(1_000, |ctx| {
+        super::intern_gauge_signatures(ctx, signatures.clone(), |key| std::mem::size_of_val(key.as_slice()))
+    });
+    assert!(matches!(result, Err(CodecError::ResourceLimit(limit))
+        if limit.dimension == ResourceDimension::WorkUnits
+            && limit.operation == "catia_gauge_signature_compare"));
+    assert_eq!(crate::test_support::with_service_context(|ctx| {
+        super::intern_gauge_signatures(ctx, signatures, |key| std::mem::size_of_val(key.as_slice()))
+    }).expect("service comparison work"), vec![0, 0]);
+}
+
+fn observed_work_refusals<T>(run: impl Fn(&cadmpeg_core::decode::DecodeContext<'_>) -> Result<T, CodecError>)
+    -> std::collections::HashSet<&'static str> {
+    let mut operations = std::collections::HashSet::new();
+    let mut cap = 0;
+    for _ in 0..1024 {
+        match crate::test_support::with_work_limit(cap, &run) {
+            Err(CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::WorkUnits => {
+                operations.insert(limit.operation);
+                cap = limit.used.checked_add(limit.additional).expect("finite test work");
+            }
+            Ok(_) => return operations,
+            Err(error) => panic!("unexpected refusal: {error}"),
+        }
+    }
+    panic!("fixture did not complete its admitted work");
+}
+
+#[test]
+fn coordinate_gauge_membership_scans_refuse_before_search() {
+    let rows = [EdgeRow::new(1, vec![0, 1], EdgeBoundaryLayout::CompleteBoundaryRun)
+        .expect("nonempty handles")];
+    let operations = observed_work_refusals(|ctx| {
+        super::build_mesh_coordinate_gauge(ctx, 2, &rows, &[[0, 1]], &[MeshEdgeGeometry::Line],
+            &[vec![[0, 1]]], &[false])
+    });
+    for operation in ["catia_gauge_group_point_scan", "catia_gauge_affected_edge_scan", "catia_gauge_affected_point_scan"] {
+        assert!(operations.contains(operation), "missing work refusal for {operation}");
+    }
+}
+
+#[test]
+fn mapped_pair_scan_refuses_before_duplicate_becomes_none() {
+    let state = (vec![None], vec![vec![MeshEndpointRelationSelection::Enumerated {
+        assignments: vec![], edge_pairs: vec![(0, [0, 1]), (0, [0, 1])],
+    }]]);
+    let gauge = MeshCandidateGauge {
+        edge_rows: &[], edge_faces: &[], edge_geometry: &[], edge_candidates: &[],
+        edge_identity_evidence: &[], coordinate_gauge: None,
+    };
+    let result = crate::test_support::with_work_limit(386, |ctx| {
+        map_endpoint_relation_state(ctx, &state, gauge, &[0, 1])
+    });
+    assert!(matches!(result, Err(CodecError::ResourceLimit(limit))
+        if limit.dimension == ResourceDimension::WorkUnits
+            && limit.operation == "catia_relation_mapped_pair_scan"));
+    assert!(crate::test_support::with_service_context(|ctx| {
+        map_endpoint_relation_state(ctx, &state, gauge, &[0, 1])
+    }).expect("service work").is_none());
+}
