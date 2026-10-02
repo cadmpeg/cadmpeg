@@ -198,6 +198,10 @@ that work separately.
 
 Use `ctx.position_by(values, fallible_predicate, operation)?` for a search
 and `ctx.equal_bytes(left, right, operation)?` for decoded byte equality.
+Calls that pass the caller context and propagate refusal are checked in the
+callee. A helper with a scan-like method name does not create a second caller
+finding. Its own uncharged scans, argument scans and closure child scans remain
+subject to the rule.
 Heap-owning comparisons require charged child comparisons. Named equality
 with unresolved ownership uses an explicit scalar annotation or a charged
 comparison. An aggregate

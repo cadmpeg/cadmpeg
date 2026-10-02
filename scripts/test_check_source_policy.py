@@ -1381,6 +1381,42 @@ fn read(ctx: &DecodeContext<'_>, left: [String; 4], right: [String; 4], pair: (S
 }""")
         self.assertEqual([f.line for f in self.findings("uncharged_decode_work")], [3, 5, 7])
 
+    def test_context_taking_callee_owns_its_charged_scan(self):
+        self.write("crates/cadmpeg-codec-demo/src/search.rs", """impl Search {
+    fn find(&self, values: &[u8], ctx: &DecodeContext<'_>) -> Result<bool, Error> {
+        ctx.charge_work(u64_from_index(values.len()), "search")?;
+        Ok(values.iter().any(predicate))
+    }
+}
+fn search(values: &[u8], ctx: &DecodeContext<'_>) -> Result<bool, Error> {
+    ctx.charge_work(u64_from_index(values.len()), "search")?;
+    Ok(values.iter().any(predicate))
+}""")
+        self.write(self.PATH, """fn read(ctx: &DecodeContext<'_>) {
+    search(values, ctx)?;
+    searcher.find(values, ctx)?;
+    searcher.find(values, ctx).map_err(Error::ResourceLimit)?;
+    for value in values { searcher.find(children, ctx)?; }
+}""")
+        self.assertEqual(self.findings("uncharged_decode_work"), [])
+
+    def test_context_taking_callee_does_not_hide_its_uncharged_work(self):
+        self.write("crates/cadmpeg-codec-demo/src/search.rs", """impl Search {
+    fn find(&self, values: &[u8], ctx: &DecodeContext<'_>) -> Result<bool, Error> {
+        Ok(values.iter().any(predicate))
+    }
+}""")
+        self.write(self.PATH, """fn read(ctx: &DecodeContext<'_>) {
+    searcher.find(values, ctx)?;
+    searcher.find(values, other)?;
+    searcher.find(values, ctx).ok();
+    searcher.find(values, ctx, others.iter().any(predicate))?;
+}""")
+        self.assertEqual([(f.path, f.line) for f in self.findings("uncharged_decode_work")], [
+            (self.PATH, 3), (self.PATH, 4), (self.PATH, 5),
+            ("crates/cadmpeg-codec-demo/src/search.rs", 3),
+        ])
+
     def test_unadmitted_loops_and_iterator_searches(self):
         self.write(self.PATH, """fn read(ctx: &DecodeContext<'_>) {
     for value in values { use_value(value); }
