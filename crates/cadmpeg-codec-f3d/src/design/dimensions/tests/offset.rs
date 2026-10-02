@@ -243,6 +243,28 @@ fn counted_offset_accepts_fitted_nurbs_with_exact_endpoint_frames() {
 }
 
 #[test]
+fn counted_offset_preserves_fitted_frame_work_refusal() {
+    let entity = |key, v| SketchEntity::new(
+        format!("test:model:entity#{key}").try_into().unwrap(),
+        "test:model:sketch#owner".try_into().unwrap(),
+        SketchGeometry::nurbs(cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
+            1, vec![0.0, 0.0, 1.0, 1.0], vec![Point2::new(0.0, v), Point2::new(1.0, v)], None, false,
+        ).unwrap()),
+    );
+    let source = entity("source", 0.0);
+    let result = entity("result", 1.0);
+    let entities = HashMap::from([(1, &source), (2, &result)]);
+    let loci = offset_loci(&[(1, 3, 1), (2, 0, 2)]);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let Some(Err(cadmpeg_core::CodecError::ResourceLimit(limit))) = exact_counted_offset(&ctx, &loci, &entities, &HashMap::new(), 0.0) else { panic!("fitted offset must preserve refusal"); };
+    assert_eq!(limit.dimension, cadmpeg_core::decode::ResourceDimension::WorkUnits);
+    assert!(matches!(ctx.finish_session(), Err(cadmpeg_core::CodecError::ResourceLimit(original)) if original == limit));
+}
+
+#[test]
 fn counted_offset_accepts_trimmed_concentric_arcs() {
     let arc = |id: &str, radius| {
         cadmpeg_ir::sketches::SketchEntity::new(

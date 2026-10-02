@@ -33,17 +33,19 @@ fn trimmed_concentric_arcs_validate_as_offsets() {
     let disjoint_result = arc(5.0, std::f64::consts::PI, 3.0 * std::f64::consts::FRAC_PI_2);
 
     assert!(sketch_curve_offset_matches(
+        &cadmpeg_test_support::service_decode_context(),
         &source,
         &trimmed_result,
         -3.0,
-        1.0e-6,
-    ));
+        TEST_LINEAR_TOLERANCE,
+    ).expect("offset walk is admitted"));
     assert!(!sketch_curve_offset_matches(
+        &cadmpeg_test_support::service_decode_context(),
         &source,
         &disjoint_result,
         -3.0,
-        1.0e-6,
-    ));
+        TEST_LINEAR_TOLERANCE,
+    ).expect("offset walk is admitted"));
 }
 
 #[test]
@@ -64,23 +66,26 @@ fn full_concentric_circles_validate_as_offsets() {
     .unwrap();
 
     assert!(sketch_curve_offset_matches(
+        &cadmpeg_test_support::service_decode_context(),
         &source,
         &result,
         1.5,
         TEST_LINEAR_TOLERANCE,
-    ));
+    ).expect("offset walk is admitted"));
     assert!(sketch_curve_offset_matches(
+        &cadmpeg_test_support::service_decode_context(),
         &result,
         &source,
         -1.5,
         TEST_LINEAR_TOLERANCE,
-    ));
+    ).expect("offset walk is admitted"));
     assert!(!sketch_curve_offset_matches(
+        &cadmpeg_test_support::service_decode_context(),
         &source,
         &displaced,
         1.5,
         TEST_LINEAR_TOLERANCE,
-    ));
+    ).expect("offset walk is admitted"));
 }
 
 #[test]
@@ -106,23 +111,26 @@ fn mixed_full_circle_arc_validate_as_offsets() {
     .unwrap();
 
     assert!(sketch_curve_offset_matches(
+        &cadmpeg_test_support::service_decode_context(),
         &circle,
         &arc,
         1.5,
         TEST_LINEAR_TOLERANCE,
-    ));
+    ).expect("offset walk is admitted"));
     assert!(sketch_curve_offset_matches(
+        &cadmpeg_test_support::service_decode_context(),
         &arc,
         &circle,
         -1.5,
         TEST_LINEAR_TOLERANCE,
-    ));
+    ).expect("offset walk is admitted"));
     assert!(!sketch_curve_offset_matches(
+        &cadmpeg_test_support::service_decode_context(),
         &circle,
         &displaced,
         1.5,
         TEST_LINEAR_TOLERANCE,
-    ));
+    ).expect("offset walk is admitted"));
 }
 
 #[test]
@@ -263,10 +271,12 @@ fn fitted_nurbs_offsets_validate_from_clamped_endpoint_frames() {
     )
     .unwrap();
     let reversed_distance = crate::eval::fitted_nurbs_offset_frame_distance(
+        &cadmpeg_test_support::service_decode_context(),
         &ir.model.sketch_entities[source_ordinal].geometry,
         &ir.model.sketch_entities[result_ordinal].geometry,
         ir.tolerances.linear.get(),
     )
+    .expect("offset walk is admitted")
     .expect("reversed fitted offset frame")
     .get();
     assert!(

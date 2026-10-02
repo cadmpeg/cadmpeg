@@ -99,11 +99,12 @@ const EPS_FULL_CIRCLE_OFFSET: f64 = EPS_SKETCH_VALIDATION_GEOMETRY;
 const EPS_OFFSET_SWEEP: f64 = EPS_SKETCH_VALIDATION_EXACT_GEOMETRY;
 
 fn sketch_curve_offset_matches(
+    ctx: &DecodeContext<'_>,
     source: &SketchGeometry,
     result: &SketchGeometry,
     expected: f64,
     linear_tolerance: f64,
-) -> bool {
+) -> Result<bool, CodecError> {
     if let (
         SketchGeometryDefinition::Circle {
             center: source_center,
@@ -125,11 +126,11 @@ fn sketch_curve_offset_matches(
                 .max(source_radius.get().abs())
                 .max(result_radius.get().abs())
                 .max(expected.abs());
-        return expected.is_finite()
+        return Ok(expected.is_finite()
             && (source_center.u - result_center.u).abs() <= EPS_FULL_CIRCLE_OFFSET * scale
             && (source_center.v - result_center.v).abs() <= EPS_FULL_CIRCLE_OFFSET * scale
             && (source_radius.get() - result_radius.get() - expected).abs()
-                <= EPS_FULL_CIRCLE_OFFSET * scale;
+                <= EPS_FULL_CIRCLE_OFFSET * scale);
     }
 
     if let (
@@ -156,12 +157,12 @@ fn sketch_curve_offset_matches(
                 .max(result_radius.get().abs())
                 .max(expected.abs());
         let result_sweep = result_end.get() - result_start.get();
-        return expected.is_finite()
+        return Ok(expected.is_finite()
             && result_sweep.abs() > EPS_OFFSET_SWEEP
             && (source_center.u - result_center.u).abs() <= EPS_FULL_CIRCLE_OFFSET * scale
             && (source_center.v - result_center.v).abs() <= EPS_FULL_CIRCLE_OFFSET * scale
             && (source_radius.get() - result_radius.get() - expected).abs()
-                <= EPS_FULL_CIRCLE_OFFSET * scale;
+                <= EPS_FULL_CIRCLE_OFFSET * scale);
     }
 
     if let (
@@ -188,13 +189,13 @@ fn sketch_curve_offset_matches(
                 .max(result_radius.get().abs())
                 .max(expected.abs());
         let source_sweep = source_end.get() - source_start.get();
-        return expected.is_finite()
+        return Ok(expected.is_finite()
             && source_sweep.abs() > EPS_OFFSET_SWEEP
             && (source_center.u - result_center.u).abs() <= EPS_FULL_CIRCLE_OFFSET * scale
             && (source_center.v - result_center.v).abs() <= EPS_FULL_CIRCLE_OFFSET * scale
             && (source_sweep.signum() * (source_radius.get() - result_radius.get()) - expected)
                 .abs()
-                <= EPS_FULL_CIRCLE_OFFSET * scale;
+                <= EPS_FULL_CIRCLE_OFFSET * scale);
     }
 
     if let (
@@ -243,7 +244,7 @@ fn sketch_curve_offset_matches(
             || [result_start.get(), result_end.get()]
                 .into_iter()
                 .any(|angle| angle_in_sweep(angle, source_start.get(), source_end.get()));
-        return source_sweep.abs() > EPS_OFFSET_SWEEP
+        return Ok(source_sweep.abs() > EPS_OFFSET_SWEEP
             && result_sweep.abs() > EPS_OFFSET_SWEEP
             && source_sweep.signum() == result_sweep.signum()
             && angular_overlap
@@ -251,17 +252,17 @@ fn sketch_curve_offset_matches(
             && (source_center.v - result_center.v).abs() <= EPS_SKETCH_VALIDATION_GEOMETRY * scale
             && (source_sweep.signum() * (source_radius.get() - result_radius.get()) - expected)
                 .abs()
-                <= EPS_SKETCH_VALIDATION_GEOMETRY * scale;
+                <= EPS_SKETCH_VALIDATION_GEOMETRY * scale);
     }
 
     if let Some(distance) =
-        crate::eval::fitted_nurbs_offset_frame_distance(source, result, linear_tolerance)
+        crate::eval::fitted_nurbs_offset_frame_distance(ctx, source, result, linear_tolerance)?
     {
         let distance = distance.get();
         let scale = 1.0 + distance.abs().max(expected.abs());
-        return expected.is_finite()
+        return Ok(expected.is_finite()
             && (distance - expected).abs()
-                <= linear_tolerance.max(EPS_SKETCHES_SKETCH_CURVE_OFFSET_MATCHES_E9 * scale);
+                <= linear_tolerance.max(EPS_SKETCHES_SKETCH_CURVE_OFFSET_MATCHES_E9 * scale));
     }
 
     let (
@@ -275,7 +276,7 @@ fn sketch_curve_offset_matches(
         },
     ) = (source.definition(), result.definition())
     else {
-        return false;
+        return Ok(false);
     };
     let source_du = source_end.u - source_start.u;
     let source_dv = source_end.v - source_start.v;
@@ -286,7 +287,7 @@ fn sketch_curve_offset_matches(
     if source_length <= EPS_SKETCHES_SKETCH_CURVE_OFFSET_MATCHES_E12
         || result_length <= EPS_SKETCHES_SKETCH_CURVE_OFFSET_MATCHES_E12
     {
-        return false;
+        return Ok(false);
     }
     let scale = 1.0 + expected.abs();
     let parallel = (source_du * result_dv - source_dv * result_du).abs()
@@ -296,11 +297,11 @@ fn sketch_curve_offset_matches(
     let distance_at = |point: &crate::math::Point2| {
         (point.u - source_start.u) * normal_u + (point.v - source_start.v) * normal_v
     };
-    parallel
+    Ok(parallel
         && (distance_at(result_start) - expected).abs()
             <= EPS_SKETCHES_SKETCH_CURVE_OFFSET_MATCHES_E9 * scale
         && (distance_at(result_end) - expected).abs()
-            <= EPS_SKETCHES_SKETCH_CURVE_OFFSET_MATCHES_E9 * scale
+            <= EPS_SKETCHES_SKETCH_CURVE_OFFSET_MATCHES_E9 * scale)
 }
 
 struct SpatialParallelLines {
@@ -1216,21 +1217,14 @@ pub(super) fn check_sketches(
         {
             for pair in pairs {
                 ctx.charge_work(1, "sketch constraint pair scan")?;
-                let valid = geometry.get(ctx, pair.source.as_str())?
-                    .zip(geometry.get(ctx, pair.result.as_str())?)
-                    .is_none_or(|(source, result)| {
-                        let expected = if pair.source_reversed {
-                            -distance.get()
-                        } else {
-                            distance.get()
-                        };
-                        sketch_curve_offset_matches(
-                            source,
-                            result,
-                            expected,
-                            ir.tolerances.linear.get(),
-                        )
-                    });
+                let valid = match geometry.get(ctx, pair.source.as_str())?
+                    .zip(geometry.get(ctx, pair.result.as_str())?) {
+                    Some((source, result)) => {
+                        let expected = if pair.source_reversed { -distance.get() } else { distance.get() };
+                        sketch_curve_offset_matches(ctx, source, result, expected, ir.tolerances.linear.get())?
+                    }
+                    None => true,
+                };
                 if !valid {
                     record_finding(ctx, findings, Check::GeometricConsistency, crate::report::Severity::Error, Some(constraint.id.as_str()), format_args!("{}", "sketch offset pair does not match its oriented distance"))?;
                 }
