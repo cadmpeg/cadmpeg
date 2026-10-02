@@ -101,13 +101,17 @@ impl<'ctx, 'arena> Scratch<'ctx, 'arena> {
         count: usize,
         value: T,
         operation: &'static str,
+        work_operation: &'static str,
     ) -> Option<Vec<T>> {
         if self.refusal.borrow().is_some() {
             return None;
         }
         let mut values = Vec::new();
         self.reserve(&mut values, count, operation)?;
-        values.extend(std::iter::repeat_with(|| value.clone()).take(count));
+        for _ in 0..count {
+            self.work(1, work_operation)?;
+            values.push(value.clone());
+        }
         Some(values)
     }
 
@@ -115,12 +119,17 @@ impl<'ctx, 'arena> Scratch<'ctx, 'arena> {
         &self,
         values: impl IntoIterator<Item = Option<T>>,
         operation: &'static str,
+        work_operation: &'static str,
     ) -> Option<Vec<T>> {
         if self.refusal.borrow().is_some() {
             return None;
         }
+        self.work(0, work_operation)?;
+        let mut values = values.into_iter();
         let mut output = Vec::new();
-        for value in values {
+        while values.size_hint() != (0, Some(0)) {
+            self.work(1, work_operation)?;
+            let Some(value) = values.next() else { break; };
             self.reserve(&mut output, 1, operation)?;
             output.push(value?);
         }

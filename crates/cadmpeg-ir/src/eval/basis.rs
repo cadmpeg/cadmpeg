@@ -65,8 +65,7 @@ pub(super) fn bspline_basis(
             len: support,
         }
     } else {
-        scratch.work(support, "IR B-spline basis work")?;
-        decode::SupportValues::Heap(scratch.filled(support, 0.0, "IR B-spline basis")?)
+        decode::SupportValues::Heap(scratch.filled(support, 0.0, "IR B-spline basis", "IR B-spline basis work")?)
     };
     scratch.admit(fill_bspline_basis(scratch.context, knots, degree, span, t, &mut values))??;
     Some(values)
@@ -187,11 +186,10 @@ pub(super) fn bspline_basis_derivative(
     t: f64,
 ) -> Option<Vec<f64>> {
     if degree == 0 {
-        return scratch.filled(1, 0.0, "IR B-spline derivative basis");
+        return scratch.filled(1, 0.0, "IR B-spline derivative basis", "IR B-spline derivative work");
     }
     let degree_real = f64_from_index(degree)?;
     let lower = bspline_basis(scratch, knots, degree - 1, span, t)?;
-    scratch.work(degree.checked_add(1)?, "IR B-spline derivative work")?;
     let lower_start = span - (degree - 1);
     scratch.collect(
         (0..=degree).map(|local| {
@@ -236,6 +234,7 @@ pub(super) fn bspline_basis_derivative(
             Some(left - right)
         }),
         "IR B-spline derivative basis",
+        "IR B-spline derivative work",
     )
 }
 
@@ -255,7 +254,6 @@ pub(super) fn bspline_basis_second_derivative(
     }
     let degree_real = f64_from_index(degree)?;
     let lower = bspline_basis_derivative(scratch, knots, degree - 1, span, t)?;
-    scratch.work(degree.checked_add(1)?, "IR B-spline second derivative work")?;
     let lower_start = span - (degree - 1);
     let basis = scratch.collect(
         (0..=degree).map(|local| {
@@ -300,6 +298,7 @@ pub(super) fn bspline_basis_second_derivative(
             Some(left - right)
         }),
         "IR B-spline second derivative basis",
+        "IR B-spline second derivative work",
     )?;
     Some(Cow::Owned(basis))
 }
@@ -323,14 +322,14 @@ pub(super) fn bspline_basis_scaled_derivatives(
 ) -> Option<ScaledBasisDerivatives> {
     if degree == 0 {
         return Some(ScaledBasisDerivatives {
-            first: scratch.filled(1, 0.0, "IR scaled B-spline first basis")?,
-            second: scratch.filled(1, 0.0, "IR scaled B-spline second basis")?,
+            first: scratch.filled(1, 0.0, "IR scaled B-spline first basis", "IR scaled B-spline derivative work")?,
+            second: scratch.filled(1, 0.0, "IR scaled B-spline second basis", "IR scaled B-spline derivative work")?,
         });
     }
     let lower = bspline_basis(scratch, knots, degree - 1, span, t)?;
     let first = bspline_basis_scaled_derivative_level(scratch, knots, degree, span, scale, &lower)?;
     let second = if degree == 1 {
-        scratch.filled(2, 0.0, "IR scaled B-spline second basis")?
+        scratch.filled(2, 0.0, "IR scaled B-spline second basis", "IR scaled B-spline derivative work")?
     } else {
         let lower_lower = bspline_basis(scratch, knots, degree - 2, span, t)?;
         let lower_first = bspline_basis_scaled_derivative_level(
@@ -356,13 +355,7 @@ fn bspline_basis_scaled_derivative_level(
 ) -> Option<Vec<f64>> {
     let degree_real = f64_from_index(degree)?;
     let lower_start = span - (degree - 1);
-    let mut derivative = scratch.filled(
-        degree.checked_add(1)?,
-        0.0,
-        "IR scaled B-spline derivative basis",
-    )?;
-    scratch.work(derivative.len(), "IR scaled B-spline derivative work")?;
-    for (local, derivative_value) in derivative.iter_mut().enumerate() {
+    scratch.collect((0..degree.checked_add(1)?).map(|local| {
         let index = span - degree + local;
         let lower_at = |values: &[f64], global: usize| {
             global
@@ -388,13 +381,10 @@ fn bspline_basis_scaled_derivative_level(
         };
         let left = ratio(index + degree, index)?;
         let right = ratio(index + degree + 1, index + 1)?;
-        *derivative_value =
+        let derivative =
             degree_real * (left * lower_at(lower, index) - right * lower_at(lower, index + 1));
-        if !derivative_value.is_finite() {
-            return None;
-        }
-    }
-    Some(derivative)
+        derivative.is_finite().then_some(derivative)
+    }), "IR scaled B-spline derivative basis", "IR scaled B-spline derivative work")
 }
 
 #[cfg(test)]

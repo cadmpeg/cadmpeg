@@ -3613,7 +3613,7 @@ fn curve_derivative_unsettled(
             let points = scratch
                 .collect(
                     (0..poles.count()).map(|index| poles.point_at(index)),
-                    "IR NURBS derivative points",
+                    "IR NURBS derivative points", "IR NURBS derivative points work",
                 )
                 .ok_or(EvaluationFailure::NoValue)?;
             let weights = match poles {
@@ -3622,7 +3622,7 @@ fn curve_derivative_unsettled(
                     scratch
                         .collect(
                             points.iter().map(|pole| Some(pole.weight.get())),
-                            "IR NURBS derivative weights",
+                            "IR NURBS derivative weights", "IR NURBS derivative weights work",
                         )
                         .ok_or(EvaluationFailure::NoValue)?,
                 ),
@@ -3639,15 +3639,15 @@ fn curve_derivative_unsettled(
         }
         SolvedCurveGeometry::Polyline(polyline) => {
             let points = scratch
-                .collect(polyline.points().map(Some), "IR polyline derivative points")
+                .collect(polyline.points().map(Some), "IR polyline derivative points", "IR polyline derivative points work")
                 .ok_or(EvaluationFailure::NoValue)?;
             let parameters = match polyline.parameters() {
                 Some(parameters) => {
-                    scratch.collect(parameters.map(Some), "IR polyline derivative parameters")
+                    scratch.collect(parameters.map(Some), "IR polyline derivative parameters", "IR polyline derivative parameters work")
                 }
                 None => scratch.collect(
                     (0..points.len()).map(FiniteReal::from_index),
-                    "IR polyline derivative parameters",
+                    "IR polyline derivative parameters", "IR polyline derivative parameters work",
                 ),
             }
             .ok_or(EvaluationFailure::NoValue)?;
@@ -9325,7 +9325,7 @@ fn pcurve_uv_unsettled(
                 crate::geometry::pcurve::PolarNurbsPoles::Rational { poles } => {
                     Some(scratch.collect(
                         poles.iter().map(|pole| Some(pole.weight.get())),
-                        "IR polar NURBS weights",
+                        "IR polar NURBS weights", "IR polar NURBS weights work",
                     )?)
                 }
             };
@@ -9519,7 +9519,7 @@ fn pcurve_uv_unsettled(
                 crate::geometry::pcurve::PcurveNurbsPoles::Rational { points } => {
                     Some(scratch.collect(
                         points.iter().map(|pole| Some(pole.weight.get())),
-                        "IR NURBS pcurve weights",
+                        "IR NURBS pcurve weights", "IR NURBS pcurve weights work",
                     )?)
                 }
             };
