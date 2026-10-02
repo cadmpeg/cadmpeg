@@ -387,14 +387,14 @@ fn rational_surface_patches_with_budget<'session>(
         let mut controls = Vec::new();
         scratch::reserve_exact(&mut controls, u_count, "IR surface u row")?;
         controls.extend((0..u_count).map(|u| homogeneous_controls.controls[u * v_count + v]));
-        let Some(spans) = homogeneous_spans(u_degree, surface.u_knots(), controls)? else {
+        let Some(spans) = homogeneous_spans(ctx, u_degree, surface.u_knots(), &controls)? else {
             return Ok(None);
         };
         u_spans_by_v.push(spans);
     }
     if u_spans_by_v
         .iter()
-        .any(|spans| spans.len() != u_domains.len())
+        .any(|spans| spans.spans.len() != u_domains.len())
     {
         return Ok(None);
     }
@@ -409,15 +409,15 @@ fn rational_surface_patches_with_budget<'session>(
         for u_control in 0..=u_degree {
             let mut controls = Vec::new();
             scratch::reserve_exact(&mut controls, v_count, "IR surface v row")?;
-            controls.extend((0..v_count).map(|v| u_spans_by_v[v][u_span].controls[u_control]));
-            let Some(spans) = homogeneous_spans(v_degree, surface.v_knots(), controls)? else {
+            controls.extend((0..v_count).map(|v| u_spans_by_v[v].spans[u_span].controls[u_control]));
+            let Some(spans) = homogeneous_spans(ctx, v_degree, surface.v_knots(), &controls)? else {
                 return Ok(None);
             };
             v_spans_by_u.push(spans);
         }
         if v_spans_by_u
             .iter()
-            .any(|spans| spans.len() != v_domains.len())
+            .any(|spans| spans.spans.len() != v_domains.len())
         {
             return Ok(None);
         }
@@ -442,7 +442,7 @@ fn rational_surface_patches_with_budget<'session>(
                 "IR surface patch controls",
             )?;
             controls.extend(
-                (0..=u_degree).flat_map(|u| v_spans_by_u[u][v_span].controls.iter().copied()),
+                (0..=u_degree).flat_map(|u| v_spans_by_u[u].spans[v_span].controls.iter().copied()),
             );
             patches.push(RationalBezierSurfacePatch {
                 u_domain,

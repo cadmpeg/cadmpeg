@@ -19,10 +19,8 @@ use cadmpeg_ir::eval::{
     pcurve_tangent, pcurve_uv, surface_point_with_budget, EvaluationFailure,
 };
 use cadmpeg_ir::features::FiniteVector3;
-#[cfg(test)]
-use cadmpeg_ir::geometry::nurbs::bezier::homogeneous_spans;
 use cadmpeg_ir::geometry::nurbs::bezier::{
-    homogeneous_spans_with_charge, positive_controls, HomogeneousBezierSpan,
+    homogeneous_spans, positive_controls, HomogeneousBezierSpans,
 };
 use cadmpeg_ir::geometry::{
     nurbs::NurbsCurve, pcurve::PcurveGeometry, BlendCrossSection, BlendRadiusLaw,
@@ -3010,20 +3008,20 @@ pub(super) fn closest_pcurve_parameters(
         .transpose()
 }
 
-struct HomogeneousCurveSpans<const DIMENSION: usize> {
-    spans: Vec<HomogeneousBezierSpan<DIMENSION>>,
+struct HomogeneousCurveSpans<'ctx, const DIMENSION: usize> {
+    extraction: HomogeneousBezierSpans<'ctx, DIMENSION>,
     coordinate_tolerance: f64,
 }
 
 #[cfg(test)]
-fn homogeneous_pcurve_spans(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+fn homogeneous_pcurve_spans<'ctx>(
+    ctx: &'ctx cadmpeg_core::decode::DecodeContext<'_>,
     degree: usize,
     knots: &[f64],
     control_points: &[Point2],
     weights: Option<&[f64]>,
     point: Point2,
-) -> Result<Option<HomogeneousCurveSpans<3>>, cadmpeg_core::CodecError> {
+) -> Result<Option<HomogeneousCurveSpans<'ctx, 3>>, cadmpeg_core::CodecError> {
     let count = control_points.len();
     let Some(expected_knots) = count
         .checked_add(degree)
@@ -3066,22 +3064,22 @@ fn homogeneous_pcurve_spans(
     if controls.iter().flatten().any(|value| !value.is_finite()) {
         return Ok(None);
     }
-    let Some(spans) = homogeneous_spans(degree, knots, controls)? else {
+    let Some(spans) = homogeneous_spans(ctx, degree, knots, &controls)? else {
         return Ok(None);
     };
     Ok(Some(HomogeneousCurveSpans {
-        spans,
+        extraction: spans,
         coordinate_tolerance: 64.0 * f64::EPSILON * coordinate_scale,
     }))
 }
 
 fn stationary_rational_distance_candidates<const DIMENSION: usize>(
-    homogeneous: &HomogeneousCurveSpans<DIMENSION>,
+    homogeneous: &HomogeneousCurveSpans<'_, DIMENSION>,
     seed: Option<f64>,
     geometry_budget: &GeometryWorkBudget<'_>,
 ) -> Result<Option<Vec<(f64, f64)>>, cadmpeg_core::decode::ResourceLimit> {
     let mut candidates = Vec::new();
-    for span in &homogeneous.spans {
+    for span in &homogeneous.extraction.spans {
         let Some(derivative) =
             rational_squared_distance_derivative(&span.controls, geometry_budget)?
         else {
@@ -5022,17 +5020,12 @@ pub(super) fn closest_nurbs_curve_parameter_with_budget(
         return Ok(None);
     };
     let Some(spans) =
-        homogeneous_spans_with_charge(degree, curve.knots(), controls.controls, |count, operation| {
-            geometry_budget.charges.charge_collection_items_limit(
-                cadmpeg_core::decode::u64_from_index(count),
-                operation,
-            )
-        })?
+        homogeneous_spans(geometry_budget.charges, degree, curve.knots(), &controls.controls)?
     else {
         return Ok(None);
     };
     let homogeneous = HomogeneousCurveSpans {
-        spans,
+        extraction: spans,
         coordinate_tolerance: 64.0 * f64::EPSILON * coordinate_scale,
     };
     let Some(candidates) =
