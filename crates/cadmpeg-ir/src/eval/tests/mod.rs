@@ -126,7 +126,7 @@ fn law_operand(value: f64, derivative: f64) -> crate::eval::ScalarSweepDifferent
 }
 
 fn bilinear_surface() -> NurbsSurface {
-    NurbsSurface::from_lanes(&cadmpeg_test_support::service_decode_context(), 
+    NurbsSurface::from_lanes(&cadmpeg_test_support::service_decode_context(),
         NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
         NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
         NurbsSurfaceLanes::new(
@@ -147,7 +147,7 @@ fn periodic_nurbs_surface_coordinates_reduce_into_the_knot_domain() {
     {
         let replacement = true;
         edit::replace(&mut surface, |previous| {
-            NurbsSurface::new(&cadmpeg_test_support::service_decode_context(), 
+            NurbsSurface::new(&cadmpeg_test_support::service_decode_context(),
                 NurbsSurfaceAxis::new(
                     previous.u_degree(),
                     previous.u_knots().to_vec(),
@@ -171,7 +171,7 @@ fn periodic_nurbs_surface_coordinates_reduce_into_the_knot_domain() {
     {
         let replacement = false;
         edit::replace(&mut surface, |previous| {
-            NurbsSurface::new(&cadmpeg_test_support::service_decode_context(), 
+            NurbsSurface::new(&cadmpeg_test_support::service_decode_context(),
                 NurbsSurfaceAxis::new(
                     previous.u_degree(),
                     previous.u_knots().to_vec(),
@@ -370,7 +370,7 @@ fn budgeted_model_surface_charges_nurbs_directrix_work() {
     ir.model.curves.push(Curve {
         id: directrix_id.clone(),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-            NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
+            NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(),
                 1,
                 vec![0.0, 0.0, 1.0, 1.0],
                 vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
@@ -387,7 +387,7 @@ fn budgeted_model_surface_charges_nurbs_directrix_work() {
         source_object: None,
     });
     ir.model
-        .add_procedural_surface(None, 
+        .add_procedural_surface(None,
             &surface_id,
             procedural_surface! {
                 id: ProceduralSurfaceId::mint("test:model:entity#budgeted-sweep-construction").expect("valid identity"),
@@ -421,7 +421,7 @@ fn budgeted_model_surface_charges_nurbs_directrix_work() {
 
 #[test]
 fn degree_zero_nurbs_surface_has_an_exact_parameter_segment_bound() {
-    let surface = NurbsSurface::from_lanes(&cadmpeg_test_support::service_decode_context(), 
+    let surface = NurbsSurface::from_lanes(&cadmpeg_test_support::service_decode_context(),
         NurbsSurfaceAxis::new(0, vec![0.0, 1.0], false),
         NurbsSurfaceAxis::new(0, vec![0.0, 1.0], false),
         NurbsSurfaceLanes::new(vec![vec![Point3::new(1.0, 2.0, 3.0)]], None),
@@ -447,7 +447,7 @@ fn degree_zero_nurbs_surface_has_an_exact_parameter_segment_bound() {
 
 #[test]
 fn degree_zero_nurbs_surface_patch_spans_use_their_matching_poles() {
-    let surface = NurbsSurface::from_lanes(&cadmpeg_test_support::service_decode_context(), 
+    let surface = NurbsSurface::from_lanes(&cadmpeg_test_support::service_decode_context(),
         NurbsSurfaceAxis::new(0, vec![0.0, 1.0, 2.0], false),
         NurbsSurfaceAxis::new(0, vec![0.0, 1.0], false),
         NurbsSurfaceLanes::new(
@@ -475,7 +475,7 @@ fn degree_zero_nurbs_surface_patch_spans_use_their_matching_poles() {
 
 #[test]
 fn nurbs_surface_parameter_segment_bound_splits_internal_knots() {
-    let surface = NurbsSurface::from_lanes(&cadmpeg_test_support::service_decode_context(), 
+    let surface = NurbsSurface::from_lanes(&cadmpeg_test_support::service_decode_context(),
         NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 0.5, 1.0, 1.0], false),
         NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
         NurbsSurfaceLanes::new(
@@ -826,7 +826,7 @@ fn degenerate_curve_inverse_preserves_the_selected_parameter() {
 fn a_surface_isoline_reproduces_the_surface_along_its_free_parameter() {
     // Rational, quadratic in u and linear in v, so the blend across the
     // fixed direction has to carry weights to stay exact.
-    let surface = NurbsSurface::from_lanes(&cadmpeg_test_support::service_decode_context(), 
+    let surface = NurbsSurface::from_lanes(&cadmpeg_test_support::service_decode_context(),
         NurbsSurfaceAxis::new(2, vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0], false),
         NurbsSurfaceAxis::new(1, vec![-2.0, -2.0, 3.0, 3.0], false),
         NurbsSurfaceLanes::new(
@@ -869,7 +869,7 @@ fn a_surface_isoline_reproduces_the_surface_along_its_free_parameter() {
 
 #[test]
 fn bilinear_surface_partials_follow_stored_parameterization() {
-    let surface = NurbsSurface::from_lanes(&cadmpeg_test_support::service_decode_context(), 
+    let surface = NurbsSurface::from_lanes(&cadmpeg_test_support::service_decode_context(),
         NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
         NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
         NurbsSurfaceLanes::new(
@@ -890,7 +890,7 @@ fn bilinear_surface_partials_follow_stored_parameterization() {
 
 #[test]
 fn quadratic_surface_second_partials_follow_stored_parameterization() {
-    let surface = NurbsSurface::from_lanes(&cadmpeg_test_support::service_decode_context(), 
+    let surface = NurbsSurface::from_lanes(&cadmpeg_test_support::service_decode_context(),
         NurbsSurfaceAxis::new(2, vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0], false),
         NurbsSurfaceAxis::new(2, vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0], false),
         NurbsSurfaceLanes::new(
@@ -1012,7 +1012,7 @@ fn linear_offset_support_extension_uses_the_boundary_tangent_plane() {
         Surface {
             id: support_id.clone(),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
-                NurbsSurface::from_lanes(&cadmpeg_test_support::service_decode_context(), 
+                NurbsSurface::from_lanes(&cadmpeg_test_support::service_decode_context(),
                     NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
                     NurbsSurfaceAxis::new(2, vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0], false),
                     NurbsSurfaceLanes::new(
@@ -1069,7 +1069,7 @@ fn offset_uses_the_nurbs_carrier_normal_orientation() {
     {
         let replacement = true;
         edit::replace(&mut support, |previous| {
-            NurbsSurface::new(&cadmpeg_test_support::service_decode_context(), 
+            NurbsSurface::new(&cadmpeg_test_support::service_decode_context(),
                 NurbsSurfaceAxis::new(
                     previous.u_degree(),
                     previous.u_knots().to_vec(),
@@ -1157,7 +1157,7 @@ fn offset_of_reversed_subset_uses_the_local_surface_normal() {
         },
     ];
     ir.model
-        .add_procedural_surface(None, 
+        .add_procedural_surface(None,
             &subset_id,
             procedural_surface! {
                 id: subset_construction,
@@ -1168,7 +1168,7 @@ fn offset_of_reversed_subset_uses_the_local_surface_normal() {
         ).unwrap()
         .expect("subset surface exists and has no procedural construction");
     ir.model
-        .add_procedural_surface(None, 
+        .add_procedural_surface(None,
             &offset_id,
             procedural_surface! {
                 id: offset_construction,
@@ -1217,7 +1217,7 @@ fn curve_bounded_surface_delegates_evaluation_to_its_support() {
         },
     ];
     ir.model
-        .add_procedural_surface(None, 
+        .add_procedural_surface(None,
             &bounded_id,
             procedural_surface! {
                 id: ProceduralSurfaceId::mint("test:model:entity#curve-bounded-construction").expect("valid identity"),
@@ -1278,7 +1278,7 @@ fn linear_sweep_surface_evaluation_uses_directrix_and_sweep_parameters() {
         source_object: None,
     });
     ir.model
-        .add_procedural_surface(None, 
+        .add_procedural_surface(None,
             &surface_id,
             procedural_surface! {
                 id: ProceduralSurfaceId::mint("test:model:entity#sweep-construction").expect("valid identity"),
@@ -1324,7 +1324,7 @@ fn cacheless_revision_extrusion_uses_the_directrix_sense_chart() {
     ir.model.curves.push(Curve {
         id: directrix_id.clone(),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-            NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
+            NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(),
                 1,
                 vec![0.0, 0.0, 2.0, 2.0],
                 vec![Point3::new(0.0, 0.0, 0.0), Point3::new(2.0, 0.0, 0.0)],
@@ -1421,7 +1421,7 @@ fn axis_revolution_surface_evaluation_rotates_the_profile_parameterization() {
         source_object: None,
     });
     ir.model
-        .add_procedural_surface(None, 
+        .add_procedural_surface(None,
             &surface_id,
             procedural_surface! {
                 id: ProceduralSurfaceId::mint("test:model:entity#revolution-construction").expect("valid identity"),
@@ -1482,7 +1482,7 @@ fn revolution_surface_maps_its_angular_parameter_interval() {
         source_object: None,
     });
     ir.model
-        .add_procedural_surface(None, 
+        .add_procedural_surface(None,
             &surface_id,
             procedural_surface! {
                 id: ProceduralSurfaceId::mint("test:model:entity#mapped-revolution-construction").expect("valid identity"),
@@ -1529,7 +1529,7 @@ fn revolution_over_wide_angular_parameter_interval_maps_interior_angle() {
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
         source_object: None,
     });
-    ir.model.add_procedural_surface(None, 
+    ir.model.add_procedural_surface(None,
         &surface_id,
         procedural_surface! {
             id: ProceduralSurfaceId::mint("test:model:entity#wide-angle-construction").expect("valid identity"),
@@ -1623,7 +1623,7 @@ fn revolution_surface_maps_a_normalized_line_domain_to_its_distance_carrier() {
         source_object: None,
     });
     ir.model
-        .add_procedural_surface(None, 
+        .add_procedural_surface(None,
             &surface_id,
             procedural_surface! {
                 id: ProceduralSurfaceId::mint("test:model:entity#normalized-revolution-construction").expect("valid identity"),
@@ -1778,7 +1778,7 @@ fn analytic_and_rational_curve_derivatives_are_exact() {
     );
 
     let arc = SolvedCurveGeometry::Nurbs(
-        NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
+        NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(),
             2,
             vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
             vec![
@@ -1839,7 +1839,7 @@ fn analytic_and_rational_curve_derivatives_are_exact() {
 
 #[test]
 fn rational_surface_partials_apply_the_weight_quotient_rule() {
-    let surface = NurbsSurface::from_lanes(&cadmpeg_test_support::service_decode_context(), 
+    let surface = NurbsSurface::from_lanes(&cadmpeg_test_support::service_decode_context(),
         NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
         NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
         NurbsSurfaceLanes::new(
@@ -1868,7 +1868,7 @@ fn rational_surface_partials_apply_the_weight_quotient_rule() {
 
 #[test]
 fn rational_surface_isocurves_preserve_the_tensor_product_parameterization() {
-    let surface = NurbsSurface::from_lanes(&cadmpeg_test_support::service_decode_context(), 
+    let surface = NurbsSurface::from_lanes(&cadmpeg_test_support::service_decode_context(),
         NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
         NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
         NurbsSurfaceLanes::new(
@@ -1910,7 +1910,7 @@ fn rational_surface_isocurves_preserve_the_tensor_product_parameterization() {
 
 #[test]
 fn nurbs_curve_inverse_uses_the_seed_to_select_an_ambiguous_witness() {
-    let curve = NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
+    let curve = NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(),
         1,
         vec![0.0, 0.0, 0.5, 1.0, 1.0],
         vec![
@@ -1940,7 +1940,7 @@ fn nurbs_curve_inverse_uses_the_seed_to_select_an_ambiguous_witness() {
             .expect("resource allocation did not fail"),
         None
     );
-    assert!(nurbs_curve_speed_bound(&curve).is_some_and(|bound| bound.get() >= 2.0));
+    assert!(nurbs_curve_speed_bound(&cadmpeg_test_support::service_decode_context(), &curve).expect("speed bound admission").is_some_and(|bound| bound.get() >= 2.0));
 }
 
 mod bounded_nurbs;

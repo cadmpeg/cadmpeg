@@ -22,7 +22,7 @@ use crate::geometry::nurbs::bezier::{homogeneous_spans, positive_controls};
 use crate::geometry::nurbs::bounds::speed_bound_by;
 use crate::geometry::nurbs::scratch;
 use crate::geometry::{
-    nurbs::{knots_nondecreasing, NurbsCurve, NurbsSurface, SurfaceParameterAxis},
+    nurbs::{NurbsCurve, NurbsSurface, SurfaceParameterAxis},
     pcurve::PcurveGeometry,
     CurveGeometry, LawExpression, LawFormula, ProceduralCurveDefinition,
     ProceduralSurfaceDefinition, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
@@ -1792,11 +1792,7 @@ fn nurbs_curve_parameter_near_point_with_nonnegative_tolerance(
         let Some(weights) = validated_nurbs_curve_weights(ctx, &mut source_storage, curve)? else {
             return Ok(None);
         };
-        let speed_work = u64_from_index(count).checked_mul(128)
-            .and_then(|work| work.checked_add(u64_from_index(curve.knots().len()).checked_mul(2)?))
-            .ok_or_else(|| ctx.refuse_codec_limit("IR curve inversion speed bound", u64::MAX - 1, u64::MAX))?;
-        ctx.charge_work(speed_work, "IR curve inversion speed bound")?;
-        let Some(speed_bound) = nurbs_curve_speed_bound_about(curve, point).map(FiniteReal::get)
+        let Some(speed_bound) = nurbs_curve_speed_bound_about(ctx, curve, point)?.map(FiniteReal::get)
         else {
             return Ok(None);
         };
@@ -1971,9 +1967,9 @@ fn nurbs_curve_parameter_near_point_newton(
 
 /// Global model-space speed bound for a structurally valid rational NURBS
 /// curve over its effective knot domain.
-pub fn nurbs_curve_speed_bound(curve: &NurbsCurve) -> Option<FiniteReal> {
-    nurbs_curve_parameter_domain(curve)?;
-    nurbs_curve_speed_bound_about(curve, Point3::new(0.0, 0.0, 0.0))
+pub fn nurbs_curve_speed_bound(ctx: &DecodeContext<'_>, curve: &NurbsCurve) -> Result<Option<FiniteReal>, ResourceLimit> {
+    if nurbs_curve_parameter_domain(curve).is_none() { return Ok(None); }
+    nurbs_curve_speed_bound_about(ctx, curve, Point3::new(0.0, 0.0, 0.0))
 }
 
 enum ValidatedNurbsWeights {
@@ -2021,8 +2017,9 @@ fn validated_nurbs_curve_weights(
     Ok(Some(ValidatedNurbsWeights::Rational(weights)))
 }
 
-fn nurbs_curve_speed_bound_about(curve: &NurbsCurve, origin: Point3) -> Option<FiniteReal> {
+fn nurbs_curve_speed_bound_about(ctx: &DecodeContext<'_>, curve: &NurbsCurve, origin: Point3) -> Result<Option<FiniteReal>, ResourceLimit> {
     speed_bound_by(
+        ctx,
         curve.degree(),
         curve.knots(),
         curve.pole_count(),
@@ -2119,22 +2116,36 @@ fn bounded_nearest_intervals<'ctx>(
     Ok((result, storage))
 }
 
+struct PcurveIntervals<'ctx> {
+    intervals: Vec<[f64; 2]>,
+    truncated: bool,
+    storage: cadmpeg_core::decode::ScopedReservation<'ctx>,
+}
+
 /// Retain the final valid knot intervals without materializing the full partition.
-fn bounded_tail_intervals(boundaries: &[f64]) -> Result<(Vec<[f64; 2]>, bool), ResourceLimit> {
-    let mut valid = boundaries
-        .windows(2)
-        .rev()
-        .filter_map(|pair| (pair[0] < pair[1]).then_some([pair[0], pair[1]]));
+fn bounded_tail_intervals<'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
+    boundaries: &[f64],
+) -> Result<PcurveIntervals<'ctx>, ResourceLimit> {
+    let mut storage = ctx.reserve_scoped_limit(0, "IR pcurve search intervals")?;
     let mut intervals = Vec::new();
-    scratch::reserve_exact(
-        &mut intervals,
-        boundaries.len().min(NURBS_SEARCH_MAX_INTERVALS),
-        "IR pcurve search intervals",
-    )?;
-    intervals.extend(valid.by_ref().take(NURBS_SEARCH_MAX_INTERVALS));
-    let truncated = valid.next().is_some();
+    ctx.reserve_scoped_vec_limit(&mut storage, &mut intervals,
+        boundaries.len().min(NURBS_SEARCH_MAX_INTERVALS), "IR pcurve search intervals")?;
+    let mut truncated = false;
+    for pair in boundaries.windows(2).rev() {
+        ctx.charge_work_limit(1, "IR pcurve search interval scan")?;
+        if pair[0] < pair[1] {
+            if intervals.len() == NURBS_SEARCH_MAX_INTERVALS {
+                truncated = true;
+                break;
+            }
+            ctx.charge_work_limit(1, "IR pcurve search interval copy")?;
+            intervals.push([pair[0], pair[1]]);
+        }
+    }
+    ctx.charge_work_limit(u64_from_index(intervals.len() / 2), "IR pcurve search interval reversal")?;
     intervals.reverse();
-    Ok((intervals, truncated))
+    Ok(PcurveIntervals { intervals, truncated, storage })
 }
 
 #[derive(Debug, PartialEq)]
@@ -2532,6 +2543,7 @@ fn nurbs_pcurve_differential_unsettled(
 /// midpoint distance minus the maximum possible travel exceeds tolerance are
 /// discarded. `None` denotes invalid input or exhaustion of the bounded search.
 pub fn nurbs_pcurve_contains_point(
+    ctx: &DecodeContext<'_>,
     degree: u32,
     knots: &[f64],
     control_points: &[Point2],
@@ -2563,23 +2575,15 @@ pub fn nurbs_pcurve_contains_point(
         Some(_) => return Ok(None),
         None => None,
     };
-    if control_points.iter().enumerate().any(|(index, control)| {
-        !control.is_finite()
-            || weights.is_some_and(|weights| !weights[index].is_finite() || weights[index] <= 0.0)
-    }) || knots.iter().any(|knot| !knot.is_finite())
-        || !knots_nondecreasing(knots)
-    {
-        return Ok(None);
-    }
-
     let Some(speed_bound) = speed_bound_by(
+        ctx,
         degree,
         knots,
         control_points.len(),
         |index| control_points.get(index).map(|point| [point.u, point.v]),
         |index| weights.map_or(1.0, |weights| weights[index]),
         [point.u, point.v],
-    )
+    )?
     .map(FiniteReal::get) else {
         return Ok(None);
     };
@@ -2588,18 +2592,28 @@ pub fn nurbs_pcurve_contains_point(
     if domain[0] > domain[1] {
         return Ok(None);
     }
-    let (mut intervals, truncated) = bounded_tail_intervals(&knots[degree_usize..=count])?;
-    if intervals.is_empty() {
-        intervals.push(domain);
+    let mut search = bounded_tail_intervals(ctx, &knots[degree_usize..=count])?;
+    if search.intervals.is_empty() {
+        ctx.charge_work_limit(1, "IR pcurve search interval copy")?;
+        ctx.reserve_scoped_vec_limit(&mut search.storage, &mut search.intervals, 1, "IR pcurve search intervals")?;
+        search.intervals.push(domain);
     }
     let mut examined = 0usize;
-    while let Some([start, end]) = intervals.pop() {
+    while !search.intervals.is_empty() {
+        ctx.charge_work_limit(1, "IR pcurve containment interval visit")?;
+        let Some([start, end]) = search.intervals.pop() else { break; };
         examined += 1;
         if examined > NURBS_SEARCH_MAX_INTERVALS {
             return Ok(None);
         }
         let middle = start.midpoint(end);
-        let curve_uv = match nurbs_pcurve_uv(degree, knots, control_points, weights, middle) {
+        let scratch = decode::Scratch::new(ctx);
+        let evaluation = FiniteReal::new(middle).ok_or(EvaluationFailure::NoValue).and_then(|middle| {
+            nurbs_pcurve_differential_with(&scratch, degree, knots, control_points.len(),
+                |index| FinitePoint2::new(*control_points.get(index)?).map(planar_pole), weights, middle)
+                .map(|differential| differential.point)
+        });
+        let curve_uv = match scratch.finish_evaluation(evaluation)? {
             Ok(value) => Point2::from(value),
             Err(EvaluationFailure::ResourceLimit(limit)) => return Err(limit),
             Err(EvaluationFailure::NoValue | EvaluationFailure::NonFinite(_)) => return Ok(None),
@@ -2615,10 +2629,12 @@ pub fn nurbs_pcurve_contains_point(
         if middle == start || middle == end {
             continue;
         }
-        intervals.push([start, middle]);
-        intervals.push([middle, end]);
+        ctx.reserve_scoped_vec_limit(&mut search.storage, &mut search.intervals, 2, "IR pcurve search subdivisions")?;
+        ctx.charge_work_limit(2, "IR pcurve search subdivision copy")?;
+        search.intervals.push([start, middle]);
+        search.intervals.push([middle, end]);
     }
-    Ok((!truncated).then_some(false))
+    Ok((!search.truncated).then_some(false))
 }
 
 /// Evaluate a tensor-product NURBS surface at `(u, v)`, or report why it has

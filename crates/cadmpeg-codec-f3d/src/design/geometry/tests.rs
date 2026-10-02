@@ -58,7 +58,7 @@ fn positive_radius(value: f64) -> PositiveLength {
 #[test]
 fn profile_polyline_keeps_finite_samples_in_a_wide_nurbs_domain() {
     let sketch_id = SketchId::mint("synthetic:test:id#wide-profile").unwrap();
-    let curve = PcurveNurbs::from_lanes(&cadmpeg_test_support::service_decode_context(), 
+    let curve = PcurveNurbs::from_lanes(&cadmpeg_test_support::service_decode_context(),
         1,
         vec![-f64::MAX, -f64::MAX, f64::MAX, f64::MAX],
         vec![Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)],
@@ -83,7 +83,7 @@ fn profile_polyline_keeps_finite_samples_in_a_wide_nurbs_domain() {
 
 #[test]
 fn certified_nurbs_tubes_cover_a_wide_finite_parameter_span() {
-    let curve = PcurveNurbs::from_lanes(&cadmpeg_test_support::service_decode_context(), 
+    let curve = PcurveNurbs::from_lanes(&cadmpeg_test_support::service_decode_context(),
         1,
         vec![-f64::MAX, -f64::MAX, f64::MAX, f64::MAX],
         vec![Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)],
@@ -111,7 +111,7 @@ fn certified_nurbs_tubes_cover_a_wide_finite_parameter_span() {
 
 #[test]
 fn certified_nurbs_tubes_refuse_collection_limit() {
-    let curve = PcurveNurbs::from_lanes(&cadmpeg_test_support::service_decode_context(), 
+    let curve = PcurveNurbs::from_lanes(&cadmpeg_test_support::service_decode_context(),
         1,
         vec![0.0, 0.0, 1.0, 1.0],
         vec![Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)],
@@ -137,7 +137,7 @@ fn certified_nurbs_tubes_refuse_collection_limit() {
 fn profile_polyline_keeps_a_finite_midpoint_near_the_float_limit() {
     let sketch_id = SketchId::mint("synthetic:test:id#high-domain-profile").unwrap();
     let lower = f64::MAX * 0.5;
-    let curve = PcurveNurbs::from_lanes(&cadmpeg_test_support::service_decode_context(), 
+    let curve = PcurveNurbs::from_lanes(&cadmpeg_test_support::service_decode_context(),
         1,
         vec![lower, lower, f64::MAX, f64::MAX],
         vec![Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)],
@@ -512,7 +512,7 @@ fn nonperiodic_nurbs_boundary_resolves_atomic_region() {
         })
         .unwrap(),
         SketchGeometry::nurbs(
-            cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(&cadmpeg_test_support::service_decode_context(), 
+            cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(&cadmpeg_test_support::service_decode_context(),
                 2,
                 vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
                 vec![
@@ -1274,7 +1274,7 @@ fn historical_point_membership_respects_conic_domains_and_nurbs_endpoints() {
     );
 
     let nurbs = entity(SketchGeometry::nurbs(
-        cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(&cadmpeg_test_support::service_decode_context(), 
+        cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(&cadmpeg_test_support::service_decode_context(),
             2,
             vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
             vec![
@@ -1581,7 +1581,7 @@ fn numerical_audit_line_circle_intersections_are_scale_invariant() {
 #[test]
 fn numerical_followup_profile_speed_bound_retains_common_weights() {
     for weight in [1.0, 1e-200, 1e200] {
-        let curve = cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(&cadmpeg_test_support::service_decode_context(), 
+        let curve = cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(&cadmpeg_test_support::service_decode_context(),
             1,
             vec![0., 0., 1., 1.],
             vec![Point2::new(0., 0.), Point2::new(1., 0.)],
@@ -1589,14 +1589,14 @@ fn numerical_followup_profile_speed_bound_retains_common_weights() {
             false,
         ).expect("fixture pcurve construction admission")
         .unwrap();
-        assert_eq!(super::nurbs_speed_bound(&curve), Some(1.0));
+        assert_eq!(super::nurbs_speed_bound(&cadmpeg_test_support::service_decode_context(), &curve).expect("speed bound admission"), Some(1.0));
     }
 }
 
 #[test]
 fn implicit_profile_unit_weights_match_explicit_units() {
     let points = vec![Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)];
-    let implicit = cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(&cadmpeg_test_support::service_decode_context(), 
+    let implicit = cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(&cadmpeg_test_support::service_decode_context(),
         1,
         vec![0.0, 0.0, 1.0, 1.0],
         points.clone(),
@@ -1604,7 +1604,7 @@ fn implicit_profile_unit_weights_match_explicit_units() {
         false,
     ).expect("fixture pcurve construction admission")
     .expect("polynomial pcurve");
-    let explicit = cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(&cadmpeg_test_support::service_decode_context(), 
+    let explicit = cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(&cadmpeg_test_support::service_decode_context(),
         1,
         vec![0.0, 0.0, 1.0, 1.0],
         points,
@@ -1613,8 +1613,8 @@ fn implicit_profile_unit_weights_match_explicit_units() {
     ).expect("fixture pcurve construction admission")
     .expect("unit-weight pcurve");
     assert_eq!(
-        super::nurbs_speed_bound(&implicit),
-        super::nurbs_speed_bound(&explicit)
+        super::nurbs_speed_bound(&cadmpeg_test_support::service_decode_context(), &implicit).expect("speed bound admission"),
+        super::nurbs_speed_bound(&cadmpeg_test_support::service_decode_context(), &explicit).expect("speed bound admission")
     );
 }
 

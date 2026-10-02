@@ -995,7 +995,7 @@ fn arrangement_split_parameters(
         "sort f3d design geometry 2",
     )?;
     let parameter_tolerance =
-        tolerance / geometric!(sketch_geometry_speed_bound(geometry, range)).max(tolerance);
+        tolerance / geometric!(sketch_geometry_speed_bound(ctx, geometry, range)?).max(tolerance);
     parameters.dedup_by(|left, right| (*left - *right).abs() <= parameter_tolerance);
     Ok((parameters.len() >= 2).then_some(parameters))
 }
@@ -1370,7 +1370,7 @@ fn profile_use_polyline(
     tolerance: f64,
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<Vec<Point2>>, CodecError> {
-    let travel = geometric!(sketch_geometry_speed_bound(&entity.geometry, range))
+    let travel = geometric!(sketch_geometry_speed_bound(ctx, &entity.geometry, range)?)
         * (range[1] - range[0]).abs();
     let ordinary_midpoint = (range[0] + range[1]) * 0.5;
     let midpoint = if ordinary_midpoint.is_finite() {
@@ -1419,12 +1419,13 @@ fn profile_use_polyline(
 }
 
 fn sketch_geometry_speed_bound(
+    ctx: &DecodeContext<'_>,
     geometry: &cadmpeg_ir::sketches::SketchGeometry,
     range: [f64; 2],
-) -> Option<f64> {
+) -> Result<Option<f64>, CodecError> {
     use cadmpeg_ir::sketches::SketchGeometryDefinition;
 
-    match geometry.definition() {
+    Ok(match geometry.definition() {
         SketchGeometryDefinition::Line { start, end } => {
             Some(point_distance(start.get(), end.get()))
         }
@@ -1433,10 +1434,10 @@ fn sketch_geometry_speed_bound(
         SketchGeometryDefinition::Ellipse { radii, .. } => {
             Some(radii.major().get().max(radii.minor().get()))
         }
-        SketchGeometryDefinition::Nurbs { curve } if !curve.periodic() => nurbs_speed_bound(curve),
+        SketchGeometryDefinition::Nurbs { curve } if !curve.periodic() => nurbs_speed_bound(ctx, curve)?,
         _ if range[0] == range[1] => None,
         _ => None,
-    }
+    })
 }
 
 fn sketch_geometry_point(
@@ -2160,7 +2161,7 @@ fn certified_nurbs_tubes(
     target_error: f64,
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<Vec<CertifiedCurveTube>>, CodecError> {
-    let speed = geometric!(nurbs_speed_bound(curve));
+    let speed = geometric!(nurbs_speed_bound(ctx, curve)?);
     let degree = index_from_u32(curve.degree());
     let knots = curve.knots();
     {
@@ -2246,8 +2247,9 @@ fn subdivision_count(travel_bound: f64, target_error: f64) -> Option<usize> {
         .flatten()
 }
 
-fn nurbs_speed_bound(curve: &PcurveNurbs) -> Option<f64> {
-    cadmpeg_ir::geometry::nurbs::bounds::speed_bound_by(
+fn nurbs_speed_bound(ctx: &DecodeContext<'_>, curve: &PcurveNurbs) -> Result<Option<f64>, CodecError> {
+    Ok(cadmpeg_ir::geometry::nurbs::bounds::speed_bound_by(
+        ctx,
         curve.degree(),
         curve.knots(),
         curve.pole_rows().count(),
@@ -2259,8 +2261,8 @@ fn nurbs_speed_bound(curve: &PcurveNurbs) -> Option<f64> {
         },
         |index| curve.pole_rows().weight_at(index).unwrap_or(1.0),
         [0.0, 0.0],
-    )
-    .map(cadmpeg_ir::scalar::FiniteReal::get)
+    )?
+    .map(cadmpeg_ir::scalar::FiniteReal::get))
 }
 
 fn circular_arc_profile_segments(
@@ -3010,6 +3012,7 @@ pub(super) fn point_on_sketch_entity(
         let (control_points, weights) =
             crate::design::geometry::nurbs_pcurve_evaluator_lanes(curve, ctx)?;
         return cadmpeg_ir::eval::nurbs_pcurve_contains_point(
+            ctx,
             curve.degree(),
             curve.knots(),
             &control_points,
