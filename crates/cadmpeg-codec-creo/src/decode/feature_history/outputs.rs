@@ -224,9 +224,12 @@ fn bodies_containing_edges(
     ir: &CadIr,
     edges: &[EdgeId],
 ) -> Result<Vec<BodyId>, CodecError> {
+    let mut lookup_storage = ctx.reserve_scoped(0, "Creo selected topology lookup")?;
     let mut selected = BTreeSet::new();
     for edge in edges {
-        ctx.insert_btree_set(&mut selected, edge, "creo selected edge nodes")?;
+        lookup_storage.with_storage(|| {
+            ctx.insert_btree_set(&mut selected, edge, "creo selected edge nodes")
+        })?;
     }
     let mut shell_ids = BTreeSet::new();
     for coedge in ir
@@ -246,7 +249,9 @@ fn bodies_containing_edges(
         else {
             continue;
         };
-        ctx.insert_btree_set(&mut shell_ids, &face.shell, "creo selected shell nodes")?;
+        lookup_storage.with_storage(|| {
+            ctx.insert_btree_set(&mut shell_ids, &face.shell, "creo selected shell nodes")
+        })?;
     }
     for shell in ir.model.shells.iter().filter(|shell| {
         shell
@@ -254,7 +259,9 @@ fn bodies_containing_edges(
             .iter()
             .any(|edge| selected.contains(edge))
     }) {
-        ctx.insert_btree_set(&mut shell_ids, &shell.id, "creo selected shell nodes")?;
+        lookup_storage.with_storage(|| {
+            ctx.insert_btree_set(&mut shell_ids, &shell.id, "creo selected shell nodes")
+        })?;
     }
     let mut bodies = Vec::new();
     for shell_id in shell_ids {
