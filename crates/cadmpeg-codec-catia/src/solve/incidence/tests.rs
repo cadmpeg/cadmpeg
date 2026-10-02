@@ -79,10 +79,19 @@ fn sparse_degrees(faces: &[&[u8]]) -> Vec<BTreeMap<usize, u8>> {
 fn endpoint_candidate_search_selects_a_face_closing_assignment() {
     catia_test_context!(ctx);
     let rows: Vec<_> = (0..6)
-        .map(|edge| EdgeRow {
-            kind: 1,
-            handles: vec![edge * 2, edge * 2 + 1],
-            boundary_layout: EdgeBoundaryLayout::InteriorWithFlankingCorners,
+        .map(|edge| {
+            assert!(EdgeRow::new(
+                1,
+                vec![edge * 2, edge * 2 + 1],
+                EdgeBoundaryLayout::InteriorWithFlankingCorners
+            )
+            .is_none());
+            EdgeRow::new(
+                1,
+                vec![edge * 2, edge * 2, edge * 2 + 1],
+                EdgeBoundaryLayout::InteriorWithFlankingCorners,
+            )
+            .expect("admitted edge row")
         })
         .collect();
     let points = vec![
@@ -152,10 +161,19 @@ fn endpoint_candidate_search_selects_a_face_closing_assignment() {
 fn endpoint_candidate_fallback_honors_caller_budget() {
     catia_test_context!(ctx);
     let rows: Vec<_> = (0..6)
-        .map(|edge| EdgeRow {
-            kind: 1,
-            handles: vec![edge * 2, edge * 2 + 1],
-            boundary_layout: EdgeBoundaryLayout::InteriorWithFlankingCorners,
+        .map(|edge| {
+            assert!(EdgeRow::new(
+                1,
+                vec![edge * 2, edge * 2 + 1],
+                EdgeBoundaryLayout::InteriorWithFlankingCorners
+            )
+            .is_none());
+            EdgeRow::new(
+                1,
+                vec![edge * 2, edge * 2, edge * 2 + 1],
+                EdgeBoundaryLayout::InteriorWithFlankingCorners,
+            )
+            .expect("admitted edge row")
         })
         .collect();
     let points = vec![
@@ -199,10 +217,19 @@ fn endpoint_candidate_validation_charges_full_incidence_work() {
 
     catia_test_context!(ctx);
     let rows = vec![
-        EdgeRow {
-            kind: 1,
-            handles: vec![0, 1],
-            boundary_layout: EdgeBoundaryLayout::InteriorWithFlankingCorners,
+        {
+            assert!(EdgeRow::new(
+                1,
+                vec![0, 1],
+                EdgeBoundaryLayout::InteriorWithFlankingCorners
+            )
+            .is_none());
+            EdgeRow::new(
+                1,
+                vec![0, 0, 1],
+                EdgeBoundaryLayout::InteriorWithFlankingCorners,
+            )
+            .expect("admitted edge row")
         };
         3
     ];

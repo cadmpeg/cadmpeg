@@ -9,7 +9,7 @@ use cadmpeg_core::CodecError;
 
 use crate::families::standard::topology::{
     incidence_cycles, reconstruct_incidence, solve_boundary_orientation_constraints, EdgeRow,
-    StandardTopology,
+    StandardTopologyDraft,
 };
 use crate::solve::mesh_quotient::{
     initial_mesh_quotient, mesh_assignment_endpoint_cycle_support_by,
@@ -445,7 +445,11 @@ fn incidence_choice_components<'storage>(
             if rank > 0 && face == edge_faces[edge][0] {
                 continue;
             }
-            fixed_incidence.union(point_nodes[&(face, pair[0])], point_nodes[&(face, pair[1])]);
+            fixed_incidence.union(
+                ctx,
+                point_nodes[&(face, pair[0])],
+                point_nodes[&(face, pair[1])],
+            )?;
         }
     }
     let mut owner = HashMap::<(usize, usize), usize>::new();
@@ -462,9 +466,9 @@ fn incidence_choice_components<'storage>(
                 continue;
             }
             for point in choices[edge].iter().flatten().copied() {
-                let point = fixed_incidence.find(point_nodes[&(face, point)]);
+                let point = fixed_incidence.find(ctx, point_nodes[&(face, point)])?;
                 if let Some(&previous) = owner.get(&(face, point)) {
-                    union.union(previous, edge);
+                    union.union(ctx, previous, edge)?;
                 } else {
                     ctx.insert_hash_map(
                         &mut owner,
@@ -490,7 +494,7 @@ fn incidence_choice_components<'storage>(
             });
             if let Some(first) = ambiguous.next() {
                 for edge in ambiguous {
-                    union.union(first, edge);
+                    union.union(ctx, first, edge)?;
                 }
             }
             Ok(())
@@ -535,10 +539,10 @@ fn incidence_choice_components<'storage>(
             let mut owner = HashMap::<usize, usize>::new();
             for &edge in &ambiguous {
                 for port in [edge * 2, edge * 2 + 1] {
-                    let root = mesh_quotient.root(port);
+                    let root = mesh_quotient.root(ctx, port)?;
                     for point in mesh_quotient.domains()[root].iter().copied() {
                         if let Some(&previous) = owner.get(&point) {
-                            union.union(previous, edge);
+                            union.union(ctx, previous, edge)?;
                         } else {
                             ctx.insert_hash_map(
                                 &mut owner,
@@ -554,7 +558,7 @@ fn incidence_choice_components<'storage>(
     }
     let mut by_root = HashMap::<usize, Vec<usize>>::new();
     for edge in ambiguous {
-        let root = union.find(edge);
+        let root = union.find(ctx, edge)?;
         if let Some(group) = by_root.get_mut(&root) {
             ctx.push_vec(group, edge, "catia_incidence_component_edges")?;
         } else {
@@ -613,14 +617,14 @@ fn join_incidence_components_by_coupling(
             continue;
         };
         if let Some(owner) = coupled_owner {
-            union.union(owner, component);
+            union.union(ctx, owner, component)?;
         } else {
             coupled_owner = Some(component);
         }
     }
     let mut joined = HashMap::<usize, (usize, Vec<usize>)>::new();
     for (index, component) in components.into_iter().enumerate() {
-        let root = union.find(index);
+        let root = union.find(ctx, index)?;
         if let Some(entry) = joined.get_mut(&root) {
             entry.0 = entry.0.min(index);
             ctx.reserve_vec(
@@ -2059,7 +2063,7 @@ pub(super) fn compact_boundary_domain_viable(
                 degrees[node] += 1;
             }
             if nodes[0] != nodes[1] {
-                components.union(nodes[0], nodes[1]);
+                components.union(ctx, nodes[0], nodes[1])?;
             }
         }
         let mut open_components = HashSet::new();
@@ -2067,14 +2071,17 @@ pub(super) fn compact_boundary_domain_viable(
             if degree < 2 {
                 ctx.insert_hash_set(
                     &mut open_components,
-                    components.find(node),
+                    components.find(ctx, node)?,
                     "catia_compact_boundary_open_components",
                 )?;
             }
         }
-        return Ok(
-            (0..components.len()).all(|node| open_components.contains(&components.find(node)))
-        );
+        for node in 0..components.len() {
+            if !open_components.contains(&components.find(ctx, node)?) {
+                return Ok(false);
+            }
+        }
+        return Ok(true);
     }
     let mut complete_pairs = Vec::new();
     for pair in selected_pairs {
@@ -2361,7 +2368,7 @@ fn advance_compact_boundary_domains<'storage, 'a>(
                         )?;
                     }
                     let Some(work) = candidate
-                        .signature_work()
+                        .signature_work(ctx)?
                         .and_then(|work| work.checked_add(work_units(next_oriented.len())))
                     else {
                         return Ok(CompactBoundaryAdvanceOutcome::Exhausted);
@@ -5178,7 +5185,7 @@ where
                     return Ok(visitor(&pairs)?);
                 };
                 let Some(closure_limit) =
-                    quotient.coordinate_domain_preparation_limit(point_count, &singleton)
+                    quotient.coordinate_domain_preparation_limit(ctx, point_count, &singleton)?
                 else {
                     return Ok(ControlFlow::Continue(()));
                 };
@@ -5386,7 +5393,7 @@ where
             if let Some(quotient) = mesh_quotient {
                 let mut quotient = quotient.clone_charged(ctx)?;
                 let Some(preparation_limit) =
-                    quotient.coordinate_domain_preparation_limit(point_count, choices)
+                    quotient.coordinate_domain_preparation_limit(ctx, point_count, choices)?
                 else {
                     return Ok(None);
                 };
@@ -5569,7 +5576,7 @@ where
                 let singleton = singleton_incidence_pairs(ctx, &pairs)?;
                 let mut quotient = quotient.clone_charged(ctx)?;
                 let Some(closure_limit) =
-                    quotient.coordinate_domain_preparation_limit(point_count, &singleton)
+                    quotient.coordinate_domain_preparation_limit(ctx, point_count, &singleton)?
                 else {
                     return Ok(None);
                 };
@@ -5779,7 +5786,7 @@ pub(crate) fn reconstruct_incidence_candidates(
     endpoints: IncidenceEndpointDomains<'_>,
     face_count: usize,
     budget: &WorkBudget<'_>,
-) -> Result<Option<StandardTopology>, CodecError> {
+) -> Result<Option<StandardTopologyDraft>, CodecError> {
     const MAX_TOPOLOGY_ASSIGNMENTS: usize = 256;
 
     let IncidenceEndpointDomains {

@@ -1511,7 +1511,7 @@ fn native_namespace_retains_count_framed_owner_packet_and_face_node_relation() {
         panic!("count-framed owner payload")
     };
     assert_eq!(references, &[911, 7, 263, 258, 281, 276, 917]);
-    assert_eq!(tail, &[0x83, 0x41, 0x92, 0x00, 0x01]);
+    assert_eq!(tail.as_slice(), &[0x83, 0x41, 0x92, 0x00, 0x01]);
     let face_node = packet.face_node.expect("face-node relation");
     assert_eq!(face_node.target, 916);
     assert_eq!(
@@ -1528,18 +1528,11 @@ fn native_namespace_retains_count_framed_owner_packet_and_face_node_relation() {
         native
     );
 
-    let mut invalid = native;
-    let crate::native::CatiaOwnerPacketPayload::Counted { tail, .. } =
-        &mut invalid.consolidated_owner_packets[0].payload
-    else {
-        panic!("count-framed owner payload")
-    };
-    tail.clear();
-    let mut namespace = cadmpeg_ir::NativeNamespace::default();
-    invalid
-        .store(&mut namespace)
-        .expect("store invalid count-framed CATIA owner packet");
-    assert!(crate::native::CatiaNative::load(&namespace).is_err());
+    let mut invalid = serde_json::to_value(packet).expect("owner packet wire");
+    invalid["payload"]["tail"] = serde_json::json!("");
+    assert!(
+        serde_json::from_value::<crate::native::CatiaConsolidatedOwnerPacket>(invalid).is_err()
+    );
 }
 
 #[test]
@@ -1816,3 +1809,33 @@ fn width_coded_forward_endpoints_merge_by_class18_record_identity() {
 }
 
 mod vertex_identity;
+
+#[test]
+fn consolidated_cone_deserialization_rejects_combined_frame_and_chart_defects() {
+    let native = crate::native::CatiaNative::decode(&b2_cone_stream());
+    let cone = &native.consolidated_cones[0];
+    let valid = serde_json::to_value(cone).expect("cone wire");
+    assert_eq!(
+        serde_json::from_value::<crate::native::CatiaConsolidatedCone>(valid.clone())
+            .expect("admitted cone"),
+        *cone
+    );
+    for (field, value) in [
+        ("direction_y", serde_json::json!([1.0, 0.0, 0.0])),
+        ("axis", serde_json::json!([0.0, 0.0, -1.0])),
+        ("half_angle", serde_json::json!(0.0)),
+        ("half_angle", serde_json::json!(std::f64::consts::FRAC_PI_2)),
+        ("angular_range", serde_json::json!([-10.0, -9.0])),
+        ("angular_domain", serde_json::json!([0.0, 1.0])),
+        ("slant_range", serde_json::json!([-1.0, 1.0])),
+    ] {
+        let mut invalid = valid.clone();
+        invalid[field] = value;
+        assert!(
+            serde_json::from_value::<crate::native::CatiaConsolidatedCone>(invalid).is_err(),
+            "{field}"
+        );
+    }
+}
+
+mod admission;

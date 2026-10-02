@@ -244,8 +244,8 @@ pub(crate) fn consolidated_owner_packets(
     ctx.stable_sort_by(
         &mut packets,
         |(left_pos, left_source, _, _), (right_pos, right_source, _, _)| {
-        (left_pos, left_source).cmp(&(right_pos, right_source))
-    },
+            (left_pos, left_source).cmp(&(right_pos, right_source))
+        },
         |_| 0,
         "catia_native_owner_packet_sort",
     )?;
@@ -424,12 +424,12 @@ pub(crate) fn consolidated_edge_nodes(
     }
     let mut frames = HashMap::new();
     for record in records.iter().filter(|record| {
-        record.family == crate::wire::records::ConsolidatedFamily::B && record.class == 0x5e
+        record.family() == crate::wire::records::ConsolidatedFamily::B && record.class() == 0x5e
     }) {
         ctx.insert_hash_map(
             &mut frames,
             record.byte_offset(),
-            (record.width, record.flag, record.source_index),
+            (record.width(), record.flag(), record.source_index()),
             "catia_native_edge_frames",
         )?;
     }
