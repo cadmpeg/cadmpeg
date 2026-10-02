@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Sampled curves and polygonal surfaces with checked sample layouts.
 
+mod admission;
+use admission::{SampledAdmission, StandardAdmission};
+
 use crate::features::FinitePoint3;
 use crate::math::Point3;
 use crate::scalar::{FiniteReal, NonNegativeReal, PositiveReal};
@@ -44,12 +47,13 @@ fn admit_chordal_deflection(
 }
 
 /// Admit polygonal-surface vertices whose every coordinate is finite.
-fn admit_finite_vertices(vertices: Vec<Point3>) -> Result<Vec<FinitePoint3>, GeometryLayoutError> {
-    vertices
-        .into_iter()
-        .map(FinitePoint3::new)
-        .collect::<Option<Vec<_>>>()
-        .ok_or_else(|| geometry_layout_error("vertices must be finite"))
+fn admit_finite_vertices<A: SampledAdmission>(admission: &A, vertices: Vec<Point3>) -> Result<Vec<FinitePoint3>, A::Error> {
+    admission.collect(vertices, "IR polygonal admitted vertices", |point| {
+        match FinitePoint3::new(point) {
+            Some(point) => Ok(point),
+            None => Err(admission.layout("vertices must be finite")?),
+        }
+    })
 }
 
 /// Source-native polygonal surface with an explicit chordal error bound.
@@ -92,10 +96,9 @@ impl PolygonalSurface {
         vertices: Vec<Point3>,
         triangles: Vec<[u32; 3]>,
         chordal_deflection: f64,
-    ) -> Result<Self, GeometryLayoutError> {
-        Self::build(vertices, triangles, || {
-            admit_chordal_deflection(chordal_deflection)
-        })
+        ctx: &DecodeContext<'_>,
+    ) -> Result<Result<Self, GeometryLayoutError>, CodecError> {
+        admission::finish(Self::build(ctx, vertices, triangles, |vertices| admit_finite_vertices(ctx, vertices), || NonNegativeReal::new(chordal_deflection)))
     }
 
     /// Build from admitted source deflection and placement scale.
@@ -103,13 +106,10 @@ impl PolygonalSurface {
         vertices: Vec<Point3>,
         triangles: Vec<[u32; 3]>,
         chordal_deflection: NonNegativeReal,
-        scale: crate::scalar::PositiveReal,
-    ) -> Result<Self, GeometryLayoutError> {
-        Self::build(vertices, triangles, || {
-            chordal_deflection.scaled(scale).ok_or_else(|| {
-                geometry_layout_error("chordal_deflection must be finite and non-negative")
-            })
-        })
+        scale: PositiveReal,
+        ctx: &DecodeContext<'_>,
+    ) -> Result<Result<Self, GeometryLayoutError>, CodecError> {
+        admission::finish(Self::build(ctx, vertices, triangles, |vertices| admit_finite_vertices(ctx, vertices), || chordal_deflection.scaled(scale)))
     }
 
     /// Build from admitted vertices, source deflection and placement scale.
@@ -118,56 +118,43 @@ impl PolygonalSurface {
         vertices: Vec<FinitePoint3>,
         triangles: Vec<[u32; 3]>,
         chordal_deflection: NonNegativeReal,
-        scale: crate::scalar::PositiveReal,
-    ) -> Result<Self, GeometryLayoutError> {
-        Self::check_layout(vertices.len(), &triangles)?;
-        let chordal_deflection = chordal_deflection.scaled(scale).ok_or_else(|| {
-            geometry_layout_error("chordal_deflection must be finite and non-negative")
-        })?;
-        Ok(Self {
-            vertices,
-            triangles,
-            chordal_deflection,
-        })
+        scale: PositiveReal,
+        ctx: &DecodeContext<'_>,
+    ) -> Result<Result<Self, GeometryLayoutError>, CodecError> {
+        admission::finish(Self::build(ctx, vertices, triangles, Ok, || chordal_deflection.scaled(scale)))
     }
 
-    fn build(
-        vertices: Vec<Point3>,
+    fn build<A: SampledAdmission, P>(
+        admission: &A,
+        vertices: Vec<P>,
         triangles: Vec<[u32; 3]>,
-        deflection: impl FnOnce() -> Result<NonNegativeReal, GeometryLayoutError>,
-    ) -> Result<Self, GeometryLayoutError> {
-        Self::check_layout(vertices.len(), &triangles)?;
-        let vertices = admit_finite_vertices(vertices)?;
-        let chordal_deflection = deflection()?;
-        Ok(Self {
-            vertices,
-            triangles,
-            chordal_deflection,
-        })
+        convert: impl FnOnce(Vec<P>) -> Result<Vec<FinitePoint3>, A::Error>,
+        deflection: impl FnOnce() -> Option<NonNegativeReal>,
+    ) -> Result<Self, A::Error> {
+        Self::check_layout(admission, vertices.len(), &triangles)?;
+        let vertices = convert(vertices)?;
+        let Some(chordal_deflection) = deflection() else {
+            return Err(admission.layout("chordal_deflection must be finite and non-negative")?);
+        };
+        Ok(Self { vertices, triangles, chordal_deflection })
     }
 
-    fn check_layout(
+    fn check_layout<A: SampledAdmission>(
+        admission: &A,
         vertex_count: usize,
         triangles: &[[u32; 3]],
-    ) -> Result<(), GeometryLayoutError> {
+    ) -> Result<(), A::Error> {
         if vertex_count < 3 {
-            return Err(geometry_layout_error(
-                "polygonal surface must contain at least three vertices",
-            ));
+            return Err(admission.layout("polygonal surface must contain at least three vertices")?);
         }
         if triangles.is_empty() {
-            return Err(geometry_layout_error(
-                "polygonal surface must contain at least one triangle",
-            ));
+            return Err(admission.layout("polygonal surface must contain at least one triangle")?);
         }
-        if triangles
-            .iter()
-            .flatten()
-            .any(|index| usize::try_from(*index).map_or(true, |index| index >= vertex_count))
-        {
-            return Err(geometry_layout_error(
-                "polygonal surface contains an out-of-range triangle index",
-            ));
+        for index in triangles.iter().flatten() {
+            admission.work(1, "IR polygonal triangle index")?;
+            if usize::try_from(*index).map_or(true, |index| index >= vertex_count) {
+                return Err(admission.layout("polygonal surface contains an out-of-range triangle index")?);
+            }
         }
         Ok(())
     }
@@ -183,7 +170,7 @@ impl PolygonalSurface {
     ) -> Result<(), GeometryLayoutError> {
         let mut candidate: Vec<Point3> = self.vertices.iter().map(|point| point.get()).collect();
         edit(&mut candidate)?;
-        self.vertices = admit_finite_vertices(candidate)?;
+        self.vertices = admit_finite_vertices(&StandardAdmission, candidate)?;
         Ok(())
     }
 
@@ -217,7 +204,7 @@ impl<'de> Deserialize<'de> for PolygonalSurface {
         }
 
         let wire = Wire::deserialize(deserializer)?;
-        Self::new(wire.vertices, wire.triangles, wire.chordal_deflection)
+        Self::build(&StandardAdmission, wire.vertices, wire.triangles, |vertices| admit_finite_vertices(&StandardAdmission, vertices), || NonNegativeReal::new(wire.chordal_deflection))
             .map_err(serde::de::Error::custom)
     }
 }

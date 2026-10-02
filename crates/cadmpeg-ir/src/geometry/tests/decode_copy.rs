@@ -147,7 +147,7 @@ fn polygonal_surface_copy_refuses_vertex_limit() {
             ],
             vec![[0, 1, 2]],
             0.0,
-        )
+         &cadmpeg_test_support::service_decode_context()).expect("polygonal construction admission")
         .expect("valid polygon"),
     );
     let arena = DecodeArena::new();
@@ -355,7 +355,7 @@ fn polygonal_support_copy_admits_vertices_and_triangles() {
         ],
         vec![[0, 1, 2]],
         0.0,
-    )
+     &cadmpeg_test_support::service_decode_context()).expect("polygonal construction admission")
     .expect("test setup");
     for (cap, operation) in [
         (0, "iges copied support polygon vertices"),

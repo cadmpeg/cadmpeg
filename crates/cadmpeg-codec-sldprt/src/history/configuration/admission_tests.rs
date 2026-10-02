@@ -20,7 +20,7 @@ fn carrier_model() -> cadmpeg_ir::CadIr {
         ],
         vec![[0, 1, 2]],
         0.01,
-    )
+     &cadmpeg_test_support::service_decode_context()).expect("polygonal construction admission")
     .unwrap();
     let mut placed = SolvedSurfaceGeometry::Polygonal(polygonal);
     for _ in 0..2 {

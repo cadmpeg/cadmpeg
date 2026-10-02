@@ -62,7 +62,7 @@ fn admitted_sampled_geometry_copy_refuses_both_polygon_lanes_and_polyline_rows()
         Point3::new(0.0, 1.0, 0.0),
     ];
     let polygon = SurfaceGeometry::Solved(crate::geometry::SolvedSurfaceGeometry::Polygonal(
-        PolygonalSurface::new(points.clone(), vec![[0, 1, 2]], 0.0).unwrap(),
+        PolygonalSurface::new(points.clone(), vec![[0, 1, 2]], 0.0, &cadmpeg_test_support::service_decode_context()).expect("polygonal construction admission").unwrap(),
     ));
     let polyline =
         crate::geometry::CurveGeometry::Solved(crate::geometry::SolvedCurveGeometry::Polyline(

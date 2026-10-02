@@ -1150,7 +1150,7 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
                                 .copy_slice(triangles, "FreeCAD polygonal surface triangles")?,
                             triangulation.deflection,
                             *deflection_scale,
-                        )
+                         self.ctx)?
                         .map_err(|error| CodecError::Malformed(error.to_string()))?,
                     )),
                     source_object: Some(self.source_association()?),
