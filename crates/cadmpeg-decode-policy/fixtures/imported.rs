@@ -62,7 +62,11 @@ pub fn imported_fills(
     Ok(())
 }
 
-pub fn imported_conversion(ctx: &cadmpeg_core::DecodeContext, text: &str, other: &str) -> Result<(), ()> {
+pub fn imported_conversion(
+    ctx: &cadmpeg_core::DecodeContext,
+    text: &str,
+    other: &str,
+) -> Result<(), ()> {
     ctx.charge_retained(u64::try_from(text.len()).map_err(|_| ())?, "text")?;
     let _paid = cadmpeg_core::forward_text(text);
     ctx.charge_retained(u64::try_from(other.len()).map_err(|_| ())?, "wrong")?;

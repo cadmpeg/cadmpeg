@@ -24,7 +24,12 @@ pub fn named_operand(ctx: &DecodeContext, destination: &mut String, text: &str) 
     Ok(())
 }
 
-pub fn moving(_ctx: &DecodeContext, mut value: Option<String>, replacement: String, repeated: String) {
+pub fn moving(
+    _ctx: &DecodeContext,
+    mut value: Option<String>,
+    replacement: String,
+    repeated: String,
+) {
     let _old = value.replace(replacement);
     let _taken = value.take();
     let _iterator = std::iter::repeat(repeated);
@@ -41,7 +46,13 @@ pub fn missing_constructor(_ctx: &DecodeContext, name: &str) {
     let _command = std::process::Command::new(name); // finding: unproven_decode_charge
 }
 
-pub fn scalar_and_metadata(_ctx: &DecodeContext, value: f64, number: u64, bytes: &[u8], text: &str) {
+pub fn scalar_and_metadata(
+    _ctx: &DecodeContext,
+    value: f64,
+    number: u64,
+    bytes: &[u8],
+    text: &str,
+) {
     let _abs = value.abs();
     let _sin = value.sin();
     let _bits = value.to_bits();

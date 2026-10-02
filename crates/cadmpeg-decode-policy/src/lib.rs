@@ -17,8 +17,8 @@ mod external;
 mod fixed;
 mod flow;
 mod instantiation;
-mod storage;
 mod scope;
+mod storage;
 mod types;
 mod work;
 
@@ -208,14 +208,6 @@ fn production(tcx: TyCtxt<'_>, owner: DefId) -> bool {
     {
         return false;
     }
-    let parent = tcx.parent(owner);
-    if matches!(
-        tcx.def_kind(parent),
-        rustc_hir::def::DefKind::Impl { of_trait: true }
-    ) && types::serde_serialize(tcx, tcx.impl_trait_ref(parent).skip_binder().def_id)
-    {
-        return false;
-    }
     let path = tcx
         .sess
         .source_map()
@@ -228,13 +220,7 @@ fn production(tcx: TyCtxt<'_>, owner: DefId) -> bool {
     if parts.iter().any(|part| {
         matches!(
             *part,
-            "tests"
-                | "test_support"
-                | "golden_tests"
-                | "integration_tests"
-                | "benches"
-                | "bin"
-
+            "tests" | "test_support" | "golden_tests" | "integration_tests" | "benches" | "bin"
         )
     }) {
         return false;

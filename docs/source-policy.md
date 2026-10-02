@@ -131,8 +131,9 @@ on any finding. Compiler failures retain their nonzero exit status.
 The tool is `crates/cadmpeg-decode-policy`, outside the default workspace.
 Its `rust-toolchain.toml` pins `nightly-2026-09-08`, with `rustc-dev`, `rust-src`,
 `llvm-tools-preview` and `clippy`. The script installs missing pinned
-components, builds the driver and runs one Cargo check for the selected
-production libraries. Its target directory is
+components and builds the driver. A graph pass checks all production
+libraries; a findings pass checks the selected libraries against the joined
+scope. Its target directory is
 `target/decode-policy`. Decode package artifacts are removed before a run
 so Cargo cannot omit findings for unchanged source.
 
@@ -154,7 +155,8 @@ Binary and test bodies are excluded. Automatically derived
 bodies, including serde derives and their generated helpers, are excluded.
 A decode call into a derived implementation is judged at the call using the
 concrete field costs. Hand-written implementations retain their own
-obligations. Serialize implementation bodies are excluded; their calls retain external costs.
+obligations. Hand-written Serialize bodies reached by decode retain their
+obligations; serialization alone does not make them roots.
 
 A resolved call to a checked body is proved at the caller. Its body owns the
 admission obligation. Resolution uses the caller's compiler typing environment.
