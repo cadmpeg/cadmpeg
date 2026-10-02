@@ -41,7 +41,6 @@ use crate::topology::{IncreasingParameterInterval, ParameterInterval};
 use crate::transform::Transform;
 use crate::units::{FinitePoint2, FiniteVector, UnitVector3};
 use crate::CadIr;
-use cadmpeg_core::decode::work_scratch::WorkScratch;
 use cadmpeg_core::decode::{u64_from_index, DecodeContext, ResourceLimit, ScopedReservation, WorkBudget};
 use cadmpeg_core::CodecError;
 
@@ -53,6 +52,7 @@ mod bezier;
 mod depth;
 mod model_surface_point;
 mod polyline;
+mod priority_queue;
 mod rational;
 mod sketch_offset;
 #[cfg(test)]
@@ -60,6 +60,7 @@ mod test_support;
 use basis::fill_bspline_basis;
 use depth::{ModelEvaluationDepthGuard, ModelEvaluationIdentity};
 use polyline::{polyline_point, polyline_samples, polyline_tangent};
+use priority_queue::PriorityQueue;
 use rational::{finite_lanes, Homogeneous};
 use sketch_offset::{clamped_nurbs_pcurve_endpoint_frames, fitted_nurbs_offset_candidate};
 
@@ -262,60 +263,6 @@ impl Ord for SurfacePatchQueueEntry<'_> {
             .total_cmp(&self.lower_bound)
             .then_with(|| other.sequence.cmp(&self.sequence))
     }
-}
-
-/// Bounds temporary surface-patch workspace and knot-extraction work.
-/// The returned pair is `(temporary_bytes, extraction_work)`. Owned patch
-/// control polygons and the search queue require separate live reservations.
-pub fn nurbs_surface_patch_workspace(surface: &NurbsSurface) -> Result<(u64, u64), ResourceLimit> {
-    let bound = || -> Option<(u64, u64)> {
-        let u = u64::from(surface.u_degree()).checked_add(1)?;
-        let v = u64::from(surface.v_degree()).checked_add(1)?;
-        let uc = u64_from_index(surface.u_count());
-        let vc = u64_from_index(surface.v_count());
-        // Each original knot and both endpoints need at most one support's
-        // insertions. Span storage has at most the expanded control count.
-        let eu = uc
-            .checked_add(u.checked_mul(u64_from_index(surface.u_knots().len()).checked_add(2)?)?)?;
-        let ev = vc
-            .checked_add(v.checked_mul(u64_from_index(surface.v_knots().len()).checked_add(2)?)?)?;
-        let cells = eu.checked_mul(ev)?;
-        let cell_bytes = u64_from_index(std::mem::size_of::<[f64; 4]>())
-            .checked_mul(8)?
-            .checked_add(
-                u64_from_index(std::mem::size_of::<
-                    crate::geometry::nurbs::bezier::HomogeneousBezierSpan,
-                >())
-                .checked_mul(4)?,
-            )?
-            .checked_add(
-                u64_from_index(std::mem::size_of::<RationalBezierSurfacePatch<'static>>())
-                    .checked_mul(2)?,
-            )?;
-        // The split's line lists, control copies and polygons use at most
-        // sixteen control-sized lanes per tensor-product support.
-        let bytes = cells
-            .checked_mul(cell_bytes)?
-            .checked_add(
-                u.checked_mul(v)?
-                    .checked_mul(16)?
-                    .checked_mul(u64_from_index(std::mem::size_of::<[f64; 4]>()))?,
-            )?
-            .checked_add(
-                u.checked_add(v)?
-                    .checked_mul(3)?
-                    .checked_mul(u64_from_index(std::mem::size_of::<f64>()))?,
-            )?;
-        let work = eu
-            .checked_mul(eu)?
-            .checked_mul(vc)?
-            .checked_add(ev.checked_mul(ev)?.checked_mul(uc)?.checked_mul(u)?)?
-            .checked_mul(256)?;
-        Some((bytes, work))
-    };
-    bound().ok_or_else(|| {
-        scratch::allocation_refusal(surface.u_count(), "IR surface patch workspace bound")
-    })
 }
 
 fn rational_surface_patches_with_budget<'ctx>(
@@ -573,8 +520,6 @@ pub fn nurbs_surface_parameter_segment_chord_bound_with_budget(
 ) -> Result<Option<f64>, CodecError> {
     let _depth = ctx.enter_nested("IR surface segment depth")?;
     let result = (|| -> Result<Option<f64>, CodecError> {
-    let (bytes, _) = nurbs_surface_patch_workspace(surface)?;
-    let _workspace = budget.reserve_scratch(bytes, "IR surface segment workspace")?;
     let [Some(first), Some(last)] = parameters.map(FinitePoint2::new) else {
         return Ok(None);
     };
@@ -684,20 +629,25 @@ pub fn nurbs_surface_parameter_segment_chord_bound_with_budget(
 }
 
 fn rational_patch_distance_bounds_with_budget(
+    ctx: &DecodeContext<'_>,
     patch: &RationalBezierSurfacePatch<'_>,
     budget: &WorkBudget<'_>,
-) -> Option<(f64, f64)> {
-    budget.charge_by(patch.controls.len()).then_some(())?;
+) -> Result<Option<(f64, f64)>, ResourceLimit> {
+    if !budget.charge() {
+        ctx.charge_work_limit(0, "IR surface distance bounds completion")?;
+        return Ok(None);
+    }
     let mut minimum = [f64::INFINITY; 3];
     let mut maximum = [f64::NEG_INFINITY; 3];
     for control in &patch.controls {
+        ctx.charge_work_limit(1, "IR surface distance control scan")?;
         if !control[3].is_finite() || control[3] <= 0.0 {
-            return None;
+            return Ok(None);
         }
         for axis in 0..3 {
             let coordinate = control[axis] / control[3];
             if !coordinate.is_finite() {
-                return None;
+                return Ok(None);
             }
             minimum[axis] = minimum[axis].min(coordinate);
             maximum[axis] = maximum[axis].max(coordinate);
@@ -717,7 +667,7 @@ fn rational_patch_distance_bounds_with_budget(
     let diameter = (0..3)
         .map(|axis| maximum[axis] - minimum[axis])
         .fold(0.0_f64, f64::hypot);
-    (lower.is_finite() && diameter.is_finite()).then_some((lower, diameter))
+    Ok((lower.is_finite() && diameter.is_finite()).then_some((lower, diameter)))
 }
 
 fn split_rational_surface_patch<'ctx>(
@@ -902,36 +852,32 @@ fn nurbs_surface_evaluation_cost(surface: &NurbsSurface) -> Option<usize> {
         .checked_add(v_support.checked_mul(v_support)?)
 }
 
-fn complete_nurbs_surface_starts<'session>(
-    ctx: &DecodeContext<'_>,
+fn complete_nurbs_surface_starts<'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
     surface: &NurbsSurface,
     point: Point3,
     seed: Option<FinitePoint2>,
     fit_tolerance: Option<f64>,
-    budget: &WorkBudget<'session>,
-) -> Result<Option<(Vec<FinitePoint2>, WorkScratch<'session>)>, ResourceLimit> {
+    budget: &WorkBudget<'_>,
+) -> Result<Option<ScopedRows<'ctx, FinitePoint2>>, ResourceLimit> {
     const MAX_PATCHES: usize = 1_000_000;
 
     let Some(mut patches) = rational_surface_residual_patches(ctx, surface, point, budget)? else {
         return Ok(None);
     };
-    let Some(coordinate_scale) =
-        patches.rows
-            .iter()
-            .flat_map(|patch| &patch.controls)
-            .try_fold(1.0_f64, |scale, control| {
-                let weight = control[3];
-                if !weight.is_finite() || weight <= 0.0 {
-                    return None;
-                }
-                control[..3].iter().try_fold(scale, |scale, coordinate| {
-                    let coordinate = (coordinate / weight).abs();
-                    coordinate.is_finite().then(|| scale.max(coordinate))
-                })
-            })
-    else {
-        return Ok(None);
-    };
+    let mut coordinate_scale = 1.0_f64;
+    for patch in &patches.rows {
+        for control in &patch.controls {
+            ctx.charge_work_limit(1, "IR surface inverse coordinate scale scan")?;
+            let weight = control[3];
+            if !weight.is_finite() || weight <= 0.0 { return Ok(None); }
+            for coordinate in &control[..3] {
+                let coordinate = (coordinate / weight).abs();
+                if !coordinate.is_finite() { return Ok(None); }
+                coordinate_scale = coordinate_scale.max(coordinate);
+            }
+        }
+    }
     let requested_tolerance = match fit_tolerance {
         Some(tolerance) if tolerance.is_finite() && tolerance >= 0.0 => tolerance,
         Some(_) => return Ok(None),
@@ -977,21 +923,15 @@ fn complete_nurbs_surface_starts<'session>(
             Ok(distance_at(parameters)?.map(|distance| (parameters, distance)))
         };
     let mut best_distance = f64::INFINITY;
-    let mut upper_scratch = budget.reserve_scratch(0, "IR surface upper parameters")?;
+    let mut upper_scratch = ctx.reserve_scoped_limit(0, "IR surface upper parameters")?;
     let mut best_upper_parameters = Vec::new();
     {
         let mut consider_upper =
             |(parameters, distance): (FinitePoint2, f64)| -> Result<(), ResourceLimit> {
                 if !best_distance.is_finite() {
                     best_distance = distance;
-                    if best_upper_parameters.len() == best_upper_parameters.capacity() {
-                        upper_scratch.grow(u64_from_index(std::mem::size_of::<FinitePoint2>()))?;
-                    }
-                    scratch::reserve_exact(
-                        &mut best_upper_parameters,
-                        1,
-                        "IR surface upper parameters",
-                    )?;
+                    ctx.reserve_scoped_vec_limit(&mut upper_scratch, &mut best_upper_parameters, 1, "IR surface upper parameters")?;
+                    ctx.charge_work_limit(1, "IR surface upper parameter append")?;
                     best_upper_parameters.push(parameters);
                     return Ok(());
                 }
@@ -1006,14 +946,8 @@ fn complete_nurbs_surface_starts<'session>(
                     best_upper_parameters.clear();
                 }
                 if (distance - best_distance).abs() <= tolerance {
-                    if best_upper_parameters.len() == best_upper_parameters.capacity() {
-                        upper_scratch.grow(u64_from_index(std::mem::size_of::<FinitePoint2>()))?;
-                    }
-                    scratch::reserve_exact(
-                        &mut best_upper_parameters,
-                        1,
-                        "IR surface upper parameters",
-                    )?;
+                    ctx.reserve_scoped_vec_limit(&mut upper_scratch, &mut best_upper_parameters, 1, "IR surface upper parameters")?;
+                    ctx.charge_work_limit(1, "IR surface upper parameter append")?;
                     best_upper_parameters.push(parameters);
                 }
                 Ok(())
@@ -1039,46 +973,33 @@ fn complete_nurbs_surface_starts<'session>(
     // a proof of the global minimum. Every upper candidate is surface-evaluated.
     if fit_tolerance.is_some() && best_distance <= distance_tolerance {
         return Ok(
-            (!best_upper_parameters.is_empty()).then_some((best_upper_parameters, upper_scratch))
+            (!best_upper_parameters.is_empty()).then_some(ScopedRows::new(best_upper_parameters, upper_scratch))
         );
     }
-    let mut queue_scratch = budget.reserve_scratch(0, "IR surface patch queue")?;
-    let mut queue = BinaryHeap::new();
+    let mut queue = PriorityQueue::new(ctx)?;
     let mut sequence = 0usize;
     for patch in patches.rows.drain(..) {
         let Some((lower_bound, diameter)) =
-            rational_patch_distance_bounds_with_budget(&patch, budget)
+            rational_patch_distance_bounds_with_budget(ctx, &patch, budget)?
         else {
             return Ok(None);
         };
-        if queue.len() == queue.capacity() {
-            queue_scratch.grow(u64_from_index(std::mem::size_of::<
-                SurfacePatchQueueEntry<'_>,
-            >()))?;
-        }
-        queue.try_reserve_exact(1).map_err(|_| {
-            cadmpeg_core::decode::ResourceLimit::allocation_failed(
-                cadmpeg_core::decode::ResourceDimension::Codec("IR surface patch queue"),
-                1,
-                1,
-                "IR surface patch queue",
-            )
-        })?;
         queue.push(SurfacePatchQueueEntry {
             lower_bound,
             diameter,
             sequence,
             patch,
-        });
+        })?;
         sequence += 1;
     }
     drop(patches);
-    let mut terminal_scratch = budget.reserve_scratch(0, "IR surface terminal parameters")?;
+    let mut terminal_scratch = ctx.reserve_scoped_limit(0, "IR surface terminal parameters")?;
     let mut terminal = Vec::<(FinitePoint2, f64)>::new();
     let mut examined = 0usize;
-    while let Some(entry) = queue.pop() {
+    while let Some(entry) = queue.pop()? {
         examined += 1;
         if examined > MAX_PATCHES || !budget.charge() {
+            ctx.charge_work_limit(0, "IR surface search completion")?;
             return Ok(None);
         }
         let SurfacePatchQueueEntry {
@@ -1103,12 +1024,12 @@ fn complete_nurbs_surface_starts<'session>(
             return Ok(None);
         };
         if fit_tolerance.is_some() && center_distance <= distance_tolerance {
-            let reservation = budget.reserve_scratch(
-                u64_from_index(std::mem::size_of::<FinitePoint2>()),
-                "IR surface parameter start",
-            )?;
-            return scratch::filled(1, upper_parameters, "IR surface parameter start")
-                .map(|starts| Some((starts, reservation)));
+            let reservation;
+            let mut starts = Vec::new();
+            reservation = ctx.reserve_temporary_vec(&mut starts, 1, "IR surface parameter start")?;
+            ctx.charge_work_limit(1, "IR surface parameter start copy")?;
+            starts.push(upper_parameters);
+            return Ok(Some(ScopedRows::new(starts, reservation)));
         }
         let upper_tolerance = 128.0
             * f64::EPSILON
@@ -1121,10 +1042,8 @@ fn complete_nurbs_surface_starts<'session>(
             best_upper_parameters.clear();
         }
         if (center_distance - best_distance).abs() <= upper_tolerance {
-            if best_upper_parameters.len() == best_upper_parameters.capacity() {
-                upper_scratch.grow(u64_from_index(std::mem::size_of::<FinitePoint2>()))?;
-            }
-            scratch::reserve_exact(&mut best_upper_parameters, 1, "IR surface upper parameters")?;
+            ctx.reserve_scoped_vec_limit(&mut upper_scratch, &mut best_upper_parameters, 1, "IR surface upper parameters")?;
+            ctx.charge_work_limit(1, "IR surface upper parameter append")?;
             best_upper_parameters.push(upper_parameters);
         }
         let indivisible = parameters.u == patch.u_domain.lower()
@@ -1135,45 +1054,35 @@ fn complete_nurbs_surface_starts<'session>(
             || center_distance - lower_bound <= distance_tolerance
             || indivisible
         {
-            if terminal.len() == terminal.capacity() {
-                terminal_scratch
-                    .grow(u64_from_index(std::mem::size_of::<(FinitePoint2, f64)>()))?;
-            }
-            scratch::reserve_exact(&mut terminal, 1, "IR surface terminal parameters")?;
+            ctx.reserve_scoped_vec_limit(&mut terminal_scratch, &mut terminal, 1, "IR surface terminal parameters")?;
+            ctx.charge_work_limit(1, "IR surface terminal parameter append")?;
             terminal.push((upper_parameters, lower_bound));
             continue;
         }
-        if !budget.charge_by(patch.controls.len()) {
-            return Ok(None);
-        }
         let control = |u: usize, v: usize| {
             let homogeneous = patch.controls[u * (patch.v_degree + 1) + v];
-            [
-                homogeneous[0] / homogeneous[3],
-                homogeneous[1] / homogeneous[3],
-                homogeneous[2] / homogeneous[3],
-            ]
+            [homogeneous[0] / homogeneous[3], homogeneous[1] / homogeneous[3], homogeneous[2] / homogeneous[3]]
         };
-        let u_variation = (0..patch.u_degree)
-            .flat_map(|u| (0..=patch.v_degree).map(move |v| (u, v)))
-            .map(|(u, v)| {
+        let mut u_variation = 0.0_f64;
+        for u in 0..patch.u_degree {
+            for v in 0..=patch.v_degree {
+                ctx.charge_work_limit(1, "IR surface u variation scan")?;
                 let first = control(u, v);
                 let second = control(u + 1, v);
-                (0..3)
-                    .map(|axis| second[axis] - first[axis])
-                    .fold(0.0_f64, f64::hypot)
-            })
-            .fold(0.0_f64, f64::max);
-        let v_variation = (0..=patch.u_degree)
-            .flat_map(|u| (0..patch.v_degree).map(move |v| (u, v)))
-            .map(|(u, v)| {
+                let variation = (0..3).map(|axis| second[axis] - first[axis]).fold(0.0_f64, f64::hypot);
+                u_variation = u_variation.max(variation);
+            }
+        }
+        let mut v_variation = 0.0_f64;
+        for u in 0..=patch.u_degree {
+            for v in 0..patch.v_degree {
+                ctx.charge_work_limit(1, "IR surface v variation scan")?;
                 let first = control(u, v);
                 let second = control(u, v + 1);
-                (0..3)
-                    .map(|axis| second[axis] - first[axis])
-                    .fold(0.0_f64, f64::hypot)
-            })
-            .fold(0.0_f64, f64::max);
+                let variation = (0..3).map(|axis| second[axis] - first[axis]).fold(0.0_f64, f64::hypot);
+                v_variation = v_variation.max(variation);
+            }
+        }
         let Some(children) =
             split_rational_surface_patch(ctx, &patch, u_variation >= v_variation, budget)?
         else {
@@ -1181,29 +1090,16 @@ fn complete_nurbs_surface_starts<'session>(
         };
         for patch in children {
             let Some((lower_bound, diameter)) =
-                rational_patch_distance_bounds_with_budget(&patch, budget)
+                rational_patch_distance_bounds_with_budget(ctx, &patch, budget)?
             else {
                 return Ok(None);
             };
-            if queue.len() == queue.capacity() {
-                queue_scratch.grow(u64_from_index(std::mem::size_of::<
-                    SurfacePatchQueueEntry<'_>,
-                >()))?;
-            }
-            queue.try_reserve_exact(1).map_err(|_| {
-                cadmpeg_core::decode::ResourceLimit::allocation_failed(
-                    cadmpeg_core::decode::ResourceDimension::Codec("IR surface patch queue"),
-                    1,
-                    1,
-                    "IR surface patch queue",
-                )
-            })?;
             queue.push(SurfacePatchQueueEntry {
                 lower_bound,
                 diameter,
                 sequence,
                 patch,
-            });
+            })?;
             sequence += 1;
         }
     }
@@ -1211,18 +1107,19 @@ fn complete_nurbs_surface_starts<'session>(
     let Some(start_count) = terminal.len().checked_add(best_upper_parameters.len()) else {
         return Ok(None);
     };
-    let start_bytes = start_count
-        .checked_mul(std::mem::size_of::<FinitePoint2>())
-        .ok_or_else(|| scratch::allocation_refusal(start_count, "IR surface start bytes"))?;
-    let start_scratch =
-        budget.reserve_scratch(u64_from_index(start_bytes), "IR surface parameter starts")?;
+    let start_scratch;
     let mut starts = Vec::new();
-    scratch::reserve_exact(&mut starts, start_count, "IR surface parameter starts")?;
-    starts.extend(terminal.into_iter().filter_map(|(parameters, lower)| {
-        (lower <= best_distance + final_tolerance).then_some(parameters)
-    }));
-    starts.extend(best_upper_parameters);
-    Ok((!starts.is_empty()).then_some((starts, start_scratch)))
+    start_scratch = ctx.reserve_temporary_vec(&mut starts, start_count, "IR surface parameter starts")?;
+    for &(parameters, lower) in &terminal {
+        ctx.charge_work_limit(1, "IR surface terminal parameter scan")?;
+        if lower <= best_distance + final_tolerance {
+            ctx.charge_work_limit(1, "IR surface terminal parameter copy")?;
+            starts.push(parameters);
+        }
+    }
+    ctx.charge_work_limit(u64_from_index(best_upper_parameters.len()), "IR surface upper parameter copy")?;
+    starts.extend_from_slice(&best_upper_parameters);
+    Ok((!starts.is_empty()).then_some(ScopedRows::new(starts, start_scratch)))
 }
 
 fn solve_nurbs_surface_parameter(
@@ -1233,8 +1130,6 @@ fn solve_nurbs_surface_parameter(
     fit_tolerance: Option<f64>,
     budget: &WorkBudget<'_>,
 ) -> Result<Option<(FinitePoint2, f64)>, ResourceLimit> {
-    let (bytes, _) = nurbs_surface_patch_workspace(surface)?;
-    let _workspace = budget.reserve_scratch(bytes, "IR surface inverse workspace")?;
     let seed = seed.and_then(FinitePoint2::new);
     let Some(u_degree) = usize::try_from(surface.u_degree()).ok() else {
         return Ok(None);
@@ -1293,7 +1188,7 @@ fn solve_nurbs_surface_parameter(
             }
         }
     }
-    let Some((starts, _start_scratch)) =
+    let Some(starts) =
         complete_nurbs_surface_starts(ctx, surface, point, seed, fit_tolerance, budget)?
     else {
         return Ok(None);
@@ -1301,7 +1196,8 @@ fn solve_nurbs_surface_parameter(
     let mut best = None;
     let mut best_distance = f64::INFINITY;
     let mut best_seed_distance = f64::INFINITY;
-    for start in starts {
+    for &start in starts.iter() {
+        ctx.charge_work_limit(1, "IR surface inverse start visit")?;
         let Some(parameters) =
             refine_nurbs_surface_parameters(surface, point, start, u_domain, v_domain, budget)?
         else {
