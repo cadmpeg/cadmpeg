@@ -1516,7 +1516,7 @@ pub(crate) fn project_surface_sweep_profiles(
             if dependency != feature.id && !feature.dependencies.contains(&dependency) {
                 feature
                     .dependencies
-                    .insert_for_decode(ctx, dependency, OPERATION)?;
+                    .insert(ctx, dependency, OPERATION)?;
             }
         }
     }
@@ -1850,7 +1850,7 @@ pub(crate) fn project_compact_combine_paths(
             if dependency != feature.id && !feature.dependencies.contains(&dependency) {
                 feature
                     .dependencies
-                    .insert_for_decode(ctx, dependency, OPERATION)?;
+                    .insert(ctx, dependency, OPERATION)?;
             }
         }
         let operands = CombineOperands::new(projection.target, projection.tools, ctx,)?

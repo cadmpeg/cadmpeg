@@ -3437,7 +3437,7 @@ fn bind_entity_face_groups(
                 face.try_clone_for_decode(ctx, "copy F3D historical topology face identity")?;
             topology
                 .faces
-                .insert_for_decode(ctx, retained, "index F3D historical entity faces")?;
+                .insert(ctx, retained, "index F3D historical entity faces")?;
         }
     }
     let native =
@@ -3513,7 +3513,7 @@ fn bind_hole_face_selection(
         let retained = face.try_clone_for_decode(ctx, "copy F3D historical hole topology face")?;
         topology
             .faces
-            .insert_for_decode(ctx, retained, "index F3D historical hole face")?;
+            .insert(ctx, retained, "index F3D historical hole face")?;
     }
     let native = ctx.copy_retained_text(native_id, "copy F3D historical hole identity")?;
     let mut selected = ctx.collection_vec(1, "validate F3D historical hole face")?;

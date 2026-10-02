@@ -42,7 +42,7 @@ fn combine_consumes_tools_and_preserves_the_target_identity() {
     let target = ir.model.bodies[0].id.clone();
     let tool = BodyId::mint("test:model:entity#tool".to_string()).expect("identity grammar");
     ir.model.features[0].evaluation.edit(|_, outputs| {
-        outputs.insert(tool.clone());
+        outputs.insert(&cadmpeg_test_support::service_decode_context(), tool.clone(), "insert fixture output").expect("output insertion admission");
     });
     ir.model.features[0]
         .evaluation
@@ -83,7 +83,7 @@ fn combine_preserves_tools_when_requested() {
     let tool = BodyId::mint("test:model:entity#tool".to_string()).expect("identity grammar");
     ir.model.bodies.push(model_body(tool.as_str()));
     ir.model.features[0].evaluation.edit(|_, outputs| {
-        outputs.insert(tool.clone());
+        outputs.insert(&cadmpeg_test_support::service_decode_context(), tool.clone(), "insert fixture output").expect("output insertion admission");
     });
     ir.model.features[0]
         .evaluation
@@ -228,7 +228,7 @@ fn trim_bodies_rejects_outputs_that_do_not_match_its_targets() {
     let tool = BodyId::mint("test:model:entity#tool".to_string()).expect("identity grammar");
     ir.model.bodies.push(model_body(tool.as_str()));
     ir.model.features[0].evaluation.edit(|_, outputs| {
-        outputs.insert(tool.clone());
+        outputs.insert(&cadmpeg_test_support::service_decode_context(), tool.clone(), "insert fixture output").expect("output insertion admission");
     });
     ir.model.features[0]
         .evaluation
@@ -693,7 +693,7 @@ fn complete_surface_edits_preserve_every_declared_body_identity() {
     let second = BodyId::mint("test:model:entity#second".to_string()).expect("identity grammar");
     ir.model.bodies.push(model_body(second.as_str()));
     ir.model.features[0].evaluation.edit(|_, outputs| {
-        outputs.insert(second.clone());
+        outputs.insert(&cadmpeg_test_support::service_decode_context(), second.clone(), "insert fixture output").expect("output insertion admission");
     });
     ir.model.features[0]
         .evaluation

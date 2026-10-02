@@ -280,8 +280,8 @@ fn local_collection_admission_preserves_order_and_rejects_invalid_membership() {
     }
     .is_err());
     assert_eq!(children, before);
-    children.insert(second.clone());
-    children.insert(second.clone());
+    children.insert(&cadmpeg_test_support::service_decode_context(), second.clone(), "insert fixture member").expect("member insertion admission");
+    children.insert(&cadmpeg_test_support::service_decode_context(), second.clone(), "insert fixture member").expect("member insertion admission");
     assert_eq!(children.len(), 2);
     {
         let active = Some(second);
@@ -301,7 +301,7 @@ fn tree_children_charged_insert_refuses_collection_limit() {
         cadmpeg_core::decode::DecodeContext::from_root_bytes(b"children", &arena, &policy).unwrap();
     let mut children = TreeChildren::default();
     let error = children
-        .insert_for_decode(&ctx, feature_id("child"), "collect tree children")
+        .insert(&ctx, feature_id("child"), "collect tree children")
         .unwrap_err();
     assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(_)));
     assert!(children.is_empty());
@@ -384,7 +384,7 @@ fn feature_evaluation_rejects_duplicate_outputs_at_admission() {
         crate::features::DistinctMembers::try_from(vec![body.clone()], &cadmpeg_test_support::service_decode_context()).unwrap(),
     );
     evaluation.edit(|_, outputs| {
-        assert!(!outputs.insert(body.clone()));
+        assert!(!outputs.insert(&cadmpeg_test_support::service_decode_context(), body.clone(), "insert fixture output").expect("output insertion admission"));
     });
     assert_eq!(evaluation.outputs(), &vec![body.clone()]);
     evaluation.set_outputs(crate::features::DistinctMembers::try_from(vec![body.clone()], &cadmpeg_test_support::service_decode_context()).unwrap());

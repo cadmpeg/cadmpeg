@@ -702,7 +702,7 @@ fn design_projection_gaps_require_unique_scope_state_dependencies() {
     assert_eq!(gaps.ambiguous_history_dependencies, 1);
 
     let predecessor = ir.model.features[0].id.clone();
-    ir.model.features[1].dependencies.insert(predecessor);
+    ir.model.features[1].dependencies.insert(&cadmpeg_test_support::service_decode_context(), predecessor, "insert fixture member").expect("member insertion admission");
     let gaps = design_projection_gaps(&ir, &native);
     assert_eq!(gaps.unprojected_history_dependencies, 0);
     assert_eq!(gaps.ambiguous_history_dependencies, 1);

@@ -86,7 +86,7 @@ fn insert_feature_dependency(
         return Ok(());
     }
     let id = (dependency).try_clone_for_decode(ctx, "f3d feature dependency id")?;
-    dependencies.insert_for_decode(ctx, id, "f3d feature dependency")?;
+    dependencies.insert(ctx, id, "f3d feature dependency")?;
     Ok(())
 }
 
@@ -1793,7 +1793,7 @@ face_operands,
             }
             let dependency =
                 (candidate).try_clone_for_decode(ctx, "f3d parameter dependency id")?;
-            parameter.dependencies.insert_for_decode(
+            parameter.dependencies.insert(
                 ctx,
                 dependency,
                 "f3d parameter dependency",

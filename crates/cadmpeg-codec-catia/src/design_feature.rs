@@ -319,7 +319,7 @@ impl DesignFeatureTransfer {
                     dependencies.len(),
                     "catia_feature_dependency_values",
                 )?;
-                feature.dependencies.extend_for_decode(
+                feature.dependencies.append(
                     ctx,
                     dependencies,
                     "catia_feature_dependency_values",

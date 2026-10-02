@@ -154,7 +154,7 @@ fn feature_seed_pattern_remains_an_explicit_body_effect_boundary() {
             .unwrap(),
         }),
     );
-    pattern.dependencies.insert(seed);
+    pattern.dependencies.insert(&cadmpeg_test_support::service_decode_context(), seed, "insert fixture member").expect("member insertion admission");
     ir.model.features.push(pattern);
 
     assert_eq!(
