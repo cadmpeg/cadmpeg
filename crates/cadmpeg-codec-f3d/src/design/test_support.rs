@@ -104,9 +104,8 @@ pub(super) fn design_type(
     version: u32,
     module: &str,
     entity_ids: Vec<u64>,
-) -> crate::records::entity_header::SegmentType {
-    crate::records::entity_header::SegmentType {
-        id: String::new(),
+) -> crate::records::entity_header::SegmentTypeData {
+    crate::records::entity_header::SegmentTypeData {
         byte_offset: 0,
         type_guid: type_guid.to_owned().try_into().expect("type GUID"),
         type_guid_offset: 0,

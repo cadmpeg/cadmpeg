@@ -153,31 +153,19 @@ impl MeshBudget {
         self.used
     }
 
-    /// Returns whether `bytes` more fit within the cap.
-    fn has_room(&self, bytes: usize) -> bool {
-        self.used
-            .checked_add(bytes)
-            .is_some_and(|total| total <= self.limit)
-    }
-
-    /// Records retained bytes after admission.
-    fn commit(&mut self, bytes: usize) -> Result<(), CodecError> {
+    /// Proves the document-local retained-byte ceiling before allocation.
+    fn admit(&self, ctx: &DecodeContext<'_>, bytes: usize) -> Result<usize, CodecError> {
         let total = self.used.checked_add(bytes).ok_or_else(|| {
-            cadmpeg_core::decode::refuse_local_limit(
-                "Rhino document mesh buffer bytes",
-                u64::MAX,
-                u64::MAX,
-            )
+            ctx.refuse_codec_limit("Rhino document mesh buffer bytes", u64::MAX, u64::MAX)
         })?;
         if total > self.limit {
-            return Err(cadmpeg_core::decode::refuse_local_limit(
+            return Err(ctx.refuse_codec_limit(
                 "Rhino document mesh buffer bytes",
                 u64_from_index(self.limit),
                 u64_from_index(total),
             ));
         }
-        self.used = total;
-        Ok(())
+        Ok(total)
     }
 }
 
@@ -204,7 +192,7 @@ pub(crate) struct DecodedMesh {
     /// Number of stored quadrilateral faces converted to neutral triangles.
     pub(crate) quad_count: usize,
     /// Native mesh arrays used to validate an attached `SubD` proxy.
-    pub(crate) proxy_fingerprint: MeshProxyFingerprint,
+    pub(crate) proxy_fingerprint: Option<MeshProxyFingerprint>,
 }
 
 /// Caller-owned identity and archive metadata for one mesh decode.
@@ -344,7 +332,6 @@ pub(crate) fn decode(
         }
     }
     let faces = read_faces(expand.ctx(), &mut reader, vertex_count, face_count)?;
-    let mut decompressed_bytes = 0;
     let mut ngon_count = 0;
     if major == 1 {
         read_raw_channels(
@@ -362,7 +349,6 @@ pub(crate) fn decode(
             &mut reader,
             vertex_count,
             &mut decoded,
-            &mut decompressed_bytes,
             document_budget,
             archive,
         )?;
@@ -380,7 +366,6 @@ pub(crate) fn decode(
                 name: "surface parameters",
             },
             &mut decoded.warnings,
-            &mut decompressed_bytes,
             document_budget,
             archive,
         )?;
@@ -424,7 +409,6 @@ pub(crate) fn decode(
                 archive,
                 &mut decoded.warnings,
                 vertex_count,
-                &mut decompressed_bytes,
                 document_budget,
             )?;
             if count == vertex_count {
@@ -585,11 +569,24 @@ pub(crate) fn decode(
             }
         }
     }
-    let proxy_fingerprint = MeshProxyFingerprint {
-        face_count: faces.len(),
-        vertex_count: decoded.vertices.len(),
-        face_sha1: native_face_sha1(&faces),
-        vertex_sha1: native_vertex_sha1(&decoded.vertices),
+    expand.ctx().charge_work(
+        u64_from_index(userdata.len()),
+        "Rhino mesh proxy userdata scan",
+    )?;
+    let proxy_fingerprint = if userdata
+        .iter()
+        .filter_map(UserdataDescriptor::known)
+        .any(|extra| {
+            extra.class_uuid == crate::subd::SUBD_MESH_PROXY_USERDATA
+                && extra.item_uuid == crate::subd::SUBD_MESH_PROXY_USERDATA
+        }) {
+        Some(native_proxy_fingerprint(
+            &faces,
+            &decoded.vertices,
+            expand.ctx(),
+        )?)
+    } else {
+        None
     };
     let mut vertices = expand
         .ctx()
@@ -689,24 +686,38 @@ fn parse_mesh_correspondence_userdata(
     Ok(())
 }
 
-fn native_face_sha1(faces: &[[u32; 4]]) -> [u8; 20] {
-    let mut digest = Sha1::new();
+fn native_proxy_fingerprint(
+    faces: &[[u32; 4]],
+    vertices: &[[FiniteBinary32; 3]],
+    ctx: &DecodeContext<'_>,
+) -> Result<MeshProxyFingerprint, CodecError> {
+    let bytes = u64_from_index(faces.len())
+        .checked_mul(16)
+        .and_then(|face_bytes| {
+            u64_from_index(vertices.len())
+                .checked_mul(12)
+                .and_then(|vertex_bytes| face_bytes.checked_add(vertex_bytes))
+        })
+        .ok_or_else(|| ctx.refuse_codec_limit("Rhino mesh proxy SHA-1", u64::MAX, u64::MAX))?;
+    ctx.charge_work(bytes, "Rhino mesh proxy SHA-1")?;
+    let mut face_digest = Sha1::new();
     for face in faces {
         for index in face {
-            digest.update(index.to_ne_bytes());
+            face_digest.update(index.to_ne_bytes());
         }
     }
-    digest.finalize().into()
-}
-
-fn native_vertex_sha1(vertices: &[[FiniteBinary32; 3]]) -> [u8; 20] {
-    let mut digest = Sha1::new();
+    let mut vertex_digest = Sha1::new();
     for vertex in vertices {
         for coordinate in vertex {
-            digest.update(coordinate.get().to_ne_bytes());
+            vertex_digest.update(coordinate.get().to_ne_bytes());
         }
     }
-    digest.finalize().into()
+    Ok(MeshProxyFingerprint {
+        face_count: faces.len(),
+        vertex_count: vertices.len(),
+        face_sha1: face_digest.finalize().into(),
+        vertex_sha1: vertex_digest.finalize().into(),
+    })
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -966,7 +977,6 @@ fn read_compressed_channels(
     reader: &mut BoundedReader<'_>,
     vertices: usize,
     decoded: &mut MeshChannels,
-    decompressed_bytes: &mut usize,
     document_budget: &mut MeshBudget,
     archive: ArchiveVersion,
 ) -> Result<(), GeometryError> {
@@ -982,7 +992,6 @@ fn read_compressed_channels(
                 name: spec.name,
             },
             &mut decoded.warnings,
-            decompressed_bytes,
             document_budget,
             archive,
         )?;
@@ -1061,7 +1070,6 @@ fn read_buffer<'a>(
     reader: &mut BoundedReader<'_>,
     spec: MeshBufferSpec<'_>,
     warnings: &mut Diagnostics,
-    decompressed_bytes: &mut usize,
     document_budget: &mut MeshBudget,
     archive: ArchiveVersion,
 ) -> Result<Option<Cow<'a, [u8]>>, GeometryError> {
@@ -1073,24 +1081,16 @@ fn read_buffer<'a>(
     }
     let buffer_limit = buffer_output_limit(expand);
     if declared > buffer_limit {
-        return Err(error(reader.position() - 4, format!("invalid {name} size")));
-    }
-    *decompressed_bytes = decompressed_bytes
-        .checked_add(declared)
-        .filter(|total| *total <= buffer_limit)
-        .ok_or_else(|| {
-            error(
-                reader.position() - 4,
-                "mesh cumulative buffer budget exceeded",
+        return Err(expand
+            .ctx()
+            .refuse_codec_limit(
+                "Rhino mesh buffer output bytes",
+                u64_from_index(buffer_limit),
+                u64_from_index(declared),
             )
-        })?;
-    // Admit before allocation; commit only after the bytes become resident.
-    if !document_budget.has_room(declared) {
-        return Err(error(
-            reader.position() - 4,
-            "document mesh buffer budget exceeded",
-        ));
+            .into());
     }
+    let admitted_document_bytes = document_budget.admit(expand.ctx(), declared)?;
     let crc = reader.u32()?;
     let method = reader.u8()?;
     let (bytes, consumed): (Cow<'a, [u8]>, usize) = match method {
@@ -1099,7 +1099,7 @@ fn read_buffer<'a>(
             let stored = expand
                 .ctx()
                 .copy_retained(input.take(declared)?, "rhino_mesh_buffer")?;
-            document_budget.commit(declared)?;
+            document_budget.used = admitted_document_bytes;
             (Cow::Owned(stored), declared)
         }
         1 => {
@@ -1149,7 +1149,7 @@ fn read_buffer<'a>(
                 .ctx()
                 .charge_retained(u64_from_index(declared), "rhino_mesh_buffer")?;
             let (view, compressed) = inflate(expand, source, declared)?;
-            document_budget.commit(declared)?;
+            document_budget.used = admitted_document_bytes;
             if compressed != chunk.body().len() {
                 return Err(error(
                     chunk.body().start + compressed,
@@ -1157,7 +1157,7 @@ fn read_buffer<'a>(
                 ));
             }
             if matches!(
-                verify_checksum(reader.backing_bytes(), &chunk)?,
+                verify_checksum(expand.ctx(), reader.backing_bytes(), &chunk)?,
                 ChecksumStatus::Mismatch { .. }
             ) {
                 warnings.push_coded_admitted(
@@ -1187,6 +1187,10 @@ fn read_buffer<'a>(
         )?;
         return Ok(None);
     }
+    expand.ctx().charge_work(
+        u64_from_index(bytes.len()),
+        "Rhino mesh buffer checksum bytes",
+    )?;
     if crc32fast::hash(&bytes) != crc {
         warnings.push_coded_admitted(
             expand.ctx(),
@@ -1212,7 +1216,6 @@ pub(crate) fn fuzz_buffer(data: &[u8]) {
     };
     let expand = MeshExpand::new(&ctx, root);
     let mut warnings = Diagnostics::new();
-    let mut decompressed_bytes = 0;
     let mut document_budget = MeshBudget::new();
     let _probe = read_buffer(
         expand,
@@ -1222,7 +1225,6 @@ pub(crate) fn fuzz_buffer(data: &[u8]) {
             name: "fuzz",
         },
         &mut warnings,
-        &mut decompressed_bytes,
         &mut document_budget,
         ArchiveVersion::V8,
     );
@@ -1270,12 +1272,17 @@ fn read_ngons(
         ));
     }
     let count = checked_u32(&mut child, 1 << 20)?;
+    ctx.charge_work(u64_from_index(count), "Rhino current mesh ngon records")?;
     for _ in 0..count {
         let boundary = checked_u32(&mut child, vertices)?;
         if boundary == 0 {
             continue;
         }
         let face_count = checked_u32(&mut child, faces)?;
+        let indices = boundary.checked_add(face_count).ok_or_else(|| {
+            ctx.refuse_codec_limit("Rhino current mesh ngon indices", u64::MAX, u64::MAX)
+        })?;
+        ctx.charge_work(u64_from_index(indices), "Rhino current mesh ngon indices")?;
         for _ in 0..boundary {
             checked_u32(&mut child, vertices)?;
         }
@@ -1350,7 +1357,6 @@ fn read_double_chunk<'a>(
     archive: ArchiveVersion,
     warnings: &mut Diagnostics,
     vertex_count: usize,
-    decompressed_bytes: &mut usize,
     document_budget: &mut MeshBudget,
 ) -> Result<DoubleVertexChunk<'a>, GeometryError> {
     let chunk = chunk_at(
@@ -1395,14 +1401,22 @@ fn read_double_chunk<'a>(
             name: "double vertices",
         },
         warnings,
-        decompressed_bytes,
         document_budget,
         archive,
     )?;
     child.skip_remaining()?;
-    let direct = crate::chunks::direct_checksum_ranges(&chunk.body(), nested_buffer.as_slice())?;
+    let direct = crate::chunks::direct_checksum_ranges(
+        expand.ctx(),
+        &chunk.body(),
+        nested_buffer.as_slice(),
+    )?;
     if matches!(
-        crate::chunks::verify_checksum_ranges(reader.backing_bytes(), &chunk, &direct)?,
+        crate::chunks::verify_checksum_ranges(
+            expand.ctx(),
+            reader.backing_bytes(),
+            &chunk,
+            &direct
+        )?,
         ChecksumStatus::Mismatch { .. }
     ) {
         warnings.push_coded_admitted(
@@ -1461,6 +1475,16 @@ fn read_v5_double_vertices(
     let _float_crc = reader.u32()?;
     let _double_crc = reader.u32()?;
     let array_count = checked_u32(&mut reader, MAX_MESH_VERTICES)?;
+    let coordinate_bytes = array_count
+        .checked_mul(24)
+        .ok_or_else(|| error(reader.position(), "V5 double-vertex byte count overflow"))?;
+    if coordinate_bytes > reader.remaining() {
+        return Err(FramingError::Truncated {
+            offset: reader.position(),
+            needed: coordinate_bytes,
+        }
+        .into());
+    }
     let mut values = ctx
         .collection_vec(array_count, "Rhino V5 mesh double vertex values")
         .map_err(crate::curves::GeometryError::from)?;
@@ -1511,7 +1535,7 @@ fn read_v4v5_ngon_userdata(
         ));
     }
     if matches!(
-        verify_checksum(data, &chunk)?,
+        verify_checksum(ctx, data, &chunk)?,
         ChecksumStatus::Mismatch { .. }
     ) {
         return Ok(None);
@@ -1750,13 +1774,19 @@ fn checked_u32(reader: &mut BoundedReader<'_>, cap: usize) -> Result<usize, Geom
 
 #[cfg(test)]
 mod tests {
+    mod resource_limits;
+    mod work_admission;
     #[test]
-    fn document_mesh_budget_commit_refuses_overflow() {
-        let mut budget = super::MeshBudget {
+    fn document_mesh_budget_admission_refuses_overflow() {
+        let budget = super::MeshBudget {
             used: usize::MAX,
             limit: usize::MAX,
         };
-        assert!(format!("{:?}", budget.commit(1)).contains("ResourceLimit"));
+        assert!(format!(
+            "{:?}",
+            budget.admit(&cadmpeg_test_support::service_decode_context(), 1)
+        )
+        .contains("ResourceLimit"));
     }
 
     #[test]
@@ -2389,9 +2419,14 @@ mod tests {
             .expect("one n-gon fits service limits"),
             Some(1)
         );
+        let checksum_body = chunk_at(&bytes, 0, bytes.len(), ArchiveVersion::V5, false)
+            .expect("bounded userdata chunk")
+            .body();
+        // One range validation and every direct checksum byte precede records.
+        let checksum_work = 1 + u64::try_from(checksum_body.len()).expect("fixture length fits");
         for (work_limit, operation) in [
-            (0, "Rhino V4V5 mesh ngon records"),
-            (6, "Rhino V4V5 mesh ngon indices"),
+            (checksum_work, "Rhino V4V5 mesh ngon records"),
+            (checksum_work + 6, "Rhino V4V5 mesh ngon indices"),
         ] {
             let mut policy = DecodePolicy::service();
             policy.limits.max_work_units = work_limit;
@@ -2618,7 +2653,6 @@ mod tests {
         with_expand(&bytes, |expand| {
             let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("reader");
             let mut warnings = Diagnostics::new();
-            let mut budget = 0;
             let mut document_budget = MeshBudget::new();
             assert_eq!(
                 read_buffer(
@@ -2629,7 +2663,6 @@ mod tests {
                         name: "test"
                     },
                     &mut warnings,
-                    &mut budget,
                     &mut document_budget,
                     ArchiveVersion::V8,
                 )
@@ -2649,7 +2682,6 @@ mod tests {
         with_expand(&bytes, |expand| {
             let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("reader");
             let mut warnings = Diagnostics::new();
-            let mut budget = 0;
             let mut document_budget = MeshBudget::new();
             assert_eq!(
                 read_buffer(
@@ -2660,7 +2692,6 @@ mod tests {
                         name: "test"
                     },
                     &mut warnings,
-                    &mut budget,
                     &mut document_budget,
                     ArchiveVersion::V8,
                 )
@@ -2677,7 +2708,6 @@ mod tests {
                         name: "test"
                     },
                     &mut warnings,
-                    &mut budget,
                     &mut document_budget,
                     ArchiveVersion::V8,
                 )
@@ -2695,7 +2725,6 @@ mod tests {
         with_expand(&bytes, |expand| {
             let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("reader");
             let mut warnings = Diagnostics::new();
-            let mut budget = 0;
             let mut document_budget = MeshBudget::new();
             assert_eq!(
                 read_buffer(
@@ -2706,7 +2735,6 @@ mod tests {
                         name: "test"
                     },
                     &mut warnings,
-                    &mut budget,
                     &mut document_budget,
                     ArchiveVersion::V8,
                 )
@@ -2738,7 +2766,6 @@ mod tests {
                         name: "first"
                     },
                     &mut warnings,
-                    &mut 0,
                     &mut document_budget,
                     ArchiveVersion::V8,
                 )
@@ -2756,7 +2783,6 @@ mod tests {
                     name: "second",
                 },
                 &mut warnings,
-                &mut 0,
                 &mut document_budget,
                 ArchiveVersion::V8,
             );
@@ -2782,7 +2808,6 @@ mod tests {
                     name: "bad"
                 },
                 &mut Diagnostics::new(),
-                &mut 0,
                 &mut MeshBudget::new(),
                 ArchiveVersion::V8,
             )
@@ -2800,7 +2825,6 @@ mod tests {
                     name: "short"
                 },
                 &mut Diagnostics::new(),
-                &mut 0,
                 &mut MeshBudget::new(),
                 ArchiveVersion::V8,
             )
@@ -2824,7 +2848,6 @@ mod tests {
                     name: "bomb"
                 },
                 &mut Diagnostics::new(),
-                &mut 0,
                 &mut MeshBudget::new(),
                 ArchiveVersion::V8,
             )
@@ -2833,24 +2856,19 @@ mod tests {
     }
 
     #[test]
-    fn cumulative_buffer_budget_rejects_another_channel() {
+    fn document_buffer_ceiling_refuses_before_another_channel() {
         let bytes = buffer(&[1], 0);
         with_expand(&bytes, |expand| {
             let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("reader");
-            let mut budget = MAX_BUFFER_OUTPUT;
-            assert!(read_buffer(
-                expand,
-                &mut reader,
-                MeshBufferSpec {
-                    expected: 1,
-                    name: "budget"
-                },
-                &mut Diagnostics::new(),
-                &mut budget,
-                &mut MeshBudget::new(),
-                ArchiveVersion::V8,
-            )
-            .is_err());
+            let mut document_budget = MeshBudget {
+                used: MAX_BUFFER_OUTPUT,
+                limit: MAX_BUFFER_OUTPUT,
+            };
+            assert!(matches!(read_buffer(expand, &mut reader,
+                MeshBufferSpec { expected: 1, name: "budget" }, &mut Diagnostics::new(),
+                &mut document_budget, ArchiveVersion::V8),
+                Err(GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(limit)))
+                    if limit.operation == "Rhino document mesh buffer bytes"));
         });
     }
 
@@ -2869,7 +2887,6 @@ mod tests {
                         name: "aggregate",
                     },
                     &mut Diagnostics::new(),
-                    &mut 0,
                     &mut document_budget,
                     ArchiveVersion::V8,
                 );
@@ -2923,9 +2940,9 @@ mod tests {
                 &mut budget,
             )
             .expect_err("second mesh exceeds aggregate budget");
-            assert!(error
-                .to_string()
-                .contains("document mesh buffer budget exceeded"));
+            assert!(matches!(error,
+                GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
+                    if limit.operation == "Rhino document mesh buffer bytes"));
         });
     }
 
@@ -3138,7 +3155,6 @@ mod tests {
                     name: "nested",
                 },
                 &mut Diagnostics::new(),
-                &mut 0,
                 &mut MeshBudget::new(),
                 ArchiveVersion::V8,
             )
@@ -3166,7 +3182,6 @@ mod tests {
                     name: "first",
                 },
                 &mut Diagnostics::new(),
-                &mut 0,
                 &mut MeshBudget::new(),
                 ArchiveVersion::V8,
             )
@@ -3180,7 +3195,6 @@ mod tests {
                     name: "second",
                 },
                 &mut Diagnostics::new(),
-                &mut 0,
                 &mut MeshBudget::new(),
                 ArchiveVersion::V8,
             );
@@ -3203,7 +3217,6 @@ mod tests {
                     name: "vertices",
                 },
                 &mut Diagnostics::new(),
-                &mut 0,
                 &mut MeshBudget::new(),
                 ArchiveVersion::V8,
             )
@@ -3230,7 +3243,6 @@ mod tests {
                     name: "vertices",
                 },
                 &mut Diagnostics::new(),
-                &mut 0,
                 &mut MeshBudget::new(),
                 ArchiveVersion::V8,
             )

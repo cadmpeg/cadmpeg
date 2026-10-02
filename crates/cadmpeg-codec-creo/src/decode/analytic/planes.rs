@@ -1054,14 +1054,14 @@ fn fc05_reference_circle_frame(
     let [circle] = circles else {
         return None;
     };
-    if !circle.center_stored {
+    if !circle.center_stored() {
         return None;
     }
-    let radius = circle.radius.get();
-    let axis = crate::vecmath::unit_length(circle.axis);
-    let start: [f64; 3] = circle.start.get().into();
-    let end: [f64; 3] = circle.end.get().into();
-    let center: [f64; 3] = circle.center.get().into();
+    let radius = circle.radius().get();
+    let axis = crate::vecmath::unit_length(circle.axis());
+    let start: [f64; 3] = circle.start().get().into();
+    let end: [f64; 3] = circle.end().get().into();
+    let center: [f64; 3] = circle.center().get().into();
     let radial = std::array::from_fn(|index| start[index] - center[index]);
     let end_radial = std::array::from_fn(|index| end[index] - center[index]);
     let radial_length = dot(radial, radial).sqrt();

@@ -126,7 +126,7 @@ impl GeneratedDesignRegistry {
             };
             let metadata = visibility_by_body.get(body.id.as_str()).copied();
             let asm_body_key = match metadata {
-                Some(metadata) => metadata.asm_body_key,
+                Some(metadata) => metadata.asm_body_key(),
                 None => u64::try_from(source_less_body_key(attributes, body, ordinal)?).map_err(
                     |_| CodecError::NotImplemented("source-less ASM body key is negative".into()),
                 )?,
@@ -385,76 +385,84 @@ mod tests {
     #[test]
     fn generated_type_rejects_relaxed_noncanonical_guid() {
         let mut source = body_map_type(vec![1]);
-        source.type_guid = "____________________________________"
-            .to_owned()
-            .try_into()
-            .unwrap();
+        source.set_type_guid(
+            "____________________________________"
+                .to_owned()
+                .try_into()
+                .unwrap(),
+        );
         assert!(super::GeneratedDesignType::try_from(&source).is_err());
         source = body_map_type(vec![1]);
-        source.base_type_guid = crate::records::entity_header::BaseTypeGuid::Guid {
+        source.set_base_type_guid(crate::records::entity_header::BaseTypeGuid::Guid {
             value: "____________________________________"
                 .to_owned()
                 .try_into()
                 .unwrap(),
             offset: 0,
-        };
+        });
         assert!(super::GeneratedDesignType::try_from(&source).is_err());
     }
 
     fn body_map_type(entity_ids: Vec<u64>) -> crate::records::entity_header::SegmentType {
-        crate::records::entity_header::SegmentType {
-            id: "synthetic:design-type#body-map".into(),
-            byte_offset: 0,
-            type_guid: crate::design::body::BODY_MAP_CARRIER_TYPE_GUID
-                .to_owned()
-                .try_into()
-                .expect("type GUID"),
-            type_guid_offset: 0,
-            base_type_guid: crate::records::entity_header::BaseTypeGuid::Guid {
-                value: crate::design::body::BODY_MAP_CARRIER_BASE_TYPE_GUID
+        crate::records::entity_header::SegmentType::try_new(
+            "f3d:generated/MetaStream.dat:design-type#0".into(),
+            crate::records::entity_header::SegmentTypeData {
+                byte_offset: 0,
+                type_guid: crate::design::body::BODY_MAP_CARRIER_TYPE_GUID
                     .to_owned()
                     .try_into()
-                    .expect("base GUID"),
-                offset: 0,
+                    .expect("type GUID"),
+                type_guid_offset: 0,
+                base_type_guid: crate::records::entity_header::BaseTypeGuid::Guid {
+                    value: crate::design::body::BODY_MAP_CARRIER_BASE_TYPE_GUID
+                        .to_owned()
+                        .try_into()
+                        .expect("base GUID"),
+                    offset: 0,
+                },
+                version: crate::design::body::BODY_MAP_CARRIER_TYPE_VERSION,
+                version_offset: 0,
+                module: crate::records::entity_header::DESIGN_MODULE_BODY.into(),
+                entities: crate::records::identity::ReferenceRun::located(
+                    entity_ids
+                        .into_iter()
+                        .map(|value| crate::records::identity::Located { value, offset: 0 })
+                        .collect(),
+                ),
             },
-            version: crate::design::body::BODY_MAP_CARRIER_TYPE_VERSION,
-            version_offset: 0,
-            module: crate::records::entity_header::DESIGN_MODULE_BODY.into(),
-            entities: crate::records::identity::ReferenceRun::located(
-                entity_ids
-                    .into_iter()
-                    .map(|value| crate::records::identity::Located { value, offset: 0 })
-                    .collect(),
-            ),
-        }
+        )
+        .unwrap()
     }
 
     fn browser_node_type(entity_ids: Vec<u64>) -> crate::records::entity_header::SegmentType {
-        crate::records::entity_header::SegmentType {
-            id: "synthetic:design-type#browser-node".into(),
-            byte_offset: 0,
-            type_guid: crate::design::presentation::BROWSER_NODE_TYPE_GUID
-                .to_owned()
-                .try_into()
-                .expect("type GUID"),
-            type_guid_offset: 0,
-            base_type_guid: crate::records::entity_header::BaseTypeGuid::Guid {
-                value: crate::design::presentation::BROWSER_NODE_BASE_TYPE_GUID
+        crate::records::entity_header::SegmentType::try_new(
+            "f3d:generated/MetaStream.dat:design-type#0".into(),
+            crate::records::entity_header::SegmentTypeData {
+                byte_offset: 0,
+                type_guid: crate::design::presentation::BROWSER_NODE_TYPE_GUID
                     .to_owned()
                     .try_into()
-                    .expect("base GUID"),
-                offset: 0,
+                    .expect("type GUID"),
+                type_guid_offset: 0,
+                base_type_guid: crate::records::entity_header::BaseTypeGuid::Guid {
+                    value: crate::design::presentation::BROWSER_NODE_BASE_TYPE_GUID
+                        .to_owned()
+                        .try_into()
+                        .expect("base GUID"),
+                    offset: 0,
+                },
+                version: crate::design::presentation::BROWSER_NODE_TYPE_VERSION,
+                version_offset: 0,
+                module: crate::records::entity_header::DESIGN_MODULE_FUSION.into(),
+                entities: crate::records::identity::ReferenceRun::located(
+                    entity_ids
+                        .into_iter()
+                        .map(|value| crate::records::identity::Located { value, offset: 0 })
+                        .collect(),
+                ),
             },
-            version: crate::design::presentation::BROWSER_NODE_TYPE_VERSION,
-            version_offset: 0,
-            module: crate::records::entity_header::DESIGN_MODULE_FUSION.into(),
-            entities: crate::records::identity::ReferenceRun::located(
-                entity_ids
-                    .into_iter()
-                    .map(|value| crate::records::identity::Located { value, offset: 0 })
-                    .collect(),
-            ),
-        }
+        )
+        .unwrap()
     }
 
     fn node_guids_for_order(reverse: bool) -> std::collections::BTreeMap<u64, String> {
@@ -499,26 +507,32 @@ mod tests {
                 },
             ],
             body_visibilities: vec![
-                crate::records::bodies::BodyVisibility {
-                    id: "generated:visibility#a".into(),
-                    body: first.id,
-                    stream: "generated/Design1/BulkStream.dat".into(),
-                    byte_offset: 0,
-                    asm_body_key_offset: 0,
-                    asm_body_key: 11,
-                    entity_suffix: 101,
-                    visible: false,
-                },
-                crate::records::bodies::BodyVisibility {
-                    id: "generated:visibility#b".into(),
-                    body: second.id,
-                    stream: "generated/Design1/BulkStream.dat".into(),
-                    byte_offset: 0,
-                    asm_body_key_offset: 0,
-                    asm_body_key: 22,
-                    entity_suffix: 202,
-                    visible: true,
-                },
+                crate::records::bodies::BodyVisibility::try_from(
+                    crate::records::bodies::BodyVisibilityWire {
+                        id: "f3d:generated:body-visibility#11".into(),
+                        body: first.id,
+                        stream: "generated/Design1/BulkStream.dat".into(),
+                        byte_offset: 0,
+                        asm_body_key_offset: 0,
+                        asm_body_key: 11,
+                        entity_suffix: 101,
+                        visible: false,
+                    },
+                )
+                .unwrap(),
+                crate::records::bodies::BodyVisibility::try_from(
+                    crate::records::bodies::BodyVisibilityWire {
+                        id: "f3d:generated:body-visibility#22".into(),
+                        body: second.id,
+                        stream: "generated/Design1/BulkStream.dat".into(),
+                        byte_offset: 0,
+                        asm_body_key_offset: 0,
+                        asm_body_key: 22,
+                        entity_suffix: 202,
+                        visible: true,
+                    },
+                )
+                .unwrap(),
             ],
             ..Default::default()
         };

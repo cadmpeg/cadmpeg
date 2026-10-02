@@ -143,7 +143,7 @@ pub(crate) fn transfer(
     }
     let mut records = Vec::new();
     for object in objects {
-        let Some(owned) = by_owner.get(object.id.as_str()) else {
+        let Some(owned) = by_owner.get(object.id().as_str()) else {
             continue;
         };
         let support = sole_named_property(ctx, "attachment", owned, "AttachmentSupport")?;
@@ -160,8 +160,8 @@ pub(crate) fn transfer(
             continue;
         }
         let record = AttachmentRecord::try_new(
-            crate::native::native_id_charged(ctx, "attachment", &object.name)?,
-            ctx.copy_retained_text(&object.id, "FreeCAD attachment object")?,
+            crate::native::native_id_charged(ctx, "attachment", object.name())?,
+            ctx.copy_retained_text(object.id(), "FreeCAD attachment object")?,
             support
                 .map(|property| support_links(ctx, property))
                 .transpose()?

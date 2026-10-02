@@ -57,7 +57,7 @@ fn one_round_feature() -> crate::feature::rows::FeatureRow {
 
 #[test]
 fn native_face_source_id_nodes_refuse_collection_limit() {
-    let mut scan = crate::container::scan_bytes_ok(Vec::new());
+    let mut scan = crate::test_support::empty_container_scan();
     scan.surfaces.rows.push(one_surface_row());
     assert_refusal(
         &limited_native(&scan, &CadIr::empty(), 0),
@@ -67,7 +67,7 @@ fn native_face_source_id_nodes_refuse_collection_limit() {
 
 #[test]
 fn native_face_orientation_nodes_refuse_collection_limit() {
-    let mut scan = crate::container::scan_bytes_ok(Vec::new());
+    let mut scan = crate::test_support::empty_container_scan();
     scan.surfaces.rows.push(one_surface_row());
     assert_refusal(
         &limited_native(&scan, &CadIr::empty(), 1),
@@ -77,7 +77,7 @@ fn native_face_orientation_nodes_refuse_collection_limit() {
 
 #[test]
 fn native_datum_orientation_nodes_refuse_collection_limit() {
-    let mut scan = crate::container::scan_bytes_ok(Vec::new());
+    let mut scan = crate::test_support::empty_container_scan();
     scan.planes
         .datum_cylinders
         .push(crate::datum::DatumCylinder {
@@ -102,7 +102,7 @@ fn native_datum_orientation_nodes_refuse_collection_limit() {
 
 #[test]
 fn native_round_feature_id_nodes_refuse_collection_limit() {
-    let mut scan = crate::container::scan_bytes_ok(Vec::new());
+    let mut scan = crate::test_support::empty_container_scan();
     scan.features.rows.push(one_round_feature());
     assert_refusal(
         &limited_native(&scan, &CadIr::empty(), 0),
@@ -112,7 +112,7 @@ fn native_round_feature_id_nodes_refuse_collection_limit() {
 
 #[test]
 fn rowless_transfer_feature_id_nodes_refuse_collection_limit() {
-    let mut scan = crate::container::scan_bytes_ok(Vec::new());
+    let mut scan = crate::test_support::empty_container_scan();
     scan.features.rows.push(one_round_feature());
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
@@ -132,7 +132,7 @@ fn rowless_transfer_feature_id_nodes_refuse_collection_limit() {
 
 #[test]
 fn constrained_round_feature_id_nodes_refuse_collection_limit() {
-    let mut scan = crate::container::scan_bytes_ok(Vec::new());
+    let mut scan = crate::test_support::empty_container_scan();
     scan.features.rows.push(one_round_feature());
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
@@ -152,7 +152,7 @@ fn constrained_round_feature_id_nodes_refuse_collection_limit() {
 
 #[test]
 fn positional_round_feature_id_nodes_refuse_collection_limit() {
-    let mut scan = crate::container::scan_bytes_ok(Vec::new());
+    let mut scan = crate::test_support::empty_container_scan();
     scan.features.rows.push(one_round_feature());
     let mut row = one_surface_row();
     row.id = 13;
@@ -177,7 +177,7 @@ fn positional_round_feature_id_nodes_refuse_collection_limit() {
 
 #[test]
 fn available_surface_id_nodes_refuse_collection_limit() {
-    let scan = crate::container::scan_bytes_ok(Vec::new());
+    let scan = crate::test_support::empty_container_scan();
     let mut ir = CadIr::empty();
     ir.model.surfaces.push(Surface {
         id: SurfaceId::compose(&crate::identity::VISIBGEOM_SURFACE, 17),
@@ -263,7 +263,7 @@ fn rowless_face_orientation_nodes_refuse_collection_limit() {
 
 #[test]
 fn native_face_orientation_indexes_preserve_service_values() {
-    let mut scan = crate::container::scan_bytes_ok(Vec::new());
+    let mut scan = crate::test_support::empty_container_scan();
     scan.surfaces.rows.push(one_surface_row());
     scan.features.rows.push(one_round_feature());
     let orientations = crate::decode::with_test_decode_ctx(|ctx| {

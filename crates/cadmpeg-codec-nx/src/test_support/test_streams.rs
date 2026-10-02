@@ -530,8 +530,9 @@ pub(crate) fn parasolid_entity_records_stream() -> Vec<u8> {
     s.push(0x00); // terminator
 
     // `00 51` framed entity: flags 1 (low_flag 1 -> six references), identity
-    // xmt 50, sequence 2, definition xmt 202. Its references resolve to the
-    // string (100), integer (101), and double (102) records above.
+    // xmt 50, sequence 2, definition xmt 202. Its leading structural references
+    // collide with the framed string, integer and double identities. Its
+    // trailing value reference is 152 and resolves to none of those values.
     s.extend_from_slice(&[0x00, 0x51]);
     s.extend_from_slice(&1u32.to_be_bytes()); // flags
     s.extend_from_slice(&50u16.to_be_bytes()); // identity xmt

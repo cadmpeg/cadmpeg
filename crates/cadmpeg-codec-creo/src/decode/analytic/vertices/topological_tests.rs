@@ -50,14 +50,14 @@ fn incident_line_collection_error(limit: u64) -> CodecError {
 }
 
 fn one_carrier_vertex_collection_error(limit: u64) -> CodecError {
-    let mut scan = crate::container::scan_bytes_ok(Vec::new());
+    let mut scan = crate::test_support::empty_container_scan();
     let half_edge = crate::topology::HalfEdgeId {
         curve_id: 7,
         side: crate::topology::Side::Zero,
     };
     scan.topology.vertices.push(
         crate::decode::with_test_decode_ctx(|ctx| {
-            crate::topology::TopologicalVertex::new(ctx, 1, vec![half_edge])
+            crate::topology::TopologicalVertex::new_for_test(ctx, 1, vec![half_edge])
         })
         .expect("vertex admission")
         .expect("valid vertex fixture"),
@@ -168,7 +168,7 @@ fn solve_topological_vertices_refuses_sample_collection() {
 
 #[test]
 fn solve_topological_vertices_refuses_carrier_point_node() {
-    let mut scan = crate::container::scan_bytes_ok(Vec::new());
+    let mut scan = crate::test_support::empty_container_scan();
     let mut carriers = std::collections::BTreeMap::new();
     let mut half_edges = Vec::new();
     for (curve_id, face_id, axis) in [(10, 5, 0), (11, 6, 1), (12, 7, 2)] {
@@ -196,7 +196,7 @@ fn solve_topological_vertices_refuses_carrier_point_node() {
     }
     scan.topology.vertices.push(
         crate::decode::with_test_decode_ctx(|ctx| {
-            crate::topology::TopologicalVertex::new(ctx, 1, half_edges)
+            crate::topology::TopologicalVertex::new_for_test(ctx, 1, half_edges)
         })
         .expect("vertex admission")
         .expect("valid vertex fixture"),
@@ -222,7 +222,7 @@ fn pcurve_vertex_case() -> (
     cadmpeg_ir::document::CadIr,
     std::collections::BTreeMap<u32, crate::decode::analytic::equations::CarrierEquation>,
 ) {
-    let mut scan = crate::container::scan_bytes_ok(Vec::new());
+    let mut scan = crate::test_support::empty_container_scan();
     let side_zero = crate::topology::HalfEdgeId {
         curve_id: 7,
         side: crate::topology::Side::Zero,
@@ -256,7 +256,7 @@ fn pcurve_vertex_case() -> (
     for (vertex_id, id, face_id, end_vertex_id) in [(1, side_zero, 10, 2), (2, side_one, 11, 1)] {
         scan.topology.vertices.push(
             crate::decode::with_test_decode_ctx(|ctx| {
-                crate::topology::TopologicalVertex::new(ctx, vertex_id, vec![id])
+                crate::topology::TopologicalVertex::new_for_test(ctx, vertex_id, vec![id])
             })
             .expect("vertex admission")
             .expect("valid vertex fixture"),
@@ -346,7 +346,7 @@ fn analytic_vertex_result(
         let mut members = scan.topology.vertices[0].half_edges().to_vec();
         members.push(id);
         scan.topology.vertices[0] = crate::decode::with_test_decode_ctx(|ctx| {
-            crate::topology::TopologicalVertex::new(
+            crate::topology::TopologicalVertex::new_for_test(
                 ctx,
                 scan.topology.vertices[0].id.get(),
                 members,
@@ -423,7 +423,7 @@ fn ambiguous_vertex_result(limit: u64) -> Result<super::SolvedTopologicalVertice
         let mut members = scan.topology.vertices[vertex_index].half_edges().to_vec();
         members.push(id);
         scan.topology.vertices[vertex_index] = crate::decode::with_test_decode_ctx(|ctx| {
-            crate::topology::TopologicalVertex::new(
+            crate::topology::TopologicalVertex::new_for_test(
                 ctx,
                 scan.topology.vertices[vertex_index].id.get(),
                 members,

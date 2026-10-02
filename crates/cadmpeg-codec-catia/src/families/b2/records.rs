@@ -369,7 +369,7 @@ pub(crate) struct B2CountedOwner {
     /// Addressing form of each count-selected reference.
     pub(in crate::families) reference_encodings: Vec<AllocationReferenceEncoding>,
     /// Nonempty class-specific bytes after the reference lane.
-    pub(crate) tail: Vec<u8>,
+    pub(crate) tail: super::counted_owner_tail::CountedOwnerTail,
 }
 
 /// Reference dialect used by a nine-reference class-`0x62` owner packet.
@@ -946,7 +946,11 @@ pub(crate) fn b2_counted_owners_from_records(
         if !valid || at >= frame.end {
             continue;
         }
-        let tail = ctx.copy_slice(&data[at..frame.end], "catia_b2_counted_owner_tail")?;
+        let Some(tail) = super::counted_owner_tail::CountedOwnerTail::new(
+            ctx.copy_slice(&data[at..frame.end], "catia_b2_counted_owner_tail")?,
+        ) else {
+            continue;
+        };
         ctx.push_vec(
             &mut owners,
             B2CountedOwner {
@@ -1013,8 +1017,8 @@ pub(crate) fn b2_owner_identity_targets_from_records(
         if index > 0 && !crate::wire::records::records_are_contiguous(&records[index - 1..=index]) {
             allocation.clear();
         }
-        if record.family == crate::wire::records::ConsolidatedFamily::B
-            && record.class == 0x65
+        if record.family() == crate::wire::records::ConsolidatedFamily::B
+            && record.class() == 0x65
             && record
                 .payload()
                 .and_then(|payload| data.get(payload))
@@ -1023,8 +1027,8 @@ pub(crate) fn b2_owner_identity_targets_from_records(
             allocation.clear();
             continue;
         }
-        if record.family == crate::wire::records::ConsolidatedFamily::B
-            && matches!(record.class, 0x5d | 0x5e)
+        if record.family() == crate::wire::records::ConsolidatedFamily::B
+            && matches!(record.class(), 0x5d | 0x5e)
         {
             ctx.push_vec(
                 &mut allocation,
@@ -1032,7 +1036,7 @@ pub(crate) fn b2_owner_identity_targets_from_records(
                 "catia_b2_owner_identity_allocations",
             )?;
         }
-        let Some(packet) = packets.get(&(record.source_index, record.byte_offset())) else {
+        let Some(packet) = packets.get(&(record.source_index(), record.byte_offset())) else {
             continue;
         };
         for (slot, (distance, encoding)) in (0u8..).zip(
@@ -1058,7 +1062,7 @@ pub(crate) fn b2_owner_identity_targets_from_records(
                 continue;
             };
             let target = &records[target_index];
-            let Ok(target_class) = crate::native::CatiaOwnerIdentityClass::try_from(target.class)
+            let Ok(target_class) = crate::native::CatiaOwnerIdentityClass::try_from(target.class())
             else {
                 continue;
             };
@@ -1198,7 +1202,7 @@ pub(crate) fn b2_owner_charts_from_records(
             else {
                 return None;
             };
-            let carrier_kind = match (carrier.family, carrier.class) {
+            let carrier_kind = match (carrier.family(), carrier.class()) {
                 (ConsolidatedFamily::B, 0x28) => B2OwnerChartCarrier::B28,
                 (ConsolidatedFamily::B, 0x2b) => B2OwnerChartCarrier::B2b,
                 (ConsolidatedFamily::A, 0x32) => B2OwnerChartCarrier::A32,
@@ -1208,14 +1212,19 @@ pub(crate) fn b2_owner_charts_from_records(
                 || window.iter().any(|record| record.range().is_none())
                 || window[1..]
                     .iter()
-                    .any(|record| record.family != ConsolidatedFamily::B)
-                || references.class != 0x37
-                || [side_05.class, side_09.class, side_0d.class, side_11.class] != [0x18; 4]
-                || owner_record.class != 0x62
+                    .any(|record| record.family() != ConsolidatedFamily::B)
+                || references.class() != 0x37
+                || [
+                    side_05.class(),
+                    side_09.class(),
+                    side_0d.class(),
+                    side_11.class(),
+                ] != [0x18; 4]
+                || owner_record.class() != 0x62
             {
                 return None;
             }
-            let owner = owners.get(&(owner_record.source_index, owner_record.byte_offset()))?;
+            let owner = owners.get(&(owner_record.source_index(), owner_record.byte_offset()))?;
             let bridge = owner_chart_bridge(data, references, carrier_kind)?;
             let points = [
                 parameter_points.get(&side_05.byte_offset())?,
@@ -1448,16 +1457,16 @@ fn b2_owner_frames(
 ) -> impl Iterator<Item = (ConsolidatedFrame, usize)> + '_ {
     records
         .iter()
-        .filter(|record| record.family == ConsolidatedFamily::B && record.class == 0x62)
+        .filter(|record| record.family() == ConsolidatedFamily::B && record.class() == 0x62)
         .filter_map(|record| {
             Some((
                 ConsolidatedFrame {
                     pos: record.byte_offset(),
                     payload: record.payload()?.start,
                     end: record.range()?.end,
-                    header_token: record.header_token,
+                    header_token: record.header_token(),
                 },
-                record.source_index,
+                record.source_index(),
             ))
         })
 }
@@ -1693,10 +1702,10 @@ pub(crate) fn b2_class5b5c_records_from_records(
 ) -> Result<Vec<B2Class5b5cRecord>, CodecError> {
     let mut output = Vec::new();
     for record in records {
-        if record.family != ConsolidatedFamily::B {
+        if record.family() != ConsolidatedFamily::B {
             continue;
         }
-        let Ok(class) = crate::native::class5b5c::CatiaClass5b5c::try_from(record.class) else {
+        let Ok(class) = crate::native::class5b5c::CatiaClass5b5c::try_from(record.class()) else {
             continue;
         };
         let Some(payload) = record.payload().and_then(|range| data.get(range)) else {
@@ -1707,8 +1716,8 @@ pub(crate) fn b2_class5b5c_records_from_records(
             &mut output,
             B2Class5b5cRecord {
                 frame: ConsolidatedRawFrame::from_record(record, payload)?,
-                source_index: record.source_index,
-                source_offset: record.source_range.start,
+                source_index: record.source_index(),
+                source_offset: record.source_range().start,
                 class,
             },
             "catia_b2_class5b5c_records",
@@ -1944,7 +1953,7 @@ pub(crate) fn b2_plane_carriers_from_records(
     let mut carriers = Vec::new();
     for record in records
         .iter()
-        .filter(|record| record.family == ConsolidatedFamily::B && record.class == 0x27)
+        .filter(|record| record.family() == ConsolidatedFamily::B && record.class() == 0x27)
     {
         let Some(range) = record.payload() else {
             continue;
@@ -2037,9 +2046,9 @@ pub(crate) fn b2_plane_carriers_from_records(
             B2PlaneCarrier {
                 pos: record.byte_offset(),
                 end: record_range.end,
-                width: record.width,
-                flag: record.flag,
-                header_token: record.header_token,
+                width: record.width(),
+                flag: record.flag(),
+                header_token: record.header_token(),
                 payload,
             },
             "catia_b2_plane_carriers",
@@ -3457,22 +3466,17 @@ pub(crate) fn b2_circles_from_records<'a>(
 }
 
 pub(crate) fn circle_range_is_full_turn(radius: f64, range: [f64; 2]) -> bool {
-    let relative_span = circle_range_relative_span(radius, range);
-    relative_span.is_finite() && (relative_span - 1.0).abs() < EPS_B2_RECORD_GEOMETRY
+    let error = circle_half_turn_error(radius, range);
+    error.is_finite() && error.abs() <= EPS_B2_RECORD_COARSE_GEOMETRY * 0.5
 }
 
 pub(crate) fn circle_range_is_within_full_turn(radius: f64, range: [f64; 2]) -> bool {
-    let relative_span = circle_range_relative_span(radius, range);
-    relative_span.is_finite() && relative_span <= 1.0 + EPS_B2_RECORD_GEOMETRY
+    let error = circle_half_turn_error(radius, range);
+    error.is_finite() && error <= EPS_B2_RECORD_COARSE_GEOMETRY * 0.5
 }
 
-fn circle_range_relative_span(radius: f64, range: [f64; 2]) -> f64 {
-    let width = range[1] - range[0];
-    if width.is_finite() {
-        (width / radius) / std::f64::consts::TAU
-    } else {
-        ((range[1] * 0.5 - range[0] * 0.5) / radius) * (2.0 / std::f64::consts::TAU)
-    }
+fn circle_half_turn_error(radius: f64, range: [f64; 2]) -> f64 {
+    (range[1] * 0.5 - range[0] * 0.5) - std::f64::consts::PI * radius
 }
 
 /// Decode structurally repeated `b2 03 23` edge-range packets.

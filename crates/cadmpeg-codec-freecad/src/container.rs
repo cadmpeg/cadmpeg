@@ -24,44 +24,53 @@ use crate::native::{
 const DETECTION_XML_BYTES: usize = 8 * 1024;
 
 /// Inspect the first local entry deeply enough to confirm `FCStd` document markers.
-pub(crate) fn has_document_markers(prefix: &[u8]) -> bool {
+pub(crate) fn has_document_markers(
+    ctx: &DecodeContext<'_>,
+    prefix: &[u8],
+) -> Result<bool, CodecError> {
     if prefix.len() < 30 || &prefix[..4] != b"PK\x03\x04" {
-        return false;
+        return Ok(false);
     }
     let Some(method) = View::u16_le_at(prefix, 8) else {
-        return false;
+        return Ok(false);
     };
     let Some(name_len) = View::u16_le_at(prefix, 26).map(usize::from) else {
-        return false;
+        return Ok(false);
     };
     let Some(extra_len) = View::u16_le_at(prefix, 28).map(usize::from) else {
-        return false;
+        return Ok(false);
     };
     let Some(name_end) = 30_usize.checked_add(name_len) else {
-        return false;
+        return Ok(false);
     };
     let Some(data_start) = name_end.checked_add(extra_len) else {
-        return false;
+        return Ok(false);
     };
     if name_end > prefix.len()
         || data_start > prefix.len()
         || &prefix[30..name_end] != b"Document.xml"
     {
-        return false;
+        return Ok(false);
     }
     let compressed = &prefix[data_start..];
+    let inflated;
     let document = match method {
-        0 => compressed.to_vec(),
-        8 => match cadmpeg_container::compression::inflate_bounded_probe(
-            compressed,
-            DETECTION_XML_BYTES,
-        ) {
-            Some(output) => output,
-            None => return false,
-        },
-        _ => return false,
+        0 => compressed,
+        8 => {
+            inflated =
+                ctx.inflate_probe(View::over_retained(compressed), DETECTION_XML_BYTES, false)?;
+            let Some((ref output, _)) = inflated else {
+                return Ok(false);
+            };
+            output.as_slice()
+        }
+        _ => return Ok(false),
     };
-    contains(&document, b"<Document") && contains(&document, b"SchemaVersion")
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(document.len()) * 2,
+        "scan FreeCAD probe XML",
+    )?;
+    Ok(contains(document, b"<Document") && contains(document, b"SchemaVersion"))
 }
 
 /// Fully scanned container used by inspection and decode.

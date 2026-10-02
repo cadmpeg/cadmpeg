@@ -460,3 +460,37 @@ fn analytic_record_ownership_is_shared_across_carrier_families() {
     assert_eq!(analytic_surfaces(&stream).len(), 1);
     assert!(analytic_points(&stream).is_empty());
 }
+
+#[test]
+fn cone_preserves_serialized_signed_radial_slope() {
+    let mut bytes = record(0x34, 115);
+    put_ref(&mut bytes, 2, 2);
+    bytes[18] = b'+';
+    put_vec3(&mut bytes, 19, [0.0, 0.0, 0.0]);
+    put_vec3(&mut bytes, 43, [0.0, 0.0, 1.0]);
+    put_f64(&mut bytes, 67, 1.0);
+    put_vec3(&mut bytes, 91, [1.0, 0.0, 0.0]);
+    for (sine_sign, cosine_sign, expected) in [
+        (-1.0, 1.0, -std::f64::consts::FRAC_PI_4),
+        (1.0, -1.0, 3.0 * std::f64::consts::FRAC_PI_4),
+        (-1.0, -1.0, -3.0 * std::f64::consts::FRAC_PI_4),
+        (1.0, 1.0, std::f64::consts::FRAC_PI_4),
+    ] {
+        put_f64(&mut bytes, 75, sine_sign * std::f64::consts::FRAC_1_SQRT_2);
+        put_f64(
+            &mut bytes,
+            83,
+            cosine_sign * std::f64::consts::FRAC_1_SQRT_2,
+        );
+        let surfaces = analytic_surfaces(&bytes);
+        let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone)) = &surfaces[0] else {
+            panic!("cone carrier required");
+        };
+        assert!((cone.half_angle().get() - expected).abs() <= 4.0 * f64::EPSILON);
+        assert_eq!(
+            *cone.frame().axis().as_raw(),
+            cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0)
+        );
+        assert_eq!(cone.radius().get(), 1000.0);
+    }
+}

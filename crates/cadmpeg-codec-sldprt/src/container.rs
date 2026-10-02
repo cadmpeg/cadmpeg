@@ -327,24 +327,44 @@ pub(crate) fn contains_ascii_case_insensitive(haystack: &str, needle: &str) -> b
 /// Test whether a prefix contains the container marker after its outer header.
 ///
 /// This structural check does not validate block framing or CRC-32.
-pub(crate) fn looks_like_sldprt(prefix: &[u8]) -> bool {
+pub(crate) fn looks_like_sldprt(
+    ctx: &DecodeContext<'_>,
+    prefix: &[u8],
+) -> Result<bool, CodecError> {
     if prefix.starts_with(&COMPOUND_FILE_MAGIC) {
-        return CompoundPrefixProbe::inspect(prefix)
-            .paths()
-            .is_some_and(|paths| {
-                paths.iter().any(|path| {
-                    path.rsplit('/')
-                        .next()
-                        .is_some_and(|name| name.eq_ignore_ascii_case("ISolidWorksInformation"))
-                })
-            });
+        let (probe, _storage) =
+            CompoundPrefixProbe::inspect_with_context(ctx, View::over_retained(prefix))?;
+        if let Some(paths) = probe.paths() {
+            for path in paths {
+                ctx.charge_work(
+                    u64_from_index(path.len()),
+                    "compare SolidWorks directory evidence",
+                )?;
+                ctx.charge_work(
+                    u64_from_index(path.len()),
+                    "scan SolidWorks directory basename",
+                )?;
+                if path
+                    .rsplit('/')
+                    .next()
+                    .is_some_and(|name| name.eq_ignore_ascii_case("ISolidWorksInformation"))
+                {
+                    return Ok(true);
+                }
+            }
+        }
+        return Ok(false);
     }
     if prefix.len() < outer_hdr::LEN + MARKER.len() {
-        return false;
+        return Ok(false);
     }
-    prefix[outer_hdr::LEN..]
+    ctx.charge_work(
+        u64_from_index(prefix.len() - outer_hdr::LEN),
+        "scan SolidWorks detection marker",
+    )?;
+    Ok(prefix[outer_hdr::LEN..]
         .windows(MARKER.len())
-        .any(|w| w == MARKER)
+        .any(|w| w == MARKER))
 }
 
 fn completed_scan_charged<'a>(
@@ -372,13 +392,6 @@ fn completed_scan_charged<'a>(
     )?;
     scan.solidworks = solidworks;
     Ok(scan)
-}
-
-fn native_version(bytes: &[u8]) -> u32 {
-    let mut view = View::over_retained(bytes);
-    view.seek(outer_hdr::VERSION)
-        .and_then(|()| view.u32_be())
-        .unwrap_or(0)
 }
 
 /// Every marker hit is tried as a block first (the CRC gate is effectively
@@ -454,7 +467,8 @@ fn compound_stream(
     bytes: Vec<u8>,
     decoded_bytes: Option<Vec<u8>>,
 ) -> Result<CompoundStream, CodecError> {
-    let ps_streams = crate::parasolid::extract_streams_with_offsets(&bytes, ctx)?;
+    let semantic_payload = decoded_bytes.as_deref().unwrap_or(&bytes);
+    let ps_streams = crate::parasolid::extract_streams_with_offsets(semantic_payload, ctx)?;
     let path = match cadmpeg_ir::StreamName::try_from(path) {
         Ok(path) => path,
         Err(_) => cadmpeg_ir::stream_name!("compound@").with_suffix(directory_id),
@@ -487,7 +501,13 @@ pub(crate) fn scan<'a>(
         );
     }
     let bytes = root.window();
-    let version = native_version(bytes);
+    let mut envelope = root;
+    let mut header = envelope
+        .req_take_child(outer_hdr::LEN)
+        .map_err(|error| error.during("read SLDPRT native outer header"))?;
+    // discarded-value: the file ID precedes the required version field
+    let _ = header.req_take(outer_hdr::VERSION)?;
+    let version = header.req_u32_be()?;
     let NativeMarkers {
         blocks,
         directory,
@@ -641,8 +661,7 @@ fn read_block_frame(bytes: &[u8], off: usize) -> Option<(BlockFrame, usize, usiz
 
     let comp = index_from_u32(comp_sz);
     let pre = index_from_u32(pre_sz);
-    let uncomp = index_from_u32(uncomp_sz);
-    if comp == 0 || uncomp == 0 {
+    if comp == 0 {
         return None;
     }
     let payload_start = off + block_hdr::LEN + pre;

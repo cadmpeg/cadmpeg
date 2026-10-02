@@ -4,6 +4,7 @@
 pub(crate) mod element_map;
 pub(crate) mod frame;
 pub(crate) mod joint;
+pub(crate) mod object_identity;
 
 use crate::attachment::MapModeIndex;
 use cadmpeg_ir::units::FiniteVector;
@@ -51,7 +52,7 @@ pub(crate) fn native_id_charged(
     id.push_str("fcstd:native:");
     id.push_str(kind);
     id.push('#');
-    push_encoded_segment(&mut id, key);
+    id.extend(encoded_segment_bytes(key).map(char::from));
     Ok(id)
 }
 
@@ -62,7 +63,7 @@ pub(crate) fn encoded_segment_charged(
 ) -> Result<IdentityKey, CodecError> {
     let len = encoded_segment_len(ctx, value, operation)?;
     let mut key = ctx.retained_string(len, operation)?;
-    push_encoded_segment(&mut key, value);
+    key.extend(encoded_segment_bytes(value).map(char::from));
     IdentityKey::try_new(key).map_err(CodecError::malformed)
 }
 
@@ -98,7 +99,7 @@ pub(crate) fn native_child_id_charged(
     id.push('#');
     id.push_str(parent_key);
     id.push(':');
-    push_encoded_segment(&mut id, child);
+    id.extend(encoded_segment_bytes(child).map(char::from));
     Ok(id)
 }
 
@@ -148,7 +149,7 @@ pub(crate) fn model_id_charged_at(
     id.push_str(parent_key);
     id.push(':');
     if !child.is_empty() {
-        push_encoded_segment(&mut id, child);
+        id.extend(encoded_segment_bytes(child).map(char::from));
     }
     Ok(id)
 }
@@ -183,21 +184,25 @@ fn encoded_segment_len(
         })
 }
 
-fn push_encoded_segment(output: &mut String, key: &str) {
+fn encoded_segment_bytes(key: &str) -> impl Iterator<Item = u8> + '_ {
     const HEX: &[u8; 16] = b"0123456789ABCDEF";
-    if key.is_empty() {
-        output.push_str("%EMPTY");
-        return;
-    }
-    for byte in key.bytes() {
-        if byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-' | b'/') {
-            output.push(char::from(byte));
-        } else {
-            output.push('%');
-            output.push(char::from(HEX[usize::from(byte >> 4)]));
-            output.push(char::from(HEX[usize::from(byte & 0x0f)]));
-        }
-    }
+    b"%EMPTY"
+        .iter()
+        .copied()
+        .take(if key.is_empty() { 6 } else { 0 })
+        .chain(key.bytes().flat_map(|byte| {
+            if byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-' | b'/') {
+                [byte, 0, 0].into_iter().take(1)
+            } else {
+                [
+                    b'%',
+                    HEX[usize::from(byte >> 4)],
+                    HEX[usize::from(byte & 0x0f)],
+                ]
+                .into_iter()
+                .take(3)
+            }
+        }))
 }
 
 #[cfg(test)]
@@ -732,7 +737,7 @@ mod tests {
         let bases = [
             serde_json::json!({"id":"state", "kind":"Camera", "order":0, "attributes":{}, "values":[], "side_entries":[]}),
             serde_json::json!({"id":"property", "owner":"provider", "name":"Color", "type_name":"App::PropertyColor", "order":0, "values":[], "side_entries":[]}),
-            serde_json::json!({"id":"object", "name":"A", "type_name":"App::Feature", "attributes":{}, "dependencies":[], "order":0}),
+            serde_json::json!({"id":"fcstd:native:object#A", "name":"A", "type_name":"App::Feature", "attributes":{}, "dependencies":[], "order":0}),
             serde_json::json!({"id":"property", "owner":"object", "name":"Label", "type_name":"App::PropertyString", "family":"scalar", "transient":false, "order":0, "values":[], "links":[], "side_entries":[]}),
         ];
         for (kind, base) in bases.into_iter().enumerate() {
@@ -864,7 +869,7 @@ mod tests {
     fn object_wire_rejects_nonpositive_partial_load_capability() {
         for value in [0, -1] {
             let wire = serde_json::json!({
-                "id": "object", "name": "A", "type_name": "App::Feature",
+                "id": "fcstd:native:object#A", "name": "A", "type_name": "App::Feature",
                 "persistent_id": null, "view_type": null, "attributes": {},
                 "dependencies": [], "dependency_allow_partial": value, "order": 0,
                 "raw_xml": null, "byte_start": null, "byte_end": null
@@ -989,7 +994,7 @@ mod tests {
     #[test]
     fn an_object_record_writes_its_retained_xml_and_its_absence() {
         let wire = serde_json::json!({
-            "id": "object", "name": "A", "type_name": "App::Feature",
+            "id": "fcstd:native:object#A", "name": "A", "type_name": "App::Feature",
             "persistent_id": 7, "view_type": "Gui::ViewProviderFeature",
             "attributes": {"Touched": "1"},
             "dependencies": ["fcstd:native:object#B"],
@@ -2811,10 +2816,8 @@ impl TryFrom<DocumentFactsWire> for DocumentFacts {
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 #[serde(try_from = "ObjectRecordWire")]
 pub(crate) struct ObjectRecord {
-    /// Stable native identity.
-    pub(crate) id: String,
-    /// Persisted object name.
-    pub(crate) name: String,
+    /// Checked identity and its persisted source name.
+    pub(crate) identity: object_identity::ObjectIdentity,
     /// Runtime type name.
     pub(crate) type_name: String,
     /// Persisted numeric identity, when present.
@@ -2831,6 +2834,16 @@ pub(crate) struct ObjectRecord {
     pub(crate) order: usize,
     /// Exact object-data XML and its source span, when present.
     pub(crate) data: Option<RetainedXml>,
+}
+
+impl ObjectRecord {
+    pub(crate) fn id(&self) -> &String {
+        self.identity.id()
+    }
+
+    pub(crate) fn name(&self) -> &String {
+        self.identity.name()
+    }
 }
 
 #[derive(Deserialize)]
@@ -2873,8 +2886,8 @@ impl Serialize for ObjectRecord {
             None => (None, None, None),
         };
         ObjectRecordOut {
-            id: &self.id,
-            name: &self.name,
+            id: self.id(),
+            name: self.name(),
             type_name: &self.type_name,
             persistent_id: self.persistent_id,
             view_type: self.view_type.as_deref(),
@@ -2908,8 +2921,7 @@ impl TryFrom<ObjectRecordWire> for ObjectRecord {
             }
         };
         Ok(Self {
-            id: wire.id,
-            name: wire.name,
+            identity: object_identity::ObjectIdentity::try_new(wire.id, wire.name)?,
             type_name: wire.type_name,
             persistent_id: wire.persistent_id,
             view_type: wire.view_type,

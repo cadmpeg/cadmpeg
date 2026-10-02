@@ -2117,7 +2117,7 @@ pub(super) struct ParasolidTermUseRecord {
     /// Zero-based source stream ordinal.
     pub(super) stream_ordinal: u32,
     /// Cross-reference index of the endpoint.
-    xmt: u32,
+    xmt: NonNullXmt,
     /// Two-byte endpoint-form discriminator as printable ASCII.
     form: crate::intersection::TermUseForm,
     /// Endpoint position in millimetres.
@@ -2132,7 +2132,7 @@ pub(super) struct ParasolidTermUseRecord {
 struct ParasolidTermUseRecordRef<'a> {
     id: &'a str,
     stream_ordinal: u32,
-    xmt: u32,
+    xmt: NonNullXmt,
     count: u32,
     form: crate::intersection::TermUseForm,
     point: FiniteVector<3>,
@@ -2163,7 +2163,7 @@ struct ParasolidTermUseRecordWire {
     /// Zero-based source stream ordinal.
     stream_ordinal: u32,
     /// Cross-reference index of the endpoint.
-    xmt: u32,
+    xmt: NonNullXmt,
     /// Serialized leading count.
     count: u32,
     /// Two-byte endpoint-form discriminator as printable ASCII.
@@ -2215,8 +2215,8 @@ mod term_use_wire_tests {
     use super::ParasolidTermUseRecord;
 
     #[test]
-    fn finite_endpoint_retains_the_native_point_array_and_open_identity() {
-        let json = r#"{"id":"term","stream_ordinal":0,"xmt":0,"count":2,"form":"TF","point":[0.0,-0.0,1.0],"framing":"direct","inflated_offset":10}"#;
+    fn finite_endpoint_retains_the_native_point_array_and_checked_identity() {
+        let json = r#"{"id":"term","stream_ordinal":0,"xmt":2,"count":2,"form":"TF","point":[0.0,-0.0,1.0],"framing":"direct","inflated_offset":10}"#;
         let record: ParasolidTermUseRecord = serde_json::from_str(json).unwrap();
         assert_eq!(serde_json::to_string(&record).unwrap(), json);
         assert_eq!(
@@ -2227,12 +2227,28 @@ mod term_use_wire_tests {
 
     #[test]
     fn term_use_native_limit_refuses_before_id_copy() {
-        let json = r#"{"id":"nx:parasolid:term-use#0","stream_ordinal":0,"xmt":0,"count":2,"form":"TF","point":[0.0,-0.0,1.0],"framing":"direct","inflated_offset":10}"#;
+        let json = r#"{"id":"nx:parasolid:term-use#0","stream_ordinal":0,"xmt":2,"count":2,"form":"TF","point":[0.0,-0.0,1.0],"framing":"direct","inflated_offset":10}"#;
         let record: ParasolidTermUseRecord = serde_json::from_str(json).unwrap();
         cadmpeg_test_support::native_serialization::assert_native_limit(
             &record,
             serde_json::from_str::<serde_json::Value>(json).unwrap(),
         );
+    }
+}
+
+#[cfg(test)]
+mod term_use_identity_tests {
+    #[test]
+    fn term_use_wire_rejects_reserved_record_identities() {
+        for identity in [0, 1] {
+            let json = format!(
+                r#"{{"id":"term","stream_ordinal":0,"xmt":{identity},"count":2,"form":"TF","point":[0.0,0.0,1.0],"framing":"direct","inflated_offset":10}}"#
+            );
+            assert!(serde_json::from_str::<super::ParasolidTermUseRecord>(&json)
+                .unwrap_err()
+                .to_string()
+                .contains("xmt"));
+        }
     }
 }
 
@@ -2252,7 +2268,7 @@ impl ParasolidScanRecords for ParasolidTermUseRecord {
         crate::intersection::term_use_records(ctx, bytes)
     }
     fn xmt(row: &Self::Row) -> u32 {
-        row.xmt
+        u32::from(row.xmt)
     }
     fn record(id: String, stream_ordinal: u32, row: Self::Row) -> Self::Record {
         ParasolidTermUseRecord {
@@ -2279,7 +2295,7 @@ pub(super) struct ParasolidSupportUvRecord {
     /// Zero-based source stream ordinal.
     pub(super) stream_ordinal: u32,
     /// Cross-reference index of the values array.
-    xmt: u32,
+    xmt: NonNullXmt,
     /// Exact finite packed support tuples.
     values: crate::intersection::support_uv_values::SupportUvValues,
     /// Serialized record framing.
@@ -2304,7 +2320,7 @@ impl ParasolidScanRecords for ParasolidSupportUvRecord {
         crate::intersection::support_uv_records(ctx, bytes)
     }
     fn xmt(row: &Self::Row) -> u32 {
-        row.xmt
+        u32::from(row.xmt)
     }
     fn record(id: String, stream_ordinal: u32, row: Self::Row) -> Self::Record {
         ParasolidSupportUvRecord {
@@ -2330,7 +2346,7 @@ pub(super) struct ParasolidChartRecord {
     /// Zero-based source stream ordinal.
     pub(super) stream_ordinal: u32,
     /// Cross-reference index of the chart.
-    xmt: u32,
+    xmt: NonNullXmt,
     /// Checked chart preamble.
     preamble: crate::intersection::chart_samples::ChartPreamble,
     /// Points with exactly the fields admitted by their Hvec layout.
@@ -2360,7 +2376,7 @@ pub(super) fn parasolid_chart_records(
                     ctx,
                     stream_ordinal,
                     "chart-record",
-                    chart.xmt,
+                    u32::from(chart.xmt),
                     chart.pos,
                 )?,
                 stream_ordinal: u32::try_from(stream_ordinal).map_err(|_| {
@@ -3633,7 +3649,7 @@ pub(super) fn parasolid_topology_attribute_list_references(
                         length.checked_add(":topology-attribute-list-reference#".len())
                     })
                     .and_then(|length| length.checked_add(digits(u64::from(topology_type.code()))))
-                    .and_then(|length| length.checked_add(1 + digits(u64::from(node.xmt))))
+                    .and_then(|length| length.checked_add(1 + digits(u64::from(node.xmt()))))
                     .ok_or_else(|| {
                         ctx.refuse_codec_limit(
                             "NX topology attribute list reference identity",
@@ -3647,7 +3663,7 @@ pub(super) fn parasolid_topology_attribute_list_references(
                     &mut id,
                     "nx:s{stream_ordinal}:topology-attribute-list-reference#{}-{}",
                     topology_type.code(),
-                    node.xmt
+                    node.xmt()
                 )
                 .map_err(|_| {
                     ctx.refuse_codec_limit(
@@ -3665,7 +3681,7 @@ pub(super) fn parasolid_topology_attribute_list_references(
                     id,
                     stream_ordinal: ordinal,
                     topology_type,
-                    topology_xmt: node.xmt,
+                    topology_xmt: node.xmt(),
                     attribute_list_xmt,
                     attribute_list_record,
                     inflated_offset: cadmpeg_core::decode::u64_from_index(inflated_offset),

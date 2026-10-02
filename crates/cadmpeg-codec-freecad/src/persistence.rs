@@ -90,11 +90,33 @@ fn parse_document(
                 "FCStd persistence diagnostic",
             )
         })?;
-    let object_limit = usize::try_from(ctx.policy().limits.max_entities)
-        .ok()
-        .map_or(MAX_OBJECTS, |policy| policy.min(MAX_OBJECTS));
-    if declared_count > object_limit {
-        return Err(CodecError::Malformed("object count limit exceeded".into()));
+    let mut actual_count = 0_usize;
+    for node in objects_node.children() {
+        ctx.charge_work(1, "FCStd object declaration framing")?;
+        if !node.has_tag_name(record_tag) {
+            continue;
+        }
+        actual_count = actual_count.checked_add(1).ok_or_else(|| {
+            ctx.refuse_codec_limit("FCStd object declaration framing", u64::MAX, u64::MAX)
+        })?;
+    }
+    if actual_count != declared_count {
+        return Err(crate::resource::malformed_charged(
+            ctx,
+            format_args!(
+                "{declarations_tag} Count={declared_count} but {actual_count} declarations were found"
+            ),
+            "FCStd persistence diagnostic",
+        ));
+    }
+    let object_limit = ctx
+        .policy()
+        .limits
+        .max_entities
+        .min(cadmpeg_core::decode::u64_from_index(MAX_OBJECTS));
+    let requested_objects = cadmpeg_core::decode::u64_from_index(declared_count);
+    if requested_objects > object_limit {
+        return Err(ctx.refuse_codec_limit("FCStd object count", object_limit, requested_objects));
     }
     ctx.charge_collection_items(
         cadmpeg_core::decode::u64_from_index(declared_count),
@@ -252,8 +274,16 @@ fn parse_document(
     {
         let name = retained_attr(ctx, node, "name", "FCStd object name")?;
         for prior in &objects {
+            ctx.charge_work(
+                cadmpeg_core::decode::u64_from_index(prior.name().len()),
+                "FCStd duplicate object names",
+            )?;
+            ctx.charge_work(
+                cadmpeg_core::decode::u64_from_index(name.len()),
+                "FCStd duplicate object names",
+            )?;
             ctx.charge_work(1, "FCStd duplicate object names")?;
-            if prior.name == name {
+            if prior.name().as_str() == name {
                 return Err(crate::resource::malformed_charged(
                     ctx,
                     format_args!("duplicate object declaration name {name}"),
@@ -262,8 +292,8 @@ fn parse_document(
             }
         }
         let type_name = retained_attr(ctx, node, "type", "FCStd object type")?;
-        let id = crate::native::native_id_charged(ctx, "object", &name)?;
-        let data_node = data_by_name.get(&name);
+        let identity = crate::native::object_identity::ObjectIdentity::from_name(ctx, name)?;
+        let data_node = data_by_name.get(identity.name());
         let attributes = node
             .attributes()
             .filter(|attribute| !matches!(attribute.name(), "name" | "type" | "id" | "ViewType"))
@@ -278,7 +308,7 @@ fn parse_document(
                 ))
             })
             .collect::<Result<_, CodecError>>()?;
-        let dependency = dependency_map.remove(&name);
+        let dependency = dependency_map.remove(identity.name());
         if dependencies_enabled
             && dependency
                 .as_ref()
@@ -286,7 +316,7 @@ fn parse_document(
         {
             return Err(crate::resource::malformed_charged(
                 ctx,
-                format_args!("ObjectDeps order does not match object {name}"),
+                format_args!("ObjectDeps order does not match object {}", identity.name()),
                 "FCStd persistence diagnostic",
             ));
         }
@@ -295,8 +325,7 @@ fn parse_document(
             None => (Vec::new(), None),
         };
         objects.push(ObjectRecord {
-            id,
-            name,
+            identity,
             type_name,
             persistent_id: node.attribute("id").and_then(|value| value.parse().ok()),
             view_type: node
@@ -320,16 +349,6 @@ fn parse_document(
         });
     }
 
-    if declared_count != objects.len() {
-        return Err(crate::resource::malformed_charged(
-            ctx,
-            format_args!(
-                "{declarations_tag} Count={declared_count} but {} declarations were found",
-                objects.len()
-            ),
-            "FCStd persistence diagnostic",
-        ));
-    }
     if !dependency_map.is_empty() {
         return Err(CodecError::Malformed(
             "ObjectDeps names do not match object declarations".into(),
@@ -343,14 +362,12 @@ fn parse_document(
         ));
     }
     for object in &mut objects {
+        let object_name = object.identity.name();
         for dependency in &mut object.dependencies {
             if !data_by_name.contains_key(dependency) {
                 return Err(crate::resource::malformed_charged(
                     ctx,
-                    format_args!(
-                        "object {} depends on missing object {dependency}",
-                        object.name
-                    ),
+                    format_args!("object {object_name} depends on missing object {dependency}"),
                     "FCStd persistence diagnostic",
                 ));
             }
@@ -395,10 +412,10 @@ fn parse_document(
         }
     }
     for object in &objects {
-        let data = data_by_name.get(&object.name).ok_or_else(|| {
+        let data = data_by_name.get(object.name()).ok_or_else(|| {
             crate::resource::malformed_charged(
                 ctx,
-                format_args!("missing ObjectData for {}", object.name),
+                format_args!("missing ObjectData for {}", object.name()),
                 "FCStd persistence diagnostic",
             )
         })?;
@@ -421,7 +438,7 @@ fn parse_document(
                 ctx,
                 format_args!(
                     "object {} has multiple direct Extensions containers",
-                    object.id
+                    object.id()
                 ),
                 "FCStd persistence diagnostic",
             ));
@@ -436,7 +453,7 @@ fn parse_document(
                 ctx,
                 format_args!(
                     "object {} has multiple direct Properties containers",
-                    object.id
+                    object.id()
                 ),
                 "FCStd persistence diagnostic",
             ));
@@ -445,7 +462,7 @@ fn parse_document(
             if extensions.range().start > properties.range().start {
                 return Err(crate::resource::malformed_charged(
                     ctx,
-                    format_args!("object {} writes Properties before Extensions", object.id),
+                    format_args!("object {} writes Properties before Extensions", object.id()),
                     "FCStd persistence diagnostic",
                 ));
             }
@@ -479,7 +496,7 @@ fn parse_document(
                     format_args!(
                         "Extensions Count={declared} but {} records were found for {}",
                         extension_nodes.len(),
-                        object.id
+                        object.id()
                     ),
                     "FCStd persistence diagnostic",
                 ));
@@ -492,7 +509,7 @@ fn parse_document(
                 if extension_names.contains(&name) {
                     return Err(crate::resource::malformed_charged(
                         ctx,
-                        format_args!("duplicate extension name {name} for {}", object.id),
+                        format_args!("duplicate extension name {name} for {}", object.id()),
                         "FCStd persistence diagnostic",
                     ));
                 }
@@ -507,7 +524,7 @@ fn parse_document(
                 if extension_types.contains(&type_name) {
                     return Err(crate::resource::malformed_charged(
                         ctx,
-                        format_args!("duplicate extension type {type_name} for {}", object.id),
+                        format_args!("duplicate extension type {type_name} for {}", object.id()),
                         "FCStd persistence diagnostic",
                     ));
                 }
@@ -517,7 +534,7 @@ fn parse_document(
                 extension_types.insert(extension_storage.with_storage(|| {
                     ctx.copy_retained_text(&type_name, "FCStd extension type copy")
                 })?);
-                let id = extension_id(ctx, &object.id, &name, order)?;
+                let id = extension_id(ctx, object.id(), &name, order)?;
                 extension_storage.with_storage(|| {
                     ctx.reserve_map(
                         &mut extension_ids_by_start,
@@ -538,7 +555,7 @@ fn parse_document(
                 ctx.reserve_capacity(&mut extensions, 1, "FCStd extension records")?;
                 extensions.push(ExtensionRecord {
                     id,
-                    owner: ctx.copy_retained_text(&object.id, "FCStd extension owner")?,
+                    owner: ctx.copy_retained_text(object.id(), "FCStd extension owner")?,
                     name,
                     type_name,
                     order,
@@ -549,7 +566,7 @@ fn parse_document(
             }
         }
         if let Some(container) = property_container {
-            parse_properties(text, container, &object.id, &mut properties, ctx)?;
+            parse_properties(text, container, object.id(), &mut properties, ctx)?;
         }
         if let Some(extensions_node) = extension_container {
             for extension in extensions_node
@@ -561,7 +578,7 @@ fn parse_document(
                     .ok_or_else(|| {
                         crate::resource::malformed_charged(
                             ctx,
-                            format_args!("extension under {} has no native identity", object.id),
+                            format_args!("extension under {} has no native identity", object.id()),
                             "FCStd persistence diagnostic",
                         )
                     })?;
@@ -649,8 +666,25 @@ fn parse_properties(
             )
         })?;
         for prior in all_nodes.clone().take(index) {
-            ctx.charge_work(1, "FCStd duplicate property names")?;
-            if prior.attribute("name") == Some(name) {
+            let lookup_work = cadmpeg_core::decode::u64_from_index(prior.attributes().len())
+                .checked_mul(5)
+                .and_then(|work| work.checked_add(1))
+                .ok_or_else(|| {
+                    ctx.refuse_codec_limit("FCStd duplicate property names", u64::MAX, u64::MAX)
+                })?;
+            ctx.charge_work(lookup_work, "FCStd duplicate property names")?;
+            let prior_name = prior.attribute("name");
+            if let Some(prior_name) = prior_name {
+                ctx.charge_work(
+                    cadmpeg_core::decode::u64_from_index(prior_name.len()),
+                    "FCStd duplicate property names",
+                )?;
+                ctx.charge_work(
+                    cadmpeg_core::decode::u64_from_index(name.len()),
+                    "FCStd duplicate property names",
+                )?;
+            }
+            if prior_name == Some(name) {
                 return Err(crate::resource::malformed_charged(
                     ctx,
                     format_args!("duplicate property name {name} for {owner}"),
@@ -733,16 +767,21 @@ fn parse_properties(
             .enumerate()
         {
             let len = value.range().len();
-            retained_value_bytes = retained_value_bytes
-                .checked_add(len)
-                .filter(|total| *total <= MAX_PROPERTY_VALUE_XML_BYTES)
-                .ok_or_else(|| {
-                    crate::resource::malformed_charged(
-                        ctx,
-                        format_args!("property {name} retained value XML limit exceeded"),
-                        "FCStd persistence diagnostic",
-                    )
-                })?;
+            let total = retained_value_bytes.checked_add(len).ok_or_else(|| {
+                ctx.refuse_codec_limit(
+                    "FCStd property retained value XML",
+                    cadmpeg_core::decode::u64_from_index(MAX_PROPERTY_VALUE_XML_BYTES),
+                    u64::MAX,
+                )
+            })?;
+            if total > MAX_PROPERTY_VALUE_XML_BYTES {
+                return Err(ctx.refuse_codec_limit(
+                    "FCStd property retained value XML",
+                    cadmpeg_core::decode::u64_from_index(MAX_PROPERTY_VALUE_XML_BYTES),
+                    cadmpeg_core::decode::u64_from_index(total),
+                ));
+            }
+            retained_value_bytes = total;
             values.push(ValueRecord {
                 tag: ctx.copy_retained_text(value.tag_name().name(), "FCStd value tag")?,
                 order: value_order,
@@ -1054,6 +1093,25 @@ fn counted_children<'a, 'input, 'ctx>(
                 "FCStd persistence diagnostic",
             )
         })?;
+    let mut actual_count = 0_usize;
+    let mut valid_tags = true;
+    for child in parent.children() {
+        ctx.charge_work(1, "FCStd link child framing")?;
+        if !child.is_element() {
+            continue;
+        }
+        actual_count = actual_count.checked_add(1).ok_or_else(|| {
+            ctx.refuse_codec_limit("FCStd link child framing", u64::MAX, u64::MAX)
+        })?;
+        valid_tags &= child.has_tag_name(tag);
+    }
+    if actual_count != count || !valid_tags {
+        return Err(crate::resource::malformed_charged(
+            ctx,
+            format_args!("{type_name} count={count} but {actual_count} {tag} values were found"),
+            "FCStd persistence diagnostic",
+        ));
+    }
     ctx.charge_collection_items(
         cadmpeg_core::decode::u64_from_index(count),
         "FCStd link nodes",
@@ -1062,28 +1120,13 @@ fn counted_children<'a, 'input, 'ctx>(
         cadmpeg_core::decode::u64_from_index(count),
         "FCStd link target or subelement records",
     )?;
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(count),
+        "FCStd link node copy",
+    )?;
     let children = parent.children().filter(roxmltree::Node::is_element);
     let (mut child_nodes, storage) = ctx.scoped_vector_storage(count, "FCStd link nodes")?;
-    for child in children {
-        if child_nodes.len() == count {
-            return Err(crate::resource::malformed_charged(
-                ctx,
-                format_args!("{type_name} child count exceeds {count}"),
-                "FCStd persistence diagnostic",
-            ));
-        }
-        child_nodes.push(child);
-    }
-    if child_nodes.len() != count || child_nodes.iter().any(|child| !child.has_tag_name(tag)) {
-        return Err(crate::resource::malformed_charged(
-            ctx,
-            format_args!(
-                "{type_name} count={count} but {} {tag} values were found",
-                child_nodes.len()
-            ),
-            "FCStd persistence diagnostic",
-        ));
-    }
+    child_nodes.extend(children);
     Ok((child_nodes.into_iter(), storage))
 }
 

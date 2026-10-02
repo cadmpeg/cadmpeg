@@ -1037,7 +1037,7 @@ mod tests {
 
     #[test]
     fn intersections_revisit_carriers_proven_by_topology_bound_planes() {
-        let mut scan = crate::container::scan_bytes_ok(Vec::new());
+        let mut scan = crate::test_support::empty_container_scan();
         scan.surfaces.rows = vec![
             crate::surface::SurfaceRow {
                 id: 5,

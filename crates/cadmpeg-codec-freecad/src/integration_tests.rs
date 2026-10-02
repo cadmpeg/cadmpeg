@@ -296,7 +296,10 @@ fn container_pipeline_handles_stored_deflated_streaming_and_zip64_layouts() {
         streaming_archive_with_options(document, SimpleFileOptions::default().large_file(true)),
     ];
     for bytes in fixtures {
-        assert_eq!(FcstdCodec.detect(&bytes), Confidence::High);
+        assert_eq!(
+            cadmpeg_test_support::detection::confidence(&FcstdCodec, &bytes),
+            Confidence::High
+        );
         let summary = FcstdCodec
             .inspect(
                 &mut Cursor::new(&bytes),
@@ -778,4 +781,20 @@ fn a_structurally_alien_document_under_a_foreign_version_still_fails() {
             .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
             .expect_err("alien element vocabulary must fail");
     }
+}
+
+#[test]
+fn native_validation_propagates_design_census_collection_refusal() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="1"><Object type="PartDesign::AdditiveBox" name="Box"/></Objects><ObjectData Count="1"><Object name="Box"><Properties Count="3"><Property name="Length" type="App::PropertyLength"><Float value="1"/></Property><Property name="Width" type="App::PropertyLength"><Float value="2"/></Property><Property name="Height" type="App::PropertyLength"><Float value="3"/></Property></Properties></Object></ObjectData></Document>"#;
+    let result = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive(document)),
+            &DecodeOptions::default(),
+        )
+        .expect("design fixture");
+    crate::test_support::assert_collection_refusal_at(
+        &[],
+        "FreeCAD design census feature index",
+        |ctx| super::validate_native(ctx, result.ir()),
+    );
 }

@@ -113,7 +113,8 @@ fn native_patch_edits_compact_counted_nurbs_surface_arrays() {
         f64::from_bits(0x7ff8_0000_0000_0002).to_be_bytes(),
     ];
 
-    crate::brep::spline::patch_nurbs_surface(&mut bytes, 0, old, &new, 0.001)
+    crate::brep::spline::patch_nurbs_surface(&ctx, &mut bytes, 0, old, &new, 0.001)
+        .expect("compact NURBS patch fits policy")
         .expect("compact NURBS patch");
 
     let patched = crate::brep::spline::scan_surface_carriers(&ctx, &bytes, &mut Vec::new())
@@ -881,4 +882,51 @@ fn native_patch_refuses_a_baseline_its_own_decoder_refuses() {
         ),
         "the write must state the baseline decode's cause, not report no patch: {error}"
     );
+}
+
+#[test]
+fn retained_point_patch_preserves_topology_resource_refusal() {
+    let body = triangle_body();
+    let payload = parasolid_with_body("partition body", "SCH_SW_33103_11000", &body);
+    let baseline_ctx = cadmpeg_test_support::service_decode_context();
+    let header = crate::parasolid::stream_header(&baseline_ctx, &payload)
+        .unwrap()
+        .unwrap();
+    let native = crate::brep::graph::decode(
+        &baseline_ctx,
+        &payload,
+        &header,
+        &cadmpeg_ir::stream_name!("point-patch-test"),
+    )
+    .unwrap();
+    let mut ir = cadmpeg_ir::CadIr::empty();
+    ir.model.points = native.points.clone();
+    let mut point = ir.model.points[0].position().get();
+    point.x += 1.0;
+    ir.model.points[0].set_position(cadmpeg_ir::features::FinitePoint3::new(point).unwrap());
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = u64::try_from(ir.model.points.len()).unwrap();
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&body, &arena, &policy).unwrap();
+    let mut edited = payload.clone();
+    let error = super::patch_points(
+        &ctx,
+        &ir,
+        &native.annotations,
+        &native,
+        &mut edited[header.body_offset..],
+        0.001,
+    )
+    .unwrap_err();
+    let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
+        panic!("topology refusal");
+    };
+    assert_eq!(
+        limit.dimension,
+        cadmpeg_core::decode::ResourceDimension::CollectionItems
+    );
+    assert_ne!(limit.operation, "index SLDPRT patch points");
+    assert_eq!(ctx.resource_refusal(), Some(limit));
+    assert_eq!(edited, payload);
 }

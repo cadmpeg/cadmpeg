@@ -23,8 +23,11 @@ fn drawing_diagnostic_refuses_at_matching_retained_limit() {
 #[test]
 fn drawing_record_collection_refuses_at_caller_limit() {
     let object = crate::native::ObjectRecord {
-        id: "fcstd:native:object#Page".into(),
-        name: "Page".into(),
+        identity: crate::native::object_identity::ObjectIdentity::try_new(
+            "fcstd:native:object#Page".into(),
+            "Page".into(),
+        )
+        .expect("object identity"),
         type_name: "TechDraw::DrawPage".into(),
         persistent_id: None,
         view_type: None,
@@ -63,8 +66,11 @@ fn resource_drawing_record() -> crate::native::DrawingRecord {
 #[test]
 fn drawing_native_identity_refuses_at_retained_limit() {
     let object = crate::native::ObjectRecord {
-        id: "fcstd:native:object#Page".into(),
-        name: "Page".into(),
+        identity: crate::native::object_identity::ObjectIdentity::try_new(
+            "fcstd:native:object#Page".into(),
+            "Page".into(),
+        )
+        .expect("object identity"),
         type_name: "TechDraw::DrawPage".into(),
         persistent_id: None,
         view_type: None,

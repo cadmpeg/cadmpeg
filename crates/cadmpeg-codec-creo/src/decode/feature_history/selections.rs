@@ -404,7 +404,7 @@ mod tests {
     }
 
     fn one_selected_edge() -> crate::container::ContainerScan<'static> {
-        let mut scan = crate::container::scan_bytes_ok(Vec::new());
+        let mut scan = crate::test_support::empty_container_scan();
         scan.features
             .affected_ids
             .push(crate::feature::rows::FeatureAffectedIds {

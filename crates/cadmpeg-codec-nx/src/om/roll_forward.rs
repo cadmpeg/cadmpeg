@@ -269,7 +269,7 @@ impl GroupTableFooter {
 impl OperationStateGroupTable {
     pub(super) fn new(groups: Vec<OperationStateGroup>, trailing_bytes: &[u8]) -> Option<Self> {
         let footer = GroupTableFooter::try_from(trailing_bytes).ok()?;
-        let groups = super::nonempty::NonEmpty::from_vec(groups)?;
+        let groups = super::nonempty::NonEmpty::from_admitted_vec(groups)?;
         let mut end = groups.first().offset();
         for group in groups.iter() {
             if group.offset() != end {

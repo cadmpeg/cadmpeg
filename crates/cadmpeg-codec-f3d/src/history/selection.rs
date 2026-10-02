@@ -791,7 +791,7 @@ fn component_histories<'a>(
     for blob in body_bindings
         .iter()
         .filter(|binding| {
-            crate::ids::native_stream(&binding.id) == Some(stream)
+            crate::ids::native_stream(binding.id()) == Some(stream)
                 && binding.entity_suffix >= space.component_record_index
                 && cluster_end.is_none_or(|end| binding.entity_suffix < end)
         })

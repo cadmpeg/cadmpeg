@@ -919,7 +919,7 @@ fn f3z_prefix_detects_as_f3d() {
         ],
     );
     assert_eq!(
-        F3dCodec.detect(&archive[..512.min(archive.len())]),
+        cadmpeg_test_support::detection::confidence(&F3dCodec, &archive[..512.min(archive.len())]),
         Confidence::High
     );
 }

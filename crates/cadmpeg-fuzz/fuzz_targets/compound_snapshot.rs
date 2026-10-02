@@ -8,12 +8,12 @@ use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use libfuzzer_sys::fuzz_target;
 
 fuzz_target!(|data: &[u8]| {
-    let _ = CompoundPrefixProbe::inspect(data);
     let arena = DecodeArena::new();
     let Ok((ctx, root)) = DecodeContext::from_root_bytes(data, &arena, &DecodePolicy::service())
     else {
         return;
     };
+    let _ = CompoundPrefixProbe::inspect_with_context(&ctx, root);
     let Ok(snapshot) = CompoundSnapshot::new(&ctx, root) else {
         return;
     };

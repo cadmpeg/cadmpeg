@@ -1868,7 +1868,7 @@ pub(crate) fn parse_rendering_attributes(
                     "rendering material mapping child must be anonymous",
                 ));
             }
-            if let Some(warning) = checksum_warning(data, &mapping)? {
+            if let Some(warning) = checksum_warning(ctx, data, &mapping)? {
                 warnings.push_coded_admitted(
                     ctx,
                     crate::loss::RhinoLossCode::IntegrityFailure,
@@ -1898,7 +1898,8 @@ pub(crate) fn parse_rendering_attributes(
             material_payload.skip(16 + 4)?;
         }
         material_payload.skip_remaining()?;
-        if let Some(warning) = checksum_warning_excluding(data, &material, &obsolete_mappings)? {
+        if let Some(warning) = checksum_warning_excluding(ctx, data, &material, &obsolete_mappings)?
+        {
             warnings.push_coded_admitted(
                 ctx,
                 crate::loss::RhinoLossCode::IntegrityFailure,
@@ -1960,7 +1961,7 @@ pub(crate) fn parse_rendering_attributes(
                         "rendering mapping channel must be anonymous",
                     ));
                 }
-                if let Some(warning) = checksum_warning(data, &channel)? {
+                if let Some(warning) = checksum_warning(ctx, data, &channel)? {
                     warnings.push_coded_admitted(
                         ctx,
                         crate::loss::RhinoLossCode::IntegrityFailure,
@@ -1991,7 +1992,7 @@ pub(crate) fn parse_rendering_attributes(
                 channels.push(channel.range());
             }
             mapping_payload.skip_remaining()?;
-            if let Some(warning) = checksum_warning_excluding(data, &mapping, &channels)? {
+            if let Some(warning) = checksum_warning_excluding(ctx, data, &mapping, &channels)? {
                 warnings.push_coded_admitted(
                     ctx,
                     crate::loss::RhinoLossCode::IntegrityFailure,
@@ -2010,7 +2011,7 @@ pub(crate) fn parse_rendering_attributes(
         }
     }
     payload.skip_remaining()?;
-    if let Some(warning) = checksum_warning_excluding(data, &chunk, &children)? {
+    if let Some(warning) = checksum_warning_excluding(ctx, data, &chunk, &children)? {
         warnings.push_coded_admitted(
             ctx,
             crate::loss::RhinoLossCode::IntegrityFailure,
@@ -2053,7 +2054,7 @@ fn skip_model_attributes(
             "missing model-component attributes chunk",
         ));
     }
-    if let Some(warning) = checksum_warning(data, &chunk)? {
+    if let Some(warning) = checksum_warning(ctx, data, &chunk)? {
         warnings.push_coded_admitted(
             ctx,
             crate::loss::RhinoLossCode::IntegrityFailure,
@@ -2176,7 +2177,7 @@ pub(crate) fn parse_direct_linetype<'a>(
         }
     }
     payload.skip_remaining()?;
-    if let Some(warning) = checksum_warning_excluding(data, &chunk, &children)? {
+    if let Some(warning) = checksum_warning_excluding(ctx, data, &chunk, &children)? {
         warnings.push_coded_admitted(
             ctx,
             crate::loss::RhinoLossCode::IntegrityFailure,
@@ -2303,7 +2304,7 @@ pub(crate) fn parse_direct_section_style<'a>(
     // cannot type. A lower or duplicate known ID has the same bounded-suffix
     // result because the cascade has passed it.
     payload.skip_remaining()?;
-    if let Some(warning) = checksum_warning_excluding(data, &chunk, &children)? {
+    if let Some(warning) = checksum_warning_excluding(ctx, data, &chunk, &children)? {
         warnings.push_coded_admitted(
             ctx,
             crate::loss::RhinoLossCode::IntegrityFailure,
@@ -2320,10 +2321,11 @@ pub(crate) fn parse_direct_section_style<'a>(
 }
 
 fn checksum_warning(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     data: &[u8],
     chunk: &crate::chunks::Chunk,
 ) -> Result<Option<String>, FramingError> {
-    match crate::chunks::verify_checksum(data, chunk)? {
+    match crate::chunks::verify_checksum(ctx, data, chunk)? {
         crate::chunks::ChecksumStatus::Mismatch { expected, actual } => Ok(Some(format!(
             "CRC mismatch at offset {} for typecode {:#x}: expected {expected:#x}, got {actual:#x}",
             chunk.header_start, chunk.typecode
@@ -2333,12 +2335,13 @@ fn checksum_warning(
 }
 
 fn checksum_warning_excluding(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     data: &[u8],
     chunk: &crate::chunks::Chunk,
     children: &[Range<usize>],
 ) -> Result<Option<String>, FramingError> {
-    let ranges = crate::chunks::direct_checksum_ranges(&chunk.body(), children)?;
-    match crate::chunks::verify_checksum_ranges(data, chunk, &ranges)? {
+    let ranges = crate::chunks::direct_checksum_ranges(ctx, &chunk.body(), children)?;
+    match crate::chunks::verify_checksum_ranges(ctx, data, chunk, &ranges)? {
         crate::chunks::ChecksumStatus::Mismatch { expected, actual } => Ok(Some(format!(
             "CRC mismatch at offset {} for typecode {:#x}: expected {expected:#x}, got {actual:#x}",
             chunk.header_start, chunk.typecode

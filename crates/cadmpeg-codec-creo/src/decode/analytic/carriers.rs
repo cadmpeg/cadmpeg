@@ -1037,7 +1037,7 @@ mod namespace_tests {
 
     #[test]
     fn native_face_orientations_reads_nonvisible_rows() {
-        let mut scan = crate::container::scan_bytes_ok(Vec::new());
+        let mut scan = crate::test_support::empty_container_scan();
         scan.surfaces
             .nonvisible_rows
             .push(crate::surface::SurfaceRow {

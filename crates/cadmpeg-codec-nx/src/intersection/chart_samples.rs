@@ -8,7 +8,7 @@ use cadmpeg_ir::geometry::FitTolerance;
 use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::scalar::{FiniteReal, Magnification, NonNegativeReal, NonZeroReal, PositiveReal};
 
-/// At least two chart points, each with one native parameter.
+/// At least two finite, spatially distinct chart points with native parameters.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct ChartSamples {
     samples: crate::om::nonempty::NonEmpty<(FinitePoint3, FiniteReal)>,
@@ -22,7 +22,7 @@ impl ChartSamples {
             "copy NX solved chart samples",
         )?;
         values.extend(self.samples.iter().copied());
-        let samples = crate::om::nonempty::NonEmpty::from_vec(values)
+        let samples = crate::om::nonempty::NonEmpty::from_admitted_vec(values)
             .ok_or_else(|| ctx.refuse_codec_limit("NX solved chart sample copy", 0, 0))?;
         Ok(Self { samples })
     }
@@ -32,6 +32,13 @@ impl ChartSamples {
         preamble: ChartPreamble,
     ) -> Result<Option<Self>, CodecError> {
         if points.len() < 2 {
+            return Ok(None);
+        }
+        ctx.charge_work(
+            u64_from_index(points.len()),
+            "form NX derived chart sample pairs",
+        )?;
+        if !points.windows(2).any(|pair| pair[0] != pair[1]) {
             return Ok(None);
         }
         ctx.charge_work(
@@ -55,12 +62,16 @@ impl ChartSamples {
             ));
             previous = Some(point);
         }
-        Ok(crate::om::nonempty::NonEmpty::from_vec(samples).map(|samples| Self { samples }))
+        Ok(crate::om::nonempty::NonEmpty::from_admitted_vec(samples)
+            .map(|samples| Self { samples }))
     }
     #[cfg(test)]
     fn new(points: Vec<FinitePoint3>, parameters: Vec<FiniteReal>) -> Result<Self, &'static str> {
         if points.len() != parameters.len() {
             return Err("native_parameters: one value per point required");
+        }
+        if !points.windows(2).any(|pair| pair[0] != pair[1]) {
+            return Err("points: distinct chart points required");
         }
         let samples = crate::om::nonempty::NonEmpty::new(points.into_iter().zip(parameters))
             .filter(|samples| samples.len() >= 2)
@@ -151,7 +162,7 @@ impl ChartSamples {
         for (old, new) in self.samples.iter().zip(other.samples.iter()) {
             replacement.push((old.0, new.1));
         }
-        let Some(samples) = crate::om::nonempty::NonEmpty::from_vec(replacement) else {
+        let Some(samples) = crate::om::nonempty::NonEmpty::from_admitted_vec(replacement) else {
             return Ok(false);
         };
         self.samples = samples;
@@ -219,12 +230,12 @@ enum SourceEncoding {
         points: Vec<FinitePoint3>,
     },
     Ext11 {
-        samples: ChartSamples,
+        samples: crate::om::nonempty::NonEmpty<(FinitePoint3, FiniteReal)>,
         support_uv: super::SupportUv,
     },
 }
 
-/// At least two finite source points with the fields required by their Hvec layout.
+/// A nonempty finite source point lane with its Hvec layout fields.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct SourceChartData {
     encoding: SourceEncoding,
@@ -232,8 +243,8 @@ pub(crate) struct SourceChartData {
 }
 impl SourceChartData {
     fn point_count(points: &[Point3]) -> Result<u32, &'static str> {
-        if points.len() < 2 {
-            return Err("points: at least two points required");
+        if points.is_empty() {
+            return Err("points: at least one point required");
         }
         u32::try_from(points.len()).map_err(|_| "points: count exceeds u32")
     }
@@ -242,9 +253,6 @@ impl SourceChartData {
         points: Vec<Point3>,
         mut checked: Vec<FinitePoint3>,
     ) -> Result<Self, &'static str> {
-        if !points.windows(2).any(|pair| pair[0] != pair[1]) {
-            return Err("points: xyz3 requires distinct points");
-        }
         let count = Self::point_count(&points)?;
         if !checked.is_empty() || checked.capacity() < points.len() {
             return Err("points: admitted storage is too small or not empty");
@@ -290,12 +298,12 @@ impl SourceChartData {
             }
             samples.push((point, parameter));
         }
-        let samples = crate::om::nonempty::NonEmpty::from_vec(samples)
-            .ok_or("points: at least two points required")?;
+        let samples = crate::om::nonempty::NonEmpty::from_admitted_vec(samples)
+            .ok_or("points: at least one point required")?;
         Ok(Self {
             count,
             encoding: SourceEncoding::Ext11 {
-                samples: ChartSamples { samples },
+                samples,
                 support_uv,
             },
         })
@@ -387,14 +395,16 @@ impl SourceChartData {
     pub(crate) fn points(&self) -> Vec<Point3> {
         match &self.encoding {
             SourceEncoding::Xyz3 { points } => points.iter().map(|point| point.get()).collect(),
-            SourceEncoding::Ext11 { samples, .. } => samples.points(),
+            SourceEncoding::Ext11 { samples, .. } => {
+                samples.iter().map(|sample| sample.0.get()).collect()
+            }
         }
     }
     pub(crate) fn point_at(&self, index: usize) -> Option<Point3> {
         match &self.encoding {
             SourceEncoding::Xyz3 { points } => points.get(index).map(|point| point.get()),
             SourceEncoding::Ext11 { samples, .. } => {
-                samples.samples.get(index).map(|sample| sample.0.get())
+                samples.get(index).map(|sample| sample.0.get())
             }
         }
     }
@@ -403,7 +413,7 @@ impl SourceChartData {
         match &self.encoding {
             SourceEncoding::Xyz3 { .. } => None,
             SourceEncoding::Ext11 { samples, .. } => {
-                samples.samples.get(index).map(|sample| sample.1.get())
+                samples.get(index).map(|sample| sample.1.get())
             }
         }
     }
@@ -427,7 +437,9 @@ impl SourceChartData {
     pub(crate) fn native_parameters(&self) -> Option<Vec<f64>> {
         match &self.encoding {
             SourceEncoding::Xyz3 { .. } => None,
-            SourceEncoding::Ext11 { samples, .. } => Some(samples.parameters()),
+            SourceEncoding::Ext11 { samples, .. } => {
+                Some(samples.iter().map(|sample| sample.1.get()).collect())
+            }
         }
     }
     #[cfg(test)]
@@ -459,7 +471,17 @@ impl SourceChartData {
             SourceEncoding::Ext11 {
                 samples,
                 support_uv,
-            } => Some((samples, support_uv)),
+            } => {
+                if samples.len() < 2
+                    || !samples
+                        .iter()
+                        .zip(samples.iter().skip(1))
+                        .any(|(a, b)| a.0 != b.0)
+                {
+                    return None;
+                }
+                Some((ChartSamples { samples }, support_uv))
+            }
         }
     }
 
@@ -476,7 +498,20 @@ impl SourceChartData {
             SourceEncoding::Ext11 {
                 samples,
                 support_uv,
-            } => Ok(Some((samples, support_uv))),
+            } => {
+                if samples.len() < 2 {
+                    return Ok(None);
+                }
+                ctx.charge_work(u64_from_index(samples.len()), "admit NX chart carrier")?;
+                if !samples
+                    .iter()
+                    .zip(samples.iter().skip(1))
+                    .any(|(a, b)| a.0 != b.0)
+                {
+                    return Ok(None);
+                }
+                Ok(Some((ChartSamples { samples }, support_uv)))
+            }
         }
     }
 }
@@ -597,10 +632,10 @@ mod tests {
     fn chart_samples_require_paired_values_and_two_endpoints() {
         let points = vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)];
         let make_samples = |points, parameters| {
-            SourceChartData::ext11(points, parameters, [None, None]).map(|data| {
+            SourceChartData::ext11(points, parameters, [None, None]).and_then(|data| {
                 data.into_samples(ChartPreamble::new(0.0, 1.0, 0.01, 0.0).unwrap())
-                    .unwrap()
-                    .0
+                    .map(|pair| pair.0)
+                    .ok_or("points: carrier requires two distinct points")
             })
         };
         assert!(make_samples(Vec::new(), Vec::new()).is_err());
@@ -616,7 +651,10 @@ mod tests {
     #[test]
     fn source_layouts_own_parameter_and_uv_constraints() {
         let points = vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)];
-        assert!(SourceChartData::xyz3(vec![points[0]; 2]).is_err());
+        let coincident = SourceChartData::xyz3(vec![points[0]; 2]).unwrap();
+        assert!(coincident
+            .into_samples(ChartPreamble::new(0.0, 1.0, 0.01, 0.0).unwrap())
+            .is_none());
         assert!(
             SourceChartData::xyz3(vec![points[0], Point3::new(f64::INFINITY, 0.0, 0.0)]).is_err()
         );
@@ -779,5 +817,60 @@ mod constructor_tests {
                 );
             },
         );
+    }
+}
+
+#[cfg(test)]
+mod physical_lane_tests {
+    use super::{ChartPreamble, SourceChartData};
+    use cadmpeg_ir::math::Point3;
+
+    #[test]
+    fn physical_single_point_charts_survive_without_a_carrier() {
+        for ext in [false, true] {
+            crate::test_support::with_decode_context(|ctx| {
+                let points = vec![Point3::new(1.0, 2.0, 3.0)];
+                let data = if ext {
+                    SourceChartData::ext11_charged(ctx, points.clone(), vec![4.0], [None, None])
+                } else {
+                    SourceChartData::xyz3_charged(ctx, points.clone())
+                }
+                .unwrap()
+                .unwrap();
+                assert_eq!(data.count(), 1);
+                assert_eq!(data.points(), points);
+                assert!(data
+                    .into_samples_charged(ctx, ChartPreamble::new(0.0, 1.0, 0.01, 0.0).unwrap())
+                    .unwrap()
+                    .is_none());
+            });
+        }
+    }
+
+    #[test]
+    fn coincident_physical_charts_survive_without_a_carrier() {
+        for ext in [false, true] {
+            crate::test_support::with_decode_context(|ctx| {
+                let points = vec![Point3::new(1.0, 2.0, 3.0); 2];
+                let data = if ext {
+                    SourceChartData::ext11_charged(
+                        ctx,
+                        points.clone(),
+                        vec![4.0, 5.0],
+                        [None, None],
+                    )
+                } else {
+                    SourceChartData::xyz3_charged(ctx, points.clone())
+                }
+                .unwrap()
+                .unwrap();
+                assert_eq!(data.count(), 2);
+                assert_eq!(data.points(), points);
+                assert!(data
+                    .into_samples_charged(ctx, ChartPreamble::new(0.0, 1.0, 0.01, 0.0).unwrap())
+                    .unwrap()
+                    .is_none());
+            });
+        }
     }
 }

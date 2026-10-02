@@ -32,9 +32,12 @@ const MAX_TRANSFORM_DEPTH: usize = 64;
 const COMPUTATION_TOLERANCE: f64 = 64.0 * f64::EPSILON;
 const CURVE_PLANE_NORMAL_EPSILON: f64 = 1.0e-10;
 
-pub(super) fn planar_polyline_has_self_intersection(points: &[[f64; 2]]) -> bool {
+pub(super) fn planar_polyline_has_self_intersection(
+    points: &[[f64; 2]],
+    ctx: &DecodeContext<'_>,
+) -> Result<bool, CodecError> {
     if points.len() < 3 {
-        return false;
+        return Ok(false);
     }
     let last = points.len() - 1;
     let point_at = |index: usize| {
@@ -46,6 +49,7 @@ pub(super) fn planar_polyline_has_self_intersection(points: &[[f64; 2]]) -> bool
     };
     for first_index in 0..last {
         for second_index in first_index + 1..last {
+            ctx.charge_work(1, "iges planar self-intersection comparisons")?;
             let allowed_endpoint = if second_index == first_index + 1 {
                 Some(point_at(second_index))
             } else if first_index == 0 && second_index + 1 == last {
@@ -58,28 +62,50 @@ pub(super) fn planar_polyline_has_self_intersection(points: &[[f64; 2]]) -> bool
                 [point_at(second_index), point_at(second_index + 1)],
                 allowed_endpoint,
             ) {
-                return true;
+                return Ok(true);
             }
         }
     }
-    false
+    Ok(false)
 }
 
-pub(super) fn planar_polylines_intersect(first: &[[f64; 2]], second: &[[f64; 2]]) -> bool {
-    first
-        .windows(2)
-        .flat_map(|first_segment| {
-            second
-                .windows(2)
-                .map(move |second_segment| [first_segment, second_segment])
-        })
-        .any(|segments| {
-            planar_segments_intersect_beyond_endpoint(
-                [segments[0][0], segments[0][1]],
-                [segments[1][0], segments[1][1]],
+pub(super) fn planar_polylines_intersect(
+    first: &[[f64; 2]],
+    second: &[[f64; 2]],
+    ctx: &DecodeContext<'_>,
+) -> Result<bool, CodecError> {
+    for first_segment in first.windows(2) {
+        for second_segment in second.windows(2) {
+            ctx.charge_work(1, "iges planar ring intersection comparisons")?;
+            if planar_segments_intersect_beyond_endpoint(
+                [first_segment[0], first_segment[1]],
+                [second_segment[0], second_segment[1]],
                 None,
-            )
-        })
+            ) {
+                return Ok(true);
+            }
+        }
+    }
+    Ok(false)
+}
+
+pub(super) fn closed_polyline_has_duplicate<T>(
+    points: &[T],
+    coincident: impl Fn(&T, &T) -> bool,
+    ctx: &DecodeContext<'_>,
+) -> Result<bool, CodecError> {
+    for (first, left) in points.iter().enumerate() {
+        for (second, right) in points.iter().enumerate().skip(first + 1) {
+            ctx.charge_work(1, "iges closed polyline duplicate comparisons")?;
+            if first == 0 && second + 1 == points.len() {
+                continue;
+            }
+            if coincident(left, right) {
+                return Ok(true);
+            }
+        }
+    }
+    Ok(false)
 }
 
 pub(super) fn planar_segments_contain_point(point: [f64; 2], segment: [[f64; 2]; 2]) -> bool {

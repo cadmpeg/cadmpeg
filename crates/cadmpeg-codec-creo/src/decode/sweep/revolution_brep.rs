@@ -149,8 +149,7 @@ pub(in super::super) fn transfer_resolved_revolution_breps(
         let Some(area) = extrusion_profile_signed_area(ctx, profile)? else {
             continue;
         };
-        let vertex_curves = crate::decode::collect_items(
-            ctx,
+        let vertex_curves = ctx.collect_vec(
             profile
                 .iter()
                 .map(|entity| revolved_section_circle(transform, entity.start(), &axis)),

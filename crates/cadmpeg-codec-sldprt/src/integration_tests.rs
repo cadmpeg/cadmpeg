@@ -84,7 +84,10 @@ fn display_geometry_and_summary_share_one_parse_per_section() {
 #[test]
 fn compound_pipeline_aligns_detection_inspection_blocks_cache_directory_and_metadata() {
     let bytes = synthetic_sldprt();
-    assert_eq!(SldprtCodec.detect(&bytes), Confidence::High);
+    assert_eq!(
+        cadmpeg_test_support::detection::confidence(&SldprtCodec, &bytes),
+        Confidence::High
+    );
     let summary = SldprtCodec
         .inspect(&mut Cursor::new(&bytes), &InspectOptions::default())
         .expect("SLDPRT inspection");

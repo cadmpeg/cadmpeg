@@ -386,7 +386,7 @@ fn indexed_mesh_channels_project_default_and_override_selectors() {
         role: 4,
         resource_guid: None,
         authored_name: None,
-        groups: Vec::new(),
+        groups: crate::paramesh::UniqueFaceGroups::default(),
         elements: crate::paramesh::MeshElements::Float {
             width: crate::paramesh::FloatWidth::Quad,
             values: (0..80).collect(),

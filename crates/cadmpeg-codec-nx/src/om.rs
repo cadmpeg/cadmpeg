@@ -1682,11 +1682,7 @@ pub(crate) fn simple_hole_repeated_scalar_lane(
             witness_offsets: [left.1, right.1],
         });
     }
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(repeated.len()),
-        "move NX simple hole first scalar",
-    )?;
-    Ok(NonEmpty::from_vec(repeated))
+    Ok(NonEmpty::from_admitted_vec(repeated))
 }
 
 /// Decode the unique four-block construction-group lane in a `HOLE PACKAGE` payload.
@@ -2702,7 +2698,7 @@ pub(crate) fn sketch_payload_scalar_lanes(
             if !complete {
                 continue;
             }
-            let Some(values) = NonEmpty::from_vec(values) else {
+            let Some(values) = NonEmpty::from_admitted_vec(values) else {
                 continue;
             };
             let Ok(lane) =
@@ -2935,7 +2931,7 @@ pub(crate) fn draft_construction_fixed_lanes(
         if !complete {
             continue;
         }
-        let Some(values) = NonEmpty::from_vec(values) else {
+        let Some(values) = NonEmpty::from_admitted_vec(values) else {
             continue;
         };
         let Ok(lane) = FramedScalarRun::new(
@@ -2990,7 +2986,7 @@ pub(crate) fn draft_construction_binary32_lanes(
             if !complete {
                 continue;
             }
-            let Some(values) = NonEmpty::from_vec(values) else {
+            let Some(values) = NonEmpty::from_admitted_vec(values) else {
                 continue;
             };
             let Ok(lane) =

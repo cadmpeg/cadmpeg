@@ -28,11 +28,9 @@ fn admitted(identifier: &str) -> Admitted {
         identifier,
         "the admission keeps the source text"
     );
-    match admitted {
-        AdmittedSchemaIdentifier::Valid { .. } => Admitted::Valid,
-        AdmittedSchemaIdentifier::ObjectIdentifierOutOfRange {
-            name, component, ..
-        } => Admitted::OutOfRange(name, component),
+    match admitted.out_of_range() {
+        None => Admitted::Valid,
+        Some((name, component)) => Admitted::OutOfRange(name.to_owned(), component.to_owned()),
     }
 }
 
@@ -180,4 +178,15 @@ fn split_separates_the_schema_name_from_the_object_identifier() {
             "{identifier}"
         );
     }
+}
+
+#[test]
+fn admitted_schema_identifiers_expose_only_proved_text_and_diagnostics() {
+    assert!(AdmittedSchemaIdentifier::admit("!".to_owned()).is_none());
+    let identifier =
+        AdmittedSchemaIdentifier::admit("AP242 { 1 40 }".to_owned()).expect("recoverable OID");
+    assert_eq!(identifier.text(), "AP242 { 1 40 }");
+    assert_eq!(identifier.out_of_range(), Some(("AP242", "40")));
+    let valid = AdmittedSchemaIdentifier::admit("AP242 { 1 39 }".to_owned()).expect("valid OID");
+    assert_eq!(valid.out_of_range(), None);
 }

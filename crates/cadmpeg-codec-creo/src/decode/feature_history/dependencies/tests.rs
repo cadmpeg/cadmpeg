@@ -124,7 +124,7 @@ fn feature_dependency_limit_error(
     operation: &'static str,
     native_only: bool,
 ) {
-    let scan = crate::container::scan_bytes_ok(Vec::new());
+    let scan = crate::test_support::empty_container_scan();
     let mut ir = reconciliation_ir_with_generated_dependency();
     ir.model.features[0].id =
         IrFeatureId::mint("creo:model:feature#3").expect("fixture feature ID");
@@ -178,7 +178,7 @@ fn feature_dependencies_refuse_collection_limit() {
 
 #[test]
 fn feature_dependency_fixture_retains_source_order_under_service_policy() {
-    let scan = crate::container::scan_bytes_ok(Vec::new());
+    let scan = crate::test_support::empty_container_scan();
     let mut ir = reconciliation_ir_with_generated_dependency();
     ir.model.features[0].id =
         IrFeatureId::mint("creo:model:feature#3").expect("fixture feature ID");
@@ -404,7 +404,7 @@ fn reconciliation_ir_with_generated_dependency() -> CadIr {
 }
 
 fn emitted_feature_identity_error(scoped: bool) {
-    let scan = crate::container::scan_bytes_ok(Vec::new());
+    let scan = crate::test_support::empty_container_scan();
     let mut ir = reconciliation_ir_with_generated_dependency();
     ir.model.features[0].id =
         IrFeatureId::mint("creo:model:sketch_feature#10").expect("fixture feature ID");
@@ -475,7 +475,7 @@ fn reconciliation_ir_for_ordering() -> CadIr {
 }
 
 fn feature_order_collection_error(limit: u64, operation: &'static str) {
-    let scan = crate::container::scan_bytes_ok(Vec::new());
+    let scan = crate::test_support::empty_container_scan();
     let mut ir = reconciliation_ir_for_ordering();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
@@ -508,7 +508,7 @@ fn preceding_feature_identity_nodes_refuse_collection_limit() {
 
 #[test]
 fn feature_order_fixture_preserves_parent_before_child() {
-    let scan = crate::container::scan_bytes_ok(Vec::new());
+    let scan = crate::test_support::empty_container_scan();
     let mut ir = reconciliation_ir_for_ordering();
     crate::decode::with_test_decode_ctx(|ctx| {
         super::reconcile_feature_links(ctx, &scan, &mut ir, &BTreeMap::new())
@@ -519,7 +519,7 @@ fn feature_order_fixture_preserves_parent_before_child() {
 }
 
 fn regeneration_scan() -> crate::container::ContainerScan<'static> {
-    let mut scan = crate::container::scan_bytes_ok(Vec::new());
+    let mut scan = crate::test_support::empty_container_scan();
     scan.features
         .operations
         .push(crate::feature::operations::FeatureOperation {
@@ -638,7 +638,7 @@ fn reconciled_native_dependency_error(
     retained: Option<u64>,
     operation: &'static str,
 ) {
-    let scan = crate::container::scan_bytes_ok(Vec::new());
+    let scan = crate::test_support::empty_container_scan();
     let mut ir = reconciliation_ir_with_emitted_parent();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
@@ -699,7 +699,7 @@ fn reconciled_native_dependencies_refuse_collection_limit() {
 
 #[test]
 fn reconciled_native_dependency_preserves_emitted_parent_under_service_policy() {
-    let scan = crate::container::scan_bytes_ok(Vec::new());
+    let scan = crate::test_support::empty_container_scan();
     let mut ir = reconciliation_ir_with_emitted_parent();
     crate::decode::with_test_decode_ctx(|ctx| {
         super::reconcile_feature_links(ctx, &scan, &mut ir, &BTreeMap::from([(10, vec![3])]))
@@ -719,7 +719,7 @@ fn reconciled_native_dependency_preserves_emitted_parent_under_service_policy() 
 
 #[test]
 fn reconciled_generated_dependency_refuses_before_retained_id() {
-    let scan = crate::container::scan_bytes_ok(Vec::new());
+    let scan = crate::test_support::empty_container_scan();
     let mut ir = reconciliation_ir_with_generated_dependency();
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
@@ -763,7 +763,7 @@ fn reconciled_generated_dependency_refuses_before_retained_id() {
 
 #[test]
 fn reconciled_generated_dependency_refuses_before_owned_row() {
-    let scan = crate::container::scan_bytes_ok(Vec::new());
+    let scan = crate::test_support::empty_container_scan();
     let mut ir = reconciliation_ir_with_generated_dependency();
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();

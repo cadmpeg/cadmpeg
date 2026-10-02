@@ -420,7 +420,21 @@ fn control_class_route_refuses_work_limit() {
 
 #[test]
 fn data_block_control_form_route_refuses_collection_limit() {
-    let error = control_form_route_refusal(|policy| policy.limits.max_collection_items = 4);
+    let early = control_form_route_refusal(|policy| policy.limits.max_collection_items = 4);
+    assert!(
+        matches!(early, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+            && limit.operation == "NX nonempty mapped entries")
+    );
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "NX data block control forms",
+        |limit| {
+            Err::<(), _>(control_form_route_refusal(|policy| {
+                policy.limits.max_collection_items = limit;
+            }))
+        },
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
@@ -450,7 +464,21 @@ fn data_block_control_form_route_refuses_retained_limit() {
 
 #[test]
 fn data_block_control_form_route_refuses_work_limit() {
-    let error = control_form_route_refusal(|policy| policy.limits.max_work_units = 0);
+    let early = control_form_route_refusal(|policy| policy.limits.max_work_units = 0);
+    assert!(
+        matches!(early, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+            && limit.operation == "NX nonempty entries")
+    );
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "retain NX control form id",
+        |limit| {
+            Err::<(), _>(control_form_route_refusal(|policy| {
+                policy.limits.max_work_units = limit;
+            }))
+        },
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
@@ -571,7 +599,21 @@ fn control_value_route_refusal(
 
 #[test]
 fn data_block_control_value_route_refuses_collection_limit() {
-    let error = control_value_route_refusal(|policy| policy.limits.max_collection_items = 4);
+    let early = control_value_route_refusal(|policy| policy.limits.max_collection_items = 4);
+    assert!(
+        matches!(early, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+            && limit.operation == "NX nonempty mapped entries")
+    );
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "NX data block control values",
+        |limit| {
+            Err::<(), _>(control_value_route_refusal(|policy| {
+                policy.limits.max_collection_items = limit;
+            }))
+        },
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
@@ -612,7 +654,21 @@ fn data_block_control_value_route_refuses_scoped_limit() {
 
 #[test]
 fn data_block_control_value_route_refuses_work_limit() {
-    let error = control_value_route_refusal(|policy| policy.limits.max_work_units = 0);
+    let early = control_value_route_refusal(|policy| policy.limits.max_work_units = 0);
+    assert!(
+        matches!(early, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+            && limit.operation == "NX nonempty entries")
+    );
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "NX control value block id",
+        |limit| {
+            Err::<(), _>(control_value_route_refusal(|policy| {
+                policy.limits.max_work_units = limit;
+            }))
+        },
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
@@ -860,7 +916,21 @@ fn control_index_value_route_refusal(
 
 #[test]
 fn data_block_control_index_value_route_refuses_collection_limit() {
-    let error = control_index_value_route_refusal(|policy| policy.limits.max_collection_items = 4);
+    let early = control_index_value_route_refusal(|policy| policy.limits.max_collection_items = 4);
+    assert!(
+        matches!(early, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+            && limit.operation == "NX nonempty mapped entries")
+    );
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "NX data block control index values",
+        |limit| {
+            Err::<(), _>(control_index_value_route_refusal(|policy| {
+                policy.limits.max_collection_items = limit;
+            }))
+        },
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
@@ -893,7 +963,21 @@ fn data_block_control_index_value_route_refuses_scoped_limit() {
 
 #[test]
 fn data_block_control_index_value_route_refuses_work_limit() {
-    let error = control_index_value_route_refusal(|policy| policy.limits.max_work_units = 0);
+    let early = control_index_value_route_refusal(|policy| policy.limits.max_work_units = 0);
+    assert!(
+        matches!(early, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+            && limit.operation == "NX nonempty entries")
+    );
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "NX control index value block id",
+        |limit| {
+            Err::<(), _>(control_index_value_route_refusal(|policy| {
+                policy.limits.max_work_units = limit;
+            }))
+        },
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits

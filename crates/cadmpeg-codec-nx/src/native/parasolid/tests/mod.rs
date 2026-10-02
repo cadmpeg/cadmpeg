@@ -137,6 +137,12 @@ fn native_value_records_refuse_collection_at_caller_limit() {
             .unwrap()
             .0
             .len();
+        assert_eq!(offset_count, 0);
+        let candidates =
+            crate::parasolid::value_records::entity_value_records(ctx, &inflated).unwrap();
+        let candidate_count =
+            candidates.integers.len() + candidates.doubles.len() + candidates.strings.len();
+        assert_eq!(candidate_count, 3);
         let streams = [stream(
             crate::parasolid::ParasolidSubtype::Partition,
             "SCH_TEST",
@@ -147,7 +153,7 @@ fn native_value_records_refuse_collection_at_caller_limit() {
             &streams[0].inflated,
             |policy| {
                 policy.limits.max_collection_items =
-                    cadmpeg_core::decode::u64_from_index(offset_count);
+                    cadmpeg_core::decode::u64_from_index(candidate_count);
             },
             |ctx| {
                 let error = super::parasolid_entity_value_records(ctx, &streams, &[])

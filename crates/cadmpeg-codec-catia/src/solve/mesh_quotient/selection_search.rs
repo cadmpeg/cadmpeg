@@ -7,13 +7,14 @@ use super::{
     canonical_mesh_boundary_directions, changed_quotient_edges, common_supported_corner_equations,
     copy_mesh_assignment, copy_mesh_boundary_directions, copy_mesh_edge_rows,
     distinct_domain_matching_with_budget, initial_mesh_quotient,
-    mesh_candidates_equivalent_with_context, orient_face_cycles, reconstruct_mesh_selection,
-    same_unordered_pair, Arc, Boundary, CodecError, CoedgeUse, DecodeContext, EdgeRow,
-    FaceTopology, HashMap, HashSet, MeshBoundaryEdgeCandidate, MeshCandidateFailure,
-    MeshCandidateGauge, MeshEndpointResolve, MeshFaceBoundaryAssignment, MeshFaceSelection,
-    MeshFixedDirectionOption, MeshQuotient, MeshQuotientSignature, MeshSelectionSearch,
-    MeshSelectionStateSignature, MeshSolve, SearchOutcome, StandardTopology, VecDeque, WorkBudget,
-    MAX_FACE_EQUATION_CACHE_ENTRIES, MAX_SELECTION_STATE_MEMO_ENTRIES,
+    mesh_candidates_equivalent_with_context, mesh_candidates_identical_with_context,
+    orient_face_cycles, reconstruct_mesh_selection, same_unordered_pair, Arc, BoundaryDraft,
+    CodecError, CoedgeUse, DecodeContext, EdgeRow, FaceTopologyDraft, HashMap, HashSet,
+    MeshBoundaryEdgeCandidate, MeshCandidateFailure, MeshCandidateGauge, MeshEndpointResolve,
+    MeshFaceBoundaryAssignment, MeshFaceSelection, MeshFixedDirectionOption, MeshQuotient,
+    MeshQuotientSignature, MeshSelectionSearch, MeshSelectionStateSignature, MeshSolve,
+    SearchOutcome, StandardTopologyDraft, VecDeque, WorkBudget, MAX_FACE_EQUATION_CACHE_ENTRIES,
+    MAX_SELECTION_STATE_MEMO_ENTRIES,
 };
 
 #[cfg(test)]
@@ -62,61 +63,70 @@ impl<'storage> MeshSelectionSearch<'storage, '_> {
         quotient: &mut MeshQuotient<'storage>,
     ) -> Result<Option<usize>, CodecError> {
         fn choice_component_reductions(
+            ctx: &DecodeContext<'_>,
             choice: &[[usize; 2]],
             quotient: &mut MeshQuotient<'_>,
             possible: &mut UnionFind<'_>,
-        ) -> HashMap<usize, usize> {
+        ) -> Result<HashMap<usize, usize>, CodecError> {
             let mut equations = HashMap::<usize, Vec<[usize; 2]>>::new();
             for [left, right] in choice {
-                let left = quotient.union.find(*left);
-                let right = quotient.union.find(*right);
-                let component = possible.find(left);
-                if component == possible.find(right) {
+                let left = quotient.union.find(ctx, *left)?;
+                let right = quotient.union.find(ctx, *right)?;
+                let component = possible.find(ctx, left)?;
+                if component == possible.find(ctx, right)? {
                     equations.entry(component).or_default().push([left, right]);
                 }
             }
-            equations
-                .into_iter()
-                .map(|(component, equations)| {
-                    let mut roots = HashMap::new();
-                    for [left, right] in &equations {
-                        for root in [left, right] {
-                            let next = roots.len();
-                            roots.entry(*root).or_insert(next);
-                        }
+            let mut reductions = HashMap::new();
+            for (component, equations) in equations {
+                let mut roots = HashMap::new();
+                for [left, right] in &equations {
+                    for root in [left, right] {
+                        let next = roots.len();
+                        roots.entry(*root).or_insert(next);
                     }
-                    let mut local = UnionFind::new(roots.len());
-                    for [left, right] in equations {
-                        local.union(roots[&left], roots[&right]);
+                }
+                let mut local = UnionFind::new(roots.len());
+                for [left, right] in equations {
+                    local.union(ctx, roots[&left], roots[&right])?;
+                }
+                let mut remaining = 0;
+                for node in 0..local.len() {
+                    if local.find(ctx, node)? == node {
+                        remaining += 1;
                     }
-                    let remaining = (0..local.len())
-                        .filter(|&node| local.find(node) == node)
-                        .count();
-                    (component, roots.len() - remaining)
-                })
-                .collect()
+                }
+                reductions.insert(component, roots.len() - remaining);
+            }
+            Ok(reductions)
         }
 
         let node_count = quotient.union.len();
         let mut possible = UnionFind::new(node_count);
         for node in 0..node_count {
-            let root = quotient.union.find(node);
-            possible.union(node, root);
+            let root = quotient.union.find(self.ctx, node)?;
+            possible.union(self.ctx, node, root)?;
         }
-        let before = (0..node_count)
-            .filter(|&node| possible.find(node) == node)
-            .count();
+        let mut before = 0usize;
+        for node in 0..node_count {
+            if possible.find(self.ctx, node)? == node {
+                before += 1;
+            }
+        }
         for (face, selected) in self.selected.iter().enumerate() {
             if selected.is_some() {
                 continue;
             }
             for [left, right] in &self.possible_face_equations[face] {
-                possible.union(*left, *right);
+                possible.union(self.ctx, *left, *right)?;
             }
         }
-        let after = (0..node_count)
-            .filter(|&node| possible.find(node) == node)
-            .count();
+        let mut after = 0usize;
+        for node in 0..node_count {
+            if possible.find(self.ctx, node)? == node {
+                after += 1;
+            }
+        }
         let point_count = if self.vertex_points.is_empty() {
             quotient
                 .domains
@@ -131,10 +141,10 @@ impl<'storage> MeshSelectionSearch<'storage, '_> {
         let mut universal_components = HashSet::new();
         let mut possible_root_counts = HashMap::<usize, NonZeroUsize>::new();
         for node in 0..node_count {
-            if quotient.union.find(node) != node {
+            if quotient.union.find(self.ctx, node)? != node {
                 continue;
             }
-            let component = possible.find(node);
+            let component = possible.find(self.ctx, node)?;
             if quotient.domains[node].len() == point_count {
                 universal_components.insert(component);
                 possible_domains.remove(&component);
@@ -166,7 +176,8 @@ impl<'storage> MeshSelectionSearch<'storage, '_> {
             let mut face_capacity = HashMap::<usize, usize>::new();
             let mut independent_face_capacity = 0usize;
             for choice in &self.possible_face_choices[face] {
-                let reductions = choice_component_reductions(choice, quotient, &mut possible);
+                let reductions =
+                    choice_component_reductions(self.ctx, choice, quotient, &mut possible)?;
                 independent_face_capacity = independent_face_capacity.max(
                     reductions
                         .values()
@@ -246,14 +257,14 @@ impl<'storage> MeshSelectionSearch<'storage, '_> {
         }
         let mut singleton_component = HashMap::new();
         for node in 0..node_count {
-            if quotient.union.find(node) != node || quotient.domains[node].len() != 1 {
+            if quotient.union.find(self.ctx, node)? != node || quotient.domains[node].len() != 1 {
                 continue;
             }
             let Some(point) = quotient.domains[node].iter().next() else {
                 return Ok(None);
             };
             let point = *point;
-            let component = possible.find(node);
+            let component = possible.find(self.ctx, node)?;
             if singleton_component
                 .insert(point, component)
                 .is_some_and(|previous| previous != component)
@@ -281,7 +292,7 @@ impl<'storage> MeshSelectionSearch<'storage, '_> {
             for node in [use_.edge * 2, use_.edge * 2 + 1] {
                 self.ctx.insert_hash_set(
                     &mut root_set,
-                    quotient.union.find(node),
+                    quotient.union.find(self.ctx, node)?,
                     "catia_face_projection_roots",
                 )?;
             }
@@ -471,7 +482,7 @@ impl<'storage> MeshSelectionSearch<'storage, '_> {
                 }
             };
             for [left, right] in equations {
-                if quotient.union.find(left) == quotient.union.find(right) {
+                if quotient.union.find(self.ctx, left)? == quotient.union.find(self.ctx, right)? {
                     continue;
                 }
                 let Some(root) = quotient.merge_charged(self.ctx, left, right)? else {
@@ -702,7 +713,7 @@ impl<'storage> MeshSelectionSearch<'storage, '_> {
         if !measured.merge_singleton_coordinate_roots(self.ctx, self.edge_candidates)? {
             return Ok(None);
         }
-        let root_count = measured.root_count();
+        let root_count = measured.root_count(self.ctx)?;
         if root_count < self.vertex_points.len() {
             return Ok(None);
         }
@@ -831,7 +842,7 @@ impl<'storage> MeshSelectionSearch<'storage, '_> {
         if !measured.merge_singleton_coordinate_roots(self.ctx, self.edge_candidates)? {
             return Ok(());
         }
-        if measured.root_count() < self.vertex_points.len() {
+        if measured.root_count(self.ctx)? < self.vertex_points.len() {
             return Ok(());
         }
         if self.visited_states.len() < MAX_SELECTION_STATE_MEMO_ENTRIES {
@@ -973,7 +984,7 @@ impl<'storage> MeshSelectionSearch<'storage, '_> {
                     let candidate = (topology, assignment);
                     let gauge = self.candidate_gauge;
                     let equivalent = if let SearchOutcome::Solved(previous) = &self.outcome {
-                        previous == &candidate
+                        mesh_candidates_identical_with_context(self.ctx, previous, &candidate)?
                             || mesh_candidates_equivalent_with_context(
                                 self.ctx, previous, &candidate, gauge,
                             )?
@@ -1097,7 +1108,7 @@ impl<'storage> MeshSelectionSearch<'storage, '_> {
             if !measured.merge_singleton_coordinate_roots(self.ctx, self.edge_candidates)? {
                 return Ok(());
             }
-            let root_count = measured.root_count();
+            let root_count = measured.root_count(self.ctx)?;
             if root_count < self.vertex_points.len() {
                 return Ok(());
             }
@@ -1141,26 +1152,26 @@ impl<'storage> MeshSelectionSearch<'storage, '_> {
             }
         }
         let adjacent_faces = (!adjacent_faces.is_empty()).then_some(adjacent_faces);
-        let next = self
-            .selected
-            .iter()
-            .enumerate()
-            .filter(|(_, selected)| selected.is_none())
-            .filter(|(face, _)| {
-                adjacent_faces
+        let mut next = None;
+        for (face, selected) in self.selected.iter().enumerate() {
+            if selected.is_some()
+                || adjacent_faces
                     .as_ref()
-                    .is_none_or(|adjacent| adjacent.contains(face))
-            })
-            .filter_map(|(face, _)| {
-                if !budget.charge() {
-                    return None;
-                }
-                self.face_work[face]?;
-                let assignments = &self.assignments[face];
-                if assignments.is_empty() {
-                    return Some((0, 0, 0, 0, 0, face));
-                }
-                let direction_work =
+                    .is_some_and(|adjacent| !adjacent.contains(&face))
+            {
+                continue;
+            }
+            if !budget.charge() {
+                break;
+            }
+            if self.face_work[face].is_none() {
+                continue;
+            }
+            let assignments = &self.assignments[face];
+            let key = if assignments.is_empty() {
+                (0, 0, 0, 0, 0, face)
+            } else {
+                let Some(direction_work) =
                     direction_work_estimate(assignments.iter().map(|assignment| {
                         assignment
                             .boundaries
@@ -1168,55 +1179,53 @@ impl<'storage> MeshSelectionSearch<'storage, '_> {
                             .flatten()
                             .filter(|use_| use_.reversed.is_none())
                             .count()
-                    }));
-                let Some(direction_work) = direction_work else {
-                    // The face states more direction choices than the work
-                    // counter can hold, so no search over it can finish.
+                    }))
+                else {
                     budget.exhaust();
-                    return None;
+                    break;
                 };
-                let can_merge = assignments
-                    .iter()
-                    .any(|assignment| mesh_assignment_can_merge(assignment, &mut measured));
-                let selected_incidence = assignments
-                    .iter()
-                    .map(|assignment| {
-                        assignment
-                            .boundaries
-                            .iter()
-                            .flatten()
-                            .filter(|use_| selected_edges.contains(&use_.edge))
-                            .count()
-                    })
-                    .max()
-                    .unwrap_or_default();
-                let constrained = assignments
-                    .iter()
-                    .map(|assignment| {
-                        assignment
-                            .boundaries
-                            .iter()
-                            .flatten()
-                            .filter(|use_| {
-                                let left = measured.union.find(use_.edge * 2);
-                                let right = measured.union.find(use_.edge * 2 + 1);
-                                measured.domains[left].len() < self.vertex_points.len()
-                                    || measured.domains[right].len() < self.vertex_points.len()
-                            })
-                            .count()
-                    })
-                    .max()
-                    .unwrap_or_default();
-                Some((
+                let mut can_merge = false;
+                let mut selected_incidence = 0;
+                let mut constrained = 0;
+                for assignment in assignments {
+                    if !can_merge {
+                        can_merge = mesh_assignment_can_merge(self.ctx, assignment, &mut measured)?;
+                    }
+                    let mut used = 0;
+                    let mut constrained_uses = 0;
+                    for use_ in assignment.boundaries.iter().flatten() {
+                        if selected_edges.contains(&use_.edge) {
+                            used += 1;
+                        }
+                        let left = measured.union.find(self.ctx, use_.edge * 2)?;
+                        let right = measured.union.find(self.ctx, use_.edge * 2 + 1)?;
+                        if measured.domains[left].len() < self.vertex_points.len()
+                            || measured.domains[right].len() < self.vertex_points.len()
+                        {
+                            constrained_uses += 1;
+                        }
+                    }
+                    if used > selected_incidence {
+                        selected_incidence = used;
+                    }
+                    if constrained_uses > constrained {
+                        constrained = constrained_uses;
+                    }
+                }
+                (
                     if can_merge { 1 } else { 2 },
                     direction_work,
                     assignments.len(),
                     usize::MAX - selected_incidence,
                     usize::MAX - constrained,
                     face,
-                ))
-            })
-            .min();
+                )
+            };
+            if next.is_none_or(|previous| key < previous) {
+                next = Some(key);
+            }
+        }
+
         if budget.exhausted() {
             self.outcome.exhaust();
             return Ok(());
@@ -1261,10 +1270,11 @@ impl<'storage> MeshSelectionSearch<'storage, '_> {
                                 let gauge = self.candidate_gauge;
                                 let equivalent =
                                     if let SearchOutcome::Solved(previous) = &self.outcome {
-                                        previous == &candidate
-                                            || mesh_candidates_equivalent_with_context(
-                                                self.ctx, previous, &candidate, gauge,
-                                            )?
+                                        mesh_candidates_identical_with_context(
+                                            self.ctx, previous, &candidate,
+                                        )? || mesh_candidates_equivalent_with_context(
+                                            self.ctx, previous, &candidate, gauge,
+                                        )?
                                     } else {
                                         false
                                     };
@@ -1339,7 +1349,7 @@ impl<'storage> MeshSelectionSearch<'storage, '_> {
                 )?;
                 for (edge, vertices) in edge_vertices.into_iter().enumerate() {
                     for (port, vertex) in vertices.into_iter().enumerate() {
-                        let root = quotient.union.find(edge * 2 + port);
+                        let root = quotient.union.find(self.ctx, edge * 2 + port)?;
                         let Some(&point) = root_points.get(&root) else {
                             break 'candidate None;
                         };
@@ -1354,8 +1364,8 @@ impl<'storage> MeshSelectionSearch<'storage, '_> {
                         break 'candidate None;
                     };
                     let points = [start, end];
-                    let closed_ports =
-                        quotient.union.find(edge * 2) == quotient.union.find(edge * 2 + 1);
+                    let closed_ports = quotient.union.find(self.ctx, edge * 2)?
+                        == quotient.union.find(self.ctx, edge * 2 + 1)?;
                     if !mesh_edge_points_compatible(
                         closed_ports,
                         &self.edge_candidates[edge],
@@ -1381,7 +1391,7 @@ impl<'storage> MeshSelectionSearch<'storage, '_> {
             if let Some(candidate) = candidate {
                 let gauge = self.candidate_gauge;
                 let equivalent = if let SearchOutcome::Solved(previous) = &self.outcome {
-                    previous == &candidate
+                    mesh_candidates_identical_with_context(self.ctx, previous, &candidate)?
                         || mesh_candidates_equivalent_with_context(
                             self.ctx, previous, &candidate, gauge,
                         )?
@@ -1456,7 +1466,14 @@ impl<'storage> MeshSelectionSearch<'storage, '_> {
                     }),
             );
         }
-        options.retain_mut(|(_, _, quotient)| quotient.root_count() >= self.vertex_points.len());
+        let mut index = 0;
+        while index < options.len() {
+            if options[index].2.root_count(self.ctx)? < self.vertex_points.len() {
+                options.remove(index);
+            } else {
+                index += 1;
+            }
+        }
         if options.is_empty() {
             return Ok(());
         }
@@ -1480,29 +1497,35 @@ impl<'storage> MeshSelectionSearch<'storage, '_> {
             self.selected[face] = None;
             return Ok(());
         }
+        let mut ranked_options = Vec::new();
+        for (assignment, directions, quotient) in options {
+            let mut count = 0usize;
+            let mut freedom = 0u128;
+            for node in 0..quotient.union.len() {
+                if quotient.union.root(self.ctx, node)? == node {
+                    count += 1;
+                    freedom += u128::from(u64_from_index(quotient.domains[node].len()));
+                }
+            }
+            self.ctx.push_vec(
+                &mut ranked_options,
+                ((count, freedom), assignment, directions, quotient),
+                "catia_search_ranked_options",
+            )?;
+        }
         self.ctx.sort_unstable_by(
-            &mut options,
-            |(left_assignment, left_directions, left_quotient),
-             (right_assignment, right_directions, right_quotient)| {
-                let measure = |quotient: &MeshQuotient<'storage>| {
-                    (0..quotient.union.len())
-                        .filter(|&node| quotient.union.root(node) == node)
-                        .fold((0usize, 0u128), |(count, freedom), node| {
-                            (
-                                count + 1,
-                                freedom + u128::from(u64_from_index(quotient.domains[node].len())),
-                            )
-                        })
-                };
-                measure(left_quotient)
-                    .cmp(&measure(right_quotient))
-                    .then_with(|| left_assignment.cmp(right_assignment))
-                    .then_with(|| left_directions.cmp(right_directions))
+            &mut ranked_options,
+            |left, right| {
+                left.0
+                    .cmp(&right.0)
+                    .then_with(|| left.1.cmp(&right.1))
+                    .then_with(|| left.2.cmp(&right.2))
             },
-            |(_, directions, _)| directions.iter().map(Vec::len).sum::<usize>(),
+            |(_, _, directions, _)| directions.iter().map(Vec::len).sum::<usize>(),
             "catia_search_assignment_options_sort",
         )?;
-        for (assignment_index, directions, next_quotient) in options {
+
+        for (_, assignment_index, directions, next_quotient) in ranked_options {
             let changed_edges = changed_quotient_edges(self.ctx, &measured, &next_quotient)?;
             self.selected[face] = Some((assignment_index, directions));
             if self.selected_orientable()? {
@@ -1544,9 +1567,10 @@ pub(super) fn direction_work_estimate(
 }
 
 pub(super) fn mesh_assignment_can_merge(
+    ctx: &DecodeContext<'_>,
     assignment: &MeshFaceBoundaryAssignment,
     quotient: &mut MeshQuotient<'_>,
-) -> bool {
+) -> Result<bool, CodecError> {
     pub(super) fn possible_ports(use_: MeshBoundaryEdgeCandidate, end: bool) -> [Option<usize>; 2] {
         let port = |reversed: bool| {
             use_.edge
@@ -1559,18 +1583,20 @@ pub(super) fn mesh_assignment_can_merge(
         }
     }
 
-    assignment.boundaries.iter().any(|boundary| {
-        (0..boundary.len()).any(|index| {
+    for boundary in &assignment.boundaries {
+        for index in 0..boundary.len() {
             let left = possible_ports(boundary[index], true);
             let right = possible_ports(boundary[(index + 1) % boundary.len()], false);
-            left.into_iter().flatten().any(|left| {
-                right
-                    .into_iter()
-                    .flatten()
-                    .any(|right| quotient.union.find(left) != quotient.union.find(right))
-            })
-        })
-    })
+            for left in left.into_iter().flatten() {
+                for right in right.into_iter().flatten() {
+                    if quotient.union.find(ctx, left)? != quotient.union.find(ctx, right)? {
+                        return Ok(true);
+                    }
+                }
+            }
+        }
+    }
+    Ok(false)
 }
 
 pub(in crate::solve) fn mesh_edge_points_compatible(
@@ -1593,7 +1619,7 @@ pub(in crate::solve) fn parse_standard_mesh_endpoint_candidates(
     bytes: &[u8],
     edge_faces: &[[usize; 2]],
     edge_candidates: &[Vec<[usize; 2]>],
-) -> Result<Option<(StandardTopology, Vec<usize>)>, CodecError> {
+) -> Result<Option<(StandardTopologyDraft, Vec<usize>)>, CodecError> {
     let Some(face_run) = largest_fbb_run(bytes) else {
         return Ok(None);
     };
@@ -1838,7 +1864,7 @@ pub(super) fn reconstruct_singleton_coordinate_topology(
     edge_candidates: &[Vec<[usize; 2]>],
     selected: &[MeshFaceBoundaryAssignment],
     directions: &[Vec<Vec<bool>>],
-) -> Result<Option<StandardTopology>, CodecError> {
+) -> Result<Option<StandardTopologyDraft>, CodecError> {
     if selected.len() != directions.len() {
         return Ok(None);
     }
@@ -1877,14 +1903,14 @@ pub(super) fn reconstruct_singleton_coordinate_topology(
                     end_vertex,
                 });
             }
-            let Some(boundary) = Boundary::new(coedges) else {
+            let Some(boundary) = BoundaryDraft::new(coedges) else {
                 return Ok(None);
             };
             boundaries.push(boundary);
         }
-        faces.push(FaceTopology { boundaries });
+        faces.push(FaceTopologyDraft { boundaries });
     }
-    let topology = StandardTopology {
+    let topology = StandardTopologyDraft {
         faces,
         edge_rows: copy_mesh_edge_rows(ctx, edge_rows)?,
         vertex_points: ctx.copy_slice(vertex_points, "catia_singleton_topology_points")?,
@@ -1898,7 +1924,7 @@ pub(super) fn reconstruct_singleton_coordinate_topology(
 
 pub(super) fn resolve_mesh_selection_from_quotient<'storage>(
     ctx: &'storage DecodeContext<'_>,
-    topology: StandardTopology,
+    topology: StandardTopologyDraft,
     mut quotient: MeshQuotient<'storage>,
     vertex_points: &[[f64; 3]],
     edge_candidates: &[Vec<[usize; 2]>],
@@ -1910,7 +1936,7 @@ pub(super) fn resolve_mesh_selection_from_quotient<'storage>(
     };
     if quotient.union.len() != port_count
         || port_identities.len() != edge_candidates.len()
-        || quotient.root_count() != vertex_points.len()
+        || quotient.root_count(ctx)? != vertex_points.len()
     {
         return Ok(None);
     }
@@ -1936,7 +1962,7 @@ pub(super) fn resolve_mesh_selection_from_quotient<'storage>(
     for (edge, [start, end]) in edge_vertices.iter().copied().enumerate() {
         let mut points = [0; 2];
         for (port, vertex) in [start, end].into_iter().enumerate() {
-            let root = quotient.union.find(edge * 2 + port);
+            let root = quotient.union.find(ctx, edge * 2 + port)?;
             let Some(&point) = root_points.get(&root) else {
                 return Ok(None);
             };
@@ -1947,7 +1973,8 @@ pub(super) fn resolve_mesh_selection_from_quotient<'storage>(
             }
             points[port] = point;
         }
-        let closed_ports = quotient.union.find(edge * 2) == quotient.union.find(edge * 2 + 1);
+        let closed_ports =
+            quotient.union.find(ctx, edge * 2)? == quotient.union.find(ctx, edge * 2 + 1)?;
         if !mesh_edge_points_compatible(closed_ports, &edge_candidates[edge], points) {
             return Ok(None);
         }
@@ -2176,8 +2203,8 @@ pub(super) fn resolve_singleton_mesh_selection(
         let &[[left_point, right_point]] = candidates.as_slice() else {
             return Ok(None);
         };
-        let left_root = quotient.union.find(edge * 2);
-        let right_root = quotient.union.find(edge * 2 + 1);
+        let left_root = quotient.union.find(ctx, edge * 2)?;
+        let right_root = quotient.union.find(ctx, edge * 2 + 1)?;
         if left_root == right_root && left_point != right_point {
             return Ok(None);
         }
@@ -2211,7 +2238,7 @@ pub(super) fn resolve_singleton_mesh_selection(
     }
     let mut roots = Vec::new();
     for node in 0..quotient.union.len() {
-        if quotient.union.find(node) == node {
+        if quotient.union.find(ctx, node)? == node {
             ctx.push_vec(&mut roots, node, "catia_singleton_root_rows")?;
         }
     }
@@ -2272,7 +2299,7 @@ pub(super) fn resolve_singleton_mesh_selection(
         return Ok(None);
     }
     let mut materialize =
-        |assignment: &[usize]| -> Result<Option<(StandardTopology, Vec<usize>)>, CodecError> {
+        |assignment: &[usize]| -> Result<Option<(StandardTopologyDraft, Vec<usize>)>, CodecError> {
             if assignment.len() != roots.len() {
                 return Ok(None);
             }
@@ -2285,7 +2312,7 @@ pub(super) fn resolve_singleton_mesh_selection(
             for (edge, [start, end]) in edge_vertices.iter().copied().enumerate() {
                 let mut points = [0; 2];
                 for (port, vertex) in [start, end].into_iter().enumerate() {
-                    let root = quotient.union.find(edge * 2 + port);
+                    let root = quotient.union.find(ctx, edge * 2 + port)?;
                     let Some(&root) = root_indices.get(&root) else {
                         return Ok(None);
                     };
@@ -2299,8 +2326,8 @@ pub(super) fn resolve_singleton_mesh_selection(
                     }
                     points[port] = point;
                 }
-                let closed_ports =
-                    quotient.union.find(edge * 2) == quotient.union.find(edge * 2 + 1);
+                let closed_ports = quotient.union.find(ctx, edge * 2)?
+                    == quotient.union.find(ctx, edge * 2 + 1)?;
                 if !mesh_edge_points_compatible(closed_ports, &edge_candidates[edge], points) {
                     return Ok(None);
                 }

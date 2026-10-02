@@ -426,18 +426,25 @@ fn x62_object_envelope_is_admitted_before_the_xml_tree() {
 fn x62_xml_tree_items_are_admitted_before_allocation() {
     let document = r#"<Document SchemaVersion="4"><Objects Count="1"><Object type="Part::Feature" name="A"/></Objects><ObjectData Count="0"/></Document>"#;
     let bytes = archive(document);
-    let mut options = cadmpeg_core::decode::InspectOptions {
+    let options = cadmpeg_core::decode::InspectOptions {
         limits: cadmpeg_core::decode::ResourceLimits::service(),
     };
     FcstdCodec
         .inspect(&mut Cursor::new(&bytes), &options)
         .expect("service profile admits the XML tree");
 
-    // The ZIP snapshot and FCStd entry table admit six items before the XML tree.
-    options.limits.max_collection_items = 6;
-    let error = FcstdCodec
-        .inspect(&mut Cursor::new(&bytes), &options)
-        .expect_err("XML nodes must be charged before parsing the tree");
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::CollectionItems,
+        "FCStd Document.xml node tree",
+        |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_collection_items = cap;
+            let (ctx, root) =
+                DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("borrowed input");
+            cadmpeg_ir::codec::CodecBackend::inspect_impl(&FcstdCodec, &ctx, root)
+        },
+    );
     assert!(matches!(
         error,
         cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -746,18 +753,28 @@ fn retains_every_reference_to_a_shared_side_entry() {
 #[test]
 fn detects_marker_but_not_arbitrary_zip() {
     assert_eq!(
-        FcstdCodec.detect(&archive(
-            "<Document SchemaVersion=\"4\" FileVersion=\"1\"/>"
-        )),
+        cadmpeg_test_support::detection::confidence(
+            &FcstdCodec,
+            &archive("<Document SchemaVersion=\"4\" FileVersion=\"1\"/>")
+        ),
         Confidence::High
     );
     let public = include_bytes!(concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/../../corpus/freecad_fcstd/fixtures/core_design_product.FCStd"
     ));
-    assert_eq!(FcstdCodec.detect(&public[..512]), Confidence::High);
-    assert_eq!(FcstdCodec.detect(b"PK\x03\x04 unrelated"), Confidence::Low);
-    assert_eq!(FcstdCodec.detect(b"not zip"), Confidence::No);
+    assert_eq!(
+        cadmpeg_test_support::detection::confidence(&FcstdCodec, &public[..512]),
+        Confidence::High
+    );
+    assert_eq!(
+        cadmpeg_test_support::detection::confidence(&FcstdCodec, b"PK\x03\x04 unrelated"),
+        Confidence::Low
+    );
+    assert_eq!(
+        cadmpeg_test_support::detection::confidence(&FcstdCodec, b"not zip"),
+        Confidence::No
+    );
 }
 
 #[test]

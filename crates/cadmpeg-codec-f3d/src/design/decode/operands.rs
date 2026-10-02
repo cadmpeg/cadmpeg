@@ -437,7 +437,7 @@ pub(crate) fn bind_work_point_input_carriers(
                         operand_id: ctx
                             .copy_retained_text(&operand.id, "f3d WorkPoint edge operand ID")?,
                     })))
-                    .map_err(crate::error::malformed)?;
+                    .map_err(CodecError::Malformed)?;
                 continue;
             }
             let Some(header) = header_index.get(&(stream.as_str(), input.record_index())) else {
@@ -449,7 +449,7 @@ pub(crate) fn bind_work_point_input_carriers(
                     .try_set_carrier(Some(Box::new(DesignWorkPointInputCarrier::VertexRecipe {
                         recipe: recipe?,
                     })))
-                    .map_err(crate::error::malformed)?;
+                    .map_err(CodecError::Malformed)?;
                 continue;
             }
             if let Some(selection) = parse_work_point_sketch_point_frame(
@@ -496,9 +496,9 @@ pub(crate) fn bind_work_point_input_carriers(
                                     next_byte_offset: selection.next_byte_offset,
                                 },
                             )
-                            .map_err(crate::error::malformed)?,
+                            .map_err(CodecError::Malformed)?,
                         })))
-                        .map_err(crate::error::malformed)?;
+                        .map_err(CodecError::Malformed)?;
                 }
                 continue;
             }
@@ -551,13 +551,13 @@ pub(crate) fn bind_work_point_input_carriers(
                         next_byte_offset: selection.next_byte_offset,
                         },
                     )
-                    .map_err(crate::error::malformed)?,
+                    .map_err(CodecError::Malformed)?,
                 })))
-                .map_err(crate::error::malformed)?;
+                .map_err(CodecError::Malformed)?;
         }
         construction.rule =
             DesignWorkPointRule::from_serialized(construction.rule.reference_type(), inputs)
-                .map_err(crate::error::malformed)?;
+                .map_err(CodecError::Malformed)?;
     }
     Ok(())
 }
@@ -827,7 +827,7 @@ pub(crate) fn decode_edge_identity_operands(
                         resolution_identity_id: None,
                     },
                 )
-                .map_err(crate::error::malformed)?,
+                .map_err(CodecError::Malformed)?,
             );
         }
     }
@@ -2917,15 +2917,15 @@ pub(crate) fn bind_construction_operand_trailing_records(
         group
             .frame
             .try_set_trailing_transforms(Vec::new())
-            .map_err(crate::error::malformed)?;
+            .map_err(CodecError::Malformed)?;
         group
             .frame
             .try_set_trailing_dual_transforms(Vec::new())
-            .map_err(crate::error::malformed)?;
+            .map_err(CodecError::Malformed)?;
         group
             .frame
             .try_set_trailing_flags(Vec::new())
-            .map_err(crate::error::malformed)?;
+            .map_err(CodecError::Malformed)?;
         let Some(stream) = native_stream(&group.id) else {
             continue;
         };
@@ -2965,15 +2965,15 @@ pub(crate) fn bind_construction_operand_trailing_records(
         group
             .frame
             .try_set_trailing_transforms(trailing_transforms)
-            .map_err(crate::error::malformed)?;
+            .map_err(CodecError::Malformed)?;
         group
             .frame
             .try_set_trailing_dual_transforms(trailing_dual_transforms)
-            .map_err(crate::error::malformed)?;
+            .map_err(CodecError::Malformed)?;
         group
             .frame
             .try_set_trailing_flags(trailing_flags)
-            .map_err(crate::error::malformed)?;
+            .map_err(CodecError::Malformed)?;
     }
     Ok(())
 }
@@ -3017,7 +3017,7 @@ pub(crate) fn bind_construction_operand_paths(
         group
             .frame
             .try_set_auxiliary_paths(Vec::new())
-            .map_err(crate::error::malformed)?;
+            .map_err(CodecError::Malformed)?;
         let Some(stream) = native_stream(&group.id) else {
             continue;
         };
@@ -3044,7 +3044,7 @@ pub(crate) fn bind_construction_operand_paths(
         group
             .frame
             .try_set_auxiliary_paths(auxiliary_paths)
-            .map_err(crate::error::malformed)?;
+            .map_err(CodecError::Malformed)?;
     }
     Ok(())
 }

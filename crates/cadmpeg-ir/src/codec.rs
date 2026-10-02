@@ -275,7 +275,11 @@ pub trait CodecBackend {
     }
 
     /// Judge, from a leading byte prefix, whether this codec applies.
-    fn detect_impl(&self, prefix: &[u8]) -> Confidence;
+    fn detect_impl(
+        &self,
+        ctx: &DecodeContext<'_>,
+        prefix: View<'_>,
+    ) -> Result<Confidence, CodecError>;
 
     /// Enumerate the acquired root view's streams/segments without decoding
     /// geometry.
@@ -318,7 +322,7 @@ mod sealed {
 /// struct Rogue;
 /// impl CodecBackend for Rogue {
 ///     const FORMAT: FormatId = FormatId::new("rogue");
-///     fn detect_impl(&self, _: &[u8]) -> Confidence { Confidence::No }
+///     fn detect_impl(&self, _: &DecodeContext<'_>, _: View<'_>) -> Result<Confidence, CodecError> { Ok(Confidence::No) }
 ///     fn inspect_impl(&self, _: &DecodeContext<'_>, _: View<'_>)
 ///         -> Result<ContainerSummary, CodecError> { panic!("never runs") }
 ///     fn decode_impl(&self, _: &DecodeContext<'_>, _: View<'_>)
@@ -326,7 +330,7 @@ mod sealed {
 /// }
 /// impl Codec for Rogue {
 ///     fn id(&self) -> FormatId { FormatId::new("rogue") }
-///     fn detect(&self, _: &[u8]) -> Confidence { Confidence::No }
+///     fn detect(&self, _: &DecodeContext<'_>, _: View<'_>) -> Result<Confidence, CodecError> { Ok(Confidence::No) }
 ///     fn validate_native(&self, _: &DecodeContext<'_>, _: &cadmpeg_ir::CadIr)
 ///         -> Result<Vec<cadmpeg_ir::report::check::Finding>, CodecError> {
 ///         Ok(Vec::new())
@@ -344,7 +348,7 @@ pub trait Codec: sealed::Sealed {
     fn id(&self) -> FormatId;
 
     /// Judge, from a leading byte prefix, whether this codec applies.
-    fn detect(&self, prefix: &[u8]) -> Confidence;
+    fn detect(&self, ctx: &DecodeContext<'_>, prefix: View<'_>) -> Result<Confidence, CodecError>;
 
     /// Findings this codec reports over its own native namespace,
     /// [`CodecBackend::validate_native`].
@@ -377,6 +381,15 @@ pub trait Codec: sealed::Sealed {
         reader: &mut dyn ReadSeek,
         options: &DecodeOptions,
     ) -> Result<DecodeResult, DecodeFailure>;
+
+    /// Decodes an acquired root in the caller's detection session.
+    /// The caller finishes the session after this method returns.
+    fn decode_with_context(
+        &self,
+        ctx: &DecodeContext<'_>,
+        root: View<'_>,
+        options: &DecodeOptions,
+    ) -> Result<DecodeResult, DecodeFailure>;
 }
 
 impl<C: CodecBackend + ?Sized> Codec for C {
@@ -384,8 +397,8 @@ impl<C: CodecBackend + ?Sized> Codec for C {
         C::FORMAT
     }
 
-    fn detect(&self, prefix: &[u8]) -> Confidence {
-        self.detect_impl(prefix)
+    fn detect(&self, ctx: &DecodeContext<'_>, prefix: View<'_>) -> Result<Confidence, CodecError> {
+        self.detect_impl(ctx, prefix)
     }
 
     fn validate_native(
@@ -428,8 +441,18 @@ impl<C: CodecBackend + ?Sized> Codec for C {
         let arena = DecodeArena::new();
         let (ctx, root) =
             DecodeContext::read_root(reader, &arena, &options.policy, options.container_only)?;
-        let decoded = self.decode_impl(&ctx, root);
+        let result = self.decode_with_context(&ctx, root, options);
         ctx.finish_session()?;
+        result
+    }
+
+    fn decode_with_context(
+        &self,
+        ctx: &DecodeContext<'_>,
+        root: View<'_>,
+        options: &DecodeOptions,
+    ) -> Result<DecodeResult, DecodeFailure> {
+        let decoded = self.decode_impl(ctx, root);
         let result = DecodeResult::new(decoded?, C::FORMAT, options.container_only);
         if result.report().format() != C::FORMAT.as_str() {
             return Err(CodecError::WrongFormat(format!(

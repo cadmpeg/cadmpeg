@@ -552,7 +552,7 @@ fn curve_expression_source_content_refuses_before_vector_reserve() {
         let arena = DecodeArena::new();
         let (ctx, _) = DecodeContext::from_root_bytes(payload, &arena, &policy)
             .expect("root input fits the limit");
-        let mut scan = crate::container::scan_bytes_ok(Vec::new());
+        let mut scan = crate::test_support::empty_container_scan();
         scan.curves.expressions.push(record.clone());
         let mut ir = cadmpeg_ir::document::CadIr::empty();
         let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
@@ -619,7 +619,7 @@ fn transfer_record_in_context(
     record: crate::curve::CurveExpressionRecord,
     dimension_parameters: &std::collections::BTreeMap<String, cadmpeg_ir::features::ParameterId>,
 ) -> Result<usize, cadmpeg_core::CodecError> {
-    let mut scan = crate::container::scan_bytes_ok(Vec::new());
+    let mut scan = crate::test_support::empty_container_scan();
     scan.curves.expressions.push(record);
     let mut ir = cadmpeg_ir::document::CadIr::empty();
     let mut annotations = cadmpeg_ir::AnnotationBuilder::new();

@@ -351,7 +351,6 @@ fn inflate_zlib_frame_budgeted(
     }
     let declared = u64::try_from(expected)
         .map_err(|_| CodecError::NotImplemented("Parasolid frame length exceeds u64".into()))?;
-    let mut output = ctx.begin_expand(ExpandSpec::Exact(declared))?;
     if expected > MAX_WRAPPED_FRAME_UNCOMPRESSED {
         return Err(ctx.refuse_codec_limit(
             "inflate Parasolid frame",
@@ -360,6 +359,7 @@ fn inflate_zlib_frame_budgeted(
         ));
     }
     let reservation = ctx.reserve_scoped(declared, "inflate Parasolid frame")?;
+    let mut output = ctx.begin_expand(ExpandSpec::Exact(declared))?;
     let work = declared
         .checked_add(cadmpeg_core::decode::u64_from_index(member.len()))
         .ok_or_else(|| ctx.refuse_codec_limit("inflate Parasolid frame", u64::MAX - 1, u64::MAX))?;

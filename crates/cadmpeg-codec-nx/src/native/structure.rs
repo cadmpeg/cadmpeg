@@ -745,7 +745,6 @@ mod tests {
     use crate::container::Container;
     use crate::container::{DirEntry, Region};
     use crate::native::om::object_uuid::ObjectUuidValue;
-    use std::borrow::Cow;
 
     fn fast_load_component_roster(
         container: &Container<'_>,
@@ -927,7 +926,7 @@ mod tests {
         data.extend(payload);
         let len = cadmpeg_core::decode::u64_from_index(data.len());
         Container {
-            data: Cow::Owned(data),
+            data: data.into(),
             physical_size: len,
             layout: crate::container::test_modern_layout(0x06),
             entries: vec![DirEntry {

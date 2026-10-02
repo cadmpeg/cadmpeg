@@ -1022,7 +1022,7 @@ fn active_view_recovery_preserves_earlier_losses_and_exact_source() {
         let list = view_list_record(archive, 0x2000_8037, &[rejected.clone(), later]);
         let document = document_with_views(archive, list.clone());
         assert_eq!(
-            crate::chunks::parse_header(&document)
+            crate::chunks::parse_header(&cadmpeg_test_support::service_decode_context(), &document)
                 .unwrap()
                 .archive_version,
             archive

@@ -874,9 +874,9 @@ fn metadata_fallback_old_retained_limit_refuses_inflated_stream_after_directory(
     let mut options = DecodeOptions::default();
     options.policy.limits.max_retained_bytes = directory_retained_bytes("/Root/UG_PART/UG_PART")
         + cadmpeg_core::decode::u64_from_index(stream.len())
+        + cadmpeg_test_support::decode::arena_registry_bytes()
         - 1;
-    let error = NxCodec
-        .decode(&mut Cursor::new(file), &options)
+    let error = cadmpeg_test_support::decode::full(&NxCodec, &file, &options.policy)
         .expect_err("directory bytes use part of the retained allowance");
     assert!(matches!(
         error,
@@ -920,8 +920,7 @@ fn opaque_container_with_one_retained_byte_refuses_directory_entry() {
     let file = prt_with_named_payloads(&[("/Root/FastLoad/Structure", vec![0x5a; 64])]);
     let mut options = DecodeOptions::default();
     options.policy.limits.max_retained_bytes = 1;
-    let error = NxCodec
-        .decode(&mut Cursor::new(file), &options)
+    let error = cadmpeg_test_support::decode::full(&NxCodec, &file, &options.policy)
         .expect_err("directory entry exceeds one byte");
     assert!(matches!(
         error,
@@ -965,8 +964,7 @@ fn invalid_preview_with_one_retained_byte_refuses_directory_entry() {
     let file = prt_with_named_payloads(&[("/Root/images/preview", vec![0x5a; 64])]);
     let mut options = DecodeOptions::default();
     options.policy.limits.max_retained_bytes = 1;
-    let error = NxCodec
-        .decode(&mut Cursor::new(file), &options)
+    let error = cadmpeg_test_support::decode::full(&NxCodec, &file, &options.policy)
         .expect_err("directory entry exceeds one byte");
     assert!(matches!(
         error,

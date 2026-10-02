@@ -544,7 +544,7 @@ pub(super) fn validate_source_less_design_ownership(native: &F3dNative) -> Resul
         {
             return Err(CodecError::InvalidInput(format!(
                 "F3D Design type {} is its own base type",
-                design_type.id
+                design_type.id()
             )));
         }
         let mut ancestors = BTreeSet::new();
@@ -619,9 +619,9 @@ pub(super) fn validate_source_less_design_bindings(
     }
     for visibility in &native.body_visibilities {
         insert(
-            visibility.asm_body_key,
+            visibility.asm_body_key(),
             visibility.entity_suffix,
-            &visibility.id,
+            visibility.id(),
         )?;
     }
     Ok(DesignBindingsValidated { native })
@@ -954,19 +954,21 @@ pub(super) fn validate_source_less_design_links(
         body,
         bodies,
         "body-visibility",
-        [id],
+        [id()],
         |visibility, (ordinal, body)| {
             if body.visible != Some(visibility.visible) {
                 return Err(CodecError::InvalidInput(format!(
                     "F3D body visibility {} conflicts with body {} visibility",
-                    visibility.id, visibility.body
+                    visibility.id(),
+                    visibility.body
                 )));
             }
             let emitted_key = source_less_body_key(attributes, body, ordinal)?;
-            if u64::try_from(emitted_key).ok() != Some(visibility.asm_body_key) {
+            if u64::try_from(emitted_key).ok() != Some(visibility.asm_body_key()) {
                 return Err(CodecError::InvalidInput(format!(
                     "F3D body visibility {} uses an ASM key different from body {}",
-                    visibility.id, visibility.body
+                    visibility.id(),
+                    visibility.body
                 )));
             }
         }

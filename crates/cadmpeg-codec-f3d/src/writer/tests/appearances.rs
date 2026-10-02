@@ -153,18 +153,21 @@ fn generated_source_less_rejects_collapsed_visibility_body_bindings() {
     f3d_native_mut(&mut source_less).body_visibilities = [985, 986]
         .into_iter()
         .enumerate()
-        .map(
-            |(ordinal, entity_suffix)| crate::records::bodies::BodyVisibility {
-                id: format!("f3d:generated:body-visibility#{ordinal}"),
-                body: body.clone(),
-                stream: "generated/Design1/BulkStream.dat".into(),
-                byte_offset: 0,
-                asm_body_key_offset: 0,
-                asm_body_key: 42,
-                entity_suffix,
-                visible: false,
-            },
-        )
+        .map(|(ordinal, entity_suffix)| {
+            crate::records::bodies::BodyVisibility::try_from(
+                crate::records::bodies::BodyVisibilityWire {
+                    id: format!("f3d:generated-{ordinal}:body-visibility#42"),
+                    body: body.clone(),
+                    stream: "generated/Design1/BulkStream.dat".into(),
+                    byte_offset: 0,
+                    asm_body_key_offset: 0,
+                    asm_body_key: 42,
+                    entity_suffix,
+                    visible: false,
+                },
+            )
+            .unwrap()
+        })
         .collect();
 
     let error = F3dCodec

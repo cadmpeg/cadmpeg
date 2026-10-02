@@ -12,7 +12,7 @@ fn fixture() -> (DesignParameterScope, DesignBodyBinding) {
         10,
     );
     let binding = DesignBodyBinding::try_from(DesignBodyBindingWire {
-        id: "f3d:Design/BulkStream.dat:body-binding#1".to_owned(),
+        id: "f3d:Design/BulkStream.dat:design-body-binding#10".to_owned(),
         stream: "Design/BulkStream.dat".to_owned(),
         pair_count: 1,
         pair_ordinal: 0,

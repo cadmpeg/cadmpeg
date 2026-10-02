@@ -98,7 +98,7 @@ fn blind_circular_sweep_requires_materialized_cap_and_cylinder_entries() {
         next_surface: 0,
         offset: usize::try_from(id).expect("fixture index fits usize"),
     };
-    let mut scan = crate::container::scan_bytes_ok(Vec::new());
+    let mut scan = crate::test_support::empty_container_scan();
     scan.features.entity_tables.push(table);
     scan.surfaces.rows.extend([
         row(40, 46, crate::surface::SurfaceKind::Plane),
@@ -222,7 +222,7 @@ fn blind_circular_sweep_requires_materialized_cap_and_cylinder_entries() {
 
 #[test]
 fn two_cap_circular_sweep_joins_materialized_caps_and_one_cylinder() {
-    let mut scan = crate::container::scan_bytes_ok(Vec::new());
+    let mut scan = crate::test_support::empty_container_scan();
     let row = |id, kind: crate::surface::SurfaceKind| crate::surface::SurfaceRow {
         id,
         kind,
@@ -643,7 +643,7 @@ fn unique_parallel_round_supports_define_constant_radius() {
 
 #[test]
 fn round_support_planes_define_radius_without_generated_surface_rows() {
-    let mut scan = crate::container::scan_bytes_ok(Vec::new());
+    let mut scan = crate::test_support::empty_container_scan();
     scan.features
         .affected_ids
         .push(crate::feature::rows::FeatureAffectedIds {
@@ -688,7 +688,7 @@ fn round_support_planes_define_radius_without_generated_surface_rows() {
 
 #[test]
 fn mixed_round_families_reconcile_placed_cylinders_and_prototype_tori() {
-    let mut scan = crate::container::scan_bytes_ok(Vec::new());
+    let mut scan = crate::test_support::empty_container_scan();
     scan.framing.layout = crate::container::Layout::Nd;
     scan.framing.sections.push(
         crate::container::Section::scan("VisibGeom".to_string(), 0, 1_000, None, &[0u8; 1_000])
@@ -833,7 +833,7 @@ fn mixed_round_families_reconcile_placed_cylinders_and_prototype_tori() {
 
 #[test]
 fn placed_cylinder_samples_identify_variable_radius_with_unresolved_siblings() {
-    let mut scan = crate::container::scan_bytes_ok(Vec::new());
+    let mut scan = crate::test_support::empty_container_scan();
     for (id, kind) in [
         (11, crate::surface::SurfaceKind::Cylinder),
         (12, crate::surface::SurfaceKind::TorusOrSphere),
@@ -882,7 +882,7 @@ fn placed_cylinder_samples_identify_variable_radius_with_unresolved_siblings() {
 
 #[test]
 fn unequal_round_samples_are_not_hidden_by_support_radius() {
-    let mut scan = crate::container::scan_bytes_ok(Vec::new());
+    let mut scan = crate::test_support::empty_container_scan();
     for (id, parameter) in [(11, Some(15.0)), (12, Some(1.0)), (13, None)] {
         scan.surfaces.rows.push(crate::surface::SurfaceRow {
             id,
@@ -1033,7 +1033,7 @@ fn unequal_round_samples_are_not_hidden_by_support_radius() {
 
 #[test]
 fn unequal_placed_round_cylinders_are_not_hidden_by_support_radius() {
-    let mut scan = crate::container::scan_bytes_ok(Vec::new());
+    let mut scan = crate::test_support::empty_container_scan();
     for id in [11, 12] {
         scan.surfaces.rows.push(crate::surface::SurfaceRow {
             id,
@@ -1137,7 +1137,7 @@ fn unequal_placed_round_cylinders_are_not_hidden_by_support_radius() {
 
 #[test]
 fn unequal_mixed_round_cylinders_are_not_hidden_by_unresolved_torus() {
-    let mut scan = crate::container::scan_bytes_ok(Vec::new());
+    let mut scan = crate::test_support::empty_container_scan();
     for (id, kind) in [
         (11, crate::surface::SurfaceKind::Cylinder),
         (12, crate::surface::SurfaceKind::TorusOrSphere),
@@ -1245,18 +1245,29 @@ fn unequal_mixed_round_cylinders_are_not_hidden_by_unresolved_torus() {
 
 #[test]
 fn opposite_reference_caps_select_one_round_envelope_axis() {
-    let circle =
-        |entity_id, axis, start: [f64; 3], end: [f64; 3]| crate::reference::ReferenceCircle {
+    let circle = |entity_id, axis, start: [f64; 3], end: [f64; 3]| {
+        let mut center = start;
+        let radial_lane = (0..3)
+            .find(|lane| start[*lane] != end[*lane])
+            .expect("distinct cap endpoints");
+        center[radial_lane] = end[radial_lane];
+        crate::reference::ReferenceCircle::try_new(
             entity_id,
-            center: cadmpeg_ir::features::FinitePoint3::ZERO,
-            center_stored: true,
-            radius: cadmpeg_ir::scalar::PositiveLength::new(2.0).expect("positive radius"),
-            axis: cadmpeg_ir::units::UnitVector3::new(cadmpeg_ir::math::Vector3::from(axis))
+            crate::reference::ReferenceCircleCenter::Stored(
+                cadmpeg_ir::features::FinitePoint3::new(center.into())
+                    .expect("finite circle center"),
+            ),
+            cadmpeg_ir::scalar::PositiveLength::new(2.0).expect("positive radius"),
+            cadmpeg_ir::units::UnitVector3::new(cadmpeg_ir::math::Vector3::from(axis))
                 .expect("unit axis"),
-            start: cadmpeg_ir::features::FinitePoint3::new(start.into()).expect("finite start"),
-            end: cadmpeg_ir::features::FinitePoint3::new(end.into()).expect("finite end"),
-            offset: 0,
-        };
+            [
+                cadmpeg_ir::features::FinitePoint3::new(start.into()).expect("finite start"),
+                cadmpeg_ir::features::FinitePoint3::new(end.into()).expect("finite end"),
+            ],
+            0,
+        )
+        .expect("checked reference geometry")
+    };
     let envelope = crate::surface::Type24RoundEnvelope {
         diameter: 2.0,
         extent_endpoints: [[3.5, 8.0, -6.0], [5.5, 10.0, -4.0]],
@@ -1290,18 +1301,26 @@ fn opposite_reference_caps_select_one_round_envelope_axis() {
 
 #[test]
 fn coaxial_reference_circles_define_a_cylinder_frame() {
-    let circle =
-        |entity_id, center: [f64; 3], axis, start: [f64; 3]| crate::reference::ReferenceCircle {
+    let circle = |entity_id, center: [f64; 3], axis, start: [f64; 3]| {
+        crate::reference::ReferenceCircle::try_new(
             entity_id,
-            center: cadmpeg_ir::features::FinitePoint3::new(center.into()).expect("finite center"),
-            center_stored: true,
-            radius: cadmpeg_ir::scalar::PositiveLength::new(2.0).expect("positive radius"),
-            axis: cadmpeg_ir::units::UnitVector3::new(cadmpeg_ir::math::Vector3::from(axis))
+            crate::reference::ReferenceCircleCenter::Stored(
+                cadmpeg_ir::features::FinitePoint3::new(center.into()).expect("finite center"),
+            ),
+            cadmpeg_ir::scalar::PositiveLength::new(2.0).expect("positive radius"),
+            cadmpeg_ir::units::UnitVector3::new(cadmpeg_ir::math::Vector3::from(axis))
                 .expect("unit axis"),
-            start: cadmpeg_ir::features::FinitePoint3::new(start.into()).expect("finite start"),
-            end: cadmpeg_ir::features::FinitePoint3::ZERO,
-            offset: 0,
-        };
+            [
+                cadmpeg_ir::features::FinitePoint3::new(start.into()).expect("finite start"),
+                cadmpeg_ir::features::FinitePoint3::new(
+                    std::array::from_fn::<_, 3, _>(|lane| 2.0 * center[lane] - start[lane]).into(),
+                )
+                .expect("on-circle end"),
+            ],
+            0,
+        )
+        .expect("checked reference geometry")
+    };
     let first = circle(41, [3.0, 5.0, -2.0], [0.0, 0.0, 1.0], [3.0, 7.0, -2.0]);
     let second = circle(42, [3.0, 5.0, 4.0], [0.0, 0.0, -1.0], [1.0, 5.0, 4.0]);
 
@@ -1309,7 +1328,7 @@ fn coaxial_reference_circles_define_a_cylinder_frame() {
         reference_circle_pair_cylinder_frame(&[&first, &second]),
         Some(
             crate::surface::PositionalCylinderFrame::new(
-                first.center.get().into(),
+                first.center().get().into(),
                 [0.0, 0.0, 1.0],
                 [0.0, 1.0, 0.0],
                 2.0,
@@ -1320,15 +1339,32 @@ fn coaxial_reference_circles_define_a_cylinder_frame() {
     );
     assert!(reference_circle_pair_cylinder_frame(&[&first]).is_none());
 
-    let mut unequal_radius = second.clone();
-    unequal_radius.radius = cadmpeg_ir::scalar::PositiveLength::new(1.0).expect("positive radius");
+    let unequal_radius = crate::reference::ReferenceCircle::try_new(
+        second.entity_id,
+        crate::reference::ReferenceCircleCenter::Stored(second.center()),
+        cadmpeg_ir::scalar::PositiveLength::new(1.0).expect("positive radius"),
+        second.axis(),
+        [
+            cadmpeg_ir::features::FinitePoint3::new([2.0, 5.0, 4.0].into()).expect("start"),
+            cadmpeg_ir::features::FinitePoint3::new([4.0, 5.0, 4.0].into()).expect("end"),
+        ],
+        second.offset,
+    )
+    .expect("valid unequal-radius circle");
     assert!(reference_circle_pair_cylinder_frame(&[&first, &unequal_radius]).is_none());
 
     let displaced = circle(43, [3.5, 5.0, 4.0], [0.0, 0.0, 1.0], [3.5, 7.0, 4.0]);
     assert!(reference_circle_pair_cylinder_frame(&[&first, &displaced]).is_none());
 
-    let mut derived_center = second;
-    derived_center.center_stored = false;
+    let derived_center = crate::reference::ReferenceCircle::try_new(
+        second.entity_id,
+        crate::reference::ReferenceCircleCenter::Diameter,
+        second.radius(),
+        cadmpeg_ir::units::UnitVector3::Z_AXIS,
+        [second.start(), second.end()],
+        second.offset,
+    )
+    .expect("valid diameter-derived center");
     assert!(reference_circle_pair_cylinder_frame(&[&first, &derived_center]).is_none());
 }
 

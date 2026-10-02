@@ -163,7 +163,7 @@ fn generated_table_cap_classes_bind_the_ordered_cap_planes() {
         )),
         source_object: None,
     };
-    let mut scan = crate::container::scan_bytes_ok(Vec::new());
+    let mut scan = crate::test_support::empty_container_scan();
     scan.features.entity_tables.push(table.clone());
     scan.surfaces.rows.extend([row(31), row(32), row(33)]);
     let mut ir = CadIr::empty();
@@ -222,7 +222,7 @@ fn rectilinear_generated_planes_define_one_axial_extrusion_family() {
             next_surface: 0,
             offset: usize::try_from(id).expect("fixture index fits usize"),
         };
-        let mut scan = crate::container::scan_bytes_ok(Vec::new());
+        let mut scan = crate::test_support::empty_container_scan();
         scan.surfaces.rows.extend([
             row(37, false),
             row(31, false),

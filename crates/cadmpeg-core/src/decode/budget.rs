@@ -17,7 +17,7 @@ use super::view::u64_from_index;
 pub(super) struct DecodeBudget {
     /// Policy applied to this budget.
     policy: DecodePolicy,
-    input_bytes: u64,
+    input_bytes: Cell<u64>,
     decompressed: Cell<u64>,
     materialized: Cell<u64>,
     retained: Cell<u64>,
@@ -38,7 +38,7 @@ impl DecodeBudget {
     pub(super) fn new(policy: DecodePolicy, input_bytes: u64) -> Self {
         Self {
             policy,
-            input_bytes,
+            input_bytes: Cell::new(input_bytes),
             decompressed: Cell::new(0),
             materialized: Cell::new(0),
             retained: Cell::new(0),
@@ -58,7 +58,7 @@ impl DecodeBudget {
     pub(super) fn decompression_allowance(&self) -> u64 {
         let policy_limit = self.policy.limits.max_decompressed_bytes_total;
         let Some(proportional) = DECOMPRESSED_TOTAL_PER_INPUT_BYTE
-            .checked_mul(self.input_bytes)
+            .checked_mul(self.input_bytes.get())
             .and_then(|bytes| DECOMPRESSED_TOTAL_BASE.checked_add(bytes))
         else {
             return policy_limit;
@@ -67,7 +67,12 @@ impl DecodeBudget {
     }
 
     pub(super) fn input_bytes(&self) -> u64 {
-        self.input_bytes
+        self.input_bytes.get()
+    }
+
+    pub(super) fn charge_input(&self, amount: u64, operation: &'static str) -> Result<(), CodecError> {
+        self.charge(ResourceDimension::InputBytes, &self.input_bytes,
+            self.policy.limits.max_input_bytes, amount, operation).map_err(Into::into)
     }
 
     pub(super) fn charge_decompressed(
@@ -92,7 +97,7 @@ impl DecodeBudget {
     fn materialized_allowance(&self) -> u64 {
         let policy_limit = self.policy.limits.max_materialized_bytes;
         let Some(proportional) = MATERIALIZED_PER_INPUT_BYTE
-            .checked_mul(self.input_bytes)
+            .checked_mul(self.input_bytes.get())
             .and_then(|bytes| MATERIALIZED_BASE.checked_add(bytes))
         else {
             return policy_limit;
@@ -103,7 +108,7 @@ impl DecodeBudget {
     fn retained_allowance(&self) -> u64 {
         let policy_limit = self.policy.limits.max_retained_bytes;
         let Some(proportional) = RETAINED_PER_INPUT_BYTE
-            .checked_mul(self.input_bytes)
+            .checked_mul(self.input_bytes.get())
             .and_then(|bytes| RETAINED_BASE.checked_add(bytes))
         else {
             return policy_limit;

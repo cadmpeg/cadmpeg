@@ -1028,7 +1028,11 @@ $3FF,0,0,0,3FF,0,0,0,3FF,0,0,0
             scope_offset: 0,
             parent: Some(fixture_offset(parent)),
             depth: 0,
-            payload: RealPayload::array(dimensions, runs).expect("complete numeric array"),
+            payload: crate::decode::with_test_decode_ctx(|ctx| {
+                RealPayload::array(ctx, dimensions, runs)
+            })
+            .expect("numeric array work admission")
+            .expect("complete numeric array"),
             offset,
         }
     }
@@ -1631,7 +1635,11 @@ $3FF,0,0,0,3FF,0,0,0,3FF,0,0,0
             scope_offset: 0,
             parent: Some(fixture_offset(parent)),
             depth: 0,
-            payload: RealPayload::array(vec![2, 4], runs).expect("complete numeric array"),
+            payload: crate::decode::with_test_decode_ctx(|ctx| {
+                RealPayload::array(ctx, vec![2, 4], runs)
+            })
+            .expect("numeric array work admission")
+            .expect("complete numeric array"),
             offset,
         }
     }
@@ -1664,16 +1672,20 @@ $3FF,0,0,0,3FF,0,0,0,3FF,0,0,0
             integer(
                 curve,
                 "crv_pnt_dir",
-                IntegerPayload::array(
-                    vec![2],
-                    vec![
-                        IntegerRun { count: 1, value: 1 },
-                        IntegerRun {
-                            count: 1,
-                            value: -1,
-                        },
-                    ],
-                )
+                crate::decode::with_test_decode_ctx(|ctx| {
+                    IntegerPayload::array(
+                        ctx,
+                        vec![2],
+                        vec![
+                            IntegerRun { count: 1, value: 1 },
+                            IntegerRun {
+                                count: 1,
+                                value: -1,
+                            },
+                        ],
+                    )
+                })
+                .expect("numeric array work admission")
                 .expect("complete numeric array"),
                 300 + usize::try_from(id).expect("fixture index fits usize"),
             ),

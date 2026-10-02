@@ -31,7 +31,8 @@ fn decode(bytes: Vec<u8>) -> EditableDecodeResult {
 }
 
 fn assert_valid(result: &EditableDecodeResult) {
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone()).expect("resource allocation did not fail");
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{validation:#?}");
     assert!(result.ir().native.namespace("creo").is_some());
 }
@@ -76,7 +77,10 @@ fn psb_pipeline_aligns_detection_inspection_layout_and_section_roles() {
             ("THMB_IMG_MAIN", jpeg_payload()),
         ],
     );
-    assert_eq!(CreoCodec.detect(&bytes), Confidence::High);
+    assert_eq!(
+        cadmpeg_test_support::detection::confidence(&CreoCodec, &bytes),
+        Confidence::High
+    );
     let summary = CreoCodec
         .inspect(&mut Cursor::new(bytes), &InspectOptions::default())
         .expect("Creo inspection");

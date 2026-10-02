@@ -436,13 +436,13 @@ pub(crate) fn consolidated_edge_nodes(
     }
     let mut frames = HashMap::new();
     for record in records.iter().filter(|record| {
-        record.family == crate::wire::records::ConsolidatedFamily::B && record.class == 0x5e
+        record.family() == crate::wire::records::ConsolidatedFamily::B && record.class() == 0x5e
     }) {
         temporary.with_storage(|| {
             ctx.insert_hash_map(
                 &mut frames,
                 record.byte_offset(),
-                (record.width, record.flag, record.source_index),
+                (record.width(), record.flag(), record.source_index()),
                 "catia_native_edge_frames",
             )
         })?;

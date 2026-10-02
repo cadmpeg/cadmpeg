@@ -13,7 +13,7 @@ use serde::{Deserialize, Serialize};
 pub(super) struct ChartWire {
     id: String,
     stream_ordinal: u32,
-    xmt: u32,
+    xmt: crate::framing::xmt_reference::NonNullXmt,
     count: u32,
     base_parameter: f64,
     base_scale: f64,
@@ -64,7 +64,7 @@ impl Serialize for ChartParameters<'_> {
 struct ChartRef<'a> {
     id: &'a str,
     stream_ordinal: u32,
-    xmt: u32,
+    xmt: crate::framing::xmt_reference::NonNullXmt,
     count: u32,
     base_parameter: f64,
     base_scale: f64,
@@ -190,8 +190,16 @@ mod tests {
             ("ext11", "[2.0,5.0]", "[[[0.0,1.0],[2.0,3.0]],null]"),
         ] {
             let json = format!(
-                r#"{{"id":"chart","stream_ordinal":0,"xmt":1,"count":2,"base_parameter":2.0,"base_scale":1.0,"chart_count":2,"chordal_error":0.01,"angular_error":0.1,"parameter_errors":[-31415800000000.0,-31415800000000.0],"points":[[0.0,0.0,0.0],[1.0,0.0,0.0]],"native_parameters":{parameters},"ext_support_uv":{uv},"point_layout":"{layout}","framing":"direct","inflated_offset":10}}"#
+                r#"{{"id":"chart","stream_ordinal":0,"xmt":2,"count":2,"base_parameter":2.0,"base_scale":1.0,"chart_count":2,"chordal_error":0.01,"angular_error":0.1,"parameter_errors":[-31415800000000.0,-31415800000000.0],"points":[[0.0,0.0,0.0],[1.0,0.0,0.0]],"native_parameters":{parameters},"ext_support_uv":{uv},"point_layout":"{layout}","framing":"direct","inflated_offset":10}}"#
             );
+            for identity in [0, 1] {
+                let mut wire: serde_json::Value = serde_json::from_str(&json).unwrap();
+                wire["xmt"] = serde_json::json!(identity);
+                assert!(serde_json::from_value::<ParasolidChartRecord>(wire)
+                    .unwrap_err()
+                    .to_string()
+                    .contains("xmt"));
+            }
             let chart: ParasolidChartRecord = serde_json::from_str(&json).unwrap();
             assert_eq!(serde_json::to_string(&chart).unwrap(), json);
             assert_eq!(
@@ -216,7 +224,7 @@ mod tests {
 
     #[test]
     fn chart_native_limit_refuses_before_nested_column_copies() {
-        let json = r#"{"id":"nx:parasolid:chart#0","stream_ordinal":0,"xmt":1,"count":2,"base_parameter":2.0,"base_scale":1.0,"chart_count":2,"chordal_error":0.01,"angular_error":0.1,"parameter_errors":[-31415800000000.0,-31415800000000.0],"points":[[0.0,0.0,0.0],[1.0,0.0,0.0]],"native_parameters":[2.0,5.0],"ext_support_uv":[[[0.0,1.0],[2.0,3.0]],null],"point_layout":"ext11","framing":"direct","inflated_offset":10}"#;
+        let json = r#"{"id":"nx:parasolid:chart#0","stream_ordinal":0,"xmt":2,"count":2,"base_parameter":2.0,"base_scale":1.0,"chart_count":2,"chordal_error":0.01,"angular_error":0.1,"parameter_errors":[-31415800000000.0,-31415800000000.0],"points":[[0.0,0.0,0.0],[1.0,0.0,0.0]],"native_parameters":[2.0,5.0],"ext_support_uv":[[[0.0,1.0],[2.0,3.0]],null],"point_layout":"ext11","framing":"direct","inflated_offset":10}"#;
         let chart: ParasolidChartRecord = serde_json::from_str(json).unwrap();
         cadmpeg_test_support::native_serialization::assert_native_limit(
             &chart,
