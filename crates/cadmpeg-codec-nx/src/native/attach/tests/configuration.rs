@@ -1158,7 +1158,7 @@ fn solved_sketch_points_require_unique_exact_ownership_atomically() {
     };
     let mut ir = CadIr::empty();
     let mut annotations = AnnotationBuilder::new();
-    let stream = StreamHandle::new(cadmpeg_ir::stream_name!("nx:container"));
+    let stream = StreamHandle::new(&cadmpeg_test_support::service_decode_context(), cadmpeg_ir::stream_name!("nx:container"), "fixture stream handle").unwrap();
 
     crate::test_support::with_decode_context(|ctx| {
         let sketch = attach_sketch_graph(
@@ -1187,7 +1187,7 @@ fn solved_sketch_points_require_unique_exact_ownership_atomically() {
 
         let mut rejected_ir = CadIr::empty();
         let mut rejected_annotations = AnnotationBuilder::new();
-        let rejected_stream = StreamHandle::new(cadmpeg_ir::stream_name!("nx:container"));
+        let rejected_stream = StreamHandle::new(&cadmpeg_test_support::service_decode_context(), cadmpeg_ir::stream_name!("nx:container"), "fixture stream handle").unwrap();
         assert!(attach_sketch_graph(
             ctx,
             &mut rejected_ir,
@@ -1261,7 +1261,7 @@ fn named_sketch_points_project_without_an_external_named_point() {
     ];
     let mut ir = CadIr::empty();
     let mut annotations = AnnotationBuilder::new();
-    let stream = StreamHandle::new(cadmpeg_ir::stream_name!("nx:container"));
+    let stream = StreamHandle::new(&cadmpeg_test_support::service_decode_context(), cadmpeg_ir::stream_name!("nx:container"), "fixture stream handle").unwrap();
 
     crate::test_support::with_decode_context(|ctx| {
         let sketch = attach_sketch_graph(

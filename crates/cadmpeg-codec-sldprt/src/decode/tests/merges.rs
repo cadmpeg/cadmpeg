@@ -12,7 +12,7 @@ use super::super::{merge_brep, Brep};
 fn brep_merge_propagates_annotation_refusal_from_the_decode_context() {
     let mut target = Brep::default();
     let mut source = Brep::default();
-    let stream = StreamHandle::new(cadmpeg_ir::stream_name!("source"));
+    let stream = StreamHandle::new(&cadmpeg_test_support::service_decode_context(), cadmpeg_ir::stream_name!("source"), "fixture stream handle").unwrap();
     let mut first = AnnotationBuilder::new();
     first.note(&cadmpeg_test_support::service_decode_context(), "sldprt:model:point#first", &stream, 1, None).unwrap();
     target.annotations = first.build();

@@ -74,7 +74,7 @@ fn tolerant_edge_becomes_a_two_support_procedural_intersection() {
         .unwrap();
         let mut off_support_ir = ir.clone();
         let mut annotations = cadmpeg_ir::annotations::AnnotationBuilder::new();
-        let stream = StreamHandle::new(cadmpeg_ir::stream_name!("nx:test"));
+        let stream = StreamHandle::new(&cadmpeg_test_support::service_decode_context(), cadmpeg_ir::stream_name!("nx:test"), "fixture stream handle").unwrap();
 
         attach_tolerant_edge_intersections(
             geometry_ctx,
@@ -166,7 +166,7 @@ fn tolerant_edge_becomes_a_two_support_procedural_intersection() {
             .expect("a finite position is a point"),
         );
         let mut annotations = cadmpeg_ir::annotations::AnnotationBuilder::new();
-        let stream = StreamHandle::new(cadmpeg_ir::stream_name!("nx:test"));
+        let stream = StreamHandle::new(&cadmpeg_test_support::service_decode_context(), cadmpeg_ir::stream_name!("nx:test"), "fixture stream handle").unwrap();
         attach_tolerant_edge_intersections(
             geometry_ctx,
             &mut off_support_ir,
@@ -201,7 +201,7 @@ fn tolerant_edge_does_not_replace_a_serialized_fin_curve() {
         })
         .unwrap();
         let mut annotations = cadmpeg_ir::annotations::AnnotationBuilder::new();
-        let source_stream = StreamHandle::new(cadmpeg_ir::stream_name!("nx:test"));
+        let source_stream = StreamHandle::new(&cadmpeg_test_support::service_decode_context(), cadmpeg_ir::stream_name!("nx:test"), "fixture stream handle").unwrap();
 
         attach_tolerant_edge_intersections(
             geometry_ctx,

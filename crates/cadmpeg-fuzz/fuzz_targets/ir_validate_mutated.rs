@@ -117,7 +117,7 @@ fuzz_target!(|data: &[u8]| {
             let policy = cadmpeg_core::decode::DecodePolicy::service();
             let Ok((annotation_ctx, _)) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy) else { return; };
             let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
-            let stream = StreamHandle::new(cadmpeg_ir::stream_name!("fuzz:nonexistent"));
+            let Ok(stream) = StreamHandle::new(&annotation_ctx, cadmpeg_ir::stream_name!("fuzz:nonexistent"), "fuzz stream handle") else { return; };
             if annotations.note(&annotation_ctx, "nonexistent", &stream, u64::MAX, None).is_err() { return; }
             let Ok(appended) = source_fidelity
                 .annotations

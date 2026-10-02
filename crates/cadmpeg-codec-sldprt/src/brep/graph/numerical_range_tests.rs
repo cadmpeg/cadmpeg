@@ -168,7 +168,7 @@ fn derive_sphere(out: &mut Brep) {
         &ctx,
         out,
         &mut AnnotationBuilder::new(),
-        &StreamHandle::new(cadmpeg_ir::StreamName::try_from("audit".to_owned()).unwrap()),
+        &StreamHandle::new(&cadmpeg_test_support::service_decode_context(), cadmpeg_ir::StreamName::try_from("audit".to_owned()).unwrap(), "fixture stream handle").unwrap(),
     )
     .expect("spherical pcurve derivation");
 }

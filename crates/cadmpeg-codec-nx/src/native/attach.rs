@@ -137,7 +137,7 @@ fn attach_container_payloads(
     unknowns: &mut Vec<UnknownRecord>,
     typed_native: TypedNative,
 ) -> Result<(), CodecError> {
-    let annotation_stream = StreamHandle::new_for_decode(
+    let annotation_stream = StreamHandle::new(
         ctx,
         cadmpeg_ir::stream_name!("nx:container"),
         "allocate annotation stream handle",
@@ -189,7 +189,7 @@ fn attach_indexed_om_unknowns(
     annotations: &mut AnnotationBuilder,
     unknowns: &mut Vec<UnknownRecord>,
 ) -> Result<(), CodecError> {
-    let annotation_stream = StreamHandle::new_for_decode(
+    let annotation_stream = StreamHandle::new(
         ctx,
         cadmpeg_ir::stream_name!("nx:container"),
         "allocate annotation stream handle",
@@ -278,7 +278,7 @@ pub(super) fn attach(
 ) -> Result<(), CodecError> {
     attach_container_payloads(ctx, ir, scan, annotations, unknowns, TypedNative::Available)?;
     let has_object_sections = !scan.container.indexed_om_sections(ctx)?.is_empty();
-    let annotation_stream = StreamHandle::new_for_decode(
+    let annotation_stream = StreamHandle::new(
         ctx,
         cadmpeg_ir::stream_name!("nx:container"),
         "allocate annotation stream handle",
@@ -792,7 +792,7 @@ fn attach_rm_appearances(
     if source_bindings.is_empty() && face_bindings.is_empty() {
         return Ok(());
     }
-    let annotation_stream = StreamHandle::new_for_decode(
+    let annotation_stream = StreamHandle::new(
         ctx,
         cadmpeg_ir::stream_name!("nx:container"),
         "allocate annotation stream handle",
@@ -1429,7 +1429,7 @@ fn attach_jpeg_preview_assets(
     annotations: &mut AnnotationBuilder,
     unknowns: &mut Vec<UnknownRecord>,
 ) -> Result<(), CodecError> {
-    let stream = StreamHandle::new_for_decode(
+    let stream = StreamHandle::new(
         ctx,
         cadmpeg_ir::stream_name!("nx:container"),
         "allocate annotation stream handle",
@@ -1625,7 +1625,7 @@ fn attach_material_texture_assets(
             .map_err(CodecError::Malformed)?,
         );
     }
-    let stream = StreamHandle::new_for_decode(
+    let stream = StreamHandle::new(
         ctx,
         cadmpeg_ir::stream_name!("nx:container"),
         "allocate annotation stream handle",
@@ -2246,7 +2246,7 @@ fn attach_feature_operations(
         input_blocks,
         data_blocks,
     )?;
-    let stream = StreamHandle::new_for_decode(
+    let stream = StreamHandle::new(
         ctx,
         cadmpeg_ir::stream_name!("nx:container"),
         "allocate annotation stream handle",
@@ -7348,7 +7348,7 @@ fn attach_parasolid_topology_string_attributes(
                 string_use.position.reference_ordinal(),
                 context.id_suffix.as_ref(),
             )?;
-            let source_stream = StreamHandle::new_for_decode(
+            let source_stream = StreamHandle::new(
                 ctx,
                 cadmpeg_ir::stream_name!("nx:s").with_suffix(reference.stream_ordinal),
                 "allocate annotation stream handle",
@@ -8330,7 +8330,7 @@ fn attach_parasolid_topology_numeric_attributes(
                 numeric_use.position.reference_ordinal(),
                 context.id_suffix.as_ref(),
             )?;
-            let source_stream = StreamHandle::new_for_decode(
+            let source_stream = StreamHandle::new(
                 ctx,
                 cadmpeg_ir::stream_name!("nx:s").with_suffix(reference.stream_ordinal),
                 "allocate annotation stream handle",
@@ -8511,7 +8511,7 @@ fn attach_parasolid_topology_structured_attributes(
                 structured_use.position.reference_ordinal(),
                 context.id_suffix.as_ref(),
             )?;
-            let source_stream = StreamHandle::new_for_decode(
+            let source_stream = StreamHandle::new(
                 ctx,
                 cadmpeg_ir::stream_name!("nx:s").with_suffix(reference.stream_ordinal),
                 "allocate annotation stream handle",

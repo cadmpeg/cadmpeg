@@ -852,7 +852,7 @@ fn completed_intersection_support_lane_attaches_after_topology_emission() {
             ),
         );
         let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
-        let source_stream = StreamHandle::new(cadmpeg_ir::stream_name!("nx:test"));
+        let source_stream = StreamHandle::new(&cadmpeg_test_support::service_decode_context(), cadmpeg_ir::stream_name!("nx:test"), "fixture stream handle").unwrap();
         let graph =
             crate::test_support::with_decode_context(|ctx| crate::topology::Graph::parse(ctx, &[]))
                 .unwrap();

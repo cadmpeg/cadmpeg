@@ -538,7 +538,7 @@ fn appending_source_metadata_is_atomic_across_annotations_and_bytes() {
         let mut existing = AnnotationBuilder::new();
         existing.note(&cadmpeg_test_support::service_decode_context(), 
             id("annotated"),
-            &StreamHandle::new(crate::stream_name!("original")),
+            &StreamHandle::new(&cadmpeg_test_support::service_decode_context(), crate::stream_name!("original"), "fixture stream handle").unwrap(),
             7, None).unwrap();
         target.annotations = existing.build();
         let before = target.clone();
@@ -557,7 +557,7 @@ fn appending_source_metadata_is_atomic_across_annotations_and_bytes() {
         });
         annotations.note(&cadmpeg_test_support::service_decode_context(), 
             annotation_id,
-            &StreamHandle::new(crate::stream_name!("incoming")),
+            &StreamHandle::new(&cadmpeg_test_support::service_decode_context(), crate::stream_name!("incoming"), "fixture stream handle").unwrap(),
             9, None).unwrap();
         incoming.annotations = annotations.build();
         let error =

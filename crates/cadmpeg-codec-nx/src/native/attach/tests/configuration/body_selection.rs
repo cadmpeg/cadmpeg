@@ -386,7 +386,7 @@ fn segment_bound_bodies_form_the_exact_retained_history_input() {
         source_offset: 100,
     };
     let mut annotations = AnnotationBuilder::new();
-    let stream = StreamHandle::new(cadmpeg_ir::stream_name!("nx:container"));
+    let stream = StreamHandle::new(&cadmpeg_test_support::service_decode_context(), cadmpeg_ir::stream_name!("nx:container"), "fixture stream handle").unwrap();
 
     let id = crate::test_support::with_decode_context(|ctx| {
         attach_initial_segment_bodies(ctx, &mut ir, &[binding], &mut annotations, &stream)
@@ -438,7 +438,7 @@ fn body_write_does_not_materialize_missing_neutral_geometry() {
         source_offset: 100,
     };
     let mut annotations = AnnotationBuilder::new();
-    let stream = StreamHandle::new(cadmpeg_ir::stream_name!("nx:container"));
+    let stream = StreamHandle::new(&cadmpeg_test_support::service_decode_context(), cadmpeg_ir::stream_name!("nx:container"), "fixture stream handle").unwrap();
 
     assert!(
         crate::test_support::with_decode_context(|ctx| attach_initial_segment_bodies(
@@ -479,7 +479,7 @@ fn retained_history_input_result(
         source_offset: 100,
     };
     let mut annotations = AnnotationBuilder::new();
-    let stream = StreamHandle::new(cadmpeg_ir::stream_name!("nx:container"));
+    let stream = StreamHandle::new(&cadmpeg_test_support::service_decode_context(), cadmpeg_ir::stream_name!("nx:container"), "fixture stream handle").unwrap();
 
     crate::test_support::with_decode_context_over(
         &[],

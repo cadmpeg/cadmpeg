@@ -4503,7 +4503,7 @@ fn annotation_stream(
 ) -> Result<StreamHandle, CodecError> {
     let name = crate::ids::native_scope_charged(ctx, entry_name)?;
     let name = cadmpeg_ir::StreamName::try_from(name).map_err(CodecError::malformed)?;
-    StreamHandle::new_for_decode(ctx, name, "allocate annotation stream handle")
+    StreamHandle::new(ctx, name, "allocate annotation stream handle")
 }
 
 fn note_native_annotation(
@@ -4577,7 +4577,7 @@ fn populate_annotations(
         "index F3D annotation spatial sketches",
     )?;
 
-    let native_stream = StreamHandle::new_for_decode(
+    let native_stream = StreamHandle::new(
         ctx,
         cadmpeg_ir::stream_name!("f3d:native"),
         "allocate annotation stream handle",

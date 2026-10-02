@@ -269,7 +269,7 @@ pub(super) fn try_decode_geometry(
     let mut intersection_index = IntersectionIncidenceIndex::default();
     let mut model_endpoint_witnesses = EndpointWitnesses::new();
     let mut completion_streams = Vec::new();
-    let container_stream = StreamHandle::new_for_decode(
+    let container_stream = StreamHandle::new(
         ctx,
         cadmpeg_ir::stream_name!("nx:container"),
         "allocate annotation stream handle",
@@ -329,7 +329,7 @@ pub(super) fn try_decode_geometry(
             format_args!("nx:parasolid#{si}:{}", stream.kind().label()),
             "nx geometry stream name",
         )?;
-        let source_stream = StreamHandle::new_for_decode(
+        let source_stream = StreamHandle::new(
             ctx,
             cadmpeg_ir::StreamName::try_from(stream_name).map_err(CodecError::malformed)?,
             "allocate annotation stream handle",
@@ -2512,7 +2512,7 @@ fn finalize_point_topology(
         derived.id_charged(ctx, &cadmpeg_ir::identity_component!("point-region"), 0)?;
     let shell_id: ShellId =
         derived.id_charged(ctx, &cadmpeg_ir::identity_component!("point-shell"), 0)?;
-    let stream = StreamHandle::new_for_decode(
+    let stream = StreamHandle::new(
         ctx,
         cadmpeg_ir::stream_name!("nx:container"),
         "allocate annotation stream handle",
