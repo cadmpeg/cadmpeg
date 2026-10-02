@@ -1417,23 +1417,24 @@ impl NurbsSurface {
 
     /// Exchange the u and v parameter axes and transpose pole storage.
     /// The natural normal changes sign; `normal_reversed` remains unchanged.
-    pub fn transpose_parameter_axes(&mut self) {
+    pub fn transpose_parameter_axes(&mut self, ctx: &DecodeContext<'_>) -> Result<(), CodecError> {
         // Surface admission and every grid mutation preserve nonempty,
         // rectangular rows. Raw pole grids do not expose this operation.
-        fn transpose<T: Copy>(rows: &[Vec<T>], width: usize) -> Vec<Vec<T>> {
-            (0..width)
-                .map(|column| rows.iter().map(|row| row[column]).collect())
-                .collect()
+        fn transpose<T: Copy>(ctx: &DecodeContext<'_>, rows: &[Vec<T>], width: usize) -> Result<Vec<Vec<T>>, CodecError> {
+            ctx.try_collect_retained_with(0..width, "IR NURBS transposed grid rows", |column| {
+                ctx.try_collect_retained_with(rows, "IR NURBS transposed grid poles", |row| Ok(row[column]))
+            })
         }
 
         let width = self.v_count();
         match &mut self.poles {
-            NurbsPoleGrid::Polynomial { rows } => *rows = transpose(rows, width),
-            NurbsPoleGrid::Rational { rows } => *rows = transpose(rows, width),
+            NurbsPoleGrid::Polynomial { rows } => *rows = transpose(ctx, rows, width)?,
+            NurbsPoleGrid::Rational { rows } => *rows = transpose(ctx, rows, width)?,
         }
         std::mem::swap(&mut self.u_degree, &mut self.v_degree);
         std::mem::swap(&mut self.u_knots, &mut self.v_knots);
         std::mem::swap(&mut self.u_periodic, &mut self.v_periodic);
+        Ok(())
     }
 }
 
