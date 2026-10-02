@@ -327,7 +327,7 @@ pub(in crate::families) fn try_decode_e5(
         let topology_transferred = if let Some(topology) = topology.as_ref() {
             original_curves = std::mem::take(&mut topology_ir.model.curves);
             for curve in &original_curves {
-                topology_annotations.remove_entity_str(curve.id.as_str());
+                admitted!(topology_annotations.remove_entity(ctx, curve.id.as_str()));
             }
             let transferred = match transfer_e5_topology(ctx,
 (&mut topology_ir, &mut topology_annotations),
@@ -1319,7 +1319,7 @@ fn transfer_e5_topology(
     }
 
     for curve in ir.model.curves.drain(..) {
-        annotations.remove_entity_str(curve.id.as_str());
+        annotations.remove_entity(ctx, curve.id.as_str())?;
     }
 
     let mut surface_for_ref = HashMap::new();
@@ -1956,7 +1956,7 @@ fn prune_e5_unused_surfaces(
         .surfaces
         .extract_if(.., |surface| !used_surfaces.contains(surface.id.as_str()))
     {
-        annotations.remove_entity_str(surface.id.as_str());
+        annotations.remove_entity(ctx, surface.id.as_str())?;
         ctx.push_vec(unused_surfaces, surface, "catia_e5_unused_surfaces")?;
     }
     Ok(())
