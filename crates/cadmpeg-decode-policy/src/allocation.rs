@@ -119,7 +119,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
                             if self.stack.contains(&local) { self.shape_report(expression, Shape::Unknown, "recursive custom Clone"); return; }
                             let mut stack = self.stack.clone();
                             stack.push(local);
-                            let mut child = Analysis { tcx: self.tcx, typeck: self.tcx.typeck(local), owner: local, flow: crate::flow::Flow::default(), stack, findings: self.findings };
+                            let mut child = Analysis { tcx: self.tcx, typeck: self.tcx.typeck(local), owner: local, summaries: self.summaries, flow: crate::flow::Flow::default(), stack, findings: self.findings };
                             child.visit_body(self.tcx.hir_body_owned_by(local));
                         } else { self.shape_report(expression, Shape::Unknown, "custom Clone body unavailable"); }
                         return;

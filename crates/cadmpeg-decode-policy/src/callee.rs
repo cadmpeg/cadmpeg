@@ -15,19 +15,33 @@ impl<'tcx> Analysis<'_, 'tcx> {
     }
 
     pub(crate) fn local_has_effects(&self, definition: DefId) -> Option<bool> {
+        if let Some(value) = self.summaries.borrow().get(&definition) { return Some(*value); }
         let local = definition.as_local()?;
         if self.stack.contains(&local) { return None; }
         let body = self.tcx.hir_maybe_body_owned_by(local)?;
         let mut findings = crate::Findings::default();
         let mut stack = self.stack.clone();
         stack.push(local);
-        let mut analysis = Analysis { tcx: self.tcx, typeck: self.tcx.typeck(local), owner: local, flow: flow::Flow::default(), stack, findings: &mut findings };
+        let mut analysis = Analysis { tcx: self.tcx, typeck: self.tcx.typeck(local), owner: local, summaries: self.summaries, flow: flow::Flow::default(), stack, findings: &mut findings };
         analysis.visit_body(body);
-        Some(!findings.entries.is_empty())
+        let has_effects = !findings.entries.is_empty();
+        self.summaries.borrow_mut().insert(definition, has_effects);
+        Some(has_effects)
     }
 
     pub(crate) fn custom_trait(&self, expression: &'tcx Expr<'tcx>, definition: DefId) -> Option<DefId> {
-        let implementation = self.implementation(expression, definition)?;
+        let mut implementation = self.implementation(expression, definition)?;
+        if types::standard(self.tcx, implementation) && self.tcx.trait_of_assoc(definition).is_some() {
+            let args = match expression.kind {
+                ExprKind::Call(callee, _) => self.typeck.node_args(callee.hir_id),
+                _ => self.typeck.node_args(expression.hir_id),
+            };
+            let peeled: Vec<_> = args.iter().map(|argument| match argument.kind() {
+                ty::GenericArgKind::Type(value) => value.peel_refs().into(),
+                _ => argument,
+            }).collect();
+            if let Ok(Some(instance)) = Instance::try_resolve(self.tcx, TypingEnv::post_analysis(self.tcx, self.owner), definition, self.tcx.mk_args(&peeled)) { implementation = instance.def_id(); }
+        }
         if !types::standard(self.tcx, implementation) && !self.tcx.is_automatically_derived(self.tcx.parent(implementation)) { Some(implementation) } else { None }
     }
 
