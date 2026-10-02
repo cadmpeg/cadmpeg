@@ -165,8 +165,15 @@ creation.
 `uncharged_decode_work` has the allocation rule's context and path scope.
 Input-sized `for`, `while` and `loop`, iterator consumers, searches, prefix
 comparisons and decoded slice equality require propagated work admission.
-Unresolved scan types use the same forms. Fixed literal ranges, arrays, byte comparisons against literals and scalar
-count queries stay outside the rule. A scalar `min` or `max` with an argument is constant time.
+Unresolved scan types use the same forms. Arrays with literal or declared
+constant lengths, constant-bounded ranges, and their iterator chains have a
+fixed iteration count. Tuple and array comparisons have fixed work when their
+elements have fixed comparison work. Explicit primitive types and structural
+`Copy` scalars have fixed comparison work. Arrays of strings have a fixed slot
+count but still require charged child comparisons. A range with a runtime
+bound and an input-sized iterator with `take` remain input-sized. Fixed byte
+comparisons against literals and scalar count queries stay outside the rule.
+A scalar `min` or `max` with an argument is constant time.
 
 A loop admits each iteration before its first effect on every control-flow
 path. Admission can be `ctx.charge_work(..., operation)?`, the resource-only

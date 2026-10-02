@@ -1241,6 +1241,76 @@ class DecodeWork(TempSourceCase):
 }""")
         self.assertEqual([f.line for f in self.findings("uncharged_decode_work")], [3])
 
+    def test_fixed_arrays_ranges_and_iterator_chains_are_accepted(self):
+        self.write(self.PATH, """const WIDTH: usize = 4;
+fn read<const N: usize>(ctx: &DecodeContext<'_>, array: &[u8; N]) {
+    for byte in array { use_value(byte); }
+    for index in 0..WIDTH { step(index); }
+    for index in 2..=WIDTH { step(index); }
+    array.iter().any(predicate);
+    array.iter().map(convert).count();
+    (0..WIDTH).map(convert).sum::<usize>();
+    let local: [u8; WIDTH] = make_array();
+    local.iter().all(predicate);
+    let inferred = [value_a, value_b];
+    for value in inferred { use_value(value); }
+    let repeated = [value; WIDTH];
+    repeated.iter().position(predicate);
+    for value in [value_a, value_b] { use_value(value); }
+}""")
+        self.assertEqual(self.findings("uncharged_decode_work"), [])
+
+    def test_input_sized_ranges_and_limited_chains_are_reported(self):
+        self.write(self.PATH, """fn read(ctx: &DecodeContext<'_>, count: usize, values: &[u8]) {
+    for index in 0..count { step(index); }
+    (0..values.len()).any(predicate);
+    values.iter().take(4).any(predicate);
+    (values.len()..4).any(predicate);
+    for index in start..4 { step(index); }
+    values.iter().any(predicate);
+}""")
+        self.assertEqual([f.line for f in self.findings("uncharged_decode_work")], list(range(2, 8)))
+
+    def test_fixed_array_and_tuple_comparisons_and_copy_scalars(self):
+        self.write(self.PATH, """const WIDTH: usize = 4;
+#[derive(Clone, Copy)] enum Kind { One, Two }
+#[derive(Clone, Copy)] struct Count { value: usize }
+fn read(ctx: &DecodeContext<'_>, left: [u8; WIDTH], right: [u8; WIDTH], tuple: (u32, bool), other: (u32, bool), kind: Kind, count: Count) {
+    left == right;
+    left.cmp(&right);
+    left.contains(&byte);
+    tuple == other;
+    tuple.partial_cmp(&other);
+    kind == other_kind;
+    count.cmp(&other_count);
+    let fixed: (u32, [u8; WIDTH]) = make_tuple();
+    fixed == other_fixed;
+}""")
+        self.assertEqual(self.findings("uncharged_decode_work"), [])
+
+    def test_fixed_container_count_does_not_bound_child_comparisons(self):
+        self.write(self.PATH, """#[derive(Clone, Copy)] struct Borrowed<'a> { text: &'a str }
+fn read(ctx: &DecodeContext<'_>, left: [String; 4], right: [String; 4], pair: (String, String), other: (String, String), borrowed: Borrowed) {
+    for value in left { use_value(value); }
+    left == right;
+    left.contains(&text);
+    pair == other;
+    borrowed == other_borrowed;
+}""")
+        self.assertEqual([f.line for f in self.findings("uncharged_decode_work")], [4, 5, 6, 7])
+
+    def test_fixed_proofs_track_shadowing_and_nested_scans(self):
+        self.write(self.PATH, """fn read(ctx: &DecodeContext<'_>, array: [u8; 4]) {
+    array.iter().any(predicate);
+    { let local: [u8; 4] = fixed(); local.iter().any(predicate); }
+    local.iter().any(predicate);
+    let array = decoded_slice();
+    array.iter().any(predicate);
+    for byte in [first, second] { others.iter().any(predicate); }
+    values.map(|array| array.iter().any(predicate));
+}""")
+        self.assertEqual([f.line for f in self.findings("uncharged_decode_work")], [4, 6, 7, 8])
+
     def test_unadmitted_loops_and_iterator_searches(self):
         self.write(self.PATH, """fn read(ctx: &DecodeContext<'_>) {
     for value in values { use_value(value); }
