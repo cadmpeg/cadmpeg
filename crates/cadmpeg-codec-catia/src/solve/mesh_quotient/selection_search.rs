@@ -983,10 +983,9 @@ impl<'storage> MeshSelectionSearch<'storage, '_> {
                     let candidate = (topology, assignment);
                     let gauge = self.candidate_gauge;
                     let equivalent = if let SearchOutcome::Solved(previous) = &self.outcome {
-                        previous == &candidate
-                            || mesh_candidates_equivalent_with_context(
-                                self.ctx, previous, &candidate, gauge,
-                            )?
+                        mesh_candidates_equivalent_with_context(
+                            self.ctx, previous, &candidate, gauge,
+                        )?
                     } else {
                         false
                     };
@@ -1269,10 +1268,9 @@ impl<'storage> MeshSelectionSearch<'storage, '_> {
                                 let gauge = self.candidate_gauge;
                                 let equivalent =
                                     if let SearchOutcome::Solved(previous) = &self.outcome {
-                                        previous == &candidate
-                                            || mesh_candidates_equivalent_with_context(
-                                                self.ctx, previous, &candidate, gauge,
-                                            )?
+                                        mesh_candidates_equivalent_with_context(
+                                            self.ctx, previous, &candidate, gauge,
+                                        )?
                                     } else {
                                         false
                                     };
@@ -1389,10 +1387,7 @@ impl<'storage> MeshSelectionSearch<'storage, '_> {
             if let Some(candidate) = candidate {
                 let gauge = self.candidate_gauge;
                 let equivalent = if let SearchOutcome::Solved(previous) = &self.outcome {
-                    previous == &candidate
-                        || mesh_candidates_equivalent_with_context(
-                            self.ctx, previous, &candidate, gauge,
-                        )?
+                    mesh_candidates_equivalent_with_context(self.ctx, previous, &candidate, gauge)?
                 } else {
                     false
                 };
