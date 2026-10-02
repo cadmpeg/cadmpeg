@@ -3083,16 +3083,22 @@ def scan_decode_work(sources: dict[Path, str]) -> list[Finding]:
                     if charge in consumed or not decode_charge_dominates(words, parents, repeated, charge, i):
                         continue
                     resolved = amount
+                    extent_start = pairs[evaluation_call_open(words, charge)] + 2
                     for declared, expression in reversed(aliases.get(amount, [])):
                         if declared < charge and decode_charge_dominates(words, parents, repeated, declared, charge):
                             resolved = expression
+                            extent_start = declared
                             break
-                    between = " ".join(words[pairs[evaluation_call_open(words, charge)] + 2:i])
+                    between = " ".join(words[extent_start:i])
                     extents = [extent] + operands
+                    roots = {".".join(operand.split(".")[:count])
+                             for operand in extents for count in range(1, len(operand.split(".")) + 1)}
+                    root_patterns = {r"\s*\.\s*".join(re.escape(part) for part in root.split("."))
+                                     for root in roots if re.fullmatch(r"[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*", root)}
                     mutated = any(re.search(
-                        r"(?:&\s*mut\s+" + re.escape(root) + r"\b|\b" +
-                        re.escape(root) + r"\s*(?:=|\.\s*(?:push|insert|extend|append|resize|retain|clear)\s*\())",
-                        between) for root in {operand.split(".", 1)[0] for operand in extents} if root)
+                        r"(?:&\s*mut\s+" + root + r"\b|\b" +
+                        root + r"\s*(?:=|\.\s*(?:push|insert|extend|append|resize|retain|clear)\s*\())",
+                        between) for root in root_patterns)
                     terms = decode_charge_terms(resolved)
                     covered = bool(terms) and all(any(decode_charge_covers(term, operand)
                                                      for operand in extents) for term in terms)

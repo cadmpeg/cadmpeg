@@ -1739,6 +1739,23 @@ impl Reader<'_> {
 }""")
         self.assertEqual([f.line for f in self.findings("uncharged_decode_work")], [5, 6])
 
+    def test_cached_extent_and_projected_collection_growth_invalidate_admission(self):
+        self.write(self.PATH, """fn read(ctx: &DecodeContext<'_>) {
+    let extent = u64_from_index(values.len());
+    values.push(extra);
+    ctx.charge_work(extent, "scan")?;
+    values.iter().any(predicate);
+    let extent = u64_from_index(values.len());
+    let mutable = &mut values;
+    ctx.charge_work(extent, "scan")?;
+    mutable.push(extra);
+    values.iter().any(predicate);
+    ctx.charge_work(u64_from_index(record.values.len()), "scan")?;
+    record.values.push(extra);
+    record.values.iter().any(predicate);
+}""")
+        self.assertEqual([f.line for f in self.findings("uncharged_decode_work")], [5, 10, 13])
+
 
 class SourcePolicyCommand(TempSourceCase):
     def run_check(self, *args: str) -> tuple[int, str]:
