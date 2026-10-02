@@ -1112,7 +1112,7 @@ fn read_nurbs_curve_inner(
     if minor >= 1 {
         reader.bool()?;
     }
-    let periodic = periodic_knots_checked(&knots, order, cv_count);
+    let periodic = periodic_knots_checked(ctx, &knots, order, cv_count)?;
     let full_knots = reconstruct_checked_knots(ctx, &knots, order, cv_count)?;
     reader.skip_remaining()?;
     let poles = NurbsPoles3::from_checked_lanes(ctx, control_points, weights)?
@@ -1186,8 +1186,8 @@ pub(crate) fn read_nurbs_surface_prefix(
     }
     let v_knots = read_knots(ctx, reader, v_knot_count)?;
     validate_stored_domain(&v_knots, v_order, v_count, reader.position())?;
-    let u_periodic = periodic_knots_checked(&u_knots, u_order, u_count);
-    let v_periodic = periodic_knots_checked(&v_knots, v_order, v_count);
+    let u_periodic = periodic_knots_checked(ctx, &u_knots, u_order, u_count)?;
+    let v_periodic = periodic_knots_checked(ctx, &v_knots, v_order, v_count)?;
     let stored_cv_count = crate::wire::element_count(
         reader,
         usize::try_from(dimension + rational)
@@ -1468,36 +1468,44 @@ fn reconstructed_endpoints(
     Ok(([start, end], capacity))
 }
 
-pub(crate) fn periodic_knots(knots: &[f64], order: usize, cv_count: usize) -> bool {
-    periodic_knots_by(knots, order, cv_count, |value| *value, true)
+pub(crate) fn periodic_knots(ctx: &DecodeContext<'_>, knots: &[f64], order: usize, cv_count: usize) -> Result<bool, CodecError> {
+    periodic_knots_by(ctx, knots, order, cv_count, |value| *value, true)
 }
 
-fn periodic_knots_checked(knots: &[FiniteReal], order: usize, cv_count: usize) -> bool {
-    periodic_knots_by(knots, order, cv_count, |value| value.get(), false)
+fn periodic_knots_checked(ctx: &DecodeContext<'_>, knots: &[FiniteReal], order: usize, cv_count: usize) -> Result<bool, CodecError> {
+    periodic_knots_by(ctx, knots, order, cv_count, |value| value.get(), false)
 }
 
 fn periodic_knots_by<T>(
+    ctx: &DecodeContext<'_>,
     knots: &[T],
     order: usize,
     cv_count: usize,
     value: impl Fn(&T) -> f64,
     require_source_finite: bool,
-) -> bool {
+) -> Result<bool, CodecError> {
     // This is ON_IsKnotVectorPeriodic over the stored, zero-based knot array.
     if order < 3 || cv_count < order || (order <= 4 && cv_count < order + 2) {
-        return false;
+        return Ok(false);
     }
     if order > 4 && cv_count < 2 * order - 2 {
-        return false;
+        return Ok(false);
     }
-    let scale = knots
-        .iter()
-        .fold(0.0_f64, |scale, knot| scale.max(value(knot).abs()));
-    if scale == 0.0
-        || !scale.is_finite()
-        || require_source_finite && knots.iter().any(|knot| !value(knot).is_finite())
-    {
-        return false;
+    let mut scale = 0.0_f64;
+    for knot in knots {
+        ctx.charge_work(1, "Rhino periodic knot scale")?;
+        scale = scale.max(value(knot).abs());
+    }
+    if scale == 0.0 || !scale.is_finite() {
+        return Ok(false);
+    }
+    if require_source_finite {
+        for knot in knots {
+            ctx.charge_work(1, "Rhino periodic knot finiteness")?;
+            if !value(knot).is_finite() {
+                return Ok(false);
+            }
+        }
     }
     let knot = |index: usize| value(&knots[index]) / scale;
     let mut tolerance = (knot(order - 1) - knot(order - 3)).abs() * f64::EPSILON.sqrt();
@@ -1506,14 +1514,15 @@ fn periodic_knots_by<T>(
     let mut index = 0;
     let mut other = cv_count - order + 1;
     while paired > 0 {
+        ctx.charge_work(1, "Rhino periodic knot comparison")?;
         if ((knot(index + 1) - knot(index)) + (knot(other) - knot(other + 1))).abs() > tolerance {
-            return false;
+            return Ok(false);
         }
         index += 1;
         other += 1;
         paired -= 1;
     }
-    true
+    Ok(true)
 }
 
 fn validate_stored_domain(

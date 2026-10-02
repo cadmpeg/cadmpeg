@@ -1926,7 +1926,7 @@ fn check_knot_roundtrip(
             crate::curves::GeometryError::Codec(CodecError::ResourceLimit(limit)) => CodecError::ResourceLimit(limit),
             error => CodecError::NotImplemented(format!("{direction} {id}: {error}")),
         })?;
-    let periodic = crate::surfaces::periodic_knots(stored, order, count);
+    let periodic = crate::surfaces::periodic_knots(&writer_ctx, stored, order, count)?;
     if reconstructed != full || periodic != declared_periodic {
         return Err(CodecError::NotImplemented(format!(
             "{direction} {id} knot endpoints or periodic flag are not native-canonical"

@@ -50,3 +50,78 @@ fn raw_knot_reconstruction_preserves_work_across_successive_calls() {
     assert_eq!(limit.additional, 9);
     assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit));
 }
+
+#[test]
+fn periodic_knot_scans_preserve_first_and_later_caller_refusals() {
+    for checked in [false, true] {
+        let visits = if checked { 9 } else { 16 };
+        for cap in 0..visits {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+            let result = if checked {
+                let knots = STORED.map(|value| cadmpeg_ir::scalar::FiniteReal::new(value).expect("finite"));
+                crate::surfaces::periodic_knots_checked(&ctx, &knots, 3, 6)
+            } else {
+                crate::surfaces::periodic_knots(&ctx, &STORED, 3, 6)
+            };
+            let Err(CodecError::ResourceLimit(limit)) = result else {
+                panic!("every visited knot and interval needs admission");
+            };
+            assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+            assert_eq!(limit.used, cap);
+            assert_eq!(limit.additional, 1);
+            let operation = if cap < 7 {
+                "Rhino periodic knot scale"
+            } else if !checked && cap < 14 {
+                "Rhino periodic knot finiteness"
+            } else {
+                "Rhino periodic knot comparison"
+            };
+            assert_eq!(limit.operation, operation);
+            assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit));
+        }
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = visits;
+        policy.limits.max_retained_bytes = 0;
+        policy.limits.max_collection_items = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+        let result = if checked {
+            let knots = STORED.map(|value| cadmpeg_ir::scalar::FiniteReal::new(value).expect("finite"));
+            crate::surfaces::periodic_knots_checked(&ctx, &knots, 3, 6)
+        } else {
+            crate::surfaces::periodic_knots(&ctx, &STORED, 3, 6)
+        };
+        assert!(result.expect("exact visits"));
+        ctx.finish_session().expect("no allocation or extra pass");
+    }
+}
+
+#[test]
+fn periodic_knot_scan_admits_before_reading_and_keeps_early_exit_order() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 3;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+    let reads = std::cell::Cell::new(0);
+    let result = crate::surfaces::periodic_knots_by(&ctx, &STORED, 3, 6, |value| {
+        reads.set(reads.get() + 1);
+        *value
+    }, true);
+    assert_eq!(reads.get(), 3);
+    assert!(matches!(result, Err(CodecError::ResourceLimit(_))));
+
+    let arena = DecodeArena::new();
+    policy.limits.max_work_units = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+    assert!(!crate::surfaces::periodic_knots(&ctx, &STORED, 2, 6).expect("fixed header rejection"));
+    ctx.finish_session().expect("no scan");
+
+    let arena = DecodeArena::new();
+    policy.limits.max_work_units = 15;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+    assert!(!crate::surfaces::periodic_knots(&ctx, &[0., 0., 0., 1., 2., 3., 3.], 3, 6).expect("first unequal interval"));
+    ctx.finish_session().expect("early mismatch stops the paired scan");
+}
