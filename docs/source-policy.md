@@ -142,14 +142,23 @@ production function, method, trait implementation and closure in
 `cadmpeg-core`, `cadmpeg-ir`, `cadmpeg-codec-*`, `cadmpeg-container`,
 `cadmpeg-asm`, `cadmpeg-parasolid` and `cadmpeg-protein`. A body without a
 `DecodeContext` cannot admit input-sized storage or work. Writer, encoder,
-binary and test exclusions apply to body selection.
+binary and test exclusions apply to body selection. Automatically derived
+bodies, including serde derives and their generated helpers, are excluded.
+A decode call into a derived implementation is judged at the call using the
+concrete field costs. Hand-written implementations retain their own
+obligations. Serialize implementation bodies remain under writer exclusion.
 
 A resolved call to a checked body is proved at the caller. Its body owns the
 admission obligation. Resolution uses the caller's compiler typing environment.
 Closures have separate checked bodies. A private trait call is proved when
 all reachable implementations have checked bodies. Generic helper calls use
-concrete instantiations collected from the checked bodies. Type-dependent
-allocation and work defects are reported at the instantiating call, with the
+symbolic storage and work proofs in the owning body. A propagated storage
+charge of the operand count times `size_of::<T>()` admits that count of
+slots for every element type. Each byte charge is consumed once; branch
+joins retain only charges present on every path, and mutation invalidates
+operand evidence. Concrete instantiations judge costs that run through
+uncharged type-parameter traits, including Clone, comparison, hash and
+conversion. Their defects are reported at the instantiating call, with the
 concrete type. Checked dependency generics use compiler MIR to resolve their
 operation calls. Local and imported bodies use the same exclusions. The driver encodes MIR in check metadata for this resolution. Trait-object and function-pointer calls require proof.
 
@@ -160,6 +169,15 @@ work rules evaluate these extents against operand types and prior admission.
 Summaries distinguish fixed moves and constructors from input-sized
 operations with the same name. An external operation missing from this table
 uses the third rule, including calls with scalar operands or no operands.
+Run `python3 scripts/check-decode-policy.py --list-externals --output FILE`
+to list every distinct resolved external operation reached by checked
+production bodies. The TSV columns are `external_operation`, resolved path,
+allocation behavior and work extent. `Argument(N)` names a zero-based
+operand, including the receiver at zero. `Input(N)` denotes result or
+internal allocation bounded by that operand. Type-dependent Clone,
+conversion and result summaries use the concrete type. `None` and `Fixed`
+have no input-sized allocation and no input-sized work. A missing entry
+prints `MISSING` and fails inventory mode. Compiler errors also fail it.
 
 ### Allocation
 

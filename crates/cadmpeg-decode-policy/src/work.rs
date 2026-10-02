@@ -37,7 +37,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
                         return;
                     }
                     if let Some(custom) = self.custom_trait(expression, definition) {
-                        if !self.checked_body(custom) && !self.tcx.is_automatically_derived(self.tcx.parent(custom)) {
+                        if !self.checked_body(custom) && !types::derived(self.tcx, custom) {
                             self.work_report(
                                 expression.span,
                                 Shape::Unknown,
@@ -46,7 +46,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
                             );
                             return;
                         }
-                        if !self.tcx.is_automatically_derived(self.tcx.parent(custom)) { return; }
+                        if !types::derived(self.tcx, custom) { return; }
                     }
                 }
                 let bounded =

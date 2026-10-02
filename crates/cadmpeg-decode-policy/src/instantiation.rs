@@ -308,6 +308,9 @@ pub(crate) fn check_imported<'tcx>(
                     rustc_middle::ty::EarlyBinder::bind(tcx, operand.node.ty(body, tcx)),
                 )
             });
+            if std::env::var_os("CADMPEG_POLICY_EXTERNALS").is_some() && !types::checked(tcx, resolved.def_id()) {
+                reporter.findings.externals.insert(external::inventory_row(tcx, resolved.def_id(), receiver));
+            }
             let Some(summary) = crate::external::summary(tcx, resolved.def_id(), receiver) else {
                 reporter.report(
                     root.span,
@@ -362,6 +365,11 @@ pub(crate) fn check_imported<'tcx>(
                                     concrete: bool| {
                 match summary.allocation {
                     external::Allocation::None => types::Shape::Fixed,
+                    external::Allocation::Input(index) => args.get(index).map_or(types::Shape::Unknown, |operand| {
+                        let value = operand.node.ty(body, tcx);
+                        let value = if concrete { instance.instantiate_mir(tcx, rustc_middle::ty::EarlyBinder::bind(tcx, value)) } else { value };
+                        types::work(tcx, value, &mut Vec::new())
+                    }),
                     external::Allocation::Clone if concrete => reporter.clone_shape(output),
                     external::Allocation::Collect
                         if vector_output

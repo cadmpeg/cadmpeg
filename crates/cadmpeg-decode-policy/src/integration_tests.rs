@@ -59,7 +59,7 @@ fn check_fixture(name: &str) {
             format!("cadmpeg_core={}", dependency.display()),
         );
     }
-    if name == "thirdparty" {
+    if matches!(name, "thirdparty" | "serde") {
         let executable = std::env::current_exe().expect("test executable");
         let target = executable
             .ancestors()
@@ -77,20 +77,21 @@ fn check_fixture(name: &str) {
             }
         }
         let mut dependencies = Vec::new();
-        for name in ["roxmltree", "serde_json"] {
+        for name in ["roxmltree", "serde_json", "serde"] {
             let prefix = format!("lib{name}-");
             let library = directories
                 .iter()
                 .filter(|directory| directory.is_dir())
                 .flat_map(|directory| std::fs::read_dir(directory).expect("dependency listing"))
                 .map(|entry| entry.expect("dependency entry").path())
-                .find(|path| {
+                .filter(|path| {
                     path.file_name()
                         .is_some_and(|file| file.to_string_lossy().starts_with(&prefix))
                         && path
                             .extension()
                             .is_some_and(|extension| extension == "rmeta")
                 })
+                .max_by_key(|path| std::fs::metadata(path).and_then(|metadata| metadata.modified()).expect("dependency modification time"))
                 .expect("fixture dependency library");
             dependencies.push(format!("{name}={}", library.display()));
         }
@@ -100,6 +101,7 @@ fn check_fixture(name: &str) {
             std::env::join_paths(directories).expect("dependency paths"),
         );
     }
+    if name == "external" { command.env("CADMPEG_POLICY_EXTERNALS", "1"); }
     let output = command
         .args([
             "--exact",
@@ -123,10 +125,17 @@ fn check_fixture(name: &str) {
             "{actual}"
         );
     }
+    if name == "external" {
+        for operation in ["abs", "first", "parse", "eq_ignore_ascii_case", "from_fn"] {
+            assert!(actual.lines().any(|line| line.starts_with("external_operation\t") && line.split('\t').nth(1).is_some_and(|path| path.ends_with(&format!("::{operation}"))) && !line.contains("MISSING")), "missing inventory cost for {operation}: {actual}");
+        }
+        assert!(actual.lines().any(|line| line.starts_with("external_operation\t") && line.contains("std::thread::current\tMISSING")), "{actual}");
+    }
     let mut findings = Vec::new();
     for line in actual.lines() {
         let fields: Vec<_> = line.split('\t').collect();
         if fields.len() == 4
+            && matches!(fields[0], "uncharged_decode_allocation" | "uncharged_decode_work" | "unproven_decode_charge")
             && (if matches!(
                 name,
                 "edges"
@@ -138,6 +147,7 @@ fn check_fixture(name: &str) {
                     | "thirdparty"
                     | "symbolic"
                     | "derived"
+                    | "serde"
             ) {
                 true
             } else if name.starts_with("work") {
@@ -271,3 +281,6 @@ fn symbolic_generic_and_derived_costs() {
 
 #[test]
 fn derived_call_costs() { check_fixture("derived"); }
+
+#[test]
+fn serde_derived_body_exclusion() { check_fixture("serde"); }
