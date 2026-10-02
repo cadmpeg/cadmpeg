@@ -365,12 +365,12 @@ fn untrimmed_surface_curve() -> CadIr {
         id: "test:model:loop#loop".try_into().expect("valid identity"),
         face: "test:model:face#face".try_into().expect("valid identity"),
         boundary: crate::topology::LoopBoundary::Ring(
-            crate::topology::LoopRing::new(
+            crate::topology::LoopRing::new(&cadmpeg_test_support::service_decode_context(),
                 vec!["test:model:coedge#coedge"
                     .try_into()
                     .expect("valid identity")],
                 Vec::new(),
-            )
+            ).expect("fixture ring admission")
             .expect("valid loop ring"),
         ),
     });

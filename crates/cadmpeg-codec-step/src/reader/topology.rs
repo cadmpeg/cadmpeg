@@ -3361,7 +3361,7 @@ fn build_one(
                         ctx.insert_hash_set(&mut typed, loop_step, "step_brep_typed")?;
                     }
                     let Ok(ring) =
-                        cadmpeg_ir::topology::LoopRing::new_for_decode(ctx, coedge_ids, Vec::new())
+                        cadmpeg_ir::topology::LoopRing::new(ctx, coedge_ids, Vec::new())
                             .map_err(cadmpeg_core::CodecError::from)?
                     else {
                         note_failure(failure, loop_step, CarrierKind::PolyLoopPointCarrier);
@@ -3622,7 +3622,7 @@ fn build_one(
                     }
                 }
                 let Ok(ring) =
-                    cadmpeg_ir::topology::LoopRing::new_for_decode(ctx, coedge_ids, Vec::new())
+                    cadmpeg_ir::topology::LoopRing::new(ctx, coedge_ids, Vec::new())
                         .map_err(cadmpeg_core::CodecError::from)?
                 else {
                     note_failure(failure, loop_step, CarrierKind::EdgeLoopCarrier);

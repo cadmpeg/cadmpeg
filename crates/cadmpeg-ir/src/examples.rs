@@ -74,6 +74,8 @@ type FaceDef = (
 
 /// A `10 mm` axis-aligned cube spanning the origin to `(10, 10, 10)`.
 pub fn unit_cube() -> Result<CadIr, ExampleError> {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &cadmpeg_core::decode::DecodePolicy::default())?;
     let s = 10.0_f64;
 
     let corners = [
@@ -238,9 +240,10 @@ pub fn unit_cube() -> Result<CadIr, ExampleError> {
             id: loop_id.clone(),
             face: cube_id!(FaceId, "face", name.clone()),
             boundary: crate::topology::LoopBoundary::Ring(crate::topology::LoopRing::new(
+                &ctx,
                 coedge_ids.clone(),
                 Vec::new(),
-            )?),
+            ).map_err(crate::topology::LoopRingAdmissionError::from)?.map_err(crate::topology::LoopRingAdmissionError::from)?),
         });
         ir.model.faces.push(Face {
             id: cube_id!(FaceId, "face", name.clone()),
@@ -297,8 +300,6 @@ pub fn unit_cube() -> Result<CadIr, ExampleError> {
         visible: None,
     });
 
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &cadmpeg_core::decode::DecodePolicy::default())?;
     ir.finalize(&ctx)?;
 
     Ok(ir)

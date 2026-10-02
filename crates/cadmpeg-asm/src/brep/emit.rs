@@ -5444,7 +5444,7 @@ pub(super) fn emit_loops(
         if r.head() == "loop" && kept_loops.contains(&i) {
             let Some(owner) = r.ref_at(5) else { continue };
             let coedges = ring_coedges(ctx, r, by_index, kept_coedges, format)?;
-            let Ok(ring) = cadmpeg_ir::topology::LoopRing::new_for_decode(ctx, coedges, Vec::new())
+            let Ok(ring) = cadmpeg_ir::topology::LoopRing::new(ctx, coedges, Vec::new())
                 .map_err(cadmpeg_core::CodecError::from)?
             else {
                 continue;

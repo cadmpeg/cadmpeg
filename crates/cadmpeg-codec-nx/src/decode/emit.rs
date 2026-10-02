@@ -1203,7 +1203,7 @@ pub(super) fn emit_topology(
                 coedges.push(fin_id.try_clone_for_decode(ctx, "nx loop coedge identity")?);
             }
             let ring = if all_resolved {
-                cadmpeg_ir::topology::LoopRing::new_for_decode(ctx, coedges, Vec::new())
+                cadmpeg_ir::topology::LoopRing::new(ctx, coedges, Vec::new())
                     .map_err(cadmpeg_core::CodecError::from)?
                     .ok()
             } else {

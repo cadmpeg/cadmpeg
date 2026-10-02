@@ -90,10 +90,10 @@ fn edgeless_doc() -> CadIr {
         id: LoopId::mint("test:model:loop#lp0").expect("identity grammar"),
         face: FaceId::mint("test:model:face#f0").expect("identity grammar"),
         boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
-            cadmpeg_ir::topology::LoopRing::new(
+            cadmpeg_ir::topology::LoopRing::new(&cadmpeg_test_support::service_decode_context(),
                 vec![CoedgeId::mint("test:model:coedge#ce0").expect("identity grammar")],
                 Vec::new(),
-            )
+            ).expect("fixture ring admission")
             .expect("valid loop ring"),
         ),
     });

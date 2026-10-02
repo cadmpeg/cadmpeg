@@ -253,7 +253,7 @@ impl Brep {
                         });
                     }
                     *ring =
-                        cadmpeg_ir::topology::LoopRing::new_for_decode(ctx, coedges, vertex_uses)
+                        cadmpeg_ir::topology::LoopRing::new(ctx, coedges, vertex_uses)
                             .map_err(cadmpeg_core::CodecError::from)?
                             .map_err(|error| {
                                 cadmpeg_core::CodecError::malformed(format_args!(
@@ -2486,7 +2486,7 @@ fn decode_graph(
                 u64_from_index(off),
                 Some("00_0f"),
             )?;
-            let Ok(ring) = cadmpeg_ir::topology::LoopRing::new_for_decode(ctx, coedges, Vec::new())
+            let Ok(ring) = cadmpeg_ir::topology::LoopRing::new(ctx, coedges, Vec::new())
                 .map_err(cadmpeg_core::CodecError::from)?
             else {
                 continue;
@@ -7325,7 +7325,7 @@ fn synthesize_cylinder_seams(
         for id in &ring_ids {
             ring_members.push(id.try_clone_for_decode(ctx, "SLDPRT seam ring identity")?);
         }
-        let ring = cadmpeg_ir::topology::LoopRing::new_for_decode(ctx, ring_members, Vec::new())
+        let ring = cadmpeg_ir::topology::LoopRing::new(ctx, ring_members, Vec::new())
             .map_err(cadmpeg_core::CodecError::from)?
             .map_err(|error| {
                 cadmpeg_core::CodecError::malformed(format_args!(
@@ -7828,7 +7828,7 @@ fn synthesize_sphere_seams(
             use_curve: None,
             pcurves: pcurve_uses,
         });
-        let ring = cadmpeg_ir::topology::LoopRing::new_for_decode(ctx, ring, Vec::new())
+        let ring = cadmpeg_ir::topology::LoopRing::new(ctx, ring, Vec::new())
             .map_err(cadmpeg_core::CodecError::from)?
             .map_err(|error| {
                 cadmpeg_core::CodecError::malformed(format_args!(
@@ -8797,11 +8797,11 @@ mod tests {
             id: LoopId::mint(format!("test:model:entity#{id}")).expect("identity grammar"),
             face: FaceId::mint(format!("test:model:entity#{face}")).expect("identity grammar"),
             boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
-                cadmpeg_ir::topology::LoopRing::new(
+                cadmpeg_ir::topology::LoopRing::new(&cadmpeg_test_support::service_decode_context(),
                     vec![CoedgeId::mint(format!("test:model:entity#{coedge}"))
                         .expect("identity grammar")],
                     Vec::new(),
-                )
+                ).expect("fixture ring admission")
                 .expect("valid loop ring"),
             ),
         };
@@ -9643,7 +9643,7 @@ mod tests {
                 id: loop_id.clone(),
                 face: FaceId::mint("test:model:entity#face").expect("identity grammar"),
                 boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
-                    cadmpeg_ir::topology::LoopRing::new(vec![coedge_id.clone()], Vec::new())
+                    cadmpeg_ir::topology::LoopRing::new(&cadmpeg_test_support::service_decode_context(), vec![coedge_id.clone()], Vec::new()).expect("fixture ring admission")
                         .expect("valid loop ring"),
                 ),
             }],

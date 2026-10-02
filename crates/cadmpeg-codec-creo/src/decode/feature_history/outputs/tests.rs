@@ -188,7 +188,7 @@ fn selected_edge_ir() -> (CadIr, EdgeId) {
         id: loop_id.clone(),
         face: face_id,
         boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
-            cadmpeg_ir::topology::LoopRing::new(vec![coedge_id.clone()], Vec::new())
+            cadmpeg_ir::topology::LoopRing::new(&cadmpeg_test_support::service_decode_context(), vec![coedge_id.clone()], Vec::new()).expect("fixture ring admission")
                 .expect("valid loop ring"),
         ),
     });
@@ -954,7 +954,7 @@ fn edge_output_joins_reject_duplicate_topology_owners() {
         id: loop_id.clone(),
         face: face_id.clone(),
         boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
-            cadmpeg_ir::topology::LoopRing::new(vec![coedge_id.clone()], Vec::new())
+            cadmpeg_ir::topology::LoopRing::new(&cadmpeg_test_support::service_decode_context(), vec![coedge_id.clone()], Vec::new()).expect("fixture ring admission")
                 .expect("valid loop ring"),
         ),
     });
@@ -983,7 +983,7 @@ fn edge_output_joins_reject_duplicate_topology_owners() {
         face: FaceId::mint("test:model:entity#creo:ambiguous:face".to_string())
             .expect("identity grammar"),
         boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
-            cadmpeg_ir::topology::LoopRing::new(vec![coedge_id.clone()], Vec::new())
+            cadmpeg_ir::topology::LoopRing::new(&cadmpeg_test_support::service_decode_context(), vec![coedge_id.clone()], Vec::new()).expect("fixture ring admission")
                 .expect("valid loop ring"),
         ),
     });

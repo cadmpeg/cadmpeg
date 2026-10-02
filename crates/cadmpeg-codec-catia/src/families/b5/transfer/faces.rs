@@ -788,7 +788,7 @@ pub(super) fn emit_faces(
                     "catia_b5_loop_annotation",
                 )?;
             }
-            let Ok(ring) = cadmpeg_ir::topology::LoopRing::new_for_decode(
+            let Ok(ring) = cadmpeg_ir::topology::LoopRing::new(
                 admission.context(),
                 coedge_ids,
                 vertex_uses,

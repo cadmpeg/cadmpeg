@@ -972,11 +972,11 @@ fn shell_and_loop_attribute_chains_retain_their_native_owners() {
             id: LoopId::mint(id(FORMAT, 4).into_string()).expect("identity grammar"),
             face: face_id,
             boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
-                cadmpeg_ir::topology::LoopRing::new(
+                cadmpeg_ir::topology::LoopRing::new(&cadmpeg_test_support::service_decode_context(),
                     vec![cadmpeg_ir::ids::CoedgeId::mint("test:model:coedge#0")
                         .expect("identity grammar")],
                     Vec::new(),
-                )
+                ).expect("fixture ring admission")
                 .expect("valid loop ring"),
             ),
         }],

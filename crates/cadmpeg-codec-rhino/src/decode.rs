@@ -4689,7 +4689,7 @@ fn stage_extrusion_caps(
                 id: loop_id.try_clone_for_decode(ctx, "Rhino typed identity copy")?,
                 face: face_id.try_clone_for_decode(ctx, "Rhino typed identity copy")?,
                 boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
-                    cadmpeg_ir::topology::LoopRing::new_for_decode(
+                    cadmpeg_ir::topology::LoopRing::new(
                         ctx,
                         vec![coedge_id.try_clone_for_decode(ctx, "Rhino typed identity copy")?],
                         Vec::new(),
@@ -5570,7 +5570,7 @@ fn stage_brep(input: BrepTransferInput<'_>) -> Result<BrepDraft, crate::curves::
             id: id.try_clone_for_decode(ctx, "Rhino typed identity copy")?,
             face: face_id.try_clone_for_decode(ctx, "Rhino typed identity copy")?,
             boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
-                cadmpeg_ir::topology::LoopRing::new_for_decode(ctx, coedges, Vec::new())
+                cadmpeg_ir::topology::LoopRing::new(ctx, coedges, Vec::new())
                     .map_err(cadmpeg_core::CodecError::from)?
                     .map_err(|error| {
                         crate::curves::GeometryError::unpositioned(error.to_string())

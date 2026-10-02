@@ -1968,7 +1968,7 @@ fn native_loop_ring(
             "creo B-rep ring coedge identities",
         )?);
     }
-    match cadmpeg_ir::topology::LoopRing::new_for_decode(ctx, coedge_ids, Vec::new())
+    match cadmpeg_ir::topology::LoopRing::new(ctx, coedge_ids, Vec::new())
         .map_err(cadmpeg_core::CodecError::from)?
     {
         Ok(ring) => Ok(ring),
