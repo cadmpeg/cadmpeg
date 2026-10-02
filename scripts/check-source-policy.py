@@ -458,10 +458,48 @@ def scan_saturating_arithmetic(path: Path, code: str) -> list[Finding]:
     ) for match in re.finditer(r"\bsaturating_\w+\s*(?:::\s*<[^;{}]*>)?\s*\(", code)]
 
 
+WRAPPING_CALL = re.compile(r"\bwrapping_\w+\s*(?:::\s*<[^;{}]*>)?\s*\(")
+WRAPPING_MARKER = re.compile(r"^\s*// wrapping-exception: (\S.*?)\s*$")
+
+
+def scan_wrapping_arithmetic(path: Path, source: str, code: str) -> list[Finding]:
+    """Admit one format-defined modular operation per local reason."""
+    findings = []
+    markers = standalone_markers(source, WRAPPING_MARKER)
+    # Mark comment positions with identifiers before masking test items. This
+    # keeps test-only markers out of stale-marker checks without parsing Rust twice per marker.
+    probe = source.splitlines(keepends=True)
+    for index in markers:
+        probe[index] = re.sub(r"[^\r\n]", "x", probe[index])
+    active, _ = production_source("".join(probe))
+    active_lines = active.splitlines()
+    markers = {index: reason for index, reason in markers.items() if active_lines[index].strip()}
+    calls_by_line: dict[int, int] = {}
+    for match in WRAPPING_CALL.finditer(code):
+        index = code.count("\n", 0, match.start())
+        calls_by_line[index] = calls_by_line.get(index, 0) + 1
+    for index in markers:
+        if calls_by_line.get(index + 1, 0) != 1:
+            findings.append(Finding(
+                "wrapping_exception", relative_path(path), index + 1,
+                "Stale wrapping exception; annotate exactly one modular call on the next line.",
+            ))
+    for index, count in calls_by_line.items():
+        if index - 1 in markers and count == 1:
+            continue
+        for _ in range(count):
+            findings.append(Finding(
+                "wrapping_arithmetic", relative_path(path), index + 1,
+                "Use checked arithmetic; format-defined modular arithmetic requires a standalone wrapping-exception reason on the preceding line.",
+            ))
+    return findings
+
+
 def scan_patterns(path: Path, source: str) -> list[Finding]:
     """Inspect each source pattern once and report its location."""
     code, size = production_source(source)
     findings = scan_saturating_arithmetic(path, code)
+    findings.extend(scan_wrapping_arithmetic(path, source, code))
 
     def report(rule: str, line: int, message: str) -> None:
         findings.append(Finding(rule, relative_path(path), line, message))

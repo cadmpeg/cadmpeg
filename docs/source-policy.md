@@ -73,6 +73,16 @@ arithmetic. The overflow branch propagates the caller context's resource refusal
 in decode code or a typed error elsewhere. Constant expressions must preserve
 the exact value or reject the invalid constant.
 
+## Wrapping exceptions
+
+Production `wrapping_*` calls fail with `wrapping_arithmetic` unless the file
+format defines modular arithmetic and a standalone `// wrapping-exception:
+<reason>` comment immediately precedes exactly one call. The nonempty reason
+states the modular operation. Index and length arithmetic use checked operations
+and an explicit overflow branch. Stale markers and markers before multiple calls
+fail with `wrapping_exception`. Test-only markers and calls are excluded. Comments
+inside literals and trailing comments grant no exception.
+
 ## Endian exceptions
 
 A standalone line comment immediately before a conversion admits exactly one

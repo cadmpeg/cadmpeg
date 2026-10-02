@@ -8804,6 +8804,7 @@ fn fc05_scalar(body: &[u8], offset: usize) -> Option<(f64, usize)> {
     if matches!(prefix, 0xe0..=0xe3 | 0xf7 | 0xf8) || offset + 7 > body.len() {
         return None;
     }
+    // wrapping-exception: DICT prefix remapping reconstructs the low IEEE byte modulo 256
     let byte_1 = prefix.wrapping_sub(0x8b);
     scalar::ieee7_with_prefix(
         body,

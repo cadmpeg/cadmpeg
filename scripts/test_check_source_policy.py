@@ -1240,5 +1240,37 @@ class SaturatingArithmetic(TempSourceCase):
         self.assertEqual(self.findings("saturating_arithmetic"), [])
 
 
+class WrappingArithmetic(TempSourceCase):
+    def test_marker_admits_only_one_next_line_call(self) -> None:
+        self.write("crates/demo/src/lib.rs", """fn f() {
+    // wrapping-exception: checksum is an eight-bit modular sum
+    sum = sum.wrapping_add(byte);
+    sum = sum.wrapping_add(byte);
+    // wrapping-exception: two calls are not one operation
+    sum = sum.wrapping_add(byte).wrapping_add(byte);
+}
+""")
+        self.assertEqual([f.line for f in self.findings("wrapping_arithmetic")], [4, 6, 6])
+        self.assertEqual([f.line for f in self.findings("wrapping_exception")], [5])
+
+    def test_empty_stale_inline_and_literal_reasons_grant_nothing(self) -> None:
+        for reason in ["// wrapping-exception: ", "// wrapping-exception: checksum\n\n",
+                       'let s = "// wrapping-exception: checksum";',
+                       "let n = 0; // wrapping-exception: checksum"]:
+            self.write("crates/demo/src/lib.rs", f"fn f() {{\n{reason}\nsum.wrapping_add(byte);\n}}\n")
+            self.assertEqual(len(self.findings("wrapping_arithmetic")), 1)
+        self.assertEqual(len(self.findings("wrapping_exception")), 0)
+
+    def test_test_only_markers_and_calls_are_exempt(self) -> None:
+        self.write("crates/demo/src/lib.rs", """#[cfg(test)] mod tests {
+    // wrapping-exception: stale marker in a test
+    fn f() { sum.wrapping_add(byte); }
+}
+fn f() { count.checked_sub(1); }
+""")
+        self.assertEqual(self.findings("wrapping_arithmetic"), [])
+        self.assertEqual(self.findings("wrapping_exception"), [])
+
+
 if __name__ == "__main__":
     unittest.main()

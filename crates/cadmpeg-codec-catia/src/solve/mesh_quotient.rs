@@ -5415,13 +5415,15 @@ fn orientation_fingerprint(
         let domain = &quotient.domains[root];
         domain.len().hash(&mut hasher);
         let mut xor = 0u64;
-        let mut sum = 0u64;
+        let mut sum = 0u128;
         for point in domain.iter() {
             let mut point_hasher = DefaultHasher::new();
             point.hash(&mut point_hasher);
             let value = point_hasher.finish();
             xor ^= value;
-            sum = sum.wrapping_add(value);
+            sum = sum.checked_add(u128::from(value)).ok_or_else(|| {
+                ctx.refuse_codec_limit("sum orientation fingerprint hashes", u64::MAX, u64::MAX)
+            })?;
         }
         xor.hash(&mut hasher);
         sum.hash(&mut hasher);
