@@ -3173,7 +3173,7 @@ pub(super) fn project(
     }
 
     drop(index);
-    let mut commit_session = CommitSession::new(ir, ctx)?;
+    let mut commit_session = CommitSession::new(ir, ctx, None)?;
     for (entry, candidate) in legacy_face_candidates {
         if commit_session
             .commit_model(candidate)?

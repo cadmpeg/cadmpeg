@@ -1069,7 +1069,7 @@ pub(super) fn project(
 
     // The session holds the document's exclusive borrow. Its identity index
     // remains unbuilt until the first body reaches commit admission.
-    let mut commit_session = CommitSession::new(ir, ctx)?;
+    let mut commit_session = CommitSession::new(ir, ctx, None)?;
     for definition in body_definitions {
         let ir = commit_session.document();
         let entry = definition.entry;

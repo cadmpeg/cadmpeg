@@ -397,7 +397,7 @@ pub(super) fn decode(
     carrier_index: &CarrierIndex,
     ctx: &DecodeContext<'_>,
 ) -> Result<StageOutcome<TopologyData>, CodecError> {
-    let mut commit_session = CommitSession::new(ir, ctx)?;
+    let mut commit_session = CommitSession::new(ir, ctx, None)?;
     let mut result = StageOutcome {
         value: TopologyData {
             body_by_root: BTreeMap::new(),
