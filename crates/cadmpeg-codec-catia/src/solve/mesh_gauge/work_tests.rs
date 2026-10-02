@@ -1,0 +1,48 @@
+use super::{map_endpoint_relation_state, relation_row_gauge_mapping, EdgeBoundaryLayout,
+    EdgeRow, MeshCandidateGauge, MeshEdgeGeometry, MeshEndpointRelationSelection};
+use cadmpeg_core::CodecError;
+use cadmpeg_core::decode::ResourceDimension;
+
+#[test]
+fn relation_choice_sort_refuses_assignment_bytes() {
+    let state = (vec![], vec![vec![MeshEndpointRelationSelection::Enumerated {
+        assignments: vec![0; 128], edge_pairs: vec![],
+    }; 2]]);
+    let gauge = MeshCandidateGauge {
+        edge_rows: &[], edge_faces: &[], edge_geometry: &[], edge_candidates: &[],
+        edge_identity_evidence: &[], coordinate_gauge: None,
+    };
+    let result = crate::test_support::with_work_limit(20_000, |ctx| {
+        map_endpoint_relation_state(ctx, &state, gauge, &[])
+    });
+    assert!(matches!(result, Err(CodecError::ResourceLimit(limit))
+        if limit.dimension == ResourceDimension::WorkUnits
+            && limit.operation == "catia_relation_mapped_choices_sort"));
+    assert_eq!(crate::test_support::with_service_context(|ctx| {
+        map_endpoint_relation_state(ctx, &state, gauge, &[])
+    }).expect("service work allowance"), Some(state));
+}
+
+#[test]
+fn relation_row_sort_refuses_endpoint_signature_bytes() {
+    let rows = std::array::from_fn::<_, 2, _>(|_| EdgeRow::new(1, vec![0, 1], EdgeBoundaryLayout::CompleteBoundaryRun)
+        .expect("nonempty handles"));
+    let faces = [[0, 1]; 2];
+    let geometry = [MeshEdgeGeometry::Line; 2];
+    let candidates = [vec![[0, 1]], vec![[0, 1]]];
+    let evidence = [false; 2];
+    let gauge = MeshCandidateGauge {
+        edge_rows: &rows, edge_faces: &faces, edge_geometry: &geometry,
+        edge_candidates: &candidates, edge_identity_evidence: &evidence, coordinate_gauge: None,
+    };
+    let state = (vec![None; 2], vec![vec![MeshEndpointRelationSelection::Deferred; 128]]);
+    let result = crate::test_support::with_work_limit(30_000, |ctx| {
+        relation_row_gauge_mapping(ctx, &state, gauge, &[0, 1])
+    });
+    assert!(matches!(result, Err(CodecError::ResourceLimit(limit))
+        if limit.dimension == ResourceDimension::WorkUnits
+            && limit.operation == "catia_relation_ordered_rows_sort"));
+    assert_eq!(crate::test_support::with_service_context(|ctx| {
+        relation_row_gauge_mapping(ctx, &state, gauge, &[0, 1])
+    }).expect("service work allowance"), Some(vec![0, 1]));
+}
