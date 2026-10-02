@@ -223,7 +223,7 @@ fn assert_merged_profile_refusal(operation: &'static str, region: bool, retained
             .unwrap(),
         )
     } else {
-        ProfileRef::Planar(PlanarProfileRef::sketch_profiles(sketch.clone(), vec![0]).unwrap())
+        ProfileRef::Planar(PlanarProfileRef::sketch_profiles(sketch.clone(), vec![0], &cadmpeg_test_support::service_decode_context(),).expect("profile membership admission").unwrap())
     };
     for limit in 0..16 {
         let arena = DecodeArena::new();

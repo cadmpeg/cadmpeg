@@ -885,7 +885,7 @@ fn sketch_profile_subselections_are_bounds_checked() {
     ir.model.features.push(feature(
         "invalid-profile-index",
         1,
-        ProfileRef::Planar(PlanarProfileRef::sketch_profiles(sketch_id.clone(), vec![0]).unwrap()),
+        ProfileRef::Planar(PlanarProfileRef::sketch_profiles(sketch_id.clone(), vec![0], &cadmpeg_test_support::service_decode_context(),).expect("profile membership admission").unwrap()),
     ));
     ir.model.features.push(feature(
         "invalid-region",
@@ -903,7 +903,7 @@ fn sketch_profile_subselections_are_bounds_checked() {
         "repeated-profile-entity",
         3,
         ProfileRef::Planar(
-            PlanarProfileRef::sketch_entities(sketch_id.clone(), vec![selected_entity]).unwrap(),
+            PlanarProfileRef::sketch_entities(sketch_id.clone(), vec![selected_entity], &cadmpeg_test_support::service_decode_context(),).expect("profile membership admission").unwrap(),
         ),
     ));
 

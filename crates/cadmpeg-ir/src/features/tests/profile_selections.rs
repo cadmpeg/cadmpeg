@@ -13,28 +13,28 @@ fn profile_selection_members_are_checked_at_construction_and_on_wire() {
     let profiles = [
         (
             ProfileRef::Planar(
-                PlanarProfileRef::sketch_profiles(sketch.clone(), vec![1, 0]).unwrap(),
+                PlanarProfileRef::sketch_profiles(sketch.clone(), vec![1, 0], &cadmpeg_test_support::service_decode_context(),).expect("profile membership admission").unwrap(),
             ),
             "profiles",
         ),
         (
-            ProfileRef::spatial_sketch_profiles(spatial.clone(), vec![1, 0]).unwrap(),
+            ProfileRef::spatial_sketch_profiles(spatial.clone(), vec![1, 0], &cadmpeg_test_support::service_decode_context(),).expect("profile membership admission").unwrap(),
             "profiles",
         ),
         (
             ProfileRef::Planar(
-                PlanarProfileRef::sketch_entities(sketch.clone(), vec![entity.clone()]).unwrap(),
+                PlanarProfileRef::sketch_entities(sketch.clone(), vec![entity.clone()], &cadmpeg_test_support::service_decode_context(),).expect("profile membership admission").unwrap(),
             ),
             "entities",
         ),
         (
             ProfileRef::Planar(
-                PlanarProfileRef::sketch_selection(sketch.clone(), vec!["group".into()]).unwrap(),
+                PlanarProfileRef::sketch_selection(sketch.clone(), vec!["group".into()], &cadmpeg_test_support::service_decode_context(),).expect("profile membership admission").unwrap(),
             ),
             "selections",
         ),
         (
-            ProfileRef::spatial_sketch_selection(spatial.clone(), vec!["group".into()]).unwrap(),
+            ProfileRef::spatial_sketch_selection(spatial.clone(), vec!["group".into()], &cadmpeg_test_support::service_decode_context(),).expect("profile membership admission").unwrap(),
             "selections",
         ),
         (
@@ -68,11 +68,11 @@ fn profile_selection_members_are_checked_at_construction_and_on_wire() {
         }
     }
     for indices in [vec![], vec![0, 0]] {
-        assert!(PlanarProfileRef::sketch_profiles(sketch.clone(), indices.clone()).is_err());
-        assert!(ProfileRef::spatial_sketch_profiles(spatial.clone(), indices).is_err());
+        assert!(PlanarProfileRef::sketch_profiles(sketch.clone(), indices.clone(), &cadmpeg_test_support::service_decode_context(),).expect("profile membership admission").is_err());
+        assert!(ProfileRef::spatial_sketch_profiles(spatial.clone(), indices, &cadmpeg_test_support::service_decode_context(),).expect("profile membership admission").is_err());
     }
     for entities in [vec![], vec![entity.clone(), entity]] {
-        assert!(PlanarProfileRef::sketch_entities(sketch.clone(), entities).is_err());
+        assert!(PlanarProfileRef::sketch_entities(sketch.clone(), entities, &cadmpeg_test_support::service_decode_context(),).expect("profile membership admission").is_err());
     }
     for names in [
         vec![],
@@ -80,8 +80,8 @@ fn profile_selection_members_are_checked_at_construction_and_on_wire() {
         vec![" \t".into()],
         vec!["group".into(), "group".into()],
     ] {
-        assert!(PlanarProfileRef::sketch_selection(sketch.clone(), names.clone()).is_err());
-        assert!(ProfileRef::spatial_sketch_selection(spatial.clone(), names.clone()).is_err());
+        assert!(PlanarProfileRef::sketch_selection(sketch.clone(), names.clone(), &cadmpeg_test_support::service_decode_context(),).expect("profile membership admission").is_err());
+        assert!(ProfileRef::spatial_sketch_selection(spatial.clone(), names.clone(), &cadmpeg_test_support::service_decode_context(),).expect("profile membership admission").is_err());
         assert!(
             PlanarProfileRef::historical_faces(state.clone(), vec![face.clone()], names, &cadmpeg_test_support::service_decode_context()).expect("selection storage is admitted").is_err()
         );
@@ -106,11 +106,11 @@ fn path_selection_members_are_checked_at_construction_and_on_wire() {
     let edge = HistoricalEdgeId::mint("test:model:historical-edge#one").unwrap();
     let paths = [
         (
-            PathRef::sketch_curves(sketch.clone(), vec![entity.clone()]).unwrap(),
+            PathRef::sketch_curves(sketch.clone(), vec![entity.clone()], &cadmpeg_test_support::service_decode_context(),).expect("profile membership admission").unwrap(),
             "curves",
         ),
         (
-            PathRef::spatial_sketch_curves(spatial.clone(), vec![spatial_entity.clone()]).unwrap(),
+            PathRef::spatial_sketch_curves(spatial.clone(), vec![spatial_entity.clone()], &cadmpeg_test_support::service_decode_context(),).expect("profile membership admission").unwrap(),
             "curves",
         ),
         (
@@ -146,10 +146,10 @@ fn path_selection_members_are_checked_at_construction_and_on_wire() {
         }
     }
     for curves in [vec![], vec![entity.clone(), entity]] {
-        assert!(PathRef::sketch_curves(sketch.clone(), curves).is_err());
+        assert!(PathRef::sketch_curves(sketch.clone(), curves, &cadmpeg_test_support::service_decode_context(),).expect("profile membership admission").is_err());
     }
     for curves in [vec![], vec![spatial_entity.clone(), spatial_entity]] {
-        assert!(PathRef::spatial_sketch_curves(spatial.clone(), curves).is_err());
+        assert!(PathRef::spatial_sketch_curves(spatial.clone(), curves, &cadmpeg_test_support::service_decode_context(),).expect("profile membership admission").is_err());
     }
     for names in [
         vec![],
@@ -221,8 +221,8 @@ fn generated_profiles_require_references_and_preserve_repeated_curves() {
 fn a_spatial_profile_where_a_planar_one_is_required_is_refused_as_an_unknown_variant() {
     let spatial = ProfileRef::spatial_sketch_profiles(
         SpatialSketchId::mint("test:test:spatial-sketch#one").unwrap(),
-        vec![0],
-    )
+        vec![0], &cadmpeg_test_support::service_decode_context(),
+    ).expect("profile membership admission")
     .unwrap();
     let wire = serde_json::to_value(&spatial).unwrap();
     assert_eq!(wire["kind"], "spatial_sketch_profiles");
@@ -245,14 +245,48 @@ fn profile_and_path_constructors_propagate_scoped_index_refusals() {
     let spatial = SpatialSketchId::mint("test:test:spatial-sketch#one").unwrap();
     let entity = SketchEntityId::mint("test:test:sketch-entity#one").unwrap();
     for limit in [
-        PlanarProfileRef::sketch_profiles_for_decode(sketch.clone(), vec![0], &ctx).unwrap_err(),
-        ProfileRef::spatial_sketch_selection_for_decode(spatial, vec!["group".into()], &ctx)
+        PlanarProfileRef::sketch_profiles(sketch.clone(), vec![0], &ctx).unwrap_err(),
+        ProfileRef::spatial_sketch_selection(spatial, vec!["group".into()], &ctx)
             .unwrap_err(),
-        PathRef::sketch_curves_for_decode(sketch, vec![entity], &ctx).unwrap_err(),
+        PathRef::sketch_curves(sketch, vec![entity], &ctx).unwrap_err(),
     ] {
         assert_eq!(
             limit.dimension,
             cadmpeg_core::decode::ResourceDimension::MaterializedBytes
         );
+    }
+}
+
+#[test]
+fn every_profile_constructor_uses_the_caller_session_for_membership() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    let sketch = SketchId::mint("test:test:sketch#one").unwrap();
+    let spatial = SpatialSketchId::mint("test:test:spatial-sketch#one").unwrap();
+    let entity = SketchEntityId::mint("test:test:sketch-entity#one").unwrap();
+    let spatial_entity = SpatialSketchEntityId::mint("test:test:spatial-entity#one").unwrap();
+    for dimension in [ResourceDimension::MaterializedBytes, ResourceDimension::CollectionItems, ResourceDimension::WorkUnits] {
+        for kind in 0..7 {
+            let mut policy = DecodePolicy::service();
+            match dimension {
+                ResourceDimension::MaterializedBytes => policy.limits.max_materialized_bytes = 0,
+                ResourceDimension::CollectionItems => policy.limits.max_collection_items = 0,
+                ResourceDimension::WorkUnits => policy.limits.max_work_units = 0,
+                _ => panic!("membership admission dimensions"),
+            }
+            let arena = DecodeArena::new();
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            let result = match kind {
+                0 => PlanarProfileRef::sketch_profiles(sketch.clone(), vec![0], &ctx).map(|result| result.map(|_| ())),
+                1 => PlanarProfileRef::sketch_entities(sketch.clone(), vec![entity.clone()], &ctx).map(|result| result.map(|_| ())),
+                2 => PlanarProfileRef::sketch_selection(sketch.clone(), vec!["group".into()], &ctx).map(|result| result.map(|_| ())),
+                3 => ProfileRef::spatial_sketch_profiles(spatial.clone(), vec![0], &ctx).map(|result| result.map(|_| ())),
+                4 => ProfileRef::spatial_sketch_selection(spatial.clone(), vec!["group".into()], &ctx).map(|result| result.map(|_| ())),
+                5 => PathRef::sketch_curves(sketch.clone(), vec![entity.clone()], &ctx).map(|result| result.map(|_| ())),
+                _ => PathRef::spatial_sketch_curves(spatial.clone(), vec![spatial_entity.clone()], &ctx).map(|result| result.map(|_| ())),
+            };
+            let limit = result.expect_err("constructor must use its supplied session");
+            assert_eq!(limit.dimension, dimension);
+            assert!(matches!(ctx.finish_session(), Err(cadmpeg_core::CodecError::ResourceLimit(original)) if original == limit));
+        }
     }
 }

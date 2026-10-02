@@ -550,8 +550,8 @@ fn spatial_sketch_paths_round_trip_through_json() {
 
     let path = PathRef::spatial_sketch_curves(
         SpatialSketchId::mint("synthetic:test:spatial-sketch#0").unwrap(),
-        vec![SpatialSketchEntityId::mint("synthetic:test:spatial-sketch-entity#0").unwrap()],
-    )
+        vec![SpatialSketchEntityId::mint("synthetic:test:spatial-sketch-entity#0").unwrap()], &cadmpeg_test_support::service_decode_context(),
+    ).expect("profile membership admission")
     .unwrap();
     let json = serde_json::to_string(&path).unwrap();
     assert_eq!(serde_json::from_str::<PathRef>(&json).unwrap(), path);
