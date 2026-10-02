@@ -2,6 +2,8 @@
 //! Focused validation checks for sketches.
 
 use super::record_finding;
+use super::scratch::Scratch;
+use super::scans::{all, find_map};
 use crate::document::CadIr;
 use crate::report::check::{Check, Finding};
 use crate::sketches::{
@@ -583,44 +585,32 @@ pub(super) fn check_sketches(
         if !spatial_sketches.contains(&constraint.sketch) {
             record_finding(ctx, findings, Check::ReferentialIntegrity, crate::report::Severity::Error, Some(constraint.id.as_str()), format_args!("{}", "spatial constraint references a missing spatial sketch"))?;
         }
-        let entities = match constraint.definition.kind() {
-            SpatialConstraint::Native { .. } => Vec::new(),
-            SpatialConstraint::SplineGroup { entities } => entities.clone(),
+        let mut entities = Scratch::new(ctx)?;
+        match constraint.definition.kind() {
+            SpatialConstraint::Native { .. } => {}
+            SpatialConstraint::SplineGroup { entities: members }
+            | SpatialConstraint::RepeatedLineLength { entities: members, .. } => entities.extend(members)?,
             SpatialConstraint::Coincident { first, second }
             | SpatialConstraint::Tangent { first, second }
             | SpatialConstraint::PointDistance { first, second, .. }
-            | SpatialConstraint::ParallelLineDistance { first, second, .. } => {
-                vec![first.clone(), second.clone()]
+            | SpatialConstraint::ParallelLineDistance { first, second, .. } => entities.extend([first, second])?,
+            SpatialConstraint::PointLineDistance { point, line, .. } => entities.extend([point, line])?,
+            SpatialConstraint::LineLength { entity, .. }
+            | SpatialConstraint::ParallelToDirection { entity, .. } => entities.push(entity)?,
+            SpatialConstraint::RepeatedParallelLineDistance { pairs, .. } => {
+                for pair in pairs {
+                    ctx.charge_work(1, "spatial constraint pair scan")?;
+                    entities.extend([&pair.first, &pair.second])?;
+                }
             }
-            SpatialConstraint::PointLineDistance { point, line, .. } => {
-                vec![point.clone(), line.clone()]
-            }
-            SpatialConstraint::LineLength { entity, .. } => vec![entity.clone()],
-            SpatialConstraint::RepeatedLineLength { entities, .. } => entities.clone(),
-            SpatialConstraint::RepeatedParallelLineDistance { pairs, .. } => pairs
-                .iter()
-                .flat_map(|pair| [pair.first.clone(), pair.second.clone()])
-                .collect(),
-            SpatialConstraint::ParallelLineSetDistance { first, second, .. } => {
-                first.iter().chain(second).cloned().collect()
-            }
-            SpatialConstraint::Offset {
-                sources, results, ..
-            } => sources.iter().chain(results).cloned().collect(),
-            SpatialConstraint::Symmetric {
-                first,
-                second,
-                axis,
-            } => vec![first.clone(), second.clone(), axis.clone()],
-            SpatialConstraint::Midpoint { point, entity } => {
-                vec![point.clone(), entity.clone()]
-            }
-            SpatialConstraint::PointOnSurface { point, surface } => {
-                vec![point.clone(), surface.clone()]
-            }
-            SpatialConstraint::ParallelToDirection { entity, .. } => vec![entity.clone()],
-        };
-        for entity in &entities {
+            SpatialConstraint::ParallelLineSetDistance { first, second, .. } => entities.extend(first.iter().chain(second))?,
+            SpatialConstraint::Offset { sources, results, .. } => entities.extend(sources.iter().chain(results))?,
+            SpatialConstraint::Symmetric { first, second, axis } => entities.extend([first, second, axis])?,
+            SpatialConstraint::Midpoint { point, entity } => entities.extend([point, entity])?,
+            SpatialConstraint::PointOnSurface { point, surface } => entities.extend([point, surface])?,
+        }
+        for &entity in entities.iter() {
+            ctx.charge_work(1, "spatial constraint member scan")?;
             if spatial_entities.get(entity) != Some(&constraint.sketch) {
                 record_finding(ctx, findings, Check::ReferentialIntegrity, crate::report::Severity::Error, Some(constraint.id.as_str()), format_args!("{}", "spatial constraint member does not belong to its sketch"))?;
             }
@@ -841,23 +831,17 @@ pub(super) fn check_sketches(
                 entities,
                 parameter,
             } => {
-                let measured = entities
-                    .iter()
-                    .map(|entity| {
-                        spatial_geometry
-                            .get(entity)
-                            .and_then(|geometry| spatial_line_length(geometry))
-                    })
-                    .collect::<Option<Vec<_>>>();
-                let matches = measured.is_some_and(|measured| {
-                    measured.iter().all(|measured| {
-                        spatial_length_parameter_matches(
-                            Some(*measured),
-                            parameter,
-                            &parameter_values,
-                        )
-                    })
-                });
+                let mut measured = Scratch::new(ctx)?;
+                let mut complete = true;
+                for entity in entities {
+                    ctx.charge_work(1, "spatial repeated length scan")?;
+                    let Some(length) = spatial_geometry.get(entity).and_then(|geometry| spatial_line_length(geometry)) else {
+                        complete = false;
+                        break;
+                    };
+                    measured.push(length)?;
+                }
+                let matches = complete && all(ctx, measured.iter(), |measured| Ok(spatial_length_parameter_matches(Some(*measured), parameter, &parameter_values)))?;
                 if !matches {
                     record_finding(ctx, findings, Check::GeometricConsistency, crate::report::Severity::Error, Some(constraint.id.as_str()), format_args!("{}", "repeated spatial line length requires distinct lines matching one length parameter"))?;
                 }
@@ -867,32 +851,20 @@ pub(super) fn check_sketches(
                 second,
                 parameter,
             } => {
-                let first_geometry = first
-                    .iter()
-                    .filter_map(|entity| spatial_geometry.get(entity).copied())
-                    .collect::<Vec<_>>();
-                let second_geometry = second
-                    .iter()
-                    .filter_map(|entity| spatial_geometry.get(entity).copied())
-                    .collect::<Vec<_>>();
+                let first_geometry = Scratch::filter_map(ctx, first, |entity| Ok(spatial_geometry.get(entity).copied()))?;
+                let second_geometry = Scratch::filter_map(ctx, second, |entity| Ok(spatial_geometry.get(entity).copied()))?;
                 let tolerance = ir.tolerances.linear.get();
-                let first_collinear = first_geometry.first().is_some_and(|reference| {
-                    first_geometry.iter().all(|candidate| {
-                        spatial_parallel_line_distance(reference, candidate)
-                            .is_some_and(|distance| distance <= tolerance)
-                    })
-                });
-                let second_collinear = second_geometry.first().is_some_and(|reference| {
-                    second_geometry.iter().all(|candidate| {
-                        spatial_parallel_line_distance(reference, candidate)
-                            .is_some_and(|distance| distance <= tolerance)
-                    })
-                });
-                let measured = first_geometry.iter().find_map(|first| {
-                    second_geometry.iter().find_map(|second| {
-                        spatial_parallel_line_span_distance(first, second, tolerance)
-                    })
-                });
+                let first_collinear = match first_geometry.first() {
+                    Some(reference) => all(ctx, first_geometry.iter(), |candidate| Ok(spatial_parallel_line_distance(reference, candidate).is_some_and(|distance| distance <= tolerance)))?,
+                    None => false,
+                };
+                let second_collinear = match second_geometry.first() {
+                    Some(reference) => all(ctx, second_geometry.iter(), |candidate| Ok(spatial_parallel_line_distance(reference, candidate).is_some_and(|distance| distance <= tolerance)))?,
+                    None => false,
+                };
+                let measured = find_map(ctx, first_geometry.iter(), |first| {
+                    find_map(ctx, second_geometry.iter(), |second| Ok(spatial_parallel_line_span_distance(first, second, tolerance)))
+                })?;
                 let matches = first_geometry.len() == first.len()
                     && second_geometry.len() == second.len()
                     && first_collinear
@@ -1131,58 +1103,34 @@ pub(super) fn check_sketches(
                 distance_matches && angle_matches && parameter_matches
             }
             Constraint::RepeatedLength { entities, .. } => {
-                let lengths = entities
-                    .iter()
-                    .filter_map(|entity| {
-                        match geometry.get(entity).map(|geometry| geometry.definition()) {
-                            Some(SketchGeometryDefinition::Line { start, end }) => {
-                                Some((end.u - start.u).hypot(end.v - start.v))
-                            }
-                            _ => None,
-                        }
-                    })
-                    .collect::<Vec<_>>();
-                lengths.len() == entities.len()
-                    && lengths[1..].iter().all(|length| {
-                        (length - lengths[0]).abs()
-                            <= ir.tolerances.linear.get().max(
-                                EPS_SKETCHES_CHECK_SKETCHES_E9
-                                    * (1.0 + length.abs().max(lengths[0].abs())),
-                            )
-                    })
+                let lengths = Scratch::filter_map(ctx, entities, |entity| Ok(match geometry.get(entity).map(|geometry| geometry.definition()) {
+                    Some(SketchGeometryDefinition::Line { start, end }) => Some((end.u - start.u).hypot(end.v - start.v)),
+                    _ => None,
+                }))?;
+                lengths.len() == entities.len() && all(ctx, lengths[1..].iter(), |length| Ok(
+                    (length - lengths[0]).abs() <= ir.tolerances.linear.get().max(EPS_SKETCHES_CHECK_SKETCHES_E9 * (1.0 + length.abs().max(lengths[0].abs())))
+                ))?
+
             }
             Constraint::ParallelLineSetDistance {
                 first,
                 second,
                 parameter,
             } => {
-                let first_geometry = first
-                    .iter()
-                    .filter_map(|entity| geometry.get(entity).copied())
-                    .collect::<Vec<_>>();
-                let second_geometry = second
-                    .iter()
-                    .filter_map(|entity| geometry.get(entity).copied())
-                    .collect::<Vec<_>>();
+                let first_geometry = Scratch::filter_map(ctx, first, |entity| Ok(geometry.get(entity).copied()))?;
+                let second_geometry = Scratch::filter_map(ctx, second, |entity| Ok(geometry.get(entity).copied()))?;
                 let tolerance = ir.tolerances.linear.get();
-                let first_collinear = first_geometry.first().is_some_and(|reference| {
-                    first_geometry.iter().all(|candidate| {
-                        planar_parallel_line_distance(reference, candidate)
-                            .is_some_and(|distance| distance.get() <= tolerance)
-                    })
-                });
-                let second_collinear = second_geometry.first().is_some_and(|reference| {
-                    second_geometry.iter().all(|candidate| {
-                        planar_parallel_line_distance(reference, candidate)
-                            .is_some_and(|distance| distance.get() <= tolerance)
-                    })
-                });
-                let measured = first_geometry.iter().find_map(|first| {
-                    second_geometry.iter().find_map(|second| {
-                        planar_parallel_line_span_distance(first, second, tolerance)
-                            .map(crate::scalar::FiniteReal::get)
-                    })
-                });
+                let first_collinear = match first_geometry.first() {
+                    Some(reference) => all(ctx, first_geometry.iter(), |candidate| Ok(planar_parallel_line_distance(reference, candidate).is_some_and(|distance| distance.get() <= tolerance)))?,
+                    None => false,
+                };
+                let second_collinear = match second_geometry.first() {
+                    Some(reference) => all(ctx, second_geometry.iter(), |candidate| Ok(planar_parallel_line_distance(reference, candidate).is_some_and(|distance| distance.get() <= tolerance)))?,
+                    None => false,
+                };
+                let measured = find_map(ctx, first_geometry.iter(), |first| {
+                    find_map(ctx, second_geometry.iter(), |second| Ok(planar_parallel_line_span_distance(first, second, tolerance).map(crate::scalar::FiniteReal::get)))
+                })?;
                 let expected = match parameter_values.get(parameter) {
                     Some(Some(crate::features::ParameterValue::Length(length))) => {
                         Some(length.get().abs())
@@ -1205,26 +1153,14 @@ pub(super) fn check_sketches(
             }
             Constraint::RepeatedRadius { entities, .. }
             | Constraint::RepeatedDiameter { entities, .. } => {
-                let radii = entities
-                    .iter()
-                    .filter_map(|entity| {
-                        match geometry.get(entity).map(|geometry| geometry.definition()) {
-                            Some(
-                                SketchGeometryDefinition::Circle { radius, .. }
-                                | SketchGeometryDefinition::Arc { radius, .. },
-                            ) => Some(radius.get()),
-                            _ => None,
-                        }
-                    })
-                    .collect::<Vec<_>>();
-                radii.len() == entities.len()
-                    && radii[1..].iter().all(|radius| {
-                        (radius - radii[0]).abs()
-                            <= ir.tolerances.linear.get().max(
-                                EPS_SKETCHES_CHECK_SKETCHES_E9
-                                    * (1.0 + radius.abs().max(radii[0].abs())),
-                            )
-                    })
+                let radii = Scratch::filter_map(ctx, entities, |entity| Ok(match geometry.get(entity).map(|geometry| geometry.definition()) {
+                    Some(SketchGeometryDefinition::Circle { radius, .. } | SketchGeometryDefinition::Arc { radius, .. }) => Some(radius.get()),
+                    _ => None,
+                }))?;
+                radii.len() == entities.len() && all(ctx, radii[1..].iter(), |radius| Ok(
+                    (radius - radii[0]).abs() <= ir.tolerances.linear.get().max(EPS_SKETCHES_CHECK_SKETCHES_E9 * (1.0 + radius.abs().max(radii[0].abs())))
+                ))?
+
             }
             Constraint::Disabled {}
             | Constraint::Coincident { .. }
@@ -1291,7 +1227,8 @@ pub(super) fn check_sketches(
         {
             record_finding(ctx, findings, Check::ReferentialIntegrity, crate::report::Severity::Error, Some(constraint.id.as_str()), format_args!("{}", message))?;
         }
-        for locus in constraint_loci(constraint.definition.kind()) {
+        for locus in constraint_loci(ctx, constraint.definition.kind())? {
+            ctx.charge_work(1, "sketch constraint locus scan")?;
             let Some(entity_geometry) = geometry.get(locus_entity(locus)) else {
                 continue;
             };
@@ -1527,11 +1464,8 @@ fn oriented_endpoints(
             ),
         ),
         SketchGeometryDefinition::Nurbs { curve } if !curve.periodic() => {
-            let control_points = curve.control_points();
-            (
-                control_points[0].get(),
-                control_points[control_points.len() - 1].get(),
-            )
+            let points = curve.pole_rows();
+            (points.point_at(0)?.get(), points.point_at(points.count().checked_sub(1)?)?.get())
         }
         _ => return None,
     };
@@ -1600,46 +1534,38 @@ fn sketch_locus_point(
     }
 }
 
-fn constraint_loci(definition: &Constraint) -> Vec<&SketchLocus> {
+fn constraint_loci<'ctx, 'definition>(ctx: &'ctx cadmpeg_core::decode::DecodeContext<'_>, definition: &'definition Constraint) -> Result<Scratch<'ctx, &'definition SketchLocus>, cadmpeg_core::CodecError> {
+    let mut loci = Scratch::new(ctx)?;
     match definition {
-        Constraint::CoincidentLoci { loci } => loci.iter().collect(),
+        Constraint::CoincidentLoci { loci: members } => loci.extend(members)?,
         Constraint::Midpoint { point, .. }
         | Constraint::PointOnObject { point, .. }
-        | Constraint::PointCoordinateValues { point, .. } => vec![point],
-        Constraint::Symmetric { first, second, .. } => vec![first, second],
-        Constraint::DistanceLoci { first, second, .. }
+        | Constraint::PointCoordinateValues { point, .. } => loci.push(point)?,
+        Constraint::Symmetric { first, second, .. }
+        | Constraint::DistanceLoci { first, second, .. }
         | Constraint::DistanceLociValue { first, second, .. }
         | Constraint::MidpointCoordinate { first, second, .. }
         | Constraint::PolarDistance { first, second, .. }
         | Constraint::HorizontalDistance { first, second, .. }
-        | Constraint::VerticalDistance { first, second, .. } => vec![first, second],
-        Constraint::EqualDistance { first, second } => {
-            [&first.first, &first.second, &second.first, &second.second]
-                .into_iter()
-                .collect()
-        }
-        Constraint::RepeatedDistance { measurements, .. } => measurements
-            .iter()
-            .flat_map(|measurement| {
+        | Constraint::VerticalDistance { first, second, .. } => loci.extend([first, second])?,
+        Constraint::EqualDistance { first, second } => loci.extend([&first.first, &first.second, &second.first, &second.second])?,
+        Constraint::RepeatedDistance { measurements, .. } => {
+            for measurement in measurements {
+                ctx.charge_work(1, "sketch distance measurement scan")?;
                 use crate::sketches::SketchDistanceMeasurement as Measurement;
                 let (first, second) = match measurement {
                     Measurement::Distance { first, second }
                     | Measurement::Horizontal { first, second }
                     | Measurement::Vertical { first, second } => (first, second),
                 };
-                [first, second]
-            })
-            .collect(),
-        Constraint::SnellsLaw {
-            incident,
-            refracted,
-            ..
-        } => vec![incident, refracted],
-        Constraint::Group { elements } | Constraint::Text { elements, .. } => {
-            elements.iter().collect()
+                loci.extend([first, second])?;
+            }
         }
-        _ => Vec::new(),
+        Constraint::SnellsLaw { incident, refracted, .. } => loci.extend([incident, refracted])?,
+        Constraint::Group { elements } | Constraint::Text { elements, .. } => loci.extend(elements)?,
+        _ => {}
     }
+    Ok(loci)
 }
 
 #[cfg(test)]
