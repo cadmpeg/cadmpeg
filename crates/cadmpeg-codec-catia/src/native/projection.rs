@@ -311,37 +311,46 @@ pub(crate) fn consolidated_edge_runs(
     nodes: &[CatiaConsolidatedEdgeNode],
     refusal: &mut crate::nurbs::LaneRefusals,
 ) -> Result<Vec<CatiaConsolidatedEdgeRun>, CodecError> {
+    let mut lookup_storage = ctx.reserve_scoped(0, "CATIA native edge run lookup")?;
     let mut pcurve_ids = HashMap::new();
     for pcurve in pcurves {
-        let id = ctx.copy_retained_text(&pcurve.id, "catia_native_edge_run_pcurve_index_id")?;
-        ctx.insert_hash_map(
-            &mut pcurve_ids,
-            pcurve.byte_offset,
-            id,
-            "catia_native_edge_run_pcurve_index",
-        )?;
+        let id = lookup_storage.with_storage(|| {
+            ctx.copy_retained_text(&pcurve.id, "catia_native_edge_run_pcurve_index_id")
+        })?;
+        lookup_storage.with_storage(|| {
+            ctx.insert_hash_map(
+                &mut pcurve_ids,
+                pcurve.byte_offset,
+                id,
+                "catia_native_edge_run_pcurve_index",
+            )
+        })?;
     }
     let mut resolved = HashMap::new();
-    for block in
+    for block in lookup_storage.with_storage(|| {
         crate::families::consolidated::records::resolve_consolidated_edge_blocks_from_records(
             ctx, bytes, records, refusal,
-        )?
-    {
-        ctx.insert_hash_map(
-            &mut resolved,
-            block.block.pcurves[0].pos,
-            block,
-            "catia_native_edge_run_resolved_index",
-        )?;
+        )
+    })? {
+        lookup_storage.with_storage(|| {
+            ctx.insert_hash_map(
+                &mut resolved,
+                block.block.pcurves[0].pos,
+                block,
+                "catia_native_edge_run_resolved_index",
+            )
+        })?;
     }
     let mut nodes_by_offset = HashMap::new();
     for node in nodes {
-        ctx.insert_hash_map(
-            &mut nodes_by_offset,
-            node.byte_offset,
-            node,
-            "catia_native_edge_run_node_index",
-        )?;
+        lookup_storage.with_storage(|| {
+            ctx.insert_hash_map(
+                &mut nodes_by_offset,
+                node.byte_offset,
+                node,
+                "catia_native_edge_run_node_index",
+            )
+        })?;
     }
     let mut output = Vec::new();
     for (index, run) in
@@ -1328,6 +1337,7 @@ mod consolidated_edge_run_limit_tests {
         ];
         let mut collection_refusals = HashSet::new();
         let mut retained_refusals = HashSet::new();
+        let mut scoped_refusals = HashSet::new();
         for bytes in fixtures {
             let native = super::super::CatiaNative::decode(&bytes);
             assert_eq!(native.consolidated_edge_runs.len(), 1);
@@ -1368,6 +1378,27 @@ mod consolidated_edge_run_limit_tests {
                     break;
                 }
             }
+            let mut limit = 0;
+            for _ in 0..4096 {
+                let result = crate::test_support::with_materialized_limit(limit, |ctx| {
+                    super::consolidated_edge_runs(
+                        ctx,
+                        &bytes,
+                        &records,
+                        &native.consolidated_pcurves,
+                        &native.consolidated_edge_nodes,
+                        &mut crate::nurbs::LaneRefusals::new(),
+                    )
+                });
+                if let Err(cadmpeg_core::CodecError::ResourceLimit(error)) = result {
+                    scoped_refusals.insert(error.operation);
+                    assert!(error.used + error.additional > limit);
+                    limit = error.used + error.additional;
+                } else {
+                    assert!(result.is_ok());
+                    break;
+                }
+            }
         }
         for operation in [
             "catia_native_edge_run_pcurve_index",
@@ -1382,7 +1413,6 @@ mod consolidated_edge_run_limit_tests {
             );
         }
         for operation in [
-            "catia_native_edge_run_pcurve_index_id",
             "catia_native_edge_run_id",
             "catia_native_edge_run_first_pcurve_id",
             "catia_native_edge_run_second_pcurve_id",
@@ -1393,5 +1423,6 @@ mod consolidated_edge_run_limit_tests {
                 "{operation} did not refuse"
             );
         }
+        assert!(scoped_refusals.contains("catia_native_edge_run_pcurve_index_id"));
     }
 }
