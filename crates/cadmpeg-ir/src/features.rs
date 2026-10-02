@@ -2641,29 +2641,38 @@ impl TreeChildren {
         active_child: Option<FeatureId>,
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ) -> Result<Self, FeatureCollectionError> {
-        ctx.charge_work_limit(0, "validate active tree child")?;
+        Self::build(
+            &membership::DecodeAdmission { ctx, operation: "validate active tree child" },
+            &membership::DecodeAdmission { ctx, operation: "validate distinct decoded members" },
+            children, active_child,
+        )?.map_err(FeatureCollectionError::Invalid)
+    }
+
+    fn build<'ctx, S: membership::Admission<'ctx>>(
+        active_admission: &S,
+        member_admission: &S,
+        children: Vec<FeatureId>,
+        active_child: Option<FeatureId>,
+    ) -> Result<Result<Self, &'static str>, S::Error> {
+        active_admission.work(0)?;
         if let Some(active) = &active_child {
             let mut present = false;
             for child in &children {
-                ctx.charge_work_limit(1, "validate active tree child")?;
+                active_admission.work(1)?;
                 if child.as_str().len() == active.as_str().len() {
-                    ctx.charge_work_limit(cadmpeg_core::decode::u64_from_index(child.as_str().len()), "validate active tree child")?;
+                    active_admission.work(child.as_str().len())?;
                 }
                 if child == active {
                     present = true;
                     break;
                 }
             }
-            if !present {
-                return Err(FeatureCollectionError::Invalid(
-                    "active_child must belong to children",
-                ));
-            }
+            if !present { return Ok(Err("active_child must belong to children")); }
         }
-        Ok(Self {
-            children: DistinctMembers::try_from(children, ctx)?,
-            active_child,
-        })
+        if !membership::distinct(member_admission, &children, children.len(), |_| true)? {
+            return Ok(Err("members must be distinct"));
+        }
+        Ok(Ok(Self { children: DistinctMembers(children), active_child }))
     }
 
     /// Whether the node has no children.
@@ -2706,17 +2715,10 @@ impl<'a> IntoIterator for &'a TreeChildren {
 impl<'de> Deserialize<'de> for TreeChildren {
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         let wire = TreeChildrenWire::deserialize(deserializer)?;
-        if wire.active_child.as_ref().is_some_and(|active| !wire.children.contains(active)) {
-            return Err(serde::de::Error::custom("active_child must belong to children"));
-        }
-        let mut seen = std::collections::HashSet::new();
-        seen.try_reserve(wire.children.len()).map_err(serde::de::Error::custom)?;
-        for child in &wire.children {
-            if !seen.insert(child) {
-                return Err(serde::de::Error::custom("members must be distinct"));
-            }
-        }
-        Ok(Self { children: DistinctMembers(wire.children), active_child: wire.active_child })
+        Self::build(&membership::StandardAdmission, &membership::StandardAdmission,
+            wire.children, wire.active_child)
+            .map_err(serde::de::Error::custom)?
+            .map_err(serde::de::Error::custom)
     }
 }
 

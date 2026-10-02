@@ -717,6 +717,28 @@ fn selection_operand_parts_move_retained_storage() {
 }
 
 #[test]
+fn tree_children_wire_and_decode_share_membership_validation() {
+    use crate::features::FeatureCollectionError;
+    let first = feature_id("first");
+    let second = feature_id("second");
+    let ctx = cadmpeg_test_support::service_decode_context();
+    for (children, active, message) in [
+        (vec![first.clone(), first.clone()], Some(first.clone()), "members must be distinct"),
+        (vec![first.clone(), first.clone()], Some(second.clone()), "active_child must belong to children"),
+        (Vec::new(), Some(first.clone()), "active_child must belong to children"),
+    ] {
+        let wire = serde_json::json!({"children": children, "active_child": active});
+        let error = serde_json::from_value::<TreeChildren>(wire).unwrap_err().to_string();
+        assert!(error.contains(message), "{error}");
+        assert_eq!(TreeChildren::new(children, active, &ctx).unwrap_err(), FeatureCollectionError::Invalid(message));
+    }
+    let children = TreeChildren::new(vec![second, first.clone()], Some(first), &ctx).unwrap();
+    let wire = serde_json::to_value(&children).unwrap();
+    assert_eq!(serde_json::from_value::<TreeChildren>(wire).unwrap(), children);
+    ctx.finish_session().unwrap();
+}
+
+#[test]
 fn tree_child_admission_preserves_first_and_later_active_comparison_refusals() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension, u64_from_index};
     use crate::features::FeatureCollectionError;
