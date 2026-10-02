@@ -527,7 +527,10 @@ impl<'tcx> Analysis<'_, 'tcx> {
         if let ExprKind::Assign(target, _, _) | ExprKind::AssignOp(_, target, _) = expression.kind {
             self.invalidate_target(target);
         }
-        if let Some((_, operands)) = self.call(expression) {
+        if let Some((definition, operands)) = self.call(expression) {
+            let reserved = types::standard(self.tcx, definition)
+                && matches!(self.tcx.item_name(definition).as_str(), "try_reserve_exact" | "reserve_exact");
+            let slots = self.flow.storage_slots.clone();
             for operand in operands {
                 if matches!(
                     self.expr_ty_adjusted(operand).kind(),
@@ -536,6 +539,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
                     self.invalidate_target(operand);
                 }
             }
+            if reserved { self.flow.storage_slots = slots; }
         }
     }
 }

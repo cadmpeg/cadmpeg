@@ -166,6 +166,7 @@ fn check_fixture(name: &str) {
                 "edges"
                     | "reachability"
                     | "fixed_ranges"
+                    | "raw_steps"
                     | "modular"
                     | "external"
                     | "generic"
@@ -329,3 +330,6 @@ fn decode_reachability() {
 
 #[test]
 fn constant_width_subslices() { check_fixture("fixed_ranges"); }
+
+#[test]
+fn charged_raw_steps() { check_fixture("raw_steps"); }

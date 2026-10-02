@@ -9,6 +9,7 @@ pub(crate) struct Slots {
     pub(crate) target: String,
     pub(crate) terms: Vec<ExtentTerm>,
     pub(crate) loop_depth: usize,
+    pub(crate) reserved: bool,
 }
 
 impl<'tcx> Analysis<'_, 'tcx> {
@@ -22,13 +23,13 @@ impl<'tcx> Analysis<'_, 'tcx> {
         let ty::Adt(owner, arguments) = self.expr_ty(receiver).peel_refs().kind() else {
             return false;
         };
-        if !types::standard(self.tcx, owner.did())
-            || self.tcx.item_name(owner.did()).as_str() != "Vec"
-        {
+        if !types::standard(self.tcx, owner.did()) {
             return false;
         }
-        let Some(element) = arguments.types().next() else {
-            return false;
+        let element = match self.tcx.item_name(owner.did()).as_str() {
+            "Vec" => match arguments.types().next() { Some(element) => element, None => return false },
+            "String" => self.tcx.types.u8,
+            _ => return false,
         };
         let Some(mut terms) = operands
             .get(1)
@@ -65,18 +66,35 @@ impl<'tcx> Analysis<'_, 'tcx> {
                 }
             }
         }
+        let counts = terms.clone();
+        let size_factor = format!("size:{element}");
         for term in &mut terms {
-            term.factors.push(format!("size:{element}"));
+            term.factors.push(size_factor.clone());
             term.factors.sort();
         }
-        let mut remaining = self.flow.storage_extents.clone();
-        for term in terms {
-            let Some(index) = remaining.iter().position(|credit| credit == &term) else {
-                return false;
-            };
-            remaining.remove(index);
+        let mut credits = self.flow.storage_extents.clone();
+        if let Ok(layout) = self.tcx.layout_of(self.typing_env().as_query_input(element)) {
+            let bytes = layout.size.bytes();
+            for term in terms.iter_mut().chain(credits.iter_mut()) {
+                if let Some(index) = term.factors.iter().position(|factor| factor == &size_factor) {
+                    let Some(coefficient) = term.coefficient.checked_mul(bytes) else { return false; };
+                    term.coefficient = coefficient;
+                    term.factors.remove(index);
+                }
+            }
         }
-        self.flow.storage_extents = remaining;
+        if !consume_terms(&mut credits, &terms) {
+            return false;
+        }
+        self.flow.storage_extents = credits;
+        if let Some(target) = self.key(receiver, &mut Vec::new()) {
+            self.flow.storage_slots.push(Slots {
+                target,
+                terms: counts,
+                loop_depth: self.flow.loop_bounds.len(),
+                reserved: true,
+            });
+        }
         true
     }
 
@@ -199,6 +217,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
                 target,
                 terms,
                 loop_depth: self.flow.loop_bounds.len(),
+                reserved: false,
             });
         }
     }
@@ -219,7 +238,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
             | "resize_with" => operands
                 .get(1)
                 .and_then(|count| self.extent_terms(count, &mut Vec::new())),
-            "append" | "extend_from_slice" => operands
+            "append" | "extend_from_slice" | "push_str" => operands
                 .get(1)
                 .and_then(|source| self.key(source, &mut Vec::new()))
                 .map(|key| {
@@ -234,7 +253,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
             return false;
         };
         for (index, credit) in self.flow.storage_slots.iter().enumerate() {
-            if credit.target != target {
+            if credit.target != target || credit.reserved && matches!(name, "reserve" | "reserve_exact" | "try_reserve" | "try_reserve_exact") {
                 continue;
             }
             let mut required = terms.clone();
@@ -266,4 +285,18 @@ impl<'tcx> Analysis<'_, 'tcx> {
         }
         false
     }
+}
+
+// A receipt admits each equal or dominated extent once.
+pub(crate) fn consume_terms(credits: &mut Vec<ExtentTerm>, required: &[ExtentTerm]) -> bool {
+    let mut remaining = credits.clone();
+    for term in required {
+        if term.coefficient == 0 { continue; }
+        let Some(index) = remaining.iter().position(|credit|
+            credit.factors == term.factors && credit.coefficient >= term.coefficient) else { return false; };
+        remaining[index].coefficient -= term.coefficient;
+        remaining.retain(|credit| credit.coefficient != 0);
+    }
+    *credits = remaining;
+    true
 }
