@@ -4892,7 +4892,15 @@ impl BrepDraft {
             }
         }
         self.links.retain(|id| emitted.contains(id));
-        self.draft.retain_exactness(|id| emitted.contains(id));
+        self.draft.retain_exactness(ctx, |id| {
+            let work = u64_from_index(emitted.len())
+                .checked_mul(u64_from_index(id.len()).checked_add(1).ok_or_else(|| {
+                    ctx.refuse_codec_limit("Rhino fallback exactness lookup", u64::MAX - 1, u64::MAX)
+                })?)
+                .ok_or_else(|| ctx.refuse_codec_limit("Rhino fallback exactness lookup", u64::MAX - 1, u64::MAX))?;
+            ctx.charge_work(work, "Rhino fallback exactness lookup")?;
+            Ok(emitted.contains(id))
+        })?;
         let model = self.draft.model_mut();
         model.bodies.clear();
         model.regions.clear();
