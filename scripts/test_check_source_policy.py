@@ -1360,5 +1360,31 @@ mod tests { #![allow(clippy::unwrap_used)] fn f() {} }
         self.assertEqual(self.findings("lint_suppression"), [])
 
 
+class OptionalDecodeContexts(TempSourceCase):
+    def test_function_method_trait_and_function_pointer_parameters_fail(self) -> None:
+        sources = [
+            "fn f(ctx: Option<&DecodeContext<'_>>) {}",
+            "fn f<'a, T>(ctx: std::option::Option<&'a cadmpeg_core::decode::DecodeContext<'a>>) {}",
+            "impl X { fn f(&self, ctx: Option<&mut DecodeContext<'_>>) {} }",
+            "trait X { fn f(ctx: core::option::Option<&DecodeContext<'_>>); }",
+            "fn f(callback: fn(Option<&DecodeContext<'_>>)) {}",
+            "fn r#context(ctx: Option<&::cadmpeg_core::decode::DecodeContext<'_>>) {}",
+        ]
+        for source in sources:
+            with self.subTest(source=source):
+                self.write("crates/demo/src/lib.rs", source)
+                self.assertEqual(len(self.findings("optional_decode_context")), 1)
+
+    def test_required_context_context_free_and_nonsignature_types_are_exempt(self) -> None:
+        self.write("crates/demo/src/lib.rs", """struct X { ctx: Option<&'static DecodeContext<'static>> }
+fn decode(ctx: &DecodeContext<'_>) {}
+fn reconstruct() {}
+fn context() -> Option<&'static DecodeContext<'static>> { None }
+fn f() { let ctx: Option<&DecodeContext<'_>> = None; }
+#[cfg(test)] mod tests { fn f(ctx: Option<&DecodeContext<'_>>) {} }
+""")
+        self.assertEqual(self.findings("optional_decode_context"), [])
+
+
 if __name__ == "__main__":
     unittest.main()

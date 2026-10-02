@@ -507,6 +507,45 @@ def scan_integer_clamps(path: Path, code: str) -> list[Finding]:
     return findings
 
 
+OPTIONAL_DECODE_CONTEXT = re.compile(
+    r"\bOption\s*<\s*&\s*(?:'[A-Za-z_]\w*\s*)?(?:mut\s+)?"
+    r"(?:::\s*)?(?:(?:[A-Za-z_]\w*)\s*::\s*)*DecodeContext\b"
+)
+
+
+def scan_optional_decode_contexts(path: Path, code: str) -> list[Finding]:
+    """Require a decode context in function parameters, never an optional one."""
+    findings = []
+    tokens, pairs, _ = evaluation_tokens(code)
+    words = [token[0] for token in tokens]
+    reported: set[int] = set()
+    for index, word in enumerate(words):
+        if word != "fn":
+            continue
+        opening = index + (1 if words[index + 1:index + 2] == ["("] else 2)
+        if words[index + 1:index + 3] == ["r", "#"]:
+            opening += 2
+        if words[opening:opening + 1] == ["<"]:
+            depth = 1
+            opening += 1
+            while opening < len(words) and depth:
+                depth += (words[opening] == "<") - (words[opening] == ">")
+                opening += 1
+        if words[opening:opening + 1] != ["("] or opening not in pairs:
+            continue
+        start = tokens[opening].end()
+        end = tokens[pairs[opening]].start()
+        for match in OPTIONAL_DECODE_CONTEXT.finditer(code, start, end):
+            if match.start() in reported:
+                continue
+            reported.add(match.start())
+            findings.append(Finding(
+                "optional_decode_context", relative_path(path), code.count("\n", 0, match.start()) + 1,
+                "The decode path takes its caller DecodeContext; context-free reconstruction and writing take no context.",
+            ))
+    return findings
+
+
 CONVERSION_EXPECTATION = {
     "clippy::as_conversions", "clippy::cast_possible_truncation",
     "clippy::cast_precision_loss", "clippy::cast_sign_loss",
@@ -598,6 +637,7 @@ def scan_patterns(path: Path, source: str) -> list[Finding]:
     findings = scan_saturating_arithmetic(path, code)
     findings.extend(scan_wrapping_arithmetic(path, source, code))
     findings.extend(scan_lint_suppressions(path, source, code))
+    findings.extend(scan_optional_decode_contexts(path, code))
 
     def report(rule: str, line: int, message: str) -> None:
         findings.append(Finding(rule, relative_path(path), line, message))
