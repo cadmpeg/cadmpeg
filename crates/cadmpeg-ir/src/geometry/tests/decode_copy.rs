@@ -306,7 +306,7 @@ fn solved_polyline_copy_admits_sample_lane() {
         .expect("test setup"),
     };
     let geometry =
-        SolvedCurveGeometry::Polyline(PolylineCurve::new(samples, 0.0).expect("test setup"));
+        SolvedCurveGeometry::Polyline(PolylineCurve::new(samples, 0.0, &cadmpeg_test_support::service_decode_context()).expect("polyline construction admission").expect("test setup"));
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = 1;
     let arena = DecodeArena::new();

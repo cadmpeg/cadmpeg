@@ -344,7 +344,7 @@ fn admitted_polyline_tangent_refuses_points_and_parameters() {
             }
         };
         let geometry = CurveGeometry::Solved(SolvedCurveGeometry::Polyline(
-            PolylineCurve::new(samples, 0.0).expect("polyline"),
+            PolylineCurve::new(samples, 0.0, &cadmpeg_test_support::service_decode_context()).expect("polyline construction admission").expect("polyline"),
         ));
         for (cap, operation) in [
             (2, "IR polyline derivative points"),

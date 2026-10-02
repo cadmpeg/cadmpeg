@@ -659,7 +659,7 @@ fn cacheless_constant_rolling_ball_uses_its_spine_as_section_center() {
                 .expect("nonempty polyline fixture"),
             },
             0.0,
-        )
+         &cadmpeg_test_support::service_decode_context()).expect("polyline construction admission")
         .unwrap(),
     ));
     let index = crate::index::ModelIndex::new(&ir);

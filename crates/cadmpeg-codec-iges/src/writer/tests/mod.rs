@@ -1412,7 +1412,7 @@ fn decreasing_polyline_parameters_are_not_implemented() {
     ]
     .try_into()
     .expect("nonempty polyline samples");
-    let polyline = PolylineCurve::new(PolylineSamples::Parameterized { vertices }, 0.0)
+    let polyline = PolylineCurve::new(PolylineSamples::Parameterized { vertices }, 0.0, &cadmpeg_test_support::service_decode_context()).expect("polyline construction admission")
         .expect("the IR admits finite strictly decreasing polyline parameters");
     assert!(matches!(
         curve_entity(
