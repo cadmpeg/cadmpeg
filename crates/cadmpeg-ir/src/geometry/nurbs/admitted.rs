@@ -248,12 +248,11 @@ fn pair<P>(
     storage: &mut Option<cadmpeg_core::decode::ScopedReservation<'_>>,
 ) -> Result<Vec<WeightedPole3<P>>, ConstructionError> {
     weight_lane(ctx, field, points.len(), weights.len())?;
-    super::weighted_poles_for_decode(
-        ctx,
+    super::weighted_poles(
         points,
         weights,
-        storage,
-        "IR NURBS paired poles",
+        |output| Ok(super::reserve_pole_storage(ctx, output, storage, "IR NURBS paired poles")?),
+        || Ok(ctx.charge_work(1, "IR NURBS paired poles")?),
         |index, weight| admitted_weight(ctx, field, index, weight),
     )
 }

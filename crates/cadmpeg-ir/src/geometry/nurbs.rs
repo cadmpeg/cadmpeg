@@ -301,39 +301,18 @@ fn reconstruct_poles<T, U>(
     Ok(output)
 }
 
-/// Pair each pole of a lane with its weight, after the weight lane has been
-/// found to cover the poles.
-fn weighted_poles<P, W>(
+/// Pair each pole with its weight through the caller's storage and work policy.
+fn weighted_poles<P, W, E>(
     points: Vec<P>,
     weights: Vec<W>,
-    weight: impl FnMut(usize, W) -> Result<NonZeroReal, NurbsError>,
-) -> Result<Vec<WeightedPole3<P>>, NurbsError> {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(&[], &arena, &cadmpeg_core::decode::DecodePolicy::default())
-            .map_err(NurbsError::from)?;
-    weighted_poles_for_decode(
-        &ctx,
-        points,
-        weights,
-        &mut None,
-        "IR weighted poles",
-        weight,
-    )
-}
-
-fn weighted_poles_for_decode<P, W, E: From<CodecError>>(
-    ctx: &DecodeContext<'_>,
-    points: Vec<P>,
-    weights: Vec<W>,
-    storage: &mut Option<cadmpeg_core::decode::ScopedReservation<'_>>,
-    operation: &'static str,
+    mut reserve: impl FnMut(&mut Vec<WeightedPole3<P>>) -> Result<(), E>,
+    mut work: impl FnMut() -> Result<(), E>,
     mut weight: impl FnMut(usize, W) -> Result<NonZeroReal, E>,
 ) -> Result<Vec<WeightedPole3<P>>, E> {
     let mut output = Vec::new();
     for (index, (point, value)) in points.into_iter().zip(weights).enumerate() {
-        reserve_pole_storage(ctx, &mut output, storage, operation)?;
-        ctx.charge_work(1, operation)?;
+        reserve(&mut output)?;
+        work()?;
         output.push(WeightedPole3 {
             point,
             weight: weight(index, value)?,
@@ -401,7 +380,9 @@ impl<P> NurbsPoles3<P> {
         };
         require_weight_lane("poles", points.len(), weights.len())?;
         Ok(Self::Rational {
-            points: weighted_poles(points, weights, |index, weight| {
+            points: weighted_poles(points, weights,
+                |output| output.try_reserve(1).map_err(|_| NurbsError::from(scratch::allocation_refusal(1, "IR weighted poles"))),
+                || Ok(()), |index, weight| {
                 admit_weight("poles", index, weight)
             })?,
         })
@@ -417,7 +398,9 @@ impl<P> NurbsPoles3<P> {
         };
         require_weight_lane("poles", points.len(), weights.len())?;
         Ok(Self::Rational {
-            points: weighted_poles(points, weights, |index, weight| {
+            points: weighted_poles(points, weights,
+                |output| output.try_reserve(1).map_err(|_| NurbsError::from(scratch::allocation_refusal(1, "IR weighted poles"))),
+                || Ok(()), |index, weight| {
                 admit_finite_weight("poles", index, weight)
             })?,
         })
@@ -439,7 +422,9 @@ impl<P> NurbsPoles3<P> {
         };
         require_weight_lane("poles", points.len(), weights.len())?;
         Ok(Self::Rational {
-            points: weighted_poles(points, weights, |_, weight| Ok(weight))?,
+            points: weighted_poles(points, weights,
+                |output| output.try_reserve(1).map_err(|_| NurbsError::from(scratch::allocation_refusal(1, "IR weighted poles"))),
+                || Ok(()), |_, weight| Ok(weight))?,
         })
     }
 
@@ -567,7 +552,9 @@ fn weighted_rows<P, W>(
     scratch::reserve_exact(&mut output, rows.len(), "IR weighted pole rows")?;
     for (row, weight_row) in rows.into_iter().zip(weights) {
         require_weight_lane("pole grid row", row.len(), weight_row.len())?;
-        output.push(weighted_poles(row, weight_row, &mut weight)?);
+        output.push(weighted_poles(row, weight_row,
+            |output| output.try_reserve(1).map_err(|_| NurbsError::from(scratch::allocation_refusal(1, "IR weighted poles"))),
+            || Ok(()), &mut weight)?);
     }
     Ok(output)
 }
