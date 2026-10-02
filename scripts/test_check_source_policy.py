@@ -1313,5 +1313,52 @@ class IntegerLimitDefaults(TempSourceCase):
         self.assertEqual([f.line for f in self.findings("integer_clamp")], [2])
 
 
+class LintSuppressions(TempSourceCase):
+    EXPECT = """#![expect(
+    clippy::as_conversions,
+    clippy::cast_possible_truncation,
+    clippy::cast_precision_loss,
+    clippy::cast_sign_loss,
+    reason = "conversions check exactness and target range"
+)]
+"""
+
+    def test_outer_inner_and_conditional_suppressions_fail(self) -> None:
+        self.write("crates/demo/src/lib.rs", """#![allow(dead_code)]
+#[expect(clippy::too_many_arguments, reason = "many inputs")]
+fn f() {}
+#[cfg_attr(feature = "x", allow(unused))]
+fn g() {}
+""")
+        self.assertEqual([f.line for f in self.findings("lint_suppression")], [1, 2, 4])
+
+    def test_only_one_exact_module_conversion_expectation_is_exempt(self) -> None:
+        path = "crates/cadmpeg-core/src/convert.rs"
+        self.write(path, self.EXPECT + "fn f() {}")
+        self.assertEqual(self.findings("lint_suppression"), [])
+        self.write(path, self.EXPECT + self.EXPECT + "fn f() {}")
+        self.assertEqual(len(self.findings("lint_suppression")), 1)
+        for source in [self.EXPECT.replace("#!", "#"),
+                       self.EXPECT.replace("clippy::cast_sign_loss,", "dead_code,"),
+                       self.EXPECT.replace("conversions check exactness and target range", ""),
+                       "mod inner {\n" + self.EXPECT + "fn f() {}\n}"]:
+            with self.subTest(source=source):
+                self.write(path, source)
+                self.assertEqual(len(self.findings("lint_suppression")), 1)
+        self.write(path, self.EXPECT + "fn f() {}")
+        self.write("crates/demo/src/lib.rs", self.EXPECT)
+        self.assertEqual(len(self.findings("lint_suppression")), 1)
+
+    def test_comments_literals_and_test_suppressions_are_exempt(self) -> None:
+        self.write("crates/demo/src/lib.rs", """// #[allow(unused)]
+fn f() { let s = "#[expect(unused)]"; }
+#[cfg(test)]
+#[allow(dead_code)]
+mod tests { #![allow(clippy::unwrap_used)] fn f() {} }
+""")
+        self.write("crates/demo/src/owner/tests.rs", "#![allow(dead_code)]")
+        self.assertEqual(self.findings("lint_suppression"), [])
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -73,6 +73,16 @@ arithmetic. The overflow branch propagates the caller context's resource refusal
 in decode code or a typed error elsewhere. Constant expressions must preserve
 the exact value or reject the invalid constant.
 
+## Lint suppressions
+
+`lint_suppression` rejects production `#[allow(...)]` and `#[expect(...)]`,
+including inner attributes and conditional suppressions. Fix the code covered
+by the lint. Test modules and test files retain their suppressions. The one
+exception is the module-level expectation in `cadmpeg-core/src/convert.rs` for
+`as_conversions`, `cast_possible_truncation`, `cast_precision_loss` and
+`cast_sign_loss`. It has a nonempty reason and appears once. Function-level
+expectations, nested module expectations and additional lints are rejected.
+
 ## Integer limits
 
 `integer_clamp` rejects integer `MAX` or `MIN` defaults in `unwrap_or`,

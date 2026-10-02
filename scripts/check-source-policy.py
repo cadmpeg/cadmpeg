@@ -507,6 +507,54 @@ def scan_integer_clamps(path: Path, code: str) -> list[Finding]:
     return findings
 
 
+CONVERSION_EXPECTATION = {
+    "clippy::as_conversions", "clippy::cast_possible_truncation",
+    "clippy::cast_precision_loss", "clippy::cast_sign_loss",
+}
+
+
+def scan_lint_suppressions(path: Path, source: str, code: str) -> list[Finding]:
+    """Keep lint suppressions in tests and the one checked conversion module."""
+    findings = []
+    tokens, pairs, parents = evaluation_tokens(code)
+    words = [token[0] for token in tokens]
+    admitted_conversion = False
+    for index, word in enumerate(words):
+        if word != "#":
+            continue
+        inner = words[index + 1:index + 2] == ["!"]
+        opening = index + (2 if inner else 1)
+        if words[opening:opening + 1] != ["["] or opening not in pairs:
+            continue
+        end = pairs[opening]
+        suppressions = [at for at in range(opening + 1, end)
+                        if words[at] in {"allow", "expect"} and words[at + 1:at + 2] == ["("]]
+        if not suppressions:
+            continue
+        allowed = False
+        if (relative_path(path) == "crates/cadmpeg-core/src/convert.rs"
+                and not admitted_conversion and inner and index not in parents
+                and words[opening + 1:opening + 3] == ["expect", "("]):
+            attribute = code[tokens[opening].end():tokens[end].start()]
+            lints = set(re.findall(r"clippy\s*::\s*([A-Za-z_]\w*)", attribute))
+            lints = {"clippy::" + lint for lint in lints}
+            remaining = re.sub(r"clippy\s*::\s*[A-Za-z_]\w*", "", attribute)
+            remaining = re.sub(r"reason\s*=", "", remaining)
+            remaining = re.sub(r"[\s,()]|expect", "", remaining)
+            raw = source[tokens[opening].end():tokens[end].start()]
+            reason = re.search(r'reason\s*=\s*"([^"\n]*)"', raw)
+            allowed = (lints == CONVERSION_EXPECTATION and not remaining
+                       and reason is not None and bool(reason[1].strip())
+                       and len(suppressions) == 1)
+            admitted_conversion = allowed
+        if not allowed:
+            findings.append(Finding(
+                "lint_suppression", relative_path(path), code.count("\n", 0, tokens[index].start()) + 1,
+                "Fix the lint instead of suppressing it; only tests and the single module expectation in core convert.rs are exempt.",
+            ))
+    return findings
+
+
 WRAPPING_CALL = re.compile(r"\bwrapping_\w+\s*(?:::\s*<[^;{}]*>)?\s*\(")
 WRAPPING_MARKER = re.compile(r"^\s*// wrapping-exception: (\S.*?)\s*$")
 
@@ -549,6 +597,7 @@ def scan_patterns(path: Path, source: str) -> list[Finding]:
     code, size = production_source(source)
     findings = scan_saturating_arithmetic(path, code)
     findings.extend(scan_wrapping_arithmetic(path, source, code))
+    findings.extend(scan_lint_suppressions(path, source, code))
 
     def report(rule: str, line: int, message: str) -> None:
         findings.append(Finding(rule, relative_path(path), line, message))
