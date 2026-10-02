@@ -650,6 +650,30 @@ impl<'ctx, D: BorrowMut<CadIr>> CommitSession<'ctx, D> {
         }
     }
 
+    /// Append a candidate under read-only admission and extend only accepted cache positions.
+    pub fn try_append<T, E>(
+        &mut self,
+        model: Model,
+        native: crate::native::Native,
+        admit: impl FnOnce(&CadIr, &[crate::unknown::UnknownRecord]) -> Result<Result<T, E>, CodecError>,
+    ) -> Result<Result<T, E>, CodecError> {
+        let ctx = self.ctx;
+        self.storage.with_storage(|| self.state.ensure_identities(ctx))?;
+        let index = self.state.identities.as_mut().ok_or_else(|| CodecError::malformed("committed identity index is absent"))?;
+        let staged = ctx.with_scoped_storage("candidate committed identity staging", || {
+            stage_committed_identities(self.state.base.borrow(), &model, Some(&native), self.state.unknown_namespace, ctx)
+        })?;
+        reserve_committed_identities(index, &staged.0, ctx, &mut self.storage)?;
+        let unknowns = &self.state.unknowns;
+        let result = self.state.base.borrow_mut().try_append(ctx, model, native, |combined| admit(combined, unknowns))?;
+        if result.is_ok() {
+            for (hash, group) in staged.0 {
+                index.entry(hash).or_default().extend(group);
+            }
+        }
+        Ok(result)
+    }
+
     /// Look up an identity through the live caller-accounted cache.
     pub fn contains(&mut self, identity: &str) -> Result<bool, CodecError> {
         self.state.lookup_with_storage(identity, self.ctx, &mut self.storage)
@@ -756,6 +780,74 @@ fn committed_identity_contains(
     Ok(false)
 }
 
+fn stage_committed_identities(
+    base: &CadIr,
+    model: &Model,
+    native: Option<&crate::native::Native>,
+    unknown_namespace: Option<&str>,
+    ctx: &DecodeContext<'_>,
+) -> Result<CommittedIdentityIndex, CodecError> {
+    let mut staged = CommittedIdentityIndex::new();
+    macro_rules! stage_model {
+        ($($field:ident: $ty:ty, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?;)*) => {$(
+            for (offset, entity) in model.$field.iter().enumerate() {
+                ctx.charge_work(u64_from_index(entity.identity().len()), "hash staged committed identity")?;
+                let index = base.model.$field.len().checked_add(offset).ok_or_else(|| ctx.refuse_codec_limit("staged committed identity position", u64::MAX - 1, u64::MAX))?;
+                insert_identity(&mut staged, identity_hash(entity.identity()), CommittedIdentity::Neutral(IdentitySlot { kind: <$ty as EntitySchema>::KIND, index }), &DecodeStorage(ctx), "draft committed identity slots")?;
+            }
+        )*};
+    }
+    crate::document::arena_registry!(stage_model);
+    if let Some(native) = native {
+        for (format, namespace) in &native.0 {
+            ctx.charge_work(u64_from_index(format.len()).checked_add(1).ok_or_else(|| ctx.refuse_codec_limit("hash staged native namespace", u64::MAX - 1, u64::MAX))?, "hash staged native namespace")?;
+            let namespace_hash = identity_hash(format);
+            let replaces_unknowns = match unknown_namespace {
+                Some(replacement) => identities_equal(ctx, format, replacement, "compare staged unknown namespace")?,
+                None => false,
+            };
+            for (arena, records) in namespace.arenas() {
+                if replaces_unknowns && identities_equal(ctx, arena, "unknowns", "compare staged unknown arena")? { continue; }
+                ctx.charge_work(u64_from_index(arena.len()).checked_add(1).ok_or_else(|| ctx.refuse_codec_limit("hash staged native arena", u64::MAX - 1, u64::MAX))?, "hash staged native arena")?;
+                let arena_hash = identity_hash(arena);
+                let mut start = 0;
+                for (existing_format, existing_namespace) in &base.native.0 {
+                    if !identities_equal(ctx, existing_format, format, "find staged native namespace")? { continue; }
+                    for (existing_arena, existing_records) in existing_namespace.arenas() {
+                        if identities_equal(ctx, existing_arena, arena, "find staged native arena")? {
+                            start = existing_records.len();
+                            break;
+                        }
+                    }
+                    break;
+                }
+                for (offset, record) in records.iter().enumerate() {
+                    ctx.charge_work(u64_from_index(record.id().len()), "hash staged native identity")?;
+                    let record_position = start.checked_add(offset).ok_or_else(|| ctx.refuse_codec_limit("staged native identity position", u64::MAX - 1, u64::MAX))?;
+                    insert_identity(&mut staged, identity_hash(record.id()), CommittedIdentity::Native { namespace_hash, arena_hash, record: record_position }, &DecodeStorage(ctx), "draft committed identity slots")?;
+                }
+            }
+        }
+    }
+    Ok(staged)
+}
+
+fn reserve_committed_identities(
+    identities: &mut CommittedIdentityIndex,
+    staged: &CommittedIdentityIndex,
+    ctx: &DecodeContext<'_>,
+    cache: &mut ScopedReservation<'_>,
+) -> Result<(), CodecError> {
+    let storage = DecodeStorage(ctx);
+    for (hash, group) in staged {
+        ctx.charge_work(2, "committed identity transfer lookup")?;
+        ctx.charge_work(u64_from_index(group.len()).checked_mul(u64_from_index(std::mem::size_of::<CommittedIdentity>())).ok_or_else(|| ctx.refuse_codec_limit("committed identity transfer moves", u64::MAX - 1, u64::MAX))?, "committed identity transfer moves")?;
+        cache.with_storage_limit(|| storage.entry(identities, hash, "committed identity slots"))?;
+        ctx.reserve_scoped_vec(cache, identities.entry(*hash).or_default(), group.len(), "committed identity slots")?;
+    }
+    Ok(())
+}
+
 impl<D: BorrowMut<CadIr>> CommitState<'_, D> {
     fn lookup_with_storage(
         &mut self,
@@ -814,25 +906,9 @@ impl<D: BorrowMut<CadIr>> CommitState<'_, D> {
             .feature_regeneration_parents
             .reserve_append(&draft.model.feature_regeneration_parents, ctx)?;
         let staged = ctx.with_scoped_storage("draft committed identity staging", || {
-            let mut staged = CommittedIdentityIndex::new();
-            macro_rules! stage_identities {
-                ($($field:ident: $ty:ty, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?;)*) => {
-                    $(for (offset, entity) in draft.model.$field.iter().enumerate() {
-                        ctx.charge_work(u64_from_index(entity.identity().len()), "hash staged committed identity")?;
-                        insert_identity(&mut staged, identity_hash(entity.identity()), CommittedIdentity::Neutral(IdentitySlot { kind: <$ty as EntitySchema>::KIND, index: base.model.$field.len() + offset }), &DecodeStorage(ctx), "draft committed identity slots")?;
-                    })*
-                };
-            }
-            crate::document::arena_registry!(stage_identities);
-            Ok::<_, CodecError>(staged)
+            stage_committed_identities(base, &draft.model, None, self.unknown_namespace, ctx)
         })?;
-        let storage = DecodeStorage(ctx);
-        for (hash, group) in &staged.0 {
-            cache.with_storage_limit(|| storage.entry(identities, hash, "committed identity slots"))?;
-            ctx.reserve_scoped_vec(
-                cache, identities.entry(*hash).or_default(), group.len(), "committed identity slots",
-            )?;
-        }
+        reserve_committed_identities(identities, &staged.0, ctx, cache)?;
         let transferred = before_apply()?;
         for (hash, group) in staged.0 {
             identities.entry(hash).or_default().extend(group);
