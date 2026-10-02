@@ -9,7 +9,7 @@ use crate::records::{
 use cadmpeg_asm::brep::attributes::attribute_key;
 use cadmpeg_asm::brep::records::BodyNativeKey;
 use cadmpeg_asm::brep::{
-    decode_with_header, decode_with_purpose, retain_root_entities, AsmBrep, DecodePurpose,
+    decode_with_header, decode_with_purpose, AsmBrep, DecodePurpose,
 };
 use cadmpeg_asm::ids::IdFormat;
 use cadmpeg_asm::sab::Record;
@@ -20,7 +20,7 @@ use cadmpeg_ir::ids::BodyId;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap, HashSet};
 
-mod value_budget;
+mod graph_ops;
 
 fn merge_brep_counts(
     ctx: &DecodeContext<'_>,
@@ -32,193 +32,6 @@ fn merge_brep_counts(
         *target.entry(kind).or_default() += count;
     }
     Ok(())
-}
-
-fn collect_owned_ids_charged(
-    ctx: &DecodeContext<'_>,
-    value: &serde_value::Value,
-    owned: &mut HashSet<String>,
-) -> Result<(), CodecError> {
-    let _depth = ctx.enter_nested("walk F3D BREP owned IDs")?;
-    ctx.charge_work(1, "walk F3D BREP owned IDs")?;
-    if let serde_value::Value::String(text) = value {
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(text.len())
-                .checked_mul(2)
-                .ok_or_else(|| ctx.refuse_codec_limit("walk F3D BREP owned IDs", 0, u64::MAX))?,
-            "walk F3D BREP owned IDs",
-        )?;
-    }
-    if let Some(id) = cadmpeg_asm::brep::entity_id(value) {
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(id.len())
-                .checked_mul(2)
-                .ok_or_else(|| ctx.refuse_codec_limit("hash F3D BREP owned ID", 0, u64::MAX))?,
-            "hash F3D BREP owned ID",
-        )?;
-        if !owned.contains(id) {
-            let key = ctx.copy_retained_text(id, "copy F3D BREP owned ID")?;
-
-            ctx.reserve_set(owned, 1, "index F3D BREP owned IDs")?;
-            owned.insert(key);
-        }
-    }
-    match value {
-        serde_value::Value::Map(fields) => {
-            for (key, item) in fields {
-                collect_owned_ids_charged(ctx, key, owned)?;
-                collect_owned_ids_charged(ctx, item, owned)?;
-            }
-        }
-        serde_value::Value::Seq(items) => {
-            for item in items {
-                collect_owned_ids_charged(ctx, item, owned)?;
-            }
-        }
-        serde_value::Value::Option(Some(item)) | serde_value::Value::Newtype(item) => {
-            collect_owned_ids_charged(ctx, item, owned)?;
-        }
-        _ => {}
-    }
-    Ok(())
-}
-
-fn remap_owned_ids_charged(
-    ctx: &DecodeContext<'_>,
-    value: &mut serde_value::Value,
-    replacements: &HashMap<String, String>,
-) -> Result<(), CodecError> {
-    let _depth = ctx.enter_nested("remap F3D BREP owned IDs")?;
-    ctx.charge_work(1, "remap F3D BREP owned IDs")?;
-    if let serde_value::Value::String(text) = value {
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(text.len())
-                .checked_mul(2)
-                .ok_or_else(|| ctx.refuse_codec_limit("remap F3D BREP owned IDs", 0, u64::MAX))?,
-            "remap F3D BREP owned IDs",
-        )?;
-    }
-    match value {
-        serde_value::Value::String(id) => {
-            if let Some(replacement) = replacements.get(id) {
-                ctx.charge_work(
-                    cadmpeg_core::decode::u64_from_index(replacement.len()),
-                    "copy F3D BREP remapped ID",
-                )?;
-                *id = ctx.copy_retained_text(replacement, "copy F3D BREP remapped ID")?;
-            }
-        }
-        serde_value::Value::Seq(items) => {
-            for item in items {
-                remap_owned_ids_charged(ctx, item, replacements)?;
-            }
-        }
-        serde_value::Value::Map(fields) => {
-            let entries = std::mem::take(fields);
-            for (mut key, mut item) in entries {
-                remap_owned_ids_charged(ctx, &mut key, replacements)?;
-                remap_owned_ids_charged(ctx, &mut item, replacements)?;
-                ctx.insert_btree_map(fields, key, item, "rebuild F3D BREP value map")?;
-            }
-        }
-        serde_value::Value::Option(Some(item)) | serde_value::Value::Newtype(item) => {
-            remap_owned_ids_charged(ctx, item, replacements)?;
-        }
-        _ => {}
-    }
-    Ok(())
-}
-
-fn collect_brep_references(
-    ctx: &DecodeContext<'_>,
-    value: &serde_value::Value,
-    owned: &HashSet<String>,
-    references: &mut HashSet<String>,
-) -> Result<(), CodecError> {
-    let _depth = ctx.enter_nested("walk F3D BREP references")?;
-    ctx.charge_work(1, "walk F3D BREP references")?;
-    if let serde_value::Value::String(text) = value {
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(text.len())
-                .checked_mul(2)
-                .ok_or_else(|| ctx.refuse_codec_limit("walk F3D BREP references", 0, u64::MAX))?,
-            "walk F3D BREP references",
-        )?;
-    }
-    match value {
-        serde_value::Value::String(id) if owned.contains(id) && !references.contains(id) => {
-            let id = ctx.copy_retained_text(id, "copy F3D BREP adjacency reference")?;
-            ctx.insert_hash_set(references, id, "collect F3D BREP adjacency references")
-                .map(|_| ())?;
-        }
-        serde_value::Value::Seq(items) => {
-            for item in items {
-                collect_brep_references(ctx, item, owned, references)?;
-            }
-        }
-        serde_value::Value::Map(fields) => {
-            for (key, item) in fields {
-                collect_brep_references(ctx, key, owned, references)?;
-                collect_brep_references(ctx, item, owned, references)?;
-            }
-        }
-        serde_value::Value::Option(Some(item)) | serde_value::Value::Newtype(item) => {
-            collect_brep_references(ctx, item, owned, references)?;
-        }
-        _ => {}
-    }
-    Ok(())
-}
-
-fn insert_brep_adjacency(
-    ctx: &DecodeContext<'_>,
-    adjacency: &mut HashMap<String, HashSet<String>>,
-    source: &str,
-    target: &str,
-) -> Result<(), CodecError> {
-    if !adjacency.contains_key(source) {
-        let source = ctx.copy_retained_text(source, "copy F3D BREP adjacency source")?;
-
-        ctx.reserve_map(adjacency, 1, "index F3D BREP adjacency")?;
-        adjacency.insert(source, HashSet::new());
-    }
-    if let Some(targets) = adjacency.get_mut(source) {
-        if !targets.contains(target) {
-            let target = ctx.copy_retained_text(target, "copy F3D BREP adjacency target")?;
-            ctx.insert_hash_set(targets, target, "collect F3D BREP adjacent IDs")
-                .map(|_| ())?;
-        }
-    }
-    Ok(())
-}
-
-fn collect_brep_adjacency(
-    ctx: &DecodeContext<'_>,
-    value: &serde_value::Value,
-    owned: &HashSet<String>,
-) -> Result<HashMap<String, HashSet<String>>, CodecError> {
-    let mut adjacency = HashMap::new();
-    let serde_value::Value::Map(fields) = value else {
-        return Ok(adjacency);
-    };
-    for value in fields.values() {
-        let serde_value::Value::Seq(items) = value else {
-            continue;
-        };
-        for item in items {
-            let Some(id) = cadmpeg_asm::brep::entity_id(item) else {
-                continue;
-            };
-            let mut references = HashSet::new();
-            collect_brep_references(ctx, item, owned, &mut references)?;
-            references.remove(id);
-            for reference in references {
-                insert_brep_adjacency(ctx, &mut adjacency, id, &reference)?;
-                insert_brep_adjacency(ctx, &mut adjacency, &reference, id)?;
-            }
-        }
-    }
-    Ok(adjacency)
 }
 
 fn copy_attribute_target(
@@ -253,7 +66,7 @@ fn copy_attribute_target(
 
 /// The ASM B-rep graph plus links derived from Fusion attribute records.
 ///
-/// Kernel arenas are flattened at the top level for [`retain_root_entities`].
+/// Kernel arenas form the top-level structural projection.
 #[derive(Default, Serialize, Deserialize)]
 pub(crate) struct Brep {
     /// The format-independent ASM graph.
@@ -371,178 +184,6 @@ impl Brep {
             }
         }
         Ok(resolved)
-    }
-
-    /// Retain the connected entity graph rooted at the body-map keys selected
-    /// for one BREP blob.
-    pub(crate) fn retain_body_keys(
-        &mut self,
-        ctx: &DecodeContext<'_>,
-        selected_keys: &HashSet<u64>,
-    ) -> Result<(), cadmpeg_core::CodecError> {
-        let annotations = std::mem::take(&mut self.asm.annotation_records);
-        let sketch_curve_links = std::mem::take(&mut self.sketch_curve_links);
-        let persistent_design_links = std::mem::take(&mut self.persistent_design_links);
-        let persistent_subentity_tags = std::mem::take(&mut self.persistent_subentity_tags);
-        let creation_timestamps = std::mem::take(&mut self.creation_timestamps);
-        let _value_reservation =
-            value_budget::reserve_projection(ctx, &*self, "project F3D retained BREP value")?;
-        let mut value = serde_value::to_value(&*self).map_err(|error| {
-            cadmpeg_core::CodecError::malformed(format_args!("BREP serialization failed: {error}"))
-        })?;
-        let mut owned = HashSet::new();
-        collect_owned_ids_charged(ctx, &value, &mut owned)?;
-        let mut native_body_ids = HashSet::new();
-        for native in &self.asm.body_native_keys {
-            if !native_body_ids.contains(native.body.as_str()) {
-                ctx.reserve_set(&mut native_body_ids, 1, "index F3D native BREP bodies")?;
-                native_body_ids.insert(native.body.as_str());
-            }
-        }
-        let mut reachable = HashSet::new();
-        for body in self.body_selectors_for(ctx, selected_keys)?.into_keys() {
-            ctx.insert_hash_set(
-                &mut reachable,
-                body.into_string(),
-                "collect F3D selected BREP roots",
-            )
-            .map(|_| ())?;
-        }
-        // A Design body map selects native ASM body records. Neutral roots
-        // projected from other saved top-level entities have no ASM body key
-        // and remain part of the selected BREP blob.
-        for body in &self.asm.bodies {
-            if !native_body_ids.contains(body.id.as_str()) {
-                let id = ctx.copy_retained_text(body.id.as_str(), "copy F3D neutral BREP root")?;
-                ctx.insert_hash_set(&mut reachable, id, "collect F3D neutral BREP roots")
-                    .map(|_| ())?;
-            }
-        }
-        let adjacency = collect_brep_adjacency(ctx, &value, &owned)?;
-        let mut pending = Vec::new();
-        for id in &reachable {
-            let id = ctx.copy_retained_text(id, "copy F3D BREP pending root")?;
-            ctx.push_vec(&mut pending, id, "collect F3D BREP pending roots")?;
-        }
-        while let Some(id) = pending.pop() {
-            for adjacent in adjacency.get(&id).into_iter().flatten() {
-                if !reachable.contains(adjacent) {
-                    let reached = ctx.copy_retained_text(adjacent, "copy F3D reachable BREP ID")?;
-                    ctx.insert_hash_set(&mut reachable, reached, "collect F3D reachable BREP IDs")
-                        .map(|_| ())?;
-                    let queued = ctx.copy_retained_text(adjacent, "copy F3D pending BREP ID")?;
-                    ctx.push_vec(&mut pending, queued, "collect F3D pending BREP IDs")?;
-                }
-            }
-        }
-        retain_root_entities(&mut value, &reachable);
-        let _rebuild_reservation =
-            value_budget::reserve_projection(ctx, &value, "rebuild F3D retained BREP value")?;
-        let mut retained: Self = crate::value_tree::from_value(value).map_err(|error| {
-            cadmpeg_core::CodecError::malformed(format_args!(
-                "retained BREP graph is invalid: {error}"
-            ))
-        })?;
-        for annotation in annotations {
-            if reachable.contains(&annotation.id) {
-                ctx.push_vec(
-                    &mut retained.asm.annotation_records,
-                    annotation,
-                    "collect F3D retained annotations",
-                )?;
-            }
-        }
-        for link in sketch_curve_links {
-            if retained_attribute_target(&link.target, &reachable) {
-                ctx.push_vec(
-                    &mut retained.sketch_curve_links,
-                    link,
-                    "collect F3D retained sketch links",
-                )?;
-            }
-        }
-        for link in persistent_design_links {
-            if retained_attribute_target(&link.target, &reachable) {
-                ctx.push_vec(
-                    &mut retained.persistent_design_links,
-                    link,
-                    "collect F3D retained design links",
-                )?;
-            }
-        }
-        for tag in persistent_subentity_tags {
-            if retained_attribute_target(&tag.target, &reachable) {
-                ctx.push_vec(
-                    &mut retained.persistent_subentity_tags,
-                    tag,
-                    "collect F3D retained subentity tags",
-                )?;
-            }
-        }
-        for timestamp in creation_timestamps {
-            if retained_attribute_target(&timestamp.target, &reachable) {
-                ctx.push_vec(
-                    &mut retained.creation_timestamps,
-                    timestamp,
-                    "collect F3D retained timestamps",
-                )?;
-            }
-        }
-        *self = retained;
-        Ok(())
-    }
-
-    /// Qualify every entity owned by this graph so several BREP blobs can
-    /// coexist in one document model without record-index collisions.
-    pub(crate) fn qualify_ids(
-        &mut self,
-        ctx: &DecodeContext<'_>,
-        format: IdFormat,
-        namespace: &str,
-    ) -> Result<(), cadmpeg_core::CodecError> {
-        let annotations = std::mem::take(&mut self.asm.annotation_records);
-        let _value_reservation =
-            value_budget::reserve_projection(ctx, &*self, "project F3D qualified BREP value")?;
-        let mut value = serde_value::to_value(&*self).map_err(|error| {
-            cadmpeg_core::CodecError::malformed(format_args!("BREP serialization failed: {error}"))
-        })?;
-        let mut owned = HashSet::new();
-        collect_owned_ids_charged(ctx, &value, &mut owned)?;
-        let scheme_prefix =
-            ctx.format_retained(format_args!("{format}:"), "retain F3D BREP scheme prefix")?;
-        let mut replacements = HashMap::new();
-        for id in owned {
-            let replacement = ctx.format_retained(
-                format_args!(
-                    "{format}:brep/{namespace}/{}",
-                    id.strip_prefix(&scheme_prefix).unwrap_or(&id)
-                ),
-                "retain F3D qualified BREP ID",
-            )?;
-
-            ctx.reserve_map(&mut replacements, 1, "index F3D BREP replacements")?;
-            replacements.insert(id, replacement);
-        }
-        remap_owned_ids_charged(ctx, &mut value, &replacements)?;
-        let _rebuild_reservation =
-            value_budget::reserve_projection(ctx, &value, "rebuild F3D qualified BREP value")?;
-        let mut qualified: Self = crate::value_tree::from_value(value).map_err(|error| {
-            cadmpeg_core::CodecError::malformed(format_args!("qualified BREP is invalid: {error}"))
-        })?;
-        let mut qualified_annotations = Vec::new();
-        for mut annotation in annotations {
-            if let Some(id) = replacements.get(&annotation.id) {
-                annotation.id = ctx.copy_retained_text(id, "copy F3D qualified annotation ID")?;
-            }
-            ctx.push_vec(
-                &mut qualified_annotations,
-                annotation,
-                "collect F3D qualified annotations",
-            )?;
-        }
-        qualified.asm.annotation_records = qualified_annotations;
-        *self = qualified;
-        Ok(())
     }
 
     /// Append a disjoint, already-qualified BREP graph.
@@ -1004,19 +645,6 @@ fn generic_tag_payload(
         _ => return None,
     };
     Some((version, usize::try_from(*group_count).ok()?, rest))
-}
-
-fn retained_attribute_target(target: &AttributeTarget, reachable: &HashSet<String>) -> bool {
-    match target {
-        AttributeTarget::Document => true,
-        AttributeTarget::Body(id) => reachable.contains(id.as_str()),
-        AttributeTarget::Face(id) => reachable.contains(id.as_str()),
-        AttributeTarget::Shell(id) => reachable.contains(id.as_str()),
-        AttributeTarget::Loop(id) => reachable.contains(id.as_str()),
-        AttributeTarget::Coedge(id) => reachable.contains(id.as_str()),
-        AttributeTarget::Edge(id) => reachable.contains(id.as_str()),
-        AttributeTarget::Vertex(id) => reachable.contains(id.as_str()),
-    }
 }
 
 fn creation_timestamp(

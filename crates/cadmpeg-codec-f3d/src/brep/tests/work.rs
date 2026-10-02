@@ -1,30 +1,32 @@
 // SPDX-License-Identifier: Apache-2.0
 use serde_value::Value;
-use std::collections::{HashMap, HashSet};
+use std::collections::BTreeSet;
+use cadmpeg_ir::schema::rewrite::typed::{IdentityMap, RewriteIdentities};
 
 #[test]
 fn brep_value_walks_preserve_work_refusals() {
     for operation in [
         "walk F3D BREP owned IDs",
-        "remap F3D BREP owned IDs",
+        "identity rewrite scalar",
         "walk F3D BREP references",
     ] {
         let mut policy = cadmpeg_core::decode::DecodePolicy::service();
         policy.limits.max_work_units = 1;
         crate::test_support::with_decode_policy(&policy, |ctx| {
-            let mut value = Value::Seq(vec![Value::U32(1), Value::U32(2)]);
+            let value = Value::Seq(vec![Value::U32(1), Value::U32(2)]);
             let error = match operation {
                 "walk F3D BREP owned IDs" => {
-                    super::super::collect_owned_ids_charged(ctx, &value, &mut HashSet::new())
+                    super::super::graph_ops::collect_owned_ids(ctx, &value, &mut BTreeSet::new())
                 }
-                "remap F3D BREP owned IDs" => {
-                    super::super::remap_owned_ids_charged(ctx, &mut value, &HashMap::new())
+                "identity rewrite scalar" => {
+                    let mut map = IdentityMap::new(ctx, operation, |source: &str| ctx.copy_retained_text(source, operation)).unwrap();
+                    vec![1_u32, 2_u32].rewrite_identities(ctx, &mut map).map(|_| ())
                 }
-                _ => super::super::collect_brep_references(
+                _ => super::super::graph_ops::collect_brep_references(
                     ctx,
                     &value,
-                    &HashSet::new(),
-                    &mut HashSet::new(),
+                    &BTreeSet::new(),
+                    &mut BTreeSet::new(),
                 ),
             }
             .unwrap_err();
