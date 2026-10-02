@@ -368,7 +368,7 @@ fn admitted_polyline_path_keeps_samples_and_checks_parameter_order() {
             } else {
                 Ok(FinitePoint3::new(Point3::new(2.0, 0.0, 0.0)).unwrap())
             }
-        })
+        }, &cadmpeg_test_support::service_decode_context()).expect("sample edit admission")
         .unwrap_err();
     assert!(error.to_string().contains("refused second point"));
     assert_eq!(edited, admitted);
@@ -484,3 +484,5 @@ fn checked_polyline_samples_keep_parameter_order_and_deflection_rules() {
 mod construction;
 
 mod polyline_construction;
+
+mod point_edits;

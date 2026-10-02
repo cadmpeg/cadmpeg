@@ -12,7 +12,7 @@ use cadmpeg_ir::geometry::pcurve::{PcurveMetadata, PcurveNurbsPoles, WeightedPol
 use cadmpeg_ir::geometry::{
     pcurve::{Pcurve, PcurveGeometry, PcurveNurbs},
     sampled::{
-        GeometryLayoutError, PolygonalSurface, PolylineCurve, PolylineSamples, PolylineVertex,
+PolygonalSurface, PolylineCurve, PolylineSamples, PolylineVertex,
     },
     Curve, CurveGeometry, ProceduralSurface, ProceduralSurfaceDefinition, SolvedCurveGeometry,
     SolvedSurfaceGeometry, Surface, SurfaceGeometry,
@@ -1561,7 +1561,7 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
             )
             .map_err(CodecError::malformed)?,
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Polyline({
-                place_polyline_samples(&mut samples, carrier_transform)?;
+                place_polyline_samples(&mut samples, carrier_transform, self.ctx)?;
                 PolylineCurve::from_scaled_deflection(samples, deflection, scale, self.ctx)?
                     .map_err(|error| CodecError::Malformed(error.to_string()))?
             })),
@@ -1582,7 +1582,7 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
             ir.model.curves.push(Curve {
                 id: self.polygon_curve_id(edge, ordinal, true)?,
                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Polyline({
-                    place_polyline_samples(&mut samples, carrier_transform)?;
+                    place_polyline_samples(&mut samples, carrier_transform, self.ctx)?;
                     PolylineCurve::from_scaled_deflection(samples, deflection, scale, self.ctx)?
                         .map_err(|error| CodecError::Malformed(error.to_string()))?
                 })),
@@ -2455,16 +2455,18 @@ fn transform_surface(
 fn place_polyline_samples(
     samples: &mut PolylineSamples<FiniteReal, FinitePoint3>,
     transform: Transform,
+    ctx: &DecodeContext<'_>,
 ) -> Result<(), CodecError> {
-    samples
-        .edit_admitted_points(|point| {
-            transform.apply_point(point.get()).ok_or_else(|| {
-                GeometryLayoutError::EditRefused(
-                    "placed polyline sample contains a non-finite coordinate".to_string(),
-                )
-            })
-        })
-        .map_err(|error| CodecError::malformed(error.to_string()))
+    samples.edit_admitted_points(|point| {
+        match transform.apply_point(point.get()) {
+            Some(point) => Ok(point),
+            None => Err(CodecError::Malformed(ctx.copy_retained_text(
+                "placed polyline sample contains a non-finite coordinate",
+                "FreeCAD polyline placement refusal",
+            )?)),
+        }
+    }, ctx)??;
+    Ok(())
 }
 
 fn transform_normalized_vector(transform: Transform, vector: Vector3) -> Option<FiniteVector3> {
