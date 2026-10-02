@@ -144,7 +144,7 @@ fn point_evaluation_borrows_only_indexed_nurbs_and_polyline_rows() {
                 .unwrap(),
         },
         0.01,
-    )
+     &cadmpeg_test_support::service_decode_context()).expect("polyline construction admission")
     .unwrap();
     assert_eq!(
         polyline.point_at(1).map(crate::features::FinitePoint3::get),
@@ -296,7 +296,7 @@ fn polyline_carriers_evaluate_in_both_parameter_directions() {
                     .expect("nonempty polyline fixture"),
             },
             0.01,
-        )
+         &cadmpeg_test_support::service_decode_context()).expect("polyline construction admission")
         .unwrap(),
     ));
     assert_eq!(
@@ -316,7 +316,7 @@ fn polyline_carriers_evaluate_in_both_parameter_directions() {
                     .expect("nonempty polyline fixture"),
             },
             0.01,
-        )
+         &cadmpeg_test_support::service_decode_context()).expect("polyline construction admission")
         .unwrap(),
     ));
     assert_eq!(

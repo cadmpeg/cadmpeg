@@ -1562,7 +1562,7 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
             .map_err(CodecError::malformed)?,
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Polyline({
                 place_polyline_samples(&mut samples, carrier_transform)?;
-                PolylineCurve::from_scaled_deflection(samples, deflection, scale)
+                PolylineCurve::from_scaled_deflection(samples, deflection, scale, self.ctx)?
                     .map_err(|error| CodecError::Malformed(error.to_string()))?
             })),
             source_object: Some(self.source_association()?),
@@ -1583,7 +1583,7 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
                 id: self.polygon_curve_id(edge, ordinal, true)?,
                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Polyline({
                     place_polyline_samples(&mut samples, carrier_transform)?;
-                    PolylineCurve::from_scaled_deflection(samples, deflection, scale)
+                    PolylineCurve::from_scaled_deflection(samples, deflection, scale, self.ctx)?
                         .map_err(|error| CodecError::Malformed(error.to_string()))?
                 })),
                 source_object: Some(self.source_association()?),

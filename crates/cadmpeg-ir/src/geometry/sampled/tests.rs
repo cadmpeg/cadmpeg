@@ -17,8 +17,8 @@ fn sampled_carriers_admit_finite_numeric_payloads_and_preserve_failed_edits() {
             .try_into()
             .expect("nonempty polyline fixture"),
     };
-    assert!(PolylineCurve::new(parameterized([1.0, 1.0]), 0.0).is_err());
-    assert!(PolylineCurve::new(parameterized([0.0, f64::INFINITY]), 0.0).is_err());
+    assert!(PolylineCurve::new(parameterized([1.0, 1.0]), 0.0, &cadmpeg_test_support::service_decode_context()).expect("polyline construction admission").is_err());
+    assert!(PolylineCurve::new(parameterized([0.0, f64::INFINITY]), 0.0, &cadmpeg_test_support::service_decode_context()).expect("polyline construction admission").is_err());
     assert!(PolylineCurve::new(
         PolylineSamples::Unparameterized {
             points: points
@@ -27,9 +27,9 @@ fn sampled_carriers_admit_finite_numeric_payloads_and_preserve_failed_edits() {
                 .expect("nonempty polyline fixture")
         },
         -1.0
-    )
+    , &cadmpeg_test_support::service_decode_context()).expect("polyline construction admission")
     .is_err());
-    let mut polyline = PolylineCurve::new(parameterized([2.0, 1.0]), 0.0).unwrap();
+    let mut polyline = PolylineCurve::new(parameterized([2.0, 1.0]), 0.0, &cadmpeg_test_support::service_decode_context()).expect("polyline construction admission").unwrap();
     let original = polyline.clone();
     assert!(polyline
         .edit_samples(|samples| {
@@ -103,7 +103,7 @@ fn a_refused_sample_edit_keeps_the_prior_samples() {
                 .unwrap(),
         },
         0.0,
-    )
+     &cadmpeg_test_support::service_decode_context()).expect("polyline construction admission")
     .unwrap();
     let original = polyline.clone();
     let mut seen = 0;
@@ -193,7 +193,7 @@ fn sampled_carriers_hold_their_admitted_chordal_deflection_and_vertices() {
             .try_into()
             .expect("nonempty polyline fixture"),
     };
-    let polyline = PolylineCurve::new(samples, 0.125).unwrap();
+    let polyline = PolylineCurve::new(samples, 0.125, &cadmpeg_test_support::service_decode_context()).expect("polyline construction admission").unwrap();
     assert_eq!(
         polyline.chordal_deflection(),
         NonNegativeReal::new(0.125).unwrap()
@@ -242,8 +242,8 @@ fn scaled_deflection_constructors_preserve_output_and_refusal_order() {
             .unwrap(),
     };
     assert_eq!(
-        PolylineCurve::from_scaled_deflection(checked_samples, deflection, scale).unwrap(),
-        PolylineCurve::new(samples, 0.5).unwrap()
+        PolylineCurve::from_scaled_deflection(checked_samples, deflection, scale, &cadmpeg_test_support::service_decode_context()).expect("polyline construction admission").unwrap(),
+        PolylineCurve::new(samples, 0.5, &cadmpeg_test_support::service_decode_context()).expect("polyline construction admission").unwrap()
     );
 
     let overflow = PositiveReal::new(f64::MAX).unwrap();
@@ -354,8 +354,8 @@ fn admitted_polyline_path_keeps_samples_and_checks_parameter_order() {
     let deflection = NonNegativeReal::new(0.25).unwrap();
     let scale = PositiveReal::new(2.0).unwrap();
     assert_eq!(
-        PolylineCurve::from_scaled_deflection(admitted.clone(), deflection, scale).unwrap(),
-        PolylineCurve::new(raw, deflection.scaled(scale).unwrap().get()).unwrap(),
+        PolylineCurve::from_scaled_deflection(admitted.clone(), deflection, scale, &cadmpeg_test_support::service_decode_context()).expect("polyline construction admission").unwrap(),
+        PolylineCurve::new(raw, deflection.scaled(scale).unwrap().get(), &cadmpeg_test_support::service_decode_context()).expect("polyline construction admission").unwrap(),
     );
 
     let mut edited = admitted.clone();
@@ -388,7 +388,7 @@ fn admitted_polyline_path_keeps_samples_and_checks_parameter_order() {
         .unwrap(),
     };
     assert!(
-        PolylineCurve::from_scaled_deflection(duplicate, deflection, scale)
+        PolylineCurve::from_scaled_deflection(duplicate, deflection, scale, &cadmpeg_test_support::service_decode_context()).expect("polyline construction admission")
             .unwrap_err()
             .to_string()
             .contains("strictly monotonic")
@@ -414,7 +414,7 @@ fn a_polyline_holds_its_admitted_samples() {
         .try_into()
         .expect("nonempty polyline fixture"),
     };
-    let mut polyline = PolylineCurve::new(samples.clone(), 0.0).unwrap();
+    let mut polyline = PolylineCurve::new(samples.clone(), 0.0, &cadmpeg_test_support::service_decode_context()).expect("polyline construction admission").unwrap();
     assert_eq!(
         polyline.points().collect::<Vec<_>>(),
         [
@@ -438,7 +438,7 @@ fn a_polyline_holds_its_admitted_samples() {
         })
         .unwrap_err();
     assert_eq!(error.to_string(), "points must be finite");
-    assert_eq!(polyline, PolylineCurve::new(samples, 0.0).unwrap());
+    assert_eq!(polyline, PolylineCurve::new(samples, 0.0, &cadmpeg_test_support::service_decode_context()).expect("polyline construction admission").unwrap());
 }
 
 #[test]
@@ -464,17 +464,17 @@ fn checked_polyline_samples_keep_parameter_order_and_deflection_rules() {
         .expect("nonempty samples"),
     };
     assert_eq!(
-        PolylineCurve::from_checked_samples(samples(2.0), 0.25).expect("ordered samples"),
-        PolylineCurve::new(samples(2.0).to_raw(), 0.25).expect("same raw samples")
+        PolylineCurve::from_checked_samples(samples(2.0), 0.25, &cadmpeg_test_support::service_decode_context()).expect("polyline construction admission").expect("ordered samples"),
+        PolylineCurve::new(samples(2.0).to_raw(), 0.25, &cadmpeg_test_support::service_decode_context()).expect("polyline construction admission").expect("same raw samples")
     );
     assert_eq!(
-        PolylineCurve::from_checked_samples(samples(1.0), 0.25)
+        PolylineCurve::from_checked_samples(samples(1.0), 0.25, &cadmpeg_test_support::service_decode_context()).expect("polyline construction admission")
             .expect_err("equal parameters are refused")
             .to_string(),
         "parameters must be finite and strictly monotonic"
     );
     assert_eq!(
-        PolylineCurve::from_checked_samples(samples(2.0), -0.25)
+        PolylineCurve::from_checked_samples(samples(2.0), -0.25, &cadmpeg_test_support::service_decode_context()).expect("polyline construction admission")
             .expect_err("negative deviation is refused")
             .to_string(),
         "chordal_deflection must be finite and non-negative"
@@ -482,3 +482,5 @@ fn checked_polyline_samples_keep_parameter_order_and_deflection_rules() {
 }
 
 mod construction;
+
+mod polyline_construction;

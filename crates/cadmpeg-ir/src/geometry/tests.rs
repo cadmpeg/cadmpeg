@@ -71,7 +71,7 @@ fn admitted_sampled_geometry_copy_refuses_both_polygon_lanes_and_polyline_rows()
                     points: points.try_into().unwrap(),
                 },
                 0.0,
-            )
+             &cadmpeg_test_support::service_decode_context()).expect("polyline construction admission")
             .unwrap(),
         ));
     let arena = DecodeArena::new();

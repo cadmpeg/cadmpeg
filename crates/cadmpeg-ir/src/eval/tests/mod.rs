@@ -615,7 +615,7 @@ fn polyline_inverse_searches_every_segment_in_native_parameter_space() {
                         .expect("nonempty polyline fixture"),
                     },
                     0.0,
-                )
+                 &cadmpeg_test_support::service_decode_context()).expect("polyline construction admission")
                 .unwrap(),
             ),
             Point3::new(0.5, 0.0, 0.0),
@@ -639,7 +639,7 @@ fn polyline_inverse_searches_every_segment_in_native_parameter_space() {
                         .expect("nonempty polyline fixture"),
                     },
                     0.0,
-                )
+                 &cadmpeg_test_support::service_decode_context()).expect("polyline construction admission")
                 .unwrap(),
             ),
             Point3::new(1.0, 0.5, 0.0),
@@ -663,7 +663,7 @@ fn polyline_inverse_searches_every_segment_in_native_parameter_space() {
                         .expect("nonempty polyline fixture"),
                     },
                     0.0,
-                )
+                 &cadmpeg_test_support::service_decode_context()).expect("polyline construction admission")
                 .unwrap(),
             ),
             Point3::new(2.0, 3.0, 4.0),
@@ -1822,7 +1822,7 @@ fn analytic_and_rational_curve_derivatives_are_exact() {
                 .expect("nonempty polyline fixture"),
             },
             0.0,
-        )
+         &cadmpeg_test_support::service_decode_context()).expect("polyline construction admission")
         .unwrap(),
     );
     assert_eq!(

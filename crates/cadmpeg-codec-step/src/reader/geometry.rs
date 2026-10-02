@@ -2795,7 +2795,7 @@ fn decode_tessellated_curve_sets(
             let Some(polyline) = PolylineCurve::from_checked_samples(
                 PolylineSamples::Unparameterized { points },
                 0.0,
-            )
+             ctx)?
             .ok() else {
                 continue;
             };

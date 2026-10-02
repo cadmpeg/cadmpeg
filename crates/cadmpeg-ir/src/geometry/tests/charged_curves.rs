@@ -77,7 +77,7 @@ fn curves() -> Vec<CurveGeometry> {
         },
     ] {
         result.push(CurveGeometry::Solved(SolvedCurveGeometry::Polyline(
-            PolylineCurve::new(samples, 0.125).unwrap(),
+            PolylineCurve::new(samples, 0.125, &cadmpeg_test_support::service_decode_context()).expect("polyline construction admission").unwrap(),
         )));
     }
     result

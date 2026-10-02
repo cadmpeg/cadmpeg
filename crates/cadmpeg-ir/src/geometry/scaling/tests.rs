@@ -249,7 +249,7 @@ fn a_scaled_polyline_keeps_its_parameters_and_refuses_only_overflow() {
                     .expect("two samples"),
                 },
                 deflection,
-            )
+             &cadmpeg_test_support::service_decode_context()).expect("polyline construction admission")
             .expect("a polyline fixture"),
         )
     };
@@ -462,7 +462,7 @@ fn owned_sample_scaling_refuses_work_and_retained_text_without_row_copies() {
                         }
                     },
                     deflection,
-                )
+                 &cadmpeg_test_support::service_decode_context()).expect("polyline construction admission")
                 .expect("polyline"),
             )
         };

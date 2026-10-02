@@ -79,7 +79,7 @@ fn polyline_nurbs_construction_preserves_caller_refusal_in_both_orientations() {
             ].try_into().expect("nonempty samples"),
         },
         0.0,
-    ).expect("polyline");
+     &cadmpeg_test_support::service_decode_context()).expect("polyline construction admission").expect("polyline");
     let geometry = CurveGeometry::Solved(SolvedCurveGeometry::Polyline(polyline));
     let span = super::super::CurveSpan {
         range: FiniteVector::new([0.0, 1.0]).expect("range"),

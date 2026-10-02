@@ -687,7 +687,7 @@ fn directrix_parameter_units_follow_step_curve_equations() {
                     .expect("nonempty polyline fixture"),
             },
             0.0,
-        )
+         &cadmpeg_test_support::service_decode_context()).expect("polyline construction admission")
         .unwrap(),
     ));
 
