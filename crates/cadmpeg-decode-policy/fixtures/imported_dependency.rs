@@ -9,25 +9,49 @@ pub fn with<F: FnOnce() -> usize>(callback: F) -> usize {
     callback()
 }
 
-pub fn slice_copy<T: Copy>(values: &[T]) -> Vec<T> { values.to_vec() }
-pub fn capacity<T>() -> Vec<T> { Vec::with_capacity(4) }
+pub fn slice_copy<T: Copy>(values: &[T]) -> Vec<T> {
+    values.to_vec()
+}
+pub fn capacity<T>() -> Vec<T> {
+    Vec::with_capacity(4)
+}
 
-pub fn grow<T>(values: &mut Vec<T>, value: T) { values.push(value); }
+pub fn grow<T>(values: &mut Vec<T>, value: T) {
+    values.push(value);
+}
 
 pub mod writer;
 
-pub trait Fixed { fn fixed(&self) -> usize { 1 } }
+pub trait Fixed {
+    fn fixed(&self) -> usize {
+        1
+    }
+}
 impl Fixed for u32 {}
 
 pub struct DecodeContext;
-pub fn context_copy<T: Clone>(_ctx: &DecodeContext, value: &T) -> T { value.clone() }
+pub fn context_copy<T: Clone>(_ctx: &DecodeContext, value: &T) -> T {
+    value.clone()
+}
 
-pub fn constant_capacity<T, const N: usize>() -> Vec<T> { Vec::with_capacity(N) }
+pub fn constant_capacity<T, const N: usize>() -> Vec<T> {
+    Vec::with_capacity(N)
+}
 
-pub fn array_copy<T: Copy>(values: &[T; 4]) -> Vec<T> { values.to_vec() }
-pub fn vector_copy<T: Clone>(values: &Vec<T>) -> Vec<T> { values.clone() }
+pub fn array_copy<T: Copy>(values: &[T; 4]) -> Vec<T> {
+    values.to_vec()
+}
+pub fn vector_copy<T: Clone>(values: &Vec<T>) -> Vec<T> {
+    values.clone()
+}
 
-pub fn array_move<T>(values: [T; 4]) -> Vec<T> { Vec::from_iter(values) }
-pub fn array_collect<T>(values: [T; 4]) -> Vec<T> { values.into_iter().collect() }
+pub fn array_move<T>(values: [T; 4]) -> Vec<T> {
+    Vec::from_iter(values)
+}
+pub fn array_collect<T>(values: [T; 4]) -> Vec<T> {
+    values.into_iter().collect()
+}
 
-pub fn minimum<T: Ord>(first: T, second: T) -> T { std::cmp::min(first, second) }
+pub fn minimum<T: Ord>(first: T, second: T) -> T {
+    std::cmp::min(first, second)
+}

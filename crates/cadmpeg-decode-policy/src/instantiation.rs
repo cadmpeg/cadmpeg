@@ -116,36 +116,74 @@ impl<'tcx> Visitor<'tcx> for Collector<'_, '_, 'tcx> {
     }
 }
 
-fn array_origin<'tcx>(tcx: TyCtxt<'tcx>, body: &rustc_middle::mir::Body<'tcx>,
-    operand: &rustc_middle::mir::Operand<'tcx>, seen: &mut HashSet<rustc_middle::mir::Local>)
-    -> Option<rustc_middle::ty::Ty<'tcx>> {
+fn array_origin<'tcx>(
+    tcx: TyCtxt<'tcx>,
+    body: &rustc_middle::mir::Body<'tcx>,
+    operand: &rustc_middle::mir::Operand<'tcx>,
+    seen: &mut HashSet<rustc_middle::mir::Local>,
+) -> Option<rustc_middle::ty::Ty<'tcx>> {
     let value = operand.ty(body, tcx).peel_refs();
-    if matches!(value.kind(), rustc_middle::ty::Array(..)) { return Some(value); }
+    if matches!(value.kind(), rustc_middle::ty::Array(..)) {
+        return Some(value);
+    }
     let place = match operand {
         rustc_middle::mir::Operand::Copy(place) | rustc_middle::mir::Operand::Move(place) => *place,
         _ => return None,
     };
-    if place.projection.len() == 1 && matches!(place.projection[0], rustc_middle::mir::ProjectionElem::Deref) {
-        return array_origin(tcx, body, &rustc_middle::mir::Operand::Copy(place.local.into()), seen);
+    if place.projection.len() == 1
+        && matches!(
+            place.projection[0],
+            rustc_middle::mir::ProjectionElem::Deref
+        )
+    {
+        return array_origin(
+            tcx,
+            body,
+            &rustc_middle::mir::Operand::Copy(place.local.into()),
+            seen,
+        );
     }
-    if !place.projection.is_empty() || !seen.insert(place.local) { return None; }
+    if !place.projection.is_empty() || !seen.insert(place.local) {
+        return None;
+    }
     let mut origin = None;
     for block in body.basic_blocks.iter() {
         if matches!(&block.terminator().kind, rustc_middle::mir::TerminatorKind::Call { destination, .. }
-            if *destination == place) { return None; }
+            if *destination == place)
+        {
+            return None;
+        }
         for statement in &block.statements {
-            let rustc_middle::mir::StatementKind::Assign(assignment) = &statement.kind else { continue; };
+            let rustc_middle::mir::StatementKind::Assign(assignment) = &statement.kind else {
+                continue;
+            };
             let (target, value) = &**assignment;
             if matches!(value, rustc_middle::mir::Rvalue::Ref(_, rustc_middle::mir::BorrowKind::Mut { .. }, source)
-                if source.local == place.local) { return None; }
-            if *target != place { continue; }
+                if source.local == place.local)
+            {
+                return None;
+            }
+            if *target != place {
+                continue;
+            }
             let candidate = match value {
-                rustc_middle::mir::Rvalue::Use(source, _) => array_origin(tcx, body, source, &mut seen.clone()),
-                rustc_middle::mir::Rvalue::Cast(rustc_middle::mir::CastKind::PointerCoercion(
-                    rustc_middle::ty::adjustment::PointerCoercion::Unsize, _), source, _) =>
-                    array_origin(tcx, body, source, &mut seen.clone()),
-                rustc_middle::mir::Rvalue::Ref(_, _, source) =>
-                    array_origin(tcx, body, &rustc_middle::mir::Operand::Copy(*source), &mut seen.clone()),
+                rustc_middle::mir::Rvalue::Use(source, _) => {
+                    array_origin(tcx, body, source, &mut seen.clone())
+                }
+                rustc_middle::mir::Rvalue::Cast(
+                    rustc_middle::mir::CastKind::PointerCoercion(
+                        rustc_middle::ty::adjustment::PointerCoercion::Unsize,
+                        _,
+                    ),
+                    source,
+                    _,
+                ) => array_origin(tcx, body, source, &mut seen.clone()),
+                rustc_middle::mir::Rvalue::Ref(_, _, source) => array_origin(
+                    tcx,
+                    body,
+                    &rustc_middle::mir::Operand::Copy(*source),
+                    &mut seen.clone(),
+                ),
                 _ => None,
             }?;
             origin = Some(candidate);
@@ -178,8 +216,10 @@ pub(crate) fn check_imported<'tcx>(
             continue;
         }
         let body = tcx.instance_mir(instance.def);
-        let has_context = body.local_decls.iter().any(|local|
-            types::has_context(tcx, local.ty, &mut Vec::new()));
+        let has_context = body
+            .local_decls
+            .iter()
+            .any(|local| types::has_context(tcx, local.ty, &mut Vec::new()));
         let has_work_charge = body.basic_blocks.iter().any(|block| {
             let rustc_middle::mir::TerminatorKind::Call { func, .. } = &block.terminator().kind else { return false; };
             matches!(func.ty(body, tcx).kind(), rustc_middle::ty::FnDef(id, _)
@@ -271,112 +311,213 @@ pub(crate) fn check_imported<'tcx>(
                 continue;
             };
             let raw_output = destination.ty(body, tcx).ty;
-            let output = instance.instantiate_mir(tcx, rustc_middle::ty::EarlyBinder::bind(tcx, raw_output));
+            let output =
+                instance.instantiate_mir(tcx, rustc_middle::ty::EarlyBinder::bind(tcx, raw_output));
             let raw_receiver = args.first().map(|operand| operand.node.ty(body, tcx));
             let count_index = match summary.allocation {
                 external::Allocation::Capacity => Some(0),
                 external::Allocation::Repeat => Some(1),
                 _ => None,
             };
-            let count = count_index.and_then(|index| args.get(index)).and_then(|operand|
-                match &operand.node {
-                    rustc_middle::mir::Operand::Constant(value) =>
-                        instance.instantiate_mir(tcx, rustc_middle::ty::EarlyBinder::bind(tcx, value.const_))
-                            .try_eval_bits(tcx, reporter.typing_env()),
+            let count = count_index
+                .and_then(|index| args.get(index))
+                .and_then(|operand| match &operand.node {
+                    rustc_middle::mir::Operand::Constant(value) => instance
+                        .instantiate_mir(
+                            tcx,
+                            rustc_middle::ty::EarlyBinder::bind(tcx, value.const_),
+                        )
+                        .try_eval_bits(tcx, reporter.typing_env()),
                     _ => None,
                 });
             let operation_name = tcx.opt_item_name(resolved.def_id());
             let array_iterator = raw_receiver.is_some_and(|value| match value.peel_refs().kind() {
-                rustc_middle::ty::Adt(owner, _) => types::standard(tcx, owner.did())
-                    && tcx.item_name(owner.did()).as_str() == "IntoIter"
-                    && tcx.def_path_str(owner.did()).contains("array::"),
+                rustc_middle::ty::Adt(owner, _) => {
+                    types::standard(tcx, owner.did())
+                        && tcx.item_name(owner.did()).as_str() == "IntoIter"
+                        && tcx.def_path_str(owner.did()).contains("array::")
+                }
                 _ => false,
             });
             let vector_output = matches!(output.kind(), rustc_middle::ty::Adt(owner, _)
                 if types::standard(tcx, owner.did()) && tcx.item_name(owner.did()).as_str() == "Vec");
-            let array_element = args.first().and_then(|operand| array_origin(tcx, body, &operand.node, &mut HashSet::new()))
-                .and_then(|value| match value.kind() { rustc_middle::ty::Array(element, _) => Some(*element), _ => None });
-            let allocation_shape = |output: rustc_middle::ty::Ty<'tcx>, receiver: rustc_middle::ty::Ty<'tcx>, concrete: bool| {
+            let array_element = args
+                .first()
+                .and_then(|operand| array_origin(tcx, body, &operand.node, &mut HashSet::new()))
+                .and_then(|value| match value.kind() {
+                    rustc_middle::ty::Array(element, _) => Some(*element),
+                    _ => None,
+                });
+            let allocation_shape = |output: rustc_middle::ty::Ty<'tcx>,
+                                    receiver: rustc_middle::ty::Ty<'tcx>,
+                                    concrete: bool| {
                 match summary.allocation {
                     external::Allocation::None => types::Shape::Fixed,
                     external::Allocation::Clone if concrete => reporter.clone_shape(output),
-                    external::Allocation::Collect if vector_output && (array_element.is_some() || array_iterator)
-                        && operation_name.is_some_and(|name| matches!(name.as_str(), "collect" | "from_iter")) => types::Shape::Fixed,
-                    external::Allocation::Collect | external::Allocation::Result if array_element.is_some()
-                        && operation_name.is_some_and(|name| matches!(name.as_str(), "to_vec" | "to_owned")) => {
-                        let Some(element) = array_element else { return types::Shape::Unknown; };
-                        if concrete { reporter.clone_shape(instance.instantiate_mir(tcx, rustc_middle::ty::EarlyBinder::bind(tcx, element))) }
-                        else { types::heap(tcx, element, &mut Vec::new()) }
+                    external::Allocation::Collect
+                        if vector_output
+                            && (array_element.is_some() || array_iterator)
+                            && operation_name.is_some_and(|name| {
+                                matches!(name.as_str(), "collect" | "from_iter")
+                            }) =>
+                    {
+                        types::Shape::Fixed
                     }
-                    external::Allocation::Growth => types::heap(tcx, receiver.peel_refs(), &mut Vec::new()),
+                    external::Allocation::Collect | external::Allocation::Result
+                        if array_element.is_some()
+                            && operation_name.is_some_and(|name| {
+                                matches!(name.as_str(), "to_vec" | "to_owned")
+                            }) =>
+                    {
+                        let Some(element) = array_element else {
+                            return types::Shape::Unknown;
+                        };
+                        if concrete {
+                            reporter.clone_shape(instance.instantiate_mir(
+                                tcx,
+                                rustc_middle::ty::EarlyBinder::bind(tcx, element),
+                            ))
+                        } else {
+                            types::heap(tcx, element, &mut Vec::new())
+                        }
+                    }
+                    external::Allocation::Growth => {
+                        types::heap(tcx, receiver.peel_refs(), &mut Vec::new())
+                    }
                     external::Allocation::Capacity if count.is_some() => types::Shape::Fixed,
                     external::Allocation::Repeat if count == Some(0) => types::Shape::Fixed,
                     external::Allocation::Repeat if count.is_some() => {
-                        if concrete { reporter.clone_shape(receiver.peel_refs()) }
-                        else { types::heap(tcx, receiver.peel_refs(), &mut Vec::new()) }
+                        if concrete {
+                            reporter.clone_shape(receiver.peel_refs())
+                        } else {
+                            types::heap(tcx, receiver.peel_refs(), &mut Vec::new())
+                        }
                     }
-                    external::Allocation::Conversion if output == receiver
-                        || matches!(receiver.peel_refs().kind(), rustc_middle::ty::Array(..)) => types::Shape::Fixed,
+                    external::Allocation::Conversion
+                        if output == receiver
+                            || matches!(
+                                receiver.peel_refs().kind(),
+                                rustc_middle::ty::Array(..)
+                            ) =>
+                    {
+                        types::Shape::Fixed
+                    }
                     _ => types::heap(tcx, output, &mut Vec::new()),
                 }
             };
             let allocation = allocation_shape(output, receiver, true);
-            let symbolic_allocation = raw_receiver.map_or(types::Shape::Unknown,
-                |receiver| allocation_shape(raw_output, receiver, false));
-            let index = match summary.work { external::Work::Argument(index) => index, _ => 0 };
+            let symbolic_allocation = raw_receiver.map_or(types::Shape::Unknown, |receiver| {
+                allocation_shape(raw_output, receiver, false)
+            });
+            let index = match summary.work {
+                external::Work::Argument(index) => index,
+                _ => 0,
+            };
             let raw_extent = args.get(index).map(|operand| operand.node.ty(body, tcx));
             let work_shape = |extent: rustc_middle::ty::Ty<'tcx>, allocation, concrete| {
                 if summary.work == external::Work::Fixed
-                    || summary.work == external::Work::Iterator && vector_output
+                    || summary.work == external::Work::Iterator
+                        && vector_output
                         && (array_element.is_some() || array_iterator)
-                        && operation_name.is_some_and(|name| matches!(name.as_str(), "collect" | "from_iter"))
-                    || summary.allocation == external::Allocation::Clone && allocation == types::Shape::Fixed
-                    || summary.work == external::Work::Repeat && count == Some(0) {
+                        && operation_name
+                            .is_some_and(|name| matches!(name.as_str(), "collect" | "from_iter"))
+                    || summary.allocation == external::Allocation::Clone
+                        && allocation == types::Shape::Fixed
+                    || summary.work == external::Work::Repeat && count == Some(0)
+                {
                     types::Shape::Fixed
                 } else {
-                    if summary.allocation == external::Allocation::Clone && allocation == types::Shape::Unknown {
+                    if summary.allocation == external::Allocation::Clone
+                        && allocation == types::Shape::Unknown
+                    {
                         return types::Shape::Unknown;
                     }
-                    if tcx.opt_item_name(resolved.def_id()).is_some_and(|name|
-                        matches!(name.as_str(), "to_vec" | "to_owned" | "copy_from_slice" | "copy_within")) {
+                    if tcx.opt_item_name(resolved.def_id()).is_some_and(|name| {
+                        matches!(
+                            name.as_str(),
+                            "to_vec" | "to_owned" | "copy_from_slice" | "copy_within"
+                        )
+                    }) {
                         let element = match extent.peel_refs().kind() {
-                            rustc_middle::ty::Array(element, _) | rustc_middle::ty::Slice(element) => Some(*element),
+                            rustc_middle::ty::Array(element, _)
+                            | rustc_middle::ty::Slice(element) => Some(*element),
                             _ => None,
                         };
                         if let Some(element) = element {
                             match types::slot_storage(tcx, element) {
                                 types::Shape::Unknown => return types::Shape::Unknown,
-                                types::Shape::Fixed if tcx.type_is_copy_modulo_regions(reporter.typing_env(), element) => return types::Shape::Fixed,
+                                types::Shape::Fixed
+                                    if tcx.type_is_copy_modulo_regions(
+                                        reporter.typing_env(),
+                                        element,
+                                    ) =>
+                                {
+                                    return types::Shape::Fixed
+                                }
                                 _ => (),
                             }
                         }
                         if let Some(element) = array_element {
-                            let element = if concrete { instance.instantiate_mir(tcx, rustc_middle::ty::EarlyBinder::bind(tcx, element)) } else { element };
-                            if reporter.clone_shape(element) == types::Shape::Fixed { return types::Shape::Fixed; }
+                            let element = if concrete {
+                                instance.instantiate_mir(
+                                    tcx,
+                                    rustc_middle::ty::EarlyBinder::bind(tcx, element),
+                                )
+                            } else {
+                                element
+                            };
+                            if reporter.clone_shape(element) == types::Shape::Fixed {
+                                return types::Shape::Fixed;
+                            }
                         }
                     }
                     let child = if summary.work == external::Work::Iterator {
-                        if array_element.is_some() { types::Shape::Fixed }
-                        else { types::iteration(tcx, extent) }
-                    } else { types::work(tcx, extent, &mut Vec::new()) };
-                    if summary.work == external::Work::Repeat && child != types::Shape::Unknown && count.is_none() {
+                        if array_element.is_some() {
+                            types::Shape::Fixed
+                        } else {
+                            types::iteration(tcx, extent)
+                        }
+                    } else {
+                        types::work(tcx, extent, &mut Vec::new())
+                    };
+                    if summary.work == external::Work::Repeat
+                        && child != types::Shape::Unknown
+                        && count.is_none()
+                    {
                         child.join(types::Shape::Dynamic)
-                    } else { child }
+                    } else {
+                        child
+                    }
                 }
             };
-            let symbolic_work = raw_extent.map_or(types::Shape::Unknown,
-                |extent| work_shape(extent, symbolic_allocation, false));
-            let work = raw_extent.map_or(types::Shape::Unknown, |extent|
-                work_shape(instance.instantiate_mir(tcx, rustc_middle::ty::EarlyBinder::bind(tcx, extent)), allocation, true));
+            let symbolic_work = raw_extent.map_or(types::Shape::Unknown, |extent| {
+                work_shape(extent, symbolic_allocation, false)
+            });
+            let work = raw_extent.map_or(types::Shape::Unknown, |extent| {
+                work_shape(
+                    instance.instantiate_mir(tcx, rustc_middle::ty::EarlyBinder::bind(tcx, extent)),
+                    allocation,
+                    true,
+                )
+            });
             for (shape, symbolic, rule) in [
-                (allocation, symbolic_allocation, "uncharged_decode_allocation"),
+                (
+                    allocation,
+                    symbolic_allocation,
+                    "uncharged_decode_allocation",
+                ),
                 (work, symbolic_work, "uncharged_decode_work"),
             ] {
                 if shape != types::Shape::Fixed && symbolic != types::Shape::Dynamic {
                     let uncertain_admission = (rule == "uncharged_decode_allocation"
-                        && summary.allocation == external::Allocation::Growth && has_context)
+                        && summary.allocation == external::Allocation::Growth
+                        && has_context)
                         || (rule == "uncharged_decode_work" && has_work_charge);
-                    let shape = if uncertain_admission { types::Shape::Unknown } else { shape };
+                    let shape = if uncertain_admission {
+                        types::Shape::Unknown
+                    } else {
+                        shape
+                    };
                     reporter.report(
                         root.span,
                         if shape == crate::types::Shape::Unknown {

@@ -676,7 +676,8 @@ impl<'tcx> Analysis<'_, 'tcx> {
                         let mut saved = self.flow.clone();
                         let repetitions = self.constant_count(input, &mut Vec::new());
                         let iterations = if shape == Shape::Fixed {
-                            repetitions.filter(|count| *count > 0)
+                            repetitions
+                                .filter(|count| *count > 0)
                                 .and_then(|count| self.flow.iterations.checked_mul(count))
                         } else {
                             None

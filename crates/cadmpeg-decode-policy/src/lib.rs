@@ -164,12 +164,14 @@ impl Callbacks for DecodeCallbacks {
 }
 
 fn production(tcx: TyCtxt<'_>, owner: DefId) -> bool {
-    if !types::checked(tcx, owner) || !matches!(
-        tcx.def_kind(owner),
-        rustc_hir::def::DefKind::Fn
-            | rustc_hir::def::DefKind::AssocFn
-            | rustc_hir::def::DefKind::Closure
-    ) {
+    if !types::checked(tcx, owner)
+        || !matches!(
+            tcx.def_kind(owner),
+            rustc_hir::def::DefKind::Fn
+                | rustc_hir::def::DefKind::AssocFn
+                | rustc_hir::def::DefKind::Closure
+        )
+    {
         return false;
     }
     let path = tcx
