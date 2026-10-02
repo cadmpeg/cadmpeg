@@ -892,7 +892,7 @@ fn emit_offset_surface(
     support: SurfaceId,
     offset: &OffsetCarrier,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    annotations.note_for_decode(
+    annotations.note(
         sink.ctx,
         surface.as_str(),
         source_stream,
@@ -1008,7 +1008,7 @@ fn ensure_surface_support(
                         Err(_) => return Ok(None),
                     }
                 }
-                annotations.note_for_decode(
+                annotations.note(
                     sink.ctx,
                     id.as_str(),
                     source_stream,
@@ -2026,7 +2026,7 @@ fn decode_graph(
         sorted_graph_attrs(ctx, kept_points.iter().copied(), "order Parasolid points")?;
     for a in point_attrs {
         let rec = &t.points()[&a];
-        annotations.note_for_decode(
+        annotations.note(
             ctx,
             id_point(a).as_str(),
             &source_stream,
@@ -2054,7 +2054,7 @@ fn decode_graph(
     for a in vuse_attrs {
         let rec = &t.vertex_uses()[&a];
         let point_attr = rec.refs[4];
-        annotations.note_for_decode(
+        annotations.note(
             ctx,
             id_vertex(a).as_str(),
             &source_stream,
@@ -2102,7 +2102,7 @@ fn decode_graph(
         let (mut start_id, mut end_id) = if let Some(position) = closed_circle_point {
             let point_id = id_closed_point(e);
             let vertex_id = id_closed_vertex(e);
-            annotations.note_for_decode(
+            annotations.note(
                 ctx,
                 point_id.as_str(),
                 &source_stream,
@@ -2110,7 +2110,7 @@ fn decode_graph(
                 Some("derived_closed_circle_seam"),
             )?;
             annotations.exactness(ctx, point_id.as_str(), Exactness::Derived)?;
-            annotations.note_for_decode(
+            annotations.note(
                 ctx,
                 vertex_id.as_str(),
                 &source_stream,
@@ -2201,7 +2201,7 @@ fn decode_graph(
                         emit_curve(ctx, &mut out, carrier)?;
                         if matches!(indexed, IndexedCurve::Derived(_)) {
                             let offset = carrier.offset;
-                            annotations.note_for_decode(
+                            annotations.note(
                                 ctx,
                                 id_curve(curve_attr).as_str(),
                                 &source_stream,
@@ -2224,7 +2224,7 @@ fn decode_graph(
                         "track emitted Parasolid curves",
                     )? {
                         let offset = eu.map_or(0, |record| record.offset);
-                        annotations.note_for_decode(
+                        annotations.note(
                             ctx,
                             id_curve(curve_attr).as_str(),
                             &source_stream,
@@ -2252,7 +2252,7 @@ fn decode_graph(
             }
         }
         let off = eu.map_or(0, |r| r.offset);
-        annotations.note_for_decode(
+        annotations.note(
             ctx,
             id_edge(e).as_str(),
             &source_stream,
@@ -2329,7 +2329,7 @@ fn decode_graph(
                     .filter(|tw| tw.refs[5] == ce_attr)
                     .filter(|_| emitted_coedges.contains(&twin))
                     .map(|_| id_coedge(twin));
-                annotations.note_for_decode(
+                annotations.note(
                     ctx,
                     id_coedge(ce_attr).as_str(),
                     &source_stream,
@@ -2387,7 +2387,7 @@ fn decode_graph(
                             cadmpeg_ir::identity_key!("intersection:").then(ce_attr),
                         );
                         let offset = curve_carrier.offset;
-                        annotations.note_for_decode(
+                        annotations.note(
                             ctx,
                             id.as_str(),
                             &source_stream,
@@ -2479,7 +2479,7 @@ fn decode_graph(
             ctx.reserve_vec(&mut coedges, ring.len(), "collect Parasolid loop coedges")?;
             coedges.extend(ring.iter().map(|a| id_coedge(*a)));
             let off = t.loops().get(loop_attr).map_or(0, |r| r.offset);
-            annotations.note_for_decode(
+            annotations.note(
                 ctx,
                 id_loop(*loop_attr).as_str(),
                 &source_stream,
@@ -2611,7 +2611,7 @@ fn decode_graph(
         match carriers.surface(f.surface_attr) {
             Some(c) => {
                 surface_orientation_reversed = c.orientation_reversed;
-                annotations.note_for_decode(
+                annotations.note(
                     ctx,
                     id_surf(f.bridge_attr).as_str(),
                     &source_stream,
@@ -2754,7 +2754,7 @@ fn decode_graph(
                             "track Parasolid blend spines",
                         )? {
                             emit_curve(ctx, &mut out, carrier)?;
-                            annotations.note_for_decode(
+                            annotations.note(
                                 ctx,
                                 id_curve(blend.spine).as_str(),
                                 &source_stream,
@@ -2805,7 +2805,7 @@ fn decode_graph(
                         construction: procedural_id,
                         cache: None,
                     };
-                    annotations.note_for_decode(
+                    annotations.note(
                         ctx,
                         id_surf(f.bridge_attr).as_str(),
                         &source_stream,
@@ -2840,7 +2840,7 @@ fn decode_graph(
                     }
                     resolved
                 } {
-                    annotations.note_for_decode(
+                    annotations.note(
                         ctx,
                         id_surf(f.bridge_attr).as_str(),
                         &source_stream,
@@ -2863,7 +2863,7 @@ fn decode_graph(
                     });
                 } else {
                     out.stats.unknown_surface_faces += 1;
-                    annotations.note_for_decode(
+                    annotations.note(
                         ctx,
                         id_surf(f.bridge_attr).as_str(),
                         &source_stream,
@@ -2887,7 +2887,7 @@ fn decode_graph(
                 }
             }
         }
-        annotations.note_for_decode(
+        annotations.note(
             ctx,
             id_face(f.bridge_attr).as_str(),
             &source_stream,
@@ -3001,7 +3001,7 @@ fn decode_graph(
                     (0, "synthetic_grouping", Exactness::Derived),
                     |(offset, tag)| (offset, tag, Exactness::ByteExact),
                 );
-                annotations.note_for_decode(
+                annotations.note(
                     ctx,
                     id,
                     &source_stream,
@@ -3196,7 +3196,7 @@ fn decode_graph(
         };
         if let Some(indexed) = carriers.curve(attr) {
             let carrier = indexed.carrier();
-            annotations.note_for_decode(
+            annotations.note(
                 ctx,
                 curve.id.as_str(),
                 &source_stream,
@@ -3693,7 +3693,7 @@ fn derive_planar_pcurves(
             });
             out.coedges[*index].pcurves = uses;
         }
-        annotations.note_for_decode(
+        annotations.note(
             ctx,
             id.as_str(),
             source_stream,
@@ -4135,7 +4135,7 @@ fn derive_cylindrical_pcurves(
             });
             out.coedges[*index].pcurves = uses;
         }
-        annotations.note_for_decode(
+        annotations.note(
             ctx,
             id.as_str(),
             source_stream,
@@ -4714,7 +4714,7 @@ fn derive_revolved_circle_pcurves(
             });
             out.coedges[*index].pcurves = uses;
         }
-        annotations.note_for_decode(
+        annotations.note(
             ctx,
             id.as_str(),
             source_stream,
@@ -4956,7 +4956,7 @@ fn derive_spherical_pcurves(
             });
             out.coedges[*index].pcurves = uses;
         }
-        annotations.note_for_decode(
+        annotations.note(
             ctx,
             id.as_str(),
             source_stream,
@@ -5183,7 +5183,7 @@ fn derive_nurbs_isoparametric_pcurves(
             });
             out.coedges[*index].pcurves = uses;
         }
-        annotations.note_for_decode(
+        annotations.note(
             ctx,
             id.as_str(),
             source_stream,
@@ -7227,7 +7227,7 @@ fn synthesize_cylinder_seams(
             seam_a.as_str(),
             seam_b.as_str(),
         ] {
-            annotations.note_for_decode(
+            annotations.note(
                 ctx,
                 id,
                 source_stream,
@@ -7484,7 +7484,7 @@ fn synthesize_sphere_seams(
             &cadmpeg_ir::identity_namespace!("sldprt", "brep", "curve"),
             cadmpeg_ir::identity_key!("sphere-seam:").then(out.edges[edge_index].id.key()),
         );
-        annotations.note_for_decode(
+        annotations.note(
             ctx,
             curve_id.as_str(),
             source_stream,
@@ -7724,7 +7724,7 @@ fn synthesize_sphere_seams(
                     })
                 }?;
                 for id in [point_id.as_str(), vertex_id.as_str()] {
-                    annotations.note_for_decode(
+                    annotations.note(
                         ctx,
                         id,
                         source_stream,
@@ -7760,7 +7760,7 @@ fn synthesize_sphere_seams(
             coedge_id.as_str(),
             pcurve_id.as_str(),
         ] {
-            annotations.note_for_decode(ctx, id, source_stream, 0, Some("derived_sphere_seam"))?;
+            annotations.note(ctx, id, source_stream, 0, Some("derived_sphere_seam"))?;
             annotations.exactness(ctx, id, Exactness::Derived)?;
         }
         admit_brep_entity(ctx)?;

@@ -207,7 +207,7 @@ pub(super) fn emit_topology(
                 .shell_fields()
                 .is_some_and(|fields| fields.body.map(u32::from) == Some(body_xmt))
         }) {
-            annotations.note_for_decode(
+            annotations.note(
                 ctx,
                 id.as_str(),
                 source_stream,
@@ -268,7 +268,7 @@ pub(super) fn emit_topology(
                     "REGION",
                 )?;
             } else {
-                annotations.note_for_decode(
+                annotations.note(
                     ctx,
                     region.as_str(),
                     source_stream,
@@ -538,7 +538,7 @@ pub(super) fn emit_topology(
                     &cadmpeg_ir::identity_component!("edge-parametric-construction"),
                     node.xmt,
                 )?;
-                annotations.note_for_decode(
+                annotations.note(
                     ctx,
                     carrier.as_str(),
                     source_stream,
@@ -1134,7 +1134,7 @@ pub(super) fn emit_topology(
                     &cadmpeg_ir::identity_component!("intersection-pcurve"),
                     fin_xmt,
                 )?;
-                annotations.note_for_decode(
+                annotations.note(
                     ctx,
                     pcurve_id.as_str(),
                     source_stream,
@@ -1374,7 +1374,7 @@ pub(super) fn retain_unresolved_topology_carriers(
             &cadmpeg_ir::identity_component!("surface"),
             format_args!("unknown-{surface_xmt}"),
         )?;
-        annotations.note_for_decode(
+        annotations.note(
             ctx,
             id.as_str(),
             source_stream,
@@ -1408,7 +1408,7 @@ pub(super) fn retain_unresolved_topology_carriers(
             &cadmpeg_ir::identity_component!("curve"),
             format_args!("unknown-{curve_xmt}"),
         )?;
-        annotations.note_for_decode(
+        annotations.note(
             ctx,
             id.as_str(),
             source_stream,
@@ -1437,7 +1437,7 @@ pub(super) fn annotate_node(
     node: &Node,
     tag: &str,
 ) -> Result<(), CodecError> {
-    annotations.note_for_decode(
+    annotations.note(
         ctx,
         id,
         stream,
@@ -1539,7 +1539,7 @@ fn synthesize_closed_edge_vertex_with_curve_index_and_budget(
         &cadmpeg_ir::identity_component!("vertex"),
         format_args!("closed-edge-{}", edge.xmt),
     )?;
-    annotations.note_for_decode(
+    annotations.note(
         ctx,
         point.as_str(),
         source_stream,
@@ -1547,7 +1547,7 @@ fn synthesize_closed_edge_vertex_with_curve_index_and_budget(
         Some("CLOSED_EDGE_POINT"),
     )?;
     annotations.exactness(ctx, point.as_str(), Exactness::Inferred)?;
-    annotations.note_for_decode(
+    annotations.note(
         ctx,
         vertex.as_str(),
         source_stream,

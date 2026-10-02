@@ -133,7 +133,7 @@ fn note_container<T: ContainerNoted>(
     )?;
     for record in records {
         let (id, offset) = record.container_note();
-        a.note_for_decode(ctx, &id, &stream, offset, tag)?;
+        a.note(ctx, &id, &stream, offset, tag)?;
         a.exactness(ctx, id, catalogue_row.exactness)?;
     }
     Ok(())
@@ -156,7 +156,7 @@ fn note_per_stream<T: StreamNoted>(
             cadmpeg_ir::stream_name!("nx:s").with_suffix(stream_ordinal),
             "allocate annotation stream handle",
         )?;
-        a.note_for_decode(ctx, id, &stream, offset, tag)?;
+        a.note(ctx, id, &stream, offset, tag)?;
         a.exactness(ctx, id, catalogue_row.exactness)?;
     }
     Ok(())
@@ -765,7 +765,7 @@ fn note_display_jt_display_jt_indices(
         "allocate annotation stream handle",
     )?;
     for index in &m.display_jt.indices {
-        a.note_for_decode(
+        a.note(
             ctx,
             &index.id,
             &annotation_stream,
@@ -774,7 +774,7 @@ fn note_display_jt_display_jt_indices(
         )?;
         a.exactness(ctx, &index.id, Exactness::ByteExact)?;
         for row in index.rows() {
-            a.note_for_decode(
+            a.note(
                 ctx,
                 &row.id,
                 &annotation_stream,
@@ -800,7 +800,7 @@ fn note_display_jt_display_jt_documents(
         "allocate annotation stream handle",
     )?;
     for document in m.display_jt.graph.documents() {
-        a.note_for_decode(
+        a.note(
             ctx,
             &document.id,
             &annotation_stream,
@@ -809,7 +809,7 @@ fn note_display_jt_display_jt_documents(
         )?;
         a.exactness(ctx, &document.id, Exactness::ByteExact)?;
         for entry in &document.toc_entries {
-            a.note_for_decode(
+            a.note(
                 ctx,
                 &entry.id,
                 &annotation_stream,
@@ -835,7 +835,7 @@ fn note_parasolid_parasolid_intersection_records(
             cadmpeg_ir::stream_name!("nx:s").with_suffix(record.stream_ordinal),
             "allocate annotation stream handle",
         )?;
-        a.note_for_decode(
+        a.note(
             ctx,
             &record.id,
             &source_stream,
@@ -864,7 +864,7 @@ fn note_parasolid_parasolid_attribute_class_uses(
             cadmpeg_ir::stream_name!("nx:s").with_suffix(class_use.stream_ordinal),
             "allocate annotation stream handle",
         )?;
-        a.note_for_decode(
+        a.note(
             ctx,
             &class_use.id,
             &source_stream,
@@ -889,7 +889,7 @@ fn note_parasolid_parasolid_topology_attribute_class_uses(
             cadmpeg_ir::stream_name!("nx:s").with_suffix(class_use.stream_ordinal),
             "allocate annotation stream handle",
         )?;
-        a.note_for_decode(
+        a.note(
             ctx,
             &class_use.id,
             &source_stream,
@@ -914,7 +914,7 @@ fn note_features_feature_sketch_point_uses(
         "allocate annotation stream handle",
     )?;
     for point_use in &m.features.feature_sketch_point_uses {
-        a.note_for_decode(
+        a.note(
             ctx,
             &point_use.id,
             &annotation_stream,
@@ -939,7 +939,7 @@ fn note_features_feature_input_block_identity_groups(
         "allocate annotation stream handle",
     )?;
     for group in &m.features.feature_input_block_identity_groups {
-        a.note_for_decode(
+        a.note(
             ctx,
             &group.id,
             &annotation_stream,
@@ -964,7 +964,7 @@ fn note_features_feature_parameter_uses(
         "allocate annotation stream handle",
     )?;
     for parameter_use in &m.features.feature_parameter_uses {
-        a.note_for_decode(
+        a.note(
             ctx,
             &parameter_use.id,
             &annotation_stream,

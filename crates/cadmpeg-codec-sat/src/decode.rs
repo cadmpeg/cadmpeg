@@ -335,7 +335,7 @@ fn build_result(
             cadmpeg_ir::stream_name!("sat:").with_suffix(&record.stream),
             "allocate annotation stream handle",
         )?;
-        annotations.note_for_decode(
+        annotations.note(
             ctx,
             &record.id,
             &stream,

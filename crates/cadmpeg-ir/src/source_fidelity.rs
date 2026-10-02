@@ -857,7 +857,7 @@ mod tests {
 
         let mut builder = crate::AnnotationBuilder::new();
         let stream = crate::annotations::StreamHandle::new(crate::stream_name!(" \t"));
-        builder.note("synthetic:point#0", &stream, 17).tag("point");
+        builder.note(&cadmpeg_test_support::service_decode_context(), "synthetic:point#0", &stream, 17, Some("point")).unwrap();
         let sidecar = DecodeSidecar::bind_sha256(
             crate::hash::digest::Sha256Digest::digest(ir_json.as_bytes()),
             report(),

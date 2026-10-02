@@ -4233,7 +4233,7 @@ mod detached_legacy_sketch_tests {
         let mut builder = cadmpeg_ir::AnnotationBuilder::new();
         let stream =
             cadmpeg_ir::annotations::StreamHandle::new(cadmpeg_ir::stream_name!("test:profile"));
-        builder.note(sketch.id.as_str(), &stream, 1).tag("profile");
+        builder.note(&cadmpeg_test_support::service_decode_context(), sketch.id.as_str(), &stream, 1, Some("profile")).unwrap();
         let annotations = builder.build();
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let (service, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(

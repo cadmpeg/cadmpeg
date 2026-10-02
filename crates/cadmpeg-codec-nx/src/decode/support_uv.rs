@@ -2815,7 +2815,7 @@ fn attach_completed_intersection_pcurves_for_sources_with_budget(
             .graph
             .get(NodeKind::Fin, fin_xmt)
             .map_or(0, |node| cadmpeg_core::decode::u64_from_index(node.pos));
-        annotations.note_for_decode(
+        annotations.note(
             ctx,
             &pcurve_id,
             &source.source_stream,

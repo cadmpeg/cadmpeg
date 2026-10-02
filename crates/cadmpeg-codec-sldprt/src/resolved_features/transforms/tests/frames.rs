@@ -1529,8 +1529,7 @@ fn declared_entity_handle_circular_carrier_replaces_nested_support_geometry() {
     let stream =
         cadmpeg_ir::annotations::StreamHandle::new(cadmpeg_ir::stream_name!("test:support"));
     builder
-        .note(sketch_id.as_str(), &stream, 200)
-        .tag("support");
+        .note(&cadmpeg_test_support::service_decode_context(), sketch_id.as_str(), &stream, 200, Some("support")).unwrap();
     let mut annotations = builder.build();
     let mut builder = AnnotationBuilder::resume(annotations);
     for id in [

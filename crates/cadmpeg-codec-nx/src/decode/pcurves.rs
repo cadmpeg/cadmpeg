@@ -4603,14 +4603,14 @@ pub(super) fn attach_tolerant_edge_intersections_with_budget(
             .derived(ctx, &edge_id, "curve")
             .map_err(cadmpeg_core::CodecError::from)?;
         if let Some(node) = graph.get(NodeKind::Edge, xmt) {
-            annotations.note_for_decode(
+            annotations.note(
                 ctx,
                 &curve_id,
                 source_stream,
                 cadmpeg_core::decode::u64_from_index(node.pos),
                 Some("TOLERANT_EDGE_INTERSECTION"),
             )?;
-            annotations.note_for_decode(
+            annotations.note(
                 ctx,
                 &procedural_id,
                 source_stream,

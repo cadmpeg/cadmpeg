@@ -166,7 +166,7 @@ fn attach_container_payloads(
         };
         let id: UnknownId = IdScope::native(cadmpeg_ir::identity_component!("container-entry"))
             .id(&cadmpeg_ir::identity_component!("opaque"), ordinal);
-        annotations.note_for_decode(ctx, &id, &annotation_stream, offset, Some(content.label()))?;
+        annotations.note(ctx, &id, &annotation_stream, offset, Some(content.label()))?;
         annotations.exactness(ctx, &id, Exactness::ByteExact)?;
         push_native_unknown(
             ctx,
@@ -205,7 +205,7 @@ fn attach_indexed_om_unknowns(
                     )
                     .id(&cadmpeg_ir::identity_component!("record"), record_index);
                     let offset = entry_offset + cadmpeg_core::decode::u64_from_index(record.offset);
-                    annotations.note_for_decode(
+                    annotations.note(
                         ctx,
                         &id,
                         &annotation_stream,
@@ -239,7 +239,7 @@ fn attach_indexed_om_unknowns(
                     )
                     .id(&cadmpeg_ir::identity_component!("block"), record_index);
                     let offset = entry_offset + cadmpeg_core::decode::u64_from_index(record.offset);
-                    annotations.note_for_decode(
+                    annotations.note(
                         ctx,
                         &id,
                         &annotation_stream,
@@ -316,7 +316,7 @@ pub(super) fn attach(
             1,
             "NX attached display tessellations",
         )?;
-        annotations.note_for_decode(
+        annotations.note(
             ctx,
             tessellation.id.as_str(),
             &annotation_stream,
@@ -482,7 +482,7 @@ fn attach_part_attributes<'a>(
             cadmpeg_core::decode::u64_from_index(id_bytes),
             "NX part attribute identity",
         )?;
-        annotations.note_for_decode(
+        annotations.note(
             ctx,
             attribute_id,
             annotation_stream,
@@ -494,7 +494,7 @@ fn attach_part_attributes<'a>(
             .ok_or_else(|| {
                 CodecError::malformed(format_args!("NX part attribute id is not an identity"))
             })?;
-        annotations.note_for_decode(
+        annotations.note(
             ctx,
             id.as_str(),
             annotation_stream,
@@ -592,7 +592,7 @@ fn attach_configurations<'a>(
         } else {
             None
         };
-        annotations.note_for_decode(
+        annotations.note(
             ctx,
             id.as_str(),
             annotation_stream,
@@ -844,7 +844,7 @@ fn attach_rm_appearances(
                 })?,
             );
         drop(binding_id_reservation);
-        annotations.note_for_decode(
+        annotations.note(
             ctx,
             binding_id.as_str(),
             &annotation_stream,
@@ -961,7 +961,7 @@ fn attach_rm_appearances(
                 })?,
             );
         drop(binding_id_reservation);
-        annotations.note_for_decode(
+        annotations.note(
             ctx,
             binding_id.as_str(),
             &annotation_stream,
@@ -1052,7 +1052,7 @@ fn ensure_rm_color_appearance(
         })?,
     );
     drop(identity_reservation);
-    annotations.note_for_decode(
+    annotations.note(
         ctx,
         id.as_str(),
         annotation_stream,
@@ -1459,7 +1459,7 @@ fn attach_jpeg_preview_assets(
         let native_ref: UnknownId =
             IdScope::container().id(&cadmpeg_ir::identity_component!("jpeg-preview"), ordinal);
         if crate::decode::jpeg::jpeg_dimensions(bytes).is_none() {
-            annotations.note_for_decode(
+            annotations.note(
                 ctx,
                 native_ref.as_str(),
                 &stream,
@@ -1483,7 +1483,7 @@ fn attach_jpeg_preview_assets(
             .ok_or_else(|| {
                 CodecError::malformed(format_args!("NX JPEG preview id is not an identity"))
             })?;
-        annotations.note_for_decode(
+        annotations.note(
             ctx,
             id.as_str(),
             &stream,
@@ -1632,7 +1632,7 @@ fn attach_material_texture_assets(
     )?;
     drop(source_reservation);
     for (texture, asset) in textures.iter().zip(&assets) {
-        annotations.note_for_decode(
+        annotations.note(
             ctx,
             asset.id.as_str(),
             &stream,
@@ -2028,7 +2028,7 @@ fn attach_initial_segment_bodies(
         }
     }
 
-    annotations.note_for_decode(ctx, &id, stream, 0, Some("FEATURE_HISTORY_INPUT"))?;
+    annotations.note(ctx, &id, stream, 0, Some("FEATURE_HISTORY_INPUT"))?;
     annotations
         .derived(ctx, &id, "definition")
         .map_err(cadmpeg_core::CodecError::from)?;
@@ -3451,7 +3451,7 @@ fn attach_feature_operations(
         else {
             continue;
         };
-        annotations.note_for_decode(
+        annotations.note(
             ctx,
             annotation.id.as_str(),
             &stream,
@@ -5543,7 +5543,7 @@ fn attach_feature_operations(
             }
             definition
         };
-        annotations.note_for_decode(
+        annotations.note(
             ctx,
             &id,
             &stream,
@@ -6459,7 +6459,7 @@ fn attach_sketch_graph(
                 }
                 _ => "SKETCH_NATIVE",
             };
-            annotations.note_for_decode(
+            annotations.note(
                 ctx,
                 entity.id().as_str(),
                 stream,
@@ -6468,7 +6468,7 @@ fn attach_sketch_graph(
             )?;
             annotations.exactness(ctx, entity.id().as_str(), Exactness::ByteExact)?;
         }
-        annotations.note_for_decode(
+        annotations.note(
             ctx,
             sketch_id.as_str(),
             stream,
@@ -6637,7 +6637,7 @@ fn attach_sketch_graph(
     for (source_offset, entity) in &entities {
         match entity.geometry.definition() {
             SketchGeometryDefinition::Point { .. } => {
-                annotations.note_for_decode(
+                annotations.note(
                     ctx,
                     entity.id().as_str(),
                     stream,
@@ -6652,7 +6652,7 @@ fn attach_sketch_graph(
                 } else {
                     "SKETCH_NATIVE"
                 };
-                annotations.note_for_decode(
+                annotations.note(
                     ctx,
                     entity.id().as_str(),
                     stream,
@@ -6668,7 +6668,7 @@ fn attach_sketch_graph(
             _ => return Ok(None),
         }
     }
-    annotations.note_for_decode(
+    annotations.note(
         ctx,
         sketch_id.as_str(),
         stream,
@@ -7353,7 +7353,7 @@ fn attach_parasolid_topology_string_attributes(
                 cadmpeg_ir::stream_name!("nx:s").with_suffix(reference.stream_ordinal),
                 "allocate annotation stream handle",
             )?;
-            annotations.note_for_decode(
+            annotations.note(
                 ctx,
                 id.as_str(),
                 &source_stream,
@@ -8335,7 +8335,7 @@ fn attach_parasolid_topology_numeric_attributes(
                 cadmpeg_ir::stream_name!("nx:s").with_suffix(reference.stream_ordinal),
                 "allocate annotation stream handle",
             )?;
-            annotations.note_for_decode(
+            annotations.note(
                 ctx,
                 id.as_str(),
                 &source_stream,
@@ -8516,7 +8516,7 @@ fn attach_parasolid_topology_structured_attributes(
                 cadmpeg_ir::stream_name!("nx:s").with_suffix(reference.stream_ordinal),
                 "allocate annotation stream handle",
             )?;
-            annotations.note_for_decode(
+            annotations.note(
                 ctx,
                 id.as_str(),
                 &source_stream,

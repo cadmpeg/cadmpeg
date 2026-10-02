@@ -8,7 +8,7 @@ const ID: &str = "f3d:native:record#one";
 fn source(stream: &str) -> SourceFidelity {
     let mut annotations = AnnotationBuilder::new();
     let handle = StreamHandle::new(cadmpeg_ir::StreamName::try_from(stream.to_owned()).unwrap());
-    annotations.note(ID, &handle, 7).tag("retained");
+    annotations.note(&cadmpeg_test_support::service_decode_context(), ID, &handle, 7, Some("retained")).unwrap();
     annotations.derived(&cadmpeg_test_support::service_decode_context(), ID, "geometry").unwrap();
     let mut fidelity = SourceFidelity::with_annotations(annotations.build());
     fidelity
@@ -106,7 +106,7 @@ fn source_rescoping_refuses_identity_retained_limit() {
 fn source_rescoping_preserves_absent_provenance_tag() {
     let mut builder = AnnotationBuilder::new();
     let stream = StreamHandle::new(cadmpeg_ir::StreamName::try_from("member".to_owned()).unwrap());
-    builder.note(ID, &stream, 7);
+    builder.note(&cadmpeg_test_support::service_decode_context(), ID, &stream, 7, None).unwrap();
     let output = rescope_fidelity(
         &cadmpeg_test_support::service_decode_context(),
         SourceFidelity::with_annotations(builder.build()),
@@ -190,7 +190,7 @@ fn fidelity_append_refuses_provenance_collection_limit() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
     let mut builder = AnnotationBuilder::new();
     let stream = StreamHandle::new(cadmpeg_ir::StreamName::try_from("member".to_owned()).unwrap());
-    builder.note(ID, &stream, 7);
+    builder.note(&cadmpeg_test_support::service_decode_context(), ID, &stream, 7, None).unwrap();
     let other = SourceFidelity::with_annotations(builder.build());
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
