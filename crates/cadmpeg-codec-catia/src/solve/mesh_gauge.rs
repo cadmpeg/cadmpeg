@@ -45,25 +45,36 @@ pub(super) struct MeshCandidateGauge<'a> {
 }
 
 fn charge_gauge_comparison(
-    ctx: &DecodeContext<'_>, left_bytes: u64, right_bytes: u64, operation: &'static str,
+    ctx: &DecodeContext<'_>,
+    left_bytes: u64,
+    right_bytes: u64,
+    operation: &'static str,
 ) -> Result<(), CodecError> {
-    let work = left_bytes.checked_add(right_bytes).and_then(|bytes| bytes.checked_add(1))
+    let work = left_bytes
+        .checked_add(right_bytes)
+        .and_then(|bytes| bytes.checked_add(1))
         .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
     ctx.charge_work(work, operation)
 }
 
 fn gauge_rows_key_bytes<T>(
-    ctx: &DecodeContext<'_>, rows: &[Vec<T>], operation: &'static str,
+    ctx: &DecodeContext<'_>,
+    rows: &[Vec<T>],
+    operation: &'static str,
 ) -> Result<u64, CodecError> {
     ctx.charge_work(u64_from_index(rows.len()), operation)?;
-    rows.iter().try_fold(u64_from_index(std::mem::size_of_val(rows)), |bytes, row| {
-        bytes.checked_add(u64_from_index(std::mem::size_of_val(row.as_slice())))
-            .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))
-    })
+    rows.iter()
+        .try_fold(u64_from_index(std::mem::size_of_val(rows)), |bytes, row| {
+            bytes
+                .checked_add(u64_from_index(std::mem::size_of_val(row.as_slice())))
+                .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))
+        })
 }
 
 fn relation_state_key_bytes(
-    ctx: &DecodeContext<'_>, state: &MeshEndpointRelationStateSignature, operation: &'static str,
+    ctx: &DecodeContext<'_>,
+    state: &MeshEndpointRelationStateSignature,
+    operation: &'static str,
 ) -> Result<u64, CodecError> {
     let mut bytes = u64_from_index(std::mem::size_of_val(state.0.as_slice()))
         .checked_add(gauge_rows_key_bytes(ctx, &state.1, operation)?)
@@ -72,9 +83,20 @@ fn relation_state_key_bytes(
     for row in &state.1 {
         ctx.charge_work(u64_from_index(row.len()), operation)?;
         for selection in row {
-            if let MeshEndpointRelationSelection::Enumerated { assignments, edge_pairs } = selection {
-                bytes = bytes.checked_add(u64_from_index(std::mem::size_of_val(assignments.as_slice())))
-                    .and_then(|bytes| bytes.checked_add(u64_from_index(std::mem::size_of_val(edge_pairs.as_slice()))))
+            if let MeshEndpointRelationSelection::Enumerated {
+                assignments,
+                edge_pairs,
+            } = selection
+            {
+                bytes = bytes
+                    .checked_add(u64_from_index(std::mem::size_of_val(
+                        assignments.as_slice(),
+                    )))
+                    .and_then(|bytes| {
+                        bytes.checked_add(u64_from_index(std::mem::size_of_val(
+                            edge_pairs.as_slice(),
+                        )))
+                    })
                     .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
             }
         }
@@ -83,27 +105,39 @@ fn relation_state_key_bytes(
 }
 
 fn topology_key_bytes(
-    ctx: &DecodeContext<'_>, topology: &StandardTopologyDraft, operation: &'static str,
+    ctx: &DecodeContext<'_>,
+    topology: &StandardTopologyDraft,
+    operation: &'static str,
 ) -> Result<u64, CodecError> {
     let mut bytes = u64_from_index(std::mem::size_of_val(topology));
-    for length in [std::mem::size_of_val(topology.vertex_points.as_slice()),
+    for length in [
+        std::mem::size_of_val(topology.vertex_points.as_slice()),
         std::mem::size_of_val(topology.edge_rows.as_slice()),
-        std::mem::size_of_val(topology.faces.as_slice())] {
-        bytes = bytes.checked_add(u64_from_index(length)).ok_or_else(||
-            ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
+        std::mem::size_of_val(topology.faces.as_slice()),
+    ] {
+        bytes = bytes
+            .checked_add(u64_from_index(length))
+            .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
     }
     ctx.charge_work(u64_from_index(topology.edge_rows.len()), operation)?;
     for row in &topology.edge_rows {
-        bytes = bytes.checked_add(u64_from_index(std::mem::size_of_val(row.handles())))
+        bytes = bytes
+            .checked_add(u64_from_index(std::mem::size_of_val(row.handles())))
             .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
     }
     ctx.charge_work(u64_from_index(topology.faces.len()), operation)?;
     for face in &topology.faces {
-        bytes = bytes.checked_add(u64_from_index(std::mem::size_of_val(face.boundaries.as_slice())))
+        bytes = bytes
+            .checked_add(u64_from_index(std::mem::size_of_val(
+                face.boundaries.as_slice(),
+            )))
             .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
         ctx.charge_work(u64_from_index(face.boundaries.len()), operation)?;
         for boundary in &face.boundaries {
-            bytes = bytes.checked_add(u64_from_index(std::mem::size_of_val(boundary.coedges.as_slice())))
+            bytes = bytes
+                .checked_add(u64_from_index(std::mem::size_of_val(
+                    boundary.coedges.as_slice(),
+                )))
                 .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
         }
     }
@@ -507,17 +541,25 @@ fn enumerate_coordinate_permutations(
 }
 
 fn bounded_factorial(
-    ctx: &DecodeContext<'_>, value: usize, limit: usize,
+    ctx: &DecodeContext<'_>,
+    value: usize,
+    limit: usize,
 ) -> Result<usize, CodecError> {
     ctx.charge_work(u64_from_index(value), "catia_gauge_permutation_count")?;
     let mut result = 1usize;
     for factor in 2..=value {
-        result = result.checked_mul(factor).ok_or_else(|| ctx.refuse_codec_limit(
-            "catia_gauge_permutation_limit", u64_from_index(limit), u64::MAX,
-        ))?;
+        result = result.checked_mul(factor).ok_or_else(|| {
+            ctx.refuse_codec_limit(
+                "catia_gauge_permutation_limit",
+                u64_from_index(limit),
+                u64::MAX,
+            )
+        })?;
         if result > limit {
             return Err(ctx.refuse_codec_limit(
-                "catia_gauge_permutation_limit", u64_from_index(limit), u64_from_index(result),
+                "catia_gauge_permutation_limit",
+                u64_from_index(limit),
+                u64_from_index(result),
             ));
         }
     }
@@ -535,18 +577,28 @@ fn intern_gauge_signatures<T: Ord>(
     for signature in signatures {
         let bytes = u64_from_index(std::mem::size_of::<T>())
             .checked_add(u64_from_index(key_bytes(&signature)))
-            .ok_or_else(|| ctx.refuse_codec_limit("catia_gauge_signature_compare", u64::MAX - 1, u64::MAX))?;
-        let lookup_work = bytes.checked_add(largest_key)
+            .ok_or_else(|| {
+                ctx.refuse_codec_limit("catia_gauge_signature_compare", u64::MAX - 1, u64::MAX)
+            })?;
+        let lookup_work = bytes
+            .checked_add(largest_key)
             .and_then(|bytes| bytes.checked_mul(u64_from_index(ids.len())))
             .and_then(|bytes| bytes.checked_add(1))
-            .ok_or_else(|| ctx.refuse_codec_limit("catia_gauge_signature_compare", u64::MAX - 1, u64::MAX))?;
+            .ok_or_else(|| {
+                ctx.refuse_codec_limit("catia_gauge_signature_compare", u64::MAX - 1, u64::MAX)
+            })?;
         ctx.charge_work(lookup_work, "catia_gauge_signature_compare")?;
         let id = if let Some(id) = ids.get(&signature) {
             *id
         } else {
             let id = ids.len();
-            let insert_work = lookup_work.checked_mul(2).ok_or_else(||
-                ctx.refuse_codec_limit("catia_gauge_signature_insert_compare", u64::MAX - 1, u64::MAX))?;
+            let insert_work = lookup_work.checked_mul(2).ok_or_else(|| {
+                ctx.refuse_codec_limit(
+                    "catia_gauge_signature_insert_compare",
+                    u64::MAX - 1,
+                    u64::MAX,
+                )
+            })?;
             ctx.charge_work(insert_work, "catia_gauge_signature_insert_compare")?;
             if bytes > largest_key {
                 largest_key = bytes;
@@ -619,7 +671,10 @@ pub(super) fn build_mesh_coordinate_gauge(
                     return identity();
                 };
                 *active_point = true;
-                ctx.charge_work(u64_from_index(group_points.len()), "catia_gauge_group_point_scan")?;
+                ctx.charge_work(
+                    u64_from_index(group_points.len()),
+                    "catia_gauge_group_point_scan",
+                )?;
                 if !group_points.contains(&point) {
                     ctx.push_vec(&mut group_points, point, "catia_gauge_group_points")?;
                 }
@@ -699,7 +754,7 @@ pub(super) fn build_mesh_coordinate_gauge(
             "catia_gauge_option_rows",
         )?;
     }
-    let mut point_colors = intern_gauge_signatures(ctx, (0..point_count).map(|_| ()), |_| 0)?;
+    let mut point_colors = intern_gauge_signatures(ctx, (0..point_count).map(|_| ()), |()| 0)?;
     let mut row_colors = intern_gauge_signatures(
         ctx,
         (0..edge_rows.len()).map(|edge| {
@@ -764,7 +819,9 @@ pub(super) fn build_mesh_coordinate_gauge(
                 "catia_gauge_row_signatures",
             )?;
         }
-        let next_row_colors = intern_gauge_signatures(ctx, row_signatures, |item| std::mem::size_of_val(item.4.as_slice()))?;
+        let next_row_colors = intern_gauge_signatures(ctx, row_signatures, |item| {
+            std::mem::size_of_val(item.4.as_slice())
+        })?;
         let mut point_signatures = Vec::new();
         for point in 0..point_count {
             let mut options = Vec::new();
@@ -787,13 +844,20 @@ pub(super) fn build_mesh_coordinate_gauge(
                 "catia_gauge_point_signatures",
             )?;
         }
-        let next_point_colors = intern_gauge_signatures(ctx, point_signatures, |item| std::mem::size_of_val(item.1.as_slice()))?;
-        for (next, previous) in [(&next_point_colors, &point_colors),
-            (&next_row_colors, &row_colors), (&next_option_colors, &option_colors)] {
-            charge_gauge_comparison(ctx,
+        let next_point_colors = intern_gauge_signatures(ctx, point_signatures, |item| {
+            std::mem::size_of_val(item.1.as_slice())
+        })?;
+        for (next, previous) in [
+            (&next_point_colors, &point_colors),
+            (&next_row_colors, &row_colors),
+            (&next_option_colors, &option_colors),
+        ] {
+            charge_gauge_comparison(
+                ctx,
                 u64_from_index(std::mem::size_of_val(next.as_slice())),
                 u64_from_index(std::mem::size_of_val(previous.as_slice())),
-                "catia_gauge_refinement_compare")?;
+                "catia_gauge_refinement_compare",
+            )?;
         }
         let stable = next_point_colors == point_colors
             && next_row_colors == row_colors
@@ -839,20 +903,30 @@ pub(super) fn build_mesh_coordinate_gauge(
                 |item| std::mem::size_of_val(item.as_slice()),
                 "catia_gauge_mapped_rows_sort",
             )?;
-            charge_gauge_comparison(ctx,
+            charge_gauge_comparison(
+                ctx,
                 gauge_rows_key_bytes(ctx, &original_unbound, "catia_gauge_automorphism_key_scan")?,
                 gauge_rows_key_bytes(ctx, &mapped_unbound, "catia_gauge_automorphism_key_scan")?,
-                "catia_gauge_automorphism_rows_compare")?;
+                "catia_gauge_automorphism_rows_compare",
+            )?;
             if original_unbound != mapped_unbound {
                 return Ok(false);
             }
             for &edge in edges.iter().filter(|edge| edge_identity_evidence[**edge]) {
-                let mapped = mapped_normalized_endpoint_options(ctx, &edge_candidates[edge], permutation)?;
-                let original = ctx.copy_retained_slice(&normalized_options[edge], "catia_gauge_identity_options")?;
-                charge_gauge_comparison(ctx,
-                    mapped.as_ref().map_or(0, |row| u64_from_index(std::mem::size_of_val(row.as_slice()))),
+                let mapped =
+                    mapped_normalized_endpoint_options(ctx, &edge_candidates[edge], permutation)?;
+                let original = ctx.copy_retained_slice(
+                    &normalized_options[edge],
+                    "catia_gauge_identity_options",
+                )?;
+                charge_gauge_comparison(
+                    ctx,
+                    mapped.as_ref().map_or(0, |row| {
+                        u64_from_index(std::mem::size_of_val(row.as_slice()))
+                    }),
                     u64_from_index(std::mem::size_of_val(original.as_slice())),
-                    "catia_gauge_identity_row_compare")?;
+                    "catia_gauge_identity_row_compare",
+                )?;
                 if mapped != Some(original) {
                     return Ok(false);
                 }
@@ -865,11 +939,16 @@ pub(super) fn build_mesh_coordinate_gauge(
     for (component, points) in coordinate_components.into_iter().enumerate() {
         let mut affected_groups = Vec::new();
         for edges in groups.values() {
-            ctx.charge_work(u64_from_index(edges.len()), "catia_gauge_affected_edge_scan")?;
+            ctx.charge_work(
+                u64_from_index(edges.len()),
+                "catia_gauge_affected_edge_scan",
+            )?;
             let mut affected = false;
             for &edge in edges {
-                ctx.charge_work(u64_from_index(std::mem::size_of_val(edge_candidates[edge].as_slice())),
-                    "catia_gauge_affected_point_scan")?;
+                ctx.charge_work(
+                    u64_from_index(std::mem::size_of_val(edge_candidates[edge].as_slice())),
+                    "catia_gauge_affected_point_scan",
+                )?;
                 if edge_candidates[edge].iter().flatten().any(|point| {
                     component_by_point.get(*point).copied().flatten() == Some(component)
                 }) {
@@ -918,8 +997,12 @@ pub(super) fn build_mesh_coordinate_gauge(
                 &mut used,
                 &mut class_orders,
             )?;
-            let next_len = local_orders.len().checked_mul(class_order_count).ok_or_else(||
-                ctx.refuse_codec_limit("catia_gauge_next_orders", u64::MAX - 1, u64::MAX))?;
+            let next_len = local_orders
+                .len()
+                .checked_mul(class_order_count)
+                .ok_or_else(|| {
+                    ctx.refuse_codec_limit("catia_gauge_next_orders", u64::MAX - 1, u64::MAX)
+                })?;
             ctx.charge_work(u64_from_index(next_len), "catia_gauge_order_product")?;
             let mut next = Vec::new();
             ctx.reserve_vec(&mut next, next_len, "catia_gauge_next_orders")?;
@@ -962,12 +1045,17 @@ pub(super) fn build_mesh_coordinate_gauge(
             |item| std::mem::size_of_val(item.as_slice()),
             "catia_gauge_permutation_sort",
         )?;
-        ctx.charge_work(u64_from_index(permutations.len()), "catia_gauge_permutation_dedup_scan")?;
+        ctx.charge_work(
+            u64_from_index(permutations.len()),
+            "catia_gauge_permutation_dedup_scan",
+        )?;
         for adjacent in permutations.windows(2) {
-            charge_gauge_comparison(ctx,
+            charge_gauge_comparison(
+                ctx,
                 u64_from_index(std::mem::size_of_val(adjacent[0].as_slice())),
                 u64_from_index(std::mem::size_of_val(adjacent[1].as_slice())),
-                "catia_gauge_permutation_dedup_compare")?;
+                "catia_gauge_permutation_dedup_compare",
+            )?;
         }
         permutations.dedup();
         ctx.push_vec(&mut components, permutations, "catia_gauge_components")?;
@@ -1137,10 +1225,12 @@ fn canonicalize_partial_endpoint_pair_gauge(
                 else {
                     return Ok(None);
                 };
-                charge_gauge_comparison(ctx,
+                charge_gauge_comparison(
+                    ctx,
                     u64_from_index(std::mem::size_of_val(candidate.as_slice())),
                     u64_from_index(std::mem::size_of_val(best.as_slice())),
-                    "catia_gauge_partial_pair_compare")?;
+                    "catia_gauge_partial_pair_compare",
+                )?;
                 if candidate < best {
                     best = candidate;
                 }
@@ -1213,8 +1303,10 @@ fn canonicalize_mesh_edge_row_gauges(
             for (boundary, boundary_topology) in face_topology.boundaries.iter().enumerate() {
                 for (position, coedge) in boundary_topology.coedges.iter().enumerate() {
                     let faces = incident_faces.get_mut(coedge.edge_row)?;
-                    if let Err(error) = ctx.charge_work(u64_from_index(faces.len()),
-                        "catia_mesh_edge_gauge_incident_face_scan") {
+                    if let Err(error) = ctx.charge_work(
+                        u64_from_index(faces.len()),
+                        "catia_mesh_edge_gauge_incident_face_scan",
+                    ) {
                         return Some(Err(error));
                     }
                     if !faces.contains(&face) {
@@ -1416,7 +1508,9 @@ fn canonicalize_mesh_edge_row_gauges(
                     .is_none()
                 {
                     return Some(Err(ctx.refuse_codec_limit(
-                        "catia_mesh_edge_gauge_ordered_sort", u64::MAX - 1, u64::MAX,
+                        "catia_mesh_edge_gauge_ordered_sort",
+                        u64::MAX - 1,
+                        u64::MAX,
                     )));
                 }
             }
@@ -1428,8 +1522,10 @@ fn canonicalize_mesh_edge_row_gauges(
                         .then_with(|| usage[*left].cmp(&usage[*right]))
                         .then_with(|| left.cmp(right))
                 },
-                |item| std::mem::size_of_val(&endpoint_keys[*item])
-                    + std::mem::size_of_val(usage[*item].as_slice()),
+                |item| {
+                    std::mem::size_of_val(&endpoint_keys[*item])
+                        + std::mem::size_of_val(usage[*item].as_slice())
+                },
                 "catia_mesh_edge_gauge_ordered_sort",
             ) {
                 return Some(Err(error));
@@ -1755,10 +1851,12 @@ fn canonicalize_mesh_coordinate_gauges(
             candidate = canonical;
             let key = mesh_topology_gauge_key(ctx, &candidate)?;
             let improves = if let Some((best_key, _)) = &best {
-                charge_gauge_comparison(ctx,
+                charge_gauge_comparison(
+                    ctx,
                     u64_from_index(std::mem::size_of_val(key.as_slice())),
                     u64_from_index(std::mem::size_of_val(best_key.as_slice())),
-                    "catia_gauge_coordinate_topology_compare")?;
+                    "catia_gauge_coordinate_topology_compare",
+                )?;
                 key < *best_key
             } else {
                 true
@@ -1939,10 +2037,12 @@ pub(super) fn mesh_candidates_equivalent_with_context(
     right: &(StandardTopologyDraft, Vec<usize>),
     gauge: Option<MeshCandidateGauge<'_>>,
 ) -> Result<bool, CodecError> {
-    charge_gauge_comparison(ctx,
+    charge_gauge_comparison(
+        ctx,
         u64_from_index(std::mem::size_of_val(left.0.vertex_points.as_slice())),
         u64_from_index(std::mem::size_of_val(right.0.vertex_points.as_slice())),
-        "catia_gauge_candidate_point_compare")?;
+        "catia_gauge_candidate_point_compare",
+    )?;
     if left.0.vertex_points != right.0.vertex_points {
         return Ok(false);
     }
@@ -1951,14 +2051,18 @@ pub(super) fn mesh_candidates_equivalent_with_context(
     let (Some(left), Some(right)) = (&left, &right) else {
         return Ok(false);
     };
-    charge_gauge_comparison(ctx,
+    charge_gauge_comparison(
+        ctx,
         topology_key_bytes(ctx, &left.0, "catia_gauge_candidate_key_scan")?,
         topology_key_bytes(ctx, &right.0, "catia_gauge_candidate_key_scan")?,
-        "catia_gauge_candidate_topology_compare")?;
-    charge_gauge_comparison(ctx,
+        "catia_gauge_candidate_topology_compare",
+    )?;
+    charge_gauge_comparison(
+        ctx,
         u64_from_index(std::mem::size_of_val(left.1.as_slice())),
         u64_from_index(std::mem::size_of_val(right.1.as_slice())),
-        "catia_gauge_candidate_assignment_compare")?;
+        "catia_gauge_candidate_assignment_compare",
+    )?;
     Ok(left == right)
 }
 
@@ -2386,10 +2490,12 @@ pub(super) fn canonicalize_endpoint_relation_state(
                 else {
                     return Ok(None);
                 };
-                charge_gauge_comparison(ctx,
+                charge_gauge_comparison(
+                    ctx,
                     relation_state_key_bytes(ctx, &candidate, "catia_relation_candidate_key_scan")?,
                     relation_state_key_bytes(ctx, &best, "catia_relation_candidate_key_scan")?,
-                    "catia_relation_candidate_compare")?;
+                    "catia_relation_candidate_compare",
+                )?;
                 if candidate < best {
                     best = candidate;
                 }
@@ -2471,7 +2577,10 @@ fn map_endpoint_relation_state(
                         let Some(&target) = row_mapping.get(edge) else {
                             return Ok(None);
                         };
-                        ctx.charge_work(u64_from_index(mapped_pairs.len()), "catia_relation_mapped_pair_scan")?;
+                        ctx.charge_work(
+                            u64_from_index(mapped_pairs.len()),
+                            "catia_relation_mapped_pair_scan",
+                        )?;
                         if mapped_pairs
                             .iter()
                             .any(|(candidate, _)| *candidate == target)
@@ -2505,14 +2614,25 @@ fn map_endpoint_relation_state(
             };
             ctx.push_vec(&mut choices, mapped, "catia_relation_mapped_choices")?;
         }
-        ctx.charge_work(u64_from_index(choices.len()), "catia_relation_choice_key_bytes")?;
+        ctx.charge_work(
+            u64_from_index(choices.len()),
+            "catia_relation_choice_key_bytes",
+        )?;
         for selection in &choices {
-            if let MeshEndpointRelationSelection::Enumerated { assignments, edge_pairs } = selection {
+            if let MeshEndpointRelationSelection::Enumerated {
+                assignments,
+                edge_pairs,
+            } = selection
+            {
                 std::mem::size_of_val(assignments.as_slice())
                     .checked_add(std::mem::size_of_val(edge_pairs.as_slice()))
-                    .ok_or_else(|| ctx.refuse_codec_limit(
-                        "catia_relation_mapped_choices_sort", u64::MAX - 1, u64::MAX,
-                    ))?;
+                    .ok_or_else(|| {
+                        ctx.refuse_codec_limit(
+                            "catia_relation_mapped_choices_sort",
+                            u64::MAX - 1,
+                            u64::MAX,
+                        )
+                    })?;
             }
         }
         ctx.sort_unstable_by(
@@ -2522,8 +2642,10 @@ fn map_endpoint_relation_state(
                 MeshEndpointRelationSelection::Enumerated {
                     assignments,
                     edge_pairs,
-                } => std::mem::size_of_val(assignments.as_slice())
-                    + std::mem::size_of_val(edge_pairs.as_slice()),
+                } => {
+                    std::mem::size_of_val(assignments.as_slice())
+                        + std::mem::size_of_val(edge_pairs.as_slice())
+                }
                 MeshEndpointRelationSelection::Deferred => 0,
             },
             "catia_relation_mapped_choices_sort",

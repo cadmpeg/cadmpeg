@@ -83,10 +83,14 @@ impl A8KnotLane {
     }
 
     pub(super) fn pole_count(
-        &self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, degree: u32,
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        degree: u32,
     ) -> Result<Option<u32>, cadmpeg_core::CodecError> {
-        ctx.charge_work(cadmpeg_core::decode::u64_from_index(self.multiplicities.len()),
-            "catia_a8_pole_count_scan")?;
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(self.multiplicities.len()),
+            "catia_a8_pole_count_scan",
+        )?;
         Ok(pole_count(&self.multiplicities, degree))
     }
 }
@@ -162,8 +166,11 @@ mod tests {
                 .expect("service collection budget"),
             vec![0.0, 0.0, 1.0, 1.0]
         );
-        assert_eq!(crate::test_support::with_service_context(|ctx| lane.pole_count(ctx, 1))
-            .expect("service count work"), Some(2));
+        assert_eq!(
+            crate::test_support::with_service_context(|ctx| lane.pole_count(ctx, 1))
+                .expect("service count work"),
+            Some(2)
+        );
     }
 
     #[test]

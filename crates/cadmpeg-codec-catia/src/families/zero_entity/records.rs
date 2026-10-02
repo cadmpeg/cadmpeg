@@ -2694,7 +2694,10 @@ fn zero_entity_expand_knots(
     distinct: impl Iterator<Item = f64>,
     multiplicities: &[u32],
 ) -> Result<Vec<f64>, CodecError> {
-    ctx.charge_work(u64_from_index(multiplicities.len()), "catia_zero_knot_expansion_scan")?;
+    ctx.charge_work(
+        u64_from_index(multiplicities.len()),
+        "catia_zero_knot_expansion_scan",
+    )?;
     let mut total = 0usize;
     for &multiplicity in multiplicities {
         let Ok(count) = usize::try_from(multiplicity) else {
@@ -4254,17 +4257,25 @@ mod tests {
 mod knot_work_tests {
     #[test]
     fn zero_entity_knot_expansion_refuses_scan_and_emission_work() {
-        for (cap, operation) in [(0, "catia_zero_knot_expansion_scan"),
-            (5, "catia_zero_knot_expansion_emit")] {
+        for (cap, operation) in [
+            (0, "catia_zero_knot_expansion_scan"),
+            (5, "catia_zero_knot_expansion_emit"),
+        ] {
             let result = crate::test_support::with_work_limit(cap, |ctx| {
                 super::zero_entity_expand_knots(ctx, [0.0, 1.0].into_iter(), &[2, 2])
             });
-            assert!(matches!(result, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            assert!(
+                matches!(result, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
                 if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
-                    && limit.operation == operation));
+                    && limit.operation == operation)
+            );
         }
-        assert_eq!(crate::test_support::with_work_limit(6, |ctx| {
-            super::zero_entity_expand_knots(ctx, [0.0, 1.0].into_iter(), &[2, 2])
-        }).expect("scan and emission work"), vec![0.0, 0.0, 1.0, 1.0]);
+        assert_eq!(
+            crate::test_support::with_work_limit(6, |ctx| {
+                super::zero_entity_expand_knots(ctx, [0.0, 1.0].into_iter(), &[2, 2])
+            })
+            .expect("scan and emission work"),
+            vec![0.0, 0.0, 1.0, 1.0]
+        );
     }
 }
