@@ -70,6 +70,16 @@ impl<'tcx> Analysis<'_, 'tcx> {
         self.work_report(expression.span, shape, paid, name);
     }
 
+    fn skipped_source(&self, expression: &'tcx Expr<'tcx>) -> bool {
+        if let Some((definition, operands)) = self.call(expression) {
+            if types::standard(self.tcx, definition) {
+                if matches!(self.tcx.item_name(definition).as_str(), "filter" | "filter_map" | "skip" | "skip_while" | "take_while" | "step_by" | "flatten" | "flat_map") { return true; }
+                return operands.first().is_some_and(|operand| self.skipped_source(operand));
+            }
+        }
+        false
+    }
+
     fn prefix_paid(&self, expression: &'tcx Expr<'tcx>) -> Option<bool> {
         match expression.kind {
             ExprKind::Block(block, _) => self.prefix_block(block),
@@ -131,7 +141,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
                                 _ => None,
                             });
                             let prefix = user_body.and_then(|body| self.prefix_paid(body));
-                            let effective = if paid == Some(true) { paid } else { prefix };
+                            let effective = if paid == Some(true) { paid } else if self.skipped_source(input) { Some(false) } else { prefix };
                             self.work_report(header, shape, effective, "for loop");
                             let saved = self.flow.clone();
                             self.flow.work.clear();

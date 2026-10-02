@@ -16,7 +16,8 @@ mod flow;
 mod work;
 mod callee;
 
-use std::collections::{BTreeMap, BTreeSet, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
+use std::cell::RefCell;
 use rustc_driver::{Callbacks, Compilation};
 use rustc_hir::intravisit::{walk_expr, Visitor};
 use rustc_hir::{Body, Expr, ExprKind};
@@ -37,6 +38,7 @@ struct DecodeCallbacks {
 impl Callbacks for DecodeCallbacks {
     fn after_analysis<'tcx>(&mut self, _compiler: &Compiler, tcx: TyCtxt<'tcx>) -> Compilation {
         let mut active = HashSet::new();
+        let summaries = RefCell::new(HashMap::new());
         for owner in tcx.hir_body_owners() {
             let body = tcx.hir_body_owned_by(owner);
             let mut scope = ContextScope { tcx, typeck: tcx.typeck(owner), present: false };
@@ -61,7 +63,7 @@ impl Callbacks for DecodeCallbacks {
         }
         for owner in active {
             if production(tcx, owner) {
-                Analysis { tcx, typeck: tcx.typeck(owner), owner, flow: flow::Flow::default(), stack: vec![owner], findings: &mut self.findings }
+                Analysis { tcx, typeck: tcx.typeck(owner), owner, summaries: &summaries, flow: flow::Flow::default(), stack: vec![owner], findings: &mut self.findings }
                     .visit_body(tcx.hir_body_owned_by(owner));
             }
         }
@@ -106,6 +108,7 @@ struct Analysis<'a, 'tcx> {
     tcx: TyCtxt<'tcx>,
     typeck: &'tcx TypeckResults<'tcx>,
     owner: LocalDefId,
+    summaries: &'a RefCell<HashMap<DefId, bool>>,
     flow: flow::Flow,
     stack: Vec<LocalDefId>,
     findings: &'a mut Findings,
