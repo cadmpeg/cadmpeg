@@ -467,11 +467,16 @@ impl<Storage: AnnotationStorage> AnnotationBuilder<Storage> {
         Ok(self)
     }
 
-    /// Remove annotations for one entity.
-    pub fn remove_entity(&mut self, id: impl Display) { self.state.remove_entity(id); }
-
-    /// Remove annotations for an already borrowed identity.
-    pub fn remove_entity_str(&mut self, id: &str) { self.state.remove_entity_str(id); }
+    /// Admit both identity lookups before removing annotations for an entity.
+    pub fn remove_entity(&mut self, ctx: &DecodeContext<'_>, id: &str) -> Result<(), CodecError> {
+        self.update(|state| {
+            admit_identity_work(ctx, state.annotations.provenance.len(), id.len(), "remove source provenance")?;
+            admit_identity_work(ctx, state.annotations.exactness.len(), id.len(), "remove source exactness")?;
+            state.annotations.provenance.remove(id);
+            state.annotations.exactness.remove(id);
+            Ok(())
+        })
+    }
 }
 
 impl AnnotationBuilder<ScopedReservation<'_>> {
@@ -747,18 +752,6 @@ impl AnnotationState {
                 }
             }
         }
-    }
-
-    /// Remove all annotations for an entity that was removed from the model.
-    fn remove_entity(&mut self, id: impl Display) {
-        let id = id.to_string();
-        self.remove_entity_str(&id);
-    }
-
-    /// Remove all annotations for an entity whose identity is already borrowed.
-    fn remove_entity_str(&mut self, id: &str) {
-        self.annotations.provenance.remove(id);
-        self.annotations.exactness.remove(id);
     }
 
     /// Finish building and return the annotation tables.
@@ -1570,7 +1563,7 @@ mod tests {
             .derived(&cadmpeg_test_support::service_decode_context(), "catia:e5:curve#0", "geometry")
             .expect("nonempty exactness field");
 
-        builder.remove_entity("catia:e5:curve#0");
+        builder.remove_entity(&cadmpeg_test_support::service_decode_context(), "catia:e5:curve#0").unwrap();
 
         assert!(!builder
             .state.annotations

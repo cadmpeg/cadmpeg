@@ -18,6 +18,42 @@ fn fixture() -> AnnotationBuilder {
 }
 
 #[test]
+fn annotation_removal_refuses_work_before_changing_either_table() {
+    let mut builder = fixture();
+    let before = builder.annotations().clone();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let Err(CodecError::ResourceLimit(limit)) = builder.remove_entity(&ctx, FIRST) else {
+        panic!("identity removal must refuse work");
+    };
+    assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+    assert_eq!(limit.operation, "remove source provenance");
+    assert_eq!(builder.annotations(), &before);
+    assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(original)) if original == limit));
+}
+
+#[test]
+fn annotation_removal_uses_no_owned_or_temporary_storage() {
+    let mut builder = fixture();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    policy.limits.max_materialized_bytes = 0;
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    builder.remove_entity(&ctx, FIRST).unwrap();
+    assert!(!builder.annotations().provenance.contains_key(FIRST));
+    assert!(!builder.annotations().exactness().contains_key(FIRST));
+    assert_eq!(builder.annotations().provenance[SECOND].offset, 9);
+    assert_eq!(builder.annotations().provenance[SECOND].tag.as_deref(), Some("second"));
+    assert_eq!(builder.annotations().exactness()[SECOND].entity(), Exactness::Inferred);
+    builder.remove_entity(&ctx, "absent").unwrap();
+    ctx.finish_session().unwrap();
+}
+
+#[test]
 fn annotation_retention_refuses_decision_storage_before_callbacks() {
     for dimension in [ResourceDimension::CollectionItems, ResourceDimension::MaterializedBytes, ResourceDimension::WorkUnits] {
         for provenance in [false, true] {

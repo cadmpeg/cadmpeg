@@ -2595,10 +2595,10 @@ impl<'a> DecodeContext<'a> {
         {
             let mut annotations = AnnotationBuilder::resume(std::mem::take(&mut self.annotations));
             for procedure in &ir.model.procedural_curves[procedural_curve_start..] {
-                annotations.remove_entity_str(procedure.id.as_str());
+                annotations.remove_entity(ctx, procedure.id.as_str())?;
             }
             for procedure in &ir.model.procedural_surfaces[procedural_surface_start..] {
-                annotations.remove_entity_str(procedure.id.as_str());
+                annotations.remove_entity(ctx, procedure.id.as_str())?;
             }
             self.annotations = annotations.build();
             ir
