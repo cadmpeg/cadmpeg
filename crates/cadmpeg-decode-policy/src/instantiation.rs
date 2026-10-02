@@ -67,8 +67,24 @@ impl<'tcx> Visitor<'tcx> for Collector<'_, '_, 'tcx> {
                 _ => None,
             })
             .or_else(|| {
-                self.analysis.call(expression).map(|(definition, _)| definition)
-                    .or_else(|| matches!(expression.kind, ExprKind::Binary(..) | ExprKind::Unary(..) | ExprKind::Index(..) | ExprKind::AssignOp(..)).then(|| self.analysis.typeck.type_dependent_def_id(expression.hir_id)).flatten())
+                self.analysis
+                    .call(expression)
+                    .map(|(definition, _)| definition)
+                    .or_else(|| {
+                        matches!(
+                            expression.kind,
+                            ExprKind::Binary(..)
+                                | ExprKind::Unary(..)
+                                | ExprKind::Index(..)
+                                | ExprKind::AssignOp(..)
+                        )
+                        .then(|| {
+                            self.analysis
+                                .typeck
+                                .type_dependent_def_id(expression.hir_id)
+                        })
+                        .flatten()
+                    })
                     .and_then(|definition| self.analysis.resolved_instance(expression, definition))
             });
         if let Some(instance) = instance {
@@ -83,9 +99,27 @@ impl<'tcx> Visitor<'tcx> for Collector<'_, '_, 'tcx> {
                 && self.seen.insert(instance)
             {
                 let span = self.origin.unwrap_or(expression.span);
-                let fixed_operands: Vec<_> = self.analysis.call(expression).map_or_else(Vec::new, |(_, operands)| operands.into_iter().map(|operand| self.analysis.constant(operand, &mut Vec::new())).collect());
-                let mut fixed_parameters = instance.def_id().as_local().map_or_else(HashSet::new, |local| crate::fixed::bindings(self.analysis.tcx, local, &fixed_operands));
-                if matches!(self.analysis.tcx.def_kind(instance.def_id()), rustc_hir::def::DefKind::Closure) { fixed_parameters.extend(self.analysis.fixed_parameters.iter().copied()); }
+                let fixed_operands: Vec<_> =
+                    self.analysis
+                        .call(expression)
+                        .map_or_else(Vec::new, |(_, operands)| {
+                            operands
+                                .into_iter()
+                                .map(|operand| self.analysis.constant(operand, &mut Vec::new()))
+                                .collect()
+                        });
+                let mut fixed_parameters = instance
+                    .def_id()
+                    .as_local()
+                    .map_or_else(HashSet::new, |local| {
+                        crate::fixed::bindings(self.analysis.tcx, local, &fixed_operands)
+                    });
+                if matches!(
+                    self.analysis.tcx.def_kind(instance.def_id()),
+                    rustc_hir::def::DefKind::Closure
+                ) {
+                    fixed_parameters.extend(self.analysis.fixed_parameters.iter().copied());
+                }
                 self.result.push(Instantiation {
                     instance,
                     caller: self.caller,
@@ -218,7 +252,7 @@ pub(crate) fn check_imported<'tcx>(
             typeck: tcx.typeck(root.caller),
             typing_owner: root.caller,
             arguments: None,
-                fixed_parameters: HashSet::new(),
+            fixed_parameters: HashSet::new(),
             flow: flow::Flow::default(),
             findings,
         };
@@ -249,14 +283,37 @@ pub(crate) fn check_imported<'tcx>(
             };
             let raw = func.ty(body, tcx);
             if let rustc_middle::ty::FnDef(id, _) = raw.kind() {
-                if tcx.trait_of_assoc(*id).is_some_and(|trait_id| types::serde_serialize(tcx, trait_id)) { continue; }
+                if tcx
+                    .trait_of_assoc(*id)
+                    .is_some_and(|trait_id| types::serde_serialize(tcx, trait_id))
+                {
+                    continue;
+                }
                 let name = tcx.opt_item_name(*id);
                 let dependent = tcx.trait_of_assoc(*id).is_some()
-                    || name.is_some_and(|name| matches!(name.as_str(),
-                        "to_vec" | "to_owned" | "clone" | "from_elem" | "resize" | "resize_with"
-                        | "contains_key" | "contains" | "get" | "get_mut" | "insert" | "remove"
-                        | "binary_search" | "sort" | "sort_unstable"));
-                if types::standard(tcx, *id) && !dependent { continue; }
+                    || name.is_some_and(|name| {
+                        matches!(
+                            name.as_str(),
+                            "to_vec"
+                                | "to_owned"
+                                | "clone"
+                                | "from_elem"
+                                | "resize"
+                                | "resize_with"
+                                | "contains_key"
+                                | "contains"
+                                | "get"
+                                | "get_mut"
+                                | "insert"
+                                | "remove"
+                                | "binary_search"
+                                | "sort"
+                                | "sort_unstable"
+                        )
+                    });
+                if types::standard(tcx, *id) && !dependent {
+                    continue;
+                }
             }
             if !raw.has_non_region_param() {
                 continue;
@@ -311,7 +368,18 @@ pub(crate) fn check_imported<'tcx>(
                 continue;
             }
             if reporter.checked_body(resolved.def_id()) {
-                let fixed = args.iter().map(|operand| crate::fixed::mir_operand(tcx, body, &operand.node, &fixed_operands, &mut HashSet::new())).collect();
+                let fixed = args
+                    .iter()
+                    .map(|operand| {
+                        crate::fixed::mir_operand(
+                            tcx,
+                            body,
+                            &operand.node,
+                            &fixed_operands,
+                            &mut HashSet::new(),
+                        )
+                    })
+                    .collect();
                 pending.push((resolved, fixed));
                 continue;
             }
@@ -321,8 +389,14 @@ pub(crate) fn check_imported<'tcx>(
                     rustc_middle::ty::EarlyBinder::bind(tcx, operand.node.ty(body, tcx)),
                 )
             });
-            if std::env::var_os("CADMPEG_POLICY_EXTERNALS").is_some() && !types::checked(tcx, resolved.def_id()) {
-                reporter.findings.externals.insert(external::inventory_row(tcx, resolved.def_id(), receiver));
+            if std::env::var_os("CADMPEG_POLICY_EXTERNALS").is_some()
+                && !types::checked(tcx, resolved.def_id())
+            {
+                reporter.findings.externals.insert(external::inventory_row(
+                    tcx,
+                    resolved.def_id(),
+                    receiver,
+                ));
             }
             let Some(summary) = crate::external::summary(tcx, resolved.def_id(), receiver) else {
                 reporter.report(
@@ -332,8 +406,29 @@ pub(crate) fn check_imported<'tcx>(
                 );
                 continue;
             };
-            let fixed_receiver = args.first().is_some_and(|operand| crate::fixed::mir_operand(tcx, body, &operand.node, &fixed_operands, &mut HashSet::new()));
-            let fixed_extent = args.get(match summary.work { external::Work::Argument(index) => index, _ => 0 }).is_some_and(|operand| crate::fixed::mir_operand(tcx, body, &operand.node, &fixed_operands, &mut HashSet::new()));
+            let fixed_receiver = args.first().is_some_and(|operand| {
+                crate::fixed::mir_operand(
+                    tcx,
+                    body,
+                    &operand.node,
+                    &fixed_operands,
+                    &mut HashSet::new(),
+                )
+            });
+            let fixed_extent = args
+                .get(match summary.work {
+                    external::Work::Argument(index) => index,
+                    _ => 0,
+                })
+                .is_some_and(|operand| {
+                    crate::fixed::mir_operand(
+                        tcx,
+                        body,
+                        &operand.node,
+                        &fixed_operands,
+                        &mut HashSet::new(),
+                    )
+                });
             let Some(receiver) = receiver else {
                 continue;
             };
@@ -360,9 +455,22 @@ pub(crate) fn check_imported<'tcx>(
             let operation_name = tcx.opt_item_name(resolved.def_id());
             if operation_name.is_some_and(|name| name.as_str() == "resize") {
                 if let Some(fill) = args.get(2) {
-                    let child = instance.instantiate_mir(tcx, rustc_middle::ty::EarlyBinder::bind(tcx, fill.node.ty(body, tcx)));
-                    let fixed_fill = crate::fixed::mir_operand(tcx, body, &fill.node, &fixed_operands, &mut HashSet::new());
-                    let shape = if fixed_fill { types::Shape::Fixed } else { reporter.clone_shape(child) };
+                    let child = instance.instantiate_mir(
+                        tcx,
+                        rustc_middle::ty::EarlyBinder::bind(tcx, fill.node.ty(body, tcx)),
+                    );
+                    let fixed_fill = crate::fixed::mir_operand(
+                        tcx,
+                        body,
+                        &fill.node,
+                        &fixed_operands,
+                        &mut HashSet::new(),
+                    );
+                    let shape = if fixed_fill {
+                        types::Shape::Fixed
+                    } else {
+                        reporter.clone_shape(child)
+                    };
                     if shape != types::Shape::Fixed {
                         for rule in ["uncharged_decode_allocation", "uncharged_decode_work"] {
                             reporter.report(root.span, if shape == types::Shape::Unknown || rule == "uncharged_decode_work" && has_work_charge { "unproven_decode_charge" } else { rule }, &format!("concrete instantiation <{child}> of {} reaches resize child Clone", tcx.def_path_str(root.instance.def_id())));
@@ -394,11 +502,20 @@ pub(crate) fn check_imported<'tcx>(
                                     concrete: bool| {
                 match summary.allocation {
                     external::Allocation::None => types::Shape::Fixed,
-                    external::Allocation::Input(index) => args.get(index).map_or(types::Shape::Unknown, |operand| {
-                        let value = operand.node.ty(body, tcx);
-                        let value = if concrete { instance.instantiate_mir(tcx, rustc_middle::ty::EarlyBinder::bind(tcx, value)) } else { value };
-                        types::work(tcx, value, &mut Vec::new())
-                    }),
+                    external::Allocation::Input(index) => {
+                        args.get(index).map_or(types::Shape::Unknown, |operand| {
+                            let value = operand.node.ty(body, tcx);
+                            let value = if concrete {
+                                instance.instantiate_mir(
+                                    tcx,
+                                    rustc_middle::ty::EarlyBinder::bind(tcx, value),
+                                )
+                            } else {
+                                value
+                            };
+                            types::work(tcx, value, &mut Vec::new())
+                        })
+                    }
                     external::Allocation::Clone if concrete => reporter.clone_shape(output),
                     external::Allocation::Collect
                         if vector_output
@@ -439,7 +556,11 @@ pub(crate) fn check_imported<'tcx>(
                             types::heap(tcx, receiver.peel_refs(), &mut Vec::new())
                         }
                     }
-                    external::Allocation::Conversion if !concrete && receiver.has_non_region_param() => types::Shape::Unknown,
+                    external::Allocation::Conversion
+                        if !concrete && receiver.has_non_region_param() =>
+                    {
+                        types::Shape::Unknown
+                    }
                     external::Allocation::Conversion
                         if output == receiver
                             || matches!(
@@ -452,11 +573,22 @@ pub(crate) fn check_imported<'tcx>(
                     _ => types::heap(tcx, output, &mut Vec::new()),
                 }
             };
-            let allocation = if fixed_receiver && matches!(summary.allocation, external::Allocation::Clone | external::Allocation::Conversion | external::Allocation::Result | external::Allocation::Input(0)) { types::Shape::Fixed } else if summary.allocation == external::Allocation::Growth {
+            let allocation = if fixed_receiver
+                && matches!(
+                    summary.allocation,
+                    external::Allocation::Clone
+                        | external::Allocation::Conversion
+                        | external::Allocation::Result
+                        | external::Allocation::Input(0)
+                ) {
+                types::Shape::Fixed
+            } else if summary.allocation == external::Allocation::Growth {
                 // Backing slot bytes are proved in the generic body. Child
                 // cloning and key traits remain concrete work obligations.
                 types::Shape::Fixed
-            } else { allocation_shape(output, receiver, true) };
+            } else {
+                allocation_shape(output, receiver, true)
+            };
             let symbolic_allocation = raw_receiver.map_or(types::Shape::Unknown, |receiver| {
                 allocation_shape(raw_output, receiver, false)
             });
@@ -466,7 +598,8 @@ pub(crate) fn check_imported<'tcx>(
             };
             let raw_extent = args.get(index).map(|operand| operand.node.ty(body, tcx));
             let work_shape = |extent: rustc_middle::ty::Ty<'tcx>, allocation, concrete| {
-                if concrete && fixed_extent || summary.work == external::Work::Fixed
+                if concrete && fixed_extent
+                    || summary.work == external::Work::Fixed
                     || summary.work == external::Work::Iterator
                         && vector_output
                         && (array_element.is_some() || array_iterator)

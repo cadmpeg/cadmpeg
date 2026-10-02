@@ -57,7 +57,9 @@ pub fn minimum<T: Ord>(first: T, second: T) -> T {
 }
 
 impl DecodeContext {
-    pub fn charge_retained(&self, _bytes: u64, _operation: &str) -> Result<(), ()> { Ok(()) }
+    pub fn charge_retained(&self, _bytes: u64, _operation: &str) -> Result<(), ()> {
+        Ok(())
+    }
 }
 pub fn reserve<T>(ctx: &DecodeContext, values: &mut Vec<T>, n: usize) -> Result<(), ()> {
     let bytes = n.checked_mul(std::mem::size_of::<T>()).ok_or(())?;
@@ -66,10 +68,16 @@ pub fn reserve<T>(ctx: &DecodeContext, values: &mut Vec<T>, n: usize) -> Result<
     Ok(())
 }
 
-pub fn text<T: Into<String>>(message: T) -> String { message.into() }
-pub fn forward_text<T: Into<String>>(message: T) -> String { text(message) }
+pub fn text<T: Into<String>>(message: T) -> String {
+    message.into()
+}
+pub fn forward_text<T: Into<String>>(message: T) -> String {
+    text(message)
+}
 
-fn overwrite<T>(value: &mut T, input: T) { *value = input; }
+fn overwrite<T>(value: &mut T, input: T) {
+    *value = input;
+}
 pub fn changed_text<T: Into<String>>(message: T, input: T) -> String {
     let mut message = message;
     overwrite(&mut message, input);
@@ -77,7 +85,9 @@ pub fn changed_text<T: Into<String>>(message: T, input: T) -> String {
 }
 
 impl DecodeContext {
-    fn charge_work(&self, _count: u64) -> Result<(), ()> { Ok(()) }
+    fn charge_work(&self, _count: u64) -> Result<(), ()> {
+        Ok(())
+    }
 }
 pub fn filled<T: Clone>(ctx: &DecodeContext, count: usize, value: T) -> Result<Vec<T>, ()> {
     let mut values = Vec::new();

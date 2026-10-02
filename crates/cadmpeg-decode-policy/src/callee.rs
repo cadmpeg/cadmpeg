@@ -5,7 +5,10 @@ use rustc_middle::ty::{self, Instance};
 use rustc_span::def_id::DefId;
 
 impl<'tcx> Analysis<'_, 'tcx> {
-    pub(crate) fn call_arguments(&self, expression: &'tcx Expr<'tcx>) -> Option<ty::GenericArgsRef<'tcx>> {
+    pub(crate) fn call_arguments(
+        &self,
+        expression: &'tcx Expr<'tcx>,
+    ) -> Option<ty::GenericArgsRef<'tcx>> {
         let arguments = match expression.kind {
             ExprKind::Call(callee, _) => match self.expr_ty(callee).kind() {
                 ty::FnDef(_, arguments) => arguments.no_bound_vars()?,
@@ -23,7 +26,14 @@ impl<'tcx> Analysis<'_, 'tcx> {
         expression: &'tcx Expr<'tcx>,
         definition: DefId,
     ) -> Option<Instance<'tcx>> {
-        if !matches!(self.tcx.def_kind(definition), rustc_hir::def::DefKind::Fn | rustc_hir::def::DefKind::AssocFn | rustc_hir::def::DefKind::Ctor(_, rustc_hir::def::CtorKind::Fn)) { return None; }
+        if !matches!(
+            self.tcx.def_kind(definition),
+            rustc_hir::def::DefKind::Fn
+                | rustc_hir::def::DefKind::AssocFn
+                | rustc_hir::def::DefKind::Ctor(_, rustc_hir::def::CtorKind::Fn)
+        ) {
+            return None;
+        }
         let args = self.call_arguments(expression)?;
         if args.len() != self.tcx.generics_of(definition).count() {
             return None;
@@ -224,20 +234,59 @@ impl<'tcx> Analysis<'_, 'tcx> {
 }
 
 impl<'tcx> Analysis<'_, 'tcx> {
-    pub(crate) fn trait_method(&self, value: ty::Ty<'tcx>, trait_name: &str, method: &str) -> Option<DefId> {
-        let trait_id = self.tcx.get_diagnostic_item(rustc_span::Symbol::intern(trait_name))?;
-        let item = self.tcx.associated_items(trait_id).in_definition_order().find(|item| item.name().as_str() == method)?;
-        Instance::try_resolve(self.tcx, self.typing_env(), item.def_id, self.tcx.mk_args(&[value.into()])).ok().flatten().map(|instance| instance.def_id())
+    pub(crate) fn trait_method(
+        &self,
+        value: ty::Ty<'tcx>,
+        trait_name: &str,
+        method: &str,
+    ) -> Option<DefId> {
+        let trait_id = self
+            .tcx
+            .get_diagnostic_item(rustc_span::Symbol::intern(trait_name))?;
+        let item = self
+            .tcx
+            .associated_items(trait_id)
+            .in_definition_order()
+            .find(|item| item.name().as_str() == method)?;
+        Instance::try_resolve(
+            self.tcx,
+            self.typing_env(),
+            item.def_id,
+            self.tcx.mk_args(&[value.into()]),
+        )
+        .ok()
+        .flatten()
+        .map(|instance| instance.def_id())
     }
 
-    pub(crate) fn default_shape(&self, value: ty::Ty<'tcx>, seen: &mut Vec<ty::Ty<'tcx>>) -> types::Shape {
-        if seen.contains(&value) { return types::Shape::Unknown; }
-        let Some(method) = self.trait_method(value, "Default", "default") else { return types::Shape::Unknown; };
-        if types::standard(self.tcx, method) || self.checked_body(method) { return types::Shape::Fixed; }
-        if !types::derived(self.tcx, method) { return types::Shape::Unknown; }
+    pub(crate) fn default_shape(
+        &self,
+        value: ty::Ty<'tcx>,
+        seen: &mut Vec<ty::Ty<'tcx>>,
+    ) -> types::Shape {
+        if seen.contains(&value) {
+            return types::Shape::Unknown;
+        }
+        let Some(method) = self.trait_method(value, "Default", "default") else {
+            return types::Shape::Unknown;
+        };
+        if types::standard(self.tcx, method) || self.checked_body(method) {
+            return types::Shape::Fixed;
+        }
+        if !types::derived(self.tcx, method) {
+            return types::Shape::Unknown;
+        }
         seen.push(value);
         let shape = match value.kind() {
-            ty::Adt(owner, arguments) => owner.all_fields().fold(types::Shape::Fixed, |shape, field| shape.join(self.default_shape(field.ty(self.tcx, arguments).skip_norm_wip(), seen))),
+            ty::Adt(owner, arguments) => {
+                owner
+                    .all_fields()
+                    .fold(types::Shape::Fixed, |shape, field| {
+                        shape.join(
+                            self.default_shape(field.ty(self.tcx, arguments).skip_norm_wip(), seen),
+                        )
+                    })
+            }
             _ => types::Shape::Unknown,
         };
         seen.pop();

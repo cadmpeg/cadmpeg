@@ -13,27 +13,67 @@ pub(crate) struct Slots {
 
 impl<'tcx> Analysis<'_, 'tcx> {
     pub(crate) fn symbolic_storage(&mut self, operands: &[&'tcx Expr<'tcx>], name: &str) -> bool {
-        if !matches!(name, "try_reserve_exact" | "reserve_exact") { return false; }
-        let Some(receiver) = operands.first() else { return false; };
-        let ty::Adt(owner, arguments) = self.expr_ty(receiver).peel_refs().kind() else { return false; };
-        if !types::standard(self.tcx, owner.did()) || self.tcx.item_name(owner.did()).as_str() != "Vec" { return false; }
-        let Some(element) = arguments.types().next() else { return false; };
-        let Some(mut terms) = operands.get(1).and_then(|count| self.extent_terms(count, &mut Vec::new())) else { return false; };
+        if !matches!(name, "try_reserve_exact" | "reserve_exact") {
+            return false;
+        }
+        let Some(receiver) = operands.first() else {
+            return false;
+        };
+        let ty::Adt(owner, arguments) = self.expr_ty(receiver).peel_refs().kind() else {
+            return false;
+        };
+        if !types::standard(self.tcx, owner.did())
+            || self.tcx.item_name(owner.did()).as_str() != "Vec"
+        {
+            return false;
+        }
+        let Some(element) = arguments.types().next() else {
+            return false;
+        };
+        let Some(mut terms) = operands
+            .get(1)
+            .and_then(|count| self.extent_terms(count, &mut Vec::new()))
+        else {
+            return false;
+        };
         let count = operands.get(1).copied();
         if let Some(count) = count {
             if let ExprKind::Binary(operator, capacity, length) = count.kind {
-                if operator.node == rustc_hir::BinOpKind::Sub && self.call(length).is_some_and(|(id, values)| types::standard(self.tcx, id) && self.tcx.item_name(id).as_str() == "len" && values.first().and_then(|value| self.key(value, &mut Vec::new())) == self.key(receiver, &mut Vec::new())) {
-                    if let (Some(left), Some(target)) = (self.extent_terms(capacity, &mut Vec::new()), self.key(receiver, &mut Vec::new())) {
-                        let right = vec![ExtentTerm { factors: vec![format!("{target}.capacity")], coefficient: 1 }];
-                        terms = vec![ExtentTerm { factors: vec![format!("difference:{left:?}:{right:?}")], coefficient: 1 }];
+                if operator.node == rustc_hir::BinOpKind::Sub
+                    && self.call(length).is_some_and(|(id, values)| {
+                        types::standard(self.tcx, id)
+                            && self.tcx.item_name(id).as_str() == "len"
+                            && values
+                                .first()
+                                .and_then(|value| self.key(value, &mut Vec::new()))
+                                == self.key(receiver, &mut Vec::new())
+                    })
+                {
+                    if let (Some(left), Some(target)) = (
+                        self.extent_terms(capacity, &mut Vec::new()),
+                        self.key(receiver, &mut Vec::new()),
+                    ) {
+                        let right = vec![ExtentTerm {
+                            factors: vec![format!("{target}.capacity")],
+                            coefficient: 1,
+                        }];
+                        terms = vec![ExtentTerm {
+                            factors: vec![format!("difference:{left:?}:{right:?}")],
+                            coefficient: 1,
+                        }];
                     }
                 }
             }
         }
-        for term in &mut terms { term.factors.push(format!("size:{element}")); term.factors.sort(); }
+        for term in &mut terms {
+            term.factors.push(format!("size:{element}"));
+            term.factors.sort();
+        }
         let mut remaining = self.flow.storage_extents.clone();
         for term in terms {
-            let Some(index) = remaining.iter().position(|credit| credit == &term) else { return false; };
+            let Some(index) = remaining.iter().position(|credit| credit == &term) else {
+                return false;
+            };
             remaining.remove(index);
         }
         self.flow.storage_extents = remaining;
@@ -44,13 +84,30 @@ impl<'tcx> Analysis<'_, 'tcx> {
         for (_, node) in self.tcx.hir_parent_iter(expression.hir_id) {
             match node {
                 Node::LetStmt(local) => {
-                    let pattern = match local.pat.kind { PatKind::Tuple(patterns, _) => patterns.first()?, _ => local.pat };
-                    return match pattern.kind { PatKind::Binding(_, id, _, _) => Some(format!("local:{id:?}")), _ => None };
+                    let pattern = match local.pat.kind {
+                        PatKind::Tuple(patterns, _) => patterns.first()?,
+                        _ => local.pat,
+                    };
+                    return match pattern.kind {
+                        PatKind::Binding(_, id, _, _) => Some(format!("local:{id:?}")),
+                        _ => None,
+                    };
                 }
                 Node::Expr(value) => match value.kind {
-                    ExprKind::Match(_, _, rustc_hir::MatchSource::TryDesugar(_)) | ExprKind::DropTemps(_) => (),
-                    ExprKind::Call(_, _) if self.call(value).is_some_and(|(id, _)| types::standard(self.tcx, id) && self.tcx.item_name(id).as_str() == "branch") => (),
-                    ExprKind::MethodCall(_, _, _, _) if self.call(value).is_some_and(|(id, _)| types::standard(self.tcx, id) && self.tcx.item_name(id).as_str() == "map_err") => (),
+                    ExprKind::Match(_, _, rustc_hir::MatchSource::TryDesugar(_))
+                    | ExprKind::DropTemps(_) => (),
+                    ExprKind::Call(_, _)
+                        if self.call(value).is_some_and(|(id, _)| {
+                            types::standard(self.tcx, id)
+                                && self.tcx.item_name(id).as_str() == "branch"
+                        }) =>
+                    {}
+                    ExprKind::MethodCall(_, _, _, _)
+                        if self.call(value).is_some_and(|(id, _)| {
+                            types::standard(self.tcx, id)
+                                && self.tcx.item_name(id).as_str() == "map_err"
+                        }) =>
+                    {}
                     _ => return None,
                 },
                 Node::Param(_) | Node::Item(_) => return None,
@@ -61,48 +118,143 @@ impl<'tcx> Analysis<'_, 'tcx> {
     }
 
     pub(crate) fn record_slots(&mut self, expression: &'tcx Expr<'tcx>) {
-        if !self.trusted_context_callee(expression) { return; }
-        let Some((definition, operands)) = self.call(expression) else { return; };
+        if !self.trusted_context_callee(expression) {
+            return;
+        }
+        let Some((definition, operands)) = self.call(expression) else {
+            return;
+        };
         let name = self.tcx.item_name(definition);
         let (target, terms) = match name.as_str() {
-            "collection_vec" | "vector_storage" | "scoped_vector_storage" => (self.allocated_binding(expression), operands.get(1).and_then(|count| self.extent_terms(count, &mut Vec::new()))),
-            "reserve_vec" | "reserve_vec_limit" | "reserve_capacity" | "reserve_capacity_limit" | "reserve_retained_vec_storage" | "reserve_set" | "reserve_map" | "reserve_heap" | "reserve_temporary_vec" => (operands.get(1).and_then(|target| self.key(target, &mut Vec::new())), operands.get(2).and_then(|count| self.extent_terms(count, &mut Vec::new()))),
-            "reserve_scoped_vec" | "reserve_scoped_vec_limit" => (operands.get(2).and_then(|target| self.key(target, &mut Vec::new())), operands.get(3).and_then(|count| self.extent_terms(count, &mut Vec::new()))),
-            "admit_hash_map_entry" | "admit_btree_entry" => (operands.get(1).and_then(|target| self.key(target, &mut Vec::new())), Some(vec![ExtentTerm { factors: Vec::new(), coefficient: 1 }])),
+            "collection_vec" | "vector_storage" | "scoped_vector_storage" => (
+                self.allocated_binding(expression),
+                operands
+                    .get(1)
+                    .and_then(|count| self.extent_terms(count, &mut Vec::new())),
+            ),
+            "reserve_vec"
+            | "reserve_vec_limit"
+            | "reserve_capacity"
+            | "reserve_capacity_limit"
+            | "reserve_retained_vec_storage"
+            | "reserve_set"
+            | "reserve_map"
+            | "reserve_heap"
+            | "reserve_temporary_vec" => (
+                operands
+                    .get(1)
+                    .and_then(|target| self.key(target, &mut Vec::new())),
+                operands
+                    .get(2)
+                    .and_then(|count| self.extent_terms(count, &mut Vec::new())),
+            ),
+            "reserve_scoped_vec" | "reserve_scoped_vec_limit" => (
+                operands
+                    .get(2)
+                    .and_then(|target| self.key(target, &mut Vec::new())),
+                operands
+                    .get(3)
+                    .and_then(|count| self.extent_terms(count, &mut Vec::new())),
+            ),
+            "admit_hash_map_entry" | "admit_btree_entry" => (
+                operands
+                    .get(1)
+                    .and_then(|target| self.key(target, &mut Vec::new())),
+                Some(vec![ExtentTerm {
+                    factors: Vec::new(),
+                    coefficient: 1,
+                }]),
+            ),
             "charge_hash_growth" => {
-                let target = operands.get(1).and_then(|length| self.call(length)).and_then(|(_, values)| values.first().and_then(|target| self.key(target, &mut Vec::new())));
-                let capacity_target = operands.get(2).and_then(|capacity| self.call(capacity)).and_then(|(_, values)| values.first().and_then(|target| self.key(target, &mut Vec::new())));
-                if target != capacity_target { return; }
-                (target, operands.get(3).and_then(|count| self.extent_terms(count, &mut Vec::new())))
+                let target = operands
+                    .get(1)
+                    .and_then(|length| self.call(length))
+                    .and_then(|(_, values)| {
+                        values
+                            .first()
+                            .and_then(|target| self.key(target, &mut Vec::new()))
+                    });
+                let capacity_target = operands
+                    .get(2)
+                    .and_then(|capacity| self.call(capacity))
+                    .and_then(|(_, values)| {
+                        values
+                            .first()
+                            .and_then(|target| self.key(target, &mut Vec::new()))
+                    });
+                if target != capacity_target {
+                    return;
+                }
+                (
+                    target,
+                    operands
+                        .get(3)
+                        .and_then(|count| self.extent_terms(count, &mut Vec::new())),
+                )
             }
             _ => return,
         };
         if let (Some(target), Some(terms)) = (target, terms) {
-            self.flow.storage_slots.push(Slots { target, terms, loop_depth: self.flow.loop_bounds.len() });
+            self.flow.storage_slots.push(Slots {
+                target,
+                terms,
+                loop_depth: self.flow.loop_bounds.len(),
+            });
         }
     }
 
     pub(crate) fn admitted_slots(&mut self, operands: &[&'tcx Expr<'tcx>], name: &str) -> bool {
-        let Some(receiver) = operands.first() else { return false; };
-        let Some(target) = self.key(receiver, &mut Vec::new()) else { return false; };
+        let Some(receiver) = operands.first() else {
+            return false;
+        };
+        let Some(target) = self.key(receiver, &mut Vec::new()) else {
+            return false;
+        };
         let terms = match name {
-            "push" | "push_back" | "push_front" | "insert" => Some(vec![ExtentTerm { factors: Vec::new(), coefficient: 1 }]),
-            "reserve" | "reserve_exact" | "try_reserve" | "try_reserve_exact" | "resize" | "resize_with" => operands.get(1).and_then(|count| self.extent_terms(count, &mut Vec::new())),
-            "append" | "extend_from_slice" => operands.get(1).and_then(|source| self.key(source, &mut Vec::new())).map(|key| vec![ExtentTerm { factors: vec![key], coefficient: 1 }]),
+            "push" | "push_back" | "push_front" | "insert" => Some(vec![ExtentTerm {
+                factors: Vec::new(),
+                coefficient: 1,
+            }]),
+            "reserve" | "reserve_exact" | "try_reserve" | "try_reserve_exact" | "resize"
+            | "resize_with" => operands
+                .get(1)
+                .and_then(|count| self.extent_terms(count, &mut Vec::new())),
+            "append" | "extend_from_slice" => operands
+                .get(1)
+                .and_then(|source| self.key(source, &mut Vec::new()))
+                .map(|key| {
+                    vec![ExtentTerm {
+                        factors: vec![key],
+                        coefficient: 1,
+                    }]
+                }),
             _ => None,
         };
-        let Some(terms) = terms else { return false; };
+        let Some(terms) = terms else {
+            return false;
+        };
         for (index, credit) in self.flow.storage_slots.iter().enumerate() {
-            if credit.target != target { continue; }
+            if credit.target != target {
+                continue;
+            }
             let mut required = terms.clone();
             let mut valid = true;
             for bounds in self.flow.loop_bounds.iter().skip(credit.loop_depth) {
                 let mut product = Vec::new();
                 for term in &required {
                     for bound in bounds {
-                        let Some(coefficient) = term.coefficient.checked_mul(bound.coefficient) else { valid = false; continue; };
-                        let mut factors = term.factors.clone(); factors.extend(bound.factors.clone()); factors.sort();
-                        product.push(ExtentTerm { factors, coefficient });
+                        let Some(coefficient) = term.coefficient.checked_mul(bound.coefficient)
+                        else {
+                            valid = false;
+                            continue;
+                        };
+                        let mut factors = term.factors.clone();
+                        factors.extend(bound.factors.clone());
+                        factors.sort();
+                        product.push(ExtentTerm {
+                            factors,
+                            coefficient,
+                        });
                     }
                 }
                 required = product;

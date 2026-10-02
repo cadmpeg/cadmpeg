@@ -91,7 +91,11 @@ fn check_fixture(name: &str) {
                             .extension()
                             .is_some_and(|extension| extension == "rmeta")
                 })
-                .max_by_key(|path| std::fs::metadata(path).and_then(|metadata| metadata.modified()).expect("dependency modification time"))
+                .max_by_key(|path| {
+                    std::fs::metadata(path)
+                        .and_then(|metadata| metadata.modified())
+                        .expect("dependency modification time")
+                })
                 .expect("fixture dependency library");
             dependencies.push(format!("{name}={}", library.display()));
         }
@@ -101,7 +105,9 @@ fn check_fixture(name: &str) {
             std::env::join_paths(directories).expect("dependency paths"),
         );
     }
-    if name == "external" { command.env("CADMPEG_POLICY_EXTERNALS", "1"); }
+    if name == "external" {
+        command.env("CADMPEG_POLICY_EXTERNALS", "1");
+    }
     let output = command
         .args([
             "--exact",
@@ -127,15 +133,34 @@ fn check_fixture(name: &str) {
     }
     if name == "external" {
         for operation in ["abs", "first", "parse", "eq_ignore_ascii_case", "from_fn"] {
-            assert!(actual.lines().any(|line| line.starts_with("external_operation\t") && line.split('\t').nth(1).is_some_and(|path| path.ends_with(&format!("::{operation}"))) && !line.contains("MISSING")), "missing inventory cost for {operation}: {actual}");
+            assert!(
+                actual
+                    .lines()
+                    .any(|line| line.starts_with("external_operation\t")
+                        && line
+                            .split('\t')
+                            .nth(1)
+                            .is_some_and(|path| path.ends_with(&format!("::{operation}")))
+                        && !line.contains("MISSING")),
+                "missing inventory cost for {operation}: {actual}"
+            );
         }
-        assert!(actual.lines().any(|line| line.starts_with("external_operation\t") && line.contains("std::thread::current\tMISSING")), "{actual}");
+        assert!(
+            actual
+                .lines()
+                .any(|line| line.starts_with("external_operation\t")
+                    && line.contains("std::thread::current\tMISSING")),
+            "{actual}"
+        );
     }
     let mut findings = Vec::new();
     for line in actual.lines() {
         let fields: Vec<_> = line.split('\t').collect();
         if fields.len() == 4
-            && matches!(fields[0], "uncharged_decode_allocation" | "uncharged_decode_work" | "unproven_decode_charge")
+            && matches!(
+                fields[0],
+                "uncharged_decode_allocation" | "uncharged_decode_work" | "unproven_decode_charge"
+            )
             && (if matches!(
                 name,
                 "edges"
@@ -281,10 +306,16 @@ fn symbolic_generic_and_derived_costs() {
 }
 
 #[test]
-fn derived_call_costs() { check_fixture("derived"); }
+fn derived_call_costs() {
+    check_fixture("derived");
+}
 
 #[test]
-fn serde_derived_body_exclusion() { check_fixture("serde"); }
+fn serde_derived_body_exclusion() {
+    check_fixture("serde");
+}
 
 #[test]
-fn fixed_text_value_proof() { check_fixture("fixed_text"); }
+fn fixed_text_value_proof() {
+    check_fixture("fixed_text");
+}

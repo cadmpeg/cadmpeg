@@ -69,32 +69,104 @@ pub(crate) fn summary(
             "serialize" => (Allocation::Input(0), Work::Receiver),
             _ => return None,
         };
-        return Some(Summary { allocation, work, zero_operand: None, empty_operand: None });
+        return Some(Summary {
+            allocation,
+            work,
+            zero_operand: None,
+            empty_operand: None,
+        });
     }
     if !types::standard(tcx, definition) {
         let (allocation, work) = match (crate_name.as_str(), name.as_str()) {
-            ("serde" | "serde_core", "deserialize" | "deserialize_any" | "deserialize_map" | "deserialize_option" | "deserialize_str" | "deserialize_string" | "deserialize_struct" | "next_value" | "next_value_seed" | "next_key" | "next_key_seed" | "next_element" | "next_element_seed") => (Allocation::Input(0), Work::Receiver),
-            ("serde" | "serde_core", "custom" | "duplicate_field" | "missing_field") => (Allocation::Input(0), Work::Argument(0)),
-            ("serde" | "serde_core", "new" | "size_hint" | "is_human_readable") => (Allocation::None, Work::Fixed),
-            ("serde" | "serde_core", "serialize" | "collect_seq" | "collect_map" | "collect_str" | "serialize_bytes" | "serialize_seq" | "serialize_map" | "serialize_str" | "serialize_some" | "serialize_field" | "serialize_entry" | "serialize_element" | "serialize_key" | "serialize_value" | "serialize_newtype_struct" | "serialize_newtype_variant") => (Allocation::Input(1), Work::Argument(1)),
-            ("serde" | "serde_core", "end" | "skip_field" | "serialize_bool" | "serialize_char" | "serialize_f32" | "serialize_f64" | "serialize_i128" | "serialize_i16" | "serialize_i32" | "serialize_i64" | "serialize_i8" | "serialize_u128" | "serialize_u16" | "serialize_u32" | "serialize_u64" | "serialize_u8" | "serialize_none" | "serialize_struct" | "serialize_struct_variant" | "serialize_tuple" | "serialize_tuple_struct" | "serialize_tuple_variant" | "serialize_unit" | "serialize_unit_struct" | "serialize_unit_variant") => (Allocation::None, Work::Fixed),
-            ("serde_json", "deserialize_any" | "deserialize" | "deserialize_map") => (Allocation::Input(0), Work::Receiver),
+            (
+                "serde" | "serde_core",
+                "deserialize" | "deserialize_any" | "deserialize_map" | "deserialize_option"
+                | "deserialize_str" | "deserialize_string" | "deserialize_struct" | "next_value"
+                | "next_value_seed" | "next_key" | "next_key_seed" | "next_element"
+                | "next_element_seed",
+            ) => (Allocation::Input(0), Work::Receiver),
+            ("serde" | "serde_core", "custom" | "duplicate_field" | "missing_field") => {
+                (Allocation::Input(0), Work::Argument(0))
+            }
+            ("serde" | "serde_core", "new" | "size_hint" | "is_human_readable") => {
+                (Allocation::None, Work::Fixed)
+            }
+            (
+                "serde" | "serde_core",
+                "serialize"
+                | "collect_seq"
+                | "collect_map"
+                | "collect_str"
+                | "serialize_bytes"
+                | "serialize_seq"
+                | "serialize_map"
+                | "serialize_str"
+                | "serialize_some"
+                | "serialize_field"
+                | "serialize_entry"
+                | "serialize_element"
+                | "serialize_key"
+                | "serialize_value"
+                | "serialize_newtype_struct"
+                | "serialize_newtype_variant",
+            ) => (Allocation::Input(1), Work::Argument(1)),
+            (
+                "serde" | "serde_core",
+                "end"
+                | "skip_field"
+                | "serialize_bool"
+                | "serialize_char"
+                | "serialize_f32"
+                | "serialize_f64"
+                | "serialize_i128"
+                | "serialize_i16"
+                | "serialize_i32"
+                | "serialize_i64"
+                | "serialize_i8"
+                | "serialize_u128"
+                | "serialize_u16"
+                | "serialize_u32"
+                | "serialize_u64"
+                | "serialize_u8"
+                | "serialize_none"
+                | "serialize_struct"
+                | "serialize_struct_variant"
+                | "serialize_tuple"
+                | "serialize_tuple_struct"
+                | "serialize_tuple_variant"
+                | "serialize_unit"
+                | "serialize_unit_struct"
+                | "serialize_unit_variant",
+            ) => (Allocation::None, Work::Fixed),
+            ("serde_json", "deserialize_any" | "deserialize" | "deserialize_map") => {
+                (Allocation::Input(0), Work::Receiver)
+            }
             ("serde_json", "custom") => (Allocation::Input(0), Work::Argument(0)),
             ("serde_json", "clone") => (Allocation::Clone, Work::Receiver),
-            ("serde_json", "eq" | "ne" | "cmp" | "partial_cmp" | "lt" | "le" | "gt" | "ge") => (Allocation::None, Work::Comparison),
+            ("serde_json", "eq" | "ne" | "cmp" | "partial_cmp" | "lt" | "le" | "gt" | "ge") => {
+                (Allocation::None, Work::Comparison)
+            }
             ("serde_json", "index" | "index_mut") => (Allocation::None, Work::Argument(1)),
             ("roxmltree", "eq" | "ne") => (Allocation::None, Work::Fixed),
             ("serde_json", "fmt") => (Allocation::None, Work::Receiver),
-            ("serde_json", "serialize" | "to_value" | "from_value" | "to_vec") => (Allocation::Input(0), Work::Receiver),
+            ("serde_json", "serialize" | "to_value" | "from_value" | "to_vec") => {
+                (Allocation::Input(0), Work::Receiver)
+            }
             ("serde_json", "to_writer") => (Allocation::Input(1), Work::Argument(1)),
             ("serde_json", "end" | "retain") => (Allocation::None, Work::Receiver),
             ("serde_json", "insert") => (Allocation::Growth, Work::Argument(1)),
             ("serde_json", "entry") => (Allocation::Input(1), Work::Argument(1)),
             ("serde_json", "contains_key" | "remove") => (Allocation::None, Work::Argument(1)),
-            ("serde_json", "new" | "len" | "is_empty" | "is_object" | "keys" | "values" | "values_mut" | "key" | "from" | "from_f64" | "is_f64" | "pretty") => (Allocation::None, Work::Fixed),
+            (
+                "serde_json",
+                "new" | "len" | "is_empty" | "is_object" | "keys" | "values" | "values_mut" | "key"
+                | "from" | "from_f64" | "is_f64" | "pretty",
+            ) => (Allocation::None, Work::Fixed),
             ("serde_value", "new") => (Allocation::None, Work::Fixed),
             ("serde_value", "to_value") => (Allocation::Input(0), Work::Receiver),
-            ("roxmltree", "value" | "id" | "ancestors" | "next_siblings" | "next" | "default") => (Allocation::None, Work::Fixed),
+            ("roxmltree", "value" | "id" | "ancestors" | "next_siblings" | "next" | "default") => {
+                (Allocation::None, Work::Fixed)
+            }
             ("crc32fast", "new" | "finalize") => (Allocation::None, Work::Fixed),
             ("crc32fast", "update") => (Allocation::None, Work::Argument(1)),
             ("crc32fast", "hash") => (Allocation::None, Work::Argument(0)),
@@ -111,23 +183,54 @@ pub(crate) fn summary(
             ("regex", "build") => (Allocation::Input(0), Work::Receiver),
             ("regex", "is_match") => (Allocation::None, Work::Argument(1)),
             ("regex", "dfa_size_limit" | "size_limit") => (Allocation::None, Work::Fixed),
-            ("encoding_rs", "for_bom" | "new_decoder_without_bom_handling") => (Allocation::None, Work::Fixed),
+            ("encoding_rs", "for_bom" | "new_decoder_without_bom_handling") => {
+                (Allocation::None, Work::Fixed)
+            }
             ("encoding_rs", "for_label") => (Allocation::None, Work::Argument(0)),
-            ("encoding_rs", "decode" | "decode_without_bom_handling") => (Allocation::Input(1), Work::Argument(1)),
-            ("encoding_rs", "decode_to_utf8_without_replacement") => (Allocation::None, Work::Argument(1)),
+            ("encoding_rs", "decode" | "decode_without_bom_handling") => {
+                (Allocation::Input(1), Work::Argument(1))
+            }
+            ("encoding_rs", "decode_to_utf8_without_replacement") => {
+                (Allocation::None, Work::Argument(1))
+            }
             ("rmp", "from_u8" | "to_u8") => (Allocation::None, Work::Fixed),
             ("flate2", "new" | "total_in" | "total_out") => (Allocation::None, Work::Fixed),
             ("flate2", "decompress" | "read") => (Allocation::None, Work::Argument(1)),
-            ("lzma_rs", "lzma_decompress_with_options") => (Allocation::Input(0), Work::Argument(0)),
+            ("lzma_rs", "lzma_decompress_with_options") => {
+                (Allocation::Input(0), Work::Argument(0))
+            }
             ("zstd_safe", "decompress_stream") => (Allocation::Input(2), Work::Argument(2)),
             ("zstd_safe", "find_frame_compressed_size") => (Allocation::None, Work::Argument(0)),
-            ("zstd_safe", "try_create" | "around" | "pos" | "set_parameter" | "get_error_name") => (Allocation::None, Work::Fixed),
+            ("zstd_safe", "try_create" | "around" | "pos" | "set_parameter" | "get_error_name") => {
+                (Allocation::None, Work::Fixed)
+            }
             ("zstd_sys", "ZSTD_getErrorCode") => (Allocation::None, Work::Fixed),
-            ("zip", "new") if path.contains("ZipArchive") => (Allocation::Input(0), Work::Argument(0)),
+            ("zip", "new") if path.contains("ZipArchive") => {
+                (Allocation::Input(0), Work::Argument(0))
+            }
             ("zip", "by_index" | "by_index_raw") => (Allocation::Input(0), Work::Receiver),
             ("zip", "start_file") => (Allocation::Input(1), Work::Argument(1)),
             ("zip", "finish") => (Allocation::Input(0), Work::Receiver),
-            ("zip", "len" | "file_names" | "central_directory_start" | "central_header_start" | "compressed_size" | "compression" | "crc32" | "data_start" | "encrypted" | "header_start" | "name" | "size" | "get_metadata" | "default" | "new" | "compression_method" | "last_modified_time") => (Allocation::None, Work::Fixed),
+            (
+                "zip",
+                "len"
+                | "file_names"
+                | "central_directory_start"
+                | "central_header_start"
+                | "compressed_size"
+                | "compression"
+                | "crc32"
+                | "data_start"
+                | "encrypted"
+                | "header_start"
+                | "name"
+                | "size"
+                | "get_metadata"
+                | "default"
+                | "new"
+                | "compression_method"
+                | "last_modified_time",
+            ) => (Allocation::None, Work::Fixed),
             ("roxmltree", "parse" | "parse_with_options") => {
                 (Allocation::Result, Work::Argument(0))
             }
@@ -161,44 +264,262 @@ pub(crate) fn summary(
         });
     }
     let (allocation, work) = match name.as_str() {
-        "add" | "sub" | "mul" | "div" | "rem" | "neg" | "not" | "bitand" | "bitor" | "bitxor" | "shl" | "shr" => {
-            if value.is_some_and(|value| matches!(value.kind(), ty::Bool | ty::Char | ty::Int(_) | ty::Uint(_) | ty::Float(_))) || path.contains("num::nonzero") { (Allocation::None, Work::Fixed) } else { (Allocation::Result, Work::Receiver) }
+        "add" | "sub" | "mul" | "div" | "rem" | "neg" | "not" | "bitand" | "bitor" | "bitxor"
+        | "shl" | "shr" => {
+            if value.is_some_and(|value| {
+                matches!(
+                    value.kind(),
+                    ty::Bool | ty::Char | ty::Int(_) | ty::Uint(_) | ty::Float(_)
+                )
+            }) || path.contains("num::nonzero")
+            {
+                (Allocation::None, Work::Fixed)
+            } else {
+                (Allocation::Result, Work::Receiver)
+            }
         }
         "from_str_radix" if path.contains("num::") => (Allocation::None, Work::Argument(0)),
-        _ if (path.contains("num::<impl ") || path.contains("f32::<impl f32>") || path.contains("f64::<impl f64>") || path.contains("char::methods::<impl char>")) && matches!(name.as_str(), "abs" | "abs_diff" | "acos" | "acosh" | "asin" | "asinh" | "atan" | "atan2" | "atanh" | "cast_signed" | "cast_unsigned" | "ceil" | "checked_abs" | "checked_add" | "checked_div" | "checked_ilog10" | "checked_ilog2" | "checked_mul" | "checked_neg" | "checked_next_power_of_two" | "checked_pow" | "checked_shl" | "checked_sub" | "clamp" | "copysign" | "cos" | "cosh" | "count_ones" | "decode_utf16" | "div_ceil" | "div_euclid" | "encode_utf16" | "encode_utf8" | "eq_ignore_ascii_case" | "escape_debug" | "exp" | "exp_m1" | "floor" | "fract" | "from" | "from_be_bytes" | "from_bits" | "from_digit" | "from_le_bytes" | "from_ne_bytes" | "from_str_radix" | "from_u32" | "hypot" | "ilog10" | "ilog2" | "is_alphabetic" | "is_alphanumeric" | "is_ascii" | "is_ascii_alphabetic" | "is_ascii_alphanumeric" | "is_ascii_control" | "is_ascii_digit" | "is_ascii_graphic" | "is_ascii_hexdigit" | "is_ascii_lowercase" | "is_ascii_uppercase" | "is_ascii_whitespace" | "is_control" | "is_finite" | "is_infinite" | "is_multiple_of" | "is_nan" | "is_negative" | "is_normal" | "is_power_of_two" | "is_sign_negative" | "is_sign_positive" | "is_whitespace" | "isqrt" | "leading_zeros" | "len_utf16" | "len_utf8" | "ln" | "log10" | "max" | "midpoint" | "min" | "mul_add" | "next_down" | "next_multiple_of" | "next_up" | "overflowing_add" | "overflowing_sub" | "powf" | "powi" | "recip" | "rem_euclid" | "rotate_left" | "round" | "round_ties_even" | "signum" | "sin" | "sin_cos" | "sinh" | "sqrt" | "tan" | "tanh" | "to_ascii_lowercase" | "to_ascii_uppercase" | "to_be_bytes" | "to_bits" | "to_degrees" | "to_digit" | "to_le_bytes" | "to_lowercase" | "to_ne_bytes" | "to_radians" | "to_uppercase" | "total_cmp" | "trailing_zeros" | "trunc" | "try_from" | "unsigned_abs" | "wrapping_add" | "wrapping_shl" | "wrapping_sub") => (Allocation::None, Work::Fixed),
+        _ if (path.contains("num::<impl ")
+            || path.contains("f32::<impl f32>")
+            || path.contains("f64::<impl f64>")
+            || path.contains("char::methods::<impl char>"))
+            && matches!(
+                name.as_str(),
+                "abs"
+                    | "abs_diff"
+                    | "acos"
+                    | "acosh"
+                    | "asin"
+                    | "asinh"
+                    | "atan"
+                    | "atan2"
+                    | "atanh"
+                    | "cast_signed"
+                    | "cast_unsigned"
+                    | "ceil"
+                    | "checked_abs"
+                    | "checked_add"
+                    | "checked_div"
+                    | "checked_ilog10"
+                    | "checked_ilog2"
+                    | "checked_mul"
+                    | "checked_neg"
+                    | "checked_next_power_of_two"
+                    | "checked_pow"
+                    | "checked_shl"
+                    | "checked_sub"
+                    | "clamp"
+                    | "copysign"
+                    | "cos"
+                    | "cosh"
+                    | "count_ones"
+                    | "decode_utf16"
+                    | "div_ceil"
+                    | "div_euclid"
+                    | "encode_utf16"
+                    | "encode_utf8"
+                    | "eq_ignore_ascii_case"
+                    | "escape_debug"
+                    | "exp"
+                    | "exp_m1"
+                    | "floor"
+                    | "fract"
+                    | "from"
+                    | "from_be_bytes"
+                    | "from_bits"
+                    | "from_digit"
+                    | "from_le_bytes"
+                    | "from_ne_bytes"
+                    | "from_str_radix"
+                    | "from_u32"
+                    | "hypot"
+                    | "ilog10"
+                    | "ilog2"
+                    | "is_alphabetic"
+                    | "is_alphanumeric"
+                    | "is_ascii"
+                    | "is_ascii_alphabetic"
+                    | "is_ascii_alphanumeric"
+                    | "is_ascii_control"
+                    | "is_ascii_digit"
+                    | "is_ascii_graphic"
+                    | "is_ascii_hexdigit"
+                    | "is_ascii_lowercase"
+                    | "is_ascii_uppercase"
+                    | "is_ascii_whitespace"
+                    | "is_control"
+                    | "is_finite"
+                    | "is_infinite"
+                    | "is_multiple_of"
+                    | "is_nan"
+                    | "is_negative"
+                    | "is_normal"
+                    | "is_power_of_two"
+                    | "is_sign_negative"
+                    | "is_sign_positive"
+                    | "is_whitespace"
+                    | "isqrt"
+                    | "leading_zeros"
+                    | "len_utf16"
+                    | "len_utf8"
+                    | "ln"
+                    | "log10"
+                    | "max"
+                    | "midpoint"
+                    | "min"
+                    | "mul_add"
+                    | "next_down"
+                    | "next_multiple_of"
+                    | "next_up"
+                    | "overflowing_add"
+                    | "overflowing_sub"
+                    | "powf"
+                    | "powi"
+                    | "recip"
+                    | "rem_euclid"
+                    | "rotate_left"
+                    | "round"
+                    | "round_ties_even"
+                    | "signum"
+                    | "sin"
+                    | "sin_cos"
+                    | "sinh"
+                    | "sqrt"
+                    | "tan"
+                    | "tanh"
+                    | "to_ascii_lowercase"
+                    | "to_ascii_uppercase"
+                    | "to_be_bytes"
+                    | "to_bits"
+                    | "to_degrees"
+                    | "to_digit"
+                    | "to_le_bytes"
+                    | "to_lowercase"
+                    | "to_ne_bytes"
+                    | "to_radians"
+                    | "to_uppercase"
+                    | "total_cmp"
+                    | "trailing_zeros"
+                    | "trunc"
+                    | "try_from"
+                    | "unsigned_abs"
+                    | "wrapping_add"
+                    | "wrapping_shl"
+                    | "wrapping_sub"
+            ) =>
+        {
+            (Allocation::None, Work::Fixed)
+        }
         "index" | "index_mut" if path.contains("ops::Index") => (Allocation::None, Work::Fixed),
         "decode_utf16" if path.contains("char::") => (Allocation::None, Work::Fixed),
         "max" if path.contains("cmp::Ord") => (Allocation::None, Work::Comparison),
-        "entry" if path.contains("HashMap") || path.contains("BTreeMap") => (Allocation::None, Work::Argument(1)),
+        "entry" if path.contains("HashMap") || path.contains("BTreeMap") => {
+            (Allocation::None, Work::Argument(1))
+        }
         "new" if path.contains("num::NonZero") => (Allocation::None, Work::Fixed),
         "unzip" if path.contains("option::") => (Allocation::None, Work::Fixed),
-        "discriminant_value" | "unreachable" | "discriminant" | "size_of_val" | "drop" => (Allocation::None, Work::Fixed),
+        "discriminant_value" | "unreachable" | "discriminant" | "size_of_val" | "drop" => {
+            (Allocation::None, Work::Fixed)
+        }
         "parse" if path.contains("str::") => (Allocation::Result, Work::Receiver),
         "eq_ignore_ascii_case" => (Allocation::None, Work::Comparison),
         "from_fn" if path.contains("array::") => (Allocation::None, Work::Fixed),
-        "next" | "next_back" | "size_hint" if path.contains("iter::") || path.contains("Iterator") => (Allocation::None, Work::Fixed),
+        "next" | "next_back" | "size_hint"
+            if path.contains("iter::") || path.contains("Iterator") =>
+        {
+            (Allocation::None, Work::Fixed)
+        }
         "clone_from" => (Allocation::Clone, Work::Argument(1)),
-        "fmt" if path.contains("fmt::num") || value.is_some_and(|value| matches!(value.kind(), ty::Bool | ty::Char | ty::Int(_) | ty::Uint(_) | ty::Float(_))) => (Allocation::None, Work::Fixed),
+        "fmt"
+            if path.contains("fmt::num")
+                || value.is_some_and(|value| {
+                    matches!(
+                        value.kind(),
+                        ty::Bool | ty::Char | ty::Int(_) | ty::Uint(_) | ty::Float(_)
+                    )
+                }) =>
+        {
+            (Allocation::None, Work::Fixed)
+        }
         "fmt" => (Allocation::None, Work::Receiver),
-        "debug_struct" | "debug_tuple" | "debug_list" | "debug_set" | "debug_map" | "finish" if path.contains("fmt::") => (Allocation::None, Work::Fixed),
+        "debug_struct" | "debug_tuple" | "debug_list" | "debug_set" | "debug_map" | "finish"
+            if path.contains("fmt::") =>
+        {
+            (Allocation::None, Work::Fixed)
+        }
         "field" if path.contains("DebugStruct") => (Allocation::None, Work::Argument(2)),
         "pad" if path.contains("fmt::") => (Allocation::None, Work::Argument(1)),
         "write_fmt" => (Allocation::None, Work::Argument(1)),
         "write" if path.contains("fmt::") => (Allocation::None, Work::Argument(1)),
         "write_char" if path.contains("fmt::") => (Allocation::None, Work::Fixed),
         "first" | "last" if keyed => (Allocation::None, Work::Fixed),
-        "first" | "last" | "first_mut" | "last_mut" | "first_chunk" | "last_chunk" | "split_first" | "split_first_mut" | "split_last" | "split_last_mut" | "split_first_chunk" | "as_chunks" | "as_flattened" | "split_at_checked" | "split_at_mut_checked" | "swap" if path.contains("slice::") || path.contains("str::") => (Allocation::None, Work::Fixed),
+        "first"
+        | "last"
+        | "first_mut"
+        | "last_mut"
+        | "first_chunk"
+        | "last_chunk"
+        | "split_first"
+        | "split_first_mut"
+        | "split_last"
+        | "split_last_mut"
+        | "split_first_chunk"
+        | "as_chunks"
+        | "as_flattened"
+        | "split_at_checked"
+        | "split_at_mut_checked"
+        | "swap"
+            if path.contains("slice::") || path.contains("str::") =>
+        {
+            (Allocation::None, Work::Fixed)
+        }
         "strip_prefix" | "strip_suffix" => (Allocation::None, Work::Comparison),
-        "bytes" | "chars" | "char_indices" | "encode_utf16" | "lines" | "split" | "rsplit" | "split_terminator" | "split_whitespace" | "split_ascii_whitespace" | "matches" | "match_indices" if path.contains("str::") || path.contains("slice::") => (Allocation::None, Work::Fixed),
-        "split_once" | "rsplit_once" | "trim_matches" | "trim_start_matches" | "trim_end_matches" | "trim_ascii_end" => (Allocation::None, Work::Receiver),
-        "make_ascii_lowercase" | "make_ascii_uppercase" | "reverse" | "rotate_left" | "rotate_right" | "fill" | "partition_point" | "dedup" | "dedup_by" | "dedup_by_key" | "retain_mut" if path.contains("slice::") || path.contains("vec::") || path.contains("str::") => (Allocation::None, Work::Receiver),
+        "bytes"
+        | "chars"
+        | "char_indices"
+        | "encode_utf16"
+        | "lines"
+        | "split"
+        | "rsplit"
+        | "split_terminator"
+        | "split_whitespace"
+        | "split_ascii_whitespace"
+        | "matches"
+        | "match_indices"
+            if path.contains("str::") || path.contains("slice::") =>
+        {
+            (Allocation::None, Work::Fixed)
+        }
+        "split_once" | "rsplit_once" | "trim_matches" | "trim_start_matches"
+        | "trim_end_matches" | "trim_ascii_end" => (Allocation::None, Work::Receiver),
+        "make_ascii_lowercase"
+        | "make_ascii_uppercase"
+        | "reverse"
+        | "rotate_left"
+        | "rotate_right"
+        | "fill"
+        | "partition_point"
+        | "dedup"
+        | "dedup_by"
+        | "dedup_by_key"
+        | "retain_mut"
+            if path.contains("slice::") || path.contains("vec::") || path.contains("str::") =>
+        {
+            (Allocation::None, Work::Receiver)
+        }
         "extend_from_within" | "replace_range" | "splice" => (Allocation::Growth, Work::Receiver),
         "split_off" => (Allocation::Result, Work::Receiver),
         "extract_if" => (Allocation::None, Work::Fixed),
         "shrink_to_fit" => (Allocation::Reallocate, Work::Receiver),
-        "entry" | "get_key_value" | "remove_entry" if keyed => (Allocation::None, Work::Argument(1)),
-        "entry" if owner.is_some_and(|name| name.as_str() == "Map") => (Allocation::None, Work::Argument(1)),
-        "or_insert" | "or_insert_with" | "or_default" if path.contains("collections::") => (Allocation::Input(0), Work::Fixed),
+        "entry" | "get_key_value" | "remove_entry" if keyed => {
+            (Allocation::None, Work::Argument(1))
+        }
+        "entry" if owner.is_some_and(|name| name.as_str() == "Map") => {
+            (Allocation::None, Work::Argument(1))
+        }
+        "or_insert" | "or_insert_with" | "or_default" if path.contains("collections::") => {
+            (Allocation::Input(0), Work::Fixed)
+        }
         "pop" if path.contains("BinaryHeap") => (Allocation::None, Work::Receiver),
         "pop_first" | "difference" | "intersection" | "union" => (Allocation::None, Work::Fixed),
         "is_subset" | "is_disjoint" => (Allocation::None, Work::Receiver),
@@ -207,14 +528,28 @@ pub(crate) fn summary(
         "new" if path.contains("io::BufWriter") => (Allocation::Result, Work::Fixed),
         "read" => (Allocation::None, Work::Argument(1)),
         "write_all" => (Allocation::None, Work::Argument(1)),
-        "to_os_string" | "with_file_name" | "to_ascii_lowercase" | "to_ascii_uppercase" => (Allocation::Result, Work::Receiver),
+        "to_os_string" | "with_file_name" | "to_ascii_lowercase" | "to_ascii_uppercase" => {
+            (Allocation::Result, Work::Receiver)
+        }
         "from_utf16_lossy" => (Allocation::Result, Work::Receiver),
         "to_str" => (Allocation::None, Work::Receiver),
         "make_mut" if path.contains("Arc") => (Allocation::Clone, Work::Receiver),
         "other" if path.contains("io::error") => (Allocation::Result, Work::Fixed),
         "panic" | "panic_fmt" | "assert_failed" => (Allocation::None, Work::Fixed),
-        "by_ref" | "cycle" | "map_while" | "scan" | "empty" | "once" | "repeat_n" | "repeat_with" | "successors" | "from_fn" | "peek" | "pop" | "pop_front" | "swap_remove" | "remainder" | "keys" | "values" | "values_mut" | "into_keys" | "into_values" | "into_vec" | "key" | "into_mut" | "and_modify" | "identity" | "each_ref" | "from_ref" | "from_mut" | "from_raw" | "as_ptr" | "leak" | "into_inner" | "into_bytes" | "set" | "get_or_init" | "get_or_insert" | "get_or_insert_with" | "as_deref" | "as_deref_mut" | "map_or" | "map_or_else" | "unwrap_or_default" | "unwrap" | "is_ok_and" | "is_break" | "start" | "extension" | "file_name" | "file_stem" | "strong_count" | "fetch_add" | "with" | "then_with" | "is_eq" | "is_gt" | "is_le" | "is_lt" | "valid_up_to" | "error_len" | "kind" | "rewind" | "seek" | "stream_position" | "flush" => (Allocation::None, Work::Fixed),
-        "call" | "call_mut" | "call_once" if path.contains("ops::") => (Allocation::None, Work::Fixed),
+        "by_ref" | "cycle" | "map_while" | "scan" | "empty" | "once" | "repeat_n"
+        | "repeat_with" | "successors" | "from_fn" | "peek" | "pop" | "pop_front"
+        | "swap_remove" | "remainder" | "keys" | "values" | "values_mut" | "into_keys"
+        | "into_values" | "into_vec" | "key" | "into_mut" | "and_modify" | "identity"
+        | "each_ref" | "from_ref" | "from_mut" | "from_raw" | "as_ptr" | "leak" | "into_inner"
+        | "into_bytes" | "set" | "get_or_init" | "get_or_insert" | "get_or_insert_with"
+        | "as_deref" | "as_deref_mut" | "map_or" | "map_or_else" | "unwrap_or_default"
+        | "unwrap" | "is_ok_and" | "is_break" | "start" | "extension" | "file_name"
+        | "file_stem" | "strong_count" | "fetch_add" | "with" | "then_with" | "is_eq" | "is_gt"
+        | "is_le" | "is_lt" | "valid_up_to" | "error_len" | "kind" | "rewind" | "seek"
+        | "stream_position" | "flush" => (Allocation::None, Work::Fixed),
+        "call" | "call_mut" | "call_once" if path.contains("ops::") => {
+            (Allocation::None, Work::Fixed)
+        }
         "lt" | "le" | "gt" | "ge" | "ne" => (Allocation::None, Work::Comparison),
         "from_le_bytes" | "from_be_bytes" | "from_ne_bytes" | "to_le_bytes" | "to_be_bytes"
         | "to_ne_bytes"
@@ -421,10 +756,17 @@ pub(crate) fn summary(
     })
 }
 
-pub(crate) fn inventory_row(tcx: TyCtxt<'_>, definition: DefId, receiver: Option<Ty<'_>>) -> String {
+pub(crate) fn inventory_row(
+    tcx: TyCtxt<'_>,
+    definition: DefId,
+    receiver: Option<Ty<'_>>,
+) -> String {
     let path = tcx.def_path_str(definition);
     match summary(tcx, definition, receiver) {
-        Some(cost) => format!("external_operation\t{path}\t{:?}\t{:?}", cost.allocation, cost.work),
+        Some(cost) => format!(
+            "external_operation\t{path}\t{:?}\t{:?}",
+            cost.allocation, cost.work
+        ),
         None => format!("external_operation\t{path}\tMISSING\tMISSING"),
     }
 }

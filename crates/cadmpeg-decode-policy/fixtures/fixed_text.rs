@@ -1,8 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 pub struct DecodeContext;
 const MESSAGE: &'static str = "fixed message";
-fn construct<T: Into<String>>(message: T) -> String { message.into() }
-fn forward<T: Into<String>>(message: T) -> String { construct(message) }
+fn construct<T: Into<String>>(message: T) -> String {
+    message.into()
+}
+fn forward<T: Into<String>>(message: T) -> String {
+    construct(message)
+}
 pub fn literal(ctx: &DecodeContext, choose: bool) {
     let _ctx = ctx;
     let _error = construct("fixed message");
@@ -36,13 +40,20 @@ pub fn repetitions(ctx: &DecodeContext, count: usize) {
     let _copy = variable.clone(); // finding: uncharged_decode_allocation, uncharged_decode_work
 }
 
-enum Framing { Structural { offset: usize, message: String } }
+enum Framing {
+    Structural { offset: usize, message: String },
+}
 impl Framing {
     fn structural(offset: usize, message: impl Into<String>) -> Self {
-        Self::Structural { offset, message: message.into() }
+        Self::Structural {
+            offset,
+            message: message.into(),
+        }
     }
 }
-enum Geometry { Malformed(Framing) }
+enum Geometry {
+    Malformed(Framing),
+}
 impl Geometry {
     fn malformed(offset: usize, message: impl Into<String>) -> Self {
         Self::Malformed(Framing::structural(offset, message))
