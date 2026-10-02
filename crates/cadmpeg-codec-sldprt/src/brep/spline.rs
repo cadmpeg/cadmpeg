@@ -994,11 +994,7 @@ pub(crate) fn scan_curve_carriers(
                     ctx,
                     format_args!("curve carrier attribute {attr}: {error}"),
                 )?;
-                ctx.reserve_capacity(
-                    refusals,
-                    1,
-                    "collect Parasolid spline refusals",
-                )?;
+                ctx.reserve_capacity(refusals, 1, "collect Parasolid spline refusals")?;
                 refusals.push(note);
                 continue;
             }
@@ -1299,11 +1295,7 @@ pub(crate) fn scan_surface_carriers(
         )?;
         for row in points.chunks(descriptor.v_count) {
             let mut copy = Vec::new();
-            ctx.reserve_capacity(
-                &mut copy,
-                row.len(),
-                "partition Parasolid surface poles",
-            )?;
+            ctx.reserve_capacity(&mut copy, row.len(), "partition Parasolid surface poles")?;
             copy.extend_from_slice(row);
             pole_rows.push(copy);
         }
@@ -1316,11 +1308,7 @@ pub(crate) fn scan_surface_carriers(
             )?;
             for row in values.chunks(descriptor.v_count) {
                 let mut copy = Vec::new();
-                ctx.reserve_capacity(
-                    &mut copy,
-                    row.len(),
-                    "partition Parasolid surface weights",
-                )?;
+                ctx.reserve_capacity(&mut copy, row.len(), "partition Parasolid surface weights")?;
                 copy.extend_from_slice(row);
                 rows.push(copy);
             }
@@ -1353,11 +1341,7 @@ pub(crate) fn scan_surface_carriers(
                     ctx,
                     format_args!("surface carrier attribute {attr}: {error}"),
                 )?;
-                ctx.reserve_capacity(
-                    refusals,
-                    1,
-                    "collect Parasolid spline refusals",
-                )?;
+                ctx.reserve_capacity(refusals, 1, "collect Parasolid spline refusals")?;
                 refusals.push(note);
                 continue;
             }

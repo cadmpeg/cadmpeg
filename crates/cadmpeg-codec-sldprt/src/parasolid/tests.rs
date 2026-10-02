@@ -178,12 +178,17 @@ fn chained_parasolid_concatenation_refuses_retained_limit() {
     let stream = parasolid_payload("partition body", "SCH_SW_33103_11000");
     let split = stream.len() / 2;
     let (payload, _) = chained_payload(&[vec![stream[..split].to_vec(), stream[split..].to_vec()]]);
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(stream.len()) * 2 - 1;
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&payload, &arena, &policy).expect("root");
-    let error = crate::parasolid::extract_streams_with_offsets(&payload, &ctx)
-        .expect_err("concatenation must be admitted");
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        "retain concatenated Parasolid stream",
+        |cap| {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_retained_bytes = cap;
+            let arena = DecodeArena::new();
+            let (ctx, _) = DecodeContext::from_root_bytes(&payload, &arena, &policy).expect("root");
+            crate::parasolid::extract_streams_with_offsets(&payload, &ctx).map(|_| ())
+        },
+    );
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::RetainedBytes
             && limit.operation == "retain concatenated Parasolid stream"));

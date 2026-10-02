@@ -1,5 +1,7 @@
 //! Tests for the `curves` module.
 
+const EPS_REFUSAL_GEOMETRY: f64 = 1.0e-9;
+
 use super::super::endpoints::{compact_legacy_code_one_line_endpoint_indices, minor_arc_geometry};
 use super::super::markers::sketch_input_entities;
 use super::super::typed_relations::compact_legacy_object_line_endpoints;
@@ -356,11 +358,17 @@ fn closed_profile_refuses_collection_limit() {
 #[test]
 fn closed_profile_refuses_retained_limit() {
     let entities = closed_profile_limit_entities();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = 0;
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = super::closed_marker_profiles(&ctx, &entities).unwrap_err();
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        "copy SLDPRT closed curve identity",
+        |cap| {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_retained_bytes = cap;
+            let arena = DecodeArena::new();
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            super::closed_marker_profiles(&ctx, &entities).map(|_| ())
+        },
+    );
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::RetainedBytes
             && limit.operation == "copy SLDPRT closed curve identity"));
@@ -1315,15 +1323,27 @@ fn linked_semicircle_refuses_collection_limit() {
 
 #[test]
 fn linked_semicircle_refuses_retained_limit() {
-    let (payload, records, mut entities) = linked_semicircle_fixture();
+    let (payload, records, entities) = linked_semicircle_fixture();
     let markers = records.iter().collect::<Vec<_>>();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = 0;
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&payload, &arena, &policy).unwrap();
-    let error =
-        resolve_two_center_semicircle_profile(&ctx, &payload, &markers, &mut entities, 1.0e-9)
-            .unwrap_err();
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        "copy SLDPRT semicircle point identity",
+        |cap| {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_retained_bytes = cap;
+            let arena = DecodeArena::new();
+            let (ctx, _) = DecodeContext::from_root_bytes(&payload, &arena, &policy).unwrap();
+            let mut entities = entities.clone();
+            resolve_two_center_semicircle_profile(
+                &ctx,
+                &payload,
+                &markers,
+                &mut entities,
+                EPS_REFUSAL_GEOMETRY,
+            )
+            .map(|_| ())
+        },
+    );
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::RetainedBytes
             && limit.operation == "copy SLDPRT semicircle point identity"));

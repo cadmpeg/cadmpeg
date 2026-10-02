@@ -713,6 +713,7 @@ fn append_design_losses(
         )))?;
     }
 
+    let mut lookup_storage = ctx.reserve_scoped(0, "SLDPRT design parameter lookup storage")?;
     let mut feature_names = HashMap::new();
     for feature in &ir.model.features {
         const OPERATION: &str = "index SLDPRT feature names";
@@ -724,14 +725,15 @@ fn append_design_losses(
             cadmpeg_core::decode::u64_from_index(feature.id.as_str().len()),
             OPERATION,
         )?;
-        ctx.admit_hash_map_entry(&mut feature_names, &feature.id, OPERATION)?;
-        let id = cadmpeg_ir::features::FeatureId::mint(copy_retained_string(
-            ctx,
-            feature.id.as_str(),
-            OPERATION,
-        )?)
+        lookup_storage.with_storage(|| {
+            ctx.admit_hash_map_entry(&mut feature_names, &feature.id, OPERATION)
+        })?;
+        let id = cadmpeg_ir::features::FeatureId::mint(
+            lookup_storage
+                .with_storage(|| copy_retained_string(ctx, feature.id.as_str(), OPERATION))?,
+        )
         .map_err(CodecError::malformed)?;
-        let name = copy_retained_string(ctx, name, OPERATION)?;
+        let name = lookup_storage.with_storage(|| copy_retained_string(ctx, name, OPERATION))?;
         feature_names.insert(id, name);
     }
     let mut global_parameter_owners = HashSet::new();
@@ -746,12 +748,12 @@ fn append_design_losses(
         {
             continue;
         }
-        ctx.reserve_set(&mut global_parameter_owners, 1, OPERATION)?;
-        let id = cadmpeg_ir::features::FeatureId::mint(copy_retained_string(
-            ctx,
-            feature.id.as_str(),
-            OPERATION,
-        )?)
+        lookup_storage
+            .with_storage(|| ctx.reserve_set(&mut global_parameter_owners, 1, OPERATION))?;
+        let id = cadmpeg_ir::features::FeatureId::mint(
+            lookup_storage
+                .with_storage(|| copy_retained_string(ctx, feature.id.as_str(), OPERATION))?,
+        )
         .map_err(CodecError::malformed)?;
         global_parameter_owners.insert(id);
     }
@@ -2576,17 +2578,21 @@ fn bind_opaque_geometry(
     Ok(())
 }
 
-fn append_brep_arena<T>(ctx: &DecodeContext<'_>, target: &mut Vec<T>, source: &mut Vec<T>) -> Result<(), CodecError> {
-    ctx.reserve_vec(
-        target,
-        source.len(),
-        "merge SLDPRT B-rep arena",
-    )?;
+fn append_brep_arena<T>(
+    ctx: &DecodeContext<'_>,
+    target: &mut Vec<T>,
+    source: &mut Vec<T>,
+) -> Result<(), CodecError> {
+    ctx.reserve_vec(target, source.len(), "merge SLDPRT B-rep arena")?;
     target.append(source);
     Ok(())
 }
 
-fn merge_brep(ctx: &DecodeContext<'_>, target: &mut Brep, mut source: Brep) -> Result<(), CodecError> {
+fn merge_brep(
+    ctx: &DecodeContext<'_>,
+    target: &mut Brep,
+    mut source: Brep,
+) -> Result<(), CodecError> {
     // Sequence links are source-local and belong only to the selected SWIFT
     // source. Alternate configuration sequences must not enter its namespace.
     target.annotations.append(source.annotations)?;
@@ -5165,11 +5171,7 @@ fn assign_configuration_bodies(
                 "merge SLDPRT configuration bodies",
             )?;
             if !merged.contains(&body) {
-                ctx.reserve_capacity(
-                    merged,
-                    1,
-                    "merge SLDPRT configuration bodies",
-                )?;
+                ctx.reserve_capacity(merged, 1, "merge SLDPRT configuration bodies")?;
                 merged.push(body);
             }
         }

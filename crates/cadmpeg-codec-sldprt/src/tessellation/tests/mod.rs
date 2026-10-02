@@ -820,7 +820,15 @@ fn persistent_tessellation_assignment_refuses_collection_limit() {
 
 #[test]
 fn persistent_tessellation_assignment_refuses_retained_limit() {
-    let error = persistent_assignment_limit_error(|policy| policy.limits.max_retained_bytes = 0);
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        "retain SLDPRT tessellation face ID",
+        |cap| {
+            Err::<(), cadmpeg_core::CodecError>(persistent_assignment_limit_error(|policy| {
+                policy.limits.max_retained_bytes = cap
+            }))
+        },
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "retain SLDPRT tessellation face ID")
@@ -865,7 +873,15 @@ fn geometric_tessellation_assignment_refuses_collection_limit() {
 
 #[test]
 fn geometric_tessellation_assignment_refuses_retained_limit() {
-    let error = geometric_assignment_limit_error(|policy| policy.limits.max_retained_bytes = 0);
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        "retain SLDPRT tessellation face ID",
+        |cap| {
+            Err::<(), cadmpeg_core::CodecError>(geometric_assignment_limit_error(|policy| {
+                policy.limits.max_retained_bytes = cap
+            }))
+        },
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "retain SLDPRT tessellation face ID")

@@ -1,5 +1,7 @@
 //! Tests for the `sketch_projection` module.
 
+const EPS_REFUSAL_GEOMETRY: f64 = 1.0e-9;
+
 use super::super::curves::{resolve_connected_marker_arcs, resolve_slot_marker_arcs};
 use super::super::LEGACY_EXTENDED_SKETCH_MARKER;
 use crate::records::{SketchInputEntity, SketchInputKind};
@@ -233,14 +235,27 @@ fn slot_cycle_refuses_work_limit() {
 
 #[test]
 fn slot_cycle_refuses_retained_limit() {
-    let (payload, inputs, mut entities) = slot_cycle_fixture();
+    let (payload, inputs, entities) = slot_cycle_fixture();
     let markers = inputs.iter().collect::<Vec<_>>();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = 0;
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&payload, &arena, &policy).unwrap();
-    let error =
-        resolve_slot_marker_arcs(&ctx, &payload, &markers, &mut entities, 1.0e-9).unwrap_err();
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        "copy SLDPRT slot endpoint identity",
+        |cap| {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_retained_bytes = cap;
+            let arena = DecodeArena::new();
+            let (ctx, _) = DecodeContext::from_root_bytes(&payload, &arena, &policy).unwrap();
+            let mut entities = entities.clone();
+            resolve_slot_marker_arcs(
+                &ctx,
+                &payload,
+                &markers,
+                &mut entities,
+                EPS_REFUSAL_GEOMETRY,
+            )
+            .map(|_| ())
+        },
+    );
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::RetainedBytes
             && limit.operation == "copy SLDPRT slot endpoint identity"));

@@ -1201,11 +1201,7 @@ fn order_surface_candidates(
         ctx.charge_work(work, operation)?;
     }
     indexed.dedup_by(|left, right| left.0 == right.0 && left.1 == right.1);
-    ctx.reserve_capacity(
-        candidates,
-        indexed.len(),
-        operation,
-    )?;
+    ctx.reserve_capacity(candidates, indexed.len(), operation)?;
     for (offset, components, _) in indexed {
         candidates.push((offset, components));
     }

@@ -267,11 +267,7 @@ pub(crate) fn bind_unique_sketch_feature(
             has_profile: binding.has_profile,
         });
     }
-    ctx.reserve_capacity(
-        &mut bindings,
-        aliases.len(),
-        "merge SLDPRT sketch aliases",
-    )?;
+    ctx.reserve_capacity(&mut bindings, aliases.len(), "merge SLDPRT sketch aliases")?;
     bindings.extend(aliases);
     for feature in features {
         ctx.charge_work(
@@ -951,7 +947,15 @@ mod tests {
 
     #[test]
     fn feature_outputs_refuse_retained_limit() {
-        let error = feature_output_error(|limits| limits.max_retained_bytes = 0);
+        let error = cadmpeg_test_support::refusal::resource_limit_at(
+            cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+            "retain SLDPRT feature output body",
+            |cap| {
+                Err::<(), cadmpeg_core::CodecError>(feature_output_error(|limits| {
+                    limits.max_retained_bytes = cap
+                }))
+            },
+        );
         assert!(matches!(
             error,
             cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -1023,7 +1027,15 @@ mod tests {
 
     #[test]
     fn sketch_binding_refuses_retained_limit() {
-        let error = sketch_binding_error(|limits| limits.max_retained_bytes = 0);
+        let error = cadmpeg_test_support::refusal::resource_limit_at(
+            cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+            "retain SLDPRT sketch binding identity",
+            |cap| {
+                Err::<(), cadmpeg_core::CodecError>(sketch_binding_error(|limits| {
+                    limits.max_retained_bytes = cap
+                }))
+            },
+        );
         assert!(matches!(
             error,
             cadmpeg_core::CodecError::ResourceLimit(limit)
