@@ -35,3 +35,24 @@ pub fn repetitions(ctx: &DecodeContext, count: usize) {
     let variable = MESSAGE.repeat(count); // finding: uncharged_decode_allocation, uncharged_decode_work
     let _copy = variable.clone(); // finding: uncharged_decode_allocation, uncharged_decode_work
 }
+
+enum Framing { Structural { offset: usize, message: String } }
+impl Framing {
+    fn structural(offset: usize, message: impl Into<String>) -> Self {
+        Self::Structural { offset, message: message.into() }
+    }
+}
+enum Geometry { Malformed(Framing) }
+impl Geometry {
+    fn malformed(offset: usize, message: impl Into<String>) -> Self {
+        Self::Malformed(Framing::structural(offset, message))
+    }
+}
+fn error(offset: usize, message: impl Into<String>) -> Geometry {
+    Geometry::malformed(offset, message)
+}
+pub fn errors(ctx: &DecodeContext, offset: usize, input: &str) {
+    let _ctx = ctx;
+    let _fixed = error(offset, "fixed error");
+    let _input = error(offset, input); // finding: uncharged_decode_allocation, uncharged_decode_work
+}
