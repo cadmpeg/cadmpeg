@@ -156,9 +156,7 @@ fn assert_split_body_refusal(
                 let arena = DecodeArena::new();
 
                 let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-                (project_split(&ctx, scope, groups, operands))
-                    .map(|_| ())
-                    .map_err(cadmpeg_core::CodecError::from)
+                (project_split(&ctx, scope, groups, operands)).map(|_| ())
             },
         );
         assert!(
@@ -294,7 +292,6 @@ fn delete_face_fallback_group_id_refuses_retained_limit() {
                 let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
                 (project_delete_face(&ctx, &scope, std::slice::from_ref(&selected), &[]))
                     .map(|_| ())
-                    .map_err(cadmpeg_core::CodecError::from)
             },
         );
         assert!(
@@ -416,9 +413,7 @@ fn assert_split_face_retained_refusal(operation: &'static str) {
                 let arena = DecodeArena::new();
 
                 let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-                (project_split_face(&ctx, &scope, &scopes, &groups, &[], &[], &[]))
-                    .map(|_| ())
-                    .map_err(cadmpeg_core::CodecError::from)
+                (project_split_face(&ctx, &scope, &scopes, &groups, &[], &[], &[])).map(|_| ())
             },
         );
         assert!(
@@ -756,16 +751,16 @@ fn assert_historical_split_face_path_refusal(
             let mut policy = cadmpeg_core::decode::DecodePolicy::service();
             match dimension {
                 cadmpeg_core::decode::ResourceDimension::RetainedBytes => {
-                    policy.limits.max_retained_bytes = cap
+                    policy.limits.max_retained_bytes = cap;
                 }
                 cadmpeg_core::decode::ResourceDimension::CollectionItems => {
-                    policy.limits.max_collection_items = cap
+                    policy.limits.max_collection_items = cap;
                 }
                 cadmpeg_core::decode::ResourceDimension::MaterializedBytes => {
-                    policy.limits.max_materialized_bytes = cap
+                    policy.limits.max_materialized_bytes = cap;
                 }
                 cadmpeg_core::decode::ResourceDimension::WorkUnits => {
-                    policy.limits.max_work_units = cap
+                    policy.limits.max_work_units = cap;
                 }
                 dimension => panic!("unsupported refusal dimension: {dimension:?}"),
             }
@@ -778,7 +773,6 @@ fn assert_historical_split_face_path_refusal(
                 &[],
             ))
             .map(|_| ())
-            .map_err(cadmpeg_core::CodecError::from)
         }) {
             cadmpeg_core::CodecError::ResourceLimit(limit) => limit.limit,
             error => panic!("unexpected refusal: {error:?}"),
@@ -786,16 +780,16 @@ fn assert_historical_split_face_path_refusal(
     policy.limits = cadmpeg_core::decode::DecodePolicy::service().limits;
     match dimension {
         cadmpeg_core::decode::ResourceDimension::RetainedBytes => {
-            policy.limits.max_retained_bytes = refusal_cap
+            policy.limits.max_retained_bytes = refusal_cap;
         }
         cadmpeg_core::decode::ResourceDimension::CollectionItems => {
-            policy.limits.max_collection_items = refusal_cap
+            policy.limits.max_collection_items = refusal_cap;
         }
         cadmpeg_core::decode::ResourceDimension::MaterializedBytes => {
-            policy.limits.max_materialized_bytes = refusal_cap
+            policy.limits.max_materialized_bytes = refusal_cap;
         }
         cadmpeg_core::decode::ResourceDimension::WorkUnits => {
-            policy.limits.max_work_units = refusal_cap
+            policy.limits.max_work_units = refusal_cap;
         }
         dimension => panic!("unsupported refusal dimension: {dimension:?}"),
     }

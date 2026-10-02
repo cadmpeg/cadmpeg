@@ -656,10 +656,11 @@ impl CompoundState {
             cadmpeg_core::decode::u64_from_index(fat_count + difat_count),
             "parse CFB allocation tables",
         )?;
-        let mut allocation_id_scratch = ctx.reserve_scoped(0, "collect CFB allocation sector ids")?;
+        let mut allocation_id_scratch =
+            ctx.reserve_scoped(0, "collect CFB allocation sector ids")?;
         let sector = |id| sector_slice(bytes, sector_size, sector_count, id);
-        let mut fat_sectors =
-            allocation_id_scratch.with_storage(|| ctx.vector_storage(fat_count, "CFB FAT sectors"))?;
+        let mut fat_sectors = allocation_id_scratch
+            .with_storage(|| ctx.vector_storage(fat_count, "CFB FAT sectors"))?;
         let mut header_free_seen = false;
         for index in 0..109 {
             let id = field(76 + index * 4, "header DIFAT entry")?;
@@ -682,11 +683,17 @@ impl CompoundState {
             if cadmpeg_core::decode::index_from_u32(next_difat) >= sector_count {
                 return malformed("CFB DIFAT chain is cyclic or out of range");
             }
-            ctx.charge_work(cadmpeg_core::decode::u64_from_index(seen_difat.len()), "compare CFB DIFAT sectors")?;
+            ctx.charge_work(
+                cadmpeg_core::decode::u64_from_index(seen_difat.len()),
+                "compare CFB DIFAT sectors",
+            )?;
             if seen_difat.contains(&next_difat) {
                 return malformed("CFB DIFAT chain is cyclic or out of range");
             }
-            ctx.admit_btree_node_storage::<u32, ()>(seen_difat.len(), "collect CFB allocation sector ids")?;
+            ctx.admit_btree_node_storage::<u32, ()>(
+                seen_difat.len(),
+                "collect CFB allocation sector ids",
+            )?;
             seen_difat.insert(next_difat);
             let data = sector(next_difat)
                 .ok_or_else(|| CodecError::Malformed("CFB DIFAT sector is absent".into()))?;
@@ -718,7 +725,8 @@ impl CompoundState {
         {
             return malformed("CFB DIFAT does not match its declared FAT count");
         }
-        let fat_sector_set = ctx.collect_btree_set(fat_sectors.iter().copied(), "collect CFB FAT sector set")?;
+        let fat_sector_set =
+            ctx.collect_btree_set(fat_sectors.iter().copied(), "collect CFB FAT sector set")?;
         if fat_sector_set.len() != fat_sectors.len() {
             return malformed("duplicate CFB FAT sector");
         }
@@ -732,10 +740,7 @@ impl CompoundState {
             cadmpeg_core::decode::u64_from_index(fat_word_count),
             "parse CFB FAT words",
         )?;
-        let mut fat = ctx.vector_storage(
-            fat_word_count,
-            "retain CFB FAT",
-        )?;
+        let mut fat = ctx.vector_storage(fat_word_count, "retain CFB FAT")?;
         for &id in &fat_sectors {
             let data = sector(id)
                 .ok_or_else(|| CodecError::Malformed("CFB FAT sector is absent".into()))?;
@@ -789,13 +794,15 @@ impl CompoundState {
             ChainRole::Directory,
         )?;
         let mut directory_scratch = ctx.reserve_scoped(0, "assemble CFB directory sectors")?;
-        let directory_bytes = directory_scratch.with_storage(|| join_sectors(
-            ctx,
-            bytes,
-            sector_size,
-            sector_count,
-            directory_chain.iter().flat_map(SectorChain::iter),
-        ))?;
+        let directory_bytes = directory_scratch.with_storage(|| {
+            join_sectors(
+                ctx,
+                bytes,
+                sector_size,
+                sector_count,
+                directory_chain.iter().flat_map(SectorChain::iter),
+            )
+        })?;
         let directory = parse_directory(ctx, &directory_bytes, version)?;
         drop(directory_bytes);
         drop(directory_scratch);
@@ -813,31 +820,32 @@ impl CompoundState {
             .map_or(0, SectorChain::len)
             .checked_mul(sector_size)
             .ok_or_else(|| CodecError::Malformed("CFB mini FAT byte size overflow".into()))?;
-        let mut mini_fat_scratch = ctx.reserve_scoped(
-            0,
-            "assemble CFB mini FAT sectors",
-        )?;
+        let mut mini_fat_scratch = ctx.reserve_scoped(0, "assemble CFB mini FAT sectors")?;
         let mini_fat_word_count = mini_fat_byte_count / 4;
         ctx.charge_collection_items(
             cadmpeg_core::decode::u64_from_index(mini_fat_word_count),
             "parse CFB mini FAT words",
         )?;
-        let mini_fat_bytes = mini_fat_scratch.with_storage(|| join_sectors(
-            ctx,
-            bytes,
-            sector_size,
-            sector_count,
-            mini_fat_chain.iter().flat_map(SectorChain::iter),
-        ))?;
+        let mini_fat_bytes = mini_fat_scratch.with_storage(|| {
+            join_sectors(
+                ctx,
+                bytes,
+                sector_size,
+                sector_count,
+                mini_fat_chain.iter().flat_map(SectorChain::iter),
+            )
+        })?;
         // Every joined sector passed the same exact-width proof above, so the
         // joined mini FAT is an exact sequence of four-byte words.
         let mut mini_fat = ctx.vector_storage(mini_fat_word_count, "retain CFB mini FAT")?;
-        mini_fat.extend(mini_fat_bytes
-            .as_chunks::<4>()
-            .0
-            .iter()
-            .copied()
-            .map(le_u32_array));
+        mini_fat.extend(
+            mini_fat_bytes
+                .as_chunks::<4>()
+                .0
+                .iter()
+                .copied()
+                .map(le_u32_array),
+        );
         drop(mini_fat_bytes);
         drop(mini_fat_scratch);
         let root = directory_root(&directory)?;
@@ -1501,11 +1509,9 @@ pub fn read_detection_prefix(
         // is already an index, so `prefix_len` is the smaller of the two.
         Err(_) => prefix_len,
     };
-    let mut bytes = ctx.vector_storage(
-        phase_one_len,
-        "compound detection prefix bytes",
-    )
-    .map_err(io::Error::other)?;
+    let mut bytes = ctx
+        .vector_storage(phase_one_len, "compound detection prefix bytes")
+        .map_err(io::Error::other)?;
     let mut chunk = ctx
         .alloc_filled(64 * 1024, 0_u8, "compound detection prefix chunk")
         .map_err(io::Error::other)?
@@ -1580,10 +1586,7 @@ fn parse_directory(
         cadmpeg_core::decode::u64_from_index(entry_count),
         "parse CFB directory entries",
     )?;
-    let mut entries = ctx.vector_storage(
-        entry_count,
-        "parse CFB directory entries",
-    )?;
+    let mut entries = ctx.vector_storage(entry_count, "parse CFB directory entries")?;
     for raw in records {
         let object_type = raw[66];
         if object_type == 0 {

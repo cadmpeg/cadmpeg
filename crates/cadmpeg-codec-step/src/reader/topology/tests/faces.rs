@@ -891,15 +891,11 @@ fn face_name_refuses_retained_limit() {
                 policy.limits.max_retained_bytes = limit;
                 let (ctx, _) = DecodeContext::from_root_bytes(named.as_bytes(), &arena, &policy)
                     .expect("root fits retained policy");
-                let result = (|| {
-                    let mut ir = cadmpeg_ir::document::CadIr::empty();
-                    crate::reader::geometry::decode(&exchange, &mut ir, &ctx)?;
-                    let index = crate::reader::index::CarrierIndex::from_ir(&ir, &ctx)?;
-                    super::super::decode(&exchange, &mut ir, &index, &ctx)?;
-                    Ok::<(), CodecError>(())
-                })();
-
-                (result).map(|_| ())
+                let mut ir = cadmpeg_ir::document::CadIr::empty();
+                crate::reader::geometry::decode(&exchange, &mut ir, &ctx)?;
+                let index = crate::reader::index::CarrierIndex::from_ir(&ir, &ctx)?;
+                super::super::decode(&exchange, &mut ir, &index, &ctx)?;
+                Ok::<(), CodecError>(())
             },
         );
         matches!(Err::<(), CodecError>(error), Err(CodecError::ResourceLimit(refusal))

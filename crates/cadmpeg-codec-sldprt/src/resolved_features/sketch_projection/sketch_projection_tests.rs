@@ -253,7 +253,6 @@ fn slot_cycle_refuses_retained_limit() {
                 &mut entities,
                 EPS_REFUSAL_GEOMETRY,
             )
-            .map(|_| ())
         },
     );
     assert!(matches!(error, CodecError::ResourceLimit(limit)

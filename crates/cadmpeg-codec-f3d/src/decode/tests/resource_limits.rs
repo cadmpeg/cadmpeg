@@ -662,8 +662,6 @@ fn selected_body_blob_name_refuses_retained_limit() {
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
             let mut index = std::collections::HashMap::new();
             super::super::index_selected_body_key(&ctx, &mut index, "BREP0.smb", 7)
-                .map(|_| ())
-                .map_err(cadmpeg_core::CodecError::from)
         },
     ) {
         cadmpeg_core::CodecError::ResourceLimit(limit) => limit.limit,
@@ -868,8 +866,6 @@ fn mesh_texture_table_key_refuses_retained_limit() {
                 "tessellation:one",
                 &one_texture_table(),
             )
-            .map(|_| ())
-            .map_err(cadmpeg_core::CodecError::from)
         },
     ) {
         cadmpeg_core::CodecError::ResourceLimit(limit) => limit.limit,
@@ -995,8 +991,6 @@ fn unresolved_mesh_attribute_loss_refuses_retained_limit() {
                 1,
             )]);
             super::super::report_unresolved_mesh_attributes(&ctx, &mut report, &unresolved)
-                .map(|_| ())
-                .map_err(cadmpeg_core::CodecError::from)
         },
     ) {
         cadmpeg_core::CodecError::ResourceLimit(limit) => limit.limit,
@@ -1101,9 +1095,7 @@ fn geometry_loss_text_refuses_retained_limit() {
             let mut policy = DecodePolicy::service();
             policy.limits.max_retained_bytes = cap;
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-            super::super::geometry_losses(&ctx, &crate::brep::Brep::default())
-                .map(|_| ())
-                .map_err(cadmpeg_core::CodecError::from)
+            super::super::geometry_losses(&ctx, &crate::brep::Brep::default()).map(|_| ())
         },
     ) {
         cadmpeg_core::CodecError::ResourceLimit(limit) => limit.limit,

@@ -52,8 +52,6 @@ fn lost_edge_reference_id_refuses_retained_limit() {
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
             let mut references = Vec::new();
             decode_lost_edge_references_from_stream(&ctx, "BulkStream.dat", &bytes, &mut references)
-                .map(|_| ())
-                .map_err(cadmpeg_core::CodecError::from)
         },
     ) {
         cadmpeg_core::CodecError::ResourceLimit(limit) => limit.limit,

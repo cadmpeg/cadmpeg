@@ -71,8 +71,7 @@ fn assert_refusal(operation: &'static str, retained: bool) {
                 }
                 let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
                 let mut features = fixture();
-                let result = bind_sketch_feature_geometry(&ctx, &mut features, &[], &[], &[], &[]);
-                result
+                bind_sketch_feature_geometry(&ctx, &mut features, &[], &[], &[], &[])
             },
         );
         assert!(matches!(error, CodecError::ResourceLimit(failure)

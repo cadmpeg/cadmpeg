@@ -48,7 +48,7 @@ fn regeneration_edge_refuses_each_storage_boundary() {
     use cadmpeg_ir::features::FeatureId;
     let child = FeatureId::mint("creo:model:feature#41").expect("identity grammar");
     let parent = FeatureId::mint("creo:model:feature#40").expect("identity grammar");
-    for (items, _bytes, dimension, operation) in [
+    for (items, bytes, dimension, operation) in [
         (
             0,
             u64::MAX,
@@ -72,7 +72,7 @@ fn regeneration_edge_refuses_each_storage_boundary() {
         let mut policy = DecodePolicy::service();
         policy.limits.max_collection_items = items;
         policy.limits.max_retained_bytes = if dimension == ResourceDimension::CollectionItems {
-            _bytes
+            bytes
         } else {
             crate::test_support::allocation_limit_at(
                 cadmpeg_core::decode::ResourceDimension::RetainedBytes,

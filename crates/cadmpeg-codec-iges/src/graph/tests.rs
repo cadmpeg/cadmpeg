@@ -441,10 +441,9 @@ fn graph_losses_admit_indexes_notes_and_provenance_text() {
 
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = (0)
-        + cadmpeg_core::decode::u64_from_index(
-            4 * std::mem::size_of::<cadmpeg_ir::report::loss::LossNote>(),
-        );
+    policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(
+        4 * std::mem::size_of::<cadmpeg_ir::report::loss::LossNote>(),
+    );
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let result = super::losses(&graph, &scan, &[], &ctx);
     assert!(matches!(

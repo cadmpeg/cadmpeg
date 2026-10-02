@@ -519,7 +519,6 @@ fn unbound_cosmetic_thread_refuses_retained_limit() {
                 &faces,
                 &surfaces,
             )
-            .map(|_| ())
         },
     );
     assert!(

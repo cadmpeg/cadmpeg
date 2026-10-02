@@ -69,7 +69,7 @@ fn occurrence_output_refuses(existing: usize) {
         let model_input =
             serde_json::to_vec(&ir).expect("synthetic existing assembly budget envelope");
         let error = crate::test_support::with_service_context(&model_input, |_, ctx| {
-            let error = super::super::decode(
+            super::super::decode(
                 &exchange,
                 &geometry.value,
                 &topology.value,
@@ -78,8 +78,7 @@ fn occurrence_output_refuses(existing: usize) {
                 &mut admitted,
             )
             .err()
-            .expect("occurrence slice must refuse");
-            error
+            .expect("occurrence slice must refuse")
         });
         assert!(
             matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal)

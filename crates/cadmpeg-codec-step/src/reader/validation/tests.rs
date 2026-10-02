@@ -39,7 +39,7 @@ fn validation_resource_refuses(
                 let mut policy = DecodePolicy::service();
                 match dimension {
                     ResourceDimension::CollectionItems => {
-                        policy.limits.max_collection_items = limit
+                        policy.limits.max_collection_items = limit;
                     }
                     ResourceDimension::RetainedBytes => policy.limits.max_retained_bytes = limit,
                     _ => unreachable!("test only selects collection or retained limits"),

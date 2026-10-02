@@ -59,8 +59,6 @@ fn f3z_report_note_refuses_retained_limit() {
                 "collect F3Z report notes",
                 "retain F3Z report note",
             )
-            .map(|_| ())
-            .map_err(cadmpeg_core::CodecError::from)
         },
     ) {
         cadmpeg_core::CodecError::ResourceLimit(limit) => limit.limit,

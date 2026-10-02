@@ -305,7 +305,7 @@ fn decoded_parameter_scopes_refuse_identifier_and_output_limits() {
                     let mut policy = DecodePolicy::default();
                     match dimension {
                         ResourceDimension::CollectionItems => {
-                            policy.limits.max_collection_items = cap
+                            policy.limits.max_collection_items = cap;
                         }
                         ResourceDimension::RetainedBytes => policy.limits.max_retained_bytes = cap,
                         _ => unreachable!(),
@@ -328,10 +328,10 @@ fn decoded_parameter_scopes_refuse_identifier_and_output_limits() {
             let mut policy = DecodePolicy::default();
             match dimension {
                 ResourceDimension::CollectionItems => {
-                    policy.limits.max_collection_items = refusal.limit + 1
+                    policy.limits.max_collection_items = refusal.limit + 1;
                 }
                 ResourceDimension::RetainedBytes => {
-                    policy.limits.max_retained_bytes = refusal.limit + 1
+                    policy.limits.max_retained_bytes = refusal.limit + 1;
                 }
                 _ => unreachable!(),
             }

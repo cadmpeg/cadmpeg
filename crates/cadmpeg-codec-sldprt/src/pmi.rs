@@ -681,7 +681,6 @@ pub(crate) fn dimensions(
             continue;
         }
         collect_dimensions(
-            &mut seen_storage,
             ctx,
             source.payload(),
             source.source_stream(),
@@ -689,6 +688,7 @@ pub(crate) fn dimensions(
             annotations,
             losses,
             DimensionOutput {
+                seen_storage: &mut seen_storage,
                 records: &mut records,
                 seen: &mut seen,
             },
@@ -718,7 +718,6 @@ pub(crate) fn parse_payload(
     let mut seen = HashSet::<String>::new();
     let stream = cadmpeg_ir::stream_name!("Contents/PMISemanticDataDB");
     collect_dimensions(
-        &mut seen_storage,
         ctx,
         payload,
         &stream,
@@ -726,6 +725,7 @@ pub(crate) fn parse_payload(
         &mut annotations,
         losses,
         DimensionOutput {
+            seen_storage: &mut seen_storage,
             records: &mut records,
             seen: &mut seen,
         },
@@ -739,22 +739,26 @@ pub(crate) fn parse_payload(
     Ok(records)
 }
 
-struct DimensionOutput<'a> {
+struct DimensionOutput<'a, 'budget> {
+    seen_storage: &'a mut cadmpeg_core::decode::ScopedReservation<'budget>,
     records: &'a mut Vec<PmiDimension>,
     seen: &'a mut HashSet<String>,
 }
 
 fn collect_dimensions(
-    seen_storage: &mut cadmpeg_core::decode::ScopedReservation<'_>,
     ctx: &DecodeContext<'_>,
     payload: &[u8],
     stream: &cadmpeg_ir::StreamName,
     parent: &str,
     annotations: &mut Annotations,
     losses: &mut Vec<LossNote>,
-    output: DimensionOutput<'_>,
+    output: DimensionOutput<'_, '_>,
 ) -> Result<(), CodecError> {
-    let DimensionOutput { records, seen } = output;
+    let DimensionOutput {
+        records,
+        seen,
+        seen_storage,
+    } = output;
     ctx.charge_work(u64_from_index(payload.len()), "scan SLDPRT PMI candidates")?;
     for (guid, offset) in candidate_maps(payload) {
         let mut normalized = seen_storage.with_storage(|| {

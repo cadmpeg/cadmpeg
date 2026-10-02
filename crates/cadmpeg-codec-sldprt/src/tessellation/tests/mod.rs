@@ -825,7 +825,7 @@ fn persistent_tessellation_assignment_refuses_retained_limit() {
         "retain SLDPRT tessellation face ID",
         |cap| {
             Err::<(), cadmpeg_core::CodecError>(persistent_assignment_limit_error(|policy| {
-                policy.limits.max_retained_bytes = cap
+                policy.limits.max_retained_bytes = cap;
             }))
         },
     );
@@ -878,7 +878,7 @@ fn geometric_tessellation_assignment_refuses_retained_limit() {
         "retain SLDPRT tessellation face ID",
         |cap| {
             Err::<(), cadmpeg_core::CodecError>(geometric_assignment_limit_error(|policy| {
-                policy.limits.max_retained_bytes = cap
+                policy.limits.max_retained_bytes = cap;
             }))
         },
     );

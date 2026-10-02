@@ -182,7 +182,6 @@ fn assert_circular_seed_refusal(role: DesignOperandRole, operation: &'static str
                 let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
                 (project_circular_pattern(&ctx, &scope, std::slice::from_ref(&seed_group), &[]))
                     .map(|_| ())
-                    .map_err(cadmpeg_core::CodecError::from)
             },
         );
         assert!(
@@ -278,7 +277,6 @@ fn assert_rectangular_seed_refusal(role: DesignOperandRole, operation: &'static 
                     &[],
                 ))
                 .map(|_| ())
-                .map_err(cadmpeg_core::CodecError::from)
             },
         );
         assert!(

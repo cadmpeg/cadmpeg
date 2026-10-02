@@ -161,9 +161,7 @@ fn assert_profile_fallback(
                 policy.limits.max_retained_bytes = cap;
                 let arena = DecodeArena::new();
                 let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-                (project_extrude(&ctx, &scope, &owned, groups, &[], &[], &[]))
-                    .map(|_| ())
-                    .map_err(cadmpeg_core::CodecError::from)
+                (project_extrude(&ctx, &scope, &owned, groups, &[], &[], &[])).map(|_| ())
             },
         );
         assert!(
@@ -237,9 +235,7 @@ fn assert_face_fallback(role: DesignConstructionOperandRole, operation: &'static
                 policy.limits.max_retained_bytes = cap;
                 let arena = DecodeArena::new();
                 let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-                (project_extrude(&ctx, &scope, &owned, &groups, &[], &[], &[]))
-                    .map(|_| ())
-                    .map_err(cadmpeg_core::CodecError::from)
+                (project_extrude(&ctx, &scope, &owned, &groups, &[], &[], &[])).map(|_| ())
             },
         );
         assert!(

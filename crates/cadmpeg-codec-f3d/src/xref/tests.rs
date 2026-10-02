@@ -269,9 +269,7 @@ fn xref_occurrence_path_refuses_retained_limit() {
             let ctx = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
                 .unwrap()
                 .0;
-            super::project_occurrences(&ctx, &table)
-                .map(|_| ())
-                .map_err(cadmpeg_core::CodecError::from)
+            super::project_occurrences(&ctx, &table).map(|_| ())
         },
     ) {
         cadmpeg_core::CodecError::ResourceLimit(limit) => limit.limit,
@@ -306,9 +304,7 @@ fn xref_occurrence_native_reference_refuses_retained_limit() {
             let ctx = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
                 .unwrap()
                 .0;
-            super::project_occurrences(&ctx, &table)
-                .map(|_| ())
-                .map_err(cadmpeg_core::CodecError::from)
+            super::project_occurrences(&ctx, &table).map(|_| ())
         },
     ) {
         cadmpeg_core::CodecError::ResourceLimit(limit) => limit.limit,
@@ -562,8 +558,6 @@ fn xref_stream_scope_refuses_retained_limit() {
             .unwrap()
             .0;
             super::bind_occurrences(&limit_ctx, &scan, &mut table, &[])
-                .map(|_| ())
-                .map_err(cadmpeg_core::CodecError::from)
         },
     ) {
         cadmpeg_core::CodecError::ResourceLimit(limit) => limit.limit,
@@ -626,8 +620,6 @@ fn xref_reference_copy_refuses_retained_limit() {
             .unwrap()
             .0;
             super::bind_occurrences(&limit_ctx, &scan, &mut table, &[])
-                .map(|_| ())
-                .map_err(cadmpeg_core::CodecError::from)
         },
     ) {
         cadmpeg_core::CodecError::ResourceLimit(limit) => limit.limit,

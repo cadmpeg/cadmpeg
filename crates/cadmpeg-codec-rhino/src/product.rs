@@ -740,9 +740,7 @@ mod tests {
             let (ctx, _) =
                 cadmpeg_core::decode::DecodeContext::from_root_bytes(scan.data, &arena, &policy)
                     .expect("root bytes admitted");
-            let error = install(&ctx, &scan, &mut CadIr::empty())
-                .expect_err("object ID exceeds retained limit");
-            error
+            install(&ctx, &scan, &mut CadIr::empty()).expect_err("object ID exceeds retained limit")
         };
         let error = run(crate::test_support::retained_limit_at(
             "Rhino product object ID",

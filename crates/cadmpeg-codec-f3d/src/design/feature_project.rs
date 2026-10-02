@@ -2412,12 +2412,12 @@ fn project_fillet_arm(
     parameters: &[(u32, &DesignParameter)],
     native_scope: &str,
 ) -> Result<cadmpeg_ir::features::FeatureDefinition, CodecError> {
-    let mut scratch_storage = ctx.reserve_scoped(0, "F3D feature projection scratch")?;
-
     use cadmpeg_ir::features::{
         edge_treatments::{FilletGroup, RadiusSpec},
         EdgeSelection, FeatureDefinition, FeatureOperation,
     };
+
+    let mut scratch_storage = ctx.reserve_scoped(0, "F3D feature projection scratch")?;
 
     if parameters.is_empty() {
         if let Some(definition) = project_full_round_fillet(
@@ -2568,11 +2568,12 @@ fn resolved_fillet_assignments<'a>(
     assignments: &[&'a DesignFilletRadiusGroup],
     parameters: &[(u32, &DesignParameter)],
 ) -> Result<Option<Vec<ResolvedFilletAssignment<'a>>>, CodecError> {
+    use cadmpeg_ir::features::edge_treatments::RadiusSpec;
+
     let mut index_storage = ctx.reserve_scoped(0, "F3D projection index scratch")?;
 
     let mut scratch_storage = ctx.reserve_scoped(0, "F3D feature projection scratch")?;
 
-    use cadmpeg_ir::features::edge_treatments::RadiusSpec;
     let mut by_record = std::collections::BTreeMap::new();
     for (_, parameter) in parameters {
         if !by_record.contains_key(&parameter.record_index) {
@@ -2733,9 +2734,9 @@ fn project_thread_face_selection(
     groups: &[DesignConstructionOperandGroup],
     face_operands: &[DesignFaceOperand],
 ) -> Result<cadmpeg_ir::features::FaceSelection, CodecError> {
-    let mut scratch_storage = ctx.reserve_scoped(0, "F3D feature projection scratch")?;
-
     use cadmpeg_ir::features::FaceSelection;
+
+    let mut scratch_storage = ctx.reserve_scoped(0, "F3D feature projection scratch")?;
 
     let Some(stream) = native_stream(&scope.id) else {
         return Ok(FaceSelection::Unresolved);
@@ -3461,9 +3462,9 @@ fn project_draft(
     face_operands: &[DesignFaceOperand],
     histories: &[crate::history_records::AsmHistory],
 ) -> Result<Option<cadmpeg_ir::features::FeatureDefinition>, CodecError> {
-    let mut scratch_storage = ctx.reserve_scoped(0, "F3D feature projection scratch")?;
-
     use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
+
+    let mut scratch_storage = ctx.reserve_scoped(0, "F3D feature projection scratch")?;
 
     let construction = or_none!(scope.draft_operation());
     let faces = or_none!(single_operand_group(
@@ -3878,9 +3879,9 @@ fn resolved_split_face_path(
     entity_selection_operands: &[crate::records::topology::entity_selection::DesignEntitySelectionOperand],
     histories: &[crate::history_records::AsmHistory],
 ) -> Result<Option<cadmpeg_ir::features::PathRef>, CodecError> {
-    let mut scratch_storage = ctx.reserve_scoped(0, "F3D feature projection scratch")?;
-
     use cadmpeg_ir::features::PathRef;
+
+    let mut scratch_storage = ctx.reserve_scoped(0, "F3D feature projection scratch")?;
 
     let previous_state_id = or_none!(crate::history::effective_scope_previous_history_state_id(
         scope, histories
@@ -4691,9 +4692,9 @@ pub(super) fn project_surface_stitch(
     scope: &DesignParameterScope,
     groups: &[DesignConstructionOperandGroup],
 ) -> Result<Option<cadmpeg_ir::features::FeatureDefinition>, CodecError> {
-    let mut scratch_storage = ctx.reserve_scoped(0, "F3D feature projection scratch")?;
-
     use cadmpeg_ir::features::{FaceSelection, FeatureDefinition, FeatureOperation};
+
+    let mut scratch_storage = ctx.reserve_scoped(0, "F3D feature projection scratch")?;
 
     let operation = or_none!(scope.surface_stitch_operation());
     let input_end = or_none!(scope.reference_members().len().checked_sub(2));
@@ -4772,14 +4773,14 @@ fn project_ruled_surface(
     edge_identity_operands: &[DesignEdgeIdentityOperand],
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<cadmpeg_ir::features::FeatureDefinition>, CodecError> {
-    let mut scratch_storage = ctx.reserve_scoped(0, "F3D feature projection scratch")?;
-
     use crate::records::feature::surface_ops::{
         DesignRuledSurfaceCorner, DesignRuledSurfaceMethod,
     };
     use cadmpeg_ir::features::{
         FaceSelection, FeatureDefinition, FeatureOperation, RuledSurfaceCorner, RuledSurfaceMode,
     };
+
+    let mut scratch_storage = ctx.reserve_scoped(0, "F3D feature projection scratch")?;
 
     let operation = or_none!(scope.ruled_surface_operation());
     let stream = or_none!(native_stream(&scope.id));
@@ -5040,9 +5041,9 @@ pub(crate) fn direct_face_selection(
     scope: &DesignParameterScope,
     operands: &[DesignFaceOperand],
 ) -> Result<Option<cadmpeg_ir::features::FaceSelection>, CodecError> {
-    let mut scratch_storage = ctx.reserve_scoped(0, "F3D feature projection scratch")?;
-
     use cadmpeg_ir::features::FaceSelection;
+
+    let mut scratch_storage = ctx.reserve_scoped(0, "F3D feature projection scratch")?;
 
     let mut matching = Vec::new();
     for operand in operands.iter().filter(|operand| {
@@ -5537,9 +5538,9 @@ fn variable_fillet_law(
     )>,
     CodecError,
 > {
-    let mut scratch_storage = ctx.reserve_scoped(0, "F3D variable Fillet scratch")?;
-
     use cadmpeg_ir::features::edge_treatments::VariableRadius;
+
+    let mut scratch_storage = ctx.reserve_scoped(0, "F3D variable Fillet scratch")?;
 
     let unique_parameter = |kind: &str| {
         let mut matches = parameters
@@ -5725,18 +5726,17 @@ fn project_chamfer(
     inputs: &ProjectInputs<'_>,
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<cadmpeg_ir::features::FeatureDefinition>, CodecError> {
-    let mut scratch_storage = ctx.reserve_scoped(0, "F3D feature projection scratch")?;
-
     enum Lanes<'a> {
         Distance(&'a [&'a DesignParameter]),
         TwoDistances(&'a [&'a DesignParameter], &'a [&'a DesignParameter]),
         DistanceAngle(&'a [&'a DesignParameter], &'a [&'a DesignParameter]),
     }
-
     use cadmpeg_ir::features::{
         edge_treatments::{ChamferGroup, ChamferSpec},
         FeatureDefinition, FeatureOperation,
     };
+
+    let mut scratch_storage = ctx.reserve_scoped(0, "F3D feature projection scratch")?;
 
     let construction_groups = inputs.construction_groups;
     let edge_operands = inputs.edge_operands;
@@ -6384,12 +6384,12 @@ pub(super) fn project_fixed_loft(
     face_operands: &[DesignFaceOperand],
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<cadmpeg_ir::features::FeatureDefinition>, CodecError> {
-    let mut scratch_storage = ctx.reserve_scoped(0, "F3D feature projection scratch")?;
-
     use cadmpeg_ir::features::{
         FeatureDefinition, FeatureOperation, LoftPointSection, LoftSection, PlanarProfileRef,
         ProfileRef,
     };
+
+    let mut scratch_storage = ctx.reserve_scoped(0, "F3D feature projection scratch")?;
 
     let crate::records::feature::scope::DesignScopePayload::Loft(Some(
         crate::records::feature::path_features::DesignLoftConstruction { operation, .. },
@@ -7170,13 +7170,13 @@ pub(super) fn project_fixed_sweep(
     face_operands: &[DesignFaceOperand],
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<cadmpeg_ir::features::FeatureDefinition>, CodecError> {
-    let mut scratch_storage = ctx.reserve_scoped(0, "F3D feature projection scratch")?;
-
     use cadmpeg_ir::features::{
         FaceSelection, FeatureDefinition, FeatureOperation, PlanarProfileRef, SweepGuideRail,
         SweepOrientation, SweepPathExtent,
     };
     use cadmpeg_ir::scalar::Angle;
+
+    let mut scratch_storage = ctx.reserve_scoped(0, "F3D feature projection scratch")?;
 
     let Some((operation, values, profile, path, paths, guide_surfaces)) =
         (|| -> Result<Option<_>, CodecError> {
@@ -7674,11 +7674,11 @@ fn project_surface_patch(
     edge_operands: &[DesignEdgeOperand],
     edge_identity_operands: &[DesignEdgeIdentityOperand],
 ) -> Result<Option<cadmpeg_ir::features::FeatureDefinition>, CodecError> {
-    let mut scratch_storage = ctx.reserve_scoped(0, "F3D feature projection scratch")?;
-
     use cadmpeg_ir::features::{
         FaceSelection, FeatureDefinition, FeatureOperation, SurfaceBoundary,
     };
+
+    let mut scratch_storage = ctx.reserve_scoped(0, "F3D feature projection scratch")?;
 
     if scope.kind() != crate::records::feature::scope::DesignFeatureKind::SurfacePatch {
         return Ok(None);
@@ -7905,9 +7905,9 @@ fn project_boundary_fill(
     scope: &DesignParameterScope,
     construction_groups: &[DesignConstructionOperandGroup],
 ) -> Result<Option<cadmpeg_ir::features::FeatureDefinition>, CodecError> {
-    let mut scratch_storage = ctx.reserve_scoped(0, "F3D feature projection scratch")?;
-
     use cadmpeg_ir::features::{BodySelection, FeatureDefinition, FeatureOperation};
+
+    let mut scratch_storage = ctx.reserve_scoped(0, "F3D feature projection scratch")?;
 
     if scope.kind() != crate::records::feature::scope::DesignFeatureKind::BoundaryFill
         || scope.reference_members().len() < 5
@@ -8631,14 +8631,11 @@ fn project_extrude(
     placements: &[DesignSketchPlacement],
     body_recipe_operands: &[DesignBodyRecipeOperand],
 ) -> Result<Option<cadmpeg_ir::features::FeatureDefinition>, CodecError> {
-    let mut scratch_storage = ctx.reserve_scoped(0, "F3D feature projection scratch")?;
-
     use cadmpeg_ir::features::{
         BooleanOp, ExtrudeDirection, ExtrudeExtent, ExtrudeSide, ExtrudeStart, FaceSelection,
         FeatureDefinition, FeatureOperation, LinearTermination, PlanarProfileRef, ProfileRef,
     };
     use cadmpeg_ir::scalar::{Angle, Length, NonZeroLength};
-
     // Per-side terminations without side-local modifiers; drafts and offsets
     // are attached below once they are resolved.
     enum ExtentShape {
@@ -8649,12 +8646,13 @@ fn project_extrude(
             second: LinearTermination,
         },
     }
-
     #[derive(Clone, Copy)]
     enum AlongDirection {
         SignedDistance,
         PrologueReversal,
     }
+
+    let mut scratch_storage = ctx.reserve_scoped(0, "F3D feature projection scratch")?;
 
     let supported_parameter = |source_kind: &str| {
         matches!(

@@ -267,15 +267,14 @@ fn drawing_ambiguous_loss_text_refuses_retained_limit() {
             let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy)
                 .expect("empty root fits retained policy");
             let identities = ["first", "second"].into_iter().map(str::to_owned).collect();
-            (super::super::note_ambiguous_target(
+            super::super::note_ambiguous_target(
                 &mut Vec::new(),
                 "drawing #1",
                 "items",
                 2,
                 &identities,
                 &ctx,
-            ))
-            .map(|_| ())
+            )
         },
     );
     assert!(

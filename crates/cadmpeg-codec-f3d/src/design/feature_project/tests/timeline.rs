@@ -1425,12 +1425,10 @@ fn assert_projected_feature_refusal(operation: &'static str, retained: bool) {
         let error = cadmpeg_test_support::refusal::resource_limit_at(
             if materialized {
                 ResourceDimension::MaterializedBytes
+            } else if retained {
+                ResourceDimension::RetainedBytes
             } else {
-                if retained {
-                    ResourceDimension::RetainedBytes
-                } else {
-                    ResourceDimension::CollectionItems
-                }
+                ResourceDimension::CollectionItems
             },
             operation,
             |cap| {
@@ -1458,7 +1456,7 @@ fn assert_projected_feature_refusal(operation: &'static str, retained: bool) {
             },
         );
         assert!(matches!(error, CodecError::ResourceLimit(failure)
-            if failure.operation == operation && failure.dimension == (if materialized { ResourceDimension::MaterializedBytes } else { if retained { ResourceDimension::RetainedBytes } else { ResourceDimension::CollectionItems } })));
+            if failure.operation == operation && failure.dimension == (if materialized { ResourceDimension::MaterializedBytes } else if retained { ResourceDimension::RetainedBytes } else { ResourceDimension::CollectionItems })));
     }
 }
 
@@ -1650,12 +1648,10 @@ fn assert_expression_dependency_refusal(operation: &'static str, retained: bool)
         let error = cadmpeg_test_support::refusal::resource_limit_at(
             if materialized {
                 ResourceDimension::MaterializedBytes
+            } else if retained {
+                ResourceDimension::RetainedBytes
             } else {
-                if retained {
-                    ResourceDimension::RetainedBytes
-                } else {
-                    ResourceDimension::CollectionItems
-                }
+                ResourceDimension::CollectionItems
             },
             operation,
             |cap| {
@@ -1682,7 +1678,7 @@ fn assert_expression_dependency_refusal(operation: &'static str, retained: bool)
             },
         );
         assert!(matches!(error, CodecError::ResourceLimit(failure)
-            if failure.operation == operation && failure.dimension == (if materialized { ResourceDimension::MaterializedBytes } else { if retained { ResourceDimension::RetainedBytes } else { ResourceDimension::CollectionItems } })));
+            if failure.operation == operation && failure.dimension == (if materialized { ResourceDimension::MaterializedBytes } else if retained { ResourceDimension::RetainedBytes } else { ResourceDimension::CollectionItems })));
     }
 }
 
@@ -1712,13 +1708,14 @@ fn parameter_dependency_id_refuses_retained_limit() {
 }
 
 fn assert_history_dependency_refusal(operation: &'static str, retained: bool) {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
     let dimension = if operation == "f3d feature history state id" {
         cadmpeg_core::decode::ResourceDimension::MaterializedBytes
     } else {
         cadmpeg_core::decode::ResourceDimension::RetainedBytes
     };
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    use cadmpeg_core::CodecError;
     let (mut scopes, timeline) = authored_ordinal_limit_fixture();
     scopes[0]
         .try_edit(|draft| draft.history_state_id = Some(7))

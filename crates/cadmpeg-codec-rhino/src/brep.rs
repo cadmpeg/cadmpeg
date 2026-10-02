@@ -4163,7 +4163,7 @@ mod tests {
                 cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
                     .expect("test input fits service profile");
             let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("reader");
-            let error = read_trims(
+            read_trims(
                 &ctx,
                 &bytes,
                 &mut reader,
@@ -4172,8 +4172,7 @@ mod tests {
                 &mut Diagnostics::new(),
                 &mut Vec::new(),
             )
-            .expect_err("31 reserved bytes exceed a 30-byte retained limit");
-            error
+            .expect_err("31 reserved bytes exceed a 30-byte retained limit")
         };
         let error = run(crate::test_support::retained_limit_at(
             "Rhino Brep trim reserved bytes",

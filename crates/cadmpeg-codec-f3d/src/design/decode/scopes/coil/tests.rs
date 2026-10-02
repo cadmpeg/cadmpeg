@@ -794,26 +794,24 @@ fn coil_face_selection_refuses_header_and_recipe_id_limits() {
             let mut policy = cadmpeg_core::decode::DecodePolicy::service();
             match ResourceDimension::RetainedBytes {
                 cadmpeg_core::decode::ResourceDimension::RetainedBytes => {
-                    policy.limits.max_retained_bytes = cap
+                    policy.limits.max_retained_bytes = cap;
                 }
                 cadmpeg_core::decode::ResourceDimension::CollectionItems => {
-                    policy.limits.max_collection_items = cap
+                    policy.limits.max_collection_items = cap;
                 }
                 cadmpeg_core::decode::ResourceDimension::MaterializedBytes => {
-                    policy.limits.max_materialized_bytes = cap
+                    policy.limits.max_materialized_bytes = cap;
                 }
                 cadmpeg_core::decode::ResourceDimension::WorkUnits => {
-                    policy.limits.max_work_units = cap
+                    policy.limits.max_work_units = cap;
                 }
                 cadmpeg_core::decode::ResourceDimension::RecursionDepth => {
-                    policy.limits.max_recursion_depth = cap
+                    policy.limits.max_recursion_depth = cap;
                 }
                 dimension => panic!("unsupported refusal dimension: {dimension:?}"),
             }
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-            (exact_coil_placement(&ctx, &bytes, &records, &scope, &recipes))
-                .map(|_| ())
-                .map_err(cadmpeg_core::CodecError::from)
+            (exact_coil_placement(&ctx, &bytes, &records, &scope, &recipes)).map(|_| ())
         },
     ) {
         cadmpeg_core::CodecError::ResourceLimit(limit) => limit.limit,
@@ -822,19 +820,19 @@ fn coil_face_selection_refuses_header_and_recipe_id_limits() {
     policy.limits = cadmpeg_core::decode::DecodePolicy::service().limits;
     match ResourceDimension::RetainedBytes {
         cadmpeg_core::decode::ResourceDimension::RetainedBytes => {
-            policy.limits.max_retained_bytes = refusal_cap
+            policy.limits.max_retained_bytes = refusal_cap;
         }
         cadmpeg_core::decode::ResourceDimension::CollectionItems => {
-            policy.limits.max_collection_items = refusal_cap
+            policy.limits.max_collection_items = refusal_cap;
         }
         cadmpeg_core::decode::ResourceDimension::MaterializedBytes => {
-            policy.limits.max_materialized_bytes = refusal_cap
+            policy.limits.max_materialized_bytes = refusal_cap;
         }
         cadmpeg_core::decode::ResourceDimension::WorkUnits => {
-            policy.limits.max_work_units = refusal_cap
+            policy.limits.max_work_units = refusal_cap;
         }
         cadmpeg_core::decode::ResourceDimension::RecursionDepth => {
-            policy.limits.max_recursion_depth = refusal_cap
+            policy.limits.max_recursion_depth = refusal_cap;
         }
         dimension => panic!("unsupported refusal dimension: {dimension:?}"),
     }
@@ -857,26 +855,24 @@ fn coil_face_selection_refuses_header_and_recipe_id_limits() {
             let mut policy = cadmpeg_core::decode::DecodePolicy::service();
             match ResourceDimension::RetainedBytes {
                 cadmpeg_core::decode::ResourceDimension::RetainedBytes => {
-                    policy.limits.max_retained_bytes = cap
+                    policy.limits.max_retained_bytes = cap;
                 }
                 cadmpeg_core::decode::ResourceDimension::CollectionItems => {
-                    policy.limits.max_collection_items = cap
+                    policy.limits.max_collection_items = cap;
                 }
                 cadmpeg_core::decode::ResourceDimension::MaterializedBytes => {
-                    policy.limits.max_materialized_bytes = cap
+                    policy.limits.max_materialized_bytes = cap;
                 }
                 cadmpeg_core::decode::ResourceDimension::WorkUnits => {
-                    policy.limits.max_work_units = cap
+                    policy.limits.max_work_units = cap;
                 }
                 cadmpeg_core::decode::ResourceDimension::RecursionDepth => {
-                    policy.limits.max_recursion_depth = cap
+                    policy.limits.max_recursion_depth = cap;
                 }
                 dimension => panic!("unsupported refusal dimension: {dimension:?}"),
             }
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-            (exact_coil_placement(&ctx, &bytes, &records, &scope, &recipes))
-                .map(|_| ())
-                .map_err(cadmpeg_core::CodecError::from)
+            (exact_coil_placement(&ctx, &bytes, &records, &scope, &recipes)).map(|_| ())
         },
     ) {
         cadmpeg_core::CodecError::ResourceLimit(limit) => limit.limit,
@@ -885,19 +881,19 @@ fn coil_face_selection_refuses_header_and_recipe_id_limits() {
     policy.limits = cadmpeg_core::decode::DecodePolicy::service().limits;
     match ResourceDimension::RetainedBytes {
         cadmpeg_core::decode::ResourceDimension::RetainedBytes => {
-            policy.limits.max_retained_bytes = refusal_cap
+            policy.limits.max_retained_bytes = refusal_cap;
         }
         cadmpeg_core::decode::ResourceDimension::CollectionItems => {
-            policy.limits.max_collection_items = refusal_cap
+            policy.limits.max_collection_items = refusal_cap;
         }
         cadmpeg_core::decode::ResourceDimension::MaterializedBytes => {
-            policy.limits.max_materialized_bytes = refusal_cap
+            policy.limits.max_materialized_bytes = refusal_cap;
         }
         cadmpeg_core::decode::ResourceDimension::WorkUnits => {
-            policy.limits.max_work_units = refusal_cap
+            policy.limits.max_work_units = refusal_cap;
         }
         cadmpeg_core::decode::ResourceDimension::RecursionDepth => {
-            policy.limits.max_recursion_depth = refusal_cap
+            policy.limits.max_recursion_depth = refusal_cap;
         }
         dimension => panic!("unsupported refusal dimension: {dimension:?}"),
     }

@@ -940,9 +940,7 @@ mod tests {
                     let mut policy = DecodePolicy::default();
                     policy.limits.max_materialized_bytes = cap;
                     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-                    super::project_assembly_joints(&ctx, &[], &[occurrence], &[])
-                        .map(|_| ())
-                        .map_err(cadmpeg_core::CodecError::from)
+                    super::project_assembly_joints(&ctx, &[], &[occurrence], &[]).map(|_| ())
                 },
             ) {
                 cadmpeg_core::CodecError::ResourceLimit(limit) => limit.limit,
@@ -1059,9 +1057,7 @@ mod tests {
                 let mut policy = DecodePolicy::default();
                 policy.limits.max_retained_bytes = cap;
                 let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-                super::project_assembly_joints(&ctx, &scopes, &[], &[])
-                    .map(|_| ())
-                    .map_err(cadmpeg_core::CodecError::from)
+                super::project_assembly_joints(&ctx, &scopes, &[], &[]).map(|_| ())
             },
         ) {
             cadmpeg_core::CodecError::ResourceLimit(limit) => limit.limit,

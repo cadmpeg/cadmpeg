@@ -1195,7 +1195,7 @@ mod tests {
                 policy.limits.max_retained_bytes = limit
                     + cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
                         cadmpeg_core::container::ContainerEntry,
-                    >())
+                    >());
             }
             _ => panic!("test only selects collection or retained limits"),
         }

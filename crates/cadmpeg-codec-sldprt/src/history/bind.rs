@@ -952,7 +952,7 @@ mod tests {
             "retain SLDPRT feature output body",
             |cap| {
                 Err::<(), cadmpeg_core::CodecError>(feature_output_error(|limits| {
-                    limits.max_retained_bytes = cap
+                    limits.max_retained_bytes = cap;
                 }))
             },
         );
@@ -1032,7 +1032,7 @@ mod tests {
             "retain SLDPRT sketch binding identity",
             |cap| {
                 Err::<(), cadmpeg_core::CodecError>(sketch_binding_error(|limits| {
-                    limits.max_retained_bytes = cap
+                    limits.max_retained_bytes = cap;
                 }))
             },
         );

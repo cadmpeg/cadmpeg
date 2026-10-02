@@ -27,7 +27,7 @@ fn hollerith_token_refuses_retained_limit_before_copy() {
         result,
         Err(TokenizeFailure::Refusal(cadmpeg_core::CodecError::ResourceLimit(limit)))
             if limit.dimension == ResourceDimension::RetainedBytes
-                && limit.used == 0 + cadmpeg_core::decode::u64_from_index(4 * std::mem::size_of::<crate::parameter::Token>())
+                && limit.used == cadmpeg_core::decode::u64_from_index(4 * std::mem::size_of::<crate::parameter::Token>())
                 && limit.additional == 4
     ));
 

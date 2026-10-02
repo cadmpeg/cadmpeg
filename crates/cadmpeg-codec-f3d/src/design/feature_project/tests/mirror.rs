@@ -165,9 +165,7 @@ fn assert_mirror_seed_refusal(role: DesignOperandRole, operation: &'static str) 
                 let arena = DecodeArena::new();
 
                 let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-                (project_mirror(&ctx, &scope, &groups, &[], &[]))
-                    .map(|_| ())
-                    .map_err(cadmpeg_core::CodecError::from)
+                (project_mirror(&ctx, &scope, &groups, &[], &[])).map(|_| ())
             },
         );
         assert!(
