@@ -1736,30 +1736,41 @@ impl NurbsCurve {
     /// Reverse poles and reflect knots within an admitted parameter range.
     /// The curve stays unchanged when a reflected knot is not finite or the
     /// resulting knot lane is decreasing.
-    #[must_use]
     pub fn reverse_parameterization_in_range(
         &mut self,
+        ctx: &DecodeContext<'_>,
         start: FiniteReal,
         end: FiniteReal,
-    ) -> Option<()> {
+    ) -> Result<Option<()>, CodecError> {
         let mut previous = None;
         for knot in self.knots.0.iter().rev() {
-            let reflected = crate::math::reflect_parameter(FiniteReal::new(*knot)?, start, end)?;
+            ctx.charge_work(1, "IR NURBS reflected knot validation")?;
+            let Some(reflected) = FiniteReal::new(*knot)
+                .and_then(|knot| crate::math::reflect_parameter(knot, start, end)) else {
+                return Ok(None);
+            };
             if previous.is_some_and(|previous| previous > reflected) {
-                return None;
+                return Ok(None);
             }
             previous = Some(reflected);
         }
+        // Admit every mutation pass before changing any carrier lane.
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(self.poles.count() / 2), "IR NURBS reflected pole reversal")?;
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(self.knots.0.len() / 2), "IR NURBS reflected knot reversal")?;
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(self.knots.0.len()), "IR NURBS reflected knot edit")?;
         self.poles.reverse();
         self.knots.0.reverse();
         for knot in &mut self.knots.0 {
             // The validation pass reached the same original knot before mutation.
-            let reflected = FiniteReal::new(*knot)
-                .and_then(|knot| crate::math::reflect_parameter(knot, start, end))?;
+            let Some(reflected) = FiniteReal::new(*knot)
+                .and_then(|knot| crate::math::reflect_parameter(knot, start, end)) else {
+                return Ok(None);
+            };
             *knot = reflected.get();
         }
-        Some(())
+        Ok(Some(()))
     }
+
 }
 
 impl<'de> Deserialize<'de> for NurbsCurve {

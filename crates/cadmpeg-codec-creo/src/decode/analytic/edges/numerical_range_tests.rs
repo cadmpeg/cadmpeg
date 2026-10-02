@@ -55,10 +55,10 @@ fn numerical_0922_finite_knot_domain_reverses() {
             false,
         ).expect("fixture constructor admission")
         .expect("valid translated degree-one curve");
-        let result = reverse_nonperiodic_nurbs(
-            &mut c,
-            d.map(|value| cadmpeg_ir::scalar::FiniteReal::new(value).expect("finite domain")),
-        );
+        let range = d.map(|value| cadmpeg_ir::scalar::FiniteReal::new(value).expect("finite domain"));
+        let result = c.reverse_parameterization_in_range(
+            &cadmpeg_test_support::service_decode_context(), range[0], range[1],
+        ).expect("range reversal admission");
         println!("Creo reverse finite line domain{d:?}: {result:?}");
         assert_eq!(result, Some(()));
         assert_eq!(c.knots().as_slice(), &[d[0], d[0], d[1], d[1]]);
