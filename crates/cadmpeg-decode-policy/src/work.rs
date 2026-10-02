@@ -684,6 +684,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
                         .any(|key| term == key || term.starts_with(&format!("{key}.")))
                 })
         });
+        saved.storage_parameters.retain(|parameter| self.flow.storage_parameters.contains(parameter));
         saved.storage |= self.flow.storage;
         saved
             .storage_extents
@@ -792,6 +793,8 @@ impl<'tcx> Analysis<'_, 'tcx> {
                 self.work_report(header, shape, paid, "loop");
                 let saved = self.flow.clone();
                 self.flow.work.clear();
+                self.flow.storage_extents.clear();
+                self.flow.storage_parameters.clear();
                 self.visit_block(block);
                 self.restore_loop(saved);
                 return;
@@ -808,6 +811,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
                 self.flow
                     .work
                     .retain(|credit| after_yes.work.contains(credit));
+                self.flow.storage_parameters.retain(|parameter| after_yes.storage_parameters.contains(parameter));
                 self.flow.storage |= after_yes.storage;
                 self.flow
                     .storage_extents
@@ -831,6 +835,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
                     }
                     self.visit_expr(arm.body);
                     merged.work.retain(|credit| self.flow.work.contains(credit));
+                    merged.storage_parameters.retain(|parameter| self.flow.storage_parameters.contains(parameter));
                     merged.storage |= self.flow.storage;
                     merged
                         .storage_extents

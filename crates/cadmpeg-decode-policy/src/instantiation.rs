@@ -396,7 +396,7 @@ pub(crate) fn check_imported<'tcx>(
                         )
                     })
                     .collect();
-                let paid = args.iter().map(|arg| crate::conversion::operand_admitted(tcx, body, &arg.node, &admitted_operands)).collect();
+                let paid = args.iter().map(|arg| crate::conversion::operand_admitted(body, &arg.node, &admitted_operands)).collect();
                 pending.push((resolved, fixed, paid));
                 continue;
             }
@@ -591,7 +591,7 @@ pub(crate) fn check_imported<'tcx>(
                 }
             };
             let admitted_conversion = operation_name.is_some_and(|name| matches!(name.as_str(), "into" | "from" | "to_owned"))
-                && args.first().is_some_and(|arg| crate::conversion::operand_admitted(tcx, body, &arg.node, &admitted_operands));
+                && args.first().is_some_and(|arg| crate::conversion::operand_admitted(body, &arg.node, &admitted_operands));
             let allocation = if admitted_conversion { types::Shape::Fixed } else if fixed_receiver
                 && matches!(
                     summary.allocation,

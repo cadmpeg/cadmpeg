@@ -12,6 +12,26 @@ ROOT = Path(__file__).resolve().parent.parent
 TOOL = ROOT / "crates/cadmpeg-decode-policy"
 
 
+def resolve_graph(source):
+    reached = set()
+    roots = {}
+    edges = {}
+    for row in source.splitlines():
+        fields = row.split("\t")
+        if len(fields) == 3 and fields[0] == "decode_root":
+            reached.add(fields[1])
+            roots[fields[1]] = fields[2]
+        elif len(fields) == 3 and fields[0] == "decode_edge":
+            edges.setdefault(fields[1], set()).add(fields[2])
+    pending = list(reached)
+    while pending:
+        for callee in edges.get(pending.pop(), ()):
+            if callee not in reached:
+                reached.add(callee)
+                pending.append(callee)
+    return reached, roots
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--crate", action="append", default=[], help="select a decode crate")
@@ -63,23 +83,10 @@ def main():
     sys.stderr.write(graph.stderr)
     if graph.returncode:
         return graph.returncode
-    reached = set()
-    edges = {}
-    for row in graph.stdout.splitlines():
-        fields = row.split("\t")
-        if len(fields) == 2 and fields[0] == "decode_root":
-            reached.add(fields[1])
-        elif len(fields) == 3 and fields[0] == "decode_edge":
-            edges.setdefault(fields[1], set()).add(fields[2])
-    pending = list(reached)
-    while pending:
-        for callee in edges.get(pending.pop(), ()):
-            if callee not in reached:
-                reached.add(callee)
-                pending.append(callee)
+    reached, roots = resolve_graph(graph.stdout)
     scope = target / "decode-scope.txt"
     scope.write_text("".join(name + "\n" for name in sorted(reached)))
-    (target / "decode-roots.txt").write_text("".join(row.split("\t")[1] + "\n" for row in sorted(set(graph.stdout.splitlines())) if row.startswith("decode_root\t")))
+    (target / "decode-roots.txt").write_text("".join(name + "\n" for name in sorted(roots.values())))
     del env["CADMPEG_POLICY_GRAPH"]
     env["CADMPEG_POLICY_SCOPE"] = str(scope)
     clean = clean_packages()

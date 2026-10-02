@@ -48,3 +48,37 @@ pub fn duplicated(ctx: &DecodeContext, text: &str) -> Result<(), ()> {
     let _copies = duplicate(text);
     Ok(())
 }
+
+fn repeated_conversion<T: Into<String> + Copy>(text: T, count: usize) {
+    for _ in 0..count { // finding: uncharged_decode_work
+        std::hint::black_box(construct(text));
+    }
+}
+pub fn repeated(ctx: &DecodeContext, text: &str, count: usize) -> Result<(), ()> {
+    ctx.charge_retained(u64::try_from(text.len()).map_err(|_| ())?, "one")?;
+    repeated_conversion(text, count); // finding: uncharged_decode_allocation, uncharged_decode_work
+    Ok(())
+}
+fn overwrite<T>(value: &mut T, replacement: T) { *value = replacement; }
+fn changed_conversion<T: Into<String>>(text: T, other: T) -> String {
+    let mut text = text;
+    overwrite(&mut text, other);
+    construct(text)
+}
+pub fn mutated_helper(ctx: &DecodeContext, text: &str, other: &str) -> Result<(), ()> {
+    ctx.charge_retained(u64::try_from(text.len()).map_err(|_| ())?, "before mutation")?;
+    let _changed = changed_conversion(text, other); // finding: uncharged_decode_allocation, uncharged_decode_work
+    Ok(())
+}
+
+pub fn repeated_raw(ctx: &DecodeContext, text: &str, count: usize) -> Result<(), ()> {
+    ctx.charge_retained(u64::try_from(text.len()).map_err(|_| ())?, "once")?;
+    for _ in 0..count { // finding: uncharged_decode_work
+        let _copy = text.to_owned(); // finding: uncharged_decode_allocation, uncharged_decode_work
+    }
+    for _ in 0..count { // finding: uncharged_decode_work
+        ctx.charge_retained(u64::try_from(text.len()).map_err(|_| ())?, "each")?;
+        let _copy = text.to_owned();
+    }
+    Ok(())
+}
