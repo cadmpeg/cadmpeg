@@ -30,46 +30,31 @@ pub fn sha256_hex(bytes: &[u8]) -> String {
     LowerHex(&sha256(bytes)).to_string()
 }
 
-/// Returns the lowercase hexadecimal SHA-256 digest of `value`'s canonical
-/// pretty JSON.
-///
-/// The JSON is streamed into the digest, so hashing a document costs a fixed
-/// buffer rather than a serialized copy of it. The bytes hashed are the ones
-/// `serde_json::to_string_pretty` produces, which is what
-/// [`CadIr::to_canonical_json`] returns.
-pub fn canonical_json_sha256<T: Serialize>(value: &T) -> Result<String, DigestError> {
+/// Hash canonical pretty JSON under the caller's storage, work and depth limits.
+/// The digest buffer is scoped; the returned hexadecimal text is retained.
+pub fn canonical_json_sha256<T: Serialize + ?Sized>(
+    ctx: &DecodeContext<'_>, value: &T, operation: &'static str,
+) -> Result<String, DigestError> {
+    ctx.charge_work(1, operation).map_err(CanonicalJsonError::from)?;
+    let mut buffer_storage = ctx.reserve_scoped(0, operation).map_err(CanonicalJsonError::from)?;
+    let mut buffer = Vec::new();
+    buffer_storage.with_storage_limit(|| ctx.reserve_retained_capacity_limit(&mut buffer, 8192, operation))
+        .map_err(|limit| CanonicalJsonError::Resource(limit.into()))?;
     let mut hasher = Sha256::new();
-    let mut writer = std::io::BufWriter::new(DigestWriter(&mut hasher));
-    write_canonical_json(None, &mut writer, value)?;
-    writer.flush().map_err(DigestError::Write)?;
-    drop(writer);
-    Ok(LowerHex(&hasher.finalize()).to_string())
-}
-
-/// Hash canonical JSON while admitting each emitted byte through the caller.
-pub fn canonical_json_sha256_with_charge<T: Serialize + ?Sized, E: From<DigestError>>(
-    value: &T,
-    charge: impl FnMut(u64) -> Result<(), E>,
-) -> Result<String, E> {
-    let mut hasher = Sha256::new();
-    let mut writer = std::io::BufWriter::new(ChargingDigestWriter {
-        hasher: &mut hasher,
-        charge,
-        error: None,
-    });
-    let serialized = write_canonical_json(None, &mut writer, value);
-    if let Some(error) = writer.get_mut().error.take() {
-        return Err(error);
-    }
-    serialized.map_err(|error| E::from(DigestError::from(error)))?;
+    let mut writer = CanonicalDigestWriter { ctx, hasher: &mut hasher, buffer, refusal: None, operation };
+    let serialized = write_canonical_json(Some(ctx), &mut writer, value);
+    if let Some(error) = writer.refusal.take() { return Err(CanonicalJsonError::Resource(error).into()); }
+    serialized?;
     if let Err(error) = writer.flush() {
-        if let Some(charged) = writer.get_mut().error.take() {
-            return Err(charged);
-        }
-        return Err(E::from(DigestError::Write(error)));
+        if let Some(refusal) = writer.refusal.take() { return Err(CanonicalJsonError::Resource(refusal).into()); }
+        return Err(DigestError::Write(error));
     }
     drop(writer);
-    Ok(LowerHex(&hasher.finalize()).to_string())
+    drop(buffer_storage);
+    ctx.charge_work(32, operation).map_err(CanonicalJsonError::from)?;
+    let digest = digest::Sha256Digest::from_bytes_for_decode(ctx, hasher.finalize().into(), operation)
+        .map_err(CanonicalJsonError::from)?;
+    Ok(digest.into())
 }
 
 /// A digest could not be computed.
@@ -144,22 +129,7 @@ pub fn document_local_sha256(
         model: ir.model.sorted(ctx)?,
         native: normalized_native(ctx, &ir.native, format, &unknowns, operation)?,
     }))?;
-    let mut buffer_storage = ctx.reserve_scoped(0, operation)?;
-    let mut buffer = Vec::new();
-    buffer_storage.with_storage_limit(|| ctx.reserve_retained_capacity_limit(&mut buffer, 1024 * 1024, operation))?;
-    let mut hasher = Sha256::new();
-    let mut writer = DocumentDigestWriter { ctx, hasher: &mut hasher, buffer, refusal: None };
-    let serialized = write_canonical_json(Some(ctx), &mut writer, &document);
-    if let Some(error) = writer.refusal.take() { return Err(error); }
-    serialized.map_err(DigestError::from)?;
-    if let Err(error) = writer.flush() {
-        if let Some(refusal) = writer.refusal.take() { return Err(refusal); }
-        return Err(CodecError::Io(error));
-    }
-    drop(writer);
-    drop(buffer_storage);
-    ctx.charge_work(32, operation)?;
-    Ok(digest::Sha256Digest::from_bytes_for_decode(ctx, hasher.finalize().into(), operation)?.into())
+    canonical_json_sha256(ctx, &document, operation).map_err(Into::into)
 }
 
 fn reduced_unknowns(
@@ -253,77 +223,40 @@ fn sorted_records<'a>(ctx: &DecodeContext<'_>, records: &'a [NativeRecord]) -> R
     Ok(refs)
 }
 
-struct DocumentDigestWriter<'ctx, 'arena, 'hash> {
+struct CanonicalDigestWriter<'ctx, 'arena, 'hash> {
     ctx: &'ctx DecodeContext<'arena>,
     hasher: &'hash mut Sha256,
     buffer: Vec<u8>,
     refusal: Option<CodecError>,
+    operation: &'static str,
 }
 
-impl DocumentDigestWriter<'_, '_, '_> {
-    fn admit(&mut self, bytes: usize, operation: &'static str) -> std::io::Result<()> {
-        if let Err(error) = self.ctx.charge_work(u64_from_index(bytes), operation) {
+impl CanonicalDigestWriter<'_, '_, '_> {
+    fn admit(&mut self, bytes: usize) -> std::io::Result<()> {
+        if let Err(error) = self.ctx.charge_work(u64_from_index(bytes), self.operation) {
             if self.refusal.is_none() { self.refusal = Some(error); }
-            return Err(std::io::Error::other("document digest admission refused"));
+            return Err(std::io::Error::other("canonical digest admission refused"));
         }
         Ok(())
     }
 }
 
-impl std::io::Write for DocumentDigestWriter<'_, '_, '_> {
+impl std::io::Write for CanonicalDigestWriter<'_, '_, '_> {
     fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
         if bytes.len() > self.buffer.capacity() - self.buffer.len() { self.flush()?; }
         if bytes.len() > self.buffer.capacity() {
-            self.admit(bytes.len(), "hash document digest bytes")?;
+            self.admit(bytes.len())?;
             self.hasher.update(bytes);
         } else {
-            self.admit(bytes.len(), "buffer document digest bytes")?;
+            self.admit(bytes.len())?;
             self.buffer.extend_from_slice(bytes);
         }
         Ok(bytes.len())
     }
     fn flush(&mut self) -> std::io::Result<()> {
-        self.admit(self.buffer.len(), "hash document digest bytes")?;
+        self.admit(self.buffer.len())?;
         self.hasher.update(&self.buffer);
         self.buffer.clear();
-        Ok(())
-    }
-}
-
-/// A sink that feeds every written byte to a digest.
-struct DigestWriter<'a>(&'a mut Sha256);
-
-impl std::io::Write for DigestWriter<'_> {
-    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-        self.0.update(buf);
-        Ok(buf.len())
-    }
-
-    fn flush(&mut self) -> std::io::Result<()> {
-        Ok(())
-    }
-}
-
-struct ChargingDigestWriter<'a, F, E> {
-    hasher: &'a mut Sha256,
-    charge: F,
-    error: Option<E>,
-}
-
-impl<F, E> std::io::Write for ChargingDigestWriter<'_, F, E>
-where
-    F: FnMut(u64) -> Result<(), E>,
-{
-    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-        if let Err(error) = (self.charge)(cadmpeg_core::decode::u64_from_index(buf.len())) {
-            self.error = Some(error);
-            return Err(std::io::Error::other("digest work charge rejected"));
-        }
-        self.hasher.update(buf);
-        Ok(buf.len())
-    }
-
-    fn flush(&mut self) -> std::io::Result<()> {
         Ok(())
     }
 }
@@ -364,15 +297,15 @@ mod tests {
 
     #[test]
     fn a_finite_float_digests() {
-        assert!(canonical_json_sha256(&1.0f64).is_ok());
-        assert!(canonical_json_sha256(&vec![1.0f64, -2.5]).is_ok());
+        assert!(canonical_json_sha256(&cadmpeg_test_support::service_decode_context(), &1.0f64, "canonical hash fixture").is_ok());
+        assert!(canonical_json_sha256(&cadmpeg_test_support::service_decode_context(), &vec![1.0f64, -2.5], "canonical hash fixture").is_ok());
     }
 
     #[test]
     fn a_non_finite_float_has_no_digest() {
         for value in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
             let Err(DigestError::CanonicalJson(CanonicalJsonError::NonFinite { value: refused })) =
-                canonical_json_sha256(&value)
+                canonical_json_sha256(&cadmpeg_test_support::service_decode_context(), &value, "canonical hash fixture")
             else {
                 panic!("a non-finite float must have no canonical JSON");
             };
@@ -399,10 +332,10 @@ mod tests {
     #[test]
     fn a_nested_non_finite_float_has_no_digest() {
         let nested = serde_json::json!({ "outer": [{ "inner": 1.0 }] });
-        assert!(canonical_json_sha256(&nested).is_ok());
+        assert!(canonical_json_sha256(&cadmpeg_test_support::service_decode_context(), &nested, "canonical hash fixture").is_ok());
         let nested = vec![Some(vec![(1.0f64, f64::NAN)])];
         assert!(matches!(
-            canonical_json_sha256(&nested),
+            canonical_json_sha256(&cadmpeg_test_support::service_decode_context(), &nested, "canonical hash fixture"),
             Err(DigestError::CanonicalJson(
                 CanonicalJsonError::NonFinite { .. }
             ))
@@ -528,7 +461,7 @@ mod tests {
     #[test]
     fn pins_native_arena_digest() {
         assert_eq!(
-            canonical_json_sha256(&pinned_native()).unwrap(),
+            canonical_json_sha256(&cadmpeg_test_support::service_decode_context(), &pinned_native(), "canonical hash fixture").unwrap(),
             "7249c236a39ac27b8614a9ef11d6b1e1c416e1242d909e6d0e94a96c1d6507d4"
         );
     }
@@ -617,7 +550,7 @@ mod tests {
     fn pins_document_digests() {
         let ir = pinned_document();
         assert_eq!(
-            canonical_json_sha256(&ir).unwrap(),
+            canonical_json_sha256(&cadmpeg_test_support::service_decode_context(), &ir, "canonical hash fixture").unwrap(),
             "dfc5790d04d56453ec5d9bd2ce5f221522ea0bdc25acdcf97a9047705f30afc7"
         );
         assert_eq!(
@@ -781,8 +714,8 @@ mod tests {
         let mut reparsed = CadIr::from_json(&json).unwrap();
         reparsed.finalize(&cadmpeg_test_support::service_decode_context()).expect("fixture ordering is admitted");
         assert_eq!(
-            canonical_json_sha256(&ir).unwrap(),
-            canonical_json_sha256(&reparsed).unwrap()
+            canonical_json_sha256(&cadmpeg_test_support::service_decode_context(), &ir, "canonical hash fixture").unwrap(),
+            canonical_json_sha256(&cadmpeg_test_support::service_decode_context(), &reparsed, "canonical hash fixture").unwrap()
         );
         assert_eq!(ir.to_canonical_json().unwrap(), json);
     }

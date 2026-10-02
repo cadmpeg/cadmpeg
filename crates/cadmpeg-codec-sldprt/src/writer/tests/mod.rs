@@ -3,6 +3,7 @@
 
 mod brep_agreement;
 pub(crate) mod configuration_carriers;
+mod digests;
 mod flex_history;
 mod helix_surfaces;
 mod homogeneous_poles;
