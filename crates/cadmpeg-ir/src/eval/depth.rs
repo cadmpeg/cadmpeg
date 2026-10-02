@@ -87,6 +87,10 @@ impl<'budget, 'session> ModelEvaluationDepthGuard<'budget, 'session> {
 
     /// Preserve the first resource refusal across evaluator fallback branches.
     pub(super) fn finish_budgeted<T>(budget: &WorkBudget<'_>, result: Result<T, EvaluationFailure<Point3>>) -> Result<T, EvaluationFailure<Point3>> {
+        // An attached work refusal can pass through an optional evaluator branch.
+        // A zero-byte reservation reads the session's first refusal without growing storage.
+        let _boundary = budget.reserve_scratch(0, "finish model evaluation")
+            .map_err(EvaluationFailure::ResourceLimit)?;
         if let Some(limit) = MODEL_EVALUATION_REFUSAL.with(Cell::get) {
             Err(EvaluationFailure::ResourceLimit(limit))
         } else if MODEL_EVALUATION_CYCLE.with(Cell::get) {
@@ -138,4 +142,49 @@ mod tests {
         assert_eq!(limit.used, 300);
         while let Some(guard) = guards.pop() { drop(guard); }
     }
+
+    #[test]
+    fn budgeted_model_evaluators_preserve_work_refusal_after_frame_admission() {
+        use crate::eval::{model_curve_point_by_id_with_budget, model_surface_point_by_id_with_budget, model_surface_partials_by_id_with_budget, EvaluationFailure};
+        use crate::geometry::{Curve, CurveGeometry, SolvedCurveGeometry, Surface, SurfaceGeometry, SolvedSurfaceGeometry};
+        use crate::math::{Point3, Vector3};
+        let mut ir = crate::CadIr::empty();
+        let curve = crate::ids::CurveId::mint("test:model:curve#line").unwrap();
+        let surface = crate::ids::SurfaceId::mint("test:model:surface#plane").unwrap();
+        ir.model.curves.push(Curve {
+            id: curve.clone(),
+            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(crate::geometry::analytic::LineCurve::try_new(Point3::new(0.0, 0.0, 0.0), Vector3::new(1.0, 0.0, 0.0)).unwrap())),
+            source_object: None,
+        });
+        ir.model.surfaces.push(Surface {
+            id: surface.clone(),
+            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(crate::geometry::analytic::PlaneSurface::try_new(Point3::new(0.0, 0.0, 0.0), Vector3::new(0.0, 0.0, 1.0), Vector3::new(1.0, 0.0, 0.0)).unwrap())),
+            source_object: None,
+        });
+        let index = crate::index::ModelIndex::new(&ir);
+        let frame_bytes = cadmpeg_core::decode::u64_from_index(std::mem::size_of::<Option<super::ModelEvaluationIdentity>>());
+        for trigger in 0..3 {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            // Partials enter both the first-order dispatcher and its carrier mapping.
+            // The second path copies two slots and compares the one preceding frame.
+            let frame_work = if trigger == 2 { frame_bytes.checked_mul(3).unwrap().checked_add(1).unwrap() } else { frame_bytes };
+            policy.limits.max_work_units = frame_work;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            let budget = ctx.work_budget(1000);
+            let error = match trigger {
+                0 => model_curve_point_by_id_with_budget(&index, &curve, 0.5, &budget).unwrap_err(),
+                1 => model_surface_point_by_id_with_budget(&index, &surface, 0.5, 0.5, &budget).unwrap_err(),
+                2 => model_surface_partials_by_id_with_budget(&index, &surface, 0.5, 0.5, &budget).unwrap_err(),
+                _ => unreachable!(),
+            };
+            let EvaluationFailure::ResourceLimit(first) = error else { panic!("model evaluation must retain the work refusal"); };
+            assert_eq!(first.dimension, ResourceDimension::WorkUnits);
+            assert_eq!(first.used, frame_work);
+            assert_eq!(first.additional, 1);
+            assert_eq!(first.operation, "work_budget");
+            assert!(matches!(ctx.finish_session(), Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit == first));
+        }
+    }
+
 }
