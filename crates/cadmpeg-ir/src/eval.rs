@@ -2575,8 +2575,11 @@ impl NurbsSurfaceLocal<'_> {
     /// finite knots, a derivative basis that is absent, a sum that is absent
     /// and a projection that is absent or overflows each left the finite
     /// range.
-    fn first(&self) -> Result<NurbsSurfaceFirstPartials, EvaluationFailure<()>> {
-        default_scratch_evaluation(|scratch| {
+    fn first(
+        &self,
+        scratch: &decode::Scratch<'_, '_>,
+    ) -> Result<NurbsSurfaceFirstPartials, EvaluationFailure<()>> {
+        scratch.settle((|| {
             let non_finite = EvaluationFailure::NonFinite(());
             let knots = [self.surface.u_knots(), self.surface.v_knots()];
 
@@ -2606,16 +2609,17 @@ impl NurbsSurfaceLocal<'_> {
                 sums: [u, v],
                 lanes,
             })
-        })
+        })())
     }
 
     /// The second partials over `first`, or why they have none, in the terms
     /// of [`Self::first`].
     fn second(
         &self,
+        scratch: &decode::Scratch<'_, '_>,
         first: &NurbsSurfaceFirstPartials,
     ) -> Result<[[FiniteReal; 3]; 3], EvaluationFailure<()>> {
-        default_scratch_evaluation(|scratch| {
+        scratch.settle((|| {
             let non_finite = EvaluationFailure::NonFinite(());
             let knots = [self.surface.u_knots(), self.surface.v_knots()];
 
@@ -2646,7 +2650,7 @@ impl NurbsSurfaceLocal<'_> {
                 lane(uv, &[(uv, self.point), (u, dv), (v, du)])?,
                 lane(vv, &[(vv, self.point), (v, dv), (v, dv)])?,
             ])
-        })
+        })())
     }
 }
 
@@ -2739,7 +2743,7 @@ fn nurbs_surface_first_order(
         let [x, y, z] = local.point;
         Ok(SurfaceFirstOrder {
             point: FinitePoint3::from_coordinates(x, y, z),
-            first: local.first().map(|first| first.lanes.map(finite_vector)),
+            first: local.first(scratch).map(|first| first.lanes.map(finite_vector)),
         })
     })
 }
@@ -2754,11 +2758,11 @@ fn nurbs_surface_jet(
     default_scratch_evaluation(|scratch| {
         let local = nurbs_surface_local(scratch, surface, u_at, v_at)?;
         let [x, y, z] = local.point;
-        let first = local.first();
+        let first = local.first(scratch);
         let second = first
             .as_ref()
             .map_err(|failure| *failure)
-            .and_then(|first| local.second(first));
+            .and_then(|first| local.second(scratch, first));
         Ok(SurfaceJet {
             point: FinitePoint3::from_coordinates(x, y, z),
             first: first.map(|first| first.lanes.map(finite_vector)),

@@ -97,6 +97,7 @@ mod pcurves;
 mod procedural_curves;
 mod ruled_sum;
 mod surface_parameter_bounds;
+mod surface_derivative_context;
 mod variable_blend;
 
 const EPS_DEGREE_ZERO_SURFACE_BOUND: f64 = 1.0e-12;
