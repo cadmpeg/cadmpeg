@@ -213,3 +213,12 @@ fn charged_format_refuses_retained_text_before_growth() {
                 && limit.operation == "step_test_format"
     ));
 }
+
+#[test]
+fn scan_join_measurement_refuses_on_work() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    assert!(matches!(ctx.join_retained(&[""], "", "join"), Err(CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::WorkUnits));
+}

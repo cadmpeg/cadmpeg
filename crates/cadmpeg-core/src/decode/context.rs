@@ -306,6 +306,7 @@ impl<'a> DecodeContext<'a> {
         let mut remaining = value;
         let mut length = 0usize;
         loop {
+            self.charge_work(u64_from_index(remaining.len()), operation)?;
             match std::str::from_utf8(remaining) {
                 Ok(valid) => {
                     length = length
@@ -329,6 +330,7 @@ impl<'a> DecodeContext<'a> {
         self.try_reserve_retained_text(&mut text, length, operation)?;
         let mut remaining = value;
         loop {
+            self.charge_work(u64_from_index(remaining.len()), operation)?;
             match std::str::from_utf8(remaining) {
                 Ok(valid) => {
                     text.push_str(valid);
@@ -489,8 +491,13 @@ impl<'a> DecodeContext<'a> {
         // Small runs use adjacent swaps, so their stable order needs no scratch.
         if values.len() <= 20 {
             for end in 1..values.len() {
+                self.charge_work(1, operation)?;
                 let mut position = end;
-                while position > 0 && compare(&values[position], &values[position - 1]).is_lt() {
+                while position > 0 {
+                    self.charge_work(1, operation)?;
+                    if !compare(&values[position], &values[position - 1]).is_lt() {
+                        break;
+                    }
                     values.swap(position, position - 1);
                     position -= 1;
                 }
@@ -520,14 +527,17 @@ impl<'a> DecodeContext<'a> {
                 .scoped_allocation_failed(scratch_bytes, operation)
         })?;
         destinations.resize(values.len(), 0usize);
-        order.sort_unstable_by(|&left, &right| {
+        order.sort_unstable_by(|&left: &usize, &right: &usize| {
             compare(&values[left], &values[right]).then_with(|| left.cmp(&right))
         });
         for (destination, source) in order.into_iter().enumerate() {
+            self.charge_work(1, operation)?;
             destinations[source] = destination;
         }
         for index in 0..values.len() {
+            self.charge_work(1, operation)?;
             while destinations[index] != index {
+                self.charge_work(1, operation)?;
                 let destination = destinations[index];
                 values.swap(index, destination);
                 destinations.swap(index, destination);
@@ -650,6 +660,7 @@ impl<'a> DecodeContext<'a> {
                 "cannot concatenate an empty view list".into(),
             ));
         }
+        self.charge_work(u64_from_index(inputs.len()), "concat_views")?;
         let total = inputs.iter().try_fold(0usize, |total, view| {
             total.checked_add(view.window().len()).ok_or_else(|| {
                 self.budget.refuse(
@@ -675,6 +686,7 @@ impl<'a> DecodeContext<'a> {
             )
         })?;
         for view in inputs {
+            self.charge_work(u64_from_index(view.window().len()), "concat_views")?;
             buffer.extend_from_slice(view.window());
         }
         let bytes = self.arena.alloc(self, buffer.into_boxed_slice())?;
@@ -697,13 +709,13 @@ impl<'a> DecodeContext<'a> {
                 "cannot concatenate an empty buffer list".into(),
             ));
         }
+        self.charge_work(u64_from_index(inputs.len()), operation)?;
         let total = inputs.iter().try_fold(0_usize, |total, input| {
             total.checked_add(input.len()).ok_or_else(|| {
                 CodecError::NotImplemented("retained concatenation exceeds usize".into())
             })
         })?;
         let total_bytes = crate::decode::u64_from_index(total);
-        self.charge_work(u64_from_index(inputs.len()), operation)?;
         self.charge_work(total_bytes, operation)?;
         self.charge_retained(total_bytes, operation)?;
         let mut buffer = Vec::new();
@@ -712,6 +724,7 @@ impl<'a> DecodeContext<'a> {
                 .retained_allocation_failed(total_bytes, operation)
         })?;
         for input in inputs {
+            self.charge_work(1, operation)?;
             buffer.extend_from_slice(input);
         }
         Ok(buffer)
@@ -1302,3 +1315,6 @@ mod tests {
 
 #[cfg(test)]
 mod sort_tests;
+
+#[cfg(test)]
+mod scan_tests;

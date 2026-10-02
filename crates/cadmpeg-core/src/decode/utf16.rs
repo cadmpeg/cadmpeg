@@ -87,9 +87,9 @@ fn admit_text<'a>(
     let bytes = bytes
         .get(..byte_len)
         .ok_or_else(|| CodecError::malformed("truncated UTF-16LE text"))?;
-    ctx.charge_work(u64_from_index(units), operation)?;
     let mut length = 0_usize;
     for character in characters(bytes, trim_nul, surrogates) {
+        ctx.charge_work(1, operation)?;
         let character =
             character.map_err(|_| CodecError::malformed("invalid UTF-16LE surrogate sequence"))?;
         length = length
