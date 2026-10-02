@@ -238,8 +238,7 @@ fn rolling_ball_jet_evaluation_interpolates_spine_and_sweeps_arc() {
                         },
                     },
                 },
-            ],
-        )
+            ], &cadmpeg_test_support::service_decode_context()).expect("fixture rolling-ball admission")
         .unwrap(),
     );
 
@@ -296,8 +295,7 @@ fn rolling_ball_jet_evaluation_uses_fixed_radius_frame() {
                         second_derivative: zero,
                     },
                 },
-            ],
-        )
+            ], &cadmpeg_test_support::service_decode_context()).expect("fixture rolling-ball admission")
         .unwrap(),
     );
 

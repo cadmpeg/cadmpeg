@@ -3314,59 +3314,44 @@ pub struct RollingBallJetStations {
     stations: Vec<RollingBallJetStation<FiniteReal, FiniteVector3, FinitePoint3>>,
 }
 
-/// Station admission or decode resource refusal.
+/// Station invariant or context-free reconstruction failure.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum RollingBallJetError {
     /// A station invariant failed.
     #[error("{0}")]
     Invalid(&'static str),
-    /// The decode budget refused an operation.
-    #[error("resource refusal: {0:?}")]
-    Resource(cadmpeg_core::decode::ResourceLimit),
     /// The admission channel could not complete.
     #[error("{0}")]
     Admission(String),
 }
 
-fn default_jet<T>(
-    build: impl FnOnce(
-        &cadmpeg_core::decode::DecodeContext<'_>,
-    ) -> Result<Result<T, &'static str>, cadmpeg_core::CodecError>,
-) -> Result<T, RollingBallJetError> {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy::default();
-    let result = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .and_then(|(ctx, _)| build(&ctx));
-    match result {
-        Ok(value) => value.map_err(RollingBallJetError::Invalid),
-        Err(cadmpeg_core::CodecError::ResourceLimit(limit)) => {
-            Err(RollingBallJetError::Resource(limit))
-        }
-        Err(error) => Err(RollingBallJetError::Admission(error.to_string())),
-    }
-}
-
 impl RollingBallJetStations {
-    /// Admit clamped increasing knots and finite equal-radius station data.
-    pub fn try_new(
-        degree: u32,
-        stations: Vec<RollingBallJetStation>,
-    ) -> Result<Self, RollingBallJetError> {
-        default_jet(|ctx| Self::try_new_for_decode(degree, stations, ctx))
-    }
-
     /// Admit raw station controls with charged retained row storage.
-    pub fn try_new_for_decode(
+    pub fn try_new(
         degree: u32,
         stations: Vec<RollingBallJetStation>,
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ) -> Result<Result<Self, &'static str>, cadmpeg_core::CodecError> {
-        if let Err(error) = Self::admit_controls(ctx, degree, &stations, |row| row.knot)? {
+        Self::from_raw(
+            degree,
+            stations,
+            |count, operation| ctx.charge_work(cadmpeg_core::decode::u64_from_index(count), operation),
+            |count| ctx.retained_vec(count, "rolling-ball jet stations"),
+        )
+    }
+
+    fn from_raw<E>(
+        degree: u32,
+        stations: Vec<RollingBallJetStation>,
+        mut work: impl FnMut(usize, &'static str) -> Result<(), E>,
+        allocate: impl FnOnce(usize) -> Result<Vec<RollingBallJetStation<FiniteReal, FiniteVector3, FinitePoint3>>, E>,
+    ) -> Result<Result<Self, &'static str>, E> {
+        if let Err(error) = Self::admit_controls(&mut work, degree, &stations, |row| row.knot)? {
             return Ok(Err(error));
         }
-        let mut admitted = ctx.retained_vec(stations.len(), "rolling-ball jet stations")?;
+        let mut admitted = allocate(stations.len())?;
         for row in stations {
-            ctx.charge_work(1, "rolling-ball jet station controls")?;
+            work(1, "rolling-ball jet station controls")?;
             let Some(knot) = FiniteReal::new(row.knot) else {
                 return Ok(Err(ROLLING_BALL_KNOTS));
             };
@@ -3389,21 +3374,13 @@ impl RollingBallJetStations {
         }))
     }
 
-    /// Admit finite station controls under the default decode policy.
-    pub fn from_parts(
-        degree: u32,
-        stations: Vec<RollingBallJetStation<FiniteReal, FiniteVector3, FinitePoint3>>,
-    ) -> Result<Self, RollingBallJetError> {
-        default_jet(|ctx| Self::from_parts_for_decode(degree, stations, ctx))
-    }
-
     /// Validate finite station rows without copying their owned storage.
-    pub fn from_parts_for_decode(
+    pub fn from_parts(
         degree: u32,
         stations: Vec<RollingBallJetStation<FiniteReal, FiniteVector3, FinitePoint3>>,
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ) -> Result<Result<Self, &'static str>, cadmpeg_core::CodecError> {
-        if let Err(error) = Self::admit_controls(ctx, degree, &stations, |row| row.knot.get())? {
+        if let Err(error) = Self::admit_controls(&mut |count, operation| ctx.charge_work(cadmpeg_core::decode::u64_from_index(count), operation), degree, &stations, |row| row.knot.get())? {
             return Ok(Err(error));
         }
         for station in &stations {
@@ -3415,12 +3392,12 @@ impl RollingBallJetStations {
         Ok(Ok(Self { degree, stations }))
     }
 
-    fn admit_controls<R, V, P>(
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    fn admit_controls<R, V, P, E>(
+        work: &mut impl FnMut(usize, &'static str) -> Result<(), E>,
         degree: u32,
         stations: &[RollingBallJetStation<R, V, P>],
         knot: impl Fn(&RollingBallJetStation<R, V, P>) -> f64,
-    ) -> Result<Result<(), &'static str>, cadmpeg_core::CodecError> {
+    ) -> Result<Result<(), &'static str>, E> {
         let Some(maximum) = degree.checked_add(1).filter(|_| degree != 0) else {
             return Ok(Err(
                 "rolling-ball jet degree must be positive with a representable end multiplicity",
@@ -3439,7 +3416,7 @@ impl RollingBallJetStations {
             ));
         }
         for station in stations {
-            ctx.charge_work(1, "rolling-ball jet multiplicities")?;
+            work(1, "rolling-ball jet multiplicities")?;
             if station.multiplicity == 0 || station.multiplicity > maximum {
                 return Ok(Err(
                     "rolling-ball jet multiplicities must be in 1..=degree+1 with clamped ends",
@@ -3448,7 +3425,7 @@ impl RollingBallJetStations {
         }
         let mut previous = None;
         for station in stations {
-            ctx.charge_work(1, "rolling-ball jet knots")?;
+            work(1, "rolling-ball jet knots")?;
             let value = knot(station);
             if !value.is_finite() || previous.is_some_and(|last| value <= last) {
                 return Ok(Err(ROLLING_BALL_KNOTS));
@@ -3485,7 +3462,16 @@ impl TryFrom<RollingBallJetReadWire> for RollingBallJetStations {
     type Error = RollingBallJetError;
 
     fn try_from(wire: RollingBallJetReadWire) -> Result<Self, Self::Error> {
-        Self::try_new(wire.degree, wire.stations)
+        Self::from_raw(
+            wire.degree,
+            wire.stations,
+            |_, _| Ok::<(), RollingBallJetError>(()),
+            |count| {
+                let mut values = Vec::new();
+                values.try_reserve_exact(count).map_err(|error| RollingBallJetError::Admission(error.to_string()))?;
+                Ok(values)
+            },
+        )?.map_err(RollingBallJetError::Invalid)
     }
 }
 

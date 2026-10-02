@@ -2161,7 +2161,7 @@ pub(super) fn append_freeform_surface_pools(
         ir.model.procedural_surfaces.push(ProceduralSurface::new(
             procedural_id,
             ProceduralSurfaceDefinition::RollingBallJet(
-                cadmpeg_ir::geometry::RollingBallJetStations::from_parts_for_decode(
+                cadmpeg_ir::geometry::RollingBallJetStations::from_parts(
                     crate::families::a5a8::records::A5FreeformCurve::DEGREE,
                     stations,
                     admission.context(),
