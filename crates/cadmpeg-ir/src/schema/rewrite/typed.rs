@@ -285,7 +285,7 @@ impl<T: RewriteIdentities, const N: usize> RewriteIdentities for [T; N] {
     }
 }
 
-impl<K: RewriteIdentities + Ord + std::hash::Hash, V: RewriteIdentities> RewriteIdentities for BTreeMap<K, V> {
+impl<K: RewriteIdentities + Ord, V: RewriteIdentities> RewriteIdentities for BTreeMap<K, V> {
     fn visit_identity_references(&self, ctx: &DecodeContext<'_>, visitor: &mut dyn FnMut(&str) -> Result<(), CodecError>) -> Result<(), CodecError> {
         let _depth = ctx.enter_nested("walk typed reference map")?;
         ctx.charge_work(1, "walk typed reference map")?;
@@ -295,11 +295,9 @@ impl<K: RewriteIdentities + Ord + std::hash::Hash, V: RewriteIdentities> Rewrite
     fn rewrite_identities<F: FnMut(&str) -> Result<String, CodecError>>(self, ctx: &DecodeContext<'_>, map: &mut IdentityMap<'_, F>) -> Result<Self, CodecError> {
         let _depth = ctx.enter_nested("identity rewrite map")?;
         let mut rewritten = Self::new();
-        let mut longest = 0;
         for (key, value) in self {
             let key = key.rewrite_identities(ctx, map)?;
             let value = value.rewrite_identities(ctx, map)?;
-            crate::features::member_work::admit_member_work(ctx, &key, rewritten.len(), &mut longest, "identity rewrite map")?;
             ctx.insert_btree_map(&mut rewritten, key, value, "identity rewrite map")?;
         }
         Ok(rewritten)
