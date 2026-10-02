@@ -1038,6 +1038,33 @@ class DecodeAllocations(TempSourceCase):
 }""")
         self.assertEqual(self.findings("uncharged_decode_allocation"), [])
 
+    def test_every_raw_owned_collection_shape_is_reported(self):
+        self.write(self.PATH, """fn read(ctx: &DecodeContext<'_>, text: &str) {
+    bytes.to_vec();
+    values.collect::<Vec<_>>();
+    value.clone();
+    String::from(text);
+    vec![value];
+    vec![0; count];
+    Clone::clone(&value);
+    ToOwned::to_owned(text);
+}""")
+        self.assertEqual([f.line for f in self.findings("uncharged_decode_allocation")], list(range(2, 10)))
+
+    def test_charged_collections_and_explicit_scalars_are_accepted(self):
+        self.write(self.PATH, """fn read(ctx: &DecodeContext<'_>, number: u32) {
+    ctx.copy_slice(bytes, "copy")?;
+    ctx.copy_retained_strings(texts, "copy")?;
+    ctx.collect_vec(values, "values")?;
+    ctx.try_collect_vec(values, "values")?;
+    ctx.alloc_filled(count, 0u8, "fill")?;
+    let copied = number;
+    vec![];
+    vec![0, 1, 2];
+    String::from("fixed");
+}""")
+        self.assertEqual(self.findings("uncharged_decode_allocation"), [])
+
     def test_separate_storage_charge_does_not_admit_raw_allocation(self):
         self.write(self.PATH, """fn read(ctx: &DecodeContext<'_>, text: &str) {
     ctx.charge_retained(text.len(), "text")?;

@@ -1991,6 +1991,13 @@ def decode_fixed_text(source, code, start, end):
         r'(?:r\#*".*"\#*|"(?:[^"\\]|\\.)*")', raw, re.DOTALL))
 
 
+
+def decode_static_values(source, code, start, end):
+    """Only literals and separators prove a fixed allocation independent of input."""
+    masked = code[start:end]
+    return bool(source[start:end].strip()) and not re.sub(
+        r"\b(?:true|false|(?:0x[0-9a-fA-F_]+|[0-9][0-9_]*)(?:_[ui](?:8|16|32|64|128|size))?)\b|[\s,;.+\-]", "", masked)
+
 def scan_decode_allocations(sources: dict[Path, str]) -> list[Finding]:
     """Require charged text construction; unresolved operands are not exemptions."""
     findings = []
@@ -2018,12 +2025,39 @@ def scan_decode_allocations(sources: dict[Path, str]) -> list[Finding]:
                 if decode_fixed_text(source, code, previous, tokens[i - 1].start()):
                     continue
                 replacement = "ctx.copy_retained_text(text, operation)? (or ctx.format_retained for Display)"
+            elif word == "vec" and words[i + 1:i + 3] == ["!", "["]:
+                opening = i + 2
+                if opening not in pairs:
+                    continue
+                first, last = tokens[opening].end(), tokens[pairs[opening]].start()
+                if not source[first:last].strip() or decode_static_values(source, code, first, last):
+                    continue
+                replacement = "ctx.alloc_filled for Copy values or ctx.push_vec for admitted elements"
+            elif word in {"to_vec", "collect", "clone"} and i > 1 and words[i - 1] == ".":
+                if evaluation_call_open(words, i) is None:
+                    continue
+                replacement = {
+                    "to_vec": "ctx.copy_slice for Copy elements or ctx.copy_retained_strings for text",
+                    "collect": "ctx.collect_vec / ctx.try_collect_vec / the charged map or set operation",
+                    "clone": "ctx.copy_retained_text / ctx.copy_slice / explicit field construction with charged child copies; copy a Copy value directly",
+                }[word]
+            elif (word in {"from", "clone", "to_owned", "to_string", "to_vec", "collect"}
+                  and words[i - 1:i] == ["::"]):
+                opening = evaluation_call_open(words, i)
+                if opening is None or opening not in pairs:
+                    continue
+                if word == "from" and words[i - 2] != "String":
+                    continue
+                first, last = tokens[opening].end(), tokens[pairs[opening]].start()
+                if word == "from" and decode_fixed_text(source, code, first, last):
+                    continue
+                replacement = "the matching ctx copy, format or collection operation"
             else:
                 continue
             findings.append(Finding(
                 "uncharged_decode_allocation", relative_path(path),
                 code.count("\n", 0, tokens[i].start()) + 1,
-                f"{word} creates unadmitted owned text; use {replacement}. "
+                f"{word} creates unadmitted owned storage or has unresolved ownership; use {replacement}. "
                 "Raw text construction is not admitted by a separate charge."))
     return findings
 
