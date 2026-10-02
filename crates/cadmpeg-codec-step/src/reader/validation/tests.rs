@@ -32,24 +32,27 @@ fn validation_resource_refuses(
     let mut setup_ir = cadmpeg_ir::document::CadIr::empty();
     let geometry = crate::reader::geometry::decode(&exchange, &mut setup_ir, &setup_ctx)
         .expect("geometry setup decodes");
-    let refused = (0..=64).any(|limit| {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        match dimension {
-            ResourceDimension::CollectionItems => policy.limits.max_collection_items = limit,
-            ResourceDimension::RetainedBytes => policy.limits.max_retained_bytes = limit,
-            _ => unreachable!("test only selects collection or retained limits"),
-        }
-        let (ctx, _) = DecodeContext::from_root_bytes(source, &arena, &policy)
-            .expect("root fits selected policy");
-        let mut ir = setup_ir.clone();
-        matches!(
-            super::decode(&exchange, &geometry.value, &mut ir, &ctx),
-            Err(CodecError::ResourceLimit(refusal))
+    let refused = {
+        let error =
+            cadmpeg_test_support::refusal::resource_limit_at(dimension, operation, |limit| {
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::service();
+                match dimension {
+                    ResourceDimension::CollectionItems => {
+                        policy.limits.max_collection_items = limit
+                    }
+                    ResourceDimension::RetainedBytes => policy.limits.max_retained_bytes = limit,
+                    _ => unreachable!("test only selects collection or retained limits"),
+                }
+                let (ctx, _) = DecodeContext::from_root_bytes(source, &arena, &policy)
+                    .expect("root fits selected policy");
+                let mut ir = setup_ir.clone();
+                (super::decode(&exchange, &geometry.value, &mut ir, &ctx)).map(|_| ())
+            });
+        matches!(Err::<(), CodecError>(error), Err(CodecError::ResourceLimit(refusal))
                 if refusal.dimension == dimension
-                    && refusal.operation == operation
-        )
-    });
+                    && refusal.operation == operation)
+    };
     assert!(refused, "no {dimension:?} limit refused {operation}");
 }
 

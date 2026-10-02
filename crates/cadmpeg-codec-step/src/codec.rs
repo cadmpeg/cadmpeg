@@ -754,7 +754,12 @@ mod tests {
     #[test]
     fn inspection_owned_attribute_value_is_not_charged_twice() {
         let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-        policy.limits.max_retained_bytes = 13;
+        policy.limits.max_retained_bytes = u64::try_from(
+            13 + 11 * std::mem::size_of::<(String, String)>()
+                + 16 * std::mem::size_of::<usize>()
+                + 2 * std::mem::align_of::<String>(),
+        )
+        .expect("attribute node layout");
         crate::test_support::with_policy_context(b"", &policy, |_, ctx| {
             let mut attributes = std::collections::BTreeMap::new();
             let value = ctx

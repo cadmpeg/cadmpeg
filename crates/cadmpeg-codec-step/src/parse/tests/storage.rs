@@ -104,7 +104,8 @@ fn anchor_leaf_text_copy_has_one_storage_admission() {
         let anchors = BTreeMap::new();
         let value = Value::Enumeration("TEXT".into());
         assert_eq!(
-            AnchorResolver::new(&anchors, ctx).expect("empty resolver scope fits")
+            AnchorResolver::new(&anchors, ctx)
+                .expect("empty resolver scope fits")
                 .resolve_root(&value)
                 .expect("one four-byte copy"),
             value

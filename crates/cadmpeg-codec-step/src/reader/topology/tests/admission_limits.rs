@@ -371,10 +371,12 @@ fn edge_definitions_refuse_collection_limit() {
 
 #[test]
 fn edge_definition_node_refuses_retained_limit() {
-    assert!(matches!(edge_definition_refusal(u64::MAX, 0, u64::MAX),
+    assert!(
+        matches!(cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::RetainedBytes, "step_edge_definition_node", |cap| Err::<(), CodecError>(edge_definition_refusal(u64::MAX, cap, u64::MAX))),
         CodecError::ResourceLimit(refusal)
             if refusal.dimension == ResourceDimension::RetainedBytes
-                && refusal.operation == "step_edge_definition_node"));
+                && refusal.operation == "step_edge_definition_node")
+    );
 }
 
 #[test]

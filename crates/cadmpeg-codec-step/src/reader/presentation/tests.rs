@@ -61,6 +61,10 @@ ENDSEC;END-ISO-10303-21;",
             &exchange,
             StyleDomain::Surface,
             super::ColorSearchState {
+                storage: &std::cell::RefCell::new(
+                    ctx.reserve_scoped(0, "color search fixture")
+                        .expect("scope"),
+                ),
                 active: &mut BTreeSet::new(),
                 cache: &mut BTreeMap::new(),
                 losses: &mut Vec::new(),

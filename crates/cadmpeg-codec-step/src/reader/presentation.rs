@@ -323,6 +323,8 @@ pub(super) fn decode(
             continue;
         }
         let domain = style_domain(target_step, exchange, ctx)?;
+        let color_storage =
+            std::cell::RefCell::new(ctx.reserve_scoped(0, "step color search storage")?);
         let mut active = BTreeSet::new();
         let mut color_cache = BTreeMap::new();
         let mut invalid_surface_sides = BTreeSet::new();
@@ -370,6 +372,7 @@ pub(super) fn decode(
                 exchange,
                 domain,
                 ColorSearchState {
+                    storage: &color_storage,
                     active: &mut active,
                     cache: &mut color_cache,
                     losses: &mut losses,
@@ -387,6 +390,7 @@ pub(super) fn decode(
                     exchange,
                     StyleDomain::Surface,
                     ColorSearchState {
+                        storage: &color_storage,
                         active: &mut active,
                         cache: &mut color_cache,
                         losses: &mut losses,
@@ -1427,7 +1431,8 @@ fn combine_color_resolutions(
     }
 }
 
-struct ColorSearchState<'a> {
+struct ColorSearchState<'a, 'ctx> {
+    storage: &'a std::cell::RefCell<cadmpeg_core::decode::ScopedReservation<'ctx>>,
     active: &'a mut BTreeSet<u64>,
     cache: &'a mut BTreeMap<(u64, StyleDomain), CachedColor>,
     losses: &'a mut Vec<LossNote>,
@@ -1438,11 +1443,12 @@ fn find_color(
     id: u64,
     exchange: &Exchange,
     domain: StyleDomain,
-    state: ColorSearchState<'_>,
+    state: ColorSearchState<'_, '_>,
     depth: usize,
     ctx: &DecodeContext<'_>,
 ) -> Result<CachedColor, CodecError> {
     let ColorSearchState {
+        storage,
         active,
         cache,
         losses,
@@ -1464,7 +1470,9 @@ fn find_color(
         return Ok(None);
     }
     let _nested = ctx.enter_nested("step_presentation_color_walk")?;
-    ctx.insert_btree_set(active, id, "step_presentation_color_active")?;
+    storage
+        .borrow_mut()
+        .with_storage(|| ctx.insert_btree_set(active, id, "step_presentation_color_active"))?;
     let transparency = if domain == StyleDomain::Surface {
         surface_transparency(id, record, exchange, losses, ctx)?
     } else {
@@ -1472,7 +1480,8 @@ fn find_color(
     };
     let result = (|| -> Result<CachedColor, CodecError> {
         let side_rank = if domain == StyleDomain::Surface {
-            let Some(rank) = surface_side_rank(id, record, losses, invalid_surface_sides, ctx)?
+            let Some(rank) =
+                surface_side_rank(id, record, losses, invalid_surface_sides, storage, ctx)?
             else {
                 return Ok(None);
             };
@@ -1516,6 +1525,7 @@ fn find_color(
                     exchange,
                     domain,
                     ColorSearchState {
+                        storage,
                         active: &mut *active,
                         cache: &mut *cache,
                         losses: &mut *losses,
@@ -1633,6 +1643,7 @@ fn find_color(
                             exchange,
                             domain,
                             ColorSearchState {
+                                storage,
                                 active: &mut *active,
                                 cache: &mut *cache,
                                 losses: &mut *losses,
@@ -1663,13 +1674,17 @@ fn find_color(
             None => {}
         }
     }
-    let cached = clone_color_resolution(&result, ctx, "step_presentation_color_cache_value")?;
-    ctx.insert_btree_map(
-        cache,
-        (id, domain),
-        cached,
-        "step_presentation_color_cache_entries",
-    )?;
+    let cached = storage.borrow_mut().with_storage(|| {
+        clone_color_resolution(&result, ctx, "step_presentation_color_cache_value")
+    })?;
+    storage.borrow_mut().with_storage(|| {
+        ctx.insert_btree_map(
+            cache,
+            (id, domain),
+            cached,
+            "step_presentation_color_cache_entries",
+        )
+    })?;
     Ok(result)
 }
 
@@ -1747,6 +1762,7 @@ fn surface_side_rank(
     record: &RawRecord,
     losses: &mut Vec<LossNote>,
     invalid_surface_sides: &mut BTreeSet<u64>,
+    storage: &std::cell::RefCell<cadmpeg_core::decode::ScopedReservation<'_>>,
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<SurfaceSideRank>, CodecError> {
     let Some(partial) = record
@@ -1757,11 +1773,13 @@ fn surface_side_rank(
         return Ok(Some(SurfaceSideRank::NoUsage));
     };
     let Some(side) = partial.parameters.first().and_then(ValueExt::enumeration) else {
-        ctx.insert_btree_set(
-            invalid_surface_sides,
-            id,
-            "step_presentation_invalid_surface_sides",
-        )?;
+        storage.borrow_mut().with_storage(|| {
+            ctx.insert_btree_set(
+                invalid_surface_sides,
+                id,
+                "step_presentation_invalid_surface_sides",
+            )
+        })?;
         ctx.push_vec(
             losses,
             StepLossCode::SurfaceSideInvalid.note(format!(
@@ -1776,11 +1794,13 @@ fn surface_side_rank(
         "POSITIVE" => Ok(Some(SurfaceSideRank::Positive)),
         "NEGATIVE" => Ok(Some(SurfaceSideRank::Negative)),
         _ => {
-            ctx.insert_btree_set(
-                invalid_surface_sides,
-                id,
-                "step_presentation_invalid_surface_sides",
-            )?;
+            storage.borrow_mut().with_storage(|| {
+                ctx.insert_btree_set(
+                    invalid_surface_sides,
+                    id,
+                    "step_presentation_invalid_surface_sides",
+                )
+            })?;
             let message = ctx.format_retained(
                 format_args!(
                     "SURFACE_STYLE_USAGE #{id} has invalid surface_side .{side}.; style omitted"

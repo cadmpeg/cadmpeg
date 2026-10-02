@@ -110,18 +110,30 @@ fn decode_diagnostic_message_refuses_retained_limit() {
     .expect("valid exchange with diagnostic");
     assert!(!diagnostics.is_empty());
     let arena = DecodeArena::new();
-    let refused = (0..512).any(|limit| {
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = limit;
-        let (ctx, _) = DecodeContext::from_root_bytes(DIAGNOSTIC_LOSS_LIMIT_SOURCE, &arena, &policy)
-            .expect("root fits retained policy");
-        matches!(
-            super::StepDecodeSession::new(&exchange, &diagnostics, &ctx, super::DecodeMode::Inspect),
-            Err(CodecError::ResourceLimit(refusal))
+    let refused = {
+        let error = cadmpeg_test_support::refusal::resource_limit_at(
+            ResourceDimension::RetainedBytes,
+            "step_decode_diagnostic_message",
+            |limit| {
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_retained_bytes = limit;
+                let (ctx, _) =
+                    DecodeContext::from_root_bytes(DIAGNOSTIC_LOSS_LIMIT_SOURCE, &arena, &policy)
+                        .expect("root fits retained policy");
+
+                (super::StepDecodeSession::new(
+                    &exchange,
+                    &diagnostics,
+                    &ctx,
+                    super::DecodeMode::Inspect,
+                ))
+                .map(|_| ())
+            },
+        );
+        matches!(Err::<(), CodecError>(error), Err(CodecError::ResourceLimit(refusal))
                 if refusal.dimension == ResourceDimension::RetainedBytes
-                    && refusal.operation == "step_decode_diagnostic_message"
-        )
-    });
+                    && refusal.operation == "step_decode_diagnostic_message")
+    };
     assert!(
         refused,
         "no retained limit refused decode diagnostic message"
@@ -165,22 +177,30 @@ fn decode_reference_note_text_refuses_retained_limit() {
     )
     .expect("valid reference exchange");
     let arena = DecodeArena::new();
-    // Two dialect declarations admit one and two ordered-node bounds.
-    let declaration_nodes = 3 * (11 * (std::mem::size_of::<cadmpeg_core::text::NonBlankString>() + std::mem::size_of::<String>())
-        + 16 * std::mem::size_of::<usize>() + 2 * std::mem::align_of::<usize>());
-    let note_slots = 4 * std::mem::size_of::<String>();
-    let refused = (0..512 + cadmpeg_core::decode::u64_from_index(declaration_nodes + note_slots)).any(|limit| {
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = limit;
-        let (ctx, _) = DecodeContext::from_root_bytes(REFERENCE_NOTE_LIMIT_SOURCE, &arena, &policy)
-            .expect("root fits retained policy");
-        matches!(
-            super::StepDecodeSession::new(&exchange, &diagnostics, &ctx, super::DecodeMode::Inspect),
-            Err(CodecError::ResourceLimit(refusal))
+    let refused = {
+        let error = cadmpeg_test_support::refusal::resource_limit_at(
+            ResourceDimension::RetainedBytes,
+            "step_decode_reference_note_text",
+            |limit| {
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_retained_bytes = limit;
+                let (ctx, _) =
+                    DecodeContext::from_root_bytes(REFERENCE_NOTE_LIMIT_SOURCE, &arena, &policy)
+                        .expect("root fits retained policy");
+
+                (super::StepDecodeSession::new(
+                    &exchange,
+                    &diagnostics,
+                    &ctx,
+                    super::DecodeMode::Inspect,
+                ))
+                .map(|_| ())
+            },
+        );
+        matches!(Err::<(), CodecError>(error), Err(CodecError::ResourceLimit(refusal))
                 if refusal.dimension == ResourceDimension::RetainedBytes
-                    && refusal.operation == "step_decode_reference_note_text"
-        )
-    });
+                    && refusal.operation == "step_decode_reference_note_text")
+    };
     assert!(refused, "no retained limit refused reference note text");
 }
 
@@ -1498,24 +1518,30 @@ fn opaque_preservation_loss_text_refuses_retained_limit() {
         crate::test_support::with_service_context(source, crate::parse::parse_inner)
             .expect("valid exchange");
     let arena = DecodeArena::new();
-    let refused = (0..8192).any(|limit| {
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = limit;
-        let (ctx, _) = DecodeContext::from_root_bytes(source, &arena, &policy)
-            .expect("root fits retained policy");
-        matches!(
-            super::decode_exchange_mode(
-                source,
-                &mut exchange.clone(),
-                &diagnostics,
-                super::DecodeMode::Inspect,
-                &ctx,
-            ),
-            Err(CodecError::ResourceLimit(refusal))
+    let refused = {
+        let error = cadmpeg_test_support::refusal::resource_limit_at(
+            ResourceDimension::RetainedBytes,
+            "step_opaque_preservation_loss_text",
+            |limit| {
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_retained_bytes = limit;
+                let (ctx, _) = DecodeContext::from_root_bytes(source, &arena, &policy)
+                    .expect("root fits retained policy");
+
+                (super::decode_exchange_mode(
+                    source,
+                    &mut exchange.clone(),
+                    &diagnostics,
+                    super::DecodeMode::Inspect,
+                    &ctx,
+                ))
+                .map(|_| ())
+            },
+        );
+        matches!(Err::<(), CodecError>(error), Err(CodecError::ResourceLimit(refusal))
                 if refusal.dimension == ResourceDimension::RetainedBytes
-                    && refusal.operation == "step_opaque_preservation_loss_text"
-        )
-    });
+                    && refusal.operation == "step_opaque_preservation_loss_text")
+    };
     assert!(refused, "opaque loss text must charge retained bytes");
 }
 
@@ -1564,26 +1590,30 @@ fn dialect_match_copy_refuses_retained_limit() {
         crate::test_support::with_service_context(source, crate::parse::parse_inner)
             .expect("valid exchange");
     let arena = DecodeArena::new();
-    let refused = (0..1024).any(|limit| {
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = limit;
-        let (ctx, _) = DecodeContext::from_root_bytes(source, &arena, &policy)
-            .expect("root fits retained policy");
-        let Ok(session) = super::StepDecodeSession::new(
-            &exchange,
-            &diagnostics,
-            &ctx,
-            super::DecodeMode::Inspect,
-        ) else {
-            return false;
-        };
-        matches!(
-            session.into_result(cadmpeg_ir::SourceFidelity::default(), BTreeSet::new()),
-            Err(CodecError::ResourceLimit(refusal))
+    let refused = {
+        let error = cadmpeg_test_support::refusal::resource_limit_at(
+            ResourceDimension::RetainedBytes,
+            "copy STEP dialect layer",
+            |limit| {
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_retained_bytes = limit;
+                let (ctx, _) = DecodeContext::from_root_bytes(source, &arena, &policy)
+                    .expect("root fits retained policy");
+                let session = super::StepDecodeSession::new(
+                    &exchange,
+                    &diagnostics,
+                    &ctx,
+                    super::DecodeMode::Inspect,
+                )?;
+
+                (session.into_result(cadmpeg_ir::SourceFidelity::default(), BTreeSet::new()))
+                    .map(|_| ())
+            },
+        );
+        matches!(Err::<(), CodecError>(error), Err(CodecError::ResourceLimit(refusal))
                 if refusal.dimension == ResourceDimension::RetainedBytes
-                    && refusal.operation == "copy STEP dialect layer"
-        )
-    });
+                    && refusal.operation == "copy STEP dialect layer")
+    };
     assert!(
         refused,
         "dialect declaration copy must charge retained text"

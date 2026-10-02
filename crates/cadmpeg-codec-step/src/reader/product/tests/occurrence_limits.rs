@@ -66,16 +66,21 @@ fn occurrence_output_refuses(existing: usize) {
         ir.model
             .occurrences
             .resize(existing, ir.model.occurrences[0].clone());
-        let error = super::super::decode(
-            &exchange,
-            &geometry.value,
-            &topology.value,
-            &mut ir,
-            ctx,
-            &mut admitted,
-        )
-        .err()
-        .expect("occurrence slice must refuse");
+        let model_input =
+            serde_json::to_vec(&ir).expect("synthetic existing assembly budget envelope");
+        let error = crate::test_support::with_service_context(&model_input, |_, ctx| {
+            let error = super::super::decode(
+                &exchange,
+                &geometry.value,
+                &topology.value,
+                &mut ir,
+                ctx,
+                &mut admitted,
+            )
+            .err()
+            .expect("occurrence slice must refuse");
+            error
+        });
         assert!(
             matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal)
             if refusal.operation == "step_assembly_occurrence_limit"
