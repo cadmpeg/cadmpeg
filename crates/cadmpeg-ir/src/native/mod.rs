@@ -36,7 +36,7 @@ pub(crate) fn test_ctx() -> DecodeContext<'static> {
 /// Every descent of a stored field recurses: `serde_json::from_value` carries
 /// no recursion counter, [`replay::emit`] starts one parse per container,
 /// `canon::CanonValue` enters one frame per container, and `Serialize`,
-/// [`NativeRecord::fields`], [`NativeRecord::field`] and `Drop` walk the
+/// [`NativeRecord::field`] and `Drop` walk the
 /// stored `Value` itself. The bound is therefore stated where a field enters
 /// the record, so every reader of a constructed record is already inside it.
 /// It is twice the 128 containers a `serde_json` text parse admits, so every
@@ -394,25 +394,18 @@ impl NativeRecord {
         self.id.as_str()
     }
 
-    /// The codec-owned fields, excluding `id`.
-    ///
-    /// This clones the stored map; read it once and reuse it when inspecting
-    /// more than one field, and prefer [`field`](Self::field) when one field is
-    /// all that is wanted.
+    /// Borrow the codec-owned fields, excluding `id`.
     #[must_use]
-    pub fn fields(&self) -> Map<String, Value> {
-        self.fields.clone()
+    pub fn fields(&self) -> &Map<String, Value> {
+        &self.fields
     }
 
-    /// Clone codec-owned fields after admitting the value tree and its bytes.
-    pub fn fields_for_decode(
+    /// Copy codec-owned fields through the caller's storage, work and depth account.
+    pub fn copy_fields(
         &self,
         ctx: &DecodeContext<'_>,
     ) -> Result<Map<String, Value>, NativeConvertError> {
-        let Value::Object(fields) = copy_value_for_decode(ctx, &self.fields)? else {
-            return Err(NativeConvertError::NonObject);
-        };
-        Ok(fields)
+        Ok(copy::fields(ctx, &self.fields)?)
     }
 
     /// Rewrite native identity fields through their typed owner's field walk.

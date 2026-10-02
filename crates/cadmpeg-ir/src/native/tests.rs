@@ -614,7 +614,7 @@ fn deeply_nested_native_values_survive_every_stored_record_reader() {
     let wire = serde_json::to_value(&document).unwrap();
     let admitted = serde_json::from_value::<crate::CadIr>(wire).unwrap();
     let record = &admitted.native.namespace("future").unwrap().arenas()["records"][0];
-    assert_eq!(record.fields(), fields);
+    assert_eq!(record.fields(), &fields);
     assert_eq!(record.field("nested"), Some(nested));
     assert_eq!(record.field("missing"), None);
     assert_eq!(record.field("id"), None);
@@ -771,7 +771,7 @@ fn flat_fields_build_a_record_no_reader_has_to_measure() {
     assert_eq!(
         NativeRecord::new(
             crate::ids::Identity::new(id).expect("valid identity"),
-            record.fields()
+            record.fields().clone()
         )
         .unwrap(),
         record,
@@ -1289,4 +1289,56 @@ fn native_attribute_target_rewrite_preserves_every_wire_kind() {
         assert_eq!(value, serde_json::to_value(expected).unwrap());
     }
     ctx.finish_session().unwrap();
+}
+
+#[test]
+fn native_field_copy_preserves_bits_and_borrowed_storage() {
+    let record = NativeRecord::new(
+        crate::ids::Identity::new("test:native:record#fields").unwrap(),
+        serde_json::from_value(serde_json::json!({
+            "text": "retained text",
+            "unsigned": u64::MAX,
+            "negative_zero": -0.0,
+            "nested": [{"text": "nested text"}]
+        })).unwrap(),
+    ).unwrap();
+    assert!(std::ptr::eq(record.fields(), record.fields()));
+    let ctx = super::test_ctx();
+    let copied = record.copy_fields(&ctx).unwrap();
+    assert_eq!(&copied, record.fields());
+    assert_ne!(copied["text"].as_str().unwrap().as_ptr(), record.fields()["text"].as_str().unwrap().as_ptr());
+    assert_eq!(copied["unsigned"].as_u64(), Some(u64::MAX));
+    assert_eq!(copied["negative_zero"].as_f64().unwrap().to_bits(), (-0.0_f64).to_bits());
+    ctx.finish_session().unwrap();
+}
+
+#[test]
+fn native_field_copy_preserves_caller_resource_refusals() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    let record = NativeRecord::new(
+        crate::ids::Identity::new("test:native:record#fields").unwrap(),
+        serde_json::from_value(serde_json::json!({"nested": [{"text": "retained"}]})).unwrap(),
+    ).unwrap();
+    for dimension in [ResourceDimension::RetainedBytes, ResourceDimension::MaterializedBytes, ResourceDimension::CollectionItems, ResourceDimension::WorkUnits, ResourceDimension::RecursionDepth] {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        match dimension {
+            ResourceDimension::RetainedBytes => policy.limits.max_retained_bytes = 0,
+            ResourceDimension::MaterializedBytes => policy.limits.max_materialized_bytes = 0,
+            ResourceDimension::CollectionItems => policy.limits.max_collection_items = 0,
+            ResourceDimension::WorkUnits => policy.limits.max_work_units = 0,
+            ResourceDimension::RecursionDepth => policy.limits.max_recursion_depth = 0,
+            _ => panic!("test dimension"),
+        }
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let error = if dimension == ResourceDimension::MaterializedBytes {
+            ctx.with_scoped_storage("native field copy scope", || record.copy_fields(&ctx)).unwrap_err()
+        } else {
+            record.copy_fields(&ctx).unwrap_err()
+        };
+        let CodecError::ResourceLimit(limit) = CodecError::from(error) else { panic!("native field copy must retain its resource refusal"); };
+        assert_eq!(limit.dimension, dimension);
+        assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit));
+    }
 }
