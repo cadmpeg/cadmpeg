@@ -48,14 +48,23 @@ mod tests {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_work_units = 1;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("test operation is admitted");
         let mut visited = 0;
-        let error = ctx.position_by(&[1, 2], |_| {
-            visited += 1;
-            Ok(false)
-        }, "search").unwrap_err();
+        let error = ctx
+            .position_by(
+                &[1, 2],
+                |_| {
+                    visited += 1;
+                    Ok(false)
+                },
+                "search",
+            )
+            .expect_err("test operation must refuse");
         assert_eq!(visited, 1);
-        let CodecError::ResourceLimit(limit) = error else { panic!("work refusal"); };
+        let CodecError::ResourceLimit(limit) = error else {
+            panic!("work refusal");
+        };
         assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
         assert_eq!(ctx.resource_refusal(), Some(limit));
     }
@@ -63,11 +72,28 @@ mod tests {
     #[test]
     fn scan_search_stops_at_match_and_propagates_child_error() {
         let arena = DecodeArena::new();
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
-        assert_eq!(ctx.position_by(&[1, 2, 3], |value| Ok(*value == 2), "search").unwrap(), Some(1));
-        assert_eq!(ctx.position_by(&[1], |_| Ok(false), "search").unwrap(), None);
-        let error = ctx.position_by(&[1], |_| Err(ctx.refuse_codec_limit("child", 0, 1)), "search").unwrap_err();
-        let CodecError::ResourceLimit(limit) = error else { panic!("child refusal"); };
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
+            .expect("test operation is admitted");
+        assert_eq!(
+            ctx.position_by(&[1, 2, 3], |value| Ok(*value == 2), "search")
+                .expect("test operation is admitted"),
+            Some(1)
+        );
+        assert_eq!(
+            ctx.position_by(&[1], |_| Ok(false), "search")
+                .expect("test operation is admitted"),
+            None
+        );
+        let error = ctx
+            .position_by(
+                &[1],
+                |_| Err(ctx.refuse_codec_limit("child", 0, 1)),
+                "search",
+            )
+            .expect_err("test operation must refuse");
+        let CodecError::ResourceLimit(limit) = error else {
+            panic!("child refusal");
+        };
         assert_eq!(limit.operation, "child");
         assert_eq!(ctx.resource_refusal(), Some(limit));
     }
@@ -77,10 +103,17 @@ mod tests {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_work_units = 1;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        assert!(!ctx.equal_bytes(b"a", b"ab", "compare").unwrap());
-        let error = ctx.equal_bytes(b"ab", b"ab", "compare").unwrap_err();
-        let CodecError::ResourceLimit(limit) = error else { panic!("work refusal"); };
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("test operation is admitted");
+        assert!(!ctx
+            .equal_bytes(b"a", b"ab", "compare")
+            .expect("test operation is admitted"));
+        let error = ctx
+            .equal_bytes(b"ab", b"ab", "compare")
+            .expect_err("test operation must refuse");
+        let CodecError::ResourceLimit(limit) = error else {
+            panic!("work refusal");
+        };
         assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
         assert_eq!(ctx.resource_refusal(), Some(limit));
     }
@@ -88,9 +121,16 @@ mod tests {
     #[test]
     fn scan_byte_equality_preserves_exact_results() {
         let arena = DecodeArena::new();
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
-        assert!(ctx.equal_bytes(b"ab", b"ab", "compare").unwrap());
-        assert!(!ctx.equal_bytes(b"ab", b"ac", "compare").unwrap());
-        assert!(ctx.equal_bytes(b"", b"", "compare").unwrap());
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
+            .expect("test operation is admitted");
+        assert!(ctx
+            .equal_bytes(b"ab", b"ab", "compare")
+            .expect("test operation is admitted"));
+        assert!(!ctx
+            .equal_bytes(b"ab", b"ac", "compare")
+            .expect("test operation is admitted"));
+        assert!(ctx
+            .equal_bytes(b"", b"", "compare")
+            .expect("test operation is admitted"));
     }
 }

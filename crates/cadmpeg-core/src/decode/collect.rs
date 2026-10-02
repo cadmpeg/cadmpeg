@@ -426,7 +426,12 @@ impl DecodeContext<'_> {
         let mut reservation = self.reserve_scoped(0, operation)?;
         reservation.with_storage(|| {
             for (key, value) in values {
-                self.charge_work(u64_from_index(entries.len()) + 1, operation)?;
+                self.charge_work(
+                    u64_from_index(entries.len())
+                        .checked_add(1)
+                        .ok_or_else(|| self.refuse_codec_limit(operation, u64::MAX, u64::MAX))?,
+                    operation,
+                )?;
                 self.insert_btree_map(&mut entries, key, value, operation)?;
             }
             Ok::<(), CodecError>(())
@@ -843,23 +848,6 @@ impl DecodeContext<'_> {
         })
     }
 
-    /// Allocates the fixed vector used by the context's aggregate fill operation.
-    pub(crate) fn admitted_vec<T>(
-        count: usize,
-        operation: &'static str,
-    ) -> Result<Vec<T>, CodecError> {
-        let mut values = Vec::new();
-        values.try_reserve_exact(count).map_err(|_| {
-            CodecError::ResourceLimit(ResourceLimit::allocation_failed(
-                ResourceDimension::CollectionItems,
-                u64::MAX,
-                u64_from_index(count),
-                operation,
-            ))
-        })?;
-        Ok(values)
-    }
-
     /// Creates a charged vector only when the source is present.
     pub fn optional_collection_vec<T>(
         &self,
@@ -902,7 +890,7 @@ impl DecodeContext<'_> {
         let mut collected = Vec::new();
         for (index, value) in values.enumerate() {
             self.charge_work(1, operation)?;
-            if index == 0 && maximum == Some(minimum) {
+            if index == 0 && maximum.is_some_and(|maximum: usize| maximum == minimum) {
                 self.reserve_retained_vec_storage(
                     &mut collected,
                     minimum.max(1),
@@ -1318,7 +1306,8 @@ impl DecodeContext<'_> {
                 self.charge_work(
                     u64_from_index(value.len())
                         .checked_mul(2)
-                        .and_then(|work| work.checked_add(1))
+                        .ok_or_else(|| self.refuse_codec_limit(operation, u64::MAX, u64::MAX))?
+                        .checked_add(1)
                         .ok_or_else(|| self.refuse_codec_limit(operation, u64::MAX, u64::MAX))?,
                     operation,
                 )?;
@@ -1353,7 +1342,8 @@ impl DecodeContext<'_> {
                 self.charge_work(
                     u64_from_index(key.len())
                         .checked_mul(2)
-                        .and_then(|work| work.checked_add(1))
+                        .ok_or_else(|| self.refuse_codec_limit(operation, u64::MAX, u64::MAX))?
+                        .checked_add(1)
                         .ok_or_else(|| self.refuse_codec_limit(operation, u64::MAX, u64::MAX))?,
                     operation,
                 )?;
@@ -1546,6 +1536,7 @@ impl DecodeContext<'_> {
             self.allocation_failed(ResourceDimension::RetainedBytes, count, operation)
         })?;
         for (index, part) in parts.iter().enumerate() {
+            self.charge_work(1, operation)?;
             self.charge_work(u64_from_index(part.as_ref().len()), operation)?;
             if index != 0 {
                 self.charge_work(u64_from_index(separator.len()), operation)?;

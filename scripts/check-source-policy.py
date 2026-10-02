@@ -1929,6 +1929,7 @@ def decode_context_functions(sources):
     """
     parsed = []
     fields = {}
+    declarations = {}
     for path, source in sources.items():
         relative = relative_path(path)
         parts = Path(relative).parts
@@ -1954,9 +1955,9 @@ def decode_context_functions(sources):
             while opening < len(words) and words[opening] not in {"{", ";", "("}:
                 opening += 1
             if opening in pairs and words[opening] == "{":
-                fields.setdefault((parts[1], words[i + 1]), set()).update(
-                    context_binding.findall(
-                        code[tokens[opening].end():tokens[pairs[opening]].start()]))
+                declarations.setdefault((parts[1], words[i + 1]), set()).add(path)
+                fields[(parts[1], words[i + 1], path)] = set(context_binding.findall(
+                    code[tokens[opening].end():tokens[pairs[opening]].start()]))
     for path, source, code, tokens, pairs, parents, words, context_binding, context_types in parsed:
         functions = []
         for index, name, _, owner in evaluation_signatures(tokens, pairs, parents):
@@ -1990,7 +1991,10 @@ def decode_context_functions(sources):
                     r"\s*::\s*(?:from_root_bytes(?:_limit)?|read_root)\b", scope))
             if owner == "DecodeContext":
                 bindings.add("self")
-            context_fields = fields.get((Path(relative_path(path)).parts[1], owner), set())
+            owner_key = (Path(relative_path(path)).parts[1], owner)
+            owners = declarations.get(owner_key, set())
+            declaring_path = path if path in owners else next(iter(owners)) if len(owners) == 1 else None
+            context_fields = fields.get((*owner_key, declaring_path), set())
             receivers = bindings | {"self." + field for field in context_fields}
             for match in re.finditer(r"\blet\s+([A-Za-z_]\w*)\s*=\s*&?\s*([A-Za-z_]\w*(?:\s*\.\s*[A-Za-z_]\w*)?)\s*;", scope):
                 if re.sub(r"\s", "", match[2]) in receivers:
@@ -2011,14 +2015,60 @@ def decode_static_values(source, code, start, end):
     """Only literals and separators prove a fixed allocation independent of input."""
     masked = code[start:end]
     return bool(source[start:end].strip()) and not re.sub(
-        r"\b(?:true|false|(?:0x[0-9a-fA-F_]+|[0-9][0-9_]*)(?:_[ui](?:8|16|32|64|128|size))?)\b|[\s,;.+\-]", "", masked)
+        r"\b(?:true|false|(?:0x[0-9a-fA-F_]+|[0-9][0-9_]*)(?:_?[ui](?:8|16|32|64|128|size))?)\b|[\s,;.+\-]", "", masked)
+
+
+def decode_fixed_format(source, code, tokens, pairs, words, opening, scope_start):
+    """Static fields and primitive arguments have an input-independent bound."""
+    first = opening + 1
+    raw = source[tokens[opening].end():tokens[first].start()].strip()
+    if not decode_fixed_text(source, code, tokens[opening].end(), tokens[first].start()):
+        return False
+    text = raw.replace("{{", "").replace("}}", "")
+    fields = re.findall(r"\{([^{}]*)\}", text)
+    # A runtime width or precision can make even primitive formatting unbounded.
+    if any("$" in field or "*" in field for field in fields):
+        return False
+    supplied = set()
+    cursor = first
+    while cursor < pairs[opening]:
+        if words[cursor] != ",":
+            return False
+        start = cursor + 1
+        if start == pairs[opening] and not source[tokens[cursor].end():tokens[start].start()].strip():
+            break
+        cursor = start
+        while cursor < pairs[opening] and words[cursor] != ",":
+            cursor = pairs[cursor] + 1 if cursor in pairs and words[cursor] in "([{" else cursor + 1
+        expression = "".join(words[start:cursor])
+        if words[start + 1:start + 2] == ["="]:
+            supplied.add(words[start])
+            start += 2
+            expression = "".join(words[start:cursor])
+        begin = tokens[start - 1].end()
+        finish = tokens[cursor].start()
+        if not (decode_fixed_text(source, code, begin, finish)
+                or decode_static_values(source, code, begin, finish)
+                or decode_scalar_receiver(code[scope_start:], expression,
+                                          tokens[opening].start() - scope_start)):
+            return False
+    for field in fields:
+        name = field.split(":", 1)[0]
+        if (name and not name.isdigit() and name not in supplied
+                and not decode_scalar_receiver(code[scope_start:], name,
+                                               tokens[opening].start() - scope_start)):
+            return False
+    return True
 
 
 def scan_decode_allocations(sources: dict[Path, str]) -> list[Finding]:
     """Require charged text construction; unresolved operands are not exemptions."""
     findings = []
+    imports = {}
     for (path, source, code, tokens, pairs, parents, words, body, end,
          active, receivers) in decode_context_functions(sources):
+        if path not in imports:
+            imports[path] = evaluation_imports(tokens, pairs)
         for i in sorted(active):
             word = words[i]
             if i <= body:
@@ -2027,10 +2077,8 @@ def scan_decode_allocations(sources: dict[Path, str]) -> list[Finding]:
                 opening = i + 2
                 if opening not in pairs:
                     continue
-                first = tokens[opening].end()
-                last = tokens[pairs[opening]].start()
-                raw = source[first:last].strip()
-                if decode_fixed_text(source, code, first, last) and "{" not in raw.replace("{{", "").replace("}}", ""):
+                if decode_fixed_format(source, code, tokens, pairs, words,
+                                       opening, tokens[min(active)].start()):
                     continue
                 replacement = "ctx.format_retained(format_args!(...), operation)?"
             elif (word in {"to_string", "to_owned"} and i > 1
@@ -2049,21 +2097,49 @@ def scan_decode_allocations(sources: dict[Path, str]) -> list[Finding]:
                 if not source[first:last].strip() or decode_static_values(source, code, first, last):
                     continue
                 replacement = "ctx.alloc_filled for Copy values or ctx.push_vec for admitted elements"
-            elif word in {"to_vec", "collect", "clone"} and i > 1 and words[i - 1] == ".":
+            elif word in {"to_vec", "collect", "clone", "cloned"} and i > 1 and words[i - 1] == ".":
                 if evaluation_call_open(words, i) is None:
                     continue
                 replacement = {
                     "to_vec": "ctx.copy_slice for Copy elements or ctx.copy_retained_strings for text",
                     "collect": "ctx.collect_vec / ctx.try_collect_vec / the charged map or set operation",
                     "clone": "ctx.copy_retained_text / ctx.copy_slice / explicit field construction with charged child copies; copy a Copy value directly",
+                    "cloned": "a charged child-copy map; use .copied() for Copy elements",
                 }[word]
-            elif (word in {"from", "clone", "to_owned", "to_string", "to_vec", "collect"}
+            elif word == "alloc_filled" and words[i - 1:i] == ["."]:
+                opening = evaluation_call_open(words, i)
+                if opening not in pairs:
+                    continue
+                comma = opening + 1
+                while comma < pairs[opening] and words[comma] != ",":
+                    comma = pairs[comma] + 1 if comma in pairs and words[comma] in "([{" else comma + 1
+                start = comma + 1
+                stop = start
+                while stop < pairs[opening] and words[stop] != ",":
+                    stop = pairs[stop] + 1 if stop in pairs and words[stop] in "([{" else stop + 1
+                initializer = "".join(words[start:stop])
+                if (initializer in {"None", "Vec::new()", "String::new()"}
+                        or decode_static_values(source, code, tokens[start - 1].end(), tokens[stop].start())
+                        or decode_fixed_text(source, code, tokens[start - 1].end(), tokens[stop].start())
+                        or decode_scalar_receiver(code[tokens[min(active)].start():], initializer,
+                                                  tokens[i].start() - tokens[min(active)].start())):
+                    continue
+                replacement = "ctx.collect_indexed_vec with explicit Copy assignments or charged child construction"
+            elif (word in {"from", "clone", "cloned", "to_owned", "to_string", "to_vec", "collect"}
                   and words[i - 1:i] == ["::"]):
                 opening = evaluation_call_open(words, i)
                 if opening is None or opening not in pairs:
                     continue
                 if word == "from" and words[i - 2] != "String":
                     continue
+                if word == "clone":
+                    owner = i - 2
+                    while owner > 1 and words[owner - 1] == "::":
+                        owner -= 2
+                    owner_words = words[owner:i - 1]
+                    resolved = imports[path].get(owner_words[0], (owner_words[0],)) + tuple(owner_words[2::2])
+                    if resolved in {("std", "rc", "Rc"), ("std", "sync", "Arc")}:
+                        continue
                 first, last = tokens[opening].end(), tokens[pairs[opening]].start()
                 if word == "from" and decode_fixed_text(source, code, first, last):
                     continue
@@ -2111,7 +2187,19 @@ def decode_work_charge(words, pairs, index, receivers):
     if decode_receiver(words, pairs, index) not in receivers:
         return None
     opening = evaluation_call_open(words, index)
-    if opening not in pairs or words[pairs[opening] + 1:pairs[opening] + 2] != ["?"]:
+    if opening not in pairs:
+        return None
+    following = pairs[opening] + 1
+    if words[following:following + 2] == [".", "map_err"]:
+        conversion = following + 2
+        if conversion not in pairs:
+            return None
+        constructor = words[conversion + 1:pairs[conversion]]
+        if (not constructor or constructor[-1] != "ResourceLimit"
+                or not re.fullmatch(r"(?:[A-Za-z_]\w*::)*ResourceLimit", "".join(constructor))):
+            return None
+        following = pairs[conversion] + 1
+    if words[following:following + 1] != ["?"]:
         return None
     stop = opening + 1
     while stop < pairs[opening]:
@@ -2134,7 +2222,7 @@ def decode_extent(expression):
 
 def decode_charge_covers(amount, extent):
     """Accept an exact named extent or its length wrapped by u64_from_index."""
-    amount = re.sub(r"(?:(?:[A-Za-z_]\w*::)*u64_from_index|u64::from)\(([^()]*(?:\.len\(\))?)\)", r"\1", amount)
+    amount = re.sub(r"(?:(?:[A-Za-z_]\w*::)*u64_from_index|u64::from)\(([^()]*(?:\.(?:len|capacity)\(\))?)\)", r"\1", amount)
     return amount in {extent, extent + ".len()", extent + ".capacity()"}
 
 
@@ -2155,9 +2243,68 @@ def decode_scalar_receiver(code, name, position):
         code[:position]))
     if not declarations:
         return False
-    tail = code[declarations[-1].end():position]
-    return not re.search(r"\blet\s+(?:mut\s+)?" + re.escape(name) + r"\b|\|[^|]*\b" +
-                         re.escape(name) + r"\b[^|]*\|", tail)
+    declaration = declarations[-1]
+    tail = code[declaration.end():position]
+    depth = 0
+    for character in tail:
+        depth += (character == "{") - (character == "}")
+        if depth < 0:
+            return False
+    prefix = code[:declaration.start()]
+    pipe = prefix.rfind("|")
+    if (pipe >= 0 and decode_closure_open(prefix, pipe)
+            and not re.search(r"[{};]", prefix[pipe + 1:])):
+        closing = tail.find("|")
+        if closing < 0:
+            return False
+        expression = tail[closing + 1:]
+        stack = []
+        block_body = expression.lstrip().startswith("{")
+        for character in expression:
+            if character in "([{":
+                stack.append(character)
+            elif character in ")]}":
+                if not stack:
+                    return False
+                stack.pop()
+                if not stack and block_body:
+                    return False
+            elif character in ",;" and not stack:
+                return False
+    if re.search(r"\blet\s+(?:mut\s+)?" + re.escape(name) + r"\b", tail):
+        return False
+    for pipe in re.finditer(r"\|", tail):
+        if not decode_closure_open(tail, pipe.start()):
+            continue
+        closing = tail.find("|", pipe.end())
+        if closing >= 0 and re.search(r"\b" + re.escape(name) + r"\b", tail[pipe.end():closing]):
+            return False
+    return True
+
+
+def decode_closure_open(code, pipe):
+    """A closing parameter pipe cannot introduce a new shadow binding."""
+    prefix = code[:pipe].rstrip()
+    return not prefix or prefix[-1] in "=(,{;" or bool(re.search(r"\bmove$", prefix))
+
+
+def decode_positive_step(amount):
+    """A literal positive amount or checked positive increment admits a step."""
+    if re.fullmatch(r"[0-9][0-9_]*(?:_?u(?:8|16|32|64|128|size))?", amount):
+        return int(re.sub(r"u(?:8|16|32|64|128|size)$", "", amount).replace("_", "")) > 0
+    increment = re.search(r"\.checked_add\([1-9][0-9_]*(?:_?u64)?\)", amount)
+    if increment is None or not amount.endswith("?"):
+        return False
+    tail = amount[increment.end():]
+    conversion = re.match(r"\.ok_or(?:_else)?\(", tail)
+    if conversion is None:
+        return False
+    depth = 1
+    for index in range(conversion.end(), len(tail)):
+        depth += (tail[index] == "(") - (tail[index] == ")")
+        if depth == 0:
+            return tail[index + 1:] == "?"
+    return False
 
 
 def scan_decode_work(sources: dict[Path, str]) -> list[Finding]:
@@ -2236,8 +2383,23 @@ def scan_decode_work(sources: dict[Path, str]) -> list[Finding]:
                     continue
                 left_name = words[left] if left >= 0 else ""
                 right_name = words[right] if right < len(words) else ""
-                if (words[i - 4:i] in [[".", method, "(", ")"] for method in {"len", "capacity", "position"}]
-                        and words[right + 1:right + 5] in [[".", method, "(", ")"] for method in {"len", "capacity", "position"}]):
+                count_queries = [[".", method, "(", ")"] for method in {"len", "capacity", "position"}]
+                right_query = right
+                while words[right_query + 1:right_query + 2] == ["."]:
+                    right_query += 2
+                if (words[i - 4:i] in count_queries
+                        or (words[right_query:right_query + 1] in [[method] for method in {"len", "capacity", "position"}]
+                            and words[right_query + 1:right_query + 3] == ["(", ")"])):
+                    continue
+                # Byte and character literals keep a b prefix in the masked
+                # token stream. Their comparison has a fixed upper bound.
+                raw_right = source[tokens[i + 1].end():].lstrip()
+                if re.match(r"(?:b|br\#*)?[\"']", raw_right):
+                    continue
+                if (decode_scalar_receiver(code[tokens[min(active)].start():], left_name,
+                                           tokens[i].start() - tokens[min(active)].start())
+                        or decode_scalar_receiver(code[tokens[min(active)].start():], right_name,
+                                                  tokens[i].start() - tokens[min(active)].start())):
                     continue
                 indexed = words[left:left + 1] == ["]"] or words[right + 1:right + 2] == ["["]
                 if indexed:
@@ -2252,9 +2414,7 @@ def scan_decode_work(sources: dict[Path, str]) -> list[Finding]:
                     # have constant work. Unresolved named comparisons do not.
                     if (not re.fullmatch(r"[A-Za-z_]\w*", left_name)
                             or not re.fullmatch(r"[A-Za-z_]\w*", right_name)
-                            or right_name in {"true", "false", "None"}
-                            or decode_scalar_receiver(code, left_name, tokens[i].start())
-                            or decode_scalar_receiver(code, right_name, tokens[i].start())):
+                            or right_name in {"true", "false", "None"}):
                         continue
                     extent = left_name
             else:
@@ -2267,7 +2427,7 @@ def scan_decode_work(sources: dict[Path, str]) -> list[Finding]:
                     first_stop = pairs[first_stop] + 1 if first_stop in pairs and words[first_stop] in "([{" else first_stop + 1
                 admitted = any(loop_body < charge < first_stop
                                and decode_block(parents, words, charge) == loop_body
-                               and charges[charge] not in {"0", "0_u64"}
+                               and decode_positive_step(charges[charge])
                                for charge in charges)
             if not admitted:
                 parent = decode_block(parents, words, i)
@@ -2279,10 +2439,12 @@ def scan_decode_work(sources: dict[Path, str]) -> list[Finding]:
                         if declared < charge and decode_block(parents, words, declared) == parent:
                             resolved = expression
                             break
-                    between = "".join(words[pairs[evaluation_call_open(words, charge)] + 2:i])
+                    between = " ".join(words[pairs[evaluation_call_open(words, charge)] + 2:i])
                     root = extent.split(".", 1)[0]
-                    mutated = re.search(r"(?:&mut" + re.escape(root) + r"\b|\b" +
-                                        re.escape(root) + r"(?:=|\.(?:push|insert|extend|append|resize|retain|clear)\())", between)
+                    mutated = re.search(
+                        r"(?:&\s*mut\s+" + re.escape(root) + r"\b|\b" +
+                        re.escape(root) + r"\s*(?:=|\.\s*(?:push|insert|extend|append|resize|retain|clear)\s*\())",
+                        between)
                     if decode_charge_covers(resolved, extent) and not mutated:
                         admitted = True
                         consumed.add(charge)

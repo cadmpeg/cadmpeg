@@ -265,6 +265,7 @@ pub fn named_entries_reporting<V>(
     let mut kept = BTreeMap::new();
     let mut refused = Vec::new();
     for (name, value) in entries {
+        ctx.charge_work(1, "named entry key scan")?;
         ctx.charge_work(
             crate::decode::u64_from_index(name.len()),
             "named entry key scan",
@@ -424,6 +425,21 @@ mod tests {
         policy.limits.max_retained_bytes = retained_limit;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
         named_entries_reporting(&ctx, "f", entries)
+    }
+
+    #[test]
+    fn named_empty_entry_refuses_iteration_before_validation() {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        policy.limits.max_retained_bytes = 0;
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
+        assert!(
+            matches!(named_entries_reporting(&ctx, "record", [(String::new(), 1)]),
+            Err(crate::CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::WorkUnits
+                && limit.operation == "named entry key scan")
+        );
     }
 
     #[test]

@@ -442,14 +442,22 @@ fn scan_collection_steps_refuse_before_callback_or_absence() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_work_units = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("test operation is admitted");
     let mut visited = false;
-    let error = ctx.collect_indexed_vec(1, "indexed", |_| {
-        visited = true;
-        Ok(0u8)
-    }).unwrap_err();
+    let error = ctx
+        .collect_indexed_vec(1, "indexed", |_| {
+            visited = true;
+            Ok(0u8)
+        })
+        .expect_err("test operation must refuse");
     assert!(!visited);
-    assert!(matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::WorkUnits));
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    assert!(matches!(ctx.collect_options([None::<u8>], "optional"), Err(CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::WorkUnits));
+    assert!(
+        matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::WorkUnits)
+    );
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("test operation is admitted");
+    assert!(
+        matches!(ctx.collect_options([None::<u8>], "optional"), Err(CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::WorkUnits)
+    );
 }

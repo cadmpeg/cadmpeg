@@ -492,18 +492,31 @@ impl DialectLayers {
         layer: DialectMatch,
         operation: &'static str,
     ) -> Result<(), DialectLayerError> {
-        ctx.charge_work_limit(
-            crate::decode::u64_from_index(self.extra.len()) + 1,
-            operation,
-        )
-        .map_err(DialectLayerError::ResourceLimit)?;
-        if Self::same_key(&self.primary, &layer)
-            || self
-                .extra
-                .iter()
-                .any(|existing| Self::same_key(existing, &layer))
-        {
-            return Err(DialectLayerError::Duplicate(layer));
+        let layer_format = layer.format();
+        for existing in std::iter::once(&self.primary).chain(&self.extra) {
+            ctx.charge_work_limit(1, operation)
+                .map_err(DialectLayerError::ResourceLimit)?;
+            let existing_format = existing.format();
+            ctx.charge_work_limit(
+                crate::decode::u64_from_index(existing_format.len()),
+                operation,
+            )
+            .map_err(DialectLayerError::ResourceLimit)?;
+            if existing_format != layer_format {
+                continue;
+            }
+            let same_instance = match (&existing.instance, &layer.instance) {
+                (Some(existing), Some(candidate)) => {
+                    ctx.charge_work_limit(crate::decode::u64_from_index(existing.len()), operation)
+                        .map_err(DialectLayerError::ResourceLimit)?;
+                    existing == candidate
+                }
+                (None, None) => true,
+                _ => false,
+            };
+            if same_instance {
+                return Err(DialectLayerError::Duplicate(layer));
+            }
         }
         ctx.reserve_vec_limit(&mut self.extra, 1, operation)
             .map_err(DialectLayerError::ResourceLimit)?;
@@ -526,10 +539,6 @@ impl DialectLayers {
     ) -> Result<Self, DialectLayerError> {
         self.insert_for_decode(ctx, layer, operation)?;
         Ok(self)
-    }
-
-    fn same_key(existing: &DialectMatch, layer: &DialectMatch) -> bool {
-        existing.format() == layer.format() && existing.instance == layer.instance
     }
 
     /// Returns the report's primary format layer.
@@ -653,6 +662,7 @@ impl DialectMatch {
         };
         let mut declared = BTreeMap::new();
         for (key, value) in &self.declared {
+            ctx.charge_work(1, operation)?;
             ctx.admit_retained_btree_record::<NonBlankString, String>(0, operation)?;
             let key = NonBlankString::new(ctx.copy_retained_text(key.as_str(), operation)?)
                 .ok_or_else(|| crate::CodecError::malformed("dialect declaration key is blank"))?;
@@ -902,6 +912,51 @@ mod tests {
             matches!(layers.try_clone_for_decode(&ctx, "copy extra storage"),
             Err(CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::RetainedBytes
                 && limit.operation == "copy extra storage")
+        );
+    }
+
+    #[test]
+    fn dialect_key_comparison_refuses_work_without_changing_layers() {
+        let primary =
+            DialectMatch::admitted(crate::dialect_id!("nx:unknown")).with_instance("same-instance");
+        let mut layers = DialectLayers::of(primary);
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        // One layer visit and the format comparison precede the instance scan.
+        policy.limits.max_work_units = 3;
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
+        let error = layers
+            .insert_for_decode(
+                &ctx,
+                DialectMatch::admitted(crate::dialect_id!("nx:unknown"))
+                    .with_instance("same-instance"),
+                "compare layer keys",
+            )
+            .expect_err("instance comparison exceeds work");
+        let super::DialectLayerError::ResourceLimit(limit) = error else {
+            panic!("work refusal must remain a resource limit");
+        };
+        assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+        assert_eq!(limit.operation, "compare layer keys");
+        assert_eq!(ctx.resource_refusal(), Some(limit));
+        assert_eq!(layers.iter().count(), 1);
+    }
+
+    #[test]
+    fn dialect_declaration_iteration_refuses_before_empty_value_copy() {
+        let layer = DialectMatch::admitted(crate::dialect_id!("nx:unknown")).with_declared(
+            BTreeMap::from([(crate::nonblank_literal!("version"), String::new())]),
+        );
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        policy.limits.max_retained_bytes = 0;
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
+        assert!(
+            matches!(layer.try_clone_for_decode(&ctx, "declaration iteration"),
+            Err(CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::WorkUnits)
         );
     }
 

@@ -127,30 +127,37 @@ Writer and encoder paths use the sort rule's path exclusions. Nested functions
 have independent contexts; closures keep the enclosing context. A borrowed
 or owned context parameter, imported context alias, constructor-bound local, typed
 local, context field and a DecodeContext method
-establish the scope.
+establish the scope. Same-named types keep their local context fields; a
+cross-file field owner must resolve uniquely.
 
 Input-dependent `format!`, `.to_string()` and `.to_owned()` use
 `ctx.format_retained(format_args!(...), operation)?` or
 `ctx.copy_retained_text(text, operation)?`. The resource-only copy form
 `copy_retained_text_limit` is also admitted. These operations charge before
 storage creation and propagate refusal. A separate storage charge does not
-admit an infallible allocating spelling. A string literal or format with no
-runtime operand is fixed size. An unresolved Display operand uses the charged
-format operation, including fixed scalar diagnostics whose types the scanner
-cannot establish.
+admit an infallible allocating spelling. A string literal, a format with static arguments, or formatting of explicitly
+typed primitives has a fixed size. Runtime format widths and precisions use
+the charged format operation. An unresolved Display operand also uses that
+operation.
 
 
 The same rule checks `.to_vec()`, `String::from`, non-empty `vec!`, owned
-`.collect()` and `.clone()`, including associated trait call spellings. Use
+`.collect()`, `.clone()` and iterator `.cloned()`, including associated trait
+call spellings. Use
 `copy_slice` for Copy elements, `copy_retained_strings` for strings,
 `collect_vec` or `try_collect_vec` for vectors, and the charged map or set
 operation for those collections. A filled vector uses `alloc_filled` with
-non-owning elements. A record clone constructs its fields with charged child
+primitive literals, explicitly typed primitives, `None`, or empty `Vec` and
+`String` constructors. Other fills use `collect_indexed_vec` with explicit
+Copy assignments or charged child construction. A record clone constructs its fields with charged child
 copies. The rule rejects unresolved clone and collect types: Copy values use
 direct copies, and a non-allocating collect uses its specific operation.
 Vectors containing only literals are fixed size and excluded. Raw clones
 with unresolved ownership use a direct Copy assignment or charged child copies.
-No separate charge admits raw collection creation.
+Explicit `std::rc::Rc::clone` and `std::sync::Arc::clone`, including their
+standard imports, only increment reference counts and allocate no child
+storage. These forms are excluded. No separate charge admits raw collection
+creation.
 
 
 ## Decode work admission
@@ -158,13 +165,16 @@ No separate charge admits raw collection creation.
 `uncharged_decode_work` has the allocation rule's context and path scope.
 Input-sized `for`, `while` and `loop`, iterator consumers, searches, prefix
 comparisons and decoded slice equality require propagated work admission.
-Unresolved scan types use the same forms. Fixed literal ranges and arrays stay outside
-the rule. A scalar `min` or `max` with an argument is constant time.
+Unresolved scan types use the same forms. Fixed literal ranges, arrays, byte comparisons against literals and scalar
+count queries stay outside the rule. A scalar `min` or `max` with an argument is constant time.
 
 A loop starts its body with `ctx.charge_work(..., operation)?` or the
-resource-only `charge_work_limit` form. The amount covers one iteration and
-its body work. A scan can instead use a charge in the same block before it
-with its exact extent or `u64_from_index(values.len())`. A simple local extent
+resource-only `charge_work_limit` form. A direct
+`.map_err(Error::ResourceLimit)?` preserves the resource payload and is also
+admitted; closures and other error constructors are not admitted. A positive literal or a checked positive increment followed directly by
+`ok_or` or `ok_or_else` and `?` charges the iteration. Input-dependent body work has a separate charge. A scan can instead use a charge in the same block before it
+with its exact extent, `u64_from_index(values.len())`, or the capacity of a
+hash table whose buckets are scanned. A simple local extent
 alias is accepted. Each charge admits one scan. Conditional, later, dropped,
 zero, unrelated and reused charges do not admit it. Nested scans need their
 own charge. Bodies and predicates with further input-dependent work charge

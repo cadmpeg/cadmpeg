@@ -94,7 +94,8 @@ mod tests {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_work_units = 0;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("test operation is admitted");
         let mut reader = Cursor::new(b"a");
         assert!(matches!(ctx.read_input_prefix(&mut reader, 1),
             Err(CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::WorkUnits));
