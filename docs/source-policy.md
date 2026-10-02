@@ -120,105 +120,98 @@ Policy changes edit the relevant rule and its tests; there is no global budget
 that permits unrelated violations to replace removed ones.
 
 
-## Decode allocation admission
+## Typed decode admission
 
-`uncharged_decode_allocation` checks context-holding production functions in
-core, IR decode paths, codec, container, assembly, Parasolid and Protein crates.
-Writer and encoder paths use the sort rule's path exclusions. Nested functions
-have independent contexts; closures keep the enclosing context. A borrowed
-or owned context parameter, imported context alias, constructor-bound local, typed
-local, context field and a DecodeContext method
-establish the scope. Same-named types keep their local context fields; a
-cross-file field owner must resolve uniquely.
+Run `python3 scripts/check-decode-policy.py`. The pre-commit, CI and release
+gates run this script. Repeat `--crate NAME` to select decode packages; their
+workspace dependencies are also checked. `--output FILE` writes sorted TSV
+findings. The four columns are rule, path, line and message. Exit status is 1
+on any finding. Compiler failures retain their nonzero exit status.
 
-Input-dependent `format!`, `.to_string()` and `.to_owned()` use
-`ctx.format_retained(format_args!(...), operation)?` or
-`ctx.copy_retained_text(text, operation)?`. The resource-only copy form
-`copy_retained_text_limit` is also admitted. These operations charge before
-storage creation and propagate refusal. A separate storage charge does not
-admit an infallible allocating spelling. A string literal, a format with static arguments, or formatting of explicitly
-typed primitives has a fixed size. Runtime format widths and precisions use
-the charged format operation. An unresolved Display operand also uses that
+The tool is `crates/cadmpeg-decode-policy`, outside the default workspace.
+Its `rust-toolchain.toml` pins `nightly-2026-09-08`, with `rustc-dev`, `rust-src`
+and `llvm-tools-preview`. The script installs missing pinned components, builds the driver and runs one Cargo
+check for the selected production libraries. Its target directory is
+`target/decode-policy`. Decode package artifacts are removed before a run
+so Cargo cannot omit findings for unchanged source.
+
+The compiler resolves expressions, receiver types, associated trait calls,
+record fields and closure owners. Both rules inspect production functions
+that hold the caller's `DecodeContext` in `cadmpeg-core`, `cadmpeg-ir`,
+`cadmpeg-codec-*`, `cadmpeg-container`, `cadmpeg-asm`, `cadmpeg-parasolid`
+and `cadmpeg-protein`. Writer, encoder, binary and test paths are excluded.
+Nested functions have independent scopes. Closures retain their enclosing
+function's scope. An owned or borrowed parameter, a local context, a context
+field or a context method establishes the scope.
+
+### Allocation
+
+`uncharged_decode_allocation` reports an operation that allocates owned
+storage whose size depends on input without a core charged operation.
+Ownership follows `String`, `Vec`, boxed slices, maps, sets and records that
+own such values. Borrowed values and types with no heap storage do not
+allocate when copied. The rule checks standard allocating constructors,
+`format!`, `to_string`, `to_owned`, `to_vec`, heap `collect`, `vec!`, `From`
+and `Into`, derived or standard heap `Clone`, and collection growth.
+`Vec::new`, `String::new` and empty collection constructors allocate no
+storage. Moving an owned value does not allocate. A custom `Clone` is checked
+in its body; owning a heap field alone does not prove that it allocates.
+
+Use `ctx.copy_retained_text` or `copy_retained_text_limit` for text copies,
+`ctx.format_retained(format_args!(...), operation)?` for variable text,
+`ctx.copy_slice` for Copy elements, `ctx.copy_retained_strings` for string
+children, and `ctx.collect_vec` or `try_collect_vec` for vectors. Use the
+matching core map or set operation for those collections. Use
+`ctx.alloc_filled` with Copy or empty values. Heap child clones use
+`ctx.collect_indexed_vec` and charged child construction. A charged outer
+collection does not admit uncharged child clones.
+
+Literal text, numeric formatting, fixed-size Copy enums, fixed arrays and
+constant-bounded collection construction have an input-independent size.
+`Rc::clone` and `Arc::clone` allocate no child storage. A runtime format width
+or precision requires the charged format operation. A separate storage
+charge does not admit an infallible raw allocation in a caller.
+
+### Work
+
+`uncharged_decode_work` reports input-sized loops, iterator consumption,
+comparisons, searches, hashes and copies without work admission. Slices,
+strings, vectors, maps, sets and `View` have variable extents. Scalars,
+fixed-size Copy values, arrays and constant-bounded ranges have fixed
+extents. Fixed array slots do not admit variable-size child comparisons.
+A `take` bound does not make an input-sized source fixed.
+
+Use `ctx.charge_work(extent, operation)?` or `charge_work_limit` before the
+operation. A simple extent alias can carry a length. Additive lengths and
+propagated checked sums can carry comparison bounds. A credit admits one
+operation. A conditional, later, dropped, reused or unrelated charge does
+not admit it. Mutation or mutable access invalidates extent evidence.
+Charges outside a loop or deferred closure do not admit its child scans.
+A loop can instead admit every iteration path with a propagated context
+operation before work. Filtering and skipping can inspect input before a
+yielded iteration; a charge in that iteration does not admit those visits.
+
+Use `ctx.position_by` for fallible search and `ctx.equal_bytes` for byte
+comparison. A callee that takes the context owns its work admission. Its
+arguments and callbacks remain checked. Custom comparison implementations
+are inspected separately from their owning types.
+
+### Undecided operations
+
+`unproven_decode_charge` reports operations for which type resolution does
+not establish allocator reachability, extent or charge coverage. Generic
+values, trait objects, opaque callees, unresolved callbacks and unsupported
+charge arithmetic use this rule. These are findings and fail the gate.
+They are not reported as known allocation or work defects. Use a concrete
+type, a core charged operation, or explicit admission with a direct extent
+inside the operation. A length charge alone does not establish child-byte,
+hash-capacity or sorting work coverage. A storage charge does not admit
+work. The checker does not silently accept an undecided
 operation.
 
+The fixture tests are in `crates/cadmpeg-decode-policy/fixtures` and are run
+by the compiler integration suite:
 
-The same rule checks `.to_vec()`, `String::from`, non-empty `vec!`, owned
-`.collect()`, `.clone()` and iterator `.cloned()`, including associated trait
-call spellings. Use
-`copy_slice` for Copy elements, `copy_retained_strings` for strings,
-`collect_vec` or `try_collect_vec` for vectors, and the charged map or set
-operation for those collections. A filled vector uses `alloc_filled` with
-primitive literals, explicitly typed primitives, `None`, or empty `Vec` and
-`String` constructors. Other fills use `collect_indexed_vec` with explicit
-Copy assignments or charged child construction. A record clone constructs its fields with charged child
-copies. The rule rejects unresolved clone and collect types: Copy values use
-direct copies, and a non-allocating collect uses its specific operation.
-Vectors containing only literals are fixed size and excluded. Raw clones
-with unresolved ownership use a direct Copy assignment or charged child copies.
-Explicit `std::rc::Rc::clone` and `std::sync::Arc::clone`, including their
-standard imports, only increment reference counts and allocate no child
-storage. These forms are excluded. No separate charge admits raw collection
-creation.
-
-
-## Decode work admission
-
-`uncharged_decode_work` has the allocation rule's context and path scope.
-Input-sized `for`, `while` and `loop`, iterator consumers, searches, prefix
-comparisons and decoded slice equality require propagated work admission.
-Unresolved scan types use the same forms. Arrays with literal or declared
-constant lengths, constant-bounded ranges, and their iterator chains have a
-fixed iteration count. Tuple and array comparisons have fixed work when their
-elements have fixed comparison work. Explicit primitive types and structural
-`Copy` scalars have fixed comparison work. Arrays of strings have a fixed slot
-count but still require charged child comparisons. `Option` has at most one
-item; its comparison work follows its child type or constructor operand.
-A range with a runtime
-bound and an input-sized iterator with `take` remain input-sized. Fixed byte
-comparisons against literals and scalar count queries stay outside the rule.
-A primitive scalar `min` or `max` with an argument has fixed comparison work.
-Declared field and method result types stay attached to their record owner.
-Primitive checked results, primitive match-arm results, standard size and
-alignment queries, and numeric range indices also prove scalar comparison
-work. A runtime range still needs iteration admission.
-
-A loop admits each iteration before its first effect on every control-flow
-path. Admission can be `ctx.charge_work(..., operation)?`, the resource-only
-`charge_work_limit` form, a charged `DecodeContext` operation such as
-`push_vec`, `insert_btree_map` or `copy_retained_text`, or a call that passes
-the caller context and propagates refusal with `?`. The checker resolves
-charged context methods through the core method call graph. A charge on only
-one branch does not admit a loop. A direct
-`.map_err(Error::ResourceLimit)?` preserves the resource payload and is also
-admitted; closures and other error constructors are not admitted. A positive
-literal or a checked positive increment followed directly by `ok_or` or
-`ok_or_else` and `?` charges the iteration. Input-dependent body work has a
-separate charge. A scan can instead use a dominating charge before it
-with its exact extent, `u64_from_index(values.len())`, or the capacity of a
-hash table whose buckets are scanned. A simple local extent
-alias is accepted when its source extent remains unchanged from capture to
-scan. Growth through a projected field or a mutable borrow invalidates that
-proof. Comparison and search operands can use the same admission,
-including additive operand lengths and propagated `checked_add` sums. A charge
-can dominate a scan in a conditional child block. It cannot pay for repeated
-scans inside a loop or deferred closure from outside that scope. Each charge
-admits one scan. Conditional, later, dropped,
-zero, unrelated and reused charges do not admit it. Nested scans need their
-own charge. Bodies and predicates with further input-dependent work charge
-that work separately.
-Loop conditions are repeated work. A charge outside the loop does not admit
-their searches. Filtering, skipping and flattening can visit source items
-before a yielded iteration starts; a body charge does not admit those visits.
-
-Use `ctx.position_by(values, fallible_predicate, operation)?` for a search
-and `ctx.equal_bytes(left, right, operation)?` for decoded byte equality.
-Calls that pass the caller context and propagate refusal are checked in the
-callee. A helper with a scan-like method name does not create a second caller
-finding. Its own uncharged scans, argument scans and closure child scans remain
-subject to the rule.
-Heap-owning comparisons require charged child comparisons. Named equality
-with unresolved ownership uses an explicit scalar annotation or a charged
-comparison. An aggregate
-algorithm bound that the lexical rule cannot prove is expressed as explicit
-per-pass or per-iteration admission. The checker does not infer arbitrary
-arithmetic, alias mutations or a callback's complexity.
+```
+cargo +nightly-2026-09-08 test -q --manifest-path crates/cadmpeg-decode-policy/Cargo.toml --lib
+```

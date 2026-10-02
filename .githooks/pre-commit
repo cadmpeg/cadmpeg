@@ -65,6 +65,12 @@ if git diff --cached --name-only | grep -qE '\.rs$|^scripts/check-source-policy\
   python3 scripts/check-source-policy.py
 fi
 
+# Typed decode admission runs through the pinned compiler driver.
+if git diff --cached --name-only | grep -qE '\.rs$|^scripts/check-decode-policy\.py$|^crates/cadmpeg-decode-policy/'; then
+  echo "pre-commit: scripts/check-decode-policy.py"
+  python3 scripts/check-decode-policy.py
+fi
+
 # Every non-test deserializable item in the two wire crates must refuse an
 # unknown key. The property is static, so it is checked over the declarations
 # rather than over the shapes the goldens happen to carry.
