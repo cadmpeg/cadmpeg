@@ -16,7 +16,7 @@ fn check_fixture(name: &str) {
     let output_dir = root.join("target/fixtures").join(name);
     std::fs::create_dir_all(&output_dir).expect("fixture directory");
     let output = Command::new(std::env::current_exe().expect("test binary"))
-        .args(["--exact", "tests::fixture_child", "--ignored", "--nocapture"])
+        .args(["--exact", "integration_tests::fixture_child", "--ignored", "--nocapture"])
         .env("CADMPEG_POLICY_FIXTURE", "1")
         .env("CADMPEG_POLICY_INPUT", &path)
         .env("CADMPEG_POLICY_OUTPUT", &output_dir)
