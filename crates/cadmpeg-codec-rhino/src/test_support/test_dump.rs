@@ -43,7 +43,9 @@ pub(crate) fn crc_chunk_excluding(
 ) -> Vec<u8> {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let ctx = cadmpeg_core::decode::DecodeContext::new(
-        &arena, &cadmpeg_core::decode::DecodePolicy::service(), false,
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+        false,
     );
     let direct = crate::chunks::direct_checksum_ranges(&ctx, &(0..body.len()), children)
         .expect("valid test child ranges");

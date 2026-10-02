@@ -1330,7 +1330,9 @@ pub(crate) mod tests {
             }
             let arena = cadmpeg_core::decode::DecodeArena::new();
             let ctx = cadmpeg_core::decode::DecodeContext::new(
-                &arena, &cadmpeg_core::decode::DecodePolicy::service(), false,
+                &arena,
+                &cadmpeg_core::decode::DecodePolicy::service(),
+                false,
             );
             let direct = crate::chunks::direct_checksum_ranges(&ctx, &(0..body.len()), &children)
                 .expect("valid extrusion children");

@@ -233,7 +233,9 @@ fn anonymous(body: &[u8]) -> Vec<u8> {
 fn anonymous_mixed(body: &[u8], children: &[Range<usize>]) -> Vec<u8> {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let ctx = cadmpeg_core::decode::DecodeContext::new(
-        &arena, &cadmpeg_core::decode::DecodePolicy::service(), false,
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+        false,
     );
     let direct = crate::chunks::direct_checksum_ranges(&ctx, &(0..body.len()), children)
         .expect("valid SubD fixture children");
@@ -1129,7 +1131,11 @@ fn subd_decode_commits_association_link_exactness_status_and_report() {
     assert!(result.report().losses.iter().any(|loss| loss.code
         == crate::loss::RhinoLossCode::ObjectRecordCensus.kind()
         && loss.message.contains("decoded 1/1 Rhino object records")));
-    assert!(cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone()).expect("resource allocation did not fail").is_ok());
+    assert!(
+        cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
+            .expect("resource allocation did not fail")
+            .is_ok()
+    );
 }
 
 #[test]
@@ -1210,7 +1216,11 @@ fn malformed_subd_is_atomic_and_later_object_recovers() {
     assert!(result.report().losses.iter().any(|loss| loss.code
         == crate::loss::RhinoLossCode::ObjectRecordCensus.kind()
         && loss.message.contains("decoded 1/2 Rhino object records")));
-    assert!(cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone()).expect("resource allocation did not fail").is_ok());
+    assert!(
+        cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
+            .expect("resource allocation did not fail")
+            .is_ok()
+    );
 }
 
 #[test]
