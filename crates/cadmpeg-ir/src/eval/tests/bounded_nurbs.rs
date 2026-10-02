@@ -165,3 +165,27 @@ fn pcurve_containment_preserves_caller_refusals_and_releases_scratch() {
     drop(reuse);
     ctx.finish_session().expect("no retained temporary storage");
 }
+
+#[test]
+fn nearest_interval_heap_preserves_descending_order_and_releases_working_storage() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    use crate::scalar::FiniteReal;
+    let boundaries = [0, 1, 1, 2, 3, 4].map(|value| FiniteReal::from_index(value).expect("exact test index"));
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    policy.limits.max_materialized_bytes = 4096;
+    // Four valid heap slots and four output slots. Repeated intervals add none.
+    policy.limits.max_collection_items = 8;
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+    let output = super::super::bounded_nearest_intervals(&ctx, &boundaries, FiniteReal::from_index(1).unwrap()).expect("eight slots");
+    assert_eq!(output.0.iter().map(|interval| interval.map(FiniteReal::get)).collect::<Vec<_>>(),
+        [[3.0, 4.0], [2.0, 3.0], [1.0, 2.0], [0.0, 1.0]]);
+    let bytes = u64::try_from(output.0.capacity() * std::mem::size_of::<[FiniteReal; 2]>()).expect("test bytes fit");
+    let spare = ctx.reserve_scoped_limit(4096 - bytes, "test nearest interval heap released").expect("only interval output remains");
+    drop(spare);
+    drop(output);
+    let reuse = ctx.reserve_scoped_limit(4096, "test nearest intervals released").expect("all bytes reusable");
+    drop(reuse);
+    ctx.finish_session().expect("scoped intervals retain no bytes");
+}
