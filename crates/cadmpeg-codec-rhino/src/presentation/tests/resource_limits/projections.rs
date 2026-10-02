@@ -175,18 +175,7 @@ fn projected_clipping_plane_uuids_refuse_collection_limit() {
     let mut attributes = presentation_attributes();
     attributes.clipping_plane_ids.push(Uuid::nil());
     assert_projected_attributes_resource(
-        &projected_attributes_refusal(
-            &attributes,
-            0,
-            crate::test_support::retained_limit_at(
-                "Rhino projected clipping plane UUIDs",
-                0,
-                |cap| match projected_attributes_refusal(&attributes, 0, cap) {
-                    cadmpeg_core::CodecError::ResourceLimit(limit) => limit,
-                    error => panic!("unexpected resource refusal: {error:?}"),
-                },
-            ),
-        ),
+        &projected_attributes_refusal(&attributes, 0, 100),
         "Rhino projected clipping plane UUIDs",
     );
 }

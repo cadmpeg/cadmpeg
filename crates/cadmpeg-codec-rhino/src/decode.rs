@@ -62,13 +62,16 @@ fn instance_members_are_unique(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     members: &[crate::wire::Uuid],
 ) -> Result<bool, cadmpeg_core::CodecError> {
+    let mut lookup_storage = ctx.reserve_scoped(0, "Rhino instance member lookup")?;
     let mut unique_members = BTreeSet::new();
     for member in members {
-        ctx.insert_btree_set(
-            &mut unique_members,
-            *member,
-            "Rhino instance unique members",
-        )?;
+        lookup_storage.with_storage(|| {
+            ctx.insert_btree_set(
+                &mut unique_members,
+                *member,
+                "Rhino instance unique members",
+            )
+        })?;
     }
     Ok(unique_members.len() == members.len())
 }
