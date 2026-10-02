@@ -23,10 +23,9 @@ impl<'tcx> Analysis<'_, 'tcx> {
                     && types::work(self.tcx, value, &mut Vec::new()) == Shape::Fixed
                     && match value.kind() {
                         ty::Str | ty::Slice(_) => false,
-                        _ => self.tcx.type_is_copy_modulo_regions(
-                            self.typing_env(),
-                            value,
-                        ),
+                        _ => self
+                            .tcx
+                            .type_is_copy_modulo_regions(self.typing_env(), value),
                     }
             }
         }
@@ -52,14 +51,22 @@ impl<'tcx> Analysis<'_, 'tcx> {
         if self.checked_call(expression, definition) && name != "alloc_filled" {
             return;
         }
-        let summary = external::summary(self.tcx, self.implementation(expression, definition).unwrap_or(definition),
-            operands.first().map(|operand| self.expr_ty(operand)));
+        let summary = external::summary(
+            self.tcx,
+            self.implementation(expression, definition)
+                .unwrap_or(definition),
+            operands.first().map(|operand| self.expr_ty(operand)),
+        );
         let allocation = summary.map(|summary| summary.allocation);
         if allocation == Some(external::Allocation::None) {
             return;
         }
-        if summary.is_some_and(|summary| summary.zero_operand
-            .and_then(|index| operands.get(index)).is_some_and(|operand| self.zero_extent(operand))) {
+        if summary.is_some_and(|summary| {
+            summary
+                .zero_operand
+                .and_then(|index| operands.get(index))
+                .is_some_and(|operand| self.zero_extent(operand))
+        }) {
             return;
         }
         if summary.is_some_and(|summary| summary.empty_operand.and_then(|index| operands.get(index))
@@ -68,7 +75,8 @@ impl<'tcx> Analysis<'_, 'tcx> {
             return;
         }
         if allocation == Some(external::Allocation::Conversion)
-            && matches!(self.expr_ty(expression).kind(), ty::Adt(owner, _) if types::standard(self.tcx, owner.did()) && self.tcx.item_name(owner.did()).as_str() == "Cow") {
+            && matches!(self.expr_ty(expression).kind(), ty::Adt(owner, _) if types::standard(self.tcx, owner.did()) && self.tcx.item_name(owner.did()).as_str() == "Cow")
+        {
             return;
         }
         let context_call = operands.first().is_some_and(|operand| {

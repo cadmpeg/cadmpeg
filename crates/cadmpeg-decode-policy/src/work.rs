@@ -28,9 +28,8 @@ impl<'tcx> Analysis<'_, 'tcx> {
                     | BinOpKind::Gt
                     | BinOpKind::Ge
             ) {
-                let shape = types::work(self.tcx, self.expr_ty(left), &mut Vec::new()).join(
-                    types::work(self.tcx, self.expr_ty(right), &mut Vec::new()),
-                );
+                let shape = types::work(self.tcx, self.expr_ty(left), &mut Vec::new())
+                    .join(types::work(self.tcx, self.expr_ty(right), &mut Vec::new()));
                 // Comparing a dynamic sequence with a fixed-size operand reads
                 // at most that operand's fixed extent.
                 if let Some(definition) = self.typeck.type_dependent_def_id(expression.hir_id) {
@@ -82,15 +81,31 @@ impl<'tcx> Analysis<'_, 'tcx> {
                 return;
             }
         }
-        let Some(summary) = external::summary(self.tcx, self.implementation(expression, definition).unwrap_or(definition),
-            operands.first().map(|operand| self.expr_ty(operand))) else {
-            self.report(expression.span, "unproven_decode_charge",
-                &format!("external operation missing summary: {}", self.tcx.def_path_str(definition)));
+        let Some(summary) = external::summary(
+            self.tcx,
+            self.implementation(expression, definition)
+                .unwrap_or(definition),
+            operands.first().map(|operand| self.expr_ty(operand)),
+        ) else {
+            self.report(
+                expression.span,
+                "unproven_decode_charge",
+                &format!(
+                    "external operation missing summary: {}",
+                    self.tcx.def_path_str(definition)
+                ),
+            );
             return;
         };
         if self.tcx.trait_of_assoc(definition).is_some()
-            && self.implementation(expression, definition).is_none() {
-            self.work_report(expression.span, Shape::Unknown, Some(false), "trait implementation unresolved");
+            && self.implementation(expression, definition).is_none()
+        {
+            self.work_report(
+                expression.span,
+                Shape::Unknown,
+                Some(false),
+                "trait implementation unresolved",
+            );
             return;
         }
         if name == "clone" && self.clone_shape(self.expr_ty(expression)) == Shape::Fixed {
@@ -143,9 +158,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
             if result
                 == operands
                     .first()
-                    .map_or(self.expr_ty(expression), |operand| {
-                        self.expr_ty(operand)
-                    })
+                    .map_or(self.expr_ty(expression), |operand| self.expr_ty(operand))
             {
                 return;
             }
@@ -235,10 +248,9 @@ impl<'tcx> Analysis<'_, 'tcx> {
                     return;
                 }
                 if shape == Shape::Fixed
-                    && self.tcx.type_is_copy_modulo_regions(
-                        self.typing_env(),
-                        element,
-                    )
+                    && self
+                        .tcx
+                        .type_is_copy_modulo_regions(self.typing_env(), element)
                 {
                     return;
                 }
@@ -263,10 +275,8 @@ impl<'tcx> Analysis<'_, 'tcx> {
         {
             if let rustc_middle::ty::Adt(_, arguments) = value.kind() {
                 if arguments.types().next().is_some_and(|element| {
-                    self.tcx.type_is_copy_modulo_regions(
-                        self.typing_env(),
-                        element,
-                    )
+                    self.tcx
+                        .type_is_copy_modulo_regions(self.typing_env(), element)
                 }) {
                     return;
                 }
@@ -308,8 +318,11 @@ impl<'tcx> Analysis<'_, 'tcx> {
         } else if consumers {
             self.iteration(receiver, &mut Vec::new())
         } else {
-            if self.constant(extent, &mut Vec::new()) { Shape::Fixed }
-            else { types::work(self.tcx, self.expr_ty(extent), &mut Vec::new()) }
+            if self.constant(extent, &mut Vec::new()) {
+                Shape::Fixed
+            } else {
+                types::work(self.tcx, self.expr_ty(extent), &mut Vec::new())
+            }
         };
         if shape == Shape::Fixed {
             return;
@@ -329,7 +342,9 @@ impl<'tcx> Analysis<'_, 'tcx> {
         };
         let checked_value = if matches!(summary.work, external::Work::Argument(_)) {
             self.expr_ty(extent).peel_refs()
-        } else { value };
+        } else {
+            value
+        };
         if paid == Some(true)
             && (matches!(
                 name,
@@ -353,9 +368,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
     }
 
     fn capacity_iteration(&self, expression: &'tcx Expr<'tcx>) -> bool {
-        if let rustc_middle::ty::Adt(definition, _) =
-            self.expr_ty(expression).peel_refs().kind()
-        {
+        if let rustc_middle::ty::Adt(definition, _) = self.expr_ty(expression).peel_refs().kind() {
             if types::standard(self.tcx, definition.did())
                 && matches!(
                     self.tcx.item_name(definition.did()).as_str(),
@@ -511,10 +524,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
         let ExprKind::Binary(operator, variable, bound) = condition.kind else {
             return false;
         };
-        if !matches!(
-            self.expr_ty(variable).kind(),
-            rustc_middle::ty::Uint(_)
-        ) {
+        if !matches!(self.expr_ty(variable).kind(), rustc_middle::ty::Uint(_)) {
             return false;
         }
         let ExprKind::Lit(literal) = bound.kind else {
@@ -591,12 +601,16 @@ impl<'tcx> Analysis<'_, 'tcx> {
     fn restore_loop(&mut self, mut saved: crate::flow::Flow) {
         saved.mutated.extend(self.flow.mutated.iter().cloned());
         saved.work.retain(|credit| {
-            !credit.extents.iter().flat_map(|term| &term.factors).any(|term| {
-                saved
-                    .mutated
-                    .iter()
-                    .any(|key| term == key || term.starts_with(&format!("{key}.")))
-            })
+            !credit
+                .extents
+                .iter()
+                .flat_map(|term| &term.factors)
+                .any(|term| {
+                    saved
+                        .mutated
+                        .iter()
+                        .any(|key| term == key || term.starts_with(&format!("{key}.")))
+                })
         });
         saved.storage |= self.flow.storage;
         self.flow = saved;
@@ -653,13 +667,21 @@ impl<'tcx> Analysis<'_, 'tcx> {
                             if let Some(count) = repetitions.filter(|count| *count > 0) {
                                 if let Some(iterations) = self.flow.iterations.checked_mul(count) {
                                     self.flow.iterations = iterations;
-                                } else { self.flow.work.clear(); }
-                            } else { self.flow.work.clear(); }
-                        } else { self.flow.work.clear(); }
+                                } else {
+                                    self.flow.work.clear();
+                                }
+                            } else {
+                                self.flow.work.clear();
+                            }
+                        } else {
+                            self.flow.work.clear();
+                        }
                         if let Some(body) = user_body {
                             self.visit_expr(body);
                         }
-                        if shape == Shape::Fixed { saved.work = self.flow.work.clone(); }
+                        if shape == Shape::Fixed {
+                            saved.work = self.flow.work.clone();
+                        }
                         self.restore_loop(saved);
                         return;
                     }

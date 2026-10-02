@@ -22,13 +22,20 @@ pub(crate) fn collect<'tcx>(tcx: TyCtxt<'tcx>, owners: &[LocalDefId]) -> Vec<Ins
         }
         let mut findings = Findings::default();
         Collector {
-            analysis: Analysis { tcx, typeck: tcx.typeck(*owner), typing_owner: *owner,
-                arguments: None, flow: flow::Flow::default(), findings: &mut findings },
+            analysis: Analysis {
+                tcx,
+                typeck: tcx.typeck(*owner),
+                typing_owner: *owner,
+                arguments: None,
+                flow: flow::Flow::default(),
+                findings: &mut findings,
+            },
             caller: *owner,
             origin: None,
             seen: HashSet::new(),
             result: &mut result,
-        }.visit_body(tcx.hir_body_owned_by(*owner));
+        }
+        .visit_body(tcx.hir_body_owned_by(*owner));
     }
     result
 }
@@ -48,34 +55,60 @@ impl<'tcx> Visitor<'tcx> for Collector<'_, '_, 'tcx> {
             ExprKind::Closure(_) => Some(self.analysis.expr_ty(expression)),
             _ => None,
         };
-        let instance = closure_type.and_then(|value| match value.peel_refs().kind() {
-            rustc_middle::ty::Closure(definition, args) => Some(Instance {
-                def: rustc_middle::ty::InstanceKind::Item(*definition), args }),
-            _ => None,
-        }).or_else(|| self.analysis.call(expression).and_then(|(definition, _)|
-            self.analysis.resolved_instance(expression, definition)));
+        let instance = closure_type
+            .and_then(|value| match value.peel_refs().kind() {
+                rustc_middle::ty::Closure(definition, args) => Some(Instance {
+                    def: rustc_middle::ty::InstanceKind::Item(*definition),
+                    args,
+                }),
+                _ => None,
+            })
+            .or_else(|| {
+                self.analysis.call(expression).and_then(|(definition, _)| {
+                    self.analysis.resolved_instance(expression, definition)
+                })
+            });
         if let Some(instance) = instance {
-                if self.analysis.checked_body(instance.def_id())
-                    && instance.args.iter().any(|argument| !matches!(argument.kind(), rustc_middle::ty::GenericArgKind::Lifetime(_))) && !instance.args.has_non_region_param()
-                    && self.seen.insert(instance) {
-                    let span = self.origin.unwrap_or(expression.span);
-                    self.result.push(Instantiation { instance, caller: self.caller, span,
-                        enumerated: self.seen.len() <= self.analysis.tcx.recursion_limit().0 });
-                    if let Some(local) = instance.def_id().as_local() {
-                        let tcx = self.analysis.tcx;
-                        let limit = tcx.recursion_limit().0;
-                        if self.seen.len() <= limit {
-                            Collector {
-                                analysis: Analysis { tcx, typeck: tcx.typeck(local), typing_owner: self.caller,
-                                    arguments: Some(instance.args), flow: flow::Flow::default(),
-                                    findings: self.analysis.findings },
-                                caller: self.caller, origin: Some(span), seen: self.seen.clone(),
-                                result: self.result,
-                            }.visit_body(tcx.hir_body_owned_by(local));
+            if self.analysis.checked_body(instance.def_id())
+                && instance.args.iter().any(|argument| {
+                    !matches!(
+                        argument.kind(),
+                        rustc_middle::ty::GenericArgKind::Lifetime(_)
+                    )
+                })
+                && !instance.args.has_non_region_param()
+                && self.seen.insert(instance)
+            {
+                let span = self.origin.unwrap_or(expression.span);
+                self.result.push(Instantiation {
+                    instance,
+                    caller: self.caller,
+                    span,
+                    enumerated: self.seen.len() <= self.analysis.tcx.recursion_limit().0,
+                });
+                if let Some(local) = instance.def_id().as_local() {
+                    let tcx = self.analysis.tcx;
+                    let limit = tcx.recursion_limit().0;
+                    if self.seen.len() <= limit {
+                        Collector {
+                            analysis: Analysis {
+                                tcx,
+                                typeck: tcx.typeck(local),
+                                typing_owner: self.caller,
+                                arguments: Some(instance.args),
+                                flow: flow::Flow::default(),
+                                findings: self.analysis.findings,
+                            },
+                            caller: self.caller,
+                            origin: Some(span),
+                            seen: self.seen.clone(),
+                            result: self.result,
                         }
+                        .visit_body(tcx.hir_body_owned_by(local));
                     }
-                    self.seen.remove(&instance);
                 }
+                self.seen.remove(&instance);
+            }
         }
         if !matches!(expression.kind, ExprKind::Closure(_)) {
             walk_expr(self, expression);
@@ -83,50 +116,91 @@ impl<'tcx> Visitor<'tcx> for Collector<'_, '_, 'tcx> {
     }
 }
 
-pub(crate) fn check_imported<'tcx>(tcx: TyCtxt<'tcx>, root: &Instantiation<'tcx>, findings: &mut Findings) {
+pub(crate) fn check_imported<'tcx>(
+    tcx: TyCtxt<'tcx>,
+    root: &Instantiation<'tcx>,
+    findings: &mut Findings,
+) {
     let mut pending = vec![root.instance];
     let mut seen = HashSet::new();
     while let Some(instance) = pending.pop() {
         if !seen.insert(instance) {
             continue;
         }
-        let mut reporter = Analysis { tcx, typeck: tcx.typeck(root.caller), typing_owner: root.caller,
-            arguments: None, flow: flow::Flow::default(), findings };
+        let mut reporter = Analysis {
+            tcx,
+            typeck: tcx.typeck(root.caller),
+            typing_owner: root.caller,
+            arguments: None,
+            flow: flow::Flow::default(),
+            findings,
+        };
         if seen.len() > tcx.recursion_limit().0 || !tcx.is_mir_available(instance.def_id()) {
             reporter.report(root.span, "unproven_decode_charge", "generic instantiations cannot be enumerated: checked dependency body unavailable or recursion limit reached");
             continue;
         }
         let body = tcx.instance_mir(instance.def);
         for block in body.basic_blocks.iter() {
-            let rustc_middle::mir::TerminatorKind::Call { func, args, destination, .. } = &block.terminator().kind else {
+            let rustc_middle::mir::TerminatorKind::Call {
+                func,
+                args,
+                destination,
+                ..
+            } = &block.terminator().kind
+            else {
                 continue;
             };
             let raw = func.ty(body, tcx);
             if !raw.has_non_region_param() {
                 continue;
             }
-            let concrete = instance.instantiate_mir(tcx, rustc_middle::ty::EarlyBinder::bind(tcx, raw));
+            let concrete =
+                instance.instantiate_mir(tcx, rustc_middle::ty::EarlyBinder::bind(tcx, raw));
             let rustc_middle::ty::FnDef(definition, arguments) = concrete.kind() else {
-                reporter.report(root.span, "unproven_decode_charge", "generic instantiation contains an indirect call");
+                reporter.report(
+                    root.span,
+                    "unproven_decode_charge",
+                    "generic instantiation contains an indirect call",
+                );
                 continue;
             };
             let Some(arguments) = arguments.no_bound_vars() else {
-                reporter.report(root.span, "unproven_decode_charge", "generic instantiation has late-bound arguments");
+                reporter.report(
+                    root.span,
+                    "unproven_decode_charge",
+                    "generic instantiation has late-bound arguments",
+                );
                 continue;
             };
-            let Ok(arguments) = tcx.try_normalize_erasing_regions(reporter.typing_env(),
-                rustc_middle::ty::Unnormalized::new_wip(arguments)) else {
-                reporter.report(root.span, "unproven_decode_charge", "generic instantiation arguments cannot be normalized");
+            let Ok(arguments) = tcx.try_normalize_erasing_regions(
+                reporter.typing_env(),
+                rustc_middle::ty::Unnormalized::new_wip(arguments),
+            ) else {
+                reporter.report(
+                    root.span,
+                    "unproven_decode_charge",
+                    "generic instantiation arguments cannot be normalized",
+                );
                 continue;
             };
-            let resolved = Instance::try_resolve(tcx, reporter.typing_env(),
-                *definition, arguments).ok().flatten();
+            let resolved =
+                Instance::try_resolve(tcx, reporter.typing_env(), *definition, arguments)
+                    .ok()
+                    .flatten();
             let Some(resolved) = resolved else {
-                reporter.report(root.span, "unproven_decode_charge", &format!("generic instantiation unresolved: {concrete}"));
+                reporter.report(
+                    root.span,
+                    "unproven_decode_charge",
+                    &format!("generic instantiation unresolved: {concrete}"),
+                );
                 continue;
             };
             if matches!(resolved.def, rustc_middle::ty::InstanceKind::Virtual(_, _)) {
-                reporter.report(root.span, "unproven_decode_charge", &format!("generic instantiation uses trait-object dispatch: {concrete}"));
+                reporter.report(
+                    root.span,
+                    "unproven_decode_charge",
+                    &format!("generic instantiation uses trait-object dispatch: {concrete}"),
+                );
                 continue;
             }
             if reporter.checked_body(resolved.def_id()) {
@@ -136,15 +210,28 @@ pub(crate) fn check_imported<'tcx>(tcx: TyCtxt<'tcx>, root: &Instantiation<'tcx>
             if tcx.trait_of_assoc(*definition).is_none() {
                 continue;
             }
-            let receiver = args.first().map(|operand| instance.instantiate_mir(tcx,
-                rustc_middle::ty::EarlyBinder::bind(tcx, operand.node.ty(body, tcx))));
+            let receiver = args.first().map(|operand| {
+                instance.instantiate_mir(
+                    tcx,
+                    rustc_middle::ty::EarlyBinder::bind(tcx, operand.node.ty(body, tcx)),
+                )
+            });
             let Some(summary) = crate::external::summary(tcx, resolved.def_id(), receiver) else {
-                reporter.report(root.span, "unproven_decode_charge", &format!("generic external operation missing summary: {concrete}"));
+                reporter.report(
+                    root.span,
+                    "unproven_decode_charge",
+                    &format!("generic external operation missing summary: {concrete}"),
+                );
                 continue;
             };
-            let Some(receiver) = receiver else { continue; };
+            let Some(receiver) = receiver else {
+                continue;
+            };
             let allocation = if summary.allocation == crate::external::Allocation::Clone {
-                let output = instance.instantiate_mir(tcx, rustc_middle::ty::EarlyBinder::bind(tcx, destination.ty(body, tcx).ty));
+                let output = instance.instantiate_mir(
+                    tcx,
+                    rustc_middle::ty::EarlyBinder::bind(tcx, destination.ty(body, tcx).ty),
+                );
                 reporter.clone_shape(output)
             } else if summary.allocation == crate::external::Allocation::None {
                 crate::types::Shape::Fixed
@@ -152,17 +239,31 @@ pub(crate) fn check_imported<'tcx>(tcx: TyCtxt<'tcx>, root: &Instantiation<'tcx>
                 crate::types::heap(tcx, receiver.peel_refs(), &mut Vec::new())
             };
             let work = if summary.work == crate::external::Work::Fixed
-                || summary.allocation == crate::external::Allocation::Clone && allocation == crate::types::Shape::Fixed {
+                || summary.allocation == crate::external::Allocation::Clone
+                    && allocation == crate::types::Shape::Fixed
+            {
                 crate::types::Shape::Fixed
             } else {
                 crate::types::work(tcx, receiver, &mut Vec::new())
             };
-            for (shape, rule) in [(allocation, "uncharged_decode_allocation"), (work, "uncharged_decode_work")] {
+            for (shape, rule) in [
+                (allocation, "uncharged_decode_allocation"),
+                (work, "uncharged_decode_work"),
+            ] {
                 if shape != crate::types::Shape::Fixed {
-                    reporter.report(root.span,
-                        if shape == crate::types::Shape::Unknown { "unproven_decode_charge" } else { rule },
-                        &format!("concrete instantiation <{receiver}> of {} reaches {}",
-                            tcx.def_path_str(root.instance.def_id()), tcx.def_path_str(resolved.def_id())));
+                    reporter.report(
+                        root.span,
+                        if shape == crate::types::Shape::Unknown {
+                            "unproven_decode_charge"
+                        } else {
+                            rule
+                        },
+                        &format!(
+                            "concrete instantiation <{receiver}> of {} reaches {}",
+                            tcx.def_path_str(root.instance.def_id()),
+                            tcx.def_path_str(resolved.def_id())
+                        ),
+                    );
                 }
             }
         }

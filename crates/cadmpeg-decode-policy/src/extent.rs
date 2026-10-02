@@ -5,8 +5,14 @@ use rustc_middle::ty;
 use types::Shape;
 
 impl<'tcx> Analysis<'_, 'tcx> {
-    pub(crate) fn constant_count(&self, expression: &'tcx Expr<'tcx>, seen: &mut Vec<rustc_hir::HirId>) -> Option<u64> {
-        if seen.contains(&expression.hir_id) { return None; }
+    pub(crate) fn constant_count(
+        &self,
+        expression: &'tcx Expr<'tcx>,
+        seen: &mut Vec<rustc_hir::HirId>,
+    ) -> Option<u64> {
+        if seen.contains(&expression.hir_id) {
+            return None;
+        }
         seen.push(expression.hir_id);
         if let ty::Array(_, length) = self.expr_ty(expression).peel_refs().kind() {
             return length.try_to_target_usize(self.tcx);
@@ -16,29 +22,60 @@ impl<'tcx> Analysis<'_, 'tcx> {
                 rustc_ast::LitKind::Int(value, _) => u64::try_from(value.get()).ok(),
                 _ => None,
             },
-            ExprKind::AddrOf(_, _, inner) | ExprKind::DropTemps(inner) => self.constant_count(inner, seen),
+            ExprKind::AddrOf(_, _, inner) | ExprKind::DropTemps(inner) => {
+                self.constant_count(inner, seen)
+            }
             ExprKind::Cast(inner, _) => {
                 let count = self.constant_count(inner, seen)?;
                 let bits = match self.expr_ty(expression).kind() {
-                    ty::Uint(width) => width.bit_width().unwrap_or(self.tcx.data_layout.pointer_size().bits()),
+                    ty::Uint(width) => width
+                        .bit_width()
+                        .unwrap_or(self.tcx.data_layout.pointer_size().bits()),
                     _ => return None,
                 };
-                if bits >= 64 || count < 1u64.checked_shl(u32::try_from(bits).ok()?)? { Some(count) } else { None }
-            },
-            ExprKind::Struct(_, fields, _) if matches!(self.expr_ty(expression).kind(), ty::Adt(owner, _) if types::standard(self.tcx, owner.did()) && self.tcx.item_name(owner.did()).as_str() == "Range") => {
-                let start = fields.iter().find(|field| field.ident.name.as_str() == "start")?.expr;
-                let end = fields.iter().find(|field| field.ident.name.as_str() == "end")?.expr;
-                self.constant_count(end, &mut seen.clone())?.checked_sub(self.constant_count(start, &mut seen.clone())?)
+                if bits >= 64 || count < 1u64.checked_shl(u32::try_from(bits).ok()?)? {
+                    Some(count)
+                } else {
+                    None
+                }
+            }
+            ExprKind::Struct(_, fields, _) if matches!(self.expr_ty(expression).kind(), ty::Adt(owner, _) if types::standard(self.tcx, owner.did()) && self.tcx.item_name(owner.did()).as_str() == "Range") =>
+            {
+                let start = fields
+                    .iter()
+                    .find(|field| field.ident.name.as_str() == "start")?
+                    .expr;
+                let end = fields
+                    .iter()
+                    .find(|field| field.ident.name.as_str() == "end")?
+                    .expr;
+                self.constant_count(end, &mut seen.clone())?
+                    .checked_sub(self.constant_count(start, &mut seen.clone())?)
             }
             ExprKind::Path(ref path) => match self.typeck.qpath_res(path, expression.hir_id) {
-                Res::Def(rustc_hir::def::DefKind::Const { .. }, definition) => self.tcx.const_eval_poly(definition).ok()?.try_to_scalar()?.to_u64().discard_err(),
-                _ => self.initializer(expression).and_then(|init| self.constant_count(init, seen)),
+                Res::Def(rustc_hir::def::DefKind::Const { .. }, definition) => self
+                    .tcx
+                    .const_eval_poly(definition)
+                    .ok()?
+                    .try_to_scalar()?
+                    .to_u64()
+                    .discard_err(),
+                _ => self
+                    .initializer(expression)
+                    .and_then(|init| self.constant_count(init, seen)),
             },
             _ => {
                 let (id, operands) = self.call(expression)?;
-                if types::standard(self.tcx, id) && matches!(self.tcx.item_name(id).as_str(), "len" | "iter" | "into_iter") {
+                if types::standard(self.tcx, id)
+                    && matches!(
+                        self.tcx.item_name(id).as_str(),
+                        "len" | "iter" | "into_iter"
+                    )
+                {
                     self.constant_count(operands.first()?, seen)
-                } else { None }
+                } else {
+                    None
+                }
             }
         }
     }
@@ -135,7 +172,9 @@ impl<'tcx> Analysis<'_, 'tcx> {
             match node {
                 Node::LetStmt(local) => return local.init,
                 Node::Expr(expression) if matches!(expression.kind, ExprKind::Let(_)) => {
-                    if let ExprKind::Let(local) = expression.kind { return Some(local.init); }
+                    if let ExprKind::Let(local) = expression.kind {
+                        return Some(local.init);
+                    }
                 }
                 Node::Param(_) | Node::Item(_) | Node::Expr(_) => return None,
                 _ => (),
@@ -181,10 +220,8 @@ impl<'tcx> Analysis<'_, 'tcx> {
                 }
                 match self.tcx.item_name(definition).as_str() {
                     "len" => operands.first().is_some_and(|operand| {
-                        matches!(
-                            self.expr_ty(operand).peel_refs().kind(),
-                            ty::Array(_, _)
-                        ) || self.constant(operand, seen)
+                        matches!(self.expr_ty(operand).peel_refs().kind(), ty::Array(_, _))
+                            || self.constant(operand, seen)
                     }),
                     "size_of" | "align_of" => true,
                     "new" => operands.is_empty(),

@@ -5,7 +5,8 @@ fn u32_at(bytes: &[u8], at: usize) -> Option<u32> {
     Some(u32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]))
 }
 fn scanning_at(bytes: &[u8], at: usize) -> Option<u32> {
-    for byte in bytes { // finding: uncharged_decode_work
+    for byte in bytes {
+        // finding: uncharged_decode_work
         std::hint::black_box(byte);
     }
     u32_at(bytes, at)
