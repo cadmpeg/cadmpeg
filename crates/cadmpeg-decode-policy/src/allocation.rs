@@ -39,7 +39,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
         if matches!(name, "push" | "push_back" | "push_front" | "push_str" | "insert" | "extend" | "extend_from_slice" | "append" | "resize" | "resize_with" | "reserve" | "reserve_exact" | "try_reserve" | "try_reserve_exact") && types::standard(self.tcx, definition) {
             if let Some(receiver) = operands.first() {
                 let shape = types::heap(self.tcx, self.typeck.expr_ty(receiver).peel_refs(), &mut Vec::new());
-                self.shape_report(expression, shape, "collection growth outside core operation");
+                self.shape_report(expression, if self.flow.storage && shape == Shape::Dynamic { Shape::Unknown } else { shape }, "collection growth outside core operation");
             }
             return;
         }
@@ -110,7 +110,10 @@ impl<'tcx> Analysis<'_, 'tcx> {
                         // A custom Clone is inspected at its implementation, not
                         // inferred to allocate from the result's ownership.
                         if let Some(local) = instance.def_id().as_local() {
-                            let mut child = Analysis { tcx: self.tcx, typeck: self.tcx.typeck(local), owner: local, findings: self.findings };
+                            if self.stack.contains(&local) { self.shape_report(expression, Shape::Unknown, "recursive custom Clone"); return; }
+                            let mut stack = self.stack.clone();
+                            stack.push(local);
+                            let mut child = Analysis { tcx: self.tcx, typeck: self.tcx.typeck(local), owner: local, flow: crate::flow::Flow::default(), stack, findings: self.findings };
                             child.visit_body(self.tcx.hir_body_owned_by(local));
                         } else { self.shape_report(expression, Shape::Unknown, "custom Clone body unavailable"); }
                         return;
