@@ -20,7 +20,7 @@ use crate::report::{
     Severity,
 };
 use crate::topology::{Body, BodyKind, Point, Region, Shell, Vertex};
-use crate::validate::{entity_census, validate_neutral};
+use crate::validate::validate_neutral;
 
 const SEG: &str = "[a-z][a-z0-9_-]{0,7}";
 
@@ -176,7 +176,7 @@ proptest! {
 
     #[test]
     fn census_matches_arena_lengths(ir in ir_strategy()) {
-        let census = entity_census(&ir);
+        let census = ir.census();
         prop_assert_eq!(census["points"], ir.model.points.len());
         let report = validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail");
         prop_assert_eq!(&census, &report.entity_counts);
