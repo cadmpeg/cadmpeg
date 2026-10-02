@@ -25,7 +25,7 @@ use cadmpeg_core::decode::{DecodeContext, ResourceLimit};
 use cadmpeg_core::CodecError;
 
 use super::pcurve_parameter_domain;
-use super::identities::BorrowedIdentities;
+use crate::index::identities::BorrowedIdentities;
 use super::scratch::Scratch;
 
 /// A curve point as the checks measure it: the finite point, or the point an

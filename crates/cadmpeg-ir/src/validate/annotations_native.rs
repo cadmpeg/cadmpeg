@@ -4,7 +4,7 @@
 use cadmpeg_core::decode::{u64_from_index, DecodeContext};
 use cadmpeg_core::CodecError;
 use serde_value::Value;
-use super::identities::BorrowedIdentities;
+use crate::index::identities::BorrowedIdentities;
 use crate::document::CadIr;
 use crate::native::view::{NativeEntity, NativeView};
 use crate::report::{check::{Check, Finding}, Severity};

@@ -9,6 +9,7 @@
 //! closure.
 
 use crate::document::CadIr;
+use crate::index::identities::BorrowedIdentities;
 use crate::report::{
     check::{Check, Finding, ValidationReport},
     loss::LossNote,
@@ -27,7 +28,6 @@ pub(crate) mod evaluation_cycles;
 mod geometry_consistency;
 mod geometry_payloads;
 mod identity_order;
-mod identities;
 mod orders;
 mod pmi;
 mod presentation;
@@ -164,7 +164,7 @@ fn validate_model_with_index(
     check_sketches(ctx, ir, &mut findings)?;
     check_spreadsheets(ctx, ir, &mut findings)?;
     check_products(ctx, ir, &mut findings)?;
-    let reference_ids = identities::BorrowedIdentities::build(ctx, |add| {
+    let reference_ids = BorrowedIdentities::build(ctx, |add| {
         for id in ids.identities() { add(id, ())?; }
         Ok(())
     })?;
@@ -198,7 +198,7 @@ fn validate_annotations<'a>(
     additional: impl IntoIterator<Item = &'a str>,
     findings: &mut Vec<Finding>,
 ) -> Result<(), CodecError> {
-    let all_ids = identities::BorrowedIdentities::build(ctx, |add| {
+    let all_ids = BorrowedIdentities::build(ctx, |add| {
         for id in ids.identities().chain(additional) { add(id, ())?; }
         Ok(())
     })?;

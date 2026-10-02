@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Drawing graph and numeric validation.
 
-use super::{identities::BorrowedIdentities, orders::Orders, record_finding};
+use crate::index::identities::BorrowedIdentities;
+use super::{orders::Orders, record_finding};
 
 use crate::document::CadIr;
 use crate::report::{

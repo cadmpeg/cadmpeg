@@ -2,7 +2,8 @@
 //! Registry-driven validation of every typed entity reference.
 
 use crate::document::CadIr;
-use super::{identities::BorrowedIdentities, record_finding};
+use crate::index::identities::BorrowedIdentities;
+use super::record_finding;
 use crate::report::{
     check::{Check, Finding},
     Severity,
