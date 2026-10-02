@@ -29,7 +29,8 @@ impl<'tcx> Analysis<'_, 'tcx> {
                 }
                 let bounded = self.constant(left, &mut Vec::new()) || self.constant(right, &mut Vec::new());
                 if !bounded {
-                    let paid = self.take_credit(&[left, right]);
+                    let mut paid = self.take_credit(&[left, right]);
+                    if paid == Some(true) && (self.deep_work(self.typeck.expr_ty(left)) || self.deep_work(self.typeck.expr_ty(right))) { paid = None; }
                     self.work_report(expression.span, shape, paid, "comparison");
                 }
             }
@@ -56,6 +57,11 @@ impl<'tcx> Analysis<'_, 'tcx> {
                 return;
             }
             if name == "clone" && types::heap(self.tcx, self.typeck.expr_ty(expression), &mut Vec::new()) == Shape::Fixed { return; }
+        }
+        if name == "format" {
+            let shape = self.format_shape(&operands);
+            self.work_report(expression.span, shape, Some(false), "format!");
+            return;
         }
         if matches!(name, "from_elem" | "repeat") {
             let count = operands.get(1);
@@ -85,12 +91,36 @@ impl<'tcx> Analysis<'_, 'tcx> {
         }
         let Some(receiver) = operands.first() else { return; };
         let value = self.typeck.expr_ty(receiver).peel_refs();
-        if matches!(name, "get" | "get_mut" | "split_at") && matches!(value.kind(), rustc_middle::ty::Slice(_) | rustc_middle::ty::Array(_, _)) { return; }
+        let vector = matches!(value.kind(), rustc_middle::ty::Adt(definition, _) if types::standard(self.tcx, definition.did()) && self.tcx.item_name(definition.did()).as_str() == "Vec");
+        if matches!(name, "get" | "get_mut" | "split_at") && (vector || matches!(value.kind(), rustc_middle::ty::Slice(_) | rustc_middle::ty::Array(_, _))) { return; }
+        if matches!(name, "clear" | "truncate") && vector {
+            if let rustc_middle::ty::Adt(_, arguments) = value.kind() {
+                if arguments.types().next().is_some_and(|element| self.tcx.type_is_copy_modulo_regions(rustc_middle::ty::TypingEnv::post_analysis(self.tcx, self.owner), element)) { return; }
+            }
+        }
         let shape = if consumers { self.iteration(receiver, &mut Vec::new()) } else { types::work(self.tcx, value, &mut Vec::new()) };
         if shape == Shape::Fixed { return; }
         if matches!(name, "starts_with" | "ends_with" | "eq" | "cmp" | "partial_cmp") && operands.get(1).is_some_and(|operand| self.constant(operand, &mut Vec::new())) { return; }
-        let paid = self.take_credit(&operands);
+        let mut paid = self.take_credit(&operands);
+        if paid == Some(true) && (matches!(name, "sort" | "sort_by" | "sort_by_key" | "sort_unstable" | "sort_unstable_by" | "sort_unstable_by_key" | "insert" | "remove" | "resize" | "append" | "extend") || self.deep_work(value) || self.capacity_iteration(receiver)) { paid = None; }
         self.work_report(expression.span, shape, paid, name);
+    }
+
+    fn capacity_iteration(&self, expression: &'tcx Expr<'tcx>) -> bool {
+        if let rustc_middle::ty::Adt(definition, _) = self.typeck.expr_ty(expression).peel_refs().kind() {
+            if types::standard(self.tcx, definition.did()) && matches!(self.tcx.item_name(definition.did()).as_str(), "HashMap" | "HashSet") { return true; }
+        }
+        self.call(expression).is_some_and(|(definition, operands)| types::standard(self.tcx, definition) && operands.first().is_some_and(|operand| self.capacity_iteration(operand)))
+    }
+
+    fn deep_work(&self, value: rustc_middle::ty::Ty<'tcx>) -> bool {
+        match value.peel_refs().kind() {
+            rustc_middle::ty::Slice(element) | rustc_middle::ty::Array(element, _) => types::work(self.tcx, *element, &mut Vec::new()) != Shape::Fixed,
+            rustc_middle::ty::Adt(definition, arguments) if types::standard(self.tcx, definition.did()) => {
+                matches!(self.tcx.item_name(definition.did()).as_str(), "HashMap" | "HashSet") || arguments.types().any(|element| types::work(self.tcx, element, &mut Vec::new()) != Shape::Fixed)
+            }
+            _ => false,
+        }
     }
 
     fn skipped_source(&self, expression: &'tcx Expr<'tcx>) -> bool {
@@ -112,7 +142,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
                 let (definition, operands) = self.call(call)?;
                 if !self.context_operation(call) { return Some(false); }
                 let name = self.tcx.item_name(definition);
-                if matches!(name.as_str(), "charge_work" | "charge_work_limit" | "charge_collection_items" | "charge_collection_items_limit" | "charge_retained" | "charge_retained_limit" | "reserve_scoped" | "reserve_scoped_limit") {
+                if matches!(name.as_str(), "charge_work" | "charge_work_limit") {
                     let Some(amount) = operands.get(1) else { return Some(false); };
                     if let ExprKind::Lit(literal) = amount.kind {
                         return Some(matches!(literal.node, rustc_ast::LitKind::Int(value, _) if value.get() > 0));
