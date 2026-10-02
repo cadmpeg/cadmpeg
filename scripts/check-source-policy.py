@@ -2401,12 +2401,105 @@ def decode_paid_prefix(words, pairs, start, stop, receivers, methods):
 def decode_extent(expression):
     """Normalize direct collection iteration and counted ranges to their extent."""
     expression = expression.lstrip("&")
+    expression = re.sub(r"\[[^\[\]]*\.\.[^\[\]]*\]$", "", expression)
     if ".." in expression:
         expression = expression.split("..", 1)[1].lstrip("=")
     for suffix in (".enumerate()", ".rev()", ".copied()", ".cloned()",
-                   ".into_iter()", ".iter_mut()", ".iter()", ".as_bytes()", ".keys()", ".values()"):
+                   ".into_iter()", ".iter_mut()", ".iter()", ".as_bytes()", ".as_str()",
+                   ".window()", ".keys()", ".values()"):
         expression = expression.replace(suffix, "")
     return expression
+
+
+def decode_charge_terms(amount):
+    """Retain exact additive extent terms, including propagated checked sums."""
+    tokens, pairs, _ = evaluation_tokens(amount)
+    words = [token[0] for token in tokens]
+    if not words:
+        return []
+    if words[0] == "(" and pairs.get(0) == len(words) - 1:
+        return decode_charge_terms(amount[1:-1])
+    terms = list(decode_split(amount, "+"))
+    if len(terms) > 1:
+        return [term for expression in terms for term in decode_charge_terms(expression)]
+    for index, word in enumerate(words):
+        if word != "checked_add" or words[index - 1:index] != ["."]:
+            continue
+        opening = evaluation_call_open(words, index)
+        if opening not in pairs:
+            continue
+        following = pairs[opening] + 1
+        if (words[following:following + 2] != [".", "ok_or"]
+                and words[following:following + 2] != [".", "ok_or_else"]):
+            continue
+        conversion = following + 2
+        if conversion in pairs and words[pairs[conversion] + 1:] == ["?"]:
+            left = amount[:tokens[index - 1].start()]
+            right = amount[tokens[opening].end():tokens[pairs[opening]].start()]
+            return decode_charge_terms(left) + decode_charge_terms(right)
+    return [amount]
+
+
+def decode_repeated_scopes(words, pairs, body, end):
+    """Loops and deferred closures cannot reuse admission from outside them."""
+    scopes = []
+    for index in range(body + 1, end):
+        word = words[index]
+        if word in {"for", "while", "loop"}:
+            opening = index + 1
+            while opening < end and words[opening] not in {"{", ";"}:
+                opening = pairs[opening] + 1 if opening in pairs and words[opening] in "([" else opening + 1
+            if opening in pairs and words[opening] == "{":
+                scopes.append((opening, pairs[opening]))
+        elif word == "|" and words[index - 1] in {"(", "=", ",", "move", "=>"}:
+            closing = index + 1
+            while closing < end and words[closing] != "|":
+                closing = pairs[closing] + 1 if closing in pairs and words[closing] in "([{" else closing + 1
+            cursor = closing + 1
+            while cursor < end and words[cursor] not in {",", ";", ")", "]", "}"}:
+                if words[cursor] == "{" and cursor in pairs:
+                    cursor = pairs[cursor] + 1
+                    break
+                cursor = pairs[cursor] + 1 if cursor in pairs and words[cursor] in "([{" else cursor + 1
+            scopes.append((index, cursor))
+    return scopes
+
+
+def decode_charge_dominates(words, parents, repeated, charge, scan):
+    """A containing block admits one execution, without crossing a repeat."""
+    if charge >= scan or any(start < scan < end and not start < charge < end for start, end in repeated):
+        return False
+    charged_block = decode_block(parents, words, charge)
+    parent = decode_block(parents, words, scan)
+    while parent is not None:
+        if parent == charged_block:
+            return True
+        parent = decode_block(parents, words, parent)
+    return False
+
+
+def decode_operand_end(words, pairs, start, end):
+    """Read a comparison operand's projections, calls and indexed windows."""
+    cursor = start
+    while cursor < end and words[cursor] in {"&", "*", "!", "-"}:
+        cursor += 1
+    if cursor >= end:
+        return cursor
+    cursor = pairs[cursor] + 1 if cursor in pairs and words[cursor] in "([{" else cursor + 1
+    while cursor < end:
+        if words[cursor] in {".", "::"} and cursor + 1 < end:
+            cursor += 2
+        elif words[cursor] in {"(", "["} and cursor in pairs:
+            cursor = pairs[cursor] + 1
+        elif words[cursor - 1:cursor] == ["::"] and words[cursor] == "<":
+            depth = 1
+            cursor += 1
+            while cursor < end and depth:
+                depth += (words[cursor] == "<") - (words[cursor] == ">")
+                cursor += 1
+        else:
+            break
+    return cursor
 
 
 def decode_charge_covers(amount, extent):
@@ -2717,9 +2810,7 @@ def scan_decode_work(sources: dict[Path, str]) -> list[Finding]:
             amount = decode_work_charge(words, pairs, i, receivers) if i > body else None
             if amount is not None:
                 charges[i] = amount
-        slice_names = set(re.findall(
-            r"\b([A-Za-z_]\w*)\s*:\s*(?:&\s*(?:'[A-Za-z_]\w*\s*)?(?:mut\s+)?\[|Vec\s*<|String\b|&\s*str\b)",
-            code[tokens[min(active)].start():tokens[body].start()]))
+        repeated = decode_repeated_scopes(words, pairs, body, end)
         consumed = set()
         for i in sorted(active):
             if i <= body:
@@ -2727,6 +2818,7 @@ def scan_decode_work(sources: dict[Path, str]) -> list[Finding]:
             word = words[i]
             loop_body = None
             extent = None
+            operands = []
             if word in {"for", "while", "loop"}:
                 # Ignore impl/trait headers and higher-ranked type declarations.
                 opening = i + 1
@@ -2764,6 +2856,9 @@ def scan_decode_work(sources: dict[Path, str]) -> list[Finding]:
                         tokens[i].start() - tokens[min(active)].start()):
                     continue
                 extent = decode_extent(receiver)
+                if word in {"contains", "starts_with", "ends_with", "eq", "cmp", "partial_cmp", "find", "rfind"}:
+                    operands = [decode_extent("".join(words[first:last]))
+                                for first, last in decode_call_arguments(words, pairs, opening)]
                 shape = decode_expression_shape(receiver, scope_code, tokens[i].start() - scope_start,
                                                 constants, copy_types)
                 if shape[1] or (shape[0] and word not in {"contains", "starts_with", "ends_with", "eq", "cmp", "partial_cmp"}):
@@ -2795,22 +2890,12 @@ def scan_decode_work(sources: dict[Path, str]) -> list[Finding]:
                         or decode_scalar_receiver(code[tokens[min(active)].start():], right_name,
                                                   tokens[i].start() - tokens[min(active)].start())):
                     continue
-                indexed = words[left:left + 1] == ["]"] or words[right + 1:right + 2] == ["["]
-                if indexed:
-                    raw_left = decode_receiver(words, pairs, i + 1)
-                    extent = raw_left.split("[", 1)[0]
-                    if ".." not in raw_left and ".." not in "".join(words[right:right + 12]):
-                        continue
-                elif left_name in slice_names or right_name in slice_names:
-                    extent = left_name if left_name in slice_names else right_name
-                else:
-                    # Literal-size comparisons and explicitly scalar operands
-                    # have constant work. Unresolved named comparisons do not.
-                    if (not re.fullmatch(r"[A-Za-z_]\w*", left_name)
-                            or not re.fullmatch(r"[A-Za-z_]\w*", right_name)
-                            or right_name in {"true", "false", "None"}):
-                        continue
-                    extent = left_name
+                raw_left = decode_receiver(words, pairs, i + 1)
+                raw_right = "".join(words[right:decode_operand_end(words, pairs, right, end)])
+                if right_name == "None":
+                    continue
+                extent = decode_extent(raw_left)
+                operands = [decode_extent(raw_right)]
             else:
                 continue
             admitted = False
@@ -2818,22 +2903,26 @@ def scan_decode_work(sources: dict[Path, str]) -> list[Finding]:
                 admitted = decode_paid_prefix(words, pairs, loop_body + 1,
                                               pairs[loop_body], receivers, methods)
             if not admitted:
-                parent = decode_block(parents, words, i)
                 for charge, amount in charges.items():
-                    if charge >= i or charge in consumed or decode_block(parents, words, charge) != parent:
+                    if charge in consumed or not decode_charge_dominates(words, parents, repeated, charge, i):
                         continue
                     resolved = amount
                     for declared, expression in reversed(aliases.get(amount, [])):
-                        if declared < charge and decode_block(parents, words, declared) == parent:
+                        if declared < charge and decode_charge_dominates(words, parents, repeated, declared, charge):
                             resolved = expression
                             break
                     between = " ".join(words[pairs[evaluation_call_open(words, charge)] + 2:i])
-                    root = extent.split(".", 1)[0]
-                    mutated = re.search(
+                    extents = [extent] + operands
+                    mutated = any(re.search(
                         r"(?:&\s*mut\s+" + re.escape(root) + r"\b|\b" +
                         re.escape(root) + r"\s*(?:=|\.\s*(?:push|insert|extend|append|resize|retain|clear)\s*\())",
-                        between)
-                    if decode_charge_covers(resolved, extent) and not mutated:
+                        between) for root in {operand.split(".", 1)[0] for operand in extents} if root)
+                    terms = decode_charge_terms(resolved)
+                    covered = bool(terms) and all(any(decode_charge_covers(term, operand)
+                                                     for operand in extents) for term in terms)
+                    if word not in {"=", "!", "eq", "cmp", "partial_cmp", "starts_with", "ends_with"}:
+                        covered = covered and any(decode_charge_covers(term, extent) for term in terms)
+                    if covered and not mutated:
                         admitted = True
                         consumed.add(charge)
                         break
