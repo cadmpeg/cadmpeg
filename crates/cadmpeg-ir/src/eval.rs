@@ -1547,7 +1547,7 @@ fn nurbs_curve_point_from_basis(
 ) -> Result<FinitePoint3, EvaluationFailure<Point3>> {
     let no_value = EvaluationFailure::NoValue;
     let unreached = EvaluationFailure::NonFinite(UNREACHED_POINT);
-    if !basis.iter().all(|value| value.is_finite()) {
+    if !basis::all_finite(scratch, basis).ok_or_else(|| scratch.failure(unreached))? {
         return Err(unreached);
     }
     let first = span
@@ -2253,7 +2253,7 @@ fn nurbs_pcurve_differential_unsettled(
     // At a finite parameter over finite knots, the basis is absent or not
     // finite only where one of its terms left the finite range.
     let basis = basis::bspline_basis(scratch, knots, degree, span, t).ok_or(unreached)?;
-    if !basis.iter().all(|value| value.is_finite()) {
+    if !basis::all_finite(scratch, &basis).ok_or_else(|| scratch.failure(unreached))? {
         return Err(unreached);
     }
     let sum = |values: &[f64]| {
@@ -2281,10 +2281,13 @@ fn nurbs_pcurve_differential_unsettled(
         return Ok(point_only(unreached));
     };
     let mut second_basis = basis::bspline_basis_second_derivative(scratch, knots, degree, span, t);
-    let scale = if first_basis.iter().all(|value| value.is_finite())
-        && second_basis
-            .as_ref()
-            .is_none_or(|values| values.iter().all(|value| value.is_finite()))
+    let scale = if basis::all_finite(scratch, &first_basis)
+        .ok_or_else(|| scratch.failure(unreached))?
+        && match &second_basis {
+            Some(values) => basis::all_finite(scratch, values)
+                .ok_or_else(|| scratch.failure(unreached))?,
+            None => true,
+        }
     {
         PositiveReal::ONE
     } else {
@@ -2716,10 +2719,8 @@ fn nurbs_surface_local_unsettled<'a>(
         .ok_or(unreached)?;
     let v_basis = basis::bspline_basis(scratch, surface.v_knots(), v_degree, v_span, v_at)
         .ok_or(unreached)?;
-    if !u_basis
-        .iter()
-        .chain(v_basis.iter())
-        .all(|value| value.is_finite())
+    if !basis::all_finite(scratch, &u_basis).ok_or_else(|| scratch.failure(unreached))?
+        || !basis::all_finite(scratch, &v_basis).ok_or_else(|| scratch.failure(unreached))?
     {
         return Err(unreached);
     }
@@ -3723,7 +3724,7 @@ fn nurbs_curve_derivative_unsettled(
     let degree = usize::try_from(degree).map_err(|_| no_value)?;
     let span = scratch.admit(basis::bspline_span(scratch.context, knots, degree, control_points.len(), t)).flatten().ok_or(no_value)?;
     let basis = basis::bspline_basis(scratch, knots, degree, span, t).ok_or(non_finite)?;
-    if !basis.iter().all(|value| value.is_finite()) {
+    if !basis::all_finite(scratch, &basis).ok_or_else(|| scratch.failure(non_finite))? {
         return Err(non_finite);
     }
     let mut first_basis =
@@ -3733,10 +3734,10 @@ fn nurbs_curve_derivative_unsettled(
     } else {
         Cow::Borrowed(&[][..])
     };
-    let scale = if first_basis
-        .iter()
-        .chain(second_basis.iter())
-        .all(|value| value.is_finite())
+    let scale = if basis::all_finite(scratch, &first_basis)
+        .ok_or_else(|| scratch.failure(non_finite))?
+        && basis::all_finite(scratch, &second_basis)
+            .ok_or_else(|| scratch.failure(non_finite))?
     {
         PositiveReal::ONE
     } else {
