@@ -569,8 +569,8 @@ fn nx_boolean_retains_disjoint_current_and_input_local_bodies() {
                         vec!["nx:om-body-object#122".to_string()],
                         "nx:om-object-indices#122".to_string()
                     )
-                    .unwrap()
-                )
+                    .unwrap(), &cadmpeg_test_support::service_decode_context(),
+                ).expect("operand admission")
                 .unwrap(),
 
                 op: BooleanKind::Cut,
@@ -643,8 +643,8 @@ fn nx_boolean_projects_unique_offset_store_body_blocks_as_local_bodies() {
                         ],
                         "nx:om-object-indices#402,403".to_string()
                     )
-                    .unwrap()
-                )
+                    .unwrap(), &cadmpeg_test_support::service_decode_context(),
+                ).expect("operand admission")
                 .unwrap(),
 
                 op: BooleanKind::Join,
@@ -721,8 +721,8 @@ fn nx_boolean_writers_follow_selected_identity_namespace() {
         let native_definition = FeatureDefinition::Operation(FeatureOperation::Combine {
             operands: cadmpeg_ir::features::CombineOperands::new(
                 BodySelection::Native("nx:om-object-index#401".to_string()),
-                BodySelection::Native("nx:om-object-indices#402".to_string()),
-            )
+                BodySelection::Native("nx:om-object-indices#402".to_string()), &cadmpeg_test_support::service_decode_context(),
+            ).expect("operand admission")
             .unwrap(),
 
             op: BooleanKind::Join,

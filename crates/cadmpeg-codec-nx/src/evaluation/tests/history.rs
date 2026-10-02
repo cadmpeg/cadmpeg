@@ -156,8 +156,8 @@ fn curve_construction_families_do_not_change_the_body_census() {
             FeatureDefinition::Operation(FeatureOperation::SectionShape {
                 operands: cadmpeg_ir::features::SectionOperands::new(
                     BodySelection::Unresolved,
-                    BodySelection::Unresolved,
-                )
+                    BodySelection::Unresolved, &cadmpeg_test_support::service_decode_context(),
+                ).expect("operand admission")
                 .unwrap(),
 
                 approximate: None,
@@ -181,8 +181,8 @@ fn curve_construction_family_cannot_claim_a_body_output() {
         FeatureDefinition::Operation(FeatureOperation::SectionShape {
             operands: cadmpeg_ir::features::SectionOperands::new(
                 BodySelection::Unresolved,
-                BodySelection::Unresolved,
-            )
+                BodySelection::Unresolved, &cadmpeg_test_support::service_decode_context(),
+            ).expect("operand admission")
             .unwrap(),
 
             approximate: None,

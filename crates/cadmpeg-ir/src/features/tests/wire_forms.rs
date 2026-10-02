@@ -358,8 +358,8 @@ fn full_round_fillet_keeps_automatic_side_semantics() {
             crate::features::edge_treatments::FullRoundFilletGroup::new(
                 FaceSelection::Faces(vec![center.clone()]),
                 FullRoundSideSelection::Automatic,
-                FullRoundSideSelection::Automatic,
-            )
+                FullRoundSideSelection::Automatic, &cadmpeg_test_support::service_decode_context(),
+            ).expect("operand admission")
             .unwrap(),
         ),
     });
@@ -393,8 +393,8 @@ fn full_round_fillet_keeps_automatic_side_semantics() {
     assert!(crate::features::edge_treatments::FullRoundFilletGroup::new(
         FaceSelection::Faces(vec![center.clone()]),
         FullRoundSideSelection::Explicit(FaceSelection::Faces(vec![center])),
-        FullRoundSideSelection::Automatic,
-    )
+        FullRoundSideSelection::Automatic, &cadmpeg_test_support::service_decode_context(),
+    ).expect("operand admission")
     .is_err());
 }
 
@@ -1014,8 +1014,8 @@ fn combine_omits_the_default_keep_tools_flag_from_json() {
     let definition = FeatureDefinition::Operation(FeatureOperation::Combine {
         operands: crate::features::CombineOperands::new(
             BodySelection::Native("body:17".into()),
-            BodySelection::Native("body:18".into()),
-        )
+            BodySelection::Native("body:18".into()), &cadmpeg_test_support::service_decode_context(),
+        ).expect("operand admission")
         .unwrap(),
 
         op: BooleanKind::Join,

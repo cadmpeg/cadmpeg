@@ -61,8 +61,8 @@ fn combine_consumes_tools_and_preserves_the_target_identity() {
         FeatureDefinition::Operation(FeatureOperation::Combine {
             operands: cadmpeg_ir::features::CombineOperands::new(
                 BodySelection::Bodies(cadmpeg_ir::features::DistinctMembers::try_from(vec![target.clone()], &cadmpeg_test_support::service_decode_context()).expect("distinct bodies")),
-                BodySelection::Bodies(cadmpeg_ir::features::DistinctMembers::try_from(vec![tool], &cadmpeg_test_support::service_decode_context()).expect("distinct bodies")),
-            )
+                BodySelection::Bodies(cadmpeg_ir::features::DistinctMembers::try_from(vec![tool], &cadmpeg_test_support::service_decode_context()).expect("distinct bodies")), &cadmpeg_test_support::service_decode_context(),
+            ).expect("operand admission")
             .unwrap(),
 
             op: cadmpeg_ir::features::BooleanKind::Join,
@@ -102,8 +102,8 @@ fn combine_preserves_tools_when_requested() {
         FeatureDefinition::Operation(FeatureOperation::Combine {
             operands: cadmpeg_ir::features::CombineOperands::new(
                 BodySelection::Bodies(cadmpeg_ir::features::DistinctMembers::try_from(vec![target.clone()], &cadmpeg_test_support::service_decode_context()).expect("distinct bodies")),
-                BodySelection::Bodies(cadmpeg_ir::features::DistinctMembers::try_from(vec![tool.clone()], &cadmpeg_test_support::service_decode_context()).expect("distinct bodies")),
-            )
+                BodySelection::Bodies(cadmpeg_ir::features::DistinctMembers::try_from(vec![tool.clone()], &cadmpeg_test_support::service_decode_context()).expect("distinct bodies")), &cadmpeg_test_support::service_decode_context(),
+            ).expect("operand admission")
             .unwrap(),
 
             op: cadmpeg_ir::features::BooleanKind::Join,
@@ -129,8 +129,8 @@ fn combine_with_exact_local_tools_preserves_its_retained_target() {
             operands: cadmpeg_ir::features::CombineOperands::new(
                 BodySelection::Bodies(cadmpeg_ir::features::DistinctMembers::try_from(vec![target.clone()], &cadmpeg_test_support::service_decode_context()).expect("distinct bodies")),
                 BodySelection::local(vec!["local-tool".to_string()], "native-tools".to_string())
-                    .unwrap(),
-            )
+                    .unwrap(), &cadmpeg_test_support::service_decode_context(),
+            ).expect("operand admission")
             .unwrap(),
 
             op: cadmpeg_ir::features::BooleanKind::Cut,
@@ -156,8 +156,8 @@ fn output_free_combine_with_exact_native_operands_is_local_to_history() {
         FeatureDefinition::Operation(FeatureOperation::Combine {
             operands: cadmpeg_ir::features::CombineOperands::new(
                 BodySelection::Native("native-target".to_string()),
-                BodySelection::NativeSet(vec!["native-tool".to_string()].try_into().unwrap()),
-            )
+                BodySelection::NativeSet(vec!["native-tool".to_string()].try_into().unwrap()), &cadmpeg_test_support::service_decode_context(),
+            ).expect("operand admission")
             .unwrap(),
 
             op: cadmpeg_ir::features::BooleanKind::Intersect,
@@ -204,8 +204,8 @@ fn trim_bodies_preserves_all_targets_and_tools() {
                     cadmpeg_ir::features::DistinctMembers::try_from(vec![first.clone(), second.clone()], &cadmpeg_test_support::service_decode_context())
                         .expect("distinct bodies"),
                 ),
-                BodySelection::Bodies(cadmpeg_ir::features::DistinctMembers::try_from(vec![tool.clone()], &cadmpeg_test_support::service_decode_context()).expect("distinct bodies")),
-            )
+                BodySelection::Bodies(cadmpeg_ir::features::DistinctMembers::try_from(vec![tool.clone()], &cadmpeg_test_support::service_decode_context()).expect("distinct bodies")), &cadmpeg_test_support::service_decode_context(),
+            ).expect("operand admission")
             .unwrap(),
 
             keep: BodyTrimSide::Forward,
@@ -247,8 +247,8 @@ fn trim_bodies_rejects_outputs_that_do_not_match_its_targets() {
         FeatureDefinition::Operation(FeatureOperation::TrimBodies {
             operands: cadmpeg_ir::features::TrimBodyOperands::new(
                 BodySelection::Bodies(cadmpeg_ir::features::DistinctMembers::try_from(vec![target], &cadmpeg_test_support::service_decode_context()).expect("distinct bodies")),
-                BodySelection::Bodies(cadmpeg_ir::features::DistinctMembers::try_from(vec![tool], &cadmpeg_test_support::service_decode_context()).expect("distinct bodies")),
-            )
+                BodySelection::Bodies(cadmpeg_ir::features::DistinctMembers::try_from(vec![tool], &cadmpeg_test_support::service_decode_context()).expect("distinct bodies")), &cadmpeg_test_support::service_decode_context(),
+            ).expect("operand admission")
             .unwrap(),
 
             keep: BodyTrimSide::Reverse,
@@ -285,8 +285,8 @@ fn trim_bodies_requires_a_resolved_retained_side_before_lineage() {
                     cadmpeg_ir::features::DistinctMembers::try_from(vec![BodyId::mint("test:model:entity#tool".to_string())
                         .expect("identity grammar")], &cadmpeg_test_support::service_decode_context())
                     .expect("distinct bodies"),
-                ),
-            )
+                ), &cadmpeg_test_support::service_decode_context(),
+            ).expect("operand admission")
             .unwrap(),
 
             keep: BodyTrimSide::Unresolved,
@@ -326,8 +326,8 @@ fn output_free_trim_is_body_census_neutral_without_resolved_roles() {
             FeatureDefinition::Operation(FeatureOperation::TrimBodies {
                 operands: cadmpeg_ir::features::TrimBodyOperands::new(
                     BodySelection::Unresolved,
-                    BodySelection::Unresolved,
-                )
+                    BodySelection::Unresolved, &cadmpeg_test_support::service_decode_context(),
+                ).expect("operand admission")
                 .unwrap(),
 
                 keep: BodyTrimSide::Unresolved,
@@ -442,8 +442,8 @@ fn combine_rejects_a_tool_absent_from_prior_history() {
                     cadmpeg_ir::features::DistinctMembers::try_from(vec![BodyId::mint("test:model:entity#missing".to_string())
                         .expect("identity grammar")], &cadmpeg_test_support::service_decode_context())
                     .expect("distinct bodies"),
-                ),
-            )
+                ), &cadmpeg_test_support::service_decode_context(),
+            ).expect("operand admission")
             .unwrap(),
 
             op: cadmpeg_ir::features::BooleanKind::Cut,
@@ -636,7 +636,7 @@ fn complete_single_body_dress_up_families_preserve_identity() {
     ]);
     let definitions = [
         FeatureDefinition::Operation(FeatureOperation::FaceBlend {
-            operands: cadmpeg_ir::features::FaceBlendOperands::new(first.clone(), second.clone())
+            operands: cadmpeg_ir::features::FaceBlendOperands::new(first.clone(), second.clone(), &cadmpeg_test_support::service_decode_context(),).expect("operand admission")
                 .unwrap(),
 
             radius: RadiusSpec::Constant {
@@ -668,7 +668,7 @@ fn complete_single_body_dress_up_families_preserve_identity() {
             outward: Some(false),
         }),
         FeatureDefinition::Operation(FeatureOperation::ReplaceFace {
-            operands: cadmpeg_ir::features::ReplaceFaceOperands::new(first, second).unwrap(),
+            operands: cadmpeg_ir::features::ReplaceFaceOperands::new(first, second, &cadmpeg_test_support::service_decode_context(),).expect("operand admission").unwrap(),
         }),
     ];
     for (index, definition) in definitions.into_iter().enumerate() {

@@ -1853,18 +1853,7 @@ pub(crate) fn project_compact_combine_paths(
                     .insert_for_decode(ctx, dependency, OPERATION)?;
             }
         }
-        for selection in [&projection.target, &projection.tools] {
-            if let BodySelection::Generated { bodies, .. } = selection {
-                for body in bodies {
-                    let work = u64_from_index(body.feature.as_str().len())
-                        .checked_add(u64_from_index(body.local_id.as_str().len()))
-                        .and_then(|work| work.checked_add(2))
-                        .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
-                    ctx.charge_work(work, OPERATION)?;
-                }
-            }
-        }
-        let operands = CombineOperands::new(projection.target, projection.tools)
+        let operands = CombineOperands::new(projection.target, projection.tools, ctx,)?
             .map_err(cadmpeg_core::CodecError::malformed)?;
         feature.evaluation.edit(|definition, _| {
             if let FeatureDefinition::Operation(FeatureOperation::Combine {

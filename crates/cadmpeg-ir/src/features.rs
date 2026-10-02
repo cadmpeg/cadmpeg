@@ -2501,7 +2501,7 @@ impl<'de> Deserialize<'de> for SewBodySelection {
 }
 
 macro_rules! selection_operands {
-    ($name:ident, $wire:ident, $selection:ty, $first:ident, $second:ident, $valid:expr $(, $edit:ident)?) => {
+    ($name:ident, $wire:ident, $selection:ty, $first:ident, $second:ident, $arity:expr, $overlap:ident $(, $edit:ident)?) => {
         /// Two admitted operand selections for one feature operation.
         #[derive(Debug, Clone, PartialEq, Serialize)]
         #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -2519,16 +2519,31 @@ macro_rules! selection_operands {
 
         impl $name {
             /// Admit the operand arity and disjoint membership.
-            pub fn new($first: $selection, $second: $selection) -> Result<Self, &'static str> {
-                if !($valid)(&$first, &$second) {
-                    return Err(concat!(
+            pub fn new(
+                $first: $selection,
+                $second: $selection,
+                ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+            ) -> Result<Result<Self, &'static str>, cadmpeg_core::decode::ResourceLimit> {
+                Self::build(ctx, $first, $second)
+            }
+
+            fn build<S: selection_overlap::OverlapAdmission>(
+                admission: &S,
+                $first: $selection,
+                $second: $selection,
+            ) -> Result<Result<Self, &'static str>, S::Error> {
+                admission.work(0)?;
+                if !($arity)(&$first)
+                    || selection_overlap::$overlap(admission, &$first, &$second)?
+                {
+                    return Ok(Err(concat!(
                         stringify!($first),
                         " and ",
                         stringify!($second),
                         " must have valid arity and disjoint membership"
-                    ));
+                    )));
                 }
-                Ok(Self { $first, $second })
+                Ok(Ok(Self { $first, $second }))
             }
 
             /// Return the first operand selection.
@@ -2550,7 +2565,9 @@ macro_rules! selection_operands {
                 let mut first = self.$first.clone();
                 let mut second = self.$second.clone();
                 edit(&mut first, &mut second);
-                *self = Self::new(first, second)?;
+                *self = selection_overlap::standard_result(Self::build(
+                    &selection_overlap::StandardAdmission, first, second,
+                ))?;
                 Ok(())
             }
             )?
@@ -2559,7 +2576,9 @@ macro_rules! selection_operands {
         impl<'de> Deserialize<'de> for $name {
             fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
                 let wire = $wire::deserialize(deserializer)?;
-                Self::new(wire.$first, wire.$second).map_err(serde::de::Error::custom)
+                selection_overlap::standard_result(Self::build(
+                    &selection_overlap::StandardAdmission, wire.$first, wire.$second,
+                )).map_err(serde::de::Error::custom)
             }
         }
     };
@@ -2571,7 +2590,8 @@ selection_operands!(
     FaceSelection,
     first_faces,
     second_faces,
-    |first, second| !selection_overlap::standard_result(selection_overlap::face_selections_overlap(&selection_overlap::StandardAdmission, first, second))
+    |_: &FaceSelection| true,
+    face_selections_overlap
 );
 selection_operands!(
     ReplaceFaceOperands,
@@ -2579,7 +2599,8 @@ selection_operands!(
     FaceSelection,
     targets,
     replacements,
-    |first, second| !selection_overlap::standard_result(selection_overlap::face_selections_overlap(&selection_overlap::StandardAdmission, first, second)),
+    |_: &FaceSelection| true,
+    face_selections_overlap,
     try_edit
 );
 selection_operands!(
@@ -2588,7 +2609,8 @@ selection_operands!(
     BodySelection,
     first,
     second,
-    |first, second| !selection_overlap::standard_result(selection_overlap::body_selections_overlap(&selection_overlap::StandardAdmission, first, second))
+    |_: &BodySelection| true,
+    body_selections_overlap
 );
 selection_operands!(
     CombineOperands,
@@ -2596,8 +2618,8 @@ selection_operands!(
     BodySelection,
     target,
     tools,
-    |first, second| known_body_count(first).is_none_or(|count| count == 1)
-        && !selection_overlap::standard_result(selection_overlap::body_selections_overlap(&selection_overlap::StandardAdmission, first, second)),
+    |first| known_body_count(first).is_none_or(|count| count == 1),
+    body_selections_overlap,
     try_edit
 );
 selection_operands!(
@@ -2606,7 +2628,8 @@ selection_operands!(
     BodySelection,
     targets,
     tools,
-    |first, second| !selection_overlap::standard_result(selection_overlap::body_selections_overlap(&selection_overlap::StandardAdmission, first, second))
+    |_: &BodySelection| true,
+    body_selections_overlap
 );
 
 impl CombineOperands {

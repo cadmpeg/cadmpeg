@@ -155,8 +155,8 @@ fn configuration_feature_states_drive_design_completeness_accounting() {
             FeatureDefinition::Operation(FeatureOperation::Combine {
                 operands: cadmpeg_ir::features::CombineOperands::new(
                     BodySelection::Native("target".into()),
-                    BodySelection::Native("tools".into()),
-                )
+                    BodySelection::Native("tools".into()), &cadmpeg_test_support::service_decode_context(),
+                ).expect("operand admission")
                 .unwrap(),
 
                 op: cadmpeg_ir::features::BooleanKind::Join,

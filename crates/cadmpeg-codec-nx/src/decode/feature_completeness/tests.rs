@@ -795,8 +795,8 @@ fn nx_replace_face_completeness_requires_resolved_disjoint_operands() {
         FeatureDefinition::Operation(FeatureOperation::ReplaceFace {
             operands: cadmpeg_ir::features::ReplaceFaceOperands::new(
                 complete_targets.clone(),
-                complete_replacements.clone()
-            )
+                complete_replacements.clone(), &cadmpeg_test_support::service_decode_context(),
+            ).expect("operand admission")
             .unwrap(),
         })
         .body_output_family(),
@@ -1676,8 +1676,8 @@ fn nx_body_producing_feature_families_require_history_outputs() {
                     vec!["tool".into()],
                     "nx:body-selection#tools".into(),
                 )
-                .unwrap(),
-            )
+                .unwrap(), &cadmpeg_test_support::service_decode_context(),
+            ).expect("operand admission")
             .unwrap(),
 
             op: cadmpeg_ir::features::BooleanKind::Join,

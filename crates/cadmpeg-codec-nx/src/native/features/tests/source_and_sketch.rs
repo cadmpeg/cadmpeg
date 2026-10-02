@@ -244,8 +244,8 @@ fn nx_boolean_projection_rejects_target_tool_alias_overlap() {
             FeatureDefinition::Operation(FeatureOperation::Combine {
                 operands: cadmpeg_ir::features::CombineOperands::new(
                     BodySelection::Native("nx:om-object-index#10".to_string()),
-                    BodySelection::Native("nx:om-object-indices#20".to_string())
-                )
+                    BodySelection::Native("nx:om-object-indices#20".to_string()), &cadmpeg_test_support::service_decode_context(),
+                ).expect("operand admission")
                 .unwrap(),
 
                 op: BooleanKind::Cut,

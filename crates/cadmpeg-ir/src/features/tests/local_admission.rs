@@ -118,11 +118,11 @@ fn selection_owners_enforce_local_arity_and_atomic_nonoverlap() {
     assert!(SewBodySelection::try_from(pair.clone()).is_ok());
     assert!(SewBodySelection::try_from(BodySelection::Unresolved).is_ok());
     assert!(SewBodySelection::try_from(BodySelection::Native("native".into())).is_ok());
-    assert!(CombineOperands::new(pair, BodySelection::Unresolved).is_err());
-    assert!(CombineOperands::new(first.clone(), first.clone()).is_err());
-    assert!(SectionOperands::new(first.clone(), first.clone()).is_err());
-    assert!(TrimBodyOperands::new(first.clone(), first.clone()).is_err());
-    let mut operands = CombineOperands::new(first, second).unwrap();
+    assert!(CombineOperands::new(pair, BodySelection::Unresolved, &cadmpeg_test_support::service_decode_context(),).expect("operand admission").is_err());
+    assert!(CombineOperands::new(first.clone(), first.clone(), &cadmpeg_test_support::service_decode_context(),).expect("operand admission").is_err());
+    assert!(SectionOperands::new(first.clone(), first.clone(), &cadmpeg_test_support::service_decode_context(),).expect("operand admission").is_err());
+    assert!(TrimBodyOperands::new(first.clone(), first.clone(), &cadmpeg_test_support::service_decode_context(),).expect("operand admission").is_err());
+    let mut operands = CombineOperands::new(first, second, &cadmpeg_test_support::service_decode_context(),).expect("operand admission").unwrap();
     let before = operands.clone();
     assert!(operands
         .try_edit(|first, second| *second = first.clone())
@@ -244,8 +244,8 @@ fn historical_body_overlap_spans_direct_and_paired_member_selections() {
         .expect("valid historical body selection rows"),
     };
 
-    assert!(SectionOperands::new(target.clone(), overlapping).is_err());
-    assert!(SectionOperands::new(target, disjoint).is_ok());
+    assert!(SectionOperands::new(target.clone(), overlapping, &cadmpeg_test_support::service_decode_context(),).expect("operand admission").is_err());
+    assert!(SectionOperands::new(target, disjoint, &cadmpeg_test_support::service_decode_context(),).expect("operand admission").is_ok());
 }
 
 #[test]
@@ -463,8 +463,8 @@ fn selection_operand_parts_move_retained_storage() {
     let tools_pointer = tools_text.as_ptr();
     let operands = CombineOperands::new(
         BodySelection::Native(target_text),
-        BodySelection::Native(tools_text),
-    )
+        BodySelection::Native(tools_text), &cadmpeg_test_support::service_decode_context(),
+    ).expect("operand admission")
     .unwrap();
     let (target, tools) = operands.into_parts();
     let BodySelection::Native(target) = target else {
@@ -482,8 +482,8 @@ fn selection_operand_parts_move_retained_storage() {
     let replacements_pointer = replacements_text.as_ptr();
     let operands = crate::features::ReplaceFaceOperands::new(
         crate::features::FaceSelection::Native(targets_text),
-        crate::features::FaceSelection::Native(replacements_text),
-    )
+        crate::features::FaceSelection::Native(replacements_text), &cadmpeg_test_support::service_decode_context(),
+    ).expect("operand admission")
     .unwrap();
     let (targets, replacements) = operands.into_parts();
     let crate::features::FaceSelection::Native(targets) = targets else {
@@ -520,4 +520,63 @@ fn tree_child_admission_preserves_first_and_later_active_comparison_refusals() {
     assert_eq!(children.active_child(), &Some(first.clone()));
     assert_eq!(TreeChildren::new(vec![first], Some(second), &ctx).unwrap_err(), FeatureCollectionError::Invalid("active_child must belong to children"));
     ctx.finish_session().unwrap();
+}
+
+#[test]
+fn operand_constructors_preserve_each_overlap_refusal_in_the_caller_session() {
+    use cadmpeg_core::decode::{u64_from_index, DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use crate::features::{FaceBlendOperands, FaceSelection, ReplaceFaceOperands};
+    use crate::features::edge_treatments::{FullRoundFilletGroup, FullRoundSideSelection};
+
+    let face = |name: &str| FaceSelection::Faces(vec![crate::ids::FaceId::mint(format!("test:model:face#{name}")).unwrap()]);
+    let body = |name: &str| BodySelection::Bodies(crate::features::DistinctMembers::try_from(
+        vec![BodyId::mint(format!("test:model:body#{name}")).unwrap()],
+        &cadmpeg_test_support::service_decode_context(),
+    ).unwrap());
+    let first_face = face("first");
+    let other_face = face("other");
+    let third_face = face("third");
+    let first_body = body("first");
+    let other_body = body("other");
+    let comparison_work = 3 + u64_from_index("test:model:face#first".len());
+    for kind in 0..6 {
+        let required = if kind == 5 { 3 * comparison_work } else { comparison_work };
+        for cap in 0..=required {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = cap;
+            policy.limits.max_materialized_bytes = 0;
+            policy.limits.max_retained_bytes = 0;
+            policy.limits.max_collection_items = 0;
+            policy.limits.max_recursion_depth = 0;
+            let arena = DecodeArena::new();
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            let result = match kind {
+                0 => FaceBlendOperands::new(first_face.clone(), other_face.clone(), &ctx).map(|result| result.map(|_| ())),
+                1 => ReplaceFaceOperands::new(first_face.clone(), other_face.clone(), &ctx).map(|result| result.map(|_| ())),
+                2 => SectionOperands::new(first_body.clone(), other_body.clone(), &ctx).map(|result| result.map(|_| ())),
+                3 => CombineOperands::new(first_body.clone(), other_body.clone(), &ctx).map(|result| result.map(|_| ())),
+                4 => TrimBodyOperands::new(first_body.clone(), other_body.clone(), &ctx).map(|result| result.map(|_| ())),
+                _ => FullRoundFilletGroup::new(first_face.clone(),
+                    FullRoundSideSelection::Explicit(other_face.clone()),
+                    FullRoundSideSelection::Explicit(third_face.clone()), &ctx,
+                ).map(|result| result.map(|_| ())),
+            };
+            if cap == required {
+                result.expect("exact comparison admission").expect("disjoint operands");
+                ctx.finish_session().expect("no storage or depth needed");
+            } else {
+                let limit = result.expect_err("every visit and comparison must be admitted");
+                assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+                assert_eq!(limit.operation, "IR selection membership overlap");
+                assert!(matches!(ctx.finish_session(), Err(cadmpeg_core::CodecError::ResourceLimit(original)) if original == limit));
+            }
+        }
+    }
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    FullRoundFilletGroup::new(first_face, FullRoundSideSelection::Automatic,
+        FullRoundSideSelection::Automatic, &ctx).unwrap().unwrap();
+    ctx.finish_session().expect("automatic sides have no membership comparisons");
 }

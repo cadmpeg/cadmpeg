@@ -2258,7 +2258,7 @@ pub(super) fn project_combine(
         };
         BodySelection::NativeSet(members)
     };
-    let Ok(operands) = cadmpeg_ir::features::CombineOperands::new(target, tools) else {
+    let Ok(operands) = cadmpeg_ir::features::CombineOperands::new(target, tools, ctx,)? else {
         return Ok(None);
     };
     Ok(Some(FeatureDefinition::Operation(
@@ -2809,8 +2809,8 @@ fn project_full_round_fillet(
                 cadmpeg_ir::features::edge_treatments::FullRoundFilletGroup::new(
                     center_faces,
                     cadmpeg_ir::features::edge_treatments::FullRoundSideSelection::Automatic,
-                    cadmpeg_ir::features::edge_treatments::FullRoundSideSelection::Automatic,
-                )
+                    cadmpeg_ir::features::edge_treatments::FullRoundSideSelection::Automatic, ctx,
+                )?
                 .ok()
             )),
         },
@@ -8015,8 +8015,8 @@ fn project_replace_face(
         FeatureOperation::ReplaceFace {
             operands: or_none!(cadmpeg_ir::features::ReplaceFaceOperands::new(
                 targets,
-                replacements
-            )
+                replacements, ctx,
+            )?
             .ok()),
         },
     )))

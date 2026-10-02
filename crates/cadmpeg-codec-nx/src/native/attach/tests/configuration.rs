@@ -1340,7 +1340,7 @@ fn nx_native_feature_parameters_require_unique_resolved_names() {
         ])
     );
     assert_eq!(
-        non_boolean_feature_definition_with_parameters(
+        non_boolean_feature_definition_with_parameters(&cadmpeg_test_support::service_decode_context(), 
             "UNKNOWN OPERATION",
             &[],
             None,
@@ -1367,7 +1367,7 @@ fn nx_native_feature_parameters_require_unique_resolved_names() {
         )
     );
     assert!(matches!(
-        non_boolean_feature_definition_with_parameters(
+        non_boolean_feature_definition_with_parameters(&cadmpeg_test_support::service_decode_context(), 
             "DELETE",
             &[],
             None,
@@ -1378,7 +1378,7 @@ fn nx_native_feature_parameters_require_unique_resolved_names() {
         cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Native { kind, .. }) if kind.as_str() == "DELETE"
     ));
     assert!(matches!(
-        non_boolean_feature_definition_with_parameters(
+        non_boolean_feature_definition_with_parameters(&cadmpeg_test_support::service_decode_context(), 
             "THRU_CURVE",
             &[],
             None,
@@ -1394,7 +1394,7 @@ fn nx_native_feature_parameters_require_unique_resolved_names() {
         )
     ));
     assert!(matches!(
-        non_boolean_feature_definition_with_parameters(
+        non_boolean_feature_definition_with_parameters(&cadmpeg_test_support::service_decode_context(), 
             "SWP104",
             &[],
             None,
@@ -1502,7 +1502,7 @@ fn native_parameter_refuses_work_limit() {
 fn nx_intersection_labels_project_without_fabricating_construction_fields() {
     for operation in ["ASSOCIATIVE_INTERSECTION", "Intersection Curve"] {
         assert!(matches!(
-            non_boolean_feature_definition_with_parameters(
+            non_boolean_feature_definition_with_parameters(&cadmpeg_test_support::service_decode_context(), 
                 operation,
                 &[],
                 None,
@@ -1519,7 +1519,7 @@ fn nx_intersection_labels_project_without_fabricating_construction_fields() {
 
 #[test]
 fn nx_multi_instance_output_projects_as_an_unresolved_pattern() {
-    assert!(matches!(&(non_boolean_feature_definition_with_parameters(
+    assert!(matches!(&(non_boolean_feature_definition_with_parameters(&cadmpeg_test_support::service_decode_context(), 
             "Multi Instance Output",
             &[],
             None,
@@ -1634,8 +1634,8 @@ fn boolean_target_output_requires_one_resolved_segment_body() {
                 bodies: cadmpeg_ir::features::DistinctMembers::try_from(vec![body.clone()], &cadmpeg_test_support::service_decode_context()).expect("distinct bodies"),
                 native: "target".into(),
             },
-            BodySelection::Unresolved,
-        )
+            BodySelection::Unresolved, &cadmpeg_test_support::service_decode_context(),
+        ).expect("operand admission")
         .unwrap(),
 
         op: BooleanKind::Join,
@@ -1646,8 +1646,8 @@ fn boolean_target_output_requires_one_resolved_segment_body() {
     let ambiguous = FeatureDefinition::Operation(FeatureOperation::Combine {
         operands: cadmpeg_ir::features::CombineOperands::new(
             BodySelection::Unresolved,
-            BodySelection::Unresolved,
-        )
+            BodySelection::Unresolved, &cadmpeg_test_support::service_decode_context(),
+        ).expect("operand admission")
         .unwrap(),
 
         op: BooleanKind::Join,
@@ -1663,7 +1663,7 @@ fn topology_inferred_hole_axis_is_not_an_authored_direction() {
 
     for kind in ["SIMPLE HOLE", "HOLE PACKAGE"] {
         assert!(matches!(
-            non_boolean_feature_definition_with_parameters(
+            non_boolean_feature_definition_with_parameters(&cadmpeg_test_support::service_decode_context(), 
                 kind,
                 &[],
                 None,
