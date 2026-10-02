@@ -391,36 +391,6 @@ impl<'tcx> Analysis<'_, 'tcx> {
         if let Some(init) = self.initializer(expression) {
             return self.iteration(init, seen);
         }
-        match value.kind() {
-            ty::Str | ty::Slice(_) => Shape::Dynamic,
-            ty::Adt(definition, _) => {
-                let path = self.tcx.def_path_str(definition.did());
-                let name = self.tcx.item_name(definition.did());
-                if types::standard(self.tcx, definition.did())
-                    && matches!(name.as_str(), "Option" | "Result" | "Once" | "Empty")
-                {
-                    return Shape::Fixed;
-                }
-                if types::standard(self.tcx, definition.did())
-                    && path.contains("array::")
-                    && name.as_str() == "IntoIter"
-                {
-                    return Shape::Fixed;
-                }
-                if types::standard(self.tcx, definition.did())
-                    && (path.contains("slice::")
-                        || path.contains("str::iter")
-                        || path.contains("collections")
-                        || path.contains("vec::")
-                        || path.contains("range::"))
-                    || name.as_str() == "View"
-                        && self.tcx.crate_name(definition.did().krate).as_str() == "cadmpeg_core"
-                {
-                    return Shape::Dynamic;
-                }
-                Shape::Unknown
-            }
-            _ => Shape::Unknown,
-        }
+        types::iteration(self.tcx, value)
     }
 }
