@@ -33,6 +33,38 @@ impl NativeRecordNamespace {
         NativeRecordIdentity { namespace: self, kind, record_index }
     }
 
+    pub(super) fn rewrite<F: FnMut(&str) -> Result<String, cadmpeg_core::CodecError>>(
+        self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        kind: &str,
+        record_index: u32,
+        map: &mut cadmpeg_ir::schema::rewrite::typed::IdentityMap<'_, F>,
+    ) -> Result<Self, cadmpeg_core::CodecError> {
+        let source = ctx.format_scoped(format_args!("{}", self.serialized_id(kind, record_index)), "format ASM identity rewrite source")?;
+        let mut target = map.identity(ctx, &source.0)?;
+        let work = cadmpeg_core::decode::u64_from_index(target.len()).checked_mul(3).and_then(|work| work.checked_add(cadmpeg_core::decode::u64_from_index(source.0.len()))).ok_or_else(|| ctx.refuse_codec_limit("split ASM identity rewrite target", u64::MAX - 1, u64::MAX))?;
+        ctx.charge_work(work, "split ASM identity rewrite target")?;
+        let (namespace, record) = target.rsplit_once(':').ok_or_else(|| cadmpeg_core::CodecError::malformed("ASM identity has no record separator"))?;
+        let source_record = source.0.rsplit_once(':').map(|(_, record)| record).ok_or_else(|| cadmpeg_core::CodecError::malformed("ASM source identity has no record separator"))?;
+        if record != source_record {
+            return Err(cadmpeg_core::CodecError::malformed("ASM identity rewrite must preserve record kind and index"));
+        }
+        let namespace_length = namespace.len();
+        target.truncate(namespace_length);
+        Ok(Self { namespace: target })
+    }
+
+    pub(super) fn visit(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        kind: &str,
+        record_index: u32,
+        visitor: &mut dyn FnMut(&str) -> Result<(), cadmpeg_core::CodecError>,
+    ) -> Result<(), cadmpeg_core::CodecError> {
+        let source = ctx.format_scoped(format_args!("{}", self.serialized_id(kind, record_index)), "format ASM identity reference")?;
+        visitor(&source.0)
+    }
+
     pub(super) fn from_wire(id: &str, record_index: u32, kind: &str) -> Result<Self, String> {
         let id = Identity::new(id).map_err(|error| error.to_string())?;
         let suffix = format!(":{kind}#{record_index}");
