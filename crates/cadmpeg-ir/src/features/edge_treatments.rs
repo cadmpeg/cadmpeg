@@ -4,7 +4,8 @@
 mod admission;
 use admission::{RadiusAdmission, StandardAdmission};
 
-use super::{face_selections_overlap, EdgeSelection, FaceSelection};
+use super::{EdgeSelection, FaceSelection};
+use super::selection_overlap::{face_selections_overlap, standard_result};
 use crate::scalar::{
     FiniteReal, Fraction, InteriorAngle, Length, NonNegativeLength, PositiveLength,
 };
@@ -139,11 +140,11 @@ impl FullRoundFilletGroup {
         }
         let first = explicit(&side_one_faces);
         let second = explicit(&side_two_faces);
-        if first.is_some_and(|faces| face_selections_overlap(&center_faces, faces))
-            || second.is_some_and(|faces| face_selections_overlap(&center_faces, faces))
+        if first.is_some_and(|faces| standard_result(face_selections_overlap(&super::selection_overlap::StandardAdmission, &center_faces, faces)))
+            || second.is_some_and(|faces| standard_result(face_selections_overlap(&super::selection_overlap::StandardAdmission, &center_faces, faces)))
             || first
                 .zip(second)
-                .is_some_and(|(first, second)| face_selections_overlap(first, second))
+                .is_some_and(|(first, second)| standard_result(face_selections_overlap(&super::selection_overlap::StandardAdmission, first, second)))
         {
             return Err(
                 "center_faces, side_one_faces and side_two_faces must be pairwise disjoint",
