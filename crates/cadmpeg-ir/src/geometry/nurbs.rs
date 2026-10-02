@@ -75,11 +75,14 @@ impl KnotVector {
     /// parameterization. Negation turns a non-decreasing sequence into a
     /// non-increasing one, and the reversal restores the order, so the
     /// result stays admitted.
-    pub(super) fn reverse_negated(&mut self) {
+    pub(super) fn reverse_negated(&mut self, ctx: &DecodeContext<'_>) -> Result<(), CodecError> {
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(self.0.len() / 2), "IR signed knot reversal")?;
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(self.0.len()), "IR signed knot negation")?;
         self.0.reverse();
         for knot in &mut self.0 {
             *knot = -*knot;
         }
+        Ok(())
     }
 }
 
@@ -1728,9 +1731,11 @@ impl NurbsCurve {
     }
 
     /// Reverse poles, weights, and the signed knot parameterization together.
-    pub fn reverse_parameterization(&mut self) {
+    pub fn reverse_parameterization(&mut self, ctx: &DecodeContext<'_>) -> Result<(), CodecError> {
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(self.poles.count() / 2), "IR signed pole reversal")?;
+        self.knots.reverse_negated(ctx)?;
         self.poles.reverse();
-        self.knots.reverse_negated();
+        Ok(())
     }
 
     /// Reverse poles and reflect knots within an admitted parameter range.

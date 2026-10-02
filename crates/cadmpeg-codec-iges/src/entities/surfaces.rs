@@ -1704,7 +1704,7 @@ pub(super) fn project(
         }
         if direction_flag == 1 {
             let knot_sum = second.knots()[0] + second.knots()[second.knots().len() - 1];
-            second.reverse_parameterization();
+            second.reverse_parameterization(ctx)?;
             if second
                 .edit_knots(ctx, |knots| {
                     for knot in knots {

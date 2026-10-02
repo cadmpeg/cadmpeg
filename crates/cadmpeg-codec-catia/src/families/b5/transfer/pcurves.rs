@@ -294,7 +294,7 @@ pub(super) fn oriented_nurbs_range(
         let mut range = endpoint_parameters;
         if range[0] > range[1] {
             let sum = domain_start + domain_end;
-            curve.reverse_parameterization();
+            if let Err(error) = curve.reverse_parameterization(ctx) { return Some(Err(error)); }
             match curve.edit_knots(ctx, |knots| {
                 for knot in knots {
                     *knot += sum;
