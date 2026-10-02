@@ -56,3 +56,22 @@ pub(crate) fn has_context<'tcx>(tcx: TyCtxt<'tcx>, value: Ty<'tcx>, seen: &mut V
         _ => false,
     }
 }
+
+pub(crate) fn work<'tcx>(tcx: TyCtxt<'tcx>, value: Ty<'tcx>, seen: &mut Vec<Ty<'tcx>>) -> Shape {
+    let value = value.peel_refs();
+    match value.kind() {
+        ty::Str | ty::Slice(_) => Shape::Dynamic,
+        ty::Param(_) | ty::Alias(..) | ty::Dynamic(..) | ty::Infer(_) | ty::Error(_) => Shape::Unknown,
+        ty::Array(element, _) => work(tcx, *element, seen),
+        ty::Tuple(fields) => fields.iter().fold(Shape::Fixed, |shape, field| shape.join(work(tcx, field, seen))),
+        ty::Adt(definition, arguments) => {
+            if seen.contains(&value) { return Shape::Fixed; }
+            seen.push(value);
+            let name = tcx.item_name(definition.did());
+            if standard(tcx, definition.did()) && matches!(name.as_str(), "String" | "Vec" | "HashMap" | "HashSet" | "BTreeMap" | "BTreeSet" | "VecDeque" | "BinaryHeap" | "LinkedList" | "PathBuf" | "OsString") { return Shape::Dynamic; }
+            if name.as_str() == "View" && tcx.crate_name(definition.did().krate).as_str() == "cadmpeg_core" { return Shape::Dynamic; }
+            definition.all_fields().fold(Shape::Fixed, |shape, field| shape.join(work(tcx, field.ty(tcx, arguments).skip_norm_wip(), seen)))
+        }
+        _ => Shape::Fixed,
+    }
+}

@@ -24,7 +24,41 @@ impl<'tcx> Analysis<'_, 'tcx> {
         let Some((definition, operands)) = self.call(expression) else { return; };
         let name = self.tcx.item_name(definition);
         let name = name.as_str();
-        if !matches!(name, "to_string" | "to_owned" | "clone" | "format") { return; }
+        if types::standard(self.tcx, definition) && matches!(name, "new" | "default" | "must_use" | "box_assume_init_into_vec_unsafe" | "branch" | "from_residual" | "from_output") { return; }
+        let context_call = operands.first().is_some_and(|operand| types::has_context(self.tcx, self.typeck.expr_ty(operand), &mut Vec::new()));
+        if context_call {
+            if name == "alloc_filled" {
+                if let Some(value) = operands.get(2) {
+                    let shape = types::heap(self.tcx, self.typeck.expr_ty(value), &mut Vec::new());
+                    let empty = self.call(value).is_some_and(|(id, args)| types::standard(self.tcx, id) && args.is_empty() && matches!(self.tcx.item_name(id).as_str(), "new" | "default"));
+                    if !empty { self.shape_report(expression, shape, "alloc_filled child Clone"); }
+                }
+            }
+            return;
+        }
+        if matches!(name, "push" | "push_back" | "push_front" | "push_str" | "insert" | "extend" | "extend_from_slice" | "append" | "resize" | "resize_with" | "reserve" | "reserve_exact" | "try_reserve" | "try_reserve_exact") && types::standard(self.tcx, definition) {
+            if let Some(receiver) = operands.first() {
+                let shape = types::heap(self.tcx, self.typeck.expr_ty(receiver).peel_refs(), &mut Vec::new());
+                self.shape_report(expression, shape, "collection growth outside core operation");
+            }
+            return;
+        }
+        if name == "cloned" && types::standard(self.tcx, definition) {
+            let value = self.typeck.expr_ty(expression);
+            if let ty::Adt(_, arguments) = value.kind() {
+                let shape = arguments.types().fold(Shape::Fixed, |shape, value| shape.join(types::work(self.tcx, value, &mut Vec::new())));
+                if shape != Shape::Fixed { self.shape_report(expression, Shape::Unknown, "lazy cloned iterator: child Clone requires resolution"); }
+            }
+            return;
+        }
+        if !matches!(name, "to_string" | "to_owned" | "clone" | "format" | "to_vec" | "collect" | "from" | "into" | "from_elem" | "with_capacity" | "with_capacity_in" | "from_iter" | "repeat" | "concat" | "join" | "into_boxed_slice" | "into_owned") {
+            if types::heap(self.tcx, self.typeck.expr_ty(expression), &mut Vec::new()) != Shape::Fixed {
+                if self.tcx.def_kind(definition) == rustc_hir::def::DefKind::Ctor(rustc_hir::def::CtorOf::Struct, rustc_hir::def::CtorKind::Fn) || self.tcx.def_kind(definition) == rustc_hir::def::DefKind::Ctor(rustc_hir::def::CtorOf::Variant, rustc_hir::def::CtorKind::Fn) { return; }
+                if operands.iter().any(|operand| types::has_context(self.tcx, self.typeck.expr_ty(operand), &mut Vec::new())) { return; }
+                self.shape_report(expression, Shape::Unknown, "constructor or opaque callee: allocator reachability unresolved");
+            }
+            return;
+        }
         let result = types::heap(self.tcx, self.typeck.expr_ty(expression), &mut Vec::new());
         if result == Shape::Fixed { return; }
         if name == "format" && types::standard(self.tcx, definition) {
@@ -34,7 +68,36 @@ impl<'tcx> Analysis<'_, 'tcx> {
             self.shape_report(expression, shape, "format!");
             return;
         }
-        if operands.first().is_some_and(|operand| self.fixed_value(operand)) { return; }
+        if matches!(name, "to_string" | "to_owned" | "clone") && operands.first().is_some_and(|operand| self.fixed_value(operand)) { return; }
+        if types::standard(self.tcx, definition) {
+            if matches!(name, "collect" | "from_iter" | "to_vec") {
+                let shape = operands.first().map_or(Shape::Unknown, |operand| self.iteration(operand, &mut Vec::new()));
+                self.shape_report(expression, shape, name);
+                return;
+            }
+            if matches!(name, "from" | "into" | "into_owned") {
+                if let Some(operand) = operands.first() {
+                    if self.constant(operand, &mut Vec::new()) { return; }
+                    if self.typeck.expr_ty(operand) == self.typeck.expr_ty(expression) { return; }
+                    let shape = match self.typeck.expr_ty(operand).peel_refs().kind() {
+                        ty::Str | ty::Slice(_) => Shape::Dynamic,
+                        ty::Array(_, _) => Shape::Fixed,
+                        _ => Shape::Unknown,
+                    };
+                    self.shape_report(expression, shape, name);
+                    return;
+                }
+            }
+            if matches!(name, "with_capacity" | "with_capacity_in" | "from_elem") {
+                let count = if name == "from_elem" { operands.get(1) } else { operands.first() };
+                if count.is_some_and(|count| self.constant(count, &mut Vec::new())) {
+                    if name != "from_elem" || operands.first().is_some_and(|value| types::heap(self.tcx, self.typeck.expr_ty(value), &mut Vec::new()) == Shape::Fixed) { return; }
+                }
+                self.shape_report(expression, Shape::Dynamic, name);
+                return;
+            }
+            if name == "into_boxed_slice" { self.shape_report(expression, Shape::Unknown, "into_boxed_slice may shrink/reallocate: capacity equality unresolved"); return; }
+        }
         if name == "clone" {
             let args = match expression.kind {
                 ExprKind::Call(callee, _) => self.typeck.node_args(callee.hir_id),
