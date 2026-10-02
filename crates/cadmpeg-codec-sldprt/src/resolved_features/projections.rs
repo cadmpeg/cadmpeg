@@ -876,7 +876,7 @@ pub(crate) fn project_compact_body_selections(
                         text.push_str(&digits);
                         ids.push(text);
                     }
-                    let Ok(selection) = cadmpeg_ir::features::BodySelection::local_for_decode(
+                    let Ok(selection) = cadmpeg_ir::features::BodySelection::local(
                         ids,
                         compact_body_selection_value_charged(ctx, &selection.local_body_ids)?,
                         ctx,
@@ -1757,7 +1757,7 @@ pub(crate) fn project_compact_surface_selections(
                             ctx.reserve_vec(&mut bodies, 1, OPERATION)?;
                             bodies.push(body);
                             let native_copy = ctx.format_retained(format_args!("{target_native}"), OPERATION)?;
-                            *targets = BodySelection::generated_for_decode(bodies, native_copy, ctx)?
+                            *targets = BodySelection::generated(bodies, native_copy, ctx)?
                                 .unwrap_or(BodySelection::Native(target_native));
                             if !dependencies.contains(producer) {
                                 let dependency = copy_projection_feature_id(ctx, producer, OPERATION)?;

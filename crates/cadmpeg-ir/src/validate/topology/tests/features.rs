@@ -1027,8 +1027,8 @@ fn generated_body_selection_must_name_a_declared_producer_result() {
                         feature: producer,
                         local_id: "body#declared".to_owned().try_into().unwrap(),
                     }],
-                    "synthetic:native-selection#0".into(),
-                )
+                    "synthetic:native-selection#0".into(), &cadmpeg_test_support::service_decode_context(),
+                ).expect("body selection admission")
                 .unwrap(),
             }),
         ),

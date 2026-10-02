@@ -714,8 +714,8 @@ fn output_free_local_extract_does_not_change_the_saved_body_census() {
             FeatureDefinition::Operation(FeatureOperation::ExtractBody {
                 source: BodySelection::local(
                     vec!["nx:om-data-blocks-2:block#736".to_string()],
-                    "nx:om-object-index#736".to_string(),
-                )
+                    "nx:om-object-index#736".to_string(), &cadmpeg_test_support::service_decode_context(),
+                ).expect("body selection admission")
                 .unwrap(),
             }),
         ),
@@ -779,8 +779,8 @@ fn delete_body_ignores_a_complete_feature_local_body() {
             FeatureDefinition::Operation(FeatureOperation::DeleteBody {
                 bodies: BodySelection::local(
                     vec!["input-body".to_string()],
-                    "native-selection".to_string(),
-                )
+                    "native-selection".to_string(), &cadmpeg_test_support::service_decode_context(),
+                ).expect("body selection admission")
                 .unwrap(),
                 mode: BodyRetentionMode::DeleteSelected,
             }),

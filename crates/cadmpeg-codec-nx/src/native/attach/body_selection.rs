@@ -43,7 +43,7 @@ pub(super) fn local_body_selection(
             ctx.copy_retained_text(body, "NX local body selection identity")
         })?;
     let native_copy = ctx.copy_retained_text(&native, "NX feature projection text")?;
-    Ok(BodySelection::local_for_decode(bodies, native_copy, ctx)?
+    Ok(BodySelection::local(bodies, native_copy, ctx)?
         .unwrap_or(BodySelection::Native(native)))
 }
 

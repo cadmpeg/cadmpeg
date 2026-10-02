@@ -128,7 +128,7 @@ fn combine_with_exact_local_tools_preserves_its_retained_target() {
         FeatureDefinition::Operation(FeatureOperation::Combine {
             operands: cadmpeg_ir::features::CombineOperands::new(
                 BodySelection::Bodies(cadmpeg_ir::features::DistinctMembers::try_from(vec![target.clone()], &cadmpeg_test_support::service_decode_context()).expect("distinct bodies")),
-                BodySelection::local(vec!["local-tool".to_string()], "native-tools".to_string())
+                BodySelection::local(vec!["local-tool".to_string()], "native-tools".to_string(), &cadmpeg_test_support::service_decode_context(),).expect("body selection admission")
                     .unwrap(), &cadmpeg_test_support::service_decode_context(),
             ).expect("operand admission")
             .unwrap(),
@@ -409,8 +409,8 @@ fn local_sew_with_an_already_retained_output_is_census_invariant() {
                         "historical-sheet".to_string(),
                         "second-historical-sheet".to_string(),
                     ],
-                    "native-selection".to_string(),
-                )
+                    "native-selection".to_string(), &cadmpeg_test_support::service_decode_context(),
+                ).expect("body selection admission")
                 .unwrap())
                 .try_into()
                 .unwrap(),
