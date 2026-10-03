@@ -324,7 +324,7 @@ fn offset_candidate_sample_error(
             support_partials.du.cross(support_partials.dv.get()),
         )?;
         let candidate_point = match finite_or_refusal(
-            cadmpeg_ir::eval::nurbs_surface_point_with_budget(candidate, u, v, geometry_budget),
+            cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(geometry_budget.charges).within_work_slice(geometry_budget, |admission| cadmpeg_ir::eval::decode::nurbs_surface_point(admission, candidate, u, v)),
         ) {
             Ok(Some(point)) => point,
             Ok(None) => return None,
@@ -801,14 +801,14 @@ pub(super) fn certified_curved_offset_cache_fit_with_budget(
                 return None;
             }
             let support_point = match finite_or_refusal(
-                cadmpeg_ir::eval::nurbs_surface_point_with_budget(support, u, v, geometry_budget),
+                cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(geometry_budget.charges).within_work_slice(geometry_budget, |admission| cadmpeg_ir::eval::decode::nurbs_surface_point(admission, support, u, v)),
             ) {
                 Ok(Some(point)) => point,
                 Ok(None) => return None,
                 Err(limit) => return Some(Err(limit)),
             };
             let candidate_point = match finite_or_refusal(
-                cadmpeg_ir::eval::nurbs_surface_point_with_budget(candidate, u, v, geometry_budget),
+                cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(geometry_budget.charges).within_work_slice(geometry_budget, |admission| cadmpeg_ir::eval::decode::nurbs_surface_point(admission, candidate, u, v)),
             ) {
                 Ok(Some(point)) => point,
                 Ok(None) => return None,

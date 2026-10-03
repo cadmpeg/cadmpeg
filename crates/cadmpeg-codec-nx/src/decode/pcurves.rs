@@ -29,9 +29,6 @@ use crate::topology::{Graph, Node};
 use cadmpeg_core::decode::{DecodeContext, WorkBudget};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::eval::analytic_surface_parameters;
-use cadmpeg_ir::eval::curve_point_with_budget;
-use cadmpeg_ir::eval::curve_second_derivative_with_budget;
-use cadmpeg_ir::eval::curve_tangent_with_budget;
 use cadmpeg_ir::eval::finite_or_refusal;
 use cadmpeg_ir::eval::model_curve_point_by_id_with_budget;
 use cadmpeg_ir::eval::model_surface_partials_by_id_with_budget;
@@ -40,9 +37,7 @@ use cadmpeg_ir::eval::nurbs_curve_speed_bound;
 use cadmpeg_ir::eval::nurbs_surface_isocurve;
 use cadmpeg_ir::eval::nurbs_surface_parameter_within_nonnegative_tolerance_with_budget;
 use cadmpeg_ir::eval::nurbs_surface_parameter_within_tolerance_with_budget;
-use cadmpeg_ir::eval::nurbs_surface_point_with_budget;
 use cadmpeg_ir::eval::pcurve_tangent;
-use cadmpeg_ir::eval::surface_point_with_budget_solved;
 use cadmpeg_ir::eval::surface_second_partials;
 use cadmpeg_ir::eval::EvaluationFailure;
 use cadmpeg_ir::features::FiniteVector3;
@@ -901,11 +896,7 @@ fn orient_tolerant_intersection_pcurve_with_index_and_budget(
                 let Some(curve) = index.curves(curve.as_str()) else {
                     return Ok(None);
                 };
-                let Some(curve_tangent) = finite_or_refusal(curve_tangent_with_budget(
-                    &curve.geometry,
-                    range[0],
-                    geometry_budget,
-                ))?
+                let Some(curve_tangent) = finite_or_refusal(cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(geometry_budget.charges).within_work_slice(geometry_budget, |admission| cadmpeg_ir::eval::decode::curve_tangent(admission, &curve.geometry, range[0])))?
                 else {
                     return Ok(None);
                 };
@@ -2279,12 +2270,7 @@ fn exact_boundary_pcurve_with_index(
         if !geometry_budget.charge() {
             return geometry_budget.resource_refusal().map_or(Ok(None), Err);
         }
-        let Some(point) = finite_or_refusal(nurbs_surface_point_with_budget(
-            nurbs,
-            parameters[index].u,
-            parameters[index].v,
-            geometry_budget,
-        ))?
+        let Some(point) = finite_or_refusal(cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(geometry_budget.charges).within_work_slice(geometry_budget, |admission| cadmpeg_ir::eval::decode::nurbs_surface_point(admission, nurbs, parameters[index].u, parameters[index].v)))?
         else {
             return Ok(None);
         };
@@ -2584,11 +2570,7 @@ fn exact_analytic_isocurve_pcurve_with_index_and_budget(
         };
         for index in 0..=SAMPLE_INTERVALS {
             let parameter = finite_parameter_sample(range, index, SAMPLE_INTERVALS)?;
-            let point = match finite_or_refusal(curve_point_with_budget(
-                &curve_carrier.geometry,
-                parameter,
-                geometry_budget,
-            )) {
+            let point = match finite_or_refusal(cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(geometry_budget.charges).within_work_slice(geometry_budget, |admission| cadmpeg_ir::eval::decode::curve_point(admission, &curve_carrier.geometry, parameter))) {
                 Ok(Some(point)) => point,
                 Ok(None) => return None,
                 Err(limit) => return Some(Err(limit)),
@@ -2662,29 +2644,17 @@ fn exact_analytic_isocurve_pcurve_with_index_and_budget(
             Ok(None) => return None,
             Err(limit) => return Some(Err(limit)),
         };
-        let curve_position = match finite_or_refusal(curve_point_with_budget(
-            &curve_carrier.geometry,
-            parameter,
-            geometry_budget,
-        )) {
+        let curve_position = match finite_or_refusal(cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(geometry_budget.charges).within_work_slice(geometry_budget, |admission| cadmpeg_ir::eval::decode::curve_point(admission, &curve_carrier.geometry, parameter))) {
             Ok(Some(point)) => point,
             Ok(None) => return None,
             Err(limit) => return Some(Err(limit)),
         };
-        let curve_tangent = match finite_or_refusal(curve_tangent_with_budget(
-            &curve_carrier.geometry,
-            parameter,
-            geometry_budget,
-        )) {
+        let curve_tangent = match finite_or_refusal(cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(geometry_budget.charges).within_work_slice(geometry_budget, |admission| cadmpeg_ir::eval::decode::curve_tangent(admission, &curve_carrier.geometry, parameter))) {
             Ok(Some(tangent)) => tangent,
             Ok(None) => return None,
             Err(limit) => return Some(Err(limit)),
         };
-        let curve_acceleration = match finite_or_refusal(curve_second_derivative_with_budget(
-            &curve_carrier.geometry,
-            parameter,
-            geometry_budget,
-        )) {
+        let curve_acceleration = match finite_or_refusal(cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(geometry_budget.charges).within_work_slice(geometry_budget, |admission| cadmpeg_ir::eval::curve_second_derivative(admission, &curve_carrier.geometry, parameter))) {
             Ok(Some(acceleration)) => acceleration,
             Ok(None) => return None,
             Err(limit) => return Some(Err(limit)),
@@ -3583,7 +3553,7 @@ fn decoded_solved_surface_point_with_budget(
     if depth >= 32 {
         return Ok(None);
     }
-    let evaluated = match surface_point_with_budget_solved(geometry, u, v, geometry_budget) {
+    let evaluated = match cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(geometry_budget.charges).within_work_slice(geometry_budget, |admission| cadmpeg_ir::eval::decode::surface_point_solved(admission, geometry, u, v)) {
         Err(EvaluationFailure::NoValue) => {
             model_surface_point_by_id_with_budget(index, surface, u, v, geometry_budget)
         }
@@ -3971,11 +3941,7 @@ fn blend_boundary_spine_geometry_matches_with_index_and_budget(
     let Some(curve) = index.curves(spine.as_str()) else {
         return Ok(false);
     };
-    let Some(tangent) = finite_or_refusal(curve_tangent_with_budget(
-        &curve.geometry,
-        parameters.u,
-        geometry_budget,
-    ))?
+    let Some(tangent) = finite_or_refusal(cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(geometry_budget.charges).within_work_slice(geometry_budget, |admission| cadmpeg_ir::eval::decode::curve_tangent(admission, &curve.geometry, parameters.u)))?
     .and_then(FiniteVector3::unit_nonzero) else {
         return Ok(false);
     };

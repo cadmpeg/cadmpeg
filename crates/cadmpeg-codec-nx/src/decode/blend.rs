@@ -13,13 +13,9 @@ use super::support_uv::parameterization_equivalent_surfaces_with_index;
 #[cfg(test)]
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::eval::nurbs_surface_parameter_within_tolerance_with_budget;
-use cadmpeg_ir::eval::curve_point_with_budget;
-use cadmpeg_ir::eval::curve_second_derivative_with_budget;
-use cadmpeg_ir::eval::curve_tangent_with_budget;
 use cadmpeg_ir::eval::model_surface_partials_by_id_with_budget;
 use cadmpeg_ir::eval::model_surface_point_by_id_with_budget;
 use cadmpeg_ir::eval::pcurve_tangent;
-use cadmpeg_ir::eval::surface_point_with_budget;
 use cadmpeg_ir::eval::EvaluationFailure;
 use cadmpeg_ir::features::FiniteVector3;
 use cadmpeg_ir::geometry::nurbs::bezier::{
@@ -599,7 +595,7 @@ pub(super) fn decoded_surface_point_with_geometry_and_budget(
     }
     // A non-finite point is returned as the evaluation reached it; only an
     // evaluation with no value falls back to the next route.
-    let evaluated = match surface_point_with_budget(geometry, u, v, geometry_budget) {
+    let evaluated = match cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(geometry_budget.charges).within_work_slice(geometry_budget, |admission| cadmpeg_ir::eval::decode::surface_point(admission, geometry, u, v)) {
         Err(EvaluationFailure::NoValue) => {
             model_surface_point_by_id_with_budget(index, surface, u, v, geometry_budget)
         }
@@ -1828,24 +1824,16 @@ fn blend_surface_u_derivative_with_index_and_budget(
     let Some(carrier) = index.curves(spine.as_str()) else {
         return Ok(None);
     };
-    let Some(center) = cadmpeg_ir::eval::finite_or_refusal(curve_point_with_budget(
-        &carrier.geometry,
-        u,
-        geometry_budget,
-    ))?
+    let Some(center) = cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(geometry_budget.charges).within_work_slice(geometry_budget, |admission| cadmpeg_ir::eval::decode::curve_point(admission, &carrier.geometry, u)))?
     else {
         return Ok(None);
     };
-    let Some(velocity) = cadmpeg_ir::eval::finite_or_refusal(curve_tangent_with_budget(
-        &carrier.geometry,
-        u,
-        geometry_budget,
-    ))?
+    let Some(velocity) = cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(geometry_budget.charges).within_work_slice(geometry_budget, |admission| cadmpeg_ir::eval::decode::curve_tangent(admission, &carrier.geometry, u)))?
     else {
         return Ok(None);
     };
     let Some(acceleration) = cadmpeg_ir::eval::finite_or_refusal(
-        curve_second_derivative_with_budget(&carrier.geometry, u, geometry_budget),
+        cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(geometry_budget.charges).within_work_slice(geometry_budget, |admission| cadmpeg_ir::eval::curve_second_derivative(admission, &carrier.geometry, u)),
     )?
     else {
         return Ok(None);
@@ -4611,11 +4599,7 @@ fn model_curve_point_with_index_and_budget(
     let Some(carrier) = index.curves(curve.as_str()) else {
         return Ok(None);
     };
-    cadmpeg_ir::eval::finite_or_refusal(curve_point_with_budget(
-        &carrier.geometry,
-        parameter,
-        geometry_budget,
-    ))
+    cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(geometry_budget.charges).within_work_slice(geometry_budget, |admission| cadmpeg_ir::eval::decode::curve_point(admission, &carrier.geometry, parameter)))
     .map(|point| point.map(cadmpeg_ir::features::FinitePoint3::get))
 }
 
@@ -4628,11 +4612,7 @@ fn model_curve_tangent_with_index_and_budget(
     let Some(carrier) = index.curves(curve.as_str()) else {
         return Ok(None);
     };
-    cadmpeg_ir::eval::finite_or_refusal(curve_tangent_with_budget(
-        &carrier.geometry,
-        parameter,
-        geometry_budget,
-    ))
+    cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(geometry_budget.charges).within_work_slice(geometry_budget, |admission| cadmpeg_ir::eval::decode::curve_tangent(admission, &carrier.geometry, parameter)))
     .map(|tangent| tangent.and_then(cadmpeg_ir::features::FiniteVector3::unit_nonzero))
 }
 

@@ -22,7 +22,6 @@ use super::rolling_ball_jet_point;
 use super::scale_vector;
 use super::subset_support_parameters_with_derivatives;
 use super::surface_first_order;
-use super::surface_point_with_budget;
 use super::sweep_has_current_cache;
 use super::unit_cross_direction;
 use super::variable_blend_has_current_cache;
@@ -180,7 +179,7 @@ pub(super) fn model_surface_point_by_id_inner(
     ) -> Option<SurfaceEvaluation> {
         if !normal {
             return point_evaluation(match budget {
-                Some(budget) => surface_point_with_budget(geometry, u, v, budget),
+                Some(budget) => crate::eval::admission::EvaluationAdmission::Standard.within_work_slice(budget, |admission| crate::eval::decode::surface_point(admission, geometry, u, v)),
                 None => crate::eval::decode::surface_point(crate::eval::admission::EvaluationAdmission::Standard, geometry, u, v),
             });
         }

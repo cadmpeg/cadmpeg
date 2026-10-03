@@ -7,7 +7,6 @@ use crate::eval::model_curve_point_by_id_with_budget;
 use crate::eval::model_surface_point_by_id;
 use crate::eval::model_surface_point_by_id_with_budget;
 use crate::eval::pcurve_tangent;
-use crate::eval::surface_point_with_budget;
 use crate::eval::EvaluationFailure;
 use crate::geometry::nurbs::{NurbsSurface, NurbsSurfaceAxis, NurbsSurfaceLanes};
 use crate::geometry::pcurve::{
@@ -435,7 +434,7 @@ fn a_nurbs_surface_whose_point_overflows_reports_the_point_it_reached() {
     let budget = WorkBudget::new(64);
     assert_eq!(crate::eval::decode::surface_point(crate::eval::admission::EvaluationAdmission::Standard, &surface, 2.0, 0.5), reached);
     assert_eq!(
-        surface_point_with_budget(&surface, 2.0, 0.5, &budget),
+        crate::eval::admission::EvaluationAdmission::Standard.within_work_slice(&budget, |admission| crate::eval::decode::surface_point(admission, &surface, 2.0, 0.5)),
         reached
     );
 
@@ -461,7 +460,7 @@ fn a_nurbs_surface_whose_partial_overflows_has_its_finite_point_on_both_point_ro
     )));
     let budget = WorkBudget::new(64);
     assert_eq!(
-        surface_point_with_budget(&surface, 5.0e-301, 0.5, &budget)
+        crate::eval::admission::EvaluationAdmission::Standard.within_work_slice(&budget, |admission| crate::eval::decode::surface_point(admission, &surface, 5.0e-301, 0.5))
             .map(crate::features::FinitePoint3::get),
         Ok(Point3::new(5.0e9, 0.5, 0.0))
     );
@@ -500,7 +499,7 @@ fn a_placed_surface_whose_partial_overflows_has_its_finite_point_on_both_point_r
     let u = 0.25_f64.acos();
     assert!(crate::eval::surface_partials(crate::eval::admission::EvaluationAdmission::Standard, &surface, u, 1.0).is_err());
     let budget = WorkBudget::new(64);
-    let with_budget = surface_point_with_budget(&surface, u, 1.0, &budget);
+    let with_budget = crate::eval::admission::EvaluationAdmission::Standard.within_work_slice(&budget, |admission| crate::eval::decode::surface_point(admission, &surface, u, 1.0));
     let point = crate::eval::decode::surface_point(crate::eval::admission::EvaluationAdmission::Standard, &surface, u, 1.0);
     assert!(point.is_ok(), "{point:?}");
     assert_eq!(point, with_budget);
@@ -959,7 +958,7 @@ fn a_nurbs_surface_whose_second_partial_overflows_keeps_its_first_partials() {
     let budget = WorkBudget::new(1_000);
     for partials in [
         crate::eval::nurbs_surface_partials(crate::eval::admission::EvaluationAdmission::Standard, &surface, 0.0, 0.5),
-        crate::eval::nurbs_surface_partials_with_budget(&surface, 0.0, 0.5, &budget),
+        crate::eval::admission::EvaluationAdmission::Standard.within_work_slice(&budget, |admission| crate::eval::nurbs_surface_partials(admission, &surface, 0.0, 0.5)),
     ] {
         let partials = partials.expect("first partials").into_raw();
         assert_eq!(partials.point, point);
@@ -969,7 +968,7 @@ fn a_nurbs_surface_whose_second_partial_overflows_keeps_its_first_partials() {
     }
     for second in [
         crate::eval::nurbs_surface_second_partials(crate::eval::admission::EvaluationAdmission::Standard, &surface, 0.0, 0.5),
-        crate::eval::nurbs_surface_second_partials_with_budget(&surface, 0.0, 0.5, &budget),
+        crate::eval::admission::EvaluationAdmission::Standard.within_work_slice(&budget, |admission| crate::eval::nurbs_surface_second_partials(admission, &surface, 0.0, 0.5)),
     ] {
         assert_eq!(
             second.map(crate::eval::SurfaceSecondPartials::into_raw),
