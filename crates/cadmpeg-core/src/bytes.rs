@@ -1,8 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Shared byte-order assembly and byte-slice search over decode data.
-//!
-//! Empty needles are never a match. That matches the codec helpers this
-//! module replaces and avoids `memchr`'s empty-needle-at-zero behavior.
+//! Shared byte-order assembly over decode data.
 
 /// Assemble a 16-bit little-endian integer from an exact byte array.
 pub const fn assemble_u16_le(bytes: [u8; 2]) -> u16 {
@@ -70,26 +67,6 @@ pub const fn assemble_f64_le(bytes: [u8; 8]) -> f64 {
 /// Assemble an IEEE-754 binary64 value from exact big-endian bytes.
 pub const fn assemble_f64_be(bytes: [u8; 8]) -> f64 {
     f64::from_bits(assemble_u64_be(bytes))
-}
-
-/// First offset of `needle` in `haystack`, or `None` when `needle` is empty.
-pub fn find(haystack: &[u8], needle: &[u8]) -> Option<usize> {
-    if needle.is_empty() {
-        return None;
-    }
-    memchr::memmem::find(haystack, needle)
-}
-
-/// First offset of `needle` at or after `from`, or `None` when `needle` is empty.
-pub fn find_from(haystack: &[u8], needle: &[u8], from: usize) -> Option<usize> {
-    let tail = haystack.get(from..)?;
-    find(tail, needle).map(|relative| from + relative)
-}
-
-/// First offset of `needle` in `haystack[start..end]`, returned as an absolute offset.
-pub fn find_in(haystack: &[u8], needle: &[u8], start: usize, end: usize) -> Option<usize> {
-    let window = haystack.get(start..end)?;
-    find(window, needle).map(|relative| start + relative)
 }
 
 #[cfg(test)]

@@ -19,7 +19,6 @@ use std::io::{Cursor, Write};
 
 use crate::records::{bodies::DesignBodyBinding, references::DesignMaterialAssignment};
 use cadmpeg_container::ArchiveSnapshot;
-use cadmpeg_core::bytes::find_from;
 use cadmpeg_core::decode::{bounded_len, DecodeContext, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::appearance::{Appearance, AppearanceBinding, AppearanceTarget};
@@ -520,7 +519,9 @@ fn patch_instance_colors(
                             })?
                     }
                     ("PrismOpaqueSchema", "surface_roughness") => {
-                        find_from(record, b"\x0e\x20\x00\x00", position)
+                        record.get(position..)
+                            .and_then(|window| memchr::memmem::find(window, b"\x0e\x20\x00\x00"))
+                            .map(|relative| position + relative)
                             .map(|marker| marker + 4)
                             .ok_or_else(|| {
                                 CodecError::Malformed("Protein roughness carrier is absent".into())
@@ -2269,7 +2270,7 @@ fn decode_fixed_record(
             position + 197 + delta,
         );
     } else if schema == "PrismOpaqueSchema" {
-        if let Some(marker) = find_from(record, b"\x0e\x20\x00\x00", position) {
+        if let Some(marker) = ctx.find_bytes_from(record, b"\x0e\x20\x00\x00", position, "find F3D roughness carrier")? {
             fixed_scalar(&mut properties, "surface_roughness", record, marker + 4);
         }
     } else if schema == "PrismTransparentSchema" {

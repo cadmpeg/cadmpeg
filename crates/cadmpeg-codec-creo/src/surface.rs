@@ -8,7 +8,6 @@
 pub(crate) mod arrays;
 pub(crate) mod cylinder_frame_readers;
 
-use cadmpeg_core::bytes::{find_from as find, find_in};
 use cadmpeg_core::decode::{bounded_len, u64_from_index, DecodeContext};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::FinitePoint3;
@@ -2941,12 +2940,19 @@ struct SurfaceArrayFrame {
     count: usize,
 }
 
-fn surface_array_frames(payload: &[u8]) -> impl Iterator<Item = SurfaceArrayFrame> + '_ {
+fn surface_array_frames<'a, 'ctx>(ctx: &'a DecodeContext<'ctx>, payload: &'a [u8]) -> impl Iterator<Item = Result<SurfaceArrayFrame, CodecError>> + use<'a, 'ctx> {
     const LABEL: &[u8] = b"srf_array\0";
     let mut search = 0;
+    let mut finished = false;
     std::iter::from_fn(move || {
+        if finished {
+            return None;
+        }
+        let frame = (|| -> Result<Option<SurfaceArrayFrame>, CodecError> {
         loop {
-            let label = find(payload, LABEL, search)?;
+            let Some(label) = ctx.find_bytes_from(payload, LABEL, search, "find Creo surface array")? else {
+                return Ok(None);
+            };
             let start = label + LABEL.len();
             search = start;
             if payload.get(start) != Some(&psb::token::ARRAY_OPEN) {
@@ -2962,18 +2968,23 @@ fn surface_array_frames(payload: &[u8]) -> impl Iterator<Item = SurfaceArrayFram
             let Ok(count) = usize::try_from(count) else {
                 continue;
             };
-            let mut end = find(payload, LABEL, start).unwrap_or(payload.len());
+            let mut end = ctx.find_bytes_from(payload, LABEL, start, "find Creo surface array boundary")?.unwrap_or(payload.len());
             for terminator in [b"crv_array\0".as_slice(), b"lo_array\0", b"qlt_array\0"] {
-                if let Some(offset) = find(payload, terminator, after_count) {
+                if let Some(offset) = ctx.find_bytes_from(payload, terminator, after_count, "find Creo surface array boundary")? {
                     end = end.min(offset);
                 }
             }
-            return Some(SurfaceArrayFrame {
+            return Ok(Some(SurfaceArrayFrame {
                 start: after_count,
                 end,
                 count,
-            });
+            }));
         }
+        })();
+        if !matches!(frame, Ok(Some(_))) {
+            finished = true;
+        }
+        frame.transpose()
     })
 }
 
@@ -2995,13 +3006,14 @@ pub(crate) fn counted_row_bounds(
     ctx: &DecodeContext<'_>,
     payload: &[u8],
 ) -> Result<Vec<(SurfaceRow, usize)>, CodecError> {
-    let mut frames = surface_array_frames(payload).peekable();
-    if frames.peek().is_none() {
+    let mut frames = surface_array_frames(ctx, payload);
+    let Some(first) = frames.next().transpose()? else {
         return Ok(Vec::new());
-    }
+    };
     let candidates = rows(ctx, payload)?;
     let mut result = Vec::new();
-    for frame in frames {
+    for frame in std::iter::once(Ok(first)).chain(frames) {
+        let frame = frame?;
         let selected_count = candidates
             .iter()
             .filter(|row| row.offset >= frame.start && row.offset < frame.end)
@@ -3034,13 +3046,14 @@ pub(crate) fn complete_surface_array_bounds(
     ctx: &DecodeContext<'_>,
     payload: &[u8],
 ) -> Result<Vec<(usize, usize)>, CodecError> {
-    let mut frames = surface_array_frames(payload).peekable();
-    if frames.peek().is_none() {
+    let mut frames = surface_array_frames(ctx, payload);
+    let Some(first) = frames.next().transpose()? else {
         return Ok(Vec::new());
-    }
+    };
     let rows = rows(ctx, payload)?;
     let mut bounds = Vec::new();
-    for frame in frames {
+    for frame in std::iter::once(Ok(first)).chain(frames) {
+        let frame = frame?;
         if frame.count != 0
             && rows
                 .iter()
@@ -3071,34 +3084,34 @@ fn rows_with_boundaries(
 ) -> Result<Vec<SurfaceRow>, CodecError> {
     let mut result = Vec::new();
     let mut namespace_start = 0;
-    while let Some(array) = find(payload, b"srf_array\0", namespace_start) {
+    while let Some(array) = ctx.find_bytes_from(payload, b"srf_array\0", namespace_start, "find Creo surface marker")? {
         let start = array + b"srf_array\0".len();
-        let end = find(payload, b"srf_array\0", start).unwrap_or(payload.len());
+        let end = ctx.find_bytes_from(payload, b"srf_array\0", start, "find Creo surface marker")?.unwrap_or(payload.len());
         namespace_start = start;
-        let value = |label: &[u8]| {
-            find_in(payload, label, start, end).and_then(|at| {
+        let value = |label: &[u8]| -> Result<Option<(u32, usize)>, CodecError> {
+            Ok(ctx.find_bytes_in(payload, label, start, end, "find Creo surface field")?.and_then(|at| {
                 let value_start = at + label.len();
                 let (value, after) = compact_int(payload, value_start);
                 (after > value_start).then_some((value, at))
-            })
+            }))
         };
-        let typed_kind = find_in(payload, b"geom_type\0", start, end)
+        let typed_kind = ctx.find_bytes_in(payload, b"geom_type\0", start, end, "find Creo surface marker")?
             .and_then(|at| payload.get(at + b"geom_type\0".len()))
             .and_then(|byte| SurfaceKind::from_byte(*byte));
         if let (Some((id, id_offset)), Some(kind), Some((feature_id, _)), Some((next_surface, _))) = (
-            value(b"geom_id\0"),
+            value(b"geom_id\0")?,
             typed_kind,
-            value(b"feat_id\0"),
-            value(b"next_geom_ptr\0"),
+            value(b"feat_id\0")?,
+            value(b"next_geom_ptr\0")?,
         ) {
-            let Some(orientation) = find_in(payload, b"orient\0", start, end)
+            let Some(orientation) = ctx.find_bytes_in(payload, b"orient\0", start, end, "find Creo surface marker")?
                 .and_then(|at| payload.get(at + b"orient\0".len()))
                 .copied()
                 .filter(|byte| matches!(byte, 0x01 | 0xf6))
             else {
                 continue;
             };
-            let Some(boundary_type) = find_in(payload, b"boundary_type\0", start, end)
+            let Some(boundary_type) = ctx.find_bytes_in(payload, b"boundary_type\0", start, end, "find Creo surface marker")?
                 .and_then(|at| payload.get(at + b"boundary_type\0".len()))
                 .copied()
                 .and_then(BoundaryType::from_byte)
@@ -3193,11 +3206,12 @@ fn rows_with_boundaries(
             .any(|(start, end)| row.offset >= *start && row.offset < *end)
     });
     result.retain(|row| boundary_types.contains(&row.boundary_type));
-    let mut frames = surface_array_frames(payload).peekable();
-    if frames.peek().is_some() {
+    let mut frames = surface_array_frames(ctx, payload);
+    if let Some(first) = frames.next().transpose()? {
         let mut framed = Vec::new();
         let mut saw_framed_candidate = false;
-        for frame in frames {
+        for frame in std::iter::once(Ok(first)).chain(frames) {
+            let frame = frame?;
             let selected_count = result
                 .iter()
                 .filter(|row| row.offset >= frame.start && row.offset < frame.end)
@@ -3617,9 +3631,9 @@ fn named_prototype_frames<'a>(
     let cache = scalar::ScalarCache::from_section_checked(ctx, payload)?;
     let mut frames = Vec::new();
     let mut search = 0;
-    while let Some(record_start) = find(payload, b"srf_prim_ptr(", search) {
+    while let Some(record_start) = ctx.find_bytes_from(payload, b"srf_prim_ptr(", search, "find Creo surface marker")? {
         let family_start = record_start + b"srf_prim_ptr(".len();
-        let Some(close) = find(payload, b")\0", family_start) else {
+        let Some(close) = ctx.find_bytes_from(payload, b")\0", family_start, "find Creo surface marker")? else {
             break;
         };
         let family_bytes = &payload[family_start..close];
@@ -3636,15 +3650,15 @@ fn named_prototype_frames<'a>(
                 "creo prototype family name",
             )?),
         };
-        let mut record_end = find(payload, b"srf_prim_ptr(", close + 2).unwrap_or(payload.len());
-        if let Some(at) = find(payload, b"srf_prim_ptr\0", close + 2) {
+        let mut record_end = ctx.find_bytes_from(payload, b"srf_prim_ptr(", close + 2, "find Creo surface marker")?.unwrap_or(payload.len());
+        if let Some(at) = ctx.find_bytes_from(payload, b"srf_prim_ptr\0", close + 2, "find Creo surface marker")? {
             record_end = record_end.min(at);
         }
-        if let Some(at) = find(payload, b"\xe0\x00entity_ptr(", close + 2) {
+        if let Some(at) = ctx.find_bytes_from(payload, b"\xe0\x00entity_ptr(", close + 2, "find Creo surface marker")? {
             record_end = record_end.min(at);
         }
         for marker in [b"crv_array\0".as_slice(), b"lo_array\0", b"qlt_array\0"] {
-            if let Some(at) = find(payload, marker, close + 2) {
+            if let Some(at) = ctx.find_bytes_from(payload, marker, close + 2, "find Creo surface marker")? {
                 record_end = record_end.min(at);
             }
         }
@@ -5366,7 +5380,7 @@ fn parameter_records_for_rows(
                     .map(InlineSurfaceCarrier::Torus),
             },
             SurfaceKind::Extrusion(variant) => {
-                decode_tabulated_cylinder_frame(&record.body, &cache)
+                decode_tabulated_cylinder_frame(ctx, &record.body, &cache)?
                     .map(|(frame, _)| InlineSurfaceCarrier::Tabulated { variant, frame })
             }
             SurfaceKind::Plane | SurfaceKind::Spline | SurfaceKind::Fillet => None,
@@ -5405,7 +5419,8 @@ fn contour_records_for_rows(
 ) -> Result<Vec<SurfaceContourRecord>, CodecError> {
     let cache = scalar::ScalarCache::from_section_checked(ctx, payload)?;
     let mut frames = Vec::new();
-    for frame in surface_array_frames(payload) {
+    for frame in surface_array_frames(ctx, payload) {
+        let frame = frame?;
         ctx.reserve_vec(&mut frames, 1, "creo contour surface frames")?;
         frames.push(frame);
     }
@@ -5884,11 +5899,15 @@ pub(crate) fn prototype_cone_frame(record: &SurfacePrototypeRecord) -> Option<Po
 }
 
 pub(crate) fn decode_tabulated_cylinder_frame(
+    ctx: &DecodeContext<'_>,
     body: &[u8],
     cache: &scalar::ScalarCache,
-) -> Option<(TabulatedCylinderFrame, usize)> {
+) -> Result<Option<(TabulatedCylinderFrame, usize)>, CodecError> {
     const FRAME_MARKER: &[u8] = &[0x00, 0x0c, 0x9a];
-    let marker = find(body, FRAME_MARKER, 0)?;
+    let Some(marker) = ctx.find_bytes_from(body, FRAME_MARKER, 0, "find Creo tabulated cylinder frame")? else {
+        return Ok(None);
+    };
+    Ok((|| {
     let mut cursor = marker + FRAME_MARKER.len();
     let mut values = [0.0; 6];
     let mut prefixes = [0; 6];
@@ -5907,6 +5926,7 @@ pub(crate) fn decode_tabulated_cylinder_frame(
         cursor = next;
     }
     Some((TabulatedCylinderFrame::new(values, prefixes)?, cursor))
+    })())
 }
 
 /// Decode the cubic curve replay owned by the preceding positional
@@ -5922,7 +5942,7 @@ pub(crate) fn tabulated_cylinder_curve_replays(
     let surface_rows = rows(ctx, payload)?;
     let mut signatures = Vec::new();
     let mut search = 0;
-    while let Some(offset) = find(payload, SIGNATURE, search) {
+    while let Some(offset) = ctx.find_bytes_from(payload, SIGNATURE, search, "find Creo surface marker")? {
         ctx.reserve_vec(&mut signatures, 1, "creo tabulated curve signatures")?;
         signatures.push(offset);
         search = offset + SIGNATURE.len();
@@ -6094,7 +6114,7 @@ fn surface_body_compound_close(
         }
     }
     if matches!(kind, SurfaceKind::Extrusion(_)) {
-        if let Some((_, mut cursor)) = decode_tabulated_cylinder_frame(body, cache) {
+        if let Some((_, mut cursor)) = decode_tabulated_cylinder_frame(ctx, body, cache)? {
             if body.get(cursor) == Some(&psb::token::ENTITY_REF) {
                 if let Ok((_, next)) = psb::reference_id(body, cursor + 1) {
                     cursor = next;
@@ -7634,12 +7654,12 @@ fn complete_plane_compact_scalar_suffix<'a>(
 
 /// Count labeled `srf_prim_ptr` prototypes whose family is known, plus unlabeled
 /// `geom_type` prototype records. Production readers use only this count.
-pub(crate) fn prototype_count(payload: &[u8]) -> usize {
+pub(crate) fn prototype_count(ctx: &DecodeContext<'_>, payload: &[u8]) -> Result<usize, CodecError> {
     let mut named = 0;
     let mut search = 0;
-    while let Some(record_start) = find(payload, b"srf_prim_ptr(", search) {
+    while let Some(record_start) = ctx.find_bytes_from(payload, b"srf_prim_ptr(", search, "find Creo surface marker")? {
         let family_start = record_start + b"srf_prim_ptr(".len();
-        let Some(close) = find(payload, b")\0", family_start) else {
+        let Some(close) = ctx.find_bytes_from(payload, b")\0", family_start, "find Creo surface marker")? else {
             break;
         };
         if std::str::from_utf8(&payload[family_start..close])
@@ -7653,10 +7673,10 @@ pub(crate) fn prototype_count(payload: &[u8]) -> usize {
     }
     let mut unlabeled = 0;
     let mut start = 0;
-    while let Some(record) = find(payload, b"srf_prim_ptr\0", start) {
+    while let Some(record) = ctx.find_bytes_from(payload, b"srf_prim_ptr\0", start, "find Creo surface marker")? {
         start = record + b"srf_prim_ptr\0".len();
-        let end = find(payload, b"srf_prim_ptr\0", start).unwrap_or(payload.len());
-        let Some(kind_label) = find_in(payload, b"geom_type\0", start, end) else {
+        let end = ctx.find_bytes_from(payload, b"srf_prim_ptr\0", start, "find Creo surface marker")?.unwrap_or(payload.len());
+        let Some(kind_label) = ctx.find_bytes_in(payload, b"geom_type\0", start, end, "find Creo surface marker")? else {
             continue;
         };
         if payload
@@ -7667,7 +7687,7 @@ pub(crate) fn prototype_count(payload: &[u8]) -> usize {
             unlabeled += 1;
         }
     }
-    named + unlabeled
+    Ok(named + unlabeled)
 }
 
 /// Half angle of an apex cone in radians: finite and in `(0, pi/2)`.

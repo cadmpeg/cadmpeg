@@ -21,7 +21,6 @@ use std::collections::BTreeMap;
 use std::num::NonZeroU32;
 use std::ops::Range;
 
-use cadmpeg_core::bytes::{find, find_from};
 use cadmpeg_core::decode::{DecodeContext, ScopedReservation, View};
 use cadmpeg_core::{CodecError, ContainerEntry};
 use cadmpeg_ir::ContainerSummary;
@@ -421,24 +420,23 @@ fn parse_last_save_version(
     ctx: &DecodeContext<'_>,
     data: &[u8],
 ) -> Result<Option<LastSaveVersion>, CodecError> {
-    let parsed = (|| {
-        Some((
-            tagged_ascii(data, b"<Version>", b"/<Version>")?
-                .parse()
-                .ok()?,
-            tagged_ascii(data, b"<Release>", b"/<Release>")?
-                .parse()
-                .ok()?,
-            tagged_ascii(data, b"<ServicePack>", b"/<ServicePack>")?
-                .parse()
-                .ok()?,
-            tagged_ascii(data, b"<HotFix>", b"/<HotFix>")?
-                .parse()
-                .ok()?,
-            tagged_ascii(data, b"<BuildDate>", b"/<BuildDate>")?,
-        ))
-    })();
-    let Some((version, release, service_pack, hot_fix, build_date)) = parsed else {
+    let Some(version) = tagged_ascii(ctx, data, b"<Version>", b"/<Version>")?
+        .and_then(|value| value.parse().ok()) else {
+        return Ok(None);
+    };
+    let Some(release) = tagged_ascii(ctx, data, b"<Release>", b"/<Release>")?
+        .and_then(|value| value.parse().ok()) else {
+        return Ok(None);
+    };
+    let Some(service_pack) = tagged_ascii(ctx, data, b"<ServicePack>", b"/<ServicePack>")?
+        .and_then(|value| value.parse().ok()) else {
+        return Ok(None);
+    };
+    let Some(hot_fix) = tagged_ascii(ctx, data, b"<HotFix>", b"/<HotFix>")?
+        .and_then(|value| value.parse().ok()) else {
+        return Ok(None);
+    };
+    let Some(build_date) = tagged_ascii(ctx, data, b"<BuildDate>", b"/<BuildDate>")? else {
         return Ok(None);
     };
     let build_date = ctx.copy_retained_text(build_date, "catia_last_save_build_date")?;
@@ -451,14 +449,19 @@ fn parse_last_save_version(
     }))
 }
 
-fn tagged_ascii<'a>(data: &'a [u8], open: &[u8], close: &[u8]) -> Option<&'a str> {
-    let start = find(data, open)? + open.len();
-    let relative_end = find(&data[start..], close)?;
-    let value = data.get(start..start + relative_end)?;
-    value
+fn tagged_ascii<'a>(ctx: &DecodeContext<'_>, data: &'a [u8], open: &[u8], close: &[u8]) -> Result<Option<&'a str>, CodecError> {
+    let Some(open_start) = ctx.find_bytes(data, open, "catia_version_tag_scan")? else {
+        return Ok(None);
+    };
+    let start = open_start + open.len();
+    let Some(end) = ctx.find_bytes_from(data, close, start, "catia_version_tag_scan")? else {
+        return Ok(None);
+    };
+    let value = &data[start..end];
+    Ok(value
         .is_ascii()
         .then(|| std::str::from_utf8(value).ok())
-        .flatten()
+        .flatten())
 }
 
 fn jpeg_extent(
@@ -1056,12 +1059,10 @@ pub(crate) fn parse_stream_directory(
     if data.len() < inner_hdr::LEN {
         return Ok(None);
     }
-    ctx.charge_work(
-        u64_from_index(data.len() - OUTER_MAGIC.len()),
-        "catia_nested_magic_scan",
-    )?;
+    let Some(inner) = ctx.find_bytes_from(data, OUTER_MAGIC, OUTER_MAGIC.len(), "catia_nested_magic_scan")? else {
+        return Ok(None);
+    };
     let Some((inner, dir_offset, b)) = (|| {
-        let inner = find_from(data, OUTER_MAGIC, OUTER_MAGIC.len())?;
         let a = usize::try_from(View::u32_be_at(
             data,
             inner.checked_add(inner_hdr::DIRECTORY_OFFSET_DELTA)?,

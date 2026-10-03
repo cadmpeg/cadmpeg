@@ -31,7 +31,6 @@ use crate::records::{
     sketch_placement::{DesignSketchPlacement, DesignSketchVisibility},
     sketch_relations::{SketchGlyphTransform, SketchRelation, SketchRelationOperand},
 };
-use cadmpeg_core::bytes::find_from;
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::{FinitePoint3, FiniteVector3};
@@ -943,7 +942,7 @@ fn decode_persistent_references_from_stream(
         ),
     ] {
         let mut cursor = 0;
-        while let Some(offset) = find_from(bytes, name, cursor) {
+        while let Some(offset) = ctx.find_bytes_from(bytes, name, cursor, "find F3D persistent reference")? {
             cursor = offset + name.len();
             let compact_type_offset = offset + name.len();
             let type_offset = if View::u32_le_at(bytes, compact_type_offset) == Some(23) {

@@ -18,7 +18,6 @@ use crate::records::{
     recipes::{ConstructionRecipe, ConstructionRecipeKind, ConstructionRecipeSelector},
 };
 use cadmpeg_asm::brep::records::BodyNativeKey;
-use cadmpeg_core::bytes::find_from;
 use cadmpeg_core::decode::{bounded_len, index_from_u32, u64_from_index, DecodeContext, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::FinitePoint3;
@@ -330,7 +329,7 @@ pub(super) fn decode_stream(
     let mut counters: HashMap<(ConstructionRecipeKind, Option<&str>), u32> = HashMap::new();
     for &(name, kind) in RECIPES {
         let mut cursor = 0;
-        while let Some(offset) = find_from(bytes, name, cursor) {
+        while let Some(offset) = ctx.find_bytes_from(bytes, name, cursor, "find F3D construction recipe")? {
             cursor = offset + 1;
             if kind == ConstructionRecipeKind::Face
                 && offset >= 8
