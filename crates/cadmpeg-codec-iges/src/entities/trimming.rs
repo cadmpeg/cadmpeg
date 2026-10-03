@@ -1650,7 +1650,7 @@ fn surface_parameter_bounds(
             visited_id,
             "iges support-bound visiting surface nodes",
         )?;
-        let Some(procedural) = index.procedural_surface_for_surface(surface_id.as_str()) else {
+        let Some(procedural) = index.procedural_surface_for_surface(surface_id.as_str(), ctx)? else {
             return Ok(None);
         };
         let bounds = match procedural.definition() {

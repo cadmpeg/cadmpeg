@@ -166,7 +166,7 @@ pub(super) fn check_native_links(
 ) -> Result<(), CodecError> {
     let ir = view.ir;
     let all_targets = BorrowedIdentities::build(ctx, |add| {
-        for id in all_ids.identities() { add(id, ())?; }
+        for id in all_ids.identities(ctx) { add(id?, ())?; }
         Ok(())
     })?;
     let native_ids = BorrowedIdentities::build(ctx, |add| {

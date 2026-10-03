@@ -165,7 +165,7 @@ fn validate_model_with_index(
     check_spreadsheets(ctx, ir, &mut findings)?;
     check_products(ctx, ir, &mut findings)?;
     let reference_ids = BorrowedIdentities::build(ctx, |add| {
-        for id in ids.identities() { add(id, ())?; }
+        for id in ids.identities(ctx) { add(id?, ())?; }
         Ok(())
     })?;
     check_presentation(ctx, ir, &reference_ids, &mut findings)?;
@@ -199,7 +199,8 @@ fn validate_annotations<'a>(
     findings: &mut Vec<Finding>,
 ) -> Result<(), CodecError> {
     let all_ids = BorrowedIdentities::build(ctx, |add| {
-        for id in ids.identities().chain(additional) { add(id, ())?; }
+        for id in ids.identities(ctx) { add(id?, ())?; }
+        for id in additional { add(id, ())?; }
         Ok(())
     })?;
     check_annotations(ctx, ids.native_view(), annotations, &all_ids, findings)

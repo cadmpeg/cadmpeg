@@ -814,7 +814,7 @@ fn blend_surface_parameters_inner(
     if depth >= 32 {
         return Ok(None);
     }
-    let Some((_, spine, _, _)) = blend_surface_definition_with_index(index, surface) else {
+    let Some((_, spine, _, _)) = blend_surface_definition_with_index(index, surface, geometry_budget.charges)? else {
         return Ok(None);
     };
     if let (Some(seed), Some(fit_tolerance)) = (seed, fit_tolerance) {
@@ -1115,7 +1115,7 @@ pub(super) fn blend_surface_parameter_grid_with_index_and_budget(
     if depth >= 32 {
         return Ok(None);
     }
-    let Some((_, spine, _, _)) = blend_surface_definition_with_index(index, surface) else {
+    let Some((_, spine, _, _)) = blend_surface_definition_with_index(index, surface, geometry_budget.charges)? else {
         return Ok(None);
     };
     let Some(curve) = index.curves(spine.as_str(), geometry_budget.charges)? else {
@@ -1309,7 +1309,7 @@ fn refine_blend_surface_parameters_with_section_domain_and_budget(
     if depth >= 32 {
         return Ok(None);
     }
-    let Some((_, spine, _, _)) = blend_surface_definition_with_index(index, surface) else {
+    let Some((_, spine, _, _)) = blend_surface_definition_with_index(index, surface, geometry_budget.charges)? else {
         return Ok(None);
     };
     let u_domain = index
@@ -1817,7 +1817,7 @@ fn blend_surface_u_derivative_with_index_and_budget(
     if depth >= 32 {
         return Ok(None);
     }
-    let Some((supports, spine, radius, _)) = blend_surface_definition_with_index(index, surface)
+    let Some((supports, spine, radius, _)) = blend_surface_definition_with_index(index, surface, geometry_budget.charges)?
     else {
         return Ok(None);
     };
@@ -2061,7 +2061,7 @@ fn blend_surface_frame_with_index_and_budget_and_options(
     }
     let frame = (|| -> Result<Option<BlendSurfaceFrame>, cadmpeg_core::decode::ResourceLimit> {
         let Some((supports, spine, radius, _)) =
-            blend_surface_definition_with_index(index, surface)
+            blend_surface_definition_with_index(index, surface, geometry_budget.charges)?
         else {
             return Ok(None);
         };
@@ -2205,7 +2205,7 @@ fn blend_boundary_point_with_index_and_budget(
         }
         return Ok(Some(point));
     }
-    let Some((supports, spine, radius, _)) = blend_surface_definition_with_index(index, surface)
+    let Some((supports, spine, radius, _)) = blend_surface_definition_with_index(index, surface, geometry_budget.charges)?
     else {
         return Ok(None);
     };
@@ -2259,7 +2259,7 @@ fn blend_boundary_parameter_with_index_and_budget(
     if depth >= 32 {
         return Ok(None);
     }
-    let Some((_, spine, _, _)) = blend_surface_definition_with_index(index, surface) else {
+    let Some((_, spine, _, _)) = blend_surface_definition_with_index(index, surface, geometry_budget.charges)? else {
         return Ok(None);
     };
     // A circular blend's u parameter is its spine parameter. Invert that
@@ -2336,7 +2336,7 @@ fn blend_boundary_parameter_from_support_pcurve_with_geometry_and_budget(
         curve_parameter,
     } = support_curve_sample;
 
-    let Some((supports, spine, radius, _)) = blend_surface_definition_with_index(index, blend)
+    let Some((supports, spine, radius, _)) = blend_surface_definition_with_index(index, blend, geometry_budget.charges)?
     else {
         return Ok(None);
     };
@@ -2463,7 +2463,7 @@ pub(super) fn blend_support_parameter_from_source_pcurve_with_index_and_budget_a
         curve_parameter,
     } = source_pcurve_sample;
 
-    let Some((supports, _, _, _)) = blend_surface_definition_with_index(index, blend) else {
+    let Some((supports, _, _, _)) = blend_surface_definition_with_index(index, blend, geometry_budget.charges)? else {
         return Ok(None);
     };
     let mut matches = 0;
@@ -2488,7 +2488,7 @@ pub(super) fn blend_support_parameter_from_source_pcurve_with_index_and_budget_a
     // source sample on the declared support and require point reproduction;
     // the support declaration is the relation proof and the fit is the
     // geometric certificate.
-    if blend_surface_definition_with_index(index, support).is_some() {
+    if blend_surface_definition_with_index(index, support, geometry_budget.charges)?.is_some() {
         if let Some(parameters) = blend_surface_parameters_from_point_with_index_and_budget(
             index,
             support,
@@ -2502,7 +2502,7 @@ pub(super) fn blend_support_parameter_from_source_pcurve_with_index_and_budget_a
         }
     }
 
-    let Some((_, spine, radius, _)) = blend_surface_definition_with_index(index, blend) else {
+    let Some((_, spine, radius, _)) = blend_surface_definition_with_index(index, blend, geometry_budget.charges)? else {
         return Ok(None);
     };
     let Some(contact_pcurve) = spine_contact_pcurve_with_index(index, support, spine, radius, 0, geometry_budget.charges)?
@@ -2556,7 +2556,7 @@ pub(super) fn blend_surface_parameters_from_point_with_index_and_budget(
     // A circular blend sample can lie on the finite continuation of either
     // rail.  Keep both chart domains bounded and require point reproduction
     // before admitting the recovered section parameter.
-    let Some((_, spine, radius, _)) = blend_surface_definition_with_index(index, surface) else {
+    let Some((_, spine, radius, _)) = blend_surface_definition_with_index(index, surface, geometry_budget.charges)? else {
         return Ok(None);
     };
     let Some(parameter) = closest_spine_parameter_with_index_and_budget(
@@ -3828,16 +3828,21 @@ fn spine_contact_point_from_offset_side_with_index_and_budget(
             Ok(None) => return None,
             Err(limit) => return Some(Err(limit)),
         };
-        let (procedural, context) = index
-            .procedural_curves_for_curve(spine.as_str())?
-            .iter()
-            .copied()
-            .find_map(|candidate| match candidate.definition() {
-                ProceduralCurveDefinition::Intersection { context, .. } => {
-                    Some((candidate, context))
-                }
-                _ => None,
-            })?;
+        let procedurals = match index.procedural_curves_for_curve(spine.as_str(), geometry_budget.charges) {
+            Ok(value) => value?,
+            Err(limit) => return Some(Err(limit)),
+        };
+        let mut selected = None;
+        for candidate in procedurals {
+            if let Err(limit) = geometry_budget.charges.charge_work_limit(1, "NX spine offset contact construction scan") {
+                return Some(Err(limit));
+            }
+            if let ProceduralCurveDefinition::Intersection { context, .. } = candidate.definition() {
+                selected = Some((*candidate, context));
+                break;
+            }
+        }
+        let (procedural, context) = selected?;
         let contact_fit_tolerance = procedural
             .cache_fit_tolerance()
             .filter(|fit| fit.get() > 0.0)
@@ -4018,7 +4023,7 @@ pub(super) fn spine_contact_pcurve_with_index<'a>(
  ctx: &cadmpeg_core::decode::DecodeContext<'_>, ) -> Result<Option<&'a PcurveGeometry>, cadmpeg_core::decode::ResourceLimit> {
 let _depth = ctx.enter_nested_limit("NX spine contact lookup depth")?;
     if depth >= 32 { return Ok(None); }
-    let Some(procedural) = index.procedural_curves_for_curve(spine.as_str()) else { return Ok(None); };
+    let Some(procedural) = index.procedural_curves_for_curve(spine.as_str(), ctx)? else { return Ok(None); };
     let mut context = None;
     for candidate in procedural {
         ctx.charge_work_limit(1, "NX spine contact construction scan")?;
@@ -4077,8 +4082,8 @@ fn blend_surface_offset_with_index(
  ctx: &cadmpeg_core::decode::DecodeContext<'_>, ) -> Result<Option<f64>, cadmpeg_core::decode::ResourceLimit> {
 let _depth = ctx.enter_nested_limit("NX blend surface offset depth")?;
     if depth >= 32 { return Ok(None); }
-    let Some((support_carriers, support_spine, support_radius, support_reversed)) = blend_surface_definition_for_carrier_with_index(index, support) else { return Ok(None); };
-    let Some((offset_carriers, offset_spine, offset_radius, offset_reversed)) = blend_surface_definition_for_carrier_with_index(index, offset) else { return Ok(None); };
+    let Some((support_carriers, support_spine, support_radius, support_reversed)) = blend_surface_definition_with_index(index, support, ctx)? else { return Ok(None); };
+    let Some((offset_carriers, offset_spine, offset_radius, offset_reversed)) = blend_surface_definition_with_index(index, offset, ctx)? else { return Ok(None); };
     if support_spine != offset_spine { return Ok(None); }
     let distance = offset_radius - support_radius;
     let magnitude = distance.abs();
@@ -4310,7 +4315,7 @@ fn surface_offset_lineage_with_index<'a>(
 let _depth = ctx.enter_nested_limit("NX surface offset lineage depth")?;
     if depth >= 32 { return Ok(None); }
     if index.surfaces(surface.as_str(), ctx)?.is_none() { return Ok(None); }
-    let Some(procedural) = index.procedural_surface_for_carrier(surface.as_str()) else { return Ok(Some((surface, 0.0))); };
+    let Some(procedural) = index.procedural_surface_for_surface(surface.as_str(), ctx)? else { return Ok(Some((surface, 0.0))); };
     let ProceduralSurfaceDefinition::Offset(definition_payload) = procedural.definition() else { return Ok(Some((surface, 0.0))); };
     let support = definition_payload.support();
     let distance = definition_payload.distance().get();
@@ -4318,20 +4323,14 @@ let _depth = ctx.enter_nested_limit("NX surface offset lineage depth")?;
 }
 
 pub(super) fn blend_surface_definition_with_index<'a>(
-    index: &'a cadmpeg_ir::index::ModelIndex<'_>,
-    surface: &SurfaceId,
-) -> Option<([&'a SurfaceId; 2], &'a CurveId, f64, [bool; 2])> {
-    let procedural = index.procedural_surface_for_surface(surface.as_str())?;
-    blend_surface_definition_from_procedural(procedural)
+    index: &'a cadmpeg_ir::index::ModelIndex<'_>, surface: &SurfaceId,
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+) -> Result<Option<([&'a SurfaceId; 2], &'a CurveId, f64, [bool; 2])>, cadmpeg_core::decode::ResourceLimit> {
+    let Some(procedural) = index.procedural_surface_for_surface(surface.as_str(), ctx)? else { return Ok(None); };
+    Ok(blend_surface_definition_from_procedural(procedural))
 }
 
-fn blend_surface_definition_for_carrier_with_index<'a>(
-    index: &'a cadmpeg_ir::index::ModelIndex<'_>,
-    surface: &SurfaceId,
-) -> Option<([&'a SurfaceId; 2], &'a CurveId, f64, [bool; 2])> {
-    let procedural = index.procedural_surface_for_carrier(surface.as_str())?;
-    blend_surface_definition_from_procedural(procedural)
-}
+
 
 fn blend_surface_definition_from_procedural(
     procedural: &ProceduralSurface,
@@ -4512,7 +4511,7 @@ fn blend_surface_contact_direction_with_budget(
     if depth >= 32 {
         return Ok(None);
     }
-    let Some((_, spine, _, _)) = blend_surface_definition_with_index(index, surface) else {
+    let Some((_, spine, _, _)) = blend_surface_definition_with_index(index, surface, geometry_budget.charges)? else {
         return Ok(None);
     };
     let Some(u) =

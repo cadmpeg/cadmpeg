@@ -88,7 +88,7 @@ mod tests {
         let ctx = cadmpeg_test_support::service_decode_context();
         let index = ModelIndex::new(&ir, crate::index::StandardIndex);
         let identities = super::BorrowedIdentities::build(&ctx, |add| {
-            for id in index.identities() { add(id, ())?; }
+            for id in index.identities(&ctx) { add(id?, ())?; }
             Ok(())
         }).unwrap();
         check_typed_references(&ctx, &ir, &identities, &mut findings).unwrap();

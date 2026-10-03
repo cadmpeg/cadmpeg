@@ -270,7 +270,7 @@ pub(super) fn validate_serialized_support_uv_with_index(
         let Some(values) = lanes[side].as_ref() else {
             continue;
         };
-        let tolerance = blend_spine_cache_fit_tolerance_with_index(index, surface, fit_tolerance);
+        let tolerance = blend_spine_cache_fit_tolerance_with_index(index, surface, fit_tolerance, geometry_budget.charges)?;
         if support_uv_lane_matches_surface_with_budget(
             index,
             surface,
@@ -1034,7 +1034,7 @@ pub(super) fn invalidate_inconsistent_support_uv_with_validated_lanes_and_status
                     continue;
                 };
                 let tolerance =
-                    blend_spine_cache_fit_tolerance_with_index(&index, surface, *fit_tolerance);
+                    blend_spine_cache_fit_tolerance_with_index(&index, surface, *fit_tolerance, geometry_budget.charges)?;
                 let parent_geometry_budget = geometry_budget;
                 let lane_geometry_budget = if isolate_lanes {
                     Some(
@@ -1287,14 +1287,15 @@ fn complete_support_uv_wave(
                     &model_index,
                     surface_id,
                     *fit_tolerance,
-                );
+                    geometry_budget.charges,
+                )?;
                 let other_support = match context.sides()[1 - side].surface.as_ref().zip(context.sides()[1 - side].pcurve.as_ref()) {
                     Some((other_surface, other_pcurve)) => model_index.surfaces(other_surface.as_str(), geometry_budget.charges)?.map(|surface| (other_surface, &other_pcurve.geometry, &surface.geometry)),
                     None => None,
                 };
                 let other_contact = (|| -> Result<_, cadmpeg_core::decode::ResourceLimit> {
                     let Some((other_surface, other_pcurve, other_geometry)) = other_support else { return Ok(None); };
-                    let Some((supports, spine, radius, _)) = blend_surface_definition_with_index(&model_index, surface_id) else { return Ok(None); };
+                    let Some((supports, spine, radius, _)) = blend_surface_definition_with_index(&model_index, surface_id, geometry_budget.charges)? else { return Ok(None); };
                     let mut selected = None;
                     for (boundary, candidate) in supports.into_iter().enumerate() {
                         if parameterization_equivalent_surfaces_with_index(&model_index, candidate, other_surface, geometry_budget.charges)? {
@@ -1761,23 +1762,21 @@ pub(super) fn blend_spine_cache_fit_tolerance(
     fit_tolerance: f64,
 ) -> f64 {
     let index = cadmpeg_ir::index::ModelIndex::new_model_only(ir, cadmpeg_ir::index::StandardIndex);
-    blend_spine_cache_fit_tolerance_with_index(&index, surface, fit_tolerance)
+    blend_spine_cache_fit_tolerance_with_index(&index, surface, fit_tolerance, &cadmpeg_test_support::service_decode_context()).unwrap()
 }
 
 pub(super) fn blend_spine_cache_fit_tolerance_with_index(
-    index: &cadmpeg_ir::index::ModelIndex<'_>,
-    surface: &SurfaceId,
-    fit_tolerance: f64,
-) -> f64 {
-    blend_surface_definition_with_index(index, surface)
-        .and_then(|(_, spine, _, _)| {
-            index
-                .procedural_curves_for_curve(spine.as_str())
-                .and_then(|procedurals| procedurals.first().copied())
-                .and_then(cadmpeg_ir::geometry::ProceduralCurve::cache_fit_tolerance)
-        })
-        .filter(|tolerance| tolerance.get() > 0.0)
-        .map_or(fit_tolerance, |tolerance| fit_tolerance + tolerance.get())
+    index: &cadmpeg_ir::index::ModelIndex<'_>, surface: &SurfaceId, fit_tolerance: f64,
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+) -> Result<f64, cadmpeg_core::decode::ResourceLimit> {
+    let tolerance = match blend_surface_definition_with_index(index, surface, ctx)? {
+        Some((_, spine, _, _)) => index.procedural_curves_for_curve(spine.as_str(), ctx)?
+            .and_then(|procedurals| procedurals.first().copied())
+            .and_then(cadmpeg_ir::geometry::ProceduralCurve::cache_fit_tolerance),
+        None => None,
+    };
+    Ok(tolerance.filter(|tolerance| tolerance.get() > 0.0)
+        .map_or(fit_tolerance, |tolerance| fit_tolerance + tolerance.get()))
 }
 
 fn complete_blend_boundary_support_uv_with_index_and_budget(
@@ -1791,7 +1790,7 @@ fn complete_blend_boundary_support_uv_with_index_and_budget(
 ) -> Result<Option<[Vec<Point2>; 2]>, cadmpeg_core::CodecError> {
     let mut selected_sides = None;
     for blend_side in 0..2 {
-        let Some((supports, _, _, _)) = blend_surface_definition_with_index(index, surfaces[blend_side]) else { continue; };
+        let Some((supports, _, _, _)) = blend_surface_definition_with_index(index, surfaces[blend_side], geometry_budget.charges)? else { continue; };
         let mut support_matches = 0;
         for support in supports {
             if parameterization_equivalent_surfaces_with_index(index, support, surfaces[1 - blend_side], ctx)? { support_matches += 1; }
@@ -2276,10 +2275,10 @@ pub(super) fn parameterization_equivalent_surfaces_with_index(
             Some(ProceduralSurfaceDefinition::Offset(second_payload)),
         ) = (
             index
-                .procedural_surface_for_carrier(first.as_str())
+                .procedural_surface_for_surface(first.as_str(), ctx)?
                 .map(cadmpeg_ir::geometry::ProceduralSurface::definition),
             index
-                .procedural_surface_for_carrier(second.as_str())
+                .procedural_surface_for_surface(second.as_str(), ctx)?
                 .map(cadmpeg_ir::geometry::ProceduralSurface::definition),
         )
         else {

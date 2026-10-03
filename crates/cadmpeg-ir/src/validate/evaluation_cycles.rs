@@ -111,8 +111,7 @@ fn walk_cycles(
         let mut max_key = 0;
         ctx.charge_work(u64_from_index(ir.model.curves.len()), "cycle carrier scan")?;
         for curve in &ir.model.curves {
-            lookup_work(ctx, ir.model.procedural_curves.len(), curve.id.as_str().len(), curve.id.as_str().len())?;
-            if let Some(procedural) = index.procedural_curves_for_curve(curve.id.as_str()).and_then(|rows| rows.first().copied()) {
+            if let Some(procedural) = index.procedural_curves_for_curve(curve.id.as_str(), ctx)?.and_then(|rows| rows.first().copied()) {
                 let dependencies = curve_dependencies(ctx, procedural.definition())?;
                 if !dependencies.is_empty() {
                     max_key = max_key.max(curve.id.as_str().len());
@@ -123,8 +122,7 @@ fn walk_cycles(
         }
         ctx.charge_work(u64_from_index(ir.model.surfaces.len()), "cycle carrier scan")?;
         for surface in &ir.model.surfaces {
-            lookup_work(ctx, ir.model.procedural_surfaces.len(), surface.id.as_str().len(), surface.id.as_str().len())?;
-            if let Some(procedural) = index.procedural_surface_for_surface(surface.id.as_str()) {
+            if let Some(procedural) = index.procedural_surface_for_surface(surface.id.as_str(), ctx)? {
                 let dependencies = surface_dependencies(ctx, procedural.definition())?;
                 if !dependencies.is_empty() {
                     max_key = max_key.max(surface.id.as_str().len());
