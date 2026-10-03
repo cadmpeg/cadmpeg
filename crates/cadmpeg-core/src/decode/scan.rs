@@ -73,6 +73,132 @@ impl DecodeContext<'_> {
         Ok(None)
     }
 
+    /// Tests for a match, charging only slots visited by position search.
+    pub fn any_by<T>(
+        &self, values: &[T], predicate: impl FnMut(&T) -> Result<bool, CodecError>,
+        operation: &'static str,
+    ) -> Result<bool, CodecError> {
+        Ok(self.position_by(values, predicate, operation)?.is_some())
+    }
+
+    /// Tests every value until a predicate fails.
+    pub fn all_by<T>(
+        &self, values: &[T], mut predicate: impl FnMut(&T) -> Result<bool, CodecError>,
+        operation: &'static str,
+    ) -> Result<bool, CodecError> {
+        Ok(self.position_by(values, |value| predicate(value).map(|matches| !matches), operation)?.is_none())
+    }
+
+    /// Borrows the first matching value without retaining new storage.
+    pub fn find_by<'values, T>(
+        &self, values: &'values [T], predicate: impl FnMut(&T) -> Result<bool, CodecError>,
+        operation: &'static str,
+    ) -> Result<Option<&'values T>, CodecError> {
+        Ok(self.position_by(values, predicate, operation)?.and_then(|index| values.get(index)))
+    }
+
+    /// Maps values until a result is present; callbacks admit child construction.
+    pub fn find_map<T, U>(
+        &self, values: &[T], mut map: impl FnMut(&T) -> Result<Option<U>, CodecError>,
+        operation: &'static str,
+    ) -> Result<Option<U>, CodecError> {
+        let mut found = None;
+        let _position = self.position_by(values, |value| {
+            found = map(value)?;
+            Ok(found.is_some())
+        }, operation)?;
+        Ok(found)
+    }
+
+    /// Counts a sealed source after admitting its complete traversal.
+    pub fn count<S: IterSource + ?Sized>(
+        &self, values: &S, operation: &'static str,
+    ) -> Result<usize, CodecError> {
+        Ok(self.admit_iter(values, operation)?.count())
+    }
+
+    /// Folds all slice slots, charging each visit before the fallible callback.
+    pub fn fold<'values, T, A>(
+        &self, values: &'values [T], initial: A,
+        mut fold: impl FnMut(A, &'values T) -> Result<A, CodecError>, operation: &'static str,
+    ) -> Result<A, CodecError> {
+        let mut result = initial;
+        for value in values {
+            self.charge_work(1, operation)?;
+            result = fold(result, value)?;
+        }
+        Ok(result)
+    }
+
+    /// Sums fallibly mapped values through the same admitted fold.
+    /// The callback owns conversion and checked addition for its result type.
+    pub fn sum<T, A: Default>(
+        &self, values: &[T], add: impl FnMut(A, &T) -> Result<A, CodecError>,
+        operation: &'static str,
+    ) -> Result<A, CodecError> {
+        self.fold(values, A::default(), add, operation)
+    }
+
+    /// Selects the first least value; comparisons admit their own child work.
+    pub fn min_by<'values, T>(
+        &self, values: &'values [T],
+        mut compare: impl FnMut(&T, &T) -> Result<std::cmp::Ordering, CodecError>,
+        operation: &'static str,
+    ) -> Result<Option<&'values T>, CodecError> {
+        self.fold(values, None, |minimum, value| {
+            match minimum {
+                Some(previous) if compare(previous, value)? != std::cmp::Ordering::Greater => Ok(minimum),
+                _ => Ok(Some(value)),
+            }
+        }, operation)
+    }
+
+    /// Selects the last greatest value; comparisons admit their own child work.
+    pub fn max_by<'values, T>(
+        &self, values: &'values [T],
+        mut compare: impl FnMut(&T, &T) -> Result<std::cmp::Ordering, CodecError>,
+        operation: &'static str,
+    ) -> Result<Option<&'values T>, CodecError> {
+        self.fold(values, None, |maximum, value| {
+            match maximum {
+                Some(previous) if compare(previous, value)? == std::cmp::Ordering::Greater => Ok(maximum),
+                _ => Ok(Some(value)),
+            }
+        }, operation)
+    }
+
+    /// Selects the least key through fallible extraction and comparison.
+    pub fn min_by_key<'values, T, K>(
+        &self, values: &'values [T], mut key: impl FnMut(&T) -> Result<K, CodecError>,
+        mut compare: impl FnMut(&K, &K) -> Result<std::cmp::Ordering, CodecError>,
+        operation: &'static str,
+    ) -> Result<Option<&'values T>, CodecError> {
+        let selected = self.fold(values, None, |selected: Option<(&T, K)>, value| {
+            let current = key(value)?;
+            match selected {
+                Some((previous, previous_key)) if compare(&previous_key, &current)? != std::cmp::Ordering::Greater => Ok(Some((previous, previous_key))),
+                _ => Ok(Some((value, current))),
+            }
+        }, operation)?;
+        Ok(selected.map(|(value, _)| value))
+    }
+
+    /// Selects the greatest key through fallible extraction and comparison.
+    pub fn max_by_key<'values, T, K>(
+        &self, values: &'values [T], mut key: impl FnMut(&T) -> Result<K, CodecError>,
+        mut compare: impl FnMut(&K, &K) -> Result<std::cmp::Ordering, CodecError>,
+        operation: &'static str,
+    ) -> Result<Option<&'values T>, CodecError> {
+        let selected = self.fold(values, None, |selected: Option<(&T, K)>, value| {
+            let current = key(value)?;
+            match selected {
+                Some((previous, previous_key)) if compare(&previous_key, &current)? == std::cmp::Ordering::Greater => Ok(Some((previous, previous_key))),
+                _ => Ok(Some((value, current))),
+            }
+        }, operation)?;
+        Ok(selected.map(|(value, _)| value))
+    }
+
     /// Compares equal-length byte slices after admitting the complete scan.
     /// Unequal lengths need no input-sized comparison.
     pub fn equal_bytes(
@@ -175,6 +301,67 @@ mod tests {
         let chunks: Vec<_> = ctx.admit_iter(&values, "chunks").expect("admission")
             .chunks(size).rev().collect();
         assert_eq!(chunks, [&[3][..], &[1, 2][..]]);
+    }
+
+    #[test]
+    fn charged_searches_preserve_short_circuit_and_results() {
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
+            .expect("context");
+        let values = [1, 2, 3];
+        assert!(ctx.any_by(&values, |value| Ok(*value == 2), "any").expect("any"));
+        assert!(!ctx.all_by(&values, |value| Ok(*value == 1), "all").expect("all"));
+        assert_eq!(ctx.find_by(&values, |value| Ok(*value == 2), "find").expect("find"), Some(&2));
+        assert_eq!(ctx.find_map(&values, |value| Ok((*value == 2).then_some(7)), "find map").expect("find map"), Some(7));
+        let CodecError::ResourceLimit(limit) = ctx.charge_work(u64::MAX, "probe").expect_err("probe") else {
+            panic!("resource refusal");
+        };
+        // Four searches visit two slots each before their short-circuit return.
+        assert_eq!(limit.used, 8);
+    }
+
+    #[test]
+    fn charged_reductions_keep_empty_results_and_tie_order() {
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
+            .expect("context");
+        let values = [(1, 0), (3, 1), (1, 2), (3, 3)];
+        assert_eq!(ctx.count(&values, "count").expect("count"), 4);
+        assert_eq!(ctx.sum(&[1_u64, 2, 3], |total: u64, value| {
+            total.checked_add(*value).ok_or_else(|| ctx.refuse_codec_limit("sum", u64::MAX, u64::MAX))
+        }, "sum").expect("sum"), 6);
+        assert_eq!(ctx.fold(&values, 10, |total, value| Ok(total + value.0), "fold").expect("fold"), 18);
+        assert_eq!(ctx.min_by(&values, |a, b| Ok(a.0.cmp(&b.0)), "min").expect("min"), Some(&values[0]));
+        assert_eq!(ctx.max_by(&values, |a, b| Ok(a.0.cmp(&b.0)), "max").expect("max"), Some(&values[3]));
+        assert_eq!(ctx.min_by_key(&values, |value| Ok(value.0), |a, b| Ok(a.cmp(b)), "min key").expect("min key"), Some(&values[0]));
+        assert_eq!(ctx.max_by_key(&values, |value| Ok(value.0), |a, b| Ok(a.cmp(b)), "max key").expect("max key"), Some(&values[3]));
+        assert_eq!(ctx.min_by::<u8>(&[], |a, b| Ok(a.cmp(b)), "empty").expect("empty"), None);
+        let CodecError::ResourceLimit(limit) = ctx.charge_work(u64::MAX, "probe").expect_err("probe") else {
+            panic!("resource refusal");
+        };
+        // Six four-slot traversals and one three-slot sum; the empty scan is free.
+        assert_eq!(limit.used, 27);
+    }
+
+    #[test]
+    fn charged_reductions_refuse_before_callback_and_keep_child_error() {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+        let called = std::cell::Cell::new(false);
+        let error = ctx.fold(&[1], (), |(), _| { called.set(true); Ok(()) }, "fold")
+            .expect_err("refusal");
+        assert!(!called.get());
+        let CodecError::ResourceLimit(limit) = error else { panic!("refusal"); };
+        assert_eq!(ctx.resource_refusal(), Some(limit));
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).expect("context");
+        let error = ctx.find_map::<_, u8>(&[1], |_| Err(ctx.refuse_codec_limit("child", 0, 1)), "find map")
+            .expect_err("child refusal");
+        let CodecError::ResourceLimit(limit) = error else { panic!("refusal"); };
+        assert_eq!(limit.operation, "child");
+        assert_eq!(ctx.resource_refusal(), Some(limit));
     }
 
     #[test]
