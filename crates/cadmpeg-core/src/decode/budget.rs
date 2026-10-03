@@ -175,8 +175,7 @@ impl DecodeBudget {
         additional: u64,
         operation: &'static str,
     ) -> CodecError {
-        self.refuse_limit(dimension, reason, limit, used, additional, operation)
-            .into()
+        CodecError::ResourceLimit(self.refuse_limit(dimension, reason, limit, used, additional, operation))
     }
 
     pub(super) fn reserve_scoped(
@@ -213,8 +212,7 @@ impl DecodeBudget {
         charged: u64,
         operation: &'static str,
     ) -> CodecError {
-        self.scoped_allocation_failed_limit(charged, operation)
-            .into()
+        CodecError::ResourceLimit(self.scoped_allocation_failed_limit(charged, operation))
     }
 
     pub(super) fn scoped_allocation_failed_limit(
@@ -317,8 +315,7 @@ impl DecodeBudget {
         charged: u64,
         operation: &'static str,
     ) -> CodecError {
-        self.retained_allocation_failed_limit(charged, operation)
-            .into()
+        CodecError::ResourceLimit(self.retained_allocation_failed_limit(charged, operation))
     }
 
     pub(super) fn retained_allocation_failed_limit(
@@ -396,8 +393,7 @@ impl DecodeBudget {
         charged: u64,
         operation: &'static str,
     ) -> CodecError {
-        self.collection_allocation_failed_limit(charged, operation)
-            .into()
+        CodecError::ResourceLimit(self.collection_allocation_failed_limit(charged, operation))
     }
 
     pub(super) fn collection_allocation_failed_limit(

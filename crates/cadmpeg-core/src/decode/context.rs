@@ -596,7 +596,7 @@ impl<'a> DecodeContext<'a> {
         limit: u64,
         requested: u64,
     ) -> CodecError {
-        self.refuse_local_limit(operation, limit, requested).into()
+        CodecError::ResourceLimit(self.refuse_local_limit(operation, limit, requested))
     }
 
     /// Creates a local work slice that also draws from the session allowance.
