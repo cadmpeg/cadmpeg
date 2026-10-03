@@ -127,7 +127,7 @@ fn certified_nurbs_tubes_refuse_collection_limit() {
     .unwrap();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
-    // The four knots exhaust admission before endpoint evaluation or tube growth.
+    // Two pole items exhaust admission before the first certified output tube.
     policy.limits.max_collection_items = 2;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let Err(error) = super::certified_nurbs_tubes(&curve, 0.5, &ctx) else {
@@ -136,7 +136,7 @@ fn certified_nurbs_tubes_refuse_collection_limit() {
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
-            && limit.operation == "f3d nurbs tube input")
+            && limit.operation == "f3d certified nurbs tube")
     );
 }
 

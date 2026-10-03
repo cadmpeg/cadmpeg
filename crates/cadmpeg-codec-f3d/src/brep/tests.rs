@@ -381,9 +381,10 @@ fn brep_remapped_id_refuses_retained_limit() {
             }))
         },
     );
+    // The boundary oracle reaches the remapped identity after preceding map storage.
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "identity rewrite sequence")
+        if limit.operation == "copy F3D BREP remapped ID")
     );
 }
 

@@ -688,7 +688,8 @@ mod tests {
     fn typed_brep_qualification_preserves_coordinate_bits_and_plain_identity_text() {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        policy.limits.max_materialized_bytes = 65536;
+        // Structural qualification admits backing map nodes within scoped storage.
+        policy.limits.max_materialized_bytes = 1024 * 1024;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let mut brep = graph();
         let original = brep.asm.points[0].position();
@@ -719,7 +720,7 @@ mod tests {
             original.z.to_bits()
         );
         let storage = ctx
-            .reserve_scoped(65536, "BREP graph scratch released")
+            .reserve_scoped(policy.limits.max_materialized_bytes, "BREP graph scratch released")
             .unwrap();
         drop(storage);
         ctx.finish_session().unwrap();
