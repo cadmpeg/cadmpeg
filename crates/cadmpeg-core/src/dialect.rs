@@ -622,9 +622,9 @@ impl<T: FormatIdentityPayload> FormatIdentity<T> {
 
     /// Constructs an identity for a known format without classification.
     #[must_use]
-    pub fn unclassified(format: impl Into<String>) -> Self {
+    pub fn unclassified(format: String) -> Self {
         Self::Unclassified {
-            format: format.into(),
+            format,
         }
     }
 
@@ -747,8 +747,8 @@ impl DialectMatch {
 
     /// Attaches a report-local layer instance before the match enters a report.
     #[must_use]
-    pub fn with_instance(mut self, instance: impl Into<String>) -> Self {
-        self.instance = Some(instance.into());
+    pub fn with_instance(mut self, instance: String) -> Self {
+        self.instance = Some(instance);
         self
     }
 
@@ -814,6 +814,20 @@ mod tests {
 
     use super::{Admission, DialectId, DialectLayers, DialectMatch, Grammar, StaticDialectId};
 
+    #[test]
+    fn owned_identity_and_instance_constructors_transfer_the_existing_allocation() {
+        let format = "custom-format".to_owned();
+        let address = format.as_ptr();
+        let identity = super::FormatIdentity::<DialectLayers>::unclassified(format);
+        assert_eq!(identity.format(), "custom-format");
+        assert_eq!(identity.format().as_ptr(), address);
+        let instance = "embedded-body".to_owned();
+        let address = instance.as_ptr();
+        let matched = DialectMatch::residual(crate::dialect_id!("parasolid:unknown")).with_instance(instance);
+        assert_eq!(matched.instance(), Some("embedded-body"));
+        assert_eq!(matched.instance().expect("instance").as_ptr(), address);
+    }
+
     #[derive(serde::Deserialize)]
     #[serde(deny_unknown_fields)]
     struct DialectIdConformance {
@@ -834,7 +848,7 @@ mod tests {
             )]),
         );
         let extra =
-            DialectMatch::residual(crate::dialect_id!("parasolid:unknown")).with_instance("body-1");
+            DialectMatch::residual(crate::dialect_id!("parasolid:unknown")).with_instance("body-1".to_owned());
         let layers = DialectLayers::of(primary).with(extra).unwrap();
         let arena = DecodeArena::new();
         let policy = DecodePolicy::service();
@@ -914,7 +928,7 @@ mod tests {
     #[test]
     fn dialect_key_comparison_refuses_work_without_changing_layers() {
         let primary =
-            DialectMatch::admitted(crate::dialect_id!("nx:unknown")).with_instance("same-instance");
+            DialectMatch::admitted(crate::dialect_id!("nx:unknown")).with_instance("same-instance".to_owned());
         let mut layers = DialectLayers::of(primary);
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
@@ -926,7 +940,7 @@ mod tests {
             .insert_for_decode(
                 &ctx,
                 DialectMatch::admitted(crate::dialect_id!("nx:unknown"))
-                    .with_instance("same-instance"),
+                    .with_instance("same-instance".to_owned()),
                 "compare layer keys",
             )
             .expect_err("instance comparison exceeds work");
@@ -1243,7 +1257,7 @@ mod tests {
 
     #[test]
     fn dialect_layers_accept_a_same_format_extra_with_an_instance() {
-        let member = layer("rhino").with_instance("components/member.3dm");
+        let member = layer("rhino").with_instance("components/member.3dm".to_owned());
         let layers = DialectLayers::of(layer("rhino"))
             .with(member.clone())
             .expect("distinct dialect layer keys");
@@ -1258,9 +1272,9 @@ mod tests {
 
     #[test]
     fn dialect_layers_insert_keeps_the_first_extra_layer_for_a_key() {
-        let first = layer("acis").with_instance("body");
+        let first = layer("acis").with_instance("body".to_owned());
         let replacement =
-            DialectMatch::residual(crate::dialect_id!("acis:other")).with_instance("body");
+            DialectMatch::residual(crate::dialect_id!("acis:other")).with_instance("body".to_owned());
         let mut layers = DialectLayers::of(layer("rhino"))
             .with(first.clone())
             .expect("distinct dialect layer keys");
@@ -1289,9 +1303,9 @@ mod tests {
 
     #[test]
     fn dialect_layers_builder_returns_the_colliding_layer() {
-        let first = layer("acis").with_instance("body");
+        let first = layer("acis").with_instance("body".to_owned());
         let replacement =
-            DialectMatch::residual(crate::dialect_id!("acis:other")).with_instance("body");
+            DialectMatch::residual(crate::dialect_id!("acis:other")).with_instance("body".to_owned());
         let layers = DialectLayers::of(layer("rhino"))
             .with(first)
             .expect("distinct dialect layer keys");
@@ -1304,7 +1318,7 @@ mod tests {
     #[test]
     fn dialect_layers_keep_same_format_extras_with_distinct_instances() {
         let anonymous = layer("acis");
-        let named = layer("acis").with_instance("body");
+        let named = layer("acis").with_instance("body".to_owned());
         let mut layers = DialectLayers::of(layer("rhino"));
 
         assert_eq!(layers.insert(anonymous.clone()), Ok(()));

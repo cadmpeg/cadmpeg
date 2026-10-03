@@ -1054,7 +1054,7 @@ mod tests {
         classify_source(
             &mut right,
             DialectMatch::admitted(cadmpeg_core::dialect_id!("rhino:archive-80"))
-                .with_instance("embedded/model.3dm"),
+                .with_instance("embedded/model.3dm".to_owned()),
         );
         assert!(!diff(&left, &right).is_empty());
 
@@ -1065,7 +1065,7 @@ mod tests {
             )))
             .with(
                 DialectMatch::residual(cadmpeg_core::dialect_id!("acis:text-acis"))
-                    .with_instance("body.sat"),
+                    .with_instance("body.sat".to_owned()),
             )
             .expect("the test dialect layers have distinct keys"),
             source.attributes,

@@ -236,7 +236,7 @@ impl DecodeResult {
         } = decoded;
         let classification = match ir.source.as_ref() {
             Some(source) => source.classification().clone(),
-            None => FormatIdentity::unclassified(format.as_str()),
+            None => FormatIdentity::unclassified(format.as_str().to_owned()),
         };
         ir.finalize();
         Self {
