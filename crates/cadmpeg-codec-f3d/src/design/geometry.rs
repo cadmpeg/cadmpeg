@@ -1475,6 +1475,7 @@ fn sketch_geometry_point(
         SketchGeometryDefinition::Nurbs { curve } if !curve.periodic() => {
             let (control_points, weights) = nurbs_pcurve_evaluator_lanes(curve, ctx)?;
             cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::nurbs_pcurve_uv(
+                ctx,
                 curve.degree(),
                 curve.knots(),
                 &control_points,
@@ -2203,6 +2204,7 @@ fn certified_nurbs_tubes(
             };
             let start = *geometric!(cadmpeg_ir::eval::finite_or_refusal(
                 cadmpeg_ir::eval::nurbs_pcurve_uv(
+                    ctx,
                     curve.degree(),
                     knots,
                     &control_points,
@@ -2213,6 +2215,7 @@ fn certified_nurbs_tubes(
             .as_raw();
             let end = *geometric!(cadmpeg_ir::eval::finite_or_refusal(
                 cadmpeg_ir::eval::nurbs_pcurve_uv(
+                    ctx,
                     curve.degree(),
                     knots,
                     &control_points,
@@ -3783,6 +3786,7 @@ pub(super) fn sketch_entity_endpoints(
             let start_parameter = curve.knots()[index_from_u32(curve.degree())];
             let end_parameter = curve.knots()[control_points.len()];
             let start = cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::nurbs_pcurve_uv(
+                ctx,
                 curve.degree(),
                 curve.knots(),
                 &control_points,
@@ -3790,6 +3794,7 @@ pub(super) fn sketch_entity_endpoints(
                 start_parameter,
             ))?;
             let end = cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::nurbs_pcurve_uv(
+                ctx,
                 curve.degree(),
                 curve.knots(),
                 &control_points,

@@ -1311,6 +1311,7 @@ fn historical_point_membership_respects_conic_domains_and_nurbs_endpoints() {
     let control_points = curve.pole_rows().raw_points();
     let weights = curve.pole_rows().weights();
     let interior = cadmpeg_ir::eval::nurbs_pcurve_uv(
+        &cadmpeg_test_support::service_decode_context(),
         curve.degree(),
         curve.knots(),
         &control_points,

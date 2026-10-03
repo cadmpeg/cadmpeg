@@ -264,6 +264,7 @@ fn pcurve_bezier_extraction_preserves_rational_knot_spans() {
             for fraction in [0.0, 0.5, 1.0] {
                 let parameter = span.domain[0] + fraction * (span.domain[1] - span.domain[0]);
                 let expected = cadmpeg_ir::eval::nurbs_pcurve_uv(
+                    geometry_ctx,
                     2,
                     &knots,
                     &points,

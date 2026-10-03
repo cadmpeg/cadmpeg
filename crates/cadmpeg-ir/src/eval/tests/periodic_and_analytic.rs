@@ -175,7 +175,7 @@ fn rational_pcurve_membership_finds_interior_points_without_sampling() {
     ];
     let weights = [1.0, weight, 1.0];
     let interior =
-        crate::eval::nurbs_pcurve_uv(2, &knots, &controls, Some(&weights), 0.375).unwrap();
+        crate::eval::nurbs_pcurve_uv(&cadmpeg_test_support::service_decode_context(), 2, &knots, &controls, Some(&weights), 0.375).unwrap();
     assert_eq!(
         crate::eval::nurbs_pcurve_contains_point(&cadmpeg_test_support::service_decode_context(),
             2,

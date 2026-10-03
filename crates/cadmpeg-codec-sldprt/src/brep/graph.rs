@@ -6596,6 +6596,7 @@ fn nurbs_degree_one_cache_lanes(
             return Ok(None);
         };
         let Some(uv) = cadmpeg_ir::eval::finite_or_refusal(nurbs_pcurve_uv(
+            ctx,
             1,
             curve.knots(),
             &control_points,

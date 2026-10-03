@@ -2820,6 +2820,7 @@ pub(super) fn evaluate_pcurve(
         })
         .transpose()?;
     let point = cadmpeg_ir::eval::finite_or_refusal(nurbs_pcurve_uv(
+        ctx,
         pcurve.degree,
         &knots,
         &control_points,
