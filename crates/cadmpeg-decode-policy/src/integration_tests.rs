@@ -61,6 +61,19 @@ fn check_fixture(name: &str) {
             "CADMPEG_POLICY_DEPENDENCY",
             format!("cadmpeg_core={}", dependency.display()),
         );
+        let graph = Command::new(std::env::current_exe().expect("fixture executable"))
+            .args(["--exact", "integration_tests::fixture_child", "--ignored", "--nocapture"])
+            .env("CADMPEG_POLICY_FIXTURE", "1")
+            .env("CADMPEG_POLICY_GRAPH", "1")
+            .env("CADMPEG_POLICY_CRATE_NAME", "cadmpeg_core")
+            .env("CADMPEG_POLICY_INPUT", root.join("fixtures/imported_dependency.rs"))
+            .env("CADMPEG_POLICY_OUTPUT", &output_dir)
+            .output().expect("owning crate proof compiler");
+        assert!(graph.status.success(), "{}", String::from_utf8_lossy(&graph.stderr));
+        let proofs = output_dir.join("key-work-proofs.txt");
+        let output = String::from_utf8(graph.stdout).expect("proof output");
+        std::fs::write(&proofs, output.lines().filter_map(|line| line.strip_prefix("decode_key_work_proof\t")).map(|line| format!("{line}\n")).collect::<String>()).expect("proof file");
+        command.env("CADMPEG_POLICY_KEY_WORK_PROOFS", proofs);
     }
     if matches!(name, "thirdparty" | "serde") {
         let executable = std::env::current_exe().expect("test executable");

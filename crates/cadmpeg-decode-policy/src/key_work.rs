@@ -2,6 +2,8 @@
 //! Single-use receipts for complete key bytes and tree lookup bounds.
 use crate::{flow::{Credit, ExtentTerm}, types, Analysis};
 use rustc_hir::Expr;
+use rustc_middle::ty::TyCtxt;
+use rustc_span::{Span, def_id::DefId};
 
 impl<'tcx> Analysis<'_, 'tcx> {
     fn tree_target(&self, count: &'tcx Expr<'tcx>) -> Option<String> {
@@ -73,5 +75,19 @@ impl<'tcx> Analysis<'_, 'tcx> {
         } else {
             self.consume_key_factor(&format!("keybytes:{key}"))
         }
+    }
+}
+
+/// A source site is stable across owning and importing compiler sessions.
+/// The definition hash includes the crate configuration; offsets are file local.
+pub(crate) fn proof_key(tcx: TyCtxt<'_>, owner: DefId, span: Span) -> String {
+    let span = span.source_callsite();
+    let file = tcx.sess.source_map().lookup_source_file(span.lo());
+    format!("{}|{}|{}", crate::scope::key(tcx, owner), span.lo().0 - file.start_pos.0, span.hi().0 - span.lo().0)
+}
+
+impl<'tcx> Analysis<'_, 'tcx> {
+    pub(crate) fn record_key_work_proof(&mut self, expression: &'tcx Expr<'tcx>) {
+        self.findings.key_work_proofs.insert(proof_key(self.tcx, self.typeck.hir_owner.def_id.to_def_id(), expression.span));
     }
 }
