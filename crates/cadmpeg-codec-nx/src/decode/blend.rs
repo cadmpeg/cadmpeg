@@ -2944,14 +2944,13 @@ pub(super) fn closest_pcurve_parameters(
         return Ok(None);
     }
     let search_seed = seed.map(|seed| canonical_periodic_parameter(domain, nurbs.periodic(), seed));
-    let control_points = nurbs.pole_rows().try_raw_points()?;
-    let weights = nurbs.pole_rows().try_weights()?;
+    let lanes = cadmpeg_ir::geometry::pcurve::evaluator::PcurveEvaluatorLanes::new(ctx, nurbs.pole_rows(), "IR pcurve control copy", "IR pcurve weight copy")?;
     let Some(homogeneous) = homogeneous_pcurve_spans(
         ctx,
         degree,
         nurbs.knots(),
-        &control_points,
-        weights.as_deref(),
+        lanes.points(),
+        lanes.weights(),
         point,
     )?
     else {
