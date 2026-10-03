@@ -1933,9 +1933,11 @@ fn a5_surface_strict_knot_refusal_stays_in_the_outer_result() {
         panic!("strict knot refusal must not disappear as a missing surface");
     };
     assert_eq!(original.dimension, ResourceDimension::WorkUnits);
-    assert_eq!(original.operation, "catia_a5_surface_knot_order_scan");
+    // Distinct materialization admits work before the strict knot scan.
+    assert_eq!(original.operation, "catia_a5_distinct_materialization");
     assert_eq!(original.used, 0);
-    assert_eq!(original.additional, 1);
+    // The fixture stores the two distinct u-knots 0 and 1.
+    assert_eq!(original.additional, 2);
     assert!(
         matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == original)
     );
