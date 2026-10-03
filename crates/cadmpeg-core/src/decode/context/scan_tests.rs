@@ -111,3 +111,23 @@ fn scan_fill_copies_without_running_clone() {
     assert_eq!(values.len(), 3);
     assert_eq!(clones.get(), 0);
 }
+
+#[test]
+fn lossy_utf8_copy_admits_scans_prefix_validation_and_output_fragments() {
+    let arena = DecodeArena::new();
+    for work in [17, 18] {
+        let mut policy = DecodePolicy::service();
+        // Four loop visits, eight suffix-scan bytes, one prefix validation byte and five output bytes.
+        policy.limits.max_work_units = work;
+        policy.limits.max_retained_bytes = 5;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+        let result = ctx.copy_retained_lossy_utf8(&[b'a', 0xff, b'b'], "lossy");
+        if work == 18 {
+            assert_eq!(result.expect("admission"), "a�b");
+        } else {
+            let CodecError::ResourceLimit(first) = result.expect_err("refusal") else { panic!("refusal") };
+            let CodecError::ResourceLimit(second) = ctx.charge_work(1, "later").expect_err("fused") else { panic!("refusal") };
+            assert_eq!(first, second);
+        }
+    }
+}

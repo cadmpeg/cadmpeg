@@ -301,8 +301,7 @@ impl<'a> DecodeContext<'a> {
         let mut length = 0usize;
         loop {
             self.charge_work(1, operation)?;
-            self.charge_work(u64_from_index(remaining.len()), operation)?;
-            match std::str::from_utf8(remaining) {
+            match self.validate_utf8(remaining, operation)? {
                 Ok(valid) => {
                     length = length
                         .checked_add(valid.len())
@@ -326,19 +325,17 @@ impl<'a> DecodeContext<'a> {
         let mut remaining = value;
         loop {
             self.charge_work(1, operation)?;
-            self.charge_work(u64_from_index(remaining.len()), operation)?;
-            match std::str::from_utf8(remaining) {
+            match self.validate_utf8(remaining, operation)? {
                 Ok(valid) => {
-                    text.push_str(valid);
+                    self.append_retained(&mut text, valid, operation)?;
                     break;
                 }
                 Err(error) => {
                     let valid_len = error.valid_up_to();
-                    text.push_str(
-                        std::str::from_utf8(&remaining[..valid_len])
-                            .map_err(|_| CodecError::malformed("valid UTF-8 prefix changed"))?,
-                    );
-                    text.push('\u{FFFD}');
+                    let prefix = self.validate_utf8(&remaining[..valid_len], operation)?
+                        .map_err(|_| CodecError::malformed("valid UTF-8 prefix changed"))?;
+                    self.append_retained(&mut text, prefix, operation)?;
+                    self.append_retained(&mut text, "�", operation)?;
                     let Some(invalid_len) = error.error_len() else {
                         break;
                     };
