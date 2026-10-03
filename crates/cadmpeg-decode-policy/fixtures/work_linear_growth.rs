@@ -11,6 +11,13 @@ pub fn admitted(ctx: &DecodeContext, values: &mut Vec<u64>) -> Result<(), ()> {
     values.push(1);
     Ok(())
 }
+fn runtime_count() -> usize { 1 }
+pub fn returned_count_admits_runtime_growth(ctx: &DecodeContext, values: &mut Vec<u64>) -> Result<(), ()> {
+    let count = runtime_count();
+    let (additional, _bytes, _growth) = ctx.linear_growth::<u64>(values.len(), values.capacity(), count, "growth")?;
+    values.try_reserve_exact(additional).map_err(|_| ())?;
+    Ok(())
+}
 pub fn wrong_target(ctx: &DecodeContext, values: &mut Vec<u64>, other: &mut Vec<u64>) -> Result<(), ()> {
     let (additional, _bytes, _growth) = ctx.linear_growth::<u64>(values.len(), values.capacity(), 1, "growth")?;
     other.try_reserve_exact(additional).map_err(|_| ())?; // finding: unproven_decode_charge

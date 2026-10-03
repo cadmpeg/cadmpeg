@@ -396,17 +396,18 @@ impl<'tcx> Analysis<'_, 'tcx> {
                 let Some(target) = target else { return; };
                 let Some(result) = self.result_binding(expression) else { return; };
                 let Some(scope) = self.growth_scope(expression, 2) else { return; };
-                let Some(original) = operands.get(3).and_then(|count| self.extent_terms(count, &mut Vec::new())) else { return; };
                 // The helper admits its returned reserve count and the requested
                 // insertion slots for this exact collection and element type.
-                self.flow.storage_slots.push(Slots {
-                    admission: expression.hir_id,
-                    target: target.clone(),
-                    terms: original,
-                    loop_depth: self.flow.loop_bounds.len(),
-                    usage: SlotUse::Insertion,
-                    scope: None,
-                });
+                if let Some(original) = operands.get(3).and_then(|count| self.extent_terms(count, &mut Vec::new())) {
+                    self.flow.storage_slots.push(Slots {
+                        admission: expression.hir_id,
+                        target: target.clone(),
+                        terms: original,
+                        loop_depth: self.flow.loop_bounds.len(),
+                        usage: SlotUse::Insertion,
+                        scope: None,
+                    });
+                }
                 self.flow.storage_slots.push(Slots {
                     admission: expression.hir_id,
                     target,

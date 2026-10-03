@@ -5,6 +5,24 @@ use crate::CodecError;
 use std::collections::HashSet;
 
 #[test]
+fn linear_growth_rejects_full_capacity_above_the_address_limit() {
+    use crate::decode::collect::LinearGrowth;
+    for growth in [LinearGrowth::Exact, LinearGrowth::Amortized, LinearGrowth::PrechargedBytes] {
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
+            .expect("context");
+        let capacity = usize::try_from(isize::MAX).expect("address limit") / 2;
+        let error = ctx.linear_growth::<u16>(capacity, capacity, 1, growth, "addressable growth")
+            .err().expect("full capacity exceeds the address limit");
+        assert_eq!(error.dimension, ResourceDimension::RetainedBytes);
+        assert_eq!(error.reason, crate::decode::ResourceFailure::AllocationFailed);
+        assert_eq!(error.used, 0);
+        assert!(error.additional > u64::try_from(isize::MAX).expect("address limit"));
+        assert_eq!(ctx.resource_refusal(), Some(error));
+    }
+}
+
+#[test]
 fn reserve_vec_charges_minimum_capacity_and_added_growth_bytes() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
