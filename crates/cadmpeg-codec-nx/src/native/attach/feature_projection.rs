@@ -2176,15 +2176,10 @@ pub(super) fn simple_hole_operations(
     if ordered_templates.is_empty() {
         return Ok(None);
     }
-    ctx.stable_sort_by(
+    ctx.stable_sort_by_key(
         &mut ordered_templates,
-            |value| value,
-            |first, second| {
-            operation_positions
-                .get(first.operation_label.as_str())
-                .cmp(&operation_positions.get(second.operation_label.as_str()))
-                .then_with(|| first.operation_label.cmp(&second.operation_label))
-        },
+            |value| { let record = *value; (operation_positions.get(record.operation_label.as_str()), record.operation_label.as_str()) },
+            Ord::cmp,
         "sort NX simple hole templates",
     )?;
     let mut selected_group = None;

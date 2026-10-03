@@ -118,12 +118,6 @@ pub(in crate::native) struct FeatureSimpleHoleTemplate {
     pub(in crate::native) end_treatment: SimpleHoleEndTreatment,
 }
 
-impl cadmpeg_core::decode::cost::DecodeCost for FeatureSimpleHoleTemplate {
-    fn decode_cost(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
-        cadmpeg_core::decode::cost::DecodeCost::decode_cost(&self.operation_label, ctx, operation)
-    }
-}
-
 /// Exact threaded-hole template retained from a `SIMPLE HOLE` operation.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub(in crate::native) struct FeatureThreadedHoleTemplate {
@@ -1265,16 +1259,10 @@ pub(in crate::native) fn feature_simple_hole_construction_groups(
         )?;
         chronology.push((index, label, first_offset));
     }
-    ctx.sort_unstable_by(
+    ctx.sort_unstable_by_key(
         &mut chronology,
-            |value| value,
-            |(left_index, left, left_first), (right_index, right, right_first)| {
-            left_first
-                .cmp(right_first)
-                .then_with(|| left.section_link.cmp(&right.section_link))
-                .then_with(|| right.source_offset.cmp(&left.source_offset))
-                .then_with(|| left_index.cmp(right_index))
-        },
+            |value| { let record = value.1; (value.2, record.section_link.as_str(), std::cmp::Reverse(record.source_offset), value.0) },
+            Ord::cmp,
         "sort NX hole operation chronology",
     )?;
     let group_work = references

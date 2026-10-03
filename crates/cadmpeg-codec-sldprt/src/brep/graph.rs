@@ -1300,9 +1300,8 @@ pub(crate) fn decode(
     decode_body(ctx, header_body(payload, header)?, stream)
 }
 
-fn is_deltas_stream(header: &StreamHeader) -> bool {
-    header
-        .description
+fn is_deltas_stream(description: &str) -> bool {
+    description
         .as_bytes()
         .windows(b"deltas".len())
         .any(|window| window.eq_ignore_ascii_case(b"deltas"))
@@ -1385,8 +1384,8 @@ pub(crate) fn decode_bodies(
     ordered.extend(bodies.iter());
     ctx.stable_sort_by(
         &mut ordered,
-            |value| value,
-            |left, right| is_deltas_stream(left.1).cmp(&is_deltas_stream(right.1)),
+            |value| value.1.description.as_str(),
+            |left, right| is_deltas_stream(left).cmp(&is_deltas_stream(right)),
         "sort Parasolid body streams",
     )?;
     let mut entity_streams = Vec::new();
@@ -1397,7 +1396,7 @@ pub(crate) fn decode_bodies(
     )?;
     for (payload, header) in &ordered {
         let body = header_body(payload, header)?;
-        entity_streams.push((body, is_deltas_stream(header)));
+        entity_streams.push((body, is_deltas_stream(&header.description)));
     }
     let mut typed_streams = Vec::new();
     ctx.reserve_vec(
@@ -1417,7 +1416,7 @@ pub(crate) fn decode_bodies(
         ordered.into_iter().zip(typed_streams).enumerate()
     {
         let body = header_body(payload, header)?;
-        let is_deltas = is_deltas_stream(header);
+        let is_deltas = is_deltas_stream(&header.description);
         let typed_face_offsets =
             selected_typed_face_offsets(ctx, &stream_typed_facts, typed_bridge_attrs.as_ref())?;
         carriers.merge_missing(ctx, scan_carriers(ctx, body)?)?;

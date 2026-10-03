@@ -903,16 +903,8 @@ fn appearances_from_schema_records(
                 }
             }
         }
-        ctx.stable_sort_by(
-            &mut connected,
-            |value| value,
-            |left, right| {
-                left.slot
-                    .cmp(&right.slot)
-                    .then_with(|| left.asset_guid.cmp(&right.asset_guid))
-            },
-            "sort F3D connected textures",
-        )?;
+        ctx.stable_sort_by(&mut connected, |value| &value.asset_guid, Ord::cmp, "sort F3D connected textures")?;
+        ctx.stable_sort_by(&mut connected, |value| &value.slot, Ord::cmp, "sort F3D connected textures")?;
         let base_color = appearance_base_color(record);
         let appearance = Appearance {
             id: crate::ids::appearance_id_charged(ctx, &record.guid)?,

@@ -1412,15 +1412,10 @@ fn resolve_indexed_marker_candidates<'a>(
     {
         return Ok((Vec::new(), true));
     }
-    ctx.sort_unstable_by(
+    ctx.sort_unstable_by_key(
         &mut pairs,
-            |value| value,
-            |left, right| {
-            left[0]
-                .id()
-                .cmp(right[0].id())
-                .then_with(|| left[1].id().cmp(right[1].id()))
-        },
+            |value| (value[0].id(), value[1].id()),
+            Ord::cmp,
         OPERATION,
     )?;
     Ok((copy_endpoint_markers(ctx, &pairs[0])?, false))

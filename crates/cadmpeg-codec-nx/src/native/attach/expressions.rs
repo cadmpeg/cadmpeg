@@ -76,17 +76,10 @@ pub(in crate::native) fn attach_expression_parameters(
         uses.push(parameter_use);
     }
     for uses in uses_by_expression.values_mut() {
-        ctx.stable_sort_by(
+        ctx.stable_sort_by_key(
             uses,
-            |value| value,
-            |first, second| {
-                first
-                    .bindings
-                    .first()
-                    .map(|binding| binding.source_offset)
-                    .cmp(&second.bindings.first().map(|binding| binding.source_offset))
-                    .then_with(|| first.id.cmp(&second.id))
-            },
+            |value| { let record = *value; (record.bindings.first().map(|binding| binding.source_offset), record.id.as_str()) },
+            Ord::cmp,
             "NX expression use sort",
         )?;
     }
@@ -101,15 +94,10 @@ pub(in crate::native) fn attach_expression_parameters(
         ordered_tables.push(entry);
     }
     for (_, expressions) in &mut ordered_tables {
-        ctx.stable_sort_by(
+        ctx.stable_sort_by_key(
             expressions,
-            |value| value,
-            |first, second| {
-                first
-                    .source_offset
-                    .cmp(&second.source_offset)
-                    .then_with(|| first.id.cmp(&second.id))
-            },
+            |value| { let record = *value; (record.source_offset, record.id.as_str()) },
+            Ord::cmp,
             "NX expression table sort",
         )?;
     }

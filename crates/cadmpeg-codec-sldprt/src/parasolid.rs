@@ -438,12 +438,6 @@ pub(crate) struct StreamHeader {
     pub(crate) body_offset: usize,
 }
 
-impl cadmpeg_core::decode::cost::DecodeCost for StreamHeader {
-    fn decode_cost(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
-        cadmpeg_core::decode::cost::DecodeCost::decode_cost(&self.description,ctx,operation)
-    }
-}
-
 /// Parse a Parasolid header from a buffer containing a leading-window signature.
 ///
 /// Returns `None` when the signature, description, or schema token is missing or
