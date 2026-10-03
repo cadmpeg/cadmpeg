@@ -168,9 +168,9 @@ fn host(evidence: &StreamEvidence<'_>) -> DialectMatch {
 /// [`Admission::Residual`]. A binary recovery names the substituted binary
 /// row. A text recovery states that no declared text-band grammar was
 /// available. The message is not the contract; the code is.
-pub(crate) fn dialect_loss(matched: &DialectMatch) -> Option<LossNote> {
-    cadmpeg_asm::dialect::unverified_message("the stream", matched)
-        .map(|message| SatLossCode::SourceDialectUnverified.note(message))
+pub(crate) fn dialect_loss(ctx: &cadmpeg_core::decode::DecodeContext<'_>, matched: &DialectMatch) -> Result<Option<LossNote>, cadmpeg_core::CodecError> {
+    Ok(cadmpeg_asm::dialect::unverified_message(ctx, "the stream", matched)?
+        .map(|message| SatLossCode::SourceDialectUnverified.note(message)))
 }
 
 /// Host-framing declarations, verbatim, under keys pinned above.
@@ -219,7 +219,7 @@ fn classify(evidence: &StreamEvidence<'_>) -> DialectMatch {
 }
 
 /// Classify the same evidence as the shared non-primary kernel layer.
-fn kernel_layer(evidence: &StreamEvidence<'_>) -> DialectMatch {
+fn kernel_layer(ctx: &cadmpeg_core::decode::DecodeContext<'_>, evidence: &StreamEvidence<'_>) -> Result<DialectMatch, cadmpeg_core::CodecError> {
     let header = match evidence {
         StreamEvidence::Binary { family, header, .. } => match family {
             Family::Asm => cadmpeg_asm::dialect::KernelHeaderRef::Asm(header),
@@ -231,12 +231,12 @@ fn kernel_layer(evidence: &StreamEvidence<'_>) -> DialectMatch {
         },
         StreamEvidence::Text(None) => cadmpeg_asm::dialect::KernelHeaderRef::Unknown,
     };
-    cadmpeg_asm::dialect::classify(header)
+    cadmpeg_asm::dialect::classify(ctx, header)
 }
 
 /// Classifies the host and kernel layers from one evidence value.
-pub(crate) fn layers(evidence: &StreamEvidence<'_>) -> (DialectMatch, DialectMatch) {
-    (classify(evidence), kernel_layer(evidence))
+pub(crate) fn layers(ctx: &cadmpeg_core::decode::DecodeContext<'_>, evidence: &StreamEvidence<'_>) -> Result<(DialectMatch, DialectMatch), cadmpeg_core::CodecError> {
+    Ok((classify(evidence), kernel_layer(ctx, evidence)?))
 }
 
 #[cfg(test)]

@@ -169,7 +169,7 @@ const fn nearest_verified_id(representation: Representation) -> DialectId {
 }
 
 /// Classifies one document from its representation and resolved Global facts.
-pub(crate) fn classify(representation: Representation, global: &ResolvedGlobal) -> DialectMatch {
+pub(crate) fn classify(ctx: &cadmpeg_core::decode::DecodeContext<'_>, representation: Representation, global: &ResolvedGlobal) -> Result<DialectMatch, cadmpeg_core::CodecError> {
     let dialect = dialect_id(representation, global.declared_version());
     let recovery = global.dialect_recovery();
     let mut declared = BTreeMap::new();
@@ -200,12 +200,12 @@ pub(crate) fn classify(representation: Representation, global: &ResolvedGlobal) 
             text.to_owned(),
         );
     }
-    if matches!(recovery, DialectRecovery::Verified) {
+    Ok(if matches!(recovery, DialectRecovery::Verified) {
         DialectMatch::admitted(dialect)
     } else {
-        DialectMatch::unverified(dialect, Grammar::of(&nearest_verified_id(representation)))
+        DialectMatch::unverified(dialect, Grammar::of(ctx, &nearest_verified_id(representation))?)
     }
-    .with_declared(declared)
+    .with_declared(declared))
 }
 
 #[cfg(test)]

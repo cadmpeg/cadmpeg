@@ -286,7 +286,7 @@ pub(crate) fn summarize(
     ctx: &DecodeContext<'_>,
     scan: &Scan,
 ) -> Result<ContainerSummary, CodecError> {
-    let matched = crate::dialect::FcstdDialect::classify(&scan.document, &scan.schema_version);
+    let matched = crate::dialect::FcstdDialect::classify(ctx, &scan.document, &scan.schema_version)?;
     let losses = crate::dialect::FcstdDialect::dialect_loss(&matched)
         .into_iter()
         .collect();

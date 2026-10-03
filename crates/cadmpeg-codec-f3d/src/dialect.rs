@@ -146,7 +146,7 @@ impl F3dDialect {
         } else {
             Self::Unknown
         };
-        Ok(dialect.matched(declared))
+        dialect.matched(ctx, declared)
     }
 
     /// Classifies a multi-document F3Z archive from its root-level `*.f3d`
@@ -167,22 +167,23 @@ impl F3dDialect {
             key,
             ctx.join_retained(root_document_members, MEMBER_SEPARATOR, OPERATION)?,
         );
-        Ok(Self::F3zMultiDocument.matched(declared))
+        Self::F3zMultiDocument.matched(ctx, declared)
     }
 
     /// The one [`DialectMatch`] construction path in this codec, so a
     /// classification bug and the report can never disagree.
     fn matched(
         self,
+        ctx: &DecodeContext<'_>,
         declared: BTreeMap<cadmpeg_core::text::NonBlankString, String>,
-    ) -> DialectMatch {
-        match self {
+    ) -> Result<DialectMatch, CodecError> {
+        Ok(match self {
             Self::Manifest3200 | Self::F3zMultiDocument => DialectMatch::admitted(self.id()),
             Self::Unknown => {
-                DialectMatch::unverified(self.id(), Grammar::of(&Self::Manifest3200.id()))
+                DialectMatch::unverified(self.id(), Grammar::of(ctx, &Self::Manifest3200.id())?)
             }
         }
-        .with_declared(declared)
+        .with_declared(declared))
     }
 }
 

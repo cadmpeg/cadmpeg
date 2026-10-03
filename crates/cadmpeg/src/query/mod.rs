@@ -888,7 +888,7 @@ fn admission_value(matched: &DialectMatch) -> Value {
         Admission::Admitted => serde_json::json!("admitted"),
         Admission::Unverified { using } => serde_json::json!({
             "unverified": {
-                "using": matched.grammar_id(using)
+                "using": format!("{}:{}", matched.format(), using.as_str())
             }
         }),
         Admission::Residual => serde_json::json!("residual"),

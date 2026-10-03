@@ -282,9 +282,8 @@ pub struct Grammar(String);
 
 impl Grammar {
     /// Names the format-local half of a registry dialect id.
-    #[must_use]
-    pub fn of(dialect: &DialectId) -> Self {
-        Self(dialect.local().to_owned())
+    pub fn of(ctx: &DecodeContext<'_>, dialect: &DialectId) -> Result<Self, CodecError> {
+        Ok(Self(ctx.copy_retained_text(dialect.local(), "copy dialect grammar")?))
     }
 
     /// Parses and validates a format-local grammar name.
@@ -784,22 +783,20 @@ impl DialectMatch {
 
     /// Returns the full registry id of the grammar applied, when this layer
     /// was parsed unverified with a declared grammar.
-    #[must_use]
-    pub fn using(&self) -> Option<DialectId> {
-        match &self.admission {
-            Admission::Unverified { using } => Some(self.grammar_id(using)),
+    pub fn using(&self, ctx: &DecodeContext<'_>) -> Result<Option<DialectId>, CodecError> {
+        Ok(match &self.admission {
+            Admission::Unverified { using } => Some(self.grammar_id(ctx, using)?),
             Admission::Admitted | Admission::Residual | Admission::Refused => None,
-        }
+        })
     }
 
     /// Return the full grammar identity in this match’s format namespace.
-    #[must_use]
-    pub fn grammar_id(&self, grammar: &Grammar) -> DialectId {
+    pub fn grammar_id(&self, ctx: &DecodeContext<'_>, grammar: &Grammar) -> Result<DialectId, CodecError> {
         let namespace = self.format();
-        DialectId {
-            value: Cow::Owned(format!("{namespace}:{}", grammar.as_str())),
+        Ok(DialectId {
+            value: Cow::Owned(ctx.format_retained(format_args!("{namespace}:{}", grammar.as_str()), "retain dialect grammar identity")?),
             namespace_len: namespace.len(),
-        }
+        })
     }
 }
 
@@ -837,6 +834,61 @@ mod tests {
 
     fn layer(format: &str) -> DialectMatch {
         DialectMatch::admitted(DialectId::parse(format!("{format}:known")).unwrap())
+    }
+
+    #[test]
+    fn grammar_copy_and_identity_charge_text_before_copying() {
+        for dimension in [ResourceDimension::WorkUnits, ResourceDimension::RetainedBytes] {
+            let arena = DecodeArena::new();
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+            let dialect = crate::dialect_id!("x:abc");
+            let grammar = Grammar::of(&ctx, &dialect).unwrap();
+            assert_eq!(grammar.as_str(), "abc");
+            let matched = DialectMatch::unverified(dialect.clone(), grammar);
+            assert_eq!(matched.using(&ctx).unwrap(), Some(dialect));
+            let error = match dimension {
+                ResourceDimension::WorkUnits => ctx.charge_work(u64::MAX, "probe"),
+                ResourceDimension::RetainedBytes => ctx.charge_retained(u64::MAX, "probe"),
+                _ => unreachable!(),
+            }.unwrap_err();
+            let CodecError::ResourceLimit(limit) = error else { panic!("refusal") };
+            // Three copied grammar bytes; five identity bytes in both formatter passes.
+            assert_eq!(limit.used, if dimension == ResourceDimension::WorkUnits { 13 } else { 8 });
+        }
+    }
+
+    #[test]
+    fn grammar_operations_propagate_the_original_refusal() {
+        for dimension in [ResourceDimension::WorkUnits, ResourceDimension::RetainedBytes] {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            match dimension {
+                ResourceDimension::WorkUnits => policy.limits.max_work_units = 0,
+                ResourceDimension::RetainedBytes => policy.limits.max_retained_bytes = 0,
+                _ => unreachable!(),
+            }
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            let residual = DialectMatch::residual(crate::dialect_id!("x:abc"));
+            assert_eq!(residual.using(&ctx).unwrap(), None);
+            let CodecError::ResourceLimit(first) = Grammar::of(&ctx, residual.dialect()).unwrap_err() else { panic!("refusal") };
+            assert_eq!(first.dimension, dimension);
+            assert_eq!(first.used, 0);
+            assert_eq!(first.additional, 3);
+            let grammar = Grammar::parse("abc").unwrap();
+            let CodecError::ResourceLimit(repeated) = residual.grammar_id(&ctx, &grammar).unwrap_err() else { panic!("refusal") };
+            assert_eq!(first, repeated);
+        }
+
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let matched = DialectMatch::unverified(crate::dialect_id!("x:abc"), Grammar::parse("abc").unwrap());
+        let CodecError::ResourceLimit(first) = matched.using(&ctx).unwrap_err() else { panic!("refusal") };
+        assert_eq!(first.used, 0);
+        assert_eq!(first.additional, 1);
+        assert_eq!(first.operation, "retain dialect grammar identity");
+        assert_eq!(ctx.resource_refusal(), Some(first));
     }
 
     #[test]
@@ -1145,10 +1197,12 @@ mod tests {
 
     #[test]
     fn residual_constructor_records_the_absence_of_a_declared_grammar() {
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
         let residual = DialectMatch::residual(crate::dialect_id!("rhino:unknown"));
 
         assert_eq!(residual.admission(), &Admission::Residual);
-        assert_eq!(residual.using(), None);
+        assert_eq!(residual.using(&ctx).unwrap(), None);
         assert_eq!(
             serde_json::to_string(&residual).unwrap(),
             "{\"dialect\":\"rhino:unknown\",\"admission\":\"residual\"}"
@@ -1157,19 +1211,21 @@ mod tests {
 
     #[test]
     fn an_unverified_admission_names_the_grammar_in_use_by_full_id() {
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
         let unverified = DialectMatch::unverified(
             crate::dialect_id!("acis:save-format-217"),
-            Grammar::of(&crate::dialect_id!("acis:save-format-218")),
+            Grammar::of(&ctx, &crate::dialect_id!("acis:save-format-218")).unwrap(),
         );
 
         assert_eq!(
             unverified.admission(),
             &Admission::Unverified {
-                using: Grammar::of(&crate::dialect_id!("acis:save-format-218")),
+                using: Grammar::of(&ctx, &crate::dialect_id!("acis:save-format-218")).unwrap(),
             }
         );
         assert_eq!(
-            unverified.using(),
+            unverified.using(&ctx).unwrap(),
             Some(crate::dialect_id!("acis:save-format-218"))
         );
         let serialized = serde_json::to_string(&unverified).unwrap();
@@ -1185,6 +1241,8 @@ mod tests {
 
     #[test]
     fn a_self_named_unverified_grammar_remains_opaque() {
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
         let self_named = serde_json::json!({
             "dialect": "rhino:unknown",
             "admission": {
@@ -1196,7 +1254,7 @@ mod tests {
         assert_eq!(
             matched.admission(),
             &Admission::Unverified {
-                using: Grammar::of(&crate::dialect_id!("rhino:unknown")),
+                using: Grammar::of(&ctx, &crate::dialect_id!("rhino:unknown")).unwrap(),
             }
         );
     }
@@ -1221,6 +1279,8 @@ mod tests {
 
     #[test]
     fn grammar_parsing_rejects_a_name_outside_the_format_local_class() {
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
         for name in [
             "",
             "rhino:archive-80",
@@ -1235,24 +1295,26 @@ mod tests {
         }
         assert_eq!(
             Grammar::parse("save-format-218").unwrap(),
-            Grammar::of(&crate::dialect_id!("acis:save-format-218"))
+            Grammar::of(&ctx, &crate::dialect_id!("acis:save-format-218")).unwrap()
         );
     }
 
     #[test]
     fn identity_does_not_encode_whether_an_unverified_path_used_a_grammar() {
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
         let dialect = crate::dialect_id!("rhino:archive-80");
         let without_grammar = DialectMatch::residual(dialect.clone());
         assert_eq!(without_grammar.admission(), &Admission::Residual);
 
-        let self_named = DialectMatch::unverified(dialect.clone(), Grammar::of(&dialect));
+        let self_named = DialectMatch::unverified(dialect.clone(), Grammar::of(&ctx, &dialect).unwrap());
         assert_eq!(
             self_named.admission(),
             &Admission::Unverified {
-                using: Grammar::of(&crate::dialect_id!("rhino:archive-80")),
+                using: Grammar::of(&ctx, &crate::dialect_id!("rhino:archive-80")).unwrap(),
             }
         );
-        assert_eq!(self_named.using(), Some(dialect));
+        assert_eq!(self_named.using(&ctx).unwrap(), Some(dialect));
     }
 
     #[test]

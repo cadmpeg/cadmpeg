@@ -1730,7 +1730,7 @@ fn decode_projects_a_line_as_a_normalized_bounded_wire_edge() {
             .source_object
             .as_ref()
             .unwrap()
-            .object_id,
+            .object_id.as_str(),
         "D1"
     );
     assert!(result.report().losses.is_empty());
@@ -1754,7 +1754,7 @@ fn decode_preserves_semi_bounded_and_unbounded_line_domains_natively() {
                 .source_object
                 .as_ref()
                 .unwrap()
-                .object_id,
+                .object_id.as_str(),
             "D1"
         );
         assert!(result.report().losses.is_empty());

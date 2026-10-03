@@ -494,7 +494,7 @@ pub(crate) fn inspect(
     source_size: usize,
 ) -> Result<ContainerSummary, CodecError> {
     let mut parse = PhysicalParse::run(window, ctx, ParseMode::Inspect)?;
-    let primary = crate::dialect::classify(representation, &parse.global);
+    let primary = crate::dialect::classify(ctx, representation, &parse.global)?;
     let mut losses = parse.admission_losses(ctx)?;
     let record_losses = parse.record_losses(ctx)?;
     ctx.reserve_vec(
@@ -569,7 +569,7 @@ fn decode_with_occurrence_limits(
     let parameter_tokens = parameter_tokens(&parse.parameters);
     let source_fidelity = source_fidelity(source_bytes, ctx)?;
 
-    let primary = crate::dialect::classify(representation, &parse.global);
+    let primary = crate::dialect::classify(ctx, representation, &parse.global)?;
     let mut ir = CadIr::decoded(source_meta(ctx, &parse.global, representation, primary)?);
     let mut invalid_resolution = false;
     if let Some(context) = &length_context {
