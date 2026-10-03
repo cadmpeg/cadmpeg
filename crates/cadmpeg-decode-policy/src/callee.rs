@@ -56,6 +56,15 @@ impl<'tcx> Analysis<'_, 'tcx> {
         }
     }
 
+    fn admitted_source_step(&self, expression: &'tcx Expr<'tcx>, definition: DefId) -> bool {
+        if !matches!(self.tcx.item_name(definition).as_str(), "next" | "next_back" | "size_hint") { return false; }
+        let Some((_, args)) = self.call(expression) else { return false; };
+        let Some(receiver) = args.first() else { return false; };
+        let ExprKind::Field(base, field) = receiver.kind else { return false; };
+        field.name.as_str() == "source" && types::admitted_iterator(self.tcx, self.expr_ty(base))
+            && self.tcx.crate_name(self.typeck.hir_owner.def_id.to_def_id().krate).as_str() == "cadmpeg_core"
+    }
+
     pub(crate) fn checked_body(&self, definition: DefId) -> bool {
         crate::production(self.tcx, definition)
             && match definition.as_local() {
@@ -65,6 +74,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
     }
 
     pub(crate) fn checked_call(&self, expression: &'tcx Expr<'tcx>, definition: DefId) -> bool {
+        if self.admitted_source_step(expression, definition) { return true; }
         if self
             .implementation(expression, definition)
             .is_some_and(|id| self.checked_body(id))

@@ -43,6 +43,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
     }
 
     pub(crate) fn allocation(&mut self, expression: &'tcx Expr<'tcx>) {
+        if self.closed_scalar_parse(expression) { return; }
         if self.admit_conversion(expression) {
             return;
         }
