@@ -13,6 +13,13 @@ mod sealed {
 pub trait TextSource: sealed::Source {
     /// Returns the existing UTF-8 view.
     fn as_text(&self) -> &str;
+
+    /// Transfer owned text or copy borrowed text through the caller budget.
+    /// The caller admits any existing owned storage.
+    fn into_retained_text(self, ctx: &DecodeContext<'_>, operation: &'static str) -> Result<String, CodecError>
+    where Self: Sized {
+        ctx.copy_retained_text(self.as_text(), operation)
+    }
 }
 
 impl sealed::Source for str {}
@@ -22,6 +29,10 @@ impl TextSource for str {
 impl sealed::Source for String {}
 impl TextSource for String {
     fn as_text(&self) -> &str { self.as_str() }
+    fn into_retained_text(self, ctx: &DecodeContext<'_>, operation: &'static str) -> Result<String, CodecError> {
+        ctx.charge_work(0, operation)?;
+        Ok(self)
+    }
 }
 impl<T: TextSource + ?Sized> sealed::Source for &T {}
 impl<T: TextSource + ?Sized> TextSource for &T {

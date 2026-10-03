@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
 use std::collections::BTreeMap;
 
+use crate::decode::text::TextSource;
 use crate::decode::DecodeContext;
 use crate::CodecError;
 
@@ -112,11 +113,12 @@ impl NonBlankString {
             .then_some(Self(Cow::Owned(value)))
     }
 
-    /// Validates transferred text after admitting its complete UTF-8 traversal.
-    /// The caller admits the string's existing storage.
-    pub fn for_decode(ctx: &DecodeContext<'_>, value: String, operation: &'static str) -> Result<Option<Self>, CodecError> {
-        let nonblank = ctx.admit_iter(value.as_str(), operation)?.any(|character| !character.is_whitespace());
-        Ok(nonblank.then_some(Self(Cow::Owned(value))))
+    /// Validate UTF-8 text before transferring owned or copying borrowed storage.
+    /// The caller admits existing owned storage; a blank borrow needs no copy.
+    pub fn for_decode<S: TextSource>(ctx: &DecodeContext<'_>, value: S, operation: &'static str) -> Result<Option<Self>, CodecError> {
+        let nonblank = ctx.admit_iter(value.as_text(), operation)?.any(|character| !character.is_whitespace());
+        if !nonblank { return Ok(None); }
+        Ok(Some(Self(Cow::Owned(value.into_retained_text(ctx, operation)?))))
     }
 
     /// Borrow static text with an existing leading-byte proof.
@@ -164,6 +166,7 @@ impl NonBlankString {
 
     /// Consumes the value and returns the source string.
     pub fn into_string(self, ctx: &DecodeContext<'_>, operation: &'static str) -> Result<String, CodecError> {
+        ctx.charge_work(0, operation)?;
         match self.0 {
             Cow::Owned(value) => Ok(value),
             Cow::Borrowed(value) => ctx.copy_retained_text(value, operation),
@@ -813,6 +816,64 @@ mod tests {
         for value in ["", "\u{2003}\n", " a "] {
             assert_eq!(NonBlankString::for_decode(&ctx, String::from(value), "validate").unwrap().is_some(), NonBlankString::new(value).is_some());
         }
+    }
+
+    #[test]
+    fn nonblank_borrowed_construction_charges_validation_and_one_copy() {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        // Four UTF-8 validation bytes and four copied bytes; one four-byte buffer.
+        policy.limits.max_work_units = 8;
+        policy.limits.max_retained_bytes = 4;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let source = String::from("\u{2003}a");
+        let result = NonBlankString::for_decode(&ctx, &source, "borrowed nonblank").unwrap().unwrap();
+        assert_eq!(result.as_str(), source);
+        assert_ne!(result.as_str().as_ptr(), source.as_ptr());
+        let CodecError::ResourceLimit(work) = ctx.charge_work(1, "probe").unwrap_err() else { panic!("work refusal") };
+        assert_eq!(work.used, 8);
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        assert_eq!(NonBlankString::for_decode(&ctx, source.as_str(), "borrowed nonblank").unwrap().unwrap().as_str(), source);
+        let CodecError::ResourceLimit(storage) = ctx.charge_retained(1, "probe").unwrap_err() else { panic!("storage refusal") };
+        assert_eq!(storage.used, 4);
+    }
+
+    #[test]
+    fn nonblank_borrowed_refusal_precedes_copy_and_blank_needs_no_storage() {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = 0;
+        // Three whitespace bytes are validated without retaining their text.
+        policy.limits.max_work_units = 3;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        assert!(NonBlankString::for_decode(&ctx, "\u{2003}", "blank text").unwrap().is_none());
+        let CodecError::ResourceLimit(work) = ctx.charge_work(1, "probe").unwrap_err() else { panic!("work refusal") };
+        assert_eq!(work.used, 3);
+        policy.limits.max_work_units = 8;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let CodecError::ResourceLimit(first) = NonBlankString::for_decode(&ctx, "\u{2003}a", "borrowed text").unwrap_err() else { panic!("storage refusal") };
+        assert_eq!(first.dimension, ResourceDimension::RetainedBytes);
+        assert_eq!(first.additional, 4);
+        assert_eq!(ctx.resource_refusal(), Some(first));
+        let CodecError::ResourceLimit(second) = NonBlankString::new("owned").unwrap().into_string(&ctx, "later owned move").unwrap_err() else { panic!("fused refusal") };
+        assert_eq!(second, first);
+    }
+
+    #[test]
+    fn retained_owned_text_preserves_storage_and_original_refusal() {
+        use crate::decode::text::TextSource;
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        policy.limits.max_retained_bytes = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let source = String::from("owned");
+        let pointer = source.as_ptr();
+        let result = source.into_retained_text(&ctx, "owned transfer").unwrap();
+        assert_eq!(result.as_ptr(), pointer);
+        let CodecError::ResourceLimit(first) = ctx.charge_work(1, "refuse").unwrap_err() else { panic!("work refusal") };
+        let CodecError::ResourceLimit(second) = result.into_retained_text(&ctx, "later transfer").unwrap_err() else { panic!("fused refusal") };
+        assert_eq!(second, first);
     }
 
     #[test]
