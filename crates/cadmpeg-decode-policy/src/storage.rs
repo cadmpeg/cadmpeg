@@ -219,6 +219,8 @@ impl<'tcx> Analysis<'_, 'tcx> {
             | "reserve_retained_vec_storage"
             | "reserve_set"
             | "reserve_map"
+                | "reserve_hash_map_storage"
+                | "reserve_hash_set_storage"
             | "reserve_heap"
             | "reserve_temporary_vec" => (
                 operands
