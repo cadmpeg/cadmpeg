@@ -405,11 +405,7 @@ fn sketch_arrangement_faces(
             }
         }
     }
-    let mut outgoing = ctx.alloc_filled(
-        nodes.len(),
-        Vec::<(usize, bool, f64)>::new(),
-        "f3d_arrangement_outgoing",
-    )?;
+    let mut outgoing = ctx.collect_indexed_vec(nodes.len(), "f3d_arrangement_outgoing", |_| Ok(Vec::<(usize, bool, f64)>::new()))?;
     let _outgoing_reservation = Some(
         ({
             let bytes = u64::try_from(edges.len())

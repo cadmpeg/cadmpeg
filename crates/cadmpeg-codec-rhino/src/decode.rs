@@ -5495,11 +5495,7 @@ fn stage_brep(input: BrepTransferInput<'_>) -> Result<BrepDraft, crate::curves::
         ));
         face_ids.push(id);
     }
-    let mut face_loop_ids = ctx.alloc_filled(
-        raw.faces.len(),
-        Vec::<cadmpeg_ir::ids::LoopId>::new(),
-        "Rhino staged Brep face loop lists",
-    )?;
+    let mut face_loop_ids = ctx.collect_indexed_vec(raw.faces.len(), "Rhino staged Brep face loop lists", |_| Ok(Vec::<cadmpeg_ir::ids::LoopId>::new()))?;
     let mut coedge_positions = ctx.alloc_filled(
         raw.trims.len(),
         None::<usize>,

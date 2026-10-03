@@ -968,7 +968,7 @@ fn pad_resolved(
 ) -> Result<Vec<Option<SketchRelationOperand>>, SketchRelationWireError> {
     if values.is_empty() {
         admission
-            .alloc_filled(len, None, "pad sketch relation resolutions")
+            .collect_vec((0..len).map(|_| None), "pad sketch relation resolutions")
             .map_err(SketchRelationWireError::Resource)
     } else if values.len() == len {
         admission

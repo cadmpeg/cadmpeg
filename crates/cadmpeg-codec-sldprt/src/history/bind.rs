@@ -344,11 +344,7 @@ fn regeneration_order(
     features: &[cadmpeg_ir::features::Feature],
     model: Option<&cadmpeg_ir::document::Model>,
 ) -> Result<Option<Vec<usize>>, cadmpeg_core::CodecError> {
-    let mut outgoing = ctx.alloc_filled(
-        features.len(),
-        Vec::<usize>::new(),
-        "sldprt feature regeneration adjacency",
-    )?;
+    let mut outgoing = ctx.collect_indexed_vec(features.len(), "sldprt feature regeneration adjacency", |_| Ok(Vec::<usize>::new()))?;
     let mut indegree = ctx.alloc_filled(
         features.len(),
         0usize,

@@ -1413,11 +1413,7 @@ fn parse_legacy_major2(
         ));
     }
 
-    let mut edge_trim_indexes = ctx.alloc_filled(
-        edge_count,
-        Vec::<usize>::new(),
-        "Rhino legacy Brep edge-trim groups",
-    )?;
+    let mut edge_trim_indexes = ctx.collect_indexed_vec(edge_count, "Rhino legacy Brep edge-trim groups", |_| Ok(Vec::<usize>::new()))?;
     for (trim_index, trim) in trims.iter().enumerate() {
         if let Some(edge_index) = position(trim.edge).filter(|index| *index < edge_count) {
             let group = &mut edge_trim_indexes[edge_index];
@@ -1962,7 +1958,7 @@ fn empty_mesh_slots(
     ctx: &DecodeContext<'_>,
     count: usize,
 ) -> Result<Vec<Option<RawBrepMesh>>, GeometryError> {
-    Ok(ctx.alloc_filled(count, None, "Rhino legacy Brep degraded mesh slots")?)
+    Ok(ctx.collect_indexed_vec(count, "Rhino legacy Brep degraded mesh slots", |_| Ok(None))?)
 }
 
 /// Returns whether a UUID is `ON_Brep`.
@@ -2354,7 +2350,7 @@ fn read_mesh_sides(
     let chunk = anonymous_chunk(bytes, reader, archive)?;
     let mut child = body_reader(bytes, &chunk)?;
     let parsed: Result<(Vec<Option<RawBrepMesh>>, Range<usize>), GeometryError> = (|| {
-        let mut result = ctx.alloc_filled(face_count, None, "Rhino Brep mesh cache slots")?;
+        let mut result = ctx.collect_indexed_vec(face_count, "Rhino Brep mesh cache slots", |_| Ok(None))?;
         let mut children = Vec::new();
         for slot in &mut result {
             let present = child.bool()?;
@@ -2416,7 +2412,7 @@ fn read_mesh_sides(
         Ok(result) => Ok(result),
         Err(error @ GeometryError::Codec(_)) => Err(error),
         Err(error) => {
-            let degraded = ctx.alloc_filled(face_count, None, "Rhino Brep degraded mesh slots")?;
+            let degraded = ctx.collect_indexed_vec(face_count, "Rhino Brep degraded mesh slots", |_| Ok(None))?;
             reader.skip(chunk.next_offset() - reader.position())?;
             warnings.push_coded_admitted(
                 ctx,

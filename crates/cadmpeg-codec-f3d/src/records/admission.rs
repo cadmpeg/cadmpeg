@@ -103,7 +103,7 @@ impl RecordAdmission<'_, '_> {
         }
     }
 
-    pub(crate) fn alloc_filled<T: Clone>(
+    pub(crate) fn alloc_filled<T: Copy>(
         self,
         count: usize,
         value: T,
@@ -114,7 +114,7 @@ impl RecordAdmission<'_, '_> {
             Self::Admitted => {
                 let mut values = self.collection_vec(count, operation)?;
                 for _ in 0..count {
-                    values.push(value.clone());
+                    values.push(value);
                 }
                 Ok(values)
             }

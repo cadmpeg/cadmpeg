@@ -195,11 +195,7 @@ fn curve_expression_parameter_order(
     record: &crate::curve::CurveExpressionRecord,
     unique_assignment_indices: &BTreeMap<String, usize>,
 ) -> Result<Option<CurveExpressionParameterOrder>, CodecError> {
-    let mut dependencies = ctx.alloc_filled(
-        record.assignments.len(),
-        Vec::new(),
-        "creo curve-expression dependency rows",
-    )?;
+    let mut dependencies = ctx.collect_indexed_vec(record.assignments.len(), "creo curve-expression dependency rows", |_| Ok(Vec::new()))?;
     for (row, assignment) in dependencies.iter_mut().zip(&record.assignments) {
         for name in &assignment.dependencies {
             let (mut key, _reservation) = ctx.format_scoped(

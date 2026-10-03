@@ -948,7 +948,7 @@ impl MeshCoordinateRootDomains {
         budget: Option<&WorkBudget<'_>>,
     ) -> Result<Option<Vec<usize>>, CodecError> {
         let mut roots_by_point =
-            ctx.alloc_filled(point_count, Vec::new(), "catia_quotient_roots_by_point")?;
+            ctx.collect_indexed_vec(point_count, "catia_quotient_roots_by_point", |_| Ok(Vec::new()))?;
         for (root, domain) in domains.iter().enumerate() {
             for &point in domain {
                 ctx.push_vec(
@@ -1007,7 +1007,7 @@ impl MeshCoordinateRootDomains {
                 return Ok(None);
             }
             let mut roots_by_point =
-                ctx.alloc_filled(self.point_count, Vec::new(), "catia_quotient_refine_roots")?;
+                ctx.collect_indexed_vec(self.point_count, "catia_quotient_refine_roots", |_| Ok(Vec::new()))?;
             for (root, domain) in domains.iter().enumerate() {
                 for &point in domain {
                     ctx.push_vec(
@@ -1534,7 +1534,7 @@ impl<'storage> MeshQuotient<'storage> {
         domains: Vec<Arc<HashSet<usize>>>,
     ) -> Result<Self, CodecError> {
         let union = UnionFind::charged(ctx, domains.len(), "catia_quotient_union")?;
-        let mut members = ctx.alloc_filled(domains.len(), Vec::new(), "catia_quotient_members")?;
+        let mut members = ctx.collect_indexed_vec(domains.len(), "catia_quotient_members", |_| Ok(Vec::new()))?;
         for (node, group) in members.iter_mut().enumerate() {
             ctx.push_vec(group, node, "catia_quotient_member_nodes")?;
         }
@@ -1829,7 +1829,7 @@ impl<'storage> MeshQuotient<'storage> {
             ctx.push_vec(&mut edge_ids, edge, "catia_quotient_edge_ids")?;
         }
         let mut root_edges =
-            ctx.alloc_filled(roots.len(), Vec::new(), "catia_quotient_root_edges")?;
+            ctx.collect_indexed_vec(roots.len(), "catia_quotient_root_edges", |_| Ok(Vec::new()))?;
         for (edge, [left, right]) in edges.iter().copied().enumerate() {
             ctx.push_vec(
                 &mut root_edges[left],
@@ -3502,7 +3502,7 @@ impl<'storage> MeshQuotient<'storage> {
             edge_roots.push([*left, *right]);
         }
         let mut root_edges =
-            ctx.alloc_filled(roots.len(), Vec::new(), "catia point assignment root edges")?;
+            ctx.collect_indexed_vec(roots.len(), "catia point assignment root edges", |_| Ok(Vec::new()))?;
         for (edge_index, edge) in edge_roots.iter().enumerate() {
             ctx.push_vec(
                 &mut root_edges[edge[0]],
@@ -5516,11 +5516,7 @@ fn edge_class_search_constraint(
     if edge_classes.len() != choices.len() {
         return Ok(None);
     }
-    let mut normalized = ctx.alloc_filled(
-        choices.len(),
-        Vec::new(),
-        "catia_edge_class_normalized_rows",
-    )?;
+    let mut normalized = ctx.collect_indexed_vec(choices.len(), "catia_edge_class_normalized_rows", |_| Ok(Vec::new()))?;
     for (row, pairs) in normalized.iter_mut().zip(choices) {
         *row = ctx.alloc_filled(
             pairs.len(),
@@ -6358,11 +6354,7 @@ pub(super) fn mesh_assignment_endpoint_cycle_support_by<'a>(
                     return Some(Err(error));
                 }
             }
-            let mut suffixes = match ctx.alloc_filled(
-                layer_count,
-                EndpointRelation::new(),
-                "catia_endpoint_suffixes",
-            ) {
+            let mut suffixes = match ctx.collect_indexed_vec(layer_count, "catia_endpoint_suffixes", |_| Ok(EndpointRelation::new())) {
                 Ok(suffixes) => suffixes,
                 Err(error) => return Some(Err(error)),
             };
@@ -6958,7 +6950,7 @@ fn endpoint_configuration_directions(
         return Ok(Err(MeshDirectionEnumerationError::Invalid));
     }
     let mut alternatives =
-        ctx.alloc_filled(1, Vec::new(), "catia_endpoint_initial_alternatives")?;
+        ctx.collect_indexed_vec(1, "catia_endpoint_initial_alternatives", |_| Ok(Vec::new()))?;
     for boundary in &assignment.boundaries {
         let boundary_options =
             match endpoint_configuration_boundary_directions(ctx, boundary, &pairs)? {
@@ -7370,12 +7362,8 @@ fn build_endpoint_relation_constraints(
             Ord::cmp,
         "catia_endpoint_relation_shared_rows_sort",
     )?;
-    let mut arcs = ctx.alloc_filled(domains.len(), Vec::new(), "catia_endpoint_relation_arcs")?;
-    let mut incoming = ctx.alloc_filled(
-        domains.len(),
-        Vec::new(),
-        "catia_endpoint_relation_incoming",
-    )?;
+    let mut arcs = ctx.collect_indexed_vec(domains.len(), "catia_endpoint_relation_arcs", |_| Ok(Vec::new()))?;
+    let mut incoming = ctx.collect_indexed_vec(domains.len(), "catia_endpoint_relation_incoming", |_| Ok(Vec::new()))?;
     let mut choice_counts = Vec::new();
     for domain in domains {
         ctx.push_vec(
@@ -9178,11 +9166,7 @@ fn resolve_fixed_mesh_endpoint_pairs(
     }
     let use_fixed_direction_search = !direction_overflow;
     if direction_overflow {
-        let directions = ctx.alloc_filled(
-            assignment_domains.len(),
-            None,
-            "catia_general_mesh_fixed_face_directions",
-        )?;
+        let directions = ctx.collect_indexed_vec(assignment_domains.len(), "catia_general_mesh_fixed_face_directions", |_| Ok(None))?;
         fixed_face_directions = directions;
     }
     let mut edge_has_fixed_direction = ctx.alloc_filled(
@@ -9334,7 +9318,7 @@ fn resolve_fixed_mesh_endpoint_pairs(
         } else {
             Vec::new()
         },
-        selected: ctx.alloc_filled(assignment_domains.len(), None, "catia_fixed_mesh_selection")?,
+        selected: ctx.collect_indexed_vec(assignment_domains.len(), "catia_fixed_mesh_selection", |_| Ok(None))?,
         visited_states: HashSet::new(),
         outcome: SearchOutcome::Open,
         face_equation_cache: RefCell::default(),
@@ -10085,14 +10069,10 @@ fn resolve_standard_mesh_endpoint_candidates<'storage>(
         vertex_points,
         candidate_gauge,
         port_identities: Some(port_identities),
-        fixed_face_directions: ctx.alloc_filled(
-            face_count,
-            None,
-            "catia_mesh_fixed_face_directions",
-        )?,
+        fixed_face_directions: ctx.collect_indexed_vec(face_count, "catia_mesh_fixed_face_directions", |_| Ok(None))?,
         fixed_edge_orientations: Vec::new(),
         edge_has_fixed_direction: Vec::new(),
-        selected: ctx.alloc_filled(face_count, None, "catia_mesh_selected_faces")?,
+        selected: ctx.collect_indexed_vec(face_count, "catia_mesh_selected_faces", |_| Ok(None))?,
         visited_states: HashSet::new(),
         outcome: SearchOutcome::Open,
         face_equation_cache: RefCell::default(),

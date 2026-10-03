@@ -7278,11 +7278,7 @@ fn synthesize_cylinder_seams(
             lp.boundary = cadmpeg_ir::topology::LoopBoundary::Ring(ring);
         }
         if let Some(face) = out.faces.iter_mut().find(|face| face.id == face_id) {
-            face.loops = cadmpeg_ir::topology::FaceLoops::unspecified(ctx.alloc_filled(
-                1,
-                loop_a,
-                "bind Parasolid cylinder seam loop",
-            )?);
+            face.loops = cadmpeg_ir::topology::FaceLoops::unspecified(ctx.collect_retained_vec([loop_a], "bind Parasolid cylinder seam loop")?);
         }
         ctx.insert_hash_set(&mut removed, loop_b, "track replaced Parasolid seam loops")?;
     }

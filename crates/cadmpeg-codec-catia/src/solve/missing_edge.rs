@@ -999,11 +999,7 @@ fn repeated_edge_face_handle_candidates_from_sets(
             return Ok(None);
         }
     }
-    let mut candidates = ctx.alloc_filled(
-        edge_rows.len(),
-        Vec::new(),
-        "catia_repeated_edge_handle_face_candidates",
-    )?;
+    let mut candidates = ctx.collect_indexed_vec(edge_rows.len(), "catia_repeated_edge_handle_face_candidates", |_| Ok(Vec::new()))?;
     for (edge, (row, faces)) in edge_rows.iter().zip(serialized).enumerate() {
         if faces[0] != faces[1] || row.handles().len() < 2 {
             continue;
@@ -1338,11 +1334,7 @@ pub(crate) fn repeated_face_endpoint_closures(
     {
         return Ok(None);
     }
-    let mut degrees = ctx.alloc_filled(
-        face_count,
-        BTreeMap::<usize, u8>::new(),
-        "catia missing-edge face degrees",
-    )?;
+    let mut degrees = ctx.collect_indexed_vec(face_count, "catia missing-edge face degrees", |_| Ok(BTreeMap::<usize, u8>::new()))?;
     for (edge, faces) in edge_faces.iter().copied().enumerate() {
         if add_pair(ctx, &mut degrees[faces[0]], endpoint_pairs[edge])?.is_none() {
             return Ok(None);
@@ -1775,7 +1767,7 @@ pub(super) fn resolve_edge_faces_from_runs(
     runs: &[MeshEdgeRun],
 ) -> Result<Option<Vec<[usize; 2]>>, CodecError> {
     let mut occurrence_faces =
-        ctx.alloc_filled(serialized.len(), Vec::new(), "catia_edge_run_faces")?;
+        ctx.collect_indexed_vec(serialized.len(), "catia_edge_run_faces", |_| Ok(Vec::new()))?;
     for run in runs {
         let Some(faces) = occurrence_faces.get_mut(run.edge) else {
             return Ok(None);
@@ -2042,22 +2034,14 @@ fn mesh_face_coverage(
     }
     let mut occurrences_by_cycle = Vec::new();
     for face_cycles in cycles {
-        let rows = ctx.alloc_filled(
-            face_cycles.len(),
-            Vec::<MeshEdgeRun>::new(),
-            "catia_mesh_cycle_occurrences",
-        )?;
+        let rows = ctx.collect_indexed_vec(face_cycles.len(), "catia_mesh_cycle_occurrences", |_| Ok(Vec::<MeshEdgeRun>::new()))?;
         ctx.push_vec(
             &mut occurrences_by_cycle,
             rows,
             "catia_mesh_occurrence_faces",
         )?;
     }
-    let mut present_edges_by_face = ctx.alloc_filled(
-        cycles.len(),
-        HashSet::<usize>::new(),
-        "catia_mesh_face_edges",
-    )?;
+    let mut present_edges_by_face = ctx.collect_indexed_vec(cycles.len(), "catia_mesh_face_edges", |_| Ok(HashSet::<usize>::new()))?;
     for values in occurrences {
         for &occurrence in values {
             let Some(face_cycles) = occurrences_by_cycle.get_mut(occurrence.face) else {
@@ -2079,7 +2063,7 @@ fn mesh_face_coverage(
         }
     }
     let mut edges_by_face =
-        ctx.alloc_filled(cycles.len(), Vec::new(), "catia_mesh_edges_by_face")?;
+        ctx.collect_indexed_vec(cycles.len(), "catia_mesh_edges_by_face", |_| Ok(Vec::new()))?;
     for (edge, faces) in edge_faces.iter().copied().enumerate() {
         for face in faces {
             if face >= cycles.len() {
@@ -3697,11 +3681,7 @@ pub(super) fn standard_mesh_boundary_domains_from_context(
                 MeshFaceAssignmentDomain::Ordered(assignments) => {
                     let mut ordered = Vec::new();
                     for assignment in assignments {
-                        let mut boundaries = ctx.alloc_filled(
-                            cycle_lengths[face].len(),
-                            Vec::new(),
-                            "catia_mesh_ordered_boundaries",
-                        )?;
+                        let mut boundaries = ctx.collect_indexed_vec(cycle_lengths[face].len(), "catia_mesh_ordered_boundaries", |_| Ok(Vec::new()))?;
                         for run in runs.iter().filter(|run| run.face == face) {
                             let fixed_direction = edge_candidates.is_none()
                                 || context.analysis.edge_rows[run.edge].boundary_layout()
@@ -4566,11 +4546,7 @@ pub(crate) fn standard_mesh_placement_endpoint_pairs(
     else {
         return Ok(None);
     };
-    let mut domains = ctx.alloc_filled(
-        edge_rows.len(),
-        Vec::new(),
-        "catia_placement_endpoint_domains",
-    )?;
+    let mut domains = ctx.collect_indexed_vec(edge_rows.len(), "catia_placement_endpoint_domains", |_| Ok(Vec::new()))?;
     let mut placement_counts =
         ctx.alloc_filled(edge_rows.len(), 0usize, "catia_placement_counts")?;
     let mut bound_counts =
