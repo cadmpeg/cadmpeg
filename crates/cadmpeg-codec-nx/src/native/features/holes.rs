@@ -118,6 +118,12 @@ pub(in crate::native) struct FeatureSimpleHoleTemplate {
     pub(in crate::native) end_treatment: SimpleHoleEndTreatment,
 }
 
+impl cadmpeg_core::decode::cost::DecodeCost for FeatureSimpleHoleTemplate {
+    fn decode_cost(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
+        cadmpeg_core::decode::cost::DecodeCost::decode_cost(&self.operation_label, ctx, operation)
+    }
+}
+
 /// Exact threaded-hole template retained from a `SIMPLE HOLE` operation.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub(in crate::native) struct FeatureThreadedHoleTemplate {
@@ -1261,14 +1267,14 @@ pub(in crate::native) fn feature_simple_hole_construction_groups(
     }
     ctx.sort_unstable_by(
         &mut chronology,
-        |(left_index, left, left_first), (right_index, right, right_first)| {
+            |value| value,
+            |(left_index, left, left_first), (right_index, right, right_first)| {
             left_first
                 .cmp(right_first)
                 .then_with(|| left.section_link.cmp(&right.section_link))
                 .then_with(|| right.source_offset.cmp(&left.source_offset))
                 .then_with(|| left_index.cmp(right_index))
         },
-        |(_, label, _)| label.section_link.len(),
         "sort NX hole operation chronology",
     )?;
     let group_work = references
@@ -1370,15 +1376,10 @@ pub(in crate::native) fn feature_simple_hole_construction_groups(
         if missing {
             continue;
         }
-        ctx.sort_unstable_by(
+        ctx.sort_unstable_by_key(
             &mut positioned,
-            |(left_pos, left_index, left, _), (right_pos, right_index, right, _)| {
-                left_pos
-                    .cmp(right_pos)
-                    .then_with(|| left.operation_label.cmp(&right.operation_label))
-                    .then_with(|| left_index.cmp(right_index))
-            },
-            |(_, _, reference, _)| reference.operation_label.len(),
+            |value| { let reference = value.2; (value.0, reference.operation_label.as_str(), value.1) },
+            Ord::cmp,
             "sort NX simple hole group members",
         )?;
         if positioned.len() < 2
@@ -1619,15 +1620,10 @@ pub(in crate::native) fn feature_hole_package_construction_group_uses(
         )?;
         matches.push((group, lane));
     }
-    ctx.sort_unstable_by(
+    ctx.sort_unstable_by_key(
         &mut matches,
-        |(left, _), (right, _)| simple_hole_group_key(left).cmp(&simple_hole_group_key(right)),
-        |(group, _)| {
-            simple_hole_group_key(group)
-                .iter()
-                .map(|part| part.len())
-                .sum::<usize>()
-        },
+            |value| { let (left, _) = value; simple_hole_group_key(*left) },
+            Ord::cmp,
         "sort NX hole package groups",
     )?;
     let mut uses = Vec::new();

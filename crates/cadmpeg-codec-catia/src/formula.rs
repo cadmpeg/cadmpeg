@@ -628,8 +628,8 @@ pub(crate) fn transfer_parameters(
         ctx.collect_vec(candidates.into_values(), "catia_formula_ordered_parameters")?;
     ctx.stable_sort_by(
         &mut parameters,
-        |left, right| left.source_order.cmp(&right.source_order),
-        |_| 0,
+            |value| &value.source_order,
+            Ord::cmp,
         "catia_formula_ordered_parameters_sort",
     )?;
     for (ordinal, candidate) in parameters.iter_mut().enumerate() {

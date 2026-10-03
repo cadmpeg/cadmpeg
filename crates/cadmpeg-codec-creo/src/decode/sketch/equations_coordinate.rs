@@ -1263,8 +1263,8 @@ fn quadratic_roots(
     });
     ctx.stable_sort_by(
         &mut roots,
-        f64::total_cmp,
-        |_| 0,
+            |value| value,
+            f64::total_cmp,
         "creo sketch coordinate quadratic roots sort",
     )?;
     roots.dedup_by(|first, second| {

@@ -1113,8 +1113,8 @@ impl<'a> FixedEntityRecord<'a> {
         }
         ctx.stable_sort_by(
             &mut references,
-            |left, right| left.offset.cmp(&right.offset),
-            |_| 0,
+            |value| &value.offset,
+            Ord::cmp,
             "sort NX record references",
         )?;
         Ok(references)
@@ -2710,10 +2710,10 @@ pub(crate) fn sketch_payload_scalar_lanes(
             lanes.push(lane);
         }
     }
-    ctx.stable_sort_by(
+    ctx.stable_sort_by_key(
         &mut lanes,
-        |left, right| left.offset().cmp(&right.offset()),
-        |_| 0,
+            |value| value.offset(),
+            Ord::cmp,
         "sort NX sketch payload scalar lanes",
     )?;
     Ok(lanes)
@@ -2768,8 +2768,8 @@ pub(crate) fn sketch_payload_fixed_pairs(
     }
     ctx.stable_sort_by(
         &mut pairs,
-        |left, right| left.offset.cmp(&right.offset),
-        |_| 0,
+            |value| &value.offset,
+            Ord::cmp,
         "sort NX sketch payload pairs",
     )?;
     Ok(pairs)
@@ -2884,8 +2884,8 @@ pub(crate) fn datum_csys_payload_fixed_pairs(
     }
     ctx.stable_sort_by(
         &mut pairs,
-        |left, right| left.offset.cmp(&right.offset),
-        |_| 0,
+            |value| &value.offset,
+            Ord::cmp,
         "sort NX datum csys payload pairs",
     )?;
     Ok(pairs)
@@ -2998,10 +2998,10 @@ pub(crate) fn draft_construction_binary32_lanes(
             lanes.push(lane);
         }
     }
-    ctx.stable_sort_by(
+    ctx.stable_sort_by_key(
         &mut lanes,
-        |left, right| left.offset().cmp(&right.offset()),
-        |_| 0,
+            |value| value.offset(),
+            Ord::cmp,
         "sort NX draft construction lanes",
     )?;
     Ok(lanes)
@@ -3314,12 +3314,10 @@ fn operation_state_group_table_before_counter_map(
         ctx.reserve_capacity(&mut candidates, 1, "nx operation-state group candidates")?;
         candidates.push((at, end));
     }
-    ctx.stable_sort_by(
+    ctx.stable_sort_by_key(
         &mut candidates,
-        |(left_start, left_end), (right_start, right_end)| {
-            (left_end, left_start).cmp(&(right_end, right_start))
-        },
-        |_| 0,
+            |value| { let (left_start, left_end) = value; (*left_end,*left_start) },
+            Ord::cmp,
         "sort NX operation state group candidates",
     )?;
 
@@ -3698,10 +3696,10 @@ pub(crate) fn operation_common_frames(
             frames.push(frame);
         }
     }
-    ctx.stable_sort_by(
+    ctx.stable_sort_by_key(
         &mut frames,
-        |left, right| left.offset().cmp(&right.offset()),
-        |_| 0,
+            |value| value.offset(),
+            Ord::cmp,
         "sort NX common frames",
     )?;
     Ok(frames)
@@ -3990,8 +3988,8 @@ fn record_references(
     }
     ctx.stable_sort_by(
         &mut out,
-        |left, right| left.offset.cmp(&right.offset),
-        |_| 0,
+            |value| &value.offset,
+            Ord::cmp,
         "sort NX direct references",
     )?;
     Ok(out)
@@ -4537,14 +4535,10 @@ fn select_outer_indexed_candidates<'a>(
     ctx: &DecodeContext<'_>,
     mut candidates: Vec<IndexedCandidate<'a>>,
 ) -> Result<Vec<IndexedCandidate<'a>>, CodecError> {
-    ctx.stable_sort_by(
+    ctx.stable_sort_by_key(
         &mut candidates,
-        |left, right| {
-            left.start()
-                .cmp(&right.start())
-                .then_with(|| right.source().len().cmp(&left.source().len()))
-        },
-        |_| 0,
+            |value| (value.start(),std::cmp::Reverse(value.source().len())),
+            Ord::cmp,
         "nx indexed OM candidates outer sort",
     )?;
     let mut furthest_end = 0;
@@ -4557,8 +4551,8 @@ fn select_outer_indexed_candidates<'a>(
     });
     ctx.stable_sort_by(
         &mut candidates,
-        |left, right| left.discovery_order.cmp(&right.discovery_order),
-        |_| 0,
+            |value| &value.discovery_order,
+            Ord::cmp,
         "nx indexed OM candidates discovery sort",
     )?;
     Ok(candidates)

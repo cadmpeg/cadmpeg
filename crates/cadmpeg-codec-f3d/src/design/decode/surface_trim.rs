@@ -254,8 +254,8 @@ pub(crate) fn decode_surface_trim_operations(
     }
     ctx.stable_sort_by(
         &mut out[..],
-        |left, right| left.id.cmp(&right.id),
-        |value| value.id.as_str().len(),
+            |value| &value.id,
+            Ord::cmp,
         "sort f3d design surface_trim 1",
     )?;
     Ok(out)

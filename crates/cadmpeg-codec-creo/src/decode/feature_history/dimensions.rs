@@ -413,16 +413,10 @@ pub(in super::super) fn transfer_feature_dimensions(
             ));
         }
     }
-    ctx.stable_sort_by(
+    ctx.stable_sort_by_key(
         candidates.as_mut_slice(),
-        |(_, left, left_ordinal, _), (_, right, right_ordinal, _)| {
-            (left.offset, left.identity.id(), *left_ordinal).cmp(&(
-                right.offset,
-                right.identity.id(),
-                *right_ordinal,
-            ))
-        },
-        |_| std::mem::size_of::<usize>() + std::mem::size_of::<u32>(),
+            |value| (value.1.offset, value.1.identity.id(), value.2),
+            Ord::cmp,
         "creo transfer feature dimensions candidates ordering",
     )?;
     let mut keys = Vec::new();

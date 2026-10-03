@@ -1296,8 +1296,8 @@ pub(crate) fn project(
     projected.retain(|(feature, _)| !duplicate_ordinals.contains(&feature.ordinal));
     ctx.sort_unstable_by(
         &mut projected,
-        |(left, _), (right, _)| left.ordinal.cmp(&right.ordinal),
-        |_| 0,
+            |value| &value.0.ordinal,
+            Ord::cmp,
         "Inventor projected features sort",
     )?;
     ctx.charge_collection_items(

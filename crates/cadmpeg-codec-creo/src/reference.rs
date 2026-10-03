@@ -486,8 +486,8 @@ pub(crate) fn ellipse_carriers(
     }
     ctx.stable_sort_by(
         result.as_mut_slice(),
-        |left, right| left.offset.cmp(&right.offset),
-        |_| 0,
+            |value| &value.offset,
+            Ord::cmp,
         "creo ellipse carriers result ordering",
     )?;
     Ok(result)
@@ -889,8 +889,8 @@ pub(crate) fn named_conics(
     }
     ctx.stable_sort_by(
         result.as_mut_slice(),
-        |left, right| left.offset.cmp(&right.offset),
-        |_| 0,
+            |value| &value.offset,
+            Ord::cmp,
         "creo named conics result ordering",
     )?;
     Ok(result)
@@ -1041,8 +1041,8 @@ pub(crate) fn positional_conics(
     }
     ctx.stable_sort_by(
         result.as_mut_slice(),
-        |left, right| left.offset.cmp(&right.offset),
-        |_| 0,
+            |value| &value.offset,
+            Ord::cmp,
         "creo positional conics result ordering",
     )?;
     result.dedup_by_key(|conic| conic.offset);
@@ -1134,8 +1134,8 @@ pub(crate) fn lines(
     }
     ctx.stable_sort_by(
         result.as_mut_slice(),
-        |left, right| left.offset.cmp(&right.offset),
-        |_| 0,
+            |value| &value.offset,
+            Ord::cmp,
         "creo lines result ordering",
     )?;
     result.dedup_by_key(|line| line.offset);
@@ -1266,8 +1266,8 @@ pub(crate) fn line3d_lines(
     }
     ctx.stable_sort_by(
         result.as_mut_slice(),
-        |left, right| left.offset.cmp(&right.offset),
-        |_| 0,
+            |value| &value.offset,
+            Ord::cmp,
         "creo line3d lines result ordering",
     )?;
     result.dedup_by_key(|line| line.offset);
@@ -1444,8 +1444,8 @@ pub(crate) fn arc_z_circles(
     }
     ctx.stable_sort_by(
         result.as_mut_slice(),
-        |left, right| left.offset.cmp(&right.offset),
-        |_| 0,
+            |value| &value.offset,
+            Ord::cmp,
         "creo arc z circles result ordering",
     )?;
     ctx.charge_work(

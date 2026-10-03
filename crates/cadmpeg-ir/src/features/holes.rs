@@ -30,6 +30,12 @@ pub enum HolePlacement {
     },
 }
 
+impl cadmpeg_core::decode::cost::DecodeCost for HolePlacement {
+    fn decode_cost(&self, _ctx: &cadmpeg_core::decode::DecodeContext<'_>, _operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
+        Ok(1+6*cadmpeg_core::decode::u64_from_index(std::mem::size_of::<f64>()))
+    }
+}
+
 /// A counterdrill recess diameter and optional larger entry diameter.
 #[derive(Debug, Clone, Copy, PartialEq)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]

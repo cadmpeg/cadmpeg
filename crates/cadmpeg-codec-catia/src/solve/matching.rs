@@ -439,7 +439,9 @@ pub(crate) fn unique_coordinate_bijection(
             };
             order.push((count, vertex));
         }
-        ctx.sort_unstable_by(&mut order, Ord::cmp, |_| 0, "catia_bijection_order_sort")?;
+        ctx.sort_unstable_by(&mut order,
+            |value| value,
+            Ord::cmp, "catia_bijection_order_sort")?;
         let mut seen_vertices =
             ctx.alloc_filled(domains.len(), 0usize, "catia_bijection_seen_vertices")?;
         let mut seen_slots =
@@ -584,8 +586,8 @@ pub(crate) fn unique_coordinate_bijection(
         }
         ctx.sort_unstable_by(
             &mut classes,
+            |value| value,
             Ord::cmp,
-            |_| 0,
             "catia_bijection_domain_classes_sort",
         )?;
         ctx.charge_work(

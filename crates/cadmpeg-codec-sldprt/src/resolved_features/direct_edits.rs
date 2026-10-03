@@ -189,8 +189,8 @@ pub(crate) fn enrich_history_move_face_translations(
         }
         ctx.sort_unstable_by(
             &mut starts,
-            |left, right| left.0.cmp(&right.0),
-            |_| 0,
+            |value| &value.0,
+            Ord::cmp,
             "sort SLDPRT move-face feature starts",
         )?;
         for (index, &(start, history_index, feature_index)) in starts.iter().enumerate() {
@@ -350,8 +350,8 @@ pub(crate) fn enrich_history_move_body_translations(
         }
         ctx.sort_unstable_by(
             &mut starts,
-            |left, right| left.0.cmp(&right.0),
-            |_| 0,
+            |value| &value.0,
+            Ord::cmp,
             "sort SLDPRT move-body feature starts",
         )?;
         for (index, &(start, history_index, feature_index)) in starts.iter().enumerate() {

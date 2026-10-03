@@ -466,8 +466,8 @@ pub(super) fn blend_feature_definition(
     }
     ctx.stable_sort_by(
         &mut surfaces,
-        Ord::cmp,
-        |surface| surface.as_str().len(),
+            |value| value,
+            Ord::cmp,
         "NX blend result sort",
     )?;
     let radius = if constant_radii {
@@ -751,8 +751,8 @@ pub(super) fn unique_carrier_supports(
     }
     ctx.stable_sort_by(
         &mut supports,
-        Ord::cmp,
-        |support| support.as_str().len(),
+            |value| value,
+            Ord::cmp,
         "NX offset support sort",
     )?;
     Ok(supports)
@@ -1018,8 +1018,8 @@ pub(in crate::native) fn feature_source_content(
     }
     ctx.stable_sort_by(
         &mut sorted,
-        |first, second| first.source_offset.cmp(&second.source_offset),
-        |_| 0,
+            |value| &value.source_offset,
+            Ord::cmp,
         "NX feature source text sort",
     )?;
     let mut content = Vec::new();
@@ -1137,6 +1137,13 @@ pub(super) fn block_placement(
         maximum: f64,
     }
 
+impl cadmpeg_core::decode::cost::DecodeCost for PlaneExtent {
+    const FIXED_BYTES: Option<u64> = Some(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<Self>()));
+    fn decode_cost(&self, _ctx: &cadmpeg_core::decode::DecodeContext<'_>, _operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
+        Ok(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<Self>()))
+    }
+}
+
     fn canonical_normal(
         normal: cadmpeg_ir::units::UnitVector3,
         angular_tolerance: f64,
@@ -1158,8 +1165,8 @@ pub(super) fn block_placement(
     ) -> Result<Option<PlaneExtent>, CodecError> {
         ctx.stable_sort_by(
             &mut band.offsets,
+            |value| value,
             f64::total_cmp,
-            |_| 0,
             "NX block plane sort",
         )?;
         let mut first: Option<[f64; 2]> = None;
@@ -1296,7 +1303,8 @@ pub(super) fn block_placement(
     let mut extents = [first, second, third];
     ctx.stable_sort_by(
         &mut extents,
-        |left, right| {
+            |value| value,
+            |left, right| {
             right
                 .normal
                 .x
@@ -1304,7 +1312,6 @@ pub(super) fn block_placement(
                 .then_with(|| right.normal.y.total_cmp(&left.normal.y))
                 .then_with(|| right.normal.z.total_cmp(&left.normal.z))
         },
-        |_| 0,
         "sort NX block plane extents",
     )?;
     let permutations = [
@@ -2171,13 +2178,13 @@ pub(super) fn simple_hole_operations(
     }
     ctx.stable_sort_by(
         &mut ordered_templates,
-        |first, second| {
+            |value| value,
+            |first, second| {
             operation_positions
                 .get(first.operation_label.as_str())
                 .cmp(&operation_positions.get(second.operation_label.as_str()))
                 .then_with(|| first.operation_label.cmp(&second.operation_label))
         },
-        |template| template.operation_label.len(),
         "sort NX simple hole templates",
     )?;
     let mut selected_group = None;
@@ -2293,13 +2300,13 @@ pub(super) fn selected_hole_operations(
     }
     ctx.stable_sort_by(
         &mut operations,
-        |first, second| {
+            |value| value,
+            |first, second| {
             operation_positions
                 .get(first.as_str())
                 .cmp(&operation_positions.get(second.as_str()))
                 .then_with(|| first.cmp(second))
         },
-        String::len,
         "sort NX hole operations",
     )?;
     Ok(Some(operations))
@@ -2977,10 +2984,10 @@ pub(super) fn hole_axis_placements_for_body(
         ctx.reserve_vec(&mut placements, 1, "NX hole axis placements")?;
         placements.push(HolePlacement::Axis { origin, axis });
     }
-    ctx.stable_sort_by(
+    ctx.stable_sort_by_key(
         &mut placements,
-        |first, second| hole_placement_key(first).cmp(&hole_placement_key(second)),
-        |_| 0,
+            |value| hole_placement_key(value),
+            Ord::cmp,
         "sort NX hole axis placements",
     )?;
     Ok(placements)
@@ -3426,8 +3433,8 @@ pub(super) fn plane_annulus_witness(
         }
         ctx.stable_sort_by(
             &mut boundaries,
-            |(first, _), (second, _)| first.total_cmp(second),
-            |_| 0,
+            |value| &value.0,
+            f64::total_cmp,
             "sort NX annulus boundaries",
         )?;
         let [(inner, inner_boundary), (outer, outer_boundary)] = boundaries.as_slice() else {
@@ -3845,8 +3852,8 @@ pub(super) fn simple_hole_chamfers(
     }
     ctx.stable_sort_by(
         &mut operations,
-        Ord::cmp,
-        String::len,
+            |value| value,
+            Ord::cmp,
         "sort NX chamfer selected operations",
     )?;
     let Some(operations_by_body) = hole_operations_by_body(ctx, ir, &operations, outputs)? else {
@@ -4029,14 +4036,14 @@ pub(super) fn simple_hole_chamfers(
         }
         ctx.stable_sort_by(
             &mut outer_radii,
+            |value| value,
             f64::total_cmp,
-            |_| 0,
             "sort NX chamfer outer radii",
         )?;
         ctx.stable_sort_by(
             &mut included_angles,
+            |value| value,
             f64::total_cmp,
-            |_| 0,
             "sort NX chamfer included angles",
         )?;
         let (Some(&widest), Some(&narrowest), Some(&largest), Some(&smallest)) = (

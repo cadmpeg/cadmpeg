@@ -479,8 +479,8 @@ pub(crate) fn decode_sketch_placements(
     }
     ctx.stable_sort_by(
         &mut out[..],
-        |a, b| a.id.cmp(&b.id),
-        |value| value.id.as_str().len(),
+            |value| &value.id,
+            Ord::cmp,
         "sort f3d design sketch 1",
     )?;
     Ok(out)
@@ -902,24 +902,15 @@ fn finish_persistent_references(
     ctx: &DecodeContext<'_>,
     mut out: Vec<(usize, PersistentReference)>,
 ) -> Result<Vec<PersistentReference>, CodecError> {
-    ctx.stable_sort_by(
+    ctx.stable_sort_by_key(
         &mut out[..],
-        |left, right| {
-            let left_key = {
-                let (entry_ordinal, reference) = left;
+            |value| {
+                let (entry_ordinal, reference) = value;
                 {
                     (*entry_ordinal, reference.byte_offset)
                 }
-            };
-            let right_key = {
-                let (entry_ordinal, reference) = right;
-                {
-                    (*entry_ordinal, reference.byte_offset)
-                }
-            };
-            left_key.cmp(&right_key)
-        },
-        |_| 0,
+            },
+            Ord::cmp,
         "sort f3d design sketch 2",
     )?;
 
@@ -1565,8 +1556,8 @@ pub(crate) fn decode_entity_headers(
     }
     ctx.stable_sort_by(
         &mut out[..],
-        |a, b| a.id.cmp(&b.id),
-        |value| value.id.as_str().len(),
+            |value| &value.id,
+            Ord::cmp,
         "sort f3d design sketch 3",
     )?;
     Ok(out)
@@ -1679,8 +1670,8 @@ fn decode_headers_for_indices(
     }
     ctx.stable_sort_by(
         &mut out[..],
-        |a, b| a.id.cmp(&b.id),
-        |value| value.id.as_str().len(),
+            |value| &value.id,
+            Ord::cmp,
         "sort f3d design sketch 4",
     )?;
     Ok(out)
@@ -3767,8 +3758,8 @@ pub(crate) fn decode_sketch_surfaces(
     }
     ctx.stable_sort_by(
         &mut out[..],
-        |a, b| a.id.cmp(&b.id),
-        |value| value.id.as_str().len(),
+            |value| &value.id,
+            Ord::cmp,
         "sort f3d design sketch 5",
     )?;
     Ok(out)

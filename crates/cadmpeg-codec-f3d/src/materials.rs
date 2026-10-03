@@ -708,8 +708,8 @@ pub(crate) fn decode_with_body_bindings<'a>(
     }
     ctx.stable_sort_by(
         &mut out,
-        |a, b| a.id.as_str().cmp(b.id.as_str()),
-        |item| item.id.as_str().len(),
+            |value| value.id.as_str(),
+            Ord::cmp,
         "sort F3D appearance assets",
     )?;
     if let Some(pair) = out
@@ -905,12 +905,12 @@ fn appearances_from_schema_records(
         }
         ctx.stable_sort_by(
             &mut connected,
+            |value| value,
             |left, right| {
                 left.slot
                     .cmp(&right.slot)
                     .then_with(|| left.asset_guid.cmp(&right.asset_guid))
             },
-            |texture| texture.slot.len() + texture.asset_guid.len(),
             "sort F3D connected textures",
         )?;
         let base_color = appearance_base_color(record);
@@ -1082,6 +1082,12 @@ struct BodyAppearanceOverride {
     visual_guid: DesignVisualToken,
 }
 
+impl cadmpeg_core::decode::cost::DecodeCost for BodyAppearanceOverride {
+    fn decode_cost(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
+        cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(&self.body,self.entity_suffix,&self.visual_guid), ctx, operation)
+    }
+}
+
 /// Decode per-body appearance overrides from browser body records in every
 /// Design `BulkStream` and join them through the exact BREP body-map pair
 /// ([spec §3.1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#31-design-metadata)).
@@ -1153,13 +1159,13 @@ fn decode_body_appearance_overrides(
     }
     ctx.stable_sort_by(
         &mut out,
-        |left, right| {
+            |value| value,
+            |left, right| {
             left.body
                 .cmp(&right.body)
                 .then_with(|| left.entity_suffix.cmp(&right.entity_suffix))
                 .then_with(|| left.visual_guid.cmp(&right.visual_guid))
         },
-        |item| item.body.as_str().len() + item.visual_guid.len(),
         "sort F3D body appearance overrides",
     )?;
     out.dedup_by(|left, right| {

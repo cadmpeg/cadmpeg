@@ -722,8 +722,8 @@ pub(crate) fn parse_topology(
         }
         if let Err(error) = ctx.sort_unstable_by(
             &mut vertex_refs,
+            |value| value,
             Ord::cmp,
-            |_| 0,
             "catia_e5_vertex_refs_sort",
         ) {
             return Some(Err(error));

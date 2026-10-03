@@ -2422,7 +2422,8 @@ fn build_profiles(
     }
     ctx.sort_unstable_by(
         &mut profiles,
-        |left, right| {
+            |value| value,
+            |left, right| {
             let key = |profile: &Vec<SketchEntityUse>| {
                 let first = profile
                     .iter()
@@ -2434,12 +2435,6 @@ fn build_profiles(
                 (first.is_none(), first)
             };
             key(left).cmp(&key(right))
-        },
-        |profile| {
-            profile
-                .iter()
-                .map(|entity| entity.entity.as_str().len())
-                .sum::<usize>()
         },
         "Inventor line profiles sort",
     )?;

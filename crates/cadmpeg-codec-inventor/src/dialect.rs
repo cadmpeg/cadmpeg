@@ -187,10 +187,10 @@ impl DialectRecovery {
                 schemas.push(schema);
             }
         }
-        ctx.sort_unstable_by(
+        ctx.sort_unstable_by_key(
             &mut schemas,
-            |left, right| left.value().cmp(&right.value()),
-            |_| 0,
+            |value| value.value(),
+            Ord::cmp,
             "Inventor dialect schema sort",
         )?;
         schemas.dedup();
@@ -201,10 +201,10 @@ impl DialectRecovery {
                 unframed_schemas.push(*schema);
             }
         }
-        ctx.sort_unstable_by(
+        ctx.sort_unstable_by_key(
             &mut unframed_schemas,
-            |left, right| left.value().cmp(&right.value()),
-            |_| 0,
+            |value| value.value(),
+            Ord::cmp,
             "Inventor unframed dialect schema sort",
         )?;
         unframed_schemas.dedup();
@@ -217,8 +217,8 @@ impl DialectRecovery {
         }
         ctx.stable_sort_by(
             &mut meta_streams,
+            |value| value,
             Ord::cmp,
-            |item| item.marker.len(),
             "Inventor dialect metadata sort",
         )?;
         meta_streams.dedup();
@@ -239,8 +239,8 @@ impl DialectRecovery {
         }
         ctx.stable_sort_by(
             &mut unframed_meta_streams,
+            |value| value,
             Ord::cmp,
-            |item| item.marker.len(),
             "Inventor unframed dialect metadata sort",
         )?;
         unframed_meta_streams.dedup();

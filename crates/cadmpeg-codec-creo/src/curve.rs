@@ -1002,8 +1002,8 @@ pub(crate) fn prototype_topology_rows(
     }
     ctx.stable_sort_by(
         rows.as_mut_slice(),
-        |left, right| left.offset.cmp(&right.offset),
-        |_| 0,
+            |value| &value.offset,
+            Ord::cmp,
         "creo prototype topology rows rows ordering",
     )?;
     Ok(rows)
@@ -1041,8 +1041,8 @@ pub(crate) fn expression_records_with_model_name(
     }
     ctx.sort_unstable_by(
         &mut labels,
-        |left, right| left.0.cmp(&right.0),
-        |_| 0,
+            |value| &value.0,
+            Ord::cmp,
         "creo expression record labels sort",
     )?;
 
@@ -7801,8 +7801,8 @@ pub(crate) fn topology_rows_with_face_ids(
     }
     ctx.stable_sort_by(
         rows.as_mut_slice(),
-        |left, right| left.offset.cmp(&right.offset),
-        |_| 0,
+            |value| &value.offset,
+            Ord::cmp,
         "creo topology rows with face ids rows ordering",
     )?;
     rows.dedup_by_key(|row| row.offset);
@@ -7864,8 +7864,8 @@ pub(crate) fn depdb_cross_section_rows(
     }
     ctx.sort_unstable_by(
         &mut boundaries,
-        Ord::cmp,
-        |_| 0,
+            |value| value,
+            Ord::cmp,
         "creo cross-section row boundaries sort",
     )?;
     boundaries.dedup();
@@ -8096,8 +8096,8 @@ fn framed_rows_with_face_ids(
     }
     ctx.stable_sort_by(
         result.as_mut_slice(),
-        |left, right| left.start.cmp(&right.start),
-        |_| 0,
+            |value| &value.start,
+            Ord::cmp,
         "creo framed rows with face ids result ordering",
     )?;
     result.dedup_by_key(|row| row.start);
@@ -8127,8 +8127,8 @@ fn framed_segment_with_face_ids(
     }
     ctx.sort_unstable_by(
         &mut prefixes,
-        |left, right| left.1.cmp(&right.1),
-        |_| 0,
+            |value| &value.1,
+            Ord::cmp,
         "creo framed curve prefixes sort",
     )?;
     let closes = segment
@@ -8455,8 +8455,8 @@ pub(crate) fn pcurve_endpoints(
     }
     ctx.stable_sort_by(
         result.as_mut_slice(),
-        |left, right| left.offset.cmp(&right.offset),
-        |_| 0,
+            |value| &value.offset,
+            Ord::cmp,
         "creo pcurve endpoints result ordering",
     )?;
     Ok(result)
@@ -8609,8 +8609,8 @@ pub(crate) fn two_chart_pcurve_samples(
     }
     ctx.stable_sort_by(
         result.as_mut_slice(),
-        |left, right| left.offset.cmp(&right.offset),
-        |_| 0,
+            |value| &value.offset,
+            Ord::cmp,
         "creo two chart pcurve samples result ordering",
     )?;
     let mut counts = BTreeMap::new();
@@ -8701,8 +8701,8 @@ pub(crate) fn fc02_short_pcurve_endpoints(
     }
     ctx.stable_sort_by(
         result.as_mut_slice(),
-        |left, right| left.offset.cmp(&right.offset),
-        |_| 0,
+            |value| &value.offset,
+            Ord::cmp,
         "creo fc02 short pcurve endpoints result ordering",
     )?;
     Ok(result)
@@ -8783,8 +8783,8 @@ pub(crate) fn fc_coordinates(
     }
     ctx.stable_sort_by(
         result.as_mut_slice(),
-        |left, right| left.offset.cmp(&right.offset),
-        |_| 0,
+            |value| &value.offset,
+            Ord::cmp,
         "creo fc coordinates result ordering",
     )?;
     Ok(result)
@@ -8974,8 +8974,8 @@ pub(crate) fn fc05_circles(
     }
     ctx.stable_sort_by(
         circles.as_mut_slice(),
-        |left, right| left.offset.cmp(&right.offset),
-        |_| 0,
+            |value| &value.offset,
+            Ord::cmp,
         "creo fc05 circles circles ordering",
     )?;
     Ok(circles)
@@ -9060,8 +9060,8 @@ pub(crate) fn fc05_cylinder_cap_pairs(
     for (surface_id, mut group) in groups {
         ctx.stable_sort_by(
             group.as_mut_slice(),
-            |(left, _, _), (right, _, _)| left.offset.cmp(&right.offset),
-            |_| std::mem::size_of::<usize>(),
+            |value| &value.0.offset,
+            Ord::cmp,
             "creo fc05 cylinder cap pairs group ordering",
         )?;
         let first = group[0].0;
@@ -9124,8 +9124,8 @@ pub(crate) fn fc05_cylinder_cap_pairs(
     }
     ctx.stable_sort_by(
         result.as_mut_slice(),
-        |left, right| left.offset.cmp(&right.offset),
-        |_| 0,
+            |value| &value.offset,
+            Ord::cmp,
         "creo fc05 cylinder cap pairs result ordering",
     )?;
     Ok(result)
@@ -9196,8 +9196,8 @@ pub(crate) fn prototype_pcurve_endpoints(
     }
     ctx.stable_sort_by(
         result.as_mut_slice(),
-        |left, right| left.offset.cmp(&right.offset),
-        |_| 0,
+            |value| &value.offset,
+            Ord::cmp,
         "creo prototype pcurve endpoints result ordering",
     )?;
     Ok(result)
@@ -9248,8 +9248,8 @@ pub(crate) fn prototype_topology(
     }
     ctx.stable_sort_by(
         result.as_mut_slice(),
-        |left, right| left.offset.cmp(&right.offset),
-        |_| 0,
+            |value| &value.offset,
+            Ord::cmp,
         "creo prototype topology result ordering",
     )?;
     Ok(result)
@@ -9310,8 +9310,8 @@ pub(crate) fn bind_prototype_pcurves(
     }
     ctx.stable_sort_by(
         result.as_mut_slice(),
-        |left, right| left.offset.cmp(&right.offset),
-        |_| 0,
+            |value| &value.offset,
+            Ord::cmp,
         "creo bind prototype pcurves result ordering",
     )?;
     Ok(result)

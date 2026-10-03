@@ -392,50 +392,50 @@ fn populate_gap_events(
 
     ctx.sort_unstable_by(
         &mut census.events.tagged_reference_lanes,
-        |left, right| left.offset.cmp(&right.offset),
-        |_| 0,
+            |value| &value.offset,
+            Ord::cmp,
         "NX deltas tagged reference lanes",
     )?;
     ctx.sort_unstable_by(
         &mut census.events.reference_type_maps,
-        |left, right| left.offset.cmp(&right.offset),
-        |_| 0,
+            |value| &value.offset,
+            Ord::cmp,
         "NX deltas reference type maps",
     )?;
     ctx.sort_unstable_by(
         &mut census.events.reference_state_packets,
-        |left, right| left.offset.cmp(&right.offset),
-        |_| 0,
+            |value| &value.offset,
+            Ord::cmp,
         "NX deltas reference state packets",
     )?;
     ctx.sort_unstable_by(
         &mut census.events.schema_reference_preambles,
-        |left, right| left.offset.cmp(&right.offset),
-        |_| 0,
+            |value| &value.offset,
+            Ord::cmp,
         "NX deltas schema reference preambles",
     )?;
     ctx.sort_unstable_by(
         &mut census.events.inline_schema_declarations,
-        |left, right| left.offset.cmp(&right.offset),
-        |_| 0,
+            |value| &value.offset,
+            Ord::cmp,
         "NX deltas inline schema declarations",
     )?;
     ctx.sort_unstable_by(
         &mut census.events.inline_body_states,
-        |left, right| left.offset.cmp(&right.offset),
-        |_| 0,
+            |value| &value.offset,
+            Ord::cmp,
         "NX deltas inline body states",
     )?;
     ctx.sort_unstable_by(
         &mut census.events.reference_marker_packets,
-        |left, right| left.offset.cmp(&right.offset),
-        |_| 0,
+            |value| &value.offset,
+            Ord::cmp,
         "NX deltas reference marker packets",
     )?;
     ctx.sort_unstable_by(
         &mut census.events.type_150_state_packets,
-        |left, right| left.offset.cmp(&right.offset),
-        |_| 0,
+            |value| &value.offset,
+            Ord::cmp,
         "NX deltas type 150 state packets",
     )?;
     Ok(admitted_bytes)

@@ -904,6 +904,12 @@ pub(super) struct ParameterFormula {
     pub(super) source_offset: u64,
 }
 
+impl cadmpeg_core::decode::cost::DecodeCost for ParameterFormula {
+    fn decode_cost(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
+        cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(self.source_offset,&self.id),ctx,operation)
+    }
+}
+
 #[derive(Serialize)]
 struct ExpressionRef<'a> {
     id: &'a str,
@@ -5216,8 +5222,8 @@ pub(super) fn data_block_control_handle_pairs(
     for (data_block, mut block_references) in by_block {
         ctx.stable_sort_by(
             &mut block_references,
-            |(left, _), (right, _)| left.source_offset.cmp(&right.source_offset),
-            |_| 0,
+            |value| &value.0.source_offset,
+            Ord::cmp,
             "sort NX control handle pair references",
         )?;
         let mut at = 0;
@@ -5879,8 +5885,8 @@ pub(super) fn object_record_handle_pairs(
     for (record, mut record_references) in by_record {
         ctx.stable_sort_by(
             &mut record_references,
-            |(left, _), (right, _)| left.source_offset.cmp(&right.source_offset),
-            |_| 0,
+            |value| &value.0.source_offset,
+            Ord::cmp,
             "sort NX record handle references",
         )?;
         let mut at = 0;

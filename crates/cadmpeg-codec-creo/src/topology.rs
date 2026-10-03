@@ -758,8 +758,8 @@ pub(crate) fn build(
     }
     ctx.stable_sort_by(
         edges.as_mut_slice(),
-        |left, right| left.id.cmp(&right.id),
-        |_| 0,
+            |value| &value.id,
+            Ord::cmp,
         "creo build edges ordering",
     )?;
     let by_id = |id: HalfEdgeId| {

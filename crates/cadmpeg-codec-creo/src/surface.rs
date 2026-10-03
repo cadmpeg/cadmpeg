@@ -2611,8 +2611,8 @@ fn outline_planes(
     }
     ctx.stable_sort_by(
         result.as_mut_slice(),
-        |left, right| left.offset.cmp(&right.offset),
-        |_| 0,
+            |value| &value.offset,
+            Ord::cmp,
         "creo outline planes result ordering",
     )?;
     Ok(result)
@@ -2799,8 +2799,8 @@ pub(crate) fn positional_frame_planes(
     }
     ctx.stable_sort_by(
         result.as_mut_slice(),
-        |left, right| left.offset.cmp(&right.offset),
-        |_| 0,
+            |value| &value.offset,
+            Ord::cmp,
         "creo positional frame planes result ordering",
     )?;
     Ok(result)
@@ -2885,8 +2885,8 @@ pub(crate) fn placed_outline_planes(
     }
     ctx.stable_sort_by(
         frame_bound.as_mut_slice(),
-        |left, right| left.offset.cmp(&right.offset),
-        |_| 0,
+            |value| &value.offset,
+            Ord::cmp,
         "creo placed outline planes frame bound ordering",
     )?;
     let mut frame_bound_ids = BTreeSet::new();
@@ -2919,8 +2919,8 @@ pub(crate) fn placed_outline_planes(
     }
     ctx.stable_sort_by(
         result.as_mut_slice(),
-        |left, right| left.offset.cmp(&right.offset),
-        |_| 0,
+            |value| &value.offset,
+            Ord::cmp,
         "creo placed outline planes result ordering",
     )?;
     Ok(result)
@@ -3018,8 +3018,8 @@ pub(crate) fn counted_row_bounds(
     }
     ctx.stable_sort_by(
         result.as_mut_slice(),
-        |(left, _), (right, _)| left.offset.cmp(&right.offset),
-        |_| 0,
+            |value| &value.0.offset,
+            Ord::cmp,
         "creo counted row bounds result ordering",
     )?;
     Ok(result)
@@ -3160,8 +3160,8 @@ fn rows_with_boundaries(
     }
     ctx.stable_sort_by(
         result.as_mut_slice(),
-        |left, right| left.offset.cmp(&right.offset),
-        |_| 0,
+            |value| &value.offset,
+            Ord::cmp,
         "creo rows with boundaries result ordering",
     )?;
     result.dedup_by_key(|row| row.offset);
@@ -3672,8 +3672,8 @@ fn named_prototype_frames<'a>(
         }
         ctx.sort_unstable_by(
             &mut named,
+            |value| value,
             Ord::cmp,
-            |_| 0,
             "creo named prototype field position sort",
         )?;
         named.dedup();
@@ -3743,8 +3743,8 @@ fn named_prototype_frames<'a>(
     }
     ctx.stable_sort_by(
         frames.as_mut_slice(),
-        |left, right| left.offset.cmp(&right.offset),
-        |_| 0,
+            |value| &value.offset,
+            Ord::cmp,
         "creo named prototype frames frames ordering",
     )?;
     Ok(frames)
@@ -4410,8 +4410,8 @@ fn inline_surface_suffix_body(
         }
         ctx.sort_unstable_by(
             &mut terminal_closes[..close_count],
+            |value| value,
             Ord::cmp,
-            |_| 0,
             "creo terminal close sort",
         )?;
         let mut previous_close = None;
@@ -5475,8 +5475,8 @@ fn contour_records_for_rows(
     }
     ctx.stable_sort_by(
         records.as_mut_slice(),
-        |left, right| left.offset.cmp(&right.offset),
-        |_| 0,
+            |value| &value.offset,
+            Ord::cmp,
         "creo contour records for rows records ordering",
     )?;
     Ok(records)
@@ -6070,8 +6070,8 @@ pub(crate) fn tabulated_cylinder_curve_replays(
     }
     ctx.stable_sort_by(
         replays.as_mut_slice(),
-        |left, right| left.offset.cmp(&right.offset),
-        |_| 0,
+            |value| &value.offset,
+            Ord::cmp,
         "creo tabulated cylinder curve replays replays ordering",
     )?;
     Ok(replays)
@@ -7599,8 +7599,8 @@ fn plane_envelopes_for_rows(
     }
     ctx.stable_sort_by(
         envelopes.as_mut_slice(),
-        |left, right| left.offset.cmp(&right.offset),
-        |_| 0,
+            |value| &value.offset,
+            Ord::cmp,
         "creo plane envelopes for rows envelopes ordering",
     )?;
     Ok(envelopes)

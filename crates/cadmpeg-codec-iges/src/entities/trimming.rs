@@ -249,10 +249,10 @@ fn cluster_boundary_positions(
             members,
         });
     }
-    ctx.stable_sort_by(
+    ctx.stable_sort_by_key(
         &mut clusters,
-        |left, right| left.members[0].cmp(&right.members[0]),
-        |_| 0,
+            |value| value.members[0],
+            Ord::cmp,
         "iges boundary clusters sort",
     )?;
     Ok(clusters)
@@ -1441,8 +1441,8 @@ fn homogeneous_pcurve_spans(
     );
     ctx.stable_sort_by(
         &mut internal,
-        f64::total_cmp,
-        |_| 0,
+            |value| value,
+            f64::total_cmp,
         "iges pcurve internal knots sort",
     )?;
     internal.dedup();

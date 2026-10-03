@@ -241,12 +241,10 @@ pub(crate) fn consolidated_owner_packets(
                     )
                 }),
         ), "catia_native_owner_packet_rows")?;
-    ctx.stable_sort_by(
+    ctx.stable_sort_by_key(
         &mut packets,
-        |(left_pos, left_source, _, _), (right_pos, right_source, _, _)| {
-            (left_pos, left_source).cmp(&(right_pos, right_source))
-        },
-        |_| 0,
+            |value| (value.0, value.1),
+            Ord::cmp,
         "catia_native_owner_packet_sort",
     )?;
     let mut output = Vec::new();

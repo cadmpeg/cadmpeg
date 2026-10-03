@@ -3464,8 +3464,8 @@ pub(super) fn scalar_bezier_roots_with_budget(
         .charges
         .stable_sort_by(
             &mut parameters,
+            |value| value,
             f64::total_cmp,
-            |_| 0,
             "nx Bezier root parameters sort",
         )
         .is_err()
@@ -3630,6 +3630,7 @@ fn closest_parameter_candidates(
         .charges
         .stable_sort_by(
             &mut nearest,
+            |value| value,
             |first, second| {
                 seed.map_or_else(
                     || first.total_cmp(second),
@@ -3641,7 +3642,6 @@ fn closest_parameter_candidates(
                     },
                 )
             },
-            |_| 0,
             "nx closest parameter minima sort",
         )
         .is_err()
@@ -3696,7 +3696,8 @@ fn lift_periodic_parameters(
     }
     ctx.stable_sort_by(
         &mut parameters,
-        |first, second| {
+            |value| value,
+            |first, second| {
             if period.is_finite() {
                 (first - seed)
                     .abs()
@@ -3709,7 +3710,6 @@ fn lift_periodic_parameters(
                     .then_with(|| first.total_cmp(second))
             }
         },
-        |_| 0,
         "nx lifted periodic parameters sort",
     )?;
     parameters.dedup_by(|first, second| first.to_bits() == second.to_bits());
@@ -4810,8 +4810,8 @@ pub(super) fn real_polynomial_roots(
     );
     ctx.stable_sort_by(
         &mut roots,
-        f64::total_cmp,
-        |_| 0,
+            |value| value,
+            f64::total_cmp,
         "nx polynomial real roots sort",
     )?;
     roots.dedup_by(|first, second| {
@@ -4875,8 +4875,8 @@ fn polynomial_roots_in_unit_interval(
     };
     ctx.stable_sort_by(
         &mut critical,
-        f64::total_cmp,
-        |_| 0,
+            |value| value,
+            f64::total_cmp,
         "nx polynomial critical points sort",
     )?;
     critical.dedup_by(|first, second| {
@@ -4937,8 +4937,8 @@ fn polynomial_roots_in_unit_interval(
     }
     ctx.stable_sort_by(
         &mut roots,
-        f64::total_cmp,
-        |_| 0,
+            |value| value,
+            f64::total_cmp,
         "nx polynomial unit interval roots sort",
     )?;
     roots.dedup_by(|first, second| {

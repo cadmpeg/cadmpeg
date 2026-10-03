@@ -1041,8 +1041,8 @@ fn form_cage_serializers(
     }
     ctx.sort_unstable_by(
         &mut offsets,
-        Ord::cmp,
-        |_| 0,
+            |value| value,
+            Ord::cmp,
         "f3d form serializer offset sort",
     )?;
     let mut ordered = Vec::new();

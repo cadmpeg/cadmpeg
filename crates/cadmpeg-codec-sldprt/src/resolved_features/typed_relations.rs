@@ -1918,8 +1918,8 @@ fn sort_axis_relation_point_loci(
     const OPERATION: &str = "sort SLDPRT axis relation point loci";
     ctx.sort_unstable_by(
         loci.as_mut_slice(),
-        |left, right| locus_key(left).cmp(&locus_key(right)),
-        |locus| locus_key(locus).0.len(),
+            |value| value,
+            |left, right| locus_key(left).cmp(&locus_key(right)),
         OPERATION,
     )?;
     loci.dedup();
@@ -2144,10 +2144,10 @@ pub(super) fn relation_owner_markers<'a>(
             break;
         }
     }
-    ctx.sort_unstable_by(
+    ctx.sort_unstable_by_key(
         &mut owners,
-        |left, right| left.offset().cmp(&right.offset()),
-        |_| 0,
+            |value| value.offset(),
+            Ord::cmp,
         OPERATION,
     )?;
     Ok(owners)

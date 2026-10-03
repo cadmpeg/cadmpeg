@@ -448,8 +448,8 @@ pub(super) fn attach(
     attach_active_configuration_feature_states(ctx, ir, annotations)?;
     ctx.stable_sort_by(
         &mut ir.model.features,
-        |first, second| first.id.cmp(&second.id),
-        |feature| feature.id.as_str().len(),
+            |value| &value.id,
+            Ord::cmp,
         "sort NX features",
     )?;
     let namespace = ir.native.namespace_mut("nx");
@@ -1381,8 +1381,8 @@ fn resolve_rm_face_color_bindings(
     }
     ctx.stable_sort_by(
         &mut bindings,
-        |left, right| left.face_id.cmp(&right.face_id),
-        |binding| binding.face_id.len(),
+            |value| &value.face_id,
+            Ord::cmp,
         "sort NX RM face color bindings",
     )?;
     Ok(bindings)
@@ -1890,8 +1890,8 @@ fn attach_initial_segment_bodies(
     sorted_bodies.extend(&ir.model.bodies);
     ctx.stable_sort_by(
         &mut sorted_bodies,
-        |first, second| first.id.cmp(&second.id),
-        |body| body.id.as_str().len(),
+            |value| &value.id,
+            Ord::cmp,
         "sort NX retained-history bodies",
     )?;
 
@@ -3044,11 +3044,8 @@ fn attach_feature_operations(
     for triples in operation_body_scalar_triples_by_operation.values_mut() {
         ctx.stable_sort_by(
             triples,
-            |left, right| {
-                left.body_reference_ordinal
-                    .cmp(&right.body_reference_ordinal)
-            },
-            |_| 0,
+            |value| &value.body_reference_ordinal,
+            Ord::cmp,
             "sort NX operation body scalar triples",
         )?;
     }
@@ -6311,16 +6308,8 @@ fn attach_sketch_graph(
         )? {
             return Ok(None);
         }
-        ctx.stable_sort_by(
-            &mut entities,
-            |(first_offset, first), (second_offset, second)| {
-                first_offset
-                    .cmp(second_offset)
-                    .then_with(|| first.id().cmp(second.id()))
-            },
-            |(_, entity)| entity.id().as_str().len(),
-            "NX sketch entity order",
-        )?;
+        ctx.stable_sort_by(&mut entities, |value| value.1.id(), Ord::cmp, "NX sketch entity order")?;
+        ctx.stable_sort_by(&mut entities, |value| &value.0, Ord::cmp, "NX sketch entity order")?;
         for (source_offset, entity) in &entities {
             let tag = match entity.geometry.definition() {
                 SketchGeometryDefinition::Native { native_kind }
@@ -6489,16 +6478,8 @@ fn attach_sketch_graph(
     )? {
         return Ok(None);
     }
-    ctx.stable_sort_by(
-        &mut entities,
-        |(first_offset, first), (second_offset, second)| {
-            first_offset
-                .cmp(second_offset)
-                .then_with(|| first.id().cmp(second.id()))
-        },
-        |(_, entity)| entity.id().as_str().len(),
-        "NX sketch entity order",
-    )?;
+    ctx.stable_sort_by(&mut entities, |value| value.1.id(), Ord::cmp, "NX sketch entity order")?;
+        ctx.stable_sort_by(&mut entities, |value| &value.0, Ord::cmp, "NX sketch entity order")?;
     if entities.is_empty() {
         return Ok(None);
     }
@@ -7100,8 +7081,8 @@ fn attach_parasolid_topology_string_attributes(
     for uses in uses_by_entity.values_mut() {
         ctx.stable_sort_by(
             uses,
-            |left, right| left.position.cmp(&right.position),
-            |_| 0,
+            |value| &value.position,
+            Ord::cmp,
             "NX Parasolid string attribute ordering",
         )?;
     }
@@ -7159,8 +7140,8 @@ fn attach_parasolid_topology_string_attributes(
     }
     ctx.stable_sort_by(
         &mut ir.model.attributes,
-        |first, second| first.id.as_str().cmp(second.id.as_str()),
-        |attribute| attribute.id.as_str().len(),
+            |value| value.id.as_str(),
+            Ord::cmp,
         "sort NX Parasolid string attributes",
     )?;
     Ok(())
@@ -7974,8 +7955,8 @@ fn attach_parasolid_topology_numeric_attributes(
     for uses in uses_by_entity.values_mut() {
         ctx.stable_sort_by(
             uses,
-            |left, right| left.position.cmp(&right.position),
-            |_| 0,
+            |value| &value.position,
+            Ord::cmp,
             "NX Parasolid numeric attribute ordering",
         )?;
     }
@@ -8057,8 +8038,8 @@ fn attach_parasolid_topology_numeric_attributes(
     }
     ctx.stable_sort_by(
         &mut ir.model.attributes,
-        |first, second| first.id.as_str().cmp(second.id.as_str()),
-        |attribute| attribute.id.as_str().len(),
+            |value| value.id.as_str(),
+            Ord::cmp,
         "sort NX Parasolid numeric attributes",
     )?;
     Ok(())
@@ -8117,8 +8098,8 @@ fn attach_parasolid_topology_structured_attributes(
     for uses in uses_by_entity.values_mut() {
         ctx.stable_sort_by(
             uses,
-            |left, right| left.position.cmp(&right.position),
-            |_| 0,
+            |value| &value.position,
+            Ord::cmp,
             "NX Parasolid structured attribute ordering",
         )?;
     }
@@ -8238,8 +8219,8 @@ fn attach_parasolid_topology_structured_attributes(
     }
     ctx.stable_sort_by(
         &mut ir.model.attributes,
-        |first, second| first.id.as_str().cmp(second.id.as_str()),
-        |attribute| attribute.id.as_str().len(),
+            |value| value.id.as_str(),
+            Ord::cmp,
         "sort NX Parasolid structured attributes",
     )?;
     Ok(())

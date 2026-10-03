@@ -2297,8 +2297,8 @@ pub(in crate::families) fn targeted_geometry_graph_from_frames(
     }
     ctx.stable_sort_by(
         &mut records,
-        |left, right| left.offset.cmp(&right.offset),
-        |_| 0,
+            |value| &value.offset,
+            Ord::cmp,
         "catia_b5_targeted_geometry_sort",
     )?;
     parse_from_records(ctx, bytes, &records, frames, false, refusal)
@@ -3034,8 +3034,8 @@ fn bind_native_vertices(
     let mut ranked = ctx.collect_vec(logical_coordinates, "catia_b5_ranked_logical_vertices")?;
     ctx.sort_unstable_by(
         &mut ranked,
-        |(left, _), (right, _)| left.cmp(right),
-        |_| 0,
+            |value| &value.0,
+            Ord::cmp,
         "catia_b5_ranked_logical_vertices_sort",
     )?;
     let mut logical_vertex_indices = HashMap::new();
@@ -3359,14 +3359,14 @@ fn bind_edge_vertices(
                 let mut current_sorted = indices;
                 ctx.sort_unstable_by(
                     &mut previous_sorted,
-                    Ord::cmp,
-                    |_| 0,
+            |value| value,
+            Ord::cmp,
                     "catia b5 edge vertex pair sort",
                 )?;
                 ctx.sort_unstable_by(
                     &mut current_sorted,
-                    Ord::cmp,
-                    |_| 0,
+            |value| value,
+            Ord::cmp,
                     "catia b5 edge vertex pair sort",
                 )?;
                 if previous_sorted != current_sorted {
@@ -5885,8 +5885,8 @@ fn admit_dependency_records(
         }
         ctx.sort_unstable_by(
             &mut found,
-            |left, right| left.offset.cmp(&right.offset),
-            |_| 0,
+            |value| &value.offset,
+            Ord::cmp,
             "catia_b5_dependency_found_sort",
         )?;
         pending.clear();
@@ -5973,14 +5973,10 @@ fn framed_records_and_dependency_candidates(
         )?;
         ctx.push_vec(&mut records, (frame.end, record), "catia_b5_framed_records")?;
     }
-    ctx.sort_unstable_by(
+    ctx.sort_unstable_by_key(
         &mut records,
-        |(left_end, left), (right_end, right)| {
-            left_end
-                .cmp(right_end)
-                .then_with(|| right.offset.cmp(&left.offset))
-        },
-        |_| 0,
+            |value| (value.0, std::cmp::Reverse(value.1.offset)),
+            Ord::cmp,
         "catia_b5_framed_records_sort",
     )?;
     let mut ordered = Vec::new();
@@ -6055,14 +6051,10 @@ fn indexed_topology_records_and_dependency_candidates(
             "catia_b5_indexed_topology_records",
         )?;
     }
-    ctx.sort_unstable_by(
+    ctx.sort_unstable_by_key(
         &mut records,
-        |(left_end, left), (right_end, right)| {
-            left_end
-                .cmp(right_end)
-                .then_with(|| right.offset.cmp(&left.offset))
-        },
-        |_| 0,
+            |value| (value.0, std::cmp::Reverse(value.1.offset)),
+            Ord::cmp,
         "catia_b5_indexed_topology_records_sort",
     )?;
     let mut ordered = Vec::new();
@@ -6666,13 +6658,13 @@ pub(in crate::families) fn select_object_stream_population(
         let mut isolated = isolated_values;
         ctx.sort_unstable_by(
             &mut isolated,
+            |value| value,
             |left, right| {
                 let left_run = &runs[*left];
                 let right_run = &runs[*right];
                 (left_run.stream_index, left_run.range.start)
                     .cmp(&(right_run.stream_index, right_run.range.start))
             },
-            |_| 0,
             "catia_b5_selected_isolated_sort",
         )?;
         for index in isolated {
@@ -6769,8 +6761,8 @@ fn owned_object_stream_population(
     let mut isolated = isolated_values;
     ctx.stable_sort_by(
         &mut isolated,
-        |(left, _, _, _), (right, _, _, _)| left.cmp(right),
-        |_| 0,
+            |value| &value.0,
+            Ord::cmp,
         "catia_b5_population_isolated_sort",
     )?;
 

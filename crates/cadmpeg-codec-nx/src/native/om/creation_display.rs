@@ -105,10 +105,10 @@ fn finalize_relations(
     ctx: &DecodeContext<'_>,
     mut relations: Vec<RmCreationDisplayDataRelation>,
 ) -> Result<Vec<RmCreationDisplayDataRelation>, CodecError> {
-    ctx.stable_sort_by(
+    ctx.stable_sort_by_key(
         &mut relations,
-        |left, right| left.encoding.offset().cmp(&right.encoding.offset()),
-        |_| 0,
+            |value| value.encoding.offset(),
+            Ord::cmp,
         "sort NX creation display relations",
     )?;
     for (ordinal, relation) in relations.iter_mut().enumerate() {

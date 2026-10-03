@@ -376,8 +376,8 @@ pub(crate) fn project_sketch_constraints(
     }
     ctx.stable_sort_by(
         &mut constraints[..],
-        |a, b| a.id.cmp(&b.id),
-        |value| value.id.as_str().len(),
+            |value| &value.id,
+            Ord::cmp,
         "sort f3d design constraints 1",
     )?;
     Ok(constraints)

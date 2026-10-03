@@ -113,8 +113,8 @@ fn agreed_dimension_records<'a>(
     for mut group in groups.into_values() {
         ctx.sort_unstable_by(
             &mut group,
-            |left, right| left.id.cmp(&right.id),
-            |record| record.id.len(),
+            |value| &value.id,
+            Ord::cmp,
             "sort SLDPRT PMI dimension group",
         )?;
         let Some(&canonical) = group.first() else {
@@ -135,8 +135,8 @@ fn agreed_dimension_records<'a>(
     }
     ctx.sort_unstable_by(
         &mut representatives,
-        |left, right| left.id.cmp(&right.id),
-        |record| record.id.len(),
+            |value| &value.id,
+            Ord::cmp,
         "sort SLDPRT PMI agreed dimensions",
     )?;
     Ok(representatives)
@@ -696,8 +696,8 @@ pub(crate) fn dimensions(
     }
     ctx.stable_sort_by(
         &mut records,
-        |left, right| left.id.cmp(&right.id),
-        |record| record.id.as_str().len(),
+            |value| &value.id,
+            Ord::cmp,
         "sort SLDPRT PMI records",
     )?;
     Ok(records)
@@ -732,8 +732,8 @@ pub(crate) fn parse_payload(
     )?;
     ctx.stable_sort_by(
         &mut records,
-        |left, right| left.id.cmp(&right.id),
-        |record| record.id.as_str().len(),
+            |value| &value.id,
+            Ord::cmp,
         "sort SLDPRT PMI records",
     )?;
     Ok(records)

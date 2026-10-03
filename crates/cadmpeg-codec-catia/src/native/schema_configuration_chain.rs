@@ -201,10 +201,8 @@ pub(super) fn derive_schema_configuration_row_chains(
     let mut groups = ctx.collect_vec(groups, "catia_configuration_sorted_groups")?;
     ctx.stable_sort_by(
         &mut groups,
-        |((left_graph, left_root), _), ((right_graph, right_root), _)| {
-            left_graph.cmp(right_graph).then(left_root.cmp(right_root))
-        },
-        |((graph, _), _)| graph.len(),
+            |value| &value.0,
+            Ord::cmp,
         "catia_configuration_sorted_groups_sort",
     )?;
 

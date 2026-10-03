@@ -604,8 +604,8 @@ pub(in super::super) fn geometry_generator_features(
     }
     ctx.stable_sort_by(
         output.as_mut_slice(),
-        |left, right| left.offset.cmp(&right.offset),
-        |_| 0,
+            |value| &value.offset,
+            Ord::cmp,
         "creo geometry generator features output ordering",
     )?;
     Ok(output)

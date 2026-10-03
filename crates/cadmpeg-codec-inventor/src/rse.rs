@@ -29,6 +29,13 @@ fn rse_issue_detail(ctx: &DecodeContext<'_>, error: CodecError) -> Result<String
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) struct StorageBand(u32);
 
+impl cadmpeg_core::decode::cost::DecodeCost for StorageBand {
+    const FIXED_BYTES: Option<u64> = Some(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<Self>()));
+    fn decode_cost(&self, _ctx: &cadmpeg_core::decode::DecodeContext<'_>, _operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
+        Ok(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<Self>()))
+    }
+}
+
 impl StorageBand {
     fn parse(component: &str) -> Option<Self> {
         let (prefix, digits) = component.split_at_checked(1)?;
@@ -125,6 +132,12 @@ pub(crate) struct SegmentPair {
 pub(crate) struct MetaStreamDeclaration {
     pub(crate) marker: String,
     pub(crate) version: u16,
+}
+
+impl cadmpeg_core::decode::cost::DecodeCost for MetaStreamDeclaration {
+    fn decode_cost(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
+        cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(&self.marker, self.version), ctx, operation)
+    }
 }
 
 impl MetaStreamDeclaration {
@@ -489,8 +502,8 @@ impl<'a> RseInventory<'a> {
         }
         ctx.stable_sort_by(
             &mut databases,
-            |(left, _), (right, _)| left.cmp(right),
-            |_| 0,
+            |value| &value.0,
+            Ord::cmp,
             "RSe database descriptor sort",
         )?;
         ctx.charge_collection_items(

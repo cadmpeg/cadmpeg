@@ -5078,8 +5078,8 @@ fn standard_limit_curve_point_parameter(
     }
     ctx.stable_sort_by(
         &mut parameters,
-        |left, right| left.1.total_cmp(&right.1),
-        |_| 0,
+            |value| &value.1,
+            f64::total_cmp,
         "catia_limit_curve_point_parameters_sort",
     )?;
     let Some(&(parameter, _)) = parameters.first() else {
@@ -5488,8 +5488,8 @@ fn attach_standard_topology(
                 let mut faces = support.faces;
                 ctx.sort_unstable_by(
                     &mut faces,
-                    Ord::cmp,
-                    |_| 0,
+            |value| value,
+            Ord::cmp,
                     "catia_standard_curve_support_faces_sort",
                 )
                 .map_err(StandardTopologyError::Resource)?;
@@ -5723,8 +5723,8 @@ fn attach_standard_topology(
                 let mut points = binding.points;
                 ctx.sort_unstable_by(
                     &mut points,
-                    Ord::cmp,
-                    |_| 0,
+            |value| value,
+            Ord::cmp,
                     "catia_limit_endpoint_pair_sort",
                 )
                 .map_err(StandardTopologyError::Resource)?;
@@ -5732,8 +5732,8 @@ fn attach_standard_topology(
             }
             ctx.sort_unstable_by(
                 &mut limit_pairs,
-                Ord::cmp,
-                |_| 0,
+            |value| value,
+            Ord::cmp,
                 "catia_limit_endpoint_pairs_sort",
             )
             .map_err(StandardTopologyError::Resource)?;
@@ -6257,7 +6257,9 @@ fn attach_standard_topology(
             if let Some(limit) = refusal {
                 return Err(StandardTopologyError::Resource(CodecError::from(limit)));
             }
-            ctx.sort_unstable_by(pairs, Ord::cmp, |_| 0, "catia_standard_endpoint_pairs_sort")
+            ctx.sort_unstable_by(pairs,
+            |value| value,
+            Ord::cmp, "catia_standard_endpoint_pairs_sort")
                 .map_err(StandardTopologyError::Resource)?;
             pairs.dedup();
         }
@@ -7916,8 +7918,8 @@ fn resolve_standard_endpoint_pairs(
         let mut faces = support.faces;
         ctx.sort_unstable_by(
             &mut faces,
+            |value| value,
             Ord::cmp,
-            |_| 0,
             "catia standard line support faces sort",
         )?;
         let line_like = match support.geometry {
@@ -8028,8 +8030,8 @@ fn resolve_standard_endpoint_pairs(
         }
         ctx.sort_unstable_by(
             &mut pairs,
+            |value| value,
             Ord::cmp,
-            |_| 0,
             "catia standard line endpoint pairs sort",
         )?;
         pairs.dedup();
@@ -8091,8 +8093,8 @@ fn standard_curve_edge_classes(
         let mut support_faces = support.faces;
         ctx.sort_unstable_by(
             &mut support_faces,
+            |value| value,
             Ord::cmp,
-            |_| 0,
             "catia_standard_edge_class_faces",
         )?;
         let mut found = None;
@@ -8100,8 +8102,8 @@ fn standard_curve_edge_classes(
             let mut candidate_faces = candidate.faces;
             ctx.sort_unstable_by(
                 &mut candidate_faces,
-                Ord::cmp,
-                |_| 0,
+            |value| value,
+            Ord::cmp,
                 "catia_standard_edge_class_faces",
             )?;
             if candidate_faces == support_faces
@@ -9158,8 +9160,8 @@ fn standard_shared_boundary_group_domains(
         let mut faces = support.faces;
         ctx.sort_unstable_by(
             &mut faces,
+            |value| value,
             Ord::cmp,
-            |_| 0,
             "catia_shared_boundary_faces_sort",
         )?;
         if let Some(edges) = groups.get_mut(&faces) {
@@ -9188,8 +9190,8 @@ fn standard_shared_boundary_group_domains(
         {
             ctx.sort_unstable_by(
                 &mut pair,
-                Ord::cmp,
-                |_| 0,
+            |value| value,
+            Ord::cmp,
                 "catia_shared_boundary_filtered_pair_sort",
             )?;
             ctx.insert_hash_set(

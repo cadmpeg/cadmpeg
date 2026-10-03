@@ -4450,10 +4450,10 @@ fn linear_uncertainty(
             }
         }
     }
-    ctx.stable_sort_by(
+    ctx.stable_sort_by_key(
         &mut candidates,
-        |left, right| left.get().total_cmp(&right.get()),
-        |_| 0,
+            |value| value.get(),
+            f64::total_cmp,
         "step_uncertainty_candidate_sort",
     )?;
 

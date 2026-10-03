@@ -95,8 +95,8 @@ pub(crate) fn extract_streams_with_offsets(
     if !out.is_empty() {
         ctx.stable_sort_by(
             &mut out,
-            |left, right| left.offset.cmp(&right.offset),
-            |_| 0,
+            |value| &value.offset,
+            Ord::cmp,
             "sort wrapped Parasolid streams",
         )?;
         return Ok(out);
@@ -438,6 +438,12 @@ pub(crate) struct StreamHeader {
     pub(crate) body_offset: usize,
 }
 
+impl cadmpeg_core::decode::cost::DecodeCost for StreamHeader {
+    fn decode_cost(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
+        cadmpeg_core::decode::cost::DecodeCost::decode_cost(&self.description,ctx,operation)
+    }
+}
+
 /// Parse a Parasolid header from a buffer containing a leading-window signature.
 ///
 /// Returns `None` when the signature, description, or schema token is missing or
@@ -630,8 +636,8 @@ pub(crate) fn mesh_polyline_from_header(
     }
     ctx.stable_sort_by(
         &mut candidates,
-        |left, right| right.0.cmp(&left.0),
-        |_| 0,
+            |value| &value.0,
+            |left, right| right.cmp(left),
         "sort Parasolid mesh candidates",
     )?;
     let Some((largest_count, _)) = candidates.first() else {

@@ -1142,12 +1142,12 @@ fn ordered_two_edge_circle_loops<'a>(
     }
     ctx.stable_sort_by(
         order.as_mut_slice(),
-        |first, second| {
+            |value| value,
+            |first, second| {
             circle_loops[*second]
                 .radius
                 .total_cmp(&circle_loops[*first].radius)
         },
-        |_| std::mem::size_of::<f64>(),
         "creo ordered two edge circle loops order ordering",
     )?;
     let mut ordered = Vec::new();

@@ -80,8 +80,8 @@ fn partial_compact_assignment_viable(
             }
             ctx.sort_unstable_by(
                 &mut edges,
-                Ord::cmp,
-                |_| 0,
+            |value| value,
+            Ord::cmp,
                 "catia coordinate relevant edges sort",
             )?;
             edges.dedup();
@@ -824,10 +824,10 @@ pub(super) fn close_coordinate_roots_with_incidence<'storage>(
                     )?;
                 }
             }
-            ctx.sort_unstable_by(
+            ctx.sort_unstable_by_key(
                 &mut scanned_roots,
-                |left, right| (domains[*left].len(), *left).cmp(&(domains[*right].len(), *right)),
-                |_| 0,
+            |value| (domains[*value].len(),*value),
+            Ord::cmp,
                 "catia_coordinate_closure_scanned_roots_sort",
             )?;
             let partial_scan = scanned_roots.len() < domains.len();
@@ -996,8 +996,8 @@ pub(super) fn close_coordinate_roots_with_incidence<'storage>(
             }
             ctx.sort_unstable_by(
                 &mut point_supports,
-                |left, right| left.0.cmp(&right.0),
-                |_| 0,
+            |value| &value.0,
+            Ord::cmp,
                 "catia_coordinate_closure_point_supports_sort",
             )?;
             let mut uniquely_required = Vec::new();
@@ -1438,8 +1438,8 @@ pub(super) fn close_coordinate_roots_with_incidence<'storage>(
         }
         ctx.sort_unstable_by(
             &mut domain,
+            |value| value,
             Ord::cmp,
-            |_| 0,
             "catia_coordinate_closure_domain_points_sort",
         )?;
         ctx.push_vec(&mut domains, domain, "catia_coordinate_closure_domains")?;
@@ -1500,10 +1500,10 @@ pub(super) fn close_coordinate_roots_with_incidence<'storage>(
         )?;
     }
     let mut components = ordered_components;
-    ctx.stable_sort_by(
+    ctx.stable_sort_by_key(
         &mut components,
-        |left, right| left[0].cmp(&right[0]),
-        |_| 0,
+            |value| value[0],
+            Ord::cmp,
         "catia_coordinate_closure_components_sort",
     )?;
     let incidence = if let Some((edge_faces, boundary_domains)) = incidence {

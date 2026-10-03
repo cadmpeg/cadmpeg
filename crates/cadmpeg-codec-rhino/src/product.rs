@@ -252,8 +252,8 @@ pub(crate) fn install(
         }
         ctx.stable_sort_by(
             &mut links,
+            |value| value,
             Ord::cmp,
-            std::string::String::len,
             "Rhino definition links sort",
         )?;
         links.dedup();
@@ -314,8 +314,8 @@ pub(crate) fn install(
     for parents in member_definitions.values_mut() {
         ctx.stable_sort_by(
             parents,
+            |value| value,
             Ord::cmp,
-            std::string::String::len,
             "Rhino product member parents sort",
         )?;
         parents.dedup();
@@ -404,8 +404,8 @@ pub(crate) fn install(
         }
         ctx.stable_sort_by(
             &mut links,
+            |value| value,
             Ord::cmp,
-            std::string::String::len,
             "Rhino occurrence links sort",
         )?;
         ctx.reserve_vec(&mut occurrences, 1, "Rhino product occurrences")?;

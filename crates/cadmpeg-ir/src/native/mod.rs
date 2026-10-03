@@ -572,15 +572,10 @@ where
         )))
     })?;
     order.extend(0..converted.len());
-    ctx.sort_unstable_by(
+    ctx.sort_unstable_by_key(
         &mut order,
-        |left, right| {
-            converted[*left]
-                .id()
-                .cmp(converted[*right].id())
-                .then_with(|| left.cmp(right))
-        },
-        |index| converted[*index].id().len(),
+            |value| (converted[*value].id(), *value),
+            Ord::cmp,
         operation,
     )
     .map_err(|error| E::from(NativeConvertError::Resource(error)))?;

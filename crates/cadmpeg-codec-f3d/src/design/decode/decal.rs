@@ -96,8 +96,8 @@ pub(crate) fn project_decal_images(
         }
         ctx.stable_sort_by(
             &mut faces[..],
-            |a, b| a.as_str().cmp(b.as_str()),
-            |_| 0,
+            |value| value.as_str(),
+            Ord::cmp,
             "sort f3d design decal 1",
         )?;
         faces.dedup();
@@ -135,8 +135,8 @@ pub(crate) fn project_decal_images(
     }
     ctx.stable_sort_by(
         &mut assets[..],
-        |a, b| a.id.cmp(&b.id),
-        |value| value.id.as_str().len(),
+            |value| &value.id,
+            Ord::cmp,
         "sort f3d design decal 2",
     )?;
     assets.dedup_by(|a, b| a.id == b.id);

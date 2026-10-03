@@ -162,8 +162,8 @@ pub(crate) fn scan(
     carriers.append(&mut nonvisible_carriers);
     ctx.stable_sort_by(
         carriers.as_mut_slice(),
-        |left, right| left.offset.cmp(&right.offset),
-        |_| 0,
+            |value| &value.offset,
+            Ord::cmp,
         "creo scan carriers ordering",
     )?;
     let (topology_rows, pcurves) = curve_namespace(
@@ -215,15 +215,15 @@ fn curve_namespace(
     }
     ctx.stable_sort_by(
         topology_rows.as_mut_slice(),
-        |left, right| left.offset.cmp(&right.offset),
-        |_| 0,
+            |value| &value.offset,
+            Ord::cmp,
         "creo curve namespace topology rows ordering",
     )?;
     topology_rows.dedup_by_key(|row| row.offset);
     ctx.stable_sort_by(
         pcurves.as_mut_slice(),
-        |left, right| left.offset.cmp(&right.offset),
-        |_| 0,
+            |value| &value.offset,
+            Ord::cmp,
         "creo curve namespace pcurves ordering",
     )?;
     pcurves.dedup_by_key(|pcurve| pcurve.offset);
@@ -459,14 +459,14 @@ fn namespace(
     }
     ctx.stable_sort_by(
         rows.as_mut_slice(),
-        |left, right| left.offset.cmp(&right.offset),
-        |_| 0,
+            |value| &value.offset,
+            Ord::cmp,
         "creo namespace rows ordering",
     )?;
     ctx.stable_sort_by(
         carriers.as_mut_slice(),
-        |left, right| left.offset.cmp(&right.offset),
-        |_| 0,
+            |value| &value.offset,
+            Ord::cmp,
         "creo namespace carriers ordering",
     )?;
     Ok((rows, carriers))

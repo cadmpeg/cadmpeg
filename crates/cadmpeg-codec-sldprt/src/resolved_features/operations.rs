@@ -581,8 +581,8 @@ pub(crate) fn enrich_history_split_lines(
         }
         ctx.sort_unstable_by(
             &mut objects,
-            |(left, _), (right, _)| left.cmp(right),
-            |_| 0,
+            |value| &value.0,
+            Ord::cmp,
             "sort SLDPRT split-line objects",
         )?;
         for (index, (start, feature)) in objects.iter().enumerate() {

@@ -60,8 +60,8 @@ pub(crate) fn feature_hash(
     )?;
     ctx.stable_sort_by(
         &mut features,
-        |left, right| left.id.cmp(right.id),
-        |feature| feature.id.as_str().len(),
+            |value| &value.id,
+            Ord::cmp,
         "sort SLDPRT canonical hash views",
     )?;
     hash_records(ctx, &features)
@@ -102,8 +102,8 @@ pub(crate) fn configuration_hash(
     let mut configurations = collect_hash_views(ctx, configurations.iter())?;
     ctx.stable_sort_by(
         &mut configurations,
-        |left, right| left.id.cmp(&right.id),
-        |configuration| configuration.id.as_str().len(),
+            |value| &value.id,
+            Ord::cmp,
         "sort SLDPRT canonical hash views",
     )?;
     hash_records(ctx, &configurations)
@@ -160,8 +160,8 @@ pub(crate) fn native_configuration_hash(
     )?;
     ctx.stable_sort_by(
         &mut configurations,
-        |left, right| left.id.cmp(&right.id),
-        |configuration| configuration.id.as_str().len(),
+            |value| &value.id,
+            Ord::cmp,
         "sort SLDPRT canonical hash views",
     )?;
     hash_records(ctx, &configurations)
@@ -175,8 +175,8 @@ pub(crate) fn parameter_hash(
     let mut parameters = collect_hash_views(ctx, parameters.iter())?;
     ctx.stable_sort_by(
         &mut parameters,
-        |left, right| left.id.cmp(&right.id),
-        |parameter| parameter.id.as_str().len(),
+            |value| &value.id,
+            Ord::cmp,
         "sort SLDPRT canonical hash views",
     )?;
     hash_records(ctx, &parameters)
@@ -220,8 +220,8 @@ pub(crate) fn native_parameter_hash(
     }
     ctx.stable_sort_by(
         &mut parameters,
-        |left, right| left.0.cmp(right.0),
-        |parameter| parameter.0.as_str().len(),
+            |value| &value.0,
+            Ord::cmp,
         "sort SLDPRT canonical hash views",
     )?;
     hash_records(ctx, &parameters)
@@ -234,8 +234,8 @@ fn hash_keyed_records<'id, V: Serialize>(
     let mut records = collect_hash_views(ctx, records)?;
     ctx.stable_sort_by(
         &mut records,
-        |left, right| left.0.cmp(right.0),
-        |record| record.0.as_str().len(),
+            |value| &value.0,
+            Ord::cmp,
         "sort SLDPRT canonical hash views",
     )?;
     hash_records(ctx, &records)

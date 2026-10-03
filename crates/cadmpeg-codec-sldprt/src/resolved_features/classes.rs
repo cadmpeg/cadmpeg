@@ -158,8 +158,8 @@ pub(crate) fn bind_history_classes(
     for classes in direct_classes_by_name.values_mut() {
         ctx.sort_unstable_by(
             classes,
+            |value| value,
             Ord::cmp,
-            |class| class.len(),
             "sort SLDPRT history class names",
         )?;
         classes.dedup();
@@ -206,8 +206,8 @@ pub(crate) fn bind_history_classes(
         })?;
         ctx.stable_sort_by(
             &mut declared,
+            |value| value,
             Ord::cmp,
-            |class| class.len(),
             "sort SLDPRT declared classes",
         )?;
         declared.dedup();
@@ -275,8 +275,8 @@ pub(crate) fn bind_history_classes(
     for classes in cosmetic_thread_classes.values_mut() {
         ctx.stable_sort_by(
             classes,
+            |value| value,
             Ord::cmp,
-            std::string::String::len,
             "sort SLDPRT bound classes",
         )?;
         classes.dedup();
@@ -326,12 +326,8 @@ pub(crate) fn bind_history_classes(
     }
     ctx.sort_unstable_by(
         &mut native_startups,
-        Ord::cmp,
-        |startup| {
-            startup
-                .iter()
-                .fold(0usize, |bytes, class| bytes + class.len())
-        },
+            |value| value,
+            Ord::cmp,
         "sort SLDPRT native startup classes",
     )?;
     native_startups.dedup();
@@ -370,8 +366,8 @@ pub(crate) fn bind_history_classes(
     for classes in classes_by_type.values_mut() {
         ctx.stable_sort_by(
             classes,
+            |value| value,
             Ord::cmp,
-            std::string::String::len,
             "sort SLDPRT bound classes",
         )?;
         classes.dedup();
@@ -445,8 +441,8 @@ pub(crate) fn bind_history_classes(
     for classes in classes_by_token.values_mut() {
         ctx.stable_sort_by(
             classes,
+            |value| value,
             Ord::cmp,
-            std::string::String::len,
             "sort SLDPRT bound classes",
         )?;
         classes.dedup();
@@ -496,8 +492,8 @@ pub(crate) fn bind_history_classes(
         }
         ctx.stable_sort_by(
             &mut candidates,
+            |value| value,
             Ord::cmp,
-            std::string::String::len,
             "sort SLDPRT class candidates",
         )?;
         candidates.dedup();
@@ -579,8 +575,8 @@ fn legacy_repeated_hole_wizard_classes(
         )?;
         ctx.sort_unstable_by(
             &mut declared,
+            |value| value,
             Ord::cmp,
-            |class| class.len(),
             "sort SLDPRT hole wizard classes",
         )?;
         declared.dedup();

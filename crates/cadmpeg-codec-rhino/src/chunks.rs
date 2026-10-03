@@ -891,8 +891,8 @@ pub(crate) fn direct_checksum_ranges<'a>(
         values.extend_from_slice(children);
         ctx.stable_sort_by(
             &mut values,
-            |left, right| left.start.cmp(&right.start),
-            |_| 0,
+            |value| &value.start,
+            Ord::cmp,
             "Rhino checksum child ordering sort",
         )?;
         ChecksumChildren::Temporary {

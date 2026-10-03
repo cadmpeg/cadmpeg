@@ -6370,8 +6370,8 @@ fn saved_positional_generated_entities(
     }
     ctx.sort_unstable_by(
         &mut starts,
-        Ord::cmp,
-        |_| 0,
+            |value| value,
+            Ord::cmp,
         "creo saved generated row starts sort",
     )?;
     starts.dedup();
@@ -6941,10 +6941,10 @@ fn saved_section(
     let spline = saved_spline_entities(ctx, payload, start, end, cache)?;
     ctx.reserve_vec(&mut entities, spline.len(), "creo saved section entities")?;
     entities.extend(spline);
-    ctx.stable_sort_by(
+    ctx.stable_sort_by_key(
         entities.as_mut_slice(),
-        |left, right| saved_entity_offset(left).cmp(&saved_entity_offset(right)),
-        |_| 0,
+            saved_entity_offset,
+            Ord::cmp,
         "creo saved section entities ordering",
     )?;
     Ok(Some(FeatureSavedSection {
@@ -6978,10 +6978,10 @@ fn positional_saved_section(
         "creo positional saved section entities",
     )?;
     entities.extend(conic);
-    ctx.stable_sort_by(
+    ctx.stable_sort_by_key(
         entities.as_mut_slice(),
-        |left, right| saved_entity_offset(left).cmp(&saved_entity_offset(right)),
-        |_| 0,
+            saved_entity_offset,
+            Ord::cmp,
         "creo positional saved section entities ordering",
     )?;
     let Some(offset) = entities.first().map(saved_entity_offset) else {
@@ -7029,8 +7029,8 @@ pub(crate) fn definition_revolution_extents(
     }
     ctx.stable_sort_by(
         result.as_mut_slice(),
-        |left, right| left.offset.cmp(&right.offset),
-        |_| 0,
+            |value| &value.offset,
+            Ord::cmp,
         "creo definition revolution extents result ordering",
     )?;
     Ok(result)
@@ -7104,8 +7104,8 @@ fn definitions_in_ranges(
         }
         ctx.stable_sort_by(
             parameter_frames.as_mut_slice(),
-            |left, right| left.offset.cmp(&right.offset),
-            |_| 0,
+            |value| &value.offset,
+            Ord::cmp,
             "creo definitions in ranges parameter frames ordering",
         )?;
         let mut outlines = Vec::new();
@@ -7153,8 +7153,8 @@ fn definitions_in_ranges(
         }
         ctx.stable_sort_by(
             outlines.as_mut_slice(),
-            |left, right| left.offset.cmp(&right.offset),
-            |_| 0,
+            |value| &value.offset,
+            Ord::cmp,
             "creo definitions in ranges outlines ordering",
         )?;
         let variables = match variable_table(ctx, payload, start, end, &cache)? {
@@ -7449,8 +7449,8 @@ fn definition_starts(
     }
     ctx.sort_unstable_by(
         &mut starts,
-        |left, right| left.offset.cmp(&right.offset),
-        |_| 0,
+            |value| &value.offset,
+            Ord::cmp,
         "creo feature definition starts sort",
     )?;
     let labeled_count = starts.len();
@@ -7475,8 +7475,8 @@ fn definition_starts(
     }
     ctx.sort_unstable_by(
         &mut starts,
-        |left, right| left.offset.cmp(&right.offset),
-        |_| 0,
+            |value| &value.offset,
+            Ord::cmp,
         "creo feature definition starts sort",
     )?;
     starts.dedup_by_key(|entry| entry.offset);
@@ -7554,8 +7554,8 @@ pub(crate) fn definitions(
     }
     ctx.sort_unstable_by(
         &mut starts,
-        |left, right| left.offset.cmp(&right.offset),
-        |_| 0,
+            |value| &value.offset,
+            Ord::cmp,
         "creo feature definition starts sort",
     )?;
     starts.dedup_by_key(|entry| entry.offset);
@@ -7595,8 +7595,8 @@ pub(crate) fn depdb_definitions(
     }
     ctx.sort_unstable_by(
         &mut starts,
-        |left, right| left.offset.cmp(&right.offset),
-        |_| 0,
+            |value| &value.offset,
+            Ord::cmp,
         "creo feature definition starts sort",
     )?;
     starts.dedup_by_key(|entry| entry.offset);
@@ -7687,8 +7687,8 @@ pub(crate) fn positional_replay_definitions(
     }
     ctx.sort_unstable_by(
         &mut starts,
-        |left, right| left.offset.cmp(&right.offset),
-        |_| 0,
+            |value| &value.offset,
+            Ord::cmp,
         "creo feature definition starts sort",
     )?;
     starts.dedup_by_key(|entry| entry.offset);
@@ -7994,8 +7994,8 @@ pub(crate) fn bind_section_owners(
         ctx.collect_vec(operations.iter(), "creo section ordered operations")?;
     ctx.stable_sort_by(
         ordered_operations.as_mut_slice(),
-        |left, right| left.offset.cmp(&right.offset),
-        |_| std::mem::size_of::<usize>(),
+            |value| &value.offset,
+            Ord::cmp,
         "creo bind section owners ordered operations ordering",
     )?;
     for definition in &mut definitions {

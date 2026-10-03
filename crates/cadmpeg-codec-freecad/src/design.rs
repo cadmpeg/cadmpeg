@@ -709,8 +709,8 @@ fn feature_ordinals<'a>(
     }
     ctx.sort_unstable_by(
         &mut source_ordinals,
-        Ord::cmp,
-        |_| 0,
+            |value| value,
+            Ord::cmp,
         "fcstd design source ordinals sort",
     )?;
     let mut emitted = BTreeSet::new();
@@ -3161,7 +3161,9 @@ fn bind_parameter_dependencies(
         ordinals.push(parameter.ordinal);
     }
     for ordinals in owner_ordinals.values_mut() {
-        ctx.sort_unstable_by(ordinals, Ord::cmp, |_| 0, "fcstd owner ordinals sort")?;
+        ctx.sort_unstable_by(ordinals,
+            |value| value,
+            Ord::cmp, "fcstd owner ordinals sort")?;
     }
     let parameter_cycle_features = order_parameters_by_dependencies(ctx, parameters)?;
     for parameter in parameters.iter_mut() {
@@ -4241,6 +4243,13 @@ struct EndpointLocus {
     start: bool,
 }
 
+impl cadmpeg_core::decode::cost::DecodeCost for EndpointLocus {
+    const FIXED_BYTES: Option<u64> = Some(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<Self>()));
+    fn decode_cost(&self, _ctx: &cadmpeg_core::decode::DecodeContext<'_>, _operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
+        Ok(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<Self>()))
+    }
+}
+
 struct IndexedEndpoint {
     locus: EndpointLocus,
     point: Point2,
@@ -4283,8 +4292,8 @@ impl EndpointIndex {
         for bucket in by_scale.values_mut() {
             ctx.stable_sort_by(
                 bucket,
-                |left, right| left.point.u.total_cmp(&right.point.u),
-                |_| 0,
+            |value| &value.point.u,
+            f64::total_cmp,
                 "FCStd profile index sort",
             )?;
         }
@@ -4356,8 +4365,8 @@ fn endpoint_candidates(
     }
     ctx.sort_unstable_by(
         &mut matches,
-        Ord::cmp,
-        |_| 0,
+            |value| value,
+            Ord::cmp,
         "FCStd profile candidate order",
     )?;
     Ok(matches)
@@ -8945,8 +8954,8 @@ pub(crate) fn census(
     }
     ctx.stable_sort_by(
         &mut census,
-        |left, right| left.id.cmp(&right.id),
-        |item| item.id.len(),
+            |value| &value.id,
+            Ord::cmp,
         "FreeCAD design census sort",
     )?;
     Ok(census)

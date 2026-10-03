@@ -408,7 +408,9 @@ pub(super) fn dimensioned_circle_transform(
                 };
                 transformed.push((center.0, center.1, *radius));
             }
-            ctx.sort_unstable_by(&mut transformed, Ord::cmp, |_| 0, OPERATION)?;
+            ctx.sort_unstable_by(&mut transformed,
+            |value| value,
+            Ord::cmp, OPERATION)?;
             Ok(
                 (transformed.len() == circles.len() && !transformed.is_empty())
                     .then_some(transformed),
@@ -1275,8 +1277,8 @@ pub(super) fn sort_marker_entity_ids(
 ) -> Result<(), cadmpeg_core::CodecError> {
     ctx.sort_unstable_by(
         entities,
-        Ord::cmp,
-        |entity| entity.as_str().len(),
+            |value| value,
+            Ord::cmp,
         operation,
     )?;
     entities.dedup();

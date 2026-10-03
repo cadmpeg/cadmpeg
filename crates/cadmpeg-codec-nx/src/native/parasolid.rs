@@ -258,13 +258,10 @@ pub(super) fn parasolid_group_records(
             "NX GROUP records",
         )?;
     }
-    ctx.stable_sort_by(
+    ctx.stable_sort_by_key(
         &mut groups,
-        |first, second| {
-            (first.origin.stream_ordinal(), first.inflated_offset)
-                .cmp(&(second.origin.stream_ordinal(), second.inflated_offset))
-        },
-        |_| 0,
+            |value| (value.origin.stream_ordinal(),value.inflated_offset),
+            Ord::cmp,
         "sort NX GROUP records",
     )?;
     Ok(groups)
@@ -482,8 +479,8 @@ fn apply_group_state_events(
     }
     ctx.stable_sort_by(
         &mut events,
-        |(first, _), (second, _)| first.cmp(second),
-        |_| 0,
+            |value| &value.0,
+            Ord::cmp,
         "sort NX GROUP state events",
     )?;
     for (_, event) in events {
@@ -1289,8 +1286,8 @@ fn sort_deltas_events<T>(
 ) -> Result<(), CodecError> {
     ctx.stable_sort_by(
         events,
-        |left, right| id(left).cmp(id(right)),
-        |event| id(event).len(),
+            |value| id(value),
+            Ord::cmp,
         "sort NX deltas events",
     )?;
     Ok(())
@@ -1857,8 +1854,8 @@ fn per_parasolid_stream<P: ParasolidStreamRecords>(
     }
     ctx.stable_sort_by(
         &mut records,
-        |left, right| P::id(left).cmp(P::id(right)),
-        |record| P::id(record).len(),
+            |value| P::id(value),
+            Ord::cmp,
         "sort NX Parasolid records",
     )?;
     Ok(records)
@@ -1906,8 +1903,8 @@ fn per_parasolid_scan<P: ParasolidScanRecords>(
     }
     ctx.stable_sort_by(
         &mut records,
-        |left, right| P::id(left).cmp(P::id(right)),
-        |record| P::id(record).len(),
+            |value| P::id(value),
+            Ord::cmp,
         "sort NX Parasolid records",
     )?;
     Ok(records)
@@ -2392,8 +2389,8 @@ pub(super) fn parasolid_chart_records(
     }
     ctx.stable_sort_by(
         &mut records,
-        |left, right| left.id.cmp(&right.id),
-        |item| item.id.len(),
+            |value| &value.id,
+            Ord::cmp,
         "sort NX Parasolid records",
     )?;
     Ok(records)
@@ -3426,8 +3423,8 @@ pub(super) fn parasolid_field_names_records(
     }
     ctx.stable_sort_by(
         &mut records,
-        |first, second| first.id.cmp(&second.id),
-        |item| item.id.len(),
+            |value| &value.id,
+            Ord::cmp,
         "sort NX Parasolid records",
     )?;
     Ok(records)
@@ -3541,8 +3538,8 @@ pub(super) fn parasolid_attribute_field_names(
     }
     ctx.stable_sort_by(
         &mut relations,
-        |first, second| first.id.cmp(&second.id),
-        |item| item.id.len(),
+            |value| &value.id,
+            Ord::cmp,
         "sort NX attribute field name relations",
     )?;
     Ok(relations)
@@ -3734,8 +3731,8 @@ pub(super) fn parasolid_entity_51_records(
     }
     ctx.stable_sort_by(
         &mut records,
-        |first, second| first.id.cmp(&second.id),
-        |item| item.id.len(),
+            |value| &value.id,
+            Ord::cmp,
         "sort NX Parasolid records",
     )?;
     Ok(records)
@@ -3973,44 +3970,44 @@ pub(super) fn parasolid_entity_value_records(
     }
     ctx.stable_sort_by(
         &mut records.integers,
-        |first, second| first.id.cmp(&second.id),
-        |item| item.id.len(),
+            |value| &value.id,
+            Ord::cmp,
         "sort NX Parasolid value integers",
     )?;
     ctx.stable_sort_by(
         &mut records.doubles,
-        |first, second| first.id.cmp(&second.id),
-        |item| item.id.len(),
+            |value| &value.id,
+            Ord::cmp,
         "sort NX Parasolid value doubles",
     )?;
     ctx.stable_sort_by(
         &mut records.strings,
-        |first, second| first.id.cmp(&second.id),
-        |item| item.id.len(),
+            |value| &value.id,
+            Ord::cmp,
         "sort NX Parasolid value strings",
     )?;
     ctx.stable_sort_by(
         &mut records.vectors,
-        |first, second| first.id.cmp(&second.id),
-        |item| item.id.len(),
+            |value| &value.id,
+            Ord::cmp,
         "sort NX Parasolid value vectors",
     )?;
     ctx.stable_sort_by(
         &mut records.axes,
-        |first, second| first.id.cmp(&second.id),
-        |item| item.id.len(),
+            |value| &value.id,
+            Ord::cmp,
         "sort NX Parasolid value axes",
     )?;
     ctx.stable_sort_by(
         &mut records.tags,
-        |first, second| first.id.cmp(&second.id),
-        |item| item.id.len(),
+            |value| &value.id,
+            Ord::cmp,
         "sort NX Parasolid value tags",
     )?;
     ctx.stable_sort_by(
         &mut records.unicode,
-        |first, second| first.id.cmp(&second.id),
-        |item| item.id.len(),
+            |value| &value.id,
+            Ord::cmp,
         "sort NX Parasolid value unicode",
     )?;
     Ok(records)
@@ -4075,8 +4072,8 @@ fn sort_entity_51_uses<T>(
 ) -> Result<(), CodecError> {
     ctx.stable_sort_by(
         uses,
-        |left, right| id(left).cmp(id(right)),
-        |value_use| id(value_use).len(),
+            |value| id(value),
+            Ord::cmp,
         "sort NX entity 51 value uses",
     )?;
     Ok(())
@@ -4482,8 +4479,8 @@ pub(super) fn parasolid_topology_attribute_class_uses(
     }
     ctx.stable_sort_by(
         &mut uses,
-        |first, second| first.id.cmp(&second.id),
-        |item| item.id.len(),
+            |value| &value.id,
+            Ord::cmp,
         "sort NX Parasolid uses",
     )?;
     Ok(uses)
@@ -4548,8 +4545,8 @@ pub(super) fn parasolid_attribute_class_uses(
     }
     ctx.stable_sort_by(
         &mut uses,
-        |first, second| first.id.cmp(&second.id),
-        |item| item.id.len(),
+            |value| &value.id,
+            Ord::cmp,
         "sort NX Parasolid uses",
     )?;
     Ok(uses)
@@ -4780,8 +4777,8 @@ pub(super) fn parasolid_attribute_field_uses(
     }
     ctx.stable_sort_by(
         &mut uses,
-        |first, second| first.id.cmp(&second.id),
-        |item| item.id.len(),
+            |value| &value.id,
+            Ord::cmp,
         "sort NX Parasolid uses",
     )?;
     Ok(uses)

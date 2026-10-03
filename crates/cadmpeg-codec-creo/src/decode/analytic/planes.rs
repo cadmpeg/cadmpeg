@@ -1998,7 +1998,8 @@ pub(super) fn topology_bound_plane(
     }
     ctx.stable_sort_by(
         points.as_mut_slice(),
-        |left, right| {
+            |value| value,
+            |left, right| {
             left.iter()
                 .zip(right)
                 .find_map(|(left, right)| {
@@ -2007,7 +2008,6 @@ pub(super) fn topology_bound_plane(
                 })
                 .unwrap_or(std::cmp::Ordering::Equal)
         },
-        |_| 0,
         "creo topology bound plane points ordering",
     )?;
     // A point outside the finite range agrees with no point.

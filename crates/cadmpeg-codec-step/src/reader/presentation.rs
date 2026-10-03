@@ -295,8 +295,8 @@ pub(super) fn decode(
     }
     ctx.stable_sort_by(
         &mut styles,
-        |(_, left), (_, right)| left.cmp(right),
-        |_| 0,
+            |value| &value.1,
+            Ord::cmp,
         "step_presentation_style_ids_sort",
     )?;
     let mut scalar_color_candidates = HashMap::<AppearanceTarget, Vec<(u64, Color)>>::new();
@@ -1823,6 +1823,13 @@ enum StyleDomain {
     Surface,
     Curve,
     Point,
+}
+
+impl cadmpeg_core::decode::cost::DecodeCost for StyleDomain {
+    const FIXED_BYTES: Option<u64> = Some(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<Self>()));
+    fn decode_cost(&self, _ctx: &cadmpeg_core::decode::DecodeContext<'_>, _operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
+        Ok(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<Self>()))
+    }
 }
 
 fn style_domain(
