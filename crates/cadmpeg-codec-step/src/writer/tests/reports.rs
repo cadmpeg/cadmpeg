@@ -136,7 +136,8 @@ fn edgeless_doc() -> CadIr {
 fn writer_reports_unhandled_neutral_arenas_and_product_metadata() {
     let mut ir = unit_cube().expect("unit cube fixture is admitted");
     ir.model.assets.push(
-        cadmpeg_ir::assets::Asset::try_new(&cadmpeg_test_support::service_decode_context(), 
+        cadmpeg_ir::assets::Asset::try_new(
+            &cadmpeg_test_support::service_decode_context(),
             cadmpeg_ir::assets::AssetId::mint("test:model:asset#texture")
                 .expect("identity grammar"),
             Some("texture".into()),
@@ -365,7 +366,8 @@ fn ap242_writer_reports_unrepresented_tessellation_triangle_metadata() {
     let mut ir = unit_cube().expect("unit cube fixture is admitted");
     let texture = AssetId::mint("synthetic:test:asset#0").expect("identity grammar");
     ir.model.assets.push(
-        Asset::try_new(&cadmpeg_test_support::service_decode_context(), 
+        Asset::try_new(
+            &cadmpeg_test_support::service_decode_context(),
             texture.clone(),
             None,
             Some("image/png".into()),

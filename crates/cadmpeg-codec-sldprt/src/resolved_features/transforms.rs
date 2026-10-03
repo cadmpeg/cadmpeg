@@ -408,9 +408,7 @@ pub(super) fn dimensioned_circle_transform(
                 };
                 transformed.push((center.0, center.1, *radius));
             }
-            ctx.sort_unstable_by(&mut transformed,
-            |value| value,
-            Ord::cmp, OPERATION)?;
+            ctx.sort_unstable_by(&mut transformed, |value| value, Ord::cmp, OPERATION)?;
             Ok(
                 (transformed.len() == circles.len() && !transformed.is_empty())
                     .then_some(transformed),
@@ -1275,12 +1273,7 @@ pub(super) fn sort_marker_entity_ids(
     entities: &mut Vec<SketchEntityId>,
     operation: &'static str,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    ctx.sort_unstable_by(
-        entities,
-            |value| value,
-            Ord::cmp,
-        operation,
-    )?;
+    ctx.sort_unstable_by(entities, |value| value, Ord::cmp, operation)?;
     entities.dedup();
     Ok(())
 }

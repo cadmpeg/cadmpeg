@@ -55,11 +55,16 @@ pub enum KernelHeaderRef<'a> {
 }
 
 /// Classify a parsed binary or text ACIS/ASM kernel header, or unframed carrier.
-pub fn classify(ctx: &cadmpeg_core::decode::DecodeContext<'_>, header: KernelHeaderRef<'_>) -> Result<DialectMatch, cadmpeg_core::CodecError> {
+pub fn classify(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    header: KernelHeaderRef<'_>,
+) -> Result<DialectMatch, cadmpeg_core::CodecError> {
     let mut declared = BTreeMap::new();
     for (key, value) in declaration_fields(header) {
         if let Some(value) = value {
-            if let Some(key) = cadmpeg_core::text::NonBlankString::for_decode(ctx, key, "validate nonblank text")? {
+            if let Some(key) =
+                cadmpeg_core::text::NonBlankString::for_decode(ctx, key, "validate nonblank text")?
+            {
                 declared.insert(key, value.to_string());
             }
         }
@@ -93,7 +98,10 @@ fn declaration_fields(header: KernelHeaderRef<'_>) -> [(&'static str, Option<u32
     ]
 }
 
-fn match_header(ctx: &cadmpeg_core::decode::DecodeContext<'_>, header: KernelHeaderRef<'_>) -> Result<DialectMatch, cadmpeg_core::CodecError> {
+fn match_header(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    header: KernelHeaderRef<'_>,
+) -> Result<DialectMatch, cadmpeg_core::CodecError> {
     Ok(match header {
         KernelHeaderRef::Acis(header) => acis_match(ctx, header.metadata.save_format_major())?,
         KernelHeaderRef::Asm(header) => DialectMatch::admitted(asm_binary_row(header.width)),
@@ -124,11 +132,12 @@ pub fn classify_layer(
                 cadmpeg_core::decode::u64_from_index(key.len()) + 10,
                 operation,
             )?;
-            let key =
-                cadmpeg_core::text::NonBlankString::for_decode(ctx, ctx.copy_retained_text(key, operation)?, "validate nonblank text")?
-                    .ok_or_else(|| {
-                        cadmpeg_core::CodecError::malformed("empty kernel declaration key")
-                    })?;
+            let key = cadmpeg_core::text::NonBlankString::for_decode(
+                ctx,
+                ctx.copy_retained_text(key, operation)?,
+                "validate nonblank text",
+            )?
+            .ok_or_else(|| cadmpeg_core::CodecError::malformed("empty kernel declaration key"))?;
             let value = ctx.format_retained(format_args!("{value}"), operation)?;
             ctx.insert_btree_map(&mut declared, key, value, operation)?;
         }
@@ -137,7 +146,11 @@ pub fn classify_layer(
         cadmpeg_core::decode::u64_from_index(DECLARED_CARRIER.len()),
         operation,
     )?;
-    let key = cadmpeg_core::text::NonBlankString::for_decode(ctx, ctx.copy_retained_text(DECLARED_CARRIER, operation)?, "validate nonblank text")?
+    let key = cadmpeg_core::text::NonBlankString::for_decode(
+        ctx,
+        ctx.copy_retained_text(DECLARED_CARRIER, operation)?,
+        "validate nonblank text",
+    )?
     .ok_or_else(|| cadmpeg_core::CodecError::malformed("empty kernel carrier key"))?;
     ctx.charge_work(
         cadmpeg_core::decode::u64_from_index(carrier.len()),
@@ -187,12 +200,18 @@ pub fn nearest_verified_acis(save_format_major: Option<u32>) -> DialectId {
 
 /// The Spatial ACIS binary row one save format satisfies, admitted under the
 /// verified decoder band or read unverified with the nearest verified grammar.
-pub fn acis_match(ctx: &cadmpeg_core::decode::DecodeContext<'_>, save_format_major: Option<u32>) -> Result<DialectMatch, cadmpeg_core::CodecError> {
+pub fn acis_match(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    save_format_major: Option<u32>,
+) -> Result<DialectMatch, cadmpeg_core::CodecError> {
     let row = acis_binary_row(save_format_major);
     Ok(if acis_band_verified(save_format_major) {
         DialectMatch::admitted(row)
     } else {
-        DialectMatch::unverified(row, Grammar::of(ctx, &nearest_verified_acis(save_format_major))?)
+        DialectMatch::unverified(
+            row,
+            Grammar::of(ctx, &nearest_verified_acis(save_format_major))?,
+        )
     })
 }
 
@@ -202,7 +221,11 @@ pub fn acis_match(ctx: &cadmpeg_core::decode::DecodeContext<'_>, save_format_maj
 /// [`Admission::Residual`]. The message
 /// names both save-format components when the stream declares them and names
 /// the substituted registry row when classification selected one.
-pub fn unverified_message(ctx: &cadmpeg_core::decode::DecodeContext<'_>, subject: &str, matched: &DialectMatch) -> Result<Option<String>, cadmpeg_core::CodecError> {
+pub fn unverified_message(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    subject: &str,
+    matched: &DialectMatch,
+) -> Result<Option<String>, cadmpeg_core::CodecError> {
     if matched.format() != FORMAT {
         return Ok(None);
     }
@@ -313,13 +336,21 @@ mod tests {
             acis_match(&cadmpeg_test_support::service_decode_context(), Some(217)).unwrap(),
             DialectMatch::admitted(ACIS_SAVE_FORMAT_217)
         );
-        let unverified = acis_match(&cadmpeg_test_support::service_decode_context(), Some(700)).unwrap();
+        let unverified =
+            acis_match(&cadmpeg_test_support::service_decode_context(), Some(700)).unwrap();
         assert_eq!(unverified.dialect(), &ACIS_SAVE_FORMAT_BINARY_OTHER);
-        assert_eq!(unverified.using(&cadmpeg_test_support::service_decode_context()).unwrap(), Some(ACIS_SAVE_FORMAT_218));
         assert_eq!(
-            classify(&cadmpeg_test_support::service_decode_context(), KernelHeaderRef::TextAcis(
-                &header(RefWidth::Four, Some(70_000)).metadata
-            )).unwrap()
+            unverified
+                .using(&cadmpeg_test_support::service_decode_context())
+                .unwrap(),
+            Some(ACIS_SAVE_FORMAT_218)
+        );
+        assert_eq!(
+            classify(
+                &cadmpeg_test_support::service_decode_context(),
+                KernelHeaderRef::TextAcis(&header(RefWidth::Four, Some(70_000)).metadata)
+            )
+            .unwrap()
             .admission(),
             &Admission::Residual
         );
@@ -327,7 +358,11 @@ mod tests {
 
     #[test]
     fn unverified_message_projects_the_complete_kernel_declaration() {
-        let binary = classify(&cadmpeg_test_support::service_decode_context(), KernelHeaderRef::Acis(&header(RefWidth::Four, Some(70_001)))).unwrap();
+        let binary = classify(
+            &cadmpeg_test_support::service_decode_context(),
+            KernelHeaderRef::Acis(&header(RefWidth::Four, Some(70_001))),
+        )
+        .unwrap();
         assert_eq!(
             unverified_message(&cadmpeg_test_support::service_decode_context(), "the carrier", &binary).unwrap().as_deref(),
             Some(
@@ -335,24 +370,34 @@ mod tests {
             )
         );
 
-        let text = classify(&cadmpeg_test_support::service_decode_context(), KernelHeaderRef::TextAcis(
-            &header(RefWidth::Four, None).metadata,
-        )).unwrap();
+        let text = classify(
+            &cadmpeg_test_support::service_decode_context(),
+            KernelHeaderRef::TextAcis(&header(RefWidth::Four, None).metadata),
+        )
+        .unwrap();
         assert_eq!(
             unverified_message(&cadmpeg_test_support::service_decode_context(), "the stream", &text).unwrap().as_deref(),
             Some(
                 "the stream declares no save format; its recovery names no declared save-band grammar as a substitute"
             )
         );
-        assert!(unverified_message(&cadmpeg_test_support::service_decode_context(), 
+        assert!(unverified_message(
+            &cadmpeg_test_support::service_decode_context(),
             "the carrier",
-            &classify(&cadmpeg_test_support::service_decode_context(), KernelHeaderRef::Acis(&header(RefWidth::Four, Some(21_703)))).unwrap()
-        ).unwrap()
+            &classify(
+                &cadmpeg_test_support::service_decode_context(),
+                KernelHeaderRef::Acis(&header(RefWidth::Four, Some(21_703)))
+            )
+            .unwrap()
+        )
+        .unwrap()
         .is_none());
-        assert!(unverified_message(&cadmpeg_test_support::service_decode_context(), 
+        assert!(unverified_message(
+            &cadmpeg_test_support::service_decode_context(),
             "the carrier",
             &DialectMatch::admitted(cadmpeg_core::dialect_id!("test:text"))
-        ).unwrap()
+        )
+        .unwrap()
         .is_none());
     }
 
@@ -374,7 +419,11 @@ mod tests {
     #[test]
     fn classification_uses_family_and_canonical_declarations() {
         let acis = header(RefWidth::Four, Some(21_703));
-        let matched = classify(&cadmpeg_test_support::service_decode_context(), KernelHeaderRef::Acis(&acis)).unwrap();
+        let matched = classify(
+            &cadmpeg_test_support::service_decode_context(),
+            KernelHeaderRef::Acis(&acis),
+        )
+        .unwrap();
         assert_eq!(matched.format(), FORMAT);
         assert_eq!(matched.dialect(), &ACIS_SAVE_FORMAT_217);
         assert_eq!(matched.admission(), &Admission::Admitted);
@@ -398,7 +447,11 @@ mod tests {
 
         let asm = header(RefWidth::Eight, Some(70_001));
         assert_eq!(
-            classify(&cadmpeg_test_support::service_decode_context(), KernelHeaderRef::Asm(&asm)).unwrap(),
+            classify(
+                &cadmpeg_test_support::service_decode_context(),
+                KernelHeaderRef::Asm(&asm)
+            )
+            .unwrap(),
             DialectMatch::admitted(ACIS_ASM_BINARYFILE_8).with_declared(
                 [
                     (
@@ -420,14 +473,28 @@ mod tests {
         );
 
         assert_eq!(
-            classify(&cadmpeg_test_support::service_decode_context(), KernelHeaderRef::TextAsm(&asm.metadata)).unwrap().dialect(),
+            classify(
+                &cadmpeg_test_support::service_decode_context(),
+                KernelHeaderRef::TextAsm(&asm.metadata)
+            )
+            .unwrap()
+            .dialect(),
             &ACIS_TEXT_ASM
         );
         assert_eq!(
-            classify(&cadmpeg_test_support::service_decode_context(), KernelHeaderRef::TextAcis(&acis.metadata)).unwrap().dialect(),
+            classify(
+                &cadmpeg_test_support::service_decode_context(),
+                KernelHeaderRef::TextAcis(&acis.metadata)
+            )
+            .unwrap()
+            .dialect(),
             &ACIS_TEXT_ACIS
         );
-        let unknown = classify(&cadmpeg_test_support::service_decode_context(), KernelHeaderRef::Unknown).unwrap();
+        let unknown = classify(
+            &cadmpeg_test_support::service_decode_context(),
+            KernelHeaderRef::Unknown,
+        )
+        .unwrap();
         assert_eq!(unknown.dialect(), &ACIS_UNKNOWN);
         assert_eq!(unknown.admission(), &Admission::Refused);
         assert!(unknown.declared().is_empty());
@@ -439,14 +506,46 @@ mod tests {
         let asm4 = header(RefWidth::Four, Some(70_000));
         let asm8 = header(RefWidth::Eight, Some(70_000));
         let ids: BTreeSet<_> = [
-            classify(&cadmpeg_test_support::service_decode_context(), KernelHeaderRef::Acis(&acis)).unwrap(),
-            classify(&cadmpeg_test_support::service_decode_context(), KernelHeaderRef::Acis(&header(RefWidth::Four, Some(21_800)))).unwrap(),
-            classify(&cadmpeg_test_support::service_decode_context(), KernelHeaderRef::Acis(&header(RefWidth::Four, Some(23_200)))).unwrap(),
-            classify(&cadmpeg_test_support::service_decode_context(), KernelHeaderRef::Asm(&asm4)).unwrap(),
-            classify(&cadmpeg_test_support::service_decode_context(), KernelHeaderRef::Asm(&asm8)).unwrap(),
-            classify(&cadmpeg_test_support::service_decode_context(), KernelHeaderRef::TextAsm(&asm8.metadata)).unwrap(),
-            classify(&cadmpeg_test_support::service_decode_context(), KernelHeaderRef::TextAcis(&acis.metadata)).unwrap(),
-            classify(&cadmpeg_test_support::service_decode_context(), KernelHeaderRef::Unknown).unwrap(),
+            classify(
+                &cadmpeg_test_support::service_decode_context(),
+                KernelHeaderRef::Acis(&acis),
+            )
+            .unwrap(),
+            classify(
+                &cadmpeg_test_support::service_decode_context(),
+                KernelHeaderRef::Acis(&header(RefWidth::Four, Some(21_800))),
+            )
+            .unwrap(),
+            classify(
+                &cadmpeg_test_support::service_decode_context(),
+                KernelHeaderRef::Acis(&header(RefWidth::Four, Some(23_200))),
+            )
+            .unwrap(),
+            classify(
+                &cadmpeg_test_support::service_decode_context(),
+                KernelHeaderRef::Asm(&asm4),
+            )
+            .unwrap(),
+            classify(
+                &cadmpeg_test_support::service_decode_context(),
+                KernelHeaderRef::Asm(&asm8),
+            )
+            .unwrap(),
+            classify(
+                &cadmpeg_test_support::service_decode_context(),
+                KernelHeaderRef::TextAsm(&asm8.metadata),
+            )
+            .unwrap(),
+            classify(
+                &cadmpeg_test_support::service_decode_context(),
+                KernelHeaderRef::TextAcis(&acis.metadata),
+            )
+            .unwrap(),
+            classify(
+                &cadmpeg_test_support::service_decode_context(),
+                KernelHeaderRef::Unknown,
+            )
+            .unwrap(),
         ]
         .into_iter()
         .map(|matched| matched.dialect().to_string())

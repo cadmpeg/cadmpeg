@@ -8466,8 +8466,8 @@ fn consolidated_class61_records(
     }
     ctx.stable_sort_by(
         &mut class61_records,
-            |value| &value.0,
-            Ord::cmp,
+        |value| &value.0,
+        Ord::cmp,
         "catia_native_class61_sort",
     )?;
     let mut output = Vec::new();
@@ -8495,8 +8495,8 @@ fn consolidated_class5b5c_records(
         crate::families::b2::records::b2_class5b5c_records_from_records(ctx, bytes, records)?;
     ctx.stable_sort_by_key(
         &mut control_records,
-            |value| (value.source_index,value.source_offset),
-            Ord::cmp,
+        |value| (value.source_index, value.source_offset),
+        Ord::cmp,
         "catia_native_class5b5c_sort",
     )?;
     let mut output = Vec::new();
@@ -9191,8 +9191,8 @@ fn consolidated_pcurves(
     )?;
     ctx.stable_sort_by(
         &mut pcurves,
-            |value| &value.0.pos,
-            Ord::cmp,
+        |value| &value.0.pos,
+        Ord::cmp,
         "catia_native_pcurve_sort",
     )?;
     let mut native = Vec::new();

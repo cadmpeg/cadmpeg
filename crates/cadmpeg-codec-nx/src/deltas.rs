@@ -535,8 +535,8 @@ fn term_use_numeric_tails(
     );
     ctx.sort_unstable_by(
         &mut event_starts,
-            |value| value,
-            Ord::cmp,
+        |value| value,
+        Ord::cmp,
         "sort NX deltas event starts",
     )?;
     event_starts.dedup();
@@ -1775,8 +1775,8 @@ fn merged_event_spans(
     }
     ctx.sort_unstable_by(
         &mut covered,
-            |value| value,
-            Ord::cmp,
+        |value| value,
+        Ord::cmp,
         "sort NX deltas covered spans",
     )?;
     let mut merged = Vec::<(usize, usize)>::new();
@@ -1931,9 +1931,18 @@ enum MergeEvent {
 }
 
 impl cadmpeg_core::decode::cost::DecodeCost for MergeEvent {
-    const FIXED_BYTES: Option<u64> = Some(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<Self>()));
-    fn decode_cost(&self, _ctx: &cadmpeg_core::decode::DecodeContext<'_>, _operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
-        Ok(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<Self>()))
+    const FIXED_BYTES: Option<u64> =
+        Some(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
+            Self,
+        >()));
+    fn decode_cost(
+        &self,
+        _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        _operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        Ok(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
+            Self,
+        >()))
     }
 }
 

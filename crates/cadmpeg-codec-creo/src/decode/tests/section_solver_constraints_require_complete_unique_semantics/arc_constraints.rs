@@ -196,14 +196,16 @@ fn section_solver_projected_arc_and_mixed_constraints() {
             SketchEntityId::mint("creo:featdefs:sketch_entity#917:12".to_string())
                 .expect("valid test fixture"),
             SketchGeometry::native(
-                cadmpeg_core::text::NonBlankString::try_from("line").expect("nonempty source identity"),
+                cadmpeg_core::text::NonBlankString::try_from("line")
+                    .expect("nonempty source identity"),
             ),
         ),
         (
             SketchEntityId::mint("creo:featdefs:sketch_entity#917:13".to_string())
                 .expect("valid test fixture"),
             SketchGeometry::native(
-                cadmpeg_core::text::NonBlankString::try_from("arc").expect("nonempty source identity"),
+                cadmpeg_core::text::NonBlankString::try_from("arc")
+                    .expect("nonempty source identity"),
             ),
         ),
     ]);

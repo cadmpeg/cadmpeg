@@ -683,7 +683,9 @@ pub(super) fn decode(
             Point::new(
                 PointId::from(ids::data(kind!("point"), id)),
                 position,
-                source_name.map(|name| super::step_source_association(ctx, id, name)).transpose()?,
+                source_name
+                    .map(|name| super::step_source_association(ctx, id, name))
+                    .transpose()?,
             ),
             "step_geometry_ir_points",
         )?;
@@ -3525,7 +3527,12 @@ pub(super) fn associate_topology_carriers(
 /// separate IR geometry entry because the transformed geometry stores the
 /// basis inline. The basis is still a real STEP dependency and must not be
 /// reported as an unowned carrier by generic IR validation.
-pub(super) fn associate_replica_bases(exchange: &Exchange, ir: &mut CadIr, index: &CarrierIndex, ctx: &DecodeContext<'_>) -> Result<(), CodecError> {
+pub(super) fn associate_replica_bases(
+    exchange: &Exchange,
+    ir: &mut CadIr,
+    index: &CarrierIndex,
+    ctx: &DecodeContext<'_>,
+) -> Result<(), CodecError> {
     for (replica_id, record) in exchange.entities("CURVE_REPLICA") {
         let Some(parent_id) =
             named_parameter(record, "CURVE_REPLICA", 1).and_then(Value::reference)
@@ -4455,8 +4462,8 @@ fn linear_uncertainty(
     }
     ctx.stable_sort_by_key(
         &mut candidates,
-            |value| value.get(),
-            f64::total_cmp,
+        |value| value.get(),
+        f64::total_cmp,
         "step_uncertainty_candidate_sort",
     )?;
 

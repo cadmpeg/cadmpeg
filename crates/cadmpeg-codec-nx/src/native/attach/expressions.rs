@@ -78,7 +78,13 @@ pub(in crate::native) fn attach_expression_parameters(
     for uses in uses_by_expression.values_mut() {
         ctx.stable_sort_by_key(
             uses,
-            |value| { let record = *value; (record.bindings.first().map(|binding| binding.source_offset), record.id.as_str()) },
+            |value| {
+                let record = *value;
+                (
+                    record.bindings.first().map(|binding| binding.source_offset),
+                    record.id.as_str(),
+                )
+            },
             Ord::cmp,
             "NX expression use sort",
         )?;
@@ -96,15 +102,23 @@ pub(in crate::native) fn attach_expression_parameters(
     for (_, expressions) in &mut ordered_tables {
         ctx.stable_sort_by_key(
             expressions,
-            |value| { let record = *value; (record.source_offset, record.id.as_str()) },
+            |value| {
+                let record = *value;
+                (record.source_offset, record.id.as_str())
+            },
             Ord::cmp,
             "NX expression table sort",
         )?;
     }
     ctx.stable_sort_by_key(
         &mut ordered_tables,
-            |value| (value.1.first().map(|expression| expression.source_offset), value.0),
-            Ord::cmp,
+        |value| {
+            (
+                value.1.first().map(|expression| expression.source_offset),
+                value.0,
+            )
+        },
+        Ord::cmp,
         "NX ordered table sort",
     )?;
     let base_ordinal = cadmpeg_core::decode::u64_from_index(ir.model.features.len());

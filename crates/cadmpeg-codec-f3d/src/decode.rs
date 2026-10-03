@@ -3084,8 +3084,8 @@ impl<'a> F3dDecodeSession<'a> {
                 apply_appearance_base_colors(self.ctx, &mut self.ir)?;
                 self.ctx.stable_sort_by(
                     &mut self.ir.model.appearance_bindings,
-            |value| &value.id,
-            Ord::cmp,
+                    |value| &value.id,
+                    Ord::cmp,
                     "sort F3D appearance bindings",
                 )?;
                 reconcile_appearance_loss(
@@ -3516,10 +3516,13 @@ fn decode_scanned_document<'a>(
                             body: body
                                 .id
                                 .try_clone_for_decode(ctx, "retain F3D visible body ID")?,
-                            stream: ctx.validate_nonblank_text(ctx.copy_retained_text(
-                                &visibility.stream,
-                                "retain F3D body visibility stream",
-                            )?, "validate stream")?,
+                            stream: ctx.validate_nonblank_text(
+                                ctx.copy_retained_text(
+                                    &visibility.stream,
+                                    "retain F3D body visibility stream",
+                                )?,
+                                "validate stream",
+                            )?,
                             byte_offset: visibility.byte_offset,
                             asm_body_key_offset: visibility.asm_body_key_offset,
                             asm_body_key: body_selector,
@@ -3756,7 +3759,8 @@ fn project_mesh_bodies(
             })
             .map(str::to_owned);
         let asset =
-            cadmpeg_ir::assets::Asset::try_new(ctx, 
+            cadmpeg_ir::assets::Asset::try_new(
+                ctx,
                 texture
                     .asset
                     .try_clone_for_decode(ctx, "retain F3D mesh texture asset ID")?,
@@ -3930,7 +3934,9 @@ fn mesh_texture_assignments(
         ));
     }
     let mut triangles =
-        ctx.collect_indexed_vec(textures.len(), "f3d mesh texture assignments", |_| Ok(Vec::new()))?;
+        ctx.collect_indexed_vec(textures.len(), "f3d mesh texture assignments", |_| {
+            Ok(Vec::new())
+        })?;
     for (triangle, texture_id) in texture_ids.iter().enumerate() {
         ctx.charge_work(1, "resolve F3D mesh texture triangle")?;
         if *texture_id == 0 {
@@ -4896,8 +4902,8 @@ fn append_related_record_headers(
     )?;
     ctx.stable_sort_by(
         &mut native.design_record_headers,
-            |value| &value.id,
-            Ord::cmp,
+        |value| &value.id,
+        Ord::cmp,
         "sort F3D design record headers",
     )?;
     Ok(())

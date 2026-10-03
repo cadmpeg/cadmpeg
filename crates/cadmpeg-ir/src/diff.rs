@@ -908,7 +908,10 @@ mod tests {
         let right = with_source(&[(&key, "b"), ("footer_fingerprint", "g")]);
         let result = diff(&left, &right);
         assert!(!result.is_empty());
-        assert_eq!(result.source.attributes[0].key.as_str(), "footer_fingerprint");
+        assert_eq!(
+            result.source.attributes[0].key.as_str(),
+            "footer_fingerprint"
+        );
     }
 
     /// A document with no source metadata compares against one that has some

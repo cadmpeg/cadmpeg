@@ -200,8 +200,12 @@ pub(crate) fn transfer(
             });
         let source_object =
             ctx.copy_retained_text(source_object, "FreeCAD topology source object")?;
-        let source_object = cadmpeg_core::text::NonBlankString::for_decode(ctx, source_object, "validate nonblank text")?
-            .ok_or_else(|| CodecError::malformed("source object_id must not be empty"))?;
+        let source_object = cadmpeg_core::text::NonBlankString::for_decode(
+            ctx,
+            source_object,
+            "validate nonblank text",
+        )?
+        .ok_or_else(|| CodecError::malformed("source object_id must not be empty"))?;
         let mut builder = Builder::new(ctx, payload, tables, source_object)?;
         builder.emit_pcurves(ir)?;
         for root in builder.body_roots()? {
@@ -270,7 +274,11 @@ struct RegionTraversal {
 struct OccurrenceKey(String);
 
 impl cadmpeg_core::decode::cost::DecodeCost for OccurrenceKey {
-    fn decode_cost(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
         cadmpeg_core::decode::cost::DecodeCost::decode_cost(&self.0, ctx, operation)
     }
 }
@@ -285,7 +293,11 @@ impl OccurrenceKey {
 struct SourceOccurrenceKey(String);
 
 impl cadmpeg_core::decode::cost::DecodeCost for SourceOccurrenceKey {
-    fn decode_cost(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
         cadmpeg_core::decode::cost::DecodeCost::decode_cost(&self.0, ctx, operation)
     }
 }
@@ -344,10 +356,14 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
     fn source_association(&self) -> Result<SourceObjectAssociation, CodecError> {
         Ok(SourceObjectAssociation {
             format: cadmpeg_ir::CodecFormat::Fcstd,
-            object_id: cadmpeg_core::text::NonBlankString::for_decode(self.ctx, self.ctx.copy_retained_text(
-                self.source_object.as_str(),
-                "FreeCAD topology source association",
-            )?, "validate nonblank text")?
+            object_id: cadmpeg_core::text::NonBlankString::for_decode(
+                self.ctx,
+                self.ctx.copy_retained_text(
+                    self.source_object.as_str(),
+                    "FreeCAD topology source association",
+                )?,
+                "validate nonblank text",
+            )?
             .ok_or_else(|| CodecError::malformed("source object_id must not be empty"))?,
             name: None,
             color: None,

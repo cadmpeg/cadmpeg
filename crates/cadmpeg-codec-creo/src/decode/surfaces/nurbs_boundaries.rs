@@ -485,8 +485,8 @@ fn generator_separates_control_nets(
     }
     ctx.stable_sort_by(
         boundary_angles.as_mut_slice(),
-            |value| value,
-            f64::total_cmp,
+        |value| value,
+        f64::total_cmp,
         "creo generator separates control nets boundary angles ordering",
     )?;
     let tolerance = point_tolerance(first_poles().chain(second_poles())).unwrap_or(f64::INFINITY);

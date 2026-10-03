@@ -71,14 +71,18 @@ fn coordinate_curve_links_carry_reverse_constraint_incidence() {
         operands,
         vec![
             SketchNativeOperand {
-                native_kind: cadmpeg_core::text::NonBlankString::try_from("sldprt:marker-constraint-owner")
+                native_kind: cadmpeg_core::text::NonBlankString::try_from(
+                    "sldprt:marker-constraint-owner"
+                )
                 .expect("source operand kind is nonempty"),
                 field: None,
                 object_index: Some(7),
                 native_ref: Some(owner.id().to_string()),
             },
             SketchNativeOperand {
-                native_kind: cadmpeg_core::text::NonBlankString::try_from("sldprt:marker-constraint-owner")
+                native_kind: cadmpeg_core::text::NonBlankString::try_from(
+                    "sldprt:marker-constraint-owner"
+                )
                 .expect("source operand kind is nonempty"),
                 field: None,
                 object_index: Some(8),
@@ -620,7 +624,8 @@ fn resolved_wrong_family_relation_is_inactive() {
     ));
     let entity_id = SketchEntityId::mint("synthetic:test:id#line").unwrap();
     let definition = SketchConstraintDefinitionInput::Native {
-        native_kind: cadmpeg_core::text::NonBlankString::try_from("sldprt:marker-relation:34").unwrap(),
+        native_kind: cadmpeg_core::text::NonBlankString::try_from("sldprt:marker-relation:34")
+            .unwrap(),
         native_state: None,
         native_flags: None,
         native_properties: std::collections::BTreeMap::new(),
@@ -656,7 +661,8 @@ fn geometrically_contradicted_point_coincidence_is_inactive() {
         SketchEntityId::mint("synthetic:test:id#second").unwrap(),
     ];
     let definition = SketchConstraintDefinitionInput::Native {
-        native_kind: cadmpeg_core::text::NonBlankString::try_from("sldprt:marker-relation:9").unwrap(),
+        native_kind: cadmpeg_core::text::NonBlankString::try_from("sldprt:marker-relation:9")
+            .unwrap(),
         native_state: None,
         native_flags: None,
         native_properties: std::collections::BTreeMap::new(),
@@ -703,7 +709,8 @@ fn horizontal_relation_requires_one_line_or_two_points() {
         )
     };
     let definition = |entities| SketchConstraintDefinitionInput::Native {
-        native_kind: cadmpeg_core::text::NonBlankString::try_from("sldprt:marker-relation:4").unwrap(),
+        native_kind: cadmpeg_core::text::NonBlankString::try_from("sldprt:marker-relation:4")
+            .unwrap(),
         native_state: None,
         native_flags: None,
         native_properties: std::collections::BTreeMap::new(),
@@ -773,15 +780,19 @@ fn horizontal_relation_requires_one_line_or_two_points() {
             parameter: None,
             operands: vec![
                 SketchNativeOperand {
-                    native_kind: cadmpeg_core::text::NonBlankString::try_from("sldprt:marker-local-id")
-                        .expect("source operand kind is nonempty"),
+                    native_kind: cadmpeg_core::text::NonBlankString::try_from(
+                        "sldprt:marker-local-id"
+                    )
+                    .expect("source operand kind is nonempty"),
                     field: None,
                     object_index: Some(3),
                     native_ref: Some("same-marker".into()),
                 },
                 SketchNativeOperand {
-                    native_kind: cadmpeg_core::text::NonBlankString::try_from("sldprt:marker-local-id")
-                        .expect("source operand kind is nonempty"),
+                    native_kind: cadmpeg_core::text::NonBlankString::try_from(
+                        "sldprt:marker-local-id"
+                    )
+                    .expect("source operand kind is nonempty"),
                     field: None,
                     object_index: Some(3),
                     native_ref: Some("same-marker".into()),

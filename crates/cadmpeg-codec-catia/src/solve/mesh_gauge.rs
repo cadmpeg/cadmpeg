@@ -25,12 +25,20 @@ pub(crate) enum MeshEdgeGeometry {
 }
 
 impl cadmpeg_core::decode::cost::DecodeCost for MeshEdgeGeometry {
-    const FIXED_BYTES: Option<u64> = Some(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<Self>()));
-    fn decode_cost(&self, _ctx: &cadmpeg_core::decode::DecodeContext<'_>, _operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
-        Ok(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<Self>()))
+    const FIXED_BYTES: Option<u64> =
+        Some(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
+            Self,
+        >()));
+    fn decode_cost(
+        &self,
+        _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        _operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        Ok(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
+            Self,
+        >()))
     }
 }
-
 
 type MeshEdgeGaugeBaseKey = (u8, EdgeBoundaryLayout, MeshEdgeGeometry, usize, [usize; 2]);
 
@@ -436,8 +444,8 @@ fn normalized_endpoint_options(
     }
     ctx.sort_unstable_by(
         &mut normalized,
-            |value| value,
-            Ord::cmp,
+        |value| value,
+        Ord::cmp,
         "catia mesh gauge normalized endpoint options sort",
     )?;
     normalized.dedup();
@@ -461,8 +469,8 @@ fn mesh_edge_gauge_base_key(
     let mut faces = faces;
     ctx.sort_unstable_by(
         &mut faces,
-            |value| value,
-            Ord::cmp,
+        |value| value,
+        Ord::cmp,
         "catia mesh gauge edge faces sort",
     )?;
     Ok(Some((
@@ -734,7 +742,10 @@ pub(super) fn build_mesh_coordinate_gauge(
 
     let mut option_records = Vec::<(usize, [usize; 2])>::new();
     let mut option_indices_by_edge = Vec::new();
-    let mut option_neighbors = ctx.collect_indexed_vec(point_count, "catia_gauge_option_neighbors", |_| Ok(Vec::<usize>::new()))?;
+    let mut option_neighbors =
+        ctx.collect_indexed_vec(point_count, "catia_gauge_option_neighbors", |_| {
+            Ok(Vec::<usize>::new())
+        })?;
     for (edge, options) in normalized_options.iter().enumerate() {
         let mut indices = Vec::new();
         for &pair in options {
@@ -793,8 +804,8 @@ pub(super) fn build_mesh_coordinate_gauge(
             let mut endpoints = [point_colors[*left], point_colors[*right]];
             ctx.sort_unstable_by(
                 &mut endpoints,
-            |value| value,
-            Ord::cmp,
+                |value| value,
+                Ord::cmp,
                 "catia_gauge_option_endpoints_sort",
             )?;
             option_signatures.push((option_colors[option], row_colors[*edge], endpoints));
@@ -810,9 +821,12 @@ pub(super) fn build_mesh_coordinate_gauge(
                     "catia_gauge_row_option_colors",
                 )?;
             }
-            ctx.sort_unstable_by(&mut options,
-            |value| value,
-            Ord::cmp, "catia_gauge_row_option_sort")?;
+            ctx.sort_unstable_by(
+                &mut options,
+                |value| value,
+                Ord::cmp,
+                "catia_gauge_row_option_sort",
+            )?;
             ctx.push_vec(
                 &mut row_signatures,
                 (
@@ -840,8 +854,8 @@ pub(super) fn build_mesh_coordinate_gauge(
             }
             ctx.sort_unstable_by(
                 &mut options,
-            |value| value,
-            Ord::cmp,
+                |value| value,
+                Ord::cmp,
                 "catia_gauge_point_option_sort",
             )?;
             ctx.push_vec(
@@ -897,14 +911,14 @@ pub(super) fn build_mesh_coordinate_gauge(
             }
             ctx.sort_unstable_by(
                 &mut original_unbound,
-            |value| value,
-            Ord::cmp,
+                |value| value,
+                Ord::cmp,
                 "catia_gauge_original_rows_sort",
             )?;
             ctx.sort_unstable_by(
                 &mut mapped_unbound,
-            |value| value,
-            Ord::cmp,
+                |value| value,
+                Ord::cmp,
                 "catia_gauge_mapped_rows_sort",
             )?;
             charge_gauge_comparison(
@@ -1081,8 +1095,8 @@ fn mapped_endpoint_pair(
     }
     ctx.sort_unstable_by(
         &mut pair,
-            |value| value,
-            Ord::cmp,
+        |value| value,
+        Ord::cmp,
         "catia mesh gauge mapped endpoint pair sort",
     )?;
     Ok(Some(pair))
@@ -1284,14 +1298,20 @@ fn canonicalize_mesh_edge_row_gauges(
             Ok(None) => return None,
             Err(error) => return Some(Err(error)),
         };
-        let mut incident_faces = match ctx.collect_indexed_vec(edge_count, "catia_mesh_edge_gauge_faces", |_| Ok(Vec::<usize>::new())) {
-            Ok(faces) => faces,
-            Err(error) => return Some(Err(error)),
-        };
-        let mut usage = match ctx.collect_indexed_vec(edge_count, "catia_mesh_edge_gauge_usage", |_| Ok(Vec::<(usize, usize, usize, bool, usize, usize)>::new())) {
-            Ok(usage) => usage,
-            Err(error) => return Some(Err(error)),
-        };
+        let mut incident_faces =
+            match ctx.collect_indexed_vec(edge_count, "catia_mesh_edge_gauge_faces", |_| {
+                Ok(Vec::<usize>::new())
+            }) {
+                Ok(faces) => faces,
+                Err(error) => return Some(Err(error)),
+            };
+        let mut usage =
+            match ctx.collect_indexed_vec(edge_count, "catia_mesh_edge_gauge_usage", |_| {
+                Ok(Vec::<(usize, usize, usize, bool, usize, usize)>::new())
+            }) {
+                Ok(usage) => usage,
+                Err(error) => return Some(Err(error)),
+            };
         for (face, face_topology) in topology.faces.iter().enumerate() {
             for (boundary, boundary_topology) in face_topology.boundaries.iter().enumerate() {
                 for (position, coedge) in boundary_topology.coedges.iter().enumerate() {
@@ -1327,20 +1347,22 @@ fn canonicalize_mesh_edge_row_gauges(
             }
         }
         for faces in &mut incident_faces {
-            if let Err(error) =
-                ctx.sort_unstable_by(faces,
-            |value| value,
-            Ord::cmp, "catia_mesh_edge_gauge_face_sort")
-            {
+            if let Err(error) = ctx.sort_unstable_by(
+                faces,
+                |value| value,
+                Ord::cmp,
+                "catia_mesh_edge_gauge_face_sort",
+            ) {
                 return Some(Err(error));
             }
         }
         for uses in &mut usage {
-            if let Err(error) =
-                ctx.sort_unstable_by(uses,
-            |value| value,
-            Ord::cmp, "catia_mesh_edge_gauge_usage_sort")
-            {
+            if let Err(error) = ctx.sort_unstable_by(
+                uses,
+                |value| value,
+                Ord::cmp,
+                "catia_mesh_edge_gauge_usage_sort",
+            ) {
                 return Some(Err(error));
             }
         }
@@ -1350,8 +1372,8 @@ fn canonicalize_mesh_edge_row_gauges(
                 let mut expected_faces = *gauge.edge_faces.get(edge)?;
                 if let Err(error) = ctx.sort_unstable_by(
                     &mut expected_faces,
-            |value| value,
-            Ord::cmp,
+                    |value| value,
+                    Ord::cmp,
                     "catia_mesh_edge_gauge_expected_faces_sort",
                 ) {
                     return Some(Err(error));
@@ -1366,8 +1388,8 @@ fn canonicalize_mesh_edge_row_gauges(
         for mut pair in edge_vertices.iter().copied() {
             if let Err(error) = ctx.sort_unstable_by(
                 &mut pair,
-            |value| value,
-            Ord::cmp,
+                |value| value,
+                Ord::cmp,
                 "catia_mesh_edge_gauge_endpoint_sort",
             ) {
                 return Some(Err(error));
@@ -1478,8 +1500,8 @@ fn canonicalize_mesh_edge_row_gauges(
             }
             if let Err(error) = ctx.sort_unstable_by(
                 &mut slots,
-            |value| value,
-            Ord::cmp,
+                |value| value,
+                Ord::cmp,
                 "catia_mesh_edge_gauge_slot_sort",
             ) {
                 return Some(Err(error));
@@ -1508,8 +1530,8 @@ fn canonicalize_mesh_edge_row_gauges(
             }
             if let Err(error) = ctx.sort_unstable_by(
                 &mut ordered,
-            |value| value,
-            |left, right| {
+                |value| value,
+                |left, right| {
                     endpoint_keys[*left]
                         .cmp(&endpoint_keys[*right])
                         .then_with(|| usage[*left].cmp(&usage[*right]))
@@ -1612,9 +1634,10 @@ fn mesh_edge_gauge_ordered_sort_refuses_usage_tuple_bytes() {
         edge_identity_evidence: &edge_identity_evidence,
         coordinate_gauge: None,
     };
-    let result = crate::test_support::with_work_limit(5_000, |ctx| {
-        canonicalize_mesh_edge_row_gauges(ctx, topology.clone(), gauge, None)
-    });
+    let result =
+        crate::test_support::with_work_refusal("catia_mesh_edge_gauge_ordered_sort", |ctx| {
+            canonicalize_mesh_edge_row_gauges(ctx, topology.clone(), gauge, None)
+        });
     assert!(matches!(result, Err(CodecError::ResourceLimit(limit))
         if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
             && limit.operation == "catia_mesh_edge_gauge_ordered_sort"));
@@ -2616,8 +2639,8 @@ fn map_endpoint_relation_state(
                     }
                     ctx.sort_unstable_by(
                         &mut mapped_pairs,
-            |value| value,
-            Ord::cmp,
+                        |value| value,
+                        Ord::cmp,
                         "catia_relation_mapped_pairs_sort",
                     )?;
                     MeshEndpointRelationSelection::Enumerated {

@@ -483,11 +483,11 @@ pub(crate) fn bind_extrude_profile_selections(
                     }
                     resolution.ctx.stable_sort_by_key(
                         &mut matching_groups[..],
-            |value| {
-                                let group = value;
-                                group.scope_reference_ordinal
-                            },
-            Ord::cmp,
+                        |value| {
+                            let group = value;
+                            group.scope_reference_ordinal
+                        },
+                        Ord::cmp,
                         "sort f3d design profile_select 1",
                     )?;
                     let FeatureDefinition::Operation(FeatureOperation::Extrude { profile, .. }) =
@@ -874,11 +874,11 @@ fn historical_face_profile_selection(
         ctx.stable_sort_by_key(
             &mut group_members[..],
             |value| {
-                    let member = value;
-                    {
-                        member.group_member_ordinal
-                    }
-                },
+                let member = value;
+                {
+                    member.group_member_ordinal
+                }
+            },
             Ord::cmp,
             "sort f3d design profile_select 2",
         )?;
@@ -1370,13 +1370,13 @@ pub(super) fn resolved_extrude_profile_selection(
     }
     resolution.ctx.stable_sort_by_key(
         &mut selection_members[..],
-            |value| {
-                let member = value;
-                {
-                    member.group_member_ordinal
-                }
-            },
-            Ord::cmp,
+        |value| {
+            let member = value;
+            {
+                member.group_member_ordinal
+            }
+        },
+        Ord::cmp,
         "sort f3d design profile_select 3",
     )?;
     let exact_member_run = selection_members.len() == group.members().len()
@@ -1766,13 +1766,13 @@ fn resolved_spatial_extrude_profile_selection(
     }
     resolution.ctx.stable_sort_by_key(
         &mut group_members[..],
-            |value| {
-                let member = value;
-                {
-                    member.group_member_ordinal
-                }
-            },
-            Ord::cmp,
+        |value| {
+            let member = value;
+            {
+                member.group_member_ordinal
+            }
+        },
+        Ord::cmp,
         "sort f3d design profile_select 4",
     )?;
     let exact_member_run = group_members.len() == group.members().len()
@@ -2031,8 +2031,8 @@ fn unique_multi_face_deleted_carrier_family(
     }
     ctx.sort_unstable_by(
         &mut faces,
-            |value| value,
-            Ord::cmp,
+        |value| value,
+        Ord::cmp,
         "sort f3d deleted carrier family faces",
     )?;
     Ok(Some(faces))
@@ -2268,8 +2268,8 @@ fn historical_selection_regions(
     }
     ctx.sort_unstable_by(
         &mut state_ids,
-            |value| value,
-            Ord::cmp,
+        |value| value,
+        Ord::cmp,
         "sort f3d historical selection states",
     )?;
     let mut previous_member_points: Option<Vec<Vec<Point3>>> = None;

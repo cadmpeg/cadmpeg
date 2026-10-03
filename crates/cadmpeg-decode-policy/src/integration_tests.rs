@@ -62,20 +62,51 @@ fn check_fixture(name: &str) {
             format!("cadmpeg_core={}", dependency.display()),
         );
         let graph = Command::new(std::env::current_exe().expect("fixture executable"))
-            .args(["--exact", "integration_tests::fixture_child", "--ignored", "--nocapture"])
+            .args([
+                "--exact",
+                "integration_tests::fixture_child",
+                "--ignored",
+                "--nocapture",
+            ])
             .env("CADMPEG_POLICY_FIXTURE", "1")
             .env("CADMPEG_POLICY_GRAPH", "1")
             .env("CADMPEG_POLICY_CRATE_NAME", "cadmpeg_core")
-            .env("CADMPEG_POLICY_INPUT", root.join("fixtures/imported_dependency.rs"))
+            .env(
+                "CADMPEG_POLICY_INPUT",
+                root.join("fixtures/imported_dependency.rs"),
+            )
             .env("CADMPEG_POLICY_OUTPUT", &output_dir)
-            .output().expect("owning crate proof compiler");
-        assert!(graph.status.success(), "{}", String::from_utf8_lossy(&graph.stderr));
+            .output()
+            .expect("owning crate proof compiler");
+        assert!(
+            graph.status.success(),
+            "{}",
+            String::from_utf8_lossy(&graph.stderr)
+        );
         let proofs = output_dir.join("key-work-proofs.txt");
         let output = String::from_utf8(graph.stdout).expect("proof output");
-        std::fs::write(&proofs, output.lines().filter_map(|line| line.strip_prefix("decode_key_work_proof\t")).map(|line| format!("{line}\n")).collect::<String>()).expect("proof file");
+        std::fs::write(
+            &proofs,
+            output
+                .lines()
+                .filter_map(|line| line.strip_prefix("decode_key_work_proof\t"))
+                .map(|line| format!("{line}\n"))
+                .collect::<String>(),
+        )
+        .expect("proof file");
         command.env("CADMPEG_POLICY_KEY_WORK_PROOFS", proofs);
     }
-    if matches!(name, "thirdparty" | "serde" | "zip" | "byte_search" | "parser_admission" | "parser_json" | "parser_zip" | "parser_zstd") {
+    if matches!(
+        name,
+        "thirdparty"
+            | "serde"
+            | "zip"
+            | "byte_search"
+            | "parser_admission"
+            | "parser_json"
+            | "parser_zip"
+            | "parser_zstd"
+    ) {
         let executable = std::env::current_exe().expect("test executable");
         let target = executable
             .ancestors()
@@ -93,24 +124,47 @@ fn check_fixture(name: &str) {
             }
         }
         let mut dependencies = Vec::new();
-        let fingerprint_directory = executable.parent().and_then(|out| out.parent())
-            .expect("test artifact directory").join("fingerprint");
+        let fingerprint_directory = executable
+            .parent()
+            .and_then(|out| out.parent())
+            .expect("test artifact directory")
+            .join("fingerprint");
         let fingerprint: serde_json::Value = serde_json::from_slice(
             &std::fs::read(fingerprint_directory.join("test-lib-cadmpeg_decode_policy.json"))
                 .expect("test dependency fingerprint"),
-        ).expect("test dependency fingerprint JSON");
-        for name in ["roxmltree", "serde_json", "serde", "zip", "memchr", "zstd_safe"] {
-            let expected = fingerprint["deps"].as_array().expect("dependency fingerprints")
-                .iter().find(|dependency| dependency[1].as_str() == Some(name))
-                .and_then(|dependency| dependency[3].as_u64()).expect("linked dependency fingerprint");
-            let expected = expected.to_le_bytes().iter().map(|byte| format!("{byte:02x}")).collect::<String>();
+        )
+        .expect("test dependency fingerprint JSON");
+        for name in [
+            "roxmltree",
+            "serde_json",
+            "serde",
+            "zip",
+            "memchr",
+            "zstd_safe",
+        ] {
+            let expected = fingerprint["deps"]
+                .as_array()
+                .expect("dependency fingerprints")
+                .iter()
+                .find(|dependency| dependency[1].as_str() == Some(name))
+                .and_then(|dependency| dependency[3].as_u64())
+                .expect("linked dependency fingerprint");
+            let expected = expected
+                .to_le_bytes()
+                .iter()
+                .map(|byte| format!("{byte:02x}"))
+                .collect::<String>();
             let prefix = format!("lib{name}-");
             let library = directories
                 .iter()
-                .filter(|directory| directory.parent().is_some_and(|artifact| {
-                    std::fs::read_to_string(artifact.join("fingerprint").join(format!("lib-{name}")))
+                .filter(|directory| {
+                    directory.parent().is_some_and(|artifact| {
+                        std::fs::read_to_string(
+                            artifact.join("fingerprint").join(format!("lib-{name}")),
+                        )
                         .is_ok_and(|fingerprint| fingerprint.trim() == expected)
-                }))
+                    })
+                })
                 .flat_map(|directory| std::fs::read_dir(directory).expect("dependency listing"))
                 .map(|entry| entry.expect("dependency entry").path())
                 .find(|path| {
@@ -129,7 +183,22 @@ fn check_fixture(name: &str) {
             std::env::join_paths(directories).expect("dependency paths"),
         );
     }
-    if matches!(name, "work_keys" | "work_callbacks" | "work_scalar" | "work_iterators" | "serde" | "boxing" | "text_sources" | "btree_storage" | "parser_admission" | "parser_json" | "parser_zstd" | "reader_callbacks" | "unicode_case") {
+    if matches!(
+        name,
+        "work_keys"
+            | "work_callbacks"
+            | "work_scalar"
+            | "work_iterators"
+            | "serde"
+            | "boxing"
+            | "text_sources"
+            | "btree_storage"
+            | "parser_admission"
+            | "parser_json"
+            | "parser_zstd"
+            | "reader_callbacks"
+            | "unicode_case"
+    ) {
         command.env("CADMPEG_POLICY_CRATE_NAME", "cadmpeg_core");
     }
     if matches!(name, "container_callbacks" | "parser_zip") {
@@ -189,15 +258,25 @@ fn check_fixture(name: &str) {
         for (index, line) in source.lines().enumerate() {
             if let Some(method) = line.trim().strip_prefix("// replacement: ") {
                 let line_number = (index + 2).to_string();
-                assert!(actual.lines().any(|row| {
-                    let fields: Vec<_> = row.split('\t').collect();
-                    fields.len() == 4 && fields[2] == line_number
-                        && fields[3].contains(&format!("replacement: DecodeContext::{method}"))
-                }), "missing replacement {method} at {line_number}: {actual}");
+                assert!(
+                    actual.lines().any(|row| {
+                        let fields: Vec<_> = row.split('\t').collect();
+                        fields.len() == 4
+                            && fields[2] == line_number
+                            && fields[3].contains(&format!("replacement: DecodeContext::{method}"))
+                    }),
+                    "missing replacement {method} at {line_number}: {actual}"
+                );
             }
         }
-        assert!(actual.lines().filter(|row| row.starts_with("uncharged_") || row.starts_with("unproven_decode_charge"))
-            .all(|row| row.contains("; replacement: ")), "{actual}");
+        assert!(
+            actual
+                .lines()
+                .filter(|row| row.starts_with("uncharged_")
+                    || row.starts_with("unproven_decode_charge"))
+                .all(|row| row.contains("; replacement: ")),
+            "{actual}"
+        );
     }
     let mut findings = Vec::new();
     for line in actual.lines() {
@@ -248,7 +327,8 @@ fn check_fixture(name: &str) {
                     | "zip"
                     | "boxing"
                     | "text_sources"
-                    | "text_growth" | "btree_storage"
+                    | "text_growth"
+                    | "btree_storage"
                     | "container_callbacks"
                     | "symbolic"
                     | "derived"

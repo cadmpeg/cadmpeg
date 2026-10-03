@@ -1338,7 +1338,7 @@ fn transfers_shape_and_subshape_binder_construction() {
             .definition()
     };
     assert!(
-        matches!(definition("ShapeBind"), cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Binder { sources, construction: cadmpeg_ir::features::BinderConstruction::Shape { trace_support: true } }) if sources.len() == 1 && sources[0].subelements.iter().map(|value| value.as_str()).collect::<Vec<_>>() == ["Face1", "Face2"])
+        matches!(definition("ShapeBind"), cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Binder { sources, construction: cadmpeg_ir::features::BinderConstruction::Shape { trace_support: true } }) if sources.len() == 1 && sources[0].subelements.iter().map(cadmpeg_core::text::NonBlankString::as_str).collect::<Vec<_>>() == ["Face1", "Face2"])
     );
     let cadmpeg_ir::features::FeatureDefinition::PostProcess {
         operation,

@@ -319,8 +319,8 @@ pub(super) fn decode(
             });
             ctx.stable_sort_by(
                 &mut bodies,
-            |value| value,
-            Ord::cmp,
+                |value| value,
+                Ord::cmp,
                 "step_product_body_sort",
             )?;
             bodies.dedup();
@@ -1226,8 +1226,8 @@ fn occurrence_placements(
             let mut source_ids = copied;
             ctx.sort_unstable_by(
                 &mut source_ids,
-            |value| value,
-            Ord::cmp,
+                |value| value,
+                Ord::cmp,
                 "step_ambiguous_context_source_sort",
             )?;
             source_ids.dedup();
@@ -1332,8 +1332,8 @@ fn occurrence_placements(
             source_ids.extend(candidates.iter().map(|(source_id, _)| *source_id));
             ctx.sort_unstable_by(
                 &mut source_ids,
-            |value| value,
-            Ord::cmp,
+                |value| value,
+                Ord::cmp,
                 "step_competing_mapped_source_sort",
             )?;
             source_ids.dedup();
@@ -1375,8 +1375,8 @@ fn occurrence_placements(
                 source_ids.extend(candidates.iter().map(|(source_id, _)| *source_id));
                 ctx.sort_unstable_by(
                     &mut source_ids,
-            |value| value,
-            Ord::cmp,
+                    |value| value,
+                    Ord::cmp,
                     "step_ambiguous_mapped_source_sort",
                 )?;
                 source_ids.dedup();

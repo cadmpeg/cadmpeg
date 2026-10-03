@@ -1578,15 +1578,25 @@ fn frame_relative_offsets_refuse_to_saturate_at_the_end_of_the_address_space() {
     )
     .unwrap()
     .expect("parsed parameter")
-    .into_record(&cadmpeg_test_support::service_decode_context(), stream, u64::MAX).unwrap()
+    .into_record(
+        &cadmpeg_test_support::service_decode_context(),
+        stream,
+        u64::MAX
+    )
+    .unwrap()
     .is_none());
 
     let parsed =
         super::parse_design_parameter(&cadmpeg_test_support::service_decode_context(), &payload)
             .unwrap()
             .expect("parsed parameter");
-    let error = super::locate_design_parameter(&cadmpeg_test_support::service_decode_context(), parsed, stream, usize::MAX)
-        .expect_err("a frame at the end of the address space cannot be located");
+    let error = super::locate_design_parameter(
+        &cadmpeg_test_support::service_decode_context(),
+        parsed,
+        stream,
+        usize::MAX,
+    )
+    .expect_err("a frame at the end of the address space cannot be located");
     assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
 }
 

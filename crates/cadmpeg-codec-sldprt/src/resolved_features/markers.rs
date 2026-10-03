@@ -220,8 +220,8 @@ pub(crate) fn spatial_sketches(
             projected.extend(projected_lines);
             ctx.sort_unstable_by(
                 &mut projected,
-            |value| &value.0,
-            Ord::cmp,
+                |value| &value.0,
+                Ord::cmp,
                 "sort SLDPRT spatial projected points",
             )?;
             let sketch_record_id = clone_spatial_sketch_id(ctx, &sketch_id)?;
@@ -1371,8 +1371,8 @@ pub(crate) fn reference_cells_charged(
     }
     ctx.stable_sort_by(
         &mut cells,
-            |value| &value.offset,
-            Ord::cmp,
+        |value| &value.offset,
+        Ord::cmp,
         "sort SLDPRT reference cells",
     )?;
     cells.dedup_by_key(|cell| cell.offset);

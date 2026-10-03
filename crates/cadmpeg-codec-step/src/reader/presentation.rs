@@ -295,8 +295,8 @@ pub(super) fn decode(
     }
     ctx.stable_sort_by(
         &mut styles,
-            |value| &value.1,
-            Ord::cmp,
+        |value| &value.1,
+        Ord::cmp,
         "step_presentation_style_ids_sort",
     )?;
     let mut scalar_color_candidates = HashMap::<AppearanceTarget, Vec<(u64, Color)>>::new();
@@ -1036,43 +1036,45 @@ fn presentation_item_one(
         });
     };
     let has = |name: &str| record.partial(name).is_some();
-    Ok(if has("NEXT_ASSEMBLY_USAGE_OCCURRENCE")
-        && entity_ids
-            .occurrences
-            .contains(ids::product(kind!("occurrence"), id).as_str())
-    {
-        PresentationItem::Occurrence {
-            occurrence: OccurrenceId::from(ids::product(kind!("occurrence"), id)),
-        }
-    } else if record.partials.iter().any(|partial| {
-        (partial.name == "DATUM"
-            || partial.name == "DATUM_SYSTEM"
-            || partial.name.starts_with("DIMENSIONAL_")
-            || partial.name.ends_with("_TOLERANCE")
-            || super::pmi::is_presentation_annotation(&partial.name))
+    Ok(
+        if has("NEXT_ASSEMBLY_USAGE_OCCURRENCE")
             && entity_ids
-                .pmi
-                .contains(ids::presentation(kind!("pmi"), id).as_str())
-    }) {
-        PresentationItem::Pmi {
-            annotation: PmiId::from(ids::presentation(kind!("pmi"), id)),
-        }
-    } else if (has("TRIANGULATED_FACE")
-        || has("COMPLEX_TRIANGULATED_FACE")
-        || has("TRIANGULATED_SURFACE_SET")
-        || has("COMPLEX_TRIANGULATED_SURFACE_SET"))
-        && entity_ids
-            .tessellations
-            .contains(ids::tessellation(kind!("mesh"), id).as_str())
-    {
-        PresentationItem::Tessellation {
-            tessellation: ids::tessellation(kind!("mesh"), id).into_string(),
-        }
-    } else {
-        PresentationItem::Source {
-            source_id: super::step_source_id(ctx, id)?,
-        }
-    })
+                .occurrences
+                .contains(ids::product(kind!("occurrence"), id).as_str())
+        {
+            PresentationItem::Occurrence {
+                occurrence: OccurrenceId::from(ids::product(kind!("occurrence"), id)),
+            }
+        } else if record.partials.iter().any(|partial| {
+            (partial.name == "DATUM"
+                || partial.name == "DATUM_SYSTEM"
+                || partial.name.starts_with("DIMENSIONAL_")
+                || partial.name.ends_with("_TOLERANCE")
+                || super::pmi::is_presentation_annotation(&partial.name))
+                && entity_ids
+                    .pmi
+                    .contains(ids::presentation(kind!("pmi"), id).as_str())
+        }) {
+            PresentationItem::Pmi {
+                annotation: PmiId::from(ids::presentation(kind!("pmi"), id)),
+            }
+        } else if (has("TRIANGULATED_FACE")
+            || has("COMPLEX_TRIANGULATED_FACE")
+            || has("TRIANGULATED_SURFACE_SET")
+            || has("COMPLEX_TRIANGULATED_SURFACE_SET"))
+            && entity_ids
+                .tessellations
+                .contains(ids::tessellation(kind!("mesh"), id).as_str())
+        {
+            PresentationItem::Tessellation {
+                tessellation: ids::tessellation(kind!("mesh"), id).into_string(),
+            }
+        } else {
+            PresentationItem::Source {
+                source_id: super::step_source_id(ctx, id)?,
+            }
+        },
+    )
 }
 
 struct EntityIds<'a> {
@@ -1827,9 +1829,18 @@ enum StyleDomain {
 }
 
 impl cadmpeg_core::decode::cost::DecodeCost for StyleDomain {
-    const FIXED_BYTES: Option<u64> = Some(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<Self>()));
-    fn decode_cost(&self, _ctx: &cadmpeg_core::decode::DecodeContext<'_>, _operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
-        Ok(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<Self>()))
+    const FIXED_BYTES: Option<u64> =
+        Some(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
+            Self,
+        >()));
+    fn decode_cost(
+        &self,
+        _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        _operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        Ok(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
+            Self,
+        >()))
     }
 }
 

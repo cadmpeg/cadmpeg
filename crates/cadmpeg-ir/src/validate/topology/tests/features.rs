@@ -54,11 +54,13 @@ fn historical_vertex_selection_requires_input_state_membership() {
                 ))
                 .unwrap(),
                 construction: Some(Box::new(DatumPointConstruction::Vertex {
-                    vertex: VertexSelection::historical(&cadmpeg_test_support::service_decode_context(), 
+                    vertex: VertexSelection::historical(
+                        &cadmpeg_test_support::service_decode_context(),
                         state_id.clone(),
                         historical_vertex,
                         "vertex:local".into(),
-                    ).unwrap()
+                    )
+                    .unwrap()
                     .unwrap(),
                 })),
             }),
@@ -72,7 +74,8 @@ fn historical_vertex_selection_requires_input_state_membership() {
         .expect("feature states its typed references");
     assert_eq!(references, vec![state_id.as_str()]);
 
-    assert!(!validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail")
+    assert!(!validate_neutral(&ir, Vec::new())
+        .expect("resource allocation did not fail")
         .findings
         .iter()
         .any(|finding| finding.check == Check::ReferentialIntegrity));
@@ -94,7 +97,8 @@ fn historical_vertex_selection_requires_input_state_membership() {
         };
         *vertex = HistoricalVertexId::mint(missing).expect("valid identity");
     });
-    assert!(validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail")
+    assert!(validate_neutral(&ir, Vec::new())
+        .expect("resource allocation did not fail")
         .findings
         .iter()
         .any(|finding| {
@@ -402,7 +406,9 @@ fn parameter_dependencies_must_exist_and_precede_consumers() {
             native_ref: None,
         });
     }
-    let findings = validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail").findings;
+    let findings = validate_neutral(&ir, Vec::new())
+        .expect("resource allocation did not fail")
+        .findings;
     assert!(findings
         .iter()
         .any(|finding| finding.message.contains("does not precede its consumer")));
@@ -470,7 +476,10 @@ fn document_parameters_can_feed_feature_parameters() {
         native_ref: None,
     });
     ir.finalize();
-    assert!(validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail").findings.is_empty());
+    assert!(validate_neutral(&ir, Vec::new())
+        .expect("resource allocation did not fail")
+        .findings
+        .is_empty());
 }
 
 #[test]
@@ -613,7 +622,8 @@ fn generated_termination_vertices_require_declared_feature_dependencies() {
     });
 
     let message = "generated termination vertex is invalid";
-    assert!(validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail")
+    assert!(validate_neutral(&ir, Vec::new())
+        .expect("resource allocation did not fail")
         .findings
         .iter()
         .any(|finding| finding.message == message));
@@ -642,7 +652,8 @@ fn generated_termination_vertices_require_declared_feature_dependencies() {
         native_ref: None,
     });
     ir.model.features[1].dependencies.insert(source.clone());
-    assert!(!validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail")
+    assert!(!validate_neutral(&ir, Vec::new())
+        .expect("resource allocation did not fail")
         .findings
         .iter()
         .any(|finding| finding.message == message));
@@ -651,7 +662,8 @@ fn generated_termination_vertices_require_declared_feature_dependencies() {
         extrude.as_str(),
         source.as_str()
     );
-    assert!(validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail")
+    assert!(validate_neutral(&ir, Vec::new())
+        .expect("resource allocation did not fail")
         .findings
         .iter()
         .any(|finding| finding.message == configuration_message));
@@ -661,7 +673,9 @@ fn generated_termination_vertices_require_declared_feature_dependencies() {
         .get_mut(&extrude)
         .expect("configured extrude");
     state.dependencies.insert(source);
-    assert!(validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail").is_ok());
+    assert!(validate_neutral(&ir, Vec::new())
+        .expect("resource allocation did not fail")
+        .is_ok());
 }
 
 #[test]
@@ -723,13 +737,15 @@ fn pattern_feature_seeds_must_be_declared_dependencies() {
         "pattern omits seed feature `{}` from its dependencies",
         seed.as_str()
     );
-    assert!(validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail")
+    assert!(validate_neutral(&ir, Vec::new())
+        .expect("resource allocation did not fail")
         .findings
         .iter()
         .any(|finding| finding.message == message));
 
     ir.model.features[1].dependencies.insert(seed);
-    assert!(!validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail")
+    assert!(!validate_neutral(&ir, Vec::new())
+        .expect("resource allocation did not fail")
         .findings
         .iter()
         .any(|finding| finding.message == message));
@@ -900,7 +916,8 @@ fn definition_references_must_be_declared_dependencies_in_every_configuration() 
         native_ref: None,
     });
 
-    let findings = validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail")
+    let findings = validate_neutral(&ir, Vec::new())
+        .expect("resource allocation did not fail")
         .findings
         .into_iter()
         .map(|finding| finding.message)
@@ -1029,7 +1046,8 @@ fn generated_body_selection_must_name_a_declared_producer_result() {
         .try_into()
         .unwrap();
     });
-    assert!(validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail")
+    assert!(validate_neutral(&ir, Vec::new())
+        .expect("resource allocation did not fail")
         .findings
         .iter()
         .any(|finding| finding.message == "generated body selection is invalid"));
@@ -1046,7 +1064,8 @@ fn reference_images_require_valid_assets_and_plane_placements() {
         FeatureId::mint("synthetic:test:feature#reference-image").expect("identity grammar");
     let mut ir = CadIr::empty();
     ir.model.assets.push(
-        Asset::try_new(&cadmpeg_test_support::service_decode_context(), 
+        Asset::try_new(
+            &cadmpeg_test_support::service_decode_context(),
             asset_id.clone(),
             Some("reference.png".into()),
             Some("image/png".into()),
@@ -1091,7 +1110,9 @@ fn reference_images_require_valid_assets_and_plane_placements() {
         native_ref: None,
     });
     ir.finalize();
-    assert!(validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail").is_ok());
+    assert!(validate_neutral(&ir, Vec::new())
+        .expect("resource allocation did not fail")
+        .is_ok());
     assert_eq!(
         serde_json::to_value(&ir.model.assets[0]).unwrap()["content"]["data"],
         "AQID"
@@ -1117,7 +1138,8 @@ fn decals_require_valid_assets_faces_and_opacity() {
     let mut ir = unit_cube().expect("valid unit cube fixture");
     let face_id = ir.model.faces[0].id.clone();
     ir.model.assets.push(
-        Asset::try_new(&cadmpeg_test_support::service_decode_context(), 
+        Asset::try_new(
+            &cadmpeg_test_support::service_decode_context(),
             asset_id.clone(),
             Some("decal.png".into()),
             Some("image/png".into()),
@@ -1150,5 +1172,7 @@ fn decals_require_valid_assets_faces_and_opacity() {
         native_ref: None,
     });
     ir.finalize();
-    assert!(validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail").is_ok());
+    assert!(validate_neutral(&ir, Vec::new())
+        .expect("resource allocation did not fail")
+        .is_ok());
 }

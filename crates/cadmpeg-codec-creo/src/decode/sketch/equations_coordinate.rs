@@ -883,7 +883,10 @@ pub(in crate::decode) fn solve_unsigned_dimension_coordinates(
                     }),
             ),
     )?;
-    let mut adjacency = ctx.collect_indexed_vec(variables.len(), "creo section equation adjacency", |_| Ok(BTreeSet::new()))?;
+    let mut adjacency =
+        ctx.collect_indexed_vec(variables.len(), "creo section equation adjacency", |_| {
+            Ok(BTreeSet::new())
+        })?;
     let connect =
         |members: &[usize], adjacency: &mut [BTreeSet<usize>]| -> Result<(), CodecError> {
             for &first in members {
@@ -1259,8 +1262,8 @@ fn quadratic_roots(
     });
     ctx.stable_sort_by(
         &mut roots,
-            |value| value,
-            f64::total_cmp,
+        |value| value,
+        f64::total_cmp,
         "creo sketch coordinate quadratic roots sort",
     )?;
     roots.dedup_by(|first, second| {
@@ -1287,8 +1290,15 @@ pub(in crate::decode) fn solve_section_coordinate_equations(
             .iter()
             .flat_map(|equation| equation.terms.keys().copied()),
     )?;
-    let mut adjacency = ctx.collect_indexed_vec(variables.len(), "creo section coordinate adjacency", |_| Ok(BTreeSet::new()))?;
-    let mut variable_equations = ctx.collect_indexed_vec(variables.len(), "creo section coordinate equation membership", |_| Ok(BTreeSet::new()))?;
+    let mut adjacency =
+        ctx.collect_indexed_vec(variables.len(), "creo section coordinate adjacency", |_| {
+            Ok(BTreeSet::new())
+        })?;
+    let mut variable_equations = ctx.collect_indexed_vec(
+        variables.len(),
+        "creo section coordinate equation membership",
+        |_| Ok(BTreeSet::new()),
+    )?;
     for (equation_index, equation) in equations.iter().enumerate() {
         let mut members = Vec::new();
         for variable in equation.terms.keys() {

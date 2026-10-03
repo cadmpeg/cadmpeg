@@ -713,29 +713,38 @@ fn assert_isocurve_route_limit(dimension: cadmpeg_core::decode::ResourceDimensio
         }
         Err(error) => panic!("unexpected isocurve route failure: {error}"),
     };
-    let mut lower = 0;
-    let mut upper = 1_u64;
-    loop {
-        set_limit(&mut options, upper);
-        if run(&options) {
-            break;
-        }
-        upper = upper.checked_mul(2).unwrap();
-    }
-    while lower < upper {
-        let middle = lower + (upper - lower) / 2;
-        set_limit(&mut options, middle);
-        if run(&options) {
-            upper = middle;
-        } else {
-            lower = middle + 1;
-        }
-    }
+    // Key insertion order can change the prefix. Keep the boundary assertions
+    // on the same pair of fresh runs used to select their allowance.
+    let (upper, admitted, refused) = (0..64)
+        .find_map(|_| {
+            let mut lower = 0;
+            let mut upper = 1_u64;
+            loop {
+                set_limit(&mut options, upper);
+                if run(&options) {
+                    break;
+                }
+                upper = upper.checked_mul(2).unwrap();
+            }
+            while lower < upper {
+                let middle = lower + (upper - lower) / 2;
+                set_limit(&mut options, middle);
+                if run(&options) {
+                    upper = middle;
+                } else {
+                    lower = middle + 1;
+                }
+            }
+            set_limit(&mut options, upper);
+            let admitted = run(&options);
+            set_limit(&mut options, upper - 1);
+            let refused = run(&options);
+            (admitted && !refused).then_some((upper, admitted, refused))
+        })
+        .expect("a success and its one-unit-below refusal");
     assert!(upper > 0);
-    set_limit(&mut options, upper);
-    assert!(run(&options));
-    set_limit(&mut options, upper - 1);
-    assert!(!run(&options));
+    assert!(admitted);
+    assert!(!refused);
 }
 
 #[test]

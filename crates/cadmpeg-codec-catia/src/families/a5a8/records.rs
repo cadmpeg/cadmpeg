@@ -1812,8 +1812,8 @@ pub(in crate::families) fn a8_external_grid_ranges(
     }
     ctx.sort_unstable_by_key(
         &mut ranges,
-            |value| (value.start,value.end),
-            Ord::cmp,
+        |value| (value.start, value.end),
+        Ord::cmp,
         "catia_a8_external_grid_ranges_sort",
     )?;
     ranges.dedup();

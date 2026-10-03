@@ -996,76 +996,76 @@ fn zero_offset_standard_section_plane_equation(
     };
     let mut instructions = placement_instructions(ctx, definition)?;
     Ok((|| {
-    let instruction = instructions.next()?;
-    instructions
-        .all(|candidate| {
-            candidate.kind == instruction.kind
-                && candidate.zero_offset == instruction.zero_offset
-                && candidate.dimension_id == instruction.dimension_id
-                && candidate.reference_id == instruction.reference_id
-                && candidate.geometry1_id == instruction.geometry1_id
-                && candidate.geometry2_id == instruction.geometry2_id
-                && candidate.member1 == instruction.member1
-                && candidate.member2 == instruction.member2
-        })
-        .then_some(())?;
-    (instruction.kind == 20_127
-        && instruction.zero_offset
-        && instruction.dimension_id.is_none()
-        && instruction.reference_id.is_none()
-        && instruction.geometry1_id == Some(reference_id)
-        && instruction.geometry2_id.is_none()
-        && instruction.member1 == 0
-        && instruction.member2 == 0)
-        .then_some(())?;
-    let datum_tables = sources
-        .geometry_tables
-        .iter()
-        .filter(|table| {
-            table.feature_id == feature_id && table.kind.datum_ids() == Some(&[sketch_id])
-        })
-        .count();
-    (datum_tables == 1).then_some(())?;
-    let mut tables = entity_tables
-        .iter()
-        .filter(|table| table.feature_id == feature_id)
-        .filter(|table| {
-            table
-                .entries
-                .iter()
-                .map(crate::feature::entity::FeatureEntityTableEntry::class_id)
-                .eq([204, 203, 200, 200])
+        let instruction = instructions.next()?;
+        instructions
+            .all(|candidate| {
+                candidate.kind == instruction.kind
+                    && candidate.zero_offset == instruction.zero_offset
+                    && candidate.dimension_id == instruction.dimension_id
+                    && candidate.reference_id == instruction.reference_id
+                    && candidate.geometry1_id == instruction.geometry1_id
+                    && candidate.geometry2_id == instruction.geometry2_id
+                    && candidate.member1 == instruction.member1
+                    && candidate.member2 == instruction.member2
+            })
+            .then_some(())?;
+        (instruction.kind == 20_127
+            && instruction.zero_offset
+            && instruction.dimension_id.is_none()
+            && instruction.reference_id.is_none()
+            && instruction.geometry1_id == Some(reference_id)
+            && instruction.geometry2_id.is_none()
+            && instruction.member1 == 0
+            && instruction.member2 == 0)
+            .then_some(())?;
+        let datum_tables = sources
+            .geometry_tables
+            .iter()
+            .filter(|table| {
+                table.feature_id == feature_id && table.kind.datum_ids() == Some(&[sketch_id])
+            })
+            .count();
+        (datum_tables == 1).then_some(())?;
+        let mut tables = entity_tables
+            .iter()
+            .filter(|table| table.feature_id == feature_id)
+            .filter(|table| {
+                table
+                    .entries
+                    .iter()
+                    .map(crate::feature::entity::FeatureEntityTableEntry::class_id)
+                    .eq([204, 203, 200, 200])
+            });
+        let table = tables.next()?;
+        tables.next().is_none().then_some(())?;
+        let cap_id = table.entries[1].entity_id;
+        let cap = plane_equation(
+            cap_id,
+            sources.datums,
+            sources.model_planes,
+            sources.outline_planes,
+        )?;
+        let mut candidates = sources.datums.iter().filter_map(|datum| {
+            let equation = SignedPlaneEquation {
+                normal: datum.plane().normal(),
+                offset: datum.plane().offset(),
+            };
+            let cap_alignment = dot(equation.normal, cap.normal).abs();
+            let reference_alignment = dot(equation.normal, reference.normal).abs();
+            ((cap_alignment - 1.0).abs() <= EPS_PLACEMENT_EXACT_GEOMETRY
+                && reference_alignment <= EPS_PLACEMENT_EXACT_GEOMETRY)
+                .then_some(equation)
         });
-    let table = tables.next()?;
-    tables.next().is_none().then_some(())?;
-    let cap_id = table.entries[1].entity_id;
-    let cap = plane_equation(
-        cap_id,
-        sources.datums,
-        sources.model_planes,
-        sources.outline_planes,
-    )?;
-    let mut candidates = sources.datums.iter().filter_map(|datum| {
-        let equation = SignedPlaneEquation {
-            normal: datum.plane().normal(),
-            offset: datum.plane().offset(),
+        let candidate = candidates.next()?;
+        candidates.next().is_none().then_some(())?;
+        let aligned_cap_offset = if dot(candidate.normal, cap.normal).is_sign_negative() {
+            -cap.offset
+        } else {
+            cap.offset
         };
-        let cap_alignment = dot(equation.normal, cap.normal).abs();
-        let reference_alignment = dot(equation.normal, reference.normal).abs();
-        ((cap_alignment - 1.0).abs() <= EPS_PLACEMENT_EXACT_GEOMETRY
-            && reference_alignment <= EPS_PLACEMENT_EXACT_GEOMETRY)
-            .then_some(equation)
-    });
-    let candidate = candidates.next()?;
-    candidates.next().is_none().then_some(())?;
-    let aligned_cap_offset = if dot(candidate.normal, cap.normal).is_sign_negative() {
-        -cap.offset
-    } else {
-        cap.offset
-    };
-    let separation = (candidate.offset - aligned_cap_offset).abs();
-    let scale = candidate.offset.abs().max(cap.offset.abs()).max(1.0);
-    (separation > EPS_PLACEMENT_EXACT_GEOMETRY * scale).then_some(candidate)
+        let separation = (candidate.offset - aligned_cap_offset).abs();
+        let scale = candidate.offset.abs().max(cap.offset.abs()).max(1.0);
+        (separation > EPS_PLACEMENT_EXACT_GEOMETRY * scale).then_some(candidate)
     })())
 }
 
@@ -1398,8 +1398,8 @@ pub(crate) fn resolve(
     }
     ctx.stable_sort_by(
         result.as_mut_slice(),
-            |value| &value.offset,
-            Ord::cmp,
+        |value| &value.offset,
+        Ord::cmp,
         "creo resolve result ordering",
     )?;
     Ok(result)

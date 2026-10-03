@@ -1612,7 +1612,8 @@ fn project_preview_asset(
         )?;
     }
     let data = ctx.copy_retained(bytes, "retain Inventor preview asset")?;
-    Asset::try_new(ctx, 
+    Asset::try_new(
+        ctx,
         AssetId::compose(
             &cadmpeg_ir::identity_namespace!("inventor", "document", "asset"),
             cadmpeg_ir::identity_key!("preview-").then(ordinal),
@@ -1911,7 +1912,10 @@ fn project_ufrx_model_state(
         )?,
         ordinal: record_ordinal(ctx, ordinal, "Inventor UFRx model-state ordinal")?,
         prefix: state.prefix,
-        name: ctx.validate_nonblank_text(ctx.copy_retained_text(&state.name, "retain Inventor UFRx model-state name")?, "validate name")?,
+        name: ctx.validate_nonblank_text(
+            ctx.copy_retained_text(&state.name, "retain Inventor UFRx model-state name")?,
+            "validate name",
+        )?,
         state: state.state,
         prefix_count: state.prefix_count,
         parameters,
@@ -1958,7 +1962,10 @@ fn project_ufrx_external_reference(
             "retain Inventor UFRx external reference id",
         )?,
         ordinal: record_ordinal(ctx, ordinal, "Inventor UFRx external ordinal")?,
-        path: ctx.validate_nonblank_text(ctx.copy_retained_text(&reference.path, "retain Inventor UFRx external path")?, "validate path")?,
+        path: ctx.validate_nonblank_text(
+            ctx.copy_retained_text(&reference.path, "retain Inventor UFRx external path")?,
+            "validate path",
+        )?,
         library_id: reference.library_id,
         library_name: ctx.copy_retained_text(
             &reference.library_name,
@@ -2132,13 +2139,20 @@ fn project_ufrx_representation(
         };
     let wire = UfrxRepresentationRecordWire {
         prefix: state.prefix,
-        active_representation: (active_representation).map(|value| ctx.validate_nonblank_text(value, "validate active_representation")).transpose()?,
-        active_representation_kind: (active_representation_kind).map(|value| ctx.validate_nonblank_text(value, "validate active_representation_kind")).transpose()?,
+        active_representation: (active_representation)
+            .map(|value| ctx.validate_nonblank_text(value, "validate active_representation"))
+            .transpose()?,
+        active_representation_kind: (active_representation_kind)
+            .map(|value| ctx.validate_nonblank_text(value, "validate active_representation_kind"))
+            .transpose()?,
         secondary_active_lod_state: state.secondary_active_lod_state,
-        active_model_state: ctx.validate_nonblank_text(ctx.copy_retained_text(
-            &state.active_model_state,
-            "retain Inventor UFRx active model state",
-        )?, "validate active_model_state")?,
+        active_model_state: ctx.validate_nonblank_text(
+            ctx.copy_retained_text(
+                &state.active_model_state,
+                "retain Inventor UFRx active model state",
+            )?,
+            "validate active_model_state",
+        )?,
         active_model_state_state: state.active_model_state_state,
     };
     admit_ufrx_record(
@@ -2365,7 +2379,7 @@ fn admit_protein_rejection(
         detail: ctx.validate_nonblank_text(wire.detail, "validate Protein rejection detail")?,
         id: wire.id,
         entry_name: wire.entry_name,
-        ordinal: wire.ordinal
+        ordinal: wire.ordinal,
     };
     admit_ufrx_record(ctx, ProteinRejectionRecord::try_from(wire), &scope, issues)
 }

@@ -633,9 +633,12 @@ fn insert_termination_field(
     value: String,
     operation: &'static str,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    let name =
-        cadmpeg_core::text::NonBlankString::for_decode(ctx, copy_termination_text(ctx, name, operation)?, "validate nonblank text")?
-            .ok_or_else(|| cadmpeg_core::CodecError::malformed("blank termination field name"))?;
+    let name = cadmpeg_core::text::NonBlankString::for_decode(
+        ctx,
+        copy_termination_text(ctx, name, operation)?,
+        "validate nonblank text",
+    )?
+    .ok_or_else(|| cadmpeg_core::CodecError::malformed("blank termination field name"))?;
     ctx.insert_btree_map(fields, name, value, operation)?;
     Ok(())
 }
@@ -1176,12 +1179,7 @@ fn history_object_offsets(
         ctx.reserve_vec(&mut objects, 1, operation)?;
         objects.push((name.offset, id));
     }
-    ctx.sort_unstable_by(
-        &mut objects,
-            |value| &value.0,
-            Ord::cmp,
-        operation,
-    )?;
+    ctx.sort_unstable_by(&mut objects, |value| &value.0, Ord::cmp, operation)?;
     Ok(objects)
 }
 
@@ -1314,12 +1312,7 @@ pub(crate) fn project_surface_sweep_profiles(
                 objects.push((name.offset, *feature));
             }
         }
-        ctx.sort_unstable_by(
-            &mut objects,
-            |value| &value.0,
-            Ord::cmp,
-            OPERATION,
-        )?;
+        ctx.sort_unstable_by(&mut objects, |value| &value.0, Ord::cmp, OPERATION)?;
         for (index, &(start, feature)) in objects.iter().enumerate() {
             ctx.charge_work(
                 u64_from_index(feature.input_class.as_ref().map_or(0, String::len))

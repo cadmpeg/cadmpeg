@@ -18,8 +18,10 @@ fn nx_block_dimension_parameters_name_the_block_as_consumer() {
         expression: key.to_string(),
         value: Some(cadmpeg_ir::scalar::FiniteReal::try_from(f64::from(key)).unwrap()),
         source_entry: "part".into(),
-        source_table: cadmpeg_core::text::NonBlankString::try_from("nx:test:expression-table#table")
-            .unwrap(),
+        source_table: cadmpeg_core::text::NonBlankString::try_from(
+            "nx:test:expression-table#table",
+        )
+        .unwrap(),
         source_offset: u64::from(key),
     };
     let expressions = [expression(20), expression(21), expression(22)];
@@ -153,8 +155,10 @@ fn nx_inch_expression_values_are_attached_in_millimeters() {
             expression: formula.into(),
             value: value.map(|value| cadmpeg_ir::scalar::FiniteReal::try_from(value).unwrap()),
             source_entry: "/Root/UG_PART/UG_PART".into(),
-            source_table: cadmpeg_core::text::NonBlankString::try_from("nx:test:expression-table#table")
-                .unwrap(),
+            source_table: cadmpeg_core::text::NonBlankString::try_from(
+                "nx:test:expression-table#table",
+            )
+            .unwrap(),
             source_offset: u64::from(key),
         }
     };
@@ -207,8 +211,10 @@ fn nx_native_expression_units_remain_outside_neutral_values() {
         expression: "4".into(),
         value: Some(cadmpeg_ir::scalar::FiniteReal::try_from(4.0).unwrap()),
         source_entry: "part".into(),
-        source_table: cadmpeg_core::text::NonBlankString::try_from("nx:test:expression-table#table")
-            .unwrap(),
+        source_table: cadmpeg_core::text::NonBlankString::try_from(
+            "nx:test:expression-table#table",
+        )
+        .unwrap(),
         source_offset: 1,
     };
     let mut ir = cadmpeg_ir::CadIr::empty();

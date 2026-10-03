@@ -30,9 +30,18 @@ fn rse_issue_detail(ctx: &DecodeContext<'_>, error: CodecError) -> Result<String
 pub(crate) struct StorageBand(u32);
 
 impl cadmpeg_core::decode::cost::DecodeCost for StorageBand {
-    const FIXED_BYTES: Option<u64> = Some(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<Self>()));
-    fn decode_cost(&self, _ctx: &cadmpeg_core::decode::DecodeContext<'_>, _operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
-        Ok(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<Self>()))
+    const FIXED_BYTES: Option<u64> =
+        Some(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
+            Self,
+        >()));
+    fn decode_cost(
+        &self,
+        _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        _operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        Ok(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
+            Self,
+        >()))
     }
 }
 
@@ -58,7 +67,11 @@ impl StorageBand {
 pub(crate) struct SegmentToken(IdentityKey);
 
 impl cadmpeg_core::decode::cost::DecodeCost for SegmentToken {
-    fn decode_cost(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
         cadmpeg_core::decode::cost::DecodeCost::decode_cost(self.as_str(), ctx, operation)
     }
 }
@@ -135,8 +148,16 @@ pub(crate) struct MetaStreamDeclaration {
 }
 
 impl cadmpeg_core::decode::cost::DecodeCost for MetaStreamDeclaration {
-    fn decode_cost(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
-        cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(&self.marker, self.version), ctx, operation)
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        cadmpeg_core::decode::cost::DecodeCost::decode_cost(
+            &(&self.marker, self.version),
+            ctx,
+            operation,
+        )
     }
 }
 

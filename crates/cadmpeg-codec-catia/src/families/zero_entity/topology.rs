@@ -278,8 +278,8 @@ fn endpoint_pair_candidates_with_budget(
             }
             ctx.stable_sort_by_key(
                 &mut pair,
-            |value| occurrences[*value].support_record_ordinal,
-            Ord::cmp,
+                |value| occurrences[*value].support_record_ordinal,
+                Ord::cmp,
                 "catia_zero_pair_support_order",
             )?;
             let [first, second] = [occurrences[pair[0]], occurrences[pair[1]]];
@@ -300,8 +300,8 @@ fn endpoint_pair_candidates_with_budget(
     }
     ctx.stable_sort_by(
         &mut candidates,
-            |value| &value.support_record_ordinals,
-            Ord::cmp,
+        |value| &value.support_record_ordinals,
+        Ord::cmp,
         "catia_zero_endpoint_pairs_sort",
     )?;
     Ok(Some(candidates))
@@ -347,7 +347,9 @@ pub(super) fn endpoint_locus_candidates_with_budget(
         }
     }
     let mut neighbors =
-        ctx.collect_indexed_vec(endpoints.len(), "catia_zero_locus_neighbors", |_| Ok(Vec::new()))?;
+        ctx.collect_indexed_vec(endpoints.len(), "catia_zero_locus_neighbors", |_| {
+            Ok(Vec::new())
+        })?;
     for (index, (_, _, point)) in endpoints.iter().enumerate() {
         let Some(cell) = endpoint_cell(*point) else {
             return Ok(None);
@@ -466,7 +468,10 @@ fn endpoint_match_graph(
             }
         }
     }
-    let mut matches = ctx.collect_indexed_vec(occurrences.len(), "catia_zero_match_rows", |_| Ok(Vec::new()))?;
+    let mut matches =
+        ctx.collect_indexed_vec(occurrences.len(), "catia_zero_match_rows", |_| {
+            Ok(Vec::new())
+        })?;
     for (index, occurrence) in occurrences.iter().enumerate() {
         let mut possible = HashSet::new();
         for endpoint in occurrence.model_endpoints {
@@ -510,9 +515,12 @@ fn endpoint_match_graph(
         }
     }
     for neighbors in &mut matches {
-        ctx.sort_unstable_by(neighbors,
+        ctx.sort_unstable_by(
+            neighbors,
             |value| value,
-            Ord::cmp, "catia_zero_match_edges_sort")?;
+            Ord::cmp,
+            "catia_zero_match_edges_sort",
+        )?;
     }
     Ok(Some(matches))
 }

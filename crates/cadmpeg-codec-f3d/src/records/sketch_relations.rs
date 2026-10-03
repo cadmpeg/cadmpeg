@@ -1055,7 +1055,8 @@ impl SketchRelation {
         wire: SketchRelationSerde,
     ) -> Result<Self, CodecError> {
         let wire = SketchRelationSerde {
-            owner_entity_id: ctx.validate_nonblank_text(wire.owner_entity_id, "validate sketch relation owner")?,
+            owner_entity_id: ctx
+                .validate_nonblank_text(wire.owner_entity_id, "validate sketch relation owner")?,
             id: wire.id,
             record_index: wire.record_index,
             class_tag: wire.class_tag,

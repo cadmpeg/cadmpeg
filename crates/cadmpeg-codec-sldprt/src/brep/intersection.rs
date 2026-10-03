@@ -297,7 +297,11 @@ fn term_records(
     for body in record_bodies(bytes, 0x29) {
         term_at(ctx, bytes, body, &mut out)?;
     }
-    for label in ctx.find_bytes_iter(bytes, b"term_use", "scan Parasolid inline terminator records")? {
+    for label in ctx.find_bytes_iter(
+        bytes,
+        b"term_use",
+        "scan Parasolid inline terminator records",
+    )? {
         let tail = label + b"term_use".len();
         if bytes.get(tail..tail + INLINE_TERM_TAIL.len()) == Some(INLINE_TERM_TAIL) {
             term_at(ctx, bytes, tail + INLINE_TERM_TAIL.len(), &mut out)?;
@@ -374,7 +378,9 @@ fn uv_records(
             )?;
         }
     }
-    for label in ctx.find_bytes_iter(bytes, b"values", "scan Parasolid inline support-UV records")? {
+    for label in
+        ctx.find_bytes_iter(bytes, b"values", "scan Parasolid inline support-UV records")?
+    {
         let tail = label + b"values".len();
         if bytes.get(tail..tail + INLINE_UV_TAIL.len()) == Some(INLINE_UV_TAIL) {
             if let Some((attr, shape)) = uv_at(ctx, bytes, tail + INLINE_UV_TAIL.len())? {

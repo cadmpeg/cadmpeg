@@ -1594,9 +1594,9 @@ fn project_all_dimension_constraints(
         ctx.stable_sort_by_key(
             &mut records[..],
             |value| {
-                    let record = value;
-                    record.recipe_ordinal
-                },
+                let record = value;
+                record.recipe_ordinal
+            },
             Ord::cmp,
             "sort f3d design dimensions 1",
         )?;
@@ -2001,8 +2001,8 @@ fn project_all_dimension_constraints(
     }
     ctx.stable_sort_by(
         &mut constraints[..],
-            |value| &value.id,
-            Ord::cmp,
+        |value| &value.id,
+        Ord::cmp,
         "sort f3d design dimensions 2",
     )?;
     Ok(constraints)
@@ -3777,8 +3777,8 @@ pub(crate) fn project_spatial_dimension_constraints(
     }
     ctx.stable_sort_by(
         &mut missing[..],
-            |value| value.as_str(),
-            Ord::cmp,
+        |value| value.as_str(),
+        Ord::cmp,
         "sort f3d design dimensions 3",
     )?;
     for parameter_id in missing {
@@ -4323,7 +4323,9 @@ fn spatial_counted_offset_dimension_definition(
     if operand_field(owner) != Some("owner")
         || owner.native_kind.as_str() != "record"
         || operand_role(owner) != Some(0)
-        || loci.iter().any(|operand| operand.native_kind.as_str() != "curve")
+        || loci
+            .iter()
+            .any(|operand| operand.native_kind.as_str() != "curve")
         || returns.iter().any(|operand| {
             operand.native_kind.as_str() != "curve"
                 || operand_field(operand) != Some("return")

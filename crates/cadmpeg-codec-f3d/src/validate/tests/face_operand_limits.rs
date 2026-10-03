@@ -165,11 +165,13 @@ fn face_error(case: Case, max_items: u64, max_retained: u64) -> cadmpeg_core::Co
                         ir.model.faces[0].id.clone(),
                     ),
                     selector: 1,
-                    token: cadmpeg_core::text::NonBlankString::try_from(if matches!(case, Case::Referenced | Case::Alternate) {
+                    token: cadmpeg_core::text::NonBlankString::try_from(
+                        if matches!(case, Case::Referenced | Case::Alternate) {
                             "13"
                         } else {
                             "1"
-                        })
+                        },
+                    )
                     .unwrap(),
                     design_references: vec![1],
                     ordinal: 0,

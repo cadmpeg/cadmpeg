@@ -1140,7 +1140,9 @@ fn legacy_stream_start(
         let Some(window) = bytes.get(search..) else {
             return Ok(None);
         };
-        let Some(relative) = ctx.find_bytes(window, b"PS\x00\x00", "scan NX legacy stream headers")? else {
+        let Some(relative) =
+            ctx.find_bytes(window, b"PS\x00\x00", "scan NX legacy stream headers")?
+        else {
             return Ok(None);
         };
         let Some(start) = search.checked_add(relative) else {
@@ -1186,7 +1188,11 @@ fn legacy_transmit_header(
     Ok(description
         .iter()
         .all(|byte| byte.is_ascii_graphic() || *byte == b' ')
-        && ctx.contains_bytes(description, b"TRANSMIT FILE", "find NX legacy transmit marker")?)
+        && ctx.contains_bytes(
+            description,
+            b"TRANSMIT FILE",
+            "find NX legacy transmit marker",
+        )?)
 }
 
 /// Inflate one complete zlib member.

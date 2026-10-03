@@ -115,11 +115,21 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     }
                     for (index, point) in points.as_slice().iter().enumerate() {
                         parameters.insert(
-                            cadmpeg_core::text::NonBlankString::try_from(format!("Position{index}")).ok().ok_or_else(|| CodecError::malformed("fillet parameter name is blank"))?,
+                            cadmpeg_core::text::NonBlankString::try_from(format!(
+                                "Position{index}"
+                            ))
+                            .ok()
+                            .ok_or_else(|| {
+                                CodecError::malformed("fillet parameter name is blank")
+                            })?,
                             point.parameter.get().to_string(),
                         );
                         parameters.insert(
-                            cadmpeg_core::text::NonBlankString::try_from(format!("Radius{index}")).ok().ok_or_else(|| CodecError::malformed("fillet parameter name is blank"))?,
+                            cadmpeg_core::text::NonBlankString::try_from(format!("Radius{index}"))
+                                .ok()
+                                .ok_or_else(|| {
+                                    CodecError::malformed("fillet parameter name is blank")
+                                })?,
                             format_length_mm(point.radius.into()),
                         );
                     }

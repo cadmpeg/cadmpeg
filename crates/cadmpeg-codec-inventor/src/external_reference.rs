@@ -1100,7 +1100,8 @@ mod tests {
             .expect("synthetic compound file fits policy");
         let snapshot = CompoundSnapshot::new(&ctx, root).expect("synthetic compound file parses");
         snapshot
-            .stream(&ctx, "RSeStorage/RSeSegInfo").expect("lookup admission")
+            .stream(&ctx, "RSeStorage/RSeSegInfo")
+            .expect("lookup admission")
             .expect("validated stream entry")
             .id()
     }

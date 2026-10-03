@@ -1079,8 +1079,7 @@ fn parse_from_records_with_class21(
         else {
             continue;
         };
-        let payload =
-            ctx.copy_slice(&record.payload, "catia_b5_opaque_surface_payload")?;
+        let payload = ctx.copy_slice(&record.payload, "catia_b5_opaque_surface_payload")?;
         ctx.insert_btree_map(
             &mut surfaces,
             surface_id,
@@ -1240,10 +1239,8 @@ fn parse_from_records_with_class21(
                     B5Surface::Unknown {
                         family: record.family,
                         class: record.class,
-                        payload: ctx.copy_slice(
-                            &record.payload,
-                            "catia_b5_offset_carrier_payload",
-                        )?,
+                        payload: ctx
+                            .copy_slice(&record.payload, "catia_b5_offset_carrier_payload")?,
                     }
                 };
                 let surface_changed = surfaces.get(&record.object_id) != Some(&carrier);
@@ -1682,8 +1679,7 @@ fn copy_surface(ctx: &DecodeContext<'_>, surface: &B5Surface) -> Result<B5Surfac
     Ok(match surface {
         B5Surface::UnresolvedNurbs { header, payload } => B5Surface::UnresolvedNurbs {
             header: header.copy_charged(ctx)?,
-            payload: ctx
-                .copy_slice(payload, "catia_b5_copied_unresolved_surface_payload")?,
+            payload: ctx.copy_slice(payload, "catia_b5_copied_unresolved_surface_payload")?,
         },
         B5Surface::Unknown {
             family,
@@ -2297,8 +2293,8 @@ pub(in crate::families) fn targeted_geometry_graph_from_frames(
     }
     ctx.stable_sort_by(
         &mut records,
-            |value| &value.offset,
-            Ord::cmp,
+        |value| &value.offset,
+        Ord::cmp,
         "catia_b5_targeted_geometry_sort",
     )?;
     parse_from_records(ctx, bytes, &records, frames, false, refusal)
@@ -3034,8 +3030,8 @@ fn bind_native_vertices(
     let mut ranked = ctx.collect_vec(logical_coordinates, "catia_b5_ranked_logical_vertices")?;
     ctx.sort_unstable_by(
         &mut ranked,
-            |value| &value.0,
-            Ord::cmp,
+        |value| &value.0,
+        Ord::cmp,
         "catia_b5_ranked_logical_vertices_sort",
     )?;
     let mut logical_vertex_indices = HashMap::new();
@@ -3359,14 +3355,14 @@ fn bind_edge_vertices(
                 let mut current_sorted = indices;
                 ctx.sort_unstable_by(
                     &mut previous_sorted,
-            |value| value,
-            Ord::cmp,
+                    |value| value,
+                    Ord::cmp,
                     "catia b5 edge vertex pair sort",
                 )?;
                 ctx.sort_unstable_by(
                     &mut current_sorted,
-            |value| value,
-            Ord::cmp,
+                    |value| value,
+                    Ord::cmp,
                     "catia b5 edge vertex pair sort",
                 )?;
                 if previous_sorted != current_sorted {
@@ -5963,8 +5959,7 @@ fn framed_records_and_dependency_candidates(
         {
             continue;
         }
-        let seen_payload =
-            ctx.copy_slice(&record.payload, "catia_b5_seen_record_payload")?;
+        let seen_payload = ctx.copy_slice(&record.payload, "catia_b5_seen_record_payload")?;
         ctx.insert_hash_map(
             &mut seen,
             frame.object_id,
@@ -5975,8 +5970,8 @@ fn framed_records_and_dependency_candidates(
     }
     ctx.sort_unstable_by_key(
         &mut records,
-            |value| (value.0, std::cmp::Reverse(value.1.offset)),
-            Ord::cmp,
+        |value| (value.0, std::cmp::Reverse(value.1.offset)),
+        Ord::cmp,
         "catia_b5_framed_records_sort",
     )?;
     let mut ordered = Vec::new();
@@ -6037,8 +6032,7 @@ fn indexed_topology_records_and_dependency_candidates(
         {
             continue;
         }
-        let seen_payload =
-            ctx.copy_slice(&record.payload, "catia_b5_indexed_seen_payload")?;
+        let seen_payload = ctx.copy_slice(&record.payload, "catia_b5_indexed_seen_payload")?;
         ctx.insert_hash_map(
             &mut seen,
             frame.object_id,
@@ -6053,8 +6047,8 @@ fn indexed_topology_records_and_dependency_candidates(
     }
     ctx.sort_unstable_by_key(
         &mut records,
-            |value| (value.0, std::cmp::Reverse(value.1.offset)),
-            Ord::cmp,
+        |value| (value.0, std::cmp::Reverse(value.1.offset)),
+        Ord::cmp,
         "catia_b5_indexed_topology_records_sort",
     )?;
     let mut ordered = Vec::new();
@@ -6732,8 +6726,7 @@ fn owned_object_stream_population(
         {
             continue;
         }
-        let bytes =
-            ctx.copy_slice(&stream[range.clone()], "catia_b5_population_isolated_bytes")?;
+        let bytes = ctx.copy_slice(&stream[range.clone()], "catia_b5_population_isolated_bytes")?;
         ctx.admit_hash_map_entry(
             &mut isolated,
             &object_id,
@@ -6761,8 +6754,8 @@ fn owned_object_stream_population(
     let mut isolated = isolated_values;
     ctx.stable_sort_by(
         &mut isolated,
-            |value| &value.0,
-            Ord::cmp,
+        |value| &value.0,
+        Ord::cmp,
         "catia_b5_population_isolated_sort",
     )?;
 

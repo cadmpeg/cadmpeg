@@ -403,8 +403,8 @@ pub(crate) fn enrich_history_reference_planes(
             }
             ctx.stable_sort_by_key(
                 &mut anchored_frames,
-            |value| reference_plane_frame_key(value),
-            Ord::cmp,
+                reference_plane_frame_key,
+                Ord::cmp,
                 "sort SLDPRT reference frames",
             )?;
             anchored_frames.dedup_by_key(|frame| reference_plane_frame_key(frame));
@@ -737,7 +737,7 @@ pub(crate) fn enrich_history_reference_planes(
     for ((history_index, feature_index), mut frames) in candidates {
         ctx.stable_sort_by_key(
             &mut frames,
-            |value| reference_plane_frame_key(value),
+            reference_plane_frame_key,
             Ord::cmp,
             "sort SLDPRT reference frames",
         )?;
@@ -1760,8 +1760,8 @@ pub(crate) fn enrich_history_sketch_block_references(
             }
             ctx.stable_sort_by(
                 &mut names,
-            |value| &value.offset,
-            Ord::cmp,
+                |value| &value.offset,
+                Ord::cmp,
                 "sort SLDPRT sketch block names",
             )?;
             let mut instance_names = Vec::new();
@@ -1894,8 +1894,8 @@ pub(crate) fn enrich_history_sketch_block_references(
         for (feature_index, mut sources) in candidates {
             ctx.sort_unstable_by(
                 &mut sources,
-            |value| value,
-            Ord::cmp,
+                |value| value,
+                Ord::cmp,
                 "sort SLDPRT sketch block definitions",
             )?;
             sources.dedup();
@@ -1917,8 +1917,8 @@ pub(crate) fn enrich_history_sketch_block_references(
         for (feature_index, mut origins) in placement_candidates {
             ctx.stable_sort_by(
                 &mut origins,
-            |value| value,
-            |left, right| {
+                |value| value,
+                |left, right| {
                     [left.x.to_bits(), left.y.to_bits(), left.z.to_bits()].cmp(&[
                         right.x.to_bits(),
                         right.y.to_bits(),
@@ -2175,8 +2175,8 @@ pub(crate) fn enrich_history_reference_axes(
             }
             ctx.stable_sort_by_key(
                 &mut anchored_frames,
-            |value| reference_axis_frame_key(value),
-            Ord::cmp,
+                reference_axis_frame_key,
+                Ord::cmp,
                 "sort SLDPRT reference frames",
             )?;
             anchored_frames.dedup_by_key(|frame| reference_axis_frame_key(frame));
@@ -3461,8 +3461,12 @@ fn compact_reference_plane_frame_candidates<'a>(
                 });
                 if let Err(error) = ctx.stable_sort_by_key(
                     &mut pair,
-            |value| value.as_ref().map_or([u64::MAX; 9], |(_, frame)| reference_plane_frame_key(frame)),
-            Ord::cmp,
+                    |value| {
+                        value
+                            .as_ref()
+                            .map_or([u64::MAX; 9], |(_, frame)| reference_plane_frame_key(frame))
+                    },
+                    Ord::cmp,
                     "sldprt compact reference plane frame pair sort",
                 ) {
                     return Some(Err(error));

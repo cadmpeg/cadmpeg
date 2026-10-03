@@ -2348,8 +2348,8 @@ pub(in crate::native) fn feature_block_payload_named_records(
             }
             ctx.stable_sort_by(
                 &mut scalar_fields,
-            |value| &value.payload_offset,
-            Ord::cmp,
+                |value| &value.payload_offset,
+                Ord::cmp,
                 "sort NX block payload scalars",
             )?;
             let id = ctx.format_retained(
@@ -2570,7 +2570,7 @@ pub(in crate::native) fn feature_block_dimensions(
         }
         ctx.stable_sort_by_key(
             &mut operation_bindings,
-            |value| (value.input_slot,value.reference_ordinal),
+            |value| (value.input_slot, value.reference_ordinal),
             Ord::cmp,
             "sort NX block dimension bindings",
         )?;

@@ -301,7 +301,7 @@ pub(crate) fn bind_parameter_scalars<'a>(
         ctx.charge_work(u64_from_index(starts.len()), OPERATION)?;
         ctx.stable_sort_by_key(
             &mut starts,
-            |value| (value.0.is_none(),value.0),
+            |value| (value.0.is_none(), value.0),
             Ord::cmp,
             "sort SLDPRT feature starts",
         )?;
@@ -1167,12 +1167,7 @@ fn variable_fillet_radius_groups<'a>(
             ctx.reserve_vec(&mut selections_copy, selections.len(), OPERATION)?;
             selections_copy.extend_from_slice(selections);
             let mut selections = selections_copy;
-            ctx.sort_unstable_by(
-                &mut selections,
-            |value| &value.ordinal,
-            Ord::cmp,
-                OPERATION,
-            )?;
+            ctx.sort_unstable_by(&mut selections, |value| &value.ordinal, Ord::cmp, OPERATION)?;
             let points = ordered_parameters
                 .into_iter()
                 .enumerate()
@@ -1212,12 +1207,7 @@ fn variable_fillet_radius_groups<'a>(
                 objects.push((name.offset, candidate));
             }
         }
-        ctx.sort_unstable_by(
-            &mut objects,
-            |value| &value.0,
-            Ord::cmp,
-            OPERATION,
-        )?;
+        ctx.sort_unstable_by(&mut objects, |value| &value.0, Ord::cmp, OPERATION)?;
         let Some(index) = objects
             .iter()
             .position(|(_, candidate)| candidate.id == feature_ref)
@@ -1348,12 +1338,7 @@ fn variable_fillet_radius_groups<'a>(
         ctx.reserve_vec(&mut selections_copy, selections.len(), OPERATION)?;
         selections_copy.extend_from_slice(selections);
         let mut selections = selections_copy;
-        ctx.sort_unstable_by(
-            &mut selections,
-            |value| &value.ordinal,
-            Ord::cmp,
-            OPERATION,
-        )?;
+        ctx.sort_unstable_by(&mut selections, |value| &value.ordinal, Ord::cmp, OPERATION)?;
         let points = ordered_parameters
             .into_iter()
             .enumerate()
@@ -2919,8 +2904,8 @@ pub(crate) fn project_unbound_cosmetic_thread_faces(
                 }
                 ctx.sort_unstable_by(
                     &mut references,
-            |value| &value.0,
-            Ord::cmp,
+                    |value| &value.0,
+                    Ord::cmp,
                     NATIVE_OPERATION,
                 )?;
                 let native = if references.is_empty() {

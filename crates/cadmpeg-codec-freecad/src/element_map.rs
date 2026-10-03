@@ -229,8 +229,8 @@ pub(crate) fn parse(
     }
     ctx.stable_sort_by(
         &mut tables,
-            |value| &value.index,
-            Ord::cmp,
+        |value| &value.index,
+        Ord::cmp,
         "FreeCAD string tables sort",
     )?;
     Ok((StringTables::try_from(tables)?, maps))

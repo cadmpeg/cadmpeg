@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
-use rustc_middle::ty;
 use crate::{types, Analysis};
 use rustc_hir::{def::Res, Expr, ExprKind, HirId, MatchSource, Node};
+use rustc_middle::ty;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct ExtentTerm {
@@ -56,14 +56,26 @@ impl Default for Flow<'_> {
 impl<'tcx> Analysis<'_, 'tcx> {
     fn range_key(&self, range: &'tcx Expr<'tcx>, seen: &mut Vec<HirId>) -> Option<String> {
         let range = self.initializer(range).unwrap_or(range);
-        let ExprKind::Struct(_, fields, _) = range.kind else { return self.key(range, seen); };
-        let ty::Adt(owner, _) = self.expr_ty(range).kind() else { return None; };
-        if !types::standard(self.tcx, owner.did()) { return None; }
+        let ExprKind::Struct(_, fields, _) = range.kind else {
+            return self.key(range, seen);
+        };
+        let ty::Adt(owner, _) = self.expr_ty(range).kind() else {
+            return None;
+        };
+        if !types::standard(self.tcx, owner.did()) {
+            return None;
+        }
         let name = self.tcx.item_name(owner.did());
-        if !matches!(name.as_str(), "Range" | "RangeTo" | "RangeFrom" | "RangeInclusive" | "RangeToInclusive") { return None; }
+        if !matches!(
+            name.as_str(),
+            "Range" | "RangeTo" | "RangeFrom" | "RangeInclusive" | "RangeToInclusive"
+        ) {
+            return None;
+        }
         let mut result = name.as_str().to_owned();
         for field in fields {
-            let key = self.extent_terms(field.expr, &mut Vec::new())
+            let key = self
+                .extent_terms(field.expr, &mut Vec::new())
                 .map(|terms| format!("{terms:?}"))
                 .or_else(|| self.key(field.expr, &mut seen.clone()))?;
             result.push_str(&format!(":{}={key}", field.ident.name));
@@ -136,8 +148,12 @@ impl<'tcx> Analysis<'_, 'tcx> {
                 if matches!(value.kind(), rustc_middle::ty::Adt(owner, _) if types::standard(self.tcx, owner.did()) && self.tcx.item_name(owner.did()).as_str().starts_with("Range"))
                 {
                     let base = self.key(base, &mut seen.clone())?;
-                    if matches!(value.kind(), ty::Adt(owner, _) if self.tcx.item_name(owner.did()).as_str() == "RangeFull") { return Some(base); }
-                    self.range_key(index, seen).map(|range| format!("{base}.range[{range}]"))
+                    if matches!(value.kind(), ty::Adt(owner, _) if self.tcx.item_name(owner.did()).as_str() == "RangeFull")
+                    {
+                        return Some(base);
+                    }
+                    self.range_key(index, seen)
+                        .map(|range| format!("{base}.range[{range}]"))
                 } else {
                     self.key(base, seen).map(|key| format!("{key}.window"))
                 }
@@ -156,10 +172,17 @@ impl<'tcx> Analysis<'_, 'tcx> {
                         matches!(self.expr_ty(operand).kind(), rustc_middle::ty::Adt(owner, _)
                             if types::standard(self.tcx, owner.did()) && self.tcx.item_name(owner.did()).as_str().starts_with("Range")));
                     if range {
-                        let base = operands.first().and_then(|operand| self.key(operand, &mut seen.clone()))?;
+                        let base = operands
+                            .first()
+                            .and_then(|operand| self.key(operand, &mut seen.clone()))?;
                         let range = operands.get(1)?;
-                        if matches!(self.expr_ty(range).kind(), ty::Adt(owner, _) if self.tcx.item_name(owner.did()).as_str() == "RangeFull") { return Some(base); }
-                        return self.range_key(range, seen).map(|range| format!("{base}.range[{range}]"));
+                        if matches!(self.expr_ty(range).kind(), ty::Adt(owner, _) if self.tcx.item_name(owner.did()).as_str() == "RangeFull")
+                        {
+                            return Some(base);
+                        }
+                        return self
+                            .range_key(range, seen)
+                            .map(|range| format!("{base}.range[{range}]"));
                     }
                     return None;
                 }
@@ -285,7 +308,8 @@ impl<'tcx> Analysis<'_, 'tcx> {
                     "checked_mul" => Some((true, 0)),
                     _ => None,
                 }
-            } else if self.trusted_context_callee(expression) && self.context_operation(expression) {
+            } else if self.trusted_context_callee(expression) && self.context_operation(expression)
+            {
                 match name.as_str() {
                     "cost_sum" => Some((false, 1)),
                     "cost_product" => Some((true, 1)),
@@ -339,11 +363,16 @@ impl<'tcx> Analysis<'_, 'tcx> {
                 Node::Expr(parent) => match parent.kind {
                     ExprKind::Match(_, _, MatchSource::TryDesugar(_)) => return true,
                     ExprKind::Call(_, _) | ExprKind::MethodCall(_, _, _, _) => {
-                        let Some((id, _)) = self.call(parent) else { return false; };
+                        let Some((id, _)) = self.call(parent) else {
+                            return false;
+                        };
                         // Standard Result::map_err keeps Err on the refusal path;
                         // the surrounding try returns before admitted work.
                         if !types::standard(self.tcx, id)
-                            || !matches!(self.tcx.item_name(id).as_str(), "branch" | "map_err") { return false; }
+                            || !matches!(self.tcx.item_name(id).as_str(), "branch" | "map_err")
+                        {
+                            return false;
+                        }
                     }
                     ExprKind::AddrOf(_, _, _) | ExprKind::DropTemps(_) => (),
                     _ => return false,
@@ -471,6 +500,17 @@ impl<'tcx> Analysis<'_, 'tcx> {
         }
     }
 
+    fn standard_range_source(&self, expression: &'tcx Expr<'tcx>) -> bool {
+        match self.expr_ty(expression).peel_refs().kind() {
+            ty::Slice(_) | ty::Array(_, _) | ty::Str => true,
+            ty::Adt(owner, _) => {
+                types::standard(self.tcx, owner.did())
+                    && matches!(self.tcx.item_name(owner.did()).as_str(), "Vec" | "String")
+            }
+            _ => false,
+        }
+    }
+
     fn dominated_keys(&self, expression: &'tcx Expr<'tcx>, seen: &mut Vec<HirId>) -> Vec<String> {
         if seen.contains(&expression.hir_id) {
             return Vec::new();
@@ -478,9 +518,30 @@ impl<'tcx> Analysis<'_, 'tcx> {
         seen.push(expression.hir_id);
         if let Some(init) = self.initializer(expression) {
             let keys = self.dominated_keys(init, seen);
-            if !keys.is_empty() { return keys; }
+            if !keys.is_empty() {
+                return keys;
+            }
+        }
+        if let ExprKind::AddrOf(_, _, inner) | ExprKind::DropTemps(inner) = expression.kind {
+            return self.dominated_keys(inner, seen);
+        }
+        if let ExprKind::Index(base, range, _) = expression.kind {
+            if self.standard_range_source(base)
+                && matches!(self.expr_ty(range).peel_refs().kind(), ty::Adt(owner, _) if types::standard(self.tcx, owner.did()) && self.tcx.item_name(owner.did()).as_str().starts_with("Range"))
+            {
+                let mut keys: Vec<_> = self.key(expression, &mut Vec::new()).into_iter().collect();
+                keys.extend(self.dominated_keys(base, seen));
+                return keys;
+            }
         }
         if let Some((definition, operands)) = self.call(expression) {
+            if types::standard(self.tcx, definition) && self.tcx.item_name(definition).as_str() == "get"
+                && operands.first().is_some_and(|base| self.standard_range_source(base))
+                && operands.get(1).is_some_and(|range| matches!(self.expr_ty(range).peel_refs().kind(), ty::Adt(owner, _) if types::standard(self.tcx, owner.did()) && self.tcx.item_name(owner.did()).as_str().starts_with("Range"))) {
+                let mut keys: Vec<_> = self.key(expression, &mut Vec::new()).into_iter().collect();
+                keys.extend(operands.first().map_or_else(Vec::new, |base| self.dominated_keys(base, seen)));
+                return keys;
+            }
             if types::standard(self.tcx, definition)
                 && self.tcx.item_name(definition).as_str() == "zip"
             {
@@ -524,9 +585,17 @@ impl<'tcx> Analysis<'_, 'tcx> {
 
     pub(crate) fn invalidate_target(&mut self, expression: &'tcx Expr<'tcx>) {
         if let Some(key) = self.key(expression, &mut Vec::new()) {
-            self.flow.parser_receipts.retain(|receipt| !factor_depends_on(&receipt.guard, &key));
-            self.flow.scoped_storage.retain(|credit| credit.guard != key
-                && !credit.terms.iter().flat_map(|term| &term.factors).any(|factor| factor_depends_on(factor, &key)));
+            self.flow
+                .parser_receipts
+                .retain(|receipt| !factor_depends_on(&receipt.guard, &key));
+            self.flow.scoped_storage.retain(|credit| {
+                credit.guard != key
+                    && !credit
+                        .terms
+                        .iter()
+                        .flat_map(|term| &term.factors)
+                        .any(|factor| factor_depends_on(factor, &key))
+            });
             self.flow.work.retain(|credit| {
                 !credit
                     .extents
@@ -546,7 +615,10 @@ impl<'tcx> Analysis<'_, 'tcx> {
             });
             self.flow.storage_slots.retain(|credit| {
                 credit.target != key
-                    && !credit.scope.as_ref().is_some_and(|scope| scope.guard == key)
+                    && !credit
+                        .scope
+                        .as_ref()
+                        .is_some_and(|scope| scope.guard == key)
                     && !credit.target.starts_with(&format!("{key}."))
                     && !credit
                         .terms
@@ -589,29 +661,54 @@ impl<'tcx> Analysis<'_, 'tcx> {
             self.invalidate_target(target);
         }
         if let Some((definition, operands)) = self.call(expression) {
-            if types::standard(self.tcx, definition) && self.tcx.item_name(definition).as_str() == "drop" {
-                if let Some(operand) = operands.first() { self.invalidate_target(operand); }
+            if types::standard(self.tcx, definition)
+                && self.tcx.item_name(definition).as_str() == "drop"
+            {
+                if let Some(operand) = operands.first() {
+                    self.invalidate_target(operand);
+                }
             }
             let reserved = types::standard(self.tcx, definition)
                 && matches!(
                     self.tcx.item_name(definition).as_str(),
                     "try_reserve_exact" | "reserve_exact"
                 );
-            let admitted_growth = self.findings.admitted_growth_operations.contains(&expression.hir_id);
+            let admitted_growth = self
+                .findings
+                .admitted_growth_operations
+                .contains(&expression.hir_id);
             let slots: Vec<_> = self
                 .flow
                 .storage_slots
                 .iter()
-                .filter(|credit| (credit.usage == crate::storage::SlotUse::Insertion || admitted_growth)
-                    && (credit.usage != crate::storage::SlotUse::Reserve || reserved && admitted_growth))
+                .filter(|credit| {
+                    (credit.usage == crate::storage::SlotUse::Insertion || admitted_growth)
+                        && (credit.usage != crate::storage::SlotUse::Reserve
+                            || reserved && admitted_growth)
+                })
                 .cloned()
                 .collect();
             for operand in operands {
-                if !matches!(self.expr_ty_adjusted(operand).kind(), rustc_middle::ty::Ref(..))
-                    && self.key(operand, &mut Vec::new()).is_some_and(|key|
-                        self.flow.scoped_storage.iter().any(|credit| credit.guard == key)
-                            || self.flow.parser_receipts.iter().any(|receipt| factor_depends_on(&key, &receipt.guard))
-                            || self.flow.storage_slots.iter().any(|credit| credit.scope.as_ref().is_some_and(|scope| scope.guard == key))) {
+                if !matches!(
+                    self.expr_ty_adjusted(operand).kind(),
+                    rustc_middle::ty::Ref(..)
+                ) && self.key(operand, &mut Vec::new()).is_some_and(|key| {
+                    self.flow
+                        .scoped_storage
+                        .iter()
+                        .any(|credit| credit.guard == key)
+                        || self
+                            .flow
+                            .parser_receipts
+                            .iter()
+                            .any(|receipt| factor_depends_on(&key, &receipt.guard))
+                        || self.flow.storage_slots.iter().any(|credit| {
+                            credit
+                                .scope
+                                .as_ref()
+                                .is_some_and(|scope| scope.guard == key)
+                        })
+                }) {
                     self.invalidate_target(operand);
                 }
                 if matches!(
@@ -647,7 +744,17 @@ impl Flow<'_> {
 pub(crate) fn factor_depends_on(factor: &str, key: &str) -> bool {
     factor == key
         || factor.contains(".range[") && factor.contains(key)
-        || matches!(factor.split_once(':').map(|(kind, _)| kind), Some("keybytes" | "treekeybytes" | "sortbytes" | "movebytes" | "heappushbytes" | "heappopbytes")) && factor.contains(key)
+        || matches!(
+            factor.split_once(':').map(|(kind, _)| kind),
+            Some(
+                "keybytes"
+                    | "treekeybytes"
+                    | "sortbytes"
+                    | "movebytes"
+                    | "heappushbytes"
+                    | "heappopbytes"
+            )
+        ) && factor.contains(key)
         || factor.starts_with(&format!("{key}."))
         || key.starts_with(&format!("{factor}."))
 }

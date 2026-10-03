@@ -261,13 +261,19 @@ fn byte_accounting_propagates_binary_lexeme_resource_refusal() {
     let (exchange, _) =
         crate::test_support::with_service_context(source, crate::parse::parse_inner)
             .expect("test exchange parses");
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_materialized_bytes = 4;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(source, &arena, &policy)
-        .expect("root fits the test policy");
-    let error = byte_accounting(source, &exchange, &HashSet::new(), &ctx)
-        .expect_err("binary lexer must refuse before temporary digit allocation");
+    // Admit preceding lexer and container operations before this exact named gate.
+    let limit = crate::test_support::resource_refusal_at(
+        source,
+        cadmpeg_core::decode::ResourceDimension::MaterializedBytes,
+        "step_binary_lexeme_temp",
+        |source, ctx| {
+            ctx.with_scoped_storage("temporary byte accounting", || {
+                byte_accounting(source, &exchange, &HashSet::new(), ctx)
+            })
+            .map(|_| ())
+        },
+    );
+    let error = cadmpeg_core::CodecError::ResourceLimit(limit);
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes && limit.operation == "step_binary_lexeme_temp")
     );
@@ -313,33 +319,18 @@ use crate::StepCodec;
 #[test]
 fn semantic_decode_uses_the_decode_session_work_budget() {
     let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('test','2026-07-14T00:00:00',('cadmpeg'),('cadmpeg'),'cadmpeg-step','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;";
-    let mut semantic_operation = None;
-    for max_work_units in 1..=2048 {
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let mut policy = cadmpeg_core::decode::DecodePolicy::default();
-        policy.limits.max_work_units = max_work_units;
-        let (ctx, _) =
-            cadmpeg_core::decode::DecodeContext::from_root_bytes(source, &arena, &policy)
-                .expect("root fits the test policy");
-        let error = crate::reader::decode(source, &ctx, Packaging::Bare)
-            .expect_err("a small work budget must refuse one decode stage");
-        let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
-            continue;
-        };
-        if !matches!(
-            limit.operation,
-            "step_lex_token"
-                | "step_schema_matching_name"
-                | "step_parse_record"
-                | "step_parse_parameter"
-                | "step_anchor_materialization"
-                | "step_reference_materialization"
-        ) {
-            semantic_operation = Some(limit.operation);
-            break;
-        }
-    }
-    assert_eq!(semantic_operation, Some("step_entity_index_name_storage"));
+    // Admit preceding lexer and container operations before this exact named gate.
+    let limit = crate::test_support::resource_refusal_at(
+        source,
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "step_entity_index_name_storage",
+        |source, ctx| crate::reader::decode(source, ctx, Packaging::Bare),
+    );
+
+    assert_eq!(
+        Some(limit.operation),
+        Some("step_entity_index_name_storage")
+    );
 }
 
 #[test]
@@ -383,28 +374,14 @@ fn implicit_face_plane_work_is_charged_before_plane_inference() {
     let source = format!(
         "ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('test','2026-07-14T00:00:00',('cadmpeg'),('cadmpeg'),'cadmpeg-step','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=POLY_LOOP('',({point_references}));{point_records}ENDSEC;END-ISO-10303-21;"
     );
-    let mut plane_limit = None;
-    for max_work_units in 1..=65_536 {
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let mut policy = cadmpeg_core::decode::DecodePolicy::default();
-        policy.limits.max_work_units = max_work_units;
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-            source.as_bytes(),
-            &arena,
-            &policy,
-        )
-        .expect("root fits the test policy");
-        let error = crate::reader::decode(source.as_bytes(), &ctx, Packaging::Bare)
-            .expect_err("bounded implicit-plane work must be refused at some budget");
-        let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
-            continue;
-        };
-        if limit.operation == "step_implicit_face_plane" {
-            plane_limit = Some(limit);
-            break;
-        }
-    }
-    let limit = plane_limit.expect("implicit face-plane work must have a stable budget gate");
+    // Admit preceding lexer and container operations before this exact named gate.
+    let limit = crate::test_support::resource_refusal_at(
+        source.as_bytes(),
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "step_implicit_face_plane",
+        |source, ctx| crate::reader::decode(source, ctx, Packaging::Bare),
+    );
+
     assert_eq!(
         limit.dimension,
         cadmpeg_core::decode::ResourceDimension::WorkUnits
@@ -1166,7 +1143,12 @@ fn omitted_geometry_names_preserve_intersection_curve_topology() {
 #[test]
 fn step_source_ids_keep_the_hash_prefixed_spelling() {
     for id in [0, 1, 42, u64::MAX] {
-        assert_eq!(super::step_source_id(&cadmpeg_test_support::service_decode_context(), id).unwrap().as_str(), format!("#{id}"));
+        assert_eq!(
+            super::step_source_id(&cadmpeg_test_support::service_decode_context(), id)
+                .unwrap()
+                .as_str(),
+            format!("#{id}")
+        );
     }
 }
 
@@ -1691,7 +1673,10 @@ fn point_ir(with_source: bool) -> cadmpeg_ir::CadIr {
         cadmpeg_ir::ids::PointId::from(identity),
         cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0))
             .expect("finite point"),
-        with_source.then(|| super::step_source_association(&cadmpeg_test_support::service_decode_context(), 1, None).unwrap()),
+        with_source.then(|| {
+            super::step_source_association(&cadmpeg_test_support::service_decode_context(), 1, None)
+                .unwrap()
+        }),
     );
     ir.model.points.push(point);
     ir

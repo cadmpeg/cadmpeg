@@ -57,11 +57,13 @@ fn native_spatial_sketch_constraints_are_reported_as_design_losses() {
             sketch: SpatialSketchId::mint("synthetic:test:id#spatial-sketch").unwrap(),
             definition: cadmpeg_ir::sketches::SpatialSketchConstraintDefinition::try_from(
                 SpatialSketchConstraintDefinitionInput::Native {
-                    native_kind: cadmpeg_core::text::NonBlankString::try_from("unresolved").unwrap(),
+                    native_kind: cadmpeg_core::text::NonBlankString::try_from("unresolved")
+                        .unwrap(),
                     native_state: None,
                     parameter: None,
                     operands: vec![cadmpeg_ir::sketches::SketchNativeOperand {
-                        native_kind: cadmpeg_core::text::NonBlankString::try_from("entity").unwrap(),
+                        native_kind: cadmpeg_core::text::NonBlankString::try_from("entity")
+                            .unwrap(),
                         field: None,
                         object_index: Some(1),
                         native_ref: None,

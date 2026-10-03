@@ -457,17 +457,13 @@ fn selected_plane_branch_node_refuses_collection_limit() {
 #[test]
 fn plane_branch_constraint_work_refuses_work_limit() {
     let scan = stored_frame_branch_scan(true);
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    // Admit both identity passes; the first constraint step has no allowance.
-    let rows = cadmpeg_core::decode::u64_from_index(scan.surfaces.rows.len());
-    policy.limits.max_work_units =
-        2 * rows * 24 * (u64::from(u64::BITS - rows.leading_zeros()) + 1);
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root admitted");
-    let error = plane_candidates(&ctx, &scan)
-        .err()
-        .expect("constraint work exceeds work limit");
+    // The allowance includes complete identifier costs and index insertions before the constraint visit.
+    let error = crate::test_support::last_refusal_at(
+        &[],
+        ResourceDimension::WorkUnits,
+        "creo plane branch constraint steps",
+        |ctx| plane_candidates(ctx, &scan),
+    );
     assert!(matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::WorkUnits
             && resource.operation == "creo plane branch constraint steps"));

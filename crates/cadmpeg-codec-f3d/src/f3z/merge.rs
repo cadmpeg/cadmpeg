@@ -966,16 +966,19 @@ mod tests {
 
     #[test]
     fn f3z_sibling_reassignment_refuses_work_limit() {
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-        policy.limits.max_work_units = 2;
-        let (ctx, _) =
-            cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let mut occurrences = [
-            root_occurrence("f3d:model:occurrence#0", 0),
-            root_occurrence("f3d:model:occurrence#1", 0),
-        ];
-        let error = make_sibling_ordinals_unique(&ctx, &mut occurrences).unwrap_err();
+        // Each probe rebuilds the occurrences and admits both complete ordinal-index keys before reassignment.
+        let error = crate::test_support::resource_refusal_at(
+            cadmpeg_core::decode::ResourceDimension::WorkUnits,
+            "find F3Z sibling ordinal",
+            0,
+            |ctx| {
+                let mut occurrences = [
+                    root_occurrence("f3d:model:occurrence#0", 0),
+                    root_occurrence("f3d:model:occurrence#1", 0),
+                ];
+                make_sibling_ordinals_unique(ctx, &mut occurrences)
+            },
+        );
         assert!(
             matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.operation == "find F3Z sibling ordinal")

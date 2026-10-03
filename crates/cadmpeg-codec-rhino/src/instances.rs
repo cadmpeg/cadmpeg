@@ -160,16 +160,24 @@ pub(crate) enum LinkSource {
 }
 
 impl LinkSource {
-    fn from_legacy(ctx: &cadmpeg_core::decode::DecodeContext<'_>, full_path: String, relative_path: String) -> Result<Self, cadmpeg_core::CodecError> {
+    fn from_legacy(
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        full_path: String,
+        relative_path: String,
+    ) -> Result<Self, cadmpeg_core::CodecError> {
         let full_path = NonBlankString::for_decode(ctx, full_path, "validate legacy full path")?;
-        Ok(if let Some(relative_path) = NonBlankString::for_decode(ctx, relative_path, "validate legacy relative path")? {
-            Self::LegacyRelative {
-                relative_path,
-                full_path,
-            }
-        } else {
-            full_path.map_or(Self::None, Self::LegacyFull)
-        })
+        Ok(
+            if let Some(relative_path) =
+                NonBlankString::for_decode(ctx, relative_path, "validate legacy relative path")?
+            {
+                Self::LegacyRelative {
+                    relative_path,
+                    full_path,
+                }
+            } else {
+                full_path.map_or(Self::None, Self::LegacyFull)
+            },
+        )
     }
 }
 
@@ -1194,7 +1202,9 @@ fn apply_idef_alternative_path(
                 continue;
             }
         };
-        let Some(path) = NonBlankString::for_decode(ctx, path.trim(), "validate nonblank text").map_err(cadmpeg_core::CodecError::from)? else {
+        let Some(path) = NonBlankString::for_decode(ctx, path.trim(), "validate nonblank text")
+            .map_err(cadmpeg_core::CodecError::from)?
+        else {
             continue;
         };
         match &mut definition.link {
@@ -1214,12 +1224,14 @@ fn apply_idef_alternative_path(
                     let copied_full_path =
                         ctx.copy_retained_text(full_path.as_str(), "Rhino instance full path")?;
                     let copied_full_path =
-                        NonBlankString::for_decode(ctx, copied_full_path, "validate nonblank text").map_err(cadmpeg_core::CodecError::from)?.ok_or_else(|| {
-                            FramingError::structural(
-                                item.range.start,
-                                "invalid copied instance full path",
-                            )
-                        })?;
+                        NonBlankString::for_decode(ctx, copied_full_path, "validate nonblank text")
+                            .map_err(cadmpeg_core::CodecError::from)?
+                            .ok_or_else(|| {
+                                FramingError::structural(
+                                    item.range.start,
+                                    "invalid copied instance full path",
+                                )
+                            })?;
                     definition.link = LinkSource::LegacyRelative {
                         relative_path: path,
                         full_path: Some(copied_full_path),

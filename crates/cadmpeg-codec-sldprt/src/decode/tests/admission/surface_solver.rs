@@ -103,29 +103,41 @@ fn assert_surface_solver_route_limit(dimension: ResourceDimension) {
         }
         Err(error) => panic!("unexpected surface-solver route failure: {error}"),
     };
-    let mut lower = 0;
-    let mut upper = 1_u64;
-    loop {
+    // A fresh randomized reader map can change work near the boundary.
+    // Preserve the exact success/refusal runs used to establish adjacent allowances.
+    let mut pair = None;
+    for _ in 0..64 {
+        let mut lower = 0;
+        let mut upper = 1_u64;
+        loop {
+            set_limit(&mut options, upper);
+            if run(&options) {
+                break;
+            }
+            upper = upper.checked_mul(2).unwrap();
+        }
+        while lower < upper {
+            let middle = lower + (upper - lower) / 2;
+            set_limit(&mut options, middle);
+            if run(&options) {
+                upper = middle;
+            } else {
+                lower = middle + 1;
+            }
+        }
+        assert!(upper > 0);
         set_limit(&mut options, upper);
-        if run(&options) {
+        let admitted = run(&options);
+        set_limit(&mut options, upper - 1);
+        let refused = !run(&options);
+        if admitted && refused {
+            pair = Some((admitted, refused));
             break;
         }
-        upper = upper.checked_mul(2).unwrap();
     }
-    while lower < upper {
-        let middle = lower + (upper - lower) / 2;
-        set_limit(&mut options, middle);
-        if run(&options) {
-            upper = middle;
-        } else {
-            lower = middle + 1;
-        }
-    }
-    assert!(upper > 0);
-    set_limit(&mut options, upper);
-    assert!(run(&options));
-    set_limit(&mut options, upper - 1);
-    assert!(!run(&options));
+    let (admitted, refused) = pair.expect("adjacent surface-solver allowances");
+    assert!(admitted);
+    assert!(refused);
 }
 
 #[test]

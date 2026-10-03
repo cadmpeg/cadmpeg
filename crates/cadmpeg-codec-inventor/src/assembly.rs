@@ -106,9 +106,18 @@ pub(crate) enum UnresolvedCause {
 }
 
 impl cadmpeg_core::decode::cost::DecodeCost for UnresolvedCause {
-    const FIXED_BYTES: Option<u64> = Some(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<Self>()));
-    fn decode_cost(&self, _ctx: &cadmpeg_core::decode::DecodeContext<'_>, _operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
-        Ok(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<Self>()))
+    const FIXED_BYTES: Option<u64> =
+        Some(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
+            Self,
+        >()));
+    fn decode_cost(
+        &self,
+        _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        _operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        Ok(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
+            Self,
+        >()))
     }
 }
 
@@ -1211,7 +1220,9 @@ mod tests {
         state: [u16; 2],
         document_id: &str,
     ) -> ExternalReferenceRecord {
-        ExternalReferenceRecord::try_from(crate::native::ufrx::ExternalReferenceRecordWire::<String> {
+        ExternalReferenceRecord::try_from(crate::native::ufrx::ExternalReferenceRecordWire::<
+            String,
+        > {
             id: format!("inventor:ufrx:external-reference#{reference_id}"),
             ordinal: reference_id,
             path: path.into(),

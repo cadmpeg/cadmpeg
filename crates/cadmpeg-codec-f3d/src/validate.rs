@@ -1233,8 +1233,13 @@ fn validate_feature_timelines(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<
     )?;
     ctx.decode.stable_sort_by_key(
         &mut design_types,
-            |value| (ids::native_stream(value.id()).unwrap_or_default(),value.byte_offset),
-            Ord::cmp,
+        |value| {
+            (
+                ids::native_stream(value.id()).unwrap_or_default(),
+                value.byte_offset,
+            )
+        },
+        Ord::cmp,
         "f3d feature timeline types sort",
     )?;
     for design_type in design_types {
@@ -1323,8 +1328,8 @@ fn validate_feature_timelines(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<
     )?;
     ctx.decode.stable_sort_by_key(
         &mut actual,
-            |value| (value.segment(),value.source_ordinal),
-            Ord::cmp,
+        |value| (value.segment(), value.source_ordinal),
+        Ord::cmp,
         "f3d feature timeline records sort",
     )?;
     let mut actual_records = HashSet::<(&str, u64)>::new();
@@ -1827,8 +1832,8 @@ fn validate_decal_images(ctx: &Ctx<'_, '_>, findings: &mut Vec<Finding>) -> Resu
                     )?;
                     ctx.decode.stable_sort_by(
                         &mut faces,
-            |value| value.as_str(),
-            Ord::cmp,
+                        |value| value.as_str(),
+                        Ord::cmp,
                         "f3d decal projected faces sort",
                     )?;
                     faces.dedup();
@@ -5599,8 +5604,8 @@ fn validate_extrude_parameter_operands(
                 }), "collect F3D Extrude face operand groups")?;
             ctx.decode.stable_sort_by(
                 &mut face_groups,
-            |value| &value.scope_reference_ordinal,
-            Ord::cmp,
+                |value| &value.scope_reference_ordinal,
+                Ord::cmp,
                 "f3d extrude face operand groups sort",
             )?;
             let expected_face_roles = match (extrude_start, extrude_extent) {
@@ -6690,7 +6695,7 @@ fn validate_extrude_selection_members(
         )?;
         ctx.decode.stable_sort_by_key(
             &mut expected_identities,
-            |value| value.wrappers().first().map(|wrapper|wrapper.byte_offset),
+            |value| value.wrappers().first().map(|wrapper| wrapper.byte_offset),
             Ord::cmp,
             "f3d extrude selection identities sort",
         )?;

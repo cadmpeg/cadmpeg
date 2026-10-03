@@ -857,11 +857,13 @@ fn profile_termination_operands() -> (
             .unwrap(),
         },
         LinearTermination::ToVertex {
-            vertex: VertexSelection::historical(&cadmpeg_test_support::service_decode_context(), 
+            vertex: VertexSelection::historical(
+                &cadmpeg_test_support::service_decode_context(),
                 state,
                 HistoricalVertexId::mint("synthetic:test:id#historical-vertex").unwrap(),
                 "historical vertex".into(),
-            ).unwrap()
+            )
+            .unwrap()
             .unwrap(),
         },
         LinearTermination::ToVertex {

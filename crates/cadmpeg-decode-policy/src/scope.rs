@@ -164,16 +164,22 @@ impl Graph {
                 if reached.contains(caller) {
                     if *kind == EdgeKind::ConstantEvaluation {
                         added |= constants.insert(callee.clone());
-                    } else { added |= reached.insert(callee.clone()); }
+                    } else {
+                        added |= reached.insert(callee.clone());
+                    }
                 }
                 if constants.contains(caller) {
                     if *kind == EdgeKind::FunctionAddress {
                         added |= reached.insert(callee.clone());
-                    } else { added |= constants.insert(callee.clone()); }
+                    } else {
+                        added |= constants.insert(callee.clone());
+                    }
                 }
             }
             for (caller, callee) in &self.symbolic_edges {
-                if constants.contains(caller) { added |= constants.insert(callee.clone()); }
+                if constants.contains(caller) {
+                    added |= constants.insert(callee.clone());
+                }
                 if symbolic.contains(caller) {
                     added |= symbolic.insert(callee.clone());
                     added |= reached.insert(callee.clone());
@@ -386,9 +392,14 @@ struct Calls<'a, 'b, 'tcx> {
 
 impl<'tcx> Calls<'_, '_, 'tcx> {
     fn edge(&mut self, callee: DefId) {
-        self.edge_kind(callee, if constant_owner(self.analysis.tcx, callee) {
-            EdgeKind::ConstantEvaluation
-        } else { EdgeKind::DirectCall });
+        self.edge_kind(
+            callee,
+            if constant_owner(self.analysis.tcx, callee) {
+                EdgeKind::ConstantEvaluation
+            } else {
+                EdgeKind::DirectCall
+            },
+        );
     }
 
     fn edge_kind(&mut self, callee: DefId, kind: EdgeKind) {
@@ -638,7 +649,11 @@ pub(crate) fn key(tcx: TyCtxt<'_>, definition: DefId) -> String {
 }
 
 fn constant_owner(tcx: TyCtxt<'_>, owner: DefId) -> bool {
-    matches!(tcx.def_kind(owner), rustc_hir::def::DefKind::Static { .. }
-        | rustc_hir::def::DefKind::Const { .. } | rustc_hir::def::DefKind::AssocConst { .. }
-        | rustc_hir::def::DefKind::AnonConst)
+    matches!(
+        tcx.def_kind(owner),
+        rustc_hir::def::DefKind::Static { .. }
+            | rustc_hir::def::DefKind::Const { .. }
+            | rustc_hir::def::DefKind::AssocConst { .. }
+            | rustc_hir::def::DefKind::AnonConst
+    )
 }

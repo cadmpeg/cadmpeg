@@ -177,7 +177,9 @@ pub(crate) struct UfrxRepresentationRecordWire<T = String> {
     pub(crate) active_model_state_state: [u16; 2],
 }
 
-impl<T: AsRef<str> + TryInto<NonBlankString>> TryFrom<UfrxRepresentationRecordWire<T>> for UfrxRepresentationRecord {
+impl<T: AsRef<str> + TryInto<NonBlankString>> TryFrom<UfrxRepresentationRecordWire<T>>
+    for UfrxRepresentationRecord
+{
     type Error = String;
     fn try_from(wire: UfrxRepresentationRecordWire<T>) -> Result<Self, Self::Error> {
         if let Some(issue) = representation_issue(
@@ -191,8 +193,11 @@ impl<T: AsRef<str> + TryInto<NonBlankString>> TryFrom<UfrxRepresentationRecordWi
             match (wire.active_representation, wire.active_representation_kind) {
                 (None, None) => None,
                 (Some(name), Some(kind)) => Some((
-                    name.try_into().ok().ok_or("active_representation must not be empty")?,
-                    kind.try_into().ok()
+                    name.try_into()
+                        .ok()
+                        .ok_or("active_representation must not be empty")?,
+                    kind.try_into()
+                        .ok()
                         .ok_or("active_representation_kind must not be empty")?,
                 )),
                 _ => return Err(
@@ -204,7 +209,10 @@ impl<T: AsRef<str> + TryInto<NonBlankString>> TryFrom<UfrxRepresentationRecordWi
             prefix: wire.prefix,
             active_representation,
             secondary_active_lod_state: wire.secondary_active_lod_state,
-            active_model_state: wire.active_model_state.try_into().ok()
+            active_model_state: wire
+                .active_model_state
+                .try_into()
+                .ok()
                 .ok_or("active_model_state must not be empty")?,
             active_model_state_state: wire.active_model_state_state,
         })
@@ -253,7 +261,9 @@ pub(crate) struct UfrxModelStateRecordWire<T = String> {
     pub(crate) suffix_sha256: String,
 }
 
-impl<T: AsRef<str> + TryInto<NonBlankString>> TryFrom<UfrxModelStateRecordWire<T>> for UfrxModelStateRecord {
+impl<T: AsRef<str> + TryInto<NonBlankString>> TryFrom<UfrxModelStateRecordWire<T>>
+    for UfrxModelStateRecord
+{
     type Error = String;
     fn try_from(wire: UfrxModelStateRecordWire<T>) -> Result<Self, Self::Error> {
         if let Some(issue) = model_state_issue(wire.suffix_len, wire.name.as_ref()) {
@@ -630,7 +640,9 @@ pub(crate) struct ExternalReferenceRecordWire<T = String> {
     pub(crate) flags: u32,
 }
 
-impl<T: AsRef<str> + TryInto<NonBlankString>> TryFrom<ExternalReferenceRecordWire<T>> for ExternalReferenceRecord {
+impl<T: AsRef<str> + TryInto<NonBlankString>> TryFrom<ExternalReferenceRecordWire<T>>
+    for ExternalReferenceRecord
+{
     type Error = String;
     fn try_from(wire: ExternalReferenceRecordWire<T>) -> Result<Self, Self::Error> {
         let suffix = wire
@@ -1295,17 +1307,19 @@ mod tests {
             original_file_name: "part.ipt".into(),
             caption: "part".into(),
             representation: None,
-            model_states: vec![UfrxModelStateRecord::try_from(UfrxModelStateRecordWire::<String> {
-                id: "inventor:ufrx:model-state#0".into(),
-                ordinal: 0,
-                prefix: 0,
-                name: "Primary".into(),
-                state: [0, 0],
-                prefix_count: 0,
-                parameters: vec![],
-                suffix_len: 77,
-                suffix_sha256: "0".repeat(64),
-            })
+            model_states: vec![UfrxModelStateRecord::try_from(
+                UfrxModelStateRecordWire::<String> {
+                    id: "inventor:ufrx:model-state#0".into(),
+                    ordinal: 0,
+                    prefix: 0,
+                    name: "Primary".into(),
+                    state: [0, 0],
+                    prefix_count: 0,
+                    parameters: vec![],
+                    suffix_len: 77,
+                    suffix_sha256: "0".repeat(64),
+                },
+            )
             .expect("valid native record fixture")],
             external_references: vec![],
             embedded_references: vec![],

@@ -131,9 +131,18 @@ pub(crate) enum UnresolvedCause {
 }
 
 impl cadmpeg_core::decode::cost::DecodeCost for UnresolvedCause {
-    const FIXED_BYTES: Option<u64> = Some(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<Self>()));
-    fn decode_cost(&self, _ctx: &cadmpeg_core::decode::DecodeContext<'_>, _operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
-        Ok(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<Self>()))
+    const FIXED_BYTES: Option<u64> =
+        Some(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
+            Self,
+        >()));
+    fn decode_cost(
+        &self,
+        _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        _operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        Ok(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
+            Self,
+        >()))
     }
 }
 
@@ -222,8 +231,11 @@ fn project_default_bindings(
     }
     ctx.stable_sort_by_key(
         &mut selected,
-            |value| { let style = *value; (&style.identity.segment_token, style.identity.record_ordinal) },
-            Ord::cmp,
+        |value| {
+            let style = *value;
+            (&style.identity.segment_token, style.identity.record_ordinal)
+        },
+        Ord::cmp,
         "Inventor default rendering styles sort",
     )?;
     selected.dedup_by(|left, right| {
@@ -387,8 +399,8 @@ fn project_face_bindings(
     let mut ordered_face_keys = face_keys.iter().collect::<Vec<_>>();
     ctx.sort_unstable_by(
         &mut ordered_face_keys,
-            |value| &value.0,
-            Ord::cmp,
+        |value| &value.0,
+        Ord::cmp,
         "Inventor presentation face keys sort",
     )?;
     for (face_id, key) in ordered_face_keys {
@@ -2146,9 +2158,9 @@ mod tests {
         let face_keys = std::collections::HashMap::from([(face_id, 42)]);
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        // The one-key face sort takes its count plus a sixteen-byte pair and twice the
-        // twenty-byte face id over two levels at eight units each, leaving nothing for the scan.
-        policy.limits.max_work_units = 1 + (16 + 2 * 20) * 2 * 8;
+        // The scalar-key hash read, two measuring visits, a sixteen-byte pair and both face keys precede the scan.
+        let key_bytes = cadmpeg_core::decode::u64_from_index("inventor:test:face#1".len());
+        policy.limits.max_work_units = 8 + 2 + (16 + 2 * key_bytes) * 2 * 8;
         let (ctx, _) =
             DecodeContext::from_root_bytes(&[], &arena, &policy).expect("projection context");
         assert!(matches!(

@@ -518,15 +518,14 @@ fn patch_instance_colors(
                                 )
                             })?
                     }
-                    ("PrismOpaqueSchema", "surface_roughness") => {
-                        record.get(position..)
-                            .and_then(|window| memchr::memmem::find(window, b"\x0e\x20\x00\x00"))
-                            .map(|relative| position + relative)
-                            .map(|marker| marker + 4)
-                            .ok_or_else(|| {
-                                CodecError::Malformed("Protein roughness carrier is absent".into())
-                            })?
-                    }
+                    ("PrismOpaqueSchema", "surface_roughness") => record
+                        .get(position..)
+                        .and_then(|window| memchr::memmem::find(window, b"\x0e\x20\x00\x00"))
+                        .map(|relative| position + relative)
+                        .map(|marker| marker + 4)
+                        .ok_or_else(|| {
+                            CodecError::Malformed("Protein roughness carrier is absent".into())
+                        })?,
                     ("PrismTransparentSchema", "refraction_index") => position + 169,
                     _ => {
                         return Err(CodecError::NotImplemented(format!(
@@ -709,8 +708,8 @@ pub(crate) fn decode_with_body_bindings<'a>(
     }
     ctx.stable_sort_by(
         &mut out,
-            |value| value.id.as_str(),
-            Ord::cmp,
+        |value| value.id.as_str(),
+        Ord::cmp,
         "sort F3D appearance assets",
     )?;
     if let Some(pair) = out
@@ -904,8 +903,18 @@ fn appearances_from_schema_records(
                 }
             }
         }
-        ctx.stable_sort_by(&mut connected, |value| &value.asset_guid, Ord::cmp, "sort F3D connected textures")?;
-        ctx.stable_sort_by(&mut connected, |value| &value.slot, Ord::cmp, "sort F3D connected textures")?;
+        ctx.stable_sort_by(
+            &mut connected,
+            |value| &value.asset_guid,
+            Ord::cmp,
+            "sort F3D connected textures",
+        )?;
+        ctx.stable_sort_by(
+            &mut connected,
+            |value| &value.slot,
+            Ord::cmp,
+            "sort F3D connected textures",
+        )?;
         let base_color = appearance_base_color(record);
         let appearance = Appearance {
             id: crate::ids::appearance_id_charged(ctx, &record.guid)?,
@@ -1076,8 +1085,16 @@ struct BodyAppearanceOverride {
 }
 
 impl cadmpeg_core::decode::cost::DecodeCost for BodyAppearanceOverride {
-    fn decode_cost(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
-        cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(&self.body,self.entity_suffix,&self.visual_guid), ctx, operation)
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        cadmpeg_core::decode::cost::DecodeCost::decode_cost(
+            &(&self.body, self.entity_suffix, &self.visual_guid),
+            ctx,
+            operation,
+        )
     }
 }
 
@@ -1152,8 +1169,8 @@ fn decode_body_appearance_overrides(
     }
     ctx.stable_sort_by(
         &mut out,
-            |value| value,
-            |left, right| {
+        |value| value,
+        |left, right| {
             left.body
                 .cmp(&right.body)
                 .then_with(|| left.entity_suffix.cmp(&right.entity_suffix))
@@ -2270,7 +2287,12 @@ fn decode_fixed_record(
             position + 197 + delta,
         );
     } else if schema == "PrismOpaqueSchema" {
-        if let Some(marker) = ctx.find_bytes_from(record, b"\x0e\x20\x00\x00", position, "find F3D roughness carrier")? {
+        if let Some(marker) = ctx.find_bytes_from(
+            record,
+            b"\x0e\x20\x00\x00",
+            position,
+            "find F3D roughness carrier",
+        )? {
             fixed_scalar(&mut properties, "surface_roughness", record, marker + 4);
         }
     } else if schema == "PrismTransparentSchema" {

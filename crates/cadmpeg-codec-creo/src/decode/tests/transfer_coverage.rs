@@ -335,8 +335,10 @@ fn surface_coverage_separates_transferred_unique_rows_from_ambiguous_ids() {
         )),
         source_object: Some(SourceObjectAssociation {
             format: cadmpeg_ir::CodecFormat::Creo,
-            object_id: cadmpeg_core::text::NonBlankString::try_from(format!("VisibGeom:{native_id}"))
-                .expect("nonempty source identity"),
+            object_id: cadmpeg_core::text::NonBlankString::try_from(format!(
+                "VisibGeom:{native_id}"
+            ))
+            .expect("nonempty source identity"),
             name: None,
             color: None,
             visible: None,
@@ -573,7 +575,8 @@ fn native_curve_families_accept_only_their_defined_loci() {
         (
             point.clone(),
             SketchGeometry::native(
-                cadmpeg_core::text::NonBlankString::try_from("point").expect("nonempty source identity"),
+                cadmpeg_core::text::NonBlankString::try_from("point")
+                    .expect("nonempty source identity"),
             ),
         ),
         (
@@ -586,7 +589,8 @@ fn native_curve_families_accept_only_their_defined_loci() {
         (
             line.clone(),
             SketchGeometry::native(
-                cadmpeg_core::text::NonBlankString::try_from("line").expect("nonempty source identity"),
+                cadmpeg_core::text::NonBlankString::try_from("line")
+                    .expect("nonempty source identity"),
             ),
         ),
         (

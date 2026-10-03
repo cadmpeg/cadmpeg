@@ -7,9 +7,18 @@ use rustc_middle::ty::Ty;
 
 impl<'tcx> Analysis<'_, 'tcx> {
     pub(crate) fn closed_scalar_parse(&self, expression: &'tcx Expr<'tcx>) -> bool {
-        let Some((definition, _)) = self.call(expression) else { return false; };
-        if self.tcx.item_name(definition).as_str() != "parse" { return false; }
-        let Some(target) = self.call_arguments(expression).and_then(|args| args.types().next()) else { return false; };
+        let Some((definition, _)) = self.call(expression) else {
+            return false;
+        };
+        if self.tcx.item_name(definition).as_str() != "parse" {
+            return false;
+        }
+        let Some(target) = self
+            .call_arguments(expression)
+            .and_then(|args| args.types().next())
+        else {
+            return false;
+        };
         self.closed_scalar_type(target)
     }
     fn closed_scalar_type(&self, target: Ty<'tcx>) -> bool {
@@ -23,11 +32,20 @@ impl<'tcx> Analysis<'_, 'tcx> {
         })
     }
     pub(crate) fn closed_scalar_default(&self, expression: &'tcx Expr<'tcx>) -> bool {
-        let Some((definition, _)) = self.call(expression) else { return false; };
+        let Some((definition, _)) = self.call(expression) else {
+            return false;
+        };
         if !crate::types::standard(self.tcx, definition)
-            || self.tcx.item_name(definition).as_str() != "default" { return false; }
-        self.tcx.trait_of_assoc(definition).is_some_and(|id| self.tcx.item_name(id).as_str() == "Default")
-            && self.call_arguments(expression).and_then(|args| args.types().next()).is_some_and(|target| self.closed_scalar_type(target))
+            || self.tcx.item_name(definition).as_str() != "default"
+        {
+            return false;
+        }
+        self.tcx
+            .trait_of_assoc(definition)
+            .is_some_and(|id| self.tcx.item_name(id).as_str() == "Default")
+            && self
+                .call_arguments(expression)
+                .and_then(|args| args.types().next())
+                .is_some_and(|target| self.closed_scalar_type(target))
     }
-
 }

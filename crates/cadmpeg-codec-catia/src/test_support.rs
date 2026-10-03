@@ -92,6 +92,18 @@ pub(crate) fn with_work_limit<T>(
     run(&ctx)
 }
 
+/// Admits the complete prefix and refuses one work unit below the named operation's need.
+pub(crate) fn with_work_refusal<T>(
+    operation: &str,
+    mut run: impl FnMut(&cadmpeg_core::decode::DecodeContext<'_>) -> Result<T, cadmpeg_core::CodecError>,
+) -> Result<T, cadmpeg_core::CodecError> {
+    Err(cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        operation,
+        |cap| with_work_limit(cap, |ctx| run(ctx)),
+    ))
+}
+
 pub(crate) fn with_depth_limit<T>(
     max_recursion_depth: u64,
     run: impl FnOnce(&cadmpeg_core::decode::DecodeContext<'_>) -> T,

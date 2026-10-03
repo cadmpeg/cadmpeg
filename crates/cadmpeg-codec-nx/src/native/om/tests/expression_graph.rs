@@ -26,8 +26,10 @@ fn nx_expression_graph_rejects_noncanonical_parameter_tokens() {
             expression: formula.into(),
             value: value.map(|value| cadmpeg_ir::scalar::FiniteReal::try_from(value).unwrap()),
             source_entry: "part".into(),
-            source_table: cadmpeg_core::text::NonBlankString::try_from("nx:test:expression-table#table")
-                .unwrap(),
+            source_table: cadmpeg_core::text::NonBlankString::try_from(
+                "nx:test:expression-table#table",
+            )
+            .unwrap(),
             source_offset: 0,
         };
     let mut expressions = vec![
@@ -67,8 +69,10 @@ fn nx_expression_graph_evaluates_exact_qualified_dependencies() {
             expression: formula.into(),
             value: value.map(|value| cadmpeg_ir::scalar::FiniteReal::try_from(value).unwrap()),
             source_entry: "part".into(),
-            source_table: cadmpeg_core::text::NonBlankString::try_from("nx:test:expression-table#table")
-                .unwrap(),
+            source_table: cadmpeg_core::text::NonBlankString::try_from(
+                "nx:test:expression-table#table",
+            )
+            .unwrap(),
             source_offset: 0,
         };
     let mut expressions = vec![
@@ -109,8 +113,10 @@ fn nx_expression_graph_substitutes_dependencies_as_atomic_operands() {
             expression: formula.into(),
             value: value.map(|value| cadmpeg_ir::scalar::FiniteReal::try_from(value).unwrap()),
             source_entry: "part".into(),
-            source_table: cadmpeg_core::text::NonBlankString::try_from("nx:test:expression-table#table")
-                .unwrap(),
+            source_table: cadmpeg_core::text::NonBlankString::try_from(
+                "nx:test:expression-table#table",
+            )
+            .unwrap(),
             source_offset: 0,
         };
     let mut expressions = vec![
@@ -311,8 +317,10 @@ fn nx_expression_graph_scopes_equal_names_by_declared_unit() {
             expression: formula.into(),
             value: value.map(|value| cadmpeg_ir::scalar::FiniteReal::try_from(value).unwrap()),
             source_entry: "part".into(),
-            source_table: cadmpeg_core::text::NonBlankString::try_from("nx:test:expression-table#table")
-                .unwrap(),
+            source_table: cadmpeg_core::text::NonBlankString::try_from(
+                "nx:test:expression-table#table",
+            )
+            .unwrap(),
             source_offset: 0,
         }
     };
@@ -390,8 +398,10 @@ fn nx_formula_dependencies_resolve_to_section_parameters() {
             expression: text.into(),
             value: value.map(|value| cadmpeg_ir::scalar::FiniteReal::try_from(value).unwrap()),
             source_entry: "/Root/UG_PART/UG_PART".into(),
-            source_table: cadmpeg_core::text::NonBlankString::try_from("nx:test:expression-table#table")
-                .unwrap(),
+            source_table: cadmpeg_core::text::NonBlankString::try_from(
+                "nx:test:expression-table#table",
+            )
+            .unwrap(),
             source_offset: u64::from(key),
         }
     };
@@ -432,8 +442,10 @@ fn nx_formula_dependencies_reject_ambiguous_parameter_names() {
         expression: text.into(),
         value: None,
         source_entry: "/Root/UG_PART/UG_PART".into(),
-        source_table: cadmpeg_core::text::NonBlankString::try_from("nx:test:expression-table#table")
-            .unwrap(),
+        source_table: cadmpeg_core::text::NonBlankString::try_from(
+            "nx:test:expression-table#table",
+        )
+        .unwrap(),
         source_offset: u64::from(key),
     };
     let expressions = [
@@ -474,8 +486,10 @@ fn nx_formula_dependencies_bind_equal_names_within_declared_unit() {
             expression: text.into(),
             value: value.map(|value| cadmpeg_ir::scalar::FiniteReal::try_from(value).unwrap()),
             source_entry: "/Root/UG_PART/UG_PART".into(),
-            source_table: cadmpeg_core::text::NonBlankString::try_from("nx:test:expression-table#table")
-                .unwrap(),
+            source_table: cadmpeg_core::text::NonBlankString::try_from(
+                "nx:test:expression-table#table",
+            )
+            .unwrap(),
             source_offset: u64::from(key),
         }
     };
@@ -723,8 +737,10 @@ fn nx_cyclic_formula_table_omits_invalid_neutral_dependency_edges() {
             expression: text.to_string(),
             value: None,
             source_entry: "part".to_string(),
-            source_table: cadmpeg_core::text::NonBlankString::try_from("nx:test:expression-table#table")
-                .unwrap(),
+            source_table: cadmpeg_core::text::NonBlankString::try_from(
+                "nx:test:expression-table#table",
+            )
+            .unwrap(),
             source_offset,
         };
     let expressions = [
@@ -784,8 +800,10 @@ fn nx_cyclic_formula_table_retains_independent_acyclic_dependencies() {
             expression: text.to_string(),
             value: None,
             source_entry: "part".to_string(),
-            source_table: cadmpeg_core::text::NonBlankString::try_from("nx:test:expression-table#table")
-                .unwrap(),
+            source_table: cadmpeg_core::text::NonBlankString::try_from(
+                "nx:test:expression-table#table",
+            )
+            .unwrap(),
             source_offset,
         };
     let expressions = [
@@ -893,8 +911,10 @@ fn nx_parameter_uses_group_binding_witnesses_and_project_consumers() {
         expression: "5".to_string(),
         value: Some(cadmpeg_ir::scalar::FiniteReal::try_from(5.0).unwrap()),
         source_entry: "part".to_string(),
-        source_table: cadmpeg_core::text::NonBlankString::try_from("nx:test:expression-table#table")
-            .unwrap(),
+        source_table: cadmpeg_core::text::NonBlankString::try_from(
+            "nx:test:expression-table#table",
+        )
+        .unwrap(),
         source_offset: 20,
     };
     let mut ir = cadmpeg_ir::CadIr::empty();
@@ -931,8 +951,10 @@ fn nx_parameter_consumers_follow_physical_use_order() {
         expression: "5".to_string(),
         value: Some(cadmpeg_ir::scalar::FiniteReal::try_from(5.0).unwrap()),
         source_entry: "part".to_string(),
-        source_table: cadmpeg_core::text::NonBlankString::try_from("nx:test:expression-table#table")
-            .unwrap(),
+        source_table: cadmpeg_core::text::NonBlankString::try_from(
+            "nx:test:expression-table#table",
+        )
+        .unwrap(),
         source_offset: 10,
     };
     let parameter_use =
@@ -984,8 +1006,10 @@ fn nx_parameter_consumers_depend_on_preceding_expression_owner() {
         expression: "5".to_string(),
         value: Some(cadmpeg_ir::scalar::FiniteReal::try_from(5.0).unwrap()),
         source_entry: "part".to_string(),
-        source_table: cadmpeg_core::text::NonBlankString::try_from("nx:test:expression-table#table")
-            .unwrap(),
+        source_table: cadmpeg_core::text::NonBlankString::try_from(
+            "nx:test:expression-table#table",
+        )
+        .unwrap(),
         source_offset: 20,
     };
     let parameter_use = crate::native::features::FeatureParameterUse {
@@ -1080,8 +1104,10 @@ fn nx_feature_parameter_binding_joins_only_resolved_input_references() {
         expression: "12".to_string(),
         value: Some(cadmpeg_ir::scalar::FiniteReal::try_from(12.0).unwrap()),
         source_entry: "/Root/UG_PART/UG_PART".to_string(),
-        source_table: cadmpeg_core::text::NonBlankString::try_from("nx:test:expression-table#table")
-            .unwrap(),
+        source_table: cadmpeg_core::text::NonBlankString::try_from(
+            "nx:test:expression-table#table",
+        )
+        .unwrap(),
         source_offset: 900,
     };
     let bindings = crate::test_support::with_decode_context(|ctx| {

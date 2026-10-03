@@ -276,7 +276,11 @@ impl<T: TryInto<NonBlankString>> TryFrom<ProteinRejectionRecordWire<T>> for Prot
             id: wire.id,
             entry_name: InstancePropertiesEntry::try_from(wire.entry_name)?,
             ordinal: wire.ordinal,
-            detail: wire.detail.try_into().ok().ok_or("detail must not be empty")?,
+            detail: wire
+                .detail
+                .try_into()
+                .ok()
+                .ok_or("detail must not be empty")?,
         })
     }
 }

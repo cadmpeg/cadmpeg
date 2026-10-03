@@ -1410,8 +1410,13 @@ pub(super) fn complete_intersection_pcurves_from_opposite_charts_with_budget(
     }
     ctx.stable_sort_by_key(
         &mut candidates,
-            |value| (value.0, value.1, value.2,),
-            |left, right| left.0.cmp(&right.0).then_with(||left.1.cmp(&right.1)).then_with(||left.2.cmp(&right.2)),
+        |value| (value.0, value.1, value.2),
+        |left, right| {
+            left.0
+                .cmp(&right.0)
+                .then_with(|| left.1.cmp(right.1))
+                .then_with(|| left.2.cmp(&right.2))
+        },
         "sort NX opposite chart candidates",
     )?;
     let candidate_count = candidates.len();
@@ -2794,8 +2799,8 @@ fn coincident_pcurve_pair_with_index(
             .charges
             .stable_sort_by(
                 &mut breaks,
-            |value| value,
-            f64::total_cmp,
+                |value| value,
+                f64::total_cmp,
                 "nx coincident pcurve breaks sort",
             )
             .is_err()

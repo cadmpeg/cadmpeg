@@ -1000,7 +1000,11 @@ fn retain_unowned_carriers(
     Ok(())
 }
 
-fn associate_unowned_direct_carriers(ir: &mut CadIr, ids: &BTreeSet<u64>, ctx: &DecodeContext<'_>) -> Result<(), CodecError> {
+fn associate_unowned_direct_carriers(
+    ir: &mut CadIr,
+    ids: &BTreeSet<u64>,
+    ctx: &DecodeContext<'_>,
+) -> Result<(), CodecError> {
     for point in &mut ir.model.points {
         let Some(id) = step_instance_id(point.id.as_str()) else {
             continue;
@@ -1029,12 +1033,19 @@ fn associate_unowned_direct_carriers(ir: &mut CadIr, ids: &BTreeSet<u64>, ctx: &
 }
 
 /// A non-blank STEP record reference.
-fn step_source_id(ctx: &DecodeContext<'_>, id: u64) -> Result<cadmpeg_core::text::NonBlankString, CodecError> {
+fn step_source_id(
+    ctx: &DecodeContext<'_>,
+    id: u64,
+) -> Result<cadmpeg_core::text::NonBlankString, CodecError> {
     cadmpeg_core::nonblank_literal!(ctx, "#{id}")
 }
 
 /// A source association for a STEP record.
-fn step_source_association(ctx: &DecodeContext<'_>, id: u64, name: Option<String>) -> Result<SourceObjectAssociation, CodecError> {
+fn step_source_association(
+    ctx: &DecodeContext<'_>,
+    id: u64,
+    name: Option<String>,
+) -> Result<SourceObjectAssociation, CodecError> {
     Ok(SourceObjectAssociation {
         format: cadmpeg_ir::codec_format!(crate::dialect::FORMAT),
         object_id: step_source_id(ctx, id)?,

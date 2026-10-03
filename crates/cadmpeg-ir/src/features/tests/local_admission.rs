@@ -255,11 +255,13 @@ fn three_point_admission_compares_targets_and_historical_states() {
     let state = FeatureInputTopologyId::mint("test:model:feature-input#first").unwrap();
     let other = FeatureInputTopologyId::mint("test:model:feature-input#second").unwrap();
     let vertex = |state: &FeatureInputTopologyId, suffix: &str, native: &str| {
-        VertexSelection::historical(&cadmpeg_test_support::service_decode_context(), 
+        VertexSelection::historical(
+            &cadmpeg_test_support::service_decode_context(),
             state.clone(),
             HistoricalVertexId::mint(format!("test:model:historical-vertex#{suffix}")).unwrap(),
             native.into(),
-        ).unwrap()
+        )
+        .unwrap()
         .unwrap()
     };
     assert!(ThreePointSelection::try_from(Box::new([

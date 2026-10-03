@@ -382,7 +382,8 @@ fn full_round_fillet_keeps_automatic_side_semantics() {
         evaluation: crate::features::FeatureEvaluation::from_definition(definition),
         native_ref: None,
     });
-    assert!(!validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail")
+    assert!(!validate_neutral(&ir, Vec::new())
+        .expect("resource allocation did not fail")
         .findings
         .iter()
         .any(|finding| {

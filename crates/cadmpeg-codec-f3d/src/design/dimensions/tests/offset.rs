@@ -621,7 +621,8 @@ fn spatial_counted_offset_projects_source_and_result_sets_without_metric_pairs()
     .unwrap()
     .is_none());
     let mut wrong_operand_kind = operands.clone();
-    wrong_operand_kind[0].native_kind = cadmpeg_core::text::NonBlankString::try_from("point").unwrap();
+    wrong_operand_kind[0].native_kind =
+        cadmpeg_core::text::NonBlankString::try_from("point").unwrap();
     assert!(crate::test_support::with_decode_context(|decode_ctx| {
         spatial_counted_offset_dimension_definition(
             decode_ctx,

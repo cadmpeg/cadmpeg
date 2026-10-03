@@ -2118,8 +2118,8 @@ fn validate_assembly(
     )?;
     ctx.stable_sort_by(
         &mut projected.occurrences,
-            |value| value.id.as_str(),
-            Ord::cmp,
+        |value| value.id.as_str(),
+        Ord::cmp,
         "Inventor projected occurrence sort",
     )?;
     if ir.model.occurrences != projected.occurrences {

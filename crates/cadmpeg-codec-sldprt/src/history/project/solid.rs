@@ -660,20 +660,20 @@ pub(super) fn hole_sketch_construction(
     let angles = &mut angles[..angle_count];
     ctx.sort_unstable_by_key(
         diameters,
-            |value| value.get(),
-            f64::total_cmp,
+        |value| value.get(),
+        f64::total_cmp,
         "sldprt hole profile diameters sort",
     )?;
     ctx.sort_unstable_by_key(
         lengths,
-            |value| value.get(),
-            f64::total_cmp,
+        |value| value.get(),
+        f64::total_cmp,
         "sldprt hole profile lengths sort",
     )?;
     ctx.sort_unstable_by_key(
         angles,
-            |value| value.get(),
-            f64::total_cmp,
+        |value| value.get(),
+        f64::total_cmp,
         "sldprt hole profile angles sort",
     )?;
     Ok(match (&*diameters, &*lengths, &*angles) {

@@ -317,7 +317,10 @@ fn decode_expands_and_retains_compressed_jpeg_thumbnail() {
 
     assert_eq!(scan.framing.expanded_sections.len(), 1);
     assert_eq!(scan.framing.expanded_sections[0].data, jpeg);
-    assert!(crate::decode::with_test_decode_ctx(|ctx| container::has_thumbnail(ctx, &scan)).expect("thumbnail search admitted"));
+    assert!(
+        crate::decode::with_test_decode_ctx(|ctx| container::has_thumbnail(ctx, &scan))
+            .expect("thumbnail search admitted")
+    );
     let classification =
         crate::decode::with_test_decode_ctx(|ctx| crate::dialect::classify(ctx, &scan))
             .expect("dialect classification admitted");

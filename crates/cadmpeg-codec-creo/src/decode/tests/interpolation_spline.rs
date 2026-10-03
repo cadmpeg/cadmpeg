@@ -100,7 +100,9 @@ fn finite_local_system(values: [f64; 12]) -> cadmpeg_ir::units::FiniteVector<12>
 #[allow(clippy::unwrap_used)]
 fn interpolation_spline_remains_a_closed_extrusion_profile() {
     let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    // Geometry closure owns this assertion; all sampled-carrier sort work is admitted.
+    policy.limits.max_work_units = u64::MAX;
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
         .expect("empty root admitted");
     let sketch_id = SketchId::mint("creo:model:sketch#spline".to_string()).unwrap();
