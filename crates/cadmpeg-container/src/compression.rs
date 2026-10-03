@@ -40,23 +40,22 @@ fn inflate_zlib_writer<'ctx, 'a>(
     spec: ExpandSpec,
 ) -> Result<(ExpandWriter<'ctx, 'a>, usize), CodecError> {
     let input = source.window();
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(input.len()),
-        "zlib compressed input",
-    )?;
     let mut decoder = Decompress::new(true);
     let mut writer = ctx.begin_expand(spec)?;
     let mut chunk = [0_u8; INFLATE_CHUNK];
     let mut source_offset = 0usize;
     loop {
+        ctx.charge_work(1, "zlib expansion iteration")?;
         let before_in = decoder.total_in();
         let before_out = decoder.total_out();
         ctx.charge_work(
             cadmpeg_core::decode::u64_from_index(chunk.len()),
             "zlib expansion step",
         )?;
+        let remaining = &input[source_offset..];
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(remaining.len()), "zlib compressed input")?;
         let status = decoder
-            .decompress(&input[source_offset..], &mut chunk, FlushDecompress::None)
+            .decompress(remaining, &mut chunk, FlushDecompress::None)
             .map_err(|error| CodecError::malformed(format_args!("invalid zlib member: {error}")))?;
         let consumed = usize::try_from(decoder.total_in() - before_in)
             .map_err(|_| CodecError::Malformed("zlib input overflow".into()))?;
@@ -127,6 +126,7 @@ fn inflate_deflate_writer<'ctx, 'a>(
     let mut writer = ctx.begin_expand(spec)?;
     let mut chunk = [0_u8; INFLATE_CHUNK];
     loop {
+        ctx.charge_work(1, "DEFLATE expansion iteration")?;
         ctx.charge_work(
             cadmpeg_core::decode::u64_from_index(chunk.len()),
             "DEFLATE expansion step",
@@ -192,6 +192,23 @@ mod tests {
                 matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::WorkUnits)
             );
         }
+    }
+
+    #[test]
+    fn zlib_step_admits_the_remaining_compressed_slice() {
+        let mut encoder = ZlibEncoder::new(Vec::new(), Compression::default());
+        encoder.write_all(b"work").expect("payload");
+        let bytes = encoder.finish().expect("zlib");
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        // One loop visit, one output chunk and all but one compressed byte.
+        policy.limits.max_work_units = 1 + super::INFLATE_CHUNK as u64 + bytes.len() as u64 - 1;
+        let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("root");
+        let error = inflate_zlib_member_owned(&ctx, root, ExpandSpec::Exact(4)).expect_err("input admission");
+        let CodecError::ResourceLimit(original) = error else { panic!("resource refusal"); };
+        assert_eq!(original.operation, "zlib compressed input");
+        assert!(matches!(ctx.charge_work(1, "after refusal"),
+            Err(CodecError::ResourceLimit(repeated)) if repeated == original));
     }
 
     #[test]

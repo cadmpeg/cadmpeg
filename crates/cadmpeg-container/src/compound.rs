@@ -1255,6 +1255,7 @@ impl CompoundPrefixProbe {
             let mut seen_difat_storage = ctx.reserve_scoped(0, "CFB probe visits")?;
             let mut seen_difat = BTreeSet::new();
             for _ in 0..difat_count {
+                ctx.charge_work(1, "visit CFB probe DIFAT sector")?;
                 ctx.charge_work(
                     cadmpeg_core::decode::u64_from_index(sector_size),
                     "CFB probe DIFAT step",
