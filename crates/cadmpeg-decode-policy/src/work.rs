@@ -6,14 +6,15 @@ use rustc_span::Span;
 use types::Shape;
 
 impl<'tcx> Analysis<'_, 'tcx> {
-    fn work_report(&mut self, span: Span, shape: Shape, paid: Option<bool>, name: &str) {
+    fn work_report(&mut self, expression: &'tcx Expr<'tcx>, span: Span, shape: Shape, paid: Option<bool>, name: &str) {
         if shape == Shape::Fixed || shape == Shape::Dynamic && paid == Some(true) {
             return;
         }
+        let replacement = self.replacement(expression, name);
         if shape == Shape::Unknown || paid.is_none() {
-            self.report(span, "unproven_decode_charge", &format!("{name}: iteration extent, callee, or charge coverage is unresolved; use concrete operands, a core charged operation or an explicit extent charge"));
+            self.report(span, "unproven_decode_charge", &format!("{name}: iteration extent, callee, or charge coverage is unresolved; replacement: {replacement}"));
         } else {
-            self.report(span, "uncharged_decode_work", &format!("{name} performs input-sized work without admission; charge its extent immediately before it, or charge every iteration path before work"));
+            self.report(span, "uncharged_decode_work", &format!("{name} performs input-sized work without admission; replacement: {replacement}"));
         }
     }
 
@@ -54,6 +55,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
                     if let Some(custom) = self.custom_trait(expression, definition) {
                         if !self.checked_body(custom) && !types::derived(self.tcx, custom) {
                             self.work_report(
+                                expression,
                                 expression.span,
                                 Shape::Unknown,
                                 Some(false),
@@ -78,7 +80,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
                     {
                         paid = None;
                     }
-                    self.work_report(expression.span, shape, paid, "comparison");
+                    self.work_report(expression, expression.span, shape, paid, "comparison");
                 }
             }
         }
@@ -123,6 +125,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
             && !self.provider_reader_call(expression, definition)
         {
             self.work_report(
+                                expression,
                 expression.span,
                 Shape::Unknown,
                 Some(false),
@@ -137,7 +140,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
             let mut complete = true;
             for index in indices {
                 let Some(operand) = operands.get(*index) else {
-                    self.work_report(expression.span, Shape::Unknown, None, name);
+                    self.work_report(expression, expression.span, Shape::Unknown, None, name);
                     complete = false;
                     continue;
                 };
@@ -147,7 +150,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
                 let mut paid = self.take_credit(&[*operand]);
                 if paid == Some(true) && self.deep_work(self.expr_ty(operand)) { paid = None; }
                 complete &= shape == Shape::Fixed || shape == Shape::Dynamic && paid == Some(true);
-                self.work_report(expression.span, shape, paid, name);
+                self.work_report(expression, expression.span, shape, paid, name);
             }
             if complete { self.record_key_work_proof(expression); }
             return;
@@ -157,6 +160,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
                 Shape::Fixed => return,
                 Shape::Unknown => {
                     self.work_report(
+                                expression,
                         expression.span,
                         Shape::Unknown,
                         Some(false),
@@ -169,7 +173,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
         }
         if name == "format" {
             let shape = self.format_shape(&operands);
-            self.work_report(expression.span, shape, Some(false), "format!");
+            self.work_report(expression, expression.span, shape, Some(false), "format!");
             return;
         }
         if name == "from_elem" && operands.first().is_some_and(|operand| matches!(self.expr_ty(operand).kind(), rustc_middle::ty::Tuple(fields) if fields.is_empty())) { return; }
@@ -191,12 +195,13 @@ impl<'tcx> Analysis<'_, 'tcx> {
                 child.join(Shape::Dynamic)
             };
             if child == Shape::Unknown {
-                self.work_report(expression.span, child, Some(false), "resize child Clone");
+                self.work_report(expression, expression.span, child, Some(false), "resize child Clone");
             } else {
                 let paid = operands
                     .get(1)
                     .map_or(Some(false), |count| self.take_credit(&[*count]));
                 self.work_report(
+                                expression,
                     expression.span,
                     shape,
                     if child == Shape::Dynamic { None } else { paid },
@@ -224,7 +229,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
                     })
                 }
             };
-            self.work_report(expression.span, shape, Some(false), name);
+            self.work_report(expression, expression.span, shape, Some(false), name);
             return;
         }
         if matches!(name, "from" | "into" | "into_owned") {
@@ -258,6 +263,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
                     let known_copy = matches!(result.kind(), rustc_middle::ty::Adt(definition, _) if types::standard(self.tcx, definition.did()) && matches!(self.tcx.item_name(definition.did()).as_str(), "String" | "Vec" | "Box" | "Rc" | "Arc" | "PathBuf" | "OsString"));
                     let paid = self.take_credit(&operands);
                     self.work_report(
+                                expression,
                         expression.span,
                         if self.constant(receiver, &mut Vec::new()) {
                             Shape::Fixed
@@ -281,6 +287,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
                 if matches!(self.expr_ty(source).kind(), rustc_middle::ty::Adt(owner, _) if types::standard(self.tcx, owner.did()) && self.tcx.item_name(owner.did()).as_str() == "IntoIter" && self.tcx.def_path_str(owner.did()).contains("vec::"))
                 {
                     self.work_report(
+                                expression,
                         expression.span,
                         Shape::Unknown,
                         Some(false),
@@ -297,7 +304,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
                     crate::storage::consume_terms(&mut credit.extents, &[crate::flow::ExtentTerm {
                         factors: vec![format!("{target}.capacity")], coefficient: self.flow.iterations,
                     }])));
-            self.work_report(expression.span, Shape::Dynamic, Some(paid), name);
+            self.work_report(expression, expression.span, Shape::Dynamic, Some(paid), name);
             return;
         }
         if summary.work == external::Work::Fixed {
@@ -341,6 +348,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
                         .type_is_copy_modulo_regions(self.typing_env(), element)
                 {
                     self.work_report(
+                                expression,
                         expression.span,
                         shape,
                         Some(false),
@@ -476,7 +484,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
         {
             paid = None;
         }
-        self.work_report(expression.span, shape, paid, name);
+        self.work_report(expression, expression.span, shape, paid, name);
     }
 
     fn capacity_iteration(&self, expression: &'tcx Expr<'tcx>) -> bool {
@@ -793,7 +801,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
                         } else {
                             prefix
                         };
-                        self.work_report(header, shape, effective, "for loop");
+                        self.work_report(expression, header, shape, effective, "for loop");
                         let mut saved = self.flow.clone();
                         self.flow.parser_receipts.clear();
                         let repetitions = self.constant_count(input, &mut Vec::new());
@@ -847,7 +855,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
                 } else {
                     Shape::Dynamic
                 };
-                self.work_report(header, shape, paid, "loop");
+                self.work_report(expression, header, shape, paid, "loop");
                 let saved = self.flow.clone();
                 self.flow.work.clear();
                 self.flow.parser_receipts.clear();
