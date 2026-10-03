@@ -12,6 +12,7 @@
 use cadmpeg_core::decode::u64_from_index;
 
 use cadmpeg_asm::kernel_header::RefWidth;
+use std::convert::Infallible;
 use std::ops::RangeInclusive;
 
 use cadmpeg_core::decode::{DecodeContext, ScopedReservation, View};
@@ -402,8 +403,10 @@ pub(crate) fn take_reference<'a>(
     bytes: &'a [u8],
     at: &mut usize,
 ) -> Option<Reference<&'a str, Utf16View<'a>>> {
-    // A borrowed probe performs no resource requests.
-    parse_reference(None, bytes, at).ok().flatten()
+    match parse_reference(bytes, at, |_, _| Ok::<(), Infallible>(())) {
+        Ok(reference) => reference,
+        Err(error) => match error {},
+    }
 }
 
 /// Parse one reference under caller work admission and retain only its kept text.
@@ -412,7 +415,10 @@ pub(crate) fn take_reference_charged(
     bytes: &[u8],
     at: &mut usize,
 ) -> Result<Option<Reference<String, String>>, CodecError> {
-    let Some(reference) = parse_reference(Some(ctx), bytes, at)? else {
+    let Some(reference) = parse_reference(bytes, at, |length, operation| {
+        ctx.charge_work(u64_from_index(length), operation)
+    })?
+    else {
         return Ok(None);
     };
     let copy_guid = |guid: Option<&str>| -> Result<Option<String>, CodecError> {
@@ -454,11 +460,11 @@ pub(crate) fn take_reference_charged(
     }))
 }
 
-fn parse_reference<'a>(
-    ctx: Option<&DecodeContext<'_>>,
+fn parse_reference<'a, E>(
     bytes: &'a [u8],
     at: &mut usize,
-) -> Result<Option<Reference<&'a str, Utf16View<'a>>>, CodecError> {
+    admit: impl Fn(usize, &'static str) -> Result<(), E>,
+) -> Result<Option<Reference<&'a str, Utf16View<'a>>>, E> {
     macro_rules! some {
         ($value:expr) => {
             match $value {
@@ -467,28 +473,23 @@ fn parse_reference<'a>(
             }
         };
     }
-    let utf16 = |at, bounds| -> Result<Option<(Utf16View<'a>, usize)>, CodecError> {
+    let utf16 = |at, bounds| -> Result<Option<(Utf16View<'a>, usize)>, E> {
         let Some((raw, end)) = lp_utf16_raw(bytes, at, bounds) else {
             return Ok(None);
         };
-        if let Some(ctx) = ctx {
-            ctx.charge_work(u64_from_index(raw.len()), "decode F3D reference UTF-16")?;
-        }
+        admit(raw.len(), "decode F3D reference UTF-16")?;
         Ok(Utf16View::new(raw).map(|text| (text, end)))
     };
-    let ascii =
-        |at, bounds: RangeInclusive<usize>| -> Result<Option<(&'a str, usize)>, CodecError> {
-            let Some((raw, end)) = lp_u32_bytes_at(bytes, at) else {
-                return Ok(None);
-            };
-            if !RangeInclusive::contains(&bounds, &raw.len()) {
-                return Ok(None);
-            }
-            if let Some(ctx) = ctx {
-                ctx.charge_work(u64_from_index(raw.len()), "decode F3D reference ASCII")?;
-            }
-            Ok(std::str::from_utf8(raw).ok().map(|text| (text, end)))
+    let ascii = |at, bounds: RangeInclusive<usize>| -> Result<Option<(&'a str, usize)>, E> {
+        let Some((raw, end)) = lp_u32_bytes_at(bytes, at) else {
+            return Ok(None);
         };
+        if !RangeInclusive::contains(&bounds, &raw.len()) {
+            return Ok(None);
+        }
+        admit(raw.len(), "decode F3D reference ASCII")?;
+        Ok(std::str::from_utf8(raw).ok().map(|text| (text, end)))
+    };
     let mut cursor = *at;
     let present = some!(bytes.get(cursor)).to_owned();
     cursor += 1;
@@ -761,5 +762,27 @@ mod tests {
         assert_eq!(target, 7);
         assert_eq!(guid.unwrap().as_ptr(), bytes[13..].as_ptr());
         assert_eq!(at, bytes.len());
+    }
+
+    #[test]
+    fn charged_reference_ascii_refusal_keeps_context_and_cursor() {
+        let mut bytes = vec![1];
+        bytes.extend_from_slice(&7_u64.to_le_bytes());
+        bytes.extend_from_slice(&36_u32.to_le_bytes());
+        bytes.extend_from_slice(b"aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee");
+        bytes.extend_from_slice(&[0, 0]);
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        crate::test_support::with_decode_policy(&policy, |ctx| {
+            let mut at = 0;
+            let cadmpeg_core::CodecError::ResourceLimit(limit) =
+                super::take_reference_charged(ctx, &bytes, &mut at).unwrap_err()
+            else {
+                panic!("ASCII admission must preserve resource refusal");
+            };
+            assert_eq!(limit.operation, "decode F3D reference ASCII");
+            assert_eq!(Some(limit), ctx.resource_refusal());
+            assert_eq!(at, 0);
+        });
     }
 }

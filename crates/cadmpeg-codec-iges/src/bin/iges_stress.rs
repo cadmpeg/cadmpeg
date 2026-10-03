@@ -142,16 +142,20 @@ impl Lcg {
         Self(seed)
     }
 
-    fn next(&mut self) -> u64 {
-        self.0 = self
-            .0
-            .wrapping_mul(6_364_136_223_846_793_005)
-            .wrapping_add(1_442_695_040_888_963_407);
-        self.0 >> 16
+    fn next(&mut self) -> Result<u64, &'static str> {
+        let next = u128::from(self.0)
+            .checked_mul(6_364_136_223_846_793_005)
+            .and_then(|value| value.checked_add(1_442_695_040_888_963_407))
+            .ok_or("random state arithmetic overflow")?;
+        self.0 = u64::try_from(next % (u128::from(u64::MAX) + 1))
+            .map_err(|_| "random state exceeds u64")?;
+        Ok(self.0 >> 16)
     }
 
-    fn below(&mut self, bound: u64) -> u64 {
-        self.next() % bound
+    fn below(&mut self, bound: u64) -> Result<u64, &'static str> {
+        self.next()?
+            .checked_rem(bound)
+            .ok_or("random bound is zero")
     }
 }
 
@@ -545,7 +549,7 @@ fn counted_lists(scale: Scale) -> Result<Vec<u8>, &'static str> {
     }
     for index in 0..arrays {
         let base = cadmpeg_core::decode::index_from_u64(
-            seed.below(cadmpeg_core::decode::u64_from_index(points)),
+            seed.below(cadmpeg_core::decode::u64_from_index(points))?,
         )
         .ok_or("random point index exceeds usize")?;
         let mut record = Record::new(412);
@@ -663,7 +667,7 @@ fn text_run(seed: &mut Lcg, length: usize) -> Result<String, &'static str> {
         .map_err(|_| "text generation storage refused")?;
     for _ in 0..length {
         let pick = cadmpeg_core::decode::index_from_u64(
-            seed.below(cadmpeg_core::decode::u64_from_index(ALPHABET.len())),
+            seed.below(cadmpeg_core::decode::u64_from_index(ALPHABET.len()))?,
         )
         .ok_or("random character index exceeds usize")?;
         text.push(char::from(ALPHABET[pick]));

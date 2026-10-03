@@ -1093,7 +1093,12 @@ pub(crate) fn lines(
             .position(|window| window == ROW_START)
             .map(|relative| cursor + relative)
         {
-            if starts.is_empty() || payload.get(start.wrapping_sub(1)) == Some(&0xe3) {
+            if starts.is_empty()
+                || match start.checked_sub(1) {
+                    Some(before) => payload.get(before) == Some(&0xe3),
+                    None => false, // Position zero has no preceding row marker.
+                }
+            {
                 ctx.reserve_vec(&mut starts, 1, "creo reference line starts")?;
                 starts.push(start);
             }
@@ -1101,10 +1106,9 @@ pub(crate) fn lines(
         }
         for (index, start) in starts.iter().copied().enumerate() {
             let end = starts.get(index + 1).map_or(block_end, |next| next - 1);
-            let end = if payload.get(end.wrapping_sub(1)) == Some(&0xe3) {
-                end - 1
-            } else {
-                end
+            let end = match end.checked_sub(1) {
+                Some(before) if payload.get(before) == Some(&0xe3) => before,
+                Some(_) | None => end,
             };
             if start >= end {
                 continue;

@@ -598,6 +598,7 @@ pub(crate) fn decode_round_edge_coordinate(
 ) -> Option<(f64, usize)> {
     let prefix = *data.get(offset)?;
     if (0x4b..=0xa3).contains(&prefix) {
+        // wrapping-exception: DICT prefix remapping reconstructs the low IEEE byte modulo 256
         let byte_1 = prefix.wrapping_add(0x75);
         let byte_0: u8 = if byte_1 >= 0x80 { 0x3f } else { 0x40 };
         return ieee7_dict(data, offset, u16::from(byte_0) << 8 | u16::from(byte_1));
@@ -2292,6 +2293,7 @@ pub(crate) fn decode_positive_dict(data: &[u8], offset: usize) -> Option<(f64, u
     let (byte_0, byte_1) = if prefix == 0xb7 {
         (0x3f, 0xe4)
     } else if (0x5b..=0xa3).contains(&prefix) {
+        // wrapping-exception: DICT prefix remapping reconstructs the low IEEE byte modulo 256
         let byte_1 = prefix.wrapping_add(0x75);
         (if byte_1 >= 0x80 { 0x3f } else { 0x40 }, byte_1)
     } else {

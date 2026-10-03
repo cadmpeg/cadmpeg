@@ -126,9 +126,11 @@ pub(super) fn decode(
                     exchange
                         .records()
                         .get(definition)
-                        .map_or(usize::MAX, |record| record.span.start)
+                        .map(|record| record.span.start)
                 };
-                start(left).cmp(&start(right))
+                let left = start(left);
+                let right = start(right);
+                (left.is_none(), left).cmp(&(right.is_none(), right))
             },
             |_| 0,
             "step_product_definition_group_sort",

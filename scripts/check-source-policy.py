@@ -31,10 +31,6 @@ class Finding:
 
 FROM_ENDIAN = re.compile(r"\bfrom_(?:le|be)_bytes\b")
 MALFORMED_FORMAT = re.compile(r"CodecError::Malformed\s*\(\s*format!", re.MULTILINE)
-INTEGER_CLAMP = re.compile(
-    r"\bunwrap_or(?:_else\s*\(\s*\|_?\|\s*|\s*\(\s*)"
-    r"[ui](?:8|16|32|64|128|size)::(?:MAX|MIN)\s*\)"
-)
 LOSS_NOTE_LIT = re.compile(r"\bLossNote\s*\{")
 LOSS_NOTE_PATH = r"(?:::\s*)?(?:(?:r#)?[^\W\d]\w*\s*::\s*)*(?:r#)?(?P<name>LossNote)"
 LOSS_NOTE_RETURN = re.compile(r"->\s*" + LOSS_NOTE_PATH + r"\s*\{")
@@ -450,10 +446,228 @@ def resolve_module_target(
     return None
 
 
+def scan_saturating_arithmetic(path: Path, code: str) -> list[Finding]:
+    """Require checked arithmetic with an explicit overflow branch."""
+    return [Finding(
+        "saturating_arithmetic", relative_path(path), code.count("\n", 0, match.start()) + 1,
+        "Use checked arithmetic and propagate a resource refusal or typed error on overflow.",
+    ) for match in re.finditer(r"\bsaturating_\w+\s*(?:::\s*<[^;{}]*>)?\s*\(", code)]
+
+
+def integer_limit_default(words: list[str]) -> bool:
+    """Recognize a bound expression or a closure returning that bound."""
+    words = list(words)
+    if words[:1] == ["move"]:
+        words = words[1:]
+    if words[:1] == ["|"]:
+        tokens, _, parents = evaluation_tokens(" ".join(words))
+        closing = next((at for at in range(1, len(tokens))
+                        if tokens[at][0] == "|" and at not in parents), None)
+        if closing is None:
+            return False
+        words = words[closing + 1:]
+        if words[:1] == ["->"]:
+            if "{" not in words:
+                return False
+            words = words[words.index("{"):]
+    while len(words) >= 2 and words[0] in {"(", "{"}:
+        # Remove only delimiters enclosing the complete expression.
+        tokens, local_pairs, _ = evaluation_tokens(" ".join(words))
+        if local_pairs.get(0) != len(tokens) - 1:
+            break
+        words = words[1:-1]
+    if words[:1] == ["return"]:
+        words = words[1:]
+        if words[-1:] == [";"]:
+            words = words[:-1]
+    bound = "".join(words)
+    primitive = r"(?:::)?(?:(?:std|core)::(?:primitive::)?)?[ui](?:8|16|32|64|128|size)"
+    return re.fullmatch(r"(?:" + primitive + r"|<" + primitive + r">)::(?:MAX|MIN)", bound) is not None
+
+
+def scan_integer_clamps(path: Path, code: str) -> list[Finding]:
+    """Reject integer-bound defaults in Option and Result combinators."""
+    findings = []
+    tokens, pairs, parents = evaluation_tokens(code)
+    words = [token[0] for token in tokens]
+    for index, word in enumerate(words):
+        if word not in {"unwrap_or", "unwrap_or_else", "map_or", "map_or_else"}:
+            continue
+        opening = evaluation_call_open(words, index)
+        if opening is None or opening not in pairs:
+            continue
+        end = pairs[opening]
+        argument_start = opening + 1
+        if words[argument_start:argument_start + 1] == ["move"]:
+            argument_start += 1
+        if words[argument_start:argument_start + 1] == ["|"]:
+            # Parameter commas, including generic type arguments, stay inside
+            # the closure's two top-level pipes.
+            closing = next((at for at in range(argument_start + 1, end)
+                            if words[at] == "|" and parents.get(at) == opening), None)
+            if closing is None:
+                continue
+            argument_start = closing + 1
+        for argument_end in range(argument_start, end):
+            if words[argument_end] == "," and parents.get(argument_end) == opening:
+                end = argument_end
+                break
+        if integer_limit_default(words[opening + 1:end]):
+            findings.append(Finding(
+                "integer_clamp", relative_path(path), code.count("\n", 0, tokens[index].start()) + 1,
+                "Use an exact conversion or an explicit refusal branch; represent a missing bound as Option instead of an integer limit.",
+            ))
+    return findings
+
+
+OPTIONAL_DECODE_CONTEXT = re.compile(
+    r"\bOption\s*<\s*&\s*(?:'[A-Za-z_]\w*\s*)?(?:mut\s+)?"
+    r"(?:::\s*)?(?:(?:[A-Za-z_]\w*)\s*::\s*)*DecodeContext\b"
+)
+
+
+def scan_optional_decode_contexts(path: Path, code: str) -> list[Finding]:
+    """Require a decode context in function parameters, never an optional one."""
+    findings = []
+    tokens, pairs, _ = evaluation_tokens(code)
+    words = [token[0] for token in tokens]
+    reported: set[int] = set()
+    for index, word in enumerate(words):
+        if word != "fn":
+            continue
+        opening = index + (1 if words[index + 1:index + 2] == ["("] else 2)
+        if words[index + 1:index + 3] == ["r", "#"]:
+            opening += 2
+        if words[opening:opening + 1] == ["<"]:
+            depth = 1
+            opening += 1
+            while opening < len(words) and depth:
+                depth += (words[opening] == "<") - (words[opening] == ">")
+                opening += 1
+        if words[opening:opening + 1] != ["("] or opening not in pairs:
+            continue
+        start = tokens[opening].end()
+        end = tokens[pairs[opening]].start()
+        for match in OPTIONAL_DECODE_CONTEXT.finditer(code, start, end):
+            if match.start() in reported:
+                continue
+            reported.add(match.start())
+            findings.append(Finding(
+                "optional_decode_context", relative_path(path), code.count("\n", 0, match.start()) + 1,
+                "The decode path takes its caller DecodeContext; context-free reconstruction and writing take no context.",
+            ))
+    return findings
+
+
+CONVERSION_EXPECTATION = {
+    "clippy::as_conversions", "clippy::cast_possible_truncation",
+    "clippy::cast_precision_loss", "clippy::cast_sign_loss",
+}
+
+
+def scan_lint_suppressions(path: Path, source: str, code: str) -> list[Finding]:
+    """Keep lint suppressions in tests and the one checked conversion module."""
+    findings = []
+    tokens, pairs, parents = evaluation_tokens(code)
+    words = [token[0] for token in tokens]
+    admitted_conversion = False
+    for index, word in enumerate(words):
+        if word != "#":
+            continue
+        inner = words[index + 1:index + 2] == ["!"]
+        opening = index + (2 if inner else 1)
+        if words[opening:opening + 1] != ["["] or opening not in pairs:
+            continue
+        end = pairs[opening]
+        suppressions = [at for at in range(opening + 1, end)
+                        if words[at] in {"allow", "expect"} and words[at + 1:at + 2] == ["("]]
+        production_suppressions = []
+        for suppression in suppressions:
+            ancestor = parents.get(suppression)
+            test_only = False
+            while ancestor is not None and ancestor != opening:
+                if ancestor > 0 and words[ancestor - 1] == "cfg_attr":
+                    condition_end = next((at for at in range(ancestor + 1, pairs[ancestor])
+                                          if words[at] == "," and parents.get(at) == ancestor), None)
+                    if condition_end is not None:
+                        condition = "".join(words[ancestor + 1:condition_end])
+                        if attr_is_test_cfg("#[cfg(" + condition + ")]"):
+                            test_only = True
+                            break
+                ancestor = parents.get(ancestor)
+            if not test_only:
+                production_suppressions.append(suppression)
+        suppressions = production_suppressions
+        if not suppressions:
+            continue
+        allowed = False
+        if (relative_path(path) == "crates/cadmpeg-core/src/convert.rs"
+                and not admitted_conversion and inner and index not in parents
+                and words[opening + 1:opening + 3] == ["expect", "("]):
+            attribute = code[tokens[opening].end():tokens[end].start()]
+            lints = set(re.findall(r"clippy\s*::\s*([A-Za-z_]\w*)", attribute))
+            lints = {"clippy::" + lint for lint in lints}
+            remaining = re.sub(r"clippy\s*::\s*[A-Za-z_]\w*", "", attribute)
+            remaining = re.sub(r"reason\s*=", "", remaining)
+            remaining = re.sub(r"[\s,()]|expect", "", remaining)
+            raw = source[tokens[opening].end():tokens[end].start()]
+            reason = re.search(r'reason\s*=\s*"([^"\n]*)"', raw)
+            allowed = (lints == CONVERSION_EXPECTATION and not remaining
+                       and reason is not None and bool(reason[1].strip())
+                       and len(suppressions) == 1)
+            admitted_conversion = allowed
+        if not allowed:
+            findings.append(Finding(
+                "lint_suppression", relative_path(path), code.count("\n", 0, tokens[index].start()) + 1,
+                "Fix the lint instead of suppressing it; only tests and the single module expectation in core convert.rs are exempt.",
+            ))
+    return findings
+
+
+WRAPPING_CALL = re.compile(r"\bwrapping_\w+\s*(?:::\s*<[^;{}]*>)?\s*\(")
+WRAPPING_MARKER = re.compile(r"^\s*// wrapping-exception: (\S.*?)\s*$")
+
+
+def scan_wrapping_arithmetic(path: Path, source: str, code: str) -> list[Finding]:
+    """Admit one format-defined modular operation per local reason."""
+    findings = []
+    markers = standalone_markers(source, WRAPPING_MARKER)
+    # Mark comment positions with identifiers before masking test items. This
+    # keeps test-only markers out of stale-marker checks without parsing Rust twice per marker.
+    probe = source.splitlines(keepends=True)
+    for index in markers:
+        probe[index] = re.sub(r"[^\r\n]", "x", probe[index])
+    active, _ = production_source("".join(probe))
+    active_lines = active.splitlines()
+    markers = {index: reason for index, reason in markers.items() if active_lines[index].strip()}
+    calls_by_line: dict[int, int] = {}
+    for match in WRAPPING_CALL.finditer(code):
+        index = code.count("\n", 0, match.start())
+        calls_by_line[index] = calls_by_line.get(index, 0) + 1
+    for index in markers:
+        if calls_by_line.get(index + 1, 0) != 1:
+            findings.append(Finding(
+                "wrapping_exception", relative_path(path), index + 1,
+                "Stale wrapping exception; annotate exactly one modular call on the next line.",
+            ))
+    for index, count in calls_by_line.items():
+        if index - 1 in markers and count == 1:
+            continue
+        for _ in range(count):
+            findings.append(Finding(
+                "wrapping_arithmetic", relative_path(path), index + 1,
+                "Use checked arithmetic; format-defined modular arithmetic requires a standalone wrapping-exception reason on the preceding line.",
+            ))
+    return findings
+
+
 def scan_patterns(path: Path, source: str) -> list[Finding]:
     """Inspect each source pattern once and report its location."""
     code, size = production_source(source)
-    findings = []
+    findings = scan_saturating_arithmetic(path, code)
+    findings.extend(scan_wrapping_arithmetic(path, source, code))
+    findings.extend(scan_lint_suppressions(path, source, code))
+    findings.extend(scan_optional_decode_contexts(path, code))
 
     def report(rule: str, line: int, message: str) -> None:
         findings.append(Finding(rule, relative_path(path), line, message))
@@ -505,9 +719,7 @@ def scan_patterns(path: Path, source: str) -> list[Finding]:
     for match in MALFORMED_FORMAT.finditer(code):
         report("formatted_malformed_error", code.count("\n", 0, match.start()) + 1,
                "Use a structured codec error instead of Malformed(format!(...)).")
-    for match in INTEGER_CLAMP.finditer(code):
-        report("integer_clamp", code.count("\n", 0, match.start()) + 1,
-               "Do not clamp to an integer bound. Widen a usize with cadmpeg_core::decode::u64_from_index, or return the refusal.")
+    findings.extend(scan_integer_clamps(path, code))
     declarations = {match.end() for match in NAMED_TOLERANCE_DECL.finditer(code)}
     for match in BARE_TOLERANCE.finditer(code):
         if match.start() not in declarations:

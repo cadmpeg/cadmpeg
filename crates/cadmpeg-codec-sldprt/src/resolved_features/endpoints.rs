@@ -2304,8 +2304,10 @@ fn point_distance_component_has_solution(
     charge_endpoint_work(ctx, component.len(), 4, POINT_SOLVER_OPERATION)?;
     reserve_point_solver_vec(ctx, &mut unassigned, component.len())?;
     unassigned.extend(component);
-    let domain_key =
-        |index: &u32| std::cmp::Reverse(domains.get(index).map_or(usize::MAX, Vec::len));
+    let domain_key = |index: &u32| {
+        let length = domains.get(index).map(Vec::len);
+        std::cmp::Reverse((length.is_none(), length))
+    };
     ctx.sort_unstable_by(
         &mut unassigned,
         |left, right| domain_key(left).cmp(&domain_key(right)),
