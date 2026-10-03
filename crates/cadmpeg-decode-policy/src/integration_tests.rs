@@ -108,7 +108,7 @@ fn check_fixture(name: &str) {
             std::env::join_paths(directories).expect("dependency paths"),
         );
     }
-    if name == "work_keys" {
+    if matches!(name, "work_keys" | "work_callbacks") {
         command.env("CADMPEG_POLICY_CRATE_NAME", "cadmpeg_core");
     }
     if name == "external" {
@@ -768,4 +768,9 @@ fn admitted_iteration_work() {
 #[test]
 fn complete_key_work_receipts() {
     check_fixture("work_keys");
+}
+
+#[test]
+fn core_callback_obligations_stay_at_the_concrete_caller() {
+    check_fixture("work_callbacks");
 }

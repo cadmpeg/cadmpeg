@@ -161,6 +161,9 @@ impl<'tcx> Analysis<'_, 'tcx> {
         if matches!(self.expr_ty(callee).kind(), ty::FnDef(_, _)) {
             return;
         }
+        if self.core_callback_parameter(self.expr_ty(callee)) {
+            return;
+        }
         if let ty::Closure(definition, _) = self.expr_ty(callee).peel_refs().kind() {
             if self.checked_body(*definition) {
                 return;

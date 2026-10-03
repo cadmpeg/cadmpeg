@@ -12,6 +12,7 @@ extern crate rustc_type_ir;
 
 mod allocation;
 mod callee;
+mod callback;
 mod conversion;
 mod extent;
 mod external;
@@ -383,6 +384,7 @@ impl<'tcx> Visitor<'tcx> for Analysis<'_, 'tcx> {
             rustc_hir::intravisit::walk_expr(self, expression);
             return;
         }
+        self.callback_boundary(expression);
         self.indirect(expression);
         self.allocation(expression);
         self.visit_work_expression(expression);
