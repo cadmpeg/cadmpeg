@@ -33,7 +33,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
         match callback.peel_refs().kind() {
             ty::Closure(id, _) => self.checked_body(*id),
             ty::FnDef(id, _) => matches!(self.tcx.def_kind(*id), rustc_hir::def::DefKind::Ctor(_, _)) || self.checked_body(*id) || external::summary(self.tcx, *id, None).is_some_and(|cost| cost.work == external::Work::Fixed),
-            ty::Param(_) => self.core_callback_parameter(callback),
+            ty::Param(_) => self.provider_callback_parameter(callback),
             _ => false,
         }
     }

@@ -124,6 +124,9 @@ fn check_fixture(name: &str) {
     if matches!(name, "work_keys" | "work_callbacks" | "work_scalar" | "work_iterators" | "serde") {
         command.env("CADMPEG_POLICY_CRATE_NAME", "cadmpeg_core");
     }
+    if name == "container_callbacks" {
+        command.env("CADMPEG_POLICY_CRATE_NAME", "cadmpeg_container");
+    }
     if name == "external" {
         command.env("CADMPEG_POLICY_EXTERNALS", "1");
     }
@@ -209,6 +212,7 @@ fn check_fixture(name: &str) {
                     | "dominance"
                     | "thirdparty"
                     | "zip"
+                    | "container_callbacks"
                     | "symbolic"
                     | "derived"
                     | "serde"
@@ -802,4 +806,9 @@ fn generic_core_collectors_check_source_steps_at_the_caller() {
 #[test]
 fn zip_raw_metadata_access_has_fixed_cost() {
     check_fixture("zip");
+}
+
+#[test]
+fn container_classifiers_keep_their_child_work_and_allocation_obligations() {
+    check_fixture("container_callbacks");
 }
