@@ -3,13 +3,15 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use cadmpeg_core::decode::{u64_from_index, DecodeContext, ResourceLimit, ScopedReservation};
+use cadmpeg_core::decode::{
+    cost::DecodeCost, u64_from_index, DecodeContext, ResourceLimit, ScopedReservation,
+};
 use cadmpeg_core::CodecError;
 
 mod cache;
 pub mod native_fields;
 
-use cache::{Key, ReplacementIndex};
+use cache::ReplacementIndex;
 
 /// Rewrite owned fields without projecting or reconstructing a serde value.
 pub trait RewriteIdentities: Sized {
@@ -50,8 +52,8 @@ pub struct IdentityMap<'ctx, F> {
     map: F,
     context: &'ctx DecodeContext<'ctx>,
     text_index: Option<ReplacementIndex<'ctx>>,
-    targets: BTreeMap<Key<'ctx>, crate::ids::Identity>,
-    occupied: BTreeSet<Key<'ctx>>,
+    targets: BTreeMap<String, crate::ids::Identity>,
+    occupied: BTreeSet<String>,
     operation: &'static str,
     refused: Option<String>,
     resource_refusal: Option<ResourceLimit>,
@@ -176,10 +178,7 @@ impl<'ctx, F: FnMut(&str) -> Result<String, CodecError>> IdentityMap<'ctx, F> {
         }
         let operation = self.operation;
         ctx.charge_work(1, operation)?;
-        let cached = self
-            .targets
-            .get(&Key::borrowed(self.context, source, operation));
-        self.context.charge_work_limit(0, operation)?;
+        let cached = self.context.get_btree_map(&self.targets, source, operation)?;
         if let Some(target) = cached {
             return target.try_clone_for_decode(ctx, operation);
         }
@@ -204,9 +203,9 @@ impl<'ctx, F: FnMut(&str) -> Result<String, CodecError>> IdentityMap<'ctx, F> {
         let occupied = self
             .storage
             .with_storage(|| ctx.copy_retained_text(target.as_str(), operation))?;
-        let destination = Key::owned(self.context, occupied, operation);
-        let collision = self.occupied.contains(&destination);
-        self.context.charge_work_limit(0, operation)?;
+        let collision = self
+            .context
+            .contains_btree_set(&self.occupied, occupied.as_str(), operation)?;
         if collision {
             return self.refuse(
                 ctx,
@@ -214,16 +213,15 @@ impl<'ctx, F: FnMut(&str) -> Result<String, CodecError>> IdentityMap<'ctx, F> {
             );
         }
         ctx.charge_work(1, operation)?;
-        self.storage
-            .with_storage(|| ctx.insert_btree_set(&mut self.occupied, destination, operation))?;
-        self.context.charge_work_limit(0, operation)?;
-        let key = Key::owned(self.context, key, operation);
+        self.storage.with_storage(|| {
+            self.context
+                .insert_btree_set(&mut self.occupied, occupied, operation)
+        })?;
         ctx.charge_work(1, operation)?;
-        self.storage
-            .with_storage(|| ctx.admit_btree_entry(&self.targets, &key, operation))?;
-        self.context.charge_work_limit(0, operation)?;
-        self.targets.insert(key, cached);
-        self.context.charge_work_limit(0, operation)?;
+        drop(self.storage.with_storage(|| {
+            self.context
+                .insert_btree_map(&mut self.targets, key, cached, operation)
+        })?);
         Ok(target)
     }
 }
@@ -454,7 +452,9 @@ impl<T: RewriteIdentities, const N: usize> RewriteIdentities for [T; N] {
     }
 }
 
-impl<K: RewriteIdentities + Ord, V: RewriteIdentities> RewriteIdentities for BTreeMap<K, V> {
+impl<K: RewriteIdentities + Ord + DecodeCost, V: RewriteIdentities> RewriteIdentities
+    for BTreeMap<K, V>
+{
     fn visit_identity_references(
         &self,
         ctx: &DecodeContext<'_>,
@@ -508,9 +508,9 @@ impl RewriteIdentities for cadmpeg_core::text::NonBlankString {
         ctx: &DecodeContext<'_>,
         map: &mut IdentityMap<'_, F>,
     ) -> Result<Self, CodecError> {
-        let text = map.text(ctx, self.into_string())?;
-        ctx.charge_work(u64_from_index(text.len()), "rewrite nonblank text")?;
-        Self::new(text).ok_or_else(|| CodecError::malformed("rewritten text must be nonblank"))
+        let text = map.text(ctx, self.into_string(ctx, "rewrite nonblank text")?)?;
+        Self::for_decode(ctx, text, "rewrite nonblank text")?
+            .ok_or_else(|| CodecError::malformed("rewritten text must be nonblank"))
     }
 }
 rewrite_scalars!(std::num::NonZeroI64, std::num::NonZeroU32);

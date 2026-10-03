@@ -819,7 +819,8 @@ fn sweep_text_whitespace_refuses_before_the_next_character() {
     use crate::eval::{admission::EvaluationAdmission, EvaluationFailure};
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     let expression = LawExpression::Text {
-        value: cadmpeg_core::text::NonBlankString::new(" X ").unwrap(),
+        value: cadmpeg_core::text::NonBlankString::try_from(" X ")
+            .expect("nonblank sweep expression"),
     };
     let frame_work = cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
         Option<crate::eval::ModelEvaluationIdentity>,
@@ -850,11 +851,12 @@ fn sweep_text_projections_admit_scoped_storage_and_release_it() {
     use crate::eval::{admission::EvaluationAdmission, EvaluationFailure};
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     let scale = LawExpression::Text {
-        value: cadmpeg_core::text::NonBlankString::new(" VEC ( 2, 3, 4 ) ").unwrap(),
+        value: cadmpeg_core::text::NonBlankString::try_from(" VEC ( 2, 3, 4 ) ")
+            .expect("nonblank scale expression"),
     };
     let formula = LawFormula::Named {
-        name: cadmpeg_core::text::NonBlankString::new(" DOMAIN ( VEC ( 1, 0, 0 ), 0, 1 ) ")
-            .unwrap(),
+        name: cadmpeg_core::text::NonBlankString::try_from(" DOMAIN ( VEC ( 1, 0, 0 ), 0, 1 ) ")
+            .expect("nonblank formula name"),
         variables: Vec::new(),
     };
     for route in 0..2 {

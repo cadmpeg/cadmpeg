@@ -583,10 +583,12 @@ macro_rules! declare_model {
 
             /// Sort each arena lexicographically by its entity identity.
             pub fn finalize(&mut self, ctx: &DecodeContext<'_>) -> Result<(), CodecError> {
-                $(ctx.stable_sort_by(&mut self.$field, |left, right| {
-                    crate::schema::EntitySchema::identity(left)
-                        .cmp(crate::schema::EntitySchema::identity(right))
-                }, |entity| crate::schema::EntitySchema::identity(entity).len(), "finalize model arena")?;)*
+                $(ctx.stable_sort_by(
+                    &mut self.$field,
+                    |entity| crate::schema::EntitySchema::identity(entity),
+                    Ord::cmp,
+                    "finalize model arena",
+                )?;)*
                 Ok(())
             }
 
@@ -697,8 +699,8 @@ fn sorted_rows<'a, T: crate::schema::EntitySchema, U>(
         storage.with_storage(|| ctx.collect_vec(entities.iter(), "digest arena order"))?;
     ctx.stable_sort_by(
         &mut refs,
-        |left, right| left.identity().cmp(right.identity()),
-        |value| value.identity().len(),
+        |value| value.identity(),
+        Ord::cmp,
         "sort digest arena",
     )?;
     let result = ctx.try_collect_vec(
@@ -1015,6 +1017,16 @@ impl CensusKey {
             CensusKeyInner::SurfacesUnknownGeometry => SURFACES_UNKNOWN_GEOMETRY,
             CensusKeyInner::Other(value) => value,
         }
+    }
+}
+
+impl cadmpeg_core::decode::cost::DecodeCost for CensusKey {
+    fn decode_cost(
+        &self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, CodecError> {
+        cadmpeg_core::decode::cost::DecodeCost::decode_cost(self.as_str(), ctx, operation)
     }
 }
 

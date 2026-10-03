@@ -234,6 +234,22 @@ fn typed_text_rewrite_preserves_its_first_refusal() {
 fn typed_ordered_map_rewrite_accepts_keys_without_hashing() {
     #[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
     struct OrderedKey(u8);
+    impl cadmpeg_core::decode::cost::DecodeCost for OrderedKey {
+        const FIXED_BYTES: Option<u64> =
+            <u8 as cadmpeg_core::decode::cost::DecodeCost>::FIXED_BYTES;
+
+        fn decode_cost(
+            &self,
+            ctx: &DecodeContext<'_>,
+            operation: &'static str,
+        ) -> Result<u64, CodecError> {
+            <u8 as cadmpeg_core::decode::cost::DecodeCost>::decode_cost(
+                &self.0,
+                ctx,
+                operation,
+            )
+        }
+    }
     impl RewriteIdentities for OrderedKey {
         fn visit_identity_references(
             &self,

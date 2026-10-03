@@ -2130,7 +2130,6 @@ fn project_work_point_construction(
                     let prefix =
                         crate::design::identity::history_input_prefix(ctx, feature_key, state_id)?;
                     match VertexSelection::historical(
-                        ctx,
                         crate::design::identity::feature_input_topology_id(
                             ctx,
                             &feature_id,
@@ -2146,6 +2145,7 @@ fn project_work_point_construction(
                             &recipe.recipe_id,
                             "f3d WorkPoint historical vertex recipe id",
                         )?,
+                        ctx,
                     )? {
                         Ok(selection) => selection,
                         Err(_) => VertexSelection::Unresolved,
@@ -2221,10 +2221,11 @@ fn project_work_plane(
         -> Result<Option<VertexSelection>, CodecError> {
             let Some(resolution) = recipe.resolution else { return Ok(None); };
             let native = ctx.copy_retained_text(&recipe.recipe_id, "f3d WorkPlane vertex recipe id")?;
-            let selection = match VertexSelection::historical(ctx,
+            let selection = match VertexSelection::historical(
                     crate::design::identity::feature_input_topology_id(ctx, &feature_id, state_id)?,
                     crate::design::identity::history_input_vertex_id(ctx, &prefix, resolution.vertex_slot(), "f3d historical vertex identifier")?,
                     native,
+                    ctx,
                 )? {
                 Ok(selection) => selection,
                 Err(_) => VertexSelection::Unresolved,

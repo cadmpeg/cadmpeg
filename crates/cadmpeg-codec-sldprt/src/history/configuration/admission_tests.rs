@@ -882,7 +882,6 @@ fn profile_termination_operands() -> (
         },
         LinearTermination::ToVertex {
             vertex: VertexSelection::historical(
-                &cadmpeg_test_support::service_decode_context(),
                 state,
                 HistoricalVertexId::mint("synthetic:test:id#historical-vertex").unwrap(),
                 "historical vertex".into(),

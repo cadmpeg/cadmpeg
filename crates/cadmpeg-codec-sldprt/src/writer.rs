@@ -1082,17 +1082,17 @@ fn patch_retained_swobjects_metadata(
                         attribute.id
                     ))
                 })?;
-            Ok((provenance.stream().to_owned(), provenance.offset, attribute))
+            Ok(((provenance.stream().to_owned(), Reverse(provenance.offset)), attribute))
         })
         .collect::<Result<Vec<_>, CodecError>>()?;
     ctx.stable_sort_by(
         &mut attributes,
-        |left, right| (&left.0, Reverse(left.1)).cmp(&(&right.0, Reverse(right.1))),
-        |attribute| attribute.0.len(),
+        |attribute| &attribute.0,
+        Ord::cmp,
         "SLDPRT retained metadata patch order",
     )?;
 
-    for (stream, offset, attribute) in attributes {
+    for ((stream, Reverse(offset)), attribute) in attributes {
         let payload = sections
             .iter_mut()
             .find_map(|(candidate, payload)| (*candidate == stream).then_some(payload))
@@ -1706,8 +1706,8 @@ fn metadata_attributes<'ir>(
     }
     ctx.stable_sort_by(
         &mut positioned,
-        |left, right| left.0.cmp(&right.0),
-        |_| 3,
+        |value| &value.0,
+        Ord::cmp,
         "sort SLDPRT metadata positions",
     )?;
     ctx.try_collect_retained_with(

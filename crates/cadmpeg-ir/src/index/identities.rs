@@ -33,8 +33,8 @@ impl<'ctx, 'ir, T> BorrowedIdentities<'ctx, 'ir, T> {
         })?;
         ctx.stable_sort_by(
             &mut values,
-            |left, right| left.0.cmp(&right.0),
-            |_| 1,
+            |value| &value.0,
+            Ord::cmp,
             "sort validation identity hashes",
         )?;
         Ok(Self {

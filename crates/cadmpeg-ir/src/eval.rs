@@ -690,8 +690,8 @@ pub fn nurbs_surface_parameter_segment_chord_bound_with_budget(
         // Equal finite split parameters are indistinguishable before deduplication.
         ctx.sort_unstable_by(
             &mut splits,
+            |value| value,
             f64::total_cmp,
-            |_| 0,
             "IR surface segment split sort",
         )?;
         ctx.charge_work(

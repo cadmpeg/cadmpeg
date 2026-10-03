@@ -38,15 +38,15 @@ impl<'ctx, T> Scratch<'ctx, T> {
         self.values.pop()
     }
 
-    pub(super) fn stable_sort_by(
+    pub(super) fn stable_sort_by<K: cadmpeg_core::decode::cost::DecodeCost + ?Sized>(
         &mut self,
-        compare: impl FnMut(&T, &T) -> std::cmp::Ordering,
-        key_bytes: impl Fn(&T) -> usize,
+        key: impl Fn(&T) -> &K,
+        compare: impl FnMut(&K, &K) -> std::cmp::Ordering,
     ) -> Result<(), CodecError> {
         self.ctx.stable_sort_by(
             &mut self.values,
+            key,
             compare,
-            key_bytes,
             "sort validation scratch",
         )
     }
