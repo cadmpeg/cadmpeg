@@ -60,8 +60,10 @@ impl Node {
 /// An externally tagged variant: `{"Variant": payload}`.
 fn tagged(ctx: &DecodeContext<'_>, variant: &str, payload: Value) -> Result<Node, CanonError> {
     let key = copy_text(ctx, variant)?;
-    ctx.admit_retained_btree_record::<String, Value>(0, STORAGE)?;
     let mut entries = Map::new();
+    ctx.admit_btree_node_storage::<String, Value>(entries.len(), STORAGE)?;
+    ctx.charge_collection_items(1, STORAGE)?;
+    ctx.charge_work(1, STORAGE)?;
     entries.insert(key, payload);
     Ok(Node::Value(Value::Object(entries)))
 }
@@ -858,6 +860,7 @@ impl CanonMap<'_> {
             .and_then(|units| u64::try_from(units).ok())
             .ok_or_else(|| self.ctx.refuse_codec_limit(WORK, u64::MAX - 1, u64::MAX))?;
         self.ctx.charge_work(work, WORK)?;
+        let len = self.entries.len();
         match self.entries.entry(key) {
             serde_json::map::Entry::Vacant(entry) => {
                 let value = value
@@ -867,7 +870,9 @@ impl CanonMap<'_> {
                     })?
                     .into_value();
                 self.ctx
-                    .admit_retained_btree_record::<String, Value>(0, STORAGE)?;
+                    .admit_btree_node_storage::<String, Value>(len, STORAGE)?;
+                self.ctx.charge_collection_items(1, STORAGE)?;
+                self.ctx.charge_work(1, STORAGE)?;
                 entry.insert(value);
                 Ok(())
             }
