@@ -54,7 +54,7 @@ struct XmlBound {
 /// Counts delimiters and element depth in one pass. Quoted values, comments,
 /// CDATA and processing instructions do not contribute element nesting.
 /// An unmatched closing tag stops depth counting; the parser rejects it.
-fn xml_bound(text: &str) -> XmlBound {
+fn xml_bound(ctx: &DecodeContext<'_>, text: &str, operation: &'static str) -> Result<XmlBound, CodecError> {
     let bytes = text.as_bytes();
     let mut markers = 0;
     let mut attributes = 0;
@@ -63,7 +63,7 @@ fn xml_bound(text: &str) -> XmlBound {
     let mut maximum = 0;
     let mut max_attributes = 0;
     let mut state = XmlScan::Text;
-    for (index, &byte) in bytes.iter().enumerate() {
+    for (index, &byte) in ctx.admit_iter(bytes, operation)?.enumerate() {
         markers += u64::from(byte == b'<');
         attributes += u64::from(byte == b'=');
         let tail = &bytes[index..];
@@ -137,13 +137,13 @@ fn xml_bound(text: &str) -> XmlBound {
             other => other,
         };
     }
-    XmlBound {
+    Ok(XmlBound {
         nodes: markers,
         attributes,
         namespaces,
         max_attributes,
         depth: maximum,
-    }
+    })
 }
 
 /// Holds nesting guards through the parser call without recursing in the
@@ -205,8 +205,7 @@ impl DecodeContext<'_> {
         operation: &'static str,
     ) -> Result<AdmittedXml<'input, '_>, CodecError> {
         let length = u64_from_index(text.len());
-        self.charge_work(length, operation)?;
-        let bound = xml_bound(text);
+        let bound = xml_bound(self, text, operation)?;
         let nodes = bound
             .nodes
             .checked_mul(2)
@@ -639,7 +638,9 @@ mod tests {
                 .expect("fixture string write");
         }
         let text = format!("<r{attributes}");
-        assert_eq!(super::xml_bound(&text).max_attributes, 16);
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).expect("context");
+        assert_eq!(super::xml_bound(&ctx, &text, "XML bound").expect("bound").max_attributes, 16);
     }
 
     #[test]
