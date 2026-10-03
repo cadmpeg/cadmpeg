@@ -21,6 +21,7 @@ mod flow;
 mod instantiation;
 mod iteration;
 mod key_work;
+mod parser;
 mod scope;
 mod scalar;
 mod serde;
@@ -394,6 +395,10 @@ impl<'tcx> Visitor<'tcx> for Analysis<'_, 'tcx> {
                     ));
                 }
             }
+        }
+        if self.parser_call_paid(expression) {
+            self.visit_work_expression(expression);
+            return;
         }
         if self.deserialize_call(expression) {
             rustc_hir::intravisit::walk_expr(self, expression);

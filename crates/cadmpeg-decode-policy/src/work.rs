@@ -740,6 +740,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
             .storage_extents
             .retain(|term| self.flow.storage_extents.contains(term));
         saved.scoped_storage.retain(|credit| self.flow.scoped_storage.contains(credit));
+        saved.parser_receipts.retain(|credit| self.flow.parser_receipts.contains(credit));
         saved.storage_slots = saved.storage_slots.iter().filter_map(|credit| {
             let remaining = self.flow.storage_slots.iter().find(|remaining| remaining.admission == credit.admission)?;
             if bounded_slots || remaining == credit { Some(remaining.clone()) } else { None }
@@ -793,6 +794,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
                         };
                         self.work_report(header, shape, effective, "for loop");
                         let mut saved = self.flow.clone();
+                        self.flow.parser_receipts.clear();
                         let repetitions = self.constant_count(input, &mut Vec::new());
                         let iterations = if shape == Shape::Fixed {
                             repetitions
@@ -847,6 +849,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
                 self.work_report(header, shape, paid, "loop");
                 let saved = self.flow.clone();
                 self.flow.work.clear();
+                self.flow.parser_receipts.clear();
                 self.flow.storage_extents.clear();
                 self.flow.scoped_storage.clear();
                 self.flow.storage_parameters.clear();
@@ -874,6 +877,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
                     .storage_extents
                     .retain(|term| after_yes.storage_extents.contains(term));
                 self.flow.scoped_storage.retain(|credit| after_yes.scoped_storage.contains(credit));
+                self.flow.parser_receipts.retain(|credit| after_yes.parser_receipts.contains(credit));
                 self.flow
                     .storage_slots
                     .retain(|credit| after_yes.storage_slots.contains(credit));
@@ -901,6 +905,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
                         .storage_extents
                         .retain(|term| self.flow.storage_extents.contains(term));
                     merged.scoped_storage.retain(|credit| self.flow.scoped_storage.contains(credit));
+                    merged.parser_receipts.retain(|credit| self.flow.parser_receipts.contains(credit));
                     merged
                         .storage_slots
                         .retain(|credit| self.flow.storage_slots.contains(credit));

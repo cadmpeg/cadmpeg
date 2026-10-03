@@ -75,7 +75,7 @@ fn check_fixture(name: &str) {
         std::fs::write(&proofs, output.lines().filter_map(|line| line.strip_prefix("decode_key_work_proof\t")).map(|line| format!("{line}\n")).collect::<String>()).expect("proof file");
         command.env("CADMPEG_POLICY_KEY_WORK_PROOFS", proofs);
     }
-    if matches!(name, "thirdparty" | "serde" | "zip" | "byte_search") {
+    if matches!(name, "thirdparty" | "serde" | "zip" | "byte_search" | "parser_admission") {
         let executable = std::env::current_exe().expect("test executable");
         let target = executable
             .ancestors()
@@ -211,6 +211,7 @@ fn check_fixture(name: &str) {
                     | "imported"
                     | "dominance"
                     | "thirdparty"
+                    | "parser_admission"
                     | "byte_search"
                     | "zip"
                     | "boxing"
@@ -825,6 +826,11 @@ fn container_classifiers_keep_their_child_work_and_allocation_obligations() {
 #[test]
 fn linear_growth_receipts_bind_the_collection_element_and_returned_count() {
     check_fixture("work_linear_growth");
+}
+
+#[test]
+fn xml_parser_receipts_bind_the_input_and_live_admission_once() {
+    check_fixture("parser_admission");
 }
 
 #[test]

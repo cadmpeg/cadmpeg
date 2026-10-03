@@ -263,7 +263,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
         false
     }
 
-    fn result_binding(&self, expression: &Expr<'tcx>) -> Option<String> {
+    pub(crate) fn result_binding(&self, expression: &Expr<'tcx>) -> Option<String> {
         self.result_binding_at(expression, 0)
     }
 
