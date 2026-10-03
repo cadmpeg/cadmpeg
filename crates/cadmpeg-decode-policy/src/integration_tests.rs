@@ -225,6 +225,7 @@ fn check_fixture(name: &str) {
                     | "parser_zstd"
                     | "reader_callbacks"
                     | "sealed_traits"
+                    | "byte_capacity"
                     | "byte_search"
                     | "zip"
                     | "boxing"
@@ -894,4 +895,9 @@ fn reader_callbacks_keep_extent_and_concrete_provider_obligations() {
 #[test]
 fn sealed_traits_require_a_private_closed_implementation_set() {
     check_fixture("sealed_traits");
+}
+
+#[test]
+fn precharged_byte_capacity_receipts_bind_target_extent_and_refusal() {
+    check_fixture("byte_capacity");
 }

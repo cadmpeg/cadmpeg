@@ -166,9 +166,10 @@ impl ZstdDecoder<'_, '_> {
                 })?;
             let produced = step.output.pos();
             drop(step);
+            let copied = &chunk[..produced];
             self.ctx
-                .charge_work(u64_from_index(produced), "Zstandard output copy")?;
-            bytes[..produced].copy_from_slice(&chunk[..produced]);
+                .charge_work(u64_from_index(copied.len()), "Zstandard output copy")?;
+            bytes[..produced].copy_from_slice(copied);
             if remaining == 0 && self.input.pos == self.input.src.len() {
                 self.finished = true;
             }
