@@ -327,7 +327,6 @@ fn polyline_carriers_evaluate_in_both_parameter_directions() {
 
 #[test]
 fn analytic_surface_points_that_overflow_report_the_non_finite_point() {
-    use crate::eval::surface_point_with_budget;
     use crate::eval::EvaluationFailure;
 
     let plane = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
@@ -346,18 +345,13 @@ fn analytic_surface_points_that_overflow_report_the_non_finite_point() {
             if point.x.is_nan() && point.y == 0.0 && point.z == 0.0)
     };
     assert!(overflowed(crate::eval::decode::surface_point(crate::eval::admission::EvaluationAdmission::Standard, &plane, f64::MAX, 0.0)));
-    assert!(overflowed(surface_point_with_budget(
-        &plane,
-        f64::MAX,
-        0.0,
-        &budget
-    )));
+    assert!(overflowed(crate::eval::admission::EvaluationAdmission::Standard.within_work_slice(&budget, |admission| crate::eval::decode::surface_point(admission, &plane, f64::MAX, 0.0))));
     assert_eq!(
         crate::eval::decode::surface_point(crate::eval::admission::EvaluationAdmission::Standard, &plane, -f64::MAX, 0.0).map(crate::features::FinitePoint3::get),
         Ok(Point3::new(0.0, 0.0, 0.0))
     );
     assert_eq!(
-        surface_point_with_budget(&plane, -f64::MAX, 0.0, &budget)
+        crate::eval::admission::EvaluationAdmission::Standard.within_work_slice(&budget, |admission| crate::eval::decode::surface_point(admission, &plane, -f64::MAX, 0.0))
             .map(crate::features::FinitePoint3::get),
         Ok(Point3::new(0.0, 0.0, 0.0))
     );
@@ -378,7 +372,6 @@ fn overflowing_plane() -> SolvedSurfaceGeometry {
 
 #[test]
 fn a_placed_surface_reports_the_point_its_placement_reaches_where_its_basis_point_overflows() {
-    use crate::eval::surface_point_with_budget;
     use crate::eval::EvaluationFailure;
 
     let placed = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Transformed(
@@ -398,7 +391,7 @@ fn a_placed_surface_reports_the_point_its_placement_reaches_where_its_basis_poin
     // row products carry it into every coordinate.
     for point in [
         crate::eval::decode::surface_point(crate::eval::admission::EvaluationAdmission::Standard, &placed, f64::MAX, 0.0),
-        surface_point_with_budget(&placed, f64::MAX, 0.0, &budget),
+        crate::eval::admission::EvaluationAdmission::Standard.within_work_slice(&budget, |admission| crate::eval::decode::surface_point(admission, &placed, f64::MAX, 0.0)),
     ] {
         assert!(
             matches!(point, Err(EvaluationFailure::NonFinite(point))
@@ -573,15 +566,15 @@ fn curve_evaluators_hand_back_admitted_values_and_refuse_overflow() {
     ));
     let budget = cadmpeg_core::decode::WorkBudget::new(64);
     assert_eq!(
-        crate::eval::curve_point_with_budget(&placed, 0.0, &budget).ok(),
+        crate::eval::admission::EvaluationAdmission::Standard.within_work_slice(&budget, |admission| crate::eval::decode::curve_point(admission, &placed, 0.0)).ok(),
         FinitePoint3::new(Point3::new(0.0, 1.0, 0.0))
     );
     assert_eq!(
-        crate::eval::curve_tangent_with_budget(&placed, 0.0, &budget).ok(),
+        crate::eval::admission::EvaluationAdmission::Standard.within_work_slice(&budget, |admission| crate::eval::decode::curve_tangent(admission, &placed, 0.0)).ok(),
         FiniteVector3::new(Vector3::new(f64::MAX, 0.0, 0.0))
     );
     assert_eq!(
-        crate::eval::curve_point_with_budget(&placed, 2.0, &budget),
+        crate::eval::admission::EvaluationAdmission::Standard.within_work_slice(&budget, |admission| crate::eval::decode::curve_point(admission, &placed, 2.0)),
         Err(crate::eval::EvaluationFailure::NonFinite(Point3::new(
             f64::INFINITY,
             1.0,

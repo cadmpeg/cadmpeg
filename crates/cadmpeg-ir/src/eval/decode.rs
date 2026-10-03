@@ -144,8 +144,8 @@ impl<'ctx, 'arena> Scratch<'ctx, 'arena> {
 
     pub(super) fn reserve<T>(&self, values: &mut Vec<T>, count: usize, operation: &'static str) -> Option<()> {
         self.work(0, operation)?;
-        match self.admission {
-            EvaluationAdmission::Decode(context) => {
+        match self.admission.context() {
+            Some(context) => {
                 let mut storage = self.storage.borrow_mut();
                 if storage.is_none() {
                     *storage = Some(self.admit(context.reserve_scoped_limit(0, operation))?);
@@ -153,7 +153,7 @@ impl<'ctx, 'arena> Scratch<'ctx, 'arena> {
                 let reservation = storage.as_mut()?;
                 self.admit(context.reserve_scoped_vec_limit(reservation, values, count, operation))
             }
-            EvaluationAdmission::Standard => self.admit(
+            None => self.admit(
                 crate::geometry::nurbs::scratch::reserve_exact(values, count, operation),
             ),
         }
@@ -164,11 +164,11 @@ impl<'ctx, 'arena> Scratch<'ctx, 'arena> {
         -> Option<(Vec<T>, Option<ScopedReservation<'ctx>>)> {
         self.work(0, operation)?;
         let mut values = Vec::new();
-        let storage = match self.admission {
-            EvaluationAdmission::Decode(context) => Some(self.admit(
+        let storage = match self.admission.context() {
+            Some(context) => Some(self.admit(
                 context.reserve_temporary_vec(&mut values, count, operation),
             )?),
-            EvaluationAdmission::Standard => {
+            None => {
                 self.admit(crate::geometry::nurbs::scratch::reserve_exact(&mut values, count, operation))?;
                 None
             }
@@ -180,11 +180,11 @@ impl<'ctx, 'arena> Scratch<'ctx, 'arena> {
     pub(super) fn retained_copy<T: Copy>(&self, source: &[T], operation: &'static str) -> Option<Vec<T>> {
         self.work(0, operation)?;
         let mut values = Vec::new();
-        match self.admission {
-            EvaluationAdmission::Decode(context) => self.admit(
+        match self.admission.context() {
+            Some(context) => self.admit(
                 context.reserve_retained_vec_limit(&mut values, source.len(), operation),
             )?,
-            EvaluationAdmission::Standard => self.admit(
+            None => self.admit(
                 crate::geometry::nurbs::scratch::reserve_exact(&mut values, source.len(), operation),
             )?,
         }
@@ -530,7 +530,7 @@ pub fn nurbs_surface_point<'ctx, 'arena: 'ctx>(
     v: f64,
 ) -> Result<FinitePoint3, EvaluationFailure<Point3>> {
     let scratch = Scratch::new(admission);
-    let result = super::nurbs_surface_local(&scratch, surface, u, v).map(|local| {
+    let result = scratch.admission.independent_cost(super::nurbs_surface_evaluation_cost(surface)).and_then(|()| super::nurbs_surface_local(&scratch, surface, u, v)).map(|local| {
         let [point_x, point_y, point_z] = local.point;
         FinitePoint3::from_coordinates(point_x, point_y, point_z)
     });

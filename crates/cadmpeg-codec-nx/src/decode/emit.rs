@@ -22,7 +22,7 @@ use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::dialect::DialectLayers;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::{CadIr, SourceMeta};
-use cadmpeg_ir::eval::{curve_point_with_budget, finite_or_refusal};
+use cadmpeg_ir::eval::finite_or_refusal;
 use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::geometry::pcurve::{PcurveGeometry, PcurveMetadata};
 use cadmpeg_ir::geometry::{
@@ -1702,11 +1702,7 @@ impl CurvePointCache {
         if let Some(point) = self.entries.get(curve).and_then(|values| values.get(&bits)) {
             return Ok(*point);
         }
-        let point = finite_or_refusal(curve_point_with_budget(
-            geometry,
-            parameter,
-            geometry_budget,
-        ))?;
+        let point = finite_or_refusal(cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(geometry_budget.charges).within_work_slice(geometry_budget, |admission| cadmpeg_ir::eval::decode::curve_point(admission, geometry, parameter)))?;
         if self.len < MAX_CURVE_POINT_CACHE_ENTRIES {
             if !self.entries.contains_key(curve) {
                 ctx.insert_btree_map(

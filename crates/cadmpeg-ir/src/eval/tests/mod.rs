@@ -26,13 +26,10 @@ use crate::eval::nurbs_surface_parameter_segment_chord_bound;
 use crate::eval::nurbs_surface_parameter_within_tolerance;
 use crate::eval::nurbs_surface_parameter_within_tolerance_with_budget;
 use crate::eval::nurbs_surface_partials;
-use crate::eval::nurbs_surface_partials_with_budget;
 
-use crate::eval::nurbs_surface_point_with_budget;
 use crate::eval::nurbs_surface_second_partials;
 use crate::eval::rolling_ball_jet_point;
 use crate::eval::surface_partials;
-use crate::eval::surface_point_with_budget;
 use crate::eval::surface_second_partials;
 use crate::eval::IsolineDirection;
 use crate::geometry::{
@@ -312,19 +309,19 @@ fn rolling_ball_jet_evaluation_uses_fixed_radius_frame() {
 fn budgeted_nurbs_surface_evaluation_charges_degree_work() {
     let surface = bilinear_surface();
     let budget = WorkBudget::new(3);
-    assert!(nurbs_surface_point_with_budget(&surface, 0.25, 0.75, &budget).is_err());
+    assert!(crate::eval::admission::EvaluationAdmission::Standard.within_work_slice(&budget, |admission| crate::eval::decode::nurbs_surface_point(admission, &surface, 0.25, 0.75)).is_err());
     assert!(budget.exhausted());
 
     let budget = WorkBudget::new(12);
-    assert!(nurbs_surface_point_with_budget(&surface, 0.25, 0.75, &budget).is_ok());
+    assert!(crate::eval::admission::EvaluationAdmission::Standard.within_work_slice(&budget, |admission| crate::eval::decode::nurbs_surface_point(admission, &surface, 0.25, 0.75)).is_ok());
     assert_eq!(budget.consumed(), 12);
 
     let budget = WorkBudget::new(27);
-    assert!(nurbs_surface_partials_with_budget(&surface, 0.25, 0.75, &budget).is_err());
+    assert!(crate::eval::admission::EvaluationAdmission::Standard.within_work_slice(&budget, |admission| crate::eval::nurbs_surface_partials(admission, &surface, 0.25, 0.75)).is_err());
     assert!(budget.exhausted());
 
     let budget = WorkBudget::new(28);
-    assert!(nurbs_surface_partials_with_budget(&surface, 0.25, 0.75, &budget).is_ok());
+    assert!(crate::eval::admission::EvaluationAdmission::Standard.within_work_slice(&budget, |admission| crate::eval::nurbs_surface_partials(admission, &surface, 0.25, 0.75)).is_ok());
     assert_eq!(budget.consumed(), 28);
 
     let transformed = SolvedSurfaceGeometry::Transformed(
@@ -340,22 +337,12 @@ fn budgeted_nurbs_surface_evaluation_charges_degree_work() {
         .expect("placed surface"),
     );
     let budget = WorkBudget::new(12);
-    assert!(surface_point_with_budget(
-        &SurfaceGeometry::Solved(transformed.clone()),
-        0.25,
-        0.75,
-        &budget
-    )
+    assert!(crate::eval::admission::EvaluationAdmission::Standard.within_work_slice(&budget, |admission| crate::eval::decode::surface_point(admission, &SurfaceGeometry::Solved(transformed.clone()), 0.25, 0.75))
     .is_err_and(|failure| failure == crate::eval::EvaluationFailure::NoValue));
     assert!(budget.exhausted());
     let budget = WorkBudget::new(13);
     assert_eq!(
-        surface_point_with_budget(
-            &SurfaceGeometry::Solved(transformed.clone()),
-            0.25,
-            0.75,
-            &budget
-        )
+        crate::eval::admission::EvaluationAdmission::Standard.within_work_slice(&budget, |admission| crate::eval::decode::surface_point(admission, &SurfaceGeometry::Solved(transformed.clone()), 0.25, 0.75))
         .map(crate::features::FinitePoint3::get),
         Ok(Point3::new(0.25, 0.75, 1.0))
     );

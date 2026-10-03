@@ -766,6 +766,7 @@ fn split_rational_surface_patch<'ctx>(
 }
 
 fn refine_nurbs_surface_parameters(
+    ctx: &DecodeContext<'_>,
     surface: &NurbsSurface,
     point: Point3,
     start: FinitePoint2,
@@ -780,12 +781,7 @@ fn refine_nurbs_surface_parameters(
         v_domain.project(ExtendedReal::from_finite(start_v)),
     );
     for _ in 0..32 {
-        let Some(position) = finite_or_refusal(nurbs_surface_point_with_budget(
-            surface,
-            parameters.u,
-            parameters.v,
-            budget,
-        ))?
+        let Some(position) = finite_or_refusal(crate::eval::admission::EvaluationAdmission::Decode(ctx).within_work_slice(budget, |admission| crate::eval::decode::nurbs_surface_point(admission, surface, parameters.u, parameters.v)))?
         else {
             return Ok(None);
         };
@@ -794,12 +790,7 @@ fn refine_nurbs_surface_parameters(
             position.y - point.y,
             position.z - point.z,
         );
-        let Some(partials) = finite_or_refusal(nurbs_surface_partials_with_budget(
-            surface,
-            parameters.u,
-            parameters.v,
-            budget,
-        ))?
+        let Some(partials) = finite_or_refusal(crate::eval::admission::EvaluationAdmission::Decode(ctx).within_work_slice(budget, |admission| crate::eval::nurbs_surface_partials(admission, surface, parameters.u, parameters.v)))?
         else {
             return Ok(None);
         };
@@ -815,12 +806,7 @@ fn refine_nurbs_surface_parameters(
                 u_domain.project(ExtendedReal::stepped(u, scale, step_u)),
                 v_domain.project(ExtendedReal::stepped(v, scale, step_v)),
             );
-            let Some(candidate_position) = finite_or_refusal(nurbs_surface_point_with_budget(
-                surface,
-                candidate.u,
-                candidate.v,
-                budget,
-            ))?
+            let Some(candidate_position) = finite_or_refusal(crate::eval::admission::EvaluationAdmission::Decode(ctx).within_work_slice(budget, |admission| crate::eval::decode::nurbs_surface_point(admission, surface, candidate.u, candidate.v)))?
             else {
                 return Ok(None);
             };
@@ -887,7 +873,7 @@ fn complete_nurbs_surface_starts<'ctx>(
     let distance_tolerance = requested_tolerance.max(256.0 * f64::EPSILON * coordinate_scale);
     let distance_at = |parameters: FinitePoint2| -> Result<Option<f64>, ResourceLimit> {
         let position =
-            match nurbs_surface_point_with_budget(surface, parameters.u, parameters.v, budget) {
+            match crate::eval::admission::EvaluationAdmission::Decode(ctx).within_work_slice(budget, |admission| crate::eval::decode::nurbs_surface_point(admission, surface, parameters.u, parameters.v)) {
                 Ok(position) => position,
                 Err(EvaluationFailure::ResourceLimit(limit)) => return Err(limit),
                 Err(EvaluationFailure::NoValue | EvaluationFailure::NonFinite(_)) => {
@@ -919,7 +905,7 @@ fn complete_nurbs_surface_starts<'ctx>(
     let refined_upper =
         |start, u_domain, v_domain| -> Result<Option<(FinitePoint2, f64)>, ResourceLimit> {
             let parameters =
-                refine_nurbs_surface_parameters(surface, point, start, u_domain, v_domain, budget)?
+                refine_nurbs_surface_parameters(ctx, surface, point, start, u_domain, v_domain, budget)?
                     .unwrap_or(start);
             Ok(distance_at(parameters)?.map(|distance| (parameters, distance)))
         };
@@ -1157,12 +1143,7 @@ fn solve_nurbs_surface_parameter(
             u_domain.project(ExtendedReal::from_finite(seed_u)),
             v_domain.project(ExtendedReal::from_finite(seed_v)),
         );
-        let Some(position) = finite_or_refusal(nurbs_surface_point_with_budget(
-            surface,
-            parameters.u,
-            parameters.v,
-            budget,
-        ))?
+        let Some(position) = finite_or_refusal(crate::eval::admission::EvaluationAdmission::Decode(ctx).within_work_slice(budget, |admission| crate::eval::decode::nurbs_surface_point(admission, surface, parameters.u, parameters.v)))?
         else {
             return Ok(None);
         };
@@ -1173,11 +1154,9 @@ fn solve_nurbs_surface_parameter(
             return Ok(Some((parameters, distance)));
         }
         if let Some(refined) =
-            refine_nurbs_surface_parameters(surface, point, parameters, u_domain, v_domain, budget)?
+            refine_nurbs_surface_parameters(ctx, surface, point, parameters, u_domain, v_domain, budget)?
         {
-            let Some(position) = finite_or_refusal(nurbs_surface_point_with_budget(
-                surface, refined.u, refined.v, budget,
-            ))?
+            let Some(position) = finite_or_refusal(crate::eval::admission::EvaluationAdmission::Decode(ctx).within_work_slice(budget, |admission| crate::eval::decode::nurbs_surface_point(admission, surface, refined.u, refined.v)))?
             else {
                 return Ok(None);
             };
@@ -1200,16 +1179,11 @@ fn solve_nurbs_surface_parameter(
     for &start in starts.iter() {
         ctx.charge_work_limit(1, "IR surface inverse start visit")?;
         let Some(parameters) =
-            refine_nurbs_surface_parameters(surface, point, start, u_domain, v_domain, budget)?
+            refine_nurbs_surface_parameters(ctx, surface, point, start, u_domain, v_domain, budget)?
         else {
             continue;
         };
-        let Some(position) = finite_or_refusal(nurbs_surface_point_with_budget(
-            surface,
-            parameters.u,
-            parameters.v,
-            budget,
-        ))?
+        let Some(position) = finite_or_refusal(crate::eval::admission::EvaluationAdmission::Decode(ctx).within_work_slice(budget, |admission| crate::eval::decode::nurbs_surface_point(admission, surface, parameters.u, parameters.v)))?
         else {
             continue;
         };
@@ -2750,6 +2724,7 @@ fn nurbs_surface_first_order(
     u_at: f64,
     v_at: f64,
 ) -> Result<SurfaceFirstOrder, EvaluationFailure<Point3>> {
+    scratch.admission.independent_cost(nurbs_surface_partials_evaluation_cost(surface))?;
     let result = (|| {
         let local = nurbs_surface_local(scratch, surface, u_at, v_at)?;
         let [x, y, z] = local.point;
@@ -2769,6 +2744,7 @@ fn nurbs_surface_jet(
     u_at: f64,
     v_at: f64,
 ) -> Result<SurfaceJet, EvaluationFailure<Point3>> {
+    scratch.admission.independent_cost(nurbs_surface_partials_evaluation_cost(surface))?;
     let result = (|| {
         let local = nurbs_surface_local(scratch, surface, u_at, v_at)?;
         let [x, y, z] = local.point;
@@ -2789,21 +2765,6 @@ fn nurbs_surface_jet(
 /// The vector of three finite lanes.
 fn finite_vector([x, y, z]: [FiniteReal; 3]) -> FiniteVector3 {
     FiniteVector3::from_components(x, y, z)
-}
-
-/// [`decode::nurbs_surface_point`] within a caller-owned work slice. A refused
-/// charge leaves no value.
-pub fn nurbs_surface_point_with_budget(
-    surface: &NurbsSurface,
-    u_at: f64,
-    v_at: f64,
-    budget: &WorkBudget<'_>,
-) -> Result<FinitePoint3, EvaluationFailure<Point3>> {
-    let cost = nurbs_surface_evaluation_cost(surface).ok_or(EvaluationFailure::NoValue)?;
-    if !budget.charge_by(cost) {
-        return Err(EvaluationFailure::NoValue);
-    }
-    crate::eval::decode::nurbs_surface_point(crate::eval::admission::EvaluationAdmission::Standard, surface, u_at, v_at)
 }
 
 /// The parametric direction a surface isoline holds fixed.
@@ -2946,10 +2907,10 @@ pub fn nurbs_surface_isocurve<'ctx, 'arena: 'ctx>(
         } else {
             None
         };
-        let curve = match scratch.admission {
-            admission::EvaluationAdmission::Decode(ctx) => NurbsCurve::from_lanes(ctx, degree, admitted_knots, control_points, weights, periodic)
+        let curve = match scratch.admission.context() {
+            Some(ctx) => NurbsCurve::from_lanes(ctx, degree, admitted_knots, control_points, weights, periodic)
                 .map_err(crate::geometry::nurbs::NurbsError::from).and_then(|curve| curve),
-            admission::EvaluationAdmission::Standard => (|| {
+            None => (|| {
                 use crate::geometry::nurbs::{admit_weight, build_curve, pair_curve_lanes, StandardNurbsAdmission};
                 let poles = pair_curve_lanes(&StandardNurbsAdmission, control_points, weights, &mut None,
                     |index, weight| admit_weight(&StandardNurbsAdmission, "poles", index, weight))?;
@@ -3211,18 +3172,6 @@ pub fn nurbs_surface_partials<'ctx, 'arena: 'ctx>(
     scratch.settle(result)
 }
 
-/// [`nurbs_surface_partials`] within a caller-owned work slice. A refused
-/// charge leaves no value.
-pub fn nurbs_surface_partials_with_budget(
-    surface: &NurbsSurface,
-    u_at: f64,
-    v_at: f64,
-    budget: &WorkBudget<'_>,
-) -> Result<SurfacePartials<FinitePoint3, FiniteVector3>, EvaluationFailure<Point3>> {
-    charge_nurbs_surface_partials(surface, budget)?;
-    nurbs_surface_partials(crate::eval::admission::EvaluationAdmission::Standard, surface, u_at, v_at)
-}
-
 /// Charge the work of a NURBS surface's partials to `budget`: a cost that
 /// does not fit and a refused charge leave no value.
 fn charge_nurbs_surface_partials(
@@ -3251,18 +3200,6 @@ pub fn nurbs_surface_second_partials<'ctx, 'arena: 'ctx>(
     let scratch = decode::Scratch::new(admission);
     let result = (|| { nurbs_surface_jet(&scratch, surface, u_at, v_at)?.second_partials() })();
     scratch.settle(result)
-}
-
-/// [`nurbs_surface_second_partials`] within a caller-owned work slice. A
-/// refused charge leaves no value.
-pub fn nurbs_surface_second_partials_with_budget(
-    surface: &NurbsSurface,
-    u_at: f64,
-    v_at: f64,
-    budget: &WorkBudget<'_>,
-) -> Result<SurfaceSecondPartials<FinitePoint3, FiniteVector3>, EvaluationFailure<Point3>> {
-    charge_nurbs_surface_partials(surface, budget)?;
-    nurbs_surface_second_partials(crate::eval::admission::EvaluationAdmission::Standard, surface, u_at, v_at)
 }
 
 fn nurbs_surface_partials_evaluation_cost(surface: &NurbsSurface) -> Option<usize> {
@@ -3326,69 +3263,6 @@ pub fn curve_second_derivative_solved<'ctx, 'arena: 'ctx>(
     scratch.settle(result)
 }
 
-/// Evaluate a directly stored curve at `t` within a caller-owned work slice.
-/// Analytic curves are constant-cost; transformed, polyline, and NURBS curves
-/// charge the work performed by their representation. A refused charge
-/// leaves no value; otherwise the failure is [`decode::curve_point_solved`]'s.
-pub fn curve_point_with_budget_solved(
-    geometry: &SolvedCurveGeometry,
-    t: f64,
-    budget: &WorkBudget<'_>,
-) -> Result<FinitePoint3, EvaluationFailure<Point3>> {
-    /// The descent is bounded by [`PlacedCurve`](crate::geometry::PlacedCurve)
-    /// construction; no arm follows an arena id.
-    fn evaluate(
-        geometry: &SolvedCurveGeometry,
-        t: f64,
-        budget: &WorkBudget<'_>,
-    ) -> Result<FinitePoint3, EvaluationFailure<Point3>> {
-        let charged = |cost: Option<usize>| {
-            cost.is_some_and(|cost| budget.charge_by(cost))
-                .then_some(())
-                .ok_or(EvaluationFailure::NoValue)
-        };
-        match geometry {
-            SolvedCurveGeometry::Nurbs(nurbs) => {
-                charged(nurbs_curve_evaluation_cost(nurbs))?;
-                crate::eval::decode::curve_point_solved(crate::eval::admission::EvaluationAdmission::Standard, geometry, t)
-            }
-            SolvedCurveGeometry::Polyline(polyline) => {
-                charged(Some(polyline.point_count()))?;
-                crate::eval::decode::curve_point_solved(crate::eval::admission::EvaluationAdmission::Standard, geometry, t)
-            }
-            SolvedCurveGeometry::Transformed(placed) => {
-                if !budget.charge() {
-                    return Err(EvaluationFailure::NoValue);
-                }
-                placed_point(*placed.transform(), evaluate(placed.basis(), t, budget))
-            }
-            _ => crate::eval::decode::curve_point_solved(crate::eval::admission::EvaluationAdmission::Standard, geometry, t),
-        }
-    }
-
-    evaluate(geometry, t, budget)
-}
-
-/// [`curve_tangent_solved`] within a caller-owned work slice. A refused
-/// charge leaves no value.
-pub fn curve_tangent_with_budget_solved(
-    geometry: &SolvedCurveGeometry,
-    t: f64,
-    budget: &WorkBudget<'_>,
-) -> Result<FiniteVector3, EvaluationFailure<()>> {
-    curve_derivative_with_budget_evaluation(geometry, t, CurveDerivative::First, budget)
-}
-
-/// [`curve_second_derivative_solved`] within a caller-owned work slice. A
-/// refused charge leaves no value.
-pub fn curve_second_derivative_with_budget_solved(
-    geometry: &SolvedCurveGeometry,
-    t: f64,
-    budget: &WorkBudget<'_>,
-) -> Result<FiniteVector3, EvaluationFailure<()>> {
-    curve_derivative_with_budget_evaluation(geometry, t, CurveDerivative::Second, budget)
-}
-
 fn nurbs_curve_evaluation_cost(curve: &NurbsCurve) -> Option<usize> {
     let support = usize::try_from(curve.degree()).ok()?.checked_add(1)?;
     support.checked_mul(support).filter(|cost| *cost > 0)
@@ -3406,50 +3280,6 @@ fn nurbs_curve_derivative_evaluation_cost(
 enum CurveDerivative {
     First,
     Second,
-}
-
-/// [`curve_derivative_evaluation`] within a caller-owned work slice. A
-/// refused charge leaves no value.
-///
-/// The descent is bounded by [`PlacedCurve`](crate::geometry::PlacedCurve)
-/// construction; no arm follows an arena id.
-fn curve_derivative_with_budget_evaluation(
-    geometry: &SolvedCurveGeometry,
-    t: f64,
-    order: CurveDerivative,
-    budget: &WorkBudget<'_>,
-) -> Result<FiniteVector3, EvaluationFailure<()>> {
-    default_scratch_evaluation(|scratch| {
-        let charged = |cost: Option<usize>| {
-            cost.is_some_and(|cost| budget.charge_by(cost))
-                .then_some(())
-                .ok_or(EvaluationFailure::NoValue)
-        };
-        match geometry {
-            SolvedCurveGeometry::Nurbs(nurbs) => {
-                let basis_levels = match order {
-                    CurveDerivative::First => 2,
-                    CurveDerivative::Second => 3,
-                };
-                charged(nurbs_curve_derivative_evaluation_cost(nurbs, basis_levels))?;
-                curve_derivative_evaluation(scratch, geometry, t, order)
-            }
-            SolvedCurveGeometry::Polyline(polyline) => {
-                charged(Some(polyline.point_count()))?;
-                curve_derivative_evaluation(scratch, geometry, t, order)
-            }
-            SolvedCurveGeometry::Transformed(placed) => {
-                if !budget.charge() {
-                    return Err(EvaluationFailure::NoValue);
-                }
-                placed_derivative(
-                    *placed.transform(),
-                    curve_derivative_with_budget_evaluation(placed.basis(), t, order, budget),
-                )
-            }
-            _ => curve_derivative_evaluation(scratch, geometry, t, order),
-        }
-    })
 }
 
 /// A placed carrier's derivative from its basis derivative. A derivative the
@@ -3486,6 +3316,15 @@ fn curve_derivative_evaluation(
     t: f64,
     order: CurveDerivative,
 ) -> Result<FiniteVector3, EvaluationFailure<()>> {
+    match geometry {
+        SolvedCurveGeometry::Nurbs(nurbs) => {
+            let levels = if order == CurveDerivative::First { 2 } else { 3 };
+            scratch.admission.independent_cost(nurbs_curve_derivative_evaluation_cost(nurbs, levels))?;
+        }
+        SolvedCurveGeometry::Polyline(polyline) => scratch.admission.independent_cost(Some(polyline.point_count()))?,
+        SolvedCurveGeometry::Transformed(_) => scratch.admission.independent_cost(Some(1))?,
+        _ => {}
+    }
     scratch.settle(curve_derivative_unsettled(scratch, geometry, t, order))
 }
 
@@ -3634,10 +3473,13 @@ fn curve_derivative_unsettled(
             let tangent = polyline_tangent(&points, &parameters, t)?;
             Ok(if second { FiniteVector3::ZERO } else { tangent })
         }
-        SolvedCurveGeometry::Transformed(placed) => placed_derivative(
+        SolvedCurveGeometry::Transformed(placed) => {
+            scratch.work(1, "placed geometry evaluation step").ok_or_else(|| scratch.failure(EvaluationFailure::NoValue))?;
+            placed_derivative(
             *placed.transform(),
             curve_derivative_evaluation(scratch, placed.basis(), t, order),
-        ),
+        )
+        },
         SolvedCurveGeometry::Degenerate(_)
         | SolvedCurveGeometry::Composite { .. }
         | SolvedCurveGeometry::Unknown { .. } => Err(EvaluationFailure::NoValue),
@@ -4063,7 +3905,7 @@ fn model_curve_differential_by_id_inner(
             return differential_at(
                 budget.map_or_else(
                     || crate::eval::decode::curve_point_solved(crate::eval::admission::EvaluationAdmission::Standard, cache, parameter),
-                    |budget| curve_point_with_budget_solved(cache, parameter, budget),
+                    |budget| crate::eval::admission::EvaluationAdmission::Standard.within_work_slice(budget, |admission| crate::eval::decode::curve_point_solved(admission, cache, parameter)),
                 ),
                 || curve_derivative_evaluation(scratch, cache, parameter, CurveDerivative::First),
                 || curve_derivative_evaluation(scratch, cache, parameter, CurveDerivative::Second),
@@ -4075,22 +3917,12 @@ fn model_curve_differential_by_id_inner(
         };
         match budget {
             Some(budget) => differential_at(
-                curve_point_with_budget_solved(solved, parameter, budget),
+                crate::eval::admission::EvaluationAdmission::Standard.within_work_slice(budget, |admission| crate::eval::decode::curve_point_solved(admission, solved, parameter)),
                 || {
-                    curve_derivative_with_budget_evaluation(
-                        solved,
-                        parameter,
-                        CurveDerivative::First,
-                        budget,
-                    )
+                    crate::eval::admission::EvaluationAdmission::Standard.within_work_slice(budget, |admission| crate::eval::curve_tangent_solved(admission, solved, parameter))
                 },
                 || {
-                    curve_derivative_with_budget_evaluation(
-                        solved,
-                        parameter,
-                        CurveDerivative::Second,
-                        budget,
-                    )
+                    crate::eval::admission::EvaluationAdmission::Standard.within_work_slice(budget, |admission| crate::eval::curve_second_derivative_solved(admission, solved, parameter))
                 },
             ),
             None => differential_at(
@@ -4680,7 +4512,7 @@ fn model_curve_point_by_id_inner(
     else {
         return budget.map_or_else(
             || crate::eval::decode::curve_point(crate::eval::admission::EvaluationAdmission::Standard, &curve.geometry, parameter),
-            |budget| curve_point_with_budget(&curve.geometry, parameter, budget),
+            |budget| crate::eval::admission::EvaluationAdmission::Standard.within_work_slice(budget, |admission| crate::eval::decode::curve_point(admission, &curve.geometry, parameter)),
         );
     };
     match procedural.definition() {
@@ -4766,12 +4598,12 @@ fn model_curve_point_by_id_inner(
             if let Some(cache) = curve.geometry.solved_cache() {
                 budget.map_or_else(
                     || crate::eval::decode::curve_point_solved(crate::eval::admission::EvaluationAdmission::Standard, cache, parameter),
-                    |budget| curve_point_with_budget_solved(cache, parameter, budget),
+                    |budget| crate::eval::admission::EvaluationAdmission::Standard.within_work_slice(budget, |admission| crate::eval::decode::curve_point_solved(admission, cache, parameter)),
                 )
             } else if matches!(&curve.geometry, CurveGeometry::Procedural { .. }) {
                 Err(EvaluationFailure::NoValue)
             } else if let Some(budget) = budget {
-                curve_point_with_budget(&curve.geometry, parameter, budget)
+                crate::eval::admission::EvaluationAdmission::Standard.within_work_slice(budget, |admission| crate::eval::decode::curve_point(admission, &curve.geometry, parameter))
             } else {
                 crate::eval::decode::curve_point(crate::eval::admission::EvaluationAdmission::Standard, &curve.geometry, parameter)
             }
@@ -5475,6 +5307,12 @@ fn curve_point_evaluation(
     geometry: &SolvedCurveGeometry,
     t: f64,
 ) -> Result<FinitePoint3, EvaluationFailure<Point3>> {
+    match geometry {
+        SolvedCurveGeometry::Nurbs(nurbs) => scratch.admission.independent_cost(nurbs_curve_evaluation_cost(nurbs))?,
+        SolvedCurveGeometry::Polyline(polyline) => scratch.admission.independent_cost(Some(polyline.point_count()))?,
+        SolvedCurveGeometry::Transformed(_) => scratch.admission.independent_cost(Some(1))?,
+        _ => {}
+    }
     let _depth = scratch.enter().ok_or(EvaluationFailure::NoValue)?;
     let parameter = || FiniteReal::new(t).ok_or(EvaluationFailure::NoValue);
     match geometry {
@@ -5589,10 +5427,13 @@ fn curve_point_evaluation(
             |index| polyline.parameter_at(index),
             t,
         ),
-        SolvedCurveGeometry::Transformed(placed) => placed_point(
+        SolvedCurveGeometry::Transformed(placed) => {
+            scratch.work(1, "placed geometry evaluation step").ok_or_else(|| scratch.failure(EvaluationFailure::NoValue))?;
+            placed_point(
             *placed.transform(),
             curve_point_evaluation(scratch, placed.basis(), t),
-        ),
+        )
+        },
         SolvedCurveGeometry::Composite { .. } | SolvedCurveGeometry::Unknown { .. } => {
             Err(EvaluationFailure::NoValue)
         }
@@ -5605,6 +5446,11 @@ fn surface_point_evaluation(
     u: f64,
     v: f64,
 ) -> Result<FinitePoint3, EvaluationFailure<Point3>> {
+    match geometry {
+        SolvedSurfaceGeometry::Nurbs(nurbs) => scratch.admission.independent_cost(nurbs_surface_evaluation_cost(nurbs))?,
+        SolvedSurfaceGeometry::Transformed(_) => scratch.admission.independent_cost(Some(1))?,
+        _ => {}
+    }
     let _depth = scratch.enter().ok_or(EvaluationFailure::NoValue)?;
     match geometry {
         SolvedSurfaceGeometry::Nurbs(nurbs) => {
@@ -5613,10 +5459,13 @@ fn surface_point_evaluation(
                 FinitePoint3::from_coordinates(point_x, point_y, point_z)
             })
         }
-        SolvedSurfaceGeometry::Transformed(placed) => placed_point(
+        SolvedSurfaceGeometry::Transformed(placed) => {
+            scratch.work(1, "placed geometry evaluation step").ok_or_else(|| scratch.failure(EvaluationFailure::NoValue))?;
+            placed_point(
             *placed.transform(),
             surface_point_evaluation(scratch, placed.basis(), u, v),
-        ),
+        )
+        },
         _ => analytic_surface_second_partials(geometry, u, v)
             .map_or(Err(EvaluationFailure::NoValue), |partials| {
                 admit_point(partials.point)
@@ -5644,35 +5493,6 @@ fn placed_point(
         Err(EvaluationFailure::ResourceLimit(limit)) => {
             Err(EvaluationFailure::ResourceLimit(limit))
         }
-    }
-}
-
-/// Evaluate a directly stored surface at `(u, v)` within a caller-owned work
-/// slice. Analytic surfaces are constant-cost; transformed carriers charge
-/// each transform layer and NURBS carriers charge their local basis work. A
-/// refused charge leaves no value; otherwise the failure is
-/// [`decode::surface_point_solved`]'s.
-///
-/// The descent is bounded by [`PlacedSurface`](crate::geometry::PlacedSurface)
-/// construction; no arm follows an arena id.
-pub fn surface_point_with_budget_solved(
-    geometry: &SolvedSurfaceGeometry,
-    u: f64,
-    v: f64,
-    budget: &WorkBudget<'_>,
-) -> Result<FinitePoint3, EvaluationFailure<Point3>> {
-    match geometry {
-        SolvedSurfaceGeometry::Nurbs(nurbs) => nurbs_surface_point_with_budget(nurbs, u, v, budget),
-        SolvedSurfaceGeometry::Transformed(placed) => {
-            if !budget.charge() {
-                return Err(EvaluationFailure::NoValue);
-            }
-            placed_point(
-                *placed.transform(),
-                surface_point_with_budget_solved(placed.basis(), u, v, budget),
-            )
-        }
-        _ => crate::eval::decode::surface_point_solved(crate::eval::admission::EvaluationAdmission::Standard, geometry, u, v),
     }
 }
 
@@ -8332,7 +8152,7 @@ fn model_surface_point_with_budget_solved(
 ) -> Result<FinitePoint3, EvaluationFailure<Point3>> {
     match (geometry, budget) {
         (SolvedSurfaceGeometry::Nurbs(nurbs), Some(budget)) => {
-            nurbs_surface_point_with_budget(nurbs, u, v, budget)
+            crate::eval::admission::EvaluationAdmission::Standard.within_work_slice(budget, |admission| crate::eval::decode::nurbs_surface_point(admission, nurbs, u, v))
         }
         (SolvedSurfaceGeometry::Transformed(placed), Some(budget)) => {
             if !budget.charge() {
@@ -9675,62 +9495,6 @@ pub fn curve_second_derivative<'ctx, 'arena: 'ctx>(
         curve_derivative_evaluation(&scratch, geometry.solved().ok_or(EvaluationFailure::NoValue)?, t, CurveDerivative::Second)
     })();
     scratch.settle(result)
-}
-
-/// Evaluate a stored curve carrier at `t` within a caller-owned work slice.
-pub fn curve_point_with_budget(
-    geometry: &CurveGeometry,
-    t: f64,
-    budget: &WorkBudget<'_>,
-) -> Result<FinitePoint3, EvaluationFailure<Point3>> {
-    curve_point_with_budget_solved(
-        geometry.solved().ok_or(EvaluationFailure::NoValue)?,
-        t,
-        budget,
-    )
-}
-
-/// [`decode::curve_tangent`] within a caller-owned work slice. A refused charge
-/// leaves no value.
-pub fn curve_tangent_with_budget(
-    geometry: &CurveGeometry,
-    t: f64,
-    budget: &WorkBudget<'_>,
-) -> Result<FiniteVector3, EvaluationFailure<()>> {
-    curve_tangent_with_budget_solved(
-        geometry.solved().ok_or(EvaluationFailure::NoValue)?,
-        t,
-        budget,
-    )
-}
-
-/// [`curve_second_derivative`] within a caller-owned work slice. A refused
-/// charge leaves no value.
-pub fn curve_second_derivative_with_budget(
-    geometry: &CurveGeometry,
-    t: f64,
-    budget: &WorkBudget<'_>,
-) -> Result<FiniteVector3, EvaluationFailure<()>> {
-    curve_second_derivative_with_budget_solved(
-        geometry.solved().ok_or(EvaluationFailure::NoValue)?,
-        t,
-        budget,
-    )
-}
-
-/// Evaluate a surface carrier at `(u, v)` within a caller-owned work slice.
-pub fn surface_point_with_budget(
-    geometry: &SurfaceGeometry,
-    u: f64,
-    v: f64,
-    budget: &WorkBudget<'_>,
-) -> Result<FinitePoint3, EvaluationFailure<Point3>> {
-    surface_point_with_budget_solved(
-        geometry.solved().ok_or(EvaluationFailure::NoValue)?,
-        u,
-        v,
-        budget,
-    )
 }
 
 /// Evaluate the first partial derivatives of a surface carrier, or report
