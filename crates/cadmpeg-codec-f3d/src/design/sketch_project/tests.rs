@@ -749,7 +749,7 @@ fn placed_sketch_projects_signed_normal_and_nonclamped_curves() {
             ref entities,
             ref operands,
             ..
-        } if native_kind == "horizontal+unknown_bits"
+        } if native_kind.as_str() == "horizontal+unknown_bits"
             && entities.len() == 3
             && entities.iter().all(|entity| entity == &entities[0])
                     && operands.iter().map(|operand| (operand.field.as_ref().map(|field| field.name.as_str()), operand.native_kind.as_str(), operand.object_index)).collect::<Vec<_>>()
@@ -774,7 +774,7 @@ fn placed_sketch_projects_signed_normal_and_nonclamped_curves() {
             ref native_kind,
             ref entities,
             ..
-        } if native_kind == "curvature" && entities.len() == 4
+        } if native_kind.as_str() == "curvature" && entities.len() == 4
     ));
     assert!(matches!(
         constraints[5].definition.kind(),

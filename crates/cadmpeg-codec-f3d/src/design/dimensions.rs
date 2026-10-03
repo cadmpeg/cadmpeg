@@ -3261,8 +3261,8 @@ pub(crate) fn bind_offset_dimension_parameters(
         };
         if !native_kind.as_str().starts_with("Linear Dimension")
             || operands.len() != 2
-            || operands[0].native_kind != "null_locus"
-            || operands[1].native_kind != "curve"
+            || operands[0].native_kind.as_str() != "null_locus"
+            || operands[1].native_kind.as_str() != "curve"
         {
             continue;
         }
@@ -3628,7 +3628,7 @@ pub(crate) fn project_spatial_dimension_constraints(
                         .transpose()?;
                     let owner_scoped = (|| -> Result<Option<SpatialSketchConstraintDefinitionInput>, CodecError> {
                         if operands.len() != 1
-                            || operands[0].native_kind != "dimension_companion"
+                            || operands[0].native_kind.as_str() != "dimension_companion"
                             || !operand_field(&operands[0]).is_some_and(|field| {
                                 field == "companion" || field == "companion_payload"
                             })
@@ -4321,11 +4321,11 @@ fn spatial_counted_offset_dimension_definition(
     let owner = operands.get(owner_position)?;
     let returns = operands.get(owner_position + 1..)?;
     if operand_field(owner) != Some("owner")
-        || owner.native_kind != "record"
+        || owner.native_kind.as_str() != "record"
         || operand_role(owner) != Some(0)
-        || loci.iter().any(|operand| operand.native_kind != "curve")
+        || loci.iter().any(|operand| operand.native_kind.as_str() != "curve")
         || returns.iter().any(|operand| {
-            operand.native_kind != "curve"
+            operand.native_kind.as_str() != "curve"
                 || operand_field(operand) != Some("return")
                 || operand_role(operand).is_some()
         })

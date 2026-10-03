@@ -724,7 +724,7 @@ fn section_solver_linear_dimensions_require_complete_unique_semantics() {
         SketchConstraintDefinitionInput::Native {
             ref native_kind,
             ..
-        } if native_kind == "creo:relation:0"
+        } if native_kind.as_str() == "creo:relation:0"
     ));
     duplicate_measured_segment
         .segments
@@ -745,7 +745,7 @@ fn section_solver_linear_dimensions_require_complete_unique_semantics() {
         SketchConstraintDefinitionInput::Native {
             ref native_kind,
             ..
-        } if native_kind == "creo:relation:0"
+        } if native_kind.as_str() == "creo:relation:0"
     ));
     let mut angular_distance = distance_definition.clone();
     angular_distance
@@ -761,7 +761,7 @@ fn section_solver_linear_dimensions_require_complete_unique_semantics() {
         SketchConstraintDefinitionInput::Native {
             ref native_kind,
             ..
-        } if native_kind == "creo:relation:0"
+        } if native_kind.as_str() == "creo:relation:0"
     ));
     assert!(
         !crate::decode::with_test_decode_ctx(|ctx| resolved_section_points(ctx, &angular_distance))
@@ -796,7 +796,7 @@ fn section_solver_linear_dimensions_require_complete_unique_semantics() {
             parameter: None,
             operands,
             ..
-        } if native_kind == "creo:relation:0"
+        } if native_kind.as_str() == "creo:relation:0"
             && operands.first().is_some_and(|operand| operand.object_index == Some(8))
             && operands.iter().any(|operand| operand.field.as_ref().map(|field| field.name.as_str()) == Some("c[3]"))
     ));

@@ -105,7 +105,7 @@ impl DesignParameterSource {
             return Err("design parameter source_kind is empty".into());
         };
         match (
-            source_kind == USER_PARAMETER_SOURCE_KIND,
+            source_kind.as_str() == USER_PARAMETER_SOURCE_KIND,
             owner_record_index,
         ) {
             (true, None) => family_discriminator

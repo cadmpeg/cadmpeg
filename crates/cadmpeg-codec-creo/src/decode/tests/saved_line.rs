@@ -265,7 +265,7 @@ fn saved_line_joins_through_order_table() {
         "creo:featdefs:sketch_entity#5:42"
     );
     assert!(matches!(*native_entity.geometry.definition(),
-        SketchGeometryDefinition::Native { ref native_kind } if native_kind == "saved_line"
+        SketchGeometryDefinition::Native { ref native_kind } if native_kind.as_str() == "saved_line"
     ));
     let mut duplicate_order_row = definition.clone();
     duplicate_order_row
@@ -415,7 +415,7 @@ fn saved_line_joins_through_order_table() {
         unreachable!();
     };
     assert!(operands.iter().any(|operand| {
-        operand.native_kind == "triples_ptr"
+        operand.native_kind.as_str() == "triples_ptr"
             && operand.field.as_ref().map(|field| field.name.as_str()) == Some("equation_id")
             && operand
                 .field
@@ -549,13 +549,13 @@ fn saved_line_joins_through_order_table() {
         panic!("untyped relation must remain native");
     };
     assert!(operands.iter().any(|operand| {
-        operand.native_kind == "skamp_ptr"
+        operand.native_kind.as_str() == "skamp_ptr"
             && operand.field.as_ref().map(|field| field.name.as_str())
                 == Some("triples_ptr.skamp_id")
             && operand.object_index == Some(5)
     }));
     assert!(operands.iter().any(|operand| {
-        operand.native_kind == "triples_ptr"
+        operand.native_kind.as_str() == "triples_ptr"
             && operand.field.as_ref().map(|field| field.name.as_str()) == Some("equation_id")
             && operand.object_index == Some(11)
     }));

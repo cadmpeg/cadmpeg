@@ -151,7 +151,7 @@ fn the_totality_row_never_carries_a_verified_admission() {
 fn the_declared_keys_are_pinned_and_verbatim() {
     let matched = FcstdDialect::classify(&document(), "4");
     assert_eq!(
-        matched.declared().keys().collect::<Vec<_>>(),
+        matched.declared().keys().map(|key| key.as_str()).collect::<Vec<_>>(),
         ["file_version", "program_version", "schema_version"]
     );
     assert_eq!(matched.declared()[DECLARED_SCHEMA_VERSION], "4");
@@ -167,7 +167,7 @@ fn the_declared_keys_are_pinned_and_verbatim() {
     facts.program_version = None;
     let matched = FcstdDialect::classify(&facts, "4");
     assert_eq!(
-        matched.declared().keys().collect::<Vec<_>>(),
+        matched.declared().keys().map(|key| key.as_str()).collect::<Vec<_>>(),
         ["file_version", "schema_version"]
     );
 }

@@ -372,18 +372,6 @@ macro_rules! nonblank_const {
     }};
 }
 
-impl PartialEq<str> for NonBlankString {
-    fn eq(&self, other: &str) -> bool {
-        self.0 == other
-    }
-}
-
-impl PartialEq<&str> for NonBlankString {
-    fn eq(&self, other: &&str) -> bool {
-        self == *other
-    }
-}
-
 impl std::fmt::Display for NonBlankString {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         formatter.write_str(self.as_str())

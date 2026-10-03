@@ -204,7 +204,7 @@ pub(super) fn transfer_section_entities(
             "FeatDefs",
             cadmpeg_core::decode::u64_from_index(segment.offset),
             match (geometry.definition(), segment.kind) {
-                (SketchGeometryDefinition::Native { native_kind }, _) if native_kind == "line" => {
+                (SketchGeometryDefinition::Native { native_kind }, _) if native_kind.as_str() == "line" => {
                     "section_degenerate_axis_line"
                 }
                 (SketchGeometryDefinition::ReferenceLine { .. }, _) => {
@@ -237,7 +237,7 @@ pub(super) fn transfer_section_entities(
         let point_ids = segment.point_ids();
         let reverse = [point_ids[1], point_ids[0]];
         let endpoints = match (geometry.definition(), segment.kind) {
-            (SketchGeometryDefinition::Native { native_kind }, _) if native_kind == "line" => {
+            (SketchGeometryDefinition::Native { native_kind }, _) if native_kind.as_str() == "line" => {
                 &point_ids[..1]
             }
             (SketchGeometryDefinition::ReferenceLine { .. }, _)

@@ -1765,7 +1765,7 @@ mod tests {
         );
         assert!(entity.geometry_ref.is_none());
         assert!(matches!(entity.geometry.definition(),
-            cadmpeg_ir::sketches::SketchGeometryDefinition::Native { native_kind } if native_kind == "2DPoint"
+            cadmpeg_ir::sketches::SketchGeometryDefinition::Native { native_kind } if native_kind.as_str() == "2DPoint"
         ));
     }
 
@@ -1953,7 +1953,7 @@ mod tests {
         else {
             panic!("expected opaque native sketch constraint");
         };
-        assert_eq!(native_kind, "ConstraintDYS");
+        assert_eq!(native_kind.as_str(), "ConstraintDYS");
         assert_eq!(native_properties["catia_relation_source_class"], "2DPoint");
         assert_eq!(
             native_properties["catia_relation_target_class"],
@@ -2028,7 +2028,7 @@ mod tests {
         );
         assert!(parameter.is_none());
         assert_eq!(operands.len(), 1);
-        assert_eq!(operands[0].native_kind, "ConstraintDYS");
+        assert_eq!(operands[0].native_kind.as_str(), "ConstraintDYS");
         assert_eq!(
             operands[0].field.as_ref().map(|field| field.name.as_str()),
             Some("catia:outer:object-record#constraint-field")
@@ -2184,7 +2184,7 @@ mod tests {
         else {
             panic!("expected opaque native constraint");
         };
-        assert_eq!(native_kind, "CstAttr_Dimension");
+        assert_eq!(native_kind.as_str(), "CstAttr_Dimension");
         assert_eq!(native_properties["catia_range_value"], "Range");
         assert_eq!(
             native_properties["catia_constraint_value"],
@@ -2198,7 +2198,7 @@ mod tests {
         assert!(entities.is_empty());
         assert!(parameter.is_none());
         assert_eq!(operands.len(), 1);
-        assert_eq!(operands[0].native_kind, "ConstraintField");
+        assert_eq!(operands[0].native_kind.as_str(), "ConstraintField");
         assert_eq!(
             operands[0].field.as_ref().map(|field| field.name.as_str()),
             Some("source-record")

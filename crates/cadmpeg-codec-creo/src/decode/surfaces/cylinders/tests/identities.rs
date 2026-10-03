@@ -268,7 +268,7 @@ fn hole_and_circular_sweep_identities_preserve_service_geometry() {
             .source_object
             .as_ref()
             .expect("source")
-            .object_id,
+            .object_id.as_str(),
         "VisibGeom:13"
     );
 
@@ -294,7 +294,7 @@ fn hole_and_circular_sweep_identities_preserve_service_geometry() {
             .source_object
             .as_ref()
             .expect("source")
-            .object_id,
+            .object_id.as_str(),
         "VisibGeom:51"
     );
 }
@@ -465,7 +465,7 @@ fn cross_section_plane_identities_preserve_service_geometry() {
                 .source_object
                 .as_ref()
                 .expect("source object")
-                .object_id,
+                .object_id.as_str(),
             "Xsections:7"
         );
     }
@@ -570,7 +570,7 @@ fn positional_cone_identity_preserves_service_geometry() {
             .source_object
             .as_ref()
             .expect("source object")
-            .object_id,
+            .object_id.as_str(),
         "VisibGeom:7"
     );
 }

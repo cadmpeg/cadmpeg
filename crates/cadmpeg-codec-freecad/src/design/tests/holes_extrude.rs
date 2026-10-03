@@ -145,7 +145,7 @@ pub(crate) fn transfers_branch_complete_threaded_counterdrill_hole() {
     else {
         panic!("thread specification");
     };
-    assert_eq!(standard, "ISO metric");
+    assert_eq!(standard.as_str(), "ISO metric");
     assert_eq!(designation.as_deref(), Some("M8"));
     assert_eq!(class.as_deref(), Some("6H"));
     assert!(*modeled && !cosmetic);

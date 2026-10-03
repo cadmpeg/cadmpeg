@@ -429,7 +429,7 @@ fn semantic_writer_round_trips_native_axis_helix() {
             revolutions,
             start_angle: Angle::ZERO,
             clockwise: false,
-        }) if revolutions.get() == 0.25 && (axis_native_ref == native_ref) && actual_axial_rise.get() == 3200.0 && actual_pitch.get() == 12800.0
+        }) if revolutions.get() == 0.25 && (axis_native_ref.as_str() == native_ref) && actual_axial_rise.get() == 3200.0 && actual_pitch.get() == 12800.0
     ));
     assert!(decoded.report().losses.iter().any(|loss| {
         loss.message

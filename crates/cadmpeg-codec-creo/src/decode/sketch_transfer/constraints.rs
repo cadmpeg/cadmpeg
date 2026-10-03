@@ -3703,7 +3703,7 @@ mod tests {
                 native_kind,
                 entities,
                 ..
-            } if native_kind == "creo:relation:0" && entities.is_empty()
+            } if native_kind.as_str() == "creo:relation:0" && entities.is_empty()
         ));
 
         let emitted_entity = SketchEntityId::mint("synthetic:test:dimension-relation#emitted")
@@ -3730,7 +3730,7 @@ mod tests {
             SketchConstraintDefinitionInput::Native {
                 native_kind,
                 ..
-            } if native_kind == "creo:relation:0"
+            } if native_kind.as_str() == "creo:relation:0"
         ));
     }
 

@@ -89,14 +89,14 @@ fn decode_projects_owned_native_sketch_relation() {
             parameter: Some(relation_parameter),
             operands,
             ..
-        } if native_kind == "sgPntPntDist"
+        } if native_kind.as_str() == "sgPntPntDist"
             && entities.is_empty()
             && relation_parameter == &parameter.id
             && operands.len() == 2
-            && operands[0].native_kind == "d6"
+            && operands[0].native_kind.as_str() == "d6"
             && operands[0].object_index == Some(0)
             && operands[0].native_ref.is_some()
-            && operands[1].native_kind == "d6"
+            && operands[1].native_kind.as_str() == "d6"
             && operands[1].object_index == Some(2)
             && operands[1].native_ref.is_none()
     ));
@@ -159,7 +159,7 @@ fn decode_groups_compact_relation_scalar_pair() {
             native_kind,
             parameter: Some(parameter),
             ..
-        } if native_kind == "sgPntPntDist"
+        } if native_kind.as_str() == "sgPntPntDist"
             && decoded.ir().model.parameters.iter().any(|candidate| {
                 &candidate.id == parameter
                     && candidate.native_ref.as_deref() == Some(driving.id.as_str())
@@ -269,9 +269,9 @@ fn decode_groups_native_tagged_point_line_relations() {
             native_kind,
             operands,
             ..
-        } if native_kind == "sgPntLineDist"
-            && operands[0].native_kind == "7b83"
-            && operands[1].native_kind == "8683"
+        } if native_kind.as_str() == "sgPntLineDist"
+            && operands[0].native_kind.as_str() == "7b83"
+            && operands[1].native_kind.as_str() == "8683"
     ));
     crate::test_support::plan_inherited_write(
         decoded.ir(),
@@ -432,10 +432,10 @@ fn decode_groups_unary_circle_diameter_relations() {
                         parameter: Some(bound_parameter),
                         operands,
                         ..
-                    } if native_kind == "sgCircleDim"
+                    } if native_kind.as_str() == "sgCircleDim"
                         && bound_parameter == &parameter.id
                         && operands.len() == 1
-                        && operands[0].native_kind == "fe83"
+                        && operands[0].native_kind.as_str() == "fe83"
                 )
         }));
     crate::test_support::plan_inherited_write(
@@ -616,7 +616,7 @@ fn decode_uses_declaration_to_disambiguate_native_relation_tags() {
                         cadmpeg_ir::sketches::SketchConstraintDefinitionInput::Native {
                             native_kind,
                             ..
-                        } if native_kind == class
+                        } if native_kind.as_str() == class
                     )
             }));
     }

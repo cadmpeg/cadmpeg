@@ -322,7 +322,7 @@ fn section_solver_radius_dimensions_require_circular_unique_semantics() {
         SketchConstraintDefinitionInput::Native {
             ref native_kind,
             ..
-        } if native_kind == "creo:relation:5"
+        } if native_kind.as_str() == "creo:relation:5"
     ));
 
     let mut type6_radius_definition = definition.clone();
@@ -472,7 +472,7 @@ fn section_solver_radius_dimensions_require_circular_unique_semantics() {
         SketchConstraintDefinitionInput::Native {
             ref native_kind,
             ..
-        } if native_kind == "creo:relation:6"
+        } if native_kind.as_str() == "creo:relation:6"
     ));
     let mut ambiguous_type6 = type6_radius_definition.clone();
     let mut duplicate_type6_arc = ambiguous_type6
@@ -503,7 +503,7 @@ fn section_solver_radius_dimensions_require_circular_unique_semantics() {
         SketchConstraintDefinitionInput::Native {
             ref native_kind,
             ..
-        } if native_kind == "creo:relation:6"
+        } if native_kind.as_str() == "creo:relation:6"
     ));
 
     let mut radius_definition = definition.clone();
@@ -769,7 +769,7 @@ fn section_solver_radius_dimensions_require_circular_unique_semantics() {
         SketchConstraintDefinitionInput::Native {
             ref native_kind,
             ..
-        } if native_kind == "creo:relation:14"
+        } if native_kind.as_str() == "creo:relation:14"
     ));
     radius_definition
         .segments
@@ -791,7 +791,7 @@ fn section_solver_radius_dimensions_require_circular_unique_semantics() {
         SketchConstraintDefinitionInput::Native {
             ref native_kind,
             ..
-        } if native_kind == "creo:relation:14"
+        } if native_kind.as_str() == "creo:relation:14"
     ));
     assert!(
         !crate::decode::with_test_decode_ctx(|ctx| resolved_section_radii(ctx, &radius_definition))

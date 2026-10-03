@@ -69,7 +69,7 @@ fn equation_native_fallback_retains_untyped_row_slots_and_activity() {
     else {
         panic!("equation fallback must be native");
     };
-    assert_eq!(native_kind, "creo:equation:4");
+    assert_eq!(native_kind.as_str(), "creo:equation:4");
     assert_eq!(*native_state, Some(1));
     assert_eq!(native_properties["equation_id"], "1");
     assert_eq!(native_properties["function_id"], "4");
@@ -77,7 +77,7 @@ fn equation_native_fallback_retains_untyped_row_slots_and_activity() {
     assert_eq!(native_properties["argument_slots"], "0:null,1:2,2:3");
     assert_eq!(native_properties["null_argument_ordinals"], "0");
     assert_eq!(operands.len(), 3);
-    assert_eq!(operands[0].native_kind, "eqtn_arr");
+    assert_eq!(operands[0].native_kind.as_str(), "eqtn_arr");
     assert_eq!(operands[0].object_index, Some(1));
     assert_eq!(
         operands[1].field.as_ref().map(|field| field.name.as_str()),
