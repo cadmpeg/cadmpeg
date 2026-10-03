@@ -1025,3 +1025,5 @@ mod tests {
         assert!(DesignRectangularPatternConstruction::try_from(wire).is_err());
     }
 }
+
+mod identity_rewrite;

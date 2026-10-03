@@ -76,7 +76,9 @@ fn generated_solved_plane_plane_blend_decodes_as_analytic_cylinder() {
         .expect("generated rolling-ball decode");
     let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
-    source_less.set_native_unknowns("f3d", &[]).unwrap();
+    source_less
+        .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+        .unwrap();
     let (support_ids, spine_id) =
         source_less.model.procedural_surfaces[0].edit_definition(|definition| {
             let ProceduralSurfaceDefinition::Blend(definition_payload) = definition else {
@@ -156,6 +158,7 @@ fn generated_solved_plane_plane_blend_decodes_as_analytic_cylinder() {
         .expect("rolling-ball spine")
         .geometry = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
         NurbsCurve::from_lanes(
+            &cadmpeg_test_support::service_decode_context(),
             2,
             vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
             vec![
@@ -166,6 +169,7 @@ fn generated_solved_plane_plane_blend_decodes_as_analytic_cylinder() {
             None,
             false,
         )
+        .expect("fixture constructor admission")
         .unwrap(),
     ));
 
@@ -221,7 +225,9 @@ fn generated_rolling_ball_surface_aliases_decode_and_write_canonically() {
         ));
         let (mut source_less, _, _) = result.into_parts();
         source_less.source = None;
-        source_less.set_native_unknowns("f3d", &[]).unwrap();
+        source_less
+            .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+            .unwrap();
         let mut encoded = Vec::new();
         F3dCodec
             .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
@@ -323,12 +329,14 @@ fn generated_f3d_rewrites_rolling_ball_spine_cache() {
     control_points[1].x = 8.0;
     control_points[1].y = -6.0;
     *nurbs = cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
+        &cadmpeg_test_support::service_decode_context(),
         1,
         vec![-1.0, -1.0, 2.0, 2.0, 2.0],
         control_points,
         nurbs.pole_rows().weights(),
         nurbs.periodic(),
     )
+    .expect("fixture constructor admission")
     .unwrap();
     let expected = curve.clone();
 
@@ -379,18 +387,22 @@ fn generated_f3d_rewrites_rolling_ball_support_cache() {
         panic!("expected NURBS blend support")
     };
     nurbs
-        .try_map_control_points(|index, pole| {
-            let mut pole = pole.get();
-            if index == 1 {
-                pole.x = 6.0;
-                pole.z = 4.0;
-            }
-            cadmpeg_ir::features::FinitePoint3::new(pole).ok_or_else(|| {
-                cadmpeg_ir::geometry::nurbs::NurbsError::Structure(
-                    "control_points contains a non-finite point".into(),
-                )
-            })
-        })
+        .try_map_control_points(
+            |index, pole| {
+                let mut pole = pole.get();
+                if index == 1 {
+                    pole.x = 6.0;
+                    pole.z = 4.0;
+                }
+                cadmpeg_ir::features::FinitePoint3::new(pole).ok_or_else(|| {
+                    cadmpeg_ir::geometry::nurbs::NurbsError::Structure(
+                        "control_points contains a non-finite point".into(),
+                    )
+                })
+            },
+            &cadmpeg_test_support::service_decode_context(),
+        )
+        .expect("pole edit admission")
         .unwrap();
     edit::replace(nurbs, |previous| {
         let mut knots = previous.u_knots().to_vec();
@@ -399,6 +411,7 @@ fn generated_f3d_rewrites_rolling_ball_support_cache() {
             knots.copy_from_slice(&[-1.0, -1.0, 2.0, 2.0]);
         };
         cadmpeg_ir::geometry::nurbs::NurbsSurface::new(
+            &cadmpeg_test_support::service_decode_context(),
             cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
                 previous.u_degree(),
                 knots,
@@ -412,6 +425,7 @@ fn generated_f3d_rewrites_rolling_ball_support_cache() {
             previous.pole_grid().clone(),
             previous.normal_reversed(),
         )
+        .expect("fixture final NURBS admission")
     })
     .unwrap();
     let expected = surface.clone();

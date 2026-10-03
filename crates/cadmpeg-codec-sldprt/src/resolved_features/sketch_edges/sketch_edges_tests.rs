@@ -72,12 +72,14 @@ fn projected_sketch_nurbs_refuses_collection_limit() {
     ]);
     let geometry = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
         NurbsCurve::from_lanes(
+            &cadmpeg_test_support::service_decode_context(),
             1,
             vec![0.0, 0.0, 1.0, 1.0],
             vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
             None,
             false,
         )
+        .expect("fixture constructor admission")
         .expect("valid curve"),
     ));
     let curves = HashMap::from([(&curve_id, &geometry)]);

@@ -276,3 +276,5 @@ pub(crate) struct ConstructionRecipeSelector {
 
 #[cfg(test)]
 mod tests;
+
+mod identity_rewrite;

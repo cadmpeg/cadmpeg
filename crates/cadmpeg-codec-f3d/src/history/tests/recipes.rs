@@ -1079,9 +1079,11 @@ fn direct_body_recipe_selection_resolves_compact_coil_target() {
     assert_eq!(
         selection,
         BodySelection::Resolved {
-            bodies: vec![BodyId::mint("f3d:brep:body#1").expect("identity grammar")]
-                .try_into()
-                .expect("distinct bodies"),
+            bodies: cadmpeg_ir::features::DistinctMembers::try_from(
+                vec![BodyId::mint("f3d:brep:body#1").expect("identity grammar")],
+                &cadmpeg_test_support::service_decode_context()
+            )
+            .expect("distinct bodies"),
             native: group_id.into(),
         }
     );
@@ -1157,13 +1159,15 @@ fn direct_body_recipe_selection_resolves_compact_coil_target() {
     assert_eq!(
         selection,
         BodySelection::ResolvedSet {
-            members: cadmpeg_ir::features::BodyMembers::try_from_rows(vec![
-                cadmpeg_ir::features::BodyMember::new(
+            members: cadmpeg_ir::features::BodyMembers::try_from_rows(
+                vec![cadmpeg_ir::features::BodyMember::new(
                     body.id.clone(),
                     cadmpeg_core::text::NonBlankString::try_from(native)
                         .expect("non-blank native fixture"),
-                ),
-            ])
+                ),],
+                &cadmpeg_test_support::service_decode_context()
+            )
+            .expect("selection storage is admitted")
             .expect("valid body selection rows"),
         }
     );
@@ -1320,11 +1324,13 @@ fn base_feature_body_selection_uses_active_transition_outputs() {
             FeatureDefinition::Operation(FeatureOperation::BaseFeature {
                 bodies: BodySelection::Native("native:scope".into()),
             }),
-            (vec![
-                BodyId::mint("test:model:body#2").expect("identity grammar"),
-                BodyId::mint("test:model:body#1").expect("identity grammar"),
-            ])
-            .try_into()
+            cadmpeg_ir::features::DistinctMembers::try_from(
+                vec![
+                    BodyId::mint("test:model:body#2").expect("identity grammar"),
+                    BodyId::mint("test:model:body#1").expect("identity grammar"),
+                ],
+                &cadmpeg_test_support::service_decode_context(),
+            )
             .unwrap(),
         ),
         native_ref: Some("native:scope".into()),

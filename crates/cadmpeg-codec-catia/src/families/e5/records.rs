@@ -90,13 +90,9 @@ impl E5RollingBallJet {
         let stations =
             ctx.copy_slice(&self.stations, "catia_e5_rolling_ball_definition_stations")?;
         Ok(
-            cadmpeg_ir::geometry::RollingBallJetStations::from_parts_for_decode(
-                Self::DEGREE,
-                stations,
-                ctx,
-            )?
-            .ok()
-            .map(ProceduralSurfaceDefinition::RollingBallJet),
+            cadmpeg_ir::geometry::RollingBallJetStations::from_parts(Self::DEGREE, stations, ctx)?
+                .ok()
+                .map(ProceduralSurfaceDefinition::RollingBallJet),
         )
     }
 }
@@ -851,22 +847,23 @@ fn e5_nurbs_surface(
     };
     crate::nurbs::note_refusal(
         ctx,
-        NurbsSurface::from_admitted_grid(
+        NurbsSurface::new(
+            ctx,
             cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
                 u_degree,
-                cadmpeg_ir::geometry::nurbs::KnotVector::new(u_knots)
+                cadmpeg_ir::geometry::nurbs::KnotVector::new(ctx, u_knots)?
                     .map_err(cadmpeg_core::CodecError::malformed)?,
                 false,
             ),
             cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
                 v_degree,
-                cadmpeg_ir::geometry::nurbs::KnotVector::new(v_knots)
+                cadmpeg_ir::geometry::nurbs::KnotVector::new(ctx, v_knots)?
                     .map_err(cadmpeg_core::CodecError::malformed)?,
                 false,
             ),
             poles,
             false,
-        ),
+        )?,
         refusal,
         format_args!("e5 NURBS surface record at byte {}", record.pos),
     )

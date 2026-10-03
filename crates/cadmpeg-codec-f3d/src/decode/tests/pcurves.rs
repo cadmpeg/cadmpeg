@@ -171,7 +171,9 @@ fn generated_surface_offset_decodes_and_writes_source_less() {
 
     let (mut source_less, _, _) = result.into_parts();
     source_less.source = None;
-    source_less.set_native_unknowns("f3d", &[]).unwrap();
+    source_less
+        .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+        .unwrap();
     let mut encoded = Vec::new();
     F3dCodec
         .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
@@ -279,7 +281,9 @@ fn generated_spring_curve_decodes_and_writes_source_less() {
 
     let (mut source_less, _, _) = result.into_parts();
     source_less.source = None;
-    source_less.set_native_unknowns("f3d", &[]).unwrap();
+    source_less
+        .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+        .unwrap();
     let mut encoded = Vec::new();
     F3dCodec
         .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
@@ -342,7 +346,9 @@ fn generated_null_support_spring_decodes_and_writes_source_less() {
 
     let (mut source_less, _, _) = result.into_parts();
     source_less.source = None;
-    source_less.set_native_unknowns("f3d", &[]).unwrap();
+    source_less
+        .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+        .unwrap();
     let mut encoded = Vec::new();
     F3dCodec
         .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
@@ -416,7 +422,9 @@ fn generated_deformable_curves_decode_and_write_source_less() {
 
         let (mut source_less, _, _) = result.into_parts();
         source_less.source = None;
-        source_less.set_native_unknowns("f3d", &[]).unwrap();
+        source_less
+            .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+            .unwrap();
         source_less
             .model
             .curves
@@ -425,6 +433,7 @@ fn generated_deformable_curves_decode_and_write_source_less() {
             .expect("deformable source carrier")
             .geometry = cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
             cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
+                &cadmpeg_test_support::service_decode_context(),
                 1,
                 vec![0.0, 0.0, 1.0, 1.0],
                 vec![
@@ -434,6 +443,7 @@ fn generated_deformable_curves_decode_and_write_source_less() {
                 None,
                 false,
             )
+            .expect("fixture constructor admission")
             .unwrap(),
         ));
         let mut encoded = Vec::new();
@@ -500,7 +510,9 @@ fn generated_deformable_curves_decode_and_write_source_less() {
         .expect("native-reference deformable decode");
     let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
-    source_less.set_native_unknowns("f3d", &[]).unwrap();
+    source_less
+        .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+        .unwrap();
     source_less.model.procedural_curves[0].edit_definition(|definition| {
         let ProceduralCurveDefinition::Deformable(definition_payload) = definition else {
             panic!("expected deformable construction")
@@ -587,7 +599,9 @@ fn generated_source_less_refuses_lossy_procedural_curve_fallbacks() {
         .expect("generated procedural curve decode");
     let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
-    source_less.set_native_unknowns("f3d", &[]).unwrap();
+    source_less
+        .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+        .unwrap();
     source_less.model.procedural_curves[0].replace_definition(
         ProceduralCurveDefinition::BlendSpine {
             blend_surface: None,
@@ -626,7 +640,9 @@ fn generated_source_less_rejects_duplicate_procedural_curve_owners() {
         .expect("generated helix decode");
     let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
-    source_less.set_native_unknowns("f3d", &[]).unwrap();
+    source_less
+        .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+        .unwrap();
     let duplicate = source_less.model.procedural_curves[0].clone();
     source_less.model.procedural_curves.push(duplicate);
     let mut encoded = Vec::new();
@@ -665,12 +681,14 @@ fn generated_f3d_rewrites_topology_bound_nurbs_curve() {
     control_points[1].x = 14.0;
     control_points[1].z = -3.0;
     nurbs = cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
+        &cadmpeg_test_support::service_decode_context(),
         1,
         vec![-1.0, -1.0, 2.0, 2.0, 2.0],
         control_points,
         nurbs.pole_rows().weights(),
         nurbs.periodic(),
     )
+    .expect("fixture constructor admission")
     .unwrap();
     *cache = SolvedCurveGeometry::Nurbs(nurbs.clone());
     let expected = curve.clone();
@@ -1140,12 +1158,14 @@ fn generated_f3d_rewrites_nurbs_pcurve_control_points() {
     control_points[0].u = -0.5;
     control_points[1].v = 2.25;
     *nurbs = cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
+        &cadmpeg_test_support::service_decode_context(),
         1,
         vec![-1.0, -1.0, 2.0, 2.0],
         control_points,
         nurbs.pole_rows().weights(),
         true,
     )
+    .expect("fixture pcurve construction admission")
     .unwrap();
     let cadmpeg_ir::geometry::pcurve::PcurveMetadata::AsmInline { form: inline } =
         &mut pcurve.metadata
@@ -1191,13 +1211,17 @@ fn generated_f3d_scopes_inline_pcurve_edits() {
         panic!("expected NURBS pcurve")
     };
     nurbs
-        .try_map_control_points(|pole_index, point| {
-            let mut point = point.get();
-            if pole_index == 0 {
-                point.u = -0.75;
-            }
-            cadmpeg_ir::units::FinitePoint2::new(point).ok_or(())
-        })
+        .try_map_control_points(
+            |pole_index, point| {
+                let mut point = point.get();
+                if pole_index == 0 {
+                    point.u = -0.75;
+                }
+                cadmpeg_ir::units::FinitePoint2::new(point).ok_or(())
+            },
+            &cadmpeg_test_support::service_decode_context(),
+        )
+        .expect("pole edit admission")
         .unwrap();
     let cadmpeg_ir::geometry::pcurve::PcurveMetadata::AsmInline { form: inline } =
         &mut pcurve.metadata
@@ -1229,31 +1253,39 @@ fn generated_f3d_rewrites_rational_pcurve_weights() {
         panic!("expected rational pcurve")
     };
     nurbs
-        .try_map_control_points(|pole_index, point| {
-            let mut point = point.get();
-            if pole_index == 0 {
-                point.u = -0.25;
-            }
-            cadmpeg_ir::units::FinitePoint2::new(point).ok_or(())
-        })
+        .try_map_control_points(
+            |pole_index, point| {
+                let mut point = point.get();
+                if pole_index == 0 {
+                    point.u = -0.25;
+                }
+                cadmpeg_ir::units::FinitePoint2::new(point).ok_or(())
+            },
+            &cadmpeg_test_support::service_decode_context(),
+        )
+        .expect("pole edit admission")
         .unwrap();
     let mut weights = nurbs.pole_rows().weights();
     if let Some(weights) = &mut weights {
         weights[1] = 0.75;
     }
     let poles = cadmpeg_ir::geometry::pcurve::PcurveNurbsPoles::from_lanes(
+        &cadmpeg_test_support::service_decode_context(),
         nurbs.pole_rows().raw_points(),
         weights,
-    );
+    )
+    .expect("fixture pcurve construction admission");
     {
         let replacement = poles.unwrap();
         edit::replace(nurbs, |previous| {
             cadmpeg_ir::geometry::pcurve::PcurveNurbs::new(
+                &cadmpeg_test_support::service_decode_context(),
                 previous.degree(),
                 previous.knots().to_vec(),
                 replacement,
                 previous.periodic(),
             )
+            .expect("fixture pcurve construction admission")
         })
     }
     .unwrap();
@@ -1288,16 +1320,20 @@ fn generated_f3d_rewrites_ref_form_pcurve_geometry_and_range() {
         panic!("expected ref-form NURBS pcurve")
     };
     nurbs
-        .try_map_control_points(|pole_index, point| {
-            let mut point = point.get();
-            if pole_index == 0 {
-                point.u = -0.75;
-            }
-            if pole_index == 1 {
-                point.v = 3.5;
-            }
-            cadmpeg_ir::units::FinitePoint2::new(point).ok_or(())
-        })
+        .try_map_control_points(
+            |pole_index, point| {
+                let mut point = point.get();
+                if pole_index == 0 {
+                    point.u = -0.75;
+                }
+                if pole_index == 1 {
+                    point.v = 3.5;
+                }
+                cadmpeg_ir::units::FinitePoint2::new(point).ok_or(())
+            },
+            &cadmpeg_test_support::service_decode_context(),
+        )
+        .expect("pole edit admission")
         .unwrap();
     edit::replace(nurbs, |previous| {
         let mut knots = previous.knots().to_vec();
@@ -1306,11 +1342,13 @@ fn generated_f3d_rewrites_ref_form_pcurve_geometry_and_range() {
             knots.copy_from_slice(&[-1.0, -1.0, 2.0, 2.0]);
         };
         cadmpeg_ir::geometry::pcurve::PcurveNurbs::new(
+            &cadmpeg_test_support::service_decode_context(),
             previous.degree(),
             knots,
             previous.pole_rows().clone(),
             previous.periodic(),
         )
+        .expect("fixture pcurve construction admission")
     })
     .unwrap();
     let cadmpeg_ir::geometry::pcurve::PcurveMetadata::General { form: metadata } =
@@ -1342,7 +1380,9 @@ fn generated_f3d_rewrites_ref_form_pcurve_geometry_and_range() {
     assert_eq!(round_trip.ir().model.pcurves, [expected.clone()]);
 
     edited.source = None;
-    edited.set_native_unknowns("f3d", &[]).unwrap();
+    edited
+        .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+        .unwrap();
     let mut source_less = Vec::new();
     F3dCodec
         .plan(EncodeInput::new(&edited, None), TargetRequest::Inherit)

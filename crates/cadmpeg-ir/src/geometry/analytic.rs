@@ -1533,3 +1533,5 @@ impl TryFrom<DegenerateCurveWire> for DegenerateCurve {
 
 #[cfg(test)]
 mod tests;
+
+mod identity_rewrite;

@@ -13,6 +13,13 @@ pub(crate) enum RecordAdmission<'ctx, 'arena> {
 }
 
 impl RecordAdmission<'_, '_> {
+    pub(crate) fn work(self, count: u64, operation: &'static str) -> Result<(), CodecError> {
+        match self {
+            Self::Charged(ctx) => ctx.charge_work(count, operation),
+            Self::Admitted => Ok(()),
+        }
+    }
+
     pub(crate) fn reserve_vec<T>(
         self,
         values: &mut Vec<T>,

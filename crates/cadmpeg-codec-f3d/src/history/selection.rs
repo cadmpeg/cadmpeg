@@ -397,7 +397,7 @@ pub(super) fn bind_body_recipe_face_selection(
     }
     let native = ctx.copy_retained_text(native, "copy F3D body recipe face selection identity")?;
     if let Ok(historical) =
-        cadmpeg_ir::features::FaceSelection::historical_for_decode(state, faces, native, ctx)?
+        cadmpeg_ir::features::FaceSelection::historical(state, faces, native, ctx)?
     {
         *selection = historical;
     }

@@ -420,3 +420,5 @@ pub(crate) struct DesignHistoricalEdgeLoopContext {
 
 #[cfg(test)]
 mod tests;
+
+mod identity_rewrite;

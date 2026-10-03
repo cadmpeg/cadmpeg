@@ -82,7 +82,7 @@ fn decode_and_validate_compact_delete_body_selection() {
     assert!(matches!(
         delete_feature.evaluation.definition(),
         cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::DeleteBody { bodies, mode })
-            if bodies == &cadmpeg_ir::features::BodySelection::local(vec!["287".into(), "115".into()], "sldprt:feature-input:body-ids:287,115".into()).unwrap() && *mode == cadmpeg_ir::features::BodyRetentionMode::DeleteSelected
+            if bodies == &cadmpeg_ir::features::BodySelection::local(vec!["287".into(), "115".into()], "sldprt:feature-input:body-ids:287,115".into(), &cadmpeg_test_support::service_decode_context(),).expect("body selection admission").unwrap() && *mode == cadmpeg_ir::features::BodyRetentionMode::DeleteSelected
     ));
     crate::test_support::plan_inherited_write(
         decoded.ir(),
@@ -169,7 +169,9 @@ fn decode_and_validate_compact_delete_body_selection() {
                 *bodies = cadmpeg_ir::features::BodySelection::local(
                     vec!["287".into(), "115".into()],
                     "sldprt:feature-input:body-ids:287,115".into(),
+                    &cadmpeg_test_support::service_decode_context(),
                 )
+                .expect("body selection admission")
                 .unwrap();
                 *mode = cadmpeg_ir::features::BodyRetentionMode::KeepSelected;
             });

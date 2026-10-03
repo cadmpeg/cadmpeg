@@ -56,7 +56,16 @@ fn numerical_0922_quintic_keeps_both_branches() {
         let mut knots = vec![0.; 6];
         knots.extend(vec![0.5 * d; 6]);
         knots.extend(vec![d; 6]);
-        let n = NurbsCurve::from_lanes(5, knots, poles, None, false).expect("valid quintic curve");
+        let n = NurbsCurve::from_lanes(
+            &cadmpeg_test_support::service_decode_context(),
+            5,
+            knots,
+            poles,
+            None,
+            false,
+        )
+        .expect("fixture constructor admission")
+        .expect("valid quintic curve");
         let result = crate::test_support::with_service_context(|ctx| {
             standard_limit_curve_point_parameter(ctx, &n, Point3::new(0., 0., 0.), 2e-3)
         })
@@ -73,7 +82,16 @@ fn numerical_0922_finite_bezier_midpoint() {
             .collect::<Vec<_>>();
         let mut knots = vec![0.; 6];
         knots.extend(vec![1.; 6]);
-        let n = NurbsCurve::from_lanes(5, knots, poles, None, false).expect("valid quintic curve");
+        let n = NurbsCurve::from_lanes(
+            &cadmpeg_test_support::service_decode_context(),
+            5,
+            knots,
+            poles,
+            None,
+            false,
+        )
+        .expect("fixture constructor admission")
+        .expect("valid quintic curve");
         let result = crate::test_support::with_service_context(|ctx| {
             standard_limit_curve_point_parameter(ctx, &n, Point3::new(x, 0.5, 0.), 2e-3)
         })
@@ -90,8 +108,16 @@ fn standard_limit_curve_finds_interior_point_on_wide_finite_domain() {
         .collect::<Vec<_>>();
     let mut knots = vec![-f64::MAX; 6];
     knots.extend(vec![f64::MAX; 6]);
-    let curve =
-        NurbsCurve::from_lanes(5, knots, poles, None, false).expect("wide finite quintic domain");
+    let curve = NurbsCurve::from_lanes(
+        &cadmpeg_test_support::service_decode_context(),
+        5,
+        knots,
+        poles,
+        None,
+        false,
+    )
+    .expect("fixture constructor admission")
+    .expect("wide finite quintic domain");
     let parameter = crate::test_support::with_service_context(|ctx| {
         standard_limit_curve_point_parameter(ctx, &curve, Point3::new(0.0, 0.2, 0.0), 2e-3)
     })
@@ -103,6 +129,7 @@ fn standard_limit_curve_finds_interior_point_on_wide_finite_domain() {
 use cadmpeg_ir::geometry::nurbs::{NurbsSurfaceAxis, NurbsSurfaceLanes};
 fn audit_plane(d: [f64; 2], s: f64) -> NurbsSurface {
     NurbsSurface::from_lanes(
+        &cadmpeg_test_support::service_decode_context(),
         NurbsSurfaceAxis::new(1, vec![d[0], d[0], d[1], d[1]], false),
         NurbsSurfaceAxis::new(1, vec![0., 0., 1., 1.], false),
         NurbsSurfaceLanes::new(
@@ -114,12 +141,17 @@ fn audit_plane(d: [f64; 2], s: f64) -> NurbsSurface {
         ),
         false,
     )
+    .expect("fixture constructor admission")
     .expect("valid bilinear surface")
 }
 #[test]
 fn numerical_0922b_surface_membership_wide_chart() {
     for d in [[0., 1.], [-1e308, 1e308]] {
-        let r = point_on_nurbs_surface(Point3::new(0.3, 0.7, 0.), &audit_plane(d, 1.));
+        let r = point_on_nurbs_surface(
+            &cadmpeg_test_support::service_decode_context(),
+            Point3::new(0.3, 0.7, 0.),
+            &audit_plane(d, 1.),
+        );
         println!("CATIA plane chart{d:?}: {r:?}");
         assert_eq!(r, Ok(Some(true)));
     }
@@ -128,6 +160,7 @@ fn numerical_0922b_surface_membership_wide_chart() {
 fn numerical_0922b_surface_membership_large_plane() {
     for scale in [1., 1e200] {
         let r = point_on_nurbs_surface(
+            &cadmpeg_test_support::service_decode_context(),
             Point3::new(0.3 * scale, 0.7 * scale, 0.),
             &audit_plane([0., 1.], scale),
         );

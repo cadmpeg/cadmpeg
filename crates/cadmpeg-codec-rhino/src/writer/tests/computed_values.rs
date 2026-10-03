@@ -46,12 +46,14 @@ fn a_plane_whose_equation_constant_overflows_is_refused() {
 #[test]
 fn a_nurbs_curve_whose_homogeneous_pole_overflows_is_refused() {
     let curve = cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
+        &cadmpeg_test_support::service_decode_context(),
         1,
         vec![0.0, 0.0, 1.0, 1.0],
         vec![Point3::new(1.0e300, 0.0, 0.0), Point3::new(2.0, 0.0, 0.0)],
         Some(vec![1.0e10, 1.0]),
         false,
     )
+    .expect("fixture constructor admission")
     .expect("finite poles and positive weights are admitted by the IR");
     assert_refused(
         super::super::nurbs_curve_payload(&curve),
@@ -66,6 +68,7 @@ fn a_nurbs_surface_whose_homogeneous_pole_overflows_is_refused() {
     use cadmpeg_ir::geometry::nurbs::{NurbsSurface, NurbsSurfaceAxis, NurbsSurfaceLanes};
 
     let surface = NurbsSurface::from_lanes(
+        &cadmpeg_test_support::service_decode_context(),
         NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
         NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
         NurbsSurfaceLanes::new(
@@ -77,6 +80,7 @@ fn a_nurbs_surface_whose_homogeneous_pole_overflows_is_refused() {
         ),
         false,
     )
+    .expect("fixture constructor admission")
     .expect("finite poles and positive weights are admitted by the IR");
     assert_refused(
         super::super::nurbs_surface_payload(&surface, 4),

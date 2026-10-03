@@ -60,12 +60,10 @@ impl Node {
 /// An externally tagged variant: `{"Variant": payload}`.
 fn tagged(ctx: &DecodeContext<'_>, variant: &str, payload: Value) -> Result<Node, CanonError> {
     let key = copy_text(ctx, variant)?;
-    ctx.charge_collection_items(1, WORK)?;
-    ctx.charge_retained(
-        cadmpeg_core::decode::u64_from_index(std::mem::size_of::<(String, Value)>()),
-        STORAGE,
-    )?;
     let mut entries = Map::new();
+    ctx.admit_btree_node_storage::<String, Value>(entries.len(), STORAGE)?;
+    ctx.charge_collection_items(1, STORAGE)?;
+    ctx.charge_work(1, STORAGE)?;
     entries.insert(key, payload);
     Ok(Node::Value(Value::Object(entries)))
 }
@@ -433,16 +431,11 @@ impl<'a> CanonValue<'a> {
     }
 
     /// The budget left after entering one container, or the refusal.
-    fn enter(&self) -> Result<(usize, Option<DepthGuard<'a>>), Error> {
+    fn enter(&self) -> Result<(usize, DepthGuard<'a>), Error> {
         match self.depth.checked_sub(1) {
             Some(depth) => {
                 self.ctx.charge_work(1, WORK)?;
-                // The record root is the entry frame; child containers are recursive frames.
-                let nested = if self.depth <= MAX_NATIVE_NESTING_DEPTH {
-                    Some(self.ctx.enter_nested(WORK)?)
-                } else {
-                    None
-                };
+                let nested = self.ctx.enter_nested(WORK)?;
                 Ok((depth, nested))
             }
             None => Err(ser::Error::custom(nests_too_deep_message())),
@@ -462,31 +455,37 @@ impl<'a> ser::Serializer for CanonValue<'a> {
     type SerializeStructVariant = CanonVariantMap<'a>;
 
     fn serialize_bool(self, value: bool) -> Result<Node, Error> {
+        self.ctx.charge_work(1, WORK)?;
         emit(self.sink, &value)?;
         Ok(Node::Value(Value::Bool(value)))
     }
 
     fn serialize_i8(self, value: i8) -> Result<Node, Error> {
+        self.ctx.charge_work(1, WORK)?;
         emit(self.sink, &value)?;
         Ok(Node::Value(Value::from(value)))
     }
 
     fn serialize_i16(self, value: i16) -> Result<Node, Error> {
+        self.ctx.charge_work(1, WORK)?;
         emit(self.sink, &value)?;
         Ok(Node::Value(Value::from(value)))
     }
 
     fn serialize_i32(self, value: i32) -> Result<Node, Error> {
+        self.ctx.charge_work(1, WORK)?;
         emit(self.sink, &value)?;
         Ok(Node::Value(Value::from(value)))
     }
 
     fn serialize_i64(self, value: i64) -> Result<Node, Error> {
+        self.ctx.charge_work(1, WORK)?;
         emit(self.sink, &value)?;
         Ok(Node::Value(Value::from(value)))
     }
 
     fn serialize_i128(self, value: i128) -> Result<Node, Error> {
+        self.ctx.charge_work(1, WORK)?;
         emit(self.sink, &value)?;
         if let Ok(value) = i64::try_from(value) {
             return Ok(Node::Value(Value::from(value)));
@@ -498,26 +497,31 @@ impl<'a> ser::Serializer for CanonValue<'a> {
     }
 
     fn serialize_u8(self, value: u8) -> Result<Node, Error> {
+        self.ctx.charge_work(1, WORK)?;
         emit(self.sink, &value)?;
         Ok(Node::Value(Value::from(value)))
     }
 
     fn serialize_u16(self, value: u16) -> Result<Node, Error> {
+        self.ctx.charge_work(1, WORK)?;
         emit(self.sink, &value)?;
         Ok(Node::Value(Value::from(value)))
     }
 
     fn serialize_u32(self, value: u32) -> Result<Node, Error> {
+        self.ctx.charge_work(1, WORK)?;
         emit(self.sink, &value)?;
         Ok(Node::Value(Value::from(value)))
     }
 
     fn serialize_u64(self, value: u64) -> Result<Node, Error> {
+        self.ctx.charge_work(1, WORK)?;
         emit(self.sink, &value)?;
         Ok(Node::Value(Value::from(value)))
     }
 
     fn serialize_u128(self, value: u128) -> Result<Node, Error> {
+        self.ctx.charge_work(1, WORK)?;
         emit(self.sink, &value)?;
         if let Ok(value) = u64::try_from(value) {
             return Ok(Node::Value(Value::from(value)));
@@ -526,14 +530,17 @@ impl<'a> ser::Serializer for CanonValue<'a> {
     }
 
     fn serialize_f32(self, value: f32) -> Result<Node, Error> {
+        self.ctx.charge_work(1, WORK)?;
         number(f64::from(value), self.sink)
     }
 
     fn serialize_f64(self, value: f64) -> Result<Node, Error> {
+        self.ctx.charge_work(1, WORK)?;
         number(value, self.sink)
     }
 
     fn serialize_char(self, value: char) -> Result<Node, Error> {
+        self.ctx.charge_work(1, WORK)?;
         emit(self.sink, &value)?;
         let mut text = [0; 4];
         Ok(Node::Value(Value::String(copy_text(
@@ -543,6 +550,7 @@ impl<'a> ser::Serializer for CanonValue<'a> {
     }
 
     fn serialize_str(self, value: &str) -> Result<Node, Error> {
+        self.ctx.charge_work(1, WORK)?;
         self.ctx.charge_work(
             u64::try_from(value.len())
                 .ok()
@@ -569,20 +577,25 @@ impl<'a> ser::Serializer for CanonValue<'a> {
     }
 
     fn serialize_none(self) -> Result<Node, Error> {
+        self.ctx.charge_work(1, WORK)?;
         emit_bytes(self.sink, b"null")?;
         Ok(Node::Value(Value::Null))
     }
 
     fn serialize_some<T: Serialize + ?Sized>(self, value: &T) -> Result<Node, Error> {
+        let _depth = self.ctx.enter_nested(WORK)?;
+        self.ctx.charge_work(1, WORK)?;
         value.serialize(self)
     }
 
     fn serialize_unit(self) -> Result<Node, Error> {
+        self.ctx.charge_work(1, WORK)?;
         emit_bytes(self.sink, b"null")?;
         Ok(Node::Value(Value::Null))
     }
 
     fn serialize_unit_struct(self, _name: &'static str) -> Result<Node, Error> {
+        self.ctx.charge_work(1, WORK)?;
         emit_bytes(self.sink, b"null")?;
         Ok(Node::Value(Value::Null))
     }
@@ -601,6 +614,8 @@ impl<'a> ser::Serializer for CanonValue<'a> {
         _name: &'static str,
         value: &T,
     ) -> Result<Node, Error> {
+        let _depth = self.ctx.enter_nested(WORK)?;
+        self.ctx.charge_work(1, WORK)?;
         value.serialize(self)
     }
 
@@ -631,7 +646,8 @@ impl<'a> ser::Serializer for CanonValue<'a> {
         Ok(CanonSeq {
             ctx: self.ctx,
             _nested: nested,
-            out: self.ctx.vector_storage(len.unwrap_or(0), STORAGE)?,
+            out: self.ctx.collection_vec(len.unwrap_or(0), STORAGE)?,
+            unfilled: len.unwrap_or(0),
             depth,
             sink: self.sink,
         })
@@ -673,7 +689,6 @@ impl<'a> ser::Serializer for CanonValue<'a> {
         Ok(CanonMap {
             ctx: self.ctx,
             _nested: nested,
-            max_key_bytes: 0,
             entries: Map::new(),
             key: None,
             depth,
@@ -716,6 +731,7 @@ impl<'a> ser::Serializer for CanonValue<'a> {
 
     /// Charge each escaped fragment before it extends the stored text.
     fn collect_str<T: Display + ?Sized>(self, value: &T) -> Result<Node, Error> {
+        self.ctx.charge_work(1, WORK)?;
         Ok(Node::Value(Value::String(collect_display_text(
             self.ctx, value, self.sink,
         )?)))
@@ -725,8 +741,10 @@ impl<'a> ser::Serializer for CanonValue<'a> {
 /// A sequence collected in visit order.
 pub(super) struct CanonSeq<'a> {
     ctx: &'a DecodeContext<'a>,
-    _nested: Option<DepthGuard<'a>>,
+    _nested: DepthGuard<'a>,
     out: Vec<Value>,
+    /// Reserved slots not yet occupied by an element.
+    unfilled: usize,
     /// Containers each element may still enter.
     depth: usize,
     sink: Option<&'a dyn ByteSink>,
@@ -746,7 +764,11 @@ impl ser::SerializeSeq for CanonSeq<'_> {
             .serialize(CanonValue::within(self.ctx, self.depth, self.sink))
             .map_err(|error| error.within(self.ctx, || Ok(Step::Index(index))))?
             .into_value();
-        self.ctx.reserve_vec(&mut self.out, 1, STORAGE)?;
+        if let Some(unfilled) = self.unfilled.checked_sub(1) {
+            self.unfilled = unfilled;
+        } else {
+            self.ctx.reserve_vec(&mut self.out, 1, STORAGE)?;
+        }
         self.out.push(element);
         Ok(())
     }
@@ -785,7 +807,7 @@ impl ser::SerializeTupleStruct for CanonSeq<'_> {
 
 /// An externally tagged tuple variant: `{"Variant":[...]}`.
 pub(super) struct CanonVariantSeq<'a> {
-    _nested: Option<DepthGuard<'a>>,
+    _nested: DepthGuard<'a>,
     variant: &'static str,
     seq: CanonSeq<'a>,
 }
@@ -815,8 +837,7 @@ impl ser::SerializeTupleVariant for CanonVariantSeq<'_> {
 /// An object's distinct members, keyed by raw (unescaped) key.
 pub(super) struct CanonMap<'a> {
     ctx: &'a DecodeContext<'a>,
-    _nested: Option<DepthGuard<'a>>,
-    max_key_bytes: usize,
+    _nested: DepthGuard<'a>,
     entries: Map<String, Value>,
     key: Option<String>,
     /// Containers each member value may still enter.
@@ -828,16 +849,18 @@ impl CanonMap<'_> {
     fn insert<T: Serialize + ?Sized>(&mut self, key: String, value: &T) -> Result<(), Error> {
         let depth = self.depth;
         let key_bytes = key.len();
-        let comparisons = self.entries.len().checked_ilog2().unwrap_or(0) + 1;
-        let work = self
-            .max_key_bytes
-            .max(key_bytes)
+        let work = key_bytes
             .checked_add(1)
-            .and_then(|bytes| bytes.checked_mul(usize::try_from(comparisons).ok()?))
-            .and_then(|units| units.checked_mul(4))
+            .and_then(|bytes| {
+                self.entries
+                    .len()
+                    .checked_add(1)
+                    .and_then(|count| bytes.checked_mul(count))
+            })
             .and_then(|units| u64::try_from(units).ok())
             .ok_or_else(|| self.ctx.refuse_codec_limit(WORK, u64::MAX - 1, u64::MAX))?;
         self.ctx.charge_work(work, WORK)?;
+        let len = self.entries.len();
         match self.entries.entry(key) {
             serde_json::map::Entry::Vacant(entry) => {
                 let value = value
@@ -846,13 +869,11 @@ impl CanonMap<'_> {
                         error.within(self.ctx, || copy_text(self.ctx, entry.key()).map(Step::Key))
                     })?
                     .into_value();
-                self.ctx.charge_collection_items(1, WORK)?;
-                self.ctx.charge_retained(
-                    cadmpeg_core::decode::u64_from_index(std::mem::size_of::<(String, Value)>()),
-                    STORAGE,
-                )?;
+                self.ctx
+                    .admit_btree_node_storage::<String, Value>(len, STORAGE)?;
+                self.ctx.charge_collection_items(1, STORAGE)?;
+                self.ctx.charge_work(1, STORAGE)?;
                 entry.insert(value);
-                self.max_key_bytes = self.max_key_bytes.max(key_bytes);
                 Ok(())
             }
             serde_json::map::Entry::Occupied(entry) => {
@@ -956,10 +977,10 @@ impl ser::SerializeStruct for CanonStruct<'_> {
                         "raw JSON requires exactly one payload field",
                     ));
                 }
-                let (text, _text_storage) = ctx.with_scoped_storage(STORAGE, || {
+                let text = ctx.with_scoped_storage(STORAGE, || {
                     value.serialize(CanonValue::raw_text(ctx, *depth, *sink))
                 })?;
-                let Node::Value(Value::String(json)) = text else {
+                let Node::Value(Value::String(json)) = &text.0 else {
                     return Err(ser::Error::custom("raw JSON payload must be a string"));
                 };
                 // Replay through the same canonical constructor, so raw objects
@@ -980,7 +1001,7 @@ impl ser::SerializeStruct for CanonStruct<'_> {
                     .ok_or_else(|| ctx.refuse_codec_limit(WORK, u64::MAX - 1, u64::MAX))?;
                 ctx.charge_work(work, WORK)?;
                 let replayed =
-                    super::replay::emit(&json, CanonValue::within(ctx, *depth, None), *depth);
+                    super::replay::emit(json, CanonValue::within(ctx, *depth, None), *depth);
                 ctx.charge_work(0, WORK)?;
                 *parsed = Some(replayed?);
                 Ok(())
@@ -1004,7 +1025,7 @@ impl ser::SerializeStruct for CanonStruct<'_> {
 
 /// An externally tagged struct variant: `{"Variant":{...}}`.
 pub(super) struct CanonVariantMap<'a> {
-    _nested: Option<DepthGuard<'a>>,
+    _nested: DepthGuard<'a>,
     variant: &'static str,
     map: CanonMap<'a>,
 }
@@ -1256,6 +1277,8 @@ impl ser::Serializer for CanonKey<'_> {
         _name: &'static str,
         value: &T,
     ) -> Result<String, Error> {
+        let _depth = self.ctx.enter_nested(WORK)?;
+        self.ctx.charge_work(1, WORK)?;
         value.serialize(self)
     }
 

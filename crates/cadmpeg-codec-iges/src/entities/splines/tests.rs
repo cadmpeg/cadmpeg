@@ -190,8 +190,13 @@ fn decode_converts_bicubic_power_patches_to_an_exact_nurbs_surface() {
     assert_eq!((surface.u_degree(), surface.v_degree()), (3, 3));
     assert_eq!((surface.u_count(), surface.v_count()), (4, 4));
     assert_eq!(
-        cadmpeg_ir::eval::nurbs_surface_point(surface, 0.25, 0.75)
-            .map(cadmpeg_ir::features::FinitePoint3::get),
+        cadmpeg_ir::eval::decode::nurbs_surface_point(
+            cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+            surface,
+            0.25,
+            0.75
+        )
+        .map(cadmpeg_ir::features::FinitePoint3::get),
         Ok(cadmpeg_ir::math::Point3::new(0.25, 0.75, 0.0))
     );
     assert!(result
@@ -224,9 +229,13 @@ fn decode_converts_piecewise_power_splines_to_exact_cubic_nurbs() {
     );
     assert_eq!(nurbs.control_points().len(), 7);
     assert_eq!(
-        cadmpeg_ir::eval::nurbs_curve_point_at(nurbs, 1.5)
-            .ok()
-            .map(cadmpeg_ir::features::FinitePoint3::get),
+        cadmpeg_ir::eval::decode::nurbs_curve_point_at(
+            cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+            nurbs,
+            1.5
+        )
+        .ok()
+        .map(cadmpeg_ir::features::FinitePoint3::get),
         Some(cadmpeg_ir::math::Point3::new(1.5, 0.0, 0.0))
     );
     assert_eq!(
@@ -257,8 +266,12 @@ fn decode_converts_nonzero_cubic_power_terms_on_a_nonunit_interval() {
     else {
         panic!("expected a cubic NURBS carrier");
     };
-    let point =
-        cadmpeg_ir::eval::nurbs_curve_point_at(nurbs, 3.25).expect("converted curve evaluates");
+    let point = cadmpeg_ir::eval::decode::nurbs_curve_point_at(
+        cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+        nurbs,
+        3.25,
+    )
+    .expect("converted curve evaluates");
     let expected = Point3::new(16.0, -1.546_875, 0.164_062_5);
     assert!(point.distance(expected) < 1.0e-12, "{point:?}");
     assert!(result
@@ -282,8 +295,13 @@ fn decode_converts_nonzero_bicubic_cross_terms_on_nonunit_intervals() {
         panic!("expected a bicubic NURBS carrier");
     };
     assert_eq!(
-        cadmpeg_ir::eval::nurbs_surface_point(surface, 1.5, -0.75)
-            .map(cadmpeg_ir::features::FinitePoint3::get),
+        cadmpeg_ir::eval::decode::nurbs_surface_point(
+            cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+            surface,
+            1.5,
+            -0.75
+        )
+        .map(cadmpeg_ir::features::FinitePoint3::get),
         Ok(Point3::new(95.496_093_75, 268.464_843_75, -95.496_093_75,))
     );
     assert!(result

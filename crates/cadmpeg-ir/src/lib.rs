@@ -35,6 +35,9 @@
 //! Product prototypes and occurrence trees retain assembly identity and
 //! placement. Joint and mate constraints are reserved.
 
+#[macro_use]
+mod identity_rewrite;
+
 pub mod annotations;
 pub mod appearance;
 pub mod assets;
@@ -149,7 +152,7 @@ pub use validate::admit::{
     CATIA_ADMISSION_CHECKS, DRAFT_CORE_CHECKS, RHINO_DRAFT_CHECKS, RHINO_INSTANCE_CHECKS,
     SLDPRT_EXPORT_PRECONDITION_CHECKS,
 };
-pub use validate::{entity_census, validate_neutral, validate_neutral_with_source_fidelity};
+pub use validate::{validate_neutral, validate_neutral_with_source_fidelity};
 
 pub mod unknown;
 

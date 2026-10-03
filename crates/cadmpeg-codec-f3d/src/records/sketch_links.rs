@@ -249,3 +249,5 @@ fn deserialize_persistent_tag_token<'de, D: Deserializer<'de>>(
 
 #[cfg(test)]
 mod tests;
+
+mod identity_rewrite;

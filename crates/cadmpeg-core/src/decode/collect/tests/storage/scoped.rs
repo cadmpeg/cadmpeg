@@ -224,10 +224,11 @@ scoped_storage_case!(format_scoped_text_storage, 1, 5, String, ctx, count, {
     )?;
     Ok((text, reservation))
 });
+// One or five scoped set entries admit one 232-byte backing node.
 scoped_storage_case!(
     insert_scoped_btree_set_storage,
     232,
-    3016,
+    232,
     BTreeSet<u64>,
     ctx,
     count,
@@ -246,10 +247,11 @@ scoped_storage_case!(
         Ok((values, reservation))
     }
 );
+// One or five scoped values admit one 232-byte backing node.
 scoped_storage_case!(
     insert_scoped_btree_value_storage,
     232,
-    3016,
+    232,
     BTreeSet<u64>,
     ctx,
     count,
@@ -267,7 +269,8 @@ scoped_storage_case!(
         Ok((values, reservation))
     }
 );
-scoped_storage_case!(insert_scoped_btree_map_if_vacant_storage, 320, 4160, BTreeMap<u64, u64>, ctx, count, {
+// One or five scoped map entries admit one 320-byte backing node.
+scoped_storage_case!(insert_scoped_btree_map_if_vacant_storage, 320, 320, BTreeMap<u64, u64>, ctx, count, {
     let mut reservation = ctx.reserve_scoped(0, "scoped tree map storage")?;
     let mut values = BTreeMap::new();
     for value in 0..count { ctx.insert_scoped_btree_map_if_vacant(&mut reservation, &mut values, u64::try_from(value).expect("small key"), 0, "tree work", "scoped tree map storage")?; }
@@ -286,7 +289,8 @@ scoped_storage_case!(collect_scoped_btree_groups_storage, 504, 560,
     peak = (504, 560 + 32), BTreeMap<u64, Vec<u64>>, ctx, count, {
     ctx.collect_scoped_btree_groups(std::iter::repeat_n((0, 0), count), "scoped collected group storage")
 });
-scoped_storage_case!(collect_scoped_btree_map_storage, 320, 4160, BTreeMap<u64, u64>, ctx, count, {
+// One or five collected scoped entries admit one 320-byte backing node.
+scoped_storage_case!(collect_scoped_btree_map_storage, 320, 320, BTreeMap<u64, u64>, ctx, count, {
     ctx.collect_scoped_btree_map((0..count).map(|value| (u64::try_from(value).expect("small key"), 0)), "scoped collected map storage")
 });
 scoped_storage_case!(

@@ -11,8 +11,8 @@ use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::eval::{nurbs_curve_parameter_domain, nurbs_curve_parameter_near_point};
 use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::geometry::{
-    nurbs::{KnotVector, NurbsCurve, NurbsPoleGrid, NurbsPoles3, NurbsSurface, NurbsSurfaceAxis},
-    pcurve::{Pcurve, PcurveGeometry, PcurveNurbs, PcurveNurbsPoles},
+    nurbs::{KnotVector, NurbsCurve, NurbsSurface, NurbsSurfaceAxis},
+    pcurve::{Pcurve, PcurveGeometry, PcurveNurbs},
     sampled::{PolylineCurve, PolylineSamples},
     CompositeCurveSegment, CompositeCurveTransition, Curve, CurveGeometry, DirectedParameterRange,
     ProceduralCurve, ProceduralCurveDefinition, ProceduralGeometryError, ProceduralSurface,
@@ -143,12 +143,12 @@ pub(super) fn infer_edge_parameter_ranges(
         .ok_or_else(|| ctx.refuse_codec_limit("step_edge_parameter_inference", 0, 1))?;
     ctx.charge_work(work, "step_edge_parameter_inference")?;
 
-    let model_index = cadmpeg_ir::index::ModelIndex::new_for_decode(ir, ctx)?;
+    let model_index = cadmpeg_ir::index::ModelIndex::build(ir, ctx)?;
     let inferred = candidates.into_iter().try_fold(
         Vec::new(),
         |mut inferred, (edge_index, curve, start, end)| {
             let Some(geometry) = model_index
-                .curves(curve.as_str())
+                .curves(curve.as_str(), ctx)?
                 .map(|curve| &curve.geometry)
             else {
                 return Ok(inferred);
@@ -159,6 +159,7 @@ pub(super) fn infer_edge_parameter_ranges(
             let start_seed = curve_endpoint_seed(solved, false, 0.0);
             let Some(start_parameter) =
                 cadmpeg_ir::eval::model_curve_parameter_near_point_in_index(
+                    ctx,
                     &model_index,
                     curve,
                     start,
@@ -169,6 +170,7 @@ pub(super) fn infer_edge_parameter_ranges(
             };
             let end_seed = curve_endpoint_seed(solved, true, start_parameter.get());
             let Some(end_parameter) = cadmpeg_ir::eval::model_curve_parameter_near_point_in_index(
+                ctx,
                 &model_index,
                 curve,
                 end,
@@ -1179,9 +1181,7 @@ pub(super) fn decode(
                 },
                 "step_geometry_ir_curves",
             )?;
-            let _attached = ir
-                .model
-                .add_procedural_curve_for_decode(ctx, &curve, procedural)?;
+            let _attached = ir.model.add_procedural_curve(ctx, &curve, procedural)?;
             ctx.insert_hash_map(
                 &mut carrier_index.curves,
                 id,
@@ -1322,9 +1322,7 @@ pub(super) fn decode(
                 "step_geometry_ir_curves",
             )?;
 
-            let _attached = ir
-                .model
-                .add_procedural_curve_for_decode(ctx, &curve, procedural)?;
+            let _attached = ir.model.add_procedural_curve(ctx, &curve, procedural)?;
 
             ctx.insert_hash_map(
                 &mut carrier_index.curves,
@@ -1506,9 +1504,7 @@ pub(super) fn decode(
             },
             "step_geometry_ir_curves",
         )?;
-        let _attached = ir
-            .model
-            .add_procedural_curve_for_decode(ctx, &curve, procedural)?;
+        let _attached = ir.model.add_procedural_curve(ctx, &curve, procedural)?;
         ctx.insert_hash_map(
             &mut carrier_index.curves,
             id,
@@ -1750,7 +1746,7 @@ pub(super) fn decode(
             },
             "step_geometry_ir_surfaces",
         )?;
-        let _attached = ir.model.add_procedural_surface_for_decode(
+        let _attached = ir.model.add_procedural_surface(
             ctx,
             &surface,
             ProceduralSurface::new(
@@ -2040,7 +2036,7 @@ pub(super) fn decode(
                 },
                 "step_geometry_ir_surfaces",
             )?;
-            let _attached = ir.model.add_procedural_surface_for_decode(ctx, &surface, match (|| {
+            let _attached = ir.model.add_procedural_surface(ctx, &surface, match (|| {
                     let ranges = parameter_ranges.map(|range| {
                         DirectedParameterRange::from_finite_endpoints(range).map_err(|_| {
                             ProceduralGeometryError::Payload(
@@ -2168,7 +2164,7 @@ pub(super) fn decode(
                 },
                 "step_geometry_ir_surfaces",
             )?;
-            let _attached = ir.model.add_procedural_surface_for_decode(
+            let _attached = ir.model.add_procedural_surface(
                 ctx,
                 &surface,
                 ProceduralSurface::new(
@@ -2233,7 +2229,7 @@ pub(super) fn decode(
                 },
                 "step_geometry_ir_surfaces",
             )?;
-            let _attached = ir.model.add_procedural_surface_for_decode(ctx, &surface, match cadmpeg_ir::geometry::surface_payloads::ParallelOffsetSurfaceConstruction::try_new(support, distance * record_scale, self_intersect).map(|admitted_payload| ProceduralSurface::new(
+            let _attached = ir.model.add_procedural_surface(ctx, &surface, match cadmpeg_ir::geometry::surface_payloads::ParallelOffsetSurfaceConstruction::try_new(support, distance * record_scale, self_intersect).map(|admitted_payload| ProceduralSurface::new(
                     ProceduralSurfaceId::from(ids::construction(kind!("offset_surface"), id)),
                     ProceduralSurfaceDefinition::ParallelOffset(admitted_payload),
                     None,
@@ -2310,7 +2306,7 @@ pub(super) fn decode(
                 },
                 "step_geometry_ir_surfaces",
             )?;
-            let _attached = ir.model.add_procedural_surface_for_decode(
+            let _attached = ir.model.add_procedural_surface(
                 ctx,
                 &surface,
                 ProceduralSurface::new(
@@ -2663,7 +2659,7 @@ pub(super) fn decode(
         if !carrier_index.surfaces.contains_key(&id) {
             continue;
         }
-        let _attached = ir.model.add_procedural_surface_for_decode(
+        let _attached = ir.model.add_procedural_surface(
             ctx,
             &surface,
             ProceduralSurface::new(
@@ -2798,7 +2794,8 @@ fn decode_tessellated_curve_sets(
             let Some(polyline) = PolylineCurve::from_checked_samples(
                 PolylineSamples::Unparameterized { points },
                 0.0,
-            )
+                ctx,
+            )?
             .ok() else {
                 continue;
             };
@@ -4609,8 +4606,7 @@ fn trim_cartesian_parameter(
     let Some(geometry) = context.geometry.solved() else {
         return Ok(None);
     };
-    curve_parameter_at_point(geometry, point.get(), context.tolerance)
-        .map_err(CodecError::ResourceLimit)
+    curve_parameter_at_point(context.ctx, geometry, point.get(), context.tolerance)
 }
 
 fn select_trim_parameter(
@@ -4784,10 +4780,11 @@ fn first_projected_axis(axis: UnitVector3) -> Option<UnitVector3> {
 }
 
 fn curve_parameter_at_point(
+    ctx: &DecodeContext<'_>,
     geometry: &SolvedCurveGeometry,
     point: Point3,
     tolerance: f64,
-) -> Result<Option<f64>, cadmpeg_core::decode::ResourceLimit> {
+) -> Result<Option<f64>, CodecError> {
     let offset =
         |origin: Point3| Vector3::new(point.x - origin.x, point.y - origin.y, point.z - origin.z);
     match geometry {
@@ -4823,8 +4820,14 @@ fn curve_parameter_at_point(
             else {
                 return Ok(None);
             };
-            nurbs_curve_parameter_near_point(curve, point, tolerance, (domain[0] + domain[1]) * 0.5)
-                .map(|parameter| parameter.map(FiniteReal::get))
+            nurbs_curve_parameter_near_point(
+                ctx,
+                curve,
+                point,
+                tolerance,
+                (domain[0] + domain[1]) * 0.5,
+            )
+            .map(|parameter| parameter.map(FiniteReal::get))
         }
         SolvedCurveGeometry::Transformed(placed) => {
             let Some(inverse) = placed.transform().try_inverse_affine().ok() else {
@@ -4833,7 +4836,7 @@ fn curve_parameter_at_point(
             let Some(mapped) = inverse.apply_point(point) else {
                 return Ok(None);
             };
-            curve_parameter_at_point(placed.basis(), mapped.get(), tolerance)
+            curve_parameter_at_point(ctx, placed.basis(), mapped.get(), tolerance)
         }
         _ => Ok(None),
     }
@@ -5332,7 +5335,7 @@ fn default_nurbs_knots(
     if knots.len() != expected {
         return Ok(None);
     }
-    Ok(KnotVector::from_finite_lanes(knots).ok())
+    Ok(KnotVector::from_finite_lanes(ctx, knots)?.ok())
 }
 
 fn nurbs_curve(
@@ -5358,14 +5361,14 @@ fn nurbs_curve(
             "step_nurbs_curve_control_points",
         )?;
     }
-    let curve = NurbsPoles3::from_lanes(control_points, definition.weights).and_then(|poles| {
-        NurbsCurve::new(
-            definition.degree,
-            definition.knots,
-            poles,
-            definition.periodic,
-        )
-    });
+    let curve = NurbsCurve::from_lanes(
+        ctx,
+        definition.degree,
+        definition.knots,
+        control_points,
+        definition.weights,
+        definition.periodic,
+    )?;
     match curve {
         Ok(curve) => Ok(Some(curve)),
         Err(error) => {
@@ -5404,15 +5407,14 @@ fn nurbs_pcurve(
             "step_nurbs_pcurve_control_points",
         )?;
     }
-    let pcurve =
-        PcurveNurbsPoles::from_lanes(control_points, definition.weights).and_then(|poles| {
-            PcurveNurbs::new(
-                definition.degree,
-                definition.knots,
-                poles,
-                definition.periodic,
-            )
-        });
+    let pcurve = PcurveNurbs::from_lanes(
+        ctx,
+        definition.degree,
+        definition.knots,
+        control_points,
+        definition.weights,
+        definition.periodic,
+    )?;
     match pcurve {
         Ok(nurbs) => Ok(Some(PcurveGeometry::Nurbs { nurbs })),
         Err(error) => {
@@ -5767,13 +5769,11 @@ fn pcurve_periodic_domain(geometry: &PcurveGeometry) -> Option<[f64; 2]> {
         PcurveGeometry::Circle(_) | PcurveGeometry::Ellipse(_) | PcurveGeometry::Harmonic(_) => {
             Some([0.0, std::f64::consts::TAU])
         }
-        PcurveGeometry::Nurbs { nurbs } if nurbs.periodic() => pcurve_nurbs_parameter_domain(
-            nurbs.degree(),
-            nurbs.knots(),
-            nurbs.control_points().len(),
-        ),
+        PcurveGeometry::Nurbs { nurbs } if nurbs.periodic() => {
+            pcurve_nurbs_parameter_domain(nurbs.degree(), nurbs.knots(), nurbs.pole_rows().count())
+        }
         PcurveGeometry::PolarNurbs { nurbs } if nurbs.periodic() => {
-            pcurve_nurbs_parameter_domain(nurbs.degree(), nurbs.knots(), nurbs.poles().len())
+            pcurve_nurbs_parameter_domain(nurbs.degree(), nurbs.knots(), nurbs.pole_rows().count())
         }
         PcurveGeometry::Offset(offset_pcurve) => {
             let basis = offset_pcurve.basis();
@@ -6166,7 +6166,7 @@ fn polyline_pcurve(
         ctx.push_vec(&mut knots, knot, "step_polyline_pcurve_knots")?;
     }
     ctx.push_vec(&mut knots, last, "step_polyline_pcurve_knots")?;
-    match PcurveNurbs::from_lanes(1, knots, control_points, None, false) {
+    match PcurveNurbs::from_lanes(ctx, 1, knots, control_points, None, false)? {
         Ok(nurbs) => Ok(Some(PcurveGeometry::Nurbs { nurbs })),
         Err(error) => {
             ctx.push_vec(
@@ -6209,7 +6209,7 @@ fn polyline(
         ctx.push_vec(&mut knots, knot, "step_polyline_knots")?;
     }
     ctx.push_vec(&mut knots, last, "step_polyline_knots")?;
-    match cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes_for_decode(
+    match cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
         ctx,
         1,
         knots,
@@ -6385,14 +6385,13 @@ fn nurbs_surface(
     } else {
         None
     };
-    let surface = NurbsPoleGrid::from_lanes(control_points, weights).and_then(|poles| {
-        NurbsSurface::new(
-            NurbsSurfaceAxis::new(u_degree, u_knots, u_periodic),
-            NurbsSurfaceAxis::new(v_degree, v_knots, v_periodic),
-            poles,
-            false,
-        )
-    });
+    let surface = NurbsSurface::from_lanes(
+        ctx,
+        NurbsSurfaceAxis::new(u_degree, u_knots, u_periodic),
+        NurbsSurfaceAxis::new(v_degree, v_knots, v_periodic),
+        cadmpeg_ir::geometry::nurbs::NurbsSurfaceLanes::new(control_points, weights),
+        false,
+    )?;
     match surface {
         Ok(surface) => Ok(Some(surface)),
         Err(error) => {
@@ -6436,7 +6435,7 @@ fn expand_knots(
         ctx.reserve_vec(&mut knots, count, "step_expanded_nurbs_knots")?;
         knots.extend(std::iter::repeat_with(|| knot).take(count));
     }
-    Ok(KnotVector::from_finite_lanes(knots).ok())
+    Ok(KnotVector::from_finite_lanes(ctx, knots)?.ok())
 }
 
 fn references(value: &Value, ctx: &DecodeContext<'_>) -> Result<Option<Vec<u64>>, CodecError> {

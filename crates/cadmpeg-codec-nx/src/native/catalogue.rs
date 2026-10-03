@@ -126,15 +126,15 @@ fn note_container<T: ContainerNoted>(
     tag: Option<&'static str>,
     a: &mut AnnotationBuilder,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    let stream = StreamHandle::new_for_decode(
+    let stream = StreamHandle::new(
         ctx,
         cadmpeg_ir::stream_name!("nx:container"),
         "allocate annotation stream handle",
     )?;
     for record in records {
         let (id, offset) = record.container_note();
-        a.note_for_decode(ctx, &id, &stream, offset, tag)?;
-        a.exactness_for_decode(ctx, id, catalogue_row.exactness)?;
+        a.note(ctx, &id, &stream, offset, tag)?;
+        a.exactness(ctx, id, catalogue_row.exactness)?;
     }
     Ok(())
 }
@@ -151,13 +151,17 @@ fn note_per_stream<T: StreamNoted>(
 ) -> Result<(), cadmpeg_core::CodecError> {
     for record in records {
         let (id, stream_ordinal, offset) = record.stream_note();
-        let stream = StreamHandle::new_for_decode(
+        let stream = StreamHandle::new(
             ctx,
-            cadmpeg_ir::stream_name!("nx:s").with_suffix(stream_ordinal),
+            cadmpeg_ir::stream_name!("nx:s").with_suffix(
+                ctx,
+                stream_ordinal,
+                "compose annotation stream name",
+            )?,
             "allocate annotation stream handle",
         )?;
-        a.note_for_decode(ctx, id, &stream, offset, tag)?;
-        a.exactness_for_decode(ctx, id, catalogue_row.exactness)?;
+        a.note(ctx, id, &stream, offset, tag)?;
+        a.exactness(ctx, id, catalogue_row.exactness)?;
     }
     Ok(())
 }
@@ -759,29 +763,29 @@ fn note_display_jt_display_jt_indices(
     _tag: Option<&'static str>,
     a: &mut AnnotationBuilder,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    let annotation_stream = StreamHandle::new_for_decode(
+    let annotation_stream = StreamHandle::new(
         ctx,
         cadmpeg_ir::stream_name!("nx:container"),
         "allocate annotation stream handle",
     )?;
     for index in &m.display_jt.indices {
-        a.note_for_decode(
+        a.note(
             ctx,
             &index.id,
             &annotation_stream,
             index.source_offset,
             Some("DISPLAY_JT_INDEX"),
         )?;
-        a.exactness_for_decode(ctx, &index.id, Exactness::ByteExact)?;
+        a.exactness(ctx, &index.id, Exactness::ByteExact)?;
         for row in index.rows() {
-            a.note_for_decode(
+            a.note(
                 ctx,
                 &row.id,
                 &annotation_stream,
                 row.source_offset,
                 Some("DISPLAY_JT_INDEX_ROW"),
             )?;
-            a.exactness_for_decode(ctx, &row.id, Exactness::ByteExact)?;
+            a.exactness(ctx, &row.id, Exactness::ByteExact)?;
         }
     }
     Ok(())
@@ -794,29 +798,29 @@ fn note_display_jt_display_jt_documents(
     _tag: Option<&'static str>,
     a: &mut AnnotationBuilder,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    let annotation_stream = StreamHandle::new_for_decode(
+    let annotation_stream = StreamHandle::new(
         ctx,
         cadmpeg_ir::stream_name!("nx:container"),
         "allocate annotation stream handle",
     )?;
     for document in m.display_jt.graph.documents() {
-        a.note_for_decode(
+        a.note(
             ctx,
             &document.id,
             &annotation_stream,
             document.source_offset,
             Some("DISPLAY_JT_DOCUMENT"),
         )?;
-        a.exactness_for_decode(ctx, &document.id, Exactness::ByteExact)?;
+        a.exactness(ctx, &document.id, Exactness::ByteExact)?;
         for entry in &document.toc_entries {
-            a.note_for_decode(
+            a.note(
                 ctx,
                 &entry.id,
                 &annotation_stream,
                 entry.source_offset,
                 Some("DISPLAY_JT_TOC_ENTRY"),
             )?;
-            a.exactness_for_decode(ctx, &entry.id, Exactness::ByteExact)?;
+            a.exactness(ctx, &entry.id, Exactness::ByteExact)?;
         }
     }
     Ok(())
@@ -830,12 +834,16 @@ fn note_parasolid_parasolid_intersection_records(
     a: &mut AnnotationBuilder,
 ) -> Result<(), cadmpeg_core::CodecError> {
     for record in &m.parasolid.intersection_records {
-        let source_stream = StreamHandle::new_for_decode(
+        let source_stream = StreamHandle::new(
             ctx,
-            cadmpeg_ir::stream_name!("nx:s").with_suffix(record.stream_ordinal),
+            cadmpeg_ir::stream_name!("nx:s").with_suffix(
+                ctx,
+                record.stream_ordinal,
+                "compose annotation stream name",
+            )?,
             "allocate annotation stream handle",
         )?;
-        a.note_for_decode(
+        a.note(
             ctx,
             &record.id,
             &source_stream,
@@ -846,7 +854,7 @@ fn note_parasolid_parasolid_intersection_records(
                 "INTERSECTION"
             }),
         )?;
-        a.exactness_for_decode(ctx, &record.id, Exactness::ByteExact)?;
+        a.exactness(ctx, &record.id, Exactness::ByteExact)?;
     }
     Ok(())
 }
@@ -859,19 +867,23 @@ fn note_parasolid_parasolid_attribute_class_uses(
     a: &mut AnnotationBuilder,
 ) -> Result<(), cadmpeg_core::CodecError> {
     for class_use in &m.parasolid.attribute_class_uses {
-        let source_stream = StreamHandle::new_for_decode(
+        let source_stream = StreamHandle::new(
             ctx,
-            cadmpeg_ir::stream_name!("nx:s").with_suffix(class_use.stream_ordinal),
+            cadmpeg_ir::stream_name!("nx:s").with_suffix(
+                ctx,
+                class_use.stream_ordinal,
+                "compose annotation stream name",
+            )?,
             "allocate annotation stream handle",
         )?;
-        a.note_for_decode(
+        a.note(
             ctx,
             &class_use.id,
             &source_stream,
             class_use.inflated_offset,
             Some("ATTRIBUTE_CLASS_USE"),
         )?;
-        a.exactness_for_decode(ctx, &class_use.id, Exactness::Derived)?;
+        a.exactness(ctx, &class_use.id, Exactness::Derived)?;
     }
     Ok(())
 }
@@ -884,19 +896,23 @@ fn note_parasolid_parasolid_topology_attribute_class_uses(
     a: &mut AnnotationBuilder,
 ) -> Result<(), cadmpeg_core::CodecError> {
     for class_use in &m.parasolid.topology_attribute_class_uses {
-        let source_stream = StreamHandle::new_for_decode(
+        let source_stream = StreamHandle::new(
             ctx,
-            cadmpeg_ir::stream_name!("nx:s").with_suffix(class_use.stream_ordinal),
+            cadmpeg_ir::stream_name!("nx:s").with_suffix(
+                ctx,
+                class_use.stream_ordinal,
+                "compose annotation stream name",
+            )?,
             "allocate annotation stream handle",
         )?;
-        a.note_for_decode(
+        a.note(
             ctx,
             &class_use.id,
             &source_stream,
             class_use.inflated_offset,
             Some("TOPOLOGY_ATTRIBUTE_CLASS_USE"),
         )?;
-        a.exactness_for_decode(ctx, &class_use.id, Exactness::Derived)?;
+        a.exactness(ctx, &class_use.id, Exactness::Derived)?;
     }
     Ok(())
 }
@@ -908,20 +924,20 @@ fn note_features_feature_sketch_point_uses(
     _tag: Option<&'static str>,
     a: &mut AnnotationBuilder,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    let annotation_stream = StreamHandle::new_for_decode(
+    let annotation_stream = StreamHandle::new(
         ctx,
         cadmpeg_ir::stream_name!("nx:container"),
         "allocate annotation stream handle",
     )?;
     for point_use in &m.features.feature_sketch_point_uses {
-        a.note_for_decode(
+        a.note(
             ctx,
             &point_use.id,
             &annotation_stream,
             point_use.references[0].source_offset,
             Some("SKETCH_POINT_USE"),
         )?;
-        a.exactness_for_decode(ctx, &point_use.id, Exactness::Derived)?;
+        a.exactness(ctx, &point_use.id, Exactness::Derived)?;
     }
     Ok(())
 }
@@ -933,20 +949,20 @@ fn note_features_feature_input_block_identity_groups(
     _tag: Option<&'static str>,
     a: &mut AnnotationBuilder,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    let annotation_stream = StreamHandle::new_for_decode(
+    let annotation_stream = StreamHandle::new(
         ctx,
         cadmpeg_ir::stream_name!("nx:container"),
         "allocate annotation stream handle",
     )?;
     for group in &m.features.feature_input_block_identity_groups {
-        a.note_for_decode(
+        a.note(
             ctx,
             &group.id,
             &annotation_stream,
             group.members[0].source_offset,
             Some("FEATURE_INPUT_BLOCK_IDENTITY_GROUP"),
         )?;
-        a.exactness_for_decode(ctx, &group.id, Exactness::ByteExact)?;
+        a.exactness(ctx, &group.id, Exactness::ByteExact)?;
     }
     Ok(())
 }
@@ -958,20 +974,20 @@ fn note_features_feature_parameter_uses(
     _tag: Option<&'static str>,
     a: &mut AnnotationBuilder,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    let annotation_stream = StreamHandle::new_for_decode(
+    let annotation_stream = StreamHandle::new(
         ctx,
         cadmpeg_ir::stream_name!("nx:container"),
         "allocate annotation stream handle",
     )?;
     for parameter_use in &m.features.feature_parameter_uses {
-        a.note_for_decode(
+        a.note(
             ctx,
             &parameter_use.id,
             &annotation_stream,
             parameter_use.bindings[0].source_offset,
             Some("FEATURE_PARAMETER_USE"),
         )?;
-        a.exactness_for_decode(ctx, &parameter_use.id, Exactness::Derived)?;
+        a.exactness(ctx, &parameter_use.id, Exactness::Derived)?;
     }
     Ok(())
 }

@@ -204,20 +204,8 @@ fn decode_surfaces(
                 NurbsPoleGrid::Polynomial { rows }
             };
             let normal_reversed = node.common_header()?.0 == cadmpeg_ir::topology::Sense::Reversed;
-            propagate_resource!(ctx.charge_work(
-                cadmpeg_core::decode::u64_from_index(propagate_resource!(full_u
-                    .len()
-                    .checked_add(full_v.len())
-                    .and_then(|count| count.checked_mul(2))
-                    .and_then(|count| count.checked_add(descriptor.u_count))
-                    .ok_or_else(|| ctx.refuse_codec_limit(
-                        "validate NX NURBS surface",
-                        u64::MAX,
-                        u64::MAX
-                    )))),
-                "validate NX NURBS surface"
-            ));
-            let surface = NurbsSurface::new(
+            let surface = propagate_resource!(NurbsSurface::new(
+                ctx,
                 NurbsSurfaceAxis::new(
                     u32::from(descriptor.u_degree),
                     full_u,
@@ -230,10 +218,9 @@ fn decode_surfaces(
                 ),
                 poles,
                 normal_reversed,
-            );
+            ));
             let surface = match surface {
                 Ok(surface) => surface,
-                Err(NurbsError::ResourceLimit(limit)) => return Some(Err(limit.into())),
                 Err(error) => {
                     propagate_resource!(ctx.push_vec(
                         refusals,
@@ -366,26 +353,15 @@ fn decode_pcurves(
                 }
                 cadmpeg_ir::geometry::pcurve::PcurveNurbsPoles::Polynomial { points }
             };
-            propagate_resource!(ctx.charge_work(
-                cadmpeg_core::decode::u64_from_index(propagate_resource!(knots
-                    .len()
-                    .checked_mul(2)
-                    .ok_or_else(|| ctx.refuse_codec_limit(
-                        "validate NX NURBS curve",
-                        u64::MAX,
-                        u64::MAX
-                    )))),
-                "validate NX NURBS curve"
-            ));
-            let nurbs = cadmpeg_ir::geometry::pcurve::PcurveNurbs::new(
+            let nurbs = propagate_resource!(cadmpeg_ir::geometry::pcurve::PcurveNurbs::new(
+                ctx,
                 u32::from(descriptor.basis.degree),
                 knots,
                 poles,
                 descriptor.basis.periodic,
-            );
+            ));
             let nurbs = match nurbs {
                 Ok(nurbs) => nurbs,
-                Err(NurbsError::ResourceLimit(limit)) => return Some(Err(limit.into())),
                 Err(error) => {
                     propagate_resource!(ctx.push_vec(
                         refusals,
@@ -523,26 +499,15 @@ fn decode_curves(
                 }
                 cadmpeg_ir::geometry::nurbs::NurbsPoles3::Polynomial { points }
             };
-            propagate_resource!(ctx.charge_work(
-                cadmpeg_core::decode::u64_from_index(propagate_resource!(knots
-                    .len()
-                    .checked_mul(2)
-                    .ok_or_else(|| ctx.refuse_codec_limit(
-                        "validate NX NURBS curve",
-                        u64::MAX,
-                        u64::MAX
-                    )))),
-                "validate NX NURBS curve"
-            ));
-            let curve = NurbsCurve::new(
+            let curve = propagate_resource!(NurbsCurve::new(
+                ctx,
                 u32::from(descriptor.basis.degree),
                 knots,
                 poles,
                 descriptor.basis.periodic,
-            );
+            ));
             let curve = match curve {
                 Ok(curve) => curve,
-                Err(NurbsError::ResourceLimit(limit)) => return Some(Err(limit.into())),
                 Err(error) => {
                     propagate_resource!(ctx.push_vec(
                         refusals,

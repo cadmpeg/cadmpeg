@@ -67,7 +67,13 @@ fn geometry_edit_replaces_each_generated_configuration_partition() {
             name: Some(format!("Config {index}")),
             material: None,
             properties: BTreeMap::new(),
-            bodies: Some(vec![body.clone()].try_into().unwrap()),
+            bodies: Some(
+                cadmpeg_ir::features::DistinctMembers::try_from(
+                    vec![body.clone()],
+                    &cadmpeg_test_support::service_decode_context(),
+                )
+                .unwrap(),
+            ),
             parameter_values: BTreeMap::new(),
             parameter_overrides: BTreeMap::new(),
             feature_states: BTreeMap::new(),
@@ -235,7 +241,13 @@ fn encoder_writes_source_less_neutral_configurations() {
         name: Some("Metric".to_string()),
         material: Some("Steel".into()),
         properties: BTreeMap::from([(cadmpeg_core::nonblank_literal!("Finish"), "Ground".into())]),
-        bodies: Some((vec![ir.model.bodies[0].id.clone()]).try_into().unwrap()),
+        bodies: Some(
+            cadmpeg_ir::features::DistinctMembers::try_from(
+                vec![ir.model.bodies[0].id.clone()],
+                &cadmpeg_test_support::service_decode_context(),
+            )
+            .unwrap(),
+        ),
         parameter_values: BTreeMap::new(),
         parameter_overrides: BTreeMap::new(),
         feature_states: BTreeMap::new(),
@@ -256,7 +268,8 @@ fn encoder_writes_source_less_neutral_configurations() {
         feature_states: BTreeMap::new(),
         native_ref: None,
     });
-    ir.finalize();
+    ir.finalize(&cadmpeg_test_support::service_decode_context())
+        .expect("fixture ordering is admitted");
 
     let mut encoded = Vec::new();
     SldprtCodec
@@ -459,7 +472,13 @@ fn encoder_partitions_source_less_bodies_by_configuration() {
             name: format!("Config {index}").into(),
             material: None,
             properties: BTreeMap::new(),
-            bodies: Some((vec![body.clone()]).try_into().unwrap()),
+            bodies: Some(
+                cadmpeg_ir::features::DistinctMembers::try_from(
+                    vec![body.clone()],
+                    &cadmpeg_test_support::service_decode_context(),
+                )
+                .unwrap(),
+            ),
             parameter_values: BTreeMap::new(),
             parameter_overrides: BTreeMap::new(),
             feature_states: BTreeMap::new(),
@@ -1436,17 +1455,21 @@ fn semantic_writer_regenerates_modified_nurbs_carriers() {
             panic!("expected NURBS curve");
         };
         curve
-            .try_map_control_points(|index, point| {
-                let mut point = point.get();
-                if index == 1 {
-                    point.y += 250.0;
-                }
-                cadmpeg_ir::features::FinitePoint3::new(point).ok_or_else(|| {
-                    cadmpeg_ir::geometry::nurbs::NurbsError::Structure(
-                        "control_points contains a non-finite point".into(),
-                    )
-                })
-            })
+            .try_map_control_points(
+                |index, point| {
+                    let mut point = point.get();
+                    if index == 1 {
+                        point.y += 250.0;
+                    }
+                    cadmpeg_ir::features::FinitePoint3::new(point).ok_or_else(|| {
+                        cadmpeg_ir::geometry::nurbs::NurbsError::Structure(
+                            "control_points contains a non-finite point".into(),
+                        )
+                    })
+                },
+                &cadmpeg_test_support::service_decode_context(),
+            )
+            .expect("pole edit admission")
             .unwrap();
         let expected_curve = curve.clone();
         let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)) =
@@ -1456,17 +1479,21 @@ fn semantic_writer_regenerates_modified_nurbs_carriers() {
         };
         let target = surface.v_count() + 1;
         surface
-            .try_map_control_points(|index, pole| {
-                let mut pole = pole.get();
-                if index == target {
-                    pole.z += 500.0;
-                }
-                cadmpeg_ir::features::FinitePoint3::new(pole).ok_or_else(|| {
-                    cadmpeg_ir::geometry::nurbs::NurbsError::Structure(
-                        "control_points contains a non-finite point".into(),
-                    )
-                })
-            })
+            .try_map_control_points(
+                |index, pole| {
+                    let mut pole = pole.get();
+                    if index == target {
+                        pole.z += 500.0;
+                    }
+                    cadmpeg_ir::features::FinitePoint3::new(pole).ok_or_else(|| {
+                        cadmpeg_ir::geometry::nurbs::NurbsError::Structure(
+                            "control_points contains a non-finite point".into(),
+                        )
+                    })
+                },
+                &cadmpeg_test_support::service_decode_context(),
+            )
+            .expect("pole edit admission")
             .unwrap();
         let expected_surface = surface.clone();
         (expected_curve, expected_surface)

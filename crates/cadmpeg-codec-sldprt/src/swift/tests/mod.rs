@@ -160,7 +160,11 @@ fn neutral_feature(
         ordinal,
         name: Some(name.into()),
         suppressed: None,
-        dependencies: (dependencies).try_into().unwrap(),
+        dependencies: cadmpeg_ir::features::DistinctMembers::try_from(
+            dependencies,
+            &cadmpeg_test_support::service_decode_context(),
+        )
+        .unwrap(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,

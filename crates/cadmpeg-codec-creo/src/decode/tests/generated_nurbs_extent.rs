@@ -10,6 +10,7 @@ use cadmpeg_ir::math::{Point3, Vector3};
 
 fn translated_surface() -> NurbsSurface {
     NurbsSurface::from_lanes(
+        &cadmpeg_test_support::service_decode_context(),
         cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
             2,
             vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
@@ -26,6 +27,7 @@ fn translated_surface() -> NurbsSurface {
         ),
         false,
     )
+    .expect("fixture constructor admission")
     .expect("valid translated surface")
 }
 

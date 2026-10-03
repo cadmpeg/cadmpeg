@@ -19,6 +19,7 @@ use crate::records::{
 };
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
+use cadmpeg_ir::geometry::pcurve::evaluator::PcurveEvaluatorLanes;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::sketches::NativeOperandField;
 use std::collections::{BTreeMap, HashMap, HashSet};
@@ -5596,7 +5597,7 @@ pub(super) fn exact_atomic_constraint(
             if entities.len() >= 3 && dimension_entity_ids_distinct(ctx, entities)? =>
         {
             let members = copy_dimension_entity_members(ctx, entities)?;
-            let polygon = cadmpeg_ir::sketches::SketchPolygon::try_new_for_decode(
+            let polygon = cadmpeg_ir::sketches::SketchPolygon::try_new(
                 members,
                 ctx,
                 "f3d atomic polygon uniqueness",
@@ -6903,13 +6904,18 @@ pub(super) fn point_lies_on_sketch_geometry(
         }
         let tolerance = EPS_DIMENSIONS_POINT_LIES_ON_SKETCH_GEOMETRY_E9
             * (1.0 + point.u.abs().max(point.v.abs()));
-        let (control_points, weights) =
-            crate::design::geometry::nurbs_pcurve_evaluator_lanes(curve, ctx)?;
+        let lanes = PcurveEvaluatorLanes::new(
+            ctx,
+            curve.pole_rows(),
+            "f3d nurbs evaluator poles",
+            "f3d nurbs evaluator weights",
+        )?;
         return cadmpeg_ir::eval::nurbs_pcurve_contains_point(
+            ctx,
             curve.degree(),
             curve.knots(),
-            &control_points,
-            weights.as_deref(),
+            lanes.points(),
+            lanes.weights(),
             point,
             tolerance,
         )
@@ -7145,14 +7151,17 @@ fn exact_counted_offset(
             .map(|_| ()));
         let source = entities.get(&source_record_index)?;
         let result = entities.get(&result_record_index)?;
-        let distance = sketch_curve_offset(&source.geometry, &result.geometry).or_else(|| {
-            cadmpeg_ir::eval::fitted_nurbs_offset_frame_distance(
+        let distance = match sketch_curve_offset(&source.geometry, &result.geometry) {
+            Some(distance) => distance,
+            None => resource!(cadmpeg_ir::eval::fitted_nurbs_offset_frame_distance(
+                ctx,
                 &source.geometry,
                 &result.geometry,
                 linear_tolerance,
             )
-            .map(cadmpeg_ir::scalar::FiniteReal::get)
-        })?;
+            .map_err(CodecError::from))
+            .map(cadmpeg_ir::scalar::FiniteReal::get)?,
+        };
         if distance.abs() <= EPS_DIMENSIONS_EXACT_COUNTED_OFFSET_E9 {
             return None;
         }

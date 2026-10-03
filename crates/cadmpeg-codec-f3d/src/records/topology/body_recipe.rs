@@ -642,3 +642,5 @@ cadmpeg_core::named_optional_field!(deserialize_resolved_body_slot, i64, "resolv
 
 #[cfg(test)]
 mod tests;
+
+mod identity_rewrite;

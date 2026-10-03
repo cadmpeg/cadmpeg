@@ -669,7 +669,7 @@ fn decode_container<'a>(
             annotation_records: kernel_annotations,
         },
     ) = transfer_into_ir(ctx, &mut ir, "inventor", kernel_brep)?;
-    ir.set_native_unknowns("inventor", &[])?;
+    ir.set_native_unknowns(ctx, "inventor", &[])?;
     let geometry_transferred =
         !(ir.model.surfaces.is_empty() && ir.model.points.is_empty() && ir.model.faces.is_empty());
     let body_ids = ctx.collect_indexed_vec(
@@ -1466,8 +1466,8 @@ fn admit_kernel_annotation(
         "retain Inventor annotation stream name",
     )?;
     let name = cadmpeg_ir::StreamName::try_from(name).map_err(CodecError::malformed)?;
-    let stream = StreamHandle::new_for_decode(ctx, name, "collect Inventor kernel provenance")?;
-    annotations.note_for_decode(
+    let stream = StreamHandle::new(ctx, name, "collect Inventor kernel provenance")?;
+    annotations.note(
         ctx,
         &record.id,
         &stream,
@@ -1476,7 +1476,7 @@ fn admit_kernel_annotation(
     )?;
     for field in &record.derived_fields {
         annotations
-            .derived_for_decode(ctx, &record.id, field)
+            .derived(ctx, &record.id, field)
             .map_err(CodecError::from)?;
     }
     Ok(())

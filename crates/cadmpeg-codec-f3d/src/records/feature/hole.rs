@@ -502,3 +502,5 @@ mod tests {
         );
     }
 }
+
+mod identity_rewrite;

@@ -15,7 +15,7 @@ crate::ids::id_type!(
 );
 
 /// One used spreadsheet cell and its A1 address.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(try_from = "SpreadsheetCellWire", into = "SpreadsheetCellWire")]
 pub struct SpreadsheetCell {
@@ -33,15 +33,6 @@ struct SpreadsheetCellWire {
     address: String,
     /// Parameter that stores the cell expression and value.
     parameter: ParameterId,
-}
-
-impl From<SpreadsheetCell> for SpreadsheetCellWire {
-    fn from(cell: SpreadsheetCell) -> Self {
-        Self {
-            address: cell.address.a1(),
-            parameter: cell.parameter,
-        }
-    }
 }
 
 impl TryFrom<SpreadsheetCellWire> for SpreadsheetCell {
@@ -96,12 +87,12 @@ impl CellAddress {
     /// A1 spelling of this address.
     #[must_use]
     pub fn a1(self) -> String {
-        format!("{}{}", column_label(self.col), self.row)
+        self.to_string()
     }
 }
 
 /// One sheet and its ordered cell/layout state.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(try_from = "SpreadsheetWire", into = "SpreadsheetWire")]
 pub struct Spreadsheet {
     /// Globally unique sheet id.
@@ -234,34 +225,6 @@ struct SpreadsheetWire {
     native_ref: Option<String>,
 }
 
-impl From<Spreadsheet> for SpreadsheetWire {
-    fn from(sheet: Spreadsheet) -> Self {
-        Self {
-            id: sheet.id,
-            feature: sheet.feature,
-            cells: sheet.cells,
-            column_widths: sheet
-                .column_widths
-                .into_iter()
-                .map(|dimension| SpreadsheetDimensionWire {
-                    name: column_label(dimension.index.get()),
-                    pixels: dimension.pixels,
-                })
-                .collect(),
-            row_heights: sheet
-                .row_heights
-                .into_iter()
-                .map(|dimension| SpreadsheetDimensionWire {
-                    name: dimension.index.to_string(),
-                    pixels: dimension.pixels,
-                })
-                .collect(),
-            merged_ranges: sheet.merged_ranges,
-            native_ref: sheet.native_ref,
-        }
-    }
-}
-
 impl TryFrom<SpreadsheetWire> for Spreadsheet {
     type Error = String;
 
@@ -339,7 +302,7 @@ struct SpreadsheetDimensionWire {
 }
 
 /// Inclusive rectangular spreadsheet range.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(try_from = "SpreadsheetRangeWire", into = "SpreadsheetRangeWire")]
 pub struct SpreadsheetRange {
@@ -384,15 +347,6 @@ impl SpreadsheetRange {
     }
 }
 
-impl From<SpreadsheetRange> for SpreadsheetRangeWire {
-    fn from(range: SpreadsheetRange) -> Self {
-        Self {
-            start: range.start.a1(),
-            end: range.end.a1(),
-        }
-    }
-}
-
 impl TryFrom<SpreadsheetRangeWire> for SpreadsheetRange {
     type Error = String;
 
@@ -419,18 +373,6 @@ fn column_index(value: &str) -> Option<u32> {
             .checked_mul(26)?
             .checked_add(u32::from(byte - b'A' + 1))
     })
-}
-
-fn column_label(mut column: u32) -> String {
-    let mut label = Vec::new();
-    while column > 0 {
-        column -= 1;
-        label
-            .push(b"ABCDEFGHIJKLMNOPQRSTUVWXYZ"[cadmpeg_core::decode::index_from_u32(column % 26)]);
-        column /= 26;
-    }
-    label.reverse();
-    String::from_utf8(label).unwrap_or_default()
 }
 
 #[cfg(test)]
@@ -552,3 +494,7 @@ mod tests {
 
 // Each optional key below names itself in whatever it refuses.
 cadmpeg_core::named_optional_field!(deserialize_native_ref, String, "native_ref");
+
+mod identity_rewrite;
+
+mod serialization;

@@ -13,12 +13,14 @@ fn polygon_curve(points: &[[f64; 2]]) -> ProfileEntity {
     let last = *knots.last().expect("knots");
     knots.push(last);
     let curve = PcurveNurbs::from_lanes(
+        &cadmpeg_test_support::service_decode_context(),
         1,
         knots,
         points.iter().map(|p| Point2::new(p[0], p[1])).collect(),
         None,
         false,
     )
+    .expect("curve admission")
     .expect("curve");
     crate::decode::with_test_decode_ctx(|ctx| {
         ProfileEntity::new(ctx, SketchGeometry::nurbs(curve), false)
@@ -77,12 +79,14 @@ fn empty_extrusion_profile_is_withheld_before_containment() {
 #[test]
 fn singular_nurbs_is_excluded_before_profile_intersection() {
     let curve = PcurveNurbs::from_lanes(
+        &cadmpeg_test_support::service_decode_context(),
         1,
         vec![0.0, 0.0, 1.0, 1.0],
         vec![Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)],
         Some(vec![1.0, -1.0]),
         false,
     )
+    .expect("structural curve admission")
     .expect("structural curve");
     assert!(
         crate::decode::with_test_decode_ctx(|ctx| ProfileEntity::new(

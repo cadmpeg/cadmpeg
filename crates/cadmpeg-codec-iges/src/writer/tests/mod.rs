@@ -28,7 +28,7 @@ use crate::entities::curve_conversion::ANGULAR_TOLERANCE;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
-use cadmpeg_ir::eval::curve_point;
+
 use cadmpeg_ir::geometry::Curve;
 use cadmpeg_ir::geometry::CurveGeometry;
 use cadmpeg_ir::geometry::SolvedCurveGeometry;
@@ -778,12 +778,20 @@ fn reversed_hyperbola_uses_an_equivalent_reflected_conic_frame() {
     let range = [0.2, 1.1];
     let span = CurveSpan {
         range: cadmpeg_ir::units::FiniteVector::new(range).expect("finite test range"),
-        start: curve_point(&geometry, range[0])
-            .expect("start evaluates")
-            .get(),
-        end: curve_point(&geometry, range[1])
-            .expect("end evaluates")
-            .get(),
+        start: cadmpeg_ir::eval::decode::curve_point(
+            cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+            &geometry,
+            range[0],
+        )
+        .expect("start evaluates")
+        .get(),
+        end: cadmpeg_ir::eval::decode::curve_point(
+            cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+            &geometry,
+            range[1],
+        )
+        .expect("end evaluates")
+        .get(),
     };
     let entity = oriented_curve_entity(
         &cadmpeg_test_support::service_decode_context(),
@@ -1097,10 +1105,12 @@ fn face_loop_order_places_the_explicit_outer_loop_first() {
             face: face_id.clone(),
             boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
                 cadmpeg_ir::topology::LoopRing::new(
+                    &cadmpeg_test_support::service_decode_context(),
                     vec![cadmpeg_ir::ids::CoedgeId::mint("test:model:coedge#dummy")
                         .expect("identity grammar")],
                     Vec::new(),
                 )
+                .expect("fixture ring admission")
                 .expect("valid loop ring"),
             ),
         },
@@ -1109,10 +1119,12 @@ fn face_loop_order_places_the_explicit_outer_loop_first() {
             face: face_id,
             boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
                 cadmpeg_ir::topology::LoopRing::new(
+                    &cadmpeg_test_support::service_decode_context(),
                     vec![cadmpeg_ir::ids::CoedgeId::mint("test:model:coedge#dummy")
                         .expect("identity grammar")],
                     Vec::new(),
                 )
+                .expect("fixture ring admission")
                 .expect("valid loop ring"),
             ),
         },
@@ -1150,10 +1162,12 @@ fn face_loop_order_does_not_promote_an_unclassified_loop() {
             face: face_id.clone(),
             boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
                 cadmpeg_ir::topology::LoopRing::new(
+                    &cadmpeg_test_support::service_decode_context(),
                     vec![cadmpeg_ir::ids::CoedgeId::mint("test:model:coedge#dummy")
                         .expect("identity grammar")],
                     Vec::new(),
                 )
+                .expect("fixture ring admission")
                 .expect("valid loop ring"),
             ),
         },
@@ -1162,10 +1176,12 @@ fn face_loop_order_does_not_promote_an_unclassified_loop() {
             face: face_id,
             boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
                 cadmpeg_ir::topology::LoopRing::new(
+                    &cadmpeg_test_support::service_decode_context(),
                     vec![cadmpeg_ir::ids::CoedgeId::mint("test:model:coedge#dummy")
                         .expect("identity grammar")],
                     Vec::new(),
                 )
+                .expect("fixture ring admission")
                 .expect("valid loop ring"),
             ),
         },
@@ -1219,12 +1235,14 @@ fn unrepresentable_conic_coefficients_are_not_implemented() {
 #[test]
 fn negative_nurbs_weights_are_not_implemented() {
     let curve = cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
+        &cadmpeg_test_support::service_decode_context(),
         1,
         vec![0.0, 0.0, 1.0, 1.0],
         vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
         Some(vec![1.0, -1.0]),
         false,
     )
+    .expect("fixture constructor admission")
     .expect("the IR admits finite nonzero signed NURBS weights");
     assert!(matches!(
         curve_entity(
@@ -1243,6 +1261,7 @@ fn negative_nurbs_weights_are_not_implemented() {
     let axis =
         || cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false);
     let surface = cadmpeg_ir::geometry::nurbs::NurbsSurface::from_lanes(
+        &cadmpeg_test_support::service_decode_context(),
         axis(),
         axis(),
         cadmpeg_ir::geometry::nurbs::NurbsSurfaceLanes::new(
@@ -1254,6 +1273,7 @@ fn negative_nurbs_weights_are_not_implemented() {
         ),
         false,
     )
+    .expect("fixture constructor admission")
     .expect("the IR admits finite nonzero signed NURBS weights");
     assert!(matches!(
         surface_entities(
@@ -1271,6 +1291,7 @@ fn empty_nurbs_surface_domain_is_not_implemented() {
     let axis =
         || cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 0.0, 0.0], false);
     let surface = cadmpeg_ir::geometry::nurbs::NurbsSurface::from_lanes(
+        &cadmpeg_test_support::service_decode_context(),
         axis(),
         axis(),
         cadmpeg_ir::geometry::nurbs::NurbsSurfaceLanes::new(
@@ -1282,6 +1303,7 @@ fn empty_nurbs_surface_domain_is_not_implemented() {
         ),
         false,
     )
+    .expect("fixture constructor admission")
     .expect("the IR admits a nondecreasing knot vector with an empty active domain");
     assert!(matches!(
         surface_entities(
@@ -1412,8 +1434,13 @@ fn decreasing_polyline_parameters_are_not_implemented() {
     ]
     .try_into()
     .expect("nonempty polyline samples");
-    let polyline = PolylineCurve::new(PolylineSamples::Parameterized { vertices }, 0.0)
-        .expect("the IR admits finite strictly decreasing polyline parameters");
+    let polyline = PolylineCurve::new(
+        PolylineSamples::Parameterized { vertices },
+        0.0,
+        &cadmpeg_test_support::service_decode_context(),
+    )
+    .expect("polyline construction admission")
+    .expect("the IR admits finite strictly decreasing polyline parameters");
     assert!(matches!(
         curve_entity(
             &cadmpeg_test_support::service_decode_context(),

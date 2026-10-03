@@ -872,7 +872,7 @@ fn build_secondary_layouts(
         let vertex_ir = vertex_ir[vertex]
             .ok_or_else(|| malformed(ctx, name, "derived-grip vertex is deleted"))?;
         layouts[index_from_u32(vertex_ir)] = Some(
-            SubdVertexGripLayout::new(direction, wedges)
+            SubdVertexGripLayout::new(direction, wedges, ctx)?
                 .map_err(|error| malformed(ctx, name, error))?,
         );
     }
@@ -1709,14 +1709,14 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
                 sweep,
                 maps,
             } => (
-                SubdSymmetryKind::radial_from_parts(segments, sweep, maps)
+                SubdSymmetryKind::radial_from_parts(segments, sweep, maps, ctx)?
                     .map_err(|error| malformed(ctx, name, error))?,
                 Vec::new(),
                 Vec::new(),
                 Vec::new(),
             ),
         };
-        let symmetry = SubdSymmetry::new(kind, plane, face_pairs, edge_pairs, vertex_pairs)
+        let symmetry = SubdSymmetry::new(kind, plane, face_pairs, edge_pairs, vertex_pairs, ctx)?
             .map_err(|error| malformed(ctx, name, error))?;
         ctx.push_vec(&mut symmetries, symmetry, "project T-spline symmetries")?;
     }
@@ -1944,7 +1944,7 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
                 layer: None,
                 instance_path: Vec::new(),
             }),
-            cage: cadmpeg_ir::subd::SubdCage::new(vertices, edges, faces, symmetries)
+            cage: cadmpeg_ir::subd::SubdCage::new(vertices, edges, faces, symmetries, ctx)?
                 .map_err(|error| malformed(ctx, name, error))?,
         },
         unknown_record_kinds,

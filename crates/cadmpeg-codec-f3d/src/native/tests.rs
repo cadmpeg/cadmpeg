@@ -226,21 +226,38 @@ fn null_locus_native_retained_limit_refuses_before_owned_wire_conversion() {
         .take_while(|row| row.arena != name)
         .map(|row| row.arena.len())
         .sum::<usize>();
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes =
-        u64::try_from(prefix_names + name.len() + record_bytes - 1).unwrap();
-    let (limited, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut retained_limit = u64::try_from(prefix_names + name.len() + record_bytes - 1).unwrap();
+    let mut reached_serialization = false;
     let mut namespace = cadmpeg_ir::NativeNamespace::default();
-    OWNED_WIRE_CONVERSIONS.with(|count| count.set(0));
-    let error = native.store(&limited, &mut namespace).unwrap_err();
-    assert_eq!(OWNED_WIRE_CONVERSIONS.with(std::cell::Cell::get), 0);
-    assert!(matches!(
-        cadmpeg_core::CodecError::from(error),
-        cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == ResourceDimension::RetainedBytes
-                && limit.operation == "serialize native record"
-    ));
+    for _ in 0..4096 {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = retained_limit;
+        let (limited, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        namespace.arenas_mut().clear();
+        OWNED_WIRE_CONVERSIONS.with(|count| count.set(0));
+        let error = native.store(&limited, &mut namespace).unwrap_err();
+        assert_eq!(OWNED_WIRE_CONVERSIONS.with(std::cell::Cell::get), 0);
+        assert!(namespace.arenas().values().all(Vec::is_empty));
+        let cadmpeg_core::CodecError::ResourceLimit(first) = cadmpeg_core::CodecError::from(error)
+        else {
+            panic!("native storage refusal");
+        };
+        assert_eq!(first.dimension, ResourceDimension::RetainedBytes);
+        assert_eq!(first.limit, retained_limit);
+        assert_eq!(limited.resource_refusal(), Some(first));
+        if first.operation == "serialize native record" {
+            reached_serialization = true;
+            break;
+        }
+        let next = first.used.checked_add(first.additional).unwrap();
+        assert!(next > retained_limit);
+        retained_limit = next;
+    }
+    assert!(
+        reached_serialization,
+        "serialization admission must refuse before an owned wire conversion"
+    );
     native
         .store(
             &cadmpeg_test_support::service_decode_context(),
@@ -373,7 +390,7 @@ fn diff_reports_design_material_assignment_changes() {
         .arenas_mut()
         .get_mut("design_material_assignments")
         .unwrap()[0];
-    let mut assignment_fields = assignment.fields();
+    let mut assignment_fields = assignment.fields().clone();
     assignment_fields.insert("entity_suffix".into(), serde_json::json!(123_456));
     *assignment = cadmpeg_ir::NativeRecord::new(
         cadmpeg_ir::ids::Identity::new(assignment.id()).expect("valid identity"),
@@ -665,17 +682,21 @@ fn decode_transfers_embedded_tolerant_coedge_use_curves() {
         panic!("embedded use curve must be NURBS")
     };
     nurbs
-        .try_map_control_points(|index, point| {
-            let mut point = point.get();
-            if index == 0 {
-                point.x += 1.0;
-            }
-            cadmpeg_ir::features::FinitePoint3::new(point).ok_or_else(|| {
-                cadmpeg_ir::geometry::nurbs::NurbsError::Structure(
-                    "control_points contains a non-finite point".into(),
-                )
-            })
-        })
+        .try_map_control_points(
+            |index, point| {
+                let mut point = point.get();
+                if index == 0 {
+                    point.x += 1.0;
+                }
+                cadmpeg_ir::features::FinitePoint3::new(point).ok_or_else(|| {
+                    cadmpeg_ir::geometry::nurbs::NurbsError::Structure(
+                        "control_points contains a non-finite point".into(),
+                    )
+                })
+            },
+            &cadmpeg_test_support::service_decode_context(),
+        )
+        .expect("pole edit admission")
         .unwrap();
     let expected = nurbs.clone();
     let mut preserved = Vec::new();
@@ -987,7 +1008,9 @@ fn generated_cache_first_spring_decodes_and_writes_source_less() {
 
     let (mut source_less, _, _) = result.into_parts();
     source_less.source = None;
-    source_less.set_native_unknowns("f3d", &[]).unwrap();
+    source_less
+        .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+        .unwrap();
     let mut encoded = Vec::new();
     F3dCodec
         .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
@@ -1046,7 +1069,9 @@ fn generated_cache_first_parametric_curve_decodes_and_writes_source_less() {
 
     let (mut source_less, _, _) = result.into_parts();
     source_less.source = None;
-    source_less.set_native_unknowns("f3d", &[]).unwrap();
+    source_less
+        .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+        .unwrap();
     let mut encoded = Vec::new();
     F3dCodec
         .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
@@ -1120,7 +1145,9 @@ fn generated_cache_first_surface_offset_decodes_and_writes_source_less() {
 
     let (mut source_less, _, _) = result.into_parts();
     source_less.source = None;
-    source_less.set_native_unknowns("f3d", &[]).unwrap();
+    source_less
+        .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+        .unwrap();
     let mut encoded = Vec::new();
     F3dCodec
         .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)

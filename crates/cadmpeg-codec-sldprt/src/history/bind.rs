@@ -242,7 +242,7 @@ pub(crate) fn bind_unique_sketch_feature(
         };
         let native_ref = copy_binding_text(ctx, native_ref)?;
         if !features[*index].dependencies.contains(&base_dependency) {
-            features[*index].dependencies.insert_for_decode(
+            features[*index].dependencies.insert(
                 ctx,
                 copy_binding_feature_id(ctx, &base_dependency)?,
                 "bind SLDPRT sketch alias dependency",
@@ -290,7 +290,7 @@ pub(crate) fn bind_unique_sketch_feature(
                         binding.has_profile,
                     )? && !dependencies.contains(&binding.feature_id)
                     {
-                        dependencies.insert_for_decode(
+                        dependencies.insert(
                             ctx,
                             copy_binding_feature_id(ctx, &binding.feature_id)?,
                             "bind SLDPRT sketch dependency",
@@ -655,9 +655,11 @@ pub(crate) fn derive_feature_outputs(
                     outputs.push(copy_output_body_id(ctx, output.as_str())?);
                 }
                 outputs.push(body);
-                feature.evaluation.set_outputs(
-                    cadmpeg_ir::features::DistinctMembers::try_from_for_decode(outputs, ctx)?,
-                );
+                feature
+                    .evaluation
+                    .set_outputs(cadmpeg_ir::features::DistinctMembers::try_from(
+                        outputs, ctx,
+                    )?);
             }
         }
     }
@@ -704,9 +706,11 @@ pub(crate) fn derive_feature_outputs(
             for body in bodies {
                 outputs.push(copy_output_body_id(ctx, body.as_str())?);
             }
-            feature.evaluation.set_outputs(
-                cadmpeg_ir::features::DistinctMembers::try_from_for_decode(outputs, ctx)?,
-            );
+            feature
+                .evaluation
+                .set_outputs(cadmpeg_ir::features::DistinctMembers::try_from(
+                    outputs, ctx,
+                )?);
         }
     }
     Ok(())

@@ -11,7 +11,7 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::eval::finite_or_refusal;
 use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::geometry::{
-    nurbs::{KnotVector, NurbsCurve, NurbsPoles3},
+    nurbs::{KnotVector, NurbsCurve},
     Curve, CurveGeometry, SolvedCurveGeometry,
 };
 use cadmpeg_ir::ids::{BodyId, CurveId, EdgeId, FaceId, PointId, SurfaceId, VertexId};
@@ -1280,7 +1280,7 @@ pub(super) fn curve_geometry_coplanar(
             let mut valid = true;
             for segment in segments {
                 ctx.charge_work(1, "iges coplanar composite segments")?;
-                let Some(curve) = index.curves(segment.curve.as_str()) else {
+                let Some(curve) = index.curves(segment.curve.as_str(), ctx)? else {
                     valid = false;
                     break;
                 };
@@ -2475,7 +2475,7 @@ pub(crate) fn project_geometry(
         let domain_end = finite_knots[control_count];
         let mut raw_knots = ctx.collection_vec(finite_knots.len(), "iges NURBS admitted knots")?;
         raw_knots.extend(finite_knots.into_iter().map(FiniteReal::get));
-        let Ok(knots) = KnotVector::new(raw_knots) else {
+        let Ok(knots) = KnotVector::new(ctx, raw_knots)? else {
             super::push_entity_loss(
                 ctx,
                 &mut losses,
@@ -2740,29 +2740,30 @@ pub(crate) fn project_geometry(
             values.extend(native_weights.into_iter().map(NonZeroReal::from));
             Some(values)
         };
-        let nurbs =
-            match NurbsPoles3::from_checked_lanes(control_points, weights).and_then(|poles| {
-                // IGES PROP4 is informational; neutral evaluation uses the
-                // serialized active carrier without periodic parameter wrapping.
-                NurbsCurve::new(degree, knots, poles, false)
-            }) {
-                Ok(nurbs) => nurbs,
-                Err(error) => {
-                    super::push_entity_loss(
-                        ctx,
-                        &mut losses,
-                        entry,
-                        format_args!("spline cardinalities are inconsistent: {error}"),
-                    )?;
-                    continue;
-                }
-            };
-        let Some(start) =
-            finite_or_refusal(cadmpeg_ir::eval::decode::nurbs_curve_point_at_for_decode(
-                ctx,
-                &nurbs,
-                parameter_range[0].get(),
-            )?)?
+        // IGES PROP4 is informational; neutral evaluation uses the
+        // serialized active carrier without periodic parameter wrapping.
+        let nurbs = match NurbsCurve::from_checked_lanes(
+            ctx,
+            degree,
+            knots,
+            control_points,
+            weights,
+            false,
+        )? {
+            Ok(nurbs) => nurbs,
+            Err(error) => {
+                super::push_entity_loss(
+                    ctx,
+                    &mut losses,
+                    entry,
+                    format_args!("spline cardinalities are inconsistent: {error}"),
+                )?;
+                continue;
+            }
+        };
+        let Some(start) = finite_or_refusal(cadmpeg_ir::eval::decode::outer_refusal(
+            cadmpeg_ir::eval::decode::nurbs_curve_point_at(ctx, &nurbs, parameter_range[0].get()),
+        )?)?
         else {
             super::push_entity_loss(
                 ctx,
@@ -2772,12 +2773,9 @@ pub(crate) fn project_geometry(
             )?;
             continue;
         };
-        let Some(end) =
-            finite_or_refusal(cadmpeg_ir::eval::decode::nurbs_curve_point_at_for_decode(
-                ctx,
-                &nurbs,
-                parameter_range[1].get(),
-            )?)?
+        let Some(end) = finite_or_refusal(cadmpeg_ir::eval::decode::outer_refusal(
+            cadmpeg_ir::eval::decode::nurbs_curve_point_at(ctx, &nurbs, parameter_range[1].get()),
+        )?)?
         else {
             super::push_entity_loss(
                 ctx,

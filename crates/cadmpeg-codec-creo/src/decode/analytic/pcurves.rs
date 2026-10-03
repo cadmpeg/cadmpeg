@@ -165,11 +165,13 @@ fn map_two_chart_endpoint_sets(
             let Some(surface) = surfaces[face_index] else {
                 continue;
             };
-            points[face_index] = match cadmpeg_ir::eval::decode::surface_point_for_decode(
-                ctx,
-                source_carriers.surface_geometry(surface),
-                sample[face_index][0],
-                sample[face_index][1],
+            points[face_index] = match cadmpeg_ir::eval::decode::outer_refusal(
+                cadmpeg_ir::eval::decode::surface_point(
+                    ctx,
+                    source_carriers.surface_geometry(surface),
+                    sample[face_index][0],
+                    sample[face_index][1],
+                ),
             )? {
                 Ok(point) => Some(Ok(point)),
                 Err(failure) => failure.non_finite()?.map(Err),
@@ -472,9 +474,10 @@ fn pcurve_plane_carrier_status(
             endpoints[0][0].mul_add(1.0 - fraction, endpoints[1][0] * fraction),
             endpoints[0][1].mul_add(1.0 - fraction, endpoints[1][1] * fraction),
         ];
-        let Some(point) = cadmpeg_ir::eval::finite_or_refusal(
-            cadmpeg_ir::eval::decode::surface_point_for_decode(ctx, surface, uv[0], uv[1])?,
-        )?
+        let Some(point) =
+            cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::decode::outer_refusal(
+                cadmpeg_ir::eval::decode::surface_point(ctx, surface, uv[0], uv[1]),
+            )?)?
         else {
             return Ok(PcurveCarrierStatus::Rejected);
         };
@@ -555,12 +558,12 @@ fn pcurve_endpoint_carrier_status(
             break;
         }
         let Some(point) = cadmpeg_ir::eval::finite_or_refusal(
-            cadmpeg_ir::eval::decode::surface_point_for_decode(
+            cadmpeg_ir::eval::decode::outer_refusal(cadmpeg_ir::eval::decode::surface_point(
                 ctx,
                 source_carriers.surface_geometry(surface),
                 uv[0],
                 uv[1],
-            )?,
+            ))?,
         )?
         else {
             valid = false;
@@ -619,9 +622,10 @@ fn support_cone_witness_matches(
     plane: PlaneEquation,
 ) -> Result<bool, cadmpeg_core::CodecError> {
     for uv in endpoints {
-        let Some(point) = cadmpeg_ir::eval::finite_or_refusal(
-            cadmpeg_ir::eval::decode::surface_point_for_decode(ctx, geometry, uv[0], uv[1])?,
-        )?
+        let Some(point) =
+            cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::decode::outer_refusal(
+                cadmpeg_ir::eval::decode::surface_point(ctx, geometry, uv[0], uv[1]),
+            )?)?
         else {
             return Ok(false);
         };
@@ -822,11 +826,13 @@ fn map_pcurve_paths(
         // A non-finite endpoint is a mapped endpoint; the path comparisons
         // read it as a mismatch.
         let [first, second] = endpoints.map(|uv| -> Result<_, cadmpeg_core::CodecError> {
-            let point = match cadmpeg_ir::eval::decode::surface_point_for_decode(
-                ctx,
-                source_carriers.surface_geometry(surface),
-                uv[0],
-                uv[1],
+            let point = match cadmpeg_ir::eval::decode::outer_refusal(
+                cadmpeg_ir::eval::decode::surface_point(
+                    ctx,
+                    source_carriers.surface_geometry(surface),
+                    uv[0],
+                    uv[1],
+                ),
             )? {
                 Ok(point) => point.get(),
                 Err(failure) => match failure.non_finite()? {
@@ -1316,9 +1322,9 @@ fn linear_pcurve_carrier(
     Ok(match surface {
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(_)) => {
             let [first, second] = endpoints.map(|uv| {
-                cadmpeg_ir::eval::finite_or_refusal(
-                    cadmpeg_ir::eval::decode::surface_point_for_decode(ctx, surface, uv[0], uv[1])?,
-                )
+                cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::decode::outer_refusal(
+                    cadmpeg_ir::eval::decode::surface_point(ctx, surface, uv[0], uv[1]),
+                )?)
                 .map(|point| point.map(|point| [point.x, point.y, point.z]))
             });
             let [Some(first), Some(second)] = [first?, second?] else {
@@ -1378,9 +1384,9 @@ fn linear_pcurve_carrier(
         }
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(_)) if { start[0] == end[0] } => {
             let [first, second] = endpoints.map(|uv| {
-                cadmpeg_ir::eval::finite_or_refusal(
-                    cadmpeg_ir::eval::decode::surface_point_for_decode(ctx, surface, uv[0], uv[1])?,
-                )
+                cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::decode::outer_refusal(
+                    cadmpeg_ir::eval::decode::surface_point(ctx, surface, uv[0], uv[1]),
+                )?)
                 .map(|point| point.map(|point| [point.x, point.y, point.z]))
             });
             let [Some(first), Some(second)] = [first?, second?] else {
@@ -1586,8 +1592,8 @@ pub(in crate::decode) fn transfer_analytic_pcurve_carriers(
             // evaluable; only an endpoint with no value is not.
             let mut evaluable = true;
             for uv in endpoints {
-                match cadmpeg_ir::eval::decode::surface_point_for_decode(
-                    ctx, geometry, uv[0], uv[1],
+                match cadmpeg_ir::eval::decode::outer_refusal(
+                    cadmpeg_ir::eval::decode::surface_point(ctx, geometry, uv[0], uv[1]),
                 )? {
                     Err(cadmpeg_ir::eval::EvaluationFailure::ResourceLimit(limit)) => {
                         return Err(limit.into())
@@ -1706,9 +1712,10 @@ pub(in crate::decode) fn transfer_analytic_pcurve_carriers(
                 break;
             }
             for parameter in [0.0, 0.25, 0.5, 0.75, 1.0] {
-                let point = cadmpeg_ir::eval::finite_or_refusal(
-                    cadmpeg_ir::eval::decode::curve_point_for_decode(ctx, candidate, parameter)?,
-                )?;
+                let point =
+                    cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::decode::outer_refusal(
+                        cadmpeg_ir::eval::decode::curve_point(ctx, candidate, parameter),
+                    )?)?;
                 if !point.is_some_and(|point| {
                     curve_contains_points(geometry, [[point.x, point.y, point.z]; 2])
                 }) {
@@ -1997,8 +2004,11 @@ pub(super) fn native_pcurve_midpoint(
 ) -> Result<Option<[f64; 3]>, cadmpeg_core::CodecError> {
     // A point outside the finite range, mapped or on the edge, aligns with
     // no point.
-    let [first, second] = endpoints
-        .map(|uv| cadmpeg_ir::eval::decode::surface_point_for_decode(ctx, surface, uv[0], uv[1]));
+    let [first, second] = endpoints.map(|uv| {
+        cadmpeg_ir::eval::decode::outer_refusal(cadmpeg_ir::eval::decode::surface_point(
+            ctx, surface, uv[0], uv[1],
+        ))
+    });
     let ([Some(first), Some(second)], [Some(start), Some(end)]) = (
         [
             cadmpeg_ir::eval::finite_or_refusal(first?)?,
@@ -2014,15 +2024,16 @@ pub(super) fn native_pcurve_midpoint(
         .then_some(()));
     // A midpoint outside the finite range is returned as the evaluation
     // reached it.
-    let point = match cadmpeg_ir::eval::decode::surface_point_for_decode(
-        ctx,
-        surface,
-        f64::midpoint(endpoints[0][0], endpoints[1][0]),
-        f64::midpoint(endpoints[0][1], endpoints[1][1]),
-    )? {
-        Ok(point) => point.get(),
-        Err(failure) => require_some!(failure.non_finite()?),
-    };
+    let point =
+        match cadmpeg_ir::eval::decode::outer_refusal(cadmpeg_ir::eval::decode::surface_point(
+            ctx,
+            surface,
+            f64::midpoint(endpoints[0][0], endpoints[1][0]),
+            f64::midpoint(endpoints[0][1], endpoints[1][1]),
+        ))? {
+            Ok(point) => point.get(),
+            Err(failure) => require_some!(failure.non_finite()?),
+        };
     Ok(Some(<[f64; 3]>::from(point)))
 }
 
@@ -2076,8 +2087,11 @@ fn oriented_native_pcurve_endpoints(
 ) -> Result<Option<[[f64; 2]; 2]>, cadmpeg_core::CodecError> {
     // A point outside the finite range, mapped or traversed, aligns with no
     // point.
-    let [first, second] = endpoints
-        .map(|uv| cadmpeg_ir::eval::decode::surface_point_for_decode(ctx, surface, uv[0], uv[1]));
+    let [first, second] = endpoints.map(|uv| {
+        cadmpeg_ir::eval::decode::outer_refusal(cadmpeg_ir::eval::decode::surface_point(
+            ctx, surface, uv[0], uv[1],
+        ))
+    });
     let mapped = [
         cadmpeg_ir::eval::finite_or_refusal(first?)?,
         cadmpeg_ir::eval::finite_or_refusal(second?)?,
@@ -2352,12 +2366,13 @@ pub(in crate::decode) fn planar_curve_pcurve(
                         return None;
                     }
                 };
-                match PcurveNurbs::from_admitted_rows(
-                    nurbs.degree(),
-                    knots,
-                    poles,
-                    nurbs.periodic(),
-                ) {
+                match match PcurveNurbs::new(ctx, nurbs.degree(), knots, poles, nurbs.periodic()) {
+                    Ok(result) => result,
+                    Err(error) => {
+                        resource_error = Some(error);
+                        return None;
+                    }
+                } {
                     Ok(nurbs) => Some(PcurveGeometry::Nurbs { nurbs }),
                     Err(error) => {
                         refusal.note_checked(
@@ -2950,6 +2965,7 @@ mod tests {
                     .expect("identity grammar"),
                 geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
                     NurbsSurface::from_lanes(
+                        &cadmpeg_test_support::service_decode_context(),
                         cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
                             1,
                             vec![0.0, 0.0, 1.0, 1.0],
@@ -2969,6 +2985,7 @@ mod tests {
                         ),
                         false,
                     )
+                    .expect("fixture constructor admission")
                     .expect("valid test surface"),
                 )),
                 source_object: None,

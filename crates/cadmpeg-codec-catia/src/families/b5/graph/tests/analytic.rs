@@ -1584,6 +1584,7 @@ fn offset_surface_accepts_an_identity_checked_class_31_cache() {
     assert!(is_referenced_geometry_class(0xb5, 0x31));
     let source = B5Surface::Nurbs(
         NurbsSurface::from_lanes(
+            &cadmpeg_test_support::service_decode_context(),
             cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
             cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
             cadmpeg_ir::geometry::nurbs::NurbsSurfaceLanes::new(
@@ -1595,6 +1596,7 @@ fn offset_surface_accepts_an_identity_checked_class_31_cache() {
             ),
             false,
         )
+        .expect("fixture constructor admission")
         .expect("valid bilinear NURBS"),
     );
     let surfaces = BTreeMap::from([(3, source.clone()), (4, source)]);

@@ -293,7 +293,7 @@ pub struct Provenance<Location> {
 ///
 /// The empty string is not a stream name; the root stream is the absence of
 /// one. Build a compile-time name with [`crate::stream_name!`].
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Deserialize)]
 #[serde(try_from = "String", into = "String")]
 pub struct StreamName(std::borrow::Cow<'static, str>);
 
@@ -347,11 +347,17 @@ impl StreamName {
 
     /// Append a value to an admitted stream-name prefix.
     ///
-    /// The receiver already proves that the resulting name is non-empty, so
-    /// composing a generated suffix has no fallible construction path.
-    #[must_use]
-    pub fn with_suffix(self, suffix: impl fmt::Display) -> Self {
-        Self(std::borrow::Cow::Owned(format!("{}{}", self.0, suffix)))
+    /// The prefix proves non-empty output. The caller admits the formatted storage.
+    pub fn with_suffix(
+        self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        suffix: impl fmt::Display,
+        operation: &'static str,
+    ) -> Result<Self, cadmpeg_core::CodecError> {
+        Ok(Self(std::borrow::Cow::Owned(ctx.format_retained(
+            format_args!("{}{}", self.0, suffix),
+            operation,
+        )?)))
     }
 }
 
@@ -584,20 +590,6 @@ struct AnnotationProvenanceWire {
     tag: Option<String>,
 }
 
-impl Serialize for Provenance<AnnotationLocation> {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        AnnotationProvenanceWire {
-            stream: (*self.location.stream).clone(),
-            offset: self.offset,
-            tag: self.tag.clone(),
-        }
-        .serialize(serializer)
-    }
-}
-
 impl<'de> Deserialize<'de> for Provenance<AnnotationLocation> {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
@@ -645,17 +637,6 @@ struct SourceProvenanceWire {
     tag: Option<String>,
 }
 
-impl From<Provenance<SourceLocation>> for SourceProvenanceWire {
-    fn from(provenance: Provenance<SourceLocation>) -> Self {
-        Self {
-            format: provenance.location.format,
-            stream: provenance.location.stream,
-            offset: provenance.offset,
-            tag: provenance.tag,
-        }
-    }
-}
-
 impl From<SourceProvenanceWire> for Provenance<SourceLocation> {
     fn from(wire: SourceProvenanceWire) -> Self {
         Self {
@@ -666,15 +647,6 @@ impl From<SourceProvenanceWire> for Provenance<SourceLocation> {
             offset: wire.offset,
             tag: wire.tag,
         }
-    }
-}
-
-impl Serialize for Provenance<SourceLocation> {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        SourceProvenanceWire::from(self.clone()).serialize(serializer)
     }
 }
 
@@ -794,9 +766,74 @@ mod tests {
 
     #[test]
     fn stream_name_composition_keeps_the_admitted_prefix() {
+        let ctx = cadmpeg_test_support::service_decode_context();
         let prefix = crate::stream_name!("codec:");
-        assert_eq!(prefix.clone().with_suffix("").as_str(), "codec:");
-        assert_eq!(prefix.with_suffix(7).as_str(), "codec:7");
+        assert_eq!(
+            prefix
+                .clone()
+                .with_suffix(&ctx, "", "stream suffix")
+                .unwrap()
+                .as_str(),
+            "codec:"
+        );
+        assert_eq!(
+            prefix
+                .with_suffix(&ctx, 7, "stream suffix")
+                .unwrap()
+                .as_str(),
+            "codec:7"
+        );
+    }
+
+    #[test]
+    fn stream_suffix_preserves_the_original_storage_refusal() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        use cadmpeg_core::CodecError;
+        for dimension in [
+            ResourceDimension::RetainedBytes,
+            ResourceDimension::WorkUnits,
+            ResourceDimension::MaterializedBytes,
+        ] {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            match dimension {
+                ResourceDimension::RetainedBytes => policy.limits.max_retained_bytes = 0,
+                ResourceDimension::WorkUnits => policy.limits.max_work_units = 0,
+                ResourceDimension::MaterializedBytes => policy.limits.max_materialized_bytes = 0,
+                _ => unreachable!(),
+            }
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            let create = || crate::stream_name!("codec:").with_suffix(&ctx, 7, "stream suffix");
+            let result = if dimension == ResourceDimension::MaterializedBytes {
+                ctx.with_scoped_storage("temporary stream name", create)
+                    .map(|_| ())
+            } else {
+                create().map(|_| ())
+            };
+            let Err(CodecError::ResourceLimit(limit)) = result else {
+                panic!("suffix must refuse");
+            };
+            assert_eq!(limit.dimension, dimension);
+            assert_eq!(limit.operation, "stream suffix");
+            assert!(
+                matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(original)) if original == limit)
+            );
+        }
+    }
+
+    #[test]
+    fn stream_suffix_uses_bytes_without_collection_slots() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = 0;
+        policy.limits.max_materialized_bytes = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let name = crate::stream_name!("codec:")
+            .with_suffix(&ctx, 7, "stream suffix")
+            .unwrap();
+        assert_eq!(name.as_str(), "codec:7");
+        ctx.finish_session().unwrap();
     }
 
     #[test]
@@ -820,3 +857,7 @@ cadmpeg_core::named_optional_field!(deserialize_visible, bool, "visible");
 cadmpeg_core::named_optional_field!(deserialize_layer, String, "layer");
 cadmpeg_core::named_optional_field!(deserialize_tag, String, "tag");
 cadmpeg_core::named_optional_field!(deserialize_stream, StreamName, "stream");
+
+mod identity_rewrite;
+
+mod serialization;

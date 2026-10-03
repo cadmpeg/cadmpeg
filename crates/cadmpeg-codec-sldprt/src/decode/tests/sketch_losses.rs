@@ -107,7 +107,9 @@ fn typed_native_operands_are_reported_as_design_losses() {
                 operands: cadmpeg_ir::features::CombineOperands::new(
                     BodySelection::Native("target".into()),
                     BodySelection::Native("tools".into()),
+                    &cadmpeg_test_support::service_decode_context(),
                 )
+                .expect("operand admission")
                 .unwrap(),
 
                 op: cadmpeg_ir::features::BooleanKind::Join,

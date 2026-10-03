@@ -805,3 +805,5 @@ fn inherited_attribute_target(
 
 #[cfg(test)]
 mod tests;
+
+mod identity_rewrite;

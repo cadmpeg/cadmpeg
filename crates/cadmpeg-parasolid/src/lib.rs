@@ -457,15 +457,14 @@ mod tests {
         }
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        // Two declared fields each admit the conservative B-tree insertion path.
+        // Two declaration keys share one backing node; their copies use 13 + 9 text bytes.
         let node_bytes = 11
             * (std::mem::size_of::<cadmpeg_core::text::NonBlankString>()
                 + std::mem::size_of::<String>())
             + 16 * std::mem::size_of::<usize>()
             + 2 * std::mem::align_of::<String>();
-        let path_nodes = 1 + 2; // empty root, then one populated insertion path
         policy.limits.max_retained_bytes =
-            13 + 9 + cadmpeg_core::decode::u64_from_index(path_nodes * node_bytes);
+            13 + 9 + cadmpeg_core::decode::u64_from_index(node_bytes);
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
         let error = classify_layer(
             &ctx,

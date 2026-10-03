@@ -1000,13 +1000,13 @@ impl CodecBackend for FcstdCodec {
             ir.model.curves = curve_transfer.curves;
             for (owner, procedural) in curve_transfer.procedural {
                 ir.model
-                    .add_procedural_curve_for_decode(ctx, &owner, procedural)?
+                    .add_procedural_curve(ctx, &owner, procedural)?
                     .map_err(|error| CodecError::malformed(error.to_string()))?;
             }
             ir.model.surfaces = surface_transfer.surfaces;
             for (owner, procedural) in surface_transfer.procedural {
                 ir.model
-                    .add_procedural_surface_for_decode(ctx, &owner, procedural)?
+                    .add_procedural_surface(ctx, &owner, procedural)?
                     .map_err(|error| CodecError::malformed(error.to_string()))?;
             }
             geometry_transferred |= application_geometry::transfer(

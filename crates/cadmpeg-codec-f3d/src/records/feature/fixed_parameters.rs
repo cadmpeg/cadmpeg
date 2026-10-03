@@ -511,3 +511,5 @@ pub(crate) struct DesignFixedChamferDistance {
     /// Byte offset of the scalar.
     pub(crate) value_offset: u64,
 }
+
+mod identity_rewrite;

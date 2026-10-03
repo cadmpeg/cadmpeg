@@ -224,10 +224,26 @@ fn surface_stitch_fixture() -> StitchFixture {
     let input_topologies = vec![FeatureInputTopology {
         id: crate::ids::feature_input_topology_id(&feature_id, 1),
         input_of: feature_id.clone(),
-        bodies: (Vec::new()).try_into().unwrap(),
-        faces: (Vec::new()).try_into().unwrap(),
-        edges: (Vec::new()).try_into().unwrap(),
-        vertices: (Vec::new()).try_into().unwrap(),
+        bodies: cadmpeg_ir::features::DistinctMembers::try_from(
+            Vec::new(),
+            &cadmpeg_test_support::service_decode_context(),
+        )
+        .unwrap(),
+        faces: cadmpeg_ir::features::DistinctMembers::try_from(
+            Vec::new(),
+            &cadmpeg_test_support::service_decode_context(),
+        )
+        .unwrap(),
+        edges: cadmpeg_ir::features::DistinctMembers::try_from(
+            Vec::new(),
+            &cadmpeg_test_support::service_decode_context(),
+        )
+        .unwrap(),
+        vertices: cadmpeg_ir::features::DistinctMembers::try_from(
+            Vec::new(),
+            &cadmpeg_test_support::service_decode_context(),
+        )
+        .unwrap(),
         native_ref: None,
     }];
     StitchFixture {

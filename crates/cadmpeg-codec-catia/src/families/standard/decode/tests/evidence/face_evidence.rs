@@ -891,13 +891,13 @@ fn a_native_circle_range_reads_from_the_finite_support_when_its_partner_overflow
     let native = overflowing_cone_support([0.0, 1.5 * std::f64::consts::PI]);
     assert_eq!(
         native_support_circle_param_range(
+            &cadmpeg_test_support::service_decode_context(),
             &native,
             Point3::new(0.0, 0.0, 0.0),
             1.0,
             Vector3::new(0.0, 0.0, 1.0),
             Vector3::new(1.0, 0.0, 0.0),
-            Point3::new(1.0, 0.0, 0.0),
-            Point3::new(0.0, -1.0, 0.0)
+            [Point3::new(1.0, 0.0, 0.0), Point3::new(0.0, -1.0, 0.0)],
         ),
         Ok(Some([0.0, 1.5 * std::f64::consts::PI]))
     );
@@ -920,7 +920,13 @@ fn a_native_endpoint_pair_reads_from_the_finite_support_when_its_partner_overflo
         })
         .collect::<Vec<_>>();
     assert_eq!(
-        standard_native_support_endpoint_pair(&native, &points, &[0, 1], None),
+        standard_native_support_endpoint_pair(
+            &cadmpeg_test_support::service_decode_context(),
+            &native,
+            &points,
+            &[0, 1],
+            None
+        ),
         Ok(Some([0, 1]))
     );
 }
@@ -956,7 +962,13 @@ fn a_native_endpoint_pair_reads_from_the_finite_support_when_its_placed_partner_
         })
         .collect::<Vec<_>>();
     assert_eq!(
-        standard_native_support_endpoint_pair(&native, &points, &[0, 1], None),
+        standard_native_support_endpoint_pair(
+            &cadmpeg_test_support::service_decode_context(),
+            &native,
+            &points,
+            &[0, 1],
+            None
+        ),
         Ok(Some([0, 1]))
     );
 }

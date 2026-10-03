@@ -231,11 +231,8 @@ fn class_outcome_label_refuses_retained_limit() {
     let error = with_transaction_limits(
         &scan,
         6,
-        Some(
-            retained_record_bytes
-                + u64::try_from(4 * std::mem::size_of::<cadmpeg_ir::UnknownRecord>())
-                    .expect("unknown slots"),
-        ),
+        // Unknown record slots are scoped; the copied label follows the retained source bytes.
+        Some(retained_record_bytes),
         None,
         |expand| {
             let context = DecodeContext::new(&scan, expand).expect("transaction admitted");

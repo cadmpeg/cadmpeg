@@ -1,7 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Fillet and chamfer operands, dimensions, and radius laws.
 
-use super::{face_selections_overlap, EdgeSelection, FaceSelection};
+mod admission;
+use admission::{RadiusAdmission, StandardAdmission};
+
+use super::selection_overlap::{face_selections_overlap, standard_result, OverlapAdmission};
+use super::{EdgeSelection, FaceSelection};
 use crate::scalar::{
     FiniteReal, Fraction, InteriorAngle, Length, NonNegativeLength, PositiveLength,
 };
@@ -127,30 +131,45 @@ impl FullRoundFilletGroup {
         center_faces: FaceSelection,
         side_one_faces: FullRoundSideSelection,
         side_two_faces: FullRoundSideSelection,
-    ) -> Result<Self, &'static str> {
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<Result<Self, &'static str>, cadmpeg_core::decode::ResourceLimit> {
+        Self::build(ctx, center_faces, side_one_faces, side_two_faces)
+    }
+
+    fn build<S: OverlapAdmission>(
+        admission: &S,
+        center_faces: FaceSelection,
+        side_one_faces: FullRoundSideSelection,
+        side_two_faces: FullRoundSideSelection,
+    ) -> Result<Result<Self, &'static str>, S::Error> {
         fn explicit(side: &FullRoundSideSelection) -> Option<&FaceSelection> {
             match side {
                 FullRoundSideSelection::Explicit(faces) => Some(faces),
                 FullRoundSideSelection::Automatic | FullRoundSideSelection::Unresolved => None,
             }
         }
+        admission.work(0)?;
         let first = explicit(&side_one_faces);
         let second = explicit(&side_two_faces);
-        if first.is_some_and(|faces| face_selections_overlap(&center_faces, faces))
-            || second.is_some_and(|faces| face_selections_overlap(&center_faces, faces))
-            || first
-                .zip(second)
-                .is_some_and(|(first, second)| face_selections_overlap(first, second))
+        for (first, second) in [
+            Some(&center_faces).zip(first),
+            Some(&center_faces).zip(second),
+            first.zip(second),
+        ]
+        .into_iter()
+        .flatten()
         {
-            return Err(
-                "center_faces, side_one_faces and side_two_faces must be pairwise disjoint",
-            );
+            if face_selections_overlap(admission, first, second)? {
+                return Ok(Err(
+                    "center_faces, side_one_faces and side_two_faces must be pairwise disjoint",
+                ));
+            }
         }
-        Ok(Self {
+        Ok(Ok(Self {
             center: center_faces,
             side_one: side_one_faces,
             side_two: side_two_faces,
-        })
+        }))
     }
 
     /// Return the center-face selection.
@@ -172,7 +191,13 @@ impl FullRoundFilletGroup {
 impl<'de> Deserialize<'de> for FullRoundFilletGroup {
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         let wire = FullRoundFilletGroupWire::deserialize(deserializer)?;
-        Self::new(wire.center, wire.side_one, wire.side_two).map_err(serde::de::Error::custom)
+        standard_result(Self::build(
+            &super::selection_overlap::StandardAdmission,
+            wire.center,
+            wire.side_one,
+            wire.side_two,
+        ))
+        .map_err(serde::de::Error::custom)
     }
 }
 
@@ -206,8 +231,6 @@ const INVALID_VARIABLE_RADII: &str = "variable radius points require at least tw
 /// Which condition refuses a mapped variable-radius law.
 #[derive(Debug, Clone, PartialEq)]
 pub enum VariableRadiiMapError<E> {
-    /// The operation exceeded its resource limit.
-    Resource(cadmpeg_core::decode::ResourceLimit),
     /// A radius conversion failed.
     Radius(E),
     /// Every mapped radius is zero.
@@ -223,18 +246,24 @@ pub struct VariableRadii(Vec<VariableRadius<Fraction, NonNegativeLength>>);
 
 impl VariableRadii {
     /// Admits finite ordered parameters in [0, 1] and nonnegative radii with one positive radius.
-    pub fn new(points: Vec<VariableRadius>) -> Result<Self, &'static str> {
-        let points = points
-            .into_iter()
-            .map(|point| {
-                Some(VariableRadius {
-                    parameter: Fraction::new(point.parameter)?,
-                    radius: NonNegativeLength::try_from(point.radius).ok()?,
-                })
-            })
-            .collect::<Option<Vec<_>>>()
-            .ok_or(INVALID_VARIABLE_RADII)?;
-        Self::from_parts(points)
+    pub fn new(
+        points: Vec<VariableRadius>,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<Result<Self, &'static str>, cadmpeg_core::CodecError> {
+        admission::finish(Self::build(ctx, points))
+    }
+
+    fn build<A: RadiusAdmission>(
+        admission: &A,
+        points: Vec<VariableRadius>,
+    ) -> Result<Self, A::Error> {
+        let points = admission.collect(points, |point| {
+            let parameter = Fraction::new(point.parameter).ok_or_else(|| admission.invalid())?;
+            let radius =
+                NonNegativeLength::try_from(point.radius).map_err(|_| admission.invalid())?;
+            Ok(VariableRadius { parameter, radius })
+        })?;
+        Self::build_parts(admission, points)
     }
 
     /// Builds the law from admitted samples. The sample types state the
@@ -242,14 +271,34 @@ impl VariableRadii {
     /// positive radius and the parameter order are tested.
     pub fn from_parts(
         points: Vec<VariableRadius<Fraction, NonNegativeLength>>,
-    ) -> Result<Self, &'static str> {
-        if points.len() < 2
-            || !points.iter().any(|point| point.radius.get() > 0.0)
-            || !points
-                .windows(2)
-                .all(|pair| pair[0].parameter < pair[1].parameter)
-        {
-            return Err(INVALID_VARIABLE_RADII);
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<Result<Self, &'static str>, cadmpeg_core::CodecError> {
+        admission::finish(Self::build_parts(ctx, points))
+    }
+
+    fn build_parts<A: RadiusAdmission>(
+        admission: &A,
+        points: Vec<VariableRadius<Fraction, NonNegativeLength>>,
+    ) -> Result<Self, A::Error> {
+        if points.len() < 2 {
+            return Err(admission.invalid());
+        }
+        let mut positive = false;
+        for point in &points {
+            admission.work("IR variable radius positivity")?;
+            if point.radius.get() > 0.0 {
+                positive = true;
+                break;
+            }
+        }
+        if !positive {
+            return Err(admission.invalid());
+        }
+        for pair in points.windows(2) {
+            admission.work("IR variable radius parameter comparison")?;
+            if pair[0].parameter >= pair[1].parameter {
+                return Err(admission.invalid());
+            }
         }
         Ok(Self(points))
     }
@@ -264,37 +313,9 @@ impl VariableRadii {
     ///
     /// The sample count and the parameter order are kept, and each mapped
     /// radius is nonnegative by type, so only the one positive radius is
-    /// tested again. The error identifies conversion or admission failure.
-    pub fn try_map_radii<E>(
-        &self,
-        map: impl FnMut(NonNegativeLength) -> Result<NonNegativeLength, E>,
-    ) -> Result<Self, VariableRadiiMapError<E>> {
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let policy = cadmpeg_core::decode::DecodePolicy::default();
-        let (ctx, _) =
-            cadmpeg_core::decode::DecodeContext::from_root_bytes_limit(&[], &arena, &policy)
-                .map_err(VariableRadiiMapError::Resource)?;
-        self.try_map_radii_for_decode(&ctx, map)
-            .map_err(|error| match error {
-                cadmpeg_core::CodecError::ResourceLimit(limit) => {
-                    VariableRadiiMapError::Resource(limit)
-                }
-                _ => VariableRadiiMapError::Admission(INVALID_VARIABLE_RADII),
-            })?
-    }
-
-    /// Copy radius rows before mapping a borrowed law.
-    pub fn try_map_radii_for_decode<E>(
-        &self,
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-        map: impl FnMut(NonNegativeLength) -> Result<NonNegativeLength, E>,
-    ) -> Result<Result<Self, VariableRadiiMapError<E>>, cadmpeg_core::CodecError> {
-        Self(ctx.copy_slice(&self.0, "IR variable radius copy")?)
-            .try_map_radii_owned(ctx, map)
-    }
-    /// Map owned radii in place through the caller's work budget.
+    /// tested again. The caller admits each conversion before it runs.
     /// Refused candidates are consumed; no sample collection is copied.
-    pub fn try_map_radii_owned<E>(
+    pub fn try_map_radii<E>(
         mut self,
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         mut map: impl FnMut(NonNegativeLength) -> Result<NonNegativeLength, E>,
@@ -320,7 +341,7 @@ impl TryFrom<Vec<VariableRadius>> for VariableRadii {
     type Error = &'static str;
 
     fn try_from(points: Vec<VariableRadius>) -> Result<Self, Self::Error> {
-        Self::new(points)
+        Self::build(&StandardAdmission, points)
     }
 }
 
@@ -421,3 +442,5 @@ mod decode_clone;
 
 #[cfg(test)]
 mod tests;
+
+mod identity_rewrite;

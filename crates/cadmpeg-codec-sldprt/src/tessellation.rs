@@ -2512,7 +2512,7 @@ fn conical_trim(
             CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)) => {
                 if nurbs.degree() != 1
                     || nurbs.periodic()
-                    || nurbs.control_points().len() != 2
+                    || nurbs.pole_rows().count() != 2
                     || nurbs.control_points().iter().any(|point| {
                         surface.solved().is_none_or(|surface| {
                             analytic_surface_residual(surface, point.get())

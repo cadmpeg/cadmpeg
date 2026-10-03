@@ -460,7 +460,7 @@ pub(in super::super) fn reconcile_feature_links(
         else {
             continue;
         };
-        let outputs = cadmpeg_ir::features::DistinctMembers::try_from_for_decode(
+        let outputs = cadmpeg_ir::features::DistinctMembers::try_from(
             super::outputs::feature_output_bodies(ctx, scan, ir, feature_id)?,
             ctx,
         )
@@ -552,7 +552,7 @@ pub(in super::super) fn reconcile_feature_links(
             )?;
             generated_ids.push(id);
         }
-        feature.dependencies = cadmpeg_ir::features::DistinctMembers::try_from_for_decode(
+        feature.dependencies = cadmpeg_ir::features::DistinctMembers::try_from(
             reconciled_dependencies(
                 ctx,
                 &feature.id,
@@ -585,7 +585,7 @@ pub(in super::super) fn reconcile_feature_links(
     }
     for (child, parent) in regeneration_edges {
         ir.model
-            .set_feature_regeneration_parent_for_decode(ctx, &child, &parent)?;
+            .set_feature_regeneration_parent(ctx, &child, &parent)?;
     }
     let mut remaining = Vec::new();
     lookup_storage.with_storage(|| {

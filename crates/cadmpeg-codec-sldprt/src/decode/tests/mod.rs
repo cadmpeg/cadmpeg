@@ -17,6 +17,7 @@ mod design_completeness;
 mod feature_degradation;
 mod feature_snapshots;
 mod geometry_report;
+mod merges;
 mod metadata_fallback;
 mod nurbs_surfaces;
 mod partition_merge;

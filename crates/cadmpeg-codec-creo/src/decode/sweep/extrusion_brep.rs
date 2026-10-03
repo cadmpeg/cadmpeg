@@ -703,7 +703,7 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                 id: copy_id!(bottom_loop),
                 face: copy_id!(bottom_face),
                 boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
-                    cadmpeg_ir::topology::LoopRing::new_for_decode(
+                    cadmpeg_ir::topology::LoopRing::new(
                         ctx,
                         copy_ring_coedges(
                             ctx,
@@ -723,7 +723,7 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                 id: copy_id!(top_loop),
                 face: copy_id!(top_face),
                 boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
-                    cadmpeg_ir::topology::LoopRing::new_for_decode(
+                    cadmpeg_ir::topology::LoopRing::new(
                         ctx,
                         copy_ring_coedges(
                             ctx,
@@ -964,7 +964,7 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                     id: copy_id!(loop_id),
                     face: copy_id!(face_id),
                     boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
-                        cadmpeg_ir::topology::LoopRing::new_for_decode(
+                        cadmpeg_ir::topology::LoopRing::new(
                             ctx,
                             copy_ring_coedges(
                                 ctx,

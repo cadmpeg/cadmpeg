@@ -208,9 +208,11 @@ pub(crate) fn bind_topology_selections(
             if let Some(outputs) =
                 resolve_ids(ctx, scope, &body_ids, cadmpeg_ir::ids::BodyId::as_str)?
             {
-                feature.evaluation.set_outputs(
-                    cadmpeg_ir::features::DistinctMembers::try_from_for_decode(outputs, ctx)?,
-                );
+                feature
+                    .evaluation
+                    .set_outputs(cadmpeg_ir::features::DistinctMembers::try_from(
+                        outputs, ctx,
+                    )?);
             }
         }
         let source_properties = &feature.source_properties;
@@ -452,28 +454,16 @@ pub(crate) fn bind_topology_selections(
                             let empty = cadmpeg_ir::features::CombineOperands::new(
                                 BodySelection::Unresolved,
                                 BodySelection::Unresolved,
-                            )
+                                ctx,
+                            )?
                             .map_err(CodecError::malformed)?;
                             let (mut target, mut tools) =
                                 std::mem::replace(operands, empty).into_parts();
                             resolve_body_selection(ctx, &mut target, &body_ids)?;
                             resolve_body_selection(ctx, &mut tools, &body_ids)?;
-                            let tools_count = match &tools {
-                                BodySelection::Bodies(bodies)
-                                | BodySelection::Resolved { bodies, .. } => bodies.len(),
-                                BodySelection::ResolvedSet { members } => members.count(),
-                                BodySelection::Historical { bodies, .. } => bodies.len(),
-                                BodySelection::Generated { bodies, .. } => bodies.len(),
-                                BodySelection::HistoricalSet { members, .. } => members.count(),
-                                BodySelection::Local { bodies, .. } => bodies.len(),
-                                _ => 0,
-                            };
-                            ctx.charge_work(
-                                cadmpeg_core::decode::u64_from_index(tools_count),
-                                "validate SLDPRT combine selection overlap",
-                            )?;
-                            *operands = cadmpeg_ir::features::CombineOperands::new(target, tools)
-                                .map_err(CodecError::malformed)?;
+                            *operands =
+                                cadmpeg_ir::features::CombineOperands::new(target, tools, ctx)?
+                                    .map_err(CodecError::malformed)?;
                         }
                         FeatureDefinition::Operation(FeatureOperation::CutWithSurface {
                             targets,
@@ -519,37 +509,18 @@ pub(crate) fn bind_topology_selections(
                             let empty = cadmpeg_ir::features::ReplaceFaceOperands::new(
                                 FaceSelection::Unresolved,
                                 FaceSelection::Unresolved,
-                            )
+                                ctx,
+                            )?
                             .map_err(CodecError::malformed)?;
                             let (mut targets, mut replacements) =
                                 std::mem::replace(operands, empty).into_parts();
                             resolve_face(&mut targets)?;
                             resolve_face(&mut replacements)?;
-                            let count = |selection: &FaceSelection| match selection {
-                                FaceSelection::Faces(faces)
-                                | FaceSelection::Resolved { faces, .. } => faces.len(),
-                                FaceSelection::Historical { faces, .. } => faces.len(),
-                                FaceSelection::HistoricalPartial { faces, .. } => faces.len(),
-                                FaceSelection::Generated { faces, .. } => faces.len(),
-                                _ => 0,
-                            };
-                            let work = count(&targets)
-                                .checked_mul(count(&replacements))
-                                .ok_or_else(|| {
-                                    ctx.refuse_codec_limit(
-                                        "validate SLDPRT replacement selection overlap",
-                                        u64::MAX - 1,
-                                        u64::MAX,
-                                    )
-                                })?;
-                            ctx.charge_work(
-                                cadmpeg_core::decode::u64_from_index(work),
-                                "validate SLDPRT replacement selection overlap",
-                            )?;
                             *operands = cadmpeg_ir::features::ReplaceFaceOperands::new(
                                 targets,
                                 replacements,
-                            )
+                                ctx,
+                            )?
                             .map_err(CodecError::malformed)?;
                         }
                         FeatureDefinition::Operation(FeatureOperation::Hole {
@@ -897,15 +868,13 @@ fn resolve_body_selection(
     ctx.charge_work(1, "bind SLDPRT topology selections")?;
     if let BodySelection::Native(native) = selection {
         let bodies = match resolve_ids(ctx, native, ids, cadmpeg_ir::ids::BodyId::as_str)? {
-            Some(bodies) => {
-                match cadmpeg_ir::features::DistinctMembers::try_from_for_decode(bodies, ctx) {
-                    Ok(bodies) => Some(bodies),
-                    Err(error @ cadmpeg_ir::features::FeatureCollectionError::Resource(_)) => {
-                        return Err(error.into())
-                    }
-                    Err(_) => None,
+            Some(bodies) => match cadmpeg_ir::features::DistinctMembers::try_from(bodies, ctx) {
+                Ok(bodies) => Some(bodies),
+                Err(error @ cadmpeg_ir::features::FeatureCollectionError::Resource(_)) => {
+                    return Err(error.into())
                 }
-            }
+                Err(_) => None,
+            },
             None => None,
         };
         if let Some(bodies) = bodies {

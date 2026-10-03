@@ -300,3 +300,5 @@ cadmpeg_core::named_optional_field!(deserialize_bump, BumpMap, "bump");
 cadmpeg_core::named_optional_field!(deserialize_source_entity_id, String, "source_entity_id");
 cadmpeg_core::named_optional_field!(deserialize_object_type, String, "object_type");
 cadmpeg_core::named_optional_field!(deserialize_visible, bool, "visible");
+
+mod identity_rewrite;

@@ -840,3 +840,5 @@ impl From<DesignHemOperation> for DesignHemOperationWire {
 
 #[cfg(test)]
 mod tests;
+
+mod identity_rewrite;

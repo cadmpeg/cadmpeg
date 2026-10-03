@@ -10,7 +10,7 @@ use cadmpeg_core::CodecError;
 #[cfg(test)]
 use cadmpeg_ir::codec::DecodeOptions;
 use cadmpeg_ir::codec::{DecodeBody, Decoded};
-use cadmpeg_ir::hash::{document_local_sha256_with_charge, DOCUMENT_LOCAL_DIGEST_ATTRIBUTE};
+use cadmpeg_ir::hash::{document_local_sha256, DOCUMENT_LOCAL_DIGEST_ATTRIBUTE};
 use cadmpeg_ir::report::{
     decode::{TransferLedger, TransferOutcome},
     loss::LossNote,
@@ -630,7 +630,7 @@ fn decode_with_occurrence_limits(
     )?;
     // The transfer ledger is verified before DecodeResult construction, so its
     // identity checks require the same canonical arena order as the result.
-    ir.finalize();
+    ir.finalize(ctx)?;
     let geometry_transferred = !projection.decoded.is_empty();
     let mut losses = parse.admission_losses(ctx)?;
     if invalid_resolution
@@ -815,7 +815,7 @@ fn decode_with_occurrence_limits(
             "quarantined parameter data retained; tokens were not recovered",
         )?;
     }
-    let verification_index = cadmpeg_ir::index::ModelIndex::new_for_decode(&ir, ctx)?;
+    let verification_index = cadmpeg_ir::index::ModelIndex::build(&ir, ctx)?;
     transfer_ledger
         .verify(&verification_index)
         .map_err(|message| {
@@ -834,10 +834,14 @@ fn decode_with_occurrence_limits(
         &mut notes,
         graph::summary_notes(&parse.references, ctx)?,
     )?;
-    let document_digest =
-        document_local_sha256_with_charge(&ir, "iges", crate::SOURCE_IMAGE_ID, |bytes| {
-            ctx.charge_work(bytes, "iges_document_digest")
-        })?;
+    let document_digest = document_local_sha256(
+        ctx,
+        &ir,
+        ir.source.as_ref(),
+        "iges",
+        crate::SOURCE_IMAGE_ID,
+        "iges_document_digest",
+    )?;
     drop(verification_index);
     if let Some(source) = &mut ir.source {
         source.attributes.insert(

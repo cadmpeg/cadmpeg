@@ -946,13 +946,12 @@ impl Parser<'_, '_, '_> {
                 if records.contains_key(&id) {
                     return self.err("duplicate instance name");
                 }
-                self.budget.admit_btree_node_storage::<u64, RawRecord>(
-                    records.len(),
+                self.budget.insert_btree_map(
+                    &mut records,
+                    id,
+                    record,
                     "step_parse_record_table_storage",
                 )?;
-                self.budget
-                    .charge_collection_items(1, "step_parse_record_table_items")?;
-                records.insert(id, record);
                 self.budget
                     .push_vec(&mut ids, id, "step_parse_section_ids")?;
             }

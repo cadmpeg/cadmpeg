@@ -507,3 +507,5 @@ impl From<DesignSketchPlacement> for DesignSketchPlacementWire {
 
 #[cfg(test)]
 mod tests;
+
+mod identity_rewrite;

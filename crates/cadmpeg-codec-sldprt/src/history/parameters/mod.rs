@@ -462,7 +462,7 @@ fn project_parameter_dependencies(
             cadmpeg_core::decode::u64_from_index(dependencies.as_slice().len()),
             OPERATION,
         )?;
-        dependencies.insert_for_decode(ctx, copy_parameter_id(ctx, dependency)?, OPERATION)?;
+        dependencies.insert(ctx, copy_parameter_id(ctx, dependency)?, OPERATION)?;
     }
     Ok(dependencies)
 }

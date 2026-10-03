@@ -10,7 +10,12 @@ fn nx_body_writing_delete_face_retains_unresolved_family() {
     let mut source_properties = BTreeMap::new();
     source_properties.insert("body_write.0".to_string(), "witness".to_string());
 
-    let definition = body_writing_unresolved_feature_definition("DELETE FACE", &source_properties);
+    let definition = body_writing_unresolved_feature_definition(
+        &cadmpeg_test_support::service_decode_context(),
+        "DELETE FACE",
+        &source_properties,
+    )
+    .expect("body-writing projection admission");
 
     assert_eq!(
         definition,
@@ -29,7 +34,12 @@ fn nx_non_body_writing_delete_face_remains_native_for_semantic_review() {
     let source_properties = BTreeMap::new();
 
     assert_eq!(
-        body_writing_unresolved_feature_definition("DELETE FACE", &source_properties),
+        body_writing_unresolved_feature_definition(
+            &cadmpeg_test_support::service_decode_context(),
+            "DELETE FACE",
+            &source_properties
+        )
+        .expect("body-writing projection admission"),
         None
     );
 }

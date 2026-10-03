@@ -8,14 +8,22 @@ use crate::math::Point3;
 #[test]
 fn configuration_output_members_are_distinct_and_empty_active_states_remain_valid() {
     let body = BodyId::mint("test:model:body#one").unwrap();
-    assert!(DistinctMembers::try_from(vec![body.clone(), body.clone()]).is_err());
+    assert!(DistinctMembers::try_from(
+        vec![body.clone(), body.clone()],
+        &cadmpeg_test_support::service_decode_context()
+    )
+    .is_err());
     for evaluation in [
         ConfigurationEvaluation::Suppressed {},
         ConfigurationEvaluation::Active {
             outputs: DistinctMembers::default(),
         },
         ConfigurationEvaluation::Active {
-            outputs: vec![body.clone()].try_into().unwrap(),
+            outputs: crate::features::DistinctMembers::try_from(
+                vec![body.clone()],
+                &cadmpeg_test_support::service_decode_context(),
+            )
+            .unwrap(),
         },
     ] {
         let wire = serde_json::to_value(&evaluation).unwrap();
@@ -45,7 +53,11 @@ fn configuration_dependencies_reject_duplicates_at_the_wire_boundary() {
         evaluation: ConfigurationEvaluation::Active {
             outputs: DistinctMembers::default(),
         },
-        dependencies: vec![earlier.clone()].try_into().unwrap(),
+        dependencies: crate::features::DistinctMembers::try_from(
+            vec![earlier.clone()],
+            &cadmpeg_test_support::service_decode_context(),
+        )
+        .unwrap(),
         definition: FeatureDefinition::Operation(FeatureOperation::DatumPoint {
             position: FinitePoint3::new(Point3::new(0.0, 0.0, 0.0)).unwrap(),
             construction: None,

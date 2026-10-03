@@ -25,6 +25,7 @@ schema = ["dep:schemars", "cadmpeg-core/schema"]
 cadmpeg-core.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+serde-value.workspace = true
 schemars = { workspace = true, optional = true }
 thiserror.workspace = true
 sha2.workspace = true

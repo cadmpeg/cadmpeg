@@ -60,7 +60,7 @@ pub(super) struct ConsolidatedRevolutionBinding {
 /// Transfer resolved consolidated axis-and-profile revolution carriers.
 pub(super) fn append_consolidated_revolutions(
     ir: &mut CadIr,
-    annotations: &mut AnnotationBuilder,
+    annotations: &mut AnnotationBuilder<impl cadmpeg_ir::annotations::AnnotationStorage>,
     resolved: &[crate::families::b2::records::B2ResolvedRevolution],
     admission: &mut FamilyEntityAdmission<'_, '_>,
 ) -> Result<Vec<ConsolidatedRevolutionBinding>, cadmpeg_core::CodecError> {
@@ -658,7 +658,9 @@ pub(super) fn try_decode_freeform_surfaces(
             "catia_freeform_census_face_ids"
         ));
         let mut topology_ir = CadIr::empty();
-        let mut topology_annotations = AnnotationBuilder::new();
+        let mut topology_annotations =
+            admitted!(AnnotationBuilder::new()
+                .copy_transaction(ctx, "catia_freeform_topology_annotations"));
         let payload_stream = if scan.brep.is_some() {
             "MainDataStream+SurfacicReps"
         } else {
@@ -686,9 +688,9 @@ pub(super) fn try_decode_freeform_surfaces(
                 Err(error) => return Some(Err(error)),
             };
             if transferred {
-                match neutral_model_is_admissible(&mut topology_ir, &unknowns) {
+                match neutral_model_is_admissible(ctx, &mut topology_ir, &unknowns) {
                     Ok(admissible) => admissible,
-                    Err(limit) => return Some(Err(limit.into())),
+                    Err(limit) => return Some(Err(limit)),
                 }
             } else {
                 false
@@ -698,7 +700,7 @@ pub(super) fn try_decode_freeform_surfaces(
         };
         if topology_transferred {
             ir = topology_ir;
-            annotations = topology_annotations;
+            annotations = admitted!(topology_annotations.into_retained());
         }
         if !topology_transferred {
             let surfaces = match fallback_surfaces.take() {
@@ -1296,7 +1298,7 @@ pub(super) fn try_decode_freeform_surfaces(
 
 fn attach_standalone_wires(
     ir: &mut CadIr,
-    annotations: &mut AnnotationBuilder,
+    annotations: &mut AnnotationBuilder<impl cadmpeg_ir::annotations::AnnotationStorage>,
     wires: &[(CurveId, [f64; 2], usize)],
     admission: &mut FamilyEntityAdmission<'_, '_>,
 ) -> Result<bool, cadmpeg_core::CodecError> {
@@ -1312,19 +1314,15 @@ fn attach_standalone_wires(
             return Ok(false);
         };
         let Some(start) =
-            cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::decode::curve_point_for_decode(
-                admission.context(),
-                geometry,
-                range[0],
+            cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::decode::outer_refusal(
+                cadmpeg_ir::eval::decode::curve_point(admission.context(), geometry, range[0]),
             )?)?
         else {
             return Ok(false);
         };
         let Some(end) =
-            cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::decode::curve_point_for_decode(
-                admission.context(),
-                geometry,
-                range[1],
+            cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::decode::outer_refusal(
+                cadmpeg_ir::eval::decode::curve_point(admission.context(), geometry, range[1]),
             )?)?
         else {
             return Ok(false);
@@ -1722,19 +1720,25 @@ fn standard_carrier_endpoint_loci(
     surface: &SurfaceGeometry,
     range: [f64; 2],
 ) -> Result<Option<[Point3; 2]>, cadmpeg_core::CodecError> {
-    let start = match cadmpeg_ir::eval::decode::pcurve_uv_for_decode(ctx, pcurve, range[0])? {
+    let start = match cadmpeg_ir::eval::decode::outer_refusal(cadmpeg_ir::eval::decode::pcurve_uv(
+        ctx, pcurve, range[0],
+    ))? {
         Ok(start) => start,
         Err(cadmpeg_ir::eval::EvaluationFailure::ResourceLimit(limit)) => return Err(limit.into()),
         Err(_) => return Ok(None),
     };
-    let end = match cadmpeg_ir::eval::decode::pcurve_uv_for_decode(ctx, pcurve, range[1])? {
+    let end = match cadmpeg_ir::eval::decode::outer_refusal(cadmpeg_ir::eval::decode::pcurve_uv(
+        ctx, pcurve, range[1],
+    ))? {
         Ok(end) => end,
         Err(cadmpeg_ir::eval::EvaluationFailure::ResourceLimit(limit)) => return Err(limit.into()),
         Err(_) => return Ok(None),
     };
     // A non-finite locus is kept as the evaluation reached it.
     let locus = |uv: cadmpeg_ir::units::FinitePoint2| -> Result<_, cadmpeg_core::CodecError> {
-        match cadmpeg_ir::eval::decode::surface_point_for_decode(ctx, surface, uv.u, uv.v)? {
+        match cadmpeg_ir::eval::decode::outer_refusal(cadmpeg_ir::eval::decode::surface_point(
+            ctx, surface, uv.u, uv.v,
+        ))? {
             Ok(point) => Ok(Some(point.get())),
             Err(failure) => Ok(failure.non_finite()?),
         }
@@ -1800,7 +1804,7 @@ fn consolidated_line_profiles(
 /// Transfer every exact consolidated line carrier.
 fn append_consolidated_line_profiles(
     ir: &mut CadIr,
-    annotations: &mut AnnotationBuilder,
+    annotations: &mut AnnotationBuilder<impl cadmpeg_ir::annotations::AnnotationStorage>,
     profiles: Vec<ConsolidatedLineProfile>,
     admission: &mut FamilyEntityAdmission<'_, '_>,
 ) -> Result<(), cadmpeg_core::CodecError> {
@@ -1824,7 +1828,7 @@ fn append_consolidated_line_profiles(
 /// surface curves bound to existing standard edges.
 pub(super) fn append_freeform_surface_pools(
     ir: &mut CadIr,
-    annotations: &mut AnnotationBuilder,
+    annotations: &mut AnnotationBuilder<impl cadmpeg_ir::annotations::AnnotationStorage>,
     data: &[u8],
     records: &[crate::wire::records::ConsolidatedRecord],
     surface_alias_tags: &HashMap<u32, Option<u32>>,
@@ -1943,7 +1947,7 @@ pub(super) fn append_freeform_surface_pools(
             Exactness::ByteExact,
         )?;
         admission.charge()?;
-        let _attached = ir.model.add_procedural_surface_for_decode(
+        let _attached = ir.model.add_procedural_surface(
             admission.context(),
             &surface_id,
             ProceduralSurface::new(
@@ -2022,14 +2026,8 @@ pub(super) fn append_freeform_surface_pools(
                 .into_iter()
                 .map(|point| Point3::new(point[0], point[1], point[2])),
         );
-        let geometry = NurbsCurve::from_lanes_for_decode(
-            admission.context(),
-            guide.degree,
-            knots,
-            poles,
-            None,
-            false,
-        )??;
+        let geometry =
+            NurbsCurve::from_lanes(admission.context(), guide.degree, knots, poles, None, false)??;
         let id = crate::resource::compose_index_id(
             admission.context(),
             &cadmpeg_ir::identity_namespace!("catia", "guide", "curve"),
@@ -2161,7 +2159,7 @@ pub(super) fn append_freeform_surface_pools(
         ir.model.procedural_surfaces.push(ProceduralSurface::new(
             procedural_id,
             ProceduralSurfaceDefinition::RollingBallJet(
-                cadmpeg_ir::geometry::RollingBallJetStations::from_parts_for_decode(
+                cadmpeg_ir::geometry::RollingBallJetStations::from_parts(
                     crate::families::a5a8::records::A5FreeformCurve::DEGREE,
                     stations,
                     admission.context(),
@@ -2318,7 +2316,7 @@ struct FreeformSurfacePool<'a> {
 
 fn append_resolved_consolidated_surface_curves(
     ir: &mut CadIr,
-    annotations: &mut AnnotationBuilder,
+    annotations: &mut AnnotationBuilder<impl cadmpeg_ir::annotations::AnnotationStorage>,
     data: &[u8],
     records: &[crate::wire::records::ConsolidatedRecord],
     pool: FreeformSurfacePool<'_>,
@@ -2722,7 +2720,7 @@ fn append_resolved_consolidated_surface_curves(
                             admission.context(),
                             "catia_freeform_offset_procedural_owner_id",
                         )?;
-                        let _attached = ir.model.add_procedural_surface_for_decode(admission.context(), &procedural_owner_id, ProceduralSurface::new(
+                        let _attached = ir.model.add_procedural_surface(admission.context(), &procedural_owner_id, ProceduralSurface::new(
                                 procedural_id,
                                 ProceduralSurfaceDefinition::Offset(
                                     cadmpeg_ir::geometry::surface_payloads::OffsetSurfaceConstruction::legacy(
@@ -3574,7 +3572,7 @@ fn append_resolved_consolidated_surface_curves(
                 "catia_annotation_field",
             )?;
             admission.charge()?;
-            let _attached = ir.model.add_procedural_curve_for_decode(
+            let _attached = ir.model.add_procedural_curve(
                 admission.context(),
                 &curve_id,
                 ProceduralCurve::new(procedural_id, definition),
@@ -3619,9 +3617,10 @@ fn solve_planar_chart_rechart(
                     return Ok(None);
                 };
                 let uv = cadmpeg_ir::math::Point2::from(uv);
-                let Some(back) = cadmpeg_ir::eval::finite_or_refusal(
-                    cadmpeg_ir::eval::decode::surface_point_for_decode(ctx, target, uv.u, uv.v)?,
-                )?
+                let Some(back) =
+                    cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::decode::outer_refusal(
+                        cadmpeg_ir::eval::decode::surface_point(ctx, target, uv.u, uv.v),
+                    )?)?
                 else {
                     return Ok(None);
                 };
@@ -3780,12 +3779,16 @@ fn pcurve_lift_reaches_endpoints(
     }
     // A non-finite lift is measured as a finite one is.
     let lift = |parameter| {
-        let uv = match cadmpeg_ir::eval::decode::pcurve_uv_for_decode(ctx, pcurve, parameter)? {
+        let uv = match cadmpeg_ir::eval::decode::outer_refusal(
+            cadmpeg_ir::eval::decode::pcurve_uv(ctx, pcurve, parameter),
+        )? {
             Ok(uv) => uv,
             Err(cadmpeg_ir::eval::EvaluationFailure::ResourceLimit(limit)) => return Err(limit),
             Err(_) => return Ok(None),
         };
-        match cadmpeg_ir::eval::decode::surface_point_solved_for_decode(ctx, surface, uv.u, uv.v)? {
+        match cadmpeg_ir::eval::decode::outer_refusal(
+            cadmpeg_ir::eval::decode::surface_point_solved(ctx, surface, uv.u, uv.v),
+        )? {
             Ok(point) => Ok(Some(point.get())),
             Err(failure) => failure.non_finite(),
         }
@@ -3836,26 +3839,25 @@ fn unique_paired_surface_lift_match<'a, T>(
     let parameters = [parameter_range[0], midpoint, parameter_range[1]];
     let resolved_lift =
         |parameter| -> Result<Option<FinitePoint3>, cadmpeg_core::decode::ResourceLimit> {
-            let Some(uv) = cadmpeg_ir::eval::finite_or_refusal(
-                cadmpeg_ir::eval::decode::pcurve_uv_for_decode(ctx, resolved_pcurve, parameter)?,
-            )?
+            let Some(uv) =
+                cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::decode::outer_refusal(
+                    cadmpeg_ir::eval::decode::pcurve_uv(ctx, resolved_pcurve, parameter),
+                )?)?
             else {
                 return Ok(None);
             };
-            cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::decode::surface_point_for_decode(
-                ctx,
-                resolved_surface,
-                uv.u,
-                uv.v,
+            cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::decode::outer_refusal(
+                cadmpeg_ir::eval::decode::surface_point(ctx, resolved_surface, uv.u, uv.v),
             )?)
         };
     let mut resolved_loci = [None; 3];
     let mut partner_uv = [None; 3];
     for (index, parameter) in parameters.into_iter().enumerate() {
         resolved_loci[index] = resolved_lift(parameter)?;
-        partner_uv[index] = cadmpeg_ir::eval::finite_or_refusal(
-            cadmpeg_ir::eval::decode::pcurve_uv_for_decode(ctx, partner_pcurve, parameter)?,
-        )?;
+        partner_uv[index] =
+            cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::decode::outer_refusal(
+                cadmpeg_ir::eval::decode::pcurve_uv(ctx, partner_pcurve, parameter),
+            )?)?;
         if resolved_loci[index].is_none() || partner_uv[index].is_none() {
             return Ok(None);
         }
@@ -3867,9 +3869,10 @@ fn unique_paired_surface_lift_match<'a, T>(
             let (Some(resolved), Some(uv)) = (resolved, uv) else {
                 return Ok(None);
             };
-            let Some(partner) = cadmpeg_ir::eval::finite_or_refusal(
-                cadmpeg_ir::eval::decode::surface_point_for_decode(ctx, surface, uv.u, uv.v)?,
-            )?
+            let Some(partner) =
+                cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::decode::outer_refusal(
+                    cadmpeg_ir::eval::decode::surface_point(ctx, surface, uv.u, uv.v),
+                )?)?
             else {
                 matches = false;
                 break;
@@ -4042,12 +4045,14 @@ fn rechart_equivalent_surface_pcurve(
                     }
                 }
             }
-            let shifted = cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_admitted_rows(
+            let shifted = cadmpeg_ir::geometry::pcurve::PcurveNurbs::new(
+                ctx,
                 nurbs.degree(),
                 knots,
                 poles,
                 nurbs.periodic(),
             )
+            .map_err(RechartFailure::Resource)?
             .map_err(|_| RechartFailure::NonFinite)?;
             Ok(Some(PcurveGeometry::Nurbs { nurbs: shifted }))
         }
@@ -4057,7 +4062,7 @@ fn rechart_equivalent_surface_pcurve(
 
 fn append_a8_rolling_ball_pools(
     ir: &mut CadIr,
-    annotations: &mut AnnotationBuilder,
+    annotations: &mut AnnotationBuilder<impl cadmpeg_ir::annotations::AnnotationStorage>,
     data: &[u8],
     admission: &mut FamilyEntityAdmission<'_, '_>,
 ) -> Result<(), cadmpeg_core::CodecError> {
@@ -4312,12 +4317,14 @@ mod tests {
             id: curve_id.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
                 NurbsCurve::from_lanes(
+                    &cadmpeg_test_support::service_decode_context(),
                     1,
                     vec![0.0, 0.0, 1.0, 1.0],
                     vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
                     None,
                     false,
                 )
+                .expect("fixture constructor admission")
                 .expect("valid linear wire curve"),
             )),
             source_object: None,
@@ -4548,12 +4555,14 @@ mod tests {
             id: curve_id.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
                 NurbsCurve::from_lanes(
+                    &cadmpeg_test_support::service_decode_context(),
                     1,
                     vec![0.0, 0.0, 1.0, 1.0],
                     vec![Point3::new(2.0, 3.0, 5.0), Point3::new(7.0, 11.0, 13.0)],
                     None,
                     false,
                 )
+                .expect("fixture constructor admission")
                 .expect("valid linear NURBS"),
             )),
             source_object: None,
@@ -4581,7 +4590,8 @@ mod tests {
             ir.model.points[0].position().get(),
             Point3::new(7.0, 11.0, 13.0)
         );
-        ir.finalize();
+        ir.finalize(&cadmpeg_test_support::service_decode_context())
+            .expect("fixture ordering is admitted");
         let validation = cadmpeg_ir::validate_neutral(&ir, Vec::new())
             .expect("resource allocation did not fail");
         assert!(validation.is_ok(), "{:?}", validation.findings);
@@ -4595,12 +4605,14 @@ mod tests {
             id: curve_id.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
                 NurbsCurve::from_lanes(
+                    &cadmpeg_test_support::service_decode_context(),
                     1,
                     vec![0.0, 0.0, 1.0, 1.0],
                     vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
                     None,
                     false,
                 )
+                .expect("fixture constructor admission")
                 .expect("valid linear NURBS"),
             )),
             source_object: None,
@@ -4624,12 +4636,14 @@ mod tests {
             id: curve_id.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
                 NurbsCurve::from_lanes(
+                    &cadmpeg_test_support::service_decode_context(),
                     1,
                     vec![0.0, 0.0, 1.0, 1.0],
                     vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
                     None,
                     false,
                 )
+                .expect("fixture constructor admission")
                 .expect("valid linear NURBS"),
             )),
             source_object: None,
@@ -4660,12 +4674,14 @@ mod tests {
             id: curve_id.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
                 NurbsCurve::from_lanes(
+                    &cadmpeg_test_support::service_decode_context(),
                     1,
                     vec![0.0, 0.0, 1.0, 1.0],
                     vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
                     None,
                     false,
                 )
+                .expect("fixture constructor admission")
                 .expect("valid linear NURBS"),
             )),
             source_object: None,
@@ -4742,7 +4758,8 @@ mod tests {
             assert!((actual.y - expected.y).abs() < 1.0e-12);
             assert!((actual.z - expected.z).abs() < 1.0e-12);
         }
-        ir.finalize();
+        ir.finalize(&cadmpeg_test_support::service_decode_context())
+            .expect("fixture ordering is admitted");
         let validation = cadmpeg_ir::validate_neutral(&ir, Vec::new())
             .expect("resource allocation did not fail");
         assert!(validation.is_ok(), "{:?}", validation.findings);
@@ -5147,6 +5164,7 @@ mod tests {
         assert!(same_surface_locus(&source, &target));
         let pcurve = PcurveGeometry::Nurbs {
             nurbs: cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
+                &cadmpeg_test_support::service_decode_context(),
                 1,
                 vec![0.0, 0.0, 1.0, 1.0],
                 vec![
@@ -5156,6 +5174,7 @@ mod tests {
                 None,
                 false,
             )
+            .expect("fixture pcurve construction admission")
             .expect("finite NURBS fixture"),
         };
         assert!(matches!(
@@ -5171,12 +5190,14 @@ mod tests {
         let surface = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None });
         let pcurve = PcurveGeometry::Nurbs {
             nurbs: cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
+                &cadmpeg_test_support::service_decode_context(),
                 1,
                 vec![0.0, 0.0, 1.0, 1.0],
                 vec![Point2::new(0.0, 0.0), Point2::new(1.0, 1.0)],
                 None,
                 false,
             )
+            .expect("fixture pcurve construction admission")
             .expect("valid pcurve fixture"),
         };
         let refused = crate::test_support::with_collection_limit(5, |ctx| {
@@ -5301,8 +5322,13 @@ mod tests {
                 id: loop_id.clone(),
                 face: face_id,
                 boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
-                    cadmpeg_ir::topology::LoopRing::new(vec![coedge_id.clone()], Vec::new())
-                        .expect("valid loop ring"),
+                    cadmpeg_ir::topology::LoopRing::new(
+                        &cadmpeg_test_support::service_decode_context(),
+                        vec![coedge_id.clone()],
+                        Vec::new(),
+                    )
+                    .expect("fixture ring admission")
+                    .expect("valid loop ring"),
                 ),
             });
             ir.model.coedges.push(Coedge {
@@ -5322,6 +5348,7 @@ mod tests {
             });
         }
         let _attached = ir.model.add_procedural_curve(
+            &cadmpeg_ir::document::admission::StandardAdmission,
             &curve_id,
             ProceduralCurve::new(
                 ProceduralCurveId::mint(
@@ -5381,7 +5408,8 @@ mod tests {
                 .count(),
             1
         );
-        let start = cadmpeg_ir::eval::pcurve_uv(
+        let start = cadmpeg_ir::eval::decode::pcurve_uv(
+            cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
             &context.sides()[0]
                 .pcurve
                 .as_ref()
@@ -5455,7 +5483,8 @@ mod tests {
             .sides()
             .iter()
             .all(|side| { side.surface.as_ref() == Some(&surface_id) && side.pcurve.is_some() }));
-        let start = cadmpeg_ir::eval::pcurve_uv(
+        let start = cadmpeg_ir::eval::decode::pcurve_uv(
+            cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
             &context.sides()[0]
                 .pcurve
                 .as_ref()
@@ -5678,6 +5707,7 @@ mod tests {
             });
         }
         let _attached = ir.model.add_procedural_curve(
+            &cadmpeg_ir::document::admission::StandardAdmission,
             &curve_id,
             ProceduralCurve::new(
                 ProceduralCurveId::mint(
@@ -5757,9 +5787,14 @@ mod tests {
         let loci = target_sites
             .iter()
             .map(|[u, v]| {
-                cadmpeg_ir::eval::surface_point_solved(&target, *u, *v)
-                    .expect("plane evaluates")
-                    .get()
+                cadmpeg_ir::eval::decode::surface_point_solved(
+                    cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+                    &target,
+                    *u,
+                    *v,
+                )
+                .expect("plane evaluates")
+                .get()
             })
             .collect::<Vec<_>>();
         let (cosine, sine) = (angle.cos(), angle.sin());

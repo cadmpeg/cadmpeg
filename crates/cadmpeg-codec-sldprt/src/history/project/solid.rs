@@ -202,7 +202,7 @@ pub(super) fn project_extrude(
                 return Ok(None);
             };
             one_sided(LinearTermination::ToVertex {
-                vertex: VertexSelection::native(copy_projected_feature_text(ctx, vertex)?)
+                vertex: VertexSelection::native(copy_projected_feature_text(ctx, vertex)?, ctx)?
                     .unwrap_or(VertexSelection::Unresolved),
             })
         }
