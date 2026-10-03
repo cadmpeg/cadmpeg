@@ -366,6 +366,11 @@ impl<'tcx> Analysis<'_, 'tcx> {
                 return;
             }
             if name == "into_boxed_slice" {
+                if self.exact_box_capacity(expression) {
+                    self.findings.admitted_operations.insert(expression.hir_id);
+                    return;
+                }
+                if operands.first().is_some_and(|operand| self.box_storage_paid(expression, operand)) { return; }
                 self.shape_report(
                     expression,
                     Shape::Unknown,

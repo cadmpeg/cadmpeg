@@ -21,6 +21,93 @@ pub(crate) struct Slots {
 }
 
 impl<'tcx> Analysis<'_, 'tcx> {
+    pub(crate) fn record_scoped_storage(&mut self, expression: &'tcx Expr<'tcx>, terms: Vec<ExtentTerm>) {
+        let Some(guard) = self.result_binding(expression) else { return; };
+        let Some(scope) = self.tcx.hir_parent_iter(expression.hir_id).find_map(|(_, node)| match node {
+            Node::Block(block) => Some(block.span),
+            _ => None,
+        }) else { return; };
+        self.flow.scoped_storage.push(crate::flow::ScopedStorage { guard, scope, terms });
+    }
+
+    fn take_storage_terms(&mut self, expression: &'tcx Expr<'tcx>, required: &[ExtentTerm], element: ty::Ty<'tcx>) -> bool {
+        let mut retained = self.flow.storage_extents.clone();
+        let mut scoped = self.flow.scoped_storage.clone();
+        if let Ok(layout) = self.tcx.layout_of(self.typing_env().as_query_input(element)) {
+            let size_factor = format!("size:{element}");
+            for term in retained.iter_mut().chain(scoped.iter_mut().flat_map(|credit| &mut credit.terms)) {
+                if let Some(index) = term.factors.iter().position(|factor| factor == &size_factor) {
+                    let Some(coefficient) = term.coefficient.checked_mul(layout.size.bytes()) else { return false; };
+                    term.coefficient = coefficient;
+                    term.factors.remove(index);
+                }
+            }
+        }
+        for term in required {
+            if term.coefficient == 0 { continue; }
+            if consume_terms(&mut retained, std::slice::from_ref(term)) { continue; }
+            if !scoped.iter_mut().any(|credit| credit.scope.contains(expression.span)
+                && !self.flow.mutated.contains(&credit.guard)
+                && consume_terms(&mut credit.terms, std::slice::from_ref(term))) { return false; }
+        }
+        self.flow.storage_extents = retained;
+        self.flow.scoped_storage = scoped;
+        true
+    }
+
+    pub(crate) fn exact_box_capacity(&self, expression: &'tcx Expr<'tcx>) -> bool {
+        let Some((definition, operands)) = self.call(expression) else { return false; };
+        if !types::standard(self.tcx, definition) || self.tcx.item_name(definition).as_str() != "into_boxed_slice" { return false; }
+        let Some(receiver) = operands.first() else { return false; };
+        let ty::Adt(owner, arguments) = self.expr_ty(receiver).peel_refs().kind() else { return false; };
+        if !types::standard(self.tcx, owner.did()) || self.tcx.item_name(owner.did()).as_str() != "Vec" { return false; }
+        let Some(element) = arguments.types().next() else { return false; };
+        let Some(target) = operands.first().and_then(|operand| self.key(operand, &mut Vec::new())) else { return false; };
+        self.tcx.hir_parent_iter(expression.hir_id)
+            .take_while(|(_, node)| !matches!(node, Node::Expr(parent) if matches!(parent.kind, ExprKind::Closure(_))))
+            .any(|(_, node)| {
+            let Node::Expr(parent) = node else { return false; };
+            let ExprKind::If(mut condition, then, _) = parent.kind else { return false; };
+            if !then.span.contains(expression.span) { return false; }
+            while let ExprKind::DropTemps(inner) = condition.kind { condition = inner; }
+            let ExprKind::Binary(operator, left, right) = condition.kind else { return false; };
+            if operator.node != rustc_hir::BinOpKind::Eq { return false; }
+            for (size, zero) in [(left, right), (right, left)] {
+                if self.constant_count(zero, &mut Vec::new()) == Some(0)
+                    && self.call(size).is_some_and(|(id, _)| types::standard(self.tcx, id)
+                        && self.tcx.item_name(id).as_str() == "size_of")
+                    && self.call_arguments(size).is_some_and(|arguments| arguments.types().next() == Some(element)) { return true; }
+            }
+            let Some((left_id, left_args)) = self.call(left) else { return false; };
+            let Some((right_id, right_args)) = self.call(right) else { return false; };
+            types::standard(self.tcx, left_id) && types::standard(self.tcx, right_id)
+                && matches!((self.tcx.item_name(left_id).as_str(), self.tcx.item_name(right_id).as_str()), ("len", "capacity") | ("capacity", "len"))
+                && left_args.first().and_then(|operand| self.key(operand, &mut Vec::new())).as_ref() == Some(&target)
+                && right_args.first().and_then(|operand| self.key(operand, &mut Vec::new())).as_ref() == Some(&target)
+                && !self.flow.mutated.contains(&target)
+        })
+    }
+
+    pub(crate) fn box_storage_paid(&mut self, expression: &'tcx Expr<'tcx>, operand: &'tcx Expr<'tcx>) -> bool {
+        let ty::Adt(owner, arguments) = self.expr_ty(operand).peel_refs().kind() else { return false; };
+        if !types::standard(self.tcx, owner.did()) || self.tcx.item_name(owner.did()).as_str() != "Vec" { return false; }
+        let Some(element) = arguments.types().next() else { return false; };
+        let Some(target) = self.key(operand, &mut Vec::new()) else { return false; };
+        let Some(mut required) = self.scaled_storage_terms(&[ExtentTerm { factors: vec![target], coefficient: 1 }]) else { return false; };
+        let size_factor = format!("size:{element}");
+        for term in &mut required { term.factors.push(size_factor.clone()); term.factors.sort(); }
+        if let Ok(layout) = self.tcx.layout_of(self.typing_env().as_query_input(element)) {
+            for term in &mut required {
+                if let Some(index) = term.factors.iter().position(|factor| factor == &size_factor) {
+                    let Some(coefficient) = term.coefficient.checked_mul(layout.size.bytes()) else { return false; };
+                    term.coefficient = coefficient;
+                    term.factors.remove(index);
+                }
+            }
+        }
+        self.take_storage_terms(expression, &required, element)
+    }
+
     pub(crate) fn symbolic_storage(
         &mut self,
         expression: &'tcx Expr<'tcx>,
@@ -92,13 +179,12 @@ impl<'tcx> Analysis<'_, 'tcx> {
             term.factors.push(size_factor.clone());
             term.factors.sort();
         }
-        let mut credits = self.flow.storage_extents.clone();
         if let Ok(layout) = self
             .tcx
             .layout_of(self.typing_env().as_query_input(element))
         {
             let bytes = layout.size.bytes();
-            for term in terms.iter_mut().chain(credits.iter_mut()) {
+            for term in &mut terms {
                 if let Some(index) = term
                     .factors
                     .iter()
@@ -112,10 +198,9 @@ impl<'tcx> Analysis<'_, 'tcx> {
                 }
             }
         }
-        if !consume_terms(&mut credits, &terms) {
+        if !self.take_storage_terms(expression, &terms, element) {
             return false;
         }
-        self.flow.storage_extents = credits;
         if name == "reserve_exact" || self.reserve_success(expression) {
             if let Some(target) = self.key(receiver, &mut Vec::new()) {
                 self.flow.storage_slots.push(Slots {
