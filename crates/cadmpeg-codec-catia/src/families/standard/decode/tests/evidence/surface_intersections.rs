@@ -703,7 +703,7 @@ fn same_surface_spline_requires_an_exact_ruled_surface_generator() {
                     None,
                 )
             }));
-        standard_spline_line(
+        standard_spline_line(&cadmpeg_test_support::service_decode_context(), 
             &ir,
             &[(
                 SurfaceId::mint("catia:test:surface#surface".to_string())

@@ -544,7 +544,7 @@ fn analytic_surface_uv_accepts_finite_nonzero_carrier_scales() {
         .expect("signed sphere point")
         .get();
     assert_eq!(
-        point_on_surface(signed_sphere_point, &signed_sphere),
+        point_on_surface(&cadmpeg_test_support::service_decode_context(), signed_sphere_point, &signed_sphere),
         Ok(true)
     );
 
@@ -559,7 +559,7 @@ fn analytic_surface_uv_accepts_finite_nonzero_carrier_scales() {
         .expect("valid TorusSurface fixture"),
     ));
     let torus_point = cadmpeg_ir::eval::decode::surface_point(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &torus, 0.5, 0.25).expect("torus point").get();
-    assert_eq!(point_on_surface(torus_point, &torus), Ok(true));
+    assert_eq!(point_on_surface(&cadmpeg_test_support::service_decode_context(), torus_point, &torus), Ok(true));
 }
 
 #[test]

@@ -35,8 +35,8 @@ pub(super) fn standard_pcurve_geometry(
     ) {
         return Ok(None);
     }
-    let on_start = point_on_surface(start, surface)?;
-    let on_end = point_on_surface(end, surface)?;
+    let on_start = point_on_surface(ctx, start, surface)?;
+    let on_end = point_on_surface(ctx, end, surface)?;
     if !on_start || !on_end {
         return Ok(None);
     }
@@ -100,7 +100,7 @@ pub(super) fn standard_pcurve_geometry(
         let center = center.get();
         let radius = radius.get();
         let normal = plane_surface.frame().axis().as_raw();
-        let contained_carrier = point_on_surface(center, surface)?
+        let contained_carrier = point_on_surface(ctx, center, surface)?
             && (start.distance(center) - radius).abs() <= CIRCLE_TOLERANCE
             && (end.distance(center) - radius).abs() <= CIRCLE_TOLERANCE
             && edge_curve.is_none_or(|curve| {
@@ -343,16 +343,19 @@ pub(super) fn unwrap_standard_uv(surface: &SurfaceGeometry, value: &mut Point2, 
 }
 
 pub(super) fn point_on_surface(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     point: Point3,
     surface: &SurfaceGeometry,
 ) -> Result<bool, cadmpeg_core::decode::ResourceLimit> {
-    Ok(point_on_surface_if_supported(point, surface)?.unwrap_or(false))
+    Ok(point_on_surface_if_supported(ctx, point, surface)?.unwrap_or(false))
 }
 
 pub(super) fn point_on_surface_if_supported(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     point: Point3,
     surface: &SurfaceGeometry,
 ) -> Result<Option<bool>, cadmpeg_core::decode::ResourceLimit> {
+    ctx.charge_work_limit(0, "catia surface membership boundary")?;
     const TOLERANCE: f64 = 1e-3;
     let residual = match surface {
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)) => {
@@ -392,7 +395,7 @@ pub(super) fn point_on_surface_if_supported(
             ((radial - major_radius).hypot(axial) - minor_radius.abs()).abs()
         }
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)) => {
-            return point_on_nurbs_surface(point, surface);
+            return point_on_nurbs_surface(ctx, point, surface);
         }
         SurfaceGeometry::Solved(
             SolvedSurfaceGeometry::Polygonal(_)
@@ -405,12 +408,14 @@ pub(super) fn point_on_surface_if_supported(
 }
 
 pub(super) fn standard_spline_line(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ir: &CadIr,
     bindings: &[(SurfaceId, bool, usize)],
     surface_indices: &HashMap<SurfaceId, usize>,
     support: &crate::families::standard::records::StandardCurveSupport,
     points: [usize; 2],
 ) -> Result<Option<(CurveGeometry, [f64; 2])>, cadmpeg_core::decode::ResourceLimit> {
+    ctx.charge_work_limit(0, "catia surface membership boundary")?;
     const TOLERANCE: f64 = 2e-3;
 
     let surfaces = support
@@ -431,10 +436,10 @@ pub(super) fn standard_spline_line(
     else {
         return Ok(None);
     };
-    if !point_on_surface(start, &left.geometry)?
-        || !point_on_surface(start, &right.geometry)?
-        || !point_on_surface(end, &left.geometry)?
-        || !point_on_surface(end, &right.geometry)?
+    if !point_on_surface(ctx, start, &left.geometry)?
+        || !point_on_surface(ctx, start, &right.geometry)?
+        || !point_on_surface(ctx, end, &left.geometry)?
+        || !point_on_surface(ctx, end, &right.geometry)?
     {
         return Ok(None);
     }
@@ -503,12 +508,14 @@ pub(super) fn standard_spline_line(
 }
 
 pub(super) fn standard_spline_circle(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ir: &CadIr,
     bindings: &[(SurfaceId, bool, usize)],
     surface_indices: &HashMap<SurfaceId, usize>,
     support: &crate::families::standard::records::StandardCurveSupport,
     points: [usize; 2],
 ) -> Result<Option<CurveGeometry>, cadmpeg_core::decode::ResourceLimit> {
+    ctx.charge_work_limit(0, "catia surface membership boundary")?;
     let surfaces = support
         .faces
         .map(|face| face_surface(ir, bindings, surface_indices, face));
@@ -569,10 +576,10 @@ pub(super) fn standard_spline_circle(
     else {
         return Ok(None);
     };
-    if !point_on_surface(start, &left.geometry)?
-        || !point_on_surface(start, &right.geometry)?
-        || !point_on_surface(end, &left.geometry)?
-        || !point_on_surface(end, &right.geometry)?
+    if !point_on_surface(ctx, start, &left.geometry)?
+        || !point_on_surface(ctx, start, &right.geometry)?
+        || !point_on_surface(ctx, end, &left.geometry)?
+        || !point_on_surface(ctx, end, &right.geometry)?
         || (start.distance(section_center) - section_radius).abs()
             > SPHERE_SECTION_ENDPOINT_TOLERANCE
         || (end.distance(section_center) - section_radius).abs() > SPHERE_SECTION_ENDPOINT_TOLERANCE
@@ -593,12 +600,14 @@ pub(super) fn standard_spline_circle(
 }
 
 pub(super) fn standard_spline_cylinder_plane(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ir: &CadIr,
     bindings: &[(SurfaceId, bool, usize)],
     surface_indices: &HashMap<SurfaceId, usize>,
     support: &crate::families::standard::records::StandardCurveSupport,
     points: [usize; 2],
 ) -> Result<Option<CurveGeometry>, cadmpeg_core::decode::ResourceLimit> {
+    ctx.charge_work_limit(0, "catia surface membership boundary")?;
     let surfaces = support
         .faces
         .map(|face| face_surface(ir, bindings, surface_indices, face));
@@ -650,10 +659,10 @@ pub(super) fn standard_spline_cylinder_plane(
     else {
         return Ok(None);
     };
-    if !point_on_surface(start, &left.geometry)?
-        || !point_on_surface(start, &right.geometry)?
-        || !point_on_surface(end, &left.geometry)?
-        || !point_on_surface(end, &right.geometry)?
+    if !point_on_surface(ctx, start, &left.geometry)?
+        || !point_on_surface(ctx, start, &right.geometry)?
+        || !point_on_surface(ctx, end, &left.geometry)?
+        || !point_on_surface(ctx, end, &right.geometry)?
     {
         return Ok(None);
     }
@@ -730,12 +739,14 @@ pub(super) fn standard_spline_cylinder_plane(
 }
 
 pub(super) fn standard_spline_perpendicular_cylinders(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ir: &CadIr,
     bindings: &[(SurfaceId, bool, usize)],
     surface_indices: &HashMap<SurfaceId, usize>,
     support: &crate::families::standard::records::StandardCurveSupport,
     points: [usize; 2],
 ) -> Result<Option<CurveGeometry>, cadmpeg_core::decode::ResourceLimit> {
+    ctx.charge_work_limit(0, "catia surface membership boundary")?;
     let surfaces = support
         .faces
         .map(|face| face_surface(ir, bindings, surface_indices, face));
@@ -809,10 +820,10 @@ pub(super) fn standard_spline_perpendicular_cylinders(
     else {
         return Ok(None);
     };
-    if !point_on_surface(start, &left.geometry)?
-        || !point_on_surface(start, &right.geometry)?
-        || !point_on_surface(end, &left.geometry)?
-        || !point_on_surface(end, &right.geometry)?
+    if !point_on_surface(ctx, start, &left.geometry)?
+        || !point_on_surface(ctx, start, &right.geometry)?
+        || !point_on_surface(ctx, end, &left.geometry)?
+        || !point_on_surface(ctx, end, &right.geometry)?
     {
         return Ok(None);
     }
@@ -1285,10 +1296,10 @@ pub(super) fn build_standard_edge_curve(
                     Some(parameter_range),
                 )
             } else {
-                match standard_spline_line(ir, bindings, surface_indices, support, points)? {
+                match standard_spline_line(ctx, ir, bindings, surface_indices, support, points)? {
                     Some((geometry, range)) => (geometry, Some(range)),
                     None => {
-                        match standard_spline_circle(
+                        match standard_spline_circle(ctx, 
                             ir,
                             bindings,
                             surface_indices,
@@ -1296,7 +1307,7 @@ pub(super) fn build_standard_edge_curve(
                             points,
                         )? {
                             Some(geometry) => (geometry, None),
-                            None => match standard_spline_cylinder_plane(
+                            None => match standard_spline_cylinder_plane(ctx, 
                                 ir,
                                 bindings,
                                 surface_indices,
@@ -1304,7 +1315,7 @@ pub(super) fn build_standard_edge_curve(
                                 points,
                             )? {
                                 Some(geometry) => (geometry, None),
-                                None => match standard_spline_perpendicular_cylinders(
+                                None => match standard_spline_perpendicular_cylinders(ctx, 
                                     ir,
                                     bindings,
                                     surface_indices,

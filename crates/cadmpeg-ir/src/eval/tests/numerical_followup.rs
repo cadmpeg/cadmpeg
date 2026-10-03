@@ -31,7 +31,7 @@ fn numerical_followup_surface_projection_is_independent_of_scale() {
         ).expect("fixture constructor admission")
         .unwrap();
         let target = Point3::new(0.3 * scale, 0.4 * scale, 0.);
-        let uv = nurbs_surface_parameter_near_point(&surface, target, Some(Point2::new(0., 0.)))
+        let uv = nurbs_surface_parameter_near_point(crate::eval::admission::EvaluationAdmission::Standard, &surface, target, Some(Point2::new(0., 0.)))
             .expect("resource allocation did not fail")
             .unwrap();
         assert!((uv.u - 0.3).abs() <= 8.0 * f64::EPSILON);

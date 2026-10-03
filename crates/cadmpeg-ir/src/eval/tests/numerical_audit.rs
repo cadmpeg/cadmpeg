@@ -97,7 +97,7 @@ fn numerical_audit_rational_points_and_derivatives_ignore_common_weight_scale() 
                 Some(Vector3::new(0.0, 0.0, 0.0))
             );
             let surface = bilinear_surface(vec![vec![weight; 2]; 2], [2.0, 4.0]);
-            let partials = nurbs_surface_second_partials(&surface, 0.5, 0.5).unwrap();
+            let partials = nurbs_surface_second_partials(crate::eval::admission::EvaluationAdmission::Standard, &surface, 0.5, 0.5).unwrap();
             assert_eq!(partials.point, Point3::new(3.0, 0.5, 0.0));
             assert_eq!(partials.du, Vector3::new(2.0, 0.0, 0.0));
             assert_eq!(partials.dv, Vector3::new(0.0, 1.0, 0.0));

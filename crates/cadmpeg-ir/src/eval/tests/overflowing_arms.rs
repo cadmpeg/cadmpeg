@@ -958,7 +958,7 @@ fn a_nurbs_surface_whose_second_partial_overflows_keeps_its_first_partials() {
     let point = Point3::new(0.0, 0.5, 0.0);
     let budget = WorkBudget::new(1_000);
     for partials in [
-        crate::eval::nurbs_surface_partials(&surface, 0.0, 0.5),
+        crate::eval::nurbs_surface_partials(crate::eval::admission::EvaluationAdmission::Standard, &surface, 0.0, 0.5),
         crate::eval::nurbs_surface_partials_with_budget(&surface, 0.0, 0.5, &budget),
     ] {
         let partials = partials.expect("first partials").into_raw();
@@ -968,7 +968,7 @@ fn a_nurbs_surface_whose_second_partial_overflows_keeps_its_first_partials() {
         assert_eq!(partials.dv, Vector3::new(0.0, 1.0, 0.0));
     }
     for second in [
-        crate::eval::nurbs_surface_second_partials(&surface, 0.0, 0.5),
+        crate::eval::nurbs_surface_second_partials(crate::eval::admission::EvaluationAdmission::Standard, &surface, 0.0, 0.5),
         crate::eval::nurbs_surface_second_partials_with_budget(&surface, 0.0, 0.5, &budget),
     ] {
         assert_eq!(

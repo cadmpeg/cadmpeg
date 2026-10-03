@@ -159,7 +159,7 @@ fn numerical_0922_wide_surface_chart_keeps_inverse_and_bound() {
             [Point3::new(0., 0., 0.), Point3::new(1., 1., 0.)],
         ).expect("resource allocation did not fail");
         let inverse =
-            crate::eval::nurbs_surface_parameter_near_point(&s, Point3::new(0.5, 0.5, 0.), None).expect("resource allocation did not fail");
+            crate::eval::nurbs_surface_parameter_near_point(crate::eval::admission::EvaluationAdmission::Standard, &s, Point3::new(0.5, 0.5, 0.), None).expect("resource allocation did not fail");
         println!("IR plane domain {d:?}: chord bound={bound:?}, inverse={inverse:?}");
         assert!(bound.unwrap() < CHORD_BOUND_TOLERANCE);
         let expected_u = d[0].midpoint(d[1]);

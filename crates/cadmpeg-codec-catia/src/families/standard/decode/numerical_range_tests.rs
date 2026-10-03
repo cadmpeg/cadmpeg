@@ -119,7 +119,7 @@ fn audit_plane(d: [f64; 2], s: f64) -> NurbsSurface {
 #[test]
 fn numerical_0922b_surface_membership_wide_chart() {
     for d in [[0., 1.], [-1e308, 1e308]] {
-        let r = point_on_nurbs_surface(Point3::new(0.3, 0.7, 0.), &audit_plane(d, 1.));
+        let r = point_on_nurbs_surface(&cadmpeg_test_support::service_decode_context(), Point3::new(0.3, 0.7, 0.), &audit_plane(d, 1.));
         println!("CATIA plane chart{d:?}: {r:?}");
         assert_eq!(r, Ok(Some(true)));
     }
@@ -127,7 +127,7 @@ fn numerical_0922b_surface_membership_wide_chart() {
 #[test]
 fn numerical_0922b_surface_membership_large_plane() {
     for scale in [1., 1e200] {
-        let r = point_on_nurbs_surface(
+        let r = point_on_nurbs_surface(&cadmpeg_test_support::service_decode_context(), 
             Point3::new(0.3 * scale, 0.7 * scale, 0.),
             &audit_plane([0., 1.], scale),
         );
