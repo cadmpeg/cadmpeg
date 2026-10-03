@@ -22,3 +22,10 @@ pub fn unresolved<T: std::str::FromStr>(ctx: &DecodeContext, text: &str) -> Resu
     let _parsed = text.parse::<T>(); // finding: unproven_decode_charge
     Ok(())
 }
+
+pub fn scalar_default<T: decode::text::TextScalar + Default>(_ctx: &DecodeContext) -> T {
+    T::default()
+}
+pub fn unresolved_default<T: Default>(_ctx: &DecodeContext) -> T {
+    T::default() // finding: unproven_decode_charge
+}

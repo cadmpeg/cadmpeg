@@ -158,7 +158,7 @@ impl DecodeContext<'_> {
 
     /// Sums fallibly mapped values through the same admitted fold.
     /// The callback owns conversion and checked addition for its result type.
-    pub fn sum<T, A: Default>(
+    pub fn sum<T, A: super::text::TextScalar + Default>(
         &self, values: &[T], add: impl FnMut(A, &T) -> Result<A, CodecError>,
         operation: &'static str,
     ) -> Result<A, CodecError> {
@@ -223,6 +223,85 @@ impl DecodeContext<'_> {
             }
         }, operation)?;
         Ok(selected.map(|(value, _)| value))
+    }
+
+    /// Selects the first least value through charged complete-value comparison.
+    pub fn min<'values, T: super::cost::DecodeCost + Ord>(
+        &self, values: &'values [T], operation: &'static str,
+    ) -> Result<Option<&'values T>, CodecError> {
+        self.min_by(values, |left, right| self.compare(left, right, operation), operation)
+    }
+
+    /// Selects the last greatest value through charged complete-value comparison.
+    pub fn max<'values, T: super::cost::DecodeCost + Ord>(
+        &self, values: &'values [T], operation: &'static str,
+    ) -> Result<Option<&'values T>, CodecError> {
+        self.max_by(values, |left, right| self.compare(left, right, operation), operation)
+    }
+
+    /// Searches from the end; callbacks admit input-sized child work.
+    pub fn rposition_by<T>(
+        &self, values: &[T], mut predicate: impl FnMut(&T) -> Result<bool, CodecError>,
+        operation: &'static str,
+    ) -> Result<Option<usize>, CodecError> {
+        for (reverse_index, value) in self.admit_iter(values, operation)?.rev().enumerate() {
+            if predicate(value)? {
+                return Ok(Some(values.len() - reverse_index - 1));
+            }
+        }
+        Ok(None)
+    }
+
+    /// Finds the first false predicate in a true-prefix slice.
+    /// Each visited slot is charged before its fallible predicate runs.
+    pub fn partition_point<T>(
+        &self, values: &[T], mut predicate: impl FnMut(&T) -> Result<bool, CodecError>,
+        operation: &'static str,
+    ) -> Result<usize, CodecError> {
+        let mut lower = 0;
+        let mut upper = values.len();
+        while lower < upper {
+            let middle = lower + (upper - lower) / 2;
+            self.charge_work(1, operation)?;
+            if predicate(&values[middle])? {
+                lower = middle + 1;
+            } else {
+                upper = middle;
+            }
+        }
+        Ok(lower)
+    }
+
+    /// Searches a sorted slice. The comparator admits its own child work.
+    pub fn binary_search_by<T>(
+        &self, values: &[T], mut compare: impl FnMut(&T) -> Result<std::cmp::Ordering, CodecError>,
+        operation: &'static str,
+    ) -> Result<Result<usize, usize>, CodecError> {
+        let index = self.partition_point(values, |value| {
+            Ok(compare(value)? == std::cmp::Ordering::Less)
+        }, operation)?;
+        if let Some(value) = values.get(index) {
+            self.charge_work(1, operation)?;
+            if compare(value)? == std::cmp::Ordering::Equal {
+                return Ok(Ok(index));
+            }
+        }
+        Ok(Err(index))
+    }
+
+    /// Searches a sorted slice with complete-value comparison charges.
+    pub fn binary_search<T: super::cost::DecodeCost + Ord>(
+        &self, values: &[T], key: &T, operation: &'static str,
+    ) -> Result<Result<usize, usize>, CodecError> {
+        self.binary_search_by(values, |value| self.compare(value, key, operation), operation)
+    }
+
+    /// Searches sorted projected keys; extraction admits its child work.
+    pub fn binary_search_by_key<T, K: super::cost::DecodeCost + Ord>(
+        &self, values: &[T], key: &K,
+        mut project: impl FnMut(&T) -> Result<K, CodecError>, operation: &'static str,
+    ) -> Result<Result<usize, usize>, CodecError> {
+        self.binary_search_by(values, |value| self.compare(&project(value)?, key, operation), operation)
     }
 
     /// Compares equal-length byte slices after admitting the complete scan.
@@ -516,4 +595,39 @@ mod tests {
             .equal_bytes(b"", b"", "compare")
             .expect("test operation is admitted"));
     }
+    #[test]
+    fn charged_sorted_searches_keep_insertion_points_and_first_equal() {
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).expect("context");
+        let values = [1_u8, 3, 3, 7];
+        for (key, expected) in [(0, Err(0)), (1, Ok(0)), (2, Err(1)), (3, Ok(1)), (4, Err(3)), (7, Ok(3)), (8, Err(4))] {
+            assert_eq!(ctx.binary_search(&values, &key, "search").expect("admission"), expected);
+        }
+        assert_eq!(ctx.binary_search::<u8>(&[], &1, "empty").expect("admission"), Err(0));
+        assert_eq!(ctx.partition_point(&values, |value| Ok(*value < 3), "partition").expect("admission"), 1);
+        assert_eq!(ctx.binary_search_by_key(&values, &6_u8, |value| Ok(*value * 2), "projection").expect("admission"), Ok(1));
+        assert_eq!(ctx.rposition_by(&values, |value| Ok(*value == 3), "reverse search").expect("admission"), Some(2));
+        assert_eq!(ctx.min(&values, "minimum").expect("admission"), Some(&1));
+        assert_eq!(ctx.max(&values, "maximum").expect("admission"), Some(&7));
+    }
+
+    #[test]
+    fn sorted_search_refuses_before_predicate_and_keeps_child_refusal() {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+        let called = std::cell::Cell::new(false);
+        let CodecError::ResourceLimit(first) = ctx.partition_point(&[1], |_| { called.set(true); Ok(true) }, "partition").expect_err("refusal") else { panic!("refusal") };
+        assert!(!called.get());
+        let CodecError::ResourceLimit(repeated) = ctx.rposition_by(&[1], |_| { called.set(true); Ok(true) }, "reverse").expect_err("refusal") else { panic!("refusal") };
+        assert_eq!(repeated, first);
+        assert!(!called.get());
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).expect("context");
+        let CodecError::ResourceLimit(child) = ctx.binary_search_by(&[1], |_| Err(ctx.refuse_codec_limit("child", 0, 1)), "search").expect_err("child refusal") else { panic!("refusal") };
+        assert_eq!(child.operation, "child");
+        assert_eq!(ctx.resource_refusal(), Some(child));
+    }
+
 }
