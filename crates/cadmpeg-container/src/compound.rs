@@ -247,15 +247,14 @@ enum DirectoryColor {
 struct DirectoryName(String);
 
 impl DirectoryName {
-    fn new(name: String) -> Result<Self, CodecError> {
+    fn new(ctx: &DecodeContext<'_>, name: String) -> Result<Self, CodecError> {
         if name.is_empty() {
             return Err(CodecError::NotImplemented(
                 "CFB empty live directory names cannot be represented as paths".into(),
             ));
         }
-        if name.encode_utf16().count() > 31
-            || name
-                .chars()
+        if ctx.admit_iter(name.as_str(), "check CFB directory name width")?.encode_utf16().count() > 31
+            || ctx.admit_iter(name.as_str(), "check CFB directory name characters")?
                 .any(|character| matches!(character, '/' | '\\' | ':' | '!'))
         {
             return malformed(
@@ -803,7 +802,7 @@ impl CompoundState {
         let directory = parse_directory(ctx, &directory_bytes, version)?;
         drop(directory_bytes);
         drop(directory_scratch);
-        validate_root(&directory)?;
+        validate_root(ctx, &directory)?;
         let mini_fat_chain = chain(
             ctx,
             &fat,
@@ -1483,7 +1482,8 @@ impl CompoundPrefixProbe {
                 Ok(root) => root,
                 Err(error) => return Ok(Self::Malformed(error.to_string())),
             };
-            if let Err(error) = validate_root(&directory) {
+            if let Err(error) = validate_root(ctx, &directory) {
+                if matches!(error, CodecError::ResourceLimit(_)) { return Err(error); }
                 return Ok(Self::Malformed(error.to_string()));
             }
             if let Err(error) = validate_sibling_tree(ctx, &directory, root.child) {
@@ -1684,7 +1684,7 @@ fn parse_directory(
             )?;
             let name =
                 ctx.utf16le_text(raw, (name_len - 2) / 2, false, "decode CFB directory name")?;
-            DirectoryName::new(name)?
+            DirectoryName::new(ctx, name)?
         };
         let color = match raw[67] {
             0 => DirectoryColor::Red,
@@ -1717,7 +1717,7 @@ fn directory_root(directory: &[DirectorySlot]) -> Result<&LiveEntry, CodecError>
         .ok_or_else(|| CodecError::Malformed("invalid CFB root directory entry".into()))
 }
 
-fn validate_root(directory: &[DirectorySlot]) -> Result<(), CodecError> {
+fn validate_root(ctx: &DecodeContext<'_>, directory: &[DirectorySlot]) -> Result<(), CodecError> {
     let root = directory_root(directory)?;
     if root.kind != DirectoryKind::Root
         || root.name.as_str() != "Root Entry"
@@ -1726,7 +1726,7 @@ fn validate_root(directory: &[DirectorySlot]) -> Result<(), CodecError> {
     {
         return malformed("invalid CFB root directory entry");
     }
-    if directory.iter().skip(1).any(|entry| {
+    if ctx.admit_iter(directory, "scan CFB root entries")?.skip(1).any(|entry| {
         entry
             .live()
             .is_some_and(|entry| entry.kind == DirectoryKind::Root)
@@ -1791,22 +1791,8 @@ fn visit_sibling_tree(
     {
         return malformed("CFB sibling tree contains an invalid node or cycle");
     }
-    let comparison_work = lower
-        .into_iter()
-        .chain(upper)
-        .try_fold(0usize, |total, name| {
-            total
-                .checked_add(name.len())?
-                .checked_add(entry.name.as_str().len())
-        })
-        .and_then(|bytes| bytes.checked_mul(2))
-        .ok_or_else(|| ctx.refuse_codec_limit("compare CFB sibling names", u64::MAX, u64::MAX))?;
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(comparison_work),
-        "compare CFB sibling names",
-    )?;
-    if lower.is_some_and(|name| cfb_name_cmp(name, entry.name.as_str()) != Ordering::Less)
-        || upper.is_some_and(|name| cfb_name_cmp(entry.name.as_str(), name) != Ordering::Less)
+    if lower.map(|name| cfb_name_cmp(ctx, name, entry.name.as_str())).transpose()?.is_some_and(|order| order != Ordering::Less)
+        || upper.map(|name| cfb_name_cmp(ctx, entry.name.as_str(), name)).transpose()?.is_some_and(|order| order != Ordering::Less)
     {
         return malformed("CFB sibling tree violates directory-name ordering");
     }
@@ -1834,14 +1820,18 @@ fn visit_sibling_tree(
     )
 }
 
-fn cfb_name_cmp(left: &str, right: &str) -> Ordering {
-    let left_len = left.encode_utf16().count();
-    let right_len = right.encode_utf16().count();
-    left_len.cmp(&right_len).then_with(|| {
-        left.encode_utf16()
-            .map(cfb_upper_unit)
-            .cmp(right.encode_utf16().map(cfb_upper_unit))
-    })
+fn cfb_name_cmp(ctx: &DecodeContext<'_>, left: &str, right: &str) -> Result<Ordering, CodecError> {
+    let left_len = ctx.admit_iter(left, "compare CFB sibling names")?.encode_utf16().count();
+    let right_len = ctx.admit_iter(right, "compare CFB sibling names")?.encode_utf16().count();
+    let length_order = left_len.cmp(&right_len);
+    if length_order != Ordering::Equal { return Ok(length_order); }
+    let left_units = ctx.admit_iter(left, "compare CFB sibling names")?.encode_utf16().map(cfb_upper_unit);
+    let right_units = ctx.admit_iter(right, "compare CFB sibling names")?.encode_utf16().map(cfb_upper_unit);
+    for (left, right) in left_units.zip(right_units) {
+        let order = left.cmp(&right);
+        if order != Ordering::Equal { return Ok(order); }
+    }
+    Ok(Ordering::Equal)
 }
 
 fn path_key(ctx: &DecodeContext<'_>, path: &str) -> Result<Vec<Vec<u16>>, CodecError> {
@@ -2914,9 +2904,25 @@ mod tests {
     }
 
     #[test]
+    fn directory_name_queries_refuse_before_scans() {
+        let file = fixture();
+        let arena = DecodeArena::new();
+        let (setup, _) = DecodeContext::from_root_bytes(&file, &arena, &DecodePolicy::service()).expect("setup");
+        let directory = parse_directory(&setup, &file[512..1024], CompoundVersion::V3).expect("directory");
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+        let CodecError::ResourceLimit(first) = cfb_name_cmp(&ctx, "alpha", "ALPHA").expect_err("comparison work") else { panic!("refusal") };
+        let CodecError::ResourceLimit(repeated) = super::DirectoryName::new(&ctx, "alpha".into()).expect_err("fused name work") else { panic!("refusal") };
+        assert_eq!(first, repeated);
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+        assert!(matches!(super::validate_root(&ctx, &directory), Err(CodecError::ResourceLimit(limit)) if limit.operation == "scan CFB root entries"));
+    }
+
+    #[test]
     fn directory_keys_use_length_preserving_simple_uppercase_units() {
-        assert_eq!(cfb_name_cmp("alpha", "ALPHA"), Ordering::Equal);
         with_context(&[], &DecodePolicy::service(), |ctx| {
+            assert_eq!(cfb_name_cmp(ctx, "alpha", "ALPHA").expect("comparison"), Ordering::Equal);
             assert_eq!(path_key(ctx, "Store/alpha").expect("key"), path_key(ctx, "store/ALPHA").expect("key"));
             assert_ne!(path_key(ctx, "ß").expect("key"), path_key(ctx, "SS").expect("key"));
         });
@@ -3018,9 +3024,9 @@ mod tests {
             assert!(matches!(error, CodecError::NotImplemented(message)
                 if message == "CFB empty live directory names cannot be represented as paths"));
         }
-        assert!(super::DirectoryName::new(String::new()).is_err());
+        assert!(with_context(&[], &DecodePolicy::service(), |ctx| super::DirectoryName::new(ctx, String::new())).is_err());
         assert_eq!(
-            super::DirectoryName::new(" ".into())
+            with_context(&[], &DecodePolicy::service(), |ctx| super::DirectoryName::new(ctx, " ".into()))
                 .expect("a space is a valid live name")
                 .as_str(),
             " "
