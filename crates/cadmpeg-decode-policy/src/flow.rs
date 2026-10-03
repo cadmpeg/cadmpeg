@@ -440,7 +440,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
         self.record_parser_admission(expression);
         self.record_key_work(expression);
         self.record_move_work(expression);
-        self.record_sort_work(expression);
+        self.record_order_work(expression);
         if !matches!(name.as_str(), "charge_work" | "charge_work_limit") {
             return;
         }
@@ -647,7 +647,7 @@ impl Flow<'_> {
 pub(crate) fn factor_depends_on(factor: &str, key: &str) -> bool {
     factor == key
         || factor.contains(".range[") && factor.contains(key)
-        || matches!(factor.split_once(':').map(|(kind, _)| kind), Some("keybytes" | "treekeybytes" | "sortbytes" | "movebytes")) && factor.contains(key)
+        || matches!(factor.split_once(':').map(|(kind, _)| kind), Some("keybytes" | "treekeybytes" | "sortbytes" | "movebytes" | "heappushbytes" | "heappopbytes")) && factor.contains(key)
         || factor.starts_with(&format!("{key}."))
         || key.starts_with(&format!("{factor}."))
 }

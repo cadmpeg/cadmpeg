@@ -13,7 +13,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
             }
             ty::Adt(owner, _) if types::standard(self.tcx, owner.did()) => match self.tcx.item_name(owner.did()).as_str() {
                 "String" => "text", "Vec" => "vector", "HashMap" => "hash_map",
-                "BTreeMap" => "btree_map", "HashSet" => "hash_set", "BTreeSet" => "btree_set",
+                "BTreeMap" => "btree_map", "BinaryHeap" => "heap", "HashSet" => "hash_set", "BTreeSet" => "btree_set",
                 _ => "other",
             },
             _ => "other",
@@ -45,6 +45,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
         if set && matches!(name.as_str(), "get" | "contains" | "remove" | "insert" | "is_subset" | "is_disjoint") {
             return method(&format!("{}_{kind}", name.as_str()));
         }
+        if kind == "heap" && matches!(name.as_str(), "pop" | "push") { return method(if name.as_str() == "pop" { "pop_heap" } else { "push_heap" }); }
         match name.as_str() {
             "contains" if kind == "text" => method("contains_text"),
             "contains" if matches!(kind, "slice" | "bytes" | "vector") => method("contains"),

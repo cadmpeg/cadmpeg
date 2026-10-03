@@ -178,3 +178,32 @@ pub fn copy_fill<T: Copy>(ctx: &DecodeContext, values: &mut [T], value: T) -> Re
     values.fill(value); // finding: uncharged_decode_work
     Ok(())
 }
+
+impl DecodeContext {
+    fn reserve_heap<T: Ord>(&self, _values: &mut std::collections::BinaryHeap<T>, _count: usize, _operation: &str) -> Result<(), ()> { Ok(()) }
+    fn admit_heap<T: Ord>(&self, _values: &std::collections::BinaryHeap<T>, _incoming: Option<&T>, _operation: &str) -> Result<(), ()> { Ok(()) }
+}
+pub fn heap_sifts(ctx: &DecodeContext, heap: &mut std::collections::BinaryHeap<String>, other: &mut std::collections::BinaryHeap<String>, value: String, wrong: String, changed: String, flag: bool) -> Result<(), ()> {
+    ctx.admit_heap(heap, None, "pop")?;
+    let _paid = heap.pop();
+    let _reused = heap.pop(); // finding: uncharged_decode_work
+    ctx.admit_heap(other, None, "wrong heap")?;
+    let _wrong_heap = heap.pop(); // finding: uncharged_decode_work
+    ctx.reserve_heap(heap, 1, "slot")?;
+    ctx.admit_heap(heap, Some(&value), "push")?;
+    heap.push(value);
+    ctx.reserve_heap(heap, 1, "slot")?;
+    ctx.admit_heap(heap, Some(&wrong), "wrong incoming")?;
+    heap.push(String::new()); // finding: uncharged_decode_work
+    ctx.reserve_heap(heap, 1, "slot")?;
+    ctx.admit_heap(heap, None, "no incoming")?;
+    heap.push(wrong); // finding: uncharged_decode_work
+    if flag { ctx.admit_heap(heap, None, "conditional")?; }
+    let _conditional = heap.pop(); // finding: uncharged_decode_work
+    let mut replacement = String::new();
+    ctx.reserve_heap(heap, 1, "slot")?;
+    ctx.admit_heap(heap, Some(&replacement), "changed incoming")?;
+    replacement = changed;
+    heap.push(replacement); // finding: uncharged_decode_work
+    Ok(())
+}

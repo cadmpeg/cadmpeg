@@ -13,6 +13,7 @@ pub mod compare;
 mod deflate;
 mod error;
 mod input;
+mod heap;
 mod mutate;
 pub mod iter_source;
 mod policy;
