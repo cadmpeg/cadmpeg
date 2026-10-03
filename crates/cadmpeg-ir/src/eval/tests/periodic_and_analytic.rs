@@ -502,25 +502,25 @@ fn conic_arms_refuse_points_and_derivatives_that_overflow() {
         CircleCurve::try_new(origin, axis, stretched, f64::MAX).unwrap(),
     ));
     assert!(crate::eval::decode::curve_tangent(crate::eval::admission::EvaluationAdmission::Standard, &circle, 0.0).is_err());
-    assert!(curve_second_derivative(&circle, 0.0).is_err());
+    assert!(curve_second_derivative(crate::eval::admission::EvaluationAdmission::Standard, &circle, 0.0).is_err());
     assert!(crate::eval::decode::curve_tangent(crate::eval::admission::EvaluationAdmission::Standard, &circle, std::f64::consts::FRAC_PI_4).is_ok());
-    assert!(curve_second_derivative(&circle, std::f64::consts::FRAC_PI_4).is_ok());
+    assert!(curve_second_derivative(crate::eval::admission::EvaluationAdmission::Standard, &circle, std::f64::consts::FRAC_PI_4).is_ok());
     let ellipse = solved(SolvedCurveGeometry::Ellipse(
         EllipseCurve::try_new(origin, axis, stretched, f64::MAX, 1.0).unwrap(),
     ));
     assert!(crate::eval::decode::curve_tangent(crate::eval::admission::EvaluationAdmission::Standard, &ellipse, std::f64::consts::FRAC_PI_2).is_err());
-    assert!(curve_second_derivative(&ellipse, 0.0).is_err());
+    assert!(curve_second_derivative(crate::eval::admission::EvaluationAdmission::Standard, &ellipse, 0.0).is_err());
     assert!(crate::eval::decode::curve_tangent(crate::eval::admission::EvaluationAdmission::Standard, &ellipse, std::f64::consts::FRAC_PI_4).is_ok());
     let parabola = solved(SolvedCurveGeometry::Parabola(
         ParabolaCurve::try_new(origin, axis, stretched, 0.5 * f64::MAX).unwrap(),
     ));
     assert!(crate::eval::decode::curve_tangent(crate::eval::admission::EvaluationAdmission::Standard, &parabola, 1.0).is_err());
-    assert!(curve_second_derivative(&parabola, 0.0).is_err());
+    assert!(curve_second_derivative(crate::eval::admission::EvaluationAdmission::Standard, &parabola, 0.0).is_err());
     let parabola = solved(SolvedCurveGeometry::Parabola(
         ParabolaCurve::try_new(origin, axis, reference, 0.5 * f64::MAX).unwrap(),
     ));
     assert!(crate::eval::decode::curve_tangent(crate::eval::admission::EvaluationAdmission::Standard, &parabola, 0.5).is_ok());
-    assert!(curve_second_derivative(&parabola, 0.0).is_ok());
+    assert!(curve_second_derivative(crate::eval::admission::EvaluationAdmission::Standard, &parabola, 0.0).is_ok());
     let hyperbola = solved(SolvedCurveGeometry::Hyperbola(
         HyperbolaCurve::try_new(origin, axis, stretched, 1.0, f64::MAX).unwrap(),
     ));
@@ -528,12 +528,12 @@ fn conic_arms_refuse_points_and_derivatives_that_overflow() {
     let hyperbola = solved(SolvedCurveGeometry::Hyperbola(
         HyperbolaCurve::try_new(origin, axis, stretched, f64::MAX, 1.0).unwrap(),
     ));
-    assert!(curve_second_derivative(&hyperbola, 0.0).is_err());
+    assert!(curve_second_derivative(crate::eval::admission::EvaluationAdmission::Standard, &hyperbola, 0.0).is_err());
     let hyperbola = solved(SolvedCurveGeometry::Hyperbola(
         HyperbolaCurve::try_new(origin, axis, reference, 1.0, f64::MAX).unwrap(),
     ));
     assert!(crate::eval::decode::curve_tangent(crate::eval::admission::EvaluationAdmission::Standard, &hyperbola, 0.0).is_ok());
-    assert!(curve_second_derivative(&hyperbola, 0.0).is_ok());
+    assert!(curve_second_derivative(crate::eval::admission::EvaluationAdmission::Standard, &hyperbola, 0.0).is_ok());
 }
 
 #[test]

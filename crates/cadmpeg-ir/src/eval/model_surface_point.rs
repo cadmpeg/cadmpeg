@@ -148,7 +148,7 @@ pub(super) fn model_surface_point_by_id_inner(
             Err(EvaluationFailure::NoValue) => return None,
             Err(EvaluationFailure::ResourceLimit(limit)) => return Some(resource(limit)),
         };
-        let oriented_normal = surface_first_order(geometry, u, v, None)
+        let oriented_normal = surface_first_order(crate::eval::admission::EvaluationAdmission::Standard, geometry, u, v, None)
             .map_err(|failure| failure.map(|_| ()))
             .and_then(|order| {
                 let [du, dv] = order.first?;
@@ -184,7 +184,7 @@ pub(super) fn model_surface_point_by_id_inner(
                 None => crate::eval::decode::surface_point(crate::eval::admission::EvaluationAdmission::Standard, geometry, u, v),
             });
         }
-        let order = match surface_first_order(geometry, u, v, budget) {
+        let order = match surface_first_order(crate::eval::admission::EvaluationAdmission::Standard, geometry, u, v, budget) {
             Ok(order) => order,
             Err(EvaluationFailure::ResourceLimit(limit)) => return Some(resource(limit)),
             Err(EvaluationFailure::NoValue) => return None,
@@ -273,7 +273,7 @@ pub(super) fn model_surface_point_by_id_inner(
         if !u_extended && !v_extended {
             return None;
         }
-        let order = match surface_first_order(&support.geometry, boundary_u, boundary_v, budget) {
+        let order = match surface_first_order(crate::eval::admission::EvaluationAdmission::Standard, &support.geometry, boundary_u, boundary_v, budget) {
             Ok(order) => order,
             Err(EvaluationFailure::ResourceLimit(limit)) => return Some(resource(limit)),
             Err(EvaluationFailure::NoValue | EvaluationFailure::NonFinite(_)) => return None,

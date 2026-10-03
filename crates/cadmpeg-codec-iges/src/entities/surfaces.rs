@@ -1322,7 +1322,7 @@ fn indicator_normal(
             else {
                 return Ok(None);
             };
-            finite_or_refusal(cadmpeg_ir::eval::surface_partials(
+            finite_or_refusal(cadmpeg_ir::eval::surface_partials(ctx, 
                 &carrier.geometry,
                 parameters[0],
                 parameters[1],
