@@ -121,7 +121,7 @@ fn check_fixture(name: &str) {
             std::env::join_paths(directories).expect("dependency paths"),
         );
     }
-    if matches!(name, "work_keys" | "work_callbacks" | "work_scalar" | "work_iterators") {
+    if matches!(name, "work_keys" | "work_callbacks" | "work_scalar" | "work_iterators" | "serde") {
         command.env("CADMPEG_POLICY_CRATE_NAME", "cadmpeg_core");
     }
     if name == "external" {
