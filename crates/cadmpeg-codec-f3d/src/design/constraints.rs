@@ -262,7 +262,7 @@ pub(crate) fn project_sketch_constraints(
                 definition
             } else {
                 let Some(native_kind) =
-                    cadmpeg_core::text::NonBlankString::new(relation_kind_name(relation, ctx)?)
+                    cadmpeg_core::text::NonBlankString::for_decode(ctx, relation_kind_name(relation, ctx)?, "validate nonblank text")?
                 else {
                     return Ok(None);
                 };

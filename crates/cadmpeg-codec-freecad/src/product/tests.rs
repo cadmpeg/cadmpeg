@@ -20,7 +20,7 @@ mod property_diagnostic_tests;
 
 #[test]
 fn local_copy_on_change_target_identity_refuses_at_retained_limit() {
-    let target = native::LinkTarget::optional_from_wire(native::LinkTargetWire {
+    let target = native::LinkTarget::optional_from_wire(native::LinkTargetWire::<String> {
         document: None,
         document_attribute: None,
         object: Some("fcstd:native:object#Gear".into()),

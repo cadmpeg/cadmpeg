@@ -336,7 +336,7 @@ fn dimension_locus_group_preserves_roles_owner_state_and_return_order() {
             byte_offset,
             state_offset: 66,
             owner_reference: 172,
-            owner_entity_id: Some(cadmpeg_core::text::NonBlankString::new("0_172").unwrap()),
+            owner_entity_id: Some(cadmpeg_core::text::NonBlankString::try_from("0_172").unwrap()),
             auxiliary_references: crate::records::identity::ReferenceRun::located(Vec::new()),
             rectangular_counted_reference_count: None,
             members: ([(175, 25), (217, 40)]

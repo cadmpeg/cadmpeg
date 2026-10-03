@@ -373,7 +373,7 @@ fn validation_body_bounds(with_binding: bool) -> crate::native::F3dNative {
     native.design_body_bounds.push(bounds);
     if with_binding {
         native.design_body_bindings.push(
-            DesignBodyBinding::try_from(DesignBodyBindingWire {
+            DesignBodyBinding::try_from(DesignBodyBindingWire::<String> {
                 id: binding_id.into(),
                 stream: "Design/BulkStream.dat".into(),
                 pair_count: 1,
@@ -555,7 +555,7 @@ fn body_binding_invalid_entity_refuses_retained_limit() {
 fn body_binding_incomplete_group_finding_refuses_collection_limit() {
     use crate::records::bodies::{DesignBodyBinding, DesignBodyBindingWire};
     let mut native = validation_body_bounds(true);
-    native.design_body_bindings[0] = DesignBodyBinding::try_from(DesignBodyBindingWire {
+    native.design_body_bindings[0] = DesignBodyBinding::try_from(DesignBodyBindingWire::<String> {
         id: "f3d:Design/BulkStream.dat:design-body-binding#50".into(),
         stream: "Design/BulkStream.dat".into(),
         pair_count: 2,

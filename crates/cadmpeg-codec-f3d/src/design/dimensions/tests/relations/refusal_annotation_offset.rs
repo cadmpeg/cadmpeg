@@ -47,14 +47,14 @@ fn fixture(operation: &'static str, dimension: ResourceDimension) {
         Point2::new(10.0, -2.0),
     );
     let parameter = crate::records::parameters::DesignParameter::try_from(
-        crate::records::parameters::DesignParameterDraft {
+        crate::records::parameters::DesignParameterDraft::<String> {
             id: format!("{stream}:design-parameter#12"),
             byte_offset: 0,
             class_tag: crate::records::references::DesignClassTag::try_from("305".to_owned())
                 .unwrap(),
             record_index: 12,
             source_ordinal: 0,
-            source: crate::records::parameters::DesignParameterSource::new(
+            source: crate::records::parameters::DesignParameterSource::new::<String>(
                 "Linear Dimension-2".into(),
                 Some(13),
                 Some(crate::records::identity::Located {

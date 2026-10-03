@@ -913,12 +913,12 @@ fn body_selections_round_trip_through_json() {
             members: crate::features::BodyMembers::try_from_rows(vec![
                 crate::features::BodyMember::new(
                     BodyId::mint("synthetic:test:body#0").expect("valid identity"),
-                    cadmpeg_core::text::NonBlankString::new("body:17")
+                    cadmpeg_core::text::NonBlankString::try_from("body:17")
                         .expect("valid body selection row"),
                 ),
                 crate::features::BodyMember::new(
                     BodyId::mint("synthetic:test:body#1").expect("valid identity"),
-                    cadmpeg_core::text::NonBlankString::new("body:18")
+                    cadmpeg_core::text::NonBlankString::try_from("body:18")
                         .expect("valid body selection row"),
                 ),
             ])
@@ -938,13 +938,13 @@ fn body_selections_round_trip_through_json() {
                 crate::features::BodyMember::new(
                     HistoricalBodyId::mint("synthetic:history-input:body#0")
                         .expect("valid identity"),
-                    cadmpeg_core::text::NonBlankString::new("body:16")
+                    cadmpeg_core::text::NonBlankString::try_from("body:16")
                         .expect("valid historical body selection row"),
                 ),
                 crate::features::BodyMember::new(
                     HistoricalBodyId::mint("synthetic:history-input:body#1")
                         .expect("valid identity"),
-                    cadmpeg_core::text::NonBlankString::new("body:17")
+                    cadmpeg_core::text::NonBlankString::try_from("body:17")
                         .expect("valid historical body selection row"),
                 ),
             ])
@@ -966,8 +966,8 @@ fn body_selection_members_reject_blank_native_rows() {
     use crate::ids::BodyId;
 
     let body = BodyId::mint("synthetic:test:body#blank").expect("identity grammar");
-    assert!(cadmpeg_core::text::NonBlankString::new(" \t").is_none());
-    assert!(cadmpeg_core::text::NonBlankString::new("\n").is_none());
+    assert!(cadmpeg_core::text::NonBlankString::try_from(" \t").is_err());
+    assert!(cadmpeg_core::text::NonBlankString::try_from("\n").is_err());
     assert!(
         serde_json::from_value::<BodyMembers<BodyId>>(serde_json::json!([
             {"body": body, "native": " "}

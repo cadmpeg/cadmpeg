@@ -1078,14 +1078,14 @@ fn parameter_owner_uses_the_paired_same_index_header_as_its_boundary() {
 
     let stream = "FusionAssetName[Active]/Design1/BulkStream.dat";
     let parameter = crate::records::parameters::DesignParameter::try_from(
-        crate::records::parameters::DesignParameterDraft {
+        crate::records::parameters::DesignParameterDraft::<String> {
             id: crate::ids::native_design_parameter_id(stream, 200),
             byte_offset: 200,
             class_tag: crate::records::references::DesignClassTag::try_from("305".to_owned())
                 .unwrap(),
             record_index: 45,
             source_ordinal: 0,
-            source: crate::records::parameters::DesignParameterSource::new(
+            source: crate::records::parameters::DesignParameterSource::new::<String>(
                 "Distance".into(),
                 Some(44),
                 Some(crate::records::identity::Located {
@@ -1185,14 +1185,14 @@ fn parameter_owner_maps_and_output_refuse_collection_limit() {
 
     let stream = "FusionAssetName[Active]/Design1/BulkStream.dat";
     let parameter = crate::records::parameters::DesignParameter::try_from(
-        crate::records::parameters::DesignParameterDraft {
+        crate::records::parameters::DesignParameterDraft::<String> {
             id: crate::ids::native_design_parameter_id(stream, 200),
             byte_offset: 200,
             class_tag: crate::records::references::DesignClassTag::try_from("305".to_owned())
                 .unwrap(),
             record_index: 45,
             source_ordinal: 0,
-            source: crate::records::parameters::DesignParameterSource::new(
+            source: crate::records::parameters::DesignParameterSource::new::<String>(
                 "Distance".into(),
                 Some(44),
                 Some(crate::records::identity::Located {
@@ -1255,14 +1255,14 @@ fn parameter_owner_maps_and_output_refuse_collection_limit() {
 fn parameter_companion_orders_recipes_by_payload_byte_offset() {
     let stream = "f3d:Design/BulkStream.dat";
     let parameter = crate::records::parameters::DesignParameter::try_from(
-        crate::records::parameters::DesignParameterDraft {
+        crate::records::parameters::DesignParameterDraft::<String> {
             id: format!("{stream}:design-parameter#20"),
             byte_offset: 1,
             class_tag: crate::records::references::DesignClassTag::try_from("305".to_owned())
                 .unwrap(),
             record_index: 20,
             source_ordinal: 0,
-            source: crate::records::parameters::DesignParameterSource::new(
+            source: crate::records::parameters::DesignParameterSource::new::<String>(
                 "Linear Dimension-1".into(),
                 Some(21),
                 None,
@@ -1578,14 +1578,14 @@ fn frame_relative_offsets_refuse_to_saturate_at_the_end_of_the_address_space() {
     )
     .unwrap()
     .expect("parsed parameter")
-    .into_record(stream, u64::MAX)
+    .into_record(&cadmpeg_test_support::service_decode_context(), stream, u64::MAX).unwrap()
     .is_none());
 
     let parsed =
         super::parse_design_parameter(&cadmpeg_test_support::service_decode_context(), &payload)
             .unwrap()
             .expect("parsed parameter");
-    let error = super::locate_design_parameter(parsed, stream, usize::MAX)
+    let error = super::locate_design_parameter(&cadmpeg_test_support::service_decode_context(), parsed, stream, usize::MAX)
         .expect_err("a frame at the end of the address space cannot be located");
     assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
 }

@@ -190,10 +190,10 @@ pub(in super::super) fn transfer_carrier_intersection_curves(
                 geometry,
                 source_object: Some(SourceObjectAssociation {
                     format: cadmpeg_ir::CodecFormat::Creo,
-                    object_id: cadmpeg_core::text::NonBlankString::new(ctx.format_retained(
+                    object_id: cadmpeg_core::text::NonBlankString::for_decode(ctx, ctx.format_retained(
                         format_args!("VisibGeom:{}", row.id),
                         "creo carrier intersection source object ID",
-                    )?)
+                    )?, "validate nonblank text")?
                     .ok_or_else(|| {
                         cadmpeg_core::CodecError::malformed("source object_id must not be empty")
                     })?,
@@ -443,10 +443,10 @@ pub(in super::super) fn transfer_nurbs_boundary_curves(
                 geometry,
                 source_object: Some(SourceObjectAssociation {
                     format: cadmpeg_ir::CodecFormat::Creo,
-                    object_id: cadmpeg_core::text::NonBlankString::new(ctx.format_retained(
+                    object_id: cadmpeg_core::text::NonBlankString::for_decode(ctx, ctx.format_retained(
                         format_args!("VisibGeom:{}", row.id),
                         "creo NURBS boundary source object ID",
-                    )?)
+                    )?, "validate nonblank text")?
                     .ok_or_else(|| {
                         cadmpeg_core::CodecError::malformed("source object_id must not be empty")
                     })?,

@@ -787,7 +787,7 @@ impl CloneForDecode for cadmpeg_core::text::NonBlankString {
         operation: &'static str,
     ) -> Result<Self, CodecError> {
         let text = ctx.copy_retained_text(self.as_str(), operation)?;
-        cadmpeg_core::text::NonBlankString::new(text)
+        cadmpeg_core::text::NonBlankString::for_decode(ctx, text, "validate nonblank text")?
             .ok_or_else(|| CodecError::malformed("admitted feature text is blank"))
     }
 }

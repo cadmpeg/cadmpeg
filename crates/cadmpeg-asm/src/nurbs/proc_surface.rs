@@ -2681,7 +2681,7 @@ fn sweep_law_expression(
             .then_some(())?;
         let copied = propagate_resource!(ctx.copy_retained_text(source, "ASM sweep law text"));
         return Some(Ok(EmbeddedLawExpression::Text(
-            cadmpeg_core::text::NonBlankString::new(copied)?,
+            propagate_resource!(cadmpeg_core::text::NonBlankString::for_decode(ctx, copied, "validate nonblank text").map_err(cadmpeg_core::CodecError::from))?,
         )));
     }
     law_expression(ctx, cur, 0)
@@ -2845,7 +2845,7 @@ fn law_formula_resolving(
         )?));
     }
     Some(Ok(EmbeddedLawFormula::Named {
-        name: cadmpeg_core::text::NonBlankString::new(name)?,
+        name: propagate_resource!(cadmpeg_core::text::NonBlankString::for_decode(ctx, name, "validate nonblank text").map_err(cadmpeg_core::CodecError::from))?,
         variables,
     }))
 }
@@ -4742,9 +4742,11 @@ fn resolve_t_spline_subtransform(
             program,
             separator,
             values,
-        } => cadmpeg_ir::geometry::InlineTSplineSubtransform::try_new(program, separator, values)
-            .ok()
-            .map(Ok),
+        } => match cadmpeg_ir::geometry::InlineTSplineSubtransform::try_new(ctx, program, separator, values) {
+            Ok(value) => Some(Ok(value)),
+            Err(error @ cadmpeg_core::CodecError::ResourceLimit(_)) => Some(Err(error)),
+            Err(_) => None,
+        },
         EmbeddedTSplineSubtransform::Reference { index, .. } => {
             resolve_t_spline_subtransform(ctx, usize::try_from(index).ok()?, table, seen)
         }

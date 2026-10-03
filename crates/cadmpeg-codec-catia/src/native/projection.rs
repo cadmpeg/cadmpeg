@@ -868,7 +868,7 @@ pub(crate) fn resolve_owner_chart_support_aliases(
         if let CatiaOwnerChartAddress::WidthCoded { alias } = &mut reference.address {
             *alias = if let Some(row) = unique_by_tag.get(&reference.value).copied().flatten() {
                 let id = ctx.copy_retained_text(&row.id, "catia_owner_alias_binding_id")?;
-                cadmpeg_core::text::NonBlankString::new(id)
+                cadmpeg_core::text::NonBlankString::for_decode(ctx, id, "validate nonblank text")?
                     .map(|id| CatiaOwnerChartAliasBinding::new(id, row.canonical_surface_tag))
             } else {
                 None

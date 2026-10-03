@@ -134,8 +134,8 @@ impl DecodeContext<'_> {
         &self,
         values: &'values S,
         operation: &'static str,
-    ) -> Result<AdmittedIter<S::Iter<'values>>, CodecError> {
-        self.charge_work(u64_from_index(values.visit_bound()), operation)?;
+    ) -> Result<AdmittedIter<S::Iter<'values>>, super::ResourceLimit> {
+        self.charge_work_limit(u64_from_index(values.visit_bound()), operation)?;
         Ok(AdmittedIter { source: values.source_iter() })
     }
 
@@ -554,7 +554,7 @@ mod tests {
         let error = result.map(|source| source.inspect(|_| visited.set(visited.get() + 1)))
             .expect_err("refusal");
         assert_eq!(visited.get(), 0);
-        let CodecError::ResourceLimit(limit) = error else { panic!("resource refusal") };
+        let limit = error;
         assert_eq!(ctx.resource_refusal(), Some(limit));
         assert_eq!(limit.operation, "iteration");
         assert_eq!(limit.dimension, ResourceDimension::WorkUnits);

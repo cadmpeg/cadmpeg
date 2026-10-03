@@ -1865,7 +1865,7 @@ fn protein_admission_keeps_later_assets_and_rejections() {
         .filter_map(|entry_name| {
             crate::decode::admit_protein_rejection(
                 &ctx,
-                crate::native::protein::ProteinRejectionRecordWire {
+                crate::native::protein::ProteinRejectionRecordWire::<String> {
                     id: "rejection".into(),
                     entry_name: entry_name.into(),
                     ordinal: 4,

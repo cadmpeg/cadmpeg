@@ -337,7 +337,7 @@ fn validation_parameter() -> crate::records::parameters::DesignParameter {
     use crate::records::parameters::{
         DesignParameter, DesignParameterDiscriminator, DesignParameterDraft, DesignParameterSource,
     };
-    DesignParameter::try_from(DesignParameterDraft {
+    DesignParameter::try_from(DesignParameterDraft::<String> {
         id: "f3d:native:parameter#0".into(),
         byte_offset: 100,
         class_tag: crate::records::references::DesignClassTag::try_from("305".to_owned()).unwrap(),

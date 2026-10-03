@@ -262,21 +262,21 @@ impl Serialize for ProteinRejectionRecord {
 }
 
 #[derive(Deserialize)]
-pub(crate) struct ProteinRejectionRecordWire {
+pub(crate) struct ProteinRejectionRecordWire<T = String> {
     pub(crate) id: String,
     pub(crate) entry_name: String,
     pub(crate) ordinal: u64,
-    pub(crate) detail: String,
+    pub(crate) detail: T,
 }
 
-impl TryFrom<ProteinRejectionRecordWire> for ProteinRejectionRecord {
+impl<T: TryInto<NonBlankString>> TryFrom<ProteinRejectionRecordWire<T>> for ProteinRejectionRecord {
     type Error = String;
-    fn try_from(wire: ProteinRejectionRecordWire) -> Result<Self, Self::Error> {
+    fn try_from(wire: ProteinRejectionRecordWire<T>) -> Result<Self, Self::Error> {
         Ok(Self {
             id: wire.id,
             entry_name: InstancePropertiesEntry::try_from(wire.entry_name)?,
             ordinal: wire.ordinal,
-            detail: NonBlankString::new(wire.detail).ok_or("detail must not be empty")?,
+            detail: wire.detail.try_into().ok().ok_or("detail must not be empty")?,
         })
     }
 }

@@ -634,7 +634,7 @@ fn insert_termination_field(
     operation: &'static str,
 ) -> Result<(), cadmpeg_core::CodecError> {
     let name =
-        cadmpeg_core::text::NonBlankString::new(copy_termination_text(ctx, name, operation)?)
+        cadmpeg_core::text::NonBlankString::for_decode(ctx, copy_termination_text(ctx, name, operation)?, "validate nonblank text")?
             .ok_or_else(|| cadmpeg_core::CodecError::malformed("blank termination field name"))?;
     ctx.insert_btree_map(fields, name, value, operation)?;
     Ok(())

@@ -19,8 +19,8 @@ fn text_fixture(frame: bool) -> (SketchRelation, SketchEntity, SketchEntity) {
         SketchEntityId::mint("synthetic:test:id#text-allocation-text").unwrap(),
         sketch,
         SketchGeometry::try_from(SketchGeometryDefinition::Text {
-            text: cadmpeg_core::text::NonBlankString::new("A").unwrap(),
-            font_family: cadmpeg_core::text::NonBlankString::new("Arial").unwrap(),
+            text: cadmpeg_core::text::NonBlankString::try_from("A").unwrap(),
+            font_family: cadmpeg_core::text::NonBlankString::try_from("Arial").unwrap(),
             font_weight: cadmpeg_ir::sketches::SketchFontWeight::Regular,
             height: Length::new(10.0).unwrap(),
             width_factor: Some(0.8),

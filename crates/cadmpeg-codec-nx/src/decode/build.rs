@@ -503,10 +503,10 @@ pub(super) fn try_decode_geometry(
                     },
                     source_object: Some(SourceObjectAssociation {
                         format: cadmpeg_ir::CodecFormat::Nx,
-                        object_id: cadmpeg_core::text::NonBlankString::new(ctx.format_retained(
+                        object_id: cadmpeg_core::text::NonBlankString::for_decode(ctx, ctx.format_retained(
                             format_args!("nx:s{si}:offset-surface-record#{}", offset.xmt),
                             "nx offset source object identity",
-                        )?)
+                        )?, "validate nonblank text")?
                         .ok_or_else(|| {
                             cadmpeg_core::CodecError::malformed(
                                 "source object_id must not be empty",
@@ -587,10 +587,10 @@ pub(super) fn try_decode_geometry(
                 },
                 source_object: Some(SourceObjectAssociation {
                     format: cadmpeg_ir::CodecFormat::Nx,
-                    object_id: cadmpeg_core::text::NonBlankString::new(ctx.format_retained(
+                    object_id: cadmpeg_core::text::NonBlankString::for_decode(ctx, ctx.format_retained(
                         format_args!("nx:s{si}:blend-surface-record#{}", blend.xmt),
                         "nx blend source object identity",
-                    )?)
+                    )?, "validate nonblank text")?
                     .ok_or_else(|| {
                         cadmpeg_core::CodecError::malformed("source object_id must not be empty")
                     })?,
@@ -999,10 +999,10 @@ pub(super) fn try_decode_geometry(
                 },
                 source_object: Some(SourceObjectAssociation {
                     format: cadmpeg_ir::CodecFormat::Nx,
-                    object_id: cadmpeg_core::text::NonBlankString::new(ctx.format_retained(
+                    object_id: cadmpeg_core::text::NonBlankString::for_decode(ctx, ctx.format_retained(
                         format_args!("nx:s{si}:intersection-record#{}", construction.xmt),
                         "nx intersection source object identity",
-                    )?)
+                    )?, "validate nonblank text")?
                     .ok_or_else(|| {
                         cadmpeg_core::CodecError::malformed("source object_id must not be empty")
                     })?,

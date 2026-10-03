@@ -59,7 +59,7 @@ pub fn classify(ctx: &cadmpeg_core::decode::DecodeContext<'_>, header: KernelHea
     let mut declared = BTreeMap::new();
     for (key, value) in declaration_fields(header) {
         if let Some(value) = value {
-            if let Some(key) = cadmpeg_core::text::NonBlankString::new(key) {
+            if let Some(key) = cadmpeg_core::text::NonBlankString::for_decode(ctx, key, "validate nonblank text")? {
                 declared.insert(key, value.to_string());
             }
         }
@@ -125,7 +125,7 @@ pub fn classify_layer(
                 operation,
             )?;
             let key =
-                cadmpeg_core::text::NonBlankString::new(ctx.copy_retained_text(key, operation)?)
+                cadmpeg_core::text::NonBlankString::for_decode(ctx, ctx.copy_retained_text(key, operation)?, "validate nonblank text")?
                     .ok_or_else(|| {
                         cadmpeg_core::CodecError::malformed("empty kernel declaration key")
                     })?;
@@ -137,9 +137,7 @@ pub fn classify_layer(
         cadmpeg_core::decode::u64_from_index(DECLARED_CARRIER.len()),
         operation,
     )?;
-    let key = cadmpeg_core::text::NonBlankString::new(
-        ctx.copy_retained_text(DECLARED_CARRIER, operation)?,
-    )
+    let key = cadmpeg_core::text::NonBlankString::for_decode(ctx, ctx.copy_retained_text(DECLARED_CARRIER, operation)?, "validate nonblank text")?
     .ok_or_else(|| cadmpeg_core::CodecError::malformed("empty kernel carrier key"))?;
     ctx.charge_work(
         cadmpeg_core::decode::u64_from_index(carrier.len()),

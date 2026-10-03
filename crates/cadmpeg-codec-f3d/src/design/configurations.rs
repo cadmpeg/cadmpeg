@@ -31,7 +31,7 @@ fn configuration_property_key(
     let mut key = ctx.retained_string(len, operation)?;
     key.push_str(prefix);
     key.push_str(suffix);
-    cadmpeg_core::text::NonBlankString::new(key)
+    cadmpeg_core::text::NonBlankString::for_decode(ctx, key, "validate nonblank text")?
         .ok_or_else(|| CodecError::malformed("configuration property key is blank"))
 }
 

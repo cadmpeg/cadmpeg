@@ -96,12 +96,12 @@ pub(crate) struct OwnedDesignParameter {
 }
 
 impl DesignParameterSource {
-    pub(crate) fn new(
-        source_kind: String,
+    pub(crate) fn new<T: TryInto<NonBlankString>>(
+        source_kind: T,
         owner_record_index: Option<u32>,
         family_discriminator: Option<Located<DesignParameterDiscriminator>>,
     ) -> Result<Self, String> {
-        let Some(source_kind) = NonBlankString::new(source_kind) else {
+        let Some(source_kind) = source_kind.try_into().ok() else {
             return Err("design parameter source_kind is empty".into());
         };
         match (
@@ -196,36 +196,36 @@ impl Clone for DesignParameter {
 }
 
 /// Unchecked Design parameter input.
-pub(crate) struct DesignParameterDraft {
+pub(crate) struct DesignParameterDraft<T = String> {
     pub(crate) id: String,
     pub(crate) byte_offset: u64,
     pub(crate) class_tag: DesignClassTag,
     pub(crate) record_index: u32,
     pub(crate) source_ordinal: u32,
     pub(crate) source: DesignParameterSource,
-    pub(crate) expression: String,
+    pub(crate) expression: T,
     pub(crate) expression_offset: u64,
     pub(crate) source_kind_offset: u64,
-    pub(crate) unit: Option<RecordedValue<String>>,
-    pub(crate) name: String,
+    pub(crate) unit: Option<RecordedValue<T>>,
+    pub(crate) name: T,
     pub(crate) name_offset: u64,
     pub(crate) evaluated_value: f64,
     pub(crate) evaluated_value_offset: u64,
 }
 
-impl TryFrom<DesignParameterDraft> for DesignParameter {
+impl<T: TryInto<NonBlankString>> TryFrom<DesignParameterDraft<T>> for DesignParameter {
     type Error = String;
-    fn try_from(draft: DesignParameterDraft) -> Result<Self, Self::Error> {
+    fn try_from(draft: DesignParameterDraft<T>) -> Result<Self, Self::Error> {
         let evaluated_value =
             FiniteReal::new(draft.evaluated_value).ok_or("evaluated_value must be finite")?;
         let expression =
-            NonBlankString::new(draft.expression).ok_or("expression must not be empty")?;
-        let name = NonBlankString::new(draft.name).ok_or("name must not be empty")?;
+            draft.expression.try_into().ok().ok_or("expression must not be empty")?;
+        let name = draft.name.try_into().ok().ok_or("name must not be empty")?;
         let unit = draft
             .unit
             .map(|unit| {
                 Ok::<_, String>(Located {
-                    value: NonBlankString::new(unit.value).ok_or("unit must not be empty")?,
+                    value: unit.value.try_into().ok().ok_or("unit must not be empty")?,
                     offset: unit.offset,
                 })
             })
@@ -293,7 +293,7 @@ impl DesignParameter {
     #[cfg(test)]
     /// Checked replacement of a present unit token.
     pub(crate) fn try_set_unit_value(&mut self, value: String) -> Result<(), String> {
-        let value = NonBlankString::new(value).ok_or("unit must not be empty")?;
+        let value = NonBlankString::try_from(value).ok().ok_or("unit must not be empty")?;
         let unit = self.unit.as_mut().ok_or("unit is absent")?;
         unit.value = value;
         Ok(())
@@ -504,12 +504,12 @@ impl TryFrom<DesignParameterSerde> for DesignParameter {
             })
         })
         .transpose()?;
-        let source = DesignParameterSource::new(
+        let source = DesignParameterSource::new::<String>(
             wire.source_kind,
             wire.owner_record_index,
             family_discriminator,
         )?;
-        Self::try_from(DesignParameterDraft {
+        Self::try_from(DesignParameterDraft::<String> {
             id: wire.id,
             byte_offset: wire.byte_offset,
             class_tag: wire.class_tag.try_into()?,

@@ -667,7 +667,7 @@ mod tests {
             name: Some("datum A".into()),
             visible: None,
             targets: vec![PmiTarget::ShapeAspect {
-                source_id: cadmpeg_core::text::NonBlankString::new("#10")
+                source_id: cadmpeg_core::text::NonBlankString::try_from("#10")
                     .expect("nonempty source identity"),
             }],
             definition: PmiDefinition::Datum {
@@ -1063,7 +1063,7 @@ mod tests {
         )
         .expect_err("empty source_id");
         assert!(error.to_string().contains("source_id"));
-        assert!(cadmpeg_core::text::NonBlankString::new("").is_none());
+        assert!(cadmpeg_core::text::NonBlankString::try_from("").is_err());
     }
 
     #[test]

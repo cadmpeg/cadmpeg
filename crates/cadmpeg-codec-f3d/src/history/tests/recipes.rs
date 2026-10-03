@@ -1160,7 +1160,7 @@ fn direct_body_recipe_selection_resolves_compact_coil_target() {
             members: cadmpeg_ir::features::BodyMembers::try_from_rows(vec![
                 cadmpeg_ir::features::BodyMember::new(
                     body.id.clone(),
-                    cadmpeg_core::text::NonBlankString::new(native)
+                    cadmpeg_core::text::NonBlankString::try_from(native)
                         .expect("non-blank native fixture"),
                 ),
             ])

@@ -34,9 +34,9 @@ fn scope(case: Case) -> crate::records::feature::scope::DesignParameterScope {
                     DesignThreadForm::Standard
                 },
                 designation_offset: 38,
-                designation: cadmpeg_core::text::NonBlankString::new("M30x3.5").unwrap(),
+                designation: cadmpeg_core::text::NonBlankString::try_from("M30x3.5").unwrap(),
                 nominal_size: DesignThreadNominalSize::try_from("30.0".to_owned()).unwrap(),
-                profile: cadmpeg_core::text::NonBlankString::new("ISO Metric profile").unwrap(),
+                profile: cadmpeg_core::text::NonBlankString::try_from("ISO Metric profile").unwrap(),
                 pitch: cadmpeg_ir::scalar::PositiveReal::new(0.35).unwrap(),
                 face_group_record_indices: if compact { vec![1, 3] } else { vec![1] },
                 diameters: DesignThreadDiameters::new(2.97345, 2.5732, 2.7568).unwrap(),

@@ -182,7 +182,7 @@ impl From<CatiaOwnerChartBridgeReference> for CatiaOwnerChartBridgeReferenceWire
         let (alias_row, canonical_surface_tag) = match value.address {
             CatiaOwnerChartAddress::WidthCoded {
                 alias: Some(binding),
-            } => (Some(binding.row.into_string()), binding.canonical_tag),
+            } => (Some(binding.row.as_str().to_owned()), binding.canonical_tag),
             _ => (None, None),
         };
         Self {
@@ -204,7 +204,7 @@ impl TryFrom<CatiaOwnerChartBridgeReferenceWire> for CatiaOwnerChartBridgeRefere
                 return Err("owner-chart canonical_surface_tag requires alias_row".to_owned());
             }
             (Some(row), canonical_tag) => {
-                let row = NonBlankString::new(row)
+                let row = NonBlankString::try_from(row).ok()
                     .ok_or_else(|| "owner-chart alias_row must not be empty".to_owned())?;
                 Some(CatiaOwnerChartAliasBinding::new(row, canonical_tag))
             }
@@ -613,7 +613,7 @@ mod tests {
             panic!("supported surface bridge")
         };
         let alias = CatiaOwnerChartAliasBinding::new(
-            cadmpeg_core::text::NonBlankString::new("catia:test:alias#0").expect("nonblank alias"),
+            cadmpeg_core::text::NonBlankString::try_from("catia:test:alias#0").expect("nonblank alias"),
             Some(5),
         );
         let bound = CatiaOwnerChartBridgeReference {

@@ -93,7 +93,7 @@ pub(super) fn embedded_image_asset(
             .map_err(|_| CodecError::Malformed("asset name must be UTF-8".into()))?;
     let native_ref = native_scope_charged(ctx, &entry.name)?;
     Ok(Some(
-        Asset::try_new(
+        Asset::try_new(ctx, 
             neutral_asset_id_charged(ctx, &entry.name)?,
             Some(name),
             media_type,
@@ -102,8 +102,7 @@ pub(super) fn embedded_image_asset(
                     .ok_or_else(|| CodecError::Malformed("asset data must not be empty".into()))?,
             },
             Some(native_ref),
-        )
-        .map_err(CodecError::Malformed)?,
+        )?,
     ))
 }
 

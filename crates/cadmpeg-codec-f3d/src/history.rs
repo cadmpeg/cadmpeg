@@ -1673,7 +1673,7 @@ pub(crate) fn bind_feature_body_selections(
                                 let repeated = historical_tool_rows
                                     .iter()
                                     .any(|row: &BodyMember<_>| row.body() == &body);
-                                let row = body_member(body, admitted!(ctx.copy_retained_text(native, "copy F3D Combine tool member identity")));
+                                let row = admitted!(body_member(ctx, body, admitted!(ctx.copy_retained_text(native, "copy F3D Combine tool member identity"))).map_err(cadmpeg_core::CodecError::from));
                                 let (false, Some(row)) = (repeated, row) else {
                                     historical_tool_rows.clear();
                                     direct_tool_rows.clear();
@@ -1705,7 +1705,7 @@ pub(crate) fn bind_feature_body_selections(
                             let repeated = direct_tool_rows
                                 .iter()
                                 .any(|row: &BodyMember<_>| row.body() == &body);
-                            let row = body_member(body, admitted!(ctx.copy_retained_text(native, "copy F3D Combine direct tool member identity")));
+                            let row = admitted!(body_member(ctx, body, admitted!(ctx.copy_retained_text(native, "copy F3D Combine direct tool member identity"))).map_err(cadmpeg_core::CodecError::from));
                             let (false, Some(row)) = (repeated, row) else {
                                 historical_tool_rows.clear();
                                 direct_tool_rows.clear();
@@ -2006,7 +2006,7 @@ fn combine_historical_rows(
     for (slot, native) in slots.into_iter().zip(native_tools) {
         let body =
             crate::ids::history_input_body_id_charged(ctx, feature_id, previous_state_id, slot)?;
-        let Some(row) = body_member(body, native) else {
+        let Some(row) = body_member(ctx, body, native)? else {
             return Ok(None);
         };
 
@@ -2652,7 +2652,7 @@ fn bind_direct_body_recipe_body_selection(
         }
         let native =
             ctx.copy_retained_text(native, "copy F3D direct body recipe member identity")?;
-        let Some(row) = body_member(body, native) else {
+        let Some(row) = body_member(ctx, body, native)? else {
             return Ok(());
         };
 
@@ -6433,11 +6433,8 @@ fn select_legacy_extrude_face_candidate(
 ///
 /// `None` when the record states a blank native member: a row the IR carrier
 /// does not hold.
-fn body_member<B>(body: B, native: String) -> Option<cadmpeg_ir::features::BodyMember<B>> {
-    Some(cadmpeg_ir::features::BodyMember::new(
-        body,
-        cadmpeg_core::text::NonBlankString::new(native)?,
-    ))
+fn body_member<B>(ctx: &cadmpeg_core::decode::DecodeContext<'_>, body: B, native: String) -> Result<Option<cadmpeg_ir::features::BodyMember<B>>, cadmpeg_core::decode::ResourceLimit> {
+    Ok(cadmpeg_core::text::NonBlankString::for_decode(ctx, native, "validate body native member")?.map(|native| cadmpeg_ir::features::BodyMember::new(body, native)))
 }
 
 fn historical_brep_source(state_id: &str) -> Option<&str> {

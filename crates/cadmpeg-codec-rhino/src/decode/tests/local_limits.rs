@@ -46,7 +46,7 @@ fn candidate_propagates_local_entity_limit() {
                         .expect("point"),
                     Some(cadmpeg_ir::SourceObjectAssociation {
                         format: cadmpeg_ir::CodecFormat::Rhino,
-                        object_id: cadmpeg_core::text::NonBlankString::new("one")
+                        object_id: cadmpeg_core::text::NonBlankString::try_from("one")
                             .expect("source identity"),
                         name: None,
                         color: None,

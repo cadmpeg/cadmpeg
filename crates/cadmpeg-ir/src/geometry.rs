@@ -3018,23 +3018,24 @@ impl TryFrom<InlineTSplineSubtransformWire> for InlineTSplineSubtransform {
             separator,
             values,
         } = wire;
-        Self::try_new(program, separator, values)
+        Ok(Self { program: cadmpeg_core::text::NonBlankString::try_from(program).map_err(|_| "T-spline program must not be empty")?, separator, values: cadmpeg_core::text::NonBlankString::try_from(values).map_err(|_| "T-spline values must not be empty")? })
     }
 }
 
 impl InlineTSplineSubtransform {
     /// Admit a non-empty T-spline program and companion values.
     pub fn try_new(
-        program: impl Into<String>,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        program: impl cadmpeg_core::decode::text::TextSource,
         separator: Option<bool>,
-        values: impl Into<String>,
-    ) -> Result<Self, &'static str> {
+        values: impl cadmpeg_core::decode::text::TextSource,
+    ) -> Result<Self, cadmpeg_core::CodecError> {
         Ok(Self {
-            program: cadmpeg_core::text::NonBlankString::new(program)
-                .ok_or("T-spline program must not be empty")?,
+            program: cadmpeg_core::text::NonBlankString::for_decode(ctx, program, "validate T-spline program")?
+                .ok_or_else(|| cadmpeg_core::CodecError::malformed("T-spline program must not be empty"))?,
             separator,
-            values: cadmpeg_core::text::NonBlankString::new(values)
-                .ok_or("T-spline values must not be empty")?,
+            values: cadmpeg_core::text::NonBlankString::for_decode(ctx, values, "validate T-spline values")?
+                .ok_or_else(|| cadmpeg_core::CodecError::malformed("T-spline values must not be empty"))?,
         })
     }
 }
@@ -3087,7 +3088,7 @@ impl TryFrom<TSplineSubtransformWire> for TSplineSubtransform {
                 program,
                 separator,
                 values,
-            } => InlineTSplineSubtransform::try_new(program, separator, values).map(Self::Inline),
+            } => InlineTSplineSubtransform::try_from(InlineTSplineSubtransformWire::Inline { program, separator, values }).map(Self::Inline),
             TSplineSubtransformWire::Reference { index, resolved } => Ok(Self::Resolved {
                 index,
                 transform: resolved,

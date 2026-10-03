@@ -94,7 +94,7 @@ fn design_projection_gaps_count_unresolved_body_map_pairs() {
     let ir = cadmpeg_ir::document::CadIr::empty();
     let mut native = F3dNative::default();
     native.design_body_bindings.push(
-        DesignBodyBinding::try_from(crate::records::bodies::DesignBodyBindingWire {
+        DesignBodyBinding::try_from(crate::records::bodies::DesignBodyBindingWire::<String> {
             id: "f3d:Design/BulkStream.dat:design-body-binding#0".into(),
             stream: "Design/BulkStream.dat".into(),
             pair_count: 1,
@@ -169,7 +169,7 @@ fn design_projection_gaps_count_each_retained_selection_family() {
         sketch: SketchId::mint("synthetic:test:id#sketch").unwrap(),
         definition: cadmpeg_ir::sketches::SketchConstraintDefinition::try_from(
             SketchConstraintDefinitionInput::Native {
-                native_kind: cadmpeg_core::text::NonBlankString::new("dimension").unwrap(),
+                native_kind: cadmpeg_core::text::NonBlankString::try_from("dimension").unwrap(),
                 native_state: None,
                 native_flags: None,
                 native_properties: std::collections::BTreeMap::new(),
@@ -397,7 +397,7 @@ fn design_projection_gaps_count_each_retained_selection_family() {
             byte_offset: 0,
             state_offset: 0,
             owner_reference: 1,
-            owner_entity_id: Some(cadmpeg_core::text::NonBlankString::new("0_1").unwrap()),
+            owner_entity_id: Some(cadmpeg_core::text::NonBlankString::try_from("0_1").unwrap()),
             auxiliary_references: crate::records::identity::ReferenceRun::located(Vec::new()),
             rectangular_counted_reference_count: None,
             members: (Vec::new()).try_into().expect("uniform member resolution"),
@@ -412,14 +412,14 @@ fn design_projection_gaps_count_each_retained_selection_family() {
     );
     native.design_parameters.push(
         crate::records::parameters::DesignParameter::try_from(
-            crate::records::parameters::DesignParameterDraft {
+            crate::records::parameters::DesignParameterDraft::<String> {
                 id: "f3d:test:design-parameter#2".into(),
                 byte_offset: 0,
                 class_tag: crate::records::references::DesignClassTag::try_from("000".to_owned())
                     .unwrap(),
                 record_index: 2,
                 source_ordinal: 2,
-                source: crate::records::parameters::DesignParameterSource::new(
+                source: crate::records::parameters::DesignParameterSource::new::<String>(
                     "Linear Dimension-2".into(),
                     Some(3),
                     Some(crate::records::identity::Located {
@@ -798,14 +798,14 @@ fn payload_bearing_dimension_companion_uses_the_governing_dimension_frame() {
     let mut native = F3dNative::default();
     native.design_parameters.push(
         crate::records::parameters::DesignParameter::try_from(
-            crate::records::parameters::DesignParameterDraft {
+            crate::records::parameters::DesignParameterDraft::<String> {
                 id: format!("{stream}:design-parameter#28"),
                 byte_offset: 0,
                 class_tag: crate::records::references::DesignClassTag::try_from("305".to_owned())
                     .unwrap(),
                 record_index: 28,
                 source_ordinal: 0,
-                source: crate::records::parameters::DesignParameterSource::new(
+                source: crate::records::parameters::DesignParameterSource::new::<String>(
                     "Linear Dimension-2".into(),
                     Some(29),
                     Some(crate::records::identity::Located {
@@ -1072,14 +1072,14 @@ fn dimension_parameter_index_refuses_collection_limit() {
     let mut native = F3dNative::default();
     native.design_parameters.push(
         crate::records::parameters::DesignParameter::try_from(
-            crate::records::parameters::DesignParameterDraft {
+            crate::records::parameters::DesignParameterDraft::<String> {
                 id: "f3d:test:design-parameter#1".into(),
                 byte_offset: 0,
                 class_tag: crate::records::references::DesignClassTag::try_from("305".to_owned())
                     .unwrap(),
                 record_index: 1,
                 source_ordinal: 0,
-                source: crate::records::parameters::DesignParameterSource::new(
+                source: crate::records::parameters::DesignParameterSource::new::<String>(
                     "Linear Dimension-2".into(),
                     Some(2),
                     Some(crate::records::identity::Located {
@@ -1122,14 +1122,14 @@ fn container_only_dimension_parameter_refuses_collection_limit() {
     let mut native = F3dNative::default();
     native.design_parameters.push(
         crate::records::parameters::DesignParameter::try_from(
-            crate::records::parameters::DesignParameterDraft {
+            crate::records::parameters::DesignParameterDraft::<String> {
                 id: format!("{stream}:design-parameter#28"),
                 byte_offset: 0,
                 class_tag: crate::records::references::DesignClassTag::try_from("305".to_owned())
                     .unwrap(),
                 record_index: 28,
                 source_ordinal: 0,
-                source: crate::records::parameters::DesignParameterSource::new(
+                source: crate::records::parameters::DesignParameterSource::new::<String>(
                     "Linear Dimension-2".into(),
                     Some(29),
                     Some(crate::records::identity::Located {

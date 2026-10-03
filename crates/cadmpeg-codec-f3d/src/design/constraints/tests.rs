@@ -375,7 +375,7 @@ fn rectangular_point_relation(
         byte_offset: 0,
         state_offset: 0,
         owner_reference: 1,
-        owner_entity_id: Some(cadmpeg_core::text::NonBlankString::new("0_1").unwrap()),
+        owner_entity_id: Some(cadmpeg_core::text::NonBlankString::try_from("0_1").unwrap()),
         auxiliary_references: crate::records::identity::ReferenceRun::located(
             auxiliary_references
                 .into_iter()
@@ -439,14 +439,14 @@ fn rectangular_point_relation(
 
 fn rectangular_parameter(record_index: u32, value: f64) -> DesignParameter {
     crate::records::parameters::DesignParameter::try_from(
-        crate::records::parameters::DesignParameterDraft {
+        crate::records::parameters::DesignParameterDraft::<String> {
             id: format!("native:design-parameter#{record_index}"),
             byte_offset: 0,
             class_tag: crate::records::references::DesignClassTag::try_from("373".to_owned())
                 .unwrap(),
             record_index,
             source_ordinal: 0,
-            source: crate::records::parameters::DesignParameterSource::new(
+            source: crate::records::parameters::DesignParameterSource::new::<String>(
                 "R-Pattern1-distance".into(),
                 Some(record_index),
                 Some(crate::records::identity::Located {
@@ -673,7 +673,7 @@ fn circular_pattern_resolves_full_and_partial_instance_distributions() {
             byte_offset: 0,
             state_offset: 0,
             owner_reference: 1,
-            owner_entity_id: Some(cadmpeg_core::text::NonBlankString::new("0_1").unwrap()),
+            owner_entity_id: Some(cadmpeg_core::text::NonBlankString::try_from("0_1").unwrap()),
             auxiliary_references: crate::records::identity::ReferenceRun::located(
                 vec![20, 21]
                     .into_iter()
@@ -812,7 +812,7 @@ fn circular_pattern_resolves_independently_of_relation_ordinals() {
         byte_offset: 0,
         state_offset: 0,
         owner_reference: 1,
-        owner_entity_id: Some(cadmpeg_core::text::NonBlankString::new("0_1").unwrap()),
+        owner_entity_id: Some(cadmpeg_core::text::NonBlankString::try_from("0_1").unwrap()),
         auxiliary_references: crate::records::identity::ReferenceRun::located(
             vec![20, 21]
                 .into_iter()
@@ -892,8 +892,8 @@ fn text_path_relation_projects_typed_entities_and_scaled_glyph_placements() {
         SketchEntityId::mint("synthetic:test:id#text").unwrap(),
         sketch,
         SketchGeometry::try_from(SketchGeometryDefinition::Text {
-            text: cadmpeg_core::text::NonBlankString::new("A").unwrap(),
-            font_family: cadmpeg_core::text::NonBlankString::new("Arial").unwrap(),
+            text: cadmpeg_core::text::NonBlankString::try_from("A").unwrap(),
+            font_family: cadmpeg_core::text::NonBlankString::try_from("Arial").unwrap(),
             font_weight: cadmpeg_ir::sketches::SketchFontWeight::Regular,
             height: Length::new(10.0).unwrap(),
             width_factor: Some(0.8),

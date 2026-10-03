@@ -698,9 +698,7 @@ fn native_curve_expression_definition(
         format_args!("{assignment_count}"),
         "creo curve-expression native assignment count",
     )?;
-    let entity_key = cadmpeg_core::text::NonBlankString::new(
-        ctx.copy_retained_text("entity_id", "creo curve-expression native entity key")?,
-    )
+    let entity_key = cadmpeg_core::text::NonBlankString::for_decode(ctx, ctx.copy_retained_text("entity_id", "creo curve-expression native entity key")?, "validate nonblank text")?
     .ok_or_else(|| CodecError::malformed("native entity key is blank"))?;
     ctx.insert_btree_map(
         &mut parameters,
@@ -708,10 +706,10 @@ fn native_curve_expression_definition(
         entity_value,
         "creo curve-expression native parameters",
     )?;
-    let assignment_key = cadmpeg_core::text::NonBlankString::new(ctx.copy_retained_text(
+    let assignment_key = cadmpeg_core::text::NonBlankString::for_decode(ctx, ctx.copy_retained_text(
         "assignment_count",
         "creo curve-expression native assignment key",
-    )?)
+    )?, "validate nonblank text")?
     .ok_or_else(|| CodecError::malformed("native assignment key is blank"))?;
     ctx.insert_btree_map(
         &mut parameters,
@@ -1077,10 +1075,11 @@ pub(super) fn transfer_curve_expression_features(
             Some(definition)
         } else if let Some(helix) = helix {
             let axis_id = curve_expression_record_id(ctx, record)?;
+            let axis_id = cadmpeg_core::text::NonBlankString::for_decode(ctx, axis_id, "validate nonblank text")?;
             (|| {
                 Some(IrFeatureDefinition::Operation(
                     IrFeatureOperation::HelixNativeAxis {
-                        axis_native_ref: cadmpeg_core::text::NonBlankString::new(axis_id)?,
+                        axis_native_ref: axis_id?,
                         axial_rise: Length::new(helix.height.get())?,
                         pitch: Length::new(helix.height.get() / helix.revolutions.get())?,
                         revolutions: helix.revolutions,

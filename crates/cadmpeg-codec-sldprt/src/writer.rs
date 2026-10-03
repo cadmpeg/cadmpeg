@@ -3955,7 +3955,7 @@ mod nurbs_write_tests {
             name: Some("datum A".into()),
             visible: None,
             targets: vec![cadmpeg_ir::PmiTarget::ShapeAspect {
-                source_id: cadmpeg_core::text::NonBlankString::new("F1")
+                source_id: cadmpeg_core::text::NonBlankString::try_from("F1")
                     .expect("nonempty source identity"),
             }],
             definition: cadmpeg_ir::PmiDefinition::Datum {

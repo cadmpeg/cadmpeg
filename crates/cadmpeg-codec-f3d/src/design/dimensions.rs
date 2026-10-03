@@ -50,7 +50,7 @@ fn copy_dimension_source_kind(
     operation: &'static str,
 ) -> Result<cadmpeg_core::text::NonBlankString, CodecError> {
     let text = ctx.copy_retained_text(parameter.source_kind(), operation)?;
-    cadmpeg_core::text::NonBlankString::new(text)
+    cadmpeg_core::text::NonBlankString::for_decode(ctx, text, "validate nonblank text")?
         .ok_or_else(|| CodecError::malformed("validated dimension source kind is blank"))
 }
 

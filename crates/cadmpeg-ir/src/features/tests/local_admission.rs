@@ -225,12 +225,12 @@ fn historical_body_overlap_spans_direct_and_paired_member_selections() {
         members: BodyMembers::try_from_rows(vec![
             crate::features::BodyMember::new(
                 HistoricalBodyId::mint("test:body:2").expect("valid identity"),
-                cadmpeg_core::text::NonBlankString::new("tool-a")
+                cadmpeg_core::text::NonBlankString::try_from("tool-a")
                     .expect("valid historical body selection row"),
             ),
             crate::features::BodyMember::new(
                 HistoricalBodyId::mint("test:body:4").expect("valid identity"),
-                cadmpeg_core::text::NonBlankString::new("tool-b")
+                cadmpeg_core::text::NonBlankString::try_from("tool-b")
                     .expect("valid historical body selection row"),
             ),
         ])
@@ -240,7 +240,7 @@ fn historical_body_overlap_spans_direct_and_paired_member_selections() {
         state,
         members: BodyMembers::try_from_rows(vec![crate::features::BodyMember::new(
             HistoricalBodyId::mint("test:body:5").expect("valid identity"),
-            cadmpeg_core::text::NonBlankString::new("tool")
+            cadmpeg_core::text::NonBlankString::try_from("tool")
                 .expect("valid historical body selection row"),
         )])
         .expect("valid historical body selection rows"),
@@ -255,11 +255,11 @@ fn three_point_admission_compares_targets_and_historical_states() {
     let state = FeatureInputTopologyId::mint("test:model:feature-input#first").unwrap();
     let other = FeatureInputTopologyId::mint("test:model:feature-input#second").unwrap();
     let vertex = |state: &FeatureInputTopologyId, suffix: &str, native: &str| {
-        VertexSelection::historical(
+        VertexSelection::historical(&cadmpeg_test_support::service_decode_context(), 
             state.clone(),
             HistoricalVertexId::mint(format!("test:model:historical-vertex#{suffix}")).unwrap(),
             native.into(),
-        )
+        ).unwrap()
         .unwrap()
     };
     assert!(ThreePointSelection::try_from(Box::new([

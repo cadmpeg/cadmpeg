@@ -46,14 +46,14 @@ fn recipe_backed_dimension_projects_disjoint_mixed_repeated_distance() {
             .unwrap(),
     };
     let parameter = crate::records::parameters::DesignParameter::try_from(
-        crate::records::parameters::DesignParameterDraft {
+        crate::records::parameters::DesignParameterDraft::<String> {
             id: format!("{stream}:design-parameter#20"),
             byte_offset: 0,
             class_tag: crate::records::references::DesignClassTag::try_from("305".to_owned())
                 .unwrap(),
             record_index: 20,
             source_ordinal: 4,
-            source: crate::records::parameters::DesignParameterSource::new(
+            source: crate::records::parameters::DesignParameterSource::new::<String>(
                 "Linear Dimension-4".into(),
                 Some(21),
                 Some(crate::records::identity::Located {
@@ -212,7 +212,7 @@ fn recipe_backed_dimension_projects_disjoint_mixed_repeated_distance() {
     let mut radial_parameter = parameter.clone();
     radial_parameter
         .try_set_source(
-            crate::records::parameters::DesignParameterSource::new(
+            crate::records::parameters::DesignParameterSource::new::<String>(
                 "Radial Dimension-4".into(),
                 radial_parameter.owner_record_index(),
                 radial_parameter.family_discriminator(),
@@ -464,7 +464,7 @@ fn recipe_backed_dimension_projects_disjoint_mixed_repeated_distance() {
     let mut radial_parameter = parameter.clone();
     radial_parameter
         .try_set_source(
-            crate::records::parameters::DesignParameterSource::new(
+            crate::records::parameters::DesignParameterSource::new::<String>(
                 "Radial Dimension-2".into(),
                 radial_parameter.owner_record_index(),
                 radial_parameter.family_discriminator(),
@@ -608,7 +608,7 @@ fn recipe_backed_dimension_projects_disjoint_mixed_repeated_distance() {
     let mut radial_parameter = parameter.clone();
     radial_parameter
         .try_set_source(
-            crate::records::parameters::DesignParameterSource::new(
+            crate::records::parameters::DesignParameterSource::new::<String>(
                 "Radial Dimension-2".into(),
                 radial_parameter.owner_record_index(),
                 radial_parameter.family_discriminator(),
@@ -864,14 +864,14 @@ fn recipe_dimension_resolves_one_parallel_line_pair() {
     ));
 
     let parameter = crate::records::parameters::DesignParameter::try_from(
-        crate::records::parameters::DesignParameterDraft {
+        crate::records::parameters::DesignParameterDraft::<String> {
             id: "f3d:A:design-parameter#1".into(),
             byte_offset: 0,
             class_tag: crate::records::references::DesignClassTag::try_from("305".to_owned())
                 .unwrap(),
             record_index: 1,
             source_ordinal: 1,
-            source: crate::records::parameters::DesignParameterSource::new(
+            source: crate::records::parameters::DesignParameterSource::new::<String>(
                 "Linear Dimension-2".into(),
                 Some(2),
                 Some(crate::records::identity::Located {
@@ -1072,14 +1072,14 @@ fn recipe_dimension_resolves_unique_axis_aligned_extension_point() {
 fn concentric_circle_dimensions_require_disjoint_matching_pairs() {
     let sketch = SketchId::mint("synthetic:test:id#sketch").unwrap();
     let parameter = crate::records::parameters::DesignParameter::try_from(
-        crate::records::parameters::DesignParameterDraft {
+        crate::records::parameters::DesignParameterDraft::<String> {
             id: "f3d:A:design-parameter#1".into(),
             byte_offset: 0,
             class_tag: crate::records::references::DesignClassTag::try_from("305".to_owned())
                 .unwrap(),
             record_index: 1,
             source_ordinal: 1,
-            source: crate::records::parameters::DesignParameterSource::new(
+            source: crate::records::parameters::DesignParameterSource::new::<String>(
                 "Linear Dimension-2".into(),
                 Some(2),
                 Some(crate::records::identity::Located {

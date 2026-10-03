@@ -59,7 +59,7 @@ fn feature_definition_copy_preserves_nested_fields_and_wire_bytes() {
             operation: FeatureOperation::Native {
                 kind: NativeFeatureKind::Other("source雪%".to_owned()),
                 parameters: std::collections::BTreeMap::from([(
-                    cadmpeg_core::text::NonBlankString::new("distance".to_owned()).unwrap(),
+                    cadmpeg_core::text::NonBlankString::try_from("distance".to_owned()).unwrap(),
                     "x + 雪".to_owned(),
                 )]),
             },
@@ -106,7 +106,7 @@ fn feature_definition_copy_refuses_retained_parameter_key_before_allocation() {
     let definition = FeatureDefinition::Operation(FeatureOperation::Native {
         kind: NativeFeatureKind::Fillet,
         parameters: std::collections::BTreeMap::from([(
-            cadmpeg_core::text::NonBlankString::new(key.to_owned()).unwrap(),
+            cadmpeg_core::text::NonBlankString::try_from(key.to_owned()).unwrap(),
             "value".to_owned(),
         )]),
     });
@@ -124,7 +124,7 @@ fn feature_definition_copy_refuses_parameter_map_work() {
     let definition = FeatureDefinition::Operation(FeatureOperation::Native {
         kind: NativeFeatureKind::Fillet,
         parameters: std::collections::BTreeMap::from([(
-            cadmpeg_core::text::NonBlankString::new("distance".to_owned()).unwrap(),
+            cadmpeg_core::text::NonBlankString::try_from("distance".to_owned()).unwrap(),
             "value".to_owned(),
         )]),
     });
@@ -144,7 +144,7 @@ fn feature_parameter_map_copy_charges_each_owned_allocation_once() {
     let definition = FeatureDefinition::Operation(FeatureOperation::Native {
         kind: NativeFeatureKind::Fillet,
         parameters: std::collections::BTreeMap::from([(
-            cadmpeg_core::text::NonBlankString::new(key.to_owned()).unwrap(),
+            cadmpeg_core::text::NonBlankString::try_from(key.to_owned()).unwrap(),
             value.to_owned(),
         )]),
     });

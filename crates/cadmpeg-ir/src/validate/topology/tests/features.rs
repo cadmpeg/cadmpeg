@@ -54,11 +54,11 @@ fn historical_vertex_selection_requires_input_state_membership() {
                 ))
                 .unwrap(),
                 construction: Some(Box::new(DatumPointConstruction::Vertex {
-                    vertex: VertexSelection::historical(
+                    vertex: VertexSelection::historical(&cadmpeg_test_support::service_decode_context(), 
                         state_id.clone(),
                         historical_vertex,
                         "vertex:local".into(),
-                    )
+                    ).unwrap()
                     .unwrap(),
                 })),
             }),
@@ -1046,7 +1046,7 @@ fn reference_images_require_valid_assets_and_plane_placements() {
         FeatureId::mint("synthetic:test:feature#reference-image").expect("identity grammar");
     let mut ir = CadIr::empty();
     ir.model.assets.push(
-        Asset::try_new(
+        Asset::try_new(&cadmpeg_test_support::service_decode_context(), 
             asset_id.clone(),
             Some("reference.png".into()),
             Some("image/png".into()),
@@ -1117,7 +1117,7 @@ fn decals_require_valid_assets_faces_and_opacity() {
     let mut ir = unit_cube().expect("valid unit cube fixture");
     let face_id = ir.model.faces[0].id.clone();
     ir.model.assets.push(
-        Asset::try_new(
+        Asset::try_new(&cadmpeg_test_support::service_decode_context(), 
             asset_id.clone(),
             Some("decal.png".into()),
             Some("image/png".into()),

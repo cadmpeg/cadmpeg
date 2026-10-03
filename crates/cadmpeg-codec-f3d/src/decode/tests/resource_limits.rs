@@ -602,7 +602,7 @@ fn source_image_copy_refuses_retained_limit() {
 fn unique_asset_append_refuses_collection_limit() {
     let arena = DecodeArena::new();
     let ctx = context(&arena, 0);
-    let asset = cadmpeg_ir::assets::Asset::try_new(
+    let asset = cadmpeg_ir::assets::Asset::try_new(&cadmpeg_test_support::service_decode_context(), 
         cadmpeg_ir::assets::AssetId::mint("f3d:model:asset#one").unwrap(),
         Some("one.png".into()),
         Some("image/png".into()),
@@ -1237,13 +1237,13 @@ fn dimension_native() -> crate::native::F3dNative {
     use crate::records::references::DesignClassTag;
 
     let stream = "f3d:test/BulkStream.dat";
-    let parameter = DesignParameter::try_from(DesignParameterDraft {
+    let parameter = DesignParameter::try_from(DesignParameterDraft::<String> {
         id: format!("{stream}:design-parameter#28"),
         byte_offset: 0,
         class_tag: DesignClassTag::try_from("305".to_owned()).unwrap(),
         record_index: 28,
         source_ordinal: 0,
-        source: DesignParameterSource::new(
+        source: DesignParameterSource::new::<String>(
             "Linear Dimension-2".into(),
             Some(29),
             Some(crate::records::identity::Located {

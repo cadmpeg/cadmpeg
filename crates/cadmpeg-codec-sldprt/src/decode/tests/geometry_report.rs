@@ -108,7 +108,7 @@ fn native_planar_and_spatial_sketch_geometry_is_reported() {
             SketchEntityId::mint("synthetic:test:id#planar-entity").unwrap(),
             SketchId::mint("synthetic:test:id#planar-sketch").unwrap(),
             SketchGeometry::native(
-                cadmpeg_core::text::NonBlankString::new("SplineHandle")
+                cadmpeg_core::text::NonBlankString::try_from("SplineHandle")
                     .expect("nonempty source identity"),
             ),
         )
@@ -119,7 +119,7 @@ fn native_planar_and_spatial_sketch_geometry_is_reported() {
             SpatialSketchEntityId::mint("synthetic:test:id#spatial-entity").unwrap(),
             SpatialSketchId::mint("synthetic:test:id#spatial-sketch").unwrap(),
             SpatialSketchGeometry::try_from(SpatialSketchGeometryDefinition::Native {
-                native_kind: cadmpeg_core::text::NonBlankString::new("ReferenceCurve")
+                native_kind: cadmpeg_core::text::NonBlankString::try_from("ReferenceCurve")
                     .expect("nonempty source identity"),
             })
             .unwrap(),
@@ -169,7 +169,7 @@ fn only_sketch_owned_relation_records_without_constraints_are_counted() {
             SketchEntityId::mint("synthetic:test:id#represented-geometry").unwrap(),
             SketchId::mint("synthetic:test:id#sketch").unwrap(),
             SketchGeometry::native(
-                cadmpeg_core::text::NonBlankString::new("UnknownGeometry")
+                cadmpeg_core::text::NonBlankString::try_from("UnknownGeometry")
                     .expect("nonempty source identity"),
             ),
         )
@@ -301,7 +301,7 @@ fn native_relation_records_have_at_most_one_neutral_owner() {
             SketchEntityId::mint(id).unwrap(),
             SketchId::mint("synthetic:test:id#sketch").unwrap(),
             SketchGeometry::native(
-                cadmpeg_core::text::NonBlankString::new("UnknownGeometry")
+                cadmpeg_core::text::NonBlankString::try_from("UnknownGeometry")
                     .expect("nonempty source identity"),
             ),
         )

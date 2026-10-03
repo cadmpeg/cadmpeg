@@ -507,7 +507,7 @@ pub(crate) fn project_occurrences(
                 reference.occurrence_ordinal,
             ),
             prototype: PrototypeReference::External {
-                document: ExternalDocument::path(path),
+                document: ExternalDocument::path(ctx, path)?,
                 object: None,
             },
             parent: OccurrenceParent::Root {},

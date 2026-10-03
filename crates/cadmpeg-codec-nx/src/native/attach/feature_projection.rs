@@ -311,7 +311,7 @@ pub(super) fn insert_parameter_property(
     value: String,
 ) -> Result<(), CodecError> {
     let key = ctx.format_retained(key, "NX feature projection text")?;
-    let key = cadmpeg_core::text::NonBlankString::new(key).ok_or_else(|| {
+    let key = cadmpeg_core::text::NonBlankString::for_decode(ctx, key, "validate nonblank text")?.ok_or_else(|| {
         cadmpeg_core::CodecError::malformed(format_args!("NX parameter property key is blank"))
     })?;
     if !properties.contains_key(&key) {

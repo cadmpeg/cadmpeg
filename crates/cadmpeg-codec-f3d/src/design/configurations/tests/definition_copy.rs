@@ -131,7 +131,7 @@ fn suppressed_definition_parameter_value_refuses_retained_limit() {
         .set_definition(FeatureDefinition::Operation(FeatureOperation::Native {
             kind: NativeFeatureKind::Fillet,
             parameters: std::collections::BTreeMap::from([(
-                cadmpeg_core::text::NonBlankString::new(key.to_owned()).unwrap(),
+                cadmpeg_core::text::NonBlankString::try_from(key.to_owned()).unwrap(),
                 value.to_owned(),
             )]),
         }));
@@ -251,7 +251,7 @@ fn suppressed_definition_parameters_refuse_collection_limit() {
         .set_definition(FeatureDefinition::Operation(FeatureOperation::Native {
             kind: NativeFeatureKind::Fillet,
             parameters: std::collections::BTreeMap::from([(
-                cadmpeg_core::text::NonBlankString::new("distance".to_owned()).unwrap(),
+                cadmpeg_core::text::NonBlankString::try_from("distance".to_owned()).unwrap(),
                 "value".to_owned(),
             )]),
         }));

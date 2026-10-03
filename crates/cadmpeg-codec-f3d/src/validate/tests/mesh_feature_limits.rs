@@ -103,12 +103,12 @@ fn mesh_error_with_feature(
         let mut ir = cadmpeg_ir::examples::unit_cube().unwrap();
         if asset {
             ir.model.assets.push(
-                cadmpeg_ir::assets::Asset::try_new(
+                cadmpeg_ir::assets::Asset::try_new(&cadmpeg_test_support::service_decode_context(), 
                     cadmpeg_ir::assets::AssetId::mint("f3d:model:asset#one").unwrap(),
                     None,
                     None,
                     cadmpeg_ir::assets::AssetContent::External {
-                        uri: cadmpeg_core::text::NonBlankString::new("asset").unwrap(),
+                        uri: cadmpeg_core::text::NonBlankString::try_from("asset").unwrap(),
                     },
                     None,
                 )

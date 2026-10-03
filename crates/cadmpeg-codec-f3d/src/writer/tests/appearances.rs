@@ -155,7 +155,7 @@ fn generated_source_less_rejects_collapsed_visibility_body_bindings() {
         .enumerate()
         .map(|(ordinal, entity_suffix)| {
             crate::records::bodies::BodyVisibility::try_from(
-                crate::records::bodies::BodyVisibilityWire {
+                crate::records::bodies::BodyVisibilityWire::<String> {
                     id: format!("f3d:generated-{ordinal}:body-visibility#42"),
                     body: body.clone(),
                     stream: "generated/Design1/BulkStream.dat".into(),

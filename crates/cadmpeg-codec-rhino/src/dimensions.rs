@@ -1431,7 +1431,7 @@ fn insert_dimension_property(
     value: fmt::Arguments<'_>,
 ) -> Result<(), cadmpeg_core::CodecError> {
     let key = ctx.copy_retained_text(key, "Rhino dimension parameter key")?;
-    let key = cadmpeg_core::text::NonBlankString::new(key)
+    let key = cadmpeg_core::text::NonBlankString::for_decode(ctx, key, "validate nonblank text")?
         .ok_or_else(|| cadmpeg_core::CodecError::malformed("generated dimension key is blank"))?;
     let value = ctx.format_retained(value, "Rhino dimension parameter value")?;
     ctx.insert_btree_map(parameters, key, value, "Rhino dimension parameter entries")?;
@@ -1716,7 +1716,7 @@ pub(crate) fn project(
             None => Ok(()),
             Some(id) if id.is_nil() => {
                 let role = ctx.copy_retained_text(role, "Rhino dimension reference key")?;
-                let role = cadmpeg_core::text::NonBlankString::new(role).ok_or_else(|| {
+                let role = cadmpeg_core::text::NonBlankString::for_decode(ctx, role, "validate nonblank text")?.ok_or_else(|| {
                     cadmpeg_core::CodecError::malformed(
                         "generated dimension reference role is blank",
                     )

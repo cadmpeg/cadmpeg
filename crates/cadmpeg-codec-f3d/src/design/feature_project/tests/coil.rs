@@ -20,14 +20,14 @@ fn parameter(
     value: f64,
 ) -> DesignParameter {
     crate::records::parameters::DesignParameter::try_from(
-        crate::records::parameters::DesignParameterDraft {
+        crate::records::parameters::DesignParameterDraft::<String> {
             id: format!("f3d:Design/BulkStream.dat:parameter#{record_index}"),
             byte_offset: 0,
             class_tag: crate::records::references::DesignClassTag::try_from("000".to_owned())
                 .unwrap(),
             record_index,
             source_ordinal: 0,
-            source: crate::records::parameters::DesignParameterSource::new(
+            source: crate::records::parameters::DesignParameterSource::new::<String>(
                 source_kind.into(),
                 Some(0),
                 None,

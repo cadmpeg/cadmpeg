@@ -47,7 +47,7 @@ fn circular_fixture() -> (SketchRelation, [SketchEntity; 4]) {
         byte_offset: 0,
         state_offset: 0,
         owner_reference: 1,
-        owner_entity_id: Some(cadmpeg_core::text::NonBlankString::new("0_1").unwrap()),
+        owner_entity_id: Some(cadmpeg_core::text::NonBlankString::try_from("0_1").unwrap()),
         auxiliary_references: crate::records::identity::ReferenceRun::located(vec![
             crate::records::identity::Located {
                 value: 20,

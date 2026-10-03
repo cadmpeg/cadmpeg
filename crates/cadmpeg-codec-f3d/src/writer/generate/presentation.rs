@@ -508,7 +508,7 @@ mod tests {
             ],
             body_visibilities: vec![
                 crate::records::bodies::BodyVisibility::try_from(
-                    crate::records::bodies::BodyVisibilityWire {
+                    crate::records::bodies::BodyVisibilityWire::<String> {
                         id: "f3d:generated:body-visibility#11".into(),
                         body: first.id,
                         stream: "generated/Design1/BulkStream.dat".into(),
@@ -521,7 +521,7 @@ mod tests {
                 )
                 .unwrap(),
                 crate::records::bodies::BodyVisibility::try_from(
-                    crate::records::bodies::BodyVisibilityWire {
+                    crate::records::bodies::BodyVisibilityWire::<String> {
                         id: "f3d:generated:body-visibility#22".into(),
                         body: second.id,
                         stream: "generated/Design1/BulkStream.dat".into(),

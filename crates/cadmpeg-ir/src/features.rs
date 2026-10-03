@@ -6466,15 +6466,17 @@ impl VertexSelection {
 
     /// Admits a historical vertex and its native reference.
     pub fn historical(
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         state: FeatureInputTopologyId,
         vertex: HistoricalVertexId,
         native: String,
-    ) -> Result<Self, BodySelectionError> {
-        Ok(Self::Historical {
+    ) -> Result<Result<Self, BodySelectionError>, cadmpeg_core::decode::ResourceLimit> {
+        let Some(native) = NonBlankString::for_decode(ctx, native, "validate historical vertex reference")? else { return Ok(Err(BodySelectionError::BlankNativeMember)); };
+        Ok(Ok(Self::Historical {
             state,
             vertex,
-            native: NonBlankString::new(native).ok_or(BodySelectionError::BlankNativeMember)?,
-        })
+            native,
+        }))
     }
 
     /// Admits a native vertex reference.
@@ -6512,11 +6514,7 @@ impl EdgeSelection {
             Ok(members) => members,
             Err(error) => return Ok(Err(error)),
         };
-        ctx.charge_work_limit(
-            cadmpeg_core::decode::u64_from_index(native.len()),
-            "validate selection native reference",
-        )?;
-        let native = match NonBlankString::new(native).ok_or(BodySelectionError::BlankNativeMember)
+        let native = match NonBlankString::for_decode(ctx, native, "validate nonblank text")?.ok_or(BodySelectionError::BlankNativeMember)
         {
             Ok(native) => native,
             Err(error) => return Ok(Err(error)),
@@ -6565,11 +6563,7 @@ impl EdgeSelection {
             Ok(members) => members,
             Err(error) => return Ok(Err(error)),
         };
-        ctx.charge_work_limit(
-            cadmpeg_core::decode::u64_from_index(native.len()),
-            "validate selection native reference",
-        )?;
-        let native = match NonBlankString::new(native).ok_or(BodySelectionError::BlankNativeMember)
+        let native = match NonBlankString::for_decode(ctx, native, "validate nonblank text")?.ok_or(BodySelectionError::BlankNativeMember)
         {
             Ok(native) => native,
             Err(error) => return Ok(Err(error)),
@@ -6623,11 +6617,7 @@ impl FaceSelection {
             Ok(members) => members,
             Err(error) => return Ok(Err(error)),
         };
-        ctx.charge_work_limit(
-            cadmpeg_core::decode::u64_from_index(native.len()),
-            "validate selection native reference",
-        )?;
-        let native = match NonBlankString::new(native).ok_or(BodySelectionError::BlankNativeMember)
+        let native = match NonBlankString::for_decode(ctx, native, "validate nonblank text")?.ok_or(BodySelectionError::BlankNativeMember)
         {
             Ok(native) => native,
             Err(error) => return Ok(Err(error)),
@@ -6676,11 +6666,7 @@ impl FaceSelection {
             Ok(members) => members,
             Err(error) => return Ok(Err(error)),
         };
-        ctx.charge_work_limit(
-            cadmpeg_core::decode::u64_from_index(native.len()),
-            "validate selection native reference",
-        )?;
-        let native = match NonBlankString::new(native).ok_or(BodySelectionError::BlankNativeMember)
+        let native = match NonBlankString::for_decode(ctx, native, "validate nonblank text")?.ok_or(BodySelectionError::BlankNativeMember)
         {
             Ok(native) => native,
             Err(error) => return Ok(Err(error)),
@@ -7214,7 +7200,7 @@ where
             native: String,
         }
         let wire = Wire::deserialize(deserializer)?;
-        let native = cadmpeg_core::text::NonBlankString::new(wire.native).ok_or_else(|| {
+        let native = cadmpeg_core::text::NonBlankString::try_from(wire.native).ok().ok_or_else(|| {
             serde::de::Error::custom(BodySelectionError::BlankNativeMember.to_string())
         })?;
         Ok(Self::new(wire.body, native))
@@ -7658,17 +7644,21 @@ pub enum FaceMaker {
 }
 
 impl FaceMaker {
-    /// Parses a non-empty runtime class name.
-    pub fn new(class: impl Into<String>) -> Option<Self> {
-        let class = class.into();
-        Some(match class.as_str() {
+    /// Parses a non-empty runtime class name under the caller budget.
+    pub fn new(ctx: &cadmpeg_core::decode::DecodeContext<'_>, class: impl cadmpeg_core::decode::text::TextSource) -> Result<Option<Self>, cadmpeg_core::CodecError> {
+        let Some(class) = NonBlankString::for_decode(ctx, class, "validate face maker class")? else { return Ok(None); };
+        Ok(Some(Self::from_class(class)))
+    }
+
+    fn from_class(class: NonBlankString) -> Self {
+        match class.as_str() {
             "Part::FaceMakerSimple" => Self::Simple,
             "Part::FaceMakerCheese" => Self::Cheese,
             "Part::FaceMakerExtrusion" => Self::Extrusion,
             "Part::FaceMakerBullseye" => Self::Bullseye,
             "Part::FaceMakerUnified" => Self::Unified,
-            _ => Self::Other(NonBlankString::new(class)?),
-        })
+            _ => Self::Other(class),
+        }
     }
 
     /// Returns the `FreeCAD` runtime class name.
@@ -7709,8 +7699,9 @@ impl<'de> Deserialize<'de> for FaceMaker {
     where
         D: serde::Deserializer<'de>,
     {
-        Self::new(String::deserialize(deserializer)?)
-            .ok_or_else(|| serde::de::Error::custom("face maker class must not be empty"))
+        NonBlankString::try_from(String::deserialize(deserializer)?)
+            .map(Self::from_class)
+            .map_err(|_| serde::de::Error::custom("face maker class must not be empty"))
     }
 }
 
@@ -9524,11 +9515,7 @@ impl PathRef {
             Ok(value) => value,
             Err(error) => return Ok(Err(error)),
         };
-        ctx.charge_work_limit(
-            cadmpeg_core::decode::u64_from_index(native.len()),
-            "validate selection native reference",
-        )?;
-        let native = match NonBlankString::new(native).ok_or(BodySelectionError::BlankNativeMember)
+        let native = match NonBlankString::for_decode(ctx, native, "validate nonblank text")?.ok_or(BodySelectionError::BlankNativeMember)
         {
             Ok(native) => native,
             Err(error) => return Ok(Err(error)),

@@ -3818,7 +3818,7 @@ pub(crate) fn bind_sketch_graph(
         let mut owner_text = ctx.retained_string(owner.len(), "f3d sketch relation owner text")?;
         owner_text.push_str(owner);
         relation.owner_entity_id = Some(
-            cadmpeg_core::text::NonBlankString::new(owner_text).ok_or_else(|| {
+            cadmpeg_core::text::NonBlankString::for_decode(ctx, owner_text, "validate nonblank text")?.ok_or_else(|| {
                 crate::design::text::malformed_design(
                     ctx,
                     format_args!(

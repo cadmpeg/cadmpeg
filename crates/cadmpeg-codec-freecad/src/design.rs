@@ -1920,9 +1920,7 @@ fn parse_sketch(
                                 ctx.copy_retained_text(name, "fcstd sketch external document")
                             })
                             .transpose()?,
-                        object: cadmpeg_core::text::NonBlankString::new(
-                            ctx.copy_retained_text(target_object, "fcstd sketch external object")?,
-                        )
+                        object: cadmpeg_core::text::NonBlankString::for_decode(ctx, ctx.copy_retained_text(target_object, "fcstd sketch external object")?, "validate nonblank text")?
                         .ok_or_else(|| {
                             cadmpeg_core::CodecError::malformed("object must not be empty")
                         })?,
@@ -2377,7 +2375,7 @@ fn feature_state(
             ctx.copy_retained_text(property.xml.text(), "fcstd feature state value")?
         };
         let name = ctx.copy_retained_text(&property.name, "fcstd feature state name")?;
-        let Some(name) = NonBlankString::new(name) else {
+        let Some(name) = NonBlankString::for_decode(ctx, name, "validate nonblank text")? else {
             return Err(crate::resource::malformed_charged(
                 ctx,
                 format_args!("{object} states a property with a blank key"),
@@ -2788,17 +2786,17 @@ fn parse_constraints(
                 _ => Ok(None),
             }
         };
-        let native_kind = cadmpeg_core::text::NonBlankString::new(native_kind)
+        let native_kind = cadmpeg_core::text::NonBlankString::for_decode(ctx, native_kind, "validate nonblank text")?
             .ok_or_else(|| CodecError::malformed("empty native constraint kind"))?;
         let mut native_operands = Vec::new();
         for (entity, position) in &operands {
             if *entity >= 0 && resolve(*entity, *position)?.is_some() {
                 continue;
             }
-            let native_kind = cadmpeg_core::text::NonBlankString::new(ctx.format_retained(
+            let native_kind = cadmpeg_core::text::NonBlankString::for_decode(ctx, ctx.format_retained(
                 format_args!("position:{position}"),
                 "fcstd native operand position kind",
-            )?)
+            )?, "validate nonblank text")?
             .ok_or_else(|| {
                 malformed_design(
                     ctx,
@@ -3868,9 +3866,7 @@ fn sketch_geometry(
     }
     let number = |name: &str| attributes.get(name).and_then(|value| value.parse().ok());
     let native = || -> Result<SketchGeometry, CodecError> {
-        let native_kind = cadmpeg_core::text::NonBlankString::new(
-            ctx.copy_retained_text(kind, "fcstd native sketch geometry kind")?,
-        )
+        let native_kind = cadmpeg_core::text::NonBlankString::for_decode(ctx, ctx.copy_retained_text(kind, "fcstd native sketch geometry kind")?, "validate nonblank text")?
         .ok_or_else(|| CodecError::malformed("native_kind must not be empty"))?;
         Ok(SketchGeometry::native(native_kind))
     };
@@ -4711,7 +4707,7 @@ fn revolution_definition(
             let Some(face_maker_class) = face_maker_class else {
                 return Ok(None);
             };
-            let Some(face_maker) = FaceMaker::new(face_maker_class) else {
+            let Some(face_maker) = FaceMaker::new(ctx, face_maker_class)? else {
                 return Ok(None);
             };
             Some(face_maker)
@@ -4906,7 +4902,7 @@ fn part_construction_geometry_definition(
         let Some(face_maker_class) = face_maker_class else {
             return Ok(None);
         };
-        let Some(face_maker) = FaceMaker::new(face_maker_class) else {
+        let Some(face_maker) = FaceMaker::new(ctx, face_maker_class)? else {
             return Ok(None);
         };
         return Ok(Some(FeatureDefinition::Operation(
@@ -5378,7 +5374,7 @@ fn extrusion_shape(
             direction = direction.reversed();
         }
         let face_maker = if property(properties, "FaceMakerClass").is_some() {
-            let maker = required!(FaceMaker::new(required!(face_maker_class)));
+            let maker = required!(FaceMaker::new(ctx, required!(face_maker_class))?);
             if property(properties, "FaceMakerMode").is_some()
                 && required!(u32::try_from(required!(integer_property(
                     ctx,
@@ -6486,9 +6482,7 @@ fn native_parameters(
         else {
             continue;
         };
-        let Some(name) = NonBlankString::new(
-            ctx.copy_retained_text(&property.name, "fcstd native parameter name")?,
-        ) else {
+        let Some(name) = NonBlankString::for_decode(ctx, ctx.copy_retained_text(&property.name, "fcstd native parameter name")?, "validate nonblank text")? else {
             continue;
         };
         let value = value?;
@@ -7190,9 +7184,9 @@ fn hole_definition(
         None
     } else {
         let threaded = required!(bool_selector(ctx, properties, "Threaded", false)?);
-        let standard = required!(cadmpeg_core::text::NonBlankString::new(required!(
+        let standard = required!(cadmpeg_core::text::NonBlankString::for_decode(ctx, required!(
             thread_standard(thread_type)
-        )));
+        ), "validate nonblank text")?);
         let designation = designation_label;
         let modeled = if property(properties, "ModelThread").is_some() {
             required!(bool_selector(ctx, properties, "ModelThread", false)?)
@@ -7440,9 +7434,7 @@ fn binder_definition(
         let mut subelements =
             ctx.collection_vec(link_selectors(link).count(), "fcstd binder subelements")?;
         for selector in link_selectors(link) {
-            let Some(selector) = cadmpeg_core::text::NonBlankString::new(
-                ctx.copy_retained_text(selector, "fcstd binder subelement selector")?,
-            ) else {
+            let Some(selector) = cadmpeg_core::text::NonBlankString::for_decode(ctx, ctx.copy_retained_text(selector, "fcstd binder subelement selector")?, "validate nonblank text")? else {
                 return Ok(None);
             };
             subelements.push(selector);
@@ -7597,14 +7589,10 @@ fn binder_target(
         return Ok(None);
     };
     if let Some(document) = link.document() {
-        let Some(document) = cadmpeg_core::text::NonBlankString::new(
-            ctx.copy_retained_text(document.as_str(), "fcstd external binder document")?,
-        ) else {
+        let Some(document) = cadmpeg_core::text::NonBlankString::for_decode(ctx, ctx.copy_retained_text(document.as_str(), "fcstd external binder document")?, "validate nonblank text")? else {
             return Ok(None);
         };
-        let Some(object) = cadmpeg_core::text::NonBlankString::new(
-            ctx.copy_retained_text(object, "fcstd external binder object")?,
-        ) else {
+        let Some(object) = cadmpeg_core::text::NonBlankString::for_decode(ctx, ctx.copy_retained_text(object, "fcstd external binder object")?, "validate nonblank text")? else {
             return Ok(None);
         };
         return Ok(Some(BinderTarget::External { document, object }));
@@ -7614,9 +7602,7 @@ fn binder_target(
             feature: feature.try_clone_for_decode(ctx, "fcstd binder feature target")?,
         },
         None => BinderTarget::Native {
-            reference: match cadmpeg_core::text::NonBlankString::new(
-                ctx.copy_retained_text(object, "fcstd binder native target")?,
-            ) {
+            reference: match cadmpeg_core::text::NonBlankString::for_decode(ctx, ctx.copy_retained_text(object, "fcstd binder native target")?, "validate nonblank text")? {
                 Some(reference) => reference,
                 None => return Ok(None),
             },

@@ -14,23 +14,14 @@ cadmpeg_core::named_optional_field!(deserialize_body, BodyId, "body");
 #[derive(Debug, Clone, PartialEq)]
 struct DesignBulkStreamPath(NonBlankString);
 
-impl TryFrom<String> for DesignBulkStreamPath {
-    type Error = String;
-    fn try_from(text: String) -> Result<Self, Self::Error> {
-        let prefix = text
-            .strip_suffix("/BulkStream.dat")
-            .ok_or("stream must name a containing Design BulkStream")?;
-        if prefix.is_empty()
-            || text.chars().any(char::is_control)
-            || prefix
-                .split('/')
-                .any(|part| matches!(part, "" | "." | ".."))
-        {
+impl DesignBulkStreamPath {
+    fn try_new<T: AsRef<str> + TryInto<NonBlankString>>(text: T) -> Result<Self, String> {
+        let value = text.as_ref();
+        let prefix = value.strip_suffix("/BulkStream.dat").ok_or("stream must name a containing Design BulkStream")?;
+        if prefix.is_empty() || value.chars().any(char::is_control) || prefix.split('/').any(|part| matches!(part, "" | "." | "..")) {
             return Err("stream must name a containing Design BulkStream".into());
         }
-        Ok(Self(
-            NonBlankString::new(text).ok_or("stream must not be blank")?,
-        ))
+        Ok(Self(text.try_into().map_err(|_| "stream must not be blank")?))
     }
 }
 
@@ -433,11 +424,11 @@ impl Serialize for DesignBodyBinding {
 
 #[derive(Deserialize)]
 #[cfg_attr(test, derive(Serialize))]
-pub(crate) struct DesignBodyBindingWire {
+pub(crate) struct DesignBodyBindingWire<T = String> {
     /// Globally unique deterministic identifier for this native map entry.
     pub(crate) id: String,
     /// Design `BulkStream` ZIP entry containing the map.
-    pub(crate) stream: String,
+    pub(crate) stream: T,
     /// Number of pairs in the enclosing body map.
     pub(crate) pair_count: u32,
     /// Zero-based position in the enclosing body map.
@@ -463,9 +454,9 @@ pub(crate) struct DesignBodyBindingWire {
     pub(crate) body: Option<BodyId>,
 }
 
-impl TryFrom<DesignBodyBindingWire> for DesignBodyBinding {
+impl<T: AsRef<str> + TryInto<NonBlankString>> TryFrom<DesignBodyBindingWire<T>> for DesignBodyBinding {
     type Error = String;
-    fn try_from(wire: DesignBodyBindingWire) -> Result<Self, Self::Error> {
+    fn try_from(wire: DesignBodyBindingWire<T>) -> Result<Self, Self::Error> {
         let pair_count =
             std::num::NonZeroU32::new(wire.pair_count).ok_or("pair_count must be nonzero")?;
         if wire.pair_ordinal >= pair_count.get() {
@@ -488,7 +479,7 @@ impl TryFrom<DesignBodyBindingWire> for DesignBodyBinding {
         }
         let id =
             NativeRecordId::try_f3d_new(wire.id, "design-body-binding", wire.asm_body_key_offset)?;
-        let stream = DesignBulkStreamPath::try_from(wire.stream)?;
+        let stream = DesignBulkStreamPath::try_new(wire.stream)?;
         if !crate::ids::native_scope_matches(id.stream(), stream.as_str()) {
             return Err("id must identify its containing stream".into());
         }
@@ -568,10 +559,10 @@ pub(crate) struct BodyVisibility {
 }
 
 #[derive(Deserialize, Serialize)]
-pub(crate) struct BodyVisibilityWire {
+pub(crate) struct BodyVisibilityWire<T = String> {
     pub(crate) id: String,
     pub(crate) body: BodyId,
-    pub(crate) stream: String,
+    pub(crate) stream: T,
     pub(crate) byte_offset: u64,
     pub(crate) asm_body_key_offset: u64,
     pub(crate) asm_body_key: u64,
@@ -579,13 +570,13 @@ pub(crate) struct BodyVisibilityWire {
     pub(crate) visible: bool,
 }
 
-impl TryFrom<BodyVisibilityWire> for BodyVisibility {
+impl<T: AsRef<str> + TryInto<NonBlankString>> TryFrom<BodyVisibilityWire<T>> for BodyVisibility {
     type Error = String;
-    fn try_from(wire: BodyVisibilityWire) -> Result<Self, Self::Error> {
+    fn try_from(wire: BodyVisibilityWire<T>) -> Result<Self, Self::Error> {
         Ok(Self {
             id: NativeRecordId::try_f3d_new(wire.id, "body-visibility", wire.asm_body_key)?,
             body: wire.body,
-            stream: DesignBulkStreamPath::try_from(wire.stream)?,
+            stream: DesignBulkStreamPath::try_new(wire.stream)?,
             byte_offset: wire.byte_offset,
             asm_body_key_offset: wire.asm_body_key_offset,
             asm_body_key: wire.asm_body_key,

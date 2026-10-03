@@ -3516,10 +3516,10 @@ fn decode_scanned_document<'a>(
                             body: body
                                 .id
                                 .try_clone_for_decode(ctx, "retain F3D visible body ID")?,
-                            stream: ctx.copy_retained_text(
+                            stream: ctx.validate_nonblank_text(ctx.copy_retained_text(
                                 &visibility.stream,
                                 "retain F3D body visibility stream",
-                            )?,
+                            )?, "validate stream")?,
                             byte_offset: visibility.byte_offset,
                             asm_body_key_offset: visibility.asm_body_key_offset,
                             asm_body_key: body_selector,
@@ -3756,7 +3756,7 @@ fn project_mesh_bodies(
             })
             .map(str::to_owned);
         let asset =
-            cadmpeg_ir::assets::Asset::try_new(
+            cadmpeg_ir::assets::Asset::try_new(ctx, 
                 texture
                     .asset
                     .try_clone_for_decode(ctx, "retain F3D mesh texture asset ID")?,
@@ -3777,8 +3777,7 @@ fn project_mesh_bodies(
                     ctx,
                     texture.file.archive_entry_name(),
                 )?),
-            )
-            .map_err(CodecError::Malformed)?;
+            )?;
         ctx.push_vec(
             &mut texture_assets,
             asset,

@@ -481,14 +481,10 @@ pub(crate) fn project_sketch_design(
             continue;
         };
         let sketch = crate::design::identity::neutral_sketch_id(ctx, placement)?;
-        let Some(text_value) = cadmpeg_core::text::NonBlankString::new(
-            ctx.copy_retained_text(&text.text, "f3d planar sketch text")?,
-        ) else {
+        let Some(text_value) = cadmpeg_core::text::NonBlankString::for_decode(ctx, ctx.copy_retained_text(&text.text, "f3d planar sketch text")?, "validate nonblank text")? else {
             continue;
         };
-        let Some(font_family) = cadmpeg_core::text::NonBlankString::new(
-            ctx.copy_retained_text(&text.font_family, "f3d planar sketch font family")?,
-        ) else {
+        let Some(font_family) = cadmpeg_core::text::NonBlankString::for_decode(ctx, ctx.copy_retained_text(&text.font_family, "f3d planar sketch font family")?, "validate nonblank text")? else {
             continue;
         };
         let Ok(font_weight) = text.font_weight.try_into() else {

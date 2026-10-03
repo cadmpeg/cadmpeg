@@ -7,8 +7,8 @@ use super::super::{
 };
 use serde_json::json;
 
-fn draft() -> DesignParameterDraft {
-    DesignParameterDraft {
+fn draft() -> DesignParameterDraft::<String> {
+    DesignParameterDraft::<String> {
         id: "parameter".into(),
         byte_offset: 100,
         class_tag: DesignClassTag::try_from("305".to_owned()).unwrap(),
