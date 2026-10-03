@@ -141,11 +141,11 @@ fn inspect_summary_refuses_attribute_node_at_collection_limit() {
     );
 }
 
-// Two ordered attributes admit one initial node and at most two split nodes.
+// Two ordered attributes share one backing node: eleven lane pairs plus metadata and padding.
 fn two_summary_attribute_nodes() -> usize {
-    3 * (22 * std::mem::size_of::<String>()
+    22 * std::mem::size_of::<String>()
         + 16 * std::mem::size_of::<usize>()
-        + 2 * std::mem::align_of::<String>().max(std::mem::align_of::<usize>()))
+        + 2 * std::mem::align_of::<String>().max(std::mem::align_of::<usize>())
 }
 
 #[test]
@@ -201,6 +201,7 @@ fn inspect_summary_refuses_stream_name_at_retained_limit() {
     crate::test_support::with_decode_context_over(
         &[],
         |policy| {
+            // One entry, one node and 23 attribute text bytes precede this copy.
             policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(
                 std::mem::size_of::<cadmpeg_core::ContainerEntry>() + two_summary_attribute_nodes(),
             ) + 23;
@@ -237,6 +238,7 @@ fn inspect_summary_refuses_directory_name_at_retained_limit() {
     crate::test_support::with_decode_context_over(
         &[],
         |policy| {
+            // One entry, one node and the directory attribute text precede its name.
             policy.limits.max_retained_bytes = u64::try_from(
                 preceding
                     + std::mem::size_of::<cadmpeg_core::ContainerEntry>()
@@ -373,6 +375,7 @@ fn inspect_summary_refuses_storage_note_text_at_retained_limit() {
     crate::test_support::with_decode_context_over(
         &[],
         |policy| {
+            // One entry, one node and 23 attribute text bytes precede this copy.
             policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(
                 std::mem::size_of::<cadmpeg_core::ContainerEntry>() + two_summary_attribute_nodes(),
             ) + 23;
