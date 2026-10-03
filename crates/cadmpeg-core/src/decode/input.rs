@@ -3,7 +3,6 @@
 
 use std::io::Read;
 
-use super::collect::LinearGrowth;
 use super::{u64_from_index, DecodeContext, ResourceDimension, ResourceFailure};
 use crate::CodecError;
 
@@ -44,17 +43,13 @@ impl DecodeContext<'_> {
             self.budget
                 .charge_input(u64_from_index(read), "read input prefix")?;
             self.charge_collection_items(u64_from_index(read), "input byte slots")?;
-            let (additional, storage, _growth) = self.linear_growth::<u8>(
-                bytes.len(), bytes.capacity(), read, LinearGrowth::PrechargedBytes,
-                "input prefix storage",
-            )?;
-            bytes.try_reserve_exact(additional).map_err(|_| {
+            self.reserve_precharged_bytes(bytes, read, "input prefix storage", |storage| {
                 self.budget.refuse(
                     ResourceDimension::InputBytes,
                     ResourceFailure::AllocationFailed,
                     self.policy().limits.max_input_bytes,
                     self.budget.input_bytes(),
-                    u64_from_index(storage),
+                    storage,
                     "input prefix storage",
                 )
             })?;
