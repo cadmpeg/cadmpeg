@@ -20,6 +20,7 @@ pub mod scan;
 mod sort;
 mod space;
 pub mod tree;
+pub mod text;
 mod unique;
 mod utf16;
 mod view;
