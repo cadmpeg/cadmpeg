@@ -24,6 +24,14 @@ impl<'ctx, T> Scratch<'ctx, T> {
         Ok(result)
     }
 
+    pub(super) fn stable_sort_by(
+        &mut self,
+        compare: impl FnMut(&T, &T) -> std::cmp::Ordering,
+        key_bytes: impl Fn(&T) -> usize,
+    ) -> Result<(), CodecError> {
+        self.ctx.stable_sort_by(&mut self.values, compare, key_bytes, "sort validation scratch")
+    }
+
     pub(super) fn push(&mut self, value: T) -> Result<(), CodecError> {
         self.ctx.charge_work(1, "validation scratch copy")?;
         self.storage.with_storage(|| self.ctx.push_retained_vec(&mut self.values, value, "validation scratch slots"))

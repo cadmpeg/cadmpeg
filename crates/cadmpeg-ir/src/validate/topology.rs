@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Focused validation checks for topology.
 
-use std::collections::{BTreeSet, HashMap, HashSet};
+use std::collections::{HashMap, HashSet};
+use super::scratch::Scratch;
+use crate::index::identities::BorrowedIdentities;
 use std::fmt;
 
 use cadmpeg_core::decode::{u64_from_index, DecodeContext};
@@ -25,33 +27,37 @@ pub(super) mod graphs;
 mod composite;
 
 fn collect_pattern_paths<'a>(
+    ctx: &DecodeContext<'_>,
     pattern: &'a PatternKind,
-    paths: &mut Vec<&'a crate::features::PathRef>,
-) {
+    paths: &mut Scratch<'_, &'a crate::features::PathRef>,
+) -> Result<(), CodecError> {
     match pattern.definition() {
         PatternTransform::CurveDriven {
             path: Some(path), ..
-        } => paths.push(path),
+        } => paths.push(path)?,
         PatternTransform::Composite { stages } => {
             for stage in stages {
-                collect_stage_pattern_paths(&stage.pattern, paths);
+                ctx.charge_work(1, "composite pattern path scan")?;
+                collect_stage_pattern_paths(&stage.pattern, paths)?;
             }
         }
         _ => {}
     }
+    Ok(())
 }
 
 /// A composite stage applies one transform, so its paths do not recurse.
 fn collect_stage_pattern_paths<'a>(
     pattern: &'a crate::features::patterns::StagePatternKind,
-    paths: &mut Vec<&'a crate::features::PathRef>,
-) {
+    paths: &mut Scratch<'_, &'a crate::features::PathRef>,
+) -> Result<(), CodecError> {
     if let PatternTransform::CurveDriven {
         path: Some(path), ..
     } = pattern.definition()
     {
-        paths.push(path);
+        paths.push(path)?;
     }
+    Ok(())
 }
 use super::sketches::locus_entity;
 use crate::index::ModelIndex;
@@ -494,10 +500,10 @@ pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelI
                     }
                         Ok(())
                 };
-                let mut scales = construction.scales.as_slice().iter().collect::<Vec<_>>();
+                let mut scales = Scratch::filter_map(ctx, construction.scales.as_slice().iter(), |scale| Ok(Some(scale)))?;
                 match &construction.tail {
                     crate::geometry::CompoundLoftTail::Six { scale, curve, .. } => {
-                        scales.push(scale.as_ref());
+                        scales.push(scale.as_ref())?;
                         check_curve(curve, findings)?;
                     }
                     crate::geometry::CompoundLoftTail::Seven {
@@ -505,8 +511,8 @@ pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelI
                         second_scale,
                         ..
                     } => {
-                        scales.extend(first_scale.iter().map(Box::as_ref));
-                        scales.push(second_scale.as_ref());
+                        scales.extend(first_scale.iter().map(Box::as_ref))?;
+                        scales.push(second_scale.as_ref())?;
                     }
                     crate::geometry::CompoundLoftTail::Zero { direction, .. } => {
                         if let crate::geometry::CompoundLoftDirection::Curve { curve, .. } =
@@ -544,22 +550,22 @@ pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelI
                     }
                         Ok(())
                 };
-                let mut scales = construction.scales.as_slice().iter().collect::<Vec<_>>();
+                let mut scales = Scratch::filter_map(ctx, construction.scales.as_slice().iter(), |scale| Ok(Some(scale)))?;
                 match &construction.branch {
                     crate::geometry::ScaledCompoundLoftBranch::ExtendedVector {
                         first_scale,
                         second_scale,
                         ..
                     } => {
-                        scales.extend(first_scale.iter().map(Box::as_ref));
-                        scales.push(second_scale.as_ref());
+                        scales.extend(first_scale.iter().map(Box::as_ref))?;
+                        scales.push(second_scale.as_ref())?;
                     }
                     crate::geometry::ScaledCompoundLoftBranch::ExtendedCurve {
                         scale,
                         curve,
                         ..
                     } => {
-                        scales.extend(scale.iter().map(Box::as_ref));
+                        scales.extend(scale.iter().map(Box::as_ref))?;
                         check_curve(curve, findings)?;
                     }
                     crate::geometry::ScaledCompoundLoftBranch::Direct { direction, .. } => {
@@ -923,14 +929,14 @@ pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelI
                     }
                 }
                 if let Some(native) = native {
-                    let formulas: Vec<_> = match &native.layout {
+                    let formulas = match &native.layout {
                         crate::geometry::SweepSurfaceLayout::ProfileFirst { formulas, .. } => {
-                            formulas.iter().collect()
+                            Scratch::filter_map(ctx, formulas.iter(), |formula| Ok(Some(formula)))?
                         }
                         crate::geometry::SweepSurfaceLayout::ExplicitFormula {
                             formula, ..
                         } => {
-                            vec![formula]
+                            Scratch::filter_map(ctx, [formula], |formula| Ok(Some(formula)))?
                         }
                         crate::geometry::SweepSurfaceLayout::ExplicitGuide {
                             guide_curve, ..
@@ -943,7 +949,7 @@ pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelI
                                     guide_curve.as_str(),
                                 )?;
                             }
-                            Vec::new()
+                            Scratch::new(ctx)?
                         }
                         crate::geometry::SweepSurfaceLayout::ExplicitSurface {
                             support_surface,
@@ -968,7 +974,7 @@ pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelI
                                     )?;
                                 }
                             }
-                            Vec::new()
+                            Scratch::new(ctx)?
                         }
                         crate::geometry::SweepSurfaceLayout::LawDriven {
                             first_law,
@@ -978,7 +984,7 @@ pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelI
                         } => {
                             check_law_curves(ctx, first_law, ids, procedural, findings)?;
                             check_law_curves(ctx, second_law, ids, procedural, findings)?;
-                            vec![formula]
+                            Scratch::filter_map(ctx, [formula], |formula| Ok(Some(formula)))?
                         }
                     };
                     for formula in formulas {
@@ -1646,9 +1652,10 @@ pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelI
                 constraint.sketch.as_str(),
             )?;
         }
-        let (entities, parameter) = match constraint.definition.kind() {
-            Definition::Disabled {} => (Vec::new(), None),
-            Definition::Polygon { polygon } => (polygon.entities().to_vec(), None),
+        let mut constraint_entities = Scratch::new(ctx)?;
+        let parameter = match constraint.definition.kind() {
+            Definition::Disabled {} => None,
+            Definition::Polygon { polygon } => { constraint_entities.extend(polygon.entities().iter())?; None },
             Definition::Coincident { entities }
             | Definition::SplineGroup { entities }
             | Definition::Distance {
@@ -1659,44 +1666,32 @@ pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelI
                 entities,
                 parameter: None,
                 ..
-            } => (entities.clone(), None),
-            Definition::RectangularPattern { pattern } => (
-                pattern
+            } => { constraint_entities.extend(entities.iter())?; None },
+            Definition::RectangularPattern { pattern } => { constraint_entities.extend(pattern
                     .rows()
                     .iter()
                     .flatten()
-                    .flat_map(|instance| instance.entities.iter().cloned())
-                    .collect(),
-                None,
-            ),
-            Definition::CircularPattern { pattern } => (
-                std::iter::once(pattern.center().clone())
+                    .flat_map(|instance| instance.entities.iter()))?; None },
+            Definition::CircularPattern { pattern } => { constraint_entities.extend(std::iter::once(pattern.center())
                     .chain(
                         pattern
                             .instances()
                             .iter()
-                            .flat_map(|instance| instance.entities.iter().cloned()),
-                    )
-                    .collect(),
-                None,
-            ),
-            Definition::TextFrame { text, frame } => (
-                std::iter::once(text.clone())
-                    .chain(frame.iter().cloned())
-                    .collect(),
-                None,
-            ),
-            Definition::TextPath { text, path, .. } => (vec![text.clone(), path.clone()], None),
+                            .flat_map(|instance| instance.entities.iter()),
+                    ))?; None },
+            Definition::TextFrame { text, frame } => { constraint_entities.extend(std::iter::once(text)
+                    .chain(frame.iter()))?; None },
+            Definition::TextPath { text, path, .. } => { constraint_entities.extend([text, path])?; None },
             Definition::Native {
                 entities,
                 parameter: Some(parameter),
                 ..
-            } => (entities.clone(), Some(parameter.as_str())),
+            } => { constraint_entities.extend(entities.iter())?; Some(parameter.as_str()) },
             Definition::Horizontal { entity }
             | Definition::Vertical { entity }
             | Definition::Fixed { entity }
             | Definition::ArcAngle { entity, .. }
-            | Definition::EllipseAngle { entity, .. } => (vec![entity.clone()], None),
+            | Definition::EllipseAngle { entity, .. } => { constraint_entities.extend([entity])?; None },
             Definition::Parallel { first, second }
             | Definition::Perpendicular { first, second }
             | Definition::Tangent { first, second }
@@ -1708,81 +1703,65 @@ pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelI
             | Definition::ProjectedCopy {
                 source: first,
                 result: second,
-            } => (vec![first.clone(), second.clone()], None),
+            } => { constraint_entities.extend([first, second])?; None },
             Definition::InternalAlignment { helper, parent, .. } => {
-                (vec![helper.clone(), parent.clone()], None)
+                constraint_entities.extend([helper, parent])?;
+                None
             }
             Definition::Group { elements } | Definition::Text { elements, .. } => {
-                (elements.iter().map(locus_entity).cloned().collect(), None)
+                constraint_entities.extend(elements.iter().map(locus_entity))?;
+                None
             }
             Definition::CoincidentLoci { loci } => {
-                (loci.iter().map(locus_entity).cloned().collect(), None)
+                constraint_entities.extend(loci.iter().map(locus_entity))?;
+                None
             }
-            Definition::SameCoordinate { relation } => (
-                vec![
-                    locus_entity(relation.first()).clone(),
-                    locus_entity(relation.second()).clone(),
-                ],
-                None,
-            ),
-            Definition::TangentLoci { first, second } => (
-                vec![locus_entity(first).clone(), locus_entity(second).clone()],
-                None,
-            ),
+            Definition::SameCoordinate { relation } => { constraint_entities.extend([
+                    locus_entity(relation.first()),
+                    locus_entity(relation.second()),
+                ])?; None },
+            Definition::TangentLoci { first, second } => { constraint_entities.extend([locus_entity(first), locus_entity(second)])?; None },
             Definition::PointSymmetric {
                 first,
                 second,
                 center,
-            } => (
-                vec![
-                    locus_entity(first).clone(),
-                    locus_entity(second).clone(),
-                    locus_entity(center).clone(),
-                ],
-                None,
-            ),
+            } => { constraint_entities.extend([
+                    locus_entity(first),
+                    locus_entity(second),
+                    locus_entity(center),
+                ])?; None },
             Definition::Midpoint { point, entity } => {
-                (vec![locus_entity(point).clone(), entity.clone()], None)
+                constraint_entities.extend([locus_entity(point), entity])?;
+                None
             }
             Definition::PointCoordinateValues { point, .. } => {
-                (vec![locus_entity(point).clone()], None)
+                constraint_entities.extend([locus_entity(point)])?;
+                None
             }
-            Definition::MidpointCoordinate { first, second, .. } => (
-                vec![locus_entity(first).clone(), locus_entity(second).clone()],
-                None,
-            ),
+            Definition::MidpointCoordinate { first, second, .. } => { constraint_entities.extend([locus_entity(first), locus_entity(second)])?; None },
             Definition::AtIntersection {
                 point,
                 first,
                 second,
-            } => (
-                vec![locus_entity(point).clone(), first.clone(), second.clone()],
-                None,
-            ),
+            } => { constraint_entities.extend([locus_entity(point), first, second])?; None },
             Definition::Offset {
                 pairs, parameter, ..
-            } => (
-                pairs
+            } => { constraint_entities.extend(pairs
                     .iter()
-                    .flat_map(|pair| [pair.source.clone(), pair.result.clone()])
-                    .collect(),
-                parameter.as_ref().map(|parameter| parameter.id.as_str()),
-            ),
+                    .flat_map(|pair| [&pair.source, &pair.result]))?; parameter.as_ref().map(|parameter| parameter.id.as_str()) },
             Definition::PointOnObject { point, entity } => {
-                (vec![locus_entity(point).clone(), entity.clone()], None)
+                constraint_entities.extend([locus_entity(point), entity])?;
+                None
             }
             Definition::Symmetric {
                 first,
                 second,
                 axis,
-            } => (
-                vec![
-                    locus_entity(first).clone(),
-                    locus_entity(second).clone(),
-                    axis.clone(),
-                ],
-                None,
-            ),
+            } => { constraint_entities.extend([
+                    locus_entity(first),
+                    locus_entity(second),
+                    axis,
+                ])?; None },
             Definition::DistanceLoci {
                 first,
                 second,
@@ -1809,44 +1788,31 @@ pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelI
                 first,
                 second,
                 parameter,
-            } => (
-                vec![locus_entity(first).clone(), locus_entity(second).clone()],
-                Some(parameter.as_str()),
-            ),
+            } => { constraint_entities.extend([locus_entity(first), locus_entity(second)])?; Some(parameter.as_str()) },
             Definition::PolarDistance {
                 first,
                 second,
                 distance_parameter: None,
                 ..
-            } => (
-                vec![locus_entity(first).clone(), locus_entity(second).clone()],
-                None,
-            ),
+            } => { constraint_entities.extend([locus_entity(first), locus_entity(second)])?; None },
             Definition::DistanceLociValue {
                 first,
                 second,
                 parameter: None,
                 ..
-            } => (
-                vec![locus_entity(first).clone(), locus_entity(second).clone()],
-                None,
-            ),
-            Definition::AngleDifference { .. } => (Vec::new(), None),
-            Definition::ScalarEquality { .. } => (Vec::new(), None),
-            Definition::EqualDistance { first, second } => (
-                vec![
-                    locus_entity(&first.first).clone(),
-                    locus_entity(&first.second).clone(),
-                    locus_entity(&second.first).clone(),
-                    locus_entity(&second.second).clone(),
-                ],
-                None,
-            ),
+            } => { constraint_entities.extend([locus_entity(first), locus_entity(second)])?; None },
+            Definition::AngleDifference { .. } => None,
+            Definition::ScalarEquality { .. } => None,
+            Definition::EqualDistance { first, second } => { constraint_entities.extend([
+                    locus_entity(&first.first),
+                    locus_entity(&first.second),
+                    locus_entity(&second.first),
+                    locus_entity(&second.second),
+                ])?; None },
             Definition::RepeatedDistance {
                 measurements,
                 parameter,
-            } => (
-                measurements
+            } => { constraint_entities.extend(measurements
                     .iter()
                     .flat_map(|measurement| {
                         use crate::sketches::SketchDistanceMeasurement as Measurement;
@@ -1855,34 +1821,25 @@ pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelI
                             | Measurement::Horizontal { first, second }
                             | Measurement::Vertical { first, second } => (first, second),
                         };
-                        [locus_entity(first).clone(), locus_entity(second).clone()]
-                    })
-                    .collect(),
-                Some(parameter.as_str()),
-            ),
+                        [locus_entity(first), locus_entity(second)]
+                    }))?; Some(parameter.as_str()) },
             Definition::RepeatedLength {
                 entities,
                 parameter,
-            } => (entities.clone(), Some(parameter.as_str())),
+            } => { constraint_entities.extend(entities.iter())?; Some(parameter.as_str()) },
             Definition::ParallelLineSetDistance {
                 first,
                 second,
                 parameter,
-            } => (
-                first.iter().chain(second).cloned().collect(),
-                Some(parameter.as_str()),
-            ),
+            } => { constraint_entities.extend(first.iter().chain(second))?; Some(parameter.as_str()) },
             Definition::Angle {
                 first,
                 second,
                 parameter,
-            } => (
-                vec![first.clone(), second.clone()],
-                Some(parameter.as_str()),
-            ),
+            } => { constraint_entities.extend([first, second])?; Some(parameter.as_str()) },
             Definition::AngleToAxis {
                 entity, parameter, ..
-            } => (vec![entity.clone()], Some(parameter.as_str())),
+            } => { constraint_entities.extend([entity])?; Some(parameter.as_str()) },
             Definition::RepeatedRadius {
                 entities,
                 parameter,
@@ -1890,31 +1847,29 @@ pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelI
             | Definition::RepeatedDiameter {
                 entities,
                 parameter,
-            } => (entities.clone(), Some(parameter.as_str())),
+            } => { constraint_entities.extend(entities.iter())?; Some(parameter.as_str()) },
             Definition::Radius { entity, parameter }
             | Definition::Diameter { entity, parameter }
             | Definition::Weight { entity, parameter } => {
-                (vec![entity.clone()], Some(parameter.as_str()))
+                constraint_entities.extend([entity])?;
+                Some(parameter.as_str())
             }
             Definition::SnellsLaw {
                 incident,
                 refracted,
                 interface,
                 parameter,
-            } => (
-                vec![
-                    locus_entity(incident).clone(),
-                    locus_entity(refracted).clone(),
-                    interface.clone(),
-                ],
-                Some(parameter.as_str()),
-            ),
+            } => { constraint_entities.extend([
+                    locus_entity(incident),
+                    locus_entity(refracted),
+                    interface,
+                ])?; Some(parameter.as_str()) },
         };
         let parameter = parameter.or(match constraint.definition.kind() {
             Definition::Distance { parameter, .. } => Some(parameter.as_str()),
             _ => None,
         });
-        for entity in entities {
+        for entity in constraint_entities {
             if !sketch_entities.contains(entity.as_str()) {
                 ref_error(ctx, 
                     findings,
@@ -2112,7 +2067,7 @@ fn check_feature_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelInde
                     Some(_) => {}
                 }
             }
-            for reference in regeneration_references(state.definition.operation()) {
+            for reference in regeneration_references(ctx, state.definition.operation())? {
                 match features.get(reference.as_str()) {
                     None => ref_error(ctx, 
                         findings,
@@ -2348,11 +2303,11 @@ fn check_feature_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelInde
             }
         }
 
-        let mut paths = Vec::new();
-        let mut edge_selections = Vec::new();
-        let mut face_selections = Vec::new();
-        let mut vertex_selections = Vec::new();
-        let mut body_selections = Vec::new();
+        let mut paths = Scratch::new(ctx)?;
+        let mut edge_selections = Scratch::new(ctx)?;
+        let mut face_selections = Scratch::new(ctx)?;
+        let mut vertex_selections = Scratch::new(ctx)?;
+        let mut body_selections = Scratch::new(ctx)?;
         let definition = match feature.evaluation.definition() {
             FeatureDefinition::PostProcess { operation, .. }
             | FeatureDefinition::Operation(operation) => operation,
@@ -2376,30 +2331,30 @@ fn check_feature_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelInde
                 if !asset_ids.contains(asset.as_str()) {
                     ref_error(ctx, findings, feature.id.as_str(), "decal asset", asset.as_str())?;
                 }
-                face_selections.push(faces);
+                face_selections.push(faces)?;
             }
             FeatureOperation::Block { .. } => {}
 
-            FeatureOperation::ExtractBody { source } => body_selections.push(source),
+            FeatureOperation::ExtractBody { source } => body_selections.push(source)?,
             FeatureOperation::FaceBlend { operands, .. } => {
-                face_selections.push(operands.first_faces());
-                face_selections.push(operands.second_faces());
+                face_selections.push(operands.first_faces())?;
+                face_selections.push(operands.second_faces())?;
             }
             FeatureOperation::FullRoundFillet { groups } => {
                 for group in groups {
-                    face_selections.push(group.center_faces());
+                    face_selections.push(group.center_faces())?;
                     for side in [group.side_one_faces(), group.side_two_faces()] {
                         if let crate::features::edge_treatments::FullRoundSideSelection::Explicit(
                             selection,
                         ) = side
                         {
-                            face_selections.push(selection);
+                            face_selections.push(selection)?;
                         }
                     }
                 }
             }
-            FeatureOperation::SewBodies { bodies, .. } => body_selections.push(bodies),
-            FeatureOperation::BaseFeature { bodies } => body_selections.push(bodies),
+            FeatureOperation::SewBodies { bodies, .. } => body_selections.push(bodies)?,
+            FeatureOperation::BaseFeature { bodies } => body_selections.push(bodies)?,
             FeatureOperation::MeshImport { tessellations } => {
                 for tessellation in tessellations {
                     if ids.tessellations(tessellation, ctx)?.is_none() {
@@ -2452,7 +2407,7 @@ fn check_feature_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelInde
                     |identity| Ok(ids.subds(identity, ctx)?.is_some()),
                 )?;
             }
-            FeatureOperation::CosmeticThread { face, .. } => face_selections.push(face),
+            FeatureOperation::CosmeticThread { face, .. } => face_selections.push(face)?,
             FeatureOperation::Extrude {
                 direction, start, ..
             } => {
@@ -2461,14 +2416,14 @@ fn check_feature_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelInde
                     ..
                 } = direction
                 {
-                    paths.push(reference);
+                    paths.push(reference)?;
                 }
                 if let ExtrudeStart::FromFace { face, .. } = start {
-                    face_selections.push(face);
+                    face_selections.push(face)?;
                 }
             }
             FeatureOperation::SheetMetalEdgeFlange { edges, height, .. } => {
-                edge_selections.push(edges);
+                edge_selections.push(edges)?;
                 if matches!(height, crate::features::SheetMetalFlangeHeight::ToObject {
                     target: crate::features::SheetMetalFlangeHeightTarget::Native(native), ..
                 } if native.is_empty())
@@ -2476,9 +2431,9 @@ fn check_feature_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelInde
                     geometry_error(ctx, findings, feature.id.as_str(), "sheet-metal edge-flange height is invalid")?;
                 }
             }
-            FeatureOperation::SheetMetalHem { edges, .. } => edge_selections.push(edges),
+            FeatureOperation::SheetMetalHem { edges, .. } => edge_selections.push(edges)?,
             FeatureOperation::Revolve { construction, .. } => {
-                paths.extend(construction.axis().and_then(|axis| axis.reference.as_ref()));
+                paths.extend(construction.axis().and_then(|axis| axis.reference.as_ref()))?;
             }
             FeatureOperation::Sweep {
                 path,
@@ -2486,17 +2441,17 @@ fn check_feature_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelInde
                 guide_rail,
                 ..
             } => {
-                paths.extend(path);
+                paths.extend(path)?;
                 if let Some(guide_rail) = guide_rail {
-                    paths.push(&guide_rail.path);
+                    paths.push(&guide_rail.path)?;
                 }
                 if let Some(crate::features::SweepOrientation::Auxiliary { path, .. }) = orientation
                 {
-                    paths.push(path);
+                    paths.push(path)?;
                 }
                 if let Some(crate::features::SweepOrientation::GuideSurface { faces }) = orientation
                 {
-                    face_selections.push(faces);
+                    face_selections.push(faces)?;
                 }
             }
             FeatureOperation::Loft {
@@ -2523,16 +2478,16 @@ fn check_feature_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelInde
                     }
                 }
                 match guidance {
-                    crate::features::LoftGuidance::Guides(guides) => paths.extend(guides),
-                    crate::features::LoftGuidance::Centerline(centerline) => paths.push(centerline),
+                    crate::features::LoftGuidance::Guides(guides) => paths.extend(guides)?,
+                    crate::features::LoftGuidance::Centerline(centerline) => paths.push(centerline)?,
                 }
             }
             FeatureOperation::Rib { .. } => {}
             FeatureOperation::Fillet { groups } => {
-                edge_selections.extend(groups.iter().map(|group| &group.edges));
+                edge_selections.extend(groups.iter().map(|group| &group.edges))?;
             }
             FeatureOperation::Chamfer { groups, .. } => {
-                edge_selections.extend(groups.iter().map(|group| &group.edges));
+                edge_selections.extend(groups.iter().map(|group| &group.edges))?;
             }
             FeatureOperation::Shell {
                 bodies,
@@ -2540,38 +2495,38 @@ fn check_feature_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelInde
                 ..
             } => {
                 if let Some(bodies) = bodies {
-                    body_selections.push(bodies);
+                    body_selections.push(bodies)?;
                 }
-                face_selections.push(removed_faces);
+                face_selections.push(removed_faces)?;
             }
-            FeatureOperation::OffsetShape { source, .. } => body_selections.push(source),
-            FeatureOperation::Compound { members } => body_selections.push(members),
+            FeatureOperation::OffsetShape { source, .. } => body_selections.push(source)?,
+            FeatureOperation::Compound { members } => body_selections.push(members)?,
             FeatureOperation::RefineShape { source }
-            | FeatureOperation::ReverseShape { source } => body_selections.push(source),
+            | FeatureOperation::ReverseShape { source } => body_selections.push(source)?,
             FeatureOperation::RuledBetweenCurves { first, second, .. } => {
-                paths.push(first);
-                paths.push(second);
+                paths.push(first)?;
+                paths.push(second)?;
             }
             FeatureOperation::SectionShape { operands, .. } => {
-                body_selections.push(operands.first());
-                body_selections.push(operands.second());
+                body_selections.push(operands.first())?;
+                body_selections.push(operands.second())?;
             }
             FeatureOperation::MirrorShape {
                 source,
                 plane_reference,
                 ..
             } => {
-                body_selections.push(source);
-                face_selections.extend(plane_reference);
+                body_selections.push(source)?;
+                face_selections.extend(plane_reference)?;
             }
             FeatureOperation::Thicken { faces, .. } => {
-                face_selections.push(faces);
+                face_selections.push(faces)?;
             }
             FeatureOperation::OffsetSurface { faces, .. } => {
-                face_selections.push(faces);
+                face_selections.push(faces)?;
             }
             FeatureOperation::KnitSurface { faces, .. } => {
-                face_selections.push(faces);
+                face_selections.push(faces)?;
             }
             FeatureOperation::FilledSurface {
                 boundary,
@@ -2580,35 +2535,35 @@ fn check_feature_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelInde
             } => {
                 match boundary {
                     crate::features::SurfaceBoundary::Edges(edges) => {
-                        edge_selections.push(edges);
+                        edge_selections.push(edges)?;
                     }
-                    crate::features::SurfaceBoundary::Path(path) => paths.push(path),
+                    crate::features::SurfaceBoundary::Path(path) => paths.push(path)?,
                 }
-                face_selections.push(support_faces);
+                face_selections.push(support_faces)?;
             }
             FeatureOperation::TrimSurface { faces, tool, .. } => {
-                face_selections.push(faces);
-                paths.push(tool);
+                face_selections.push(faces)?;
+                paths.push(tool)?;
             }
             FeatureOperation::ExtendSurface { faces, .. } => {
-                face_selections.push(faces);
+                face_selections.push(faces)?;
             }
             FeatureOperation::RuledSurface {
                 edges,
                 support_faces,
                 ..
             } => {
-                edge_selections.push(edges);
-                face_selections.push(support_faces);
+                edge_selections.push(edges)?;
+                face_selections.push(support_faces)?;
             }
             FeatureOperation::Draft { faces, anchor, .. } => {
-                face_selections.push(faces);
+                face_selections.push(faces)?;
                 match anchor {
                     crate::features::DraftAnchor::NeutralPlane { plane, .. } => {
-                        face_selections.push(plane);
+                        face_selections.push(plane)?;
                     }
                     crate::features::DraftAnchor::PartingLine { tool, .. } => {
-                        face_selections.push(tool);
+                        face_selections.push(tool)?;
                     }
                 }
                 if let Some(pull_plane) = anchor.pull().and_then(|pull| pull.plane.as_ref()) {
@@ -2622,17 +2577,17 @@ fn check_feature_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelInde
                 }
             }
             FeatureOperation::BoundaryFill { tools, cells } => {
-                body_selections.push(tools);
-                body_selections.extend(cells);
+                body_selections.push(tools)?;
+                body_selections.extend(cells)?;
             }
             FeatureOperation::SplitBody { targets, tools } => {
-                body_selections.push(targets);
-                face_selections.push(tools);
+                body_selections.push(targets)?;
+                face_selections.push(tools)?;
             }
             FeatureOperation::SplitFace { targets, tool } => {
-                face_selections.push(targets);
+                face_selections.push(targets)?;
                 match tool {
-                    SplitFaceTool::Path(path) => paths.push(path),
+                    SplitFaceTool::Path(path) => paths.push(path)?,
                     SplitFaceTool::Plane { plane } => check_plane_feature_reference(ctx, 
                         findings,
                         feature,
@@ -2654,24 +2609,24 @@ fn check_feature_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelInde
                 }
             }
             FeatureOperation::DeleteFace { faces, .. } => {
-                face_selections.push(faces);
+                face_selections.push(faces)?;
             }
             FeatureOperation::ReplaceFace { operands } => {
-                face_selections.push(operands.targets());
-                face_selections.push(operands.replacements());
+                face_selections.push(operands.targets())?;
+                face_selections.push(operands.replacements())?;
             }
             FeatureOperation::MoveFace { faces, .. } => {
-                face_selections.push(faces);
+                face_selections.push(faces)?;
             }
             FeatureOperation::MoveBody { bodies, .. } => {
-                body_selections.push(bodies);
+                body_selections.push(bodies)?;
             }
             FeatureOperation::Dome { faces, .. } => {
-                face_selections.push(faces);
+                face_selections.push(faces)?;
             }
             FeatureOperation::Flex { .. } => {}
             FeatureOperation::Scale { bodies, center, .. } => {
-                body_selections.push(bodies);
+                body_selections.push(bodies)?;
                 let center_valid = center.as_ref().is_none_or(|center| match center {
                     ScaleCenter::Point(_) => true,
                     ScaleCenter::Native(reference) => !reference.is_empty(),
@@ -2682,23 +2637,23 @@ fn check_feature_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelInde
                 }
             }
             FeatureOperation::Combine { operands, .. } => {
-                body_selections.push(operands.target());
-                body_selections.push(operands.tools());
+                body_selections.push(operands.target())?;
+                body_selections.push(operands.tools())?;
             }
             FeatureOperation::CutWithSurface { targets, tools, .. } => {
-                body_selections.push(targets);
-                face_selections.push(tools);
+                body_selections.push(targets)?;
+                face_selections.push(tools)?;
             }
             FeatureOperation::TrimBodies { operands, .. } => {
-                body_selections.push(operands.targets());
-                body_selections.push(operands.tools());
+                body_selections.push(operands.targets())?;
+                body_selections.push(operands.tools())?;
             }
             FeatureOperation::DeleteBody { bodies, .. } => {
-                body_selections.push(bodies);
+                body_selections.push(bodies)?;
             }
-            FeatureOperation::Hole { face, .. } => face_selections.extend(face),
+            FeatureOperation::Hole { face, .. } => face_selections.extend(face)?,
             FeatureOperation::Pattern { seeds, pattern } => {
-                collect_pattern_paths(pattern, &mut paths);
+                collect_pattern_paths(ctx, pattern, &mut paths)?;
                 for seed in seeds {
                     match seed {
                         PatternSeed::Feature(seed) => match features.get(seed.as_str()) {
@@ -2722,8 +2677,8 @@ fn check_feature_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelInde
                             }
                             Some(_) => {}
                         },
-                        PatternSeed::Faces(selection) => face_selections.push(selection),
-                        PatternSeed::Bodies(selection) => body_selections.push(selection),
+                        PatternSeed::Faces(selection) => face_selections.push(selection)?,
+                        PatternSeed::Bodies(selection) => body_selections.push(selection)?,
                         PatternSeed::Occurrences(occurrences) => {
                             for occurrence in occurrences {
                                 if !ir
@@ -2781,26 +2736,26 @@ fn check_feature_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelInde
                 target_faces,
                 ..
             } => {
-                paths.push(source);
-                face_selections.push(target_faces);
+                paths.push(source)?;
+                face_selections.push(target_faces)?;
             }
             FeatureOperation::ProjectOnSurface {
                 sources,
                 support_face,
                 ..
             } => {
-                paths.push(sources);
-                face_selections.push(support_face);
+                paths.push(sources)?;
+                face_selections.push(support_face)?;
             }
             FeatureOperation::CompositeCurve { segments, .. } => {
-                paths.extend(segments);
+                paths.extend(segments)?;
             }
             FeatureOperation::Helix { .. } => {}
             FeatureOperation::HelixNativeAxis { .. } => {}
             FeatureOperation::Coil { result, .. } => {
                 use crate::features::CoilResult;
                 if let CoilResult::Boolean { targets, .. } = result {
-                    body_selections.push(targets);
+                    body_selections.push(targets)?;
                 }
             }
             FeatureOperation::HelicalSweep { .. } => {}
@@ -2840,7 +2795,7 @@ fn check_feature_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelInde
                 }
             }
             FeatureOperation::Wrap { face, .. } => {
-                face_selections.push(face);
+                face_selections.push(face)?;
             }
             FeatureOperation::Sphere { .. } => {}
             FeatureOperation::Torus { .. } => {}
@@ -2855,7 +2810,7 @@ fn check_feature_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelInde
 
             FeatureOperation::RegularPolygonCurve { .. } => {}
             FeatureOperation::FaceFromShapes { sources, .. } => {
-                body_selections.push(sources);
+                body_selections.push(sources)?;
             }
             FeatureOperation::TreeNode { children, .. } => {
                 for child in children {
@@ -2872,34 +2827,34 @@ fn check_feature_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelInde
             FeatureOperation::DatumPlane { .. } => {}
             FeatureOperation::DatumThreePointPlane { points, .. } => {
                 for point in points.iter() {
-                    vertex_selections.push((point, "three-point datum-plane"));
+                    vertex_selections.push((point, "three-point datum-plane"))?;
                 }
             }
             FeatureOperation::DatumAxis { .. } => {}
             FeatureOperation::DatumPoint { construction, .. } => {
-                let mut plane_references = Vec::new();
+                let mut plane_references = Scratch::new(ctx)?;
                 if let Some(construction) = construction.as_deref() {
                     match construction {
                         crate::features::DatumPointConstruction::CircleCenter { edge }
                         | crate::features::DatumPointConstruction::DistanceOnEdge {
                             edge, ..
-                        } => edge_selections.push(edge),
+                        } => edge_selections.push(edge)?,
                         crate::features::DatumPointConstruction::TwoEdgeIntersection { edges } => {
-                            edge_selections.extend(edges);
+                            edge_selections.extend(edges)?;
                         }
                         crate::features::DatumPointConstruction::ThreePlaneIntersection {
                             planes,
-                        } => plane_references.extend(planes.iter()),
+                        } => plane_references.extend(planes.iter())?,
                         crate::features::DatumPointConstruction::Vertex { vertex } => {
-                            vertex_selections.push((vertex, "datum-point"));
+                            vertex_selections.push((vertex, "datum-point"))?;
                         }
                         crate::features::DatumPointConstruction::SketchPoint { .. } => {}
                         crate::features::DatumPointConstruction::EdgePlaneIntersection {
                             edge,
                             plane,
                         } => {
-                            edge_selections.push(edge);
-                            plane_references.push(plane);
+                            edge_selections.push(edge)?;
+                            plane_references.push(plane)?;
                         }
                     }
                 }
@@ -2938,7 +2893,7 @@ fn check_feature_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelInde
                                 Some(_) => {}
                             }
                         }
-                        DatumPlaneReference::Face { face } => face_selections.push(face),
+                        DatumPlaneReference::Face { face } => face_selections.push(face)?,
                         DatumPlaneReference::ResolvedPlane { .. } => {}
                     }
                 }
@@ -3040,13 +2995,13 @@ fn check_feature_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelInde
                                 Some(_) => {}
                             }
                         }
-                        DatumPlaneReference::Face { face } => face_selections.push(face),
+                        DatumPlaneReference::Face { face } => face_selections.push(face)?,
                         DatumPlaneReference::ResolvedPlane { .. } => {}
                     }
                 }
             }
         }
-        for profile in definition_profiles(definition) {
+        for profile in definition_profiles(ctx, definition)? {
             match profile {
                 PlanarProfileRef::Faces(faces) => check_ids(ctx, 
                     findings,
@@ -3065,13 +3020,7 @@ fn check_feature_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelInde
                         ),
                         "profile face",
                         &input_topologies,
-                        |topology| {
-                            topology
-                                .faces
-                                .iter()
-                                .map(crate::ids::HistoricalFaceId::as_str)
-                                .collect()
-                        },
+                        |topology| Scratch::filter_map(ctx, topology.faces.iter().map(crate::ids::HistoricalFaceId::as_str), |id| Ok(Some(id))),
                     )?;
                 }
                 PlanarProfileRef::Feature(producer) => match features.get(producer.as_str()) {
@@ -3143,13 +3092,7 @@ fn check_feature_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelInde
                     ),
                     "path edge",
                     &input_topologies,
-                    |topology| {
-                        topology
-                            .edges
-                            .iter()
-                            .map(crate::ids::HistoricalEdgeId::as_str)
-                            .collect()
-                    },
+                    |topology| Scratch::filter_map(ctx, topology.edges.iter().map(crate::ids::HistoricalEdgeId::as_str), |id| Ok(Some(id))),
                 )?,
                 PathRef::Unresolved(_)
                 | PathRef::Native(_)
@@ -3157,7 +3100,7 @@ fn check_feature_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelInde
                 | PathRef::SpatialSketchSelection { .. } => {}
             }
         }
-        for termination in definition_terminations(definition) {
+        for termination in definition_terminations(ctx, definition)? {
             if let Some(FaceSelection::Faces(faces) | FaceSelection::Resolved { faces, .. }) =
                 termination.face()
             {
@@ -3181,7 +3124,7 @@ fn check_feature_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelInde
                 )?;
             }
             if let Some(vertex) = termination.vertex() {
-                vertex_selections.push((vertex, "termination"));
+                vertex_selections.push((vertex, "termination"))?;
             }
         }
         for (selection, consumer) in vertex_selections {
@@ -3213,13 +3156,7 @@ fn check_feature_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelInde
                     (state, std::iter::once(vertex.as_str())),
                     "vertex",
                     &input_topologies,
-                    |topology| {
-                        topology
-                            .vertices
-                            .iter()
-                            .map(crate::ids::HistoricalVertexId::as_str)
-                            .collect()
-                    },
+                    |topology| Scratch::filter_map(ctx, topology.vertices.iter().map(crate::ids::HistoricalVertexId::as_str), |id| Ok(Some(id))),
                 )?,
                 crate::features::VertexSelection::Unresolved
                 | crate::features::VertexSelection::Native(_) => {}
@@ -3243,13 +3180,7 @@ fn check_feature_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelInde
                     ),
                     "edge",
                     &input_topologies,
-                    |topology| {
-                        topology
-                            .edges
-                            .iter()
-                            .map(crate::ids::HistoricalEdgeId::as_str)
-                            .collect()
-                    },
+                    |topology| Scratch::filter_map(ctx, topology.edges.iter().map(crate::ids::HistoricalEdgeId::as_str), |id| Ok(Some(id))),
                 )?;
             }
             match selection {
@@ -3294,13 +3225,7 @@ fn check_feature_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelInde
                     ),
                     "face",
                     &input_topologies,
-                    |topology| {
-                        topology
-                            .faces
-                            .iter()
-                            .map(crate::ids::HistoricalFaceId::as_str)
-                            .collect()
-                    },
+                    |topology| Scratch::filter_map(ctx, topology.faces.iter().map(crate::ids::HistoricalFaceId::as_str), |id| Ok(Some(id))),
                 )?;
             }
             match selection {
@@ -3361,13 +3286,7 @@ fn check_feature_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelInde
                         ),
                         "body",
                         &input_topologies,
-                        |topology| {
-                            topology
-                                .bodies
-                                .iter()
-                                .map(crate::ids::HistoricalBodyId::as_str)
-                                .collect()
-                        },
+                        |topology| Scratch::filter_map(ctx, topology.bodies.iter().map(crate::ids::HistoricalBodyId::as_str), |id| Ok(Some(id))),
                     )?;
                 }
                 BodySelection::HistoricalSet { state, members } => {
@@ -3380,13 +3299,7 @@ fn check_feature_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelInde
                         ),
                         "body",
                         &input_topologies,
-                        |topology| {
-                            topology
-                                .bodies
-                                .iter()
-                                .map(crate::ids::HistoricalBodyId::as_str)
-                                .collect()
-                        },
+                        |topology| Scratch::filter_map(ctx, topology.bodies.iter().map(crate::ids::HistoricalBodyId::as_str), |id| Ok(Some(id))),
                     )?;
                 }
                 BodySelection::Generated { bodies, .. } => {
@@ -3430,16 +3343,16 @@ fn plane_lookup_work(ctx: &DecodeContext<'_>, count: usize, key_bytes: usize, lo
     ctx.charge_work(work, "datum-plane identity lookup")
 }
 
-fn check_historical_members<'a, I, F>(ctx: &DecodeContext<'_>, 
+fn check_historical_members<'ctx, 'a, I, F>(ctx: &'ctx DecodeContext<'_>, 
     findings: &mut Vec<Finding>,
     feature: &crate::features::FeatureId,
     selection: (&crate::ids::FeatureInputTopologyId, I),
     kind: &str,
-    states: &HashMap<&str, &crate::features::FeatureInputTopology>,
+    states: &HashMap<&str, &'a crate::features::FeatureInputTopology>,
     members: F,
 ) -> Result<(), CodecError> where
     I: IntoIterator<Item = &'a str>,
-    F: FnOnce(&crate::features::FeatureInputTopology) -> Vec<&str>,
+    F: FnOnce(&'a crate::features::FeatureInputTopology) -> Result<Scratch<'ctx, &'a str>, CodecError>,
 {
     let (state_id, selected) = selection;
     let Some(state) = states.get(state_id.as_str()) else {
@@ -3454,9 +3367,9 @@ fn check_historical_members<'a, I, F>(ctx: &DecodeContext<'_>,
     if state.input_of != *feature {
         super::record_finding(ctx, findings, Check::ReferentialIntegrity, Severity::Error, Some(feature.as_str()), format_args!("historical {kind} selection uses another feature's input topology"))?;
     }
-    let available = members(state).into_iter().collect::<HashSet<_>>();
-    let selected = selected.into_iter().collect::<Vec<_>>();
+    let available = members(state)?.into_iter().collect::<HashSet<_>>();
     for id in selected {
+        ctx.charge_work(1, "historical selection scan")?;
         if !available.contains(id) {
             ref_error(ctx, 
                 findings,
@@ -3470,10 +3383,11 @@ fn check_historical_members<'a, I, F>(ctx: &DecodeContext<'_>,
     Ok(())
 }
 
-fn regeneration_references(
-    definition: &crate::features::FeatureOperation,
-) -> impl Iterator<Item = &crate::features::FeatureId> {
-    let mut references = BTreeSet::new();
+fn regeneration_references<'ctx, 'a>(
+    ctx: &'ctx DecodeContext<'_>,
+    definition: &'a crate::features::FeatureOperation,
+) -> Result<Scratch<'ctx, &'a crate::features::FeatureId>, CodecError> {
+    let mut references = BorrowedIdentities::build(ctx, |_| Ok(()))?;
     match definition {
         // A datum offset plane regenerates from its reference only when that
         // reference names a feature; a face-supported plane carries its frame
@@ -3482,94 +3396,95 @@ fn regeneration_references(
             reference: Some(DatumPlaneReference::Feature { feature: reference }),
             ..
         } => {
-            references.insert(reference);
+            references.insert_unique(reference.as_str(), reference)?;
         }
         crate::features::FeatureOperation::DatumPoint {
             construction: Some(construction),
             ..
-        } => references.extend(construction.feature_references()),
+        } => for reference in construction.feature_references() { ctx.charge_work(1, "regeneration reference scan")?; references.insert_unique(reference.as_str(), reference)?; },
         crate::features::FeatureOperation::DatumThreePointPlane { points, .. } => {
-            references.extend(points.iter().filter_map(|point| match point {
+            for reference in points.iter().filter_map(|point| match point {
                 crate::features::VertexSelection::Generated { vertex, .. } => Some(&vertex.feature),
                 crate::features::VertexSelection::Historical { .. }
                 | crate::features::VertexSelection::Native(_)
                 | crate::features::VertexSelection::Unresolved => None,
-            }));
+            }) { ctx.charge_work(1, "regeneration reference scan")?; references.insert_unique(reference.as_str(), reference)?; };
         }
         crate::features::FeatureOperation::DerivedGeometry { source: reference }
         | crate::features::FeatureOperation::SketchBlockInstance {
             block: Some(reference),
             ..
         } => {
-            references.insert(reference);
+            references.insert_unique(reference.as_str(), reference)?;
         }
         crate::features::FeatureOperation::Pattern { seeds, .. } => {
-            references.extend(seeds.iter().filter_map(|seed| match seed {
+            for reference in seeds.iter().filter_map(|seed| match seed {
                 crate::features::patterns::PatternSeed::Feature(feature) => Some(feature),
                 crate::features::patterns::PatternSeed::Faces(_)
                 | crate::features::patterns::PatternSeed::Bodies(_)
                 | crate::features::patterns::PatternSeed::Occurrences(_) => None,
-            }));
+            }) { ctx.charge_work(1, "regeneration reference scan")?; references.insert_unique(reference.as_str(), reference)?; };
         }
         _ => {}
     }
-    references.extend(
-        definition_terminations(definition).filter_map(|termination| match termination.vertex() {
+    for reference in definition_terminations(ctx, definition)?.into_iter().filter_map(|termination| match termination.vertex() {
             Some(crate::features::VertexSelection::Generated { vertex, .. }) => {
                 Some(&vertex.feature)
             }
             _ => None,
-        }),
-    );
-    for profile in definition_profiles(definition) {
+        }) { ctx.charge_work(1, "regeneration reference scan")?; references.insert_unique(reference.as_str(), reference)?; };
+    for profile in definition_profiles(ctx, definition)? {
         match profile {
             crate::features::PlanarProfileRef::Feature(feature) => {
-                references.insert(feature);
+                references.insert_unique(feature.as_str(), feature)?;
             }
             crate::features::PlanarProfileRef::Generated { curves, .. } => {
-                references.extend(curves.iter().map(|curve| &curve.feature));
+                for reference in curves.iter().map(|curve| &curve.feature) { ctx.charge_work(1, "regeneration reference scan")?; references.insert_unique(reference.as_str(), reference)?; };
             }
             _ => {}
         }
     }
-    references.into_iter()
+    let mut ordered = Scratch::filter_map(ctx, references.values(), |reference| Ok(Some(*reference)))?;
+    ordered.stable_sort_by(|left, right| left.as_str().cmp(right.as_str()), |reference| reference.as_str().len())?;
+    Ok(ordered)
 }
 
-fn definition_profiles(
-    definition: &crate::features::FeatureOperation,
-) -> impl Iterator<Item = &crate::features::PlanarProfileRef> {
-    let mut profiles: Vec<&crate::features::PlanarProfileRef> = Vec::new();
+fn definition_profiles<'ctx, 'a>(
+    ctx: &'ctx DecodeContext<'_>,
+    definition: &'a crate::features::FeatureOperation,
+) -> Result<Scratch<'ctx, &'a crate::features::PlanarProfileRef>, CodecError> {
+    let mut profiles = Scratch::new(ctx)?;
     match definition {
         crate::features::FeatureOperation::Extrude { profile, .. } => {
-            profiles.extend(profile.planar());
+            profiles.extend(profile.planar())?;
         }
         crate::features::FeatureOperation::SheetMetalBaseFlange { profile, .. }
-        | crate::features::FeatureOperation::Wrap { profile, .. } => profiles.push(profile),
+        | crate::features::FeatureOperation::Wrap { profile, .. } => profiles.push(profile)?,
         crate::features::FeatureOperation::Revolve { construction, .. } => {
-            profiles.extend(construction.profile());
+            profiles.extend(construction.profile())?;
         }
         crate::features::FeatureOperation::Rib { construction, .. } => {
-            profiles.extend(construction.profile.as_ref());
+            profiles.extend(construction.profile.as_ref())?;
         }
         crate::features::FeatureOperation::Sweep { shape, .. } => {
-            profiles.extend(shape.referenced_profiles());
+            profiles.extend(shape.referenced_profiles())?;
         }
         crate::features::FeatureOperation::HelicalSweep { construction, .. } => {
-            profiles.push(&construction.profile);
+            profiles.push(&construction.profile)?;
         }
         crate::features::FeatureOperation::Loft { sections, .. } => {
             profiles.extend(sections.iter().filter_map(|section| match section {
                 crate::features::LoftSection::Profile(profile) => profile.planar(),
                 crate::features::LoftSection::Point(_) => None,
-            }));
+            }))?;
         }
         crate::features::FeatureOperation::Hole {
             profile: Some(profile),
             ..
-        } => profiles.push(profile),
+        } => profiles.push(profile)?,
         _ => {}
     }
-    profiles.into_iter()
+    Ok(profiles)
 }
 
 #[derive(Clone, Copy)]
@@ -3608,21 +3523,22 @@ impl<'a> TerminationRef<'a> {
     }
 }
 
-fn definition_terminations(
-    definition: &crate::features::FeatureOperation,
-) -> impl Iterator<Item = TerminationRef<'_>> {
-    let mut terminations = Vec::new();
+fn definition_terminations<'ctx, 'a>(
+    ctx: &'ctx DecodeContext<'_>,
+    definition: &'a crate::features::FeatureOperation,
+) -> Result<Scratch<'ctx, TerminationRef<'a>>, CodecError> {
+    let mut terminations = Scratch::new(ctx)?;
     match definition {
         crate::features::FeatureOperation::Extrude { extent, .. } => match extent {
             crate::features::ExtrudeExtent::OneSided { side }
             | crate::features::ExtrudeExtent::Symmetric { side } => {
-                terminations.push(TerminationRef::Linear(&side.termination));
+                terminations.push(TerminationRef::Linear(&side.termination))?;
             }
             crate::features::ExtrudeExtent::TwoSided { first, second } => {
                 terminations.extend([
                     TerminationRef::Linear(&first.termination),
                     TerminationRef::Linear(&second.termination),
-                ]);
+                ])?;
             }
         },
         crate::features::FeatureOperation::Revolve { construction, .. } => {
@@ -3630,12 +3546,12 @@ fn definition_terminations(
                 Some(
                     crate::features::RevolveExtent::OneSided { termination }
                     | crate::features::RevolveExtent::Symmetric { termination },
-                ) => terminations.push(TerminationRef::Angular(termination)),
+                ) => terminations.push(TerminationRef::Angular(termination))?,
                 Some(crate::features::RevolveExtent::TwoSided { first, second }) => {
                     terminations.extend([
                         TerminationRef::Angular(first),
                         TerminationRef::Angular(second),
-                    ]);
+                    ])?;
                 }
                 None => {}
             }
@@ -3643,10 +3559,10 @@ fn definition_terminations(
         crate::features::FeatureOperation::Hole {
             extent: Some(extent),
             ..
-        } => terminations.push(TerminationRef::Linear(extent)),
+        } => terminations.push(TerminationRef::Linear(extent))?,
         _ => {}
     }
-    terminations.into_iter()
+    Ok(terminations)
 }
 
 fn check_configuration_state_closure(ctx: &DecodeContext<'_>, 
@@ -3747,13 +3663,30 @@ fn check_ids<'a>(ctx: &DecodeContext<'_>,
     Ok(())
 }
 
+#[derive(Clone, Copy)]
+enum ProfileReference<'a> {
+    Planar(&'a crate::features::PlanarProfileRef),
+    SpatialSketchProfiles { sketch: &'a crate::sketches::SpatialSketchId, profiles: &'a [u32] },
+    SpatialSketchSelection { sketch: &'a crate::sketches::SpatialSketchId },
+}
+
+impl<'a> From<&'a crate::features::ProfileRef> for ProfileReference<'a> {
+    fn from(profile: &'a crate::features::ProfileRef) -> Self {
+        match profile {
+            crate::features::ProfileRef::Planar(profile) => Self::Planar(profile),
+            crate::features::ProfileRef::SpatialSketchProfiles { sketch, profiles } => Self::SpatialSketchProfiles { sketch, profiles },
+            crate::features::ProfileRef::SpatialSketchSelection { sketch, .. } => Self::SpatialSketchSelection { sketch },
+        }
+    }
+}
+
 fn check_feature_sketch_references(ctx: &DecodeContext<'_>, 
     ir: &CadIr,
     sketches: &HashSet<&str>,
     findings: &mut Vec<Finding>,
 ) -> Result<(), CodecError> {
     use crate::features::{
-        FeatureDefinition, FeatureOperation, PathRef, PlanarProfileRef, ProfileRef,
+        FeatureDefinition, FeatureOperation, PathRef, PlanarProfileRef,
         SketchPointSelection,
     };
 
@@ -3869,34 +3802,34 @@ fn check_feature_sketch_references(ctx: &DecodeContext<'_>,
     }
 
     for feature in &ir.model.features {
-        let mut profiles: Vec<crate::features::ProfileRef> = Vec::new();
-        let mut paths = Vec::new();
+        let mut profiles = Scratch::new(ctx)?;
+        let mut paths = Scratch::new(ctx)?;
         let definition = match feature.evaluation.definition() {
             FeatureDefinition::PostProcess { operation, .. }
             | FeatureDefinition::Operation(operation) => operation,
         };
         match definition {
             FeatureOperation::Extrude { profile, .. } => {
-                profiles.push(profile.clone());
+                profiles.push(ProfileReference::from(profile))?;
             }
             FeatureOperation::SheetMetalBaseFlange { profile, .. } => {
-                profiles.push(ProfileRef::Planar(profile.clone()));
+                profiles.push(ProfileReference::Planar(profile))?;
             }
             FeatureOperation::Rib { construction, .. } => {
                 profiles.extend(
                     construction
                         .profile
                         .as_ref()
-                        .map(|profile| ProfileRef::Planar(profile.clone())),
-                );
+                        .map(|profile| ProfileReference::Planar(profile)),
+                )?;
             }
             FeatureOperation::Revolve { construction, .. } => {
                 profiles.extend(
                     construction
                         .profile()
-                        .map(|profile| ProfileRef::Planar(profile.clone())),
-                );
-                paths.extend(construction.axis().and_then(|axis| axis.reference.as_ref()));
+                        .map(|profile| ProfileReference::Planar(profile)),
+                )?;
+                paths.extend(construction.axis().and_then(|axis| axis.reference.as_ref()))?;
             }
             FeatureOperation::Sweep {
                 shape,
@@ -3908,47 +3841,47 @@ fn check_feature_sketch_references(ctx: &DecodeContext<'_>,
                     shape
                         .referenced_profiles()
                         .into_iter()
-                        .map(|profile| ProfileRef::Planar(profile.clone())),
-                );
-                paths.extend(path);
+                        .map(|profile| ProfileReference::Planar(profile)),
+                )?;
+                paths.extend(path)?;
                 if let Some(guide_rail) = guide_rail {
-                    paths.push(&guide_rail.path);
+                    paths.push(&guide_rail.path)?;
                 }
             }
             FeatureOperation::HelicalSweep { construction, .. } => {
-                profiles.push(ProfileRef::Planar(construction.profile.clone()));
+                profiles.push(ProfileReference::Planar(&construction.profile))?;
             }
             FeatureOperation::Loft {
                 sections, guidance, ..
             } => {
                 profiles.extend(sections.iter().filter_map(|section| match section {
-                    crate::features::LoftSection::Profile(profile) => Some(profile.clone()),
+                    crate::features::LoftSection::Profile(profile) => Some(ProfileReference::from(profile)),
                     crate::features::LoftSection::Point(_) => None,
-                }));
+                }))?;
                 match guidance {
-                    crate::features::LoftGuidance::Guides(guides) => paths.extend(guides),
-                    crate::features::LoftGuidance::Centerline(centerline) => paths.push(centerline),
+                    crate::features::LoftGuidance::Guides(guides) => paths.extend(guides)?,
+                    crate::features::LoftGuidance::Centerline(centerline) => paths.push(centerline)?,
                 }
             }
             FeatureOperation::Pattern { pattern, .. } => {
-                collect_pattern_paths(pattern, &mut paths);
+                collect_pattern_paths(ctx, pattern, &mut paths)?;
             }
             _ => {}
         }
-        for profile in &profiles {
+        for profile in profiles {
             let (sketch, sketch_kind, defined_sketches) = match profile {
-                ProfileRef::SpatialSketchProfiles { sketch, .. }
-                | ProfileRef::SpatialSketchSelection { sketch, .. } => {
+                ProfileReference::SpatialSketchProfiles { sketch, .. }
+                | ProfileReference::SpatialSketchSelection { sketch, .. } => {
                     (sketch.as_str(), "spatial sketch", &spatial_sketches)
                 }
-                ProfileRef::Planar(
+                ProfileReference::Planar(
                     PlanarProfileRef::Sketch(sketch)
                     | PlanarProfileRef::SketchProfiles { sketch, .. }
                     | PlanarProfileRef::SketchRegions { sketch, .. }
                     | PlanarProfileRef::SketchEntities { sketch, .. }
                     | PlanarProfileRef::SketchSelection { sketch, .. },
                 ) => (sketch.as_str(), "sketch", sketches),
-                ProfileRef::Planar(_) => continue,
+                ProfileReference::Planar(_) => continue,
             };
             if !defined_sketches.contains(sketch) {
                 ref_error(ctx, 
@@ -3965,7 +3898,7 @@ fn check_feature_sketch_references(ctx: &DecodeContext<'_>,
                 }
             }
             match profile {
-                ProfileRef::SpatialSketchProfiles { sketch, profiles } => {
+                ProfileReference::SpatialSketchProfiles { sketch, profiles } => {
                     let profile_count = ir
                         .model
                         .spatial_sketches
@@ -3979,7 +3912,7 @@ fn check_feature_sketch_references(ctx: &DecodeContext<'_>,
                         geometry_error(ctx, findings, feature.id.as_str(), "spatial sketch profile indices are empty, repeated, or out of range")?;
                     }
                 }
-                ProfileRef::Planar(PlanarProfileRef::SketchProfiles { sketch, profiles }) => {
+                ProfileReference::Planar(PlanarProfileRef::SketchProfiles { sketch, profiles }) => {
                     let sketch_profile_count = ir
                         .model
                         .sketches
@@ -3992,7 +3925,7 @@ fn check_feature_sketch_references(ctx: &DecodeContext<'_>,
                         geometry_error(ctx, findings, feature.id.as_str(), "sketch profile indices are empty, repeated, or out of range")?;
                     }
                 }
-                ProfileRef::Planar(PlanarProfileRef::SketchRegions { sketch, regions }) => {
+                ProfileReference::Planar(PlanarProfileRef::SketchRegions { sketch, regions }) => {
                     let selected_sketch = ir
                         .model
                         .sketches
@@ -4029,7 +3962,7 @@ fn check_feature_sketch_references(ctx: &DecodeContext<'_>,
                         geometry_error(ctx, findings, feature.id.as_str(), "sketch regions have empty, repeated, invalid, or out-of-range boundaries")?;
                     }
                 }
-                ProfileRef::Planar(PlanarProfileRef::SketchEntities { sketch, entities }) => {
+                ProfileReference::Planar(PlanarProfileRef::SketchEntities { sketch, entities }) => {
                     if entities.iter().any(|entity| {
                         sketch_entity_owners
                             .get(entity.as_str())
@@ -4038,7 +3971,7 @@ fn check_feature_sketch_references(ctx: &DecodeContext<'_>,
                         geometry_error(ctx, findings, feature.id.as_str(), "sketch profile entities are empty, repeated, missing, or owned by another sketch")?;
                     }
                 }
-                ProfileRef::Planar(
+                ProfileReference::Planar(
                     PlanarProfileRef::Native(_)
                     | PlanarProfileRef::Unresolved(_)
                     | PlanarProfileRef::Feature(_)
@@ -4048,7 +3981,7 @@ fn check_feature_sketch_references(ctx: &DecodeContext<'_>,
                     | PlanarProfileRef::HistoricalFaces { .. }
                     | PlanarProfileRef::Faces(_),
                 )
-                | ProfileRef::SpatialSketchSelection { .. } => {}
+                | ProfileReference::SpatialSketchSelection { .. } => {}
             }
         }
         for path in paths {
