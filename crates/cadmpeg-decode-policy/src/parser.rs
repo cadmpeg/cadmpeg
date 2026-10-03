@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Parser receipts couple a sealed input with live, operation-specific admission.
+//! External-operation receipts couple a sealed input with live, operation-specific admission.
 use crate::{types, Analysis};
 use rustc_hir::{Expr, ExprKind, Node};
 use rustc_middle::ty;
@@ -7,6 +7,7 @@ use rustc_span::Span;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ParserKind<'tcx> {
+    UnicodeCase,
     Xml,
     Zip,
     ZstdStep,
@@ -28,6 +29,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
         if !matches!(self.tcx.crate_name(owner.did().krate).as_str(), "cadmpeg_core" | "cadmpeg_container")
             && std::env::var_os("CADMPEG_POLICY_FIXTURE").is_none() { return None; }
         match self.tcx.item_name(owner.did()).as_str() {
+            "UnicodeCaseAdmission" => Some("UnicodeCaseAdmission"),
             "XmlParserAdmission" => Some("XmlParserAdmission"),
             "ZipParserAdmission" => Some("ZipParserAdmission"),
             "ZstdStepAdmission" => Some("ZstdStepAdmission"),
@@ -53,6 +55,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
         if !types::standard(self.tcx, result.did()) || self.tcx.item_name(result.did()).as_str() != "Result" { return; }
         let Some(value) = args.types().next() else { return; };
         let kind = match (self.tcx.item_name(definition).as_str(), self.parser_type_name(value)) {
+            ("unicode_case_admission", Some("UnicodeCaseAdmission")) => ParserKind::UnicodeCase,
             ("xml_parser_admission", Some("XmlParserAdmission")) => ParserKind::Xml,
             ("zip_parser_admission", Some("ZipParserAdmission")) => ParserKind::Zip,
             ("zstd_step_admission", Some("ZstdStepAdmission")) => ParserKind::ZstdStep,
@@ -145,6 +148,9 @@ impl<'tcx> Analysis<'_, 'tcx> {
             if receipt.guard != guard || !receipt.scope.contains(expression.span)
                 || self.flow.mutated.iter().any(|key| crate::flow::factor_depends_on(&guard, key)) { return false; }
             match receipt.kind {
+                ParserKind::UnicodeCase => types::standard(self.tcx, definition)
+                    && matches!(name.as_str(), "to_lowercase" | "to_uppercase")
+                    && matches!(self.expr_ty(input).peel_refs().kind(), ty::Str),
                 ParserKind::ZstdStep => false,
                 ParserKind::Xml => owner.as_str() == "roxmltree" && name.as_str() == "parse_with_options",
                 ParserKind::Zip => zip && matches!(self.expr_ty(expression).kind(), ty::Adt(result, args)
