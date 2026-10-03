@@ -3,7 +3,6 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use cadmpeg_core::bytes::{find_from, find_in};
 use cadmpeg_core::decode::{bounded_len, index_from_u32, DecodeContext};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::scalar::FiniteReal;
@@ -509,12 +508,11 @@ pub(crate) fn round_replay_scalars(
             if bytes != CR_FLAGS_ANCHOR {
                 continue;
             }
-            let Some(record_end) = find_in(
+            let Some(record_end) = ctx.find_bytes_in(
                 &row.body,
                 MISC_CHOICE_ANCHOR,
                 record_start + 1,
-                row.body.len(),
-            ) else {
+                row.body.len(), "find Creo feature row")? else {
                 continue;
             };
             let Some(separator) = row.body[record_start + CR_FLAGS_ANCHOR.len()..record_end]
@@ -597,7 +595,7 @@ pub(crate) fn choices(
         let mut hits = Vec::new();
         for &label in CHOICE_LABELS {
             let mut from = 0;
-            while let Some(label_offset) = find_from(&row.body, label, from) {
+            while let Some(label_offset) = ctx.find_bytes_from(&row.body, label, from, "find Creo feature row")? {
                 let label_end = label_offset + label.len();
                 if row.body.get(label_end) != Some(&0) {
                     from = label_offset + 1;
@@ -814,7 +812,7 @@ pub(crate) fn geometry_tables(
     for row in rows {
         for (label, kind) in FIELDS {
             let mut from = 0;
-            while let Some(offset) = find_from(&row.body, label, from) {
+            while let Some(offset) = ctx.find_bytes_from(&row.body, label, from, "find Creo feature row")? {
                 let label_end = offset + label.len();
                 if row.body.get(label_end) != Some(&0) {
                     from = offset + 1;
@@ -995,7 +993,7 @@ pub(crate) fn affected_ids(
     for row in rows {
         for &(label, kind) in FIELDS {
             let mut from = 0;
-            while let Some(label_offset) = find_from(&row.body, label, from) {
+            while let Some(label_offset) = ctx.find_bytes_from(&row.body, label, from, "find Creo feature row")? {
                 let label_end = label_offset + label.len();
                 if row.body.get(label_end) != Some(&0) {
                     from = label_offset + 1;
@@ -1357,7 +1355,7 @@ pub(crate) fn replay_affected_ids(
         };
         let (pair, source_offset) = if let Some(anchor) = anchor {
             let run_start = anchor + ANCHOR_LEN;
-            let Some(term) = find_from(&row.body, TERMINATOR, run_start) else {
+            let Some(term) = ctx.find_bytes_from(&row.body, TERMINATOR, run_start, "find Creo feature row")? else {
                 continue;
             };
             let run = &row.body[run_start..term];
@@ -1576,7 +1574,7 @@ pub(crate) fn loop_restore_directions(
     for row in rows {
         for &(label, lane) in FIELDS {
             let mut from = 0;
-            while let Some(label_offset) = find_from(&row.body, label, from) {
+            while let Some(label_offset) = ctx.find_bytes_from(&row.body, label, from, "find Creo feature row")? {
                 let label_end = label_offset + label.len();
                 if row.body.get(label_end) != Some(&0) {
                     from = label_offset + 1;
@@ -1637,7 +1635,7 @@ pub(crate) fn loop_history_entries(
             continue;
         };
         let table_offset = table.offset - row.body_offset;
-        let Some(label_offset) = find_from(&row.body, LABEL, table_offset) else {
+        let Some(label_offset) = ctx.find_bytes_from(&row.body, LABEL, table_offset, "find Creo feature row")? else {
             continue;
         };
         let label_stream_offset = row.body_offset + label_offset;
@@ -1811,12 +1809,11 @@ pub(crate) fn revolution_extents(
         if row.body.get(schema_end) != Some(&2) {
             continue;
         }
-        let Some(choice_start) = find_in(
+        let Some(choice_start) = ctx.find_bytes_in(
             &row.body,
             PARAMETER_CHOICE_PREFIX,
             schema_end + 1,
-            row.body.len().min(64),
-        )
+            row.body.len().min(64), "find Creo feature row")?
         .map(|at| at + PARAMETER_CHOICE_PREFIX.len()) else {
             continue;
         };

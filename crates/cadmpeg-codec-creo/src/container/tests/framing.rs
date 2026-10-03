@@ -210,7 +210,7 @@ fn scan_enumerates_and_classifies_sections() {
     assert_eq!(scan.framing.sections[1].name(), "AllFeatur");
     assert_eq!(scan.framing.sections[1].role(), SectionRole::ModelData);
     assert_eq!(scan.framing.sections[2].role(), SectionRole::Thumbnail);
-    assert!(container::has_thumbnail(&scan));
+    assert!(crate::decode::with_test_decode_ctx(|ctx| container::has_thumbnail(ctx, &scan)).expect("thumbnail search admitted"));
 }
 
 #[test]

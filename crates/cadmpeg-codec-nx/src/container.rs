@@ -25,7 +25,6 @@ use std::collections::BTreeMap;
 use std::sync::OnceLock;
 
 use cadmpeg_container::compound::{CompoundEntry, CompoundPrefixProbe, CompoundSnapshot};
-use cadmpeg_core::bytes::find;
 use cadmpeg_core::decode::{bounded_len, u64_from_index, DecodeContext, View};
 use cadmpeg_core::CodecError;
 
@@ -732,19 +731,21 @@ impl<'a> Container<'a> {
         ctx: &DecodeContext<'_>,
     ) -> Result<Option<(usize, RmFastLoadObjectIdTable)>, CodecError> {
         const REGISTRY_MARKER: &[u8] = b"UGS::Solid::Topol";
-        let Some((entry_index, bytes, registry_offset, search_start)) = (|| {
+        let Some((entry_index, bytes)) = (|| {
             let entry_index = self.entries.iter().position(|entry| {
                 entry.name == "/Root/FastLoad/RMFastLoad" && entry.file_span().is_some()
             })?;
             let (offset, size) = self.entries[entry_index].file_span()?;
             let (offset, size) = (usize::try_from(offset).ok()?, usize::try_from(size).ok()?);
             let bytes = self.data.get(offset..offset.checked_add(size)?)?;
-            let registry_offset = find(bytes, REGISTRY_MARKER)?;
-            let search_start = registry_offset.checked_add(REGISTRY_MARKER.len())?;
-            Some((entry_index, bytes, registry_offset, search_start))
+            Some((entry_index, bytes))
         })() else {
             return Ok(None);
         };
+        let Some(registry_offset) = ctx.find_bytes(bytes, REGISTRY_MARKER, "find NX FastLoad registry marker")? else {
+            return Ok(None);
+        };
+        let search_start = registry_offset + REGISTRY_MARKER.len();
         // Search candidates in byte order and use the first span whose suffix
         // parses as a modern product record.
         let mut candidate = None;

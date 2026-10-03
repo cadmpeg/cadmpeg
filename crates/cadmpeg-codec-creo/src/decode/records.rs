@@ -2379,7 +2379,7 @@ pub(super) fn feature_placement_instruction_records<'a>(
 ) -> Result<Vec<CreoFeaturePlacementInstructionRecord<'a>>, CodecError> {
     let mut records = Vec::new();
     for definition in &scan.features.definitions {
-        for instruction in crate::feature::definitions::placement_instructions(definition) {
+        for instruction in crate::feature::definitions::placement_instructions(ctx, definition)? {
             let id = ctx.format_retained(
                 format_args!(
                     "creo:featdefs:placement_instruction#{}:{}",

@@ -446,8 +446,11 @@ pub(crate) fn stream_header(
     payload: &[u8],
 ) -> Result<Option<StreamHeader>, CodecError> {
     ctx.charge_work(256, "decode Parasolid stream header")?;
+    let window = payload.len().min(64);
+    let Some(sig) = ctx.find_bytes(&payload[..window], b"PS\0\0", "decode Parasolid stream header")? else {
+        return Ok(None);
+    };
     let Some((description_bytes, token, schema_end)) = (|| {
-        let sig = parasolid_offset(payload)?;
         let desc_len_at = sig + 4;
         let mut view = View::over_retained(payload);
         view.seek(desc_len_at)?;
@@ -539,12 +542,6 @@ fn append_lossy_utf8(output: &mut String, mut bytes: &[u8]) {
             }
         }
     }
-}
-
-fn parasolid_offset(payload: &[u8]) -> Option<usize> {
-    const SIGNATURE: &[u8] = b"PS\0\0";
-    let window = payload.len().min(64);
-    cadmpeg_core::bytes::find(&payload[..window], SIGNATURE)
 }
 
 /// Test whether the description identifies a partition or deltas body stream.

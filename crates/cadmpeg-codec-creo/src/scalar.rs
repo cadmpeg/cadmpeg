@@ -3,7 +3,7 @@
 
 use std::collections::{BTreeMap, HashSet};
 
-use cadmpeg_core::bytes::{assemble_f32_be, assemble_f64_be, find_from};
+use cadmpeg_core::bytes::{assemble_f32_be, assemble_f64_be};
 use cadmpeg_core::decode::{index_from_u32, DecodeContext, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::units::FiniteVector;
@@ -156,11 +156,7 @@ pub(crate) fn double_xar_tables(
     let mut tables = Vec::new();
     let mut search = 0;
     loop {
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(data.len() - search),
-            "creo double_xar discovery",
-        )?;
-        let Some(offset) = find_from(data, LABEL, search) else {
+        let Some(offset) = ctx.find_bytes_from(data, LABEL, search, "creo double_xar discovery")? else {
             break;
         };
         let count_offset = offset + LABEL.len();

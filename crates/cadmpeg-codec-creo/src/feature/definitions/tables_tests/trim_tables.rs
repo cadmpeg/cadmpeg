@@ -869,7 +869,7 @@ fn trim_vertex_template_identifies_table_and_entry_classes() {
             \xf7\x45\x09\x0a\x03\x00";
 
     assert_eq!(
-        trim_table_header(payload, b"vert_tab\0", 0, payload.len()),
+        crate::decode::with_test_decode_ctx(|ctx| trim_table_header(ctx, payload, b"vert_tab\0", 0, payload.len())).expect("trim header search admitted"),
         Some(TrimTableHeader {
             declared_count: 19,
             classes: TrimTableClasses {

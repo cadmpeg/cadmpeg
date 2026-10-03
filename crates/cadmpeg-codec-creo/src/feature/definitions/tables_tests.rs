@@ -1715,7 +1715,22 @@ fn positional_relation_triples_refuse_before_vec_growth() {
 fn solver_header_does_not_adopt_a_later_array() {
     let payload = b"skamp_ptr\0opaque\xf8\x02\xf7\x58\xfb\xe2";
 
-    assert!(named_solver_table_header(payload, b"skamp_ptr\0", 0, payload.len()).is_none());
+    assert!(crate::decode::with_test_decode_ctx(|ctx| named_solver_table_header(ctx, payload, b"skamp_ptr\0", 0, payload.len())).expect("solver search admitted").is_none());
+}
+
+#[test]
+fn optional_solver_header_propagates_the_search_refusal() {
+    let payload = b"skamp_ptr\0opaque\xf8\x02\xf7\x58\xfb\xe2";
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(payload, &arena, &policy).expect("root admitted");
+    let cadmpeg_core::CodecError::ResourceLimit(limit) = named_solver_table_header(&ctx, payload, b"skamp_ptr\0", 0, payload.len()).expect_err("search must refuse") else {
+        panic!("resource refusal");
+    };
+    assert_eq!(limit.dimension, cadmpeg_core::decode::ResourceDimension::WorkUnits);
+    assert_eq!(limit.operation, "find Creo solver table");
+    assert_eq!(ctx.resource_refusal(), Some(limit));
 }
 
 #[test]

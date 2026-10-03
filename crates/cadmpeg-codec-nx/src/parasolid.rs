@@ -13,7 +13,6 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::num::NonZeroU32;
 
 use cadmpeg_container::compression::inflate_zlib_member;
-use cadmpeg_core::bytes::find;
 use cadmpeg_core::decode::{ByteRange, DecodeContext, ExpandSpec, ScopedReservation, View};
 use cadmpeg_core::CodecError;
 
@@ -1141,11 +1140,7 @@ fn legacy_stream_start(
         let Some(window) = bytes.get(search..) else {
             return Ok(None);
         };
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(window.len()),
-            "scan NX legacy stream headers",
-        )?;
-        let Some(relative) = find(window, b"PS\x00\x00") else {
+        let Some(relative) = ctx.find_bytes(window, b"PS\x00\x00", "scan NX legacy stream headers")? else {
             return Ok(None);
         };
         let Some(start) = search.checked_add(relative) else {

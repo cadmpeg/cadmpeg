@@ -980,16 +980,22 @@ fn generated_section_cap_plane_equation(
 }
 
 fn zero_offset_standard_section_plane_equation(
+    ctx: &DecodeContext<'_>,
     definition: &FeatureDefinition,
     section: &crate::feature::definitions::FeatureSection3d,
     reference_id: u32,
     reference: SignedPlaneEquation,
     sources: &PlacementSources<'_>,
     entity_tables: &[FeatureEntityTable],
-) -> Option<SignedPlaneEquation> {
-    let feature_id = definition.identity.owner_feature_id()?;
-    let sketch_id = section.sketch_plane_entity_id?;
-    let mut instructions = placement_instructions(definition);
+) -> Result<Option<SignedPlaneEquation>, CodecError> {
+    let Some(feature_id) = definition.identity.owner_feature_id() else {
+        return Ok(None);
+    };
+    let Some(sketch_id) = section.sketch_plane_entity_id else {
+        return Ok(None);
+    };
+    let mut instructions = placement_instructions(ctx, definition)?;
+    Ok((|| {
     let instruction = instructions.next()?;
     instructions
         .all(|candidate| {
@@ -1060,6 +1066,7 @@ fn zero_offset_standard_section_plane_equation(
     let separation = (candidate.offset - aligned_cap_offset).abs();
     let scale = candidate.offset.abs().max(cap.offset.abs()).max(1.0);
     (separation > EPS_PLACEMENT_EXACT_GEOMETRY * scale).then_some(candidate)
+    })())
 }
 
 fn circular_profile_aligned_origin(
@@ -1242,22 +1249,24 @@ pub(crate) fn resolve(
                     }
                 }
             } else if let Some(reference) = direct_reference {
-                if let Some(sketch) = generated_datum_plane_equation(
+                let sketch = match generated_datum_plane_equation(
                     sketch_id,
                     reference_id,
                     reference.normal,
                     sources,
-                )
-                .or_else(|| {
-                    zero_offset_standard_section_plane_equation(
+                ) {
+                    Some(sketch) => Some(sketch),
+                    None => zero_offset_standard_section_plane_equation(
+                        ctx,
                         definition,
                         section,
                         reference_id,
                         reference,
                         sources,
                         entity_tables,
-                    )
-                }) {
+                    )?,
+                };
+                if let Some(sketch) = sketch {
                     if dot(sketch.normal, reference.normal).abs()
                         < 1.0 - EPS_PLACEMENT_EXACT_GEOMETRY
                         && !candidates.iter().any(|candidate| {

@@ -914,7 +914,7 @@ fn decodes_repeated_diameter_type24_round_envelopes() {
 fn summarizes_seven_byte_torus_radius() {
     let payload = b"srf_prim_ptr(torus)\0\xe0\x01radius1\0\x5e\x33\x33\x33\x33\x33\x2c\xe0\x01radius2\0\x29\xc9\x99\xe3";
 
-    assert_eq!(prototype_count(payload), 1);
+    assert_eq!(crate::decode::with_test_decode_ctx(|ctx| prototype_count(ctx, payload)).expect("prototype search admitted"), 1);
     let records = named_prototype_records(payload, &mut crate::lane_refusal::LaneRefusals::new());
     let radius1 = records[0].field("radius1").expect("radius1");
     let radius2 = records[0].field("radius2").expect("radius2");
