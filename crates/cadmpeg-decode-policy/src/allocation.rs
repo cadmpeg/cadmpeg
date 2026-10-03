@@ -114,7 +114,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
                 }
             }
             if self.symbolic_storage(expression, &operands, name)
-                || self.admitted_slots(&operands, name)
+                || self.admitted_slots(expression, &operands, name)
             {
                 self.findings.admitted_growth_operations.insert(expression.hir_id);
                 return;

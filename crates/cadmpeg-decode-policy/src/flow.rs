@@ -513,6 +513,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
             });
             self.flow.storage_slots.retain(|credit| {
                 credit.target != key
+                    && !credit.scope.as_ref().is_some_and(|scope| scope.guard == key)
                     && !credit.target.starts_with(&format!("{key}."))
                     && !credit
                         .terms
@@ -574,7 +575,8 @@ impl<'tcx> Analysis<'_, 'tcx> {
             for operand in operands {
                 if !matches!(self.expr_ty_adjusted(operand).kind(), rustc_middle::ty::Ref(..))
                     && self.key(operand, &mut Vec::new()).is_some_and(|key|
-                        self.flow.scoped_storage.iter().any(|credit| credit.guard == key)) {
+                        self.flow.scoped_storage.iter().any(|credit| credit.guard == key)
+                            || self.flow.storage_slots.iter().any(|credit| credit.scope.as_ref().is_some_and(|scope| scope.guard == key))) {
                     self.invalidate_target(operand);
                 }
                 if matches!(

@@ -12,12 +12,19 @@ pub(crate) enum SlotUse {
 }
 
 #[derive(Clone, PartialEq, Eq)]
+pub(crate) struct SlotScope {
+    pub(crate) guard: String,
+    pub(crate) span: rustc_span::Span,
+}
+
+#[derive(Clone, PartialEq, Eq)]
 pub(crate) struct Slots {
     pub(crate) admission: rustc_hir::HirId,
     pub(crate) target: String,
     pub(crate) terms: Vec<ExtentTerm>,
     pub(crate) loop_depth: usize,
     pub(crate) usage: SlotUse,
+    pub(crate) scope: Option<SlotScope>,
 }
 
 impl<'tcx> Analysis<'_, 'tcx> {
@@ -210,6 +217,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
                     terms: counts,
                     loop_depth: self.flow.loop_bounds.len(),
                     usage: SlotUse::Insertion,
+                    scope: None,
                 });
             }
         }
@@ -256,12 +264,17 @@ impl<'tcx> Analysis<'_, 'tcx> {
     }
 
     fn result_binding(&self, expression: &Expr<'tcx>) -> Option<String> {
+        self.result_binding_at(expression, 0)
+    }
+
+    fn result_binding_at(&self, expression: &Expr<'tcx>, index: usize) -> Option<String> {
         for (_, node) in self.tcx.hir_parent_iter(expression.hir_id) {
             match node {
                 Node::LetStmt(local) => {
                     let pattern = match local.pat.kind {
-                        PatKind::Tuple(patterns, _) => patterns.first()?,
-                        _ => local.pat,
+                        PatKind::Tuple(patterns, _) => patterns.get(index)?,
+                        _ if index == 0 => local.pat,
+                        _ => return None,
                     };
                     return match pattern.kind {
                         PatKind::Binding(_, id, _, _) => Some(format!("local:{id:?}")),
@@ -288,6 +301,15 @@ impl<'tcx> Analysis<'_, 'tcx> {
             }
         }
         None
+    }
+
+    fn growth_scope(&self, expression: &Expr<'tcx>, index: usize) -> Option<SlotScope> {
+        let guard = self.result_binding_at(expression, index)?;
+        let span = self.tcx.hir_parent_iter(expression.hir_id).find_map(|(_, node)| match node {
+            Node::Block(block) => Some(block.span),
+            _ => None,
+        })?;
+        Some(SlotScope { guard, span })
     }
 
     pub(crate) fn record_slots(&mut self, expression: &'tcx Expr<'tcx>) {
@@ -373,6 +395,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
                 if element != call_args.types().next() { return; }
                 let Some(target) = target else { return; };
                 let Some(result) = self.result_binding(expression) else { return; };
+                let Some(scope) = self.growth_scope(expression, 2) else { return; };
                 let Some(original) = operands.get(3).and_then(|count| self.extent_terms(count, &mut Vec::new())) else { return; };
                 // The helper admits its returned reserve count and the requested
                 // insertion slots for this exact collection and element type.
@@ -382,6 +405,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
                     terms: original,
                     loop_depth: self.flow.loop_bounds.len(),
                     usage: SlotUse::Insertion,
+                    scope: None,
                 });
                 self.flow.storage_slots.push(Slots {
                     admission: expression.hir_id,
@@ -389,10 +413,25 @@ impl<'tcx> Analysis<'_, 'tcx> {
                     terms: vec![ExtentTerm { factors: vec![result], coefficient: 1 }],
                     loop_depth: self.flow.loop_bounds.len(),
                     usage: SlotUse::Reserve,
+                    scope: Some(scope),
                 });
                 return;
             }
             "charge_hash_growth" => {
+                let Some((length_id, length)) = operands.get(1).and_then(|value| self.call(value)) else { return; };
+                let Some((capacity_id, _)) = operands.get(2).and_then(|value| self.call(value)) else { return; };
+                if !types::standard(self.tcx, length_id) || self.tcx.item_name(length_id).as_str() != "len"
+                    || !types::standard(self.tcx, capacity_id) || self.tcx.item_name(capacity_id).as_str() != "capacity" { return; }
+                let Some(value) = length.first() else { return; };
+                let ty::Adt(owner, args) = self.expr_ty(value).peel_refs().kind() else { return; };
+                if !types::standard(self.tcx, owner.did()) { return; }
+                let actual = args.types().collect::<Vec<_>>();
+                let element = match self.tcx.item_name(owner.did()).as_str() {
+                    "HashSet" => actual.first().copied(),
+                    "HashMap" if actual.len() >= 2 => Some(ty::Ty::new_tup(self.tcx, &actual[..2])),
+                    _ => None,
+                };
+                if element.is_none() || element != self.call_arguments(expression).and_then(|args| args.types().next()) { return; }
                 let target = operands
                     .get(1)
                     .and_then(|length| self.call(length))
@@ -422,17 +461,22 @@ impl<'tcx> Analysis<'_, 'tcx> {
             _ => return,
         };
         if let (Some(target), Some(terms)) = (target, terms) {
+            let scope = if name.as_str() == "charge_hash_growth" {
+                let Some(scope) = self.growth_scope(expression, 1) else { return; };
+                Some(scope)
+            } else { None };
             self.flow.storage_slots.push(Slots {
                 admission: expression.hir_id,
                 target,
                 terms,
                 loop_depth: self.flow.loop_bounds.len(),
                 usage: SlotUse::Storage,
+                scope,
             });
         }
     }
 
-    pub(crate) fn admitted_slots(&mut self, operands: &[&'tcx Expr<'tcx>], name: &str) -> bool {
+    pub(crate) fn admitted_slots(&mut self, expression: &'tcx Expr<'tcx>, operands: &[&'tcx Expr<'tcx>], name: &str) -> bool {
         let Some(receiver) = operands.first() else {
             return false;
         };
@@ -465,6 +509,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
         for (index, credit) in self.flow.storage_slots.iter().enumerate() {
             let reserve = matches!(name, "reserve" | "reserve_exact" | "try_reserve" | "try_reserve_exact");
             if credit.target != target
+                || credit.scope.as_ref().is_some_and(|scope| !scope.span.contains(expression.span) || self.flow.mutated.contains(&scope.guard))
                 || credit.usage == SlotUse::Insertion && reserve
                 || credit.usage == SlotUse::Reserve && !reserve
             {
