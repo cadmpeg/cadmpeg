@@ -3,7 +3,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use cadmpeg_core::bytes::{contains, find_from, find_in};
+use cadmpeg_core::bytes::{find_from, find_in};
 use cadmpeg_core::decode::{bounded_len, index_from_u32, DecodeContext};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::scalar::FiniteReal;
@@ -1586,7 +1586,7 @@ pub(crate) fn loop_restore_directions(
                 if label_offset < 2
                     || row.body[label_offset - 2] != psb::token::NAMED_RECORD
                     || row.body[label_offset - 1] != 1
-                    || !contains(&row.body[..label_offset - 2], b"lo_restore\0")
+                    || !ctx.contains_bytes(&row.body[..label_offset - 2], b"lo_restore\0", "find Creo loop restore owner")?
                 {
                     continue;
                 }

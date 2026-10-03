@@ -8,7 +8,6 @@
 //! descriptions identify partition, deltas, and feature-profile payloads.
 
 use cadmpeg_container::compression::inflate_zlib_member;
-use cadmpeg_core::bytes::contains;
 use cadmpeg_core::decode::{DecodeContext, ExpandSpec, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::math::Point3;
@@ -72,7 +71,7 @@ pub(crate) fn extract_streams_with_offsets(
     if !out.is_empty() {
         return Ok(out);
     }
-    if !contains(payload, &WRAPPED_MAGIC_PREFIX) {
+    if !ctx.contains_bytes(payload, &WRAPPED_MAGIC_PREFIX, "find Parasolid wrapper prefix")? {
         return Ok(out);
     }
 

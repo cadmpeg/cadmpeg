@@ -7,7 +7,6 @@ use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::path::Path;
 
 use cadmpeg_container::ArchiveSnapshot;
-use cadmpeg_core::bytes::contains;
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::text::NonBlankString;
 use cadmpeg_core::{CodecError, ContainerEntry};
@@ -66,11 +65,8 @@ pub(crate) fn has_document_markers(
         }
         _ => return Ok(false),
     };
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(document.len()) * 2,
-        "scan FreeCAD probe XML",
-    )?;
-    Ok(contains(document, b"<Document") && contains(document, b"SchemaVersion"))
+    Ok(ctx.contains_bytes(document, b"<Document", "scan FreeCAD probe XML")?
+        && ctx.contains_bytes(document, b"SchemaVersion", "scan FreeCAD probe XML")?)
 }
 
 /// Fully scanned container used by inspection and decode.
