@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Admission of parser-owned XML and JSON trees.
 
-use super::{u64_from_index, DecodeContext, ScopedReservation};
+use super::{u64_from_index, DecodeContext, DepthGuard, ScopedReservation};
 use crate::CodecError;
 
 /// Bounds roxmltree 0.21.1 `NodeData`, including `NodeKind`, four node IDs,
@@ -146,16 +146,14 @@ fn xml_bound(ctx: &DecodeContext<'_>, text: &str, operation: &'static str) -> Re
     })
 }
 
-/// Holds nesting guards through the parser call without recursing in the
-/// admission code. Guard slots and their temporary storage are admitted first.
-fn at_depth<T>(
-    ctx: &DecodeContext<'_>,
+/// Holds all parser depth guards and their storage through the parser call.
+fn enter_tree_depth<'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
     depth: u64,
     operation: &'static str,
-    parse: impl FnOnce() -> Result<T, CodecError>,
-) -> Result<T, CodecError> {
+) -> Result<(Vec<DepthGuard<'ctx>>, ScopedReservation<'ctx>), CodecError> {
     if depth == 0 {
-        return parse();
+        return Ok((Vec::new(), ctx.reserve_scoped(0, operation)?));
     }
     ctx.charge_collection_items(depth, operation)?;
     let count =
@@ -163,14 +161,12 @@ fn at_depth<T>(
     let capacity = count
         .checked_add(4)
         .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX, depth))?;
-    let (mut guards, _reservation) = ctx.scoped_vector_storage(capacity, operation)?;
+    let mut scope = ctx.scoped_vector_storage(capacity, operation)?;
     ctx.charge_work(u64_from_index(count), operation)?;
     for _ in 0..count {
-        guards.push(ctx.enter_nested(operation)?);
+        scope.0.push(ctx.enter_nested(operation)?);
     }
-    let result = parse();
-    drop(guards);
-    result
+    Ok(scope)
 }
 
 impl DecodeContext<'_> {
@@ -259,8 +255,8 @@ impl DecodeContext<'_> {
         self.charge_work(work, operation)?;
         let reservation = self.reserve_scoped(bytes, operation)?;
         let nodes_limit = u32::try_from(nodes).map_err(|_| self.tree_overflow(operation))?;
-        let document = at_depth(self, bound.depth, operation, || {
-            roxmltree::Document::parse_with_options(
+        let _depth = enter_tree_depth(self, bound.depth, operation)?;
+        let document = roxmltree::Document::parse_with_options(
                 text,
                 roxmltree::ParsingOptions {
                     nodes_limit,
@@ -272,8 +268,7 @@ impl DecodeContext<'_> {
                     self.refuse_codec_limit(operation, u64::from(nodes_limit), nodes)
                 }
                 other => self.tree_malformed(other, operation),
-            })
-        })?;
+            })?;
         Ok(AdmittedXml {
             document,
             _reservation: reservation,
@@ -515,20 +510,17 @@ impl DecodeContext<'_> {
             .ok_or_else(|| self.tree_overflow(operation))?;
         self.charge_work(work, operation)?;
         let reservation = self.reserve_scoped(bound.bytes, operation)?;
-        let value = at_depth(self, bound.depth, operation, || {
-            if interpret_raw {
-                serde_json::from_str(text).map_err(|error| self.tree_malformed(error, operation))
-            } else {
-                use serde::Deserialize;
-                let mut parser = serde_json::Deserializer::from_str(text);
-                PlainJson::deserialize(&mut parser)
-                    .and_then(|value| {
-                        parser.end()?;
-                        Ok(value.0)
-                    })
-                    .map_err(|error| self.tree_malformed(error, operation))
-            }
-        })?;
+        let _depth = enter_tree_depth(self, bound.depth, operation)?;
+        let value = if interpret_raw {
+            serde_json::from_str(text).map_err(|error| self.tree_malformed(error, operation))?
+        } else {
+            use serde::Deserialize;
+            let mut parser = serde_json::Deserializer::from_str(text);
+            let value = PlainJson::deserialize(&mut parser)
+                .map_err(|error| self.tree_malformed(error, operation))?;
+            parser.end().map_err(|error| self.tree_malformed(error, operation))?;
+            value.0
+        };
         Ok((value, reservation, bound))
     }
 
@@ -575,19 +567,16 @@ impl DecodeContext<'_> {
         self.charge_collection_items(bound.values, operation)?;
         {
             let _validation = self.reserve_scoped(retained, operation)?;
-            at_depth(self, bound.depth, operation, || {
-                let validated: T = serde_json::from_str(text)
-                    .map_err(|error| self.tree_malformed(error, operation))?;
-                drop(validated);
-                Ok(())
-            })?;
+            let _depth = enter_tree_depth(self, bound.depth, operation)?;
+            let validated: T = serde_json::from_str(text)
+                .map_err(|error| self.tree_malformed(error, operation))?;
+            drop(validated);
         }
         self.charge_retained(retained, operation)?;
         self.charge_collection_items(bound.values, operation)?;
         self.charge_work(bound.values, operation)?;
-        at_depth(self, bound.depth, operation, || {
-            serde_json::from_value(value).map_err(|error| self.tree_malformed(error, operation))
-        })
+        let _depth = enter_tree_depth(self, bound.depth, operation)?;
+        serde_json::from_value(value).map_err(|error| self.tree_malformed(error, operation))
     }
 }
 
