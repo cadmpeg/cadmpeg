@@ -19,6 +19,7 @@ mod fixed;
 mod flow;
 mod instantiation;
 mod scope;
+mod serde;
 mod storage;
 mod types;
 mod work;
@@ -213,7 +214,7 @@ fn production(tcx: TyCtxt<'_>, owner: DefId) -> bool {
     {
         return false;
     }
-    if types::serialization_body(tcx, owner) {
+    if types::serde_body(tcx, owner) {
         return false;
     }
     let path = tcx
@@ -376,6 +377,10 @@ impl<'tcx> Visitor<'tcx> for Analysis<'_, 'tcx> {
                     ));
                 }
             }
+        }
+        if self.deserialize_call(expression) {
+            rustc_hir::intravisit::walk_expr(self, expression);
+            return;
         }
         self.indirect(expression);
         self.allocation(expression);

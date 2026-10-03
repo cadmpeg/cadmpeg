@@ -81,6 +81,9 @@ impl<'tcx> Analysis<'_, 'tcx> {
         let Some(trait_id) = self.tcx.trait_of_assoc(definition) else {
             return false;
         };
+        if types::cost_trait(self.tcx, trait_id) {
+            return self.implementation(expression, definition).is_none();
+        }
         if !trait_id.is_local() || self.tcx.visibility(trait_id).is_public() {
             return false;
         }

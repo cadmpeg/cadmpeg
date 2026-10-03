@@ -303,13 +303,36 @@ pub(crate) fn serde_serialize(tcx: TyCtxt<'_>, trait_id: rustc_span::def_id::Def
         && tcx.item_name(trait_id).as_str() == "Serialize"
 }
 
-pub(crate) fn serialization_body(tcx: TyCtxt<'_>, mut owner: rustc_span::def_id::DefId) -> bool {
+pub(crate) fn serde_deserialize(tcx: TyCtxt<'_>, trait_id: rustc_span::def_id::DefId) -> bool {
+    !trait_id.is_local()
+        && matches!(tcx.crate_name(trait_id.krate).as_str(), "serde" | "serde_core")
+        && tcx.item_name(trait_id).as_str() == "Deserialize"
+}
+
+pub(crate) fn cost_trait(tcx: TyCtxt<'_>, trait_id: rustc_span::def_id::DefId) -> bool {
+    tcx.crate_name(trait_id.krate).as_str() == "cadmpeg_core"
+        && tcx.def_path_str(trait_id) == "cadmpeg_core::decode::cost::DecodeCost"
+}
+
+pub(crate) fn cost_body(tcx: TyCtxt<'_>, mut owner: rustc_span::def_id::DefId) -> bool {
     while let Some(parent) = tcx.opt_parent(owner) {
-        if matches!(
-            tcx.def_kind(parent),
-            rustc_hir::def::DefKind::Impl { of_trait: true }
-        ) {
-            return serde_serialize(tcx, tcx.impl_trait_ref(parent).skip_binder().def_id);
+        if matches!(tcx.def_kind(parent), rustc_hir::def::DefKind::Impl { of_trait: true })
+            && cost_trait(tcx, tcx.impl_trait_ref(parent).skip_binder().def_id)
+        {
+            return true;
+        }
+        owner = parent;
+    }
+    false
+}
+
+pub(crate) fn serde_body(tcx: TyCtxt<'_>, mut owner: rustc_span::def_id::DefId) -> bool {
+    while let Some(parent) = tcx.opt_parent(owner) {
+        if matches!(tcx.def_kind(parent), rustc_hir::def::DefKind::Impl { of_trait: true }) {
+            let trait_id = tcx.impl_trait_ref(parent).skip_binder().def_id;
+            if serde_serialize(tcx, trait_id) || serde_deserialize(tcx, trait_id) {
+                return true;
+            }
         }
         owner = parent;
     }
