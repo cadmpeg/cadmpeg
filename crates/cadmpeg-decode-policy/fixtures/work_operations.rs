@@ -46,6 +46,8 @@ pub fn decode(
     let _arrays = [1u8, 2, 3] == [4u8, 5, 6];
     let _fixed = Fixed { x: 1, y: 2 } == Fixed { x: 3, y: 4 };
     let _custom = record == record;
+    let _pointer = std::ptr::eq(record, record);
+    let _slice_pointers = std::ptr::eq(bytes, other);
     let _array_search = [1u8, 2, 3].iter().any(|b| *b == 1);
     let strings = ["a", "b"];
     let variable_text = std::str::from_utf8(bytes).unwrap_or(""); // finding: uncharged_decode_work

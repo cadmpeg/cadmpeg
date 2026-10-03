@@ -264,6 +264,7 @@ pub(crate) fn summary(
         });
     }
     let (allocation, work) = match name.as_str() {
+        "eq" if path.ends_with("::ptr::eq") => (Allocation::None, Work::Fixed),
         "add" | "sub" | "mul" | "div" | "rem" | "neg" | "not" | "bitand" | "bitor" | "bitxor"
         | "shl" | "shr" => {
             if value.is_some_and(|value| {
