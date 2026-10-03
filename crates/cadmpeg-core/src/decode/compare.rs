@@ -117,6 +117,64 @@ impl DecodeContext<'_> {
         self.charge_key(key, self.tree_comparisons(values.len()), operation)?;
         Ok(values.remove(key))
     }
+    /// Admits the query key before borrowing the stored key and value.
+    pub fn get_key_value_hash_map<'values, K, Q, V, S>(&self, values: &'values HashMap<K, V, S>, key: &Q, operation: &'static str) -> Result<Option<(&'values K, &'values V)>, CodecError>
+    where K: Borrow<Q> + Eq + Hash, Q: DecodeCost + Eq + Hash + ?Sized, S: BuildHasher {
+        self.charge_key(key, 1, operation)?;
+        Ok(values.get_key_value(key))
+    }
+    /// Admits the query key before removing the stored key and value.
+    pub fn remove_entry_hash_map<'values, K, Q, V, S>(&self, values: &'values mut HashMap<K, V, S>, key: &Q, operation: &'static str) -> Result<Option<(K, V)>, CodecError>
+    where K: Borrow<Q> + Eq + Hash, Q: DecodeCost + Eq + Hash + ?Sized, S: BuildHasher {
+        self.charge_key(key, 1, operation)?;
+        Ok(values.remove_entry(key))
+    }
+    /// Tests set separation through admitted traversal and complete-key lookup.
+    pub fn is_disjoint_hash_set<T: DecodeCost + Eq + Hash, S: BuildHasher>(&self, left: &HashSet<T, S>, right: &HashSet<T, S>, operation: &'static str) -> Result<bool, CodecError> {
+        let (source, target) = if left.len() <= right.len() { (left, right) } else { (right, left) };
+        for value in self.admit_iter(source, operation)? {
+            if self.contains_hash_set(target, value, operation)? { return Ok(false); }
+        }
+        Ok(true)
+    }
+    /// Tests set containment through admitted traversal and complete-key lookup.
+    pub fn is_subset_hash_set<T: DecodeCost + Eq + Hash, S: BuildHasher>(&self, left: &HashSet<T, S>, right: &HashSet<T, S>, operation: &'static str) -> Result<bool, CodecError> {
+        if left.len() > right.len() { return Ok(false); }
+        let (source, target) = (left, right);
+        for value in self.admit_iter(source, operation)? {
+            if !self.contains_hash_set(target, value, operation)? { return Ok(false); }
+        }
+        Ok(true)
+    }
+    /// Admits the query key before borrowing the stored key and value.
+    pub fn get_key_value_btree_map<'values, K, Q, V>(&self, values: &'values BTreeMap<K, V>, key: &Q, operation: &'static str) -> Result<Option<(&'values K, &'values V)>, CodecError>
+    where K: Borrow<Q> + Ord, Q: DecodeCost + Ord + ?Sized {
+        self.charge_key(key, self.tree_comparisons(values.len()), operation)?;
+        Ok(values.get_key_value(key))
+    }
+    /// Admits the query key before removing the stored key and value.
+    pub fn remove_entry_btree_map<'values, K, Q, V>(&self, values: &'values mut BTreeMap<K, V>, key: &Q, operation: &'static str) -> Result<Option<(K, V)>, CodecError>
+    where K: Borrow<Q> + Ord, Q: DecodeCost + Ord + ?Sized {
+        self.charge_key(key, self.tree_comparisons(values.len()), operation)?;
+        Ok(values.remove_entry(key))
+    }
+    /// Tests set separation through admitted traversal and complete-key lookup.
+    pub fn is_disjoint_btree_set<T: DecodeCost + Ord>(&self, left: &BTreeSet<T>, right: &BTreeSet<T>, operation: &'static str) -> Result<bool, CodecError> {
+        let (source, target) = if left.len() <= right.len() { (left, right) } else { (right, left) };
+        for value in self.admit_iter(source, operation)? {
+            if self.contains_btree_set(target, value, operation)? { return Ok(false); }
+        }
+        Ok(true)
+    }
+    /// Tests set containment through admitted traversal and complete-key lookup.
+    pub fn is_subset_btree_set<T: DecodeCost + Ord>(&self, left: &BTreeSet<T>, right: &BTreeSet<T>, operation: &'static str) -> Result<bool, CodecError> {
+        if left.len() > right.len() { return Ok(false); }
+        let (source, target) = (left, right);
+        for value in self.admit_iter(source, operation)? {
+            if !self.contains_btree_set(target, value, operation)? { return Ok(false); }
+        }
+        Ok(true)
+    }
     /// Admits lookup and new entry storage before returning an entry.
     pub fn entry_hash_map<'values, K: DecodeCost + Eq + Hash, V>(&self, values: &'values mut std::collections::HashMap<K, V>, key: K, operation: &'static str) -> Result<std::collections::hash_map::Entry<'values, K, V>, CodecError> {
         self.admit_hash_map_entry(values, &key, operation)?;

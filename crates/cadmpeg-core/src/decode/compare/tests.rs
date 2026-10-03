@@ -75,3 +75,31 @@ fn charged_set_get_borrows_the_stored_variable_size_key() {
     assert_eq!(ctx.get_hash_set(&hash, "stored", "get").expect("admission").map(String::as_str), Some("stored"));
     assert_eq!(ctx.get_btree_set(&tree, "stored", "get").expect("admission").map(String::as_str), Some("stored"));
 }
+
+#[test]
+fn set_relations_and_stored_map_keys_use_complete_query_work() {
+    use std::collections::{HashSet, BTreeSet, HashMap, BTreeMap};
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).expect("context");
+    let left = HashSet::from([String::from("alpha")]);
+    let right = HashSet::from([String::from("alpha"), String::from("beta")]);
+    assert!(!ctx.is_disjoint_hash_set(&left, &right, "hash relation").expect("admission"));
+    assert!(ctx.is_subset_hash_set(&left, &right, "hash relation").expect("admission"));
+    assert!(!ctx.is_subset_hash_set(&right, &left, "hash relation").expect("length rejection"));
+    let left = BTreeSet::from([String::from("alpha")]);
+    let right = BTreeSet::from([String::from("beta")]);
+    assert!(ctx.is_disjoint_btree_set(&left, &right, "tree relation").expect("admission"));
+    assert!(!ctx.is_subset_btree_set(&left, &right, "tree relation").expect("admission"));
+    let mut hash = HashMap::from([(String::from("alpha"), 1)]);
+    let mut tree = BTreeMap::from([(String::from("alpha"), 2)]);
+    assert_eq!(ctx.get_key_value_hash_map(&hash, "alpha", "stored").expect("admission").map(|(key, value)| (key.as_str(), *value)), Some(("alpha", 1)));
+    assert_eq!(ctx.get_key_value_btree_map(&tree, "alpha", "stored").expect("admission").map(|(key, value)| (key.as_str(), *value)), Some(("alpha", 2)));
+    assert_eq!(ctx.remove_entry_hash_map(&mut hash, "alpha", "remove").expect("admission"), Some((String::from("alpha"), 1)));
+    assert_eq!(ctx.remove_entry_btree_map(&mut tree, "alpha", "remove").expect("admission"), Some((String::from("alpha"), 2)));
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+    let CodecError::ResourceLimit(first) = ctx.is_disjoint_btree_set(&left, &right, "refuse relation").expect_err("work") else { panic!("refusal") };
+    let CodecError::ResourceLimit(repeated) = ctx.remove_entry_hash_map(&mut hash, "alpha", "refuse remove").expect_err("fused") else { panic!("refusal") };
+    assert_eq!(first, repeated);
+}
