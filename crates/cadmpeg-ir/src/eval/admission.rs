@@ -178,6 +178,24 @@ impl<'ctx, 'arena> EvaluationAdmission<'ctx, 'arena> {
     }
 }
 
+impl crate::index::sealed::IndexQuery for EvaluationAdmission<'_, '_> {}
+
+impl crate::index::IndexQuery for EvaluationAdmission<'_, '_> {
+    type Error = ResourceLimit;
+    type Output<T> = Result<T, ResourceLimit>;
+    fn finish<T>(&self, result: Result<T, ResourceLimit>) -> Self::Output<T> { result }
+    fn lazy(&self) -> bool { self.context().is_none() }
+    fn work(&self, count: usize, operation: &'static str) -> Result<(), ResourceLimit> {
+        EvaluationAdmission::work(*self, u64_from_index(count), operation)
+    }
+    fn equal(&self, first: &str, second: &str, operation: &'static str) -> Result<bool, ResourceLimit> {
+        match self.context() {
+            Some(context) => crate::ids::comparison::equal(context, first, second, operation),
+            None => Ok(first == second),
+        }
+    }
+}
+
 pub(super) enum EvaluationDepthGuard<'scratch> {
     Decode { _guard: DepthGuard<'scratch> },
     Standard { depth: &'scratch Cell<usize> },
@@ -195,6 +213,40 @@ mod tests {
     use crate::eval::EvaluationFailure;
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension, WorkBudget};
     use cadmpeg_core::CodecError;
+
+    #[test]
+    fn model_lookup_work_refusal_reaches_curve_and_surface_evaluation() {
+        use crate::geometry::{Curve, CurveGeometry, SolvedCurveGeometry, Surface, SurfaceGeometry, SolvedSurfaceGeometry};
+        let mut ir = crate::CadIr::empty();
+        let curve = crate::ids::CurveId::mint("test:model:curve#unknown").unwrap();
+        let surface = crate::ids::SurfaceId::mint("test:model:surface#unknown").unwrap();
+        ir.model.curves.push(Curve { id: curve.clone(), geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }), source_object: None });
+        ir.model.surfaces.push(Surface { id: surface.clone(), geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }), source_object: None });
+        let index = crate::index::ModelIndex::new_model_only(&ir, crate::index::StandardIndex);
+        assert!(index.curves(curve.as_str(), crate::index::StandardIndex).is_some());
+        assert!(index.surfaces(surface.as_str(), crate::index::StandardIndex).is_some());
+        let frame_work = cadmpeg_core::decode::u64_from_index(std::mem::size_of::<Option<crate::eval::ModelEvaluationIdentity>>());
+        for surface_route in [false, true] {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = frame_work.checked_add(1).unwrap();
+            let arena = DecodeArena::new();
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            let evaluate = || if surface_route {
+                crate::eval::model_surface_point_by_id(EvaluationAdmission::Decode(&ctx), &index, &surface, 0.5, 0.5)
+            } else {
+                crate::eval::model_curve_point_by_id(EvaluationAdmission::Decode(&ctx), &index, &curve, 0.5)
+            };
+            let EvaluationFailure::ResourceLimit(first) = evaluate().unwrap_err() else { panic!("lookup work refusal is an evaluation resource error"); };
+            assert_eq!(first.dimension, ResourceDimension::WorkUnits);
+            // Curve lookup precedes its model step; surface lookup follows it.
+            let expected_used = frame_work.checked_add(u64::from(surface_route)).unwrap();
+            let query = if surface_route { surface.as_str() } else { curve.as_str() };
+            assert_eq!((first.limit, first.used, first.additional),
+                (policy.limits.max_work_units, expected_used, cadmpeg_core::decode::u64_from_index(query.len())));
+            assert_eq!(evaluate(), Err(EvaluationFailure::ResourceLimit(first)));
+            assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == first));
+        }
+    }
 
     #[test]
     fn model_entries_use_the_live_resource_policy() {

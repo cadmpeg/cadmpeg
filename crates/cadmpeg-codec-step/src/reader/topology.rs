@@ -4691,7 +4691,7 @@ fn pcurve_locus_witness(
         return Ok(false);
     };
     let curve_id = CurveId::from(ids::data(kind!("curve"), curve_step));
-    let curve_seeds = curve_selection_parameter_domain(index, &curve_id).map_or(
+    let curve_seeds = curve_selection_parameter_domain(index, &curve_id, ctx)?.map_or(
         [
             0.0,
             1.0,
@@ -4907,16 +4907,12 @@ fn surface_selection_parameters(
     surface_id: &SurfaceId,
     u: f64,
     v: f64,
-) -> [f64; 2] {
-    let domains = index
-        .surfaces(surface_id.as_str())
-        .map_or([None, None], |surface| {
-            surface_selection_parameter_domains(index, surface_id, &surface.geometry)
-        });
-    [
-        clamp_selection_parameter(u, domains[0]),
-        clamp_selection_parameter(v, domains[1]),
-    ]
+ ctx: &DecodeContext<'_>, ) -> Result<[f64; 2], ResourceLimit> {
+let domains = match index.surfaces(surface_id.as_str(), ctx)? {
+        Some(surface) => surface_selection_parameter_domains(index, surface_id, &surface.geometry, ctx)?,
+        None => [None, None],
+    };
+    Ok([clamp_selection_parameter(u, domains[0]), clamp_selection_parameter(v, domains[1])])
 }
 
 fn clamp_selection_parameter(value: f64, domain: Option<[f64; 2]>) -> f64 {
@@ -4940,7 +4936,7 @@ fn surface_selection_point(
     u: f64,
     v: f64,
 ) -> Result<Option<Point3>, ResourceLimit> {
-    let [u, v] = surface_selection_parameters(index, surface_id, u, v);
+    let [u, v] = surface_selection_parameters(index, surface_id, u, v, ctx)?;
     // A non-finite point is returned as the evaluation reached it; the
     // selection measures read it as a miss.
     match model_surface_point_by_id(cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(ctx), index, surface_id, u, v) {
@@ -5075,7 +5071,7 @@ fn mapped_pcurve_closest(
             Err(cadmpeg_ir::eval::EvaluationFailure::ResourceLimit(limit)) => return Err(limit),
             Err(_) => return Ok(None),
         };
-        let [u, v] = surface_selection_parameters(index, surface_id, uv.u, uv.v);
+        let [u, v] = surface_selection_parameters(index, surface_id, uv.u, uv.v, ctx)?;
         let partials = match model_surface_partials_by_id(cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(ctx), index, surface_id, u, v) {
             Ok(value) => value,
             Err(cadmpeg_ir::eval::EvaluationFailure::ResourceLimit(limit)) => return Err(limit),
@@ -5301,7 +5297,7 @@ fn pcurve_selection_seeds(
                 }
             }
         }
-        let [u_domain, v_domain] = surface_selection_parameter_domains(index, surface_id, surface);
+        let [u_domain, v_domain] = surface_selection_parameter_domains(index, surface_id, surface, ctx)?;
         if let Some([u_lower, u_upper]) = u_domain {
             for boundary in [u_lower, u_lower.midpoint(u_upper), u_upper] {
                 if direction.u != 0.0 {
@@ -5411,7 +5407,8 @@ fn surface_selection_parameter_domains(
     index: &ModelIndex<'_>,
     surface_id: &SurfaceId,
     surface: &SurfaceGeometry,
-) -> [Option<[f64; 2]>; 2] {
+ ctx: &DecodeContext<'_>, ) -> Result<[Option<[f64; 2]>; 2], ResourceLimit> {
+    let _depth = ctx.enter_nested_limit("STEP surface selection domain depth")?;
     let definition = index
         .ir()
         .model
@@ -5421,7 +5418,7 @@ fn surface_selection_parameter_domains(
             index.ir().model.procedural_surface_owner(&procedural.id) == Some(surface_id)
         })
         .map(cadmpeg_ir::geometry::ProceduralSurface::definition);
-    match definition {
+    Ok(match definition {
         Some(ProceduralSurfaceDefinition::Subset(definition_payload)) => {
             let parameter_ranges = definition_payload
                 .parameter_ranges()
@@ -5433,26 +5430,25 @@ fn surface_selection_parameter_domains(
         }
         Some(ProceduralSurfaceDefinition::AxisRevolution(definition_payload)) => [
             Some([0.0, std::f64::consts::TAU]),
-            curve_selection_parameter_domain(index, definition_payload.directrix()),
+            curve_selection_parameter_domain(index, definition_payload.directrix(), ctx)?,
         ],
         Some(ProceduralSurfaceDefinition::Extrusion(payload)) => [
-            curve_selection_parameter_domain(index, payload.directrix()),
+            curve_selection_parameter_domain(index, payload.directrix(), ctx)?,
             None,
         ],
         Some(ProceduralSurfaceDefinition::LinearSweep(definition_payload)) => [
-            curve_selection_parameter_domain(index, definition_payload.directrix()),
+            curve_selection_parameter_domain(index, definition_payload.directrix(), ctx)?,
             None,
         ],
-        Some(ProceduralSurfaceDefinition::Replica { source, .. }) => index
-            .surfaces(source.as_str())
-            .map_or([None, None], |source_surface| {
-                surface_selection_parameter_domains(index, source, &source_surface.geometry)
-            }),
+        Some(ProceduralSurfaceDefinition::Replica { source, .. }) => match index.surfaces(source.as_str(), ctx)? {
+            Some(source_surface) => surface_selection_parameter_domains(index, source, &source_surface.geometry, ctx)?,
+            None => [None, None],
+        },
         _ => surface.solved().map_or(
             [None, None],
             surface_selection_parameter_domains_from_geometry,
         ),
-    }
+    })
 }
 
 fn surface_selection_parameter_domains_from_geometry(
@@ -5489,9 +5485,9 @@ fn subset_parameter_domain(range: [f64; 2]) -> Option<[f64; 2]> {
 fn curve_selection_parameter_domain(
     index: &ModelIndex<'_>,
     curve_id: &CurveId,
-) -> Option<[f64; 2]> {
-    let curve = index.curves(curve_id.as_str())?;
-    curve_selection_parameter_domain_from_geometry(curve.geometry.solved()?)
+ ctx: &DecodeContext<'_>, ) -> Result<Option<[f64; 2]>, ResourceLimit> {
+let Some(curve) = index.curves(curve_id.as_str(), ctx)? else { return Ok(None); };
+    Ok(curve.geometry.solved().and_then(curve_selection_parameter_domain_from_geometry))
 }
 
 fn curve_selection_parameter_domain_from_geometry(

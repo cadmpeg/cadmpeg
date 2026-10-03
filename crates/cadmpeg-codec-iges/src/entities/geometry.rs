@@ -1254,7 +1254,7 @@ pub(super) fn curve_geometry_coplanar(
             let mut valid = true;
             for segment in segments {
                 ctx.charge_work(1, "iges coplanar composite segments")?;
-                let Some(curve) = index.curves(segment.curve.as_str()) else {
+                let Some(curve) = index.curves(segment.curve.as_str(), ctx)? else {
                     valid = false;
                     break;
                 };

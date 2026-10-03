@@ -915,7 +915,7 @@ fn linear_intersection_endpoint_witness_requires_a_clamped_linear_curve() {
     let index = cadmpeg_ir::index::ModelIndex::new_model_only(&ir, cadmpeg_ir::index::StandardIndex);
 
     assert_eq!(
-        crate::decode::pcurves::linear_nurbs_curve_endpoint_witness_with_index(&index, &curve_id),
+        crate::decode::pcurves::linear_nurbs_curve_endpoint_witness_with_index(&index, &curve_id, &cadmpeg_test_support::service_decode_context()).unwrap(),
         Some([first, last])
     );
 
@@ -931,7 +931,7 @@ fn linear_intersection_endpoint_witness_requires_a_clamped_linear_curve() {
     ));
     let index = cadmpeg_ir::index::ModelIndex::new_model_only(&ir, cadmpeg_ir::index::StandardIndex);
     assert!(
-        crate::decode::pcurves::linear_nurbs_curve_endpoint_witness_with_index(&index, &curve_id)
+        crate::decode::pcurves::linear_nurbs_curve_endpoint_witness_with_index(&index, &curve_id, &cadmpeg_test_support::service_decode_context()).unwrap()
             .is_none()
     );
 }

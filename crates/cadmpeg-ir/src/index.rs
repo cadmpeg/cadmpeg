@@ -304,13 +304,13 @@ fn build_identity_index<T: EntitySchema, S: IndexStorage>(
     Ok(index)
 }
 
-fn lookup_identity<'a, T: EntitySchema, S: IndexStorage>(
+fn lookup_identity<'a, T: EntitySchema, S: IndexQuery>(
     entities: &'a [T],
     index: &OnceLock<IdentityIndex>,
     identity: &str,
     storage: &S,
 ) -> Result<Option<&'a T>, S::Error> {
-    let index = if S::EAGER_LOOKUPS {
+    let index = if !storage.lazy() {
         index.get()
     } else {
         Some(index.get_or_init(|| public_result(build_identity_index(entities, &PublicStorage))))
@@ -356,7 +356,10 @@ impl<'ir> std::ops::Deref for DecodeModelIndex<'_, 'ir> {
     }
 }
 
-mod sealed {
+pub(crate) mod sealed {
+    pub trait IndexQuery {}
+    impl IndexQuery for super::StandardIndex {}
+    impl IndexQuery for &cadmpeg_core::decode::DecodeContext<'_> {}
     pub trait IndexAdmission {}
     impl IndexAdmission for super::StandardIndex {}
     impl IndexAdmission for &cadmpeg_core::decode::DecodeContext<'_> {}
@@ -365,6 +368,48 @@ mod sealed {
 /// Explicit standard allocation policy for context-free model indexes.
 #[derive(Debug, Clone, Copy)]
 pub struct StandardIndex;
+
+/// Work policy for one borrowed model identity query.
+pub trait IndexQuery: sealed::IndexQuery {
+    /// The refusal type selected by this policy.
+    type Error;
+    /// An infallible value or a value carrying the resource refusal.
+    type Output<T>;
+    #[doc(hidden)]
+    fn finish<T>(&self, result: Result<T, Self::Error>) -> Self::Output<T>;
+    #[doc(hidden)]
+    fn lazy(&self) -> bool;
+    #[doc(hidden)]
+    fn work(&self, count: usize, operation: &'static str) -> Result<(), Self::Error>;
+    #[doc(hidden)]
+    fn equal(&self, first: &str, second: &str, operation: &'static str) -> Result<bool, Self::Error>;
+}
+
+impl IndexQuery for StandardIndex {
+    type Error = std::convert::Infallible;
+    type Output<T> = T;
+    fn finish<T>(&self, result: Result<T, Self::Error>) -> T { public_result(result) }
+    fn lazy(&self) -> bool { true }
+    fn work(&self, count: usize, operation: &'static str) -> Result<(), Self::Error> {
+        IndexStorage::work(&PublicStorage, count, operation)
+    }
+    fn equal(&self, first: &str, second: &str, operation: &'static str) -> Result<bool, Self::Error> {
+        IndexStorage::equal(&PublicStorage, first, second, operation)
+    }
+}
+
+impl IndexQuery for &DecodeContext<'_> {
+    type Error = ResourceLimit;
+    type Output<T> = Result<T, ResourceLimit>;
+    fn finish<T>(&self, result: Result<T, ResourceLimit>) -> Self::Output<T> { result }
+    fn lazy(&self) -> bool { false }
+    fn work(&self, count: usize, operation: &'static str) -> Result<(), ResourceLimit> {
+        IndexStorage::work(&DecodeStorage(self), count, operation)
+    }
+    fn equal(&self, first: &str, second: &str, operation: &'static str) -> Result<bool, ResourceLimit> {
+        IndexStorage::equal(&DecodeStorage(self), first, second, operation)
+    }
+}
 
 /// Select standard lazy lookups or live-session scoped decode lookups.
 pub trait IndexAdmission<'ir>: sealed::IndexAdmission {
@@ -632,8 +677,8 @@ macro_rules! define_model_index {
 
             $(
                 #[doc = concat!("Looks up an entity in the `", stringify!($lookup), "` arena.")]
-                pub fn $lookup(&self, identity: &str) -> Option<&'a $element> {
-                    public_result(lookup_identity(&self.ir.model.$lookup, &self.$lookup, identity, &PublicStorage))
+                pub fn $lookup<P: IndexQuery>(&self, identity: &str, admission: P) -> P::Output<Option<&'a $element>> {
+                    admission.finish(lookup_identity(&self.ir.model.$lookup, &self.$lookup, identity, &admission))
                 }
             )*
         }
@@ -651,6 +696,34 @@ mod tests {
     use crate::{NativeNamespace, NativeRecord};
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use serde_json::Map;
+
+    #[test]
+    fn typed_model_getters_admit_queries_and_preserve_the_first_refusal() {
+        let ir = CadIr::empty();
+        let index = ModelIndex::new_model_only(&ir, crate::index::StandardIndex);
+        let query = "test:model:entity#missing";
+        macro_rules! check {
+            ($($lookup:ident),+ $(,)?) => {$({
+                assert!(index.$lookup(query, crate::index::StandardIndex).is_none());
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_work_units = 0;
+                policy.limits.max_materialized_bytes = 0;
+                policy.limits.max_retained_bytes = 0;
+                policy.limits.max_collection_items = 0;
+                let arena = DecodeArena::new();
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+                let first = index.$lookup(query, &ctx).unwrap_err();
+                assert_eq!(first.dimension, ResourceDimension::WorkUnits);
+                assert_eq!(first.operation, "model identity lookup hash");
+                assert_eq!((first.limit, first.used, first.additional), (0, 0, cadmpeg_core::decode::u64_from_index(query.len())));
+                assert_eq!(index.$lookup("test:model:entity#other", &ctx).unwrap_err(), first);
+                assert!(matches!(ctx.finish_session(), Err(cadmpeg_core::CodecError::ResourceLimit(sticky)) if sticky == first));
+            })+};
+        }
+        check!(bodies, regions, shells, faces, loops, coedges, edges, vertices,
+            points, surfaces, curves, subds, pcurves, procedural_surfaces,
+            procedural_curves, tessellations, appearances);
+    }
 
     #[test]
     fn explicit_index_policy_keeps_decode_storage_scoped() {
@@ -684,7 +757,7 @@ mod tests {
                 let index = result.unwrap();
                 assert!(index.points.get().is_some());
                 assert!(index.bodies.get().is_some());
-                assert_eq!(index.points(id.as_str()).map(|point| &point.id), Some(&id));
+                assert_eq!(index.points(id.as_str(), &ctx).unwrap().map(|point| &point.id), Some(&id));
                 drop(index);
                 let storage = ctx.reserve_scoped_limit(4096, "test released model index").unwrap();
                 drop(storage);
@@ -713,7 +786,7 @@ mod tests {
             let mut policy = DecodePolicy::service();
             policy.limits.max_work_units = cap;
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-            let first = super::lookup_identity(&ir.model.points, &cache, query, &super::DecodeStorage(&ctx)).unwrap_err();
+            let first = super::lookup_identity(&ir.model.points, &cache, query, &&ctx).unwrap_err();
             assert_eq!(first.dimension, ResourceDimension::WorkUnits);
             assert_eq!(first.operation, operation);
             assert_eq!(first.limit, cap);
@@ -737,7 +810,7 @@ mod tests {
         policy.limits.max_collection_items = 0;
         policy.limits.max_retained_bytes = 0;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let found = super::lookup_identity(&ir.model.points, &cache, id.as_str(), &super::DecodeStorage(&ctx)).unwrap().unwrap();
+        let found = super::lookup_identity(&ir.model.points, &cache, id.as_str(), &&ctx).unwrap().unwrap();
         assert_eq!(found.position().get(), crate::math::Point3::new(1.0, 0.0, 0.0));
         assert!(cache.get().is_none());
         ctx.finish_session().unwrap();
@@ -745,7 +818,7 @@ mod tests {
         let mut policy = DecodePolicy::service();
         policy.limits.max_work_units = 0;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let first = super::lookup_identity(&ir.model.points, &cache, id.as_str(), &super::DecodeStorage(&ctx)).unwrap_err();
+        let first = super::lookup_identity(&ir.model.points, &cache, id.as_str(), &&ctx).unwrap_err();
         assert_eq!(first.dimension, ResourceDimension::WorkUnits);
         assert_eq!(first.operation, "model identity lookup scan");
         assert_eq!((first.limit, first.used, first.additional), (0, 0, 1));
@@ -790,7 +863,7 @@ mod tests {
             DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
         let index = ModelIndex::new_model_only(&ir, &ctx).unwrap();
         assert_eq!(
-            index.points(point_id.as_str()).map(|point| &point.id),
+            index.points(point_id.as_str(), &ctx).unwrap().map(|point| &point.id),
             Some(&point_id)
         );
     }
@@ -880,7 +953,7 @@ mod tests {
         assert!(parameters.get().is_none());
         assert!(index.bodies.get().is_none());
         assert_eq!(
-            super::lookup_identity(&ir.model.parameters, &parameters, parameter_id.as_str(), &super::PublicStorage).unwrap()
+            super::lookup_identity(&ir.model.parameters, &parameters, parameter_id.as_str(), &crate::index::StandardIndex).unwrap()
                 .map(|parameter| parameter.expression.as_str()),
             Some("last")
         );

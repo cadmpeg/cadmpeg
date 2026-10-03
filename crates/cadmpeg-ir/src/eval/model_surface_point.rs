@@ -239,7 +239,11 @@ pub(super) fn model_surface_point_by_id_inner(
         u: f64,
         v: f64,
     ) -> Option<SurfaceEvaluation> {
-        let support = index.surfaces(support.as_str())?;
+        let support = match index.surfaces(support.as_str(), admission) {
+            Ok(Some(support)) => support,
+            Ok(None) => return None,
+            Err(limit) => return Some(resource(limit)),
+        };
         let Some(SolvedSurfaceGeometry::Nurbs(nurbs)) = support.geometry.solved() else {
             return None;
         };
@@ -324,7 +328,11 @@ pub(super) fn model_surface_point_by_id_inner(
                 EvaluationFailure::NoValue | EvaluationFailure::NonFinite(()) => None,
             };
         }
-        let surface = index.surfaces(surface_id.as_str())?;
+        let surface = match index.surfaces(surface_id.as_str(), admission) {
+            Ok(Some(surface)) => surface,
+            Ok(None) => return None,
+            Err(limit) => return Some(resource(limit)),
+        };
         if !depth_guard.bind(
             ModelEvaluationIdentity::Surface(std::ptr::from_ref(surface)),
             admission,
