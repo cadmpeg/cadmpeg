@@ -3,12 +3,16 @@
 use crate::Analysis;
 use rustc_hir::Expr;
 use rustc_middle::ty;
+use rustc_middle::ty::Ty;
 
 impl<'tcx> Analysis<'_, 'tcx> {
     pub(crate) fn closed_scalar_parse(&self, expression: &'tcx Expr<'tcx>) -> bool {
         let Some((definition, _)) = self.call(expression) else { return false; };
         if self.tcx.item_name(definition).as_str() != "parse" { return false; }
         let Some(target) = self.call_arguments(expression).and_then(|args| args.types().next()) else { return false; };
+        self.closed_scalar_type(target)
+    }
+    fn closed_scalar_type(&self, target: Ty<'tcx>) -> bool {
         let owner = self.typeck.hir_owner.def_id;
         self.tcx.clauses_of(owner).instantiate_identity(self.tcx).clauses.iter().any(|clause| {
             matches!(clause.kind().skip_binder(), ty::ClauseKind::Trait(predicate)
@@ -18,4 +22,12 @@ impl<'tcx> Analysis<'_, 'tcx> {
                         "decode::text::TextScalar" | "cadmpeg_core::decode::text::TextScalar"))
         })
     }
+    pub(crate) fn closed_scalar_default(&self, expression: &'tcx Expr<'tcx>) -> bool {
+        let Some((definition, _)) = self.call(expression) else { return false; };
+        if !crate::types::standard(self.tcx, definition)
+            || self.tcx.item_name(definition).as_str() != "default" { return false; }
+        self.tcx.trait_of_assoc(definition).is_some_and(|id| self.tcx.item_name(id).as_str() == "Default")
+            && self.call_arguments(expression).and_then(|args| args.types().next()).is_some_and(|target| self.closed_scalar_type(target))
+    }
+
 }
