@@ -121,8 +121,9 @@ impl SectorChain {
         1 + self.rest.len()
     }
 
-    fn iter(&self) -> impl Iterator<Item = &u32> + Clone {
-        std::iter::once(&self.first).chain(&self.rest)
+    fn admitted<'sectors>(&'sectors self, ctx: &DecodeContext<'_>) -> Result<impl Iterator<Item = &'sectors u32> + 'sectors, CodecError> {
+        ctx.charge_work(1, "visit CFB first chain sector")?;
+        Ok(Some(&self.first).into_iter().chain(ctx.admit_iter(&self.rest, "visit CFB chain sectors")?))
     }
 
     fn get(&self, index: usize) -> Option<&u32> {
@@ -179,13 +180,7 @@ impl CompoundStreamEntry {
         }
     }
 
-    fn sectors(&self) -> impl Iterator<Item = &u32> {
-        let (first, rest): (Option<&u32>, &[u32]) = match &self.data {
-            StreamData::Empty(_) => (None, &[]),
-            StreamData::Allocated { chain, .. } => (Some(&chain.first), &chain.rest),
-        };
-        first.into_iter().chain(rest)
-    }
+
 }
 
 /// A typed CFB directory entry.
@@ -1065,15 +1060,7 @@ impl CompoundState {
                 "validate CFB sector ownership",
             )?;
         }
-        for &sector in self
-            .fat_sectors
-            .iter()
-            .chain(&self.difat_sectors)
-            .chain(self.directory_chain.iter().flat_map(SectorChain::iter))
-            .chain(self.mini_fat_chain.iter().flat_map(SectorChain::iter))
-            .chain(self.root_mini_chain.iter().flat_map(SectorChain::iter))
-        {
-            ctx.charge_work(1, "validate CFB structural sector")?;
+        let mut claim_structural = |sector| -> Result<(), CodecError> {
             if !ctx.insert_scoped_btree_set(
                 &mut scratch,
                 &mut used,
@@ -1082,6 +1069,18 @@ impl CompoundState {
                 "validate CFB sector ownership",
             )? {
                 return malformed("CFB regular sector has duplicate structural ownership");
+            }
+            Ok(())
+        };
+        for &sector in ctx.admit_iter(&self.fat_sectors, "visit CFB owned FAT sectors")?
+            .chain(ctx.admit_iter(&self.difat_sectors, "visit CFB owned DIFAT sectors")?) {
+            claim_structural(sector)?;
+        }
+        for chain in [&self.directory_chain, &self.mini_fat_chain, &self.root_mini_chain] {
+            if let Some(chain) = chain {
+                for &sector in chain.admitted(ctx)? {
+                    claim_structural(sector)?;
+                }
             }
         }
         let mut mini_used = BTreeSet::new();
@@ -1093,17 +1092,17 @@ impl CompoundState {
             .div_ceil(MINI_SECTOR_SIZE);
         for entry in ctx.admit_iter(entries, "visit CFB stream ownership")? {
             if let CompoundEntry::Stream(stream) = entry {
-                let Some(allocation) = stream.allocation() else {
+                let StreamData::Allocated { allocation, chain, .. } = &stream.data else {
                     continue;
                 };
+                let allocation = *allocation;
                 let target = if allocation == CompoundAllocation::Regular {
                     &mut used
                 } else {
                     &mut mini_used
                 };
                 let mut remaining = stream.logical_size();
-                for &sector in stream.sectors() {
-                    ctx.charge_work(1, "visit CFB owned stream sector")?;
+                for &sector in chain.admitted(ctx)? {
                     let payload =
                         remaining.min(cadmpeg_core::decode::u64_from_index(MINI_SECTOR_SIZE));
                     remaining -= payload;
