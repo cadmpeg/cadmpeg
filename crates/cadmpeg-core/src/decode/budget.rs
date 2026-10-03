@@ -154,6 +154,9 @@ impl DecodeBudget {
         additional: u64,
         operation: &'static str,
     ) -> ResourceLimit {
+        if let Some(resource) = self.fuse.get() {
+            return resource;
+        }
         let resource = ResourceLimit {
             dimension,
             reason,
@@ -979,4 +982,18 @@ mod tests {
         assert_eq!(limit.used, 2);
         assert_eq!(limit.additional, 3);
     }
+    #[test]
+    fn later_refusals_preserve_the_first_session_refusal() {
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        let session = DecodeBudget::new(policy, 1);
+        let first = session.charge_work_limit(1, "first work refusal").expect_err("refusal");
+        let later = session.retained_allocation_failed_limit(7, "later allocator refusal");
+        assert_eq!(later, first);
+        assert_eq!(session.fused(), Some(first));
+        let later = session.refuse_limit(ResourceDimension::Codec("later codec"), ResourceFailure::BudgetExceeded, 2, 2, 1, "later codec");
+        assert_eq!(later, first);
+        assert_eq!(session.fused(), Some(first));
+    }
+
 }
