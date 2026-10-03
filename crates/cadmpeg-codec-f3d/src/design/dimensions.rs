@@ -19,6 +19,7 @@ use crate::records::{
 };
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
+use cadmpeg_ir::geometry::pcurve::evaluator::PcurveEvaluatorLanes;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::sketches::NativeOperandField;
 use std::collections::{BTreeMap, HashMap, HashSet};
@@ -6908,14 +6909,13 @@ pub(super) fn point_lies_on_sketch_geometry(
         }
         let tolerance = EPS_DIMENSIONS_POINT_LIES_ON_SKETCH_GEOMETRY_E9
             * (1.0 + point.u.abs().max(point.v.abs()));
-        let (control_points, weights) =
-            crate::design::geometry::nurbs_pcurve_evaluator_lanes(curve, ctx)?;
+        let lanes = PcurveEvaluatorLanes::new(ctx, curve.pole_rows(), "f3d nurbs evaluator poles", "f3d nurbs evaluator weights")?;
         return cadmpeg_ir::eval::nurbs_pcurve_contains_point(
             ctx,
             curve.degree(),
             curve.knots(),
-            &control_points,
-            weights.as_deref(),
+            lanes.points(),
+            lanes.weights(),
             point,
             tolerance,
         )
