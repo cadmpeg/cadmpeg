@@ -89,6 +89,7 @@ impl DecodeContext<'_> {
     pub fn remove_btree_map<'values, K, Q, V>(&self, values: &'values mut BTreeMap<K, V>, key: &Q, operation: &'static str) -> Result<Option<V>, CodecError>
     where K: Borrow<Q> + Ord, Q: DecodeCost + Ord + ?Sized {
         self.charge_key(key, self.tree_comparisons(values.len()), operation)?;
+        self.admit_tree_mutation::<K, V>(values.len(), operation)?;
         Ok(values.remove(key))
     }
     /// Admits key work before BTreeSet::contains.
@@ -115,6 +116,7 @@ impl DecodeContext<'_> {
     pub fn remove_btree_set<'values, K, Q>(&self, values: &'values mut BTreeSet<K>, key: &Q, operation: &'static str) -> Result<bool, CodecError>
     where K: Borrow<Q> + Ord, Q: DecodeCost + Ord + ?Sized {
         self.charge_key(key, self.tree_comparisons(values.len()), operation)?;
+        self.admit_tree_mutation::<K, ()>(values.len(), operation)?;
         Ok(values.remove(key))
     }
     /// Admits the query key before borrowing the stored key and value.
@@ -156,6 +158,7 @@ impl DecodeContext<'_> {
     pub fn remove_entry_btree_map<'values, K, Q, V>(&self, values: &'values mut BTreeMap<K, V>, key: &Q, operation: &'static str) -> Result<Option<(K, V)>, CodecError>
     where K: Borrow<Q> + Ord, Q: DecodeCost + Ord + ?Sized {
         self.charge_key(key, self.tree_comparisons(values.len()), operation)?;
+        self.admit_tree_mutation::<K, V>(values.len(), operation)?;
         Ok(values.remove_entry(key))
     }
     /// Tests set separation through admitted traversal and complete-key lookup.
