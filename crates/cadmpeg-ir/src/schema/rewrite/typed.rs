@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Typed identity replacement under the caller's decode policy.
 
-use std::collections::{btree_map::Entry, BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_core::decode::{u64_from_index, DecodeContext, ResourceLimit, ScopedReservation};
 use cadmpeg_core::CodecError;
@@ -213,25 +213,20 @@ impl<'ctx, F: FnMut(&str) -> Result<String, CodecError>> IdentityMap<'ctx, F> {
                 format_args!("identity {source} collides at rewritten identity {target}"),
             );
         }
-        self.storage
-            .with_storage(|| ctx.admit_retained_btree_record::<Key<'_>, ()>(0, operation))?;
-        self.occupied.insert(destination);
+        ctx.charge_work(1, operation)?;
+        self.storage.with_storage(|| ctx.insert_btree_set(&mut self.occupied, destination, operation))?;
         self.context.charge_work_limit(0, operation)?;
-        let source_entry = self.targets.entry(Key::owned(self.context, key, operation));
+        let key = Key::owned(self.context, key, operation);
+        let exists = self.targets.contains_key(&key);
         self.context.charge_work_limit(0, operation)?;
-        match source_entry {
-            Entry::Occupied(_) => {
-                return Err(CodecError::malformed(
-                    "identity rewrite cache contains the source",
-                ))
-            }
-            Entry::Vacant(entry) => {
-                self.storage.with_storage(|| {
-                    ctx.admit_retained_btree_record::<Key<'_>, crate::ids::Identity>(0, operation)
-                })?;
-                entry.insert(cached);
-            }
+        if exists {
+            return Err(CodecError::malformed("identity rewrite cache contains the source"));
         }
+        ctx.charge_work(1, operation)?;
+        self.storage.with_storage(|| ctx.admit_btree_entry(&self.targets, &key, operation))?;
+        self.context.charge_work_limit(0, operation)?;
+        self.targets.insert(key, cached);
+        self.context.charge_work_limit(0, operation)?;
         Ok(target)
     }
 }

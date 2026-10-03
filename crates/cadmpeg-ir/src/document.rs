@@ -156,8 +156,8 @@ impl FeatureRegenerationParents {
             ctx.charge_work(work, operation)?;
             let child = child.try_clone_for_decode(ctx, operation)?;
             let parent = parent.try_clone_for_decode(ctx, operation)?;
-            ctx.admit_retained_btree_record::<crate::features::FeatureId, crate::features::FeatureId>(0, operation)?;
-            parents.insert(child, parent);
+            ctx.charge_work(1, operation)?;
+            ctx.insert_btree_map(&mut parents, child, parent, operation)?;
         }
         Ok(Self(parents))
     }
@@ -1224,8 +1224,8 @@ impl Model {
             *existing = parent;
         } else {
             let child = child.try_clone_for_decode(ctx, OPERATION)?;
-            ctx.admit_retained_btree_record::<crate::features::FeatureId, crate::features::FeatureId>(0, OPERATION)?;
-            self.feature_regeneration_parents.0.insert(child, parent);
+            ctx.charge_work(1, OPERATION)?;
+            ctx.insert_btree_map(&mut self.feature_regeneration_parents.0, child, parent, OPERATION)?;
         }
         Ok(())
     }

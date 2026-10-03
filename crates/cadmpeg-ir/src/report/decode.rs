@@ -429,8 +429,8 @@ impl Coverage {
             *value = count;
             return Ok(());
         }
-        ctx.admit_retained_btree_record::<String, usize>(0, "decode coverage nodes")?;
-        self.entries.insert(name, count);
+        ctx.charge_work(1, "decode coverage nodes")?;
+        ctx.insert_btree_map(&mut self.entries, name, count, "decode coverage nodes")?;
         Ok(())
     }
 
