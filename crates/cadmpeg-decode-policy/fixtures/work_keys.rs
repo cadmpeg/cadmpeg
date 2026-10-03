@@ -141,3 +141,15 @@ pub fn dropped_suffix(ctx: &DecodeContext, values: &mut Vec<String>, other: &mut
     values.truncate(length); // finding: uncharged_decode_work
     Ok(())
 }
+
+pub fn stored_keys(ctx: &DecodeContext, hash: &mut std::collections::HashMap<String, u8>, tree: &mut std::collections::BTreeMap<String, u8>, key: &str, other: &str) -> Result<(), ()> {
+    ctx.charge_key(key, 1, "borrow")?;
+    let _stored = hash.get_key_value(key);
+    let _reused = hash.remove_entry(key); // finding: uncharged_decode_work
+    ctx.charge_key(other, 1, "wrong key")?;
+    let _wrong = hash.get_key_value(key); // finding: uncharged_decode_work
+    ctx.charge_key(key, ctx.tree_comparisons(tree.len()), "remove")?;
+    let _removed = tree.remove_entry(key);
+    let _unpaid = tree.get_key_value(key); // finding: uncharged_decode_work
+    Ok(())
+}

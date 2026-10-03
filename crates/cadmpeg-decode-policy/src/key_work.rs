@@ -171,7 +171,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
             self.flow.work = before;
             return false;
         }
-        if !matches!(name, "get" | "get_mut" | "contains" | "contains_key" | "insert" | "remove" | "entry" | "hash") { return false; }
+        if !matches!(name, "get" | "get_mut" | "contains" | "contains_key" | "insert" | "remove" | "entry" | "get_key_value" | "remove_entry" | "hash") { return false; }
         let Some(receiver) = operands.first() else { return false; };
         if name == "hash" {
             return self.key_work_operand(receiver).is_some_and(|key| self.consume_key_factor(&format!("keybytes:{key}")));
