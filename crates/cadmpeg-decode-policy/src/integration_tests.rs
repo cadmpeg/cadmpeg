@@ -75,7 +75,7 @@ fn check_fixture(name: &str) {
         std::fs::write(&proofs, output.lines().filter_map(|line| line.strip_prefix("decode_key_work_proof\t")).map(|line| format!("{line}\n")).collect::<String>()).expect("proof file");
         command.env("CADMPEG_POLICY_KEY_WORK_PROOFS", proofs);
     }
-    if matches!(name, "thirdparty" | "serde" | "zip" | "byte_search" | "parser_admission" | "parser_json") {
+    if matches!(name, "thirdparty" | "serde" | "zip" | "byte_search" | "parser_admission" | "parser_json" | "parser_zip") {
         let executable = std::env::current_exe().expect("test executable");
         let target = executable
             .ancestors()
@@ -132,7 +132,7 @@ fn check_fixture(name: &str) {
     if matches!(name, "work_keys" | "work_callbacks" | "work_scalar" | "work_iterators" | "serde" | "boxing" | "text_sources" | "btree_storage" | "parser_admission" | "parser_json") {
         command.env("CADMPEG_POLICY_CRATE_NAME", "cadmpeg_core");
     }
-    if name == "container_callbacks" {
+    if matches!(name, "container_callbacks" | "parser_zip") {
         command.env("CADMPEG_POLICY_CRATE_NAME", "cadmpeg_container");
     }
     if name == "external" {
@@ -221,6 +221,7 @@ fn check_fixture(name: &str) {
                     | "thirdparty"
                     | "parser_admission"
                     | "parser_json"
+                    | "parser_zip"
                     | "byte_search"
                     | "zip"
                     | "boxing"
@@ -845,6 +846,11 @@ fn xml_parser_receipts_bind_the_input_and_live_admission_once() {
 #[test]
 fn json_parser_receipts_bind_the_source_phase_and_target() {
     check_fixture("parser_json");
+}
+
+#[test]
+fn zip_parser_receipts_bind_the_cursor_input_and_live_workspace() {
+    check_fixture("parser_zip");
 }
 
 #[test]
