@@ -264,6 +264,7 @@ fn cacheless_zero_radius_rounded_chamfer_is_ruled_between_contact_tracks() {
         Ok(Point3::new(4.0, 4.375, 2.125))
     );
     assert!(variable_blend_is_zero_radius(
+        crate::eval::admission::EvaluationAdmission::Standard,
         &VariableBlendValue {
             modern_flag: false,
             calibrated: 0,
@@ -278,7 +279,7 @@ fn cacheless_zero_radius_rounded_chamfer_is_ruled_between_contact_tracks() {
         }
         .admit()
         .expect("finite value")
-    ));
+    ).unwrap());
 }
 
 #[test]
