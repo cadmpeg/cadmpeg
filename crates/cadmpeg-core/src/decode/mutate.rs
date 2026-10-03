@@ -94,9 +94,12 @@ impl DecodeContext<'_> {
         self.admit_moves(slice, 1, operation)?;
         let count = slice.len();
         self.reserve_vec(values, count, operation)?;
-        for index in source {
+        for offset in 0..count {
             self.charge_work(1, operation)?;
+            let index = source.start.checked_add(offset)
+                .ok_or_else(|| self.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
             let value = values[index];
+            self.reserve_capacity(values, 1, operation)?;
             values.push(value);
         }
         Ok(())
@@ -130,6 +133,7 @@ impl DecodeContext<'_> {
         for _index in 0..count {
             self.charge_work(1, operation)?;
             let Some(value) = values.pop() else { return Err(CodecError::malformed("vector split suffix disappeared")); };
+            self.reserve_capacity(&mut output, 1, operation)?;
             output.push(value);
         }
         self.reverse(&mut output, operation)?;
