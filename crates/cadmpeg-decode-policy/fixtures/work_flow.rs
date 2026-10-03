@@ -75,3 +75,27 @@ pub fn hash_bucket_retention(ctx: &DecodeContext, values: &mut std::collections:
     values.retain(|_, _| true); // finding: uncharged_decode_work
     Ok(())
 }
+
+pub fn mapped_loop_refusals(ctx: &DecodeContext, bytes: &[u8], flag: bool) -> Result<(), &'static str> {
+    for byte in bytes {
+        ctx.charge_work(1, "first").map_err(|_| "refusal")?;
+        std::hint::black_box(byte);
+    }
+    for byte in bytes {
+        ctx.charge_work(1, "nested mappings").map_err(|_| "refusal").map_err(|error| error)?;
+        std::hint::black_box(byte);
+    }
+    for byte in bytes { // finding: uncharged_decode_work
+        std::hint::black_box(byte);
+        ctx.charge_work(1, "late").map_err(|_| "refusal")?;
+    }
+    for byte in bytes { // finding: uncharged_decode_work
+        if flag { ctx.charge_work(1, "conditional").map_err(|_| "refusal")?; }
+        std::hint::black_box(byte);
+    }
+    for byte in bytes { // finding: uncharged_decode_work
+        ctx.charge_work(0, "zero").map_err(|_| "refusal")?;
+        std::hint::black_box(byte);
+    }
+    Ok(())
+}
