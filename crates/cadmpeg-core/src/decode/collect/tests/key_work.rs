@@ -67,8 +67,9 @@ fn rehash_charges_stored_visits_and_key_bytes() {
     let mut map = HashMap::from([("ab", 1), ("cd", 2), ("ef", 3)]);
     ctx.reserve_map(&mut map, 1, "grow").expect("growth");
     let CodecError::ResourceLimit(limit) = ctx.charge_work(u64::MAX, "probe").expect_err("probe") else { panic!("resource refusal") };
-    // Three measuring visits, three rehash visits and six stored key bytes.
-    assert_eq!(limit.used, 12);
+    // Three measuring visits, three rehash visits, six key bytes and the old bucket storage move.
+    let old_storage = 4 * std::mem::size_of::<(&str, i32)>() + 15 + 4 + 16;
+    assert_eq!(limit.used, 12 + u64::try_from(old_storage).unwrap());
 }
 
 #[test]
@@ -90,4 +91,24 @@ fn scoped_borrowed_keys_charge_lookup_and_preserve_prepaid_slots() {
     assert_eq!(first.dimension, ResourceDimension::WorkUnits);
     let CodecError::ResourceLimit(repeated) = refusal_ctx.collect_scoped_string_map(1, [("long", 1)], "refuse map").expect_err("fused refusal") else { panic!("resource refusal") };
     assert_eq!(first, repeated);
+}
+
+#[test]
+fn hash_growth_refuses_inline_slot_moves_before_rehashing() {
+    let hashes = Rc::new(Cell::new(0));
+    let mut map = HashMap::new();
+    for text in ["a", "b", "c"] {
+        map.insert(ObservedKey { text: text.into(), hashes: Rc::clone(&hashes) }, [0_u8; 4096]);
+    }
+    hashes.set(0);
+    let capacity = map.capacity();
+    let arena = DecodeArena::new();
+    // Three measuring visits, three rehash visits and three key bytes precede bucket movement.
+    let ctx = operation_context(&arena, ResourceDimension::WorkUnits, 9);
+    let CodecError::ResourceLimit(limit) = ctx.reserve_map(&mut map, 1, "large slots").unwrap_err() else { panic!("resource refusal") };
+    assert_eq!(limit.used, 9);
+    assert!(limit.additional > 3 * 4096);
+    assert_eq!(hashes.get(), 0);
+    assert_eq!(map.capacity(), capacity);
+    assert_eq!(map.len(), 3);
 }
