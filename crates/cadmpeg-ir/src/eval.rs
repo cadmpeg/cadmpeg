@@ -3836,7 +3836,7 @@ fn model_curve_differential_by_id_inner(
             return Err(EvaluationFailure::NoValue);
         }
         if let Some(procedural) = index
-            .procedural_curves_for_curve(curve_id.as_str())
+            .procedural_curves_for_curve(curve_id.as_str(), admission).map_err(EvaluationFailure::ResourceLimit)?
             .and_then(|procedurals| procedurals.first().copied())
         {
             match procedural.definition() {
@@ -4461,7 +4461,7 @@ fn model_curve_point_by_id_inner(
         return Err(EvaluationFailure::NoValue);
     }
     let Some(procedural) = index
-        .procedural_curves_for_curve(curve_id.as_str())
+        .procedural_curves_for_curve(curve_id.as_str(), admission).map_err(EvaluationFailure::ResourceLimit)?
         .and_then(|procedurals| procedurals.first().copied())
     else {
         return crate::eval::decode::curve_point(admission, &curve.geometry, parameter);
@@ -4604,7 +4604,7 @@ fn model_curve_parameter_near_point_with_tolerance(
         return Ok(None);
     };
     if let Some(procedural) = index
-        .procedural_curves_for_curve(curve_id.as_str())
+        .procedural_curves_for_curve(curve_id.as_str(), ctx)?
         .and_then(|procedurals| procedurals.first().copied())
     {
         match procedural.definition() {
@@ -8196,7 +8196,7 @@ fn model_surface_first_order_by_id(
     let budget = admission.work_slice();
     let _depth = ModelEvaluationDepthGuard::enter(budget).map_err(EvaluationFailure::ResourceLimit)?;
     let cacheless = match index
-        .procedural_surface_for_surface(surface.as_str())
+        .procedural_surface_for_surface(surface.as_str(), admission).map_err(EvaluationFailure::ResourceLimit)?
         .map(crate::geometry::ProceduralSurface::definition)
     {
         Some(ProceduralSurfaceDefinition::Blend(definition_payload)) => {
@@ -8343,7 +8343,7 @@ fn model_surface_mapping(
     ) {
         return Err(no_value);
     }
-    let procedural = index.procedural_surface_for_surface(surface.as_str());
+    let procedural = index.procedural_surface_for_surface(surface.as_str(), admission).map_err(EvaluationFailure::ResourceLimit)?;
     let carrier_interval =
         procedural.and_then(|procedural| record_u_interval(procedural.record_bounds()));
     let direct = |base: SurfaceJet| SurfaceMapping {

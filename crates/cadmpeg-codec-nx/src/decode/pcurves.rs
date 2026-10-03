@@ -1468,7 +1468,8 @@ pub(super) fn complete_intersection_pcurves_from_opposite_charts_with_budget(
                     &model_index,
                     target_surface,
                     tolerance,
-                );
+                    geometry_budget.charges,
+                )?;
                 let contact_key = (source_surface, target_surface);
                 ctx.admit_btree_entry(
                     &blend_contacts,
@@ -1597,7 +1598,7 @@ fn blend_boundary_transfer_available(
     source_surface: &SurfaceId,
     target_surface: &SurfaceId,
  ctx: &cadmpeg_core::decode::DecodeContext<'_>, ) -> Result<bool, cadmpeg_core::decode::ResourceLimit> {
-let Some((supports, _, _, _)) = blend_surface_definition_with_index(index, target_surface) else { return Ok(false); };
+let Some((supports, _, _, _)) = blend_surface_definition_with_index(index, target_surface, ctx)? else { return Ok(false); };
     for support in supports {
         if parameterization_equivalent_surfaces_with_index(index, support, source_surface, ctx)? { return Ok(true); }
     }
@@ -1609,7 +1610,7 @@ fn reverse_blend_boundary_transfer_available(
     source_surface: &SurfaceId,
     target_surface: &SurfaceId,
  ctx: &cadmpeg_core::decode::DecodeContext<'_>, ) -> Result<bool, cadmpeg_core::decode::ResourceLimit> {
-let Some((supports, spine, radius, _)) = blend_surface_definition_with_index(index, source_surface) else { return Ok(false); };
+let Some((supports, spine, radius, _)) = blend_surface_definition_with_index(index, source_surface, ctx)? else { return Ok(false); };
     for support in supports {
         if parameterization_equivalent_surfaces_with_index(index, support, target_surface, ctx)?
             && spine_contact_pcurve_with_index(index, target_surface, spine, radius, 0, ctx)?.is_some() { return Ok(true); }
@@ -3226,7 +3227,7 @@ fn blend_transfer_contact<'a>(
     support: &'a SurfaceId,
     blend: &SurfaceId,
  ctx: &cadmpeg_core::decode::DecodeContext<'_>, ) -> Result<Option<BlendTransferContact<'a>>, cadmpeg_core::decode::ResourceLimit> {
-let Some((supports, spine, radius, _)) = blend_surface_definition_with_index(index, blend) else { return Ok(None); };
+let Some((supports, spine, radius, _)) = blend_surface_definition_with_index(index, blend, ctx)? else { return Ok(None); };
     let mut matched = None;
     for (boundary, candidate) in supports.into_iter().enumerate() {
         if parameterization_equivalent_surfaces_with_index(index, candidate, support, ctx)? {
@@ -3814,7 +3815,7 @@ pub(super) fn blend_boundary_parameter_from_support_spine_with_index_and_budget(
     tolerance: f64,
     geometry_budget: &GeometryWorkBudget<'_>,
 ) -> Result<Option<Point2>, cadmpeg_core::decode::ResourceLimit> {
-    let Some((supports, spine, _, _)) = blend_surface_definition_with_index(index, blend) else {
+    let Some((supports, spine, _, _)) = blend_surface_definition_with_index(index, blend, geometry_budget.charges)? else {
         return Ok(None);
     };
     let mut match_boundary = None;
@@ -3883,7 +3884,7 @@ fn blend_boundary_spine_geometry_matches_with_index_and_budget(
     if parameters.v.to_bits() != 0.0f64.to_bits() && parameters.v.to_bits() != 1.0f64.to_bits() {
         return Ok(false);
     }
-    let Some((_, spine, radius, _)) = blend_surface_definition_with_index(index, blend) else {
+    let Some((_, spine, radius, _)) = blend_surface_definition_with_index(index, blend, geometry_budget.charges)? else {
         return Ok(false);
     };
     let Some(center) = finite_or_refusal(cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(geometry_budget.charges).within_work_slice(geometry_budget, |admission| model_curve_point_by_id(admission, index, spine, parameters.u)))?

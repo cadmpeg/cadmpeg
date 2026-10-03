@@ -105,11 +105,10 @@ pub(crate) trait IndexStorage {
         count: usize,
         operation: &'static str,
     ) -> Result<HashMap<K, V>, Self::Error>;
-    fn temporary_map<K: Eq + Hash, V>(
-        &self,
-        count: usize,
-        operation: &'static str,
-    ) -> Result<TemporaryIndexMap<'_, K, V>, Self::Error>;
+    fn temporary<T>(
+        &self, operation: &'static str,
+        run: impl FnOnce() -> Result<T, Self::Error>,
+    ) -> Result<TemporaryIndex<'_, T>, Self::Error>;
     fn entry<K: Eq + Hash, V>(
         &self,
         values: &mut HashMap<K, V>,
@@ -126,22 +125,15 @@ pub(crate) trait IndexStorage {
     fn equal(&self, first: &str, second: &str, operation: &'static str) -> Result<bool, Self::Error>;
 }
 
-pub(crate) struct TemporaryIndexMap<'a, K, V> {
-    values: HashMap<K, V>,
-    _reservation: Option<ScopedReservation<'a>>,
+/// Temporary index data is dropped before its storage reservation.
+pub(crate) struct TemporaryIndex<'ctx, T> {
+    value: T,
+    _storage: Option<ScopedReservation<'ctx>>,
 }
 
-impl<K, V> std::ops::Deref for TemporaryIndexMap<'_, K, V> {
-    type Target = HashMap<K, V>;
-    fn deref(&self) -> &Self::Target {
-        &self.values
-    }
-}
-
-impl<K, V> std::ops::DerefMut for TemporaryIndexMap<'_, K, V> {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.values
-    }
+impl<T> std::ops::Deref for TemporaryIndex<'_, T> {
+    type Target = T;
+    fn deref(&self) -> &T { &self.value }
 }
 
 pub(crate) struct PublicStorage;
@@ -157,15 +149,11 @@ impl IndexStorage for PublicStorage {
     ) -> Result<HashMap<K, V>, Self::Error> {
         Ok(HashMap::with_capacity(count))
     }
-    fn temporary_map<K: Eq + Hash, V>(
-        &self,
-        count: usize,
-        operation: &'static str,
-    ) -> Result<TemporaryIndexMap<'_, K, V>, Self::Error> {
-        Ok(TemporaryIndexMap {
-            values: public_result(self.map(count, operation)),
-            _reservation: None,
-        })
+    fn temporary<T>(
+        &self, _operation: &'static str,
+        run: impl FnOnce() -> Result<T, Self::Error>,
+    ) -> Result<TemporaryIndex<'_, T>, Self::Error> {
+        Ok(TemporaryIndex { value: run()?, _storage: None })
     }
     fn entry<K: Eq + Hash, V>(
         &self,
@@ -248,17 +236,13 @@ impl IndexStorage for DecodeStorage<'_, '_> {
         })?;
         Ok(values)
     }
-    fn temporary_map<K: Eq + Hash, V>(
-        &self,
-        count: usize,
-        operation: &'static str,
-    ) -> Result<TemporaryIndexMap<'_, K, V>, Self::Error> {
+    fn temporary<T>(
+        &self, operation: &'static str,
+        run: impl FnOnce() -> Result<T, Self::Error>,
+    ) -> Result<TemporaryIndex<'_, T>, Self::Error> {
         let mut reservation = self.0.reserve_scoped_limit(0, operation)?;
-        let values = reservation.with_storage_limit(|| self.map(count, operation))?;
-        Ok(TemporaryIndexMap {
-            values,
-            _reservation: Some(reservation),
-        })
+        let value = reservation.with_storage_limit(run)?;
+        Ok(TemporaryIndex { value, _storage: Some(reservation) })
     }
     fn entry<K: Eq + Hash, V>(
         &self,
@@ -550,8 +534,8 @@ macro_rules! define_model_index {
         pub struct ModelIndex<'a> {
             ir: &'a CadIr,
             $($lookup: OnceLock<IdentityIndex>,)*
-            procedural_surface_by_surface: HashMap<&'a str, &'a ProceduralSurface>,
-            procedural_curves_by_curve: HashMap<&'a str, Vec<&'a ProceduralCurve>>,
+            procedural_surface_by_surface: BorrowedIdentityIndex<'a, &'a ProceduralSurface>,
+            procedural_curves_by_curve: BorrowedIdentityIndex<'a, Vec<&'a ProceduralCurve>>,
             identities: BorrowedIdentityIndex<'a, ()>,
             include_native: bool,
             additional_native_identities: Vec<&'a str>,
@@ -600,51 +584,49 @@ macro_rules! define_model_index {
                 native_unknowns: Option<(&'a str, &'a [crate::unknown::UnknownRecord], &'a [usize])>,
                 storage: &S,
             ) -> Result<Self, S::Error> {
-                let mut procedural_surface_by_surface =
-                    storage.map(ir.model.surfaces.len(), "model procedural surface carriers")?;
-                let mut procedural_curves_by_curve =
-                    storage.map::<&'a str, Vec<&'a ProceduralCurve>>(ir.model.curves.len(), "model procedural curve carriers")?;
-                let mut procedural_surfaces_by_id =
-                    storage.temporary_map(ir.model.procedural_surfaces.len(), "model procedural surface IDs")?;
-                for procedural in &ir.model.procedural_surfaces {
-                    storage.work(1, "model procedural surface scan")?;
-                    procedural_surfaces_by_id
-                        .entry(procedural.id.as_str())
-                        .or_insert(procedural);
-                }
-                let mut procedural_curves_by_id =
-                    storage.temporary_map(ir.model.procedural_curves.len(), "model procedural curve IDs")?;
-                for procedural in &ir.model.procedural_curves {
-                    storage.work(1, "model procedural curve scan")?;
-                    procedural_curves_by_id
-                        .entry(procedural.id.as_str())
-                        .or_insert(procedural);
-                }
+                let mut procedural_surface_by_surface = BorrowedIdentityIndex::new(storage, "model procedural surface carriers")?;
+                let mut procedural_curves_by_curve = BorrowedIdentityIndex::new(storage, "model procedural curve carriers")?;
+                let procedural_surfaces_by_id = storage.temporary("model procedural surface IDs", || {
+                    let mut index = BorrowedIdentityIndex::new(storage, "model procedural surface IDs")?;
+                    for procedural in &ir.model.procedural_surfaces {
+                        storage.work(1, "model procedural surface scan")?;
+                        index.entry(procedural.id.as_str(), || procedural, storage, "model procedural surface IDs")?;
+                    }
+                    Ok(index)
+                })?;
+                let procedural_curves_by_id = storage.temporary("model procedural curve IDs", || {
+                    let mut index = BorrowedIdentityIndex::new(storage, "model procedural curve IDs")?;
+                    for procedural in &ir.model.procedural_curves {
+                        storage.work(1, "model procedural curve scan")?;
+                        index.entry(procedural.id.as_str(), || procedural, storage, "model procedural curve IDs")?;
+                    }
+                    Ok(index)
+                })?;
                 for carrier in &ir.model.surfaces {
                     storage.work(1, "model surface carrier scan")?;
-                    if let Some(procedural) = carrier
-                        .geometry
-                        .procedural_construction()
-                        .and_then(|construction| {
-                            procedural_surfaces_by_id.get(construction.as_str())
-                        })
-                        .copied()
-                    {
-                        procedural_surface_by_surface
-                            .insert(carrier.id.as_str(), procedural);
+                    if let Some(construction) = carrier.geometry.procedural_construction() {
+                        let (hash, found) = procedural_surfaces_by_id.position(construction.as_str(),
+                            |count| storage.work(count, "model procedural surface ID query"),
+                            |first, second| storage.equal(first, second, "model procedural surface ID query"))?;
+                        if let Some(position) = found {
+                            let procedural = procedural_surfaces_by_id.slots[&hash][position].1;
+                            storage.work(std::mem::size_of::<&ProceduralSurface>(), "model procedural surface carrier copy")?;
+                            *procedural_surface_by_surface.entry(carrier.id.as_str(), || procedural, storage, "model procedural surface carriers")? = procedural;
+                        }
                     }
                 }
                 for carrier in &ir.model.curves {
                     storage.work(1, "model curve carrier scan")?;
-                    if let Some(procedural) = carrier
-                        .geometry
-                        .procedural_construction()
-                        .and_then(|construction| {
-                            procedural_curves_by_id.get(construction.as_str())
-                        })
-                        .copied()
-                    {
-                        storage.push(procedural_curves_by_curve.entry(carrier.id.as_str()).or_default(), procedural, "model procedural curve carrier members")?;
+                    if let Some(construction) = carrier.geometry.procedural_construction() {
+                        let (hash, found) = procedural_curves_by_id.position(construction.as_str(),
+                            |count| storage.work(count, "model procedural curve ID query"),
+                            |first, second| storage.equal(first, second, "model procedural curve ID query"))?;
+                        if let Some(position) = found {
+                            let procedural = procedural_curves_by_id.slots[&hash][position].1;
+                            let members = procedural_curves_by_curve.entry(carrier.id.as_str(), Vec::new, storage, "model procedural curve carriers")?;
+                            storage.work(std::mem::size_of::<&ProceduralCurve>(), "model procedural curve carrier copy")?;
+                            storage.push(members, procedural, "model procedural curve carrier members")?;
+                        }
                     }
                 }
                 let mut additional_native_identities = Vec::new();
@@ -697,36 +679,36 @@ macro_rules! define_model_index {
             }
 
             /// Iterates every neutral and native identity.
-            pub fn identities(&self) -> impl Iterator<Item = &'a str> + '_ {
-                self.identity_set().identities()
+            pub fn identities<'index, P: IndexQuery + 'index>(
+                &'index self, query: P,
+            ) -> impl Iterator<Item = P::Output<&'a str>> + 'index {
+                let mut identities = self.identity_set().identities();
+                let mut finished = false;
+                std::iter::from_fn(move || {
+                    if finished { return None; }
+                    if let Err(error) = query.work(1, "model identity universe iteration") {
+                        finished = true;
+                        return Some(query.finish(Err(error)));
+                    }
+                    match identities.next() {
+                        Some(identity) => Some(query.finish(Ok(identity))),
+                        None => { finished = true; None }
+                    }
+                })
             }
 
             /// Looks up the procedural construction that owns a surface.
-            pub fn procedural_surface_for_surface(
-                &self,
-                surface: &str,
-            ) -> Option<&'a ProceduralSurface> {
-                self.procedural_surface_by_surface.get(surface).copied()
+            pub fn procedural_surface_for_surface<P: IndexQuery>(
+                &self, surface: &str, query: P,
+            ) -> P::Output<Option<&'a ProceduralSurface>> {
+                query.finish(self.procedural_surface_by_surface.get(surface, &query, "model procedural surface query").map(|value| value.copied()))
             }
 
             /// Looks up procedural constructions that own a curve in arena order.
-            pub fn procedural_curves_for_curve(
-                &self,
-                curve: &str,
-            ) -> Option<&[&'a ProceduralCurve]> {
-                self.procedural_curves_by_curve.get(curve).map(Vec::as_slice)
-            }
-
-            /// Looks up the unique procedural construction for a surface carrier.
-            ///
-            /// A procedural carrier follows its exact construction identity. A
-            /// non-procedural carrier accepts a cached producer only when that
-            /// producer is unique for the carrier.
-            pub fn procedural_surface_for_carrier(
-                &self,
-                surface: &str,
-            ) -> Option<&'a ProceduralSurface> {
-                self.procedural_surface_by_surface.get(surface).copied()
+            pub fn procedural_curves_for_curve<P: IndexQuery>(
+                &self, curve: &str, query: P,
+            ) -> P::Output<Option<&[&'a ProceduralCurve]>> {
+                query.finish(self.procedural_curves_by_curve.get(curve, &query, "model procedural curve query").map(|value| value.map(Vec::as_slice)))
             }
 
             $(
@@ -752,6 +734,76 @@ mod tests {
     use serde_json::Map;
 
     #[test]
+fn temporary_identity_storage_owns_growth_and_releases_it_after_the_value() {
+    use super::IndexStorage;
+    for test_hold in [false, true] {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = 0;
+        policy.limits.max_materialized_bytes = 64;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let storage = super::DecodeStorage(&ctx);
+        let index = storage.temporary("test temporary index", || {
+            let mut values = Vec::new();
+            storage.push(&mut values, 7u64, "test temporary index growth")?;
+            Ok(values)
+        }).unwrap();
+        assert_eq!(index.as_slice(), [7]);
+        if test_hold {
+            let allocated = cadmpeg_core::decode::u64_from_index(index.capacity().checked_mul(std::mem::size_of::<u64>()).unwrap());
+            let first = ctx.reserve_scoped_limit(64, "test held temporary index").unwrap_err();
+            assert_eq!(first.dimension, ResourceDimension::MaterializedBytes);
+            assert_eq!((first.limit, first.used, first.additional), (64, allocated, 64));
+            drop(index);
+            assert!(matches!(ctx.finish_session(), Err(cadmpeg_core::CodecError::ResourceLimit(sticky)) if sticky == first));
+        } else {
+            drop(index);
+            let released = ctx.reserve_scoped_limit(64, "test released temporary index").unwrap();
+            drop(released);
+            ctx.finish_session().unwrap();
+        }
+    }
+}
+
+#[test]
+fn borrowed_carrier_queries_and_identity_iteration_preserve_refusals() {
+    let mut ir = CadIr::empty();
+    let id = crate::ids::PointId::mint("test:model:point#identity-walk").unwrap();
+    ir.model.points.push(crate::topology::Point::new(id.clone(), crate::features::FinitePoint3::ZERO, None));
+    let index = ModelIndex::new_model_only(&ir, crate::index::StandardIndex);
+    for route in 0..3 {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        policy.limits.max_materialized_bytes = 0;
+        policy.limits.max_retained_bytes = 0;
+        policy.limits.max_collection_items = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let first = match route {
+            0 => index.procedural_surface_for_surface(id.as_str(), &ctx).unwrap_err(),
+            1 => index.procedural_curves_for_curve(id.as_str(), &ctx).unwrap_err(),
+            _ => index.identities(&ctx).next().unwrap().unwrap_err(),
+        };
+        assert_eq!(first.dimension, ResourceDimension::WorkUnits);
+        assert_eq!((first.limit, first.used, first.additional),
+            (0, 0, if route == 2 { 1 } else { cadmpeg_core::decode::u64_from_index(id.as_str().len()) }));
+        assert!(matches!(index.procedural_surface_for_surface("missing", &ctx), Err(sticky) if sticky == first));
+        assert!(matches!(ctx.finish_session(), Err(cadmpeg_core::CodecError::ResourceLimit(sticky)) if sticky == first));
+    }
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 1;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut identities = index.identities(&ctx);
+    assert_eq!(identities.next(), Some(Ok(id.as_str())));
+    let first = identities.next().unwrap().unwrap_err();
+    assert_eq!((first.limit, first.used, first.additional), (1, 1, 1));
+    assert!(identities.next().is_none());
+    drop(identities);
+    assert!(matches!(ctx.finish_session(), Err(cadmpeg_core::CodecError::ResourceLimit(sticky)) if sticky == first));
+}
+
+#[test]
 fn identity_universe_lookup_preserves_collision_and_resource_results() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     let query = "abcd";
@@ -1006,7 +1058,7 @@ fn identity_universe_lookup_preserves_collision_and_resource_results() {
         assert!(!model_only.contains(native_id, crate::index::StandardIndex));
         assert!(model_only.contains(model_id, crate::index::StandardIndex));
         assert!(!model_only
-            .identities()
+            .identities(crate::index::StandardIndex)
             .any(|identity| identity == native_id));
     }
 
@@ -1096,13 +1148,13 @@ fn identity_universe_lookup_preserves_collision_and_resource_results() {
         let index = ModelIndex::new_model_only(&ir, crate::index::StandardIndex);
         assert_eq!(
             index
-                .procedural_surface_for_carrier(exact_surface.as_str())
+                .procedural_surface_for_surface(exact_surface.as_str(), crate::index::StandardIndex)
                 .map(|surface| surface.id.as_str()),
             Some("test:model:procedural#exact")
         );
         assert_eq!(
             index
-                .procedural_surface_for_carrier(cached_surface.as_str())
+                .procedural_surface_for_surface(cached_surface.as_str(), crate::index::StandardIndex)
                 .map(|surface| surface.id.as_str()),
             Some("test:model:procedural#cached")
         );

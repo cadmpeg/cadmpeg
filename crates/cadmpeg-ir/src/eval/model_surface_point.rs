@@ -339,7 +339,7 @@ pub(super) fn model_surface_point_by_id_inner(
         ) {
             return None;
         }
-        let procedural = index.procedural_surface_for_surface(surface_id.as_str());
+        let procedural = match index.procedural_surface_for_surface(surface_id.as_str(), admission) { Ok(value) => value, Err(limit) => return Some(resource(limit)), };
         let carrier_interval =
             procedural.and_then(|procedural| record_u_interval(procedural.record_bounds()));
         let result = match procedural.map(crate::geometry::ProceduralSurface::definition) {
