@@ -116,12 +116,6 @@ pub(super) struct FeatureOperationLabel {
     pub(super) source_offset: u64,
 }
 
-impl cadmpeg_core::decode::cost::DecodeCost for FeatureOperationLabel {
-    fn decode_cost(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
-        cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(&self.section_link,self.source_offset), ctx, operation)
-    }
-}
-
 /// Return operation labels in neutral construction-history order.
 ///
 /// Each feature-history section stores its operation records newest first. The
@@ -146,16 +140,10 @@ pub(super) fn feature_operation_chronological_labels<'a>(
     }
     let mut ordered = ctx.collection_vec(labels.len(), "NX chronological feature labels")?;
     ordered.extend(labels);
-    ctx.stable_sort_by(
+    ctx.stable_sort_by_key(
         &mut ordered,
-            |value| value,
-            |left, right| {
-            sections
-                .get(left.section_link.as_str())
-                .cmp(&sections.get(right.section_link.as_str()))
-                .then_with(|| left.section_link.cmp(&right.section_link))
-                .then_with(|| right.source_offset.cmp(&left.source_offset))
-        },
+            |value| { let record = *value; (sections.get(record.section_link.as_str()), record.section_link.as_str(), std::cmp::Reverse(record.source_offset)) },
+            Ord::cmp,
         "sort NX chronological feature labels",
     )?;
     Ok(ordered)
@@ -883,12 +871,6 @@ pub(super) struct FeatureParameterUse {
     pub(super) expression: String,
     /// Binding occurrences in ascending source-offset order.
     pub(super) bindings: Vec<FeatureParameterUseBinding>,
-}
-
-impl cadmpeg_core::decode::cost::DecodeCost for FeatureParameterUse {
-    fn decode_cost(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
-        cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(self.bindings[0].source_offset,&self.operation_label,&self.expression), ctx, operation)
-    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -2363,12 +2345,6 @@ pub(super) struct FeatureSketchNamedPointBlockUse {
     pub(super) source_offset: u64,
 }
 
-impl cadmpeg_core::decode::cost::DecodeCost for FeatureSketchNamedPointBlockUse {
-    fn decode_cost(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
-        cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(self.reference_ordinal,self.source_offset,&self.id), ctx, operation)
-    }
-}
-
 /// Exact predecessor relation between a named point and a sketch construction lane.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub(super) struct FeatureSketchPrecedingNamedPointUse {
@@ -3622,24 +3598,9 @@ pub(super) fn canonical_feature_history_links(
     mut links: Vec<SegmentOmLink>,
 ) -> Result<Vec<SegmentOmLink>, CodecError> {
     links.retain(|link| link.schema_role == OmSchemaRole::FeatureHistory);
-    ctx.stable_sort_by(
-        &mut links,
-            |value| value,
-            |first, second| {
-            first
-                .location
-                .section_offset()
-                .cmp(&second.location.section_offset())
-                .then_with(|| {
-                    first
-                        .location
-                        .source_offset()
-                        .cmp(&second.location.source_offset())
-                })
-                .then_with(|| first.id.cmp(&second.id))
-        },
-        "sort NX feature history links",
-    )?;
+    ctx.stable_sort_by(&mut links, |value| &value.id, Ord::cmp, "sort NX feature history links")?;
+        ctx.stable_sort_by_key(&mut links, |value| value.location.source_offset(), Ord::cmp, "sort NX feature history links")?;
+        ctx.stable_sort_by_key(&mut links, |value| value.location.section_offset(), Ord::cmp, "sort NX feature history links")?;
     links.dedup_by_key(|link| link.location.section_offset());
     Ok(links)
 }
@@ -8307,18 +8268,9 @@ pub(super) fn feature_sketch_point_uses(
             })?;
             point_block_uses.push(candidate);
         }
-        ctx.stable_sort_by(
-            &mut point_block_uses,
-            |value| value,
-            |left, right| {
-                (left.reference_ordinal, left.source_offset, left.id.as_str()).cmp(&(
-                    right.reference_ordinal,
-                    right.source_offset,
-                    right.id.as_str(),
-                ))
-            },
-            "sort NX sketch point block uses",
-        )?;
+        ctx.stable_sort_by(&mut point_block_uses, |value| &value.id, Ord::cmp, "sort NX sketch point block uses")?;
+        ctx.stable_sort_by(&mut point_block_uses, |value| &value.source_offset, Ord::cmp, "sort NX sketch point block uses")?;
+        ctx.stable_sort_by(&mut point_block_uses, |value| &value.reference_ordinal, Ord::cmp, "sort NX sketch point block uses")?;
         let mut point_group = None;
         ctx.charge_work(
             cadmpeg_core::decode::u64_from_index(point_groups.len()),
@@ -8815,18 +8767,9 @@ pub(super) fn feature_parameter_uses(
             bindings: occurrences,
         });
     }
-    ctx.stable_sort_by(
-        &mut uses,
-            |value| value,
-            |left, right| {
-            left.bindings[0]
-                .source_offset
-                .cmp(&right.bindings[0].source_offset)
-                .then_with(|| left.operation_label.cmp(&right.operation_label))
-                .then_with(|| left.expression.cmp(&right.expression))
-        },
-        "sort NX parameter uses",
-    )?;
+    ctx.stable_sort_by(&mut uses, |value| &value.expression, Ord::cmp, "sort NX parameter uses")?;
+        ctx.stable_sort_by(&mut uses, |value| &value.operation_label, Ord::cmp, "sort NX parameter uses")?;
+        ctx.stable_sort_by_key(&mut uses, |value| value.bindings[0].source_offset, Ord::cmp, "sort NX parameter uses")?;
     Ok(uses)
 }
 

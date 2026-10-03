@@ -2340,20 +2340,8 @@ fn active_body_streams<'a>(
             });
         }
     }
-    ctx.stable_sort_by(
-        &mut streams,
-            |value| value,
-            |left, right| {
-            let key = |stream: &ActiveParasolidSite<'_>| {
-                (
-                    !contains_ascii_case_insensitive(stream.source_stream().as_str(), "partition"),
-                    !contains_ascii_case_insensitive(&stream.header.description, "partition"),
-                )
-            };
-            key(left).cmp(&key(right))
-        },
-        "sort SLDPRT active body streams",
-    )?;
+    ctx.stable_sort_by(&mut streams, |value| value.header.description.as_str(), |left: &str, right: &str| (!contains_ascii_case_insensitive(left, "partition")).cmp(&(!contains_ascii_case_insensitive(right, "partition"))), "sort SLDPRT active body streams")?;
+        ctx.stable_sort_by(&mut streams, |value| value.source_stream().as_str(), |left: &str, right: &str| (!contains_ascii_case_insensitive(left, "partition")).cmp(&(!contains_ascii_case_insensitive(right, "partition"))), "sort SLDPRT active body streams")?;
     Ok(streams)
 }
 

@@ -138,16 +138,8 @@ pub(crate) fn project_catalog(
                     }
                 }
             }
-            ctx.stable_sort_by(
-                &mut connected,
-            |value| value,
-            |left, right| {
-                    left.slot
-                        .cmp(&right.slot)
-                        .then_with(|| left.asset_guid.cmp(&right.asset_guid))
-                },
-                "Inventor appearance texture sort",
-            )?;
+            ctx.stable_sort_by(&mut connected, |value| &value.asset_guid, Ord::cmp, "Inventor appearance texture sort")?;
+        ctx.stable_sort_by(&mut connected, |value| &value.slot, Ord::cmp, "Inventor appearance texture sort")?;
             let base_color = [
                 "generic_diffuse",
                 "opaque_albedo",

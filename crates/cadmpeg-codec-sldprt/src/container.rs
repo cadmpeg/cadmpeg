@@ -1160,12 +1160,6 @@ pub(crate) struct ActiveParasolidSite<'a> {
     pub(crate) header: &'a crate::parasolid::StreamHeader,
 }
 
-impl cadmpeg_core::decode::cost::DecodeCost for ActiveParasolidSite<'_> {
- fn decode_cost(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
- cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(self.source_stream().as_str(), &self.header.description),ctx,operation)
- }
-}
-
 impl ActiveParasolidSite<'_> {
     pub(crate) fn name(&self) -> String {
         self.section.display_name()

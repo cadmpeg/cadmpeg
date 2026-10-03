@@ -904,12 +904,6 @@ pub(super) struct ParameterFormula {
     pub(super) source_offset: u64,
 }
 
-impl cadmpeg_core::decode::cost::DecodeCost for ParameterFormula {
-    fn decode_cost(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
-        cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(self.source_offset,&self.id),ctx,operation)
-    }
-}
-
 #[derive(Serialize)]
 struct ExpressionRef<'a> {
     id: &'a str,

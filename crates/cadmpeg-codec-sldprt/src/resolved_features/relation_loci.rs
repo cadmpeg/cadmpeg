@@ -4428,17 +4428,9 @@ fn dynamic_relation_marker<'a>(
     }
     let mut ordinal =
         collect_relation_marker_candidates(ctx, relation, markers_by_id, direct_kind)?;
-    ctx.sort_unstable_by(
-        &mut ordinal,
-            |value| value,
-            |left, right| {
-            left.offset()
-                .cmp(&right.offset())
-                .then_with(|| left.ordinal().cmp(&right.ordinal()))
-                .then_with(|| left.id().cmp(right.id()))
-        },
-        "sort SLDPRT ordinal operand markers",
-    )?;
+    ctx.stable_sort_by(&mut ordinal, |value| value.id(), Ord::cmp, "sort SLDPRT ordinal operand markers")?;
+        ctx.stable_sort_by_key(&mut ordinal, |value| value.ordinal(), Ord::cmp, "sort SLDPRT ordinal operand markers")?;
+        ctx.stable_sort_by_key(&mut ordinal, |value| value.offset(), Ord::cmp, "sort SLDPRT ordinal operand markers")?;
     Ok(ordinal
         .get(usize::from(operand.entity_index))
         .map(|marker| marker.id()))

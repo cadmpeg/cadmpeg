@@ -2907,7 +2907,7 @@ fn standard_mesh_missing_edge_assignment_domains(
 
 impl cadmpeg_core::decode::cost::DecodeCost for EndpointTrail {
     fn decode_cost(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
-        cadmpeg_core::decode::cost::DecodeCost::decode_cost(&self.edges, ctx, operation)
+        cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(&self.edges, self.start, self.end), ctx, operation)
     }
 }
 
