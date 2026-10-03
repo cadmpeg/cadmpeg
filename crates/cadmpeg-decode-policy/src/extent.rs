@@ -429,6 +429,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
                         | "enumerate"
                         | "rev"
                         | "copied"
+                        | "decode_utf16"
                         | "cloned"
                         | "map"
                         | "filter"
