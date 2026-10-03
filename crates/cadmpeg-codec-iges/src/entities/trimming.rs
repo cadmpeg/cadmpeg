@@ -293,9 +293,9 @@ fn create_boundary_vertices(
     Ok((result_ids, derivations))
 }
 
-fn point_position(index: &ModelIndex<'_>, id: &VertexId) -> Option<FinitePoint3> {
-    let point_id = &index.vertices(id.as_str())?.point;
-    index.points(point_id.as_str()).map(Point::position)
+fn point_position(index: &ModelIndex<'_>, id: &VertexId, ctx: &DecodeContext<'_>, ) -> Result<Option<FinitePoint3>, CodecError> {
+let Some(vertex) = index.vertices(id.as_str(), ctx)? else { return Ok(None); };
+    Ok(index.points(vertex.point.as_str(), ctx)?.map(Point::position))
 }
 
 pub(super) struct PcurveSupport<'a> {
@@ -972,7 +972,7 @@ fn linear_boundary_model_points(
 ) -> Result<Option<Vec<Point3>>, CodecError> {
     let mut points = Vec::new();
     for item in items {
-        let Some(curve) = index.curves(item.model_curve.as_str()) else {
+        let Some(curve) = index.curves(item.model_curve.as_str(), ctx)? else {
             return Ok(None);
         };
         let mut curve_points = match curve.geometry.solved() {
@@ -1047,7 +1047,7 @@ fn linear_boundary_geometry(
     };
     let model_plane = (origin, *normal);
     for item in items {
-        let Some(curve) = index.curves(item.model_curve.as_str()) else {
+        let Some(curve) = index.curves(item.model_curve.as_str(), ctx)? else {
             return Ok(None);
         };
         let Some(geometry) = curve.geometry.solved() else {
@@ -1754,7 +1754,7 @@ fn edge_range_matches_curve(
     let Some(curve_id) = edge.curve() else {
         return Ok(false);
     };
-    let Some(curve) = carrier_index.curves(curve_id.as_str()) else {
+    let Some(curve) = carrier_index.curves(curve_id.as_str(), ctx)? else {
         return Ok(false);
     };
     let Some(range) = edge.param_range() else {
@@ -1809,10 +1809,10 @@ fn select_boundary_edge(
         .collection_vec(candidates.len(), "iges trimmed edge candidates")
         .map_err(BoundaryEdgeSelectionError::Resource)?;
     for &edge in candidates {
-        let Some(start) = point_position(carrier_index, &edge.start) else {
+        let Some(start) = point_position(carrier_index, &edge.start, ctx).map_err(BoundaryEdgeSelectionError::Resource)? else {
             continue;
         };
-        let Some(end) = point_position(carrier_index, &edge.end) else {
+        let Some(end) = point_position(carrier_index, &edge.end, ctx).map_err(BoundaryEdgeSelectionError::Resource)? else {
             continue;
         };
         candidates_with_endpoints += 1;
@@ -2429,7 +2429,7 @@ pub(super) fn project(
         let surface_id =
             crate::ids::surface_admitted(&crate::ids::Stem::directory(surface_sequence), ctx)?;
         let Some(support_geometry) = carrier_index
-            .surfaces(surface_id.as_str())
+            .surfaces(surface_id.as_str(), ctx)?
             .map(|surface| match &surface.geometry {
                 SurfaceGeometry::Solved(solved) => solved
                     .try_clone_for_decode(ctx, "iges copied support surface")

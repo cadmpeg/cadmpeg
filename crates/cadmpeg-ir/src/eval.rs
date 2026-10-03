@@ -3826,7 +3826,7 @@ fn model_curve_differential_by_id_inner(
             return Err(EvaluationFailure::NoValue);
         }
         let curve = index
-            .curves(curve_id.as_str())
+            .curves(curve_id.as_str(), admission).map_err(EvaluationFailure::ResourceLimit)?
             .ok_or(EvaluationFailure::NoValue)?;
         admission.model_step()?;
         if !depth_guard.bind(
@@ -4066,7 +4066,7 @@ struct ConstructionParameter {
 /// carrier whose edge ranges disagree have no value. A width or mapped
 /// parameter that overflows, and a derivative the mapping reads, leave the
 /// finite range; the evaluation reaches no coordinate there.
-fn construction_curve_parameter(
+fn construction_curve_parameter(admission: admission::EvaluationAdmission<'_, '_>, 
     index: &crate::index::ModelIndex<'_>,
     directrix: &crate::ids::CurveId,
     parameter: f64,
@@ -4125,7 +4125,7 @@ fn construction_curve_parameter(
         }
         (None, None) => (parameter, FiniteReal::ONE, None),
     };
-    let curve = index.curves(directrix.as_str()).ok_or(no_value)?;
+    let curve = index.curves(directrix.as_str(), admission).map_err(EvaluationFailure::ResourceLimit)?.ok_or(no_value)?;
     let directed = |parameter: FiniteReal, derivative: FiniteReal| {
         Ok(if reversed {
             ConstructionParameter {
@@ -4205,7 +4205,7 @@ fn model_native_extrusion_point(
     }
     let directrix = construction.directrix();
     let direction = construction.direction().get();
-    let carrier = construction_curve_parameter(
+    let carrier = construction_curve_parameter(admission, 
         index,
         directrix,
         u,
@@ -4239,7 +4239,7 @@ fn model_native_extrusion_jet(
     }
     let directrix = construction.directrix();
     let direction = construction.direction().get();
-    let carrier = construction_curve_parameter(
+    let carrier = construction_curve_parameter(admission, 
         index,
         directrix,
         u,
@@ -4347,13 +4347,13 @@ fn native_revolution_parameters(
 
 /// The directrix parameter of a native revolution on its carrier curve, or
 /// why there is none.
-fn native_revolution_carrier(
+fn native_revolution_carrier(admission: admission::EvaluationAdmission<'_, '_>, 
     index: &crate::index::ModelIndex<'_>,
     construction: &crate::geometry::surface_payloads::RevolutionSurfaceConstruction,
     carrier_interval: Option<[FiniteReal; 2]>,
     directrix_parameter: f64,
 ) -> Result<ConstructionParameter, EvaluationFailure<Point3>> {
-    construction_curve_parameter(
+    construction_curve_parameter(admission, 
         index,
         construction.directrix(),
         directrix_parameter,
@@ -4380,7 +4380,7 @@ fn model_native_revolution_point(
     let (directrix_parameter, angular_parameter) =
         native_revolution_parameters(construction, u, v)?;
     let carrier =
-        native_revolution_carrier(index, construction, carrier_interval, directrix_parameter)?;
+        native_revolution_carrier(admission, index, construction, carrier_interval, directrix_parameter)?;
     let (angle, _) = native_revolution_angle(construction, angular_parameter)?;
     let axis_origin = construction.axis_origin().get();
     let axis = unit_length_axis(construction.axis_direction());
@@ -4404,7 +4404,7 @@ fn model_native_revolution_jet(
     let (directrix_parameter, angular_parameter) =
         native_revolution_parameters(construction, u, v)?;
     let carrier =
-        native_revolution_carrier(index, construction, carrier_interval, directrix_parameter)?;
+        native_revolution_carrier(admission, index, construction, carrier_interval, directrix_parameter)?;
     let (angle, angular_derivative) = native_revolution_angle(construction, angular_parameter)?;
     let jet = model_axis_revolution_jet(admission, index, construction.directrix(), construction.axis_origin().get(), construction.axis_direction(), angle, carrier.parameter.get())?;
     let derivative = carrier.derivative.map(FiniteReal::get);
@@ -4451,7 +4451,7 @@ fn model_curve_point_by_id_inner(
     let budget = admission.work_slice();
     let depth_guard = ModelEvaluationDepthGuard::enter(budget).map_err(EvaluationFailure::ResourceLimit)?;
     let curve = index
-        .curves(curve_id.as_str())
+        .curves(curve_id.as_str(), admission).map_err(EvaluationFailure::ResourceLimit)?
         .ok_or(EvaluationFailure::NoValue)?;
     admission.model_step()?;
     if !depth_guard.bind(
@@ -4600,8 +4600,7 @@ fn model_curve_parameter_near_point_with_tolerance(
     tolerance: NonNegativeLength,
 ) -> Result<Option<FiniteReal>, CodecError> {
     let _depth = ctx.enter_nested("IR model curve inversion depth")?;
-    ctx.charge_work(u64_from_index(curve_id.as_str().len()), "IR model curve inversion identity hash")?;
-    let Some(curve) = index.curves(curve_id.as_str()) else {
+    let Some(curve) = index.curves(curve_id.as_str(), ctx)? else {
         return Ok(None);
     };
     if let Some(procedural) = index
@@ -4699,7 +4698,7 @@ fn model_curve_parameter_near_point_with_tolerance(
     let Some(construction) = curve.geometry.procedural_construction() else {
         return Ok(None);
     };
-    let Some(procedural) = index.procedural_curves(construction.as_str()) else {
+    let Some(procedural) = index.procedural_curves(construction.as_str(), ctx)? else {
         return Ok(None);
     };
     let crate::geometry::ProceduralCurveDefinition::TolerantIntersection {
@@ -4723,7 +4722,7 @@ fn model_curve_parameter_near_point_with_tolerance(
     }
     let mut best_candidate: Option<FiniteReal> = None;
     for (support_id, pcurve) in supports.iter().zip(&parameterization.pcurves) {
-        let Some(surface) = index.surfaces(support_id.as_str()) else {
+        let Some(surface) = index.surfaces(support_id.as_str(), ctx)? else {
             continue;
         };
         let PcurveGeometry::Line(line_pcurve) = pcurve else {
@@ -6822,7 +6821,7 @@ fn straight_sweep_path_origin(
     spine: &crate::ids::CurveId,
 ) -> Result<Point3, EvaluationFailure<()>> {
     let curve = index
-        .curves(spine.as_str())
+        .curves(spine.as_str(), admission).map_err(EvaluationFailure::ResourceLimit)?
         .ok_or(EvaluationFailure::NoValue)?;
     match &curve.geometry {
         CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve)) => {
@@ -6940,7 +6939,7 @@ fn sweep_profile_differential(
     }
     let profile_interval =
         IncreasingParameterInterval::new(FiniteReal::raw_array(profile_range)).ok_or(no_value)?;
-    let curve = index.curves(profile.as_str()).ok_or(no_value)?;
+    let curve = index.curves(profile.as_str(), admission).map_err(EvaluationFailure::ResourceLimit)?.ok_or(no_value)?;
     let (native_parameter, parameter_scale) = match &curve.geometry {
         CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)) => {
             let native_interval = nurbs_curve_parameter_domain(nurbs).ok_or(no_value)?;
@@ -8337,7 +8336,7 @@ fn model_surface_mapping(
     let depth_guard = ModelEvaluationDepthGuard::enter(budget).map_err(EvaluationFailure::ResourceLimit)?;
     let no_value = EvaluationFailure::NoValue;
     admission.model_step()?;
-    let carrier = index.surfaces(surface.as_str()).ok_or(no_value)?;
+    let carrier = index.surfaces(surface.as_str(), admission).map_err(EvaluationFailure::ResourceLimit)?.ok_or(no_value)?;
     if !depth_guard.bind(
         ModelEvaluationIdentity::Surface(std::ptr::from_ref(carrier)),
         admission,

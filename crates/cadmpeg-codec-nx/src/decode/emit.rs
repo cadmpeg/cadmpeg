@@ -889,25 +889,17 @@ pub(super) fn emit_topology(
                             face.surface
                                 .and_then(|target| surfaces.get(&u32::from(target)))
                         })?;
-                    let carrier = fields
-                        .curve_xmt
-                        .and_then(|target| pcurves.get(&u32::from(target)))
-                        .and_then(|id| index.pcurves(id.as_str()))?;
+                    let carrier_id = fields.curve_xmt.and_then(|target| pcurves.get(&u32::from(target)))?;
                     let use_range = fields
                         .curve_xmt
                         .and_then(|target| trim_ranges.get(&u32::from(target)))
                         .copied()
                         .and_then(ordered_parameter_range);
-                    let parameter_range = use_range
-                        .or(carrier
-                            .parameter_range()
-                            .map(cadmpeg_ir::units::FiniteVector::get))
-                        .or_else(|| pcurve_parameter_range(&carrier.geometry));
-                    Some((edge, support, carrier, parameter_range))
+                    Some((edge, support, carrier_id, use_range))
                 })();
-                let Some((edge, support, carrier, parameter_range)) = candidate else {
-                    return Ok(None);
-                };
+                let Some((edge, support, carrier_id, use_range)) = candidate else { return Ok(None); };
+                let Some(carrier) = index.pcurves(carrier_id.as_str(), ctx)? else { return Ok(None); };
+                let parameter_range = use_range.or(carrier.parameter_range().map(cadmpeg_ir::units::FiniteVector::get)).or_else(|| pcurve_parameter_range(&carrier.geometry));
                 let Some(endpoints) = pcurve_endpoint_witness_with_index_and_budget(
                     &index,
                     edge,
@@ -922,7 +914,7 @@ pub(super) fn emit_topology(
                 else {
                     return Ok(None);
                 };
-                let Some(curve) = index.edges(edge.as_str()).and_then(|edge| edge.curve()) else {
+                let Some(curve) = index.edges(edge.as_str(), ctx)?.and_then(|edge| edge.curve()) else {
                     return Ok(None);
                 };
                 let Some(parameter_range) = parameter_range else {

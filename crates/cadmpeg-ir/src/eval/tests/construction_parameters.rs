@@ -31,7 +31,7 @@ fn construction_mapping_refuses_nonfinite_widths_and_derivatives() {
     let (ir, id) = line_in_nurbs_carrier();
     let index = crate::index::ModelIndex::new(&ir, crate::index::StandardIndex);
     assert_eq!(
-        super::super::construction_curve_parameter(
+        super::super::construction_curve_parameter(crate::eval::admission::EvaluationAdmission::Standard, 
             &index,
             &id,
             5e-301,
@@ -42,7 +42,7 @@ fn construction_mapping_refuses_nonfinite_widths_and_derivatives() {
         Err(crate::eval::EvaluationFailure::NonFinite(()))
     );
     assert_eq!(
-        super::super::construction_curve_parameter(
+        super::super::construction_curve_parameter(crate::eval::admission::EvaluationAdmission::Standard, 
             &index,
             &id,
             0.0,

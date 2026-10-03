@@ -73,7 +73,7 @@ fn sectioned_area_curves_coplanar(
     let mut active = BTreeSet::new();
     for sequence in sequences {
         let curve_id = crate::ids::curve_admitted(&crate::ids::Stem::directory(sequence), ctx)?;
-        let Some(curve) = index.curves(curve_id.as_str()) else {
+        let Some(curve) = index.curves(curve_id.as_str(), ctx)? else {
             return Ok(false);
         };
         if active.contains(&curve_id) {

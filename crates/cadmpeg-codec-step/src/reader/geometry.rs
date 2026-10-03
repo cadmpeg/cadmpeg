@@ -148,7 +148,7 @@ pub(super) fn infer_edge_parameter_ranges(
         Vec::new(),
         |mut inferred, (edge_index, curve, start, end)| {
             let Some(geometry) = model_index
-                .curves(curve.as_str())
+                .curves(curve.as_str(), ctx)?
                 .map(|curve| &curve.geometry)
             else {
                 return Ok(inferred);

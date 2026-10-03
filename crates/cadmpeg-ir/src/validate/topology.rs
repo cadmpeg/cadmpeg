@@ -66,25 +66,28 @@ fn ref_error(findings: &mut Vec<Finding>, owner: &str, target_kind: &str, target
     });
 }
 
-fn check_law_curves<R, V, P>(
+fn check_law_curves<R, V, P>(ctx: &DecodeContext<'_>, 
     expression: &crate::geometry::LawExpression<R, V, P>,
     ids: &ModelIndex<'_>,
     procedural: &crate::geometry::ProceduralSurface,
     findings: &mut Vec<Finding>,
-) {
+) -> Result<(), CodecError> {
+    let _depth = ctx.enter_nested("law reference depth")?;
     match expression {
         crate::geometry::LawExpression::Edge { curve, .. } => {
-            if ids.curves(curve.id.as_str()).is_none() {
+            if ids.curves(curve.id.as_str(), ctx)?.is_none() {
                 ref_error(findings, procedural.id.as_str(), "curve", curve.id.as_str());
             }
         }
         crate::geometry::LawExpression::Algebraic { operands, .. } => {
             for operand in operands {
-                check_law_curves(operand, ids, procedural, findings);
+                check_law_curves(ctx, operand, ids, procedural, findings)?;
             }
         }
         _ => {}
     }
+
+    Ok(())
 }
 
 pub(super) fn check_tolerances(ctx: &DecodeContext<'_>, ir: &CadIr, findings: &mut Vec<Finding>) -> Result<(), CodecError> {
@@ -127,65 +130,65 @@ pub(super) fn check_topology_tolerances(ctx: &DecodeContext<'_>, ir: &CadIr, fin
 pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec<Finding>) -> Result<(), CodecError> {
     for b in &ir.model.bodies {
         for l in &b.regions {
-            if ids.regions(l.as_str()).is_none() {
+            if ids.regions(l.as_str(), ctx)?.is_none() {
                 ref_error(findings, b.id.as_str(), "region", l.as_str());
             }
         }
     }
     for l in &ir.model.regions {
-        if ids.bodies(l.body.as_str()).is_none() {
+        if ids.bodies(l.body.as_str(), ctx)?.is_none() {
             ref_error(findings, l.id.as_str(), "body", l.body.as_str());
         }
         for s in &l.shells {
-            if ids.shells(s.as_str()).is_none() {
+            if ids.shells(s.as_str(), ctx)?.is_none() {
                 ref_error(findings, l.id.as_str(), "shell", s.as_str());
             }
         }
     }
     for s in &ir.model.shells {
-        if ids.regions(s.region.as_str()).is_none() {
+        if ids.regions(s.region.as_str(), ctx)?.is_none() {
             ref_error(findings, s.id.as_str(), "region", s.region.as_str());
         }
         for f in s.faces() {
-            if ids.faces(f.as_str()).is_none() {
+            if ids.faces(f.as_str(), ctx)?.is_none() {
                 ref_error(findings, s.id.as_str(), "face", f.as_str());
             }
         }
         for e in s.wire_edges() {
-            if ids.edges(e.as_str()).is_none() {
+            if ids.edges(e.as_str(), ctx)?.is_none() {
                 ref_error(findings, s.id.as_str(), "wire edge", e.as_str());
             }
         }
         for v in s.free_vertices() {
-            if ids.vertices(v.as_str()).is_none() {
+            if ids.vertices(v.as_str(), ctx)?.is_none() {
                 ref_error(findings, s.id.as_str(), "free vertex", v.as_str());
             }
         }
     }
     for f in &ir.model.faces {
-        if ids.shells(f.shell.as_str()).is_none() {
+        if ids.shells(f.shell.as_str(), ctx)?.is_none() {
             ref_error(findings, f.id.as_str(), "shell", f.shell.as_str());
         }
-        if ids.surfaces(f.surface.as_str()).is_none() {
+        if ids.surfaces(f.surface.as_str(), ctx)?.is_none() {
             ref_error(findings, f.id.as_str(), "surface", f.surface.as_str());
         }
         for lp in &f.loops {
-            if ids.loops(lp.as_str()).is_none() {
+            if ids.loops(lp.as_str(), ctx)?.is_none() {
                 ref_error(findings, f.id.as_str(), "loop", lp.as_str());
             }
         }
     }
     for lp in &ir.model.loops {
-        if ids.faces(lp.face.as_str()).is_none() {
+        if ids.faces(lp.face.as_str(), ctx)?.is_none() {
             ref_error(findings, lp.id.as_str(), "face", lp.face.as_str());
         }
         match &lp.boundary {
             crate::topology::LoopBoundary::Vertex { vertex, pcurves } => {
-                if ids.vertices(vertex.as_str()).is_none() {
+                if ids.vertices(vertex.as_str(), ctx)?.is_none() {
                     ref_error(findings, lp.id.as_str(), "vertex", vertex.as_str());
                 }
                 for pcurve in pcurves {
-                    if ids.pcurves(pcurve.pcurve.as_str()).is_none() {
+                    if ids.pcurves(pcurve.pcurve.as_str(), ctx)?.is_none() {
                         ref_error(
                             findings,
                             lp.id.as_str(),
@@ -197,16 +200,16 @@ pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelI
             }
             crate::topology::LoopBoundary::Ring(ring) => {
                 for ce in ring.coedges() {
-                    if ids.coedges(ce.as_str()).is_none() {
+                    if ids.coedges(ce.as_str(), ctx)?.is_none() {
                         ref_error(findings, lp.id.as_str(), "coedge", ce.as_str());
                     }
                 }
                 for use_ in ring.vertex_uses() {
-                    if ids.vertices(use_.vertex.as_str()).is_none() {
+                    if ids.vertices(use_.vertex.as_str(), ctx)?.is_none() {
                         ref_error(findings, lp.id.as_str(), "vertex", use_.vertex.as_str());
                     }
                     let after = &use_.after;
-                    if ids.coedges(after.as_str()).is_none() {
+                    if ids.coedges(after.as_str(), ctx)?.is_none() {
                         ref_error(
                             findings,
                             lp.id.as_str(),
@@ -215,7 +218,7 @@ pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelI
                         );
                     }
                     for pcurve in &use_.pcurves {
-                        if ids.pcurves(pcurve.pcurve.as_str()).is_none() {
+                        if ids.pcurves(pcurve.pcurve.as_str(), ctx)?.is_none() {
                             ref_error(
                                 findings,
                                 lp.id.as_str(),
@@ -229,13 +232,13 @@ pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelI
         }
     }
     for ce in &ir.model.coedges {
-        if ids.loops(ce.owner_loop.as_str()).is_none() {
+        if ids.loops(ce.owner_loop.as_str(), ctx)?.is_none() {
             ref_error(findings, ce.id.as_str(), "loop", ce.owner_loop.as_str());
         }
-        if ids.edges(ce.edge.as_str()).is_none() {
+        if ids.edges(ce.edge.as_str(), ctx)?.is_none() {
             ref_error(findings, ce.id.as_str(), "edge", ce.edge.as_str());
         }
-        if ids.coedges(ce.radial_next.as_str()).is_none() {
+        if ids.coedges(ce.radial_next.as_str(), ctx)?.is_none() {
             ref_error(
                 findings,
                 ce.id.as_str(),
@@ -244,12 +247,12 @@ pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelI
             );
         }
         for use_ in &ce.pcurves {
-            if ids.pcurves(use_.pcurve.as_str()).is_none() {
+            if ids.pcurves(use_.pcurve.as_str(), ctx)?.is_none() {
                 ref_error(findings, ce.id.as_str(), "pcurve", use_.pcurve.as_str());
             }
         }
         if let Some(curve) = &ce.use_curve {
-            if ids.curves(curve.curve.as_str()).is_none() {
+            if ids.curves(curve.curve.as_str(), ctx)?.is_none() {
                 ref_error(
                     findings,
                     ce.id.as_str(),
@@ -261,52 +264,52 @@ pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelI
     }
     for e in &ir.model.edges {
         if let Some(c) = e.curve() {
-            if ids.curves(c.as_str()).is_none() {
+            if ids.curves(c.as_str(), ctx)?.is_none() {
                 ref_error(findings, e.id.as_str(), "curve", c.as_str());
             }
         }
-        if ids.vertices(e.start.as_str()).is_none() {
+        if ids.vertices(e.start.as_str(), ctx)?.is_none() {
             ref_error(findings, e.id.as_str(), "vertex(start)", e.start.as_str());
         }
-        if ids.vertices(e.end.as_str()).is_none() {
+        if ids.vertices(e.end.as_str(), ctx)?.is_none() {
             ref_error(findings, e.id.as_str(), "vertex(end)", e.end.as_str());
         }
     }
     for v in &ir.model.vertices {
-        if ids.points(v.point.as_str()).is_none() {
+        if ids.points(v.point.as_str(), ctx)?.is_none() {
             ref_error(findings, v.id.as_str(), "point", v.point.as_str());
         }
     }
     for binding in &ir.model.appearance_bindings {
         use crate::appearance::AppearanceTarget;
         let owner = format!("appearance-binding:{}", binding.appearance.as_str());
-        if ids.appearances(binding.appearance.as_str()).is_none() {
+        if ids.appearances(binding.appearance.as_str(), ctx)?.is_none() {
             ref_error(findings, &owner, "appearance", binding.appearance.as_str());
         }
         match &binding.target {
-            AppearanceTarget::Body(body) if ids.bodies(body.as_str()).is_none() => {
+            AppearanceTarget::Body(body) if ids.bodies(body.as_str(), ctx)?.is_none() => {
                 ref_error(findings, &owner, "body", body.as_str());
             }
-            AppearanceTarget::Face(face) if ids.faces(face.as_str()).is_none() => {
+            AppearanceTarget::Face(face) if ids.faces(face.as_str(), ctx)?.is_none() => {
                 ref_error(findings, &owner, "face", face.as_str());
             }
-            AppearanceTarget::Edge(edge) if ids.edges(edge.as_str()).is_none() => {
+            AppearanceTarget::Edge(edge) if ids.edges(edge.as_str(), ctx)?.is_none() => {
                 ref_error(findings, &owner, "edge", edge.as_str());
             }
-            AppearanceTarget::Vertex(vertex) if ids.vertices(vertex.as_str()).is_none() => {
+            AppearanceTarget::Vertex(vertex) if ids.vertices(vertex.as_str(), ctx)?.is_none() => {
                 ref_error(findings, &owner, "vertex", vertex.as_str());
             }
-            AppearanceTarget::Surface(surface) if ids.surfaces(surface.as_str()).is_none() => {
+            AppearanceTarget::Surface(surface) if ids.surfaces(surface.as_str(), ctx)?.is_none() => {
                 ref_error(findings, &owner, "surface", surface.as_str());
             }
-            AppearanceTarget::Curve(curve) if ids.curves(curve.as_str()).is_none() => {
+            AppearanceTarget::Curve(curve) if ids.curves(curve.as_str(), ctx)?.is_none() => {
                 ref_error(findings, &owner, "curve", curve.as_str());
             }
-            AppearanceTarget::Point(point) if ids.points(point.as_str()).is_none() => {
+            AppearanceTarget::Point(point) if ids.points(point.as_str(), ctx)?.is_none() => {
                 ref_error(findings, &owner, "point", point.as_str());
             }
             AppearanceTarget::Tessellation(tessellation)
-                if ids.tessellations(tessellation).is_none() =>
+                if ids.tessellations(tessellation, ctx)?.is_none() =>
             {
                 ref_error(findings, &owner, "tessellation", tessellation);
             }
@@ -319,19 +322,19 @@ pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelI
         let owner = attribute.id.as_str();
         match &attribute.target {
             AttributeTarget::Document => {}
-            AttributeTarget::Body(id) if ids.bodies(id.as_str()).is_none() => {
+            AttributeTarget::Body(id) if ids.bodies(id.as_str(), ctx)?.is_none() => {
                 ref_error(findings, owner, "body", id.as_str());
             }
-            AttributeTarget::Face(id) if ids.faces(id.as_str()).is_none() => {
+            AttributeTarget::Face(id) if ids.faces(id.as_str(), ctx)?.is_none() => {
                 ref_error(findings, owner, "face", id.as_str());
             }
-            AttributeTarget::Coedge(id) if ids.coedges(id.as_str()).is_none() => {
+            AttributeTarget::Coedge(id) if ids.coedges(id.as_str(), ctx)?.is_none() => {
                 ref_error(findings, owner, "coedge", id.as_str());
             }
-            AttributeTarget::Edge(id) if ids.edges(id.as_str()).is_none() => {
+            AttributeTarget::Edge(id) if ids.edges(id.as_str(), ctx)?.is_none() => {
                 ref_error(findings, owner, "edge", id.as_str());
             }
-            AttributeTarget::Vertex(id) if ids.vertices(id.as_str()).is_none() => {
+            AttributeTarget::Vertex(id) if ids.vertices(id.as_str(), ctx)?.is_none() => {
                 ref_error(findings, owner, "vertex", id.as_str());
             }
             _ => {}
@@ -340,7 +343,7 @@ pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelI
     for s in &ir.model.surfaces {
         match &s.geometry {
             SurfaceGeometry::Procedural { construction, .. } => {
-                if ids.procedural_surfaces(construction.as_str()).is_none() {
+                if ids.procedural_surfaces(construction.as_str(), ctx)?.is_none() {
                     ref_error(
                         findings,
                         s.id.as_str(),
@@ -360,7 +363,7 @@ pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelI
     for curve in &ir.model.curves {
         match &curve.geometry {
             CurveGeometry::Procedural { construction, .. } => {
-                if ids.procedural_curves(construction.as_str()).is_none() {
+                if ids.procedural_curves(construction.as_str(), ctx)?.is_none() {
                     ref_error(
                         findings,
                         curve.id.as_str(),
@@ -383,7 +386,7 @@ pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelI
             }
             CurveGeometry::Solved(SolvedCurveGeometry::Composite { segments, .. }) => {
                 for segment in segments {
-                    if ids.curves(segment.curve.as_str()).is_none() {
+                    if ids.curves(segment.curve.as_str(), ctx)?.is_none() {
                         ref_error(findings, curve.id.as_str(), "curve", segment.curve.as_str());
                     }
                 }
@@ -399,7 +402,7 @@ pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelI
                 let components = definition_payload.components();
 
                 for component in components {
-                    if ids.surfaces(component.component.as_str()).is_none() {
+                    if ids.surfaces(component.component.as_str(), ctx)?.is_none() {
                         ref_error(
                             findings,
                             procedural.id.as_str(),
@@ -412,7 +415,7 @@ pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelI
             ProceduralSurfaceDefinition::SubSurface(definition_payload) => {
                 let support = definition_payload.support();
                 {
-                    if ids.surfaces(support.as_str()).is_none() {
+                    if ids.surfaces(support.as_str(), ctx)?.is_none() {
                         ref_error(
                             findings,
                             procedural.id.as_str(),
@@ -425,7 +428,7 @@ pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelI
             ProceduralSurfaceDefinition::Replica {
                 source: support, ..
             } => {
-                if ids.surfaces(support.as_str()).is_none() {
+                if ids.surfaces(support.as_str(), ctx)?.is_none() {
                     ref_error(
                         findings,
                         procedural.id.as_str(),
@@ -438,7 +441,7 @@ pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelI
                 let support = definition_payload.support();
                 let reference = definition_payload.reference();
                 {
-                    if ids.surfaces(support.as_str()).is_none() {
+                    if ids.surfaces(support.as_str(), ctx)?.is_none() {
                         ref_error(
                             findings,
                             procedural.id.as_str(),
@@ -446,7 +449,7 @@ pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelI
                             support.as_str(),
                         );
                     }
-                    if ids.curves(reference.as_str()).is_none() {
+                    if ids.curves(reference.as_str(), ctx)?.is_none() {
                         ref_error(
                             findings,
                             procedural.id.as_str(),
@@ -468,13 +471,13 @@ pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelI
                         .chain(entry.path.auxiliaries.iter())
                         .chain(entry.profile.iter().map(|member| &member.profile.id))
                     {
-                        if ids.curves(curve.as_str()).is_none() {
+                        if ids.curves(curve.as_str(), ctx)?.is_none() {
                             ref_error(findings, procedural.id.as_str(), "curve", curve.as_str());
                         }
                     }
                     for member in &entry.profile {
                         if let Some(surface) = member.form.surface() {
-                            if ids.surfaces(surface.as_str()).is_none() {
+                            if ids.surfaces(surface.as_str(), ctx)?.is_none() {
                                 ref_error(
                                     findings,
                                     procedural.id.as_str(),
@@ -489,16 +492,17 @@ pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelI
             ProceduralSurfaceDefinition::CompoundLoft(definition_payload) => {
                 let construction = definition_payload.construction();
 
-                let check_curve = |curve: &crate::ids::CurveId, findings: &mut Vec<Finding>| {
-                    if ids.curves(curve.as_str()).is_none() {
+                let check_curve = |curve: &crate::ids::CurveId, findings: &mut Vec<Finding>| -> Result<(), CodecError> {
+                    if ids.curves(curve.as_str(), ctx)?.is_none() {
                         ref_error(findings, procedural.id.as_str(), "curve", curve.as_str());
                     }
+                        Ok(())
                 };
                 let mut scales = construction.scales.as_slice().iter().collect::<Vec<_>>();
                 match &construction.tail {
                     crate::geometry::CompoundLoftTail::Six { scale, curve, .. } => {
                         scales.push(scale.as_ref());
-                        check_curve(curve, findings);
+                        check_curve(curve, findings)?;
                     }
                     crate::geometry::CompoundLoftTail::Seven {
                         first_scale,
@@ -512,19 +516,19 @@ pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelI
                         if let crate::geometry::CompoundLoftDirection::Curve { curve, .. } =
                             direction
                         {
-                            check_curve(curve, findings);
+                            check_curve(curve, findings)?;
                         }
                     }
                 }
                 for scale in scales {
-                    check_curve(&scale.path, findings);
+                    check_curve(&scale.path, findings)?;
                     for curve in &scale.auxiliaries {
-                        check_curve(curve, findings);
+                        check_curve(curve, findings)?;
                     }
                     for member in &scale.members {
-                        check_curve(&member.curve, findings);
+                        check_curve(&member.curve, findings)?;
                         let surface = &member.data.surface;
-                        if ids.surfaces(surface.as_str()).is_none() {
+                        if ids.surfaces(surface.as_str(), ctx)?.is_none() {
                             ref_error(
                                 findings,
                                 procedural.id.as_str(),
@@ -538,10 +542,11 @@ pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelI
             ProceduralSurfaceDefinition::ScaledCompoundLoft(definition_payload) => {
                 let construction = definition_payload.construction();
 
-                let check_curve = |curve: &crate::ids::CurveId, findings: &mut Vec<Finding>| {
-                    if ids.curves(curve.as_str()).is_none() {
+                let check_curve = |curve: &crate::ids::CurveId, findings: &mut Vec<Finding>| -> Result<(), CodecError> {
+                    if ids.curves(curve.as_str(), ctx)?.is_none() {
                         ref_error(findings, procedural.id.as_str(), "curve", curve.as_str());
                     }
+                        Ok(())
                 };
                 let mut scales = construction.scales.as_slice().iter().collect::<Vec<_>>();
                 match &construction.branch {
@@ -559,26 +564,26 @@ pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelI
                         ..
                     } => {
                         scales.extend(scale.iter().map(Box::as_ref));
-                        check_curve(curve, findings);
+                        check_curve(curve, findings)?;
                     }
                     crate::geometry::ScaledCompoundLoftBranch::Direct { direction, .. } => {
                         if let crate::geometry::CompoundLoftDirection::Curve { curve, .. } =
                             direction
                         {
-                            check_curve(curve, findings);
+                            check_curve(curve, findings)?;
                         }
                     }
                 }
-                check_curve(&construction.tail_curve, findings);
+                check_curve(&construction.tail_curve, findings)?;
                 for scale in scales {
-                    check_curve(&scale.path, findings);
+                    check_curve(&scale.path, findings)?;
                     for curve in &scale.auxiliaries {
-                        check_curve(curve, findings);
+                        check_curve(curve, findings)?;
                     }
                     for member in &scale.members {
-                        check_curve(&member.curve, findings);
+                        check_curve(&member.curve, findings)?;
                         let surface = &member.data.surface;
-                        if ids.surfaces(surface.as_str()).is_none() {
+                        if ids.surfaces(surface.as_str(), ctx)?.is_none() {
                             ref_error(
                                 findings,
                                 procedural.id.as_str(),
@@ -591,18 +596,19 @@ pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelI
             }
             ProceduralSurfaceDefinition::Skin(definition_payload) => {
                 let construction = definition_payload.construction();
-                let check_curve = |curve: &crate::ids::CurveId, findings: &mut Vec<Finding>| {
-                    if ids.curves(curve.as_str()).is_none() {
+                let check_curve = |curve: &crate::ids::CurveId, findings: &mut Vec<Finding>| -> Result<(), CodecError> {
+                    if ids.curves(curve.as_str(), ctx)?.is_none() {
                         ref_error(findings, procedural.id.as_str(), "curve", curve.as_str());
                     }
+                        Ok(())
                 };
                 match &construction.layout {
                     crate::geometry::SkinSurfaceLayout::Profiles { profiles, path, .. } => {
-                        check_curve(path, findings);
+                        check_curve(path, findings)?;
                         for profile in profiles {
-                            check_curve(&profile.curve, findings);
+                            check_curve(&profile.curve, findings)?;
                             let surface = &profile.data.surface;
-                            if ids.surfaces(surface.as_str()).is_none() {
+                            if ids.surfaces(surface.as_str(), ctx)?.is_none() {
                                 ref_error(
                                     findings,
                                     procedural.id.as_str(),
@@ -617,13 +623,13 @@ pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelI
                         secondary_curve,
                         ..
                     } => {
-                        check_curve(curve, findings);
-                        check_curve(secondary_curve, findings);
+                        check_curve(curve, findings)?;
+                        check_curve(secondary_curve, findings)?;
                     }
                 }
-                check_curve(&construction.parameter_curve, findings);
+                check_curve(&construction.parameter_curve, findings)?;
                 for variable in construction.formula.variables() {
-                    check_law_curves(variable, ids, procedural, findings);
+                    check_law_curves(ctx, variable, ids, procedural, findings)?;
                 }
             }
             ProceduralSurfaceDefinition::Law(definition_payload) => {
@@ -632,7 +638,7 @@ pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelI
                     std::iter::once(&construction.primary).chain(&construction.additional)
                 {
                     for variable in formula.variables() {
-                        check_law_curves(variable, ids, procedural, findings);
+                        check_law_curves(ctx, variable, ids, procedural, findings)?;
                     }
                 }
             }
@@ -651,13 +657,13 @@ pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelI
                         .chain(entry.path.auxiliaries.iter())
                         .chain(entry.profile.iter().map(|member| &member.profile.id))
                     {
-                        if ids.curves(curve.as_str()).is_none() {
+                        if ids.curves(curve.as_str(), ctx)?.is_none() {
                             ref_error(findings, procedural.id.as_str(), "curve", curve.as_str());
                         }
                     }
                     for member in &entry.profile {
                         if let Some(surface) = member.form.surface() {
-                            if ids.surfaces(surface.as_str()).is_none() {
+                            if ids.surfaces(surface.as_str(), ctx)?.is_none() {
                                 ref_error(
                                     findings,
                                     procedural.id.as_str(),
@@ -670,7 +676,7 @@ pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelI
                 }
                 for formula in construction.formulas.iter() {
                     for variable in formula.variables() {
-                        check_law_curves(variable, ids, procedural, findings);
+                        check_law_curves(ctx, variable, ids, procedural, findings)?;
                     }
                 }
             }
@@ -681,7 +687,7 @@ pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelI
                     .into_iter()
                     .chain(std::iter::once(&construction.second_exact_surface))
                 {
-                    if ids.surfaces(surface.as_str()).is_none() {
+                    if ids.surfaces(surface.as_str(), ctx)?.is_none() {
                         ref_error(
                             findings,
                             procedural.id.as_str(),
@@ -694,7 +700,7 @@ pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelI
                     support: Some(support),
                 } = &construction.first_shape
                 {
-                    if ids.surfaces(support.surface.as_str()).is_none() {
+                    if ids.surfaces(support.surface.as_str(), ctx)?.is_none() {
                         ref_error(
                             findings,
                             procedural.id.as_str(),
@@ -708,7 +714,7 @@ pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelI
                     &construction.second.curve,
                     &construction.center_curve,
                 ] {
-                    if ids.curves(curve.as_str()).is_none() {
+                    if ids.curves(curve.as_str(), ctx)?.is_none() {
                         ref_error(findings, procedural.id.as_str(), "curve", curve.as_str());
                     }
                 }
@@ -718,7 +724,7 @@ pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelI
 
                 for side in &construction.sides {
                     if let Some(surface) = &side.surface {
-                        if ids.surfaces(surface.surface.as_str()).is_none() {
+                        if ids.surfaces(surface.surface.as_str(), ctx)?.is_none() {
                             ref_error(
                                 findings,
                                 procedural.id.as_str(),
@@ -728,7 +734,7 @@ pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelI
                         }
                     }
                     if let Some(curve) = &side.curve {
-                        if ids.curves(curve.curve.as_str()).is_none() {
+                        if ids.curves(curve.curve.as_str(), ctx)?.is_none() {
                             ref_error(
                                 findings,
                                 procedural.id.as_str(),
@@ -749,7 +755,7 @@ pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelI
                 .into_iter()
                 .flatten()
                 {
-                    if ids.curves(curve.as_str()).is_none() {
+                    if ids.curves(curve.as_str(), ctx)?.is_none() {
                         ref_error(findings, procedural.id.as_str(), "curve", curve.as_str());
                     }
                 }
@@ -761,7 +767,7 @@ pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelI
                         .iter()
                         .flat_map(|entry| &entry.profile),
                 ) {
-                    if ids.curves(member.profile.id.as_str()).is_none() {
+                    if ids.curves(member.profile.id.as_str(), ctx)?.is_none() {
                         ref_error(
                             findings,
                             procedural.id.as_str(),
@@ -770,7 +776,7 @@ pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelI
                         );
                     }
                     if let Some(surface) = member.form.surface() {
-                        if ids.surfaces(surface.as_str()).is_none() {
+                        if ids.surfaces(surface.as_str(), ctx)?.is_none() {
                             ref_error(
                                 findings,
                                 procedural.id.as_str(),
@@ -794,7 +800,7 @@ pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelI
                     })
                     .chain(construction.tail().curve())
                 {
-                    if ids.curves(curve.as_str()).is_none() {
+                    if ids.curves(curve.as_str(), ctx)?.is_none() {
                         ref_error(findings, procedural.id.as_str(), "curve", curve.as_str());
                     }
                 }
@@ -802,7 +808,7 @@ pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelI
             ProceduralSurfaceDefinition::RevisionG2Blend { construction } => {
                 for side in construction.sides() {
                     if let Some(surface) = &side.surface {
-                        if ids.surfaces(surface.surface.as_str()).is_none() {
+                        if ids.surfaces(surface.surface.as_str(), ctx)?.is_none() {
                             ref_error(
                                 findings,
                                 procedural.id.as_str(),
@@ -812,7 +818,7 @@ pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelI
                         }
                     }
                     if let Some(curve) = &side.curve {
-                        if ids.curves(curve.curve.as_str()).is_none() {
+                        if ids.curves(curve.curve.as_str(), ctx)?.is_none() {
                             ref_error(
                                 findings,
                                 procedural.id.as_str(),
@@ -822,7 +828,7 @@ pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelI
                         }
                     }
                 }
-                if ids.curves(construction.center().as_str()).is_none() {
+                if ids.curves(construction.center().as_str(), ctx)?.is_none() {
                     ref_error(
                         findings,
                         procedural.id.as_str(),
@@ -838,7 +844,7 @@ pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelI
                     match &boundary.geometry {
                         crate::geometry::VertexBlendBoundaryGeometry::Circle { curve, .. }
                         | crate::geometry::VertexBlendBoundaryGeometry::Plane { curve, .. } => {
-                            if ids.curves(curve.as_str()).is_none() {
+                            if ids.curves(curve.as_str(), ctx)?.is_none() {
                                 ref_error(
                                     findings,
                                     procedural.id.as_str(),
@@ -850,7 +856,7 @@ pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelI
                         crate::geometry::VertexBlendBoundaryGeometry::Pcurve {
                             surface, ..
                         } => {
-                            if ids.surfaces(surface.as_str()).is_none() {
+                            if ids.surfaces(surface.as_str(), ctx)?.is_none() {
                                 ref_error(
                                     findings,
                                     procedural.id.as_str(),
@@ -866,7 +872,7 @@ pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelI
             ProceduralSurfaceDefinition::Extrusion(definition_payload) => {
                 let directrix = definition_payload.directrix();
                 {
-                    if ids.curves(directrix.as_str()).is_none() {
+                    if ids.curves(directrix.as_str(), ctx)?.is_none() {
                         ref_error(
                             findings,
                             procedural.id.as_str(),
@@ -878,7 +884,7 @@ pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelI
             }
             ProceduralSurfaceDefinition::LinearSweep(definition_payload) => {
                 let directrix = definition_payload.directrix();
-                if ids.curves(directrix.as_str()).is_none() {
+                if ids.curves(directrix.as_str(), ctx)?.is_none() {
                     ref_error(
                         findings,
                         procedural.id.as_str(),
@@ -890,7 +896,7 @@ pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelI
             ProceduralSurfaceDefinition::Revolution(definition_payload) => {
                 let directrix = definition_payload.directrix();
                 {
-                    if ids.curves(directrix.as_str()).is_none() {
+                    if ids.curves(directrix.as_str(), ctx)?.is_none() {
                         ref_error(
                             findings,
                             procedural.id.as_str(),
@@ -902,7 +908,7 @@ pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelI
             }
             ProceduralSurfaceDefinition::AxisRevolution(definition_payload) => {
                 let directrix = definition_payload.directrix();
-                if ids.curves(directrix.as_str()).is_none() {
+                if ids.curves(directrix.as_str(), ctx)?.is_none() {
                     ref_error(
                         findings,
                         procedural.id.as_str(),
@@ -916,7 +922,7 @@ pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelI
                 let spine = definition_payload.spine();
                 let native = definition_payload.native();
                 for curve in [profile, spine] {
-                    if ids.curves(curve.as_str()).is_none() {
+                    if ids.curves(curve.as_str(), ctx)?.is_none() {
                         ref_error(findings, procedural.id.as_str(), "curve", curve.as_str());
                     }
                 }
@@ -933,7 +939,7 @@ pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelI
                         crate::geometry::SweepSurfaceLayout::ExplicitGuide {
                             guide_curve, ..
                         } => {
-                            if ids.curves(guide_curve.as_str()).is_none() {
+                            if ids.curves(guide_curve.as_str(), ctx)?.is_none() {
                                 ref_error(
                                     findings,
                                     procedural.id.as_str(),
@@ -948,7 +954,7 @@ pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelI
                             auxiliary_curve,
                             ..
                         } => {
-                            if ids.surfaces(support_surface.as_str()).is_none() {
+                            if ids.surfaces(support_surface.as_str(), ctx)?.is_none() {
                                 ref_error(
                                     findings,
                                     procedural.id.as_str(),
@@ -957,7 +963,7 @@ pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelI
                                 );
                             }
                             if let Some(curve) = auxiliary_curve {
-                                if ids.curves(curve.as_str()).is_none() {
+                                if ids.curves(curve.as_str(), ctx)?.is_none() {
                                     ref_error(
                                         findings,
                                         procedural.id.as_str(),
@@ -974,14 +980,14 @@ pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelI
                             formula,
                             ..
                         } => {
-                            check_law_curves(first_law, ids, procedural, findings);
-                            check_law_curves(second_law, ids, procedural, findings);
+                            check_law_curves(ctx, first_law, ids, procedural, findings)?;
+                            check_law_curves(ctx, second_law, ids, procedural, findings)?;
                             vec![formula]
                         }
                     };
                     for formula in formulas {
                         for variable in formula.variables() {
-                            check_law_curves(variable, ids, procedural, findings);
+                            check_law_curves(ctx, variable, ids, procedural, findings)?;
                         }
                     }
                 }
@@ -989,7 +995,7 @@ pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelI
             ProceduralSurfaceDefinition::Offset(definition_payload) => {
                 let support = definition_payload.support();
                 {
-                    if ids.surfaces(support.as_str()).is_none() {
+                    if ids.surfaces(support.as_str(), ctx)?.is_none() {
                         ref_error(
                             findings,
                             procedural.id.as_str(),
@@ -1002,7 +1008,7 @@ pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelI
             ProceduralSurfaceDefinition::Subset(definition_payload) => {
                 let support = definition_payload.support();
                 {
-                    if ids.surfaces(support.as_str()).is_none() {
+                    if ids.surfaces(support.as_str(), ctx)?.is_none() {
                         ref_error(
                             findings,
                             procedural.id.as_str(),
@@ -1015,7 +1021,7 @@ pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelI
             ProceduralSurfaceDefinition::ParallelOffset(definition_payload) => {
                 let support = definition_payload.support();
                 {
-                    if ids.surfaces(support.as_str()).is_none() {
+                    if ids.surfaces(support.as_str(), ctx)?.is_none() {
                         ref_error(
                             findings,
                             procedural.id.as_str(),
@@ -1027,14 +1033,14 @@ pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelI
             }
             ProceduralSurfaceDefinition::Ruled { first, second, .. } => {
                 for curve in [first, second] {
-                    if ids.curves(curve.as_str()).is_none() {
+                    if ids.curves(curve.as_str(), ctx)?.is_none() {
                         ref_error(findings, procedural.id.as_str(), "curve", curve.as_str());
                     }
                 }
             }
             ProceduralSurfaceDefinition::Sum(definition_payload) => {
                 for curve in [definition_payload.first(), definition_payload.second()] {
-                    if ids.curves(curve.as_str()).is_none() {
+                    if ids.curves(curve.as_str(), ctx)?.is_none() {
                         ref_error(findings, procedural.id.as_str(), "curve", curve.as_str());
                     }
                 }
@@ -1045,7 +1051,7 @@ pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelI
                 let native = definition_payload.native();
 
                 for support in supports.iter().flatten() {
-                    if ids.surfaces(support.surface.as_str()).is_none() {
+                    if ids.surfaces(support.surface.as_str(), ctx)?.is_none() {
                         ref_error(
                             findings,
                             procedural.id.as_str(),
@@ -1055,19 +1061,20 @@ pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelI
                     }
                 }
                 if let Some(spine) = spine {
-                    if ids.curves(spine.as_str()).is_none() {
+                    if ids.curves(spine.as_str(), ctx)?.is_none() {
                         ref_error(findings, procedural.id.as_str(), "curve", spine.as_str());
                     }
                 }
                 if let Some(native) = native {
-                    let check_curve = |curve: &crate::ids::CurveId, findings: &mut Vec<Finding>| {
-                        if ids.curves(curve.as_str()).is_none() {
+                    let check_curve = |curve: &crate::ids::CurveId, findings: &mut Vec<Finding>| -> Result<(), CodecError> {
+                        if ids.curves(curve.as_str(), ctx)?.is_none() {
                             ref_error(findings, procedural.id.as_str(), "curve", curve.as_str());
                         }
+                        Ok(())
                     };
                     let check_surface =
-                        |surface: &crate::ids::SurfaceId, findings: &mut Vec<Finding>| {
-                            if ids.surfaces(surface.as_str()).is_none() {
+                        |surface: &crate::ids::SurfaceId, findings: &mut Vec<Finding>| -> Result<(), CodecError> {
+                            if ids.surfaces(surface.as_str(), ctx)?.is_none() {
                                 ref_error(
                                     findings,
                                     procedural.id.as_str(),
@@ -1075,19 +1082,20 @@ pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelI
                                     surface.as_str(),
                                 );
                             }
+                        Ok(())
                         };
-                    check_curve(&native.slice, findings);
+                    check_curve(&native.slice, findings)?;
                     for side in &native.sides {
                         if let Some(curve) = &side.curve {
-                            check_curve(&curve.curve, findings);
+                            check_curve(&curve.curve, findings)?;
                         }
                         if let Some(surface) = &side.surface {
-                            check_surface(&surface.surface, findings);
+                            check_surface(&surface.surface, findings)?;
                         }
                     }
                     if let Some(side) = &native.third {
-                        check_curve(&side.curve, findings);
-                        check_surface(&side.surface, findings);
+                        check_curve(&side.curve, findings)?;
+                        check_surface(&side.surface, findings)?;
                     }
                 }
             }
@@ -1115,7 +1123,7 @@ pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelI
                 boundary_pcurves,
                 ..
             } => {
-                if ids.surfaces(support.as_str()).is_none() {
+                if ids.surfaces(support.as_str(), ctx)?.is_none() {
                     ref_error(
                         findings,
                         procedural.id.as_str(),
@@ -1124,12 +1132,12 @@ pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelI
                     );
                 }
                 for boundary in boundaries {
-                    if ids.curves(boundary.as_str()).is_none() {
+                    if ids.curves(boundary.as_str(), ctx)?.is_none() {
                         ref_error(findings, procedural.id.as_str(), "curve", boundary.as_str());
                     }
                 }
                 for pcurve in boundary_pcurves {
-                    if ids.pcurves(pcurve.as_str()).is_none() {
+                    if ids.pcurves(pcurve.as_str(), ctx)?.is_none() {
                         ref_error(
                             findings,
                             procedural.id.as_str(),
@@ -1142,7 +1150,7 @@ pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelI
             ProceduralSurfaceDefinition::Deformable(definition_payload) => {
                 let construction = definition_payload.construction();
 
-                if ids.surfaces(construction.support.as_str()).is_none() {
+                if ids.surfaces(construction.support.as_str(), ctx)?.is_none() {
                     ref_error(
                         findings,
                         procedural.id.as_str(),
@@ -1156,7 +1164,7 @@ pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelI
                 | crate::geometry::DeformableSurfaceData::Full { surface, curve, .. } =
                     &construction.data
                 {
-                    if ids.surfaces(surface.as_str()).is_none() {
+                    if ids.surfaces(surface.as_str(), ctx)?.is_none() {
                         ref_error(
                             findings,
                             procedural.id.as_str(),
@@ -1164,7 +1172,7 @@ pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelI
                             surface.as_str(),
                         );
                     }
-                    if ids.curves(curve.as_str()).is_none() {
+                    if ids.curves(curve.as_str(), ctx)?.is_none() {
                         ref_error(findings, procedural.id.as_str(), "curve", curve.as_str());
                     }
                 }
@@ -1180,15 +1188,16 @@ pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelI
                 additional,
                 ..
             } => {
-                fn check<R, V, P>(
+                fn check<R, V, P>(ctx: &DecodeContext<'_>, 
                     expression: &crate::geometry::LawExpression<R, V, P>,
                     ids: &ModelIndex<'_>,
                     procedural: &crate::geometry::ProceduralCurve,
                     findings: &mut Vec<Finding>,
-                ) {
+                ) -> Result<(), CodecError> {
+    let _depth = ctx.enter_nested("law reference depth")?;
                     match expression {
                         crate::geometry::LawExpression::Edge { curve, .. } => {
-                            if ids.curves(curve.id.as_str()).is_none() {
+                            if ids.curves(curve.id.as_str(), ctx)?.is_none() {
                                 ref_error(
                                     findings,
                                     procedural.id.as_str(),
@@ -1199,15 +1208,17 @@ pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelI
                         }
                         crate::geometry::LawExpression::Algebraic { operands, .. } => {
                             for operand in operands {
-                                check(operand, ids, procedural, findings);
+                                check(ctx, operand, ids, procedural, findings)?;
                             }
                         }
                         _ => {}
                     }
-                }
+                
+    Ok(())
+}
                 for side in context.sides() {
                     if let Some(surface) = &side.surface {
-                        if ids.surfaces(surface.as_str()).is_none() {
+                        if ids.surfaces(surface.as_str(), ctx)?.is_none() {
                             ref_error(
                                 findings,
                                 procedural.id.as_str(),
@@ -1219,7 +1230,7 @@ pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelI
                 }
                 for formula in std::iter::once(primary).chain(additional) {
                     for variable in formula.formula().variables() {
-                        check(variable, ids, procedural, findings);
+                        check(ctx, variable, ids, procedural, findings)?;
                     }
                 }
             }
@@ -1227,7 +1238,7 @@ pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelI
                 let components = compound.components();
 
                 for component in components {
-                    if ids.curves(component.component.as_str()).is_none() {
+                    if ids.curves(component.component.as_str(), ctx)?.is_none() {
                         ref_error(
                             findings,
                             procedural.id.as_str(),
@@ -1240,7 +1251,7 @@ pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelI
             ProceduralCurveDefinition::Intersection { context, .. } => {
                 for side in context.sides() {
                     if let Some(surface) = &side.surface {
-                        if ids.surfaces(surface.as_str()).is_none() {
+                        if ids.surfaces(surface.as_str(), ctx)?.is_none() {
                             ref_error(
                                 findings,
                                 procedural.id.as_str(),
@@ -1258,7 +1269,7 @@ pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelI
                 let supports = intersection.supports();
 
                 for surface in supports {
-                    if ids.surfaces(surface.as_str()).is_none() {
+                    if ids.surfaces(surface.as_str(), ctx)?.is_none() {
                         ref_error(
                             findings,
                             procedural.id.as_str(),
@@ -1274,7 +1285,7 @@ pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelI
 
                 for side in context.sides().iter().chain(std::iter::once(third)) {
                     if let Some(surface) = &side.surface {
-                        if ids.surfaces(surface.as_str()).is_none() {
+                        if ids.surfaces(surface.as_str(), ctx)?.is_none() {
                             ref_error(
                                 findings,
                                 procedural.id.as_str(),
@@ -1288,7 +1299,7 @@ pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelI
             ProceduralCurveDefinition::SurfaceCurve { family } => {
                 for side in family.context().sides() {
                     if let Some(surface) = &side.surface {
-                        if ids.surfaces(surface.as_str()).is_none() {
+                        if ids.surfaces(surface.as_str(), ctx)?.is_none() {
                             ref_error(
                                 findings,
                                 procedural.id.as_str(),
@@ -1302,7 +1313,7 @@ pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelI
             ProceduralCurveDefinition::Silhouette(definition_payload) => {
                 let context = definition_payload.context();
                 let cast_surface = definition_payload.cast_surface();
-                if ids.surfaces(cast_surface.as_str()).is_none() {
+                if ids.surfaces(cast_surface.as_str(), ctx)?.is_none() {
                     ref_error(
                         findings,
                         procedural.id.as_str(),
@@ -1312,7 +1323,7 @@ pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelI
                 }
                 for side in context.sides() {
                     if let Some(surface) = &side.surface {
-                        if ids.surfaces(surface.as_str()).is_none() {
+                        if ids.surfaces(surface.as_str(), ctx)?.is_none() {
                             ref_error(
                                 findings,
                                 procedural.id.as_str(),
@@ -1327,12 +1338,12 @@ pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelI
                 let context = definition_payload.context();
                 let base = definition_payload.base();
                 {
-                    if ids.curves(base.as_str()).is_none() {
+                    if ids.curves(base.as_str(), ctx)?.is_none() {
                         ref_error(findings, procedural.id.as_str(), "curve", base.as_str());
                     }
                     for side in context.sides() {
                         if let Some(surface) = &side.surface {
-                            if ids.surfaces(surface.as_str()).is_none() {
+                            if ids.surfaces(surface.as_str(), ctx)?.is_none() {
                                 ref_error(
                                     findings,
                                     procedural.id.as_str(),
@@ -1347,7 +1358,7 @@ pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelI
             ProceduralCurveDefinition::Spring(definition_payload) => {
                 for side in definition_payload.support_context().sides() {
                     if let Some(surface) = &side.surface {
-                        if ids.surfaces(surface.as_str()).is_none() {
+                        if ids.surfaces(surface.as_str(), ctx)?.is_none() {
                             ref_error(
                                 findings,
                                 procedural.id.as_str(),
@@ -1363,13 +1374,13 @@ pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelI
                 let source = definition_payload.source();
                 {
                     if let crate::geometry::DeformableCurveSource::Curve { curve } = source {
-                        if ids.curves(curve.as_str()).is_none() {
+                        if ids.curves(curve.as_str(), ctx)?.is_none() {
                             ref_error(findings, procedural.id.as_str(), "curve", curve.as_str());
                         }
                     }
                     for side in context.sides() {
                         if let Some(surface) = &side.surface {
-                            if ids.surfaces(surface.as_str()).is_none() {
+                            if ids.surfaces(surface.as_str(), ctx)?.is_none() {
                                 ref_error(
                                     findings,
                                     procedural.id.as_str(),
@@ -1385,12 +1396,12 @@ pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelI
                 let context = definition_payload.context();
                 let source = definition_payload.source();
 
-                if ids.curves(source.as_str()).is_none() {
+                if ids.curves(source.as_str(), ctx)?.is_none() {
                     ref_error(findings, procedural.id.as_str(), "curve", source.as_str());
                 }
                 for side in context.sides() {
                     if let Some(surface) = &side.surface {
-                        if ids.surfaces(surface.as_str()).is_none() {
+                        if ids.surfaces(surface.as_str(), ctx)?.is_none() {
                             ref_error(
                                 findings,
                                 procedural.id.as_str(),
@@ -1406,7 +1417,7 @@ pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelI
                 let side = definition_payload.side();
                 let range = definition_payload.range();
                 {
-                    if ids.curves(source.as_str()).is_none() {
+                    if ids.curves(source.as_str(), ctx)?.is_none() {
                         ref_error(findings, procedural.id.as_str(), "curve", source.as_str());
                     }
                     if let crate::geometry::OffsetSide::Direction {
@@ -1414,7 +1425,7 @@ pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelI
                         ..
                     } = side
                     {
-                        if ids.surfaces(support.as_str()).is_none() {
+                        if ids.surfaces(support.as_str(), ctx)?.is_none() {
                             ref_error(
                                 findings,
                                 procedural.id.as_str(),
@@ -1429,7 +1440,7 @@ pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelI
                         ..
                     }) = range
                     {
-                        if ids.curves(function.as_str()).is_none() {
+                        if ids.curves(function.as_str(), ctx)?.is_none() {
                             ref_error(findings, procedural.id.as_str(), "curve", function.as_str());
                         }
                     }
@@ -1438,7 +1449,7 @@ pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelI
             ProceduralCurveDefinition::SpatialOffset(definition_payload) => {
                 let source = definition_payload.source();
                 {
-                    if ids.curves(source.as_str()).is_none() {
+                    if ids.curves(source.as_str(), ctx)?.is_none() {
                         ref_error(findings, procedural.id.as_str(), "curve", source.as_str());
                     }
                 }
@@ -1448,7 +1459,7 @@ pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelI
                 {
                     for side in context.sides() {
                         if let Some(surface) = &side.surface {
-                            if ids.surfaces(surface.as_str()).is_none() {
+                            if ids.surfaces(surface.as_str(), ctx)?.is_none() {
                                 ref_error(
                                     findings,
                                     procedural.id.as_str(),
@@ -1463,27 +1474,27 @@ pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelI
             ProceduralCurveDefinition::VectorOffset(definition_payload) => {
                 let source = definition_payload.source();
                 {
-                    if ids.curves(source.as_str()).is_none() {
+                    if ids.curves(source.as_str(), ctx)?.is_none() {
                         ref_error(findings, procedural.id.as_str(), "curve", source.as_str());
                     }
                 }
             }
             ProceduralCurveDefinition::Replica { source, .. } => {
-                if ids.curves(source.as_str()).is_none() {
+                if ids.curves(source.as_str(), ctx)?.is_none() {
                     ref_error(findings, procedural.id.as_str(), "curve", source.as_str());
                 }
             }
             ProceduralCurveDefinition::Subset(definition_payload) => {
                 let source = definition_payload.source();
                 {
-                    if ids.curves(source.as_str()).is_none() {
+                    if ids.curves(source.as_str(), ctx)?.is_none() {
                         ref_error(findings, procedural.id.as_str(), "curve", source.as_str());
                     }
                 }
             }
             ProceduralCurveDefinition::BlendSpine { blend_surface } => {
                 if let Some(surface) = blend_surface {
-                    if ids.surfaces(surface.as_str()).is_none() {
+                    if ids.surfaces(surface.as_str(), ctx)?.is_none() {
                         ref_error(
                             findings,
                             procedural.id.as_str(),
@@ -2052,7 +2063,7 @@ fn check_feature_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelInde
             }
         }
         for body in configuration.bodies.iter().flatten() {
-            if ids.bodies(body.as_str()).is_none() {
+            if ids.bodies(body.as_str(), ctx)?.is_none() {
                 ref_error(
                     findings,
                     configuration.id.as_str(),
@@ -2186,7 +2197,7 @@ fn check_feature_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelInde
                 }
             }
             for output in state.evaluation.outputs() {
-                if ids.bodies(output.as_str()).is_none() {
+                if ids.bodies(output.as_str(), ctx)?.is_none() {
                     ref_error(
                         findings,
                         configuration.id.as_str(),
@@ -2423,7 +2434,7 @@ fn check_feature_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelInde
             }
         }
         for body in feature.evaluation.outputs() {
-            if ids.bodies(body.as_str()).is_none() {
+            if ids.bodies(body.as_str(), ctx)?.is_none() {
                 ref_error(findings, feature.id.as_str(), "output body", body.as_str());
             }
         }
@@ -2482,7 +2493,7 @@ fn check_feature_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelInde
             FeatureOperation::BaseFeature { bodies } => body_selections.push(bodies),
             FeatureOperation::MeshImport { tessellations } => {
                 for tessellation in tessellations {
-                    if ids.tessellations(tessellation).is_none() {
+                    if ids.tessellations(tessellation, ctx)?.is_none() {
                         ref_error(
                             findings,
                             feature.id.as_str(),
@@ -2524,13 +2535,13 @@ fn check_feature_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelInde
                 }
             }
             FeatureOperation::Form { cages } => {
-                check_ids(
+                check_ids(ctx, 
                     findings,
                     feature.id.as_str(),
                     "Form control cage",
                     cages.iter().map(super::super::ids::SubdId::as_str),
-                    |identity| ids.subds(identity).is_some(),
-                );
+                    |identity| Ok(ids.subds(identity, ctx)?.is_some()),
+                )?;
             }
             FeatureOperation::CosmeticThread { face, .. } => face_selections.push(face),
             FeatureOperation::Extrude {
@@ -2597,13 +2608,13 @@ fn check_feature_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelInde
                         ) => {}
                         crate::features::LoftSection::Point(
                             crate::features::LoftPointSection::Vertex(vertex),
-                        ) => check_ids(
+                        ) => check_ids(ctx, 
                             findings,
                             feature.id.as_str(),
                             "loft section vertex",
                             std::iter::once(vertex.as_str()),
-                            |identity| ids.vertices(identity).is_some(),
-                        ),
+                            |identity| Ok(ids.vertices(identity, ctx)?.is_some()),
+                        )?,
                     }
                 }
                 match guidance {
@@ -3197,13 +3208,13 @@ fn check_feature_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelInde
         }
         for profile in definition_profiles(definition) {
             match profile {
-                PlanarProfileRef::Faces(faces) => check_ids(
+                PlanarProfileRef::Faces(faces) => check_ids(ctx, 
                     findings,
                     feature.id.as_str(),
                     "profile face",
                     faces.iter().map(super::super::ids::FaceId::as_str),
-                    |identity| ids.faces(identity).is_some(),
-                ),
+                    |identity| Ok(ids.faces(identity, ctx)?.is_some()),
+                )?,
                 PlanarProfileRef::HistoricalFaces { state, faces, .. } => {
                     check_historical_members(
                         findings,
@@ -3257,36 +3268,36 @@ fn check_feature_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelInde
         }
         for path in paths {
             match path {
-                PathRef::Edges(edges) => check_ids(
+                PathRef::Edges(edges) => check_ids(ctx, 
                     findings,
                     feature.id.as_str(),
                     "path edge",
                     edges.iter().map(super::super::ids::EdgeId::as_str),
-                    |identity| ids.edges(identity).is_some(),
-                ),
-                PathRef::Curves(curves) => check_ids(
+                    |identity| Ok(ids.edges(identity, ctx)?.is_some()),
+                )?,
+                PathRef::Curves(curves) => check_ids(ctx, 
                     findings,
                     feature.id.as_str(),
                     "path curve",
                     curves.iter().map(super::super::ids::CurveId::as_str),
-                    |identity| ids.curves(identity).is_some(),
-                ),
-                PathRef::SketchCurves { curves, .. } => check_ids(
+                    |identity| Ok(ids.curves(identity, ctx)?.is_some()),
+                )?,
+                PathRef::SketchCurves { curves, .. } => check_ids(ctx, 
                     findings,
                     feature.id.as_str(),
                     "sketch path curve",
                     curves.iter().map(crate::sketches::SketchEntityId::as_str),
-                    |identity| sketch_entities.contains(identity),
-                ),
-                PathRef::SpatialSketchCurves { curves, .. } => check_ids(
+                    |identity| Ok(sketch_entities.contains(identity)),
+                )?,
+                PathRef::SpatialSketchCurves { curves, .. } => check_ids(ctx, 
                     findings,
                     feature.id.as_str(),
                     "spatial sketch path curve",
                     curves
                         .iter()
                         .map(crate::sketches::SpatialSketchEntityId::as_str),
-                    |identity| spatial_sketch_entity_owners.contains_key(identity),
-                ),
+                    |identity| Ok(spatial_sketch_entity_owners.contains_key(identity)),
+                )?,
                 PathRef::HistoricalEdges { state, edges, .. } => check_historical_members(
                     findings,
                     &feature.id,
@@ -3314,24 +3325,24 @@ fn check_feature_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelInde
             if let Some(FaceSelection::Faces(faces) | FaceSelection::Resolved { faces, .. }) =
                 termination.face()
             {
-                check_ids(
+                check_ids(ctx, 
                     findings,
                     feature.id.as_str(),
                     "termination face",
                     faces.iter().map(super::super::ids::FaceId::as_str),
-                    |identity| ids.faces(identity).is_some(),
-                );
+                    |identity| Ok(ids.faces(identity, ctx)?.is_some()),
+                )?;
             }
             if let Some(FaceSelection::Faces(faces) | FaceSelection::Resolved { faces, .. }) =
                 termination.shape()
             {
-                check_ids(
+                check_ids(ctx, 
                     findings,
                     feature.id.as_str(),
                     "termination shape face",
                     faces.iter().map(super::super::ids::FaceId::as_str),
-                    |identity| ids.faces(identity).is_some(),
-                );
+                    |identity| Ok(ids.faces(identity, ctx)?.is_some()),
+                )?;
             }
             if let Some(vertex) = termination.vertex() {
                 vertex_selections.push((vertex, "termination"));
@@ -3410,13 +3421,13 @@ fn check_feature_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelInde
                 );
             }
             match selection {
-                EdgeSelection::Edges(edges) | EdgeSelection::Resolved { edges, .. } => check_ids(
+                EdgeSelection::Edges(edges) | EdgeSelection::Resolved { edges, .. } => check_ids(ctx, 
                     findings,
                     feature.id.as_str(),
                     "selected edge",
                     edges.iter().map(super::super::ids::EdgeId::as_str),
-                    |identity| ids.edges(identity).is_some(),
-                ),
+                    |identity| Ok(ids.edges(identity, ctx)?.is_some()),
+                )?,
                 EdgeSelection::Historical { .. } | EdgeSelection::HistoricalPartial { .. } => {}
                 EdgeSelection::Generated { edges, .. } => {
                     if edges.iter().any(|edge| {
@@ -3465,13 +3476,13 @@ fn check_feature_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelInde
                 );
             }
             match selection {
-                FaceSelection::Faces(faces) | FaceSelection::Resolved { faces, .. } => check_ids(
+                FaceSelection::Faces(faces) | FaceSelection::Resolved { faces, .. } => check_ids(ctx, 
                     findings,
                     feature.id.as_str(),
                     "selected face",
                     faces.iter().map(super::super::ids::FaceId::as_str),
-                    |identity| ids.faces(identity).is_some(),
-                ),
+                    |identity| Ok(ids.faces(identity, ctx)?.is_some()),
+                )?,
                 FaceSelection::Historical { .. } | FaceSelection::HistoricalPartial { .. } => {}
                 FaceSelection::Generated { faces, .. } => {
                     if faces.iter().any(|face| {
@@ -3495,22 +3506,22 @@ fn check_feature_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelInde
         for selection in body_selections {
             match selection {
                 BodySelection::Bodies(bodies) | BodySelection::Resolved { bodies, .. } => {
-                    check_ids(
+                    check_ids(ctx, 
                         findings,
                         feature.id.as_str(),
                         "selected body",
                         bodies.iter().map(super::super::ids::BodyId::as_str),
-                        |identity| ids.bodies(identity).is_some(),
-                    );
+                        |identity| Ok(ids.bodies(identity, ctx)?.is_some()),
+                    )?;
                 }
                 BodySelection::ResolvedSet { members } => {
-                    check_ids(
+                    check_ids(ctx, 
                         findings,
                         feature.id.as_str(),
                         "selected body",
                         members.bodies().map(super::super::ids::BodyId::as_str),
-                        |identity| ids.bodies(identity).is_some(),
-                    );
+                        |identity| Ok(ids.bodies(identity, ctx)?.is_some()),
+                    )?;
                 }
                 BodySelection::Historical {
                     state,
@@ -3924,18 +3935,21 @@ fn geometry_error(findings: &mut Vec<Finding>, entity: &str, message: &str) {
     });
 }
 
-fn check_ids<'a>(
+fn check_ids<'a>(ctx: &DecodeContext<'_>, 
     findings: &mut Vec<Finding>,
     owner: &str,
     kind: &str,
     values: impl Iterator<Item = &'a str>,
-    valid: impl Fn(&str) -> bool,
-) {
+    valid: impl Fn(&str) -> Result<bool, CodecError>,
+) -> Result<(), CodecError> {
     for value in values {
-        if !valid(value) {
+        ctx.charge_work(1, "selected identity validation")?;
+        if !valid(value)? {
             ref_error(findings, owner, kind, value);
         }
     }
+
+    Ok(())
 }
 
 fn check_feature_sketch_references(
