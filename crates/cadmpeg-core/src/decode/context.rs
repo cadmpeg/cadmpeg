@@ -456,6 +456,7 @@ impl<'a> DecodeContext<'a> {
     ///
     /// `key` borrows the compared projection; its DecodeCost includes owned children.
     /// Equal values retain input order. Values move in place without cloning children.
+    /// Each value must project the same key and comparison cost throughout the sort.
     pub fn stable_sort_by<T, K: super::cost::DecodeCost + ?Sized>(
         &self,
         values: &mut [T],
@@ -468,6 +469,7 @@ impl<'a> DecodeContext<'a> {
     }
 
     /// Sorts copied keys stably without cloning any owned children.
+    /// Each value must project the same key and comparison cost throughout the sort.
     pub fn stable_sort_by_key<T, K: Copy + super::cost::DecodeCost>(
         &self,
         values: &mut [T],
