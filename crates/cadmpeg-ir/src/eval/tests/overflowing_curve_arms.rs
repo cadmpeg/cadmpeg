@@ -495,13 +495,13 @@ fn an_offset_pcurve_whose_basis_acceleration_overflows_reports_its_tangent_as_le
         .expect("circle pcurve fixture"),
     );
     let parameter = std::f64::consts::FRAC_PI_4;
-    assert!(pcurve_tangent(&basis, parameter).is_ok());
+    assert!(pcurve_tangent(crate::eval::admission::EvaluationAdmission::Standard, &basis, parameter).is_ok());
     let offset = PcurveGeometry::Offset(
         OffsetPcurve::try_new(1.0, Box::new(basis)).expect("offset pcurve fixture"),
     );
     assert!(crate::eval::decode::pcurve_uv(crate::eval::admission::EvaluationAdmission::Standard, &offset, parameter).is_ok());
     assert!(matches!(
-        pcurve_tangent(&offset, parameter),
+        pcurve_tangent(crate::eval::admission::EvaluationAdmission::Standard, &offset, parameter),
         Err(EvaluationFailure::NonFinite(tangent)) if tangent.u.is_nan() && tangent.v.is_nan()
     ));
 }
@@ -526,7 +526,7 @@ fn an_offset_pcurve_over_an_offset_basis_has_no_tangent() {
         crate::eval::decode::pcurve_uv(crate::eval::admission::EvaluationAdmission::Standard, &outer, 0.5).map(crate::units::FinitePoint2::get),
         Ok(Point2::new(0.5, 2.0))
     );
-    assert_eq!(pcurve_tangent(&outer, 0.5), Err(EvaluationFailure::NoValue));
+    assert_eq!(pcurve_tangent(crate::eval::admission::EvaluationAdmission::Standard, &outer, 0.5), Err(EvaluationFailure::NoValue));
 }
 
 #[test]

@@ -5069,7 +5069,7 @@ fn mapped_pcurve_closest(
         let Some(uv) = pcurve_selection_uv(ctx, geometry, parameter)? else {
             return Ok(None);
         };
-        let tangent_uv = match pcurve_tangent(geometry, parameter) {
+        let tangent_uv = match pcurve_tangent(ctx, geometry, parameter) {
             Ok(value) => value,
             Err(cadmpeg_ir::eval::EvaluationFailure::ResourceLimit(limit)) => return Err(limit),
             Err(_) => return Ok(None),
