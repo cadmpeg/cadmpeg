@@ -40,3 +40,38 @@ fn charged_tree_lookup_counts_key_bytes_at_depth_bound() {
     // Three two-byte keys, eleven comparisons per node, two nodes in the depth bound.
     assert_eq!(limit.used, 132);
 }
+
+#[test]
+fn charged_hash_refuses_before_the_hash_callback() {
+    struct Key<'a> { bytes: &'a str, calls: &'a std::cell::Cell<usize> }
+    impl std::hash::Hash for Key<'_> {
+        fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+            self.calls.set(self.calls.get() + 1);
+            self.bytes.hash(state);
+        }
+    }
+    impl crate::decode::cost::DecodeCost for Key<'_> {
+        fn decode_cost(&self, _ctx: &DecodeContext<'_>, _operation: &'static str) -> Result<u64, CodecError> {
+            Ok(crate::decode::u64_from_index(self.bytes.len()) + crate::decode::u64_from_index(std::mem::size_of::<usize>()))
+        }
+    }
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+    let calls = std::cell::Cell::new(0);
+    let key = Key { bytes: "key", calls: &calls };
+    let CodecError::ResourceLimit(first) = ctx.hash_value(&key, "hash").expect_err("refusal") else { panic!("refusal") };
+    let CodecError::ResourceLimit(second) = ctx.hash_value(&key, "again").expect_err("fused refusal") else { panic!("refusal") };
+    assert_eq!(first, second);
+    assert_eq!(calls.get(), 0);
+}
+#[test]
+fn charged_set_get_borrows_the_stored_variable_size_key() {
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).expect("context");
+    let hash = std::collections::HashSet::from([String::from("stored")]);
+    let tree = std::collections::BTreeSet::from([String::from("stored")]);
+    assert_eq!(ctx.get_hash_set(&hash, "stored", "get").expect("admission").map(String::as_str), Some("stored"));
+    assert_eq!(ctx.get_btree_set(&tree, "stored", "get").expect("admission").map(String::as_str), Some("stored"));
+}
