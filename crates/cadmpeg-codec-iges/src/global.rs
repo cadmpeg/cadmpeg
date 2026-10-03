@@ -737,7 +737,7 @@ fn parse_raw(scan: &CardScan, ctx: &DecodeContext<'_>) -> Result<RawGlobal, Code
         }
     }
 
-    let mut values = ctx.alloc_filled(26, Value::Omitted, "iges_global_fields")?;
+    let mut values = ctx.collect_indexed_vec(26, "iges_global_fields", |_| Ok(Value::Omitted))?;
     values[0] = Value::String(ctx.copy_retained(&[parameter_delimiter], "iges_global_value")?);
     values[1] = if let Value::String(value) = record_value {
         Value::String(value)

@@ -52,7 +52,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
         };
         let name = self.tcx.item_name(definition);
         let name = name.as_str();
-        if self.checked_call(expression, definition) && name != "alloc_filled" {
+        if self.checked_call(expression, definition) {
             return;
         }
         let summary = external::summary(
@@ -84,28 +84,6 @@ impl<'tcx> Analysis<'_, 'tcx> {
         if allocation == Some(external::Allocation::Conversion)
             && matches!(self.expr_ty(expression).kind(), ty::Adt(owner, _) if types::standard(self.tcx, owner.did()) && self.tcx.item_name(owner.did()).as_str() == "Cow")
         {
-            return;
-        }
-        let context_call = operands.first().is_some_and(|operand| {
-            types::has_context(self.tcx, self.expr_ty(operand), &mut Vec::new())
-        });
-        if context_call && self.checked_call(expression, definition) {
-            if name == "alloc_filled"
-                && !operands.get(1).is_some_and(|count| self.zero_extent(count))
-            {
-                if let Some(value) = operands.get(2) {
-                    let shape = self.clone_shape(self.expr_ty(value));
-                    let empty = self.constant(value, &mut Vec::new())
-                        || self.call(value).is_some_and(|(id, args)| {
-                            types::standard(self.tcx, id)
-                                && args.is_empty()
-                                && matches!(self.tcx.item_name(id).as_str(), "new" | "default")
-                        });
-                    if !empty {
-                        self.shape_report(expression, shape, "alloc_filled child Clone");
-                    }
-                }
-            }
             return;
         }
         if let Some(external::Allocation::Input(index)) = allocation {

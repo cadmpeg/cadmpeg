@@ -336,11 +336,7 @@ impl StandardTopologyDraft {
         let Some(edge_vertices) = self.edge_vertices(ctx)? else {
             return Ok(None);
         };
-        let mut domains = ctx.alloc_filled(
-            self.logical_vertex_count,
-            HashSet::new(),
-            "catia standard vertex point domains",
-        )?;
+        let mut domains = ctx.collect_indexed_vec(self.logical_vertex_count, "catia standard vertex point domains", |_| Ok(HashSet::new()))?;
         for domain in &mut domains {
             ctx.reserve_set(
                 domain,
@@ -732,7 +728,7 @@ pub(super) fn reconstruct_incidence_with_edge_classes_and_mesh(
         return Ok(None);
     };
     let edge_faces = completed_edge_faces.as_slice();
-    let mut face_edges = ctx.alloc_filled(face_count, Vec::new(), "catia standard face edges")?;
+    let mut face_edges = ctx.collect_indexed_vec(face_count, "catia standard face edges", |_| Ok(Vec::new()))?;
     for (edge, &[left, right]) in edge_faces.iter().enumerate() {
         let Some(face) = face_edges.get_mut(left) else {
             return Ok(None);
@@ -983,11 +979,7 @@ pub(super) fn complete_duplicate_face_slots(
     if unresolved.is_empty() {
         return Ok(Some(completed));
     }
-    let mut degrees = ctx.alloc_filled(
-        face_count,
-        Vec::<(usize, u8)>::new(),
-        "catia standard endpoint degrees",
-    )?;
+    let mut degrees = ctx.collect_indexed_vec(face_count, "catia standard endpoint degrees", |_| Ok(Vec::<(usize, u8)>::new()))?;
     for (edge, faces) in edge_faces.iter().enumerate() {
         let mut incident = *faces;
         ctx.sort_unstable_by(
@@ -1249,11 +1241,7 @@ pub(crate) fn solve_boundary_orientation_constraints(
     edge_uses: &HashMap<usize, Vec<(usize, bool)>>,
     require_paired_uses: bool,
 ) -> Result<Option<Vec<bool>>, CodecError> {
-    let mut constraints = ctx.alloc_filled(
-        boundary_count,
-        Vec::<(usize, bool)>::new(),
-        "catia standard boundary constraints",
-    )?;
+    let mut constraints = ctx.collect_indexed_vec(boundary_count, "catia standard boundary constraints", |_| Ok(Vec::<(usize, bool)>::new()))?;
     for uses in edge_uses.values() {
         let [(left_node, left_reversed), (right_node, right_reversed)] = uses.as_slice() else {
             if !require_paired_uses && uses.len() == 1 {

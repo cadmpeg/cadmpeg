@@ -1907,11 +1907,7 @@ fn unique_bipartite_assignment(
     if candidate_sets.is_empty() {
         return Ok(None);
     }
-    let mut normalized = ctx.alloc_filled(
-        candidate_sets.len(),
-        Vec::<i64>::new(),
-        "f3d edge normalized groups",
-    )?;
+    let mut normalized = ctx.collect_indexed_vec(candidate_sets.len(), "f3d edge normalized groups", |_| Ok(Vec::<i64>::new()))?;
     for (source, candidates) in candidate_sets.iter().zip(&mut normalized) {
         *candidates = ctx.alloc_filled(source.len(), 0, "f3d edge normalized candidates")?;
         candidates.copy_from_slice(source);

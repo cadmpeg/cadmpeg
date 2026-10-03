@@ -740,7 +740,7 @@ fn build_secondary_layouts(
         grip_points,
     } = *context;
     let live_vertices = vertex_ir.iter().flatten().count();
-    let mut layouts = ctx.alloc_filled(live_vertices, None, "f3d subd secondary layouts")?;
+    let mut layouts = ctx.collect_indexed_vec(live_vertices, "f3d subd secondary layouts", |_| Ok(None))?;
     let mut has_cg = ctx.alloc_filled(
         vertex_live.len(),
         false,

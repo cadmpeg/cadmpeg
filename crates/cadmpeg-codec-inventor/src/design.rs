@@ -635,11 +635,7 @@ fn close_parameter_graph(
         .map(|(index, parameter)| (&parameter.id, index))
         .collect::<HashMap<_, _>>();
     let mut remaining = ctx.alloc_filled(count, 0usize, "admit Inventor parameter indegrees")?;
-    let mut dependents = ctx.alloc_filled(
-        count,
-        Vec::<usize>::new(),
-        "admit Inventor parameter adjacency",
-    )?;
+    let mut dependents = ctx.collect_indexed_vec(count, "admit Inventor parameter adjacency", |_| Ok(Vec::<usize>::new()))?;
     ctx.charge_collection_items(
         cadmpeg_core::decode::u64_from_index(edge_count),
         "admit Inventor parameter edges",

@@ -3473,11 +3473,7 @@ pub(super) fn counterbore_cylinders(
         cadmpeg_core::decode::u64_from_index(pair_work),
         "NX counterbore pair scan",
     )?;
-    let mut candidates = ctx.alloc_filled(
-        cylinders.len(),
-        Vec::<(usize, CounterboreCylinderWitness)>::new(),
-        "nx counterbore cylinder candidates",
-    )?;
+    let mut candidates = ctx.collect_indexed_vec(cylinders.len(), "nx counterbore cylinder candidates", |_| Ok(Vec::<(usize, CounterboreCylinderWitness)>::new()))?;
     for (first_index, first) in cylinders.iter().enumerate() {
         for (second_index, second) in cylinders.iter().enumerate().skip(first_index + 1) {
             let (small, large) = if first.radius < second.radius {

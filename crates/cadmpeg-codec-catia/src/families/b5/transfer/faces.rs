@@ -184,11 +184,7 @@ pub(super) fn orient_loop_members(
             ctx.push_vec(occurrences, (node, sense), "catia b5 orientation edge uses")?;
         }
     }
-    let mut constraints = ctx.alloc_filled(
-        loop_ids.len(),
-        Vec::<(usize, bool)>::new(),
-        "catia b5 loop orientation constraints",
-    )?;
+    let mut constraints = ctx.collect_indexed_vec(loop_ids.len(), "catia b5 loop orientation constraints", |_| Ok(Vec::<(usize, bool)>::new()))?;
     for [(left, left_reversed), (right, right_reversed)] in uses
         .values()
         .filter_map(|occurrences| <&[_; 2]>::try_from(occurrences.as_slice()).ok())

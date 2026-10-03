@@ -2112,11 +2112,7 @@ fn evaluate_expression_program_details(
             || solve_program.executable_line_indices.contains(index)
     };
     let control_is_valid = expression_program_control_is_valid(ctx, lines)?;
-    let mut parsed_assignments = ctx.alloc_filled(
-        lines.len(),
-        None::<CurveExpressionAssignment>,
-        "creo parsed expression assignment slots",
-    )?;
+    let mut parsed_assignments = ctx.collect_indexed_vec(lines.len(), "creo parsed expression assignment slots", |_| Ok(None::<CurveExpressionAssignment>))?;
     for (index, line) in lines.iter().enumerate() {
         if solve_line_is_executable(&index) {
             parsed_assignments[index] = expression_assignment(ctx, line)?;
@@ -2206,11 +2202,7 @@ fn evaluate_expression_program_details(
         {
             let mut dimensions =
                 ctx.alloc_filled(block.unknowns.len(), None, "creo solve dimension snapshots")?;
-            let mut initial_values = ctx.alloc_filled(
-                block.unknowns.len(),
-                None,
-                "creo solve initial value snapshots",
-            )?;
+            let mut initial_values = ctx.collect_indexed_vec(block.unknowns.len(), "creo solve initial value snapshots", |_| Ok(None))?;
             for ((dimension, initial), unknown) in dimensions
                 .iter_mut()
                 .zip(&mut initial_values)

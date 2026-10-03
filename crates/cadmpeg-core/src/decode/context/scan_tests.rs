@@ -67,3 +67,26 @@ fn scan_fill_admits_work_and_retained_storage_before_initialization() {
         [7, 7]
     );
 }
+
+#[test]
+fn scan_fill_copies_without_running_clone() {
+    #[derive(Copy)]
+    struct CopyValue<'a>(&'a std::cell::Cell<usize>);
+
+    // Clone has an observable effect so the test detects clone-based fills.
+    #[allow(clippy::non_canonical_clone_impl)]
+    impl Clone for CopyValue<'_> {
+        fn clone(&self) -> Self {
+            self.0.set(self.0.get() + 1);
+            *self
+        }
+    }
+
+    let clones = std::cell::Cell::new(0);
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
+        .expect("empty root is admitted");
+    let values = ctx.alloc_filled(3, CopyValue(&clones), "fixed copies").expect("admitted copies");
+    assert_eq!(values.len(), 3);
+    assert_eq!(clones.get(), 0);
+}

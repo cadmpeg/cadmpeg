@@ -3717,11 +3717,7 @@ fn e5_ownership_plan(
             ctx.insert_hash_map(&mut body_by_face, *face, body, "catia_e5_body_faces")?;
         }
     }
-    let mut uses = ctx.alloc_filled(
-        body_faces.len(),
-        HashMap::<u32, usize>::new(),
-        "catia_e5_body_uses",
-    )?;
+    let mut uses = ctx.collect_indexed_vec(body_faces.len(), "catia_e5_body_uses", |_| Ok(HashMap::<u32, usize>::new()))?;
     let mut bodies_by_edge = HashMap::new();
     for &edge in topology.edges.keys() {
         ctx.insert_hash_map(

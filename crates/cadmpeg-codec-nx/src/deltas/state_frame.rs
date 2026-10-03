@@ -29,11 +29,7 @@ impl StateFrames {
         ctx: &DecodeContext<'_>,
         first: ReferenceStateFrame,
     ) -> Result<Self, CodecError> {
-        Ok(Self(ctx.alloc_filled(
-            1,
-            first,
-            "NX reference state frames",
-        )?))
+        Ok(Self(ctx.collect_retained_vec([first], "NX reference state frames")?))
     }
     pub(super) fn push(
         &mut self,

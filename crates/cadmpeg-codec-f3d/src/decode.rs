@@ -3931,7 +3931,7 @@ fn mesh_texture_assignments(
         ));
     }
     let mut triangles =
-        ctx.alloc_filled(textures.len(), Vec::new(), "f3d mesh texture assignments")?;
+        ctx.collect_indexed_vec(textures.len(), "f3d mesh texture assignments", |_| Ok(Vec::new()))?;
     for (triangle, texture_id) in texture_ids.iter().enumerate() {
         ctx.charge_work(1, "resolve F3D mesh texture triangle")?;
         if *texture_id == 0 {

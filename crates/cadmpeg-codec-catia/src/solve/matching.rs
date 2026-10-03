@@ -298,8 +298,8 @@ pub(crate) fn retain_distinct_matching_supports(
     let Some(node_count) = domains.len().checked_add(point_count) else {
         return Ok(None);
     };
-    let mut graph = ctx.alloc_filled(node_count, Vec::new(), "catia_match_support_graph")?;
-    let mut reverse = ctx.alloc_filled(node_count, Vec::new(), "catia_match_support_reverse")?;
+    let mut graph = ctx.collect_indexed_vec(node_count, "catia_match_support_graph", |_| Ok(Vec::new()))?;
+    let mut reverse = ctx.collect_indexed_vec(node_count, "catia_match_support_reverse", |_| Ok(Vec::new()))?;
     let mut matched_points = ctx.alloc_filled(point_count, false, "catia_match_support_points")?;
     for (domain, values) in domains.iter().enumerate() {
         if !values.contains(&matching[domain]) || matched_points[matching[domain]] {
@@ -604,7 +604,7 @@ pub(crate) fn unique_coordinate_bijection(
     }
     let mut slot_classes = Vec::new();
     let mut slots_by_class =
-        ctx.alloc_filled(capacities.len(), Vec::new(), "catia_bijection_slots")?;
+        ctx.collect_indexed_vec(capacities.len(), "catia_bijection_slots", |_| Ok(Vec::new()))?;
     for (class, capacity) in capacities.into_iter().enumerate() {
         for _ in 0..capacity {
             let slot = slot_classes.len();
@@ -636,11 +636,7 @@ pub(crate) fn unique_coordinate_bijection(
             }
         }
     }
-    let mut available = ctx.alloc_filled(
-        representatives.len(),
-        Vec::new(),
-        "catia_bijection_available",
-    )?;
+    let mut available = ctx.collect_indexed_vec(representatives.len(), "catia_bijection_available", |_| Ok(Vec::new()))?;
     for (point, class) in point_classes.into_iter().enumerate() {
         ctx.push_vec(
             &mut available[class],

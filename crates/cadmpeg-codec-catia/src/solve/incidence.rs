@@ -249,7 +249,7 @@ fn prune_incidence_choices_with_explicit_support(
     {
         return Ok(None);
     }
-    let mut face_edges = ctx.alloc_filled(face_count, Vec::new(), "catia_incidence_face_edges")?;
+    let mut face_edges = ctx.collect_indexed_vec(face_count, "catia_incidence_face_edges", |_| Ok(Vec::new()))?;
     for (edge, faces) in edge_faces.iter().copied().enumerate() {
         for face in unique_faces(faces) {
             ctx.push_vec(
@@ -260,11 +260,7 @@ fn prune_incidence_choices_with_explicit_support(
         }
     }
     let mut fixed = ctx.alloc_filled(choices.len(), false, "catia_incidence_fixed_edges")?;
-    let mut degrees = ctx.alloc_filled(
-        face_count,
-        BTreeMap::<usize, u8>::new(),
-        "catia_incidence_degrees",
-    )?;
+    let mut degrees = ctx.collect_indexed_vec(face_count, "catia_incidence_degrees", |_| Ok(BTreeMap::<usize, u8>::new()))?;
     let mut edge_supports = Vec::new();
     ctx.reserve_vec(
         &mut edge_supports,
@@ -274,11 +270,7 @@ fn prune_incidence_choices_with_explicit_support(
     for pairs in choices.iter() {
         edge_supports.push(choice_points(ctx, pairs)?);
     }
-    let mut supports = ctx.alloc_filled(
-        face_count,
-        BTreeMap::<usize, u32>::new(),
-        "catia_incidence_supports",
-    )?;
+    let mut supports = ctx.collect_indexed_vec(face_count, "catia_incidence_supports", |_| Ok(BTreeMap::<usize, u32>::new()))?;
     for (edge, points) in edge_supports.iter().enumerate() {
         for face in unique_faces(edge_faces[edge]) {
             for &point in points {
@@ -761,17 +753,9 @@ fn order_incidence_components_by_constraints(
     }
     let mut incoming =
         ctx.alloc_filled(components.len(), 0usize, "catia_incidence_component_in")?;
-    let mut outgoing = ctx.alloc_filled(
-        components.len(),
-        Vec::<usize>::new(),
-        "catia_incidence_component_out",
-    )?;
+    let mut outgoing = ctx.collect_indexed_vec(components.len(), "catia_incidence_component_out", |_| Ok(Vec::<usize>::new()))?;
     let mut local_incoming = ctx.alloc_filled(choices.len(), 0usize, "catia_incidence_local_in")?;
-    let mut local_outgoing = ctx.alloc_filled(
-        choices.len(),
-        Vec::<usize>::new(),
-        "catia_incidence_local_out",
-    )?;
+    let mut local_outgoing = ctx.collect_indexed_vec(choices.len(), "catia_incidence_local_out", |_| Ok(Vec::<usize>::new()))?;
     let mut add_dependency =
         |target_edge: usize, prerequisite_edge: usize| -> Result<(), CodecError> {
             let (Some(&target_component), Some(&prerequisite_component)) = (
@@ -1106,7 +1090,7 @@ impl FaceFactorGraph {
         }
         let mut arcs = Vec::new();
         let mut incoming =
-            ctx.alloc_filled(domains.len(), Vec::new(), "catia_face_factor_incoming")?;
+            ctx.collect_indexed_vec(domains.len(), "catia_face_factor_incoming", |_| Ok(Vec::new()))?;
         for left in 0..domains.len() {
             for right in 0..domains.len() {
                 if left == right || edge_sets[left].is_disjoint(&edge_sets[right]) {
@@ -1364,7 +1348,7 @@ fn prune_face_configuration_support(
         edge_sets.push(edges);
     }
     let mut neighbors =
-        ctx.alloc_filled(domains.len(), Vec::new(), "catia_face_config_neighbors")?;
+        ctx.collect_indexed_vec(domains.len(), "catia_face_config_neighbors", |_| Ok(Vec::new()))?;
     let mut queue = VecDeque::new();
     for left in 0..domains.len() {
         for right in 0..domains.len() {
@@ -1788,7 +1772,7 @@ fn prepare_face_configuration_domains(
     let Some(assignments) = assignments else {
         return Ok(None);
     };
-    let mut domains = ctx.alloc_filled(assignments.len(), None, "catia_face_factor_domains")?;
+    let mut domains = ctx.collect_indexed_vec(assignments.len(), "catia_face_factor_domains", |_| Ok(None))?;
     for (face, domain) in assignments.iter().enumerate() {
         let MeshFaceBoundaryDomain::Ordered(assignments) = domain else {
             continue;
@@ -1876,7 +1860,7 @@ fn prepare_face_configuration_domains(
         .transpose()?;
     let mut factor_by_face = ctx.alloc_filled(domains.len(), None, "catia_face_factor_by_face")?;
     let mut factors_by_edge =
-        ctx.alloc_filled(choices.len(), Vec::new(), "catia_face_factors_by_edge")?;
+        ctx.collect_indexed_vec(choices.len(), "catia_face_factors_by_edge", |_| Ok(Vec::new()))?;
     for (factor, &face) in retained_faces.iter().enumerate() {
         factor_by_face[face] = Some(factor);
         let indexed_edges = configurations[factor]
@@ -4947,11 +4931,7 @@ where
         let mut component_storage = ctx.reserve_scoped(0, "CATIA component incidence workspace")?;
         let mut active = ctx.alloc_filled(choices.len(), false, "catia incidence active edges")?;
         let mut constraints = HashSet::<(usize, usize)>::new();
-        let mut point_support_edges = ctx.alloc_filled(
-            face_edges.len(),
-            HashMap::<usize, Vec<usize>>::new(),
-            "catia incidence point support edges",
-        )?;
+        let mut point_support_edges = ctx.collect_indexed_vec(face_edges.len(), "catia incidence point support edges", |_| Ok(HashMap::<usize, Vec<usize>>::new()))?;
         let mut component_faces = HashSet::new();
         for &edge in component {
             active[edge] = true;
@@ -5662,7 +5642,7 @@ where
             return Ok(None);
         }
         let mut face_edges =
-            ctx.alloc_filled(face_count, Vec::new(), "catia incidence face edges")?;
+            ctx.collect_indexed_vec(face_count, "catia incidence face edges", |_| Ok(Vec::new()))?;
         for (edge, faces) in edge_faces.iter().copied().enumerate() {
             for (rank, face) in faces.into_iter().enumerate() {
                 if (rank == 0 || face != faces[0]) && !face_edges[face].contains(&edge) {
@@ -5675,11 +5655,7 @@ where
             }
         }
         let mut fixed = ctx.alloc_filled(choices.len(), None, "catia incidence fixed edges")?;
-        let mut degrees = ctx.alloc_filled(
-            face_count,
-            BTreeMap::<usize, u8>::new(),
-            "catia incidence face degrees",
-        )?;
+        let mut degrees = ctx.collect_indexed_vec(face_count, "catia incidence face degrees", |_| Ok(BTreeMap::<usize, u8>::new()))?;
         for (edge, pairs) in choices.iter().enumerate() {
             let [pair] = pairs.as_slice() else {
                 continue;

@@ -1478,11 +1478,7 @@ pub(crate) fn project_profiled_hole_constructions(
             )?;
         }
     }
-    let mut unowned_incomplete_holes = ctx.alloc_filled(
-        histories.len(),
-        Vec::<(&str, u32)>::new(),
-        "SLDPRT unowned incomplete-hole histories",
-    )?;
+    let mut unowned_incomplete_holes = ctx.collect_indexed_vec(histories.len(), "SLDPRT unowned incomplete-hole histories", |_| Ok(Vec::<(&str, u32)>::new()))?;
     for feature in features.iter() {
         ctx.charge_work(1, OPERATION)?;
         let FeatureDefinition::Operation(FeatureOperation::Hole { shape, extent, .. }) =
@@ -3271,11 +3267,7 @@ fn partition_seeded_hole_axes(
         seed_directions.push(direction);
     }
 
-    let mut partitions = ctx.alloc_filled(
-        siblings.len(),
-        Vec::<HolePlacement>::new(),
-        "SLDPRT seeded hole-axis partitions",
-    )?;
+    let mut partitions = ctx.collect_indexed_vec(siblings.len(), "SLDPRT seeded hole-axis partitions", |_| Ok(Vec::<HolePlacement>::new()))?;
     for placement in candidates {
         let HolePlacement::Axis { axis, .. } = placement else {
             return Ok(());

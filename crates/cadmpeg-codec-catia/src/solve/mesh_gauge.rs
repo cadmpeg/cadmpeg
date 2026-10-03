@@ -734,11 +734,7 @@ pub(super) fn build_mesh_coordinate_gauge(
 
     let mut option_records = Vec::<(usize, [usize; 2])>::new();
     let mut option_indices_by_edge = Vec::new();
-    let mut option_neighbors = ctx.alloc_filled(
-        point_count,
-        Vec::<usize>::new(),
-        "catia_gauge_option_neighbors",
-    )?;
+    let mut option_neighbors = ctx.collect_indexed_vec(point_count, "catia_gauge_option_neighbors", |_| Ok(Vec::<usize>::new()))?;
     for (edge, options) in normalized_options.iter().enumerate() {
         let mut indices = Vec::new();
         for &pair in options {
@@ -1288,19 +1284,11 @@ fn canonicalize_mesh_edge_row_gauges(
             Ok(None) => return None,
             Err(error) => return Some(Err(error)),
         };
-        let mut incident_faces = match ctx.alloc_filled(
-            edge_count,
-            Vec::<usize>::new(),
-            "catia_mesh_edge_gauge_faces",
-        ) {
+        let mut incident_faces = match ctx.collect_indexed_vec(edge_count, "catia_mesh_edge_gauge_faces", |_| Ok(Vec::<usize>::new())) {
             Ok(faces) => faces,
             Err(error) => return Some(Err(error)),
         };
-        let mut usage = match ctx.alloc_filled(
-            edge_count,
-            Vec::<(usize, usize, usize, bool, usize, usize)>::new(),
-            "catia_mesh_edge_gauge_usage",
-        ) {
+        let mut usage = match ctx.collect_indexed_vec(edge_count, "catia_mesh_edge_gauge_usage", |_| Ok(Vec::<(usize, usize, usize, bool, usize, usize)>::new())) {
             Ok(usage) => usage,
             Err(error) => return Some(Err(error)),
         };

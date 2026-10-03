@@ -188,11 +188,7 @@ fn partial_compact_assignment_viable(
             for (&edge, &points) in &selected {
                 edge_points[edge] = points;
             }
-            let mut compatible = ctx.alloc_filled(
-                closed_components.len(),
-                Vec::new(),
-                "catia_deferred_compatible_rows",
-            )?;
+            let mut compatible = ctx.collect_indexed_vec(closed_components.len(), "catia_deferred_compatible_rows", |_| Ok(Vec::new()))?;
             for (row, component) in compatible.iter_mut().zip(&closed_components) {
                 let incidence = incidence_cycles(ctx, component, &edge_points)?;
                 let Some([incidence]) = incidence.as_deref() else {
@@ -1639,11 +1635,7 @@ pub(super) fn close_coordinate_roots_with_incidence<'storage>(
                         "catia_coordinate_closure_local_edge_faces",
                     )?;
                 }
-                let mut face_edges = ctx.alloc_filled(
-                    boundary_domains.len(),
-                    Vec::new(),
-                    "catia_coordinate_closure_face_edges",
-                )?;
+                let mut face_edges = ctx.collect_indexed_vec(boundary_domains.len(), "catia_coordinate_closure_face_edges", |_| Ok(Vec::new()))?;
                 for (edge, faces) in local_edge_faces.iter().copied().enumerate() {
                     for (rank, face) in faces.into_iter().enumerate() {
                         if rank == 0 || face != faces[0] {
@@ -1684,11 +1676,7 @@ pub(super) fn close_coordinate_roots_with_incidence<'storage>(
                 "catia_coordinate_closure_local_domains",
             )?;
         }
-        let mut root_edges = ctx.alloc_filled(
-            component.len(),
-            Vec::new(),
-            "catia_coordinate_closure_root_edges",
-        )?;
+        let mut root_edges = ctx.collect_indexed_vec(component.len(), "catia_coordinate_closure_root_edges", |_| Ok(Vec::new()))?;
         for (edge, [left, right]) in local_edges.iter().copied().enumerate() {
             ctx.push_vec(
                 &mut root_edges[left],

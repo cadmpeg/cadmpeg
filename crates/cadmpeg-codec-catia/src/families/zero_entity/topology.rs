@@ -347,7 +347,7 @@ pub(super) fn endpoint_locus_candidates_with_budget(
         }
     }
     let mut neighbors =
-        ctx.alloc_filled(endpoints.len(), Vec::new(), "catia_zero_locus_neighbors")?;
+        ctx.collect_indexed_vec(endpoints.len(), "catia_zero_locus_neighbors", |_| Ok(Vec::new()))?;
     for (index, (_, _, point)) in endpoints.iter().enumerate() {
         let Some(cell) = endpoint_cell(*point) else {
             return Ok(None);
@@ -466,7 +466,7 @@ fn endpoint_match_graph(
             }
         }
     }
-    let mut matches = ctx.alloc_filled(occurrences.len(), Vec::new(), "catia_zero_match_rows")?;
+    let mut matches = ctx.collect_indexed_vec(occurrences.len(), "catia_zero_match_rows", |_| Ok(Vec::new()))?;
     for (index, occurrence) in occurrences.iter().enumerate() {
         let mut possible = HashSet::new();
         for endpoint in occurrence.model_endpoints {

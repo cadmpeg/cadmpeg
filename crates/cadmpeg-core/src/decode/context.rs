@@ -356,10 +356,9 @@ impl<'a> DecodeContext<'a> {
     }
 
     /// Allocates `count` fixed-storage copies after admitting work, retained
-    /// storage and collection slots. The fill is Copy or an empty standard
-    /// collection. Owned child copies use `collect_indexed_vec` and charged
-    /// child construction. The source policy checks unresolved fills.
-    pub fn alloc_filled<T: Clone>(
+    /// storage and collection slots. Owned children use `collect_indexed_vec`
+    /// and charged child construction.
+    pub fn alloc_filled<T: Copy>(
         &self,
         count: usize,
         value: T,
@@ -367,7 +366,9 @@ impl<'a> DecodeContext<'a> {
     ) -> Result<Vec<T>, CodecError> {
         self.charge_work(u64_from_index(count), operation)?;
         let mut values = self.collection_vec(count, operation)?;
-        values.resize(count, value);
+        for _ in 0..count {
+            values.push(value);
+        }
         Ok(values)
     }
 

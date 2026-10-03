@@ -4019,11 +4019,7 @@ fn connected_face_components(
     edge_vertices: &BTreeMap<String, (String, String)>,
     ctx: &DecodeContext<'_>,
 ) -> Result<Vec<Vec<usize>>, CodecError> {
-    let mut neighbors = ctx.alloc_filled(
-        face_ids.len(),
-        BTreeSet::new(),
-        "STEP connected-face neighbors",
-    )?;
+    let mut neighbors = ctx.collect_indexed_vec(face_ids.len(), "STEP connected-face neighbors", |_| Ok(BTreeSet::new()))?;
     let mut face_indices = BTreeMap::new();
     for (index, face) in face_ids.iter().enumerate() {
         ctx.insert_btree_map(
