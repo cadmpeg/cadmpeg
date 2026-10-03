@@ -513,7 +513,7 @@ impl<'a> RseInventory<'a> {
         let mut database_descriptors =
             ctx.vector_storage(databases.len(), "admit RSe database descriptors")?;
         for (band, stream_id) in databases {
-            let state = match snapshot.stream_by_id(stream_id) {
+            let state = match snapshot.stream_by_id(ctx, stream_id)? {
                 Some(stream) => match snapshot
                     .open(ctx, stream)
                     .and_then(|view| parse_database(ctx, view.window()))
@@ -544,7 +544,7 @@ impl<'a> RseInventory<'a> {
         // declared, including when they declared nothing or disagreed. What the
         // grammar cannot frame degrades here, which is a structural outcome; the
         // declarations decide the admission, not whether the attempt is made.
-        let registry = match snapshot.stream("RSeStorage/RSeSegInfo") {
+        let registry = match snapshot.stream(ctx, "RSeStorage/RSeSegInfo")? {
             None => ParsedState::Absent,
             Some(stream) => match snapshot
                 .open(ctx, stream)
@@ -554,7 +554,7 @@ impl<'a> RseInventory<'a> {
                 Err(error) => ParsedState::Unavailable(rse_issue_detail(ctx, error)?),
             },
         };
-        let revisions = match snapshot.stream("RSeStorage/RSeDbRevisionInfo") {
+        let revisions = match snapshot.stream(ctx, "RSeStorage/RSeDbRevisionInfo")? {
             None => ParsedState::Absent,
             Some(stream) => match snapshot
                 .open(ctx, stream)
@@ -585,7 +585,7 @@ impl<'a> RseInventory<'a> {
             .map(
                 |pair| -> Result<SegmentDescriptor<'a, BulkEnvelope<'a>>, CodecError> {
                     let meta = snapshot
-                        .stream_by_id(pair.metadata)
+                        .stream_by_id(ctx, pair.metadata)?
                         .ok_or_else(|| {
                             CodecError::Malformed("RSe metadata stream handle is absent".into())
                         })
@@ -599,7 +599,7 @@ impl<'a> RseInventory<'a> {
                         },
                     };
                     let bulk = snapshot
-                        .stream_by_id(pair.bulk)
+                        .stream_by_id(ctx, pair.bulk)?
                         .ok_or_else(|| {
                             CodecError::Malformed("RSe bulk stream handle is absent".into())
                         })

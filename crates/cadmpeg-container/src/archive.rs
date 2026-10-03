@@ -273,14 +273,14 @@ impl<'a> ArchiveSnapshot<'a> {
     }
 
     /// Finds an entry record by its exact archive name.
-    pub fn entry(&self, name: &str) -> Option<&EntryRecord> {
-        self.by_name.get(name).map(|index| &self.entries[*index])
+    pub fn entry(&self, ctx: &DecodeContext<'_>, name: &str) -> Result<Option<&EntryRecord>, CodecError> {
+        Ok(ctx.get_btree_map(&self.by_name, name, "ZIP entry lookup")?.map(|index| &self.entries[*index]))
     }
 
     /// Opens an exact entry name as a borrowed stored slice or budgeted expanded view.
     pub fn open(&self, ctx: &DecodeContext<'a>, name: &str) -> Result<View<'a>, CodecError> {
         let entry = self
-            .entry(name)
+            .entry(ctx, name)?
             .ok_or_else(|| CodecError::malformed(format_args!("ZIP entry {name} is absent")))?;
         let end = entry.data_end()?;
         let archive_start = cadmpeg_core::decode::u64_from_index(self.root.start());
@@ -2115,6 +2115,21 @@ mod tests {
     }
 
     #[test]
+    fn archive_name_lookup_refuses_before_key_comparison() {
+        let bytes = archive_bytes();
+        let arena = DecodeArena::new();
+        let (setup, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service()).expect("setup");
+        let snapshot = ArchiveSnapshot::new(&setup, root).expect("snapshot");
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+        let CodecError::ResourceLimit(first) = snapshot.entry(&ctx, "stored.bin").expect_err("lookup work") else { panic!("resource refusal") };
+        assert_eq!(first.dimension, ResourceDimension::WorkUnits);
+        let CodecError::ResourceLimit(repeated) = snapshot.entry(&ctx, "absent").expect_err("fused lookup") else { panic!("resource refusal") };
+        assert_eq!(first, repeated);
+    }
+
+    #[test]
     fn snapshot_opens_supported_entries_after_parser_drop() {
         let bytes = archive_bytes();
         let arena = DecodeArena::new();
@@ -2122,9 +2137,9 @@ mod tests {
             .expect("archive fits root policy");
         let snapshot = ArchiveSnapshot::new(&ctx, root).expect("archive snapshots");
         assert_eq!(snapshot.entries().len(), 3);
-        let stored = snapshot.entry("stored.bin").expect("stored record");
-        let deflated = snapshot.entry("deflated.bin").expect("deflated record");
-        let zstd = snapshot.entry("zstd.bin").expect("Zstandard record");
+        let stored = snapshot.entry(&ctx, "stored.bin").expect("lookup admission").expect("stored record");
+        let deflated = snapshot.entry(&ctx, "deflated.bin").expect("lookup admission").expect("deflated record");
+        let zstd = snapshot.entry(&ctx, "zstd.bin").expect("lookup admission").expect("Zstandard record");
         assert_eq!(
             snapshot
                 .open(&ctx, &stored.name)
@@ -2166,7 +2181,7 @@ mod tests {
                     .expect("archive fits service profile");
             ArchiveSnapshot::new(&ctx, root)
                 .expect("original directory is valid")
-                .entry("deflated.bin")
+                .entry(&ctx, "deflated.bin").expect("lookup admission")
                 .expect("deflate entry exists")
                 .clone()
         };
@@ -2209,7 +2224,7 @@ mod tests {
             .expect("archive fits root policy");
         let first = ArchiveSnapshot::new(&ctx, root).expect("first archive snapshot");
         let second = ArchiveSnapshot::new(&ctx, root).expect("second archive snapshot");
-        let mut detached = second.entry("stored.bin").expect("entry exists").clone();
+        let mut detached = second.entry(&ctx, "stored.bin").expect("lookup admission").expect("entry exists").clone();
         detached.data_start = u64::MAX;
         detached.crc32 = 0;
         assert_eq!(
@@ -2241,7 +2256,7 @@ mod tests {
             ("deflated.bin", b"deflated payload".as_slice()),
             ("zstd.bin", b"Zstandard payload".as_slice()),
         ] {
-            let entry = snapshot.entry(name).expect("entry exists");
+            let entry = snapshot.entry(&ctx, name).expect("lookup admission").expect("entry exists");
             assert_eq!(
                 snapshot
                     .open(&ctx, &entry.name)

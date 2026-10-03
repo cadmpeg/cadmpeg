@@ -1514,7 +1514,7 @@ pub(crate) fn scan_legacy<'a>(
 ) -> Result<(Container<'a>, View<'a>), CodecError> {
     let snapshot = CompoundSnapshot::new(ctx, root)?;
     let part = snapshot
-        .stream("UG_PART/UG_PART")
+        .stream(ctx, "UG_PART/UG_PART")?
         .ok_or_else(|| CodecError::WrongFormat("missing legacy UG_PART/UG_PART stream".into()))?;
     let part_view = snapshot.open(ctx, part)?;
     let payload_prefix = part_view

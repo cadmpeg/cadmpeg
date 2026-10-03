@@ -41,7 +41,7 @@ pub(crate) fn parse<'a>(
     ctx: &DecodeContext<'a>,
     snapshot: &CompoundSnapshot<'a>,
 ) -> Result<ProteinState<'a>, CodecError> {
-    let Some(stream) = snapshot.stream("Protein") else {
+    let Some(stream) = snapshot.stream(ctx, "Protein")? else {
         return Ok(ProteinState::Absent);
     };
     let source = snapshot.open(ctx, stream)?;
@@ -473,7 +473,7 @@ mod tests {
                 .expect("compound context");
         let snapshot = CompoundSnapshot::new(&cfb_ctx, cfb_root).expect("compound fixture");
         let stream = snapshot
-            .stream("RSeStorage/RSeSegInfo")
+            .stream(&cfb_ctx, "RSeStorage/RSeSegInfo").expect("lookup admission")
             .expect("fixture stream")
             .id();
         let package = ProteinEnvelope {
