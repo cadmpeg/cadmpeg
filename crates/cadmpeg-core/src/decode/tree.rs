@@ -164,6 +164,7 @@ fn enter_tree_depth<'ctx>(
     let mut scope = ctx.scoped_vector_storage(capacity, operation)?;
     ctx.charge_work(u64_from_index(count), operation)?;
     for _ in 0..count {
+        ctx.reserve_capacity(&mut scope.0, 1, operation)?;
         scope.0.push(ctx.enter_nested(operation)?);
     }
     Ok(scope)
