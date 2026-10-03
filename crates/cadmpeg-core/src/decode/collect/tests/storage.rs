@@ -228,11 +228,11 @@ storage_case!(
     }
 );
 // A u64/u64 B-tree node bound is 11 lane pairs, sixteen pointer widths
-// and two alignment widths. Five new entries use 1+2+3+3+4 node bounds.
+// and two alignment widths. One or five new entries admit one 320-byte node.
 storage_case!(
     insert_btree_map_storage,
     320,
-    4160,
+    320,
     |ctx: &DecodeContext<'_>, count| {
         let mut values = BTreeMap::new();
         for value in 0..count {
@@ -246,10 +246,11 @@ storage_case!(
         Ok(values)
     }
 );
+// One or five map entries admit one 320-byte backing node.
 storage_case!(
     admit_btree_entry_storage,
     320,
-    4160,
+    320,
     |ctx: &DecodeContext<'_>, count| {
         let mut values = BTreeMap::new();
         for value in 0..count {
@@ -260,10 +261,11 @@ storage_case!(
         Ok(values)
     }
 );
+// One or five set entries admit one 232-byte backing node.
 storage_case!(
     insert_btree_set_storage,
     232,
-    3016,
+    232,
     |ctx: &DecodeContext<'_>, count| {
         let mut values = BTreeSet::new();
         for value in 0..count {
@@ -381,10 +383,11 @@ storage_case!(
         Ok(values)
     }
 );
+// One or five collected set entries admit one 232-byte backing node.
 storage_case!(
     collect_btree_set_storage,
     232,
-    3016,
+    232,
     |ctx: &DecodeContext<'_>, count| {
         ctx.collect_btree_set(
             (0..count).map(|value| u64::try_from(value).expect("small test index")),
@@ -457,3 +460,55 @@ storage_case!(
 
 mod retained;
 mod scoped;
+
+#[test]
+fn btree_node_bound_increments_at_first_entry_and_each_five_keys() {
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
+        .expect("test context");
+    // Each u64/u64 node has eleven lane pairs, sixteen pointer widths and two alignments.
+    for (len, bytes) in [(0, 320), (1, 0), (4, 0), (5, 320), (6, 0), (9, 0), (10, 320)] {
+        assert_eq!(ctx.tree_growth_bytes::<u64, u64>(len, "node bound").unwrap(), bytes);
+    }
+    let error = ctx.tree_growth_bytes::<u64, u64>(usize::MAX, "node bound")
+        .expect_err("entry count overflow");
+    assert_eq!(error.dimension, ResourceDimension::RetainedBytes);
+    assert_eq!(error.operation, "node bound");
+}
+
+#[test]
+fn btree_node_bound_refuses_before_bound_step_and_keeps_map_unchanged() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    // Six entries admit two 320-byte nodes; the sixth must refuse one byte below that total.
+    policy.limits.max_retained_bytes = 639;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("test context");
+    let mut values = BTreeMap::new();
+    for key in 0u64..5 {
+        ctx.insert_btree_map(&mut values, key, 0u64, "bound step").unwrap();
+    }
+    assert_eq!(ctx.insert_btree_map(&mut values, 0, 7, "replacement").unwrap(), Some(0));
+    let error = ctx.insert_btree_map(&mut values, 5, 0, "bound step")
+        .expect_err("sixth key exceeds node bound");
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::RetainedBytes
+            && limit.used == 320 && limit.additional == 320 && limit.operation == "bound step"
+            && ctx.resource_refusal() == Some(limit)));
+    assert_eq!(values.len(), 5);
+    assert_eq!(values[&0], 7);
+    assert!(!values.contains_key(&5));
+
+    policy.limits.max_retained_bytes = 640;
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("test context");
+    let mut values = BTreeMap::new();
+    for key in 0u64..10 {
+        ctx.insert_btree_map(&mut values, key, 0u64, "bound step").unwrap();
+    }
+    assert_eq!(values.len(), 10);
+    let error = ctx.insert_btree_map(&mut values, 10, 0, "bound step")
+        .expect_err("eleventh key requires third node admission");
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.used == 640 && limit.additional == 320));
+    assert_eq!(values.len(), 10);
+}
