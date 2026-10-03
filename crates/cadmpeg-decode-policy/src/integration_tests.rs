@@ -224,6 +224,7 @@ fn check_fixture(name: &str) {
                     | "parser_zip"
                     | "parser_zstd"
                     | "reader_callbacks"
+                    | "sealed_traits"
                     | "byte_search"
                     | "zip"
                     | "boxing"
@@ -888,4 +889,9 @@ fn zstd_step_receipts_bind_all_buffers_and_the_live_workspace() {
 #[test]
 fn reader_callbacks_keep_extent_and_concrete_provider_obligations() {
     check_fixture("reader_callbacks");
+}
+
+#[test]
+fn sealed_traits_require_a_private_closed_implementation_set() {
+    check_fixture("sealed_traits");
 }

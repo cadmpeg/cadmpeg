@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 use crate::{types, Analysis};
 use rustc_hir::{Expr, ExprKind};
-use rustc_middle::ty::{self, Instance};
+use rustc_middle::ty::{self, Instance, TypeVisitableExt};
 use rustc_span::def_id::DefId;
 
 impl<'tcx> Analysis<'_, 'tcx> {
@@ -77,6 +77,23 @@ impl<'tcx> Analysis<'_, 'tcx> {
             }
     }
 
+    fn closed_local_trait(&self, trait_id: DefId) -> bool {
+        let Some(local) = trait_id.as_local() else { return false; };
+        if !self.tcx.effective_visibilities(()).is_exported(local) { return true; }
+        self.tcx.explicit_super_clauses_of(trait_id).iter_identity_copied().any(|entry| {
+            let (clause, _) = entry.skip_norm_wip();
+            let ty::ClauseKind::Trait(predicate) = clause.kind().skip_binder() else { return false; };
+            let Some(seal) = predicate.trait_ref.def_id.as_local() else { return false; };
+            if self.tcx.effective_visibilities(()).is_exported(seal) { return false; }
+            let mut implementations = self.tcx.all_impls(seal.to_def_id()).peekable();
+            implementations.peek().is_some() && implementations.all(|id| {
+                let value = self.tcx.impl_trait_ref(id).instantiate_identity().skip_norm_wip().self_ty();
+                !value.has_non_region_param() && !value.has_aliases()
+                    && !value.has_escaping_bound_vars()
+            })
+        })
+    }
+
     pub(crate) fn checked_call(&self, expression: &'tcx Expr<'tcx>, definition: DefId) -> bool {
         if self.admitted_source_step(expression, definition) || self.closed_scalar_default(expression) || self.core_iterator_metadata(expression, definition) { return true; }
         if self
@@ -98,7 +115,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
         if types::cost_trait(self.tcx, trait_id) || types::text_source_trait(self.tcx, trait_id) {
             return self.implementation(expression, definition).is_none();
         }
-        if !trait_id.is_local() || self.tcx.visibility(trait_id).is_public() {
+        if !self.closed_local_trait(trait_id) {
             return false;
         }
         let mut implementations = self.tcx.all_impls(trait_id).peekable();
