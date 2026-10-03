@@ -245,7 +245,9 @@ pub(crate) fn iteration<'tcx>(tcx: TyCtxt<'tcx>, value: Ty<'tcx>) -> Shape {
                 }
             }
             if standard(tcx, definition.did())
-                && matches!(name.as_str(), "Option" | "Result" | "Once" | "Empty")
+                && (matches!(name.as_str(), "Option" | "Result" | "Once" | "Empty")
+                    || matches!(name.as_str(), "Iter" | "IterMut" | "IntoIter")
+                        && (path.contains("option::") || path.contains("result::")))
             {
                 return Shape::Fixed;
             }
@@ -291,7 +293,7 @@ pub(crate) fn admitted_iterator<'tcx>(tcx: TyCtxt<'tcx>, value: Ty<'tcx>) -> boo
         "Map" | "Filter" | "FilterMap" | "Enumerate" | "Rev" | "Cloned" | "Copied"
             | "Inspect" | "Take" | "Skip" | "TakeWhile" | "SkipWhile" | "StepBy"
             | "Peekable" | "Fuse" | "Scan" | "MapWhile" | "DecodeUtf16" => admitted_iterator(tcx, source),
-        "Zip" | "Chain" => admitted_iterator(tcx, source)
+        "Zip" | "Chain" => (admitted_iterator(tcx, source) || iteration(tcx, source) == Shape::Fixed)
             && types.next().is_some_and(|other| admitted_iterator(tcx, other)
                 || iteration(tcx, other) == Shape::Fixed),
         "FlatMap" => admitted_iterator(tcx, source)

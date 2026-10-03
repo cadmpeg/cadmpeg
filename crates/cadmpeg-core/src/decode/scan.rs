@@ -44,6 +44,14 @@ impl<'a, T> AdmittedIter<std::slice::Iter<'a, T>> {
     }
 }
 
+impl<'text> AdmittedIter<std::str::Chars<'text>> {
+    /// Consumes byte admission for the remaining UTF-16 units.
+    /// A UTF-16 unit count does not exceed the UTF-8 byte count.
+    pub fn encode_utf16(self) -> AdmittedIter<std::str::EncodeUtf16<'text>> {
+        AdmittedIter { source: self.source.as_str().encode_utf16() }
+    }
+}
+
 impl DecodeContext<'_> {
     /// Validates borrowed UTF-8 after admitting every input byte.
     /// The inner result preserves the standard validation error.
@@ -324,6 +332,18 @@ impl DecodeContext<'_> {
 mod tests {
     use crate::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use crate::CodecError;
+
+    #[test]
+    fn admitted_utf16_adapter_consumes_only_remaining_text() {
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).expect("context");
+        let mut characters = ctx.admit_iter("A😀é", "text").expect("admission");
+        assert_eq!(characters.next(), Some('A'));
+        assert_eq!(characters.encode_utf16().collect::<Vec<_>>(), "😀é".encode_utf16().collect::<Vec<_>>());
+        let CodecError::ResourceLimit(limit) = ctx.charge_work(u64::MAX, "probe").expect_err("probe") else { panic!("refusal") };
+        // One admission covers the seven original UTF-8 bytes, including the consumed prefix.
+        assert_eq!(limit.used, 7);
+    }
 
     #[test]
     fn charged_text_validation_preserves_standard_results_and_counts_bytes() {

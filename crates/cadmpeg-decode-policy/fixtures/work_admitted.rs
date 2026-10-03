@@ -42,3 +42,12 @@ pub fn opaque(ctx: &DecodeContext, bytes: &[u8]) {
     for byte in opaque_admitted(bytes) { std::hint::black_box(byte); }
     for byte in opaque_raw(bytes) { std::hint::black_box(byte); } // finding: uncharged_decode_work
 }
+
+pub fn fixed_and_admitted_chain(ctx: &DecodeContext, bytes: &[u8]) {
+    let _ctx = ctx;
+    let admitted = decode::scan::source(bytes.iter()).copied();
+    for value in Some(0).into_iter().chain(admitted) { std::hint::black_box(value); }
+    let admitted = decode::scan::source(bytes.iter()).copied();
+    for value in admitted.chain(Some(0)) { std::hint::black_box(value); }
+    for value in Some(0).into_iter().chain(bytes.iter().copied()) { std::hint::black_box(value); } // finding: uncharged_decode_work
+}
