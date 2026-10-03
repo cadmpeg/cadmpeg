@@ -31,3 +31,16 @@ pub fn decode(ctx: &DecodeContext, hash: &std::collections::HashMap<Vec<String>,
     let _partial = key == other; // finding: uncharged_decode_work
     Ok(())
 }
+impl DecodeContext {
+    fn admit_sort<T>(&self, _values: &[T], _operation: &str) -> Result<(), ()> { Ok(()) }
+}
+pub fn sorts(ctx: &DecodeContext, values: &mut [u8], other: &mut [u8], flag: bool) -> Result<(), ()> {
+    ctx.admit_sort(values, "sort")?;
+    values.sort_unstable();
+    values.sort_unstable(); // finding: uncharged_decode_work
+    ctx.admit_sort(other, "other")?;
+    values.sort_unstable(); // finding: uncharged_decode_work
+    if flag { ctx.admit_sort(values, "conditional")?; }
+    values.sort_unstable(); // finding: uncharged_decode_work
+    Ok(())
+}
