@@ -602,7 +602,7 @@ pub(crate) fn summary(
         "from" | "into" | "into_owned" => (Allocation::Conversion, Work::Conversion),
         "from_elem" | "repeat" => (Allocation::Repeat, Work::Repeat),
         "with_capacity" | "with_capacity_in" => (Allocation::Capacity, Work::Fixed),
-        "into_boxed_slice" => (Allocation::Reallocate, Work::Fixed),
+        "into_boxed_slice" => (Allocation::Reallocate, Work::Receiver),
         "push" | "push_back" | "push_front" | "reserve" | "reserve_exact" | "try_reserve"
         | "try_reserve_exact" => (Allocation::Growth, Work::Fixed),
         "push_str" | "extend" | "extend_from_slice" | "append" => {

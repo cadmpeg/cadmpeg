@@ -14,6 +14,13 @@ pub(crate) struct Credit {
     pub(crate) opaque: bool,
 }
 
+#[derive(Clone, PartialEq, Eq)]
+pub(crate) struct ScopedStorage {
+    pub(crate) guard: String,
+    pub(crate) scope: rustc_span::Span,
+    pub(crate) terms: Vec<ExtentTerm>,
+}
+
 #[derive(Clone)]
 pub(crate) struct Flow {
     pub(crate) work: Vec<Credit>,
@@ -21,6 +28,7 @@ pub(crate) struct Flow {
     pub(crate) storage: bool,
     pub(crate) storage_parameters: std::collections::HashSet<String>,
     pub(crate) storage_extents: Vec<ExtentTerm>,
+    pub(crate) scoped_storage: Vec<ScopedStorage>,
     pub(crate) storage_slots: Vec<crate::storage::Slots>,
     pub(crate) loop_bounds: Vec<Vec<ExtentTerm>>,
     pub(crate) mutated: std::collections::HashSet<String>,
@@ -33,6 +41,7 @@ impl Default for Flow {
             storage: false,
             storage_parameters: std::collections::HashSet::new(),
             storage_extents: Vec::new(),
+            scoped_storage: Vec::new(),
             storage_slots: Vec::new(),
             loop_bounds: Vec::new(),
             iterations: 1,
@@ -407,7 +416,11 @@ impl<'tcx> Analysis<'_, 'tcx> {
                 .and_then(|amount| self.extent_terms(amount, &mut Vec::new()))
             {
                 if let Some(terms) = self.scaled_storage_terms(&terms) {
-                    self.flow.storage_extents.extend(terms);
+                    if matches!(name.as_str(), "reserve_scoped" | "reserve_scoped_limit") {
+                        self.record_scoped_storage(expression, terms);
+                    } else {
+                        self.flow.storage_extents.extend(terms);
+                    }
                 }
             }
         }
@@ -498,6 +511,8 @@ impl<'tcx> Analysis<'_, 'tcx> {
 
     pub(crate) fn invalidate_target(&mut self, expression: &'tcx Expr<'tcx>) {
         if let Some(key) = self.key(expression, &mut Vec::new()) {
+            self.flow.scoped_storage.retain(|credit| credit.guard != key
+                && !credit.terms.iter().flat_map(|term| &term.factors).any(|factor| factor_depends_on(factor, &key)));
             self.flow.work.retain(|credit| {
                 !credit
                     .extents
@@ -526,6 +541,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
             });
             self.flow.mutated.insert(key);
         } else {
+            self.flow.scoped_storage.clear();
             self.flow.storage_parameters.clear();
             self.flow.storage_extents.clear();
             self.flow.storage_slots.clear();
@@ -557,6 +573,9 @@ impl<'tcx> Analysis<'_, 'tcx> {
             self.invalidate_target(target);
         }
         if let Some((definition, operands)) = self.call(expression) {
+            if types::standard(self.tcx, definition) && self.tcx.item_name(definition).as_str() == "drop" {
+                if let Some(operand) = operands.first() { self.invalidate_target(operand); }
+            }
             let reserved = types::standard(self.tcx, definition)
                 && matches!(
                     self.tcx.item_name(definition).as_str(),
@@ -572,6 +591,11 @@ impl<'tcx> Analysis<'_, 'tcx> {
                 .cloned()
                 .collect();
             for operand in operands {
+                if !matches!(self.expr_ty_adjusted(operand).kind(), rustc_middle::ty::Ref(..))
+                    && self.key(operand, &mut Vec::new()).is_some_and(|key|
+                        self.flow.scoped_storage.iter().any(|credit| credit.guard == key)) {
+                    self.invalidate_target(operand);
+                }
                 if matches!(
                     self.expr_ty_adjusted(operand).kind(),
                     rustc_middle::ty::Ref(_, _, rustc_hir::Mutability::Mut)

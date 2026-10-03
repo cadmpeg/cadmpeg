@@ -5,6 +5,23 @@ use super::{u64_from_index, DecodeContext};
 use crate::CodecError;
 
 impl DecodeContext<'_> {
+    /// Converts vector storage to a boxed slice after admitting a possible shrink copy.
+    /// The caller admits the vector's existing storage.
+    pub fn into_boxed_slice<T>(&self, values: Vec<T>, operation: &'static str) -> Result<Box<[T]>, CodecError> {
+        if std::mem::size_of::<T>() == 0 {
+            self.reserve_scoped(0, operation)?;
+            return Ok(values.into_boxed_slice());
+        }
+        if values.capacity() == values.len() {
+            self.reserve_scoped(0, operation)?;
+            return Ok(values.into_boxed_slice());
+        }
+        let bytes = self.cost_product(u64_from_index(values.len()), u64_from_index(std::mem::size_of::<T>()), operation)?;
+        let _storage = self.reserve_scoped(bytes, operation)?;
+        self.admit_moves(&values, 1, operation)?;
+        Ok(values.into_boxed_slice())
+    }
+
     /// Admits slot visits and moves of the complete inline representation.
     pub(super) fn admit_moves<T>(&self, values: &[T], moves: u64, operation: &'static str) -> Result<(), CodecError> {
         let count = u64_from_index(values.len());
@@ -92,6 +109,48 @@ impl DecodeContext<'_> {
 mod tests {
     use crate::decode::{DecodeArena, DecodeContext, DecodePolicy};
     use crate::CodecError;
+
+    #[test]
+    fn vector_boxing_reuses_exact_capacity_without_work_or_storage() {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        policy.limits.max_materialized_bytes = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+        let values = vec![1_u8, 2, 3];
+        assert_eq!(values.len(), values.capacity());
+        let pointer = values.as_ptr();
+        let boxed = ctx.into_boxed_slice(values, "box").expect("same storage");
+        assert_eq!(boxed.as_ptr(), pointer);
+        assert_eq!(&*boxed, &[1, 2, 3]);
+        let zero_sized = ctx.into_boxed_slice(vec![(); 1024], "zero-sized box").expect("metadata only");
+        assert_eq!(zero_sized.len(), 1024);
+    }
+
+    #[test]
+    fn vector_boxing_admits_shrink_storage_and_moves_before_conversion() {
+        let arena = DecodeArena::new();
+        for (work, storage) in [(5, 3), (6, 2)] {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = work;
+            policy.limits.max_materialized_bytes = storage;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+            let mut values = Vec::with_capacity(8);
+            values.extend_from_slice(&[1_u8, 2, 3]);
+            let CodecError::ResourceLimit(first) = ctx.into_boxed_slice(values, "box").expect_err("refusal") else { panic!("refusal") };
+            let CodecError::ResourceLimit(second) = ctx.charge_work(1, "later").expect_err("fused") else { panic!("refusal") };
+            assert_eq!(first, second);
+        }
+        let mut policy = DecodePolicy::service();
+        // Three slot visits and three moved bytes; three temporary allocation bytes.
+        policy.limits.max_work_units = 6;
+        policy.limits.max_materialized_bytes = 3;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+        let mut values = Vec::with_capacity(8);
+        values.extend_from_slice(&[1_u8, 2, 3]);
+        assert_eq!(&*ctx.into_boxed_slice(values, "box").expect("admission"), &[1, 2, 3]);
+        ctx.reserve_scoped(3, "released shrink storage").expect("released");
+    }
 
     #[test]
     fn slice_moves_preserve_copy_and_reverse_results() {

@@ -59,7 +59,7 @@ impl<'a> DecodeContext<'a> {
         let ctx = Self::new(arena, policy, container_only);
         let mut buffer = Vec::new();
         ctx.complete_input(reader, &mut buffer)?;
-        let bytes = arena.alloc(&ctx, buffer.into_boxed_slice())?;
+        let bytes = arena.alloc(&ctx, ctx.into_boxed_slice(buffer, "root input boxing")?)?;
         Ok((ctx, View::over_space(bytes, SpaceId::ROOT)))
     }
 
@@ -697,7 +697,7 @@ impl<'a> DecodeContext<'a> {
             self.charge_work(u64_from_index(view.window().len()), "concat_views")?;
             buffer.extend_from_slice(view.window());
         }
-        let bytes = self.arena.alloc(self, buffer.into_boxed_slice())?;
+        let bytes = self.arena.alloc(self, self.into_boxed_slice(buffer, "concat_views boxing")?)?;
         reservation.commit()?;
         let space = self.allocate_space()?;
         Ok(View::over_space(bytes, space))
@@ -874,7 +874,7 @@ impl<'a> ExpandWriter<'_, 'a> {
         let bytes = self
             .ctx
             .arena
-            .alloc(self.ctx, self.buffer.into_boxed_slice())?;
+            .alloc(self.ctx, self.ctx.into_boxed_slice(self.buffer, "expansion boxing")?)?;
         let space = self.ctx.allocate_space()?;
         Ok(View::over_space(bytes, space))
     }

@@ -121,7 +121,7 @@ fn check_fixture(name: &str) {
             std::env::join_paths(directories).expect("dependency paths"),
         );
     }
-    if matches!(name, "work_keys" | "work_callbacks" | "work_scalar" | "work_iterators" | "serde") {
+    if matches!(name, "work_keys" | "work_callbacks" | "work_scalar" | "work_iterators" | "serde" | "boxing") {
         command.env("CADMPEG_POLICY_CRATE_NAME", "cadmpeg_core");
     }
     if name == "container_callbacks" {
@@ -212,6 +212,7 @@ fn check_fixture(name: &str) {
                     | "dominance"
                     | "thirdparty"
                     | "zip"
+                    | "boxing"
                     | "container_callbacks"
                     | "symbolic"
                     | "derived"
@@ -821,4 +822,9 @@ fn linear_growth_receipts_bind_the_collection_element_and_returned_count() {
 #[test]
 fn checked_core_cost_arithmetic_preserves_exact_operand_credits() {
     check_fixture("work_cost");
+}
+
+#[test]
+fn vector_boxing_requires_current_capacity_or_live_storage_and_moves() {
+    check_fixture("boxing");
 }
