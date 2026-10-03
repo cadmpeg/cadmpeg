@@ -5691,7 +5691,7 @@ fn attach_standard_topology(
     }
     for edge in 0..supports.len() {
         let native_pair = match native_supports_by_row.get(edge).and_then(Option::as_ref) {
-            Some(native) => standard_native_support_endpoint_pair(
+            Some(native) => standard_native_support_endpoint_pair(ctx, 
                 native,
                 &ir.model.points,
                 &endpoint_candidates[edge],
@@ -7292,7 +7292,7 @@ fn emit_standard_topology(
             .and_then(Option::as_ref)
         {
             Some(native)
-                if standard_native_support_endpoint_pair(
+                if standard_native_support_endpoint_pair(ctx, 
                     native,
                     &ir.model.points,
                     &[start_point, end_point],
@@ -7676,18 +7676,20 @@ refusal)?
 }
 
 fn lifted_standard_support_parameters<const N: usize>(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     surface: &SurfaceGeometry,
     pcurve: &PcurveGeometry,
     parameters: [f64; N],
 ) -> Result<[Option<Point3>; N], cadmpeg_core::decode::ResourceLimit> {
+    ctx.charge_work_limit(0, "geometry helper boundary")?;
     let mut points = [None; N];
     for (index, parameter) in parameters.into_iter().enumerate() {
         let Some(uv) =
-            cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::decode::pcurve_uv(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, pcurve, parameter))?
+            cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::decode::pcurve_uv(cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(ctx), pcurve, parameter))?
         else {
             continue;
         };
-        points[index] = match cadmpeg_ir::eval::decode::surface_point(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, surface, uv.u, uv.v) {
+        points[index] = match cadmpeg_ir::eval::decode::surface_point(cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(ctx), surface, uv.u, uv.v) {
             Ok(point) => Some(point.get()),
             Err(failure) => failure.non_finite()?,
         };
@@ -7696,11 +7698,13 @@ fn lifted_standard_support_parameters<const N: usize>(
 }
 
 fn standard_native_support_endpoint_pair(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     support: &StandardEdgeSupport,
     points: &[Point],
     candidates: &[usize],
     required_pair: Option<[usize; 2]>,
 ) -> Result<Option<[usize; 2]>, cadmpeg_core::decode::ResourceLimit> {
+    ctx.charge_work_limit(0, "geometry helper boundary")?;
     const VERTEX_MATCH_TOLERANCE: f64 = 2e-3;
 
     let mut lifted = [[None; 2]; 2];
@@ -7710,7 +7714,7 @@ fn standard_native_support_endpoint_pair(
             return Ok(None);
         };
         lifted[index] =
-            lifted_standard_support_parameters(surface, pcurve, support.parameter_range)?;
+            lifted_standard_support_parameters(ctx, surface, pcurve, support.parameter_range)?;
     }
     let [[Some(first_start), Some(first_end)], [Some(second_start), Some(second_end)]] = lifted
     else {
@@ -7731,16 +7735,22 @@ fn standard_native_support_endpoint_pair(
     if direct.min(reversed) > SUPPORT_AGREEMENT_TOLERANCE {
         return Ok(None);
     }
-    let point_for = |expected: Point3| {
-        let mut matches = candidates.iter().copied().filter(|point| {
-            points.get(*point).is_some_and(|point| {
+    let point_for = |expected: Point3| -> Result<Option<usize>, cadmpeg_core::decode::ResourceLimit> {
+        let mut selected = None;
+        for &candidate in candidates {
+            ctx.charge_work_limit(1, "catia native support endpoint candidate")?;
+            if points.get(candidate).is_some_and(|point| {
                 point.position().get().distance_squared(expected).sqrt() <= VERTEX_MATCH_TOLERANCE
-            })
-        });
-        let point = matches.next()?;
-        matches.next().is_none().then_some(point)
+            }) {
+                if selected.is_some() {
+                    return Ok(None);
+                }
+                selected = Some(candidate);
+            }
+        }
+        Ok(selected)
     };
-    let pair = [point_for(first[0]), point_for(first[1])];
+    let pair = [point_for(first[0])?, point_for(first[1])?];
     Ok(match pair {
         [Some(start), Some(end)] if start != end => {
             let pair = [start, end];
@@ -9325,9 +9335,11 @@ fn invariant_face_carrier_bindings(
 }
 
 fn owner_matches_a5_carrier(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     tail: &crate::native::owner_numeric_tail::CatiaOwnerNumericTail,
     surface: &NurbsSurface,
 ) -> Result<bool, cadmpeg_core::decode::ResourceLimit> {
+    ctx.charge_work_limit(0, "geometry helper boundary")?;
     let Some(domain) = nurbs_surface_parameter_domain(surface) else {
         return Ok(false);
     };
@@ -9340,7 +9352,7 @@ fn owner_matches_a5_carrier(
     for u in [tail.lower()[0], tail.upper()[0]] {
         for v in [tail.lower()[1], tail.upper()[1]] {
             let Some(point) = cadmpeg_ir::eval::finite_or_refusal(
-                cadmpeg_ir::eval::decode::nurbs_surface_point(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, surface, u, v),
+                cadmpeg_ir::eval::decode::nurbs_surface_point(cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(ctx), surface, u, v),
             )?
             else {
                 return Ok(false);
@@ -9509,7 +9521,7 @@ fn bind_standard_a5_owner_surfaces(
     for owner in &owners {
         let mut matched = Vec::new();
         for (carrier, value) in carriers.iter().enumerate() {
-            if owner_matches_a5_carrier(&owner.numeric_tail, &value.geometry)? {
+            if owner_matches_a5_carrier(ctx, &owner.numeric_tail, &value.geometry)? {
                 ctx.push_vec(&mut matched, carrier, "catia_a5_owner_carrier_indices")?;
             }
         }

@@ -119,7 +119,7 @@ fn trimmed_pcurve_fit_uses_declared_endpoints() {
         .unwrap(),
     );
 
-    let fit = pcurve_declared_endpoint_fit(
+    let fit = pcurve_declared_endpoint_fit(&cadmpeg_test_support::service_decode_context(), 
         &ModelIndex::new(&ir),
         &surface_id,
         &pcurve,
@@ -180,7 +180,7 @@ fn bounded_pcurve_search_can_miss_an_unsampled_exact_point() {
     let seeds = pcurve_selection_seeds(&index, &surface_id, &pcurve, &surface_geometry, &ctx)
         .expect("seed collection fits policy");
     assert_eq!(seeds, vec![0.0]);
-    let bounded = pcurve_surface_closest(&index, &surface_id, &pcurve, target, &seeds)
+    let bounded = pcurve_surface_closest(&ctx, &index, &surface_id, &pcurve, target, &seeds)
         .expect("resource allocation did not fail")
         .expect("bounded search returns an evaluated witness");
     assert!(bounded.0 > cadmpeg_ir::units::COINCIDENCE_TOLERANCE);

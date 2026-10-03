@@ -90,7 +90,7 @@ mod tests {
                 ).expect("fixture pcurve construction admission")
                 .unwrap(),
             };
-            let result = super::closest_pcurve_parameter_from_seed(
+            let result = super::closest_pcurve_parameter_from_seed(&cadmpeg_test_support::service_decode_context(), 
                 &line,
                 Point2::new(0.5, 0.),
                 0.2 * domain,
@@ -99,7 +99,7 @@ mod tests {
             .unwrap();
             assert!((result / domain - 0.5).abs() < 16. * f64::EPSILON);
             let coarse =
-                super::closest_pcurve_parameter_from_coarse_grid(&line, Point2::new(0.5, 1e200))
+                super::closest_pcurve_parameter_from_coarse_grid(&cadmpeg_test_support::service_decode_context(), &line, Point2::new(0.5, 1e200))
                     .expect("evaluator allocation succeeds")
                     .unwrap();
             assert!((coarse / domain - 0.5).abs() < 16. * f64::EPSILON);
@@ -2418,12 +2418,12 @@ pub(super) fn blend_boundary_parameter_from_contact_pcurve_with_geometry_and_bud
         return Ok(None);
     };
     let seeded = match target.seed {
-        Some(seed) => closest_pcurve_parameter_from_seed(contact_pcurve, support_uv.get(), seed.u)?,
+        Some(seed) => closest_pcurve_parameter_from_seed(geometry_budget.charges, contact_pcurve, support_uv.get(), seed.u)?,
         None => None,
     };
     let parameter = match seeded {
         Some(parameter) => Some(parameter),
-        None => closest_pcurve_parameter_from_coarse_grid(contact_pcurve, support_uv.get())?,
+        None => closest_pcurve_parameter_from_coarse_grid(geometry_budget.charges, contact_pcurve, support_uv.get())?,
     };
     let Some(parameter) = parameter else {
         return Ok(None);
@@ -2818,14 +2818,17 @@ fn pcurve_domain(pcurve: &PcurveGeometry) -> Option<([f64; 2], bool)> {
 }
 
 fn closest_pcurve_parameter_from_coarse_grid(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     pcurve: &PcurveGeometry,
     point: Point2,
 ) -> Result<Option<f64>, cadmpeg_core::decode::ResourceLimit> {
+    ctx.charge_work_limit(0, "geometry helper boundary")?;
     let Some((domain, _)) = pcurve_domain(pcurve) else {
         return Ok(None);
     };
     let mut closest = None;
     for index in 0..=COARSE_PCURVE_SEARCH_INTERVALS {
+        ctx.charge_work_limit(1, "nx pcurve coarse sample")?;
         let Some(parameter) = cadmpeg_ir::math::interpolate(
             domain[0],
             domain[1],
@@ -2846,7 +2849,7 @@ fn closest_pcurve_parameter_from_coarse_grid(
             return Ok(None);
         };
         let parameter = parameter.get();
-        let Some(candidate) = cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::decode::pcurve_uv(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, pcurve, parameter))?
+        let Some(candidate) = cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::decode::pcurve_uv(cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(ctx), pcurve, parameter))?
         else {
             return Ok(None);
         };
@@ -2861,14 +2864,16 @@ fn closest_pcurve_parameter_from_coarse_grid(
     let Some((parameter, _)) = closest else {
         return Ok(None);
     };
-    closest_pcurve_parameter_from_seed(pcurve, point, parameter)
+    closest_pcurve_parameter_from_seed(ctx, pcurve, point, parameter)
 }
 
 fn closest_pcurve_parameter_from_seed(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     pcurve: &PcurveGeometry,
     point: Point2,
     seed: f64,
 ) -> Result<Option<f64>, cadmpeg_core::decode::ResourceLimit> {
+    ctx.charge_work_limit(0, "geometry helper boundary")?;
     let Some((domain, periodic)) = pcurve_domain(pcurve) else {
         return Ok(None);
     };
@@ -2878,7 +2883,8 @@ fn closest_pcurve_parameter_from_seed(
         seed.clamp(domain[0], domain[1])
     };
     for _ in 0..LOCAL_PCURVE_SEARCH_STEPS {
-        let Some(candidate) = cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::decode::pcurve_uv(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, pcurve, parameter))?
+        ctx.charge_work_limit(1, "nx pcurve local step")?;
+        let Some(candidate) = cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::decode::pcurve_uv(cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(ctx), pcurve, parameter))?
         else {
             return Ok(None);
         };

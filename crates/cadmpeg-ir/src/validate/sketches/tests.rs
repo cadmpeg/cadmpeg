@@ -1076,3 +1076,29 @@ fn extreme_lines_preserve_parallelism_and_span_separation() {
 }
 
 mod admission;
+
+#[test]
+fn spatial_sketch_endpoint_helper_preserves_session_depth_refusal() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    let curve = crate::geometry::nurbs::NurbsCurve::from_lanes(
+        &cadmpeg_test_support::service_decode_context(), 1, vec![0.0, 0.0, 1.0, 1.0],
+        vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)], None, false)
+        .expect("constructor admission").expect("valid curve");
+    let geometry = crate::sketches::SpatialSketchGeometry::try_from(
+        crate::sketches::SpatialSketchGeometryDefinition::Nurbs {
+            curve: curve.try_into().expect("valid spatial NURBS"),
+        }).expect("valid spatial geometry");
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_recursion_depth = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+    assert_eq!(super::spatial_oriented_endpoints(&ctx, &geometry, false),
+        Ok(Some((Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)))));
+    let original = ctx.enter_nested_limit("spatial endpoint test outer frame").err().expect("outer frame refuses");
+    let limit = super::spatial_oriented_endpoints(&ctx, &geometry, false).expect_err("first evaluator frame refuses");
+    assert_eq!(limit, original);
+    assert_eq!(limit.dimension, ResourceDimension::RecursionDepth);
+    assert_eq!((limit.limit, limit.used, limit.additional), (0, 0, 1));
+    assert_eq!(ctx.charge_work_limit(0, "observe endpoint refusal"), Err(limit));
+    assert_eq!(super::spatial_oriented_endpoints(&ctx, &geometry, true), Err(limit));
+}

@@ -285,7 +285,7 @@ fn numerical_audit_pcurve_newton_converges_on_small_chart() {
             ).expect("fixture pcurve construction admission")
             .unwrap(),
         };
-        let t = closest_pcurve_parameter_from_seed(&p, Point2::new(0.25, 0.), 0.9 * d)
+        let t = closest_pcurve_parameter_from_seed(&cadmpeg_test_support::service_decode_context(), &p, Point2::new(0.25, 0.), 0.9 * d)
             .expect("evaluator allocation succeeds")
             .unwrap();
         assert!((cadmpeg_ir::eval::decode::pcurve_uv(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &p, t).unwrap().u - 0.25).abs() < 64. * f64::EPSILON);
@@ -328,7 +328,7 @@ fn numerical_audit_inverse_and_grid_keep_wide_finite_chart() {
                 ).expect("fixture pcurve construction admission")
                 .unwrap(),
             };
-            let t = closest_pcurve_parameter_from_coarse_grid(&p, Point2::new(0.3, 0.))
+            let t = closest_pcurve_parameter_from_coarse_grid(&cadmpeg_test_support::service_decode_context(), &p, Point2::new(0.3, 0.))
                 .expect("evaluator allocation succeeds")
                 .unwrap();
             assert!((cadmpeg_ir::eval::decode::pcurve_uv(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &p, t).unwrap().u - 0.3).abs() < 64. * f64::EPSILON);
@@ -466,4 +466,46 @@ fn a_decoded_placed_surface_point_that_overflows_is_returned_without_a_fallback(
             assert_eq!(point, Some(Point3::new(f64::INFINITY, 3.0, 0.0)));
         }
     });
+}
+
+#[test]
+fn closest_pcurve_helpers_preserve_session_depth_refusal() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    let line = PcurveGeometry::Nurbs {
+        nurbs: PcurveNurbs::from_lanes(&cadmpeg_test_support::service_decode_context(), 1,
+            vec![0.0, 0.0, 1.0, 1.0], vec![Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)], None, false)
+            .expect("constructor admission").expect("valid line"),
+    };
+    for coarse in [false, true] {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+        let limit = if coarse {
+            closest_pcurve_parameter_from_coarse_grid(&ctx, &line, Point2::new(0.5, 0.0))
+        } else {
+            closest_pcurve_parameter_from_seed(&ctx, &line, Point2::new(0.5, 0.0), 0.2)
+        }.expect_err("first sample or local step charges work");
+        assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+        assert_eq!((limit.limit, limit.used, limit.additional), (0, 0, 1));
+        assert_eq!(limit.operation, if coarse { "nx pcurve coarse sample" } else { "nx pcurve local step" });
+        assert_eq!(ctx.charge_work_limit(0, "observe pcurve refusal"), Err(limit));
+    }
+    for coarse in [false, true] {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_recursion_depth = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+        let result = if coarse {
+            closest_pcurve_parameter_from_coarse_grid(&ctx, &line, Point2::new(0.5, 0.0))
+        } else {
+            closest_pcurve_parameter_from_seed(&ctx, &line, Point2::new(0.5, 0.0), 0.2)
+        };
+        let limit = result.expect_err("first evaluator frame refuses");
+        assert_eq!(limit.dimension, ResourceDimension::RecursionDepth);
+        assert_eq!((limit.limit, limit.used, limit.additional), (0, 0, 1));
+        assert_eq!(ctx.charge_work_limit(0, "observe pcurve refusal"), Err(limit));
+        assert_eq!(closest_pcurve_parameter_from_coarse_grid(&ctx, &line, Point2::new(0.5, 0.0)), Err(limit));
+        assert_eq!(closest_pcurve_parameter_from_seed(&ctx, &line, Point2::new(0.5, 0.0), 0.2), Err(limit));
+    }
 }

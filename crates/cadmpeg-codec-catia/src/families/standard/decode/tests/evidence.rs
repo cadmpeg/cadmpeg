@@ -1224,7 +1224,7 @@ fn native_support_pcurves_bind_standard_edge_endpoints() {
     };
 
     assert_eq!(
-        standard_native_support_endpoint_pair(&native, &points, &[0, 1], None)
+        standard_native_support_endpoint_pair(&cadmpeg_test_support::service_decode_context(), &native, &points, &[0, 1], None)
             .expect("evaluator allocation succeeds"),
         Some([0, 1])
     );
@@ -1255,7 +1255,7 @@ fn native_support_pcurves_bind_standard_edge_endpoints() {
         ])
     );
     assert_eq!(
-        standard_native_support_endpoint_pair(&native, &points, &[0, 1], Some([0, 2]))
+        standard_native_support_endpoint_pair(&cadmpeg_test_support::service_decode_context(), &native, &points, &[0, 1], Some([0, 2]))
             .expect("evaluator allocation succeeds"),
         None
     );
@@ -1269,7 +1269,7 @@ fn native_support_pcurves_bind_standard_edge_endpoints() {
         .expect("valid LinePcurve fixture"),
     );
     assert_eq!(
-        standard_native_support_endpoint_pair(&reversed, &points, &[0, 1], None)
+        standard_native_support_endpoint_pair(&cadmpeg_test_support::service_decode_context(), &reversed, &points, &[0, 1], None)
             .expect("evaluator allocation succeeds"),
         Some([0, 1])
     );
@@ -1281,7 +1281,7 @@ fn native_support_pcurves_bind_standard_edge_endpoints() {
         None,
     ));
     assert_eq!(
-        standard_native_support_endpoint_pair(&native, &points, &[0, 1, 2], None)
+        standard_native_support_endpoint_pair(&cadmpeg_test_support::service_decode_context(), &native, &points, &[0, 1, 2], None)
             .expect("evaluator allocation succeeds"),
         None
     );
@@ -1295,10 +1295,18 @@ fn native_support_pcurves_bind_standard_edge_endpoints() {
         .expect("valid LinePcurve fixture"),
     );
     assert_eq!(
-        standard_native_support_endpoint_pair(&disagreeing, &points, &[0, 1], None)
+        standard_native_support_endpoint_pair(&cadmpeg_test_support::service_decode_context(), &disagreeing, &points, &[0, 1], None)
             .expect("evaluator allocation succeeds"),
         None
     );
+    crate::test_support::with_work_limit(0, |ctx| {
+        let limit = standard_native_support_endpoint_pair(ctx, &native, &points, &[0, 1], None)
+            .expect_err("candidate inspection charges work");
+        assert_eq!(limit.dimension, cadmpeg_core::decode::ResourceDimension::WorkUnits);
+        assert_eq!((limit.limit, limit.used, limit.additional), (0, 0, 1));
+        assert_eq!(limit.operation, "catia native support endpoint candidate");
+        assert_eq!(ctx.charge_work_limit(0, "observe candidate refusal"), Err(limit));
+    });
 }
 
 #[test]
@@ -1384,7 +1392,7 @@ fn standard_native_reverse_label_refuses_materialized_limit() {
         parameter_range: [1.0, 4.0],
     };
     assert_eq!(
-        standard_native_support_endpoint_pair(&native, &points, &[0, 1], Some([0, 1])),
+        standard_native_support_endpoint_pair(&cadmpeg_test_support::service_decode_context(), &native, &points, &[0, 1], Some([0, 1])),
         Ok(Some([0, 1]))
     );
     let limited = crate::test_support::with_materialized_limit(0, |ctx| {
@@ -1850,7 +1858,7 @@ fn native_support_pcurve_midpoint_selects_an_unwitnessed_circle_branch() {
     let start = Point3::new(1.0, 0.0, 0.0);
     let end = Point3::new(0.0, -1.0, 0.0);
     assert_eq!(
-        native_support_circle_param_range(
+        native_support_circle_param_range(&cadmpeg_test_support::service_decode_context(), 
             &native,
             Point3::new(0.0, 0.0, 0.0),
             1.0,
@@ -1870,7 +1878,7 @@ fn native_support_pcurve_midpoint_selects_an_unwitnessed_circle_branch() {
         )
         .expect("valid LinePcurve fixture"),
     );
-    assert!(native_support_circle_param_range(
+    assert!(native_support_circle_param_range(&cadmpeg_test_support::service_decode_context(), 
         &disagreeing,
         Point3::new(0.0, 0.0, 0.0),
         1.0,
@@ -1881,7 +1889,7 @@ fn native_support_pcurve_midpoint_selects_an_unwitnessed_circle_branch() {
     )
     .expect("evaluator allocation succeeds")
     .is_none());
-    assert!(native_support_circle_param_range(
+    assert!(native_support_circle_param_range(&cadmpeg_test_support::service_decode_context(), 
         &native,
         Point3::new(0.0, 0.0, 0.0),
         1.0,
