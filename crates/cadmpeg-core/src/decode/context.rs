@@ -667,8 +667,7 @@ impl<'a> DecodeContext<'a> {
                 "cannot concatenate an empty view list".into(),
             ));
         }
-        self.charge_work(u64_from_index(inputs.len()), "concat_views")?;
-        let total = inputs.iter().try_fold(0usize, |total, view| {
+        let total = self.admit_iter(inputs, "concat_views")?.try_fold(0usize, |total, view| {
             total.checked_add(view.window().len()).ok_or_else(|| {
                 self.budget.refuse(
                     ResourceDimension::RetainedBytes,
@@ -680,22 +679,12 @@ impl<'a> DecodeContext<'a> {
                 )
             })
         })?;
-        let reservation = self.reserve_scoped(u64_from_index(total), "concat_views")?;
-        let mut buffer = Vec::new();
-        buffer.try_reserve_exact(total).map_err(|_| {
-            self.budget.refuse(
-                ResourceDimension::MaterializedBytes,
-                ResourceFailure::AllocationFailed,
-                self.budget.policy().limits.max_materialized_bytes,
-                0,
-                u64_from_index(total),
-                "concat_views",
-            )
-        })?;
-        for view in inputs {
-            self.charge_work(1, "concat_views")?;
-            self.charge_work(u64_from_index(view.window().len()), "concat_views")?;
-            buffer.extend_from_slice(view.window());
+        let (mut buffer, reservation) = self.scoped_vector_storage(total, "concat_views")?;
+        for view in self.admit_iter(inputs, "concat_views")? {
+            let data = view.window();
+            self.reserve_capacity(&mut buffer, data.len(), "concat_views")?;
+            self.charge_work(u64_from_index(data.len()), "concat_views")?;
+            buffer.extend_from_slice(data);
         }
         let bytes = self.arena.alloc(self, self.into_boxed_slice(buffer, "concat_views boxing")?)?;
         reservation.commit()?;
@@ -717,21 +706,14 @@ impl<'a> DecodeContext<'a> {
                 "cannot concatenate an empty buffer list".into(),
             ));
         }
-        self.charge_work(u64_from_index(inputs.len()), operation)?;
-        let total = inputs.iter().try_fold(0_usize, |total, input| {
+        let total = self.admit_iter(inputs, operation)?.try_fold(0_usize, |total, input| {
             total.checked_add(input.len()).ok_or_else(|| {
                 CodecError::NotImplemented("retained concatenation exceeds usize".into())
             })
         })?;
-        let total_bytes = crate::decode::u64_from_index(total);
-        self.charge_retained(total_bytes, operation)?;
-        let mut buffer = Vec::new();
-        buffer.try_reserve_exact(total).map_err(|_| {
-            self.budget
-                .retained_allocation_failed(total_bytes, operation)
-        })?;
-        for input in inputs {
-            self.charge_work(1, operation)?;
+        let mut buffer = self.vector_storage(total, operation)?;
+        for input in self.admit_iter(inputs, operation)? {
+            self.reserve_capacity(&mut buffer, input.len(), operation)?;
             self.charge_work(u64_from_index(input.len()), operation)?;
             buffer.extend_from_slice(input);
         }
