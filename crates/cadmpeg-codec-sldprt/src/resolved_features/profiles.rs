@@ -135,10 +135,10 @@ pub(crate) fn bind_sketch_profiles(
             ctx.reserve_vec(&mut starts, 1, OPERATION)?;
             starts.push((name.offset, ordinal, feature));
         }
-        ctx.sort_unstable_by(
+        ctx.sort_unstable_by_key(
             &mut starts,
-            |left, right| (left.0, left.1).cmp(&(right.0, right.1)),
-            |_| 0,
+            |value| (value.0,value.1),
+            Ord::cmp,
             OPERATION,
         )?;
         for (index, &(start, _, native_feature)) in starts.iter().enumerate() {
@@ -459,12 +459,10 @@ pub(crate) fn project_compact_sketch_profiles(
                 .map(|(ordinal, (offset, feature))| (offset, ordinal, feature)),
             OPERATION,
         )?;
-        ctx.sort_unstable_by(
+        ctx.sort_unstable_by_key(
             &mut objects,
-            |(left_offset, left_ordinal, _), (right_offset, right_ordinal, _)| {
-                (left_offset, left_ordinal).cmp(&(right_offset, right_ordinal))
-            },
-            |_| 0,
+            |value| { let (left_offset, left_ordinal, _) = value; (*left_offset,*left_ordinal) },
+            Ord::cmp,
             OPERATION,
         )?;
         for (object_index, &(start, _, native_feature)) in objects.iter().enumerate() {
@@ -1353,8 +1351,8 @@ pub(crate) fn project_marker_backed_sketches(
         }
         ctx.stable_sort_by(
             &mut objects,
-            |left, right| left.0.cmp(&right.0),
-            |_| 0,
+            |value| &value.0,
+            Ord::cmp,
             "sort SLDPRT profile objects",
         )?;
         for (object_index, &(start, native_feature)) in objects.iter().enumerate() {
@@ -2674,12 +2672,10 @@ pub(crate) fn project_sketch_block_profiles(
                     }
                 }
             }
-            ctx.sort_unstable_by(
+            ctx.sort_unstable_by_key(
                 &mut objects,
-                |(left_offset, _, left_ordinal), (right_offset, _, right_ordinal)| {
-                    (left_offset, left_ordinal).cmp(&(right_offset, right_ordinal))
-                },
-                |_| 0,
+            |value| { let (left_offset, _, left_ordinal) = value; (*left_offset,*left_ordinal) },
+            Ord::cmp,
                 "sort SLDPRT sketch block objects",
             )?;
 
@@ -3474,12 +3470,10 @@ fn project_detached_legacy_config_sketches(
                     .filter_map(|feature| feature_frames.get(feature).copied()),
                 OPERATION,
             )?;
-            ctx.sort_unstable_by(
+            ctx.sort_unstable_by_key(
                 &mut frames,
-                |left, right| {
-                    reference_plane_frame_key(left).cmp(&reference_plane_frame_key(right))
-                },
-                |_| 0,
+            |value| reference_plane_frame_key(value),
+            Ord::cmp,
                 "sort SLDPRT legacy config sketch frames",
             )?;
             frames.dedup();
@@ -3636,10 +3630,10 @@ fn legacy_config_hex_sketch(
         }),
         OPERATION,
     )?;
-    ctx.sort_unstable_by(
+    ctx.sort_unstable_by_key(
         &mut curves,
-        |left, right| left.offset().cmp(&right.offset()),
-        |_| 0,
+            |value| value.offset(),
+            Ord::cmp,
         "sort SLDPRT legacy hex sketch curves",
     )?;
     let prepared = (|| {
@@ -3919,10 +3913,10 @@ fn legacy_config_collinear_sketch(
         }),
         OPERATION,
     )?;
-    ctx.sort_unstable_by(
+    ctx.sort_unstable_by_key(
         &mut curves,
-        |left, right| left.offset().cmp(&right.offset()),
-        |_| 0,
+            |value| value.offset(),
+            Ord::cmp,
         "sort SLDPRT legacy collinear sketch curves",
     )?;
     let prepared = (|| {
@@ -3976,14 +3970,10 @@ fn legacy_config_collinear_sketch(
     let ordinal = chain.len();
     ctx.reserve_vec(&mut chain, 1, OPERATION)?;
     chain.push((origin.0, origin.1, ordinal));
-    ctx.sort_unstable_by(
+    ctx.sort_unstable_by_key(
         &mut chain,
-        |left, right| {
-            left.1[0]
-                .total_cmp(&right.1[0])
-                .then_with(|| left.2.cmp(&right.2))
-        },
-        |_| 0,
+            |value| (value.1[0], value.2,),
+            |left, right| left.0.total_cmp(&right.0).then_with(||left.1.cmp(&right.1)),
         "sort SLDPRT legacy collinear sketch chain",
     )?;
     chain.dedup_by(|left, right| {
@@ -4056,15 +4046,10 @@ fn legacy_config_collinear_sketch(
             .map(|(ordinal, (marker, point))| (marker, point, ordinal)),
         OPERATION,
     )?;
-    ctx.sort_unstable_by(
+    ctx.sort_unstable_by_key(
         &mut points,
-        |left, right| {
-            left.1[0]
-                .total_cmp(&right.1[0])
-                .then_with(|| left.1[1].total_cmp(&right.1[1]))
-                .then_with(|| left.2.cmp(&right.2))
-        },
-        |_| 0,
+            |value| (value.1[0], value.1[1], value.2,),
+            |left, right| left.0.total_cmp(&right.0).then_with(||left.1.total_cmp(&right.1)).then_with(||left.2.cmp(&right.2)),
         "sort SLDPRT legacy collinear sketch points",
     )?;
     points.dedup_by(|left, right| {

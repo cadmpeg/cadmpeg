@@ -1591,20 +1591,13 @@ fn project_all_dimension_constraints(
         }
     }
     for records in recipes_by_companion.values_mut() {
-        ctx.stable_sort_by(
+        ctx.stable_sort_by_key(
             &mut records[..],
-            |left, right| {
-                let left_key = {
-                    let record = left;
+            |value| {
+                    let record = value;
                     record.recipe_ordinal
-                };
-                let right_key = {
-                    let record = right;
-                    record.recipe_ordinal
-                };
-                left_key.cmp(&right_key)
-            },
-            |_| 0,
+                },
+            Ord::cmp,
             "sort f3d design dimensions 1",
         )?;
     }
@@ -2008,8 +2001,8 @@ fn project_all_dimension_constraints(
     }
     ctx.stable_sort_by(
         &mut constraints[..],
-        |a, b| a.id.cmp(&b.id),
-        |value| value.id.as_str().len(),
+            |value| &value.id,
+            Ord::cmp,
         "sort f3d design dimensions 2",
     )?;
     Ok(constraints)
@@ -3784,8 +3777,8 @@ pub(crate) fn project_spatial_dimension_constraints(
     }
     ctx.stable_sort_by(
         &mut missing[..],
-        |first, second| first.as_str().cmp(second.as_str()),
-        |_| 0,
+            |value| value.as_str(),
+            Ord::cmp,
         "sort f3d design dimensions 3",
     )?;
     for parameter_id in missing {

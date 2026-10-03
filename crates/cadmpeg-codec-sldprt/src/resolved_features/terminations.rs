@@ -1178,8 +1178,8 @@ fn history_object_offsets(
     }
     ctx.sort_unstable_by(
         &mut objects,
-        |left, right| left.0.cmp(&right.0),
-        |_| 0,
+            |value| &value.0,
+            Ord::cmp,
         operation,
     )?;
     Ok(objects)
@@ -1316,8 +1316,8 @@ pub(crate) fn project_surface_sweep_profiles(
         }
         ctx.sort_unstable_by(
             &mut objects,
-            |(left, _), (right, _)| left.cmp(right),
-            |_| 0,
+            |value| &value.0,
+            Ord::cmp,
             OPERATION,
         )?;
         for (index, &(start, feature)) in objects.iter().enumerate() {
@@ -1779,6 +1779,7 @@ pub(crate) fn project_compact_combine_paths(
         }
         ctx.sort_unstable_by(
             &mut ordered,
+            |value| value,
             |(left_order, left_ordinal, _), (right_order, right_ordinal, _)| {
                 (left_order.is_none(), left_order, left_ordinal).cmp(&(
                     right_order.is_none(),
@@ -1786,7 +1787,6 @@ pub(crate) fn project_compact_combine_paths(
                     right_ordinal,
                 ))
             },
-            |_| 0,
             OPERATION,
         )?;
         let mut dependencies = Vec::<cadmpeg_ir::features::FeatureId>::new();

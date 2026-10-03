@@ -138,8 +138,8 @@ pub(crate) fn bind_pattern_inputs(
         )?;
         ctx.sort_unstable_by(
             &mut starts,
-            |(left, _), (right, _)| left.cmp(right),
-            |_| 0,
+            |value| &value.0,
+            Ord::cmp,
             "sort SLDPRT pattern input candidates",
         )?;
         for (start_index, (_, feature)) in starts.iter().enumerate() {
@@ -370,8 +370,8 @@ pub(crate) fn bind_pattern_inputs(
                         )?;
                         ctx.sort_unstable_by(
                             &mut seeds,
-                            Ord::cmp,
-                            |seed| seed.as_str().len(),
+            |value| value,
+            Ord::cmp,
                             "sort SLDPRT pattern input seeds",
                         )?;
                         seeds.dedup();
@@ -1198,8 +1198,8 @@ pub(crate) fn bind_sweep_adjacent_profiles(
         )?;
         ctx.sort_unstable_by(
             &mut starts,
-            |(left, _), (right, _)| left.cmp(right),
-            |_| 0,
+            |value| &value.0,
+            Ord::cmp,
             "sort SLDPRT sweep adjacent features",
         )?;
         for (index, (_, feature)) in starts.iter().enumerate() {
@@ -1401,8 +1401,8 @@ pub(crate) fn bind_scalar_operands(
         )?;
         ctx.sort_unstable_by(
             &mut starts,
-            |left, right| left.0.cmp(&right.0),
-            |_| 0,
+            |value| &value.0,
+            Ord::cmp,
             "sort SLDPRT scalar operand features",
         )?;
         for (index, &(start, feature_id)) in starts.iter().enumerate() {
@@ -1606,8 +1606,8 @@ fn represented_sketch_features(
         )?;
         ctx.sort_unstable_by(
             &mut objects,
-            |(left, _), (right, _)| left.cmp(right),
-            |_| 0,
+            |value| &value.0,
+            Ord::cmp,
             "sort SLDPRT represented sketch objects",
         )?;
         for (index, &(start, feature)) in objects.iter().enumerate() {
@@ -1733,8 +1733,8 @@ pub(super) fn bind_detached_legacy_sketch_objects(
     )?;
     ctx.sort_unstable_by(
         &mut owners,
-        |(left, _), (right, _)| left.cmp(right),
-        |_| 0,
+            |value| &value.0,
+            Ord::cmp,
         "sort SLDPRT detached sketch owners",
     )?;
     if starts.len() != owners.len() {
@@ -1800,8 +1800,8 @@ pub(super) fn spatial_relation_manager_ranges_charged(
     }
     ctx.sort_unstable_by(
         &mut ranges,
-        Ord::cmp,
-        |_| 0,
+            |value| value,
+            Ord::cmp,
         "sort SLDPRT spatial relation ranges",
     )?;
     ranges.dedup();

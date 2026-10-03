@@ -458,8 +458,8 @@ fn sketch_arrangement_faces(
     for uses in &mut outgoing {
         ctx.stable_sort_by(
             &mut uses[..],
-            |left, right| left.2.total_cmp(&right.2),
-            |_| 0,
+            |value| &value.2,
+            f64::total_cmp,
             "sort f3d design geometry 1",
         )?;
     }
@@ -982,13 +982,10 @@ fn arrangement_split_parameters(
         }
         _ => {}
     }
-    ctx.stable_sort_by(
+    ctx.stable_sort_by_key(
         &mut parameters[..],
-        |left, right| {
-            ((left - range[0]) / (range[1] - range[0]))
-                .total_cmp(&((right - range[0]) / (range[1] - range[0])))
-        },
-        |_| 0,
+            |value| (value-range[0])/(range[1]-range[0]),
+            f64::total_cmp,
         "sort f3d design geometry 2",
     )?;
     let parameter_tolerance =
@@ -1016,8 +1013,8 @@ fn arrangement_circle_angles(
     }
     ctx.stable_sort_by(
         &mut angles[..],
-        f64::total_cmp,
-        |_| 0,
+            |value| value,
+            f64::total_cmp,
         "sort f3d arrangement circle angles",
     )?;
     angles.dedup_by(|left, right| (*left - *right).abs() <= tolerance / radius.get());
@@ -2951,8 +2948,8 @@ fn historical_owned_faces(
     }
     ctx.sort_unstable_by(
         &mut faces,
-        Ord::cmp,
-        |_| 0,
+            |value| value,
+            Ord::cmp,
         "sort F3D historical owned faces",
     )?;
     faces.dedup();
@@ -3167,8 +3164,8 @@ pub(super) fn closed_sketch_profiles(
     if edges.is_empty() {
         ctx.stable_sort_by(
             &mut profiles[..],
-            |a, b| a[0].entity.cmp(&b[0].entity),
-            |_| 0,
+            |value| &value[0].entity,
+            Ord::cmp,
             "sort f3d design geometry 4",
         )?;
         return Ok(profiles);
@@ -3242,10 +3239,10 @@ pub(super) fn closed_sketch_profiles(
         )?;
     }
     for incident in adjacency.values_mut() {
-        ctx.stable_sort_by(
+        ctx.stable_sort_by_key(
             &mut incident[..],
-            |a, b| edges[*a].0.id().cmp(edges[*b].0.id()),
-            |_| 0,
+            |value| edges[*value].0.id(),
+            Ord::cmp,
             "sort f3d design geometry 5",
         )?;
     }
@@ -3255,10 +3252,10 @@ pub(super) fn closed_sketch_profiles(
     for edge in 0..edges.len() {
         ctx.push_vec(&mut order, edge, "f3d closed sketch edge order")?;
     }
-    ctx.stable_sort_by(
+    ctx.stable_sort_by_key(
         &mut order[..],
-        |a, b| edges[*a].0.id().cmp(edges[*b].0.id()),
-        |_| 0,
+            |value| edges[*value].0.id(),
+            Ord::cmp,
         "sort f3d design geometry 6",
     )?;
     for first_edge in order {
@@ -3320,10 +3317,10 @@ pub(super) fn closed_sketch_profiles(
             continue;
         }
 
-        ctx.stable_sort_by(
+        ctx.stable_sort_by_key(
             &mut component[..],
-            |a, b| edges[*a].0.id().cmp(edges[*b].0.id()),
-            |_| 0,
+            |value| edges[*value].0.id(),
+            Ord::cmp,
             "sort f3d design geometry 7",
         )?;
         let first_edge = component[0];
@@ -3375,8 +3372,8 @@ pub(super) fn closed_sketch_profiles(
     }
     ctx.stable_sort_by(
         &mut profiles[..],
-        |a, b| a[0].entity.cmp(&b[0].entity),
-        |_| 0,
+            |value| &value[0].entity,
+            Ord::cmp,
         "sort f3d design geometry 8",
     )?;
     Ok(profiles)
@@ -3422,6 +3419,7 @@ fn branched_line_profiles(
     for half_edges in outgoing.values_mut() {
         ctx.stable_sort_by(
             &mut half_edges[..],
+            |value| value,
             |first, second| {
                 let angle = |half_edge: usize| {
                     let edge = half_edge / 2;
@@ -3438,7 +3436,6 @@ fn branched_line_profiles(
                     .then_with(|| edges[*first / 2].0.id().cmp(edges[*second / 2].0.id()))
                     .then_with(|| first.cmp(second))
             },
-            |_| 0,
             "sort f3d design geometry 9",
         )?;
     }
@@ -3471,10 +3468,10 @@ fn branched_line_profiles(
             "f3d branched profile start half-edge",
         )?;
     }
-    ctx.stable_sort_by(
+    ctx.stable_sort_by_key(
         &mut starts[..],
-        |a, b| (edges[*a / 2].0.id(), *a % 2).cmp(&(edges[*b / 2].0.id(), *b % 2)),
-        |_| 0,
+            |value| (edges[*value/2].0.id(),*value%2),
+            Ord::cmp,
         "sort f3d design geometry 10",
     )?;
     for start in starts {

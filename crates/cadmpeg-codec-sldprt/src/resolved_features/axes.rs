@@ -847,33 +847,10 @@ fn revolution_line_reference_inputs(
         }
     }
     let mut candidates = selected;
-    ctx.stable_sort_by(
+    ctx.stable_sort_by_key(
         &mut candidates,
-        |left, right| {
-            (
-                left.0,
-                [
-                    left.1.x.to_bits(),
-                    left.1.y.to_bits(),
-                    left.1.z.to_bits(),
-                    left.2.as_raw().x.to_bits(),
-                    left.2.as_raw().y.to_bits(),
-                    left.2.as_raw().z.to_bits(),
-                ],
-            )
-                .cmp(&(
-                    right.0,
-                    [
-                        right.1.x.to_bits(),
-                        right.1.y.to_bits(),
-                        right.1.z.to_bits(),
-                        right.2.as_raw().x.to_bits(),
-                        right.2.as_raw().y.to_bits(),
-                        right.2.as_raw().z.to_bits(),
-                    ],
-                ))
-        },
-        |_| 0,
+            |value| (value.0,[value.1.x.to_bits(),value.1.y.to_bits(),value.1.z.to_bits(),value.2.as_raw().x.to_bits(),value.2.as_raw().y.to_bits(),value.2.as_raw().z.to_bits(),]),
+            Ord::cmp,
         "sort SLDPRT revolution line references",
     )?;
     candidates.dedup();
@@ -1025,8 +1002,8 @@ pub(crate) fn enrich_history_revolution_inputs(
         }
         ctx.sort_unstable_by(
             &mut object_ids,
+            |value| value,
             Ord::cmp,
-            |_| 0,
             "sort SLDPRT revolution profile sources",
         )?;
         object_ids.dedup();
@@ -1095,8 +1072,8 @@ pub(crate) fn enrich_history_revolution_inputs(
             }
             ctx.sort_unstable_by(
                 &mut objects,
-                |(left, _), (right, _)| left.cmp(right),
-                |_| 0,
+            |value| &value.0,
+            Ord::cmp,
                 "sort SLDPRT revolution feature objects",
             )?;
             for (index, &(start, feature)) in objects.iter().enumerate() {
@@ -1363,27 +1340,10 @@ pub(crate) fn bind_profile_revolution_axes(
                 candidates.push(axis);
             }
         }
-        ctx.stable_sort_by(
+        ctx.stable_sort_by_key(
             &mut candidates,
-            |left, right| {
-                [
-                    left.origin.x.to_bits(),
-                    left.origin.y.to_bits(),
-                    left.origin.z.to_bits(),
-                    left.direction.x.to_bits(),
-                    left.direction.y.to_bits(),
-                    left.direction.z.to_bits(),
-                ]
-                .cmp(&[
-                    right.origin.x.to_bits(),
-                    right.origin.y.to_bits(),
-                    right.origin.z.to_bits(),
-                    right.direction.x.to_bits(),
-                    right.direction.y.to_bits(),
-                    right.direction.z.to_bits(),
-                ])
-            },
-            |_| 0,
+            |value| [value.origin.x.to_bits(),value.origin.y.to_bits(),value.origin.z.to_bits(),value.direction.x.to_bits(),value.direction.y.to_bits(),value.direction.z.to_bits(),],
+            Ord::cmp,
             "sort SLDPRT revolution axis candidates",
         )?;
         candidates.dedup();
@@ -1795,14 +1755,10 @@ fn profile_roster_origin_axis_endpoints(
         )?;
         candidates_sorted.push(candidate);
     }
-    ctx.stable_sort_by(
+    ctx.stable_sort_by_key(
         &mut candidates_sorted,
-        |left, right| {
-            left[1][0]
-                .total_cmp(&right[1][0])
-                .then(left[1][1].total_cmp(&right[1][1]))
-        },
-        |_| 0,
+            |value| (value[1][0], value[1][1],),
+            |left, right| left.0.total_cmp(&right.0).then(left.1.total_cmp(&right.1)),
         "sort SLDPRT origin axis candidates",
     )?;
     let mut lines = Vec::<[[f64; 2]; 2]>::new();
@@ -1978,10 +1934,10 @@ fn profile_roster_implicit_axis_endpoints<'a>(
             ctx.reserve_vec(&mut owned, 1, "collect SLDPRT owned profile markers")?;
             owned.push(marker);
         }
-        ctx.sort_unstable_by(
+        ctx.sort_unstable_by_key(
             &mut owned,
-            |left, right| left.offset().cmp(&right.offset()),
-            |_| 0,
+            |value| value.offset(),
+            Ord::cmp,
             "sldprt profile axis owned markers sort",
         )?;
         if let Some(start) = owned
@@ -2030,12 +1986,10 @@ fn profile_roster_implicit_axis_endpoints<'a>(
         )?;
         boundary_relations.push(endpoints);
     }
-    ctx.sort_unstable_by(
+    ctx.sort_unstable_by_key(
         &mut boundary_relations,
-        |left, right| {
-            [left[0].offset(), left[1].offset()].cmp(&[right[0].offset(), right[1].offset()])
-        },
-        |_| 0,
+            |value| [value[0].offset(),value[1].offset()],
+            Ord::cmp,
         "sldprt profile axis boundary relations sort",
     )?;
     boundary_relations.dedup_by_key(|endpoints| [endpoints[0].id(), endpoints[1].id()]);

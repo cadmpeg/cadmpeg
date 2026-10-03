@@ -894,10 +894,10 @@ impl PacketGrowth for ChargedPacketGrowth<'_, '_> {
         operation: &'static str,
     ) -> Result<(), Self::Error> {
         let ctx: &DecodeContext<'_> = self.0;
-        ctx.sort_unstable_by(
+        ctx.sort_unstable_by_key(
             values,
-            |left, right| key(left).cmp(&key(right)),
-            |_| 0,
+            key,
+            Ord::cmp,
             operation,
         )
     }
@@ -1372,6 +1372,13 @@ struct MonotonePathState {
     predecessor: Option<usize>,
 }
 
+impl cadmpeg_core::decode::cost::DecodeCost for MonotonePathState {
+    const FIXED_BYTES: Option<u64> = Some(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<Self>()));
+    fn decode_cost(&self, _ctx: &cadmpeg_core::decode::DecodeContext<'_>, _operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
+        Ok(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<Self>()))
+    }
+}
+
 fn unique_monotone_run(
     ctx: &DecodeContext<'_>,
     records: &[EntityRecordCandidates],
@@ -1401,8 +1408,8 @@ fn unique_monotone_run(
         ordered_predecessors.extend(previous.iter().enumerate());
         ctx.stable_sort_by(
             &mut ordered_predecessors,
-            |(_, left), (_, right)| left.identity.entity_id.cmp(&right.identity.entity_id),
-            |_| 0,
+            |value| &value.1.identity.entity_id,
+            Ord::cmp,
             "sort CATIA 7C05 predecessor states",
         )?;
         let mut cumulative = Vec::new();

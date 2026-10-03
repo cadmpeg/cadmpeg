@@ -481,20 +481,13 @@ pub(crate) fn bind_extrude_profile_selections(
                             "f3d extrude matching selection group",
                         )?;
                     }
-                    resolution.ctx.stable_sort_by(
+                    resolution.ctx.stable_sort_by_key(
                         &mut matching_groups[..],
-                        |left, right| {
-                            let left_key = {
-                                let group = left;
+            |value| {
+                                let group = value;
                                 group.scope_reference_ordinal
-                            };
-                            let right_key = {
-                                let group = right;
-                                group.scope_reference_ordinal
-                            };
-                            left_key.cmp(&right_key)
-                        },
-                        |_| 0,
+                            },
+            Ord::cmp,
                         "sort f3d design profile_select 1",
                     )?;
                     let FeatureDefinition::Operation(FeatureOperation::Extrude { profile, .. }) =
@@ -878,24 +871,15 @@ fn historical_face_profile_selection(
                 "f3d historical profile group member",
             )?;
         }
-        ctx.stable_sort_by(
+        ctx.stable_sort_by_key(
             &mut group_members[..],
-            |left, right| {
-                let left_key = {
-                    let member = left;
+            |value| {
+                    let member = value;
                     {
                         member.group_member_ordinal
                     }
-                };
-                let right_key = {
-                    let member = right;
-                    {
-                        member.group_member_ordinal
-                    }
-                };
-                left_key.cmp(&right_key)
-            },
-            |_| 0,
+                },
+            Ord::cmp,
             "sort f3d design profile_select 2",
         )?;
         if group_members.len() != group.members().len()
@@ -1384,24 +1368,15 @@ pub(super) fn resolved_extrude_profile_selection(
             "f3d extrude selection member",
         )?;
     }
-    resolution.ctx.stable_sort_by(
+    resolution.ctx.stable_sort_by_key(
         &mut selection_members[..],
-        |left, right| {
-            let left_key = {
-                let member = left;
+            |value| {
+                let member = value;
                 {
                     member.group_member_ordinal
                 }
-            };
-            let right_key = {
-                let member = right;
-                {
-                    member.group_member_ordinal
-                }
-            };
-            left_key.cmp(&right_key)
-        },
-        |_| 0,
+            },
+            Ord::cmp,
         "sort f3d design profile_select 3",
     )?;
     let exact_member_run = selection_members.len() == group.members().len()
@@ -1789,24 +1764,15 @@ fn resolved_spatial_extrude_profile_selection(
             "f3d spatial profile group member",
         )?;
     }
-    resolution.ctx.stable_sort_by(
+    resolution.ctx.stable_sort_by_key(
         &mut group_members[..],
-        |left, right| {
-            let left_key = {
-                let member = left;
+            |value| {
+                let member = value;
                 {
                     member.group_member_ordinal
                 }
-            };
-            let right_key = {
-                let member = right;
-                {
-                    member.group_member_ordinal
-                }
-            };
-            left_key.cmp(&right_key)
-        },
-        |_| 0,
+            },
+            Ord::cmp,
         "sort f3d design profile_select 4",
     )?;
     let exact_member_run = group_members.len() == group.members().len()
@@ -1926,8 +1892,8 @@ fn transition_spatial_profile_selection(
         }
         ctx.sort_unstable_by(
             &mut indices,
+            |value| value,
             Ord::cmp,
-            |_| 0,
             "sort f3d spatial transition profile indices",
         )?;
         indices.dedup();
@@ -2065,8 +2031,8 @@ fn unique_multi_face_deleted_carrier_family(
     }
     ctx.sort_unstable_by(
         &mut faces,
-        Ord::cmp,
-        |_| 0,
+            |value| value,
+            Ord::cmp,
         "sort f3d deleted carrier family faces",
     )?;
     Ok(Some(faces))
@@ -2302,8 +2268,8 @@ fn historical_selection_regions(
     }
     ctx.sort_unstable_by(
         &mut state_ids,
-        Ord::cmp,
-        |_| 0,
+            |value| value,
+            Ord::cmp,
         "sort f3d historical selection states",
     )?;
     let mut previous_member_points: Option<Vec<Vec<Point3>>> = None;

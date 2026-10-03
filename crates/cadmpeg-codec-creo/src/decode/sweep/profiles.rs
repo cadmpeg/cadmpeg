@@ -804,8 +804,8 @@ impl ValidatedProfile {
                     })?;
                 ctx.stable_sort_by(
                     &mut ordered,
-                    |first, second| first.2.total_cmp(&second.2),
-                    |_| 0,
+            |value| &value.2,
+            f64::total_cmp,
                     "creo NURBS carrier bound ordering",
                 )?;
                 for (position, first) in ordered.iter().enumerate() {

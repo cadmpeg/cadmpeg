@@ -1116,8 +1116,8 @@ pub(in crate::families) fn b2_closed_owner_boundary_edges(
     let mut edges = [first, second, third, fourth];
     ctx.sort_unstable_by(
         &mut edges,
-        |left, right| left.slot.cmp(&right.slot),
-        |_| 0,
+            |value| &value.slot,
+            Ord::cmp,
         "catia b2 owner boundary edges sort",
     )?;
     if edges.windows(2).any(|pair| pair[0].slot == pair[1].slot)
@@ -1138,8 +1138,8 @@ pub(in crate::families) fn b2_closed_owner_boundary_edges(
     });
     ctx.sort_unstable_by(
         &mut edge_keys,
-        Ord::cmp,
-        |_| 0,
+            |value| value,
+            Ord::cmp,
         "catia b2 owner boundary edge keys sort",
     )?;
     if edge_keys.windows(2).any(|pair| pair[0] == pair[1]) {
@@ -1157,8 +1157,8 @@ pub(in crate::families) fn b2_closed_owner_boundary_edges(
     ];
     ctx.sort_unstable_by(
         &mut vertices,
-        Ord::cmp,
-        |_| 0,
+            |value| value,
+            Ord::cmp,
         "catia b2 owner boundary vertices sort",
     )?;
     Ok((vertices[0] == vertices[1]
@@ -3565,8 +3565,8 @@ pub(in crate::families) fn b2_offset_supports_from_records(
     offsets.extend(extra);
     ctx.sort_unstable_by(
         &mut offsets,
-        |left, right| left.pos.cmp(&right.pos),
-        |_| 0,
+            |value| &value.pos,
+            Ord::cmp,
         "catia_b2_offset_supports_sort",
     )?;
     Ok(offsets)

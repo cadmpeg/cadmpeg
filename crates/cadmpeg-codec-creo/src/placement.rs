@@ -1185,8 +1185,8 @@ pub(crate) fn resolve(
         }
         ctx.sort_unstable_by(
             &mut reference_ids,
+            |value| value,
             Ord::cmp,
-            |_| 0,
             "creo placement reference ID sort",
         )?;
         reference_ids.dedup();
@@ -1389,8 +1389,8 @@ pub(crate) fn resolve(
     }
     ctx.stable_sort_by(
         result.as_mut_slice(),
-        |left, right| left.offset.cmp(&right.offset),
-        |_| 0,
+            |value| &value.offset,
+            Ord::cmp,
         "creo resolve result ordering",
     )?;
     Ok(result)

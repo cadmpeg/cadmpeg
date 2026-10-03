@@ -312,6 +312,12 @@ pub(super) struct SegmentOmLink {
     pub(super) location: OmLocation,
 }
 
+impl cadmpeg_core::decode::cost::DecodeCost for SegmentOmLink {
+    fn decode_cost(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
+        cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(self.location.section_offset(),self.location.source_offset(),&self.id),ctx,operation)
+    }
+}
+
 pub(super) struct BodyLineageInputs<'inputs> {
     pub(super) labels: &'inputs [FeatureOperationLabel],
     pub(super) references: &'inputs [FeatureBodyReference],

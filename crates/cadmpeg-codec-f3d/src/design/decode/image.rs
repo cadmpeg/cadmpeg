@@ -141,8 +141,8 @@ pub(super) fn decode_scoped_images<T>(
     }
     ctx.stable_sort_by(
         &mut images[..],
-        |a, b| id(a).cmp(id(b)),
-        |_| 0,
+            |value| id(value),
+            Ord::cmp,
         "sort f3d design image 1",
     )?;
     images.dedup_by(|a, b| id(a) == id(b));

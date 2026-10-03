@@ -367,9 +367,15 @@ refusal,
                 topology_ir.model.curves = original_curves;
                 admitted!(ctx.reserve_vec(&mut topology_ir.model.surfaces, unused_surfaces.len(), "catia_e5_rollback_surfaces"));
                 topology_ir.model.surfaces.append(&mut unused_surfaces);
-                admitted!(ctx.sort_unstable_by(&mut topology_ir.model.surfaces, |left, right| e5_source_ordinal(left.id.as_str()).cmp(&e5_source_ordinal(right.id.as_str())), |surface| surface.id.as_str().len(), "catia_e5_rollback_surfaces_sort"));
-                admitted!(ctx.sort_unstable_by(&mut topology_ir.model.points, |left, right| e5_source_ordinal(left.id.as_str()).cmp(&e5_source_ordinal(right.id.as_str())), |point| point.id.as_str().len(), "catia_e5_rollback_points_sort"));
-                admitted!(ctx.sort_unstable_by(&mut topology_ir.model.vertices, |left, right| e5_source_ordinal(left.id.as_str()).cmp(&e5_source_ordinal(right.id.as_str())), |vertex| vertex.id.as_str().len(), "catia_e5_rollback_vertices_sort"));
+                admitted!(ctx.sort_unstable_by(&mut topology_ir.model.surfaces,
+            |value| value.id.as_str(),
+            |left, right| e5_source_ordinal(left).cmp(&e5_source_ordinal(right)), "catia_e5_rollback_surfaces_sort"));
+                admitted!(ctx.sort_unstable_by(&mut topology_ir.model.points,
+            |value| value.id.as_str(),
+            |left, right| e5_source_ordinal(left).cmp(&e5_source_ordinal(right)), "catia_e5_rollback_points_sort"));
+                admitted!(ctx.sort_unstable_by(&mut topology_ir.model.vertices,
+            |value| value.id.as_str(),
+            |left, right| e5_source_ordinal(left).cmp(&e5_source_ordinal(right)), "catia_e5_rollback_vertices_sort"));
             }
             ir = topology_ir;
             if !ir.model.vertices.is_empty() {

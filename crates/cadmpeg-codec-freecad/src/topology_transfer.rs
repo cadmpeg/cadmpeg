@@ -269,6 +269,12 @@ struct RegionTraversal {
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 struct OccurrenceKey(String);
 
+impl cadmpeg_core::decode::cost::DecodeCost for OccurrenceKey {
+    fn decode_cost(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
+        cadmpeg_core::decode::cost::DecodeCost::decode_cost(&self.0, ctx, operation)
+    }
+}
+
 impl OccurrenceKey {
     fn new(shape: usize, transform: Transform) -> Self {
         Self(occurrence_label(shape, transform))
@@ -277,6 +283,12 @@ impl OccurrenceKey {
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 struct SourceOccurrenceKey(String);
+
+impl cadmpeg_core::decode::cost::DecodeCost for SourceOccurrenceKey {
+    fn decode_cost(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
+        cadmpeg_core::decode::cost::DecodeCost::decode_cost(&self.0, ctx, operation)
+    }
+}
 
 impl SourceOccurrenceKey {
     fn new(shape: usize, transform: Transform) -> Self {
@@ -2140,8 +2152,8 @@ fn connected_components(
         }
         ctx.sort_unstable_by(
             &mut component,
+            |value| value,
             Ord::cmp,
-            |_| 0,
             "FreeCAD connected-component members sort",
         )?;
         ctx.reserve_vec(&mut components, 1, "FreeCAD connected components")?;

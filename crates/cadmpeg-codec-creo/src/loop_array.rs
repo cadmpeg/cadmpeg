@@ -369,14 +369,14 @@ pub(crate) fn scan(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<LoopArrayScan
     }
     ctx.stable_sort_by(
         result.frames.as_mut_slice(),
-        |left, right| left.offset.cmp(&right.offset),
-        |_| 0,
+            |value| &value.offset,
+            Ord::cmp,
         "creo scan result frames ordering",
     )?;
     ctx.stable_sort_by(
         result.records.as_mut_slice(),
-        |left, right| left.offset.cmp(&right.offset),
-        |_| 0,
+            |value| &value.offset,
+            Ord::cmp,
         "creo scan result records ordering",
     )?;
     Ok(result)

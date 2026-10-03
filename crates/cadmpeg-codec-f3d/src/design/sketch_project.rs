@@ -295,8 +295,8 @@ pub(crate) fn project_sketch_design(
     }
     ctx.stable_sort_by(
         &mut sketches[..],
-        |a, b| a.id.cmp(&b.id),
-        |value| value.id.as_str().len(),
+            |value| &value.id,
+            Ord::cmp,
         "sort f3d design sketch_project 1",
     )?;
 
@@ -538,8 +538,8 @@ pub(crate) fn project_sketch_design(
     }
     ctx.stable_sort_by(
         &mut entities[..],
-        |a, b| a.id().cmp(b.id()),
-        |_| 0,
+            |value| value.id(),
+            Ord::cmp,
         "sort f3d design sketch_project 2",
     )?;
     for sketch in &mut sketches {
@@ -991,8 +991,8 @@ pub(crate) fn project_spatial_sketch_design(
     }
     ctx.stable_sort_by(
         &mut entities[..],
-        |a, b| a.id().cmp(b.id()),
-        |_| 0,
+            |value| value.id(),
+            Ord::cmp,
         "sort f3d design sketch_project 3",
     )?;
     let mut spatial_ids = HashSet::<cadmpeg_ir::sketches::SpatialSketchId>::new();
@@ -1035,8 +1035,8 @@ pub(crate) fn project_spatial_sketch_design(
     }
     ctx.stable_sort_by(
         &mut sketches[..],
-        |a, b| a.id.cmp(&b.id),
-        |value| value.id.as_str().len(),
+            |value| &value.id,
+            Ord::cmp,
         "sort f3d design sketch_project 4",
     )?;
     Ok((sketches, entities))
@@ -1365,8 +1365,8 @@ pub(crate) fn project_spatial_sketch_constraints(
     }
     ctx.stable_sort_by(
         &mut constraints[..],
-        |a, b| a.id.cmp(&b.id),
-        |value| value.id.as_str().len(),
+            |value| &value.id,
+            Ord::cmp,
         "sort f3d design sketch_project 5",
     )?;
     Ok(constraints)

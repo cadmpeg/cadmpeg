@@ -1398,6 +1398,12 @@ pub(crate) struct SketchInputEntity {
     pub(crate) links: Option<SketchInputLinks>,
 }
 
+impl cadmpeg_core::decode::cost::DecodeCost for SketchInputEntity {
+    fn decode_cost(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
+        cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(self.offset,self.ordinal,&self.id), ctx, operation)
+    }
+}
+
 /// Deserialization mirror of a sketch-entity marker, re-admitted against its lane payload.
 #[derive(Deserialize)]
 pub(crate) struct SketchInputEntityWire {

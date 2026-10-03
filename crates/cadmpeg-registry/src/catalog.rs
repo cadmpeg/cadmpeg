@@ -262,8 +262,8 @@ impl InputCatalog {
             }
             ctx.stable_sort_by(
                 &mut matches,
-                |(_, left), (_, right)| right.cmp(left),
-                |_| 0,
+            |value| &value.1,
+            |left, right| right.cmp(left),
                 "sort detection candidates",
             )?;
             Ok::<_, CodecError>(matches)

@@ -3016,14 +3016,14 @@ impl<'a> F3dDecodeSession<'a> {
         )?;
         ctx.stable_sort_by(
             &mut self.ir.model.sketch_constraints,
-            |a, b| a.id.cmp(&b.id),
-            |constraint| constraint.id.as_str().len(),
+            |value| &value.id,
+            Ord::cmp,
             "sort F3D sketch constraints",
         )?;
         ctx.stable_sort_by(
             &mut self.ir.model.spatial_sketch_constraints,
-            |a, b| a.id.cmp(&b.id),
-            |constraint| constraint.id.as_str().len(),
+            |value| &value.id,
+            Ord::cmp,
             "sort F3D spatial sketch constraints",
         )?;
         crate::design::configurations::bind_configuration_suppressed_features(
@@ -3084,8 +3084,8 @@ impl<'a> F3dDecodeSession<'a> {
                 apply_appearance_base_colors(self.ctx, &mut self.ir)?;
                 self.ctx.stable_sort_by(
                     &mut self.ir.model.appearance_bindings,
-                    |a, b| a.id.cmp(&b.id),
-                    |binding| binding.id.as_str().len(),
+            |value| &value.id,
+            Ord::cmp,
                     "sort F3D appearance bindings",
                 )?;
                 reconcile_appearance_loss(
@@ -4897,8 +4897,8 @@ fn append_related_record_headers(
     )?;
     ctx.stable_sort_by(
         &mut native.design_record_headers,
-        |a, b| a.id.cmp(&b.id),
-        |record| record.id.len(),
+            |value| &value.id,
+            Ord::cmp,
         "sort F3D design record headers",
     )?;
     Ok(())
@@ -6294,8 +6294,8 @@ pub(crate) fn resolve_face_appearance_bindings(
     for faces in faces_by_guid.values_mut() {
         ctx.stable_sort_by(
             faces,
+            |value| value,
             Ord::cmp,
-            |face| face.as_str().len(),
             "sort F3D faces by material GUID",
         )?;
         faces.dedup();

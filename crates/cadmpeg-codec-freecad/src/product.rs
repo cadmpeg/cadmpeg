@@ -321,8 +321,8 @@ pub(crate) fn transfer_neutral(
     }
     ctx.sort_unstable_by(
         &mut component_objects,
-        Ord::cmp,
-        |item| item.len(),
+            |value| value,
+            Ord::cmp,
         "fcstd product component name sort",
     )?;
     component_objects.dedup();

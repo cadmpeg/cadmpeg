@@ -5720,8 +5720,8 @@ pub(crate) fn install(
         };
         ctx.stable_sort_by(
             &mut group.links,
+            |value| value,
             Ord::cmp,
-            std::string::String::len,
             "Rhino group link sort",
         )?;
     }

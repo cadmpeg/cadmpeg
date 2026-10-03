@@ -179,8 +179,8 @@ pub(super) fn decode(
     }
     ctx.stable_sort_by(
         &mut candidates,
-        |left, right| left.offset.cmp(&right.offset),
-        |_| 0,
+            |value| &value.offset,
+            Ord::cmp,
         "step_drawing_candidates_sort",
     )?;
 

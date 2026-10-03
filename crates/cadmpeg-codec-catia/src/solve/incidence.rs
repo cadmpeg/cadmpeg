@@ -484,8 +484,8 @@ fn incidence_choice_components<'storage>(
         let mut connect = |mut edges: Vec<usize>| -> Result<(), CodecError> {
             ctx.sort_unstable_by(
                 &mut edges,
-                Ord::cmp,
-                |_| 0,
+            |value| value,
+            Ord::cmp,
                 "catia_incidence_boundary_edges_sort",
             )?;
             edges.dedup();
@@ -574,15 +574,15 @@ fn incidence_choice_components<'storage>(
     for component in &mut components {
         ctx.sort_unstable_by(
             &mut *component,
+            |value| value,
             Ord::cmp,
-            |_| 0,
             "catia_incidence_component_sort",
         )?;
     }
-    ctx.stable_sort_by(
+    ctx.stable_sort_by_key(
         &mut components,
-        |left, right| left[0].cmp(&right[0]),
-        |_| 0,
+            |value| value[0],
+            Ord::cmp,
         "catia_incidence_components_sort",
     )?;
     Ok(components)
@@ -649,15 +649,15 @@ fn join_incidence_components_by_coupling(
     for (_, edges) in &mut joined_values {
         ctx.sort_unstable_by(
             &mut *edges,
+            |value| value,
             Ord::cmp,
-            |_| 0,
             "catia_incidence_joined_edges_sort",
         )?;
     }
     ctx.sort_unstable_by(
         &mut joined_values,
-        |left, right| left.0.cmp(&right.0),
-        |_| 0,
+            |value| &value.0,
+            Ord::cmp,
         "catia_incidence_joined_groups_sort",
     )?;
     let mut output = Vec::new();
@@ -692,10 +692,10 @@ fn order_incidence_components_by_branch_width(
             component.first().copied().unwrap_or_default(),
         )
     };
-    ctx.stable_sort_by(
+    ctx.stable_sort_by_key(
         components,
-        |left, right| order_key(left).cmp(&order_key(right)),
-        |_| 0,
+            |value| order_key(value),
+            Ord::cmp,
         "catia incidence component branch width sort",
     )?;
     Ok(Some(()))
@@ -1494,6 +1494,7 @@ fn prune_face_configuration_singleton_support(
         order.extend(0..domains.len());
         ctx.sort_unstable_by(
             &mut order,
+            |value| value,
             |left, right| {
                 let count = |domain: &usize| {
                     active[*domain]
@@ -1503,7 +1504,6 @@ fn prune_face_configuration_singleton_support(
                 };
                 count(left).cmp(&count(right))
             },
-            |_| 0,
             "catia face configuration singleton order sort",
         )?;
         for domain in order {
@@ -1597,7 +1597,9 @@ fn prune_ordered_face_endpoint_support(
                     .flat_map(|assignment| assignment.boundaries.iter().flatten())
                     .map(|use_| use_.edge),
             );
-            ctx.sort_unstable_by(&mut edges, Ord::cmp, |_| 0, "catia ordered face edges sort")?;
+            ctx.sort_unstable_by(&mut edges,
+            |value| value,
+            Ord::cmp, "catia ordered face edges sort")?;
             edges.dedup();
             if edges
                 .iter()
@@ -1644,8 +1646,8 @@ fn prune_ordered_face_endpoint_support(
                     let mut canonical = pair;
                     ctx.sort_unstable_by(
                         &mut canonical,
-                        Ord::cmp,
-                        |_| 0,
+            |value| value,
+            Ord::cmp,
                         "catia ordered face canonical pair sort",
                     )?;
                     if edge_supported.contains(&canonical) {
@@ -1746,8 +1748,8 @@ pub(super) fn prune_implicit_ordered_face_endpoint_support(
                     }
                     ctx.sort_unstable_by(
                         &mut pair,
-                        Ord::cmp,
-                        |_| 0,
+            |value| value,
+            Ord::cmp,
                         "catia implicit face pair sort",
                     )?;
                     if supported.contains(&pair) {
@@ -1756,8 +1758,8 @@ pub(super) fn prune_implicit_ordered_face_endpoint_support(
                 }
                 ctx.sort_unstable_by(
                     &mut retained,
-                    Ord::cmp,
-                    |_| 0,
+            |value| value,
+            Ord::cmp,
                     "catia implicit face retained pairs sort",
                 )?;
                 retained.dedup();
@@ -1805,7 +1807,9 @@ fn prepare_face_configuration_domains(
                 .map(|use_| use_.edge)
                 .filter(|edge| active.get(*edge) == Some(&true)),
         );
-        ctx.sort_unstable_by(&mut edges, Ord::cmp, |_| 0, "catia face factor edges sort")?;
+        ctx.sort_unstable_by(&mut edges,
+            |value| value,
+            Ord::cmp, "catia face factor edges sort")?;
         edges.dedup();
         if edges.is_empty()
             || edges.iter().any(|edge| {
@@ -1893,8 +1897,8 @@ fn prepare_face_configuration_domains(
         );
         ctx.sort_unstable_by(
             &mut edges,
+            |value| value,
             Ord::cmp,
-            |_| 0,
             "catia face factor indexed edges sort",
         )?;
         edges.dedup();
@@ -2387,8 +2391,8 @@ fn advance_compact_boundary_domains<'storage, 'a>(
                     }
                     ctx.sort_unstable_by(
                         &mut oriented_signature,
-                        Ord::cmp,
-                        |_| 0,
+            |value| value,
+            Ord::cmp,
                         "catia_compact_boundary_oriented_signature_sort",
                     )?;
                     if ctx.insert_hash_set(
@@ -2756,8 +2760,8 @@ impl<'storage> IncidenceComponentSearch<'storage, '_> {
         let mut faces = self.edge_faces[edge];
         self.ctx.sort_unstable_by(
             &mut faces,
+            |value| value,
             Ord::cmp,
-            |_| 0,
             "catia incidence degree support faces sort",
         )?;
         let length = if faces[0] == faces[1] { 1 } else { 2 };
@@ -2859,8 +2863,8 @@ impl<'storage> IncidenceComponentSearch<'storage, '_> {
             let mut faces = self.edge_faces[edge];
             self.ctx.sort_unstable_by(
                 &mut faces,
-                Ord::cmp,
-                |_| 0,
+            |value| value,
+            Ord::cmp,
                 "catia incidence candidate fit faces sort",
             )?;
             let length = if faces[0] == faces[1] { 1 } else { 2 };
@@ -3024,8 +3028,8 @@ impl<'storage> IncidenceComponentSearch<'storage, '_> {
         ordered.extend(options);
         self.ctx.sort_unstable_by(
             &mut ordered,
+            |value| value,
             Ord::cmp,
-            |_| 0,
             "catia incidence ordered constraint options sort",
         )?;
         Ok(IncidenceConstraintOptions::Exact(ordered))
@@ -3062,8 +3066,8 @@ impl<'storage> IncidenceComponentSearch<'storage, '_> {
         }
         self.ctx.stable_sort_by(
             &mut ordered_edges,
-            |left, right| left.1.cmp(&right.1),
-            |_| 0,
+            |value| &value.1,
+            Ord::cmp,
             "catia_incidence_branch_edge_widths_sort",
         )?;
         'edges: for (edge, width) in ordered_edges {
@@ -3231,8 +3235,8 @@ impl<'storage> IncidenceComponentSearch<'storage, '_> {
         let mut faces = faces_collection;
         self.ctx.sort_unstable_by(
             &mut faces,
+            |value| value,
             Ord::cmp,
-            |_| 0,
             "catia_incidence_advanced_faces_sort",
         )?;
         faces.dedup();
@@ -3319,8 +3323,8 @@ impl<'storage> IncidenceComponentSearch<'storage, '_> {
         faces.extend(self.edges.iter().flat_map(|edge| self.edge_faces[*edge]));
         self.ctx.sort_unstable_by(
             &mut faces,
+            |value| value,
             Ord::cmp,
-            |_| 0,
             "catia incidence component faces sort",
         )?;
         faces.dedup();
@@ -3379,10 +3383,10 @@ impl<'storage> IncidenceComponentSearch<'storage, '_> {
             }
             Some((width?, face, assignments))
         }));
-        self.ctx.stable_sort_by(
+        self.ctx.stable_sort_by_key(
             &mut faces,
-            |left, right| (left.0, left.1).cmp(&(right.0, right.1)),
-            |_| 0,
+            |value| (value.0,value.1),
+            Ord::cmp,
             "catia face option candidates sort",
         )?;
         let mut domains = Vec::new();
@@ -3474,8 +3478,8 @@ impl<'storage> IncidenceComponentSearch<'storage, '_> {
             projected.extend(unique);
             self.ctx.sort_unstable_by(
                 &mut projected,
-                Ord::cmp,
-                |item| std::mem::size_of_val(item.as_slice()),
+            |value| value,
+            Ord::cmp,
                 "catia face option ordered projections sort",
             )?;
             if projected.is_empty() {
@@ -3637,8 +3641,8 @@ impl<'storage> IncidenceComponentSearch<'storage, '_> {
         }
         self.ctx.sort_unstable_by(
             &mut affected_faces,
+            |value| value,
             Ord::cmp,
-            |_| 0,
             "catia face configuration affected faces sort",
         )?;
         affected_faces.dedup();
@@ -4159,8 +4163,8 @@ pub(super) fn deferred_boundary_assignment(
     );
     ctx.sort_unstable_by(
         &mut incident,
-        Ord::cmp,
-        |_| 0,
+            |value| value,
+            Ord::cmp,
         "catia deferred incident edges sort",
     )?;
     incident.dedup();
@@ -4312,8 +4316,8 @@ fn deferred_boundary_closes(
     );
     ctx.sort_unstable_by(
         &mut incident,
-        Ord::cmp,
-        |_| 0,
+            |value| value,
+            Ord::cmp,
         "catia deferred close incident edges sort",
     )?;
     incident.dedup();
@@ -4618,8 +4622,8 @@ pub(super) fn partial_face_orientability_viable(
             }
             ctx.sort_unstable_by(
                 &mut component,
-                Ord::cmp,
-                |_| 0,
+            |value| value,
+            Ord::cmp,
                 "catia orientability component edges sort",
             )?;
             let trail = if points.iter().all(|point| degrees[point] == 2) {
@@ -4640,8 +4644,8 @@ pub(super) fn partial_face_orientability_viable(
                 endpoints.extend(points.iter().copied().filter(|point| degrees[point] == 1));
                 ctx.sort_unstable_by(
                     &mut endpoints,
-                    Ord::cmp,
-                    |_| 0,
+            |value| value,
+            Ord::cmp,
                     "catia orientability endpoints sort",
                 )?;
                 let [start, end] = endpoints.as_slice() else {
@@ -4983,8 +4987,8 @@ where
                 };
                 ctx.sort_unstable_by(
                     &mut points,
-                    Ord::cmp,
-                    |_| 0,
+            |value| value,
+            Ord::cmp,
                     "catia_incidence_candidate_points_sort",
                 )?;
                 points.dedup();
@@ -5026,8 +5030,8 @@ where
         let mut constraints = sorted_constraints;
         ctx.sort_unstable_by(
             &mut constraints,
+            |value| value,
             Ord::cmp,
-            |_| 0,
             "catia_incidence_sorted_constraints_sort",
         )?;
         let mut explicit_point_supports = Vec::new();
@@ -6186,12 +6190,14 @@ where
     })?;
     for candidates in &mut choices {
         for pair in candidates.iter_mut() {
-            ctx.sort_unstable_by(pair, Ord::cmp, |_| 0, "catia incidence choice pair sort")?;
+            ctx.sort_unstable_by(pair,
+            |value| value,
+            Ord::cmp, "catia incidence choice pair sort")?;
         }
         ctx.sort_unstable_by(
             candidates,
+            |value| value,
             Ord::cmp,
-            |_| 0,
             "catia incidence choice pairs sort",
         )?;
         candidates.dedup();

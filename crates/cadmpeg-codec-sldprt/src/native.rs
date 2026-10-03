@@ -826,8 +826,8 @@ impl SldprtNative {
             )?;
             ctx.stable_sort_by(
                 &mut history.configurations,
-                |left, right| left.ordinal.cmp(&right.ordinal),
-                |_| 0,
+            |value| &value.ordinal,
+            Ord::cmp,
                 "sort SLDPRT native records",
             )?;
             if let Some(pair) = history
@@ -852,8 +852,8 @@ impl SldprtNative {
             )?;
             ctx.stable_sort_by(
                 &mut history.features,
-                |left, right| left.ordinal.cmp(&right.ordinal),
-                |_| 0,
+            |value| &value.ordinal,
+            Ord::cmp,
                 "sort SLDPRT native records",
             )?;
             if let Some(pair) = history
@@ -880,8 +880,8 @@ impl SldprtNative {
             )?;
             ctx.stable_sort_by(
                 &mut lane.classes,
-                |left, right| left.ordinal.cmp(&right.ordinal),
-                |_| 0,
+            |value| &value.ordinal,
+            Ord::cmp,
                 "sort SLDPRT native records",
             )?;
             lane.names = ctx.try_collect_retained_with(
@@ -891,8 +891,8 @@ impl SldprtNative {
             )?;
             ctx.stable_sort_by(
                 &mut lane.names,
-                |left, right| left.ordinal.cmp(&right.ordinal),
-                |_| 0,
+            |value| &value.ordinal,
+            Ord::cmp,
                 "sort SLDPRT native records",
             )?;
             lane.scalars = ctx.try_collect_retained_with(
@@ -902,8 +902,8 @@ impl SldprtNative {
             )?;
             ctx.stable_sort_by(
                 &mut lane.scalars,
-                |left, right| left.ordinal.cmp(&right.ordinal),
-                |_| 0,
+            |value| &value.ordinal,
+            Ord::cmp,
                 "sort SLDPRT native records",
             )?;
             lane.references = ctx.try_collect_retained_with(
@@ -913,8 +913,8 @@ impl SldprtNative {
             )?;
             ctx.stable_sort_by(
                 &mut lane.references,
-                |left, right| left.ordinal.cmp(&right.ordinal),
-                |_| 0,
+            |value| &value.ordinal,
+            Ord::cmp,
                 "sort SLDPRT native records",
             )?;
             lane.relation_bindings = ctx.try_collect_retained_with(
@@ -926,8 +926,8 @@ impl SldprtNative {
             )?;
             ctx.stable_sort_by(
                 &mut lane.relation_bindings,
-                |left, right| left.ordinal.cmp(&right.ordinal),
-                |_| 0,
+            |value| &value.ordinal,
+            Ord::cmp,
                 "sort SLDPRT native records",
             )?;
             lane.relation_instances = ctx.try_collect_retained_with(
@@ -939,8 +939,8 @@ impl SldprtNative {
             )?;
             ctx.stable_sort_by(
                 &mut lane.relation_instances,
-                |left, right| left.ordinal.cmp(&right.ordinal),
-                |_| 0,
+            |value| &value.ordinal,
+            Ord::cmp,
                 "sort SLDPRT native records",
             )?;
             lane.body_selections = ctx.try_collect_retained_with(
@@ -952,8 +952,8 @@ impl SldprtNative {
             )?;
             ctx.stable_sort_by(
                 &mut lane.body_selections,
-                |left, right| left.ordinal.cmp(&right.ordinal),
-                |_| 0,
+            |value| &value.ordinal,
+            Ord::cmp,
                 "sort SLDPRT native records",
             )?;
             for record in &lane.body_selections {
@@ -978,8 +978,8 @@ impl SldprtNative {
             )?;
             ctx.stable_sort_by(
                 &mut lane.edge_selections,
-                |left, right| left.ordinal.cmp(&right.ordinal),
-                |_| 0,
+            |value| &value.ordinal,
+            Ord::cmp,
                 "sort SLDPRT native records",
             )?;
             let (mut edge_features, _edge_features_reservation) =
@@ -1057,8 +1057,8 @@ impl SldprtNative {
             )?;
             ctx.stable_sort_by(
                 &mut lane.surface_selections,
-                |left, right| left.ordinal.cmp(&right.ordinal),
-                |_| 0,
+            |value| &value.ordinal,
+            Ord::cmp,
                 "sort SLDPRT native records",
             )?;
             for record in &lane.surface_selections {
@@ -1083,8 +1083,8 @@ impl SldprtNative {
             )?;
             ctx.stable_sort_by(
                 &mut records,
-                |left, right| left.ordinal.cmp(&right.ordinal),
-                |_| 0,
+            |value| &value.ordinal,
+            Ord::cmp,
                 "sort SLDPRT native records",
             )?;
             lane.generated_surface_identities = records;
@@ -1104,10 +1104,10 @@ impl SldprtNative {
                 "attach SLDPRT lane sketch entities",
                 |record| record.clone_charged(ctx, "attach SLDPRT lane sketch entities"),
             )?;
-            ctx.stable_sort_by(
+            ctx.stable_sort_by_key(
                 &mut lane.sketch_entities,
-                |left, right| left.ordinal().cmp(&right.ordinal()),
-                |_| 0,
+            |value| value.ordinal(),
+            Ord::cmp,
                 "sort SLDPRT sketch entity records",
             )?;
         }

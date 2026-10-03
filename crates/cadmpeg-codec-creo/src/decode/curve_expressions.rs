@@ -394,10 +394,10 @@ fn curve_expression_emitted_ordinals(
             indices.push(index);
         }
     }
-    ctx.stable_sort_by(
+    ctx.stable_sort_by_key(
         indices.as_mut_slice(),
-        |left, right| parameter_ordinals[*left].cmp(&parameter_ordinals[*right]),
-        |_| std::mem::size_of::<u32>(),
+            |value| parameter_ordinals[*value],
+            Ord::cmp,
         "creo curve expression emitted ordinals indices ordering",
     )?;
     let mut emitted = BTreeMap::new();
@@ -672,8 +672,8 @@ fn curve_expression_properties(
     }
     ctx.sort_unstable_by(
         &mut cyclic_dependencies,
-        Ord::cmp,
-        |item| item.len(),
+            |value| value,
+            Ord::cmp,
         "creo curve-expression cyclic dependency name sort",
     )?;
     cyclic_dependencies.dedup();

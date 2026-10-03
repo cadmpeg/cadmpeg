@@ -47,8 +47,8 @@ pub(crate) fn decode_component_occurrences(
     }
     ctx.stable_sort_by(
         &mut occurrences[..],
-        |a, b| a.id.cmp(&b.id),
-        |value| value.id.as_str().len(),
+            |value| &value.id,
+            Ord::cmp,
         "sort f3d design components 1",
     )?;
     occurrences.dedup_by(|left, right| left.id == right.id);

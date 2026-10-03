@@ -690,8 +690,8 @@ pub(crate) fn logical_ledger(
             }
             ctx.stable_sort_by(
                 &mut ranges,
-                |left, right| left.0.cmp(&right.0),
-                |_| 0,
+            |value| &value.0,
+            Ord::cmp,
                 "FCStd logical GUI range sort",
             )?;
             let mut cursor = 0_u64;
@@ -778,10 +778,10 @@ pub(crate) fn byte_coverage(
     let mut ordered_physical =
         ctx.collection_vec(physical.len(), "FCStd ordered physical spans")?;
     ordered_physical.extend(physical.iter());
-    ctx.stable_sort_by(
+    ctx.stable_sort_by_key(
         &mut ordered_physical,
-        |left, right| left.span.start().cmp(&right.span.start()),
-        |_| 0,
+            |value| value.span.start(),
+            Ord::cmp,
         "FCStd physical span sort",
     )?;
     let physical_exact = ordered_physical
@@ -803,10 +803,10 @@ pub(crate) fn byte_coverage(
                 ctx.reserve_vec(&mut spans, 1, "FCStd entry logical spans")?;
                 spans.push(span);
             }
-            ctx.stable_sort_by(
+            ctx.stable_sort_by_key(
                 &mut spans,
-                |left, right| left.span.start().cmp(&right.span.start()),
-                |_| 0,
+            |value| value.span.start(),
+            Ord::cmp,
                 "FCStd entry logical span sort",
             )?;
             let exact = if entry.byte_len() == 0 {

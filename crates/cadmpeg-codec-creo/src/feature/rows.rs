@@ -403,7 +403,9 @@ pub(super) fn row_spans(
             starts.push((offset, id));
         }
     }
-    ctx.sort_unstable_by(&mut starts, Ord::cmp, |_| 0, "creo feature row starts sort")?;
+    ctx.sort_unstable_by(&mut starts,
+            |value| value,
+            Ord::cmp, "creo feature row starts sort")?;
     // One stream can expose the same feature identifier under conflicting
     // schema classes, but one identifier/class pair is one row.
     let mut seen_ids = BTreeSet::new();
@@ -546,8 +548,8 @@ pub(crate) fn round_replay_scalars(
     }
     ctx.stable_sort_by(
         result.as_mut_slice(),
-        |left, right| left.offset.cmp(&right.offset),
-        |_| 0,
+            |value| &value.offset,
+            Ord::cmp,
         "creo round replay scalars result ordering",
     )?;
     Ok(result)
@@ -615,8 +617,8 @@ pub(crate) fn choices(
         }
         ctx.stable_sort_by(
             hits.as_mut_slice(),
-            |left, right| left.0.cmp(&right.0),
-            |_| 0,
+            |value| &value.0,
+            Ord::cmp,
             "creo choices hits ordering",
         )?;
         for (index, &(header, label_at, label, type_byte)) in hits.iter().enumerate() {
@@ -651,8 +653,8 @@ pub(crate) fn choices(
     }
     ctx.stable_sort_by(
         result.as_mut_slice(),
-        |left, right| left.offset.cmp(&right.offset),
-        |_| 0,
+            |value| &value.offset,
+            Ord::cmp,
         "creo choices result ordering",
     )?;
     Ok(result)
@@ -787,8 +789,8 @@ pub(crate) fn choice_fields(
     }
     ctx.stable_sort_by(
         fields.as_mut_slice(),
-        |left, right| left.offset.cmp(&right.offset),
-        |_| 0,
+            |value| &value.offset,
+            Ord::cmp,
         "creo choice fields fields ordering",
     )?;
     Ok(fields)
@@ -863,8 +865,8 @@ pub(crate) fn geometry_tables(
     }
     ctx.stable_sort_by(
         tables.as_mut_slice(),
-        |left, right| left.offset.cmp(&right.offset),
-        |_| 0,
+            |value| &value.offset,
+            Ord::cmp,
         "creo geometry tables tables ordering",
     )?;
     Ok(tables)
@@ -1043,8 +1045,8 @@ pub(crate) fn affected_ids(
     }
     ctx.stable_sort_by(
         result.as_mut_slice(),
-        |left, right| left.offset.cmp(&right.offset),
-        |_| 0,
+            |value| &value.offset,
+            Ord::cmp,
         "creo affected ids result ordering",
     )?;
     Ok(result)
@@ -1396,8 +1398,8 @@ pub(crate) fn replay_affected_ids(
     }
     ctx.stable_sort_by(
         result.as_mut_slice(),
-        |left, right| left.offset.cmp(&right.offset),
-        |_| 0,
+            |value| &value.offset,
+            Ord::cmp,
         "creo replay affected ids result ordering",
     )?;
     Ok(result)
@@ -1553,8 +1555,8 @@ pub(crate) fn surface_merge_replay_affected_ids(
     }
     ctx.stable_sort_by(
         result.as_mut_slice(),
-        |left, right| left.offset.cmp(&right.offset),
-        |_| 0,
+            |value| &value.offset,
+            Ord::cmp,
         "creo surface merge replay affected ids result ordering",
     )?;
     Ok(result)
@@ -1604,8 +1606,8 @@ pub(crate) fn loop_restore_directions(
     }
     ctx.stable_sort_by(
         result.as_mut_slice(),
-        |left, right| left.offset.cmp(&right.offset),
-        |_| 0,
+            |value| &value.offset,
+            Ord::cmp,
         "creo loop restore directions result ordering",
     )?;
     Ok(result)
@@ -1677,8 +1679,8 @@ pub(crate) fn loop_history_entries(
     }
     ctx.stable_sort_by(
         result.as_mut_slice(),
-        |left, right| left.offset.cmp(&right.offset),
-        |_| 0,
+            |value| &value.offset,
+            Ord::cmp,
         "creo loop history entries result ordering",
     )?;
     Ok(result)
@@ -1833,8 +1835,8 @@ pub(crate) fn revolution_extents(
     }
     ctx.stable_sort_by(
         result.as_mut_slice(),
-        |left, right| left.offset.cmp(&right.offset),
-        |_| 0,
+            |value| &value.offset,
+            Ord::cmp,
         "creo revolution extents result ordering",
     )?;
     Ok(result)

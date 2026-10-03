@@ -104,8 +104,8 @@ pub(crate) fn patch_partition(
     }
     ctx.stable_sort_by(
         &mut ordered,
-        |left, right| left.0.cmp(&right.0),
-        |_| 0,
+            |value| &value.0,
+            Ord::cmp,
         "sort SLDPRT patch streams",
     )?;
     let bodies = ctx.collect_vec(

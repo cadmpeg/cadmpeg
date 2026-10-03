@@ -3661,8 +3661,8 @@ fn overlapping_ranges(
     );
     ctx.sort_unstable_by(
         &mut ordered,
-        Ord::cmp,
-        |_| 0,
+            |value| value,
+            Ord::cmp,
         "iges declared parameter range sort",
     )?;
     let mut overlapping = BTreeSet::new();

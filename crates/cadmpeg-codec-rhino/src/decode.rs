@@ -4378,8 +4378,8 @@ impl<'a> DecodeContext<'a> {
         }
         ctx.sort_unstable_by(
             &mut sorted,
-            |(first, _), (second, _)| first.cmp(second),
-            |(label, _)| label.len(),
+            |value| &value.0,
+            Ord::cmp,
             "Rhino class outcome rows sort",
         )?;
         Ok(sorted)
@@ -6734,7 +6734,7 @@ fn push_group_face<K: Eq + std::hash::Hash + cadmpeg_core::decode::cost::DecodeC
     Ok(())
 }
 
-fn ordered_group_faces<K: Ord>(
+fn ordered_group_faces<K: Ord + cadmpeg_core::decode::cost::DecodeCost>(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     groups: HashMap<K, Vec<usize>>,
 ) -> Result<Vec<(K, Vec<usize>)>, crate::curves::GeometryError> {
@@ -6744,8 +6744,8 @@ fn ordered_group_faces<K: Ord>(
     ordered.extend(groups);
     ctx.sort_unstable_by(
         &mut ordered,
-        |left, right| left.0.cmp(&right.0),
-        |_| 0,
+            |value| &value.0,
+            Ord::cmp,
         "Rhino Brep ordered shell group sort",
     )?;
     Ok(ordered)

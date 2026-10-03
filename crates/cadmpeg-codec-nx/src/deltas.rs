@@ -535,8 +535,8 @@ fn term_use_numeric_tails(
     );
     ctx.sort_unstable_by(
         &mut event_starts,
-        Ord::cmp,
-        |_| 0,
+            |value| value,
+            Ord::cmp,
         "sort NX deltas event starts",
     )?;
     event_starts.dedup();
@@ -1775,8 +1775,8 @@ fn merged_event_spans(
     }
     ctx.sort_unstable_by(
         &mut covered,
-        Ord::cmp,
-        |_| 0,
+            |value| value,
+            Ord::cmp,
         "sort NX deltas covered spans",
     )?;
     let mut merged = Vec::<(usize, usize)>::new();
@@ -1928,6 +1928,13 @@ pub(crate) struct MergeFullRecordsResult {
 enum MergeEvent {
     Full { offset: usize },
     Tombstone { offset: usize, kind: RecordKind },
+}
+
+impl cadmpeg_core::decode::cost::DecodeCost for MergeEvent {
+    const FIXED_BYTES: Option<u64> = Some(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<Self>()));
+    fn decode_cost(&self, _ctx: &cadmpeg_core::decode::DecodeContext<'_>, _operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
+        Ok(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<Self>()))
+    }
 }
 
 fn push_merge_event(
@@ -2253,13 +2260,13 @@ fn count_unmatched_events(
     for ((kind, xmt), mut events) in events {
         ctx.stable_sort_by(
             &mut events,
+            |value| value,
             |first, second| {
                 let offset = |event: &MergeEvent| match event {
                     MergeEvent::Full { offset } | MergeEvent::Tombstone { offset, .. } => *offset,
                 };
                 offset(first).cmp(&offset(second))
             },
-            |_| 0,
             "sort NX unmatched deltas events",
         )?;
         let Some(MergeEvent::Tombstone {

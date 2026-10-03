@@ -471,8 +471,8 @@ pub(super) fn draft_operand_candidates(
     }
     ctx.sort_unstable_by(
         &mut objects,
-        |(left, _), (right, _)| left.cmp(right),
-        |_| 0,
+            |value| &value.0,
+            Ord::cmp,
         OPERATION,
     )?;
     let mut candidates = Vec::new();

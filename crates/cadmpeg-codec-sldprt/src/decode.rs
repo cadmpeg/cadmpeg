@@ -2342,7 +2342,8 @@ fn active_body_streams<'a>(
     }
     ctx.stable_sort_by(
         &mut streams,
-        |left, right| {
+            |value| value,
+            |left, right| {
             let key = |stream: &ActiveParasolidSite<'_>| {
                 (
                     !contains_ascii_case_insensitive(stream.source_stream().as_str(), "partition"),
@@ -2350,13 +2351,6 @@ fn active_body_streams<'a>(
                 )
             };
             key(left).cmp(&key(right))
-        },
-        |stream| {
-            stream
-                .source_stream()
-                .as_str()
-                .len()
-                .max(stream.header.description.len())
         },
         "sort SLDPRT active body streams",
     )?;

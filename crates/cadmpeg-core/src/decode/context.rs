@@ -465,31 +465,40 @@ impl<'a> DecodeContext<'a> {
 
     /// Sort admitted values stably using fallible index scratch.
     ///
-    /// `key_bytes` states the external bytes a comparison can read from each value.
+    /// `key` borrows the compared projection; its DecodeCost includes owned children.
     /// Equal values retain input order. Values move in place without cloning children.
-    pub fn stable_sort_by<T>(
+    pub fn stable_sort_by<T, K: super::cost::DecodeCost + ?Sized>(
+        &self,
+        values: &mut [T],
+        key: impl Fn(&T) -> &K,
+        mut compare: impl FnMut(&K, &K) -> std::cmp::Ordering,
+        operation: &'static str,
+    ) -> Result<(), CodecError> {
+        let projection = super::sort::BorrowedKey { key, marker: std::marker::PhantomData };
+        self.admit_sort(values, &projection, operation)?;
+        self.stable_sort_admitted(values, |left, right| compare((projection.key)(left), (projection.key)(right)), operation)
+    }
+
+    /// Sorts copied keys stably without cloning any owned children.
+    pub fn stable_sort_by_key<T, K: Copy + super::cost::DecodeCost>(
+        &self,
+        values: &mut [T],
+        key: impl Fn(&T) -> K,
+        mut compare: impl FnMut(&K, &K) -> std::cmp::Ordering,
+        operation: &'static str,
+    ) -> Result<(), CodecError> {
+        let projection = super::sort::CopiedKey { key, marker: std::marker::PhantomData };
+        self.admit_sort(values, &projection, operation)?;
+        self.stable_sort_admitted(values, |left, right| compare(&(projection.key)(left), &(projection.key)(right)), operation)
+    }
+
+    fn stable_sort_admitted<T>(
         &self,
         values: &mut [T],
         mut compare: impl FnMut(&T, &T) -> std::cmp::Ordering,
-        key_bytes: impl Fn(&T) -> usize,
         operation: &'static str,
     ) -> Result<(), CodecError> {
         let count = super::u64_from_index(values.len());
-        self.charge_work(count, operation)?;
-        let bytes = values
-            .iter()
-            .try_fold(0u64, |bytes, value| {
-                bytes.checked_add(super::u64_from_index(key_bytes(value)))
-            })
-            .ok_or_else(|| self.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
-        let levels = u64::from(u64::BITS - count.leading_zeros()) + 1;
-        let work = count
-            .checked_mul(super::u64_from_index(std::mem::size_of::<T>()))
-            .and_then(|storage| storage.checked_add(bytes.checked_mul(2)?))
-            .and_then(|work| work.checked_mul(levels))
-            .and_then(|work| work.checked_mul(8))
-            .ok_or_else(|| self.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
-        self.charge_work(work, operation)?;
         // Small runs use adjacent swaps, so their stable order needs no scratch.
         if values.len() <= 20 {
             for end in 1..values.len() {

@@ -1274,14 +1274,10 @@ impl Graph {
         stream: &[u8],
         mut nodes: Vec<NodeCandidate>,
     ) -> Result<(Vec<NodeCandidate>, ScopedReservation<'ctx>), CodecError> {
-        ctx.stable_sort_by(
+        ctx.stable_sort_by_key(
             &mut nodes,
-            |left, right| {
-                left.pos()
-                    .cmp(&right.pos())
-                    .then_with(|| left.end().cmp(&right.end()))
-            },
-            |_| 0,
+            |value| (value.pos(), value.end(),),
+            |left, right| left.0.cmp(&right.0).then_with(||left.1.cmp(&right.1)),
             "sort NX topology candidates",
         )?;
         let mut selected = Vec::new();
@@ -1836,7 +1832,9 @@ impl Graph {
                     .and_then(Node::face_fields)
                     .and_then(|face| face.next_face);
             }
-            ctx.sort_unstable_by(&mut faces, Ord::cmp, |_| 0, "sort NX shell faces")?;
+            ctx.sort_unstable_by(&mut faces,
+            |value| value,
+            Ord::cmp, "sort NX shell faces")?;
         }
         Ok(Some(faces))
     }

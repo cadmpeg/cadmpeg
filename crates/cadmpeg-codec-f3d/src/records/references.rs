@@ -284,6 +284,12 @@ impl From<LostEdgeReference> for LostEdgeReferenceWire {
 #[serde(try_from = "String")]
 pub(crate) struct DesignVisualToken(cadmpeg_ir::ids::IdentityKey);
 
+impl cadmpeg_core::decode::cost::DecodeCost for DesignVisualToken {
+    fn decode_cost(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
+        cadmpeg_core::decode::cost::DecodeCost::decode_cost(&self.0, ctx, operation)
+    }
+}
+
 impl Serialize for DesignVisualToken {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         serializer.serialize_str(self.0.as_str())

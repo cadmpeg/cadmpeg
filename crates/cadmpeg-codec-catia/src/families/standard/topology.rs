@@ -644,6 +644,13 @@ pub(crate) struct CoedgeUse {
     pub(crate) end_vertex: usize,
 }
 
+impl cadmpeg_core::decode::cost::DecodeCost for CoedgeUse {
+    const FIXED_BYTES: Option<u64> = Some(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<Self>()));
+    fn decode_cost(&self, _ctx: &cadmpeg_core::decode::DecodeContext<'_>, _operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
+        Ok(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<Self>()))
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct TrimRecord {
     pub(crate) packet: TrimPacket,
@@ -985,8 +992,8 @@ pub(super) fn complete_duplicate_face_slots(
         let mut incident = *faces;
         ctx.sort_unstable_by(
             &mut incident,
+            |value| value,
             Ord::cmp,
-            |_| 0,
             "catia standard duplicate edge faces sort",
         )?;
         for &face in if incident[0] == incident[1] {
@@ -1024,8 +1031,8 @@ pub(super) fn complete_duplicate_face_slots(
     };
     ctx.stable_sort_by(
         &mut unresolved,
-        |left, right| free_faces(left).cmp(&free_faces(right)),
-        |_| 0,
+            |value| value,
+            |left, right| free_faces(left).cmp(&free_faces(right)),
         "catia standard duplicate unresolved edges sort",
     )?;
 
@@ -1144,14 +1151,14 @@ fn duplicate_face_assignments_equivalent(
             let mut points = edge_points[edge];
             ctx.sort_unstable_by(
                 &mut first_points,
-                Ord::cmp,
-                |_| 0,
+            |value| value,
+            Ord::cmp,
                 "catia_standard_duplicate_first_points_sort",
             )?;
             ctx.sort_unstable_by(
                 &mut points,
-                Ord::cmp,
-                |_| 0,
+            |value| value,
+            Ord::cmp,
                 "catia_standard_duplicate_points_sort",
             )?;
             if same_row
@@ -1173,14 +1180,14 @@ fn duplicate_face_assignments_equivalent(
         }
         ctx.sort_unstable_by(
             &mut left_faces,
+            |value| value,
             Ord::cmp,
-            |_| 0,
             "catia_standard_duplicate_left_faces_sort",
         )?;
         ctx.sort_unstable_by(
             &mut right_faces,
+            |value| value,
             Ord::cmp,
-            |_| 0,
             "catia_standard_duplicate_right_faces_sort",
         )?;
         if left_faces != right_faces {
@@ -1389,10 +1396,10 @@ pub(crate) fn incidence_cycles(
     if at_vertex.iter().any(|edges| edges.len() != 2) {
         return Ok(None);
     }
-    ctx.sort_unstable_by(
+    ctx.sort_unstable_by_key(
         &mut unseen,
-        |left, right| std::cmp::Reverse(left.0).cmp(&std::cmp::Reverse(right.0)),
-        |_| 0,
+            |value| std::cmp::Reverse(value.0),
+            Ord::cmp,
         "catia_incidence_unseen_edges_sort",
     )?;
     while let Some((first, [start_vertex, mut vertex])) = unseen.pop() {

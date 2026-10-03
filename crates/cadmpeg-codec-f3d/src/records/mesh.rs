@@ -322,8 +322,8 @@ impl DesignMeshTextureTable {
         resources.extend(&self.resources);
         ctx.stable_sort_by(
             &mut resources,
-            |a, b| a.ordinal.cmp(&b.ordinal),
-            |_| 0,
+            |value| &value.ordinal,
+            Ord::cmp,
             operation,
         )?;
         Ok(resources)

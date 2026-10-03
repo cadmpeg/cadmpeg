@@ -796,8 +796,8 @@ fn physical_ledger(
         local_order.extend(entries.iter());
         ctx.stable_sort_by(
             &mut local_order,
-            |left, right| left.header_start.cmp(&right.header_start),
-            |_| 0,
+            |value| &value.header_start,
+            Ord::cmp,
             "ZIP ledger local order",
         )?;
         if central_begin > len {
@@ -923,8 +923,8 @@ fn physical_ledger(
         central_order.extend(entries.iter());
         ctx.stable_sort_by(
             &mut central_order,
-            |left, right| left.central_start.cmp(&right.central_start),
-            |_| 0,
+            |value| &value.central_start,
+            Ord::cmp,
             "ZIP ledger central order",
         )?;
         let mut central_end = central_begin;
@@ -1120,10 +1120,10 @@ fn partition(
     let mut ordered_regions = index_storage
         .with_storage(|| ctx.collection_vec(regions.len(), "ZIP ledger ordered regions"))?;
     ordered_regions.extend(regions.iter());
-    ctx.stable_sort_by(
+    ctx.stable_sort_by_key(
         &mut ordered_regions,
-        |left, right| (left.start, left.end).cmp(&(right.start, right.end)),
-        |_| 0,
+            |value| (value.start,value.end),
+            Ord::cmp,
         "ZIP ledger ordered regions",
     )?;
     let mut region_index = 0_usize;

@@ -551,8 +551,8 @@ mod tests {
         cadmpeg_test_support::service_decode_context()
             .stable_sort_by(
                 &mut ordered,
-                |left, right| left.index.cmp(&right.index),
-                |_| 0,
+            |value| &value.index,
+            Ord::cmp,
                 "test string tables sort",
             )
             .unwrap();

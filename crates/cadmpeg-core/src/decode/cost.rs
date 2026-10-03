@@ -108,6 +108,13 @@ tuple_cost!(A:0, B:1, C:2, D:3);
 tuple_cost!(A:0, B:1, C:2, D:3, E:4);
 tuple_cost!(A:0, B:1, C:2, D:3, E:4, F:5);
 
+impl<T: DecodeCost> DecodeCost for std::cmp::Reverse<T> {
+    const FIXED_BYTES: Option<u64> = T::FIXED_BYTES;
+    fn decode_cost(&self, ctx: &DecodeContext<'_>, operation: &'static str) -> Result<u64, CodecError> {
+        self.0.decode_cost(ctx, operation)
+    }
+}
+
 impl DecodeCost for serde_value::Value {
     fn decode_cost(&self, ctx: &DecodeContext<'_>, operation: &'static str) -> Result<u64, CodecError> {
         let _depth = ctx.enter_nested(operation)?;

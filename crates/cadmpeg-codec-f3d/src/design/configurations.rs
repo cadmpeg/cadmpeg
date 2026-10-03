@@ -396,8 +396,8 @@ pub(crate) fn project_configurations(
     }
     ctx.stable_sort_by(
         &mut projected,
-        |left, right| left.id.cmp(&right.id),
-        |value| value.id.as_str().len(),
+            |value| &value.id,
+            Ord::cmp,
         "sort f3d configuration variants",
     )?;
     Ok(projected)

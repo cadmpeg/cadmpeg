@@ -476,6 +476,12 @@ pub struct SketchEntityUse {
     pub reversed: bool,
 }
 
+impl cadmpeg_core::decode::cost::DecodeCost for SketchEntityUse {
+    fn decode_cost(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
+        cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(&self.entity, self.reversed), ctx, operation)
+    }
+}
+
 /// Solved geometry belonging to one sketch.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -2492,6 +2498,12 @@ pub enum SketchLocus {
     End(SketchEntityId),
     /// Center of a circle, arc, or ellipse.
     Center(SketchEntityId),
+}
+
+impl cadmpeg_core::decode::cost::DecodeCost for SketchLocus {
+    fn decode_cost(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
+        let id = match self { Self::Entity(id) | Self::Start(id) | Self::End(id) | Self::Center(id) => id }; cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(1_u8,id),ctx,operation)
+    }
 }
 
 /// Coordinate axis selected by a sketch relation.

@@ -96,8 +96,8 @@ pub(super) fn project_fillet(
         }
         ctx.sort_unstable_by(
             &mut points,
-            |(left, _), (right, _)| left.cmp(right),
-            |_| 0,
+            |value| &value.0,
+            Ord::cmp,
             "sort SLDPRT variable fillet radii",
         )?;
         let points = if valid

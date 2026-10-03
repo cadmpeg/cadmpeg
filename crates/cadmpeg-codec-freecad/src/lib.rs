@@ -119,8 +119,8 @@ fn validate_native(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<Vec<Finding>, 
         arena!(namespace.arena_as_for_decode::<native::StringTableRecord>(ctx, "string_tables"));
     ctx.stable_sort_by(
         &mut string_table_records,
-        |left, right| left.index.cmp(&right.index),
-        |_| 0,
+            |value| &value.index,
+            Ord::cmp,
         "FreeCAD native string tables sort",
     )?;
     let string_tables = arena!(native::StringTables::try_from(string_table_records));
@@ -746,10 +746,10 @@ fn validate_native(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<Vec<Finding>, 
         }
     }
     for (name, mut spans) in logical_by_entry {
-        ctx.stable_sort_by(
+        ctx.stable_sort_by_key(
             &mut spans,
-            |left, right| left.span.start().cmp(&right.span.start()),
-            |_| 0,
+            |value| value.span.start(),
+            Ord::cmp,
             "fcstd logical spans sort",
         )?;
         let expected = entry_lengths.get(name).copied();
@@ -789,10 +789,10 @@ fn validate_span_chain(
     findings: &mut Vec<Finding>,
 ) -> Result<(), CodecError> {
     let mut ordered = spans.iter().collect::<Vec<_>>();
-    ctx.stable_sort_by(
+    ctx.stable_sort_by_key(
         &mut ordered,
-        |left, right| left.span.start().cmp(&right.span.start()),
-        |_| 0,
+            |value| value.span.start(),
+            Ord::cmp,
         "FreeCAD archive span chain sort",
     )?;
     let valid = ordered.first().is_some_and(|span| span.span.start() == 0)

@@ -304,9 +304,13 @@ pub(super) fn parse_standard_motif(
         let Some(mut anchor) = anchor else {
             continue;
         };
-        ctx.sort_unstable_by(&mut anchor, Ord::cmp, |_| 0, "catia_motif_anchor_sort")?;
+        ctx.sort_unstable_by(&mut anchor,
+            |value| value,
+            Ord::cmp, "catia_motif_anchor_sort")?;
         let mut points = *points;
-        ctx.sort_unstable_by(&mut points, Ord::cmp, |_| 0, "catia_motif_edge_points_sort")?;
+        ctx.sort_unstable_by(&mut points,
+            |value| value,
+            Ord::cmp, "catia_motif_edge_points_sort")?;
         if points != anchor {
             return Ok(None);
         }
@@ -477,12 +481,14 @@ pub(super) fn prune_edge_candidates_by_port_domains_with_deferred(
             }
         }
         for pair in &mut filtered {
-            ctx.sort_unstable_by(pair, Ord::cmp, |_| 0, "catia standard port pair sort")?;
+            ctx.sort_unstable_by(pair,
+            |value| value,
+            Ord::cmp, "catia standard port pair sort")?;
         }
         ctx.sort_unstable_by(
             &mut filtered,
+            |value| value,
             Ord::cmp,
-            |_| 0,
             "catia standard port filtered pairs sort",
         )?;
         filtered.dedup();
@@ -2169,8 +2175,8 @@ pub(crate) fn boundary_cycles(
     }
     ctx.stable_sort_by(
         &mut cycles,
-        Ord::cmp,
-        |item| std::mem::size_of_val(item.as_slice()),
+            |value| value,
+            Ord::cmp,
         "catia_boundary_cycles_sort",
     )?;
     Ok((!cycles.is_empty()).then_some(cycles))
@@ -2243,10 +2249,10 @@ fn cover_cycle_by_rows(
     if coverage.iter().any(|count| *count != 1) {
         return Ok(None);
     }
-    ctx.stable_sort_by(
+    ctx.stable_sort_by_key(
         &mut matches,
-        |left, right| (left.0 % length).cmp(&(right.0 % length)),
-        |_| 0,
+            |value| value.0%length,
+            Ord::cmp,
         "catia_cover_cycle_rows_sort",
     )?;
     let mut corner_nodes = HashMap::new();

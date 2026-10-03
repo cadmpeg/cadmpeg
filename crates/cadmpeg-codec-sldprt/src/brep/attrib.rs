@@ -424,8 +424,8 @@ pub(super) fn scan(
     out.extend(found.into_values().flatten());
     ctx.stable_sort_by(
         &mut out,
-        |left, right| left.face_attr.cmp(&right.face_attr),
-        |_| 0,
+            |value| &value.face_attr,
+            Ord::cmp,
         "sort Parasolid face atoms",
     )?;
     Ok(out)
@@ -499,8 +499,8 @@ pub(super) fn scan_body_modifiers(
     out.extend(found.into_values().flatten());
     ctx.stable_sort_by(
         &mut out,
-        |left, right| left.body_attr.cmp(&right.body_attr),
-        |_| 0,
+            |value| &value.body_attr,
+            Ord::cmp,
         "sort Parasolid body modifiers",
     )?;
     Ok(out)

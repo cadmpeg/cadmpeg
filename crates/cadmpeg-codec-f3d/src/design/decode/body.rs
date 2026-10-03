@@ -261,8 +261,8 @@ pub(crate) fn decode_body_bounds(
     }
     ctx.stable_sort_by(
         &mut out[..],
-        |a, b| a.id().cmp(b.id()),
-        |value| value.id().len(),
+            |value| value.id(),
+            Ord::cmp,
         "sort f3d design body 1",
     )?;
     Ok(out)
@@ -403,24 +403,15 @@ pub(super) fn decode_stream(
             out.push(recipe);
         }
     }
-    ctx.stable_sort_by(
+    ctx.stable_sort_by_key(
         &mut out[..],
-        |left, right| {
-            let left_key = {
-                let recipe = left;
+            |value| {
+                let recipe = value;
                 {
                     recipe.record_index.map(|index| index.value)
                 }
-            };
-            let right_key = {
-                let recipe = right;
-                {
-                    recipe.record_index.map(|index| index.value)
-                }
-            };
-            left_key.cmp(&right_key)
-        },
-        |_| 0,
+            },
+            Ord::cmp,
         "sort f3d design body 2",
     )?;
     Ok(())
@@ -1059,7 +1050,9 @@ pub(crate) fn design_model_blob_names(
         let mut names = Vec::new();
         ctx.reserve_vec(&mut names, archive_counts.len(), "f3d archive BREP names")?;
         names.extend(archive_counts.into_keys());
-        ctx.stable_sort_by(&mut names[..], Ord::cmp, |_| 0, "sort f3d design body 3")?;
+        ctx.stable_sort_by(&mut names[..],
+            |value| value,
+            Ord::cmp, "sort f3d design body 3")?;
         return Ok(names);
     }
     if carrier_counts != archive_counts {
@@ -1069,8 +1062,8 @@ pub(crate) fn design_model_blob_names(
     }
     ctx.stable_sort_by(
         &mut model_names[..],
-        Ord::cmp,
-        |_| 0,
+            |value| value,
+            Ord::cmp,
         "sort f3d design body 4",
     )?;
     model_names.dedup();
@@ -1292,8 +1285,8 @@ pub(crate) fn decode_design_body_bindings(
     }
     ctx.stable_sort_by(
         &mut out[..],
-        |a, b| a.id().cmp(b.id()),
-        |value| value.id().len(),
+            |value| value.id(),
+            Ord::cmp,
         "sort f3d design body 5",
     )?;
     Ok(out)
@@ -1321,24 +1314,15 @@ pub(crate) fn bind_body_bounds(
             ctx.reserve_vec(&mut matches, 1, "f3d matching body bounds bindings")?;
             matches.push(binding);
         }
-        ctx.stable_sort_by(
+        ctx.stable_sort_by_key(
             &mut matches[..],
-            |left, right| {
-                let left_key = {
-                    let binding = left;
+            |value| {
+                    let binding = value;
                     {
                         binding.asm_body_key_offset()
                     }
-                };
-                let right_key = {
-                    let binding = right;
-                    {
-                        binding.asm_body_key_offset()
-                    }
-                };
-                left_key.cmp(&right_key)
-            },
-            |_| 0,
+                },
+            Ord::cmp,
             "sort f3d design body 6",
         )?;
         let mut ids = Vec::new();
@@ -1464,20 +1448,13 @@ fn typed_browser_node_hidden_flags(
             ctx.reserve_vec(&mut linked, 1, "f3d linked browser visibility nodes")?;
             linked.push(node);
         }
-        ctx.stable_sort_by(
+        ctx.stable_sort_by_key(
             &mut linked[..],
-            |left, right| {
-                let left_key = {
-                    let node = left;
+            |value| {
+                    let node = value;
                     node.record_index
-                };
-                let right_key = {
-                    let node = right;
-                    node.record_index
-                };
-                left_key.cmp(&right_key)
-            },
-            |_| 0,
+                },
+            Ord::cmp,
             "sort f3d design body 7",
         )?;
         linked.dedup_by_key(|node| node.record_index);
