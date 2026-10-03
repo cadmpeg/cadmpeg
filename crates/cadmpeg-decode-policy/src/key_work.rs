@@ -27,6 +27,14 @@ impl<'tcx> Analysis<'_, 'tcx> {
         } else { return; };
         self.flow.work.push(Credit { extents: vec![ExtentTerm { factors: vec![factor], coefficient }], opaque: false });
     }
+    pub(crate) fn record_sort_work(&mut self, expression: &'tcx Expr<'tcx>) {
+        let Some((definition, args)) = self.call(expression) else { return; };
+        if self.tcx.crate_name(definition.krate).as_str() != "cadmpeg_core"
+            || self.tcx.item_name(definition).as_str() != "admit_sort"
+            || !self.propagated(expression) { return; }
+        let Some(key) = args.get(1).and_then(|value| self.key(value, &mut Vec::new())) else { return; };
+        self.flow.work.push(Credit { extents: vec![ExtentTerm { factors: vec![format!("sortbytes:{key}")], coefficient: self.flow.iterations }], opaque: false });
+    }
     fn consume_key_factor(&mut self, factor: &str) -> bool {
         let Some(term) = self.flow.work.iter_mut().filter(|credit| !credit.opaque)
             .flat_map(|credit| &mut credit.extents)
@@ -36,6 +44,10 @@ impl<'tcx> Analysis<'_, 'tcx> {
         true
     }
     pub(crate) fn key_work_paid(&mut self, operands: &[&'tcx Expr<'tcx>], name: &str) -> bool {
+        if matches!(name, "sort_unstable_by" | "sort_unstable_by_key" | "sort_by" | "sort_by_key" | "sort" | "sort_unstable") {
+            return operands.first().and_then(|value| self.key(value, &mut Vec::new()))
+                .is_some_and(|key| self.consume_key_factor(&format!("sortbytes:{key}")));
+        }
         let comparison = matches!(name, "comparison" | "eq" | "ne" | "lt" | "le" | "gt" | "ge" | "cmp" | "partial_cmp");
         if comparison {
             let keys: Option<Vec<_>> = operands.iter().map(|value| self.key(value, &mut Vec::new())).collect();
