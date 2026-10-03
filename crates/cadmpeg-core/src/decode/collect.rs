@@ -779,6 +779,22 @@ impl DecodeContext<'_> {
         Ok((target - len, bytes, overlap))
     }
 
+    /// Reserves precharged input or expansion bytes with admitted move work
+    /// and overlap storage. The caller selects its allocation failure dimension.
+    pub(super) fn reserve_precharged_bytes(
+        &self,
+        values: &mut Vec<u8>,
+        count: usize,
+        operation: &'static str,
+        allocation_failed: impl FnOnce(u64) -> CodecError,
+    ) -> Result<(), CodecError> {
+        let (additional, storage, _growth) = self.linear_growth::<u8>(
+            values.len(), values.capacity(), count, LinearGrowth::PrechargedBytes, operation,
+        )?;
+        values.try_reserve_exact(additional)
+            .map_err(|_| allocation_failed(u64_from_index(storage)))
+    }
+
     /// Appends a deque item after charging its slot.
     pub fn push_back<T>(
         &self,

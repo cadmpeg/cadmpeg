@@ -801,15 +801,11 @@ impl<'a> ExpandWriter<'_, 'a> {
             ));
         }
         self.ctx.budget.charge_decompressed(len, "expand_write")?;
-        let (additional, storage, _growth) = self.ctx.linear_growth::<u8>(
-            self.buffer.len(), self.buffer.capacity(), data.len(),
-            LinearGrowth::PrechargedBytes, "expand_write storage",
-        )?;
-        self.buffer.try_reserve_exact(additional).map_err(|_| {
+        self.ctx.reserve_precharged_bytes(&mut self.buffer, data.len(), "expand_write storage", |storage| {
             self.ctx.fuse(
                 ResourceFailure::AllocationFailed,
                 LimitScope::PerExpand,
-                u64_from_index(storage),
+                storage,
                 "expand_write",
             )
         })?;

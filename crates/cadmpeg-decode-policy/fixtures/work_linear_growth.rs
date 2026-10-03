@@ -2,6 +2,7 @@
 pub struct DecodeContext;
 pub struct ScopedReservation;
 impl DecodeContext {
+    pub fn charge_work(&self, _count: u64, _operation: &str) -> Result<(), ()> { Ok(()) }
     pub fn linear_growth<T>(&self, _length: usize, _capacity: usize, count: usize, _operation: &str) -> Result<(usize, usize, ScopedReservation), ()> { Ok((count, std::mem::size_of::<T>(), ScopedReservation)) }
     pub fn charge_hash_growth<T>(&self, _length: usize, _capacity: usize, count: usize, _operation: &str) -> Result<(usize, ScopedReservation), ()> { Ok((count, ScopedReservation)) }
 }
@@ -12,6 +13,20 @@ pub fn admitted(ctx: &DecodeContext, values: &mut Vec<u64>) -> Result<(), ()> {
     Ok(())
 }
 fn runtime_count() -> usize { 1 }
+pub fn input_like_growth(ctx: &DecodeContext, reader: &mut dyn std::io::Read, values: &mut Vec<u8>, length: usize) -> Result<(), ()> {
+    let mut chunk = [0_u8; 8192];
+    while values.len() < length {
+        ctx.charge_work(1, "iteration")?;
+        let count = (length - values.len()).min(chunk.len());
+        let read = reader.read(&mut chunk[..count]).map_err(|_| ())?; // finding: unproven_decode_charge
+        if read > count { return Err(()); }
+        if read == 0 { break; }
+        let (additional, _bytes, _growth) = ctx.linear_growth::<u8>(values.len(), values.capacity(), read, "growth")?;
+        values.try_reserve_exact(additional).map_err(|_| ())?;
+        break;
+    }
+    Ok(())
+}
 pub fn returned_count_admits_runtime_growth(ctx: &DecodeContext, values: &mut Vec<u64>) -> Result<(), ()> {
     let count = runtime_count();
     let (additional, _bytes, _growth) = ctx.linear_growth::<u64>(values.len(), values.capacity(), count, "growth")?;
