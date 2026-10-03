@@ -1260,11 +1260,14 @@ pub fn nurbs_surface_closest_parameter_with_budget(
 /// candidate only; callers must forward-evaluate it and apply their own
 /// residual bound. This operation does not prove that the candidate is
 /// globally closest.
-pub fn nurbs_surface_parameter_near_point(
+pub fn nurbs_surface_parameter_near_point<'ctx, 'arena: 'ctx>(
+    admission: impl Into<admission::EvaluationAdmission<'ctx, 'arena>>,
     surface: &NurbsSurface,
     point: Point3,
     seed: Option<Point2>,
 ) -> Result<Option<FinitePoint2>, ResourceLimit> {
+    let admission = admission.into();
+    admission.work(0, "IR surface inverse boundary")?;
     const COARSE_GRID: usize = 8;
     const COARSE_GRID_F64: f64 = 8.0;
     const MAX_ITERATIONS: usize = 24;
@@ -1311,6 +1314,7 @@ pub fn nurbs_surface_parameter_near_point(
                     return Ok(None);
                 };
                 for v_index in 0..=COARSE_GRID {
+                    admission.work(1, "IR surface inverse coarse visit")?;
                     let Some(v_index) = f64_from_index(v_index) else {
                         return Ok(None);
                     };
@@ -1320,7 +1324,7 @@ pub fn nurbs_surface_parameter_near_point(
                         return Ok(None);
                     };
                     let Some(candidate) =
-                        finite_or_refusal(crate::eval::decode::nurbs_surface_point(crate::eval::admission::EvaluationAdmission::Standard, surface, u.get(), v.get()))?
+                        finite_or_refusal(crate::eval::decode::nurbs_surface_point(admission, surface, u.get(), v.get()))?
                     else {
                         return Ok(None);
                     };
@@ -1338,8 +1342,9 @@ pub fn nurbs_surface_parameter_near_point(
     };
     let distance = |left: Point3| left.distance(point);
     for _ in 0..MAX_ITERATIONS {
+        admission.work(1, "IR surface inverse partial visit")?;
         let Some(partials) =
-            finite_or_refusal(nurbs_surface_partials(surface, parameters.u, parameters.v))?
+            finite_or_refusal(nurbs_surface_partials(admission, surface, parameters.u, parameters.v))?
         else {
             return Ok(None);
         };
@@ -1359,12 +1364,13 @@ pub fn nurbs_surface_parameter_near_point(
         let mut scale = FiniteReal::ONE;
         let mut accepted = false;
         for _ in 0..MAX_LINE_SEARCH_STEPS {
+            admission.work(1, "IR surface inverse backtrack")?;
             let candidate = FinitePoint2::from_coordinates(
                 u_domain.project(ExtendedReal::stepped(u, scale, step_u)),
                 v_domain.project(ExtendedReal::stepped(v, scale, step_v)),
             );
             let Some(candidate_point) =
-                finite_or_refusal(crate::eval::decode::nurbs_surface_point(crate::eval::admission::EvaluationAdmission::Standard, surface, candidate.u, candidate.v))?
+                finite_or_refusal(crate::eval::decode::nurbs_surface_point(admission, surface, candidate.u, candidate.v))?
             else {
                 return Ok(None);
             };
@@ -2738,42 +2744,48 @@ fn nurbs_surface_local_unsettled<'a>(
 
 /// A NURBS surface's point and first partials at `(u, v)`, the partials with
 /// their own outcome, or why the point has none.
-fn nurbs_surface_first_order(
+fn nurbs_surface_first_order<'ctx, 'arena: 'ctx>(
+    admission: impl Into<admission::EvaluationAdmission<'ctx, 'arena>>,
     surface: &NurbsSurface,
     u_at: f64,
     v_at: f64,
 ) -> Result<SurfaceFirstOrder, EvaluationFailure<Point3>> {
-    default_scratch_evaluation(|scratch| {
-        let local = nurbs_surface_local(scratch, surface, u_at, v_at)?;
+    let scratch = decode::Scratch::new(admission);
+    let result = (|| {
+        let local = nurbs_surface_local(&scratch, surface, u_at, v_at)?;
         let [x, y, z] = local.point;
         Ok(SurfaceFirstOrder {
             point: FinitePoint3::from_coordinates(x, y, z),
-            first: local.first(scratch).map(|first| first.lanes.map(finite_vector)),
+            first: local.first(&scratch).map(|first| first.lanes.map(finite_vector)),
         })
-    })
+    })();
+    scratch.settle(result)
 }
 
 /// A NURBS surface's point with its first and second partials at `(u, v)`,
 /// each order with its own outcome, or why the point has none.
-fn nurbs_surface_jet(
+fn nurbs_surface_jet<'ctx, 'arena: 'ctx>(
+    admission: impl Into<admission::EvaluationAdmission<'ctx, 'arena>>,
     surface: &NurbsSurface,
     u_at: f64,
     v_at: f64,
 ) -> Result<SurfaceJet, EvaluationFailure<Point3>> {
-    default_scratch_evaluation(|scratch| {
-        let local = nurbs_surface_local(scratch, surface, u_at, v_at)?;
+    let scratch = decode::Scratch::new(admission);
+    let result = (|| {
+        let local = nurbs_surface_local(&scratch, surface, u_at, v_at)?;
         let [x, y, z] = local.point;
-        let first = local.first(scratch);
+        let first = local.first(&scratch);
         let second = first
             .as_ref()
             .map_err(|failure| *failure)
-            .and_then(|first| local.second(scratch, first));
+            .and_then(|first| local.second(&scratch, first));
         Ok(SurfaceJet {
             point: FinitePoint3::from_coordinates(x, y, z),
             first: first.map(|first| first.lanes.map(finite_vector)),
             second: second.map(|lanes| lanes.map(finite_vector)),
         })
-    })
+    })();
+    scratch.settle(result)
 }
 
 /// The vector of three finite lanes.
@@ -3190,12 +3202,13 @@ fn admit_lanes<const N: usize>(
 /// The point fails as [`decode::nurbs_surface_point`] states. At a finite point,
 /// first partials outside the finite range leave the evaluation there,
 /// carrying the point.
-pub fn nurbs_surface_partials(
+pub fn nurbs_surface_partials<'ctx, 'arena: 'ctx>(
+    admission: impl Into<admission::EvaluationAdmission<'ctx, 'arena>>,
     surface: &NurbsSurface,
     u_at: f64,
     v_at: f64,
 ) -> Result<SurfacePartials<FinitePoint3, FiniteVector3>, EvaluationFailure<Point3>> {
-    nurbs_surface_first_order(surface, u_at, v_at)?.partials()
+    nurbs_surface_first_order(admission, surface, u_at, v_at)?.partials()
 }
 
 /// [`nurbs_surface_partials`] within a caller-owned work slice. A refused
@@ -3207,7 +3220,7 @@ pub fn nurbs_surface_partials_with_budget(
     budget: &WorkBudget<'_>,
 ) -> Result<SurfacePartials<FinitePoint3, FiniteVector3>, EvaluationFailure<Point3>> {
     charge_nurbs_surface_partials(surface, budget)?;
-    nurbs_surface_partials(surface, u_at, v_at)
+    nurbs_surface_partials(crate::eval::admission::EvaluationAdmission::Standard, surface, u_at, v_at)
 }
 
 /// Charge the work of a NURBS surface's partials to `budget`: a cost that
@@ -3229,12 +3242,13 @@ fn charge_nurbs_surface_partials(
 /// The point fails as [`decode::nurbs_surface_point`] states. At a finite point,
 /// partials outside the finite range leave the evaluation there, carrying
 /// the point.
-pub fn nurbs_surface_second_partials(
+pub fn nurbs_surface_second_partials<'ctx, 'arena: 'ctx>(
+    admission: impl Into<admission::EvaluationAdmission<'ctx, 'arena>>,
     surface: &NurbsSurface,
     u_at: f64,
     v_at: f64,
 ) -> Result<SurfaceSecondPartials<FinitePoint3, FiniteVector3>, EvaluationFailure<Point3>> {
-    nurbs_surface_jet(surface, u_at, v_at)?.second_partials()
+    nurbs_surface_jet(admission, surface, u_at, v_at)?.second_partials()
 }
 
 /// [`nurbs_surface_second_partials`] within a caller-owned work slice. A
@@ -3246,7 +3260,7 @@ pub fn nurbs_surface_second_partials_with_budget(
     budget: &WorkBudget<'_>,
 ) -> Result<SurfaceSecondPartials<FinitePoint3, FiniteVector3>, EvaluationFailure<Point3>> {
     charge_nurbs_surface_partials(surface, budget)?;
-    nurbs_surface_second_partials(surface, u_at, v_at)
+    nurbs_surface_second_partials(crate::eval::admission::EvaluationAdmission::Standard, surface, u_at, v_at)
 }
 
 fn nurbs_surface_partials_evaluation_cost(surface: &NurbsSurface) -> Option<usize> {
@@ -6110,7 +6124,7 @@ fn surface_jet_solved(
             if let Some(budget) = budget {
                 charge_nurbs_surface_partials(nurbs, budget)?;
             }
-            nurbs_surface_jet(nurbs, u, v)
+            nurbs_surface_jet(crate::eval::admission::EvaluationAdmission::Standard, nurbs, u, v)
         }
         SolvedSurfaceGeometry::Transformed(placed) => {
             if budget.is_some_and(|budget| !budget.charge()) {
@@ -6150,7 +6164,7 @@ fn surface_first_order_solved(
             if let Some(budget) = budget {
                 charge_nurbs_surface_partials(nurbs, budget)?;
             }
-            nurbs_surface_first_order(nurbs, u, v)
+            nurbs_surface_first_order(crate::eval::admission::EvaluationAdmission::Standard, nurbs, u, v)
         }
         SolvedSurfaceGeometry::Transformed(placed) => {
             if budget.is_some_and(|budget| !budget.charge()) {

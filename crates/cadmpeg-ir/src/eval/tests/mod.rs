@@ -883,7 +883,7 @@ fn bilinear_surface_partials_follow_stored_parameterization() {
         false,
     ).expect("fixture constructor admission")
     .unwrap();
-    let partials = nurbs_surface_partials(&surface, 0.25, 0.75).expect("partials");
+    let partials = nurbs_surface_partials(crate::eval::admission::EvaluationAdmission::Standard, &surface, 0.25, 0.75).expect("partials");
     assert_eq!(partials.point, Point3::new(0.5, 2.25, 0.0));
     assert_eq!(partials.du, Vector3::new(2.0, 0.0, 0.0));
     assert_eq!(partials.dv, Vector3::new(0.0, 3.0, 0.0));
@@ -913,7 +913,7 @@ fn quadratic_surface_second_partials_follow_stored_parameterization() {
         false,
     ).expect("fixture constructor admission")
     .unwrap();
-    let partials = nurbs_surface_second_partials(&surface, 0.25, 0.75).expect("second partials");
+    let partials = nurbs_surface_second_partials(crate::eval::admission::EvaluationAdmission::Standard, &surface, 0.25, 0.75).expect("second partials");
     assert_eq!(partials.point, Point3::new(0.25, 0.75, 0.625));
     assert_eq!(partials.du, Vector3::new(1.0, 0.0, 0.5));
     assert_eq!(partials.dv, Vector3::new(0.0, 1.0, 1.5));
@@ -1854,13 +1854,13 @@ fn rational_surface_partials_apply_the_weight_quotient_rule() {
         false,
     ).expect("fixture constructor admission")
     .unwrap();
-    let partials = nurbs_surface_partials(&surface, 0.5, 0.25).expect("partials");
+    let partials = nurbs_surface_partials(crate::eval::admission::EvaluationAdmission::Standard, &surface, 0.5, 0.25).expect("partials");
     assert!((partials.point.x - 4.0 / 3.0).abs() < 1.0e-12);
     assert!((partials.point.y - 0.75).abs() < 1.0e-12);
     assert!((partials.du.x - 16.0 / 9.0).abs() < 1.0e-12);
     assert!(partials.du.y.abs() < 1.0e-12);
     assert!((partials.dv.y - 3.0).abs() < 1.0e-12);
-    let second = nurbs_surface_second_partials(&surface, 0.5, 0.25).expect("second partials");
+    let second = nurbs_surface_second_partials(crate::eval::admission::EvaluationAdmission::Standard, &surface, 0.5, 0.25).expect("second partials");
     assert!((second.duu.x + 64.0 / 27.0).abs() < 1.0e-12);
     assert!(second.duu.y.abs() < 1.0e-12);
     assert_eq!(second.duv, Vector3::new(0.0, 0.0, 0.0));

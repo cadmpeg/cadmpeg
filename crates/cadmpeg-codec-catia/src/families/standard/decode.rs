@@ -5102,7 +5102,7 @@ fn standard_limit_curve_bindings(
                         if !matches!(
                             surface.geometry,
                             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { .. })
-                        ) && !point_on_surface(position, &surface.geometry)?
+                        ) && !point_on_surface(ctx, position, &surface.geometry)?
                         {
                             all_faces = false;
                             break;
@@ -5154,7 +5154,7 @@ fn standard_limit_curve_bindings(
                     continue;
                 }
                 checked_surface = true;
-                if !point_on_surface(midpoint.get(), &surface.geometry)? {
+                if !point_on_surface(ctx, midpoint.get(), &surface.geometry)? {
                     agrees = false;
                     break;
                 }
@@ -5446,7 +5446,7 @@ fn attach_standard_topology(
                     if !face_incidence_candidates.contains_key(&face) {
                         let mut points = Vec::new();
                         for (index, point) in ir.model.points.iter().enumerate() {
-                            if point_on_standard_face(
+                            if point_on_standard_face(ctx, 
                                 point.position().get(),
                                 surface,
                                 face_bounds.as_ref().and_then(|bounds| bounds[face]),
@@ -5790,7 +5790,7 @@ fn attach_standard_topology(
                                     all_points = false;
                                     break;
                                 };
-                                if !point_on_standard_face(
+                                if !point_on_standard_face(ctx, 
                                     point.position().get(),
                                     &surface.geometry,
                                     face_bounds.as_ref().and_then(|bounds| bounds[face]),
@@ -5803,7 +5803,7 @@ fn attach_standard_topology(
                                 }
                             }
                             if all_points
-                                && standard_nurbs_line_pair_on_face(
+                                && standard_nurbs_line_pair_on_face(ctx, 
                                     &surface.geometry,
                                     support,
                                     pair,
@@ -5941,7 +5941,7 @@ fn attach_standard_topology(
                             all_points = false;
                             break;
                         };
-                        if !point_on_standard_face(
+                        if !point_on_standard_face(ctx, 
                             point.position().get(),
                             &surface.geometry,
                             face_bounds.as_ref().and_then(|bounds| bounds[faces[1]]),
@@ -5994,8 +5994,8 @@ fn attach_standard_topology(
                         return Ok(false);
                     };
                     let bounds = face_bounds.as_ref().and_then(|bounds| bounds[face]);
-                    if !point_on_standard_face(position, &surface.geometry, bounds)?
-                        || !standard_nurbs_line_pair_on_face(
+                    if !point_on_standard_face(ctx, position, &surface.geometry, bounds)?
+                        || !standard_nurbs_line_pair_on_face(ctx, 
                             &surface.geometry,
                             &supports[edge],
                             &pair,
@@ -7952,8 +7952,8 @@ fn resolve_standard_endpoint_pairs(
                 if segment_norm != 0.0
                     && follows_direction
                     && follows_same_cone_generator
-                    && point_on_surface(midpoint, &surface0.geometry)?
-                    && point_on_surface(midpoint, &surface1.geometry)?
+                    && point_on_surface(ctx, midpoint, &surface0.geometry)?
+                    && point_on_surface(ctx, midpoint, &surface1.geometry)?
                 {
                     ctx.push_vec(
                         &mut pairs,
@@ -8119,7 +8119,7 @@ fn standard_circle_endpoint_candidates(
         let mut incident = true;
         if let Some(faces) = faces {
             for (surface, bounds) in faces {
-                if !point_on_standard_face(point.position().get(), surface, bounds)? {
+                if !point_on_standard_face(ctx, point.position().get(), surface, bounds)? {
                     incident = false;
                     break;
                 }
@@ -8654,21 +8654,23 @@ fn standard_face_point_membership(
             ctx.alloc_filled(ir.model.points.len(), false, "catia_face_point_membership")?;
         for (point, candidate) in ir.model.points.iter().enumerate() {
             membership[point] =
-                point_on_standard_face(candidate.position().get(), &surface.geometry, bounds)?;
+                point_on_standard_face(ctx, candidate.position().get(), &surface.geometry, bounds)?;
         }
     }
     Ok(memberships)
 }
 
 fn point_on_standard_face(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     point: Point3,
     surface: &SurfaceGeometry,
     bounds: Option<crate::families::standard::records::StandardFaceBounds>,
 ) -> Result<bool, cadmpeg_core::decode::ResourceLimit> {
+    ctx.charge_work_limit(0, "catia surface membership boundary")?;
     if bounds.is_some_and(|bounds| !point_inside_standard_face_bounds(point, bounds)) {
         return Ok(false);
     }
-    Ok(point_on_surface_if_supported(point, surface)? != Some(false))
+    Ok(point_on_surface_if_supported(ctx, point, surface)? != Some(false))
 }
 
 fn point_inside_standard_face_bounds(
@@ -8797,12 +8799,14 @@ fn refine_repeated_face_domains_by_geometry_and_bounds(
 }
 
 fn standard_nurbs_line_pair_on_face(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     surface: &SurfaceGeometry,
     support: &crate::families::standard::records::StandardCurveSupport,
     pair: &[usize; 2],
     points: &[Point],
     bounds: Option<crate::families::standard::records::StandardFaceBounds>,
 ) -> Result<bool, cadmpeg_core::decode::ResourceLimit> {
+    ctx.charge_work_limit(0, "catia surface membership boundary")?;
     if !matches!(
         surface,
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(_))
@@ -8824,28 +8828,34 @@ fn standard_nurbs_line_pair_on_face(
             start.y + fraction * (end.y - start.y),
             start.z + fraction * (end.z - start.z),
         );
-        if !point_on_standard_face(point, surface, bounds)? {
+        if !point_on_standard_face(ctx, point, surface, bounds)? {
             return Ok(false);
         }
     }
     Ok(true)
 }
 
-fn nurbs_surface_control_bounds(surface: &NurbsSurface) -> Option<[[f64; 2]; 3]> {
-    if surface
-        .pole_weights()
-        .is_some_and(|weights| weights.into_iter().any(|weight| weight.get() <= 0.0))
-    {
-        return None;
+fn nurbs_surface_control_bounds(
+    ctx: &DecodeContext<'_>,
+    surface: &NurbsSurface,
+) -> Result<Option<[[f64; 2]; 3]>, cadmpeg_core::decode::ResourceLimit> {
+    ctx.charge_work_limit(0, "catia surface control bounds")?;
+    if let Some(weights) = surface.pole_weights() {
+        for weight in weights {
+            ctx.charge_work_limit(1, "catia surface bound weight")?;
+            if weight.get() <= 0.0 { return Ok(None); }
+        }
     }
     let mut bounds = [[f64::INFINITY, f64::NEG_INFINITY]; 3];
     for point in surface.poles() {
+        ctx.charge_work_limit(1, "catia surface bound pole")?;
         for (axis, coordinate) in [point.x, point.y, point.z].into_iter().enumerate() {
+            ctx.charge_work_limit(2, "catia surface bound comparison")?;
             bounds[axis][0] = bounds[axis][0].min(coordinate);
             bounds[axis][1] = bounds[axis][1].max(coordinate);
         }
     }
-    Some(bounds)
+    Ok(Some(bounds))
 }
 
 fn nurbs_surface_parameter_domain(surface: &NurbsSurface) -> Option<[[f64; 2]; 2]> {
@@ -9234,14 +9244,16 @@ fn standard_endpoint_options_for_selected_faces(
 }
 
 fn point_on_nurbs_surface(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     point: Point3,
     surface: &NurbsSurface,
 ) -> Result<Option<bool>, cadmpeg_core::decode::ResourceLimit> {
+    ctx.charge_work_limit(0, "catia surface membership boundary")?;
     // A positive-weight NURBS control net bounds the surface, so its AABB is a
     // sound negative test.  The bounded parameter search supplies positive
     // witnesses only.  A failed search inside that AABB is unknown, not proof
     // that the point is off the surface.
-    if let Some(bounds) = nurbs_surface_control_bounds(surface) {
+    if let Some(bounds) = nurbs_surface_control_bounds(ctx, surface)? {
         let outside =
             [point.x, point.y, point.z]
                 .into_iter()
@@ -9254,7 +9266,7 @@ fn point_on_nurbs_surface(
             return Ok(Some(false));
         }
     }
-    let Some(distance) = surface_membership::nurbs_surface_witness_distance(surface, point)? else {
+    let Some(distance) = surface_membership::nurbs_surface_witness_distance(ctx, surface, point)? else {
         return Ok(None);
     };
     Ok((distance <= NURBS_SURFACE_MEMBERSHIP_TOLERANCE).then_some(true))
@@ -9600,7 +9612,7 @@ fn bind_standard_a5_owner_surfaces(
                 if points.len() >= 3 {
                     witnessed = true;
                     for point in points {
-                        if point_on_nurbs_surface(*point, surface)? != Some(true) {
+                        if point_on_nurbs_surface(ctx, *point, surface)? != Some(true) {
                             witnessed = false;
                             break;
                         }
@@ -9674,9 +9686,9 @@ fn standard_endpoint_pair_supports_topology(
     let endpoint_is_supported = |point| -> Result<bool, cadmpeg_core::decode::ResourceLimit> {
         Ok(match surface {
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(_)) => {
-                point_on_surface_if_supported(point, surface)? != Some(false)
+                point_on_surface_if_supported(ctx, point, surface)? != Some(false)
             }
-            _ => point_on_surface(point, surface)?,
+            _ => point_on_surface(ctx, point, surface)?,
         })
     };
     if !endpoint_is_supported(start)? || !endpoint_is_supported(end)? {
@@ -10316,7 +10328,7 @@ mod circle_axis_tests {
             false,
         ).expect("fixture constructor admission")
         .expect("anisotropic nurbs surface");
-        let residual = super::surface_membership::nurbs_surface_witness_distance(
+        let residual = super::surface_membership::nurbs_surface_witness_distance(&cadmpeg_test_support::service_decode_context(), 
             &surface,
             Point3::new(0.3, 0.4, 0.),
         )

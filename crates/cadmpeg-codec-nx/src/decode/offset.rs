@@ -17,7 +17,7 @@ use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::eval::{
     analytic_surface_parameters, finite_or_refusal, model_surface_partials_by_id_with_budget,
     model_surface_point_by_id_with_budget, nurbs_surface_closest_parameter_with_budget,
-    nurbs_surface_parameter_within_tolerance_with_budget, nurbs_surface_partials_with_budget,
+    nurbs_surface_parameter_within_tolerance_with_budget, nurbs_surface_partials,
 };
 use cadmpeg_ir::features::FiniteVector3;
 use cadmpeg_ir::geometry::{
@@ -314,12 +314,7 @@ fn offset_candidate_sample_error(
         }
         let u = u0 + (u1 - u0) * 0.5;
         let v = v0 + (v1 - v0) * 0.5;
-        let support_partials = match finite_or_refusal(nurbs_surface_partials_with_budget(
-            support,
-            u,
-            v,
-            geometry_budget,
-        )) {
+        let support_partials = match finite_or_refusal(nurbs_surface_partials(geometry_budget.charges, support, u, v)) {
             Ok(Some(partials)) => partials,
             Ok(None) => return None,
             Err(limit) => return Some(Err(limit)),
@@ -819,12 +814,7 @@ pub(super) fn certified_curved_offset_cache_fit_with_budget(
                 Ok(None) => return None,
                 Err(limit) => return Some(Err(limit)),
             };
-            let partials = match finite_or_refusal(nurbs_surface_partials_with_budget(
-                support,
-                u,
-                v,
-                geometry_budget,
-            )) {
+            let partials = match finite_or_refusal(nurbs_surface_partials(geometry_budget.charges, support, u, v)) {
                 Ok(Some(partials)) => partials,
                 Ok(None) => return None,
                 Err(limit) => return Some(Err(limit)),

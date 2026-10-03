@@ -1238,7 +1238,7 @@ fn cylinder_generator_direction_requires_compatible_support_axes() {
 
 #[test]
 fn unknown_surface_membership_stays_open_but_nurbs_membership_is_geometric() {
-    assert!(point_on_standard_face(
+    assert!(point_on_standard_face(&cadmpeg_test_support::service_decode_context(), 
         Point3::new(100.0, -50.0, 7.0),
         &SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
         None,
@@ -1246,15 +1246,15 @@ fn unknown_surface_membership_stays_open_but_nurbs_membership_is_geometric() {
     .expect("surface evaluator accepts the fixture"));
     let nurbs = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(unit_square_surface()));
     assert!(
-        point_on_standard_face(Point3::new(0.5, 0.5, 0.0), &nurbs, None,)
+        point_on_standard_face(&cadmpeg_test_support::service_decode_context(), Point3::new(0.5, 0.5, 0.0), &nurbs, None,)
             .expect("surface evaluator accepts the fixture")
     );
     assert!(
-        !point_on_standard_face(Point3::new(0.5, 0.5, 0.1), &nurbs, None,)
+        !point_on_standard_face(&cadmpeg_test_support::service_decode_context(), Point3::new(0.5, 0.5, 0.1), &nurbs, None,)
             .expect("surface evaluator accepts the fixture")
     );
     assert!(
-        !point_on_standard_face(Point3::new(100.0, -50.0, 7.0), &nurbs, None,)
+        !point_on_standard_face(&cadmpeg_test_support::service_decode_context(), Point3::new(100.0, -50.0, 7.0), &nurbs, None,)
             .expect("surface evaluator accepts the fixture")
     );
 }
@@ -1447,7 +1447,7 @@ fn cached_face_point_membership_matches_the_source_predicate() {
     assert!(!membership[0][1]);
     assert!(membership[0].iter().enumerate().all(|(point, cached)| {
         *cached
-            == point_on_standard_face(
+            == point_on_standard_face(&ctx, 
                 ir.model.points[point].position().get(),
                 &ir.model.surfaces[0].geometry,
                 None,
@@ -1512,15 +1512,15 @@ fn freeform_face_bounds_constrain_unknown_surface_endpoints() {
     };
     let surface = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None });
     assert!(
-        point_on_standard_face(Point3::new(2.0, 4.0, 6.0), &surface, Some(bounds),)
+        point_on_standard_face(&cadmpeg_test_support::service_decode_context(), Point3::new(2.0, 4.0, 6.0), &surface, Some(bounds),)
             .expect("surface evaluator accepts the fixture")
     );
     assert!(
-        !point_on_standard_face(Point3::new(3.01, 3.0, 4.0), &surface, Some(bounds),)
+        !point_on_standard_face(&cadmpeg_test_support::service_decode_context(), Point3::new(3.01, 3.0, 4.0), &surface, Some(bounds),)
             .expect("surface evaluator accepts the fixture")
     );
     assert!(
-        !point_on_standard_face(Point3::new(3.0, 5.0, 7.0), &surface, Some(bounds),)
+        !point_on_standard_face(&cadmpeg_test_support::service_decode_context(), Point3::new(3.0, 5.0, 7.0), &surface, Some(bounds),)
             .expect("surface evaluator accepts the fixture")
     );
 }

@@ -167,7 +167,7 @@ fn budgeted_nurbs_surface_inverse_refines_an_approximate_seed_before_global_sear
 fn nurbs_surface_local_inverse_returns_a_forward_checked_candidate() {
     let surface = bilinear_surface();
     let point = Point3::new(0.3, 0.7, 0.2);
-    let parameters = nurbs_surface_parameter_near_point(&surface, point, None).expect("resource allocation did not fail")
+    let parameters = nurbs_surface_parameter_near_point(crate::eval::admission::EvaluationAdmission::Standard, &surface, point, None).expect("resource allocation did not fail")
         .expect("bounded local surface candidate");
     let mapped = crate::eval::decode::nurbs_surface_point(crate::eval::admission::EvaluationAdmission::Standard, &surface, parameters.u, parameters.v).expect("surface point");
     assert!(mapped.distance(point) <= 0.2 + f64::EPSILON * 1024.0);
@@ -197,4 +197,68 @@ fn nurbs_surface_inverse_handles_rational_internal_spans() {
         .expect("rational multi-span inverse");
     assert!((parameters.u - 0.75).abs() < 1.0e-9);
     assert!((parameters.v - 0.4).abs() < 1.0e-9);
+}
+
+#[test]
+fn local_surface_inverse_preserves_each_work_refusal() {
+    use cadmpeg_core::decode::{DecodePolicy, ResourceDimension};
+    let surface = bilinear_surface();
+    for (seed, operation) in [
+        (None, "IR surface inverse coarse visit"),
+        (Some(Point2::new(0.0, 0.0)), "IR surface inverse partial visit"),
+    ] {
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        crate::eval::test_support::with_policy(policy, |ctx| {
+            let original = nurbs_surface_parameter_near_point(ctx, &surface, Point3::new(0.3, 0.7, 0.0), seed).unwrap_err();
+            assert_eq!(original.dimension, ResourceDimension::WorkUnits);
+            assert_eq!((original.limit, original.used, original.additional), (0, 0, 1));
+            assert_eq!(original.operation, operation);
+            assert_eq!(ctx.resource_refusal(), Some(original));
+            assert_eq!(nurbs_surface_parameter_near_point(ctx, &surface, Point3::new(f64::NAN, 0.0, 0.0), None), Err(original));
+        });
+    }
+}
+
+#[test]
+fn surface_partials_preserve_scratch_refusal_and_temporary_lifetime() {
+    use cadmpeg_core::decode::{DecodePolicy, ResourceDimension};
+    let surface = NurbsSurface::from_lanes(
+        &cadmpeg_test_support::service_decode_context(),
+        NurbsSurfaceAxis::new(2, vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0], false),
+        NurbsSurfaceAxis::new(2, vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0], false),
+        NurbsSurfaceLanes::new((0..3).map(|u| (0..3).map(|v| Point3::new(f64::from(u) * 0.5, f64::from(v) * 0.5, 0.0)).collect()).collect(), None),
+        false,
+    ).expect("fixture admission").expect("quadratic plane");
+    for dimension in [ResourceDimension::MaterializedBytes, ResourceDimension::CollectionItems, ResourceDimension::WorkUnits] {
+        let mut policy = DecodePolicy::service();
+        match dimension {
+            ResourceDimension::MaterializedBytes => policy.limits.max_materialized_bytes = 0,
+            ResourceDimension::CollectionItems => policy.limits.max_collection_items = 0,
+            ResourceDimension::WorkUnits => policy.limits.max_work_units = 0,
+            _ => unreachable!("three scratch dimensions"),
+        }
+        crate::eval::test_support::with_policy(policy, |ctx| {
+            let Err(crate::eval::EvaluationFailure::ResourceLimit(original)) = crate::eval::nurbs_surface_partials(ctx, &surface, 0.5, 0.5)
+            else { panic!("partial scratch must refuse") };
+            assert_eq!(original.dimension, dimension);
+            assert_eq!((original.limit, original.used), (0, 0));
+            assert!(original.additional > 0);
+            assert_eq!(ctx.resource_refusal(), Some(original));
+            assert_eq!(crate::eval::nurbs_surface_second_partials(ctx, &surface, f64::NAN, 0.5), Err(crate::eval::EvaluationFailure::ResourceLimit(original)));
+        });
+    }
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    crate::eval::test_support::with_policy(policy, |ctx| {
+        let partials = crate::eval::nurbs_surface_partials(ctx, &surface, 0.5, 0.5).unwrap();
+        assert_eq!(partials.point, Point3::new(0.5, 0.5, 0.0));
+        assert_eq!(partials.du, crate::math::Vector3::new(1.0, 0.0, 0.0));
+        assert_eq!(partials.dv, crate::math::Vector3::new(0.0, 1.0, 0.0));
+        let second = crate::eval::nurbs_surface_second_partials(ctx, &surface, 0.5, 0.5).unwrap();
+        assert_eq!(second.duu, crate::math::Vector3::new(0.0, 0.0, 0.0));
+        assert_eq!(second.duv, crate::math::Vector3::new(0.0, 0.0, 0.0));
+        assert_eq!(second.dvv, crate::math::Vector3::new(0.0, 0.0, 0.0));
+        assert_eq!(ctx.resource_refusal(), None);
+    });
 }
